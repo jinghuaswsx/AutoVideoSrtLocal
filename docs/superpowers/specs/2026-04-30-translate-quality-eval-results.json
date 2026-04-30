@@ -1,0 +1,3709 @@
+{
+  "sources": [
+    {
+      "label": "A_ice_ball",
+      "asr_path": "/opt/autovideosrt/output/e51759992ed5516388897810782aa1f0/asr_result.json",
+      "source_full_text": "I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.",
+      "n_segments": 10
+    },
+    {
+      "label": "B_utility_knife",
+      "asr_path": "/opt/autovideosrt/output/12c71abff2be555ab1547d94a53288e8/asr_result.json",
+      "source_full_text": "This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.",
+      "n_segments": 8
+    }
+  ],
+  "results": [
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "de",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 8.83,
+      "full_text": "Ich hab's wirklich aufgegeben. Jeder Gast bei mir will diese riesige Eiskugel mitnehmen. Sie schmilzt viel langsamer als normale Eiswuerfel, und die Kuehlwirkung ist wirklich stark. Den ganzen Sommer war das meine liebste Erfrischung. Die Handhabung ist auch super einfach. Einfach die Form mit Wasser fuellen, Deckel draufschnappen, ueberschuessiges Wasser rausdruecken, und ab damit in ein freies Eckchen im Gefrierfach. Die Eiskugel kommt perfekt rund und glatt raus. Eine Kugel in dein Getraenk geben, egal ob Cocktail oder Limo, und es ist unglaublich erfrischend. Der Preis ist gerade auch sehr gut. Du bekommst sechs Formen auf einmal.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ich hab's wirklich aufgegeben.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Jeder Gast bei mir will diese riesige Eiskugel mitnehmen.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Sie schmilzt viel langsamer als normale Eiswuerfel, und die Kuehlwirkung ist wirklich stark.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Den ganzen Sommer war das meine liebste Erfrischung.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Die Handhabung ist auch super einfach.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Einfach die Form mit Wasser fuellen, Deckel draufschnappen, ueberschuessiges Wasser rausdruecken, und ab damit in ein freies Eckchen im Gefrierfach.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Die Eiskugel kommt perfekt rund und glatt raus.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Eine Kugel in dein Getraenk geben, egal ob Cocktail oder Limo, und es ist unglaublich erfrischend.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Der Preis ist gerade auch sehr gut.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Du bekommst sechs Formen auf einmal.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1151,
+        "output_tokens": 660
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "de",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": false,
+      "elapsed_s": 37.87,
+      "full_text": null,
+      "sentences": null,
+      "usage": null,
+      "error": "ValueError: localized_translation requires sentences"
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "de",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.43,
+      "full_text": "Ich habe es ehrlich aufgegeben. Jeder Gast bei mir will diese riesige Eiskugel mitnehmen. Sie schmilzt viel langsamer als normale Eiswuerfel und kuehlt extrem gut. Das war den ganzen Sommer meine Rettung. Die Anwendung ist auch super einfach. Form mit Wasser fuellen, Deckel drauf und ab ins Gefrierfach. Die Eiskugel kommt perfekt rund und glatt heraus. Egal ob Alkohol oder Limo, das Getraenk bleibt eiskalt. Der Preis ist gerade auch richtig gut. Man bekommt direkt sechs Formen im Set. Das lohnt sich.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ich habe es ehrlich aufgegeben.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Jeder Gast bei mir will diese riesige Eiskugel mitnehmen.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Sie schmilzt viel langsamer als normale Eiswuerfel und kuehlt extrem gut.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Das war den ganzen Sommer meine Rettung.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Die Anwendung ist auch super einfach.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Form mit Wasser fuellen, Deckel drauf und ab ins Gefrierfach.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Die Eiskugel kommt perfekt rund und glatt heraus.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Egal ob Alkohol oder Limo, das Getraenk bleibt eiskalt.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Der Preis ist gerade auch richtig gut.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Man bekommt direkt sechs Formen im Set.",
+          "source_segment_indices": [
+            9
+          ]
+        },
+        {
+          "index": 10,
+          "text": "Das lohnt sich.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 975,
+        "output_tokens": 473
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "es",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 6.4,
+      "full_text": "Ya me he rendido. Todos los que vienen a casa quieren llevarse esta bola de hielo gigante. Se derrite mucho más despacio que los cubitos normales, y refresca de maravilla. Ha sido mi salvación este verano. Además, es muy fácil de usar. Solo llena el molde con agua, cierra la tapa para quitar el exceso, y mételo en cualquier hueco del congelador. La bola de hielo sale perfectamente redonda y lisa. Échala en tu bebida, ya sea alcohol o refresco, y el resultado es increíblemente refrescante. El precio ahora mismo está muy bien. Te llevas seis moldes de una vez.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ya me he rendido.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Todos los que vienen a casa quieren llevarse esta bola de hielo gigante.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Se derrite mucho más despacio que los cubitos normales, y refresca de maravilla.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Ha sido mi salvación este verano.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Además, es muy fácil de usar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Solo llena el molde con agua, cierra la tapa para quitar el exceso, y mételo en cualquier hueco del congelador.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "La bola de hielo sale perfectamente redonda y lisa.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Échala en tu bebida, ya sea alcohol o refresco, y el resultado es increíblemente refrescante.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "El precio ahora mismo está muy bien.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Te llevas seis moldes de una vez.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1673,
+        "output_tokens": 526
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "es",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 25.16,
+      "full_text": "Sinceramente, ya me he rendido. Todos los que vienen a casa quieren llevárselo. Hablo de esta bola de hielo gigante. Se derrite mucho más lento que los cubitos normales. Además, enfría la bebida muchísimo. Ha sido mi salvación todo el verano. Es súper fácil de usar. Solo tienes que llenar el molde con agua. Pones la tapa para sacar el sobrante. Y lo metes en cualquier hueco del congelador. La bola sale perfectamente redonda y lisa. Pon una en tu refresco o copa. Queda genial y refresca un montón. Además, ahora mismo tiene muy buen precio. El paquete incluye seis moldes en total.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Sinceramente, ya me he rendido.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Todos los que vienen a casa quieren llevárselo.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Hablo de esta bola de hielo gigante.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Se derrite mucho más lento que los cubitos normales.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Además, enfría la bebida muchísimo.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Ha sido mi salvación todo el verano.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Es súper fácil de usar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Solo tienes que llenar el molde con agua.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Pones la tapa para sacar el sobrante.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Y lo metes en cualquier hueco del congelador.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 10,
+          "text": "La bola sale perfectamente redonda y lisa.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 11,
+          "text": "Pon una en tu refresco o copa.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 12,
+          "text": "Queda genial y refresca un montón.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 13,
+          "text": "Además, ahora mismo tiene muy buen precio.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 14,
+          "text": "El paquete incluye seis moldes en total.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1247,
+        "output_tokens": 3229
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "es",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.63,
+      "full_text": "La verdad es que me rindo. Todo el que viene a casa quiere llevarse esta bola de hielo gigante. Tarda mucho más en derretirse que los cubitos normales. Además, enfría de una forma increíble. Ha sido mi salvación durante todo el verano. Es un gadget súper fácil de usar. Solo tienes que llenar el molde con agua. Cierras la tapa para quitar el exceso y al congelador. La bola sale perfecta, redonda y muy lisa. Ponla en tu refresco o en una copa y verás qué frescura. El precio ahora mismo está genial. Vienen seis moldes en el pack. ¡No te quedes sin ellos!",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "La verdad es que me rindo.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Todo el que viene a casa quiere llevarse esta bola de hielo gigante.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Tarda mucho más en derretirse que los cubitos normales.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Además, enfría de una forma increíble.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Ha sido mi salvación durante todo el verano.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Es un gadget súper fácil de usar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Solo tienes que llenar el molde con agua.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Cierras la tapa para quitar el exceso y al congelador.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 8,
+          "text": "La bola sale perfecta, redonda y muy lisa.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Ponla en tu refresco o en una copa y verás qué frescura.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 10,
+          "text": "El precio ahora mismo está genial.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 11,
+          "text": "Vienen seis moldes en el pack.",
+          "source_segment_indices": [
+            9
+          ]
+        },
+        {
+          "index": 12,
+          "text": "¡No te quedes sin ellos!",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1430,
+        "output_tokens": 553
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "fr",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 7.97,
+      "full_text": "Franchement, j'ai abandonné l'idée de les garder pour moi. Tous mes invités repartent avec une de mes grosses boules de glace. Ça fond beaucoup plus lentement que des glaçons classiques, et l'effet rafraîchissant est vraiment top. C'est devenu mon indispensable de l'été. Et c'est super simple à utiliser. Vous remplissez le moule d'eau, vous fermez le couvercle pour chasser l'excédent, et vous le glissez dans un coin du congélateur. La boule de glace ressort parfaitement ronde et lisse. Vous en déposez une dans votre verre, que ce soit un cocktail ou un soda, et c'est vraiment très rafraîchissant. Le prix est vraiment intéressant en ce moment. Vous recevez six moules d'un coup.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Franchement, j'ai abandonné l'idée de les garder pour moi.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Tous mes invités repartent avec une de mes grosses boules de glace.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Ça fond beaucoup plus lentement que des glaçons classiques, et l'effet rafraîchissant est vraiment top.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "C'est devenu mon indispensable de l'été.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Et c'est super simple à utiliser.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Vous remplissez le moule d'eau, vous fermez le couvercle pour chasser l'excédent, et vous le glissez dans un coin du congélateur.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "La boule de glace ressort parfaitement ronde et lisse.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Vous en déposez une dans votre verre, que ce soit un cocktail ou un soda, et c'est vraiment très rafraîchissant.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Le prix est vraiment intéressant en ce moment.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Vous recevez six moules d'un coup.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1272,
+        "output_tokens": 644
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "fr",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": false,
+      "elapsed_s": 36.11,
+      "full_text": null,
+      "sentences": null,
+      "usage": null,
+      "error": "ValueError: localized_translation requires sentences"
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "fr",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 3.57,
+      "full_text": "Franchement, j'abandonne. Tous mes amis veulent me piquer ces boules de glace géantes. Elles fondent bien plus lentement que les glaçons classiques. C'est mon secret pour rester au frais tout l'été. En plus, c'est super simple à utiliser. Remplissez le moule, fermez le couvercle et hop au congélateur. La sphère ressort parfaitement ronde et bien lisse. C'est idéal pour vos cocktails ou vos sodas préférés. Le prix est vraiment top en ce moment. Vous recevez six moules d'un coup, profitez-en.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Franchement, j'abandonne.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Tous mes amis veulent me piquer ces boules de glace géantes.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Elles fondent bien plus lentement que les glaçons classiques.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "C'est mon secret pour rester au frais tout l'été.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "En plus, c'est super simple à utiliser.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Remplissez le moule, fermez le couvercle et hop au congélateur.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "La sphère ressort parfaitement ronde et bien lisse.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "C'est idéal pour vos cocktails ou vos sodas préférés.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Le prix est vraiment top en ce moment.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Vous recevez six moules d'un coup, profitez-en.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1076,
+        "output_tokens": 471
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "it",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 8.61,
+      "full_text": "Ragazzi, ho alzato bandiera bianca. Ogni volta che qualcuno viene a casa mia, vuole portarsi via questa sfera di ghiaccio gigante. Si scioglie molto piu lentamente dei cubetti normali, e rinfresca in modo incredibile. E stata la mia salvezza per tutta l'estate. Usarla e semplicissimo. Riempi lo stampo d'acqua, chiudi il coperchio per eliminare l'aria in eccesso, e mettilo in qualsiasi angolino del congelatore. La sfera viene fuori perfettamente tonda e liscia. Aggiungila alla tua bevanda, che sia un cocktail o una bibita, e la freschezza e assurda. Il prezzo e ottimo in questo momento. Con un solo acquisto ricevi sei stampi.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ragazzi, ho alzato bandiera bianca.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Ogni volta che qualcuno viene a casa mia, vuole portarsi via questa sfera di ghiaccio gigante.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Si scioglie molto piu lentamente dei cubetti normali, e rinfresca in modo incredibile.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "E stata la mia salvezza per tutta l'estate.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Usarla e semplicissimo.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Riempi lo stampo d'acqua, chiudi il coperchio per eliminare l'aria in eccesso, e mettilo in qualsiasi angolino del congelatore.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "La sfera viene fuori perfettamente tonda e liscia.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Aggiungila alla tua bevanda, che sia un cocktail o una bibita, e la freschezza e assurda.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Il prezzo e ottimo in questo momento.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Con un solo acquisto ricevi sei stampi.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1596,
+        "output_tokens": 629
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "it",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": false,
+      "elapsed_s": 37.91,
+      "full_text": null,
+      "sentences": null,
+      "usage": null,
+      "error": "ValueError: localized_translation requires sentences"
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "it",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.56,
+      "full_text": "Ormai mi sono arresa. Chiunque venga a casa mia vuole rubarmi questa sfera di ghiaccio gigante. Si scioglie molto più lentamente dei classici cubetti e rinfresca tantissimo. È stata la mia salvezza per tutta l'estate. È anche semplicissima da usare. Basta riempire lo stampo d'acqua e chiudere il coperchio per far uscire l'eccesso. Occupa pochissimo spazio nel freezer. La sfera esce fuori perfettamente rotonda e liscia. Mettine una nel bicchiere con una bibita o un cocktail ed è freschissima. Il prezzo attuale è davvero ottimo. Ricevi ben sei stampi in un colpo solo. Approfittane.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ormai mi sono arresa.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Chiunque venga a casa mia vuole rubarmi questa sfera di ghiaccio gigante.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Si scioglie molto più lentamente dei classici cubetti e rinfresca tantissimo.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "È stata la mia salvezza per tutta l'estate.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "È anche semplicissima da usare.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Basta riempire lo stampo d'acqua e chiudere il coperchio per far uscire l'eccesso.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Occupa pochissimo spazio nel freezer.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "La sfera esce fuori perfettamente rotonda e liscia.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Mettine una nel bicchiere con una bibita o un cocktail ed è freschissima.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Il prezzo attuale è davvero ottimo.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 10,
+          "text": "Ricevi ben sei stampi in un colpo solo.",
+          "source_segment_indices": [
+            9
+          ]
+        },
+        {
+          "index": 11,
+          "text": "Approfittane.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1394,
+        "output_tokens": 565
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "ja",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 10.08,
+      "full_text": "最近見つけたんですが、これがほんとに人気で困ってます。 うちに来る人みんな、この大きな丸い氷を持って帰りたがるんです。 普通の氷より全然溶けにくくて、冷え方がすごいんですよ。 今年の夏はずっとこれにお世話になってます。 使い方もとっても簡単です。 型に水を入れてフタをパチッと閉めるだけ。 余分な水が出て、冷凍庫のすき間にそのまま入れられます。 できあがった氷はきれいな丸い形で、つるっとしてます。 お酒にもジュースにも入れると、ひんやり感がたまらないです。 今はお値段もお得になっていて、型が6個セットで手に入ります。",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "最近見つけたんですが、これがほんとに人気で困ってます。",
+          "source_segment_indices": [
+            0,
+            1
+          ]
+        },
+        {
+          "index": 1,
+          "text": "うちに来る人みんな、この大きな丸い氷を持って帰りたがるんです。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "普通の氷より全然溶けにくくて、冷え方がすごいんですよ。",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "今年の夏はずっとこれにお世話になってます。",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "使い方もとっても簡単です。",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "型に水を入れてフタをパチッと閉めるだけ。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "余分な水が出て、冷凍庫のすき間にそのまま入れられます。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "できあがった氷はきれいな丸い形で、つるっとしてます。",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "お酒にもジュースにも入れると、ひんやり感がたまらないです。",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 9,
+          "text": "今はお値段もお得になっていて、型が6個セットで手に入ります。",
+          "source_segment_indices": [
+            8,
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1844,
+        "output_tokens": 682
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "ja",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 25.36,
+      "full_text": "正直、最近もう諦めてるんです。 家に来る人みんな、この巨大な氷を欲しがるんです。 普通の氷より全然溶けにくくて、しっかり冷えます。 この夏は、これのおかげで本当に快適に過ごせました。 使い方もすごくシンプルで簡単なんですよ。 水を入れてフタをし、余分な水を抜いて冷凍庫に入れるだけ。 まん丸でツルツルの、すごく綺麗な氷が完成します。 お酒や炭酸水に入れると、冷たさが続いて最高ですよ。 今ならお値段もかなりお手頃になっています。 一度に6個の型がセットになっていて、コスパも抜群です。",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "正直、最近もう諦めてるんです。",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "家に来る人みんな、この巨大な氷を欲しがるんです。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "普通の氷より全然溶けにくくて、しっかり冷えます。",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "この夏は、これのおかげで本当に快適に過ごせました。",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "使い方もすごくシンプルで簡単なんですよ。",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "水を入れてフタをし、余分な水を抜いて冷凍庫に入れるだけ。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "まん丸でツルツルの、すごく綺麗な氷が完成します。",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "お酒や炭酸水に入れると、冷たさが続いて最高ですよ。",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "今ならお値段もかなりお手頃になっています。",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "一度に6個の型がセットになっていて、コスパも抜群です。",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1296,
+        "output_tokens": 2825
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "ja",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.05,
+      "full_text": "これ、ほんとに便利で困っちゃいます。 遊びに来た友達がみんな欲しがる、この大きな丸氷。 普通の氷より溶けにくくて、冷たさが長持ちするんです。 今年の夏はこれのおかげで、ずっと快適に過ごせました。 使い方もすごく簡単ですよ。 型に水を入れて蓋を閉めるだけで、余分な水が抜ける仕組みです。 冷凍庫のちょっとした隙間に置けるのも嬉しいポイント。 取り出すと、ツルツルで綺麗な丸い氷ができあがります。 お酒や炭酸水に入れるだけで、いつもの飲み物が格段に美味しくなります。 今なら6個セットでお得に手に入るので、ぜひチェックしてみてくださいね。",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "これ、ほんとに便利で困っちゃいます。",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "遊びに来た友達がみんな欲しがる、この大きな丸氷。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "普通の氷より溶けにくくて、冷たさが長持ちするんです。",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "今年の夏はこれのおかげで、ずっと快適に過ごせました。",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "使い方もすごく簡単ですよ。",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "型に水を入れて蓋を閉めるだけで、余分な水が抜ける仕組みです。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "冷凍庫のちょっとした隙間に置けるのも嬉しいポイント。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "取り出すと、ツルツルで綺麗な丸い氷ができあがります。",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "お酒や炭酸水に入れるだけで、いつもの飲み物が格段に美味しくなります。",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 9,
+          "text": "今なら6個セットでお得に手に入るので、ぜひチェックしてみてくださいね。",
+          "source_segment_indices": [
+            8,
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1479,
+        "output_tokens": 513
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "nl",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 9.03,
+      "full_text": "Ik heb het eerlijk gezegd opgegeven. Iedereen die bij mij thuis komt, wil zo'n grote ijsbal meenemen. Hij smelt veel langzamer dan gewone ijsblokjes, en het koeleffect is echt goed. De hele zomer mijn favoriete manier om af te koelen. En heel makkelijk in gebruik. Vul de mal gewoon met water, klik het deksel erop om het overtollige water eruit te drukken, en zet hem in een klein hoekje van je vriezer. De ijsbal komt er perfect rond en glad uit. Gooi er een in je drankje, of dat nou alcohol of frisdrank is, en het is verrassend verfrissend. De prijs is op dit moment ook goed. Je krijgt zes mallen in een keer.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ik heb het eerlijk gezegd opgegeven.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Iedereen die bij mij thuis komt, wil zo'n grote ijsbal meenemen.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Hij smelt veel langzamer dan gewone ijsblokjes, en het koeleffect is echt goed.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "De hele zomer mijn favoriete manier om af te koelen.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "En heel makkelijk in gebruik.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Vul de mal gewoon met water, klik het deksel erop om het overtollige water eruit te drukken, en zet hem in een klein hoekje van je vriezer.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "De ijsbal komt er perfect rond en glad uit.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Gooi er een in je drankje, of dat nou alcohol of frisdrank is, en het is verrassend verfrissend.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "De prijs is op dit moment ook goed.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Je krijgt zes mallen in een keer.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1155,
+        "output_tokens": 602
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "nl",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 27.12,
+      "full_text": "Ik heb het eerlijk gezegd maar opgegeven. Iedereen die hier over de vloer komt wil deze enorme ijsbal meenemen. Hij smelt echt veel langzamer dan gewone ijsblokjes en koelt fantastisch. Dit is de hele zomer al mijn favoriete manier om af te koelen. Ze zijn ook super simpel in gebruik. Je vult de vorm met water, drukt de deksel erop zodat het extra water eruit loopt en legt hem ergens in je vriezer. De ijsbal komt er perfect rond en glad uit. Doe er eentje in je drankje, of het nu frisdrank of een cocktail is, en het is meteen heerlijk koud. De prijs is momenteel ook erg goed. Je krijgt namelijk zes vormen in één pakket.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ik heb het eerlijk gezegd maar opgegeven.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Iedereen die hier over de vloer komt wil deze enorme ijsbal meenemen.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Hij smelt echt veel langzamer dan gewone ijsblokjes en koelt fantastisch.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Dit is de hele zomer al mijn favoriete manier om af te koelen.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Ze zijn ook super simpel in gebruik.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Je vult de vorm met water, drukt de deksel erop zodat het extra water eruit loopt en legt hem ergens in je vriezer.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "De ijsbal komt er perfect rond en glad uit.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Doe er eentje in je drankje, of het nu frisdrank of een cocktail is, en het is meteen heerlijk koud.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "De prijs is momenteel ook erg goed.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Je krijgt namelijk zes vormen in één pakket.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 790,
+        "output_tokens": 2562
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "nl",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.17,
+      "full_text": "Ik geef het eerlijk gezegd op. Iedereen die bij mij over de vloer komt wil deze gigantische ijsbal mee naar huis nemen. Hij smelt veel langzamer dan gewone ijsblokjes en het koelt echt bizar goed. Het is de hele zomer al mijn favoriete manier om af te koelen. Het is ook nog eens super simpel in gebruik. Je vult de vorm met water, drukt de deksel erop om het overtollige water eruit te persen en zet hem in een klein hoekje van je vriezer. De ijsbal komt er perfect rond en glad uit. Doe er eentje in je drankje, of het nu alcohol is of frisdrank, en het is echt heerlijk verfrissend. De prijs is nu ook top. Je krijgt meteen zes vormen in één keer. Mis dit niet.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Ik geef het eerlijk gezegd op.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Iedereen die bij mij over de vloer komt wil deze gigantische ijsbal mee naar huis nemen.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Hij smelt veel langzamer dan gewone ijsblokjes en het koelt echt bizar goed.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Het is de hele zomer al mijn favoriete manier om af te koelen.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Het is ook nog eens super simpel in gebruik.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Je vult de vorm met water, drukt de deksel erop om het overtollige water eruit te persen en zet hem in een klein hoekje van je vriezer.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "De ijsbal komt er perfect rond en glad uit.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Doe er eentje in je drankje, of het nu alcohol is of frisdrank, en het is echt heerlijk verfrissend.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "De prijs is nu ook top.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Je krijgt meteen zes vormen in één keer. Mis dit niet.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 973,
+        "output_tokens": 578
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "pt",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 7.76,
+      "full_text": "Já desisti de tentar esconder. Toda a gente que vem cá a casa quer levar uma destas bolas de gelo gigantes. Derrete muito mais devagar do que o gelo normal, e arrefece mesmo bem. Foi o meu refresco favorito durante todo o verão. E é super fácil de usar. Enches o molde com água, fechas a tampa para tirar o excesso, e metes no congelador. A bola sai redondinha e perfeita. Deitas numa bebida, seja álcool ou refrigerante, e fica uma delícia. O preço está muito bom agora. Levas seis moldes de uma vez.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Já desisti de tentar esconder.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Toda a gente que vem cá a casa quer levar uma destas bolas de gelo gigantes.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Derrete muito mais devagar do que o gelo normal, e arrefece mesmo bem.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Foi o meu refresco favorito durante todo o verão.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "E é super fácil de usar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Enches o molde com água, fechas a tampa para tirar o excesso, e metes no congelador.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "A bola sai redondinha e perfeita.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Deitas numa bebida, seja álcool ou refrigerante, e fica uma delícia.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "O preço está muito bom agora.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Levas seis moldes de uma vez.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1590,
+        "output_tokens": 528
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "pt",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 20.42,
+      "full_text": "Sinceramente, já desisti. Toda a gente quer levar esta bola de gelo. Derrete muito mais devagar que os cubos normais. O efeito refrescante é mesmo muito bom. Tem sido a minha salvação neste verão. É também super fácil de usar. Basta encher a forma com água e fechar a tampa. Podes guardar em qualquer cantinho do congelador. A bola de gelo sai perfeitamente redonda. Fica incrível em qualquer bebida ou sumo. O preço está muito bom agora. Recebes logo seis formas de uma vez.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Sinceramente, já desisti.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Toda a gente quer levar esta bola de gelo.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Derrete muito mais devagar que os cubos normais.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "O efeito refrescante é mesmo muito bom.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Tem sido a minha salvação neste verão.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 5,
+          "text": "É também super fácil de usar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Basta encher a forma com água e fechar a tampa.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Podes guardar em qualquer cantinho do congelador.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 8,
+          "text": "A bola de gelo sai perfeitamente redonda.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Fica incrível em qualquer bebida ou sumo.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 10,
+          "text": "O preço está muito bom agora.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 11,
+          "text": "Recebes logo seis formas de uma vez.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1206,
+        "output_tokens": 2599
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "pt",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 5.19,
+      "full_text": "Olha, eu já desisti. Toda a gente que vem cá a casa quer levar estas bolas de gelo gigantes. Derretem muito mais devagar que o gelo normal e refrescam imenso. Tem sido a minha salvação este verão. É super fácil de usar. Enches o molde com água, fechas a tampa e pões no congelador. A bola sai perfeita e bem redonda. Fica ótimo em qualquer bebida ou refrigerante. O preço agora está excelente. Recebes logo seis moldes de uma vez. Aproveita.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Olha, eu já desisti.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Toda a gente que vem cá a casa quer levar estas bolas de gelo gigantes.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Derretem muito mais devagar que o gelo normal e refrescam imenso.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Tem sido a minha salvação este verão.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "É super fácil de usar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Enches o molde com água, fechas a tampa e pões no congelador.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "A bola sai perfeita e bem redonda.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Fica ótimo em qualquer bebida ou refrigerante.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "O preço agora está excelente.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Recebes logo seis moldes de uma vez.",
+          "source_segment_indices": [
+            9
+          ]
+        },
+        {
+          "index": 10,
+          "text": "Aproveita.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1391,
+        "output_tokens": 413
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "sv",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 8.79,
+      "full_text": "Jag har faktiskt gett upp. Alla som kommer hem till mig vill ta med sig en sån här jätteis-boll. Den smälter mycket långsammare än vanliga isbitar och håller drycken kall längre. Den har varit min räddning hela sommaren. Superenkel att använda också. Fyll formen med vatten, sätt på locket så pressas överskottet ut, och ställ den i valfri liten plats i frysen. Isbollen kommer ut perfekt rund och slät. Lägg en i ditt glas, oavsett om det är alkohol eller läsk, och det blir otroligt uppfriskande. Priset är riktigt bra just nu. Du får sex formar på köpet.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Jag har faktiskt gett upp.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Alla som kommer hem till mig vill ta med sig en sån här jätteis-boll.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Den smälter mycket långsammare än vanliga isbitar och håller drycken kall längre.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Den har varit min räddning hela sommaren.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Superenkel att använda också.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Fyll formen med vatten, sätt på locket så pressas överskottet ut, och ställ den i valfri liten plats i frysen.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Isbollen kommer ut perfekt rund och slät.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Lägg en i ditt glas, oavsett om det är alkohol eller läsk, och det blir otroligt uppfriskande.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Priset är riktigt bra just nu.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Du får sex formar på köpet.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1150,
+        "output_tokens": 601
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "sv",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 29.96,
+      "full_text": "Jag har ärligt talat gett upp. Alla som hälsar på vill ta med sig den här stora isbollen hem. Den smälter mycket långsammare än vanliga isbitar och kyler ner drycken helt perfekt. Den har varit min räddning i värmen hela sommaren. Den är superlätt att använda också. Fyll bara formen med vatten, tryck på locket så att överflödet rinner ut och ställ in den där det finns plats i frysen. Isbollen blir helt rund och slät. Lägg en i glaset, oavsett om det är en drink eller läsk, så blir det otroligt svalkande. Priset är riktigt bra just nu också. Du får sex formar i ett paket.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Jag har ärligt talat gett upp.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Alla som hälsar på vill ta med sig den här stora isbollen hem.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Den smälter mycket långsammare än vanliga isbitar och kyler ner drycken helt perfekt.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Den har varit min räddning i värmen hela sommaren.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Den är superlätt att använda också.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Fyll bara formen med vatten, tryck på locket så att överflödet rinner ut och ställ in den där det finns plats i frysen.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Isbollen blir helt rund och slät.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Lägg en i glaset, oavsett om det är en drink eller läsk, så blir det otroligt svalkande.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Priset är riktigt bra just nu också.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Du får sex formar i ett paket.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 785,
+        "output_tokens": 2140
+      },
+      "error": null
+    },
+    {
+      "source_label": "A_ice_ball",
+      "target_lang": "sv",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 6.28,
+      "full_text": "Jag har nästan gett upp hoppet. Alla som hälsar på vill ta med sig de här stora isbollarna hem. De smälter mycket långsammare än vanliga isbitar och kyler helt fantastiskt. Det har varit min räddning hela sommaren. De är superenkla att använda också. Fyll bara formen med vatten, tryck på locket så att överflödet försvinner och ställ in den var som helst i frysen. Isbollen blir helt rund och slät. Lägg i en i glaset, oavsett om det är drinkar eller läsk, så blir det otroligt svalkande. Priset är riktigt bra just nu dessutom. Man får sex formar på en gång, så passa på.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Jag har nästan gett upp hoppet.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Alla som hälsar på vill ta med sig de här stora isbollarna hem.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "De smälter mycket långsammare än vanliga isbitar och kyler helt fantastiskt.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Det har varit min räddning hela sommaren.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "De är superenkla att använda också.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Fyll bara formen med vatten, tryck på locket så att överflödet försvinner och ställ in den var som helst i frysen.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Isbollen blir helt rund och slät.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Lägg i en i glaset, oavsett om det är drinkar eller läsk, så blir det otroligt svalkande.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Priset är riktigt bra just nu dessutom.",
+          "source_segment_indices": [
+            8
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Man får sex formar på en gång, så passa på.",
+          "source_segment_indices": [
+            9
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 970,
+        "output_tokens": 546
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "de",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 8.66,
+      "full_text": "Das ist das einzige Cuttermesser, das du noch brauchst. Es besteht aus massivem Edelstahl und ist ein 6-in-1-Multitool mit 10 Ersatzklingen. Die verstaerkte Spitze funktioniert als Schlitzschraubendreher und Dosenoefffner. Das hintere Ende ist ein Flaschenoeffner, und seitlich ist ein Lineal eingebaut. Im Griff sind ausserdem Innensechskantschluesseln in verschiedenen Groessen integriert. Mit dem verstellbaren Knopf kannst du die Klingenlaenge genau einstellen. Die Klingen sind rasiermesserscharf und leicht wechselbar, und das Gehaeuse ist stabil und liegt gut in der Hand. Du brauchst keinen schweren Werkzeugkasten mehr, dieses Tool erledigt alles.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Das ist das einzige Cuttermesser, das du noch brauchst.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Es besteht aus massivem Edelstahl und ist ein 6-in-1-Multitool mit 10 Ersatzklingen.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Die verstaerkte Spitze funktioniert als Schlitzschraubendreher und Dosenoefffner.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Das hintere Ende ist ein Flaschenoeffner, und seitlich ist ein Lineal eingebaut.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Im Griff sind ausserdem Innensechskantschluesseln in verschiedenen Groessen integriert.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Mit dem verstellbaren Knopf kannst du die Klingenlaenge genau einstellen.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Die Klingen sind rasiermesserscharf und leicht wechselbar, und das Gehaeuse ist stabil und liegt gut in der Hand.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Du brauchst keinen schweren Werkzeugkasten mehr, dieses Tool erledigt alles.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1105,
+        "output_tokens": 615
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "de",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 39.04,
+      "full_text": "Das ist das einzige Cuttermesser, das du brauchst. Dieses 6-in-1 Multi-Tool ist aus massivem Edelstahl. Es ist sehr robust und bringt 10 Ersatzklingen mit. Die Spitze dient als Schraubenzieher und Dosenöffner. Hinten gibt es einen Flaschenöffner und ein Lineal. Der Griff hat auch mehrere Sechskantschlüssel integriert. Mit dem Rad stellst du die Klingenlänge genau ein. Die scharfen Klingen lassen sich ganz leicht wechseln. Das Gehäuse ist dick, stabil und sehr bequem. Du brauchst keinen schweren Werkzeugkoffer mehr. Dieses kompakte Tool erledigt einfach alles für dich.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Das ist das einzige Cuttermesser, das du brauchst.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Dieses 6-in-1 Multi-Tool ist aus massivem Edelstahl.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Es ist sehr robust und bringt 10 Ersatzklingen mit.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Die Spitze dient als Schraubenzieher und Dosenöffner.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Hinten gibt es einen Flaschenöffner und ein Lineal.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Der Griff hat auch mehrere Sechskantschlüssel integriert.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Mit dem Rad stellst du die Klingenlänge genau ein.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Die scharfen Klingen lassen sich ganz leicht wechseln.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Das Gehäuse ist dick, stabil und sehr bequem.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Du brauchst keinen schweren Werkzeugkoffer mehr.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 10,
+          "text": "Dieses kompakte Tool erledigt einfach alles für dich.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 728,
+        "output_tokens": 2998
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "de",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 5.48,
+      "full_text": "Das ist das letzte Cuttermesser, das du jemals brauchen wirst. Dieses 6 in 1 Multi Tool aus Edelstahl ist extrem langlebig. Es kommen direkt 10 Ersatzklingen mit dazu. Die Spitze dient als Schlitzschraubendreher und Dosenöffner. Am Ende gibt es einen Flaschenöffner und ein integriertes Lineal. Im Griff sind zudem verschiedene Sechskantschlüssel verbaut. Mit dem Drehknopf stellst du die Klingenlänge präzise ein. Die scharfen Klingen lassen sich einfach wechseln. Das Gehäuse ist stabil und liegt gut in der Hand. Du brauchst keinen schweren Werkzeugkoffer mehr für kleine Aufgaben.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Das ist das letzte Cuttermesser, das du jemals brauchen wirst.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Dieses 6 in 1 Multi Tool aus Edelstahl ist extrem langlebig.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Es kommen direkt 10 Ersatzklingen mit dazu.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Die Spitze dient als Schlitzschraubendreher und Dosenöffner.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Am Ende gibt es einen Flaschenöffner und ein integriertes Lineal.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Im Griff sind zudem verschiedene Sechskantschlüssel verbaut.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Mit dem Drehknopf stellst du die Klingenlänge präzise ein.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Die scharfen Klingen lassen sich einfach wechseln.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Das Gehäuse ist stabil und liegt gut in der Hand.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Du brauchst keinen schweren Werkzeugkoffer mehr für kleine Aufgaben.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 913,
+        "output_tokens": 500
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "es",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 6.9,
+      "full_text": "Mira este cúter multiherramienta, el único que necesitas. Fabricado en acero inoxidable sólido de calidad, este 6 en 1 incluye 10 cuchillas de repuesto. La punta reforzada funciona como destornillador plano y abridor de latas. La parte trasera es un abrebotellas, con una regla integrada en el lateral. El mango también incorpora llaves Allen de varios tamaños. El botón ajustable controla la longitud de la cuchilla con precisión. Las cuchillas son muy afiladas y fáciles de cambiar, y el cuerpo es robusto y cómodo. Olvídate de la caja de herramientas, esta multiherramienta lo hace todo.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Mira este cúter multiherramienta, el único que necesitas.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Fabricado en acero inoxidable sólido de calidad, este 6 en 1 incluye 10 cuchillas de repuesto.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "La punta reforzada funciona como destornillador plano y abridor de latas.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "La parte trasera es un abrebotellas, con una regla integrada en el lateral.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "El mango también incorpora llaves Allen de varios tamaños.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "El botón ajustable controla la longitud de la cuchilla con precisión.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Las cuchillas son muy afiladas y fáciles de cambiar, y el cuerpo es robusto y cómodo.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Olvídate de la caja de herramientas, esta multiherramienta lo hace todo.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1627,
+        "output_tokens": 567
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "es",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 40.56,
+      "full_text": "¡Mira este cúter, es el único que necesitarás! Es de acero inoxidable y muy resistente. Es una herramienta multiusos seis en uno. Además, incluye diez cuchillas de repuesto. Su punta reforzada sirve como destornillador plano. También funciona muy bien como abrelatas. La base es un práctico abridor de botellas. Y tiene una regla integrada en el lateral. El mango incluye llaves hexagonales de varios tamaños. La rueda permite ajustar la cuchilla con precisión. Las cuchillas están afiladas y se cambian fácilmente. El cuerpo es grueso, robusto y muy cómodo. ¿Cansado de cargar con una caja de herramientas? Esta herramienta todo en uno es muy práctica.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "¡Mira este cúter, es el único que necesitarás!",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Es de acero inoxidable y muy resistente.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Es una herramienta multiusos seis en uno.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Además, incluye diez cuchillas de repuesto.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Su punta reforzada sirve como destornillador plano.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 5,
+          "text": "También funciona muy bien como abrelatas.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 6,
+          "text": "La base es un práctico abridor de botellas.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Y tiene una regla integrada en el lateral.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 8,
+          "text": "El mango incluye llaves hexagonales de varios tamaños.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 9,
+          "text": "La rueda permite ajustar la cuchilla con precisión.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 10,
+          "text": "Las cuchillas están afiladas y se cambian fácilmente.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 11,
+          "text": "El cuerpo es grueso, robusto y muy cómodo.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 12,
+          "text": "¿Cansado de cargar con una caja de herramientas?",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 13,
+          "text": "Esta herramienta todo en uno es muy práctica.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1183,
+        "output_tokens": 3354
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "es",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 8.8,
+      "full_text": "¿Buscas un cúter que dure para siempre? Este multiusos de acero inoxidable es superresistente. Incluye 10 cuchillas de repuesto de regalo. La punta reforzada sirve como destornillador plano. También funciona como un práctico abrelatas. En la parte trasera tienes un abrebotellas. Incluso trae una regla grabada en el lateral. El mango incluye varias llaves hexagonales integradas. Puedes ajustar la longitud de la cuchilla fácilmente. Es un cuerpo robusto, cómodo y muy seguro. Olvídate de cargar con cajas de herramientas pesadas. Con este gadget lo tienes todo a mano.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "¿Buscas un cúter que dure para siempre?",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Este multiusos de acero inoxidable es superresistente.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Incluye 10 cuchillas de repuesto de regalo.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "La punta reforzada sirve como destornillador plano.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "También funciona como un práctico abrelatas.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 5,
+          "text": "En la parte trasera tienes un abrebotellas.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Incluso trae una regla grabada en el lateral.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 7,
+          "text": "El mango incluye varias llaves hexagonales integradas.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Puedes ajustar la longitud de la cuchilla fácilmente.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Es un cuerpo robusto, cómodo y muy seguro.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 10,
+          "text": "Olvídate de cargar con cajas de herramientas pesadas.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 11,
+          "text": "Con este gadget lo tienes todo a mano.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1368,
+        "output_tokens": 511
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "fr",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 7.12,
+      "full_text": "Voici un couteau utilitaire vraiment polyvalent. Fabriqué en acier inoxydable massif de qualité, cet outil 6 en 1 est solide et livré avec 10 lames de rechange. L'embout renforcé fait office de tournevis plat et d'ouvre-boîte. Le talon sert d'ouvre-bouteille, avec une règle intégrée sur le côté. Le manche inclut aussi des clés hexagonales multi-tailles. Le bouton réglable permet de contrôler précisément la longueur de la lame. Les lames sont très tranchantes et faciles à changer, et le corps est épais, robuste et agréable en main. Pas besoin d'une grosse boîte à outils, cet outil fait tout.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Voici un couteau utilitaire vraiment polyvalent.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Fabriqué en acier inoxydable massif de qualité, cet outil 6 en 1 est solide et livré avec 10 lames de rechange.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "L'embout renforcé fait office de tournevis plat et d'ouvre-boîte.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Le talon sert d'ouvre-bouteille, avec une règle intégrée sur le côté.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Le manche inclut aussi des clés hexagonales multi-tailles.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Le bouton réglable permet de contrôler précisément la longueur de la lame.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Les lames sont très tranchantes et faciles à changer, et le corps est épais, robuste et agréable en main.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Pas besoin d'une grosse boîte à outils, cet outil fait tout.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1226,
+        "output_tokens": 570
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "fr",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 141.44,
+      "full_text": "C'est le dernier cutter dont vous aurez besoin. Cet outil multifonction en acier inoxydable est super robuste. Il est livré avec dix lames de rechange. La pointe sert de tournevis plat et d'ouvre-boîte. L'arrière fait décapsuleur, avec une règle sur le côté. Le manche intègre aussi plusieurs clés hexagonales. La molette permet d'ajuster la lame avec précision. Les lames très tranchantes se changent vraiment facilement. Le corps est épais, solide et agréable en main. Plus besoin de sortir une lourde boîte à outils. Cet outil tout-en-un fait vraiment tout le travail.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "C'est le dernier cutter dont vous aurez besoin.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Cet outil multifonction en acier inoxydable est super robuste.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Il est livré avec dix lames de rechange.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "La pointe sert de tournevis plat et d'ouvre-boîte.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "L'arrière fait décapsuleur, avec une règle sur le côté.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Le manche intègre aussi plusieurs clés hexagonales.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 6,
+          "text": "La molette permet d'ajuster la lame avec précision.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Les lames très tranchantes se changent vraiment facilement.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "Le corps est épais, solide et agréable en main.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 9,
+          "text": "Plus besoin de sortir une lourde boîte à outils.",
+          "source_segment_indices": [
+            7
+          ]
+        },
+        {
+          "index": 10,
+          "text": "Cet outil tout-en-un fait vraiment tout le travail.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 829,
+        "output_tokens": 3486
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "fr",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 3.87,
+      "full_text": "C'est probablement le dernier cutter dont vous aurez besoin. En acier inoxydable, cet outil 6-en-1 est ultra robuste et livré avec 10 lames. Sa pointe renforcée sert de tournevis plat et d'ouvre-boîte. À l'arrière, on trouve un décapsuleur et une règle intégrée. Le manche cache aussi plusieurs clés hexagonales. Une molette permet de régler précisément la longueur de la lame. Les lames se changent facilement et le corps est très ergonomique. Plus besoin de boîte à outils, cet accessoire fait tout.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "C'est probablement le dernier cutter dont vous aurez besoin.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "En acier inoxydable, cet outil 6-en-1 est ultra robuste et livré avec 10 lames.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Sa pointe renforcée sert de tournevis plat et d'ouvre-boîte.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "À l'arrière, on trouve un décapsuleur et une règle intégrée.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Le manche cache aussi plusieurs clés hexagonales.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Une molette permet de régler précisément la longueur de la lame.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Les lames se changent facilement et le corps est très ergonomique.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Plus besoin de boîte à outils, cet accessoire fait tout.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1014,
+        "output_tokens": 410
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "it",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 8.61,
+      "full_text": "Guarda qui, questo e' il coltellino multiuso che stavi cercando. In acciaio inox massiccio di alta qualita', e' un 6 in 1 con 10 lame di ricambio incluse. La punta rinforzata funziona da cacciavite a testa piatta e apri scatole. Il fondo e' un apribottiglie, con un righello integrato sul lato. Il manico include anche chiavi esagonali di varie misure. La manopola regolabile ti permette di controllare la lunghezza della lama con precisione. Le lame sono affilatissime e facili da cambiare, e il corpo e' robusto e comodo da tenere in mano. Niente piu' cassetta degli attrezzi ingombrante, questo strumento fa tutto da solo.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Guarda qui, questo e' il coltellino multiuso che stavi cercando.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "In acciaio inox massiccio di alta qualita', e' un 6 in 1 con 10 lame di ricambio incluse.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "La punta rinforzata funziona da cacciavite a testa piatta e apri scatole.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Il fondo e' un apribottiglie, con un righello integrato sul lato.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Il manico include anche chiavi esagonali di varie misure.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "La manopola regolabile ti permette di controllare la lunghezza della lama con precisione.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Le lame sono affilatissime e facili da cambiare, e il corpo e' robusto e comodo da tenere in mano.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Niente piu' cassetta degli attrezzi ingombrante, questo strumento fa tutto da solo.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1550,
+        "output_tokens": 597
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "it",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": false,
+      "elapsed_s": 53.42,
+      "full_text": null,
+      "sentences": null,
+      "usage": null,
+      "error": "ValueError: localized_translation requires sentences"
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "it",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.33,
+      "full_text": "Questo è l'unico taglierino che ti servirà davvero. Realizzato in solido acciaio inossidabile, questo multi-tool 6 in 1 è robusto e include 10 lame di ricambio. La punta rinforzata funge da cacciavite a taglio e apriscatole. Sul retro trovi un apribottiglie e un righello integrato sul lato. Il manico include anche diverse chiavi esagonali. Grazie alla manopola regolabile, controlli con precisione la lunghezza della lama. Le lame affilatissime si cambiano facilmente e l'impugnatura è solida e comoda. Non serve una cassetta degli attrezzi pesante, questo gadget fa tutto.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Questo è l'unico taglierino che ti servirà davvero.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Realizzato in solido acciaio inossidabile, questo multi-tool 6 in 1 è robusto e include 10 lame di ricambio.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "La punta rinforzata funge da cacciavite a taglio e apriscatole.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Sul retro trovi un apribottiglie e un righello integrato sul lato.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Il manico include anche diverse chiavi esagonali.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Grazie alla manopola regolabile, controlli con precisione la lunghezza della lama.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Le lame affilatissime si cambiano facilmente e l'impugnatura è solida e comoda.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Non serve una cassetta degli attrezzi pesante, questo gadget fa tutto.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1332,
+        "output_tokens": 476
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "ja",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 10.7,
+      "full_text": "最近見つけたんですが、これ一本あればもう他のカッターはいらないかもしれません。 高品質なステンレス製で、6つの機能がひとつにまとまったマルチツールです。 替え刃も10枚付いてくるので、長く使えますよ。 先端は強化されていて、マイナスドライバーと缶切りとして使えます。 反対側はボトルオープナーになっていて、側面にはルーラーも内蔵されています。 グリップ部分には複数サイズの六角レンチも付いています。 調整ノブで刃の出る長さを細かくコントロールできるのも便利なポイントです。 刃はよく切れて交換も簡単、本体もしっかりした厚みがあって持ちやすいです。 重い工具箱を持ち歩かなくても、これ一本でいろんな作業に対応できます。",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "最近見つけたんですが、これ一本あればもう他のカッターはいらないかもしれません。",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "高品質なステンレス製で、6つの機能がひとつにまとまったマルチツールです。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "替え刃も10枚付いてくるので、長く使えますよ。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "先端は強化されていて、マイナスドライバーと缶切りとして使えます。",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "反対側はボトルオープナーになっていて、側面にはルーラーも内蔵されています。",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 5,
+          "text": "グリップ部分には複数サイズの六角レンチも付いています。",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 6,
+          "text": "調整ノブで刃の出る長さを細かくコントロールできるのも便利なポイントです。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "刃はよく切れて交換も簡単、本体もしっかりした厚みがあって持ちやすいです。",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "重い工具箱を持ち歩かなくても、これ一本でいろんな作業に対応できます。",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1798,
+        "output_tokens": 725
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "ja",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 21.21,
+      "full_text": "これ一本あれば、もう他のカッターは不要かもしれません。 高品質なステンレス製で、とても頑丈な作りです。 6つの機能がついていて、替え刃も10枚付属しています。 先端部分はマイナスドライバーや缶切りとして使えます。 後ろは栓抜きになっていて、側面には便利な定規付き。 持ち手部分には、複数のサイズの六角レンチまで。 ダイヤル式で、刃の長さを細かく調整できるのもポイント。 切れ味抜群の刃は交換も簡単で、本体は握りやすく頑丈です。 重い工具箱を出さなくても、これ一つでサッと作業できます。",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "これ一本あれば、もう他のカッターは不要かもしれません。",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "高品質なステンレス製で、とても頑丈な作りです。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "6つの機能がついていて、替え刃も10枚付属しています。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 3,
+          "text": "先端部分はマイナスドライバーや缶切りとして使えます。",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 4,
+          "text": "後ろは栓抜きになっていて、側面には便利な定規付き。",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 5,
+          "text": "持ち手部分には、複数のサイズの六角レンチまで。",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 6,
+          "text": "ダイヤル式で、刃の長さを細かく調整できるのもポイント。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 7,
+          "text": "切れ味抜群の刃は交換も簡単で、本体は握りやすく頑丈です。",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 8,
+          "text": "重い工具箱を出さなくても、これ一つでサッと作業できます。",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1232,
+        "output_tokens": 2747
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "ja",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 3.82,
+      "full_text": "これ、ほんとに便利で、もう他のカッターは必要ないかもしれません。 高品質なステンレス製で耐久性も高く、替え刃が10枚も付いています。 先端はマイナスドライバーや缶切りとして使えます。 後ろ側には栓抜きと、便利な定規も付いているんです。 さらにハンドル部分には、マルチサイズの六角レンチまで。 ダイヤルで刃の長さを細かく調整できるのも嬉しいポイントです。 切れ味抜群の刃は交換も簡単で、本体もしっかりしていて持ちやすいですよ。 重い工具箱を持ち歩かなくても、これ1本で幅広く活躍してくれます。",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "これ、ほんとに便利で、もう他のカッターは必要ないかもしれません。",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "高品質なステンレス製で耐久性も高く、替え刃が10枚も付いています。",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "先端はマイナスドライバーや缶切りとして使えます。",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "後ろ側には栓抜きと、便利な定規も付いているんです。",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "さらにハンドル部分には、マルチサイズの六角レンチまで。",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "ダイヤルで刃の長さを細かく調整できるのも嬉しいポイントです。",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "切れ味抜群の刃は交換も簡単で、本体もしっかりしていて持ちやすいですよ。",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "重い工具箱を持ち歩かなくても、これ1本で幅広く活躍してくれます。",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1417,
+        "output_tokens": 428
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "nl",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 10.05,
+      "full_text": "Dit is het enige stanleymes dat je ooit nog nodig hebt. Gemaakt van massief roestvrij staal van hoge kwaliteit, is deze 6-in-1 multitool gebouwd om lang mee te gaan, en hij wordt geleverd met 10 reservemesjes. De versterkte punt werkt als een platte schroevendraaier en blikopener. De achterkant is een flesopener, met een ingebouwde liniaal aan de zijkant. In het handvat zitten ook meerdere maten inbussleutels. Met de verstelbare knop bepaal je precies hoe ver het mesje uitsteekt. De mesjes zijn vlijmscherp en makkelijk te wisselen, en het lichaam is stevig, dik en zit lekker in de hand. Geen zware gereedschapskist meer nodig, want dit ding doet het allemaal.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Dit is het enige stanleymes dat je ooit nog nodig hebt.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Gemaakt van massief roestvrij staal van hoge kwaliteit, is deze 6-in-1 multitool gebouwd om lang mee te gaan, en hij wordt geleverd met 10 reservemesjes.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "De versterkte punt werkt als een platte schroevendraaier en blikopener.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "De achterkant is een flesopener, met een ingebouwde liniaal aan de zijkant.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "In het handvat zitten ook meerdere maten inbussleutels.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Met de verstelbare knop bepaal je precies hoe ver het mesje uitsteekt.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "De mesjes zijn vlijmscherp en makkelijk te wisselen, en het lichaam is stevig, dik en zit lekker in de hand.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Geen zware gereedschapskist meer nodig, want dit ding doet het allemaal.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1109,
+        "output_tokens": 618
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "nl",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 25.29,
+      "full_text": "Dit is het enige stanleymes dat je nog nodig hebt. Deze 6 in 1 multitool is gemaakt van massief roestvrij staal, gaat superlang mee en je krijgt er tien reservemesjes bij. De stevige punt kun je gebruiken als platte schroevendraaier en blikopener. Aan de achterkant zit een flesopener en op de zijkant een ingebouwde liniaal. Het handvat heeft zelfs inbussleutels in meerdere maten. Met de handige knop bepaal je precies hoe ver het mesje uitsteekt. De vlijmscherpe mesjes vervang je in een handomdraai en de behuizing is dik, stevig en ligt comfortabel in de hand. Een zware gereedschapskist is dus niet meer nodig, want deze alles in een tool doet het allemaal.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Dit is het enige stanleymes dat je nog nodig hebt.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Deze 6 in 1 multitool is gemaakt van massief roestvrij staal, gaat superlang mee en je krijgt er tien reservemesjes bij.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "De stevige punt kun je gebruiken als platte schroevendraaier en blikopener.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Aan de achterkant zit een flesopener en op de zijkant een ingebouwde liniaal.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Het handvat heeft zelfs inbussleutels in meerdere maten.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Met de handige knop bepaal je precies hoe ver het mesje uitsteekt.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "De vlijmscherpe mesjes vervang je in een handomdraai en de behuizing is dik, stevig en ligt comfortabel in de hand.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Een zware gereedschapskist is dus niet meer nodig, want deze alles in een tool doet het allemaal.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 726,
+        "output_tokens": 3290
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "nl",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.16,
+      "full_text": "Dit is waarschijnlijk het laatste afbreekmes dat je ooit hoeft te kopen. Deze 6 in 1 multitool is gemaakt van stevig roestvrij staal en gaat echt jaren mee, plus je krijgt er direct 10 reservemesjes bij. De versterkte punt kun je gebruiken als platte schroevendraaier en blikopener. Aan de achterkant zit een flessenopener en er staat zelfs een liniaal op de zijkant. In het handvat zitten ook verschillende maten inbussleutels verwerkt. Met de draaiknop stel je de lengte van het mes heel precies in. De vlijmscherpe mesjes zijn simpel te vervangen en de behuizing voelt robuust en fijn aan in de hand. Je hebt geen zware gereedschapskist meer nodig, want deze alles-in-één tool kan het allemaal.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Dit is waarschijnlijk het laatste afbreekmes dat je ooit hoeft te kopen.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Deze 6 in 1 multitool is gemaakt van stevig roestvrij staal en gaat echt jaren mee, plus je krijgt er direct 10 reservemesjes bij.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "De versterkte punt kun je gebruiken als platte schroevendraaier en blikopener.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Aan de achterkant zit een flessenopener en er staat zelfs een liniaal op de zijkant.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "In het handvat zitten ook verschillende maten inbussleutels verwerkt.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Met de draaiknop stel je de lengte van het mes heel precies in.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "De vlijmscherpe mesjes zijn simpel te vervangen en de behuizing voelt robuust en fijn aan in de hand.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Je hebt geen zware gereedschapskist meer nodig, want deze alles-in-één tool kan het allemaal.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 911,
+        "output_tokens": 553
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "pt",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 7.89,
+      "full_text": "Olha só esta faca multiusos, a única que vais precisar. Feita em aço inoxidável maciço de qualidade, é uma ferramenta 6 em 1 com 10 lâminas de substituição incluídas. A ponta reforçada funciona como chave de fenda e abre-latas. A parte traseira é um abre-garrafas, com uma régua integrada na lateral. O cabo ainda inclui chaves hexagonais de vários tamanhos. O botão ajustável controla o comprimento da lâmina com precisão. As lâminas são muito afiadas e fáceis de trocar, e o corpo é robusto e confortável. Não precisas de uma caixa de ferramentas pesada, esta faz tudo.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Olha só esta faca multiusos, a única que vais precisar.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Feita em aço inoxidável maciço de qualidade, é uma ferramenta 6 em 1 com 10 lâminas de substituição incluídas.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "A ponta reforçada funciona como chave de fenda e abre-latas.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "A parte traseira é um abre-garrafas, com uma régua integrada na lateral.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "O cabo ainda inclui chaves hexagonais de vários tamanhos.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "O botão ajustável controla o comprimento da lâmina com precisão.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "As lâminas são muito afiadas e fáceis de trocar, e o corpo é robusto e confortável.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Não precisas de uma caixa de ferramentas pesada, esta faz tudo.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1544,
+        "output_tokens": 573
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "pt",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": false,
+      "elapsed_s": 135.95,
+      "full_text": null,
+      "sentences": null,
+      "usage": null,
+      "error": "TypeError: LLM 返回内容为 None"
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "pt",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 3.99,
+      "full_text": "Este e o unico x-ato que vais precisar. Feito em aco inoxidavel de alta qualidade, esta ferramenta 6 em 1 e super resistente e traz 10 laminas extra. A ponta reforcada serve como chave de fendas e abre-latas. Na parte de tras tens um abre-capsulas e uma regua lateral. O cabo ainda inclui chaves sextavadas de varios tamanhos. O botao ajustavel permite controlar o comprimento da lamina com precisao. As laminas sao muito afiadas e faceis de trocar, com um corpo robusto e confortavel. Esquece a caixa de ferramentas pesada, este acessorio faz tudo.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Este e o unico x-ato que vais precisar.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Feito em aco inoxidavel de alta qualidade, esta ferramenta 6 em 1 e super resistente e traz 10 laminas extra.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "A ponta reforcada serve como chave de fendas e abre-latas.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Na parte de tras tens um abre-capsulas e uma regua lateral.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "O cabo ainda inclui chaves sextavadas de varios tamanhos.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "O botao ajustavel permite controlar o comprimento da lamina com precisao.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "As laminas sao muito afiadas e faceis de trocar, com um corpo robusto e confortavel.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Esquece a caixa de ferramentas pesada, este acessorio faz tudo.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1329,
+        "output_tokens": 420
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "sv",
+      "provider_key": "claude_sonnet",
+      "provider_name": "Claude Sonnet 4.6",
+      "ok": true,
+      "elapsed_s": 11.06,
+      "full_text": "Det här är den enda universalkniven du någonsin kommer att behöva. Den är tillverkad i massivt rostfritt stål av hög kvalitet, ett 6-i-1 multiverktyg som håller länge, och den levereras med 10 utbytesblad. Den förstärkta spetsen fungerar som en spårskruvmejsel och konservöppnare. Bakänden är en flasköppnare, och på sidan finns ett inbyggt linjal. Handtaget har också hexnycklar i flera storlekar. Den justerbara ratten låter dig styra bladlängden exakt. Bladen är rakbladsvassa och enkla att byta, och kroppen är tjock, stadig och bekväm att hålla i. Inget behov av en tung verktygslåda, det här verktyget fixar allt.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Det här är den enda universalkniven du någonsin kommer att behöva.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Den är tillverkad i massivt rostfritt stål av hög kvalitet, ett 6-i-1 multiverktyg som håller länge, och den levereras med 10 utbytesblad.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Den förstärkta spetsen fungerar som en spårskruvmejsel och konservöppnare.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "Bakänden är en flasköppnare, och på sidan finns ett inbyggt linjal.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Handtaget har också hexnycklar i flera storlekar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Den justerbara ratten låter dig styra bladlängden exakt.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Bladen är rakbladsvassa och enkla att byta, och kroppen är tjock, stadig och bekväm att hålla i.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Inget behov av en tung verktygslåda, det här verktyget fixar allt.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1104,
+        "output_tokens": 625
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "sv",
+      "provider_key": "gemini_31_pro",
+      "provider_name": "Gemini 3.1 Pro",
+      "ok": true,
+      "elapsed_s": 133.04,
+      "full_text": "Det här är den sista universalkniven du kommer behöva köpa. Den är gjord av rejält rostfritt stål och är ett smart 6-i-1 multiverktyg som levereras med tio extrablad. Den förstärkta spetsen fungerar både som spårskruvmejsel och konservöppnare. I andra änden finns en kapsylöppnare och på sidan sitter en inbyggd linjal. Handtaget har även inbyggda insexnycklar i flera storlekar. Med det justerbara vredet kan du ställa in bladets längd precis som du vill ha det. Bladen är riktigt vassa och enkla att byta ut, och själva kniven är rejäl och ligger väldigt bra i handen. Du slipper släpa på en tung verktygslåda när du har ett smidigt allt-i-ett-verktyg som klarar det mesta.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Det här är den sista universalkniven du kommer behöva köpa.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Den är gjord av rejält rostfritt stål och är ett smart 6-i-1 multiverktyg som levereras med tio extrablad.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Den förstärkta spetsen fungerar både som spårskruvmejsel och konservöppnare.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "I andra änden finns en kapsylöppnare och på sidan sitter en inbyggd linjal.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Handtaget har även inbyggda insexnycklar i flera storlekar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Med det justerbara vredet kan du ställa in bladets längd precis som du vill ha det.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Bladen är riktigt vassa och enkla att byta ut, och själva kniven är rejäl och ligger väldigt bra i handen.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Du slipper släpa på en tung verktygslåda när du har ett smidigt allt-i-ett-verktyg som klarar det mesta.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 723,
+        "output_tokens": 3666
+      },
+      "error": null
+    },
+    {
+      "source_label": "B_utility_knife",
+      "target_lang": "sv",
+      "provider_key": "gemini_3_flash",
+      "provider_name": "Gemini 3 Flash",
+      "ok": true,
+      "elapsed_s": 4.28,
+      "full_text": "Det här är förmodligen den sista universalkniven du någonsin behöver köpa. Den är gjord i rejält rostfritt stål, byggd för att hålla och kommer med tio extra rakblad. Den förstärkta spetsen fungerar som både spårskruvmejsel och konservöppnare. I änden finns en kapsylöppnare och på sidan hittar du en inbyggd linjal. Handtaget har dessutom sexkantsnycklar i flera olika storlekar. Med det justerbara vredet kan du ställa in bladlängden exakt som du vill ha den. Bladen är supervassa och lätta att byta, och själva kniven känns rejäl och bekväm i handen. Du slipper släpa på en tung verktygslåda när det här multiverktyget löser det mesta.",
+      "sentences": [
+        {
+          "index": 0,
+          "text": "Det här är förmodligen den sista universalkniven du någonsin behöver köpa.",
+          "source_segment_indices": [
+            0
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Den är gjord i rejält rostfritt stål, byggd för att hålla och kommer med tio extra rakblad.",
+          "source_segment_indices": [
+            1
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Den förstärkta spetsen fungerar som både spårskruvmejsel och konservöppnare.",
+          "source_segment_indices": [
+            2
+          ]
+        },
+        {
+          "index": 3,
+          "text": "I änden finns en kapsylöppnare och på sidan hittar du en inbyggd linjal.",
+          "source_segment_indices": [
+            3
+          ]
+        },
+        {
+          "index": 4,
+          "text": "Handtaget har dessutom sexkantsnycklar i flera olika storlekar.",
+          "source_segment_indices": [
+            4
+          ]
+        },
+        {
+          "index": 5,
+          "text": "Med det justerbara vredet kan du ställa in bladlängden exakt som du vill ha den.",
+          "source_segment_indices": [
+            5
+          ]
+        },
+        {
+          "index": 6,
+          "text": "Bladen är supervassa och lätta att byta, och själva kniven känns rejäl och bekväm i handen.",
+          "source_segment_indices": [
+            6
+          ]
+        },
+        {
+          "index": 7,
+          "text": "Du slipper släpa på en tung verktygslåda när det här multiverktyget löser det mesta.",
+          "source_segment_indices": [
+            7
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 908,
+        "output_tokens": 526
+      },
+      "error": null
+    }
+  ]
+}

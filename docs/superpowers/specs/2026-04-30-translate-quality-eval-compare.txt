@@ -1,0 +1,298 @@
+================================================================================
+### A_ice_ball -> 德语 (de)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[8.83s, in=1151 out=660]
+Ich hab's wirklich aufgegeben. Jeder Gast bei mir will diese riesige Eiskugel mitnehmen. Sie schmilzt viel langsamer als normale Eiswuerfel, und die Kuehlwirkung ist wirklich stark. Den ganzen Sommer war das meine liebste Erfrischung. Die Handhabung ist auch super einfach. Einfach die Form mit Wasser fuellen, Deckel draufschnappen, ueberschuessiges Wasser rausdruecken, und ab damit in ein freies Eckchen im Gefrierfach. Die Eiskugel kommt perfekt rund und glatt raus. Eine Kugel in dein Getraenk geben, egal ob Cocktail oder Limo, und es ist unglaublich erfrischend. Der Preis ist gerade auch sehr gut. Du bekommst sechs Formen auf einmal.
+
+--- Gemini 3.1 Pro ---
+[FAIL] ValueError: localized_translation requires sentences
+
+--- Gemini 3 Flash ---
+[4.43s, in=975 out=473]
+Ich habe es ehrlich aufgegeben. Jeder Gast bei mir will diese riesige Eiskugel mitnehmen. Sie schmilzt viel langsamer als normale Eiswuerfel und kuehlt extrem gut. Das war den ganzen Sommer meine Rettung. Die Anwendung ist auch super einfach. Form mit Wasser fuellen, Deckel drauf und ab ins Gefrierfach. Die Eiskugel kommt perfekt rund und glatt heraus. Egal ob Alkohol oder Limo, das Getraenk bleibt eiskalt. Der Preis ist gerade auch richtig gut. Man bekommt direkt sechs Formen im Set. Das lohnt sich.
+
+
+================================================================================
+### A_ice_ball -> 西班牙语 (es)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[6.4s, in=1673 out=526]
+Ya me he rendido. Todos los que vienen a casa quieren llevarse esta bola de hielo gigante. Se derrite mucho más despacio que los cubitos normales, y refresca de maravilla. Ha sido mi salvación este verano. Además, es muy fácil de usar. Solo llena el molde con agua, cierra la tapa para quitar el exceso, y mételo en cualquier hueco del congelador. La bola de hielo sale perfectamente redonda y lisa. Échala en tu bebida, ya sea alcohol o refresco, y el resultado es increíblemente refrescante. El precio ahora mismo está muy bien. Te llevas seis moldes de una vez.
+
+--- Gemini 3.1 Pro ---
+[25.16s, in=1247 out=3229]
+Sinceramente, ya me he rendido. Todos los que vienen a casa quieren llevárselo. Hablo de esta bola de hielo gigante. Se derrite mucho más lento que los cubitos normales. Además, enfría la bebida muchísimo. Ha sido mi salvación todo el verano. Es súper fácil de usar. Solo tienes que llenar el molde con agua. Pones la tapa para sacar el sobrante. Y lo metes en cualquier hueco del congelador. La bola sale perfectamente redonda y lisa. Pon una en tu refresco o copa. Queda genial y refresca un montón. Además, ahora mismo tiene muy buen precio. El paquete incluye seis moldes en total.
+
+--- Gemini 3 Flash ---
+[4.63s, in=1430 out=553]
+La verdad es que me rindo. Todo el que viene a casa quiere llevarse esta bola de hielo gigante. Tarda mucho más en derretirse que los cubitos normales. Además, enfría de una forma increíble. Ha sido mi salvación durante todo el verano. Es un gadget súper fácil de usar. Solo tienes que llenar el molde con agua. Cierras la tapa para quitar el exceso y al congelador. La bola sale perfecta, redonda y muy lisa. Ponla en tu refresco o en una copa y verás qué frescura. El precio ahora mismo está genial. Vienen seis moldes en el pack. ¡No te quedes sin ellos!
+
+
+================================================================================
+### A_ice_ball -> 法语 (fr)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[7.97s, in=1272 out=644]
+Franchement, j'ai abandonné l'idée de les garder pour moi. Tous mes invités repartent avec une de mes grosses boules de glace. Ça fond beaucoup plus lentement que des glaçons classiques, et l'effet rafraîchissant est vraiment top. C'est devenu mon indispensable de l'été. Et c'est super simple à utiliser. Vous remplissez le moule d'eau, vous fermez le couvercle pour chasser l'excédent, et vous le glissez dans un coin du congélateur. La boule de glace ressort parfaitement ronde et lisse. Vous en déposez une dans votre verre, que ce soit un cocktail ou un soda, et c'est vraiment très rafraîchissant. Le prix est vraiment intéressant en ce moment. Vous recevez six moules d'un coup.
+
+--- Gemini 3.1 Pro ---
+[FAIL] ValueError: localized_translation requires sentences
+
+--- Gemini 3 Flash ---
+[3.57s, in=1076 out=471]
+Franchement, j'abandonne. Tous mes amis veulent me piquer ces boules de glace géantes. Elles fondent bien plus lentement que les glaçons classiques. C'est mon secret pour rester au frais tout l'été. En plus, c'est super simple à utiliser. Remplissez le moule, fermez le couvercle et hop au congélateur. La sphère ressort parfaitement ronde et bien lisse. C'est idéal pour vos cocktails ou vos sodas préférés. Le prix est vraiment top en ce moment. Vous recevez six moules d'un coup, profitez-en.
+
+
+================================================================================
+### A_ice_ball -> 意大利语 (it)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[8.61s, in=1596 out=629]
+Ragazzi, ho alzato bandiera bianca. Ogni volta che qualcuno viene a casa mia, vuole portarsi via questa sfera di ghiaccio gigante. Si scioglie molto piu lentamente dei cubetti normali, e rinfresca in modo incredibile. E stata la mia salvezza per tutta l'estate. Usarla e semplicissimo. Riempi lo stampo d'acqua, chiudi il coperchio per eliminare l'aria in eccesso, e mettilo in qualsiasi angolino del congelatore. La sfera viene fuori perfettamente tonda e liscia. Aggiungila alla tua bevanda, che sia un cocktail o una bibita, e la freschezza e assurda. Il prezzo e ottimo in questo momento. Con un solo acquisto ricevi sei stampi.
+
+--- Gemini 3.1 Pro ---
+[FAIL] ValueError: localized_translation requires sentences
+
+--- Gemini 3 Flash ---
+[4.56s, in=1394 out=565]
+Ormai mi sono arresa. Chiunque venga a casa mia vuole rubarmi questa sfera di ghiaccio gigante. Si scioglie molto più lentamente dei classici cubetti e rinfresca tantissimo. È stata la mia salvezza per tutta l'estate. È anche semplicissima da usare. Basta riempire lo stampo d'acqua e chiudere il coperchio per far uscire l'eccesso. Occupa pochissimo spazio nel freezer. La sfera esce fuori perfettamente rotonda e liscia. Mettine una nel bicchiere con una bibita o un cocktail ed è freschissima. Il prezzo attuale è davvero ottimo. Ricevi ben sei stampi in un colpo solo. Approfittane.
+
+
+================================================================================
+### A_ice_ball -> 日语 (ja)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[10.08s, in=1844 out=682]
+最近見つけたんですが、これがほんとに人気で困ってます。 うちに来る人みんな、この大きな丸い氷を持って帰りたがるんです。 普通の氷より全然溶けにくくて、冷え方がすごいんですよ。 今年の夏はずっとこれにお世話になってます。 使い方もとっても簡単です。 型に水を入れてフタをパチッと閉めるだけ。 余分な水が出て、冷凍庫のすき間にそのまま入れられます。 できあがった氷はきれいな丸い形で、つるっとしてます。 お酒にもジュースにも入れると、ひんやり感がたまらないです。 今はお値段もお得になっていて、型が6個セットで手に入ります。
+
+--- Gemini 3.1 Pro ---
+[25.36s, in=1296 out=2825]
+正直、最近もう諦めてるんです。 家に来る人みんな、この巨大な氷を欲しがるんです。 普通の氷より全然溶けにくくて、しっかり冷えます。 この夏は、これのおかげで本当に快適に過ごせました。 使い方もすごくシンプルで簡単なんですよ。 水を入れてフタをし、余分な水を抜いて冷凍庫に入れるだけ。 まん丸でツルツルの、すごく綺麗な氷が完成します。 お酒や炭酸水に入れると、冷たさが続いて最高ですよ。 今ならお値段もかなりお手頃になっています。 一度に6個の型がセットになっていて、コスパも抜群です。
+
+--- Gemini 3 Flash ---
+[4.05s, in=1479 out=513]
+これ、ほんとに便利で困っちゃいます。 遊びに来た友達がみんな欲しがる、この大きな丸氷。 普通の氷より溶けにくくて、冷たさが長持ちするんです。 今年の夏はこれのおかげで、ずっと快適に過ごせました。 使い方もすごく簡単ですよ。 型に水を入れて蓋を閉めるだけで、余分な水が抜ける仕組みです。 冷凍庫のちょっとした隙間に置けるのも嬉しいポイント。 取り出すと、ツルツルで綺麗な丸い氷ができあがります。 お酒や炭酸水に入れるだけで、いつもの飲み物が格段に美味しくなります。 今なら6個セットでお得に手に入るので、ぜひチェックしてみてくださいね。
+
+
+================================================================================
+### A_ice_ball -> 荷兰语 (nl)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[9.03s, in=1155 out=602]
+Ik heb het eerlijk gezegd opgegeven. Iedereen die bij mij thuis komt, wil zo'n grote ijsbal meenemen. Hij smelt veel langzamer dan gewone ijsblokjes, en het koeleffect is echt goed. De hele zomer mijn favoriete manier om af te koelen. En heel makkelijk in gebruik. Vul de mal gewoon met water, klik het deksel erop om het overtollige water eruit te drukken, en zet hem in een klein hoekje van je vriezer. De ijsbal komt er perfect rond en glad uit. Gooi er een in je drankje, of dat nou alcohol of frisdrank is, en het is verrassend verfrissend. De prijs is op dit moment ook goed. Je krijgt zes mallen in een keer.
+
+--- Gemini 3.1 Pro ---
+[27.12s, in=790 out=2562]
+Ik heb het eerlijk gezegd maar opgegeven. Iedereen die hier over de vloer komt wil deze enorme ijsbal meenemen. Hij smelt echt veel langzamer dan gewone ijsblokjes en koelt fantastisch. Dit is de hele zomer al mijn favoriete manier om af te koelen. Ze zijn ook super simpel in gebruik. Je vult de vorm met water, drukt de deksel erop zodat het extra water eruit loopt en legt hem ergens in je vriezer. De ijsbal komt er perfect rond en glad uit. Doe er eentje in je drankje, of het nu frisdrank of een cocktail is, en het is meteen heerlijk koud. De prijs is momenteel ook erg goed. Je krijgt namelijk zes vormen in één pakket.
+
+--- Gemini 3 Flash ---
+[4.17s, in=973 out=578]
+Ik geef het eerlijk gezegd op. Iedereen die bij mij over de vloer komt wil deze gigantische ijsbal mee naar huis nemen. Hij smelt veel langzamer dan gewone ijsblokjes en het koelt echt bizar goed. Het is de hele zomer al mijn favoriete manier om af te koelen. Het is ook nog eens super simpel in gebruik. Je vult de vorm met water, drukt de deksel erop om het overtollige water eruit te persen en zet hem in een klein hoekje van je vriezer. De ijsbal komt er perfect rond en glad uit. Doe er eentje in je drankje, of het nu alcohol is of frisdrank, en het is echt heerlijk verfrissend. De prijs is nu ook top. Je krijgt meteen zes vormen in één keer. Mis dit niet.
+
+
+================================================================================
+### A_ice_ball -> 葡萄牙语 (pt)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[7.76s, in=1590 out=528]
+Já desisti de tentar esconder. Toda a gente que vem cá a casa quer levar uma destas bolas de gelo gigantes. Derrete muito mais devagar do que o gelo normal, e arrefece mesmo bem. Foi o meu refresco favorito durante todo o verão. E é super fácil de usar. Enches o molde com água, fechas a tampa para tirar o excesso, e metes no congelador. A bola sai redondinha e perfeita. Deitas numa bebida, seja álcool ou refrigerante, e fica uma delícia. O preço está muito bom agora. Levas seis moldes de uma vez.
+
+--- Gemini 3.1 Pro ---
+[20.42s, in=1206 out=2599]
+Sinceramente, já desisti. Toda a gente quer levar esta bola de gelo. Derrete muito mais devagar que os cubos normais. O efeito refrescante é mesmo muito bom. Tem sido a minha salvação neste verão. É também super fácil de usar. Basta encher a forma com água e fechar a tampa. Podes guardar em qualquer cantinho do congelador. A bola de gelo sai perfeitamente redonda. Fica incrível em qualquer bebida ou sumo. O preço está muito bom agora. Recebes logo seis formas de uma vez.
+
+--- Gemini 3 Flash ---
+[5.19s, in=1391 out=413]
+Olha, eu já desisti. Toda a gente que vem cá a casa quer levar estas bolas de gelo gigantes. Derretem muito mais devagar que o gelo normal e refrescam imenso. Tem sido a minha salvação este verão. É super fácil de usar. Enches o molde com água, fechas a tampa e pões no congelador. A bola sai perfeita e bem redonda. Fica ótimo em qualquer bebida ou refrigerante. O preço agora está excelente. Recebes logo seis moldes de uma vez. Aproveita.
+
+
+================================================================================
+### A_ice_ball -> 瑞典语 (sv)
+================================================================================
+**Source EN (10 segs):**
+I've honestly given up. Everyone who comes to my place wants to take this giant ice ball with them. It melts way slower than regular ice cubes, and the cooling effect is incredible. It's been my go-to source of refreshment all summer. Super easy to use too. Just fill the mold with water, snap on the lid to squeeze out the extra, and stick it in any small space in your freezer. The ice ball comes out perfectly round and smooth. Drop one into your drink, whether it's alcohol or soda, and it's unbelievably refreshing. Price is great right now too. You get six molds in one go. Don't miss out.
+
+--- Claude Sonnet 4.6 ---
+[8.79s, in=1150 out=601]
+Jag har faktiskt gett upp. Alla som kommer hem till mig vill ta med sig en sån här jätteis-boll. Den smälter mycket långsammare än vanliga isbitar och håller drycken kall längre. Den har varit min räddning hela sommaren. Superenkel att använda också. Fyll formen med vatten, sätt på locket så pressas överskottet ut, och ställ den i valfri liten plats i frysen. Isbollen kommer ut perfekt rund och slät. Lägg en i ditt glas, oavsett om det är alkohol eller läsk, och det blir otroligt uppfriskande. Priset är riktigt bra just nu. Du får sex formar på köpet.
+
+--- Gemini 3.1 Pro ---
+[29.96s, in=785 out=2140]
+Jag har ärligt talat gett upp. Alla som hälsar på vill ta med sig den här stora isbollen hem. Den smälter mycket långsammare än vanliga isbitar och kyler ner drycken helt perfekt. Den har varit min räddning i värmen hela sommaren. Den är superlätt att använda också. Fyll bara formen med vatten, tryck på locket så att överflödet rinner ut och ställ in den där det finns plats i frysen. Isbollen blir helt rund och slät. Lägg en i glaset, oavsett om det är en drink eller läsk, så blir det otroligt svalkande. Priset är riktigt bra just nu också. Du får sex formar i ett paket.
+
+--- Gemini 3 Flash ---
+[6.28s, in=970 out=546]
+Jag har nästan gett upp hoppet. Alla som hälsar på vill ta med sig de här stora isbollarna hem. De smälter mycket långsammare än vanliga isbitar och kyler helt fantastiskt. Det har varit min räddning hela sommaren. De är superenkla att använda också. Fyll bara formen med vatten, tryck på locket så att överflödet försvinner och ställ in den var som helst i frysen. Isbollen blir helt rund och slät. Lägg i en i glaset, oavsett om det är drinkar eller läsk, så blir det otroligt svalkande. Priset är riktigt bra just nu dessutom. Man får sex formar på en gång, så passa på.
+
+
+================================================================================
+### B_utility_knife -> 德语 (de)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[8.66s, in=1105 out=615]
+Das ist das einzige Cuttermesser, das du noch brauchst. Es besteht aus massivem Edelstahl und ist ein 6-in-1-Multitool mit 10 Ersatzklingen. Die verstaerkte Spitze funktioniert als Schlitzschraubendreher und Dosenoefffner. Das hintere Ende ist ein Flaschenoeffner, und seitlich ist ein Lineal eingebaut. Im Griff sind ausserdem Innensechskantschluesseln in verschiedenen Groessen integriert. Mit dem verstellbaren Knopf kannst du die Klingenlaenge genau einstellen. Die Klingen sind rasiermesserscharf und leicht wechselbar, und das Gehaeuse ist stabil und liegt gut in der Hand. Du brauchst keinen schweren Werkzeugkasten mehr, dieses Tool erledigt alles.
+
+--- Gemini 3.1 Pro ---
+[39.04s, in=728 out=2998]
+Das ist das einzige Cuttermesser, das du brauchst. Dieses 6-in-1 Multi-Tool ist aus massivem Edelstahl. Es ist sehr robust und bringt 10 Ersatzklingen mit. Die Spitze dient als Schraubenzieher und Dosenöffner. Hinten gibt es einen Flaschenöffner und ein Lineal. Der Griff hat auch mehrere Sechskantschlüssel integriert. Mit dem Rad stellst du die Klingenlänge genau ein. Die scharfen Klingen lassen sich ganz leicht wechseln. Das Gehäuse ist dick, stabil und sehr bequem. Du brauchst keinen schweren Werkzeugkoffer mehr. Dieses kompakte Tool erledigt einfach alles für dich.
+
+--- Gemini 3 Flash ---
+[5.48s, in=913 out=500]
+Das ist das letzte Cuttermesser, das du jemals brauchen wirst. Dieses 6 in 1 Multi Tool aus Edelstahl ist extrem langlebig. Es kommen direkt 10 Ersatzklingen mit dazu. Die Spitze dient als Schlitzschraubendreher und Dosenöffner. Am Ende gibt es einen Flaschenöffner und ein integriertes Lineal. Im Griff sind zudem verschiedene Sechskantschlüssel verbaut. Mit dem Drehknopf stellst du die Klingenlänge präzise ein. Die scharfen Klingen lassen sich einfach wechseln. Das Gehäuse ist stabil und liegt gut in der Hand. Du brauchst keinen schweren Werkzeugkoffer mehr für kleine Aufgaben.
+
+
+================================================================================
+### B_utility_knife -> 西班牙语 (es)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[6.9s, in=1627 out=567]
+Mira este cúter multiherramienta, el único que necesitas. Fabricado en acero inoxidable sólido de calidad, este 6 en 1 incluye 10 cuchillas de repuesto. La punta reforzada funciona como destornillador plano y abridor de latas. La parte trasera es un abrebotellas, con una regla integrada en el lateral. El mango también incorpora llaves Allen de varios tamaños. El botón ajustable controla la longitud de la cuchilla con precisión. Las cuchillas son muy afiladas y fáciles de cambiar, y el cuerpo es robusto y cómodo. Olvídate de la caja de herramientas, esta multiherramienta lo hace todo.
+
+--- Gemini 3.1 Pro ---
+[40.56s, in=1183 out=3354]
+¡Mira este cúter, es el único que necesitarás! Es de acero inoxidable y muy resistente. Es una herramienta multiusos seis en uno. Además, incluye diez cuchillas de repuesto. Su punta reforzada sirve como destornillador plano. También funciona muy bien como abrelatas. La base es un práctico abridor de botellas. Y tiene una regla integrada en el lateral. El mango incluye llaves hexagonales de varios tamaños. La rueda permite ajustar la cuchilla con precisión. Las cuchillas están afiladas y se cambian fácilmente. El cuerpo es grueso, robusto y muy cómodo. ¿Cansado de cargar con una caja de herramientas? Esta herramienta todo en uno es muy práctica.
+
+--- Gemini 3 Flash ---
+[8.8s, in=1368 out=511]
+¿Buscas un cúter que dure para siempre? Este multiusos de acero inoxidable es superresistente. Incluye 10 cuchillas de repuesto de regalo. La punta reforzada sirve como destornillador plano. También funciona como un práctico abrelatas. En la parte trasera tienes un abrebotellas. Incluso trae una regla grabada en el lateral. El mango incluye varias llaves hexagonales integradas. Puedes ajustar la longitud de la cuchilla fácilmente. Es un cuerpo robusto, cómodo y muy seguro. Olvídate de cargar con cajas de herramientas pesadas. Con este gadget lo tienes todo a mano.
+
+
+================================================================================
+### B_utility_knife -> 法语 (fr)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[7.12s, in=1226 out=570]
+Voici un couteau utilitaire vraiment polyvalent. Fabriqué en acier inoxydable massif de qualité, cet outil 6 en 1 est solide et livré avec 10 lames de rechange. L'embout renforcé fait office de tournevis plat et d'ouvre-boîte. Le talon sert d'ouvre-bouteille, avec une règle intégrée sur le côté. Le manche inclut aussi des clés hexagonales multi-tailles. Le bouton réglable permet de contrôler précisément la longueur de la lame. Les lames sont très tranchantes et faciles à changer, et le corps est épais, robuste et agréable en main. Pas besoin d'une grosse boîte à outils, cet outil fait tout.
+
+--- Gemini 3.1 Pro ---
+[141.44s, in=829 out=3486]
+C'est le dernier cutter dont vous aurez besoin. Cet outil multifonction en acier inoxydable est super robuste. Il est livré avec dix lames de rechange. La pointe sert de tournevis plat et d'ouvre-boîte. L'arrière fait décapsuleur, avec une règle sur le côté. Le manche intègre aussi plusieurs clés hexagonales. La molette permet d'ajuster la lame avec précision. Les lames très tranchantes se changent vraiment facilement. Le corps est épais, solide et agréable en main. Plus besoin de sortir une lourde boîte à outils. Cet outil tout-en-un fait vraiment tout le travail.
+
+--- Gemini 3 Flash ---
+[3.87s, in=1014 out=410]
+C'est probablement le dernier cutter dont vous aurez besoin. En acier inoxydable, cet outil 6-en-1 est ultra robuste et livré avec 10 lames. Sa pointe renforcée sert de tournevis plat et d'ouvre-boîte. À l'arrière, on trouve un décapsuleur et une règle intégrée. Le manche cache aussi plusieurs clés hexagonales. Une molette permet de régler précisément la longueur de la lame. Les lames se changent facilement et le corps est très ergonomique. Plus besoin de boîte à outils, cet accessoire fait tout.
+
+
+================================================================================
+### B_utility_knife -> 意大利语 (it)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[8.61s, in=1550 out=597]
+Guarda qui, questo e' il coltellino multiuso che stavi cercando. In acciaio inox massiccio di alta qualita', e' un 6 in 1 con 10 lame di ricambio incluse. La punta rinforzata funziona da cacciavite a testa piatta e apri scatole. Il fondo e' un apribottiglie, con un righello integrato sul lato. Il manico include anche chiavi esagonali di varie misure. La manopola regolabile ti permette di controllare la lunghezza della lama con precisione. Le lame sono affilatissime e facili da cambiare, e il corpo e' robusto e comodo da tenere in mano. Niente piu' cassetta degli attrezzi ingombrante, questo strumento fa tutto da solo.
+
+--- Gemini 3.1 Pro ---
+[FAIL] ValueError: localized_translation requires sentences
+
+--- Gemini 3 Flash ---
+[4.33s, in=1332 out=476]
+Questo è l'unico taglierino che ti servirà davvero. Realizzato in solido acciaio inossidabile, questo multi-tool 6 in 1 è robusto e include 10 lame di ricambio. La punta rinforzata funge da cacciavite a taglio e apriscatole. Sul retro trovi un apribottiglie e un righello integrato sul lato. Il manico include anche diverse chiavi esagonali. Grazie alla manopola regolabile, controlli con precisione la lunghezza della lama. Le lame affilatissime si cambiano facilmente e l'impugnatura è solida e comoda. Non serve una cassetta degli attrezzi pesante, questo gadget fa tutto.
+
+
+================================================================================
+### B_utility_knife -> 日语 (ja)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[10.7s, in=1798 out=725]
+最近見つけたんですが、これ一本あればもう他のカッターはいらないかもしれません。 高品質なステンレス製で、6つの機能がひとつにまとまったマルチツールです。 替え刃も10枚付いてくるので、長く使えますよ。 先端は強化されていて、マイナスドライバーと缶切りとして使えます。 反対側はボトルオープナーになっていて、側面にはルーラーも内蔵されています。 グリップ部分には複数サイズの六角レンチも付いています。 調整ノブで刃の出る長さを細かくコントロールできるのも便利なポイントです。 刃はよく切れて交換も簡単、本体もしっかりした厚みがあって持ちやすいです。 重い工具箱を持ち歩かなくても、これ一本でいろんな作業に対応できます。
+
+--- Gemini 3.1 Pro ---
+[21.21s, in=1232 out=2747]
+これ一本あれば、もう他のカッターは不要かもしれません。 高品質なステンレス製で、とても頑丈な作りです。 6つの機能がついていて、替え刃も10枚付属しています。 先端部分はマイナスドライバーや缶切りとして使えます。 後ろは栓抜きになっていて、側面には便利な定規付き。 持ち手部分には、複数のサイズの六角レンチまで。 ダイヤル式で、刃の長さを細かく調整できるのもポイント。 切れ味抜群の刃は交換も簡単で、本体は握りやすく頑丈です。 重い工具箱を出さなくても、これ一つでサッと作業できます。
+
+--- Gemini 3 Flash ---
+[3.82s, in=1417 out=428]
+これ、ほんとに便利で、もう他のカッターは必要ないかもしれません。 高品質なステンレス製で耐久性も高く、替え刃が10枚も付いています。 先端はマイナスドライバーや缶切りとして使えます。 後ろ側には栓抜きと、便利な定規も付いているんです。 さらにハンドル部分には、マルチサイズの六角レンチまで。 ダイヤルで刃の長さを細かく調整できるのも嬉しいポイントです。 切れ味抜群の刃は交換も簡単で、本体もしっかりしていて持ちやすいですよ。 重い工具箱を持ち歩かなくても、これ1本で幅広く活躍してくれます。
+
+
+================================================================================
+### B_utility_knife -> 荷兰语 (nl)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[10.05s, in=1109 out=618]
+Dit is het enige stanleymes dat je ooit nog nodig hebt. Gemaakt van massief roestvrij staal van hoge kwaliteit, is deze 6-in-1 multitool gebouwd om lang mee te gaan, en hij wordt geleverd met 10 reservemesjes. De versterkte punt werkt als een platte schroevendraaier en blikopener. De achterkant is een flesopener, met een ingebouwde liniaal aan de zijkant. In het handvat zitten ook meerdere maten inbussleutels. Met de verstelbare knop bepaal je precies hoe ver het mesje uitsteekt. De mesjes zijn vlijmscherp en makkelijk te wisselen, en het lichaam is stevig, dik en zit lekker in de hand. Geen zware gereedschapskist meer nodig, want dit ding doet het allemaal.
+
+--- Gemini 3.1 Pro ---
+[25.29s, in=726 out=3290]
+Dit is het enige stanleymes dat je nog nodig hebt. Deze 6 in 1 multitool is gemaakt van massief roestvrij staal, gaat superlang mee en je krijgt er tien reservemesjes bij. De stevige punt kun je gebruiken als platte schroevendraaier en blikopener. Aan de achterkant zit een flesopener en op de zijkant een ingebouwde liniaal. Het handvat heeft zelfs inbussleutels in meerdere maten. Met de handige knop bepaal je precies hoe ver het mesje uitsteekt. De vlijmscherpe mesjes vervang je in een handomdraai en de behuizing is dik, stevig en ligt comfortabel in de hand. Een zware gereedschapskist is dus niet meer nodig, want deze alles in een tool doet het allemaal.
+
+--- Gemini 3 Flash ---
+[4.16s, in=911 out=553]
+Dit is waarschijnlijk het laatste afbreekmes dat je ooit hoeft te kopen. Deze 6 in 1 multitool is gemaakt van stevig roestvrij staal en gaat echt jaren mee, plus je krijgt er direct 10 reservemesjes bij. De versterkte punt kun je gebruiken als platte schroevendraaier en blikopener. Aan de achterkant zit een flessenopener en er staat zelfs een liniaal op de zijkant. In het handvat zitten ook verschillende maten inbussleutels verwerkt. Met de draaiknop stel je de lengte van het mes heel precies in. De vlijmscherpe mesjes zijn simpel te vervangen en de behuizing voelt robuust en fijn aan in de hand. Je hebt geen zware gereedschapskist meer nodig, want deze alles-in-één tool kan het allemaal.
+
+
+================================================================================
+### B_utility_knife -> 葡萄牙语 (pt)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[7.89s, in=1544 out=573]
+Olha só esta faca multiusos, a única que vais precisar. Feita em aço inoxidável maciço de qualidade, é uma ferramenta 6 em 1 com 10 lâminas de substituição incluídas. A ponta reforçada funciona como chave de fenda e abre-latas. A parte traseira é um abre-garrafas, com uma régua integrada na lateral. O cabo ainda inclui chaves hexagonais de vários tamanhos. O botão ajustável controla o comprimento da lâmina com precisão. As lâminas são muito afiadas e fáceis de trocar, e o corpo é robusto e confortável. Não precisas de uma caixa de ferramentas pesada, esta faz tudo.
+
+--- Gemini 3.1 Pro ---
+[FAIL] TypeError: LLM 返回内容为 None
+
+--- Gemini 3 Flash ---
+[3.99s, in=1329 out=420]
+Este e o unico x-ato que vais precisar. Feito em aco inoxidavel de alta qualidade, esta ferramenta 6 em 1 e super resistente e traz 10 laminas extra. A ponta reforcada serve como chave de fendas e abre-latas. Na parte de tras tens um abre-capsulas e uma regua lateral. O cabo ainda inclui chaves sextavadas de varios tamanhos. O botao ajustavel permite controlar o comprimento da lamina com precisao. As laminas sao muito afiadas e faceis de trocar, com um corpo robusto e confortavel. Esquece a caixa de ferramentas pesada, este acessorio faz tudo.
+
+
+================================================================================
+### B_utility_knife -> 瑞典语 (sv)
+================================================================================
+**Source EN (8 segs):**
+This is the last utility knife you'll ever need. Made of high quality solid stainless steel, this 6 in one multi tool is built to last, and it comes with 10 replacement blades. The reinforced tip works as a flat head screwdriver and can opener. The tail is a bottle opener, with a built in ruler on the side. The handle also includes multi size hex wrenches. The adjustable knob lets you control blade length precisely. Razor sharp blades are easy to change, and the body is thick, sturdy and comfortable. No need for a heavy toolbox, this all in one tool does it all. Get yours today.
+
+--- Claude Sonnet 4.6 ---
+[11.06s, in=1104 out=625]
+Det här är den enda universalkniven du någonsin kommer att behöva. Den är tillverkad i massivt rostfritt stål av hög kvalitet, ett 6-i-1 multiverktyg som håller länge, och den levereras med 10 utbytesblad. Den förstärkta spetsen fungerar som en spårskruvmejsel och konservöppnare. Bakänden är en flasköppnare, och på sidan finns ett inbyggt linjal. Handtaget har också hexnycklar i flera storlekar. Den justerbara ratten låter dig styra bladlängden exakt. Bladen är rakbladsvassa och enkla att byta, och kroppen är tjock, stadig och bekväm att hålla i. Inget behov av en tung verktygslåda, det här verktyget fixar allt.
+
+--- Gemini 3.1 Pro ---
+[133.04s, in=723 out=3666]
+Det här är den sista universalkniven du kommer behöva köpa. Den är gjord av rejält rostfritt stål och är ett smart 6-i-1 multiverktyg som levereras med tio extrablad. Den förstärkta spetsen fungerar både som spårskruvmejsel och konservöppnare. I andra änden finns en kapsylöppnare och på sidan sitter en inbyggd linjal. Handtaget har även inbyggda insexnycklar i flera storlekar. Med det justerbara vredet kan du ställa in bladets längd precis som du vill ha det. Bladen är riktigt vassa och enkla att byta ut, och själva kniven är rejäl och ligger väldigt bra i handen. Du slipper släpa på en tung verktygslåda när du har ett smidigt allt-i-ett-verktyg som klarar det mesta.
+
+--- Gemini 3 Flash ---
+[4.28s, in=908 out=526]
+Det här är förmodligen den sista universalkniven du någonsin behöver köpa. Den är gjord i rejält rostfritt stål, byggd för att hålla och kommer med tio extra rakblad. Den förstärkta spetsen fungerar som både spårskruvmejsel och konservöppnare. I änden finns en kapsylöppnare och på sidan hittar du en inbyggd linjal. Handtaget har dessutom sexkantsnycklar i flera olika storlekar. Med det justerbara vredet kan du ställa in bladlängden exakt som du vill ha den. Bladen är supervassa och lätta att byta, och själva kniven känns rejäl och bekväm i handen. Du slipper släpa på en tung verktygslåda när det här multiverktyget löser det mesta.
+
