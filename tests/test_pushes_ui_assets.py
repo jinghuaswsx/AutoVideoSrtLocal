@@ -107,6 +107,38 @@ def test_eval_country_table_expands_risk_section_but_keeps_meta_collapsed():
     assert 'return `<details class="ect-collapsible" open>' not in meta_section
 
 
+def test_eval_country_table_has_compact_push_detail_table_renderer():
+    script = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
+
+    assert "function renderCompact" in script
+    assert "function compactTableHtml" in script
+    assert "slice(0, 8)" in script
+    assert ".ect-compact-table" in script
+    assert ".ect-compact-status" in script
+    assert ".ect-compact-reason" in script
+    assert "renderCompact: renderCompact" in script
+
+
+def test_eval_country_table_prioritizes_and_highlights_current_language():
+    script = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
+
+    assert "function movePrimaryCountryFirst" in script
+    assert "opts.primaryLang" in script
+    assert "ect-compact-primary" in script
+    assert ".ect-compact-primary" in script
+    assert "width: 272px" in script
+    assert "color: var(--oc-accent)" in script
+
+
+def test_push_modal_uses_compact_ai_evaluation_detail_table():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert "function renderAuditDetailNode" in script
+    assert "window.EvalCountryTable.renderCompact" in script
+    assert "{ primaryLang: item.lang }" in script
+    assert "audit-country-table-value" in script
+
+
 def test_pushes_and_medias_use_shared_ai_evaluation_detail_modal():
     shared = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
     pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")

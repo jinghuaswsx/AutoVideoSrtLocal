@@ -321,6 +321,21 @@
     }
   }
 
+  function renderAuditDetailNode(detail, options) {
+    const opts = options || {};
+    const wrap = el('div', { class: 'v audit-country-table-value' });
+    const table = window.EvalCountryTable;
+    if (table && typeof table.renderCompact === 'function') {
+      const parsed = typeof table.parse === 'function' ? table.parse(detail) : null;
+      if (parsed && Array.isArray(parsed.countries) && parsed.countries.length) {
+        wrap.innerHTML = window.EvalCountryTable.renderCompact(detail, opts);
+        return wrap;
+      }
+    }
+    wrap.appendChild(el('pre', { class: 'audit-detail-pre' }, formatAuditDetail(detail)));
+    return wrap;
+  }
+
   function renderAuditCell(it) {
     const result = String(it.ai_evaluation_result || '').trim() || '未评估';
     const remark = String(it.remark || '').trim() || '暂无备注';
@@ -1007,9 +1022,7 @@
     addAuditKV('AI评分', formatAuditScore(item.ai_score));
     addAuditKV('AI评估结果', item.ai_evaluation_result || '未评估');
     addAuditKV('备注说明', item.remark || '暂无备注');
-    addAuditKV('AI评估详情', el('span', { class: 'v' }, [
-      el('pre', { class: 'audit-detail-pre' }, formatAuditDetail(item.ai_evaluation_detail)),
-    ]));
+    addAuditKV('AI评估详情', renderAuditDetailNode(item.ai_evaluation_detail, { primaryLang: item.lang }));
     auditCard.appendChild(auditKV);
     body.appendChild(auditCard);
 

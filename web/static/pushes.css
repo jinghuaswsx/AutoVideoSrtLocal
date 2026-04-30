@@ -1058,6 +1058,10 @@
 }
 .pm-kv .k { color: var(--oc-fg-muted); font-weight: 500; }
 .pm-kv .v { color: var(--oc-fg); word-break: break-word; line-height: 1.5; }
+.pm-kv .v.audit-country-table-value {
+  min-width: 0;
+  width: 100%;
+}
 .pm-kv .v code, .pm-sub code, .pm-list code {
   font-family: "JetBrains Mono", "Geist Mono", ui-monospace, Consolas, monospace;
   font-size: 12px; background: var(--oc-bg-subtle);

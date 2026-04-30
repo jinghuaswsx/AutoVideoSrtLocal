@@ -79,6 +79,30 @@
     .ect-reason { color: var(--oc-fg); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
     .ect-reason.ect-muted { color: var(--oc-fg-subtle); }
 
+    .ect-compact-scroll { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--oc-border); border-radius: var(--oc-r-md, 8px); background: var(--oc-bg); }
+    .ect-compact-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+    .ect-compact-table th,
+    .ect-compact-table td { padding: var(--oc-sp-2, 8px) var(--oc-sp-3, 12px); border-bottom: 1px solid var(--oc-border); border-right: 1px solid var(--oc-border); vertical-align: top; font-size: 12px; line-height: 1.45; text-align: center; }
+    .ect-compact-table tr:last-child > th,
+    .ect-compact-table tr:last-child > td { border-bottom: none; }
+    .ect-compact-table th:last-child,
+    .ect-compact-table td:last-child { border-right: none; }
+    .ect-compact-table thead th { background: var(--oc-bg-subtle); color: var(--oc-fg); font-weight: 600; }
+    .ect-compact-table .ect-row-label { position: sticky; left: 0; z-index: 2; width: 84px; min-width: 84px; max-width: 84px; background: var(--oc-bg-subtle); color: var(--oc-fg-muted); font-weight: 500; text-align: left; white-space: nowrap; }
+    .ect-compact-table thead .ect-row-label { z-index: 3; }
+    .ect-compact-country { width: 136px; min-width: 136px; max-width: 136px; }
+    .ect-compact-country.ect-compact-primary { width: 272px; min-width: 272px; max-width: 272px; }
+    .ect-compact-country .ect-thead-country { align-items: center; }
+    .ect-compact-primary .ect-thead-name,
+    .ect-compact-primary .ect-thead-lang,
+    .ect-compact-primary .ect-thead-language { color: var(--oc-accent); font-weight: 700; }
+    .ect-compact-status { display: flex; align-items: center; justify-content: center; min-height: 30px; }
+    .ect-compact-icon { width: 26px; height: 26px; border-radius: var(--oc-r-full, 9999px); display: inline-flex; align-items: center; justify-content: center; }
+    .ect-compact-icon.ect-compact-yes { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+    .ect-compact-icon.ect-compact-no { background: var(--oc-danger-bg); color: var(--oc-danger-fg); }
+    .ect-compact-reason { color: var(--oc-fg); font-size: 12px; line-height: 1.45; text-align: left; word-break: break-word; }
+    .ect-compact-reason.ect-muted { color: var(--oc-fg-subtle); text-align: center; }
+
     .ect-risk { display: inline-flex; padding: 2px 10px; border-radius: var(--oc-r-full, 9999px); font-size: 12px; font-weight: 500; }
     .ect-risk-low { background: var(--oc-success-bg); color: var(--oc-success-fg); }
     .ect-risk-medium { background: var(--oc-warning-bg); color: var(--oc-warning-fg); }
@@ -340,6 +364,38 @@
       : `<div class="ect-reason ect-muted">—</div>`;
   }
 
+  function compactReasonText(rawReason) {
+    const normalized = String(rawReason || '')
+      .replace(/\s+/g, ' ')
+      .replace(/^原因[:：]\s*/, '')
+      .trim();
+    if (!normalized) return '';
+    const firstClause = normalized
+      .split(/[。.!！？?；;]/)
+      .map(part => part.trim())
+      .filter(Boolean)[0] || normalized;
+    const clipped = firstClause.length > 36
+      ? `${firstClause.slice(0, 36).replace(/[，、,：:\s]+$/g, '')}…`
+      : firstClause;
+    return clipped;
+  }
+
+  function compactStatusCellHtml(c) {
+    const ok = !!c.is_suitable;
+    const label = ok ? '适合' : '不适合';
+    return `<div class="ect-compact-status">
+      <span class="ect-compact-icon ${ok ? 'ect-compact-yes' : 'ect-compact-no'}" aria-label="${label}" title="${label}">${ok ? checkSvg() : crossSvg()}</span>
+    </div>`;
+  }
+
+  function compactReasonCellHtml(c) {
+    const fullReason = String(c.reason || '').trim();
+    const brief = compactReasonText(fullReason);
+    return brief
+      ? `<div class="ect-compact-reason" title="${escapeHtml(fullReason)}">${escapeHtml(brief)}</div>`
+      : `<div class="ect-compact-reason ect-muted">—</div>`;
+  }
+
   function riskCellHtml(c) {
     const cls = riskClass(c.risk_level);
     if (!cls) {
@@ -371,6 +427,62 @@
       }
       return `<th class="ect-cell"><div class="ect-thead-country"><span class="ect-thead-name">${escapeHtml(country)}</span>${subline}</div></th>`;
     }).join('');
+  }
+
+  function normalizePrimaryValue(value) {
+    return String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  }
+
+  function countryMatchesPrimary(c, opts) {
+    const targets = [opts.primaryLang, opts.primaryLanguage, opts.primaryCountry]
+      .map(normalizePrimaryValue)
+      .filter(Boolean);
+    if (!targets.length) return false;
+    const values = [c.lang, c.language, c.country, c.country_code, c.locale]
+      .map(normalizePrimaryValue)
+      .filter(Boolean);
+    return targets.some(t => values.includes(t));
+  }
+
+  function movePrimaryCountryFirst(countries, opts) {
+    const primaryIndex = countries.findIndex(c => countryMatchesPrimary(c, opts || {}));
+    if (primaryIndex < 0) return countries.slice();
+    const primary = Object.assign({}, countries[primaryIndex], { __isPrimary: true });
+    return [primary].concat(countries.filter((_, index) => index !== primaryIndex));
+  }
+
+  function buildCompactHeaderCells(countries) {
+    return countries.map(c => {
+      const country = String(c.country || c.language || c.lang || '—').trim();
+      const lang = String(c.lang || '').trim();
+      const language = String(c.language || '').trim();
+      const showLanguage = !!language && language !== country && language.toLowerCase() !== lang.toLowerCase();
+      let subline = '';
+      if (lang && showLanguage) {
+        subline = `<span class="ect-thead-lang">${escapeHtml(lang)} · <span class="ect-thead-language">${escapeHtml(language)}</span></span>`;
+      } else if (lang) {
+        subline = `<span class="ect-thead-lang">${escapeHtml(lang)}</span>`;
+      } else if (showLanguage) {
+        subline = `<span class="ect-thead-language">${escapeHtml(language)}</span>`;
+      }
+      const cls = c.__isPrimary ? 'ect-compact-country ect-compact-primary' : 'ect-compact-country';
+      return `<th class="${cls}"><div class="ect-thead-country"><span class="ect-thead-name">${escapeHtml(country)}</span>${subline}</div></th>`;
+    }).join('');
+  }
+
+  function compactTableHtml(countries) {
+    const headerCells = buildCompactHeaderCells(countries);
+    const statusRow = countries.map(c => `<td class="ect-compact-country${c.__isPrimary ? ' ect-compact-primary' : ''}">${compactStatusCellHtml(c)}</td>`).join('');
+    const reasonRow = countries.map(c => `<td class="ect-compact-country${c.__isPrimary ? ' ect-compact-primary' : ''}">${compactReasonCellHtml(c)}</td>`).join('');
+    return `<div class="ect-compact-scroll">
+      <table class="ect-compact-table" aria-label="AI 评估国家适配表">
+        <thead><tr><th class="ect-row-label">国家</th>${headerCells}</tr></thead>
+        <tbody>
+          <tr><th class="ect-row-label">是否合适</th>${statusRow}</tr>
+          <tr><th class="ect-row-label">原因</th>${reasonRow}</tr>
+        </tbody>
+      </table>
+    </div>`;
   }
 
   function mainTableHtml(countries) {
@@ -469,6 +581,18 @@
       extraSectionHtml(countries),
       metaSectionHtml(detail),
     ].filter(Boolean).join('');
+  }
+
+  function renderCompact(rawDetail, options) {
+    ensureStyle();
+    const opts = options || {};
+    const detail = parse(rawDetail);
+    const countries = extractCountries(detail);
+    if (!countries.length) {
+      return `<div class="ect-empty">暂无评估详情</div>`;
+    }
+    const visibleCountries = movePrimaryCountryFirst(countries, opts).slice(0, 8);
+    return compactTableHtml(visibleCountries);
   }
 
   function formatDetail(detail) {
@@ -598,5 +722,10 @@
     };
   }
 
-  window.EvalCountryTable = { render: render, parse: parse, openModal: openAiEvaluationDetailModal };
+  window.EvalCountryTable = {
+    render: render,
+    parse: parse,
+    renderCompact: renderCompact,
+    openModal: openAiEvaluationDetailModal,
+  };
 })();
