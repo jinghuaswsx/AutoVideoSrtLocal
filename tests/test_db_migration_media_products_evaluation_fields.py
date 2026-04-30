@@ -31,3 +31,16 @@ def test_media_products_evaluation_fields_migration_is_idempotent():
 
     assert "ENUM(''上架'',''下架'')" in body
     assert "DEFAULT ''上架''" in body
+
+
+def test_media_products_ai_evaluation_result_index_migration_is_idempotent():
+    body = Path(
+        "db/migrations/2026_04_30_media_products_ai_evaluation_result_index.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "information_schema.STATISTICS" in body
+    assert "INDEX_NAME = 'idx_media_products_ai_eval_deleted'" in body
+    assert (
+        "ADD KEY idx_media_products_ai_eval_deleted "
+        "(ai_evaluation_result, deleted_at)"
+    ) in body
