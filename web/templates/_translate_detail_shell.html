@@ -200,6 +200,7 @@
   {% set _force_restart_api = '/api/tasks' %}
 {% endif %}
 {% set _current_src_lang = state.source_language if state.user_specified_source_language else '' %}
+{% set _default_src_lang = _current_src_lang or state.detected_source_language or 'zh' %}
 <div class="detail-topbar">
   <a class="back-link" href="{{ detail_back_href }}">{{ detail_back_label }}</a>
   {% if _force_restart_api %}
@@ -225,19 +226,18 @@
     <label for="forceRestartLangSelect" class="source-lang-picker-label">原始语言</label>
     <select id="forceRestartLangSelect"
             class="source-lang-select"
-            data-current-value="{{ _current_src_lang }}">
-      <option value="" {% if _current_src_lang == '' %}selected{% endif %}>自动识别</option>
-      <option value="zh" {% if _current_src_lang == 'zh' %}selected{% endif %}>中文</option>
-      <option value="en" {% if _current_src_lang == 'en' %}selected{% endif %}>英文</option>
-      <option value="es" {% if _current_src_lang == 'es' %}selected{% endif %}>西班牙语</option>
-      <option value="pt" {% if _current_src_lang == 'pt' %}selected{% endif %}>葡萄牙语</option>
-      <option value="fr" {% if _current_src_lang == 'fr' %}selected{% endif %}>法语</option>
-      <option value="it" {% if _current_src_lang == 'it' %}selected{% endif %}>意大利语</option>
-      <option value="ja" {% if _current_src_lang == 'ja' %}selected{% endif %}>日语</option>
-      <option value="de" {% if _current_src_lang == 'de' %}selected{% endif %}>德语</option>
-      <option value="nl" {% if _current_src_lang == 'nl' %}selected{% endif %}>荷兰语</option>
-      <option value="sv" {% if _current_src_lang == 'sv' %}selected{% endif %}>瑞典语</option>
-      <option value="fi" {% if _current_src_lang == 'fi' %}selected{% endif %}>芬兰语</option>
+            data-current-value="{{ _default_src_lang }}">
+      <option value="zh" {% if _default_src_lang == 'zh' %}selected{% endif %}>中文</option>
+      <option value="en" {% if _default_src_lang == 'en' %}selected{% endif %}>英文</option>
+      <option value="es" {% if _default_src_lang == 'es' %}selected{% endif %}>西班牙语</option>
+      <option value="pt" {% if _default_src_lang == 'pt' %}selected{% endif %}>葡萄牙语</option>
+      <option value="fr" {% if _default_src_lang == 'fr' %}selected{% endif %}>法语</option>
+      <option value="it" {% if _default_src_lang == 'it' %}selected{% endif %}>意大利语</option>
+      <option value="ja" {% if _default_src_lang == 'ja' %}selected{% endif %}>日语</option>
+      <option value="de" {% if _default_src_lang == 'de' %}selected{% endif %}>德语</option>
+      <option value="nl" {% if _default_src_lang == 'nl' %}selected{% endif %}>荷兰语</option>
+      <option value="sv" {% if _default_src_lang == 'sv' %}selected{% endif %}>瑞典语</option>
+      <option value="fi" {% if _default_src_lang == 'fi' %}selected{% endif %}>芬兰语</option>
     </select>
   </div>
   {% endif %}
