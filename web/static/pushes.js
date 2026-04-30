@@ -672,6 +672,17 @@
     return list;
   }
 
+  function renderQualityEvidence(result) {
+    const evidence = result && Array.isArray(result.evidence) ? result.evidence : [];
+    if (!evidence.length) return null;
+    const root = el('div', { class: 'pm-quality-evidence' });
+    root.appendChild(el('div', { class: 'pm-quality-evidence-title' }, '判断依据'));
+    const list = el('ul', {});
+    evidence.slice(0, 4).forEach(item => list.appendChild(el('li', {}, String(item))));
+    root.appendChild(list);
+    return root;
+  }
+
   function renderQualityDetailBlock(label, result, previewNode) {
     const data = result || {};
     const meta = qualityScoreMeta(data.status);
@@ -684,6 +695,8 @@
     block.appendChild(el('p', { class: 'pm-quality-summary' }, data.summary || '暂无检查结果'));
     const issues = renderQualityIssues(data);
     if (issues) block.appendChild(issues);
+    const evidence = renderQualityEvidence(data);
+    if (evidence) block.appendChild(evidence);
     return block;
   }
 

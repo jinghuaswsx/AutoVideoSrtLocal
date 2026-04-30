@@ -564,6 +564,25 @@
   font-size: 12px;
   line-height: 1.5;
 }
+.pm-quality-evidence {
+  margin-top: var(--oc-sp-3);
+  padding: var(--oc-sp-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+  background: var(--oc-bg-subtle);
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pm-quality-evidence-title {
+  margin-bottom: var(--oc-sp-1);
+  color: var(--oc-fg);
+  font-weight: 700;
+}
+.pm-quality-evidence ul {
+  margin: 0;
+  padding-left: 18px;
+}
 .pm-quality-retry {
   flex: 0 0 auto;
 }

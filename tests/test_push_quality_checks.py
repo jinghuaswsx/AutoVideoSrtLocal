@@ -330,6 +330,99 @@ def test_copy_prompt_demands_each_copy_field_target_language(monkeypatch):
     assert "非目标语种营销文案" in prompt
 
 
+def test_copy_prompt_demands_chinese_human_readable_result_fields(monkeypatch):
+    from appcore import push_quality_checks as qc
+
+    captured = {}
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["messages"] = kwargs["messages"]
+        return {
+            "json": {
+                "status": "passed",
+                "is_clean": True,
+                "summary": "文案是法语，符合目标语种要求。",
+                "issues": [],
+                "target_language_match": True,
+                "detected_languages": ["法语"],
+                "evidence": ["title/message/description 均为法语营销文案"],
+            }
+        }
+
+    monkeypatch.setattr(qc.llm_client, "invoke_chat", fake_invoke_chat)
+
+    qc.check_copy(
+        {"id": 7, "product_id": 3, "lang": "fr"},
+        {"id": 3, "name": "Demo", "product_code": "demo-rjc"},
+        {"title": "Titre", "message": "Bonjour", "description": "Description"},
+    )
+
+    all_prompt_text = "\n".join(message["content"] for message in captured["messages"])
+    assert "简体中文" in all_prompt_text
+    assert "summary" in all_prompt_text
+    assert "issues" in all_prompt_text
+    assert "evidence" in all_prompt_text
+    assert "判断依据" in all_prompt_text
+
+
+def test_fingerprints_change_when_quality_prompt_version_changes(monkeypatch):
+    from appcore import push_quality_checks as qc
+
+    item = {
+        "id": 7,
+        "product_id": 3,
+        "lang": "fr",
+        "object_key": "videos/v1.mp4",
+        "cover_object_key": "covers/c1.jpg",
+    }
+    product = {"id": 3, "name": "Demo"}
+    monkeypatch.setattr(
+        qc.pushes,
+        "resolve_localized_text_payload",
+        lambda item: {
+            "title": "Titre",
+            "message": "Bonjour",
+            "description": "Description",
+            "lang": "法语",
+        },
+    )
+
+    monkeypatch.setattr(qc, "QUALITY_PROMPT_VERSION", "zh-cn-v1", raising=False)
+    first = qc.build_fingerprints(item, product)
+    monkeypatch.setattr(qc, "QUALITY_PROMPT_VERSION", "zh-cn-v2", raising=False)
+    second = qc.build_fingerprints(item, product)
+
+    assert first.copy_fingerprint != second.copy_fingerprint
+    assert first.cover_fingerprint != second.cover_fingerprint
+    assert first.video_fingerprint != second.video_fingerprint
+
+
+def test_rerun_existing_checked_items_evaluates_distinct_items(monkeypatch):
+    from appcore import push_quality_checks as qc
+
+    monkeypatch.setattr(qc, "ensure_table", lambda: None)
+    monkeypatch.setattr(
+        qc,
+        "query",
+        lambda sql, args=(): [{"item_id": 7}, {"item_id": 8}, {"item_id": 7}],
+        raising=False,
+    )
+    evaluated = []
+    monkeypatch.setattr(
+        qc,
+        "evaluate_item",
+        lambda item_id, source="manual": evaluated.append((item_id, source)) or {"id": item_id, "status": "passed"},
+    )
+
+    summary = qc.rerun_existing_checked_items(limit=10)
+
+    assert evaluated == [(7, "manual"), (8, "manual")]
+    assert summary["scanned"] == 3
+    assert summary["evaluated"] == 2
+    assert summary["skipped_duplicate"] == 1
+    assert summary["errors"] == 0
+
+
 def test_video_prompt_requires_speech_subtitle_and_visual_language_checks():
     from appcore import push_quality_checks as qc
 

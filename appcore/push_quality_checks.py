@@ -13,14 +13,22 @@ from pathlib import Path
 from typing import Any
 
 from appcore import llm_client, local_media_storage, medias, pushes, tos_clients
-from appcore.db import execute, query_one
+from appcore.db import execute, query, query_one
 
 log = logging.getLogger(__name__)
 
 USE_CASE_CODE = "push_quality.check"
 PROVIDER = "openrouter"
 MODEL = "google/gemini-3.1-flash-lite-preview"
+QUALITY_PROMPT_VERSION = "zh-cn-human-readable-2026-04-30"
 _CHECK_STATUSES = {"passed", "warning", "failed", "error"}
+
+_CHINESE_OUTPUT_RULES = (
+    "输出语言要求：所有面向人工阅读的字段必须使用简体中文，包括 summary、issues、evidence、"
+    "detected_languages、speech_language、subtitle_language、checked_scope、ocr_text。"
+    "summary 用一句中文概要说明结论；issues 用中文列出问题；evidence 用中文写判断依据，"
+    "可以保留必要原文片段，但解释文字必须是中文。不要用英文句子解释结果。"
+)
 
 _TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS media_push_quality_checks (
@@ -101,6 +109,7 @@ def build_fingerprints(item: dict, product: dict | None = None) -> QualityFinger
     return QualityFingerprints(
         copy_fingerprint=_hash_payload({
             "kind": "copy",
+            "quality_prompt_version": QUALITY_PROMPT_VERSION,
             "product_id": product_id,
             "lang": lang,
             "title": copy_payload.get("title") or "",
@@ -109,12 +118,14 @@ def build_fingerprints(item: dict, product: dict | None = None) -> QualityFinger
         }),
         cover_fingerprint=_hash_payload({
             "kind": "cover",
+            "quality_prompt_version": QUALITY_PROMPT_VERSION,
             "item_id": item_id,
             "lang": lang,
             "cover_object_key": str((item or {}).get("cover_object_key") or ""),
         }),
         video_fingerprint=_hash_payload({
             "kind": "video",
+            "quality_prompt_version": QUALITY_PROMPT_VERSION,
             "item_id": item_id,
             "lang": lang,
             "object_key": str((item or {}).get("object_key") or ""),
@@ -179,6 +190,75 @@ def latest_for_item(item_id: int) -> dict[str, Any] | None:
         (int(item_id),),
     )
     return _normalize_row(row)
+
+
+def rerun_existing_checked_items(
+    *,
+    limit: int | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Re-evaluate items that already have push quality-check records.
+
+    This is intentionally manual-source: it bypasses old auto reuse and writes a
+    fresh latest result for the item after prompt-version changes.
+    """
+    ensure_table()
+    safe_limit = max(1, int(limit)) if limit is not None else None
+    sql = (
+        "SELECT item_id FROM media_push_quality_checks "
+        "WHERE status<>'running' "
+        "ORDER BY updated_at DESC, id DESC"
+    )
+    args: tuple[Any, ...] = ()
+    if safe_limit is not None:
+        sql += " LIMIT %s"
+        args = (safe_limit,)
+
+    rows = query(sql, args)
+    seen: set[int] = set()
+    summary: dict[str, Any] = {
+        "scanned": 0,
+        "evaluated": 0,
+        "skipped_duplicate": 0,
+        "errors": 0,
+        "dry_run": bool(dry_run),
+        "item_ids": [],
+        "error_items": [],
+    }
+    for row in rows:
+        summary["scanned"] += 1
+        try:
+            item_id = int(row.get("item_id") or 0)
+        except (TypeError, ValueError):
+            summary["errors"] += 1
+            summary["error_items"].append({"item_id": row.get("item_id"), "error": "invalid_item_id"})
+            continue
+        if item_id <= 0:
+            summary["errors"] += 1
+            summary["error_items"].append({"item_id": item_id, "error": "invalid_item_id"})
+            continue
+        if item_id in seen:
+            summary["skipped_duplicate"] += 1
+            continue
+        seen.add(item_id)
+        summary["item_ids"].append(item_id)
+        if dry_run:
+            continue
+        try:
+            result = evaluate_item(item_id, source="manual")
+            if result.get("status") == "error":
+                summary["errors"] += 1
+                summary["error_items"].append({
+                    "item_id": item_id,
+                    "error": result.get("error") or result.get("summary") or "evaluate_error",
+                })
+            else:
+                summary["evaluated"] += 1
+        except Exception as exc:
+            summary["errors"] += 1
+            summary["error_items"].append({"item_id": item_id, "error": str(exc)[:300]})
+            log.exception("rerun existing push quality check failed item_id=%s", item_id)
+    return summary
 
 
 def has_reusable_auto_result_for_item(item: dict, product: dict | None = None) -> bool:
@@ -407,27 +487,34 @@ def _response_schema() -> dict[str, Any]:
         "properties": {
             "status": {"type": "string", "enum": ["passed", "warning", "failed"]},
             "is_clean": {"type": "boolean"},
-            "summary": {"type": "string"},
+            "summary": {
+                "type": "string",
+                "description": "必须用简体中文返回一句概要，说明是否通过以及核心原因。",
+            },
             "issues": {
                 "type": "array",
+                "description": "必须用简体中文列出发现的问题；没有问题时返回空数组。",
                 "items": {"type": "string"},
             },
             "target_language_match": {"type": "boolean"},
             "detected_languages": {
                 "type": "array",
+                "description": "必须用简体中文写检测到的语种名称，例如“法语”“英语”。",
                 "items": {"type": "string"},
             },
             "evidence": {
                 "type": "array",
+                "description": "必须用简体中文写判断依据，可附必要原文片段或字段名。",
                 "items": {"type": "string"},
             },
             "ocr_text": {
                 "type": "array",
+                "description": "必须用简体中文概括识别到的画面文字；必要时可保留原文片段。",
                 "items": {"type": "string"},
             },
-            "speech_language": {"type": "string"},
-            "subtitle_language": {"type": "string"},
-            "checked_scope": {"type": "string"},
+            "speech_language": {"type": "string", "description": "必须用简体中文写语音/旁白语种。"},
+            "subtitle_language": {"type": "string", "description": "必须用简体中文写字幕/画面文字语种。"},
+            "checked_scope": {"type": "string", "description": "必须用简体中文写本次检查范围。"},
         },
     }
 
@@ -506,6 +593,7 @@ def check_copy(item: dict, product: dict, copy_payload: dict[str, Any] | None) -
     lang_label = _language_label(item)
     prompt = (
         "请检查跨境电商素材推送前的小语种文案是否纯净，并严格判断是否对应目标语种。"
+        f"{_CHINESE_OUTPUT_RULES}"
         f"目标语种：{lang_label}。\n"
         f"商品：{product.get('name') or ''} / {product.get('product_code') or ''}\n"
         "逐字段检查 title、message、description：每个字段里的可翻译营销文案必须是目标语种。"
@@ -514,6 +602,7 @@ def check_copy(item: dict, product: dict, copy_payload: dict[str, Any] | None) -
         "如果 title/message/description 任一字段的主体不是目标语种，应判为 failed；"
         "如果只有极少量可解释专有名词或证据不足，可判 warning。"
         "请在 evidence 中列出你依据的原文片段或字段名，detected_languages 写检测到的语种，"
+        "summary 必须是中文概要，issues 必须是中文问题列表，evidence 必须是中文判断依据。"
         "target_language_match 表示所有可翻译营销文案是否匹配目标语种。请只返回 JSON。"
         f"\n待检查文案：{json.dumps(copy_payload, ensure_ascii=False)}"
     )
@@ -522,7 +611,10 @@ def check_copy(item: dict, product: dict, copy_payload: dict[str, Any] | None) -
         messages=[
             {
                 "role": "system",
-                "content": "你是严格的小语种本地化质检员，只输出符合 schema 的 JSON。",
+                "content": (
+                    "你是严格的小语种本地化质检员，只输出符合 schema 的 JSON。"
+                    "所有概要、问题、判断依据和语种说明都必须使用简体中文。"
+                ),
             },
             {"role": "user", "content": prompt},
         ],
@@ -571,6 +663,7 @@ def _visual_prompt(kind: str, item: dict, product: dict) -> str:
     base = (
         f"请检查这个{kind}是否适合作为目标语种 {lang_label} 的推送素材。"
         f"商品：{product.get('name') or ''} / {product.get('product_code') or ''}。"
+        f"{_CHINESE_OUTPUT_RULES}"
     )
     if "视频" in kind:
         return (
@@ -582,6 +675,7 @@ def _visual_prompt(kind: str, item: dict, product: dict) -> str:
             "品牌名、商品型号、URL、计量单位、商标和不可翻译专有名词可以保留。"
             "如果听不清语音、看不清字幕或片段证据不足，应判 warning，并在 evidence 说明不确定原因，不要默认通过。"
             "请填写 speech_language、subtitle_language、ocr_text、detected_languages、target_language_match、checked_scope。"
+            "summary 必须是中文概要，issues 必须是中文问题列表，evidence 必须是中文判断依据。"
             "请只输出 JSON。"
         )
     return (
@@ -592,6 +686,7 @@ def _visual_prompt(kind: str, item: dict, product: dict) -> str:
         "品牌名、商品型号、URL、计量单位、商标和不可翻译专有名词可以保留。"
         "如果文字太小、遮挡或证据不足，应判 warning，并在 evidence 说明不确定原因，不要默认通过。"
         "请填写 ocr_text、detected_languages、target_language_match、checked_scope。请只输出 JSON。"
+        "summary 必须是中文概要，issues 必须是中文问题列表，evidence 必须是中文判断依据。"
     )
 
 
