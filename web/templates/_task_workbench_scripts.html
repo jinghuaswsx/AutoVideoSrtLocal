@@ -1602,13 +1602,33 @@
   // ============================================================
   // 文案收敛内循环 —— 表格 + attempt 弹窗预览
   // ============================================================
+  function _rewriteWordWindowLabel(round) {
+    const rawWindow = Array.isArray(round.rewrite_word_window) ? round.rewrite_word_window : null;
+    const lo = rawWindow && rawWindow.length >= 2 ? Number(rawWindow[0]) : NaN;
+    const hi = rawWindow && rawWindow.length >= 2 ? Number(rawWindow[1]) : NaN;
+    const hasWindow = Number.isFinite(lo) && Number.isFinite(hi);
+    const ratio = Number(round.rewrite_word_tolerance_ratio);
+    const pctLabel = Number.isFinite(ratio) && ratio > 0
+      ? `±${Math.round(ratio * 100)}%`
+      : '';
+    const abs = Number(round.rewrite_word_tolerance_abs);
+    const absLabel = Number.isFinite(abs) && abs > 0 ? `约 ±${abs} 词` : '';
+    const detailBits = [pctLabel, absLabel].filter(Boolean);
+    if (hasWindow) {
+      return `允许 ${lo}–${hi} 词${detailBits.length ? `（${detailBits.join('，')}）` : ''}`;
+    }
+    if (detailBits.length) return `允许 ${detailBits.join('，')}`;
+    return '';
+  }
+
   function _rewriteAttemptsHtml(round) {
     const attempts = Array.isArray(round.rewrite_attempts) ? round.rewrite_attempts : [];
     if (!attempts.length) return '';
     const base = (typeof TASK_WORKBENCH_CONFIG !== 'undefined' && TASK_WORKBENCH_CONFIG.apiBase) || '/api/tasks';
+    const windowLabel = _rewriteWordWindowLabel(round);
     const rows = attempts.map(a => {
       const ok = a.accepted
-        ? '<span style="color:var(--success-fg);">✓ 命中 ±10%</span>'
+        ? '<span style="color:var(--success-fg);">✓ 命中</span>'
         : '<span style="color:var(--fg-subtle);">✗ 超差</span>';
       const used = a.is_used_for_tts
         ? '<span style="color:var(--accent);font-weight:700;">（本轮采用）</span>'
@@ -1630,9 +1650,10 @@
         </tr>
         <tr class="duration-attempt-preview-row"><td colspan="5">${previewHtml}</td></tr>`;
     }).join('');
+    const windowSuffix = windowLabel ? `；${windowLabel}` : '';
     const pickInfo = round.rewrite_converged === false
-      ? `（${attempts.length} 次均未命中 ±10%，挑最接近目标的第 ${round.rewrite_attempt_used} 次：${round.rewrite_words_actual} 词）`
-      : `（第 ${round.rewrite_attempt_used} 次命中，${round.rewrite_words_actual} 词）`;
+      ? `（${attempts.length} 次均未命中${windowLabel || '词数窗口'}，挑最接近目标的第 ${round.rewrite_attempt_closest || round.rewrite_attempt_used} 次：${round.rewrite_words_actual} 词）`
+      : `（第 ${round.rewrite_attempt_used} 次命中，${round.rewrite_words_actual} 词${windowSuffix}）`;
     return `
       <details class="duration-round-attempts" open>
         <summary>文案收敛内循环：${attempts.length} 次 rewrite ${pickInfo}</summary>
@@ -1799,8 +1820,9 @@
         truncationParts.push(`✂️ 删除 ${round.removed_count} 个朗读块（${(round.removed_duration || 0).toFixed(1)}s）`);
       }
       const truncationInfo = truncationParts.join(' · ');
+      const rewriteWindowLabel = _rewriteWordWindowLabel(round);
       const skippedInfo = round.rewrite_audio_skipped
-        ? `文案未进入词数置信区间（目标 ${round.target_words} 词，允许 ${round.rewrite_word_window ? round.rewrite_word_window.join('–') : '±' + round.rewrite_word_tolerance_abs} 词），本轮未生成语音。`
+        ? `文案未进入词数置信区间（目标 ${round.target_words} 词${rewriteWindowLabel ? '，' + rewriteWindowLabel : ''}），本轮未生成语音。`
         : '';
 
       // 内联音频播放器

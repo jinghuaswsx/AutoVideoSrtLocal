@@ -626,7 +626,7 @@ class PipelineRunner:
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
 
                 # ========= 字数收敛内循环（最多 5 次 rewrite）=========
-                # LLM 对 target_words 经常不听话。先确认文案字数在 ±10% 窗口内
+                # LLM 对 target_words 经常不听话。先确认文案字数在置信窗口内，
                 # 再去跑 TTS，避免浪费 TTS 调用。
                 # 每次 attempt 的完整译文 JSON 单独落盘，UI 可逐一查看。
                 #

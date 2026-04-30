@@ -60,5 +60,8 @@ def test_tts_generation_summary_is_rendered_in_duration_log():
     assert "次分段语音合成" in script
     assert "audio_segment_calls" in script
     assert "audio_rounds" in script
+    assert "rewrite_word_tolerance_ratio" in script
+    assert "rewrite_word_window" in script
+    assert "±10%" not in script
     assert "duration-generation-summary" in script
     assert ".duration-generation-summary" in styles
