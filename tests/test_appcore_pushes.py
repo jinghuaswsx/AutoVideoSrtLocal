@@ -525,6 +525,30 @@ def test_list_items_for_push_selects_product_owner_name(monkeypatch):
     assert "LEFT JOIN users u ON u.id = p.user_id" in sql
 
 
+def test_list_items_for_push_filter_by_owner_id(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    def fake_query(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    rows, total = pushes.list_items_for_push(owner_id=42, offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    assert "p.user_id = %s" in captured["sql"]
+    assert 42 in captured["args"]
+
+
 # ---------- resolve_push_texts ----------
 
 

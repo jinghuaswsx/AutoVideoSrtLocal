@@ -832,6 +832,7 @@ def list_items_for_push(
     langs: list[str] | None = None,
     keyword: str = "",
     product_term: str = "",
+    owner_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     offset: int = 0,
@@ -857,6 +858,9 @@ def list_items_for_push(
         where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
         like = f"%{product_term}%"
         args.extend([like, like])
+    if owner_id is not None:
+        where.append("p.user_id = %s")
+        args.append(int(owner_id))
     if date_from:
         where.append("i.created_at >= %s")
         args.append(date_from)

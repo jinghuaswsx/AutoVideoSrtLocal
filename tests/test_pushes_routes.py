@@ -266,6 +266,24 @@ def test_pushes_api_items_includes_product_owner_name(
     assert resp.get_json()["items"][0]["product_owner_name"] == "张三"
 
 
+def test_pushes_api_items_passes_owner_id_filter(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_items_for_push(**kwargs):
+        captured.update(kwargs)
+        return [], 0
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        fake_list_items_for_push,
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?owner_id=42&page=1")
+
+    assert resp.status_code == 200
+    assert captured["owner_id"] == 42
+
+
 def test_pushes_api_items_passes_shopify_image_confirmation_to_status(
     authed_client_no_db, monkeypatch,
 ):
