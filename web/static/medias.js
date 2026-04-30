@@ -88,9 +88,14 @@
   }
 
   // 新增产品首屏/编辑页英语素材：只要求 YYYY.MM.DD-产品名-xxxxx.mp4。
+  function validateFilenameNoSpaces(filename) {
+    return String(filename || '').includes(' ') ? ['文件名不能包含空格'] : [];
+  }
+
   function validateSimpleMaterialFilename(filename, productName) {
     const fn = String(filename || '');
-    const errors = [];
+    const errors = validateFilenameNoSpaces(fn);
+    if (errors.length) return errors;
     if (!productName) {
       errors.push('当前产品尚未加载，请重试');
       return errors;
@@ -135,6 +140,8 @@
     if (langCode === 'en') return validateSimpleMaterialFilename(filename, productName);
 
     const fn = String(filename || '');
+    const noSpaceErrors = validateFilenameNoSpaces(fn);
+    if (noSpaceErrors.length) return noSpaceErrors;
     const TAIL = '-指派-蔡靖华.mp4';
     const LOCALIZED_SUPPLEMENT_MARKER = '-原素材-补充素材';
     const errs = [];
@@ -2720,6 +2727,7 @@
     await ensureLanguages();
     const productName = state.current && state.current.product && state.current.product.name;
     const lang = resolveMaterialFilenameLang(file.name, 'en');
+    if (!assertMaterialFilenameOrAlert(file.name, productName, lang)) return;
     const box = $('uploadProgress');
     const row = document.createElement('div');
     row.className = 'oc-upload-row';
@@ -4998,8 +5006,8 @@
   async function edSaveItemNameEdit(itemId, card) {
     const input = card.querySelector('.vname-input');
     if (!input) return;
-    const nextName = input.value.trim();
-    if (!nextName) {
+    const nextName = input.value;
+    if (!nextName.trim()) {
       alert('文件名不能为空');
       input.focus();
       return;
@@ -6002,6 +6010,13 @@
     const rid = card.dataset.rsId;
     const currentDisplayName = card.dataset.displayName || '';
     const defaultTitle = card.dataset.defaultTitle || getRawSourceDefaultTitle(rid);
+    const noSpaceErrors = validateFilenameNoSpaces(input.value);
+    if (noSpaceErrors.length) {
+      alertRawSourceTitleErrors(noSpaceErrors);
+      input.focus();
+      input.setSelectionRange(0, input.value.length);
+      return;
+    }
     const normalized = normalizeRawSourceTitle(input.value);
     const nextDisplayName = (!currentDisplayName && normalized === defaultTitle) ? '' : normalized;
     if (nextDisplayName === currentDisplayName) {
@@ -6281,6 +6296,18 @@
   async function submitRawSourceUpload(event) {
     event.preventDefault();
     if (!uiState.currentPid) return;
+    const videoFile = uploadVideoInput && uploadVideoInput.files && uploadVideoInput.files[0];
+    const videoNameErrors = validateFilenameNoSpaces(videoFile ? videoFile.name : '');
+    if (videoNameErrors.length) {
+      alertRawSourceTitleErrors(videoNameErrors);
+      return;
+    }
+    const displayNameErrors = validateFilenameNoSpaces(uploadNameInput.value || (videoFile ? videoFile.name : ''));
+    if (displayNameErrors.length) {
+      alertRawSourceTitleErrors(displayNameErrors);
+      uploadNameInput.focus();
+      return;
+    }
     const fd = new FormData(uploadForm);
     uploadSubmit.disabled = true;
     try {

@@ -38,6 +38,7 @@ from appcore.gemini_image import coerce_image_model
 from appcore.material_filename_rules import (
     validate_initial_material_filename,
     validate_material_filename,
+    validate_video_filename_no_spaces,
 )
 from config import OUTPUT_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
@@ -219,6 +220,23 @@ def _validate_material_filename_for_product(
     )
 
 
+def _client_filename_basename(value) -> str:
+    return os.path.basename(str(value or "").replace("\\", "/"))
+
+
+def _raw_source_filename_error_response(filename: str):
+    details = list(validate_video_filename_no_spaces(filename))
+    return (
+        jsonify({
+            "error": "raw_source_filename_invalid",
+            "message": "文件名不能包含空格",
+            "details": details,
+            "uploaded_filename": filename,
+        }),
+        400,
+    )
+
+
 _DATE_PREFIX_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}-")
 _RAW_SOURCE_TITLE_DATE_RE = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})$")
 
@@ -300,7 +318,7 @@ def _list_raw_source_allowed_english_filenames(product_id: int) -> list[str]:
     seen: set[str] = set()
     filenames: list[str] = []
     for row in rows:
-        filename = Path(str(row.get("filename") or "").strip()).name
+        filename = _client_filename_basename(row.get("filename"))
         if not filename or filename in seen:
             continue
         seen.add(filename)
@@ -1411,7 +1429,9 @@ def api_create_raw_source(pid: int):
     if cover_ct not in _ALLOWED_IMAGE_TYPES:
         return jsonify({"error": f"cover mimetype not allowed: {cover_ct}"}), 400
 
-    uploaded_filename = Path(str(video.filename or "").strip()).name
+    uploaded_filename = _client_filename_basename(video.filename)
+    if validate_video_filename_no_spaces(uploaded_filename):
+        return _raw_source_filename_error_response(uploaded_filename)
     english_filenames = _list_raw_source_allowed_english_filenames(pid)
     if not english_filenames:
         return jsonify({
@@ -1427,7 +1447,12 @@ def api_create_raw_source(pid: int):
             "uploaded_filename": uploaded_filename,
             "english_filenames": english_filenames,
         }), 400
-    display_name = (request.form.get("display_name") or uploaded_filename).strip()
+    display_name_raw = request.form.get("display_name")
+    display_name = _client_filename_basename(
+        display_name_raw if display_name_raw is not None and str(display_name_raw).strip() else uploaded_filename
+    )
+    if validate_video_filename_no_spaces(display_name):
+        return _raw_source_filename_error_response(display_name)
 
     uid = _resolve_upload_user_id()
     if uid is None:
@@ -1514,7 +1539,10 @@ def api_update_raw_source(rid: int):
     body = request.get_json(silent=True) or {}
     fields: dict = {}
     if "display_name" in body:
-        fields["display_name"] = (body.get("display_name") or "").strip() or None
+        display_name = _client_filename_basename(body.get("display_name"))
+        if display_name.strip() and validate_video_filename_no_spaces(display_name):
+            return _raw_source_filename_error_response(display_name)
+        fields["display_name"] = display_name if display_name.strip() else None
     if "sort_order" in body:
         try:
             fields["sort_order"] = int(body["sort_order"])
@@ -1640,8 +1668,8 @@ def api_item_bootstrap(pid: int):
     lang, err = _parse_lang(body)
     if err:
         return jsonify({"error": err}), 400
-    filename = os.path.basename((body.get("filename") or "").strip())
-    if not filename:
+    filename = _client_filename_basename(body.get("filename"))
+    if not filename.strip():
         return jsonify({"error": "filename required"}), 400
     validation, error_response = _validate_material_filename_for_product(
         filename,
@@ -1675,9 +1703,9 @@ def api_item_complete(pid: int):
     if err:
         return jsonify({"error": err}), 400
     object_key = (body.get("object_key") or "").strip()
-    filename = (body.get("filename") or "").strip()
+    filename = _client_filename_basename(body.get("filename"))
     file_size = int(body.get("file_size") or 0)
-    if not object_key or not filename:
+    if not object_key or not filename.strip():
         return jsonify({"error": "object_key and filename required"}), 400
     validation, error_response = _validate_material_filename_for_product(
         filename,
@@ -1931,8 +1959,8 @@ def api_update_item(item_id: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    display_name = str(body.get("display_name") or "").strip()
-    if not display_name:
+    display_name = _client_filename_basename(body.get("display_name"))
+    if not display_name.strip():
         return jsonify({"error": "display_name required"}), 400
     if len(display_name) > 255:
         return jsonify({"error": "display_name too long"}), 400

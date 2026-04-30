@@ -5,11 +5,20 @@ from typing import Any
 
 from appcore import product_roas
 from appcore.db import query, query_one, execute, get_conn
+from appcore.material_filename_rules import validate_video_filename_no_spaces
 
 
 LISTING_STATUS_ON = "上架"
 LISTING_STATUS_OFF = "下架"
 LISTING_STATUSES = {LISTING_STATUS_ON, LISTING_STATUS_OFF}
+
+
+def _ensure_video_filename_no_spaces(filename: str | None) -> None:
+    if filename is None:
+        return
+    errors = validate_video_filename_no_spaces(str(filename))
+    if errors:
+        raise ValueError(errors[0])
 
 
 def normalize_listing_status(value: str | None) -> str:
@@ -690,6 +699,10 @@ def create_item(product_id: int, user_id: int, filename: str, object_key: str,
                 file_size: int | None = None,
                 cover_object_key: str | None = None,
                 lang: str = "en") -> int:
+    _ensure_video_filename_no_spaces(filename)
+    _ensure_video_filename_no_spaces(object_key)
+    if display_name:
+        _ensure_video_filename_no_spaces(display_name)
     return execute(
         "INSERT INTO media_items "
         "(product_id, lang, user_id, filename, display_name, object_key, file_url, "
@@ -708,6 +721,7 @@ def update_item_cover(item_id: int, cover_object_key: str | None) -> int:
 
 
 def update_item_display_name(item_id: int, display_name: str) -> int:
+    _ensure_video_filename_no_spaces(display_name)
     return execute(
         "UPDATE media_items SET display_name=%s WHERE id=%s",
         (display_name, item_id),
@@ -1170,6 +1184,9 @@ def create_raw_source(
     width: int | None = None,
     height: int | None = None,
 ) -> int:
+    if display_name:
+        _ensure_video_filename_no_spaces(display_name)
+    _ensure_video_filename_no_spaces(video_object_key)
     return execute(
         "INSERT INTO media_raw_sources "
         "(product_id, user_id, display_name, video_object_key, cover_object_key, "
@@ -1270,6 +1287,8 @@ def update_raw_source(rid: int, **fields) -> int:
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
+    if "display_name" in fields and fields.get("display_name"):
+        _ensure_video_filename_no_spaces(fields.get("display_name"))
     set_sql = ", ".join(f"{k}=%s" for k in keys)
     args = tuple(fields[k] for k in keys) + (rid,)
     return execute(f"UPDATE media_raw_sources SET {set_sql} WHERE id=%s", args)
