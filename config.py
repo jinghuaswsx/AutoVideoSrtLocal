@@ -142,6 +142,14 @@ SUBTITLE_REMOVAL_RESUBMIT_POLL_WINDOW_SECONDS = int(_env("SUBTITLE_REMOVAL_RESUB
 # 字幕擦除后端选择：goodline（第三方 API）| vod（火山引擎点播）
 SUBTITLE_REMOVAL_PROVIDER = _env("SUBTITLE_REMOVAL_PROVIDER", "goodline").strip().lower()
 
+# 长视频 LLM 调用分段：超过 threshold 段时把 translate / rewrite / tts_script
+# 三处长 prompt 调用切成 batch_size 一批；短视频走原 single-shot 路径。
+# 长 prompt 下 Claude / Gemini 容易丢嵌套字段（source_segment_indices 等），
+# 分段把每次调用控制在小 prompt 内，从根上避免漏字段失败。
+MULTI_TRANSLATE_BATCH_ENABLED = _env("MULTI_TRANSLATE_BATCH_ENABLED", "1") in {"1", "true", "yes", "on"}
+MULTI_TRANSLATE_BATCH_THRESHOLD = int(_env("MULTI_TRANSLATE_BATCH_THRESHOLD", "18"))
+MULTI_TRANSLATE_BATCH_SIZE = int(_env("MULTI_TRANSLATE_BATCH_SIZE", "12"))
+
 
 # ---------------------------------------------------------------------------
 # 路径

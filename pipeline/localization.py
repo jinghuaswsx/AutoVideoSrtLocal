@@ -386,6 +386,35 @@ def build_tts_script_messages(localized_translation: dict) -> list[dict]:
     ]
 
 
+def _split_segments_into_batches(
+    segments: list[dict],
+    target_size: int = 12,
+) -> list[list[dict]]:
+    """Split a list of segments (or sentences) into roughly equal-sized batches.
+    Used by long-video LLM call batching to keep each prompt small enough that
+    LLMs reliably honor the JSON schema (long prompts cause Claude/Gemini to
+    drop nested fields like source_segment_indices).
+
+    Algorithm: ceil(N / target_size) batches, sizes differ by at most 1.
+    Avoids the naive "fill 12, leave 2 in the last batch" pattern."""
+    n = len(segments)
+    if n == 0:
+        return []
+    if target_size <= 0 or n <= target_size:
+        return [list(segments)]
+    import math
+    batch_count = math.ceil(n / target_size)
+    base = n // batch_count
+    extra = n % batch_count
+    batches: list[list[dict]] = []
+    cursor = 0
+    for i in range(batch_count):
+        size = base + (1 if i < extra else 0)
+        batches.append(list(segments[cursor:cursor + size]))
+        cursor += size
+    return batches
+
+
 def _derive_tts_script_indices(payload: dict, sentences: list[dict]) -> dict:
     """Re-derive blocks/subtitle_chunks index fields (sentence_indices,
     source_segment_indices, block_indices) by aligning their text against

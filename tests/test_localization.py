@@ -6,6 +6,7 @@ from pipeline.localization import (
     LOCALIZED_TRANSLATION_SYSTEM_PROMPT,
     TTS_SCRIPT_SYSTEM_PROMPT,
     _derive_tts_script_indices,
+    _split_segments_into_batches,
     _subtitle_word_signature,
     build_localized_translation_messages,
     build_source_full_text_zh,
@@ -232,6 +233,120 @@ def test_validate_tts_script_rejects_block_missing_source_segment_indices_when_n
 
     with pytest.raises(ValueError, match="source_segment_indices"):
         validate_tts_script(payload)
+
+
+def test_split_segments_short_video_returns_single_batch():
+    """≤ batch_size 的视频走单批路径，分段策略不应启动。"""
+    segments = [{"index": i, "text": f"seg {i}"} for i in range(10)]
+    batches = _split_segments_into_batches(segments, target_size=12)
+    assert len(batches) == 1
+    assert batches[0] == segments
+
+
+def test_split_segments_long_video_splits_into_balanced_batches():
+    """长视频按 target_size 等分，避免最后一批过小。"""
+    segments = [{"index": i, "text": f"seg {i}"} for i in range(35)]
+    batches = _split_segments_into_batches(segments, target_size=12)
+    # 35 / 12 = 3 批
+    assert len(batches) == 3
+    sizes = [len(b) for b in batches]
+    assert sum(sizes) == 35
+    # 等分后每批接近 12，不应有 < target_size/2 的孤批
+    assert all(s >= 6 for s in sizes)
+    assert max(sizes) - min(sizes) <= 1
+
+
+def test_split_segments_avoids_orphan_tail_batch():
+    """50/12 = 4.16，向上取 5 批 → 每批 10。
+    防止 12+12+12+12+2 这种最后一批极小的情况。"""
+    segments = [{"index": i, "text": f"seg {i}"} for i in range(50)]
+    batches = _split_segments_into_batches(segments, target_size=12)
+    sizes = [len(b) for b in batches]
+    assert sum(sizes) == 50
+    assert min(sizes) >= 6  # 没有孤批
+
+
+def test_generate_localized_translation_short_video_skips_batching(monkeypatch):
+    """≤ threshold 的短视频继续走单批路径，long-prompt 风险与现状一致。"""
+    from pipeline import translate as translate_mod
+    segments = [{"index": i, "text": f"seg-{i}"} for i in range(15)]
+
+    call_count = {"n": 0}
+
+    def fake_single(source_full_text_zh, batch_segments, **kwargs):
+        call_count["n"] += 1
+        assert len(batch_segments) == 15
+        return {
+            "full_text": "out",
+            "sentences": [
+                {"index": 0, "text": "out", "source_segment_indices": [0]},
+            ],
+        }
+
+    monkeypatch.setattr(translate_mod, "_generate_localized_translation_single", fake_single)
+    translate_mod.generate_localized_translation("source", segments)
+    assert call_count["n"] == 1
+
+
+def test_generate_localized_translation_long_video_splits_into_batches(monkeypatch):
+    """长视频自动分批；LLM 返回该批的全局 source_segment_indices 时直接合并。"""
+    from pipeline import translate as translate_mod
+    segments = [{"index": i, "text": f"seg-{i}"} for i in range(30)]
+    call_count = {"n": 0}
+
+    def fake_single(source_full_text_zh, batch_segments, **kwargs):
+        call_count["n"] += 1
+        return {
+            "full_text": " ".join(f"sent-{s['index']}" for s in batch_segments),
+            "sentences": [
+                {"index": i, "text": f"sent-{s['index']}",
+                 "source_segment_indices": [s["index"]]}
+                for i, s in enumerate(batch_segments)
+            ],
+        }
+
+    monkeypatch.setattr(translate_mod, "_generate_localized_translation_single", fake_single)
+    result = translate_mod.generate_localized_translation("source", segments)
+
+    assert call_count["n"] == 3  # 30/12 → 3 批
+    assert len(result["sentences"]) == 30
+    assert result["sentences"][0]["index"] == 0
+    assert result["sentences"][29]["index"] == 29
+    assert result["sentences"][0]["source_segment_indices"] == [0]
+    assert result["sentences"][15]["source_segment_indices"] == [15]
+    assert result["sentences"][29]["source_segment_indices"] == [29]
+
+
+def test_generate_localized_translation_batched_normalizes_relative_indices(monkeypatch):
+    """LLM 经常用 0-based 相对索引；wrapper 自动平移到该批的全局段索引。"""
+    from pipeline import translate as translate_mod
+    segments = [{"index": i, "text": f"seg-{i}"} for i in range(24)]
+
+    def fake_single(source_full_text_zh, batch_segments, **kwargs):
+        return {
+            "full_text": "...",
+            "sentences": [
+                {"index": i, "text": f"s{i}",
+                 "source_segment_indices": [i]}  # 0-based 相对索引
+                for i in range(len(batch_segments))
+            ],
+        }
+
+    monkeypatch.setattr(translate_mod, "_generate_localized_translation_single", fake_single)
+    result = translate_mod.generate_localized_translation("source", segments)
+
+    assert len(result["sentences"]) == 24
+    # 第 2 批的第 1 句应当映射到全局 segment index 12
+    assert result["sentences"][12]["source_segment_indices"] == [12]
+    assert result["sentences"][23]["source_segment_indices"] == [23]
+
+
+def test_split_segments_preserves_order_and_indices():
+    """分批后每段的原始 index/text 不应被改动。"""
+    segments = [{"index": i, "text": f"text-{i}"} for i in range(25)]
+    batches = _split_segments_into_batches(segments, target_size=12)
+    flat = [seg for batch in batches for seg in batch]
+    assert flat == segments
 
 
 def test_derive_tts_script_indices_fills_missing_source_segment_indices_from_sentence_indices():
