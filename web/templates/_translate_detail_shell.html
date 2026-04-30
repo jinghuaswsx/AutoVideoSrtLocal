@@ -154,10 +154,10 @@
   #configPanel { display: none !important; }
   /* 多语种详情页使用顶部原始语言选择器，隐藏旧的 zh/en 切换条 */
   #sourceLangPanel { display: none !important; }
-  /* 仅调整多语种/音画同步详情页的前端展示位置；实际流程仍按 STEP_ORDER: extract -> asr 执行 */
-  #pipelineCard .steps > #step-asr { order: -3; }
-  #pipelineCard .steps > #step-asr_normalize { order: -2; }
-  #pipelineCard .steps > #step-extract { order: -1; }
+  /* 仅调整多语种/音画同步详情页的前端展示位置；保留音频提取在音色选择前，ASR 后紧跟原文标准化 */
+  #pipelineCard .steps > #step-extract { order: -3; }
+  #pipelineCard .steps > #step-asr { order: -2; }
+  #pipelineCard .steps > #step-asr_normalize { order: -1; }
   {% elif detail_mode == 'ja' %}
   #voicePanel { display: none !important; }
   #configPanel { display: none !important; }
