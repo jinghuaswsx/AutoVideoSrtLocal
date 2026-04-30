@@ -1079,6 +1079,26 @@ def test_pushes_assets_include_quality_check_panel():
     assert "height: 80vh" in style
 
 
+def test_pushes_quality_media_previews_are_side_by_side_180_by_320():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    style = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert "pm-quality-media-row" in script
+    assert "pm-quality-media-frame" in script
+    assert "pm-quality-cover-preview pm-quality-media-preview" in script
+    assert "pm-quality-video-preview pm-quality-media-preview" in script
+    assert ".pm-quality-media-row" in style
+    assert "grid-template-columns: repeat(2, minmax(180px, 1fr))" in style
+    assert ".pm-quality-media-frame" in style
+    assert "width: 180px" in style
+    assert "height: 320px" in style
+    assert ".pm-quality-media-frame > img," in style
+    assert ".pm-quality-media-frame > video" in style
+    assert "height: 100%" in style
+
+
 # ================================================================
 # mk_id 回填（推送成功 → lookup_mk_id → 写回 media_products）
 # ================================================================

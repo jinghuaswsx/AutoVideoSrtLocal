@@ -706,20 +706,23 @@
   function renderQualityCoverPreview(payload, previewCoverUrl) {
     const video = firstPayloadVideo(payload);
     const coverSrc = previewCoverUrl || (video && video.image_url) || '';
-    const root = el('div', { class: 'pm-quality-cover-preview' });
+    const root = el('div', { class: 'pm-quality-cover-preview pm-quality-media-preview' });
+    const frame = el('div', { class: 'pm-quality-media-frame' });
     if (coverSrc) {
-      root.appendChild(el('img', { class: 'pm-quality-cover-img', src: coverSrc, alt: '封面图' }));
+      frame.appendChild(el('img', { class: 'pm-quality-cover-img', src: coverSrc, alt: '封面图' }));
     } else {
-      root.appendChild(el('p', { class: 'pm-empty' }, '暂无封面图预览'));
+      frame.appendChild(el('p', { class: 'pm-empty' }, '暂无封面图预览'));
     }
+    root.appendChild(frame);
     return root;
   }
 
   function renderQualityVideoPreview(payload, previewCoverUrl) {
     const video = firstPayloadVideo(payload);
-    const root = el('div', { class: 'pm-quality-video-preview' });
+    const root = el('div', { class: 'pm-quality-video-preview pm-quality-media-preview' });
+    const frame = el('div', { class: 'pm-quality-media-frame' });
     if (video && video.url) {
-      root.appendChild(el('video', {
+      frame.appendChild(el('video', {
         class: 'pm-quality-video',
         src: video.url,
         poster: previewCoverUrl || video.image_url || '',
@@ -727,8 +730,9 @@
         preload: 'metadata',
       }));
     } else {
-      root.appendChild(el('p', { class: 'pm-empty' }, '暂无视频预览'));
+      frame.appendChild(el('p', { class: 'pm-empty' }, '暂无视频预览'));
     }
+    root.appendChild(frame);
     return root;
   }
 
@@ -760,16 +764,18 @@
       qualityCheck && qualityCheck.copy_result,
       renderQualityCopyPreview(localizedText),
     ));
-    root.appendChild(renderQualityDetailBlock(
-      '封面图',
-      qualityCheck && qualityCheck.cover_result,
-      renderQualityCoverPreview(payload, previewCoverUrl),
-    ));
-    root.appendChild(renderQualityDetailBlock(
-      '视频',
-      qualityCheck && qualityCheck.video_result,
-      renderQualityVideoPreview(payload, previewCoverUrl),
-    ));
+    root.appendChild(el('div', { class: 'pm-quality-media-row' }, [
+      renderQualityDetailBlock(
+        '封面图',
+        qualityCheck && qualityCheck.cover_result,
+        renderQualityCoverPreview(payload, previewCoverUrl),
+      ),
+      renderQualityDetailBlock(
+        '视频',
+        qualityCheck && qualityCheck.video_result,
+        renderQualityVideoPreview(payload, previewCoverUrl),
+      ),
+    ]));
     if (Array.isArray(qualityCheck?.failed_reasons) && qualityCheck.failed_reasons.length) {
       const reasons = el('ul', { class: 'pm-quality-reasons' });
       qualityCheck.failed_reasons.slice(0, 5).forEach(reason => {
