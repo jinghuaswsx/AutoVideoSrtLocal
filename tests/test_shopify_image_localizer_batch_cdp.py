@@ -857,7 +857,10 @@ def test_plan_body_html_replacements_skips_detail_image_without_server_candidate
     assert plan["skipped_missing"][0]["source_index"] == 19
 
 
-def test_plan_body_html_replacements_skips_detail_source_index_mismatch():
+def test_plan_body_html_replacements_falls_back_to_token_when_source_index_mismatches():
+    """v2.8 起：src URL 上的 source_index 可能来自上一轮 fallback 文件名（位置编号而非真实
+    source 序号），不可信。32 位 hex token 一致即认为同一张图，按 token 兜底选首个候选，
+    而不是直接 skip——避免详情图因 source_index 错位被漏替换。"""
     token = "e91c999470fd206bac418a40a6d21c2f"
     src = f"https://cdn.example.com/from_url_en_19_{token}.png"
     html = f'<p><img src="{src}"></p>'
@@ -867,9 +870,10 @@ def test_plan_body_html_replacements_skips_detail_source_index_mismatch():
 
     plan = taa_cdp.plan_body_html_replacements(html, localized_images)
 
-    assert plan["replacements"] == []
-    assert len(plan["skipped_missing"]) == 1
-    assert "source index 19" in plan["skipped_missing"][0]["reason"]
+    assert len(plan["replacements"]) == 1
+    assert plan["replacements"][0]["token"] == token
+    assert plan["replacements"][0]["match_method"] == "token"
+    assert plan["skipped_missing"] == []
 
 
 def test_plan_body_html_replacements_ignores_extra_server_candidates_not_in_html():
