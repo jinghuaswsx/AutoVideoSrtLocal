@@ -134,8 +134,16 @@ def api_list():
     langs = [l for l in request.args.getlist("lang") if l]
     keyword = (request.args.get("keyword") or "").strip()
     product_term = (request.args.get("product") or "").strip()
+    owner_id_raw = (request.args.get("owner_id") or "").strip()
     date_from = (request.args.get("date_from") or "").strip() or None
     date_to = (request.args.get("date_to") or "").strip() or None
+
+    owner_id = None
+    if owner_id_raw:
+        try:
+            owner_id = int(owner_id_raw)
+        except ValueError:
+            return jsonify({"error": "invalid_owner_id"}), 400
 
     page = max(1, int(request.args.get("page") or 1))
     limit = _PAGE_SIZE_DEFAULT
@@ -146,6 +154,7 @@ def api_list():
         langs=langs or None,
         keyword=keyword,
         product_term=product_term,
+        owner_id=owner_id,
         date_from=date_from,
         date_to=date_to,
         offset=0,

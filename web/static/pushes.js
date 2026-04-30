@@ -25,6 +25,7 @@
 
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
   let LANGUAGES = [];
+  let OWNERS = [];
 
   // ---------- 工具 ----------
 
@@ -134,6 +135,33 @@
     }
   }
 
+  async function loadOwners() {
+    const sel = document.getElementById('f-owner');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = '全部员工';
+    sel.appendChild(all);
+    if (!window.PUSH_IS_ADMIN) return;
+
+    try {
+      const data = await fetchJSON('/medias/api/users/active');
+      OWNERS = Array.isArray(data && data.users) ? data.users : [];
+      OWNERS.forEach(user => {
+        const id = user && user.id;
+        const name = String((user && user.display_name) || '').trim();
+        if (id === null || id === undefined || !name) return;
+        const opt = document.createElement('option');
+        opt.value = String(id);
+        opt.textContent = name;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.warn('load owners failed', e);
+    }
+  }
+
   function buildQuery() {
     const params = new URLSearchParams();
     const statusSel = document.getElementById('f-status');
@@ -144,6 +172,8 @@
     if (product) params.set('product', product);
     const keyword = document.getElementById('f-keyword').value.trim();
     if (keyword) params.set('keyword', keyword);
+    const ownerSel = document.getElementById('f-owner');
+    if (ownerSel && ownerSel.value) params.set('owner_id', ownerSel.value);
     const df = document.getElementById('f-date-from').value;
     if (df) params.set('date_from', df);
     const dt = document.getElementById('f-date-to').value;
@@ -368,6 +398,7 @@
       document.querySelectorAll('.push-toolbar input').forEach(i => (i.value = ''));
       document.getElementById('f-status').value = 'pending';
       document.getElementById('f-lang').value = '';
+      document.getElementById('f-owner').value = '';
       state.page = 1; load();
     });
   }
@@ -1190,5 +1221,5 @@
   });
 
   window._pushesLoad = load;
-  loadLanguages().then(() => { bindFilters(); load(); });
+  Promise.all([loadLanguages(), loadOwners()]).then(() => { bindFilters(); load(); });
 })();

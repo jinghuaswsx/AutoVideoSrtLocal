@@ -7,6 +7,8 @@ def test_pushes_template_contains_mk_id_column():
     assert "<th>mk_id</th>" in template
     assert "<th>产品负责人</th>" in template
     assert "<th>审核信息</th>" in template
+    assert 'for="f-owner"' in template
+    assert 'id="f-owner"' in template
 
 
 def test_pushes_script_renders_product_link_and_copy_button():
@@ -26,6 +28,10 @@ def test_pushes_script_renders_product_link_and_copy_button():
     assert "ai_evaluation_result" in script
     assert "ai_evaluation_detail" in script
     assert "AI评估详情" in script
+    assert "loadOwners" in script
+    assert "/medias/api/users/active" in script
+    assert "owner_id" in script
+    assert "f-owner" in script
 
 
 def test_pushes_css_styles_product_link_and_copy_button():
