@@ -68,16 +68,17 @@ def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
     assert "voice_selector_multi.js" in shared
 
 
-def test_asr_normalize_card_stays_grouped_after_asr_before_voice_selector():
+def test_asr_normalize_card_moves_after_asr_without_reordering_other_cards():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
     voice_selector = (root / "web" / "static" / "voice_selector_multi.js").read_text(encoding="utf-8")
     av_sync = (root / "web" / "templates" / "av_sync_detail.html").read_text(encoding="utf-8")
 
-    assert "#pipelineCard .steps > #step-extract { order: -3; }" in shared
     assert "#pipelineCard .steps > #step-asr { order: -2; }" in shared
-    assert "#pipelineCard .steps > #step-asr_normalize { order: -1; }" in shared
-    assert 'document.getElementById("step-asr_normalize") || document.getElementById("step-asr")' in voice_selector
+    assert "#pipelineCard .steps > #step-extract { order: -1; }" in shared
+    assert "#pipelineCard .steps > #step-asr_normalize { order: -2; }" in shared
+    assert 'const anchor = document.getElementById("step-asr");' in voice_selector
+    assert "step-asr_normalize\") ||" not in voice_selector
     assert "{% set pipeline_kind = 'multi_translate' %}" in av_sync
 
 
