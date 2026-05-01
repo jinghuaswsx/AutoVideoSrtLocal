@@ -13,7 +13,7 @@ import zipfile
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 import uuid
 import requests
 from flask import Blueprint, Response, render_template, request, jsonify, abort, redirect, send_file, url_for
@@ -34,7 +34,6 @@ from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
-from appcore.gemini_image import coerce_image_model
 from appcore.material_filename_rules import (
     validate_initial_material_filename,
     validate_material_filename,
@@ -47,9 +46,21 @@ from web.background import start_background_task
 from web.routes import image_translate as image_translate_routes
 from web.services import image_translate_runner, link_check_runner
 from ._helpers import (
+    _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES,
+    _DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES,
+    _DETAIL_IMAGE_KIND_LABELS,
+    _DETAIL_IMAGE_LIMITS,
     _check_filename_prefix,
     _client_filename_basename,
     _default_image_translate_model_id,
+    _detail_image_empty_counts,
+    _detail_image_existing_counts,
+    _detail_image_kind_from_download_ext,
+    _detail_image_limit_error,
+    _detail_images_archive_basename,
+    _detail_images_archive_part,
+    _detail_images_archive_product_code,
+    _detail_images_is_gif,
     _dianxiaomi_rankings_columns,
     _download_image_to_local_media,
     _ensure_product_listed,
@@ -64,6 +75,7 @@ from ._helpers import (
     _validate_material_filename_for_product,
     _validate_product_code,
     _validate_raw_source_display_name,
+    probe_media_info_safe,
 )
 from ._serializers import (
     _int_or_none,
@@ -74,8 +86,6 @@ from ._serializers import (
     _serialize_product,
     _serialize_raw_source,
 )
-
-import re
 
 import pymysql.err
 
@@ -1762,121 +1772,6 @@ def api_list_languages():
 # ----------------------------------------------------------------------
 # 绗竴杞彧鍦ㄨ嫳璇绉嶆毚闇插叆鍙ｏ紝鍏朵粬璇鐨勭増鏈皢鐢卞悗缁浘鐗囩炕璇戦泦鎴愯嚜鍔ㄧ敓鎴愩€?
 # ======================================================================
-
-_DETAIL_IMAGES_STATIC_MAX = task_state.IMAGE_TRANSLATE_MAX_ITEMS
-_DETAIL_IMAGES_GIF_MAX = 20
-_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES = _DETAIL_IMAGES_STATIC_MAX + _DETAIL_IMAGES_GIF_MAX
-_DETAIL_IMAGE_LIMITS = {
-    "static": _DETAIL_IMAGES_STATIC_MAX,
-    "gif": _DETAIL_IMAGES_GIF_MAX,
-}
-_DETAIL_IMAGE_KIND_LABELS = {
-    "static": "static detail images",
-    "gif": "GIF detail images",
-}
-
-_DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES = {
-    "de": "德国",
-    "fr": "法国",
-    "es": "西班牙",
-    "it": "意大利",
-    "ja": "日本",
-    "pt": "葡萄牙",
-    "nl": "荷兰",
-    "sv": "瑞典",
-    "fi": "芬兰",
-}
-
-
-def probe_media_info_safe(path: str) -> dict:
-    try:
-        from pipeline.ffutil import probe_media_info
-
-        return probe_media_info(path) or {}
-    except Exception:
-        return {}
-
-
-def _detail_images_archive_product_code(product: dict, pid: int) -> str:
-    raw_code = str((product or {}).get("product_code") or "").strip()
-    return re.sub(r"[^A-Za-z0-9_-]+", "-", raw_code).strip("-") or f"product-{pid}"
-
-
-def _detail_images_is_gif(row: dict) -> bool:
-    return medias.detail_image_is_gif(row)
-
-
-def _detail_image_kind_from_payload(item: dict) -> str:
-    content_type = str((item or {}).get("content_type") or "").split(";")[0].strip().lower()
-    raw_key = str(
-        (item or {}).get("object_key")
-        or (item or {}).get("filename")
-        or (item or {}).get("source_url")
-        or ""
-    ).strip().lower()
-    path = urlparse(raw_key).path.lower()
-    if content_type == "image/gif" or path.endswith(".gif") or raw_key.endswith(".gif"):
-        return "gif"
-    return "static"
-
-
-def _detail_image_kind_from_download_ext(ext: str | None) -> str:
-    return "gif" if str(ext or "").lower() == ".gif" else "static"
-
-
-def _detail_image_empty_counts() -> dict[str, int]:
-    return {"static": 0, "gif": 0}
-
-
-def _detail_image_existing_counts(pid: int, lang: str) -> dict[str, int]:
-    counts = _detail_image_empty_counts()
-    for row in medias.list_detail_images(pid, lang):
-        kind = "gif" if _detail_images_is_gif(row) else "static"
-        counts[kind] += 1
-    return counts
-
-
-def _detail_image_incoming_counts(items: list[dict]) -> dict[str, int]:
-    counts = _detail_image_empty_counts()
-    for item in items:
-        counts[_detail_image_kind_from_payload(item)] += 1
-    return counts
-
-
-def _detail_image_limit_error(
-    pid: int,
-    lang: str,
-    incoming_items: list[dict],
-    *,
-    existing_counts: dict[str, int] | None = None,
-) -> str | None:
-    existing = existing_counts if existing_counts is not None else _detail_image_existing_counts(pid, lang)
-    incoming = _detail_image_incoming_counts(incoming_items)
-    for kind, max_count in _DETAIL_IMAGE_LIMITS.items():
-        label = _DETAIL_IMAGE_KIND_LABELS[kind]
-        if incoming[kind] > max_count:
-            return f"too many {label} (max {max_count})"
-        current = int(existing.get(kind) or 0)
-        total = current + incoming[kind]
-        if total > max_count:
-            return (
-                f"too many {label} "
-                f"(max {max_count}, current {current}, incoming {incoming[kind]})"
-            )
-    return None
-
-
-def _detail_images_archive_part(value: str, fallback: str) -> str:
-    text = str(value or "").strip() or fallback
-    return re.sub(r'[\\/:*?"<>|]+', "-", text).strip("-") or fallback
-
-
-def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
-    base_code = _detail_images_archive_product_code(product, pid)
-    archive_name = f"{base_code}_{lang}_detail-images"
-    country_prefix = _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES.get((lang or "").strip().lower())
-    return f"{country_prefix}-{archive_name}" if country_prefix else archive_name
-
 
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
 @login_required

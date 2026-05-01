@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from flask import jsonify
 from flask_login import current_user
 
-from appcore import local_media_storage, medias, object_keys
+from appcore import local_media_storage, medias, object_keys, task_state
 from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
 from appcore.material_filename_rules import (
@@ -28,6 +28,29 @@ _PRODUCT_CODE_SUFFIX = "-rjc"
 _PRODUCT_CODE_SUFFIX_ERROR = "Product ID 必须以 -RJC 结尾"
 _DATE_PREFIX_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}-")
 _RAW_SOURCE_TITLE_DATE_RE = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})$")
+_DETAIL_IMAGES_STATIC_MAX = task_state.IMAGE_TRANSLATE_MAX_ITEMS
+_DETAIL_IMAGES_GIF_MAX = 20
+_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES = _DETAIL_IMAGES_STATIC_MAX + _DETAIL_IMAGES_GIF_MAX
+_DETAIL_IMAGE_LIMITS = {
+    "static": _DETAIL_IMAGES_STATIC_MAX,
+    "gif": _DETAIL_IMAGES_GIF_MAX,
+}
+_DETAIL_IMAGE_KIND_LABELS = {
+    "static": "static detail images",
+    "gif": "GIF detail images",
+}
+
+_DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES = {
+    "de": "德国",
+    "fr": "法国",
+    "es": "西班牙",
+    "it": "意大利",
+    "ja": "日本",
+    "pt": "葡萄牙",
+    "nl": "荷兰",
+    "sv": "瑞典",
+    "fi": "芬兰",
+}
 
 
 def _material_evaluation_message(result: dict) -> str:
@@ -304,3 +327,93 @@ def _default_image_translate_model_id() -> str:
         return its.get_default_model(channel)
     except Exception:
         return coerce_image_model("", channel=channel)
+
+
+def probe_media_info_safe(path: str) -> dict:
+    try:
+        from pipeline.ffutil import probe_media_info
+
+        return probe_media_info(path) or {}
+    except Exception:
+        return {}
+
+
+def _detail_images_archive_product_code(product: dict, pid: int) -> str:
+    raw_code = str((product or {}).get("product_code") or "").strip()
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", raw_code).strip("-") or f"product-{pid}"
+
+
+def _detail_images_is_gif(row: dict) -> bool:
+    return medias.detail_image_is_gif(row)
+
+
+def _detail_image_kind_from_payload(item: dict) -> str:
+    content_type = str((item or {}).get("content_type") or "").split(";")[0].strip().lower()
+    raw_key = str(
+        (item or {}).get("object_key")
+        or (item or {}).get("filename")
+        or (item or {}).get("source_url")
+        or ""
+    ).strip().lower()
+    path = urlparse(raw_key).path.lower()
+    if content_type == "image/gif" or path.endswith(".gif") or raw_key.endswith(".gif"):
+        return "gif"
+    return "static"
+
+
+def _detail_image_kind_from_download_ext(ext: str | None) -> str:
+    return "gif" if str(ext or "").lower() == ".gif" else "static"
+
+
+def _detail_image_empty_counts() -> dict[str, int]:
+    return {"static": 0, "gif": 0}
+
+
+def _detail_image_existing_counts(pid: int, lang: str) -> dict[str, int]:
+    counts = _detail_image_empty_counts()
+    for row in medias.list_detail_images(pid, lang):
+        kind = "gif" if _detail_images_is_gif(row) else "static"
+        counts[kind] += 1
+    return counts
+
+
+def _detail_image_incoming_counts(items: list[dict]) -> dict[str, int]:
+    counts = _detail_image_empty_counts()
+    for item in items:
+        counts[_detail_image_kind_from_payload(item)] += 1
+    return counts
+
+
+def _detail_image_limit_error(
+    pid: int,
+    lang: str,
+    incoming_items: list[dict],
+    *,
+    existing_counts: dict[str, int] | None = None,
+) -> str | None:
+    existing = existing_counts if existing_counts is not None else _detail_image_existing_counts(pid, lang)
+    incoming = _detail_image_incoming_counts(incoming_items)
+    for kind, max_count in _DETAIL_IMAGE_LIMITS.items():
+        label = _DETAIL_IMAGE_KIND_LABELS[kind]
+        if incoming[kind] > max_count:
+            return f"too many {label} (max {max_count})"
+        current = int(existing.get(kind) or 0)
+        total = current + incoming[kind]
+        if total > max_count:
+            return (
+                f"too many {label} "
+                f"(max {max_count}, current {current}, incoming {incoming[kind]})"
+            )
+    return None
+
+
+def _detail_images_archive_part(value: str, fallback: str) -> str:
+    text = str(value or "").strip() or fallback
+    return re.sub(r'[\\/:*?"<>|]+', "-", text).strip("-") or fallback
+
+
+def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
+    base_code = _detail_images_archive_product_code(product, pid)
+    archive_name = f"{base_code}_{lang}_detail-images"
+    country_prefix = _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES.get((lang or "").strip().lower())
+    return f"{country_prefix}-{archive_name}" if country_prefix else archive_name
