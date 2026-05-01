@@ -18,12 +18,22 @@ threads = 32
 bind = os.getenv("AUTOVIDEOSRT_GUNICORN_BIND", bind)
 threads = int(os.getenv("AUTOVIDEOSRT_GUNICORN_THREADS", str(threads)))
 timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_TIMEOUT", "300"))
-# 15 minutes — match systemd TimeoutStopSec so workers can finish in-flight
-# pipeline batches before exit (long multi-translate tasks would otherwise
-# get SIGKILL'd mid-batch on every service restart).
-graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "900"))
+# Web shutdown should not wait for long background jobs to finish in-process.
+# Operators should run appcore.ops.active_tasks pre-restart before release; this
+# timeout only gives ordinary requests and shutdown snapshots room to finish.
+graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "45"))
 keepalive = int(os.getenv("AUTOVIDEOSRT_GUNICORN_KEEPALIVE", "10"))
 capture_output = True
 accesslog = "-"
 errorlog = "-"
 proc_name = "autovideosrt-web"
+
+
+def worker_exit(server, worker):
+    try:
+        from appcore.active_tasks import snapshot_active_tasks
+
+        result = snapshot_active_tasks("shutdown_signal")
+        worker.log.info("active task shutdown snapshot: %s", result)
+    except Exception as exc:
+        worker.log.warning("active task shutdown snapshot failed: %s", exc)

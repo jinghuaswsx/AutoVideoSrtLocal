@@ -1,0 +1,40 @@
+CREATE TABLE IF NOT EXISTS runtime_active_tasks (
+  task_key VARCHAR(191) NOT NULL PRIMARY KEY,
+  project_type VARCHAR(64) NOT NULL,
+  task_id VARCHAR(128) NOT NULL,
+  user_id BIGINT NULL,
+  runner VARCHAR(255) NOT NULL DEFAULT '',
+  entrypoint VARCHAR(255) NOT NULL DEFAULT '',
+  stage VARCHAR(255) NOT NULL DEFAULT '',
+  thread_name VARCHAR(255) NOT NULL DEFAULT '',
+  process_id INT NOT NULL DEFAULT 0,
+  interrupt_policy VARCHAR(32) NOT NULL DEFAULT 'block_restart',
+  started_at DATETIME NULL,
+  last_heartbeat_at DATETIME NULL,
+  details_json JSON NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_runtime_active_tasks_heartbeat (last_heartbeat_at),
+  KEY idx_runtime_active_tasks_type_task (project_type, task_id),
+  KEY idx_runtime_active_tasks_policy (interrupt_policy)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS runtime_active_task_snapshots (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  snapshot_reason VARCHAR(64) NOT NULL,
+  project_type VARCHAR(64) NOT NULL,
+  task_id VARCHAR(128) NOT NULL,
+  user_id BIGINT NULL,
+  runner VARCHAR(255) NOT NULL DEFAULT '',
+  entrypoint VARCHAR(255) NOT NULL DEFAULT '',
+  stage VARCHAR(255) NOT NULL DEFAULT '',
+  thread_name VARCHAR(255) NOT NULL DEFAULT '',
+  process_id INT NOT NULL DEFAULT 0,
+  interrupt_policy VARCHAR(32) NOT NULL DEFAULT 'block_restart',
+  started_at DATETIME NULL,
+  last_heartbeat_at DATETIME NULL,
+  captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  details_json JSON NULL,
+  KEY idx_runtime_active_task_snapshots_captured_at (captured_at),
+  KEY idx_runtime_active_task_snapshots_task (project_type, task_id),
+  KEY idx_runtime_active_task_snapshots_reason (snapshot_reason)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

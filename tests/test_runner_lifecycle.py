@@ -217,3 +217,50 @@ def test_link_check_runner_rejects_duplicate_global_active_task(monkeypatch):
         task_recovery.unregister_active_task("link_check", task_id)
         with link_check_runner._lock:
             link_check_runner._running.discard(task_id)
+
+
+def test_start_tracked_thread_records_active_task_metadata(monkeypatch):
+    from appcore import active_tasks, runner_lifecycle
+
+    monkeypatch.setattr(active_tasks, "_database_enabled", lambda: False)
+    active_tasks.clear_active_tasks_for_tests()
+    threads = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    def target():
+        return None
+
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+
+    try:
+        assert runner_lifecycle.start_tracked_thread(
+            project_type="multi_translate",
+            task_id="mt-meta",
+            target=target,
+            user_id=42,
+            runner="web.services.multi_pipeline_runner.start",
+            entrypoint="multi_translate.start",
+            details={"source": "test"},
+        ) is True
+
+        listed = active_tasks.list_active_tasks()
+        assert len(listed) == 1
+        task = listed[0]
+        assert task.project_type == "multi_translate"
+        assert task.task_id == "mt-meta"
+        assert task.user_id == 42
+        assert task.runner == "web.services.multi_pipeline_runner.start"
+        assert task.entrypoint == "multi_translate.start"
+        assert task.details["source"] == "test"
+        assert task.interrupt_policy == "block_restart"
+        assert len(threads) == 1
+    finally:
+        active_tasks.clear_active_tasks_for_tests()

@@ -13,6 +13,9 @@ def _make_file(filename: str, content: bytes = b"fake-video-data"):
 def authed_client(monkeypatch):
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
 
     fake_user = {"id": 1, "username": "test-admin", "role": "admin", "is_active": 1}
     monkeypatch.setattr("web.auth.get_by_id", lambda uid: fake_user if int(uid) == 1 else None)
@@ -35,9 +38,12 @@ def test_background_helper_proxies_to_socketio(monkeypatch):
             calls.append((target, args, kwargs))
             return "task-handle"
 
-    monkeypatch.setattr("web.extensions.socketio", FakeSocketIO())
-
     from web.background import start_background_task
+    import web.background
+
+    fake_socketio = FakeSocketIO()
+    monkeypatch.setattr("web.extensions.socketio", fake_socketio)
+    monkeypatch.setattr(web.background, "socketio", fake_socketio)
 
     def runner():
         return None
@@ -76,7 +82,14 @@ def test_copywriting_generate_uses_background_helper(authed_client, monkeypatch)
 def test_video_creation_upload_uses_background_helper(authed_client, monkeypatch, tmp_path):
     background_calls = []
 
-    monkeypatch.setattr("web.routes.video_creation.resolve_key", lambda *args: "seedance-key")
+    monkeypatch.setattr(
+        "web.routes.video_creation._resolve_seedance_config",
+        lambda: {
+            "api_key": "seedance-key",
+            "base_url": "https://seedance.example.test",
+            "model_id": "seedance-test",
+        },
+    )
     monkeypatch.setattr("web.routes.video_creation.register_active_task", lambda *args: None)
     monkeypatch.setattr("web.routes.video_creation.get_retention_hours", lambda *_: 24)
     monkeypatch.setattr(
@@ -95,7 +108,7 @@ def test_video_creation_upload_uses_background_helper(authed_client, monkeypatch
 
     assert response.status_code == 201
     assert len(background_calls) == 1
-    assert len(background_calls[0][1]) == 3
+    assert len(background_calls[0][1]) == 5
 
 
 def test_video_review_start_review_uses_background_helper(authed_client, monkeypatch, tmp_path):
@@ -146,5 +159,7 @@ def test_gunicorn_service_uses_threaded_config():
     assert 'worker_class = "gthread"' in config
     assert "workers = 1" in config
     assert "threads = 32" in config
+    assert 'AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "45"' in config
+    assert "TimeoutStopSec=60" in service
     assert "simple-websocket" in requirements
     assert "\neventlet" not in requirements

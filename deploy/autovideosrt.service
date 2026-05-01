@@ -9,6 +9,7 @@ Environment="PATH=/opt/autovideosrt/venv/bin:/usr/bin:/usr/local/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="AUTOVIDEOSRT_GUNICORN_BIND=0.0.0.0:80"
 Environment="AUTOVIDEOSRT_GUNICORN_THREADS=32"
+Environment="AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT=45"
 Environment="OMP_NUM_THREADS=1"
 Environment="OPENBLAS_NUM_THREADS=1"
 Environment="MKL_NUM_THREADS=1"
@@ -16,10 +17,10 @@ Environment="NUMEXPR_NUM_THREADS=1"
 ExecStart=/opt/autovideosrt/venv/bin/gunicorn --config /opt/autovideosrt/deploy/gunicorn.conf.py main:app
 Restart=always
 RestartSec=5
-# Long-running pipeline tasks (multi-translate / image-translate etc.) run in
-# in-process non-daemon threads. On stop we want gunicorn workers to wait for
-# those threads via sys.exit, not get SIGKILL'd mid-batch — give 15 minutes.
-TimeoutStopSec=900
+# Long-running tasks are guarded by appcore.ops.active_tasks pre-restart and
+# startup recovery. Stop should be short enough for releases but long enough
+# for ordinary requests and shutdown snapshots to finish.
+TimeoutStopSec=60
 LimitNOFILE=65535
 
 [Install]

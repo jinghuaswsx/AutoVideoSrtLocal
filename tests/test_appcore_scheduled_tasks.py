@@ -96,6 +96,18 @@ def test_task_definitions_expose_control_strategy_and_log_source():
     assert by_code["tts_convergence_stats"]["log_source"] == "file:/var/log/tts_convergence.log"
 
 
+def test_task_definitions_include_active_task_pre_restart_check():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["active_task_pre_restart_check"]
+    assert task["source_type"] == "manual_ops"
+    assert task["runner"] == "python -m appcore.ops.active_tasks pre-restart"
+    assert task["control_strategy"] == "readonly"
+    assert task["log_source"] == "db:runtime_active_task_snapshots"
+
+
 def test_task_definitions_include_audited_external_and_in_process_timers():
     from appcore import scheduled_tasks
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import threading
 
+from appcore import active_tasks
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 import appcore.task_state as task_state
 
@@ -29,32 +29,21 @@ LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyz
 IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES = ("queued", "running")
 SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES = ("queued", "running", "submitted", "interrupted")
 
-_active_tasks: set[tuple[str, str]] = set()
-_active_lock = threading.Lock()
+
+def register_active_task(project_type: str, task_id: str, **metadata) -> None:
+    active_tasks.register(project_type, str(task_id), **metadata)
 
 
-def register_active_task(project_type: str, task_id: str) -> None:
-    with _active_lock:
-        _active_tasks.add((project_type, task_id))
-
-
-def try_register_active_task(project_type: str, task_id: str) -> bool:
-    key = (project_type, task_id)
-    with _active_lock:
-        if key in _active_tasks:
-            return False
-        _active_tasks.add(key)
-        return True
+def try_register_active_task(project_type: str, task_id: str, **metadata) -> bool:
+    return active_tasks.try_register(project_type, str(task_id), **metadata)
 
 
 def unregister_active_task(project_type: str, task_id: str) -> None:
-    with _active_lock:
-        _active_tasks.discard((project_type, task_id))
+    active_tasks.unregister(project_type, str(task_id))
 
 
 def is_task_active(project_type: str, task_id: str) -> bool:
-    with _active_lock:
-        return (project_type, task_id) in _active_tasks
+    return active_tasks.is_active(project_type, str(task_id))
 
 
 def _mark_running_steps_as_error(state: dict) -> bool:
