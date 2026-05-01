@@ -250,36 +250,7 @@
   font-weight: 700; background: var(--bg-subtle); border-top: 2px solid var(--border);
 }
 
-/* ── 控件区 ───────────────────────────────────── */
-.oar-hero {
-  display: grid; grid-template-columns: repeat(6, minmax(150px, 1fr));
-  gap: var(--space-4); margin-bottom: var(--space-5);
-}
-.oar-card {
-  background: var(--bg-card); border: 1.5px solid var(--border);
-  border-radius: var(--radius-lg); padding: var(--space-6);
-}
-.oar-card.is-primary {
-  border-color: var(--accent); background: var(--accent-subtle);
-}
-.oar-roas-pair {
-  grid-column: span 2;
-  display: flex; align-items: stretch; gap: var(--space-5);
-}
-.oar-roas-cell { flex: 1 1 0; min-width: 0; }
-.oar-roas-divider {
-  flex: 0 0 1px; background: var(--accent); opacity: 0.25; align-self: stretch;
-}
-.oar-label {
-  font-size: var(--text-sm); color: var(--fg-muted); font-weight: 600; margin-bottom: var(--space-2);
-}
-.oar-value {
-  font-size: 38px; line-height: 1.1; font-weight: 800; color: var(--accent);
-  font-family: var(--font-mono);
-}
-.oar-sub {
-  margin-top: var(--space-2); color: var(--fg-muted); font-size: var(--text-sm);
-}
+/* ── 实时大盘子 tab 控件 ─────────────────────── */
 .oar-subtabs {
   display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap;
   margin: var(--space-5) 0 var(--space-4);
@@ -304,24 +275,17 @@
 .oar-id-cell {
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
 }
-.oar-grid {
-  display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr));
-  gap: var(--space-4); margin-bottom: var(--space-5);
+.oar-note {
+  color: var(--fg-muted); font-size: var(--text-sm);
 }
-.oar-mini-value {
-  font-size: var(--text-xl); font-weight: 700; color: var(--fg);
-  font-family: var(--font-mono);
+.oa-stat-sub {
+  margin-top: 4px; color: var(--fg-muted); font-size: var(--text-xs); line-height: 1.4;
 }
+
+/* ── 订单分析 tab 的口径提示条（实时大盘已废弃使用） ── */
 .oar-toolbar {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   margin-bottom: var(--space-4); flex-wrap: wrap;
-}
-.oar-toolbar input {
-  height: 32px; padding: 0 10px; border: 1px solid var(--border-strong);
-  border-radius: var(--radius); background: var(--bg-card); color: var(--fg);
-}
-.oar-note {
-  color: var(--fg-muted); font-size: var(--text-sm);
 }
 .oar-time-rule {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
@@ -335,10 +299,8 @@
 .oar-time-rule span {
   color: var(--fg-muted); font-size: var(--text-sm);
 }
-@media (max-width: 980px) {
-  .oar-hero, .oar-grid { grid-template-columns: 1fr; }
-  .oar-value { font-size: 32px; }
-  .oar-time-rule { align-items: flex-start; flex-direction: column; }
+@media (max-width: 768px) {
+  .oar-time-rule { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
 }
 
 .oa-controls {
@@ -647,12 +609,9 @@
 }
 @media (max-width: 768px) {
   .oa-mobile-tabs { display: block; }
-  .oar-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .oar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .oar-card { padding: 14px; }
-  .oar-value { font-size: 24px; }
-  .oar-roas-pair { grid-column: span 2; gap: 12px; }
-  .oar-time-rule { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
+  .oa-stats { gap: 12px; }
+  .oa-stat-card { min-width: 0; flex: 1 1 calc(50% - 6px); padding: 12px 14px; }
+  .oa-stat-value { font-size: 20px; }
   .oa-controls { gap: 8px; }
   .oa-controls label,
   .oa-controls select,
@@ -668,12 +627,10 @@
 }
 
 @media (max-width: 480px) {
-  .oar-hero { grid-template-columns: 1fr; }
-  .oar-grid { grid-template-columns: 1fr; }
-  .oar-value { font-size: 22px; }
-  .oar-card { padding: 12px; }
-  .oar-roas-pair { grid-column: 1; flex-direction: column; gap: 10px; }
-  .oar-roas-divider { width: 100%; height: 1px; flex: 0 0 1px; }
+  .oa-stat-card { padding: 10px 12px; flex: 1 1 calc(50% - 6px); }
+  .oa-stat-value { font-size: 18px; }
+  .oa-stat-label { font-size: 11px; }
+  .oa-stat-sub { font-size: 11px; }
 }
 {% endblock %}
 
@@ -694,81 +651,80 @@
 
 
 <section class="oa-panel active" id="panelRealtime">
-  <div class="oar-toolbar">
-    <div class="oar-note">NewJoy + Omurio / 按 Meta 广告系统日期统计</div>
-    <div>
-      <input type="date" id="realtimeDate">
-      <button class="btn btn-primary btn-sm" id="realtimeRefresh">刷新</button>
-    </div>
-  </div>
-
-  <div class="oar-time-rule">
-    <div>
-      <strong>日期口径：Meta 广告系统日</strong>
-      <div class="oar-note">“今天”按广告后台日期归属统计，订单会换算到同一个广告系统日后再累计。</div>
-    </div>
-    <span id="realtimeTimeRule">当前广告系统日：-</span>
-  </div>
-
-  <div class="oar-hero">
-    <div class="oar-card is-primary">
-      <div class="oar-label">商品销售额</div>
-      <div class="oar-value" id="realtimeRevenue">$0.00</div>
-      <div class="oar-sub" id="realtimeRevenueSub">订单 0 单</div>
-    </div>
-    <div class="oar-card is-primary">
-      <div class="oar-label">运费</div>
-      <div class="oar-value" id="realtimeShipping">$0.00</div>
-      <div class="oar-sub">订单收取的运费</div>
-    </div>
-    <div class="oar-card is-primary">
-      <div class="oar-label">总销售额</div>
-      <div class="oar-value" id="realtimeRevenueWithShipping">$0.00</div>
-      <div class="oar-sub">商品销售额 + 运费</div>
-    </div>
-    <div class="oar-card is-primary">
-      <div class="oar-label">广告消耗费用</div>
-      <div class="oar-value" id="realtimeSpend">$0.00</div>
-      <div class="oar-sub">Meta 实际消耗，包含无出单消耗</div>
-    </div>
-    <div class="oar-card is-primary oar-roas-pair">
-      <div class="oar-roas-cell">
-        <div class="oar-label">真实 ROAS（总销售额 / 总广告费）</div>
-        <div class="oar-value" id="realtimeRoas">-</div>
-        <div class="oar-sub" id="realtimeWindow">公式: 总销售额 / 广告消耗费用</div>
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      <div class="oad-range-presets" role="group" aria-label="实时大盘时间范围">
+        <button type="button" class="oad-seg is-active" data-realtime-range="today" aria-pressed="true">今天</button>
+        <button type="button" class="oad-seg" data-realtime-range="yesterday" aria-pressed="false">昨天</button>
+        <button type="button" class="oad-seg" data-realtime-range="thisWeek" aria-pressed="false">本周</button>
+        <button type="button" class="oad-seg" data-realtime-range="lastWeek" aria-pressed="false">上周</button>
+        <button type="button" class="oad-seg" data-realtime-range="thisMonth" aria-pressed="false">本月</button>
+        <button type="button" class="oad-seg" data-realtime-range="lastMonth" aria-pressed="false">上月</button>
       </div>
-      <div class="oar-roas-divider" aria-hidden="true"></div>
-      <div class="oar-roas-cell">
-        <div class="oar-label">Meta ROAS（Meta 销售额 / Meta 广告费）</div>
-        <div class="oar-value" id="realtimeMetaRoas">-</div>
-        <div class="oar-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
+      <div class="oad-date-range-field" role="group" aria-label="实时大盘自定义日期范围">
+        <input type="date" id="realtimeStartDate" aria-label="开始日期">
+        <span class="oad-date-range-sep">至</span>
+        <input type="date" id="realtimeEndDate" aria-label="结束日期">
       </div>
+      <button type="button" class="oad-btn-primary" id="realtimeRefresh">刷新</button>
+    </div>
+    <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 04:00 切日</div>
+  </div>
+
+  <div class="oa-stats" id="realtimeSummary">
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">商品销售额</div>
+      <div class="oa-stat-value" id="realtimeRevenue">$0.00</div>
+      <div class="oa-stat-sub" id="realtimeRevenueSub">订单 0 单</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">运费</div>
+      <div class="oa-stat-value" id="realtimeShipping">$0.00</div>
+      <div class="oa-stat-sub">订单收取的运费</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">总销售额</div>
+      <div class="oa-stat-value" id="realtimeRevenueWithShipping">$0.00</div>
+      <div class="oa-stat-sub">商品销售额 + 运费</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">广告消耗费用</div>
+      <div class="oa-stat-value" id="realtimeSpend">$0.00</div>
+      <div class="oa-stat-sub">Meta 实际消耗</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">真实 ROAS</div>
+      <div class="oa-stat-value" id="realtimeRoas">-</div>
+      <div class="oa-stat-sub" id="realtimeWindow">总销售额 / 广告费</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">Meta ROAS</div>
+      <div class="oa-stat-value" id="realtimeMetaRoas">-</div>
+      <div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">订单数</div>
+      <div class="oa-stat-value" id="realtimeOrderCount">0</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">商品件数</div>
+      <div class="oa-stat-value" id="realtimeUnits">0</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">订单最新时间</div>
+      <div class="oa-stat-value" id="realtimeFreshness">-</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">广告数据更新时间</div>
+      <div class="oa-stat-value" id="realtimeAdFreshness">-</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">数据快照时间</div>
+      <div class="oa-stat-value" id="realtimeSnapshotAt">-</div>
     </div>
   </div>
 
-  <div class="oar-grid">
-    <div class="oar-card">
-      <div class="oar-label">订单数</div>
-      <div class="oar-mini-value" id="realtimeOrderCount">0</div>
-    </div>
-    <div class="oar-card">
-      <div class="oar-label">商品件数</div>
-      <div class="oar-mini-value" id="realtimeUnits">0</div>
-    </div>
-    <div class="oar-card">
-      <div class="oar-label">订单最新时间</div>
-      <div class="oar-mini-value" id="realtimeFreshness">-</div>
-    </div>
-    <div class="oar-card">
-      <div class="oar-label">广告数据更新时间</div>
-      <div class="oar-mini-value" id="realtimeAdFreshness">-</div>
-    </div>
-    <div class="oar-card">
-      <div class="oar-label">数据快照时间</div>
-      <div class="oar-mini-value" id="realtimeSnapshotAt">-</div>
-    </div>
-  </div>
-
+  <div class="oar-note" style="margin-top: var(--space-5); margin-bottom: var(--space-2);">以下明细仅展示「当前广告系统日」 · 不跟随上方时间范围</div>
   <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
     <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
     <button type="button" class="oar-subtab" data-realtime-subtab="campaigns">广告计划</button>
@@ -2221,9 +2177,27 @@
   // ── 上传 ──────────────────────────────────────────
   var trueRoasRefresh = document.getElementById('trueRoasRefresh');
   if (trueRoasRefresh) trueRoasRefresh.addEventListener('click', loadTrueRoas);
+  var realtimeState = { range: 'today' };
+
   var realtimeRefresh = document.getElementById('realtimeRefresh');
-  if (realtimeRefresh) realtimeRefresh.addEventListener('click', loadRealtimeOverview);
-  var realtimeDate = document.getElementById('realtimeDate');
+  if (realtimeRefresh) {
+    realtimeRefresh.addEventListener('click', function() {
+      loadRealtimeTopCards();
+      loadRealtimeSubTabs();
+    });
+  }
+  document.querySelectorAll('[data-realtime-range]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setRealtimeRange(btn.dataset.realtimeRange);
+    });
+  });
+  ['realtimeStartDate', 'realtimeEndDate'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', function() {
+      syncRealtimeRangeSelection();
+      loadRealtimeTopCards();
+    });
+  });
   document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
@@ -2234,6 +2208,7 @@
       });
     });
   });
+  setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
   loadRealtimeOverview();
 
   function localDateString(value) {
@@ -2243,16 +2218,89 @@
     return y + '-' + m + '-' + d;
   }
 
+  // ── 时间范围预设（仿国家看板）───────────────────────
+  function resolveRealtimeRange(range) {
+    var now = new Date();
+    var start = new Date(now);
+    var end = new Date(now);
+    if (range === 'yesterday') {
+      start = addDays(now, -1);
+      end = addDays(now, -1);
+    } else if (range === 'thisWeek') {
+      start = startOfWeek(now);
+      end = endOfWeek(now);
+    } else if (range === 'lastWeek') {
+      start = addDays(startOfWeek(now), -7);
+      end = addDays(endOfWeek(now), -7);
+    } else if (range === 'thisMonth') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (range === 'lastMonth') {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0);
+    }
+    return { start: start, end: end };
+  }
+
+  function setRealtimeRange(range, skipLoad) {
+    var bounds = resolveRealtimeRange(range || 'today');
+    realtimeState.range = range || 'today';
+    setInputValue('realtimeStartDate', formatDateInput(bounds.start));
+    setInputValue('realtimeEndDate', formatDateInput(bounds.end));
+    syncRealtimeRangeSelection();
+    if (!skipLoad) loadRealtimeTopCards();
+  }
+
+  function syncRealtimeRangeSelection() {
+    var startEl = document.getElementById('realtimeStartDate');
+    var endEl = document.getElementById('realtimeEndDate');
+    var currentStart = startEl ? startEl.value : '';
+    var currentEnd = endEl ? endEl.value : '';
+    var matched = '';
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+      var bounds = resolveRealtimeRange(range);
+      if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
+        matched = range;
+        return true;
+      }
+      return false;
+    });
+    realtimeState.range = matched || 'custom';
+    document.querySelectorAll('[data-realtime-range]').forEach(function(btn) {
+      var isActive = btn.dataset.realtimeRange === matched;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function getRealtimeDateRange() {
+    var s = (document.getElementById('realtimeStartDate') || {}).value || '';
+    var e = (document.getElementById('realtimeEndDate') || {}).value || '';
+    if (!s || !e) return null;
+    if (e < s) throw new Error('结束日期不能早于开始日期');
+    return { start: s, end: e };
+  }
+
+  // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
   function loadRealtimeOverview() {
-    var dateInput = document.getElementById('realtimeDate');
-    var date = dateInput ? dateInput.value : '';
-    var hourlyBody = document.getElementById('realtimeHourlyBody');
-    var orderBody = document.getElementById('realtimeOrderBody');
-    var campaignBody = document.getElementById('realtimeCampaignBody');
-    if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
-    if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
-    if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
-    fetch('/order-analytics/realtime-overview?date=' + encodeURIComponent(date))
+    loadRealtimeTopCards();
+    loadRealtimeSubTabs();
+  }
+
+  // ── 顶部 11 张卡：按选择的时间范围聚合 ───────────────
+  function loadRealtimeTopCards() {
+    var range;
+    try {
+      range = getRealtimeDateRange();
+    } catch (err) {
+      var note = document.getElementById('realtimeRangeNote');
+      if (note) note.textContent = err.message;
+      return;
+    }
+    if (!range) return;
+    var url = '/order-analytics/realtime-overview?start_date=' +
+      encodeURIComponent(range.start) + '&end_date=' + encodeURIComponent(range.end);
+    fetch(url)
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
         return r.json();
@@ -2263,9 +2311,6 @@
         if (!Number.isFinite(revenueWithShipping) || revenueWithShipping === 0) {
           revenueWithShipping = Number(s.order_revenue || 0) + Number(s.shipping_revenue || 0);
         }
-        if (dateInput && !dateInput.value && (data.period || {}).date) {
-          dateInput.value = String((data.period || {}).date).slice(0, 10);
-        }
         document.getElementById('realtimeRevenue').textContent = fmtMoney(s.order_revenue);
         document.getElementById('realtimeSpend').textContent = fmtMoney(s.ad_spend);
         document.getElementById('realtimeRoas').textContent = fmtRoasValue(s.true_roas);
@@ -2274,9 +2319,7 @@
         var metaRoas = (Number.isFinite(metaSpend) && metaSpend > 0 && Number.isFinite(metaPurchase))
           ? metaPurchase / metaSpend : null;
         document.getElementById('realtimeMetaRoas').textContent = fmtRoasValue(metaRoas);
-        document.getElementById('realtimeMetaRoasSub').textContent = 'Meta 后台成效口径';
-        document.getElementById('realtimeRevenueSub').textContent =
-          '订单 ' + fmtInt(s.order_count || 0) + ' 单';
+        document.getElementById('realtimeRevenueSub').textContent = '订单 ' + fmtInt(s.order_count || 0) + ' 单';
         document.getElementById('realtimeOrderCount').textContent = fmtInt(s.order_count || 0);
         document.getElementById('realtimeUnits').textContent = s.units || 0;
         document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
@@ -2285,7 +2328,28 @@
         document.getElementById('realtimeAdFreshness').textContent = formatShortDateTime((data.freshness || {}).last_ad_updated_at);
         document.getElementById('realtimeSnapshotAt').textContent = formatShortDateTime((data.period || {}).data_until_at);
         document.getElementById('realtimeWindow').textContent = '截止 ' + formatShortDateTime((data.period || {}).data_until_at);
-        document.getElementById('realtimeTimeRule').textContent = formatTimeRule(data.period || {}, data.roas_points || []);
+      })
+      .catch(function(err) {
+        var note = document.getElementById('realtimeRangeNote');
+        if (note) note.textContent = '加载失败：' + err.message;
+      });
+  }
+
+  // ── 子 tab：永远展示"当前广告系统日"（不传日期参数）──
+  function loadRealtimeSubTabs() {
+    var hourlyBody = document.getElementById('realtimeHourlyBody');
+    var orderBody = document.getElementById('realtimeOrderBody');
+    var campaignBody = document.getElementById('realtimeCampaignBody');
+    if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
+    if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
+    fetch('/order-analytics/realtime-overview')
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        var s = data.summary || {};
         document.getElementById('realtimeGranularity').textContent =
           '每 10 分钟记录当天累计订单、商品销售额、运费、广告费和 ROAS；ROAS=总销售额/广告消耗费用';
         renderRealtimeRoasChart(data.roas_points || []);
