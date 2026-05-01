@@ -25,23 +25,14 @@ body {
 }
 
 /* iOS Safari 输入控件不要被自动缩放：字号 ≥ 16px 即可。
- * 仅在 <= 768px 启用，桌面保留原 13/14。 */
+ * 仅在 <= 768px 启用，桌面保留原 13/14。
+ * 用 !important 覆盖各页面 inline <style> 里的硬编码字号
+ * （tools.html 的 .avg-input、tasks_list 的 .tc-input 等都用了 13/14）。 */
 @media (max-width: 768px) {
-  input[type='text'],
-  input[type='password'],
-  input[type='email'],
-  input[type='number'],
-  input[type='search'],
-  input[type='tel'],
-  input[type='url'],
-  input[type='date'],
-  input[type='time'],
-  input[type='datetime-local'],
-  input[type='month'],
-  input[type='week'],
+  input,
   textarea,
   select {
-    font-size: max(16px, 1em);
+    font-size: max(16px, 1em) !important;
   }
 }
 
@@ -71,12 +62,24 @@ body {
     min-width: 0;
   }
 
-  /* 桌面顶栏右侧的用户胶囊 + 退出按钮：移动端隐藏，
-   * 用户信息和退出登录走 sidebar 抽屉脚部 */
-  .topbar-user,
-  .topbar-logout-btn,
-  .topbar > .topbar-user + a {
-    display: none;
+  /* 桌面顶栏右侧的用户胶囊：移动端隐藏。
+   * 这里用 !important 是为了覆盖 layout.html inline <style> 中的
+   * `.topbar-user { display: flex; }`——inline <style> 在 mobile.css
+   * <link> 之后加载，同特异性下 source order 后赢。 */
+  .topbar-user {
+    display: none !important;
+  }
+
+  /* 顶栏右上角"退出登录"按钮：移动端保留显示并紧凑化，
+   * 让用户在右上角直接看到退出入口（之前隐藏了，用户找不到出口）。 */
+  .topbar-logout-btn {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1;
+    min-height: 36px;
   }
 
   /* 主题切换按钮在移动端紧凑 */

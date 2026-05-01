@@ -53,6 +53,21 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 .close-btn { background: none; border: none; font-size: 20px; color: #9ca3af; cursor: pointer; padding: 0; }
 .close-btn:hover { color: #374151; }
 .perm-locked-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+
+/* ── 移动端适配 ── */
+@media (max-width: 768px) {
+  .create-card { padding: 14px; }
+  .form-row { grid-template-columns: 1fr; gap: 10px; }
+  .form-row > div:last-child { padding-top: 0 !important; }
+  .form-row button { width: 100%; }
+  .perm-modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 32px);
+  }
+  .perm-role-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .perm-role-row select { width: 100% !important; }
+}
 {% endblock %}
 
 {% block content %}
