@@ -2309,15 +2309,16 @@ def _aggregate_orders_by_product(
     """按产品聚合订单。返回 {product_id: {orders, units, revenue}}。"""
     sql = (
         "SELECT product_id, "
-        "COUNT(DISTINCT shopify_order_id) AS orders, "
-        "SUM(lineitem_quantity) AS units, "
-        "SUM(COALESCE(lineitem_price, 0) * lineitem_quantity) AS revenue "
-        "FROM shopify_orders "
-        "WHERE created_at_order >= %s AND created_at_order < DATE_ADD(%s, INTERVAL 1 DAY) "
+        "COUNT(DISTINCT dxm_package_id) AS orders, "
+        "SUM(COALESCE(quantity, 0)) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS revenue "
+        "FROM dianxiaomi_order_lines "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "AND product_id IS NOT NULL "
     )
     args: tuple = (start, end)
     if country:
-        sql += "AND billing_country = %s "
+        sql += "AND buyer_country = %s "
         args = (start, end, country)
     sql += "GROUP BY product_id"
 
