@@ -42,6 +42,27 @@ def test_pre_restart_with_blocking_task_exits_two(monkeypatch, capsys):
     assert "multi_translate:mt-1" in out
 
 
+def test_pre_restart_snapshot_failure_still_reports_blocking_tasks(monkeypatch, capsys):
+    from appcore.active_tasks import ActiveTask
+    from appcore.ops import active_tasks as cli
+
+    task = ActiveTask(project_type="multi_translate", task_id="mt-snapshot-fail")
+    monkeypatch.setattr(cli.active_tasks, "list_active_tasks", lambda: [task])
+    monkeypatch.setattr(cli.active_tasks, "load_persisted_active_tasks", lambda max_age_seconds: [])
+
+    def fail_snapshot(reason, tasks=None):
+        raise RuntimeError("snapshot offline")
+
+    monkeypatch.setattr(cli.active_tasks, "snapshot_active_tasks", fail_snapshot)
+
+    assert cli.main(["pre-restart"]) == 2
+    out = capsys.readouterr().out
+    assert "warning: failed to snapshot active tasks before restart" in out
+    assert "snapshot offline" in out
+    assert "blocked" in out
+    assert "multi_translate:mt-snapshot-fail" in out
+
+
 def test_pre_restart_force_allows_blocking_task(monkeypatch, capsys):
     from appcore.active_tasks import ActiveTask
     from appcore.ops import active_tasks as cli

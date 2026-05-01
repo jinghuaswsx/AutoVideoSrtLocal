@@ -84,10 +84,13 @@ def _pre_restart(args: argparse.Namespace) -> int:
         _print_load_error(exc, force=args.force)
         return 0 if args.force else 2
 
-    active_tasks.snapshot_active_tasks(
-        "pre_restart_force" if args.force else "pre_restart_check",
-        tasks=tasks,
-    )
+    try:
+        active_tasks.snapshot_active_tasks(
+            "pre_restart_force" if args.force else "pre_restart_check",
+            tasks=tasks,
+        )
+    except Exception as exc:
+        print(f"warning: failed to snapshot active tasks before restart: {exc}")
     if not tasks:
         print("no active tasks")
         return 0
