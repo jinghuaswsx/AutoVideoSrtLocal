@@ -68,7 +68,11 @@ def _print_load_error(exc: Exception, *, force: bool) -> None:
 
 
 def _list(args: argparse.Namespace) -> int:
-    tasks = _load_tasks(args.max_age_seconds)
+    try:
+        tasks = _load_tasks(args.max_age_seconds)
+    except Exception as exc:
+        _print_load_error(exc, force=False)
+        return 2
     _print_tasks(tasks, as_json=args.json)
     return 0
 
