@@ -36,6 +36,7 @@
 - 2026-05-02 在测试服务器 `/opt/autovideosrt-test` 运行第 7 项关键回归：`122 passed`，覆盖 active task、CLI、runner lifecycle、startup recovery、调度登记、服务调优、安全配置、上传校验、schema safety 和 DB pool 配置。
 - 2026-05-02 测试服务器补充执行 `py_compile`、`pre-restart`、HTTP 可达性和最近 10 分钟 warning journal 检查：`pre-restart` 返回 `no active tasks`，根路径返回 `302`，服务保持 `active (running)`，warning journal 无新增记录。
 - 2026-05-02 当前工作区补充首次部署缺少 runtime active task 表的 CLI 提示回归后，重新运行同一关键组合回归：`124 passed, 2 warnings`。
+- 2026-05-02 测试环境已拉取提交 `4aaf53ad`，服务端使用 `/opt/autovideosrt/venv/bin/python` 重新执行 `tests/test_active_tasks_cli.py`：`6 passed`；`pre-restart` 返回 `no active tasks`，服务保持 `active/running`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
