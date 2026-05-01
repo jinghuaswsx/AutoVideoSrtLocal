@@ -25,23 +25,14 @@ body {
 }
 
 /* iOS Safari 输入控件不要被自动缩放：字号 ≥ 16px 即可。
- * 仅在 <= 768px 启用，桌面保留原 13/14。 */
+ * 仅在 <= 768px 启用，桌面保留原 13/14。
+ * 用 !important 覆盖各页面 inline <style> 里的硬编码字号
+ * （tools.html 的 .avg-input、tasks_list 的 .tc-input 等都用了 13/14）。 */
 @media (max-width: 768px) {
-  input[type='text'],
-  input[type='password'],
-  input[type='email'],
-  input[type='number'],
-  input[type='search'],
-  input[type='tel'],
-  input[type='url'],
-  input[type='date'],
-  input[type='time'],
-  input[type='datetime-local'],
-  input[type='month'],
-  input[type='week'],
+  input,
   textarea,
   select {
-    font-size: max(16px, 1em);
+    font-size: max(16px, 1em) !important;
   }
 }
 
