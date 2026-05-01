@@ -8,6 +8,8 @@ from typing import Iterable
 from appcore import active_tasks
 from appcore.active_tasks import ActiveTask
 
+_RUNTIME_TABLE_NAMES = ("runtime_active_tasks", "runtime_active_task_snapshots")
+
 
 def _task_key(task: ActiveTask) -> str:
     return f"{task.project_type}:{task.task_id}"
@@ -42,6 +44,29 @@ def _load_tasks(max_age_seconds: int) -> list[ActiveTask]:
     ])
 
 
+def _is_missing_runtime_table_error(exc: Exception) -> bool:
+    parts = getattr(exc, "args", None) or (str(exc),)
+    text = " ".join(str(part) for part in parts).lower()
+    return "1146" in text and any(table_name in text for table_name in _RUNTIME_TABLE_NAMES)
+
+
+def _print_load_error(exc: Exception, *, force: bool) -> None:
+    if not _is_missing_runtime_table_error(exc):
+        print(f"blocked: cannot verify active tasks before restart: {exc}")
+        return
+
+    print(
+        "blocked: runtime active task tables are missing; this is expected only during "
+        "the first deploy before migrations have run."
+    )
+    print(
+        "Use --force only after manually confirming no long-running tasks, then restart "
+        "once to apply migrations. After that, run pre-restart without --force."
+    )
+    if force:
+        print("force: restart allowed by operator override despite missing runtime active task tables.")
+
+
 def _list(args: argparse.Namespace) -> int:
     tasks = _load_tasks(args.max_age_seconds)
     _print_tasks(tasks, as_json=args.json)
@@ -52,7 +77,7 @@ def _pre_restart(args: argparse.Namespace) -> int:
     try:
         tasks = _load_tasks(args.max_age_seconds)
     except Exception as exc:
-        print(f"blocked: cannot verify active tasks before restart: {exc}")
+        _print_load_error(exc, force=args.force)
         return 0 if args.force else 2
 
     active_tasks.snapshot_active_tasks(
