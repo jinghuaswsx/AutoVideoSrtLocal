@@ -10,9 +10,17 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from appcore import gemini_image, llm_client, local_media_storage, medias, object_keys, task_state
+from appcore import (
+    gemini_image,
+    llm_client,
+    local_media_storage,
+    medias,
+    object_keys,
+    task_state,
+)
 from appcore.events import Event, EventBus
-from web import store
+
+store = task_state
 
 logger = logging.getLogger(__name__)
 

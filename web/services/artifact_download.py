@@ -8,6 +8,8 @@ from flask import Response, jsonify, send_file
 from flask_login import current_user
 
 from appcore.api_keys import resolve_jianying_project_root
+from appcore.safe_paths import PathSafetyError, resolve_under_allowed_roots
+from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.capcut import build_capcut_archive_name, rewrite_capcut_project_paths
 from web import store
 
@@ -41,8 +43,44 @@ def _preview_artifact_path(task: dict, name: str, variant: str | None) -> str | 
     }.get(name)
 
 
-def _local_artifact_exists(path: str | None) -> bool:
-    return bool(path and os.path.exists(path))
+def _artifact_allowed_roots(task: dict) -> list[str]:
+    roots = []
+    task_dir = (task.get("task_dir") or "").strip()
+    if task_dir:
+        roots.append(task_dir)
+    roots.extend([OUTPUT_DIR, UPLOAD_DIR])
+    return roots
+
+
+def artifact_allowed_roots(task: dict) -> list[str]:
+    return _artifact_allowed_roots(task)
+
+
+def _safe_artifact_path(task: dict, path: str | None) -> str | None:
+    if not path:
+        return None
+    try:
+        return str(resolve_under_allowed_roots(path, _artifact_allowed_roots(task)))
+    except PathSafetyError:
+        return None
+
+
+def _local_artifact_exists(task: dict, path: str | None) -> bool:
+    safe_path = _safe_artifact_path(task, path)
+    return bool(safe_path and os.path.isfile(safe_path))
+
+
+def safe_task_file_response(
+    task: dict,
+    path: str | None,
+    *,
+    not_found_message: str = "Artifact not found",
+    **send_file_kwargs,
+):
+    safe_path = _safe_artifact_path(task, path)
+    if not safe_path or not os.path.isfile(safe_path):
+        return jsonify({"error": not_found_message}), 404
+    return send_file(os.path.abspath(safe_path), **send_file_kwargs)
 
 
 def artifact_kind_for_download(file_type: str) -> str | None:
@@ -68,7 +106,7 @@ def upload_capcut_archive_for_current_user(
     archive_path: str,
 ) -> dict | None:
     """Compatibility hook; CapCut archives are served from local disk."""
-    if not archive_path or not os.path.exists(archive_path):
+    if not _local_artifact_exists(task, archive_path):
         return None
     return {
         "storage_backend": "local",
@@ -100,7 +138,7 @@ def _rewrite_capcut_for_current_user(
     archive_path: str | None,
     rewrite_capcut_paths: bool,
 ) -> None:
-    if not rewrite_capcut_paths or not _local_artifact_exists(archive_path):
+    if not rewrite_capcut_paths or not _local_artifact_exists(task, archive_path):
         return
 
     project_dir = exports.get("capcut_project")
@@ -126,11 +164,19 @@ def _rewrite_capcut_for_current_user(
 
 
 def _send_local_artifact(task: dict, task_id: str, file_type: str, variant: str | None, path: str) -> Response:
+    safe_path = _safe_artifact_path(task, path)
+    if not safe_path:
+        return jsonify({
+            "error": "local artifact missing",
+            "message": "本地产物缺失，请先运行本地存储迁移回填，或重新生成该任务。",
+        }), 404
+    if not os.path.isfile(safe_path):
+        return jsonify({"error": "local artifact missing"}), 404
     download_name = None
     if file_type == "capcut":
         source_name = task.get("display_name") or task.get("original_filename") or task_id
         download_name = build_capcut_archive_name(source_name, variant=variant)
-    return send_file(os.path.abspath(path), as_attachment=True, download_name=download_name)
+    return send_file(os.path.abspath(safe_path), as_attachment=True, download_name=download_name)
 
 
 def serve_artifact_download(
@@ -149,7 +195,7 @@ def serve_artifact_download(
         "capcut": exports.get("capcut_archive"),
     }
     path = path_map.get(file_type)
-    local_available = _local_artifact_exists(path)
+    local_available = _local_artifact_exists(task, path)
 
     if file_type == "capcut":
         _rewrite_capcut_for_current_user(task_id, task, variant, exports, path, rewrite_capcut_paths)

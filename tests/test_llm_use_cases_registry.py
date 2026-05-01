@@ -1,4 +1,12 @@
-from appcore.llm_use_cases import MODULE_LABELS, USE_CASES, get_use_case, list_by_module
+from appcore.llm_providers import PROVIDER_ADAPTERS
+from appcore.llm_use_cases import (
+    KNOWN_USE_CASE_PROVIDER_CODES,
+    LLM_PROVIDER_CODES,
+    MODULE_LABELS,
+    USE_CASES,
+    get_use_case,
+    list_by_module,
+)
 
 
 def test_all_use_cases_have_required_fields():
@@ -6,14 +14,18 @@ def test_all_use_cases_have_required_fields():
         assert uc["code"] == code, f"{code} mismatch self-key"
         assert uc["module"], f"{code} missing module"
         assert uc["label"], f"{code} missing label"
-        assert uc["default_provider"] in {
-            "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
-            "gemini_vertex_adc",
-            "elevenlabs", "doubao_asr",
-        }
+        assert uc["default_provider"] in KNOWN_USE_CASE_PROVIDER_CODES
         assert uc["default_model"], f"{code} missing default_model"
         assert uc["usage_log_service"], f"{code} missing usage_log_service"
         assert uc["units_type"] in {"tokens", "chars", "seconds", "images"}
+
+
+def test_llm_use_case_providers_have_registered_adapters():
+    assert LLM_PROVIDER_CODES <= set(PROVIDER_ADAPTERS)
+    for code, uc in USE_CASES.items():
+        provider = uc["default_provider"]
+        if provider in LLM_PROVIDER_CODES:
+            assert provider in PROVIDER_ADAPTERS, f"{code} missing adapter for {provider}"
 
 
 def test_video_translate_defaults_align_with_master_vertex_pref():

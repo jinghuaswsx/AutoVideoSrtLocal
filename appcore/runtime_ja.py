@@ -1,4 +1,4 @@
-"""Dedicated Japanese video translation runner.
+﻿"""Dedicated Japanese video translation runner.
 
 The generic multi-language runner is word-count oriented. This runner keeps
 Japanese on a character-budget path from localization through subtitles.
@@ -33,7 +33,7 @@ from pipeline.languages import ja as ja_rules
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.timeline import build_timeline_manifest
 from pipeline.tts import _get_audio_duration, generate_full_audio
-from web.preview_artifacts import (
+from appcore.preview_artifacts import (
     build_asr_artifact,
     build_subtitle_artifact,
     build_translate_artifact,

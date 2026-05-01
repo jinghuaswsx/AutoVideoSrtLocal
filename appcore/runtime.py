@@ -1,4 +1,4 @@
-"""Framework-agnostic pipeline runner.
+﻿"""Framework-agnostic pipeline runner.
 
 No Flask, no socketio, no web imports.
 Uses EventBus to publish status events consumed by any adapter (web, desktop).
@@ -35,7 +35,7 @@ from appcore.events import (
     Event,
     EventBus,
 )
-from web.preview_artifacts import (
+from appcore.preview_artifacts import (
     build_alignment_artifact,
     build_analysis_artifact,
     build_asr_artifact,
@@ -2247,7 +2247,7 @@ class PipelineRunner:
 
         # Fire-and-forget translation-quality assessment. Failures don't block compose.
         try:
-            from web.services import quality_assessment as _qa
+            from appcore import quality_assessment as _qa
             _qa.trigger_assessment(
                 task_id=task_id, project_type=self.project_type,
                 triggered_by="auto", user_id=self.user_id,
@@ -3030,7 +3030,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
 
         # Fire-and-forget translation-quality assessment. Failures don't block compose.
         try:
-            from web.services import quality_assessment as _qa
+            from appcore import quality_assessment as _qa
             _qa.trigger_assessment(
                 task_id=task_id, project_type=runner.project_type,
                 triggered_by="auto", user_id=runner.user_id,

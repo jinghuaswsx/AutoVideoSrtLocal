@@ -16,6 +16,7 @@ import uuid
 from typing import Any, Optional
 
 from appcore.db import query
+from appcore import realtime_events
 
 log = logging.getLogger(__name__)
 
@@ -50,11 +51,8 @@ def _get_api_key() -> str:
 
 
 def _emit(event: str, payload: dict) -> None:
-    try:
-        from web.extensions import socketio
-        socketio.emit(event, payload, to="admin")
-    except Exception:
-        log.warning("socketio emit failed: %s", event, exc_info=True)
+    if not realtime_events.emit_admin(event, payload):
+        log.debug("admin realtime emitter is not registered: %s", event)
 
 
 def start_sync(*, language: str) -> str:

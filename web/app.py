@@ -20,6 +20,7 @@ from flask_socketio import join_room
 from flask_wtf.csrf import CSRFProtect
 
 from appcore import task_state
+from appcore import realtime_events
 from appcore.bulk_translate_recovery import mark_interrupted_bulk_translate_tasks
 from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
@@ -137,6 +138,9 @@ def create_app() -> Flask:
     login_manager.init_app(app)
     csrf.init_app(app)
     socketio.init_app(app)
+    realtime_events.register_admin_emitter(
+        lambda event, payload: socketio.emit(event, payload, to="admin")
+    )
 
     # 注册蓝图
     app.register_blueprint(auth_bp)

@@ -382,7 +382,10 @@ def get_artifact(task_id, name):
 
     variant = request.args.get("variant") or None
 
-    from web.services.artifact_download import preview_artifact_tos_redirect
+    from web.services.artifact_download import (
+        preview_artifact_tos_redirect,
+        safe_task_file_response,
+    )
     tos_resp = preview_artifact_tos_redirect(task, name, variant=variant)
     if tos_resp is not None:
         return tos_resp
@@ -392,8 +395,8 @@ def get_artifact(task_id, name):
         preview_files = (task.get("variants") or {}).get(variant, {}).get("preview_files", {})
 
     path = preview_files.get(name)
-    if path and os.path.exists(path):
-        return send_file(os.path.abspath(path))
+    if path:
+        return safe_task_file_response(task, path)
     return jsonify({"error": "Artifact not found"}), 404
 
 
@@ -422,14 +425,19 @@ def get_round_file(task_id: str, round_index: int, kind: str):
     filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
     filename = filename_pattern.format(r=round_index)
     path = os.path.join(task.get("task_dir", ""), filename)
-    if not os.path.exists(path):
-        return jsonify({"error": "File not ready"}), 404
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response(
+        task,
+        path,
+        not_found_message="File not ready",
+        mimetype=mime,
+        as_attachment=False,
+        download_name=filename,
+        conditional=False,
+    )
 
     # conditional=False 禁用 304，避免浏览器 If-None-Match 命中后返回空 body
     # 让前端 res.json() 爆 "Unexpected end of JSON input"。
-    return send_file(os.path.abspath(path), mimetype=mime,
-                     as_attachment=False, download_name=filename,
-                     conditional=False)
 
 
 @bp.route("/api/fr-translate/<task_id>/analysis/run", methods=["POST"])

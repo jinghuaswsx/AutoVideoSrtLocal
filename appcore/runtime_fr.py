@@ -1,4 +1,4 @@
-"""French translation pipeline runner.
+﻿"""French translation pipeline runner.
 
 Subclasses PipelineRunner, overriding translate/tts/subtitle steps
 for French-specific prompts, TTS model, and subtitle rules.
@@ -29,7 +29,7 @@ from appcore.runtime import (
     _save_json,
     _resolve_translate_provider,
 )
-from web.preview_artifacts import (
+from appcore.preview_artifacts import (
     build_asr_artifact,
     build_subtitle_artifact,
     build_translate_artifact,

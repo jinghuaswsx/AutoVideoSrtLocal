@@ -23,7 +23,7 @@ def build_product_preview_payload(
 def build_multi_translate_preview_payload(
     task_id: str, user_id: int, *, api_base: str = "/api/multi-translate",
 ) -> dict:
-    from web import store
+    from appcore import task_state as store
 
     task = store.get(task_id) or {}
     video_url = _pick_task_video_url(task)

@@ -198,6 +198,7 @@ DB_PORT = int(_env("DB_PORT", "3306"))
 DB_NAME = _env("DB_NAME", "auto_video")
 DB_USER = _env("DB_USER", "root")
 DB_PASSWORD = _env("DB_PASSWORD")
+DB_POOL_MAX_CONNECTIONS = int(_env("DB_POOL_MAX_CONNECTIONS", "40"))
 
 
 def validate_runtime_config(required_keys=None):

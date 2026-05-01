@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+
+class _FakeRunner:
+    project_type = "translation"
+
+    def start(self, task_id):
+        return None
+
+    def resume(self, task_id, start_step):
+        return None
+
+
+def test_pipeline_runner_start_prevents_duplicate_active_thread(monkeypatch):
+    from appcore import task_recovery
+    from web.services import pipeline_runner
+
+    task_id = "runner-dup"
+    task_recovery.unregister_active_task("translation", task_id)
+    threads = []
+
+    class FakeThread:
+        def __init__(self, *, target, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    monkeypatch.setattr(pipeline_runner, "_make_runner", lambda task_id, user_id: _FakeRunner())
+    monkeypatch.setattr(pipeline_runner.threading, "Thread", FakeThread)
+
+    try:
+        assert pipeline_runner.start(task_id, user_id=1) is True
+        assert pipeline_runner.start(task_id, user_id=1) is False
+        assert len(threads) == 1
+        assert task_recovery.is_task_active("translation", task_id) is True
+    finally:
+        task_recovery.unregister_active_task("translation", task_id)
+
+
+def test_image_translate_runner_registers_active_task_before_thread_runs(monkeypatch):
+    from appcore import task_recovery
+    from web.services import image_translate_runner
+
+    task_id = "image-active"
+    task_recovery.unregister_active_task("image_translate", task_id)
+    with image_translate_runner._running_tasks_lock:
+        image_translate_runner._running_tasks.discard(task_id)
+    threads = []
+
+    class FakeThread:
+        def __init__(self, *, target, daemon=None):
+            self.target = target
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    monkeypatch.setattr(image_translate_runner.threading, "Thread", FakeThread)
+
+    try:
+        assert image_translate_runner.start(task_id, user_id=1) is True
+        assert task_recovery.is_task_active("image_translate", task_id) is True
+        assert len(threads) == 1
+    finally:
+        task_recovery.unregister_active_task("image_translate", task_id)
+        with image_translate_runner._running_tasks_lock:
+            image_translate_runner._running_tasks.discard(task_id)
+
+
+def test_translate_lab_runner_start_uses_active_registry(monkeypatch):
+    from appcore import runner_lifecycle, task_recovery
+    from web.services import translate_lab_runner
+
+    task_id = "lab-active"
+    task_recovery.unregister_active_task("translate_lab", task_id)
+    threads = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    class FakeLabRunner:
+        project_type = "translate_lab"
+
+        def __init__(self, *, bus, user_id=None):
+            self.bus = bus
+            self.user_id = user_id
+
+        def start(self, task_id):
+            return None
+
+        def resume(self, task_id, start_step):
+            return None
+
+    monkeypatch.setattr(translate_lab_runner, "PipelineRunnerV2", FakeLabRunner)
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+
+    try:
+        assert translate_lab_runner.start(task_id, user_id=1) is True
+        assert translate_lab_runner.start(task_id, user_id=1) is False
+        assert task_recovery.is_task_active("translate_lab", task_id) is True
+        assert len(threads) == 1
+    finally:
+        task_recovery.unregister_active_task("translate_lab", task_id)
+
+
+def test_subtitle_removal_runner_registers_active_task_before_thread_runs(monkeypatch):
+    from appcore import runner_lifecycle, task_recovery
+    from web.services import subtitle_removal_runner
+
+    task_id = "sr-active"
+    task_recovery.unregister_active_task("subtitle_removal", task_id)
+    with subtitle_removal_runner._running_tasks_lock:
+        subtitle_removal_runner._running_tasks.discard(task_id)
+    threads = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+    monkeypatch.setattr(subtitle_removal_runner.threading, "Thread", FakeThread, raising=False)
+    monkeypatch.setattr(
+        subtitle_removal_runner.SubtitleRemovalRuntime,
+        "start",
+        lambda self, task_id: None,
+    )
+
+    try:
+        assert subtitle_removal_runner.start(task_id, user_id=1) is True
+        assert subtitle_removal_runner.start(task_id, user_id=1) is False
+        assert task_recovery.is_task_active("subtitle_removal", task_id) is True
+        assert len(threads) == 1
+    finally:
+        task_recovery.unregister_active_task("subtitle_removal", task_id)
+        with subtitle_removal_runner._running_tasks_lock:
+            subtitle_removal_runner._running_tasks.discard(task_id)
+
+
+def test_link_check_runner_registers_active_task_before_thread_runs(monkeypatch):
+    from appcore import runner_lifecycle, task_recovery
+    from web.services import link_check_runner
+
+    task_id = "lc-active"
+    task_recovery.unregister_active_task("link_check", task_id)
+    with link_check_runner._lock:
+        link_check_runner._running.discard(task_id)
+    threads = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    class FakeRuntime:
+        def start(self, task_id):
+            return None
+
+    monkeypatch.setattr(link_check_runner, "LinkCheckRuntime", lambda: FakeRuntime())
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+
+    try:
+        assert link_check_runner.start(task_id) is True
+        assert link_check_runner.start(task_id) is False
+        assert task_recovery.is_task_active("link_check", task_id) is True
+        assert len(threads) == 1
+    finally:
+        task_recovery.unregister_active_task("link_check", task_id)
+        with link_check_runner._lock:
+            link_check_runner._running.discard(task_id)
+
+
+def test_link_check_runner_rejects_duplicate_global_active_task(monkeypatch):
+    from appcore import task_recovery
+    from web.services import link_check_runner
+
+    task_id = "lc-global-active"
+    with link_check_runner._lock:
+        link_check_runner._running.discard(task_id)
+    task_recovery.register_active_task("link_check", task_id)
+    started = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            started.append(self)
+
+    monkeypatch.setattr(link_check_runner.threading, "Thread", FakeThread)
+
+    try:
+        assert link_check_runner.start(task_id) is False
+        assert started == []
+        with link_check_runner._lock:
+            assert task_id not in link_check_runner._running
+    finally:
+        task_recovery.unregister_active_task("link_check", task_id)
+        with link_check_runner._lock:
+            link_check_runner._running.discard(task_id)

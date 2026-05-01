@@ -1,4 +1,4 @@
-"""Sentence-level AV-sync translation runner.
+﻿"""Sentence-level AV-sync translation runner.
 
 This runner deliberately uses MultiTranslateRunner as the base workflow:
 extract -> asr -> asr_normalize -> voice_match -> alignment -> translate
@@ -29,7 +29,7 @@ from appcore.tts_language_guard import (
     TtsLanguageValidationError,
     validate_tts_script_language_or_raise,
 )
-from web.preview_artifacts import (
+from appcore.preview_artifacts import (
     build_subtitle_artifact,
     build_translate_artifact,
     build_tts_artifact,

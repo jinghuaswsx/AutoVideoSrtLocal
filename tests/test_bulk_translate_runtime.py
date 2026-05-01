@@ -607,7 +607,6 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     )
     monkeypatch.setattr(mod, "execute", lambda *args, **kwargs: 1)
 
-    import web.store as store
     from web.services import multi_pipeline_runner
 
     def fake_create(task_id, video_path, task_dir, original_filename, user_id):
@@ -633,9 +632,9 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     def fake_set_preview_file(task_id, name, path):
         preview_files.setdefault(task_id, {})[name] = path
 
-    monkeypatch.setattr(store, "create", fake_create)
-    monkeypatch.setattr(store, "update", fake_update)
-    monkeypatch.setattr(store, "set_preview_file", fake_set_preview_file)
+    monkeypatch.setattr(mod.store, "create", fake_create)
+    monkeypatch.setattr(mod.store, "update", fake_update)
+    monkeypatch.setattr(mod.store, "set_preview_file", fake_set_preview_file)
     monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
     monkeypatch.setattr(multi_pipeline_runner, "start", lambda task_id, user_id: started.append((task_id, user_id)))
 
@@ -686,7 +685,6 @@ def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatc
     )
     monkeypatch.setattr(mod, "execute", lambda *args, **kwargs: 1)
 
-    import web.store as store
     from web.services import ja_pipeline_runner, multi_pipeline_runner
 
     def fake_create(task_id, video_path, task_dir, original_filename, user_id):
@@ -707,8 +705,8 @@ def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatc
             fh.write(b"video")
         return destination
 
-    monkeypatch.setattr(store, "create", fake_create)
-    monkeypatch.setattr(store, "update", fake_update)
+    monkeypatch.setattr(mod.store, "create", fake_create)
+    monkeypatch.setattr(mod.store, "update", fake_update)
     monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
     monkeypatch.setattr(multi_pipeline_runner, "start", lambda task_id, user_id: multi_started.append((task_id, user_id)))
     monkeypatch.setattr(ja_pipeline_runner, "start", lambda task_id, user_id: ja_started.append((task_id, user_id)))

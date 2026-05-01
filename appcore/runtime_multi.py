@@ -1,4 +1,4 @@
-"""多语种视频翻译 pipeline runner。
+﻿"""多语种视频翻译 pipeline runner。
 
 单一 Runner 处理 de/fr/es/it/ja/pt 所有目标语言：
 - 翻译步骤走 llm_prompt_configs resolver
@@ -41,7 +41,7 @@ from pipeline.localization import (
 )
 from pipeline.translate import generate_localized_translation, get_model_display_name
 from pipeline import asr_normalize as pipeline_asr_normalize
-from web.preview_artifacts import (
+from appcore.preview_artifacts import (
     build_asr_artifact,
     build_asr_normalize_artifact,
     build_subtitle_artifact,
@@ -365,7 +365,7 @@ class MultiTranslateRunner(PipelineRunner):
 
         # Fire-and-forget translation-quality assessment. Failures don't block compose.
         try:
-            from web.services import quality_assessment as _qa
+            from appcore import quality_assessment as _qa
             _qa.trigger_assessment(
                 task_id=task_id, project_type=self.project_type,
                 triggered_by="auto", user_id=self.user_id,

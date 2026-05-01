@@ -363,9 +363,20 @@ def _artifact_candidates(task_id: str, name: str, task: dict | None = None, vari
 
 
 def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> str | None:
+    if not task:
+        return None
+    from appcore.safe_paths import PathSafetyError, resolve_under_allowed_roots
+    from web.services.artifact_download import artifact_allowed_roots
+
     for path in _artifact_candidates(task_id, name, task, variant=variant):
-        if path and os.path.exists(path):
-            return os.path.abspath(path)
+        if not path:
+            continue
+        try:
+            safe_path = resolve_under_allowed_roots(path, artifact_allowed_roots(task))
+        except PathSafetyError:
+            continue
+        if safe_path.is_file():
+            return str(safe_path)
     return None
 
 
@@ -724,14 +735,19 @@ def get_round_file(task_id: str, round_index: int, kind: str):
     filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
     filename = filename_pattern.format(r=round_index)
     path = os.path.join(task.get("task_dir", ""), filename)
-    if not os.path.exists(path):
-        return jsonify({"error": "File not ready"}), 404
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response(
+        task,
+        path,
+        not_found_message="File not ready",
+        mimetype=mime,
+        as_attachment=False,
+        download_name=filename,
+        conditional=False,
+    )
 
     # conditional=False 禁用 304，避免浏览器对 round 文件命中 If-None-Match 后
     # 返回空 body，前端 res.json() 爆 "Unexpected end of JSON input"。
-    return send_file(os.path.abspath(path), mimetype=mime,
-                     as_attachment=False, download_name=filename,
-                     conditional=False)
 
 
 @bp.route("/<task_id>/restart", methods=["POST"])

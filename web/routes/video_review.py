@@ -11,6 +11,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
+from appcore.project_state import update_project_state
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
     recover_project_if_needed,
@@ -318,17 +319,9 @@ def delete(task_id: str):
 
 def _update_state(task_id: str, updates: dict):
     """更新 state_json 中的字段，支持点号路径。"""
-    row = db_query_one("SELECT state_json FROM projects WHERE id = %s", (task_id,))
-    if not row:
-        return
-    state = json.loads(row.get("state_json") or "{}")
-    for key, val in updates.items():
-        parts = key.split(".")
-        target = state
-        for p in parts[:-1]:
-            target = target.setdefault(p, {})
-        target[parts[-1]] = val
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
+    update_project_state(
+        task_id,
+        updates,
+        query_one_func=db_query_one,
+        execute_func=db_execute,
     )

@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 
 from appcore import object_keys
 from appcore.db import execute, query
+from appcore.safe_paths import PathSafetyError, remove_file_under_roots, remove_tree_under_roots
+from config import OUTPUT_DIR, UPLOAD_DIR
 
 log = logging.getLogger(__name__)
 
@@ -59,14 +60,19 @@ def run_cleanup() -> None:
 def delete_task_storage(task_or_row: dict) -> None:
     task_dir = (task_or_row.get("task_dir") or "").strip()
     if task_dir and os.path.isdir(task_dir):
-        shutil.rmtree(task_dir, ignore_errors=True)
+        try:
+            remove_tree_under_roots(task_dir, [OUTPUT_DIR], ignore_errors=True)
+        except PathSafetyError:
+            log.warning("Skip deleting task_dir outside OUTPUT_DIR: %s", task_dir)
 
     state = _load_task_state(task_or_row)
     video_path = state.get("video_path") or task_or_row.get("video_path") or ""
     if video_path and os.path.isfile(video_path):
         try:
-            os.remove(video_path)
+            remove_file_under_roots(video_path, [UPLOAD_DIR, OUTPUT_DIR])
             log.info("Deleted upload file: %s", video_path)
+        except PathSafetyError:
+            log.warning("Skip deleting upload file outside storage roots: %s", video_path)
         except Exception:
             pass
 
@@ -95,8 +101,6 @@ def _load_task_state(row: dict) -> dict:
 
 def _cleanup_orphan_uploads() -> None:
     """Remove upload files whose project has been deleted or does not exist."""
-    from config import UPLOAD_DIR
-
     if not UPLOAD_DIR or not os.path.isdir(UPLOAD_DIR):
         return
 

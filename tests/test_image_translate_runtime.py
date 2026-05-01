@@ -342,6 +342,7 @@ def test_runtime_non_retryable_marks_failed_immediately(tmp_path):
     from appcore.gemini_image import GeminiImageError
 
     task = _fake_task([_item(0), _item(1)])
+    task["concurrency_mode"] = "sequential"
     def fake_download(key, lp):
         open(lp, "wb").write(b"IMG")
         return lp

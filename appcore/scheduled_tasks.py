@@ -256,8 +256,35 @@ CONTROL_LABELS = {
 CONTROLLABLE_STRATEGIES = {"apscheduler", "systemd", "windows", "guard"}
 
 
+def _log_source(task: TaskDefinition) -> str:
+    log_table = str(task.get("log_table") or "").strip()
+    if log_table:
+        return f"db:{log_table}"
+    output_file = str(task.get("output_file") or "").strip()
+    if output_file:
+        return f"file:{output_file}"
+    source_type = str(task.get("source_type") or "").strip().lower()
+    if source_type in {"apscheduler", "in_process"}:
+        return "service:autovideosrt"
+    if source_type == "systemd":
+        return f"journal:{task.get('source_ref') or task.get('code') or 'unknown'}"
+    if source_type == "windows":
+        return "windows:event-log"
+    if source_type == "cron":
+        return "cron:external"
+    return "unknown"
+
+
+def _with_definition_metadata(task: TaskDefinition) -> TaskDefinition:
+    item = dict(task)
+    item.setdefault("control_strategy", _control_strategy(item))
+    item.setdefault("log_source", _log_source(item))
+    item.setdefault("log_available", bool(item["log_source"] and item["log_source"] != "unknown"))
+    return item
+
+
 def task_definitions() -> list[TaskDefinition]:
-    return [dict(item) for item in TASK_DEFINITIONS.values()]
+    return [_with_definition_metadata(item) for item in TASK_DEFINITIONS.values()]
 
 
 def log_filter_definitions() -> list[TaskDefinition]:

@@ -7,9 +7,8 @@ runner 的 start / resume。
 """
 from __future__ import annotations
 
-import threading
-
 from appcore.events import EventBus
+from appcore.runner_lifecycle import start_tracked_thread
 from appcore.runtime_v2 import PipelineRunnerV2
 from web.extensions import socketio
 
@@ -27,27 +26,31 @@ def _make_socketio_handler(task_id: str):
     return handler
 
 
-def start(task_id: str, user_id: int | None = None) -> threading.Thread:
+def start(task_id: str, user_id: int | None = None) -> bool:
     """在后台线程启动 PipelineRunnerV2.start(task_id)。"""
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
     runner = PipelineRunnerV2(bus=bus, user_id=user_id)
-    thread = threading.Thread(
-        target=runner.start, args=(task_id,), daemon=True,
+    return start_tracked_thread(
+        project_type=runner.project_type,
+        task_id=task_id,
+        target=runner.start,
+        args=(task_id,),
+        daemon=True,
     )
-    thread.start()
-    return thread
 
 
 def resume(
     task_id: str, start_step: str, user_id: int | None = None,
-) -> threading.Thread:
+) -> bool:
     """在后台线程调用 PipelineRunnerV2.resume(task_id, start_step)。"""
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
     runner = PipelineRunnerV2(bus=bus, user_id=user_id)
-    thread = threading.Thread(
-        target=runner.resume, args=(task_id, start_step), daemon=True,
+    return start_tracked_thread(
+        project_type=runner.project_type,
+        task_id=task_id,
+        target=runner.resume,
+        args=(task_id, start_step),
+        daemon=True,
     )
-    thread.start()
-    return thread

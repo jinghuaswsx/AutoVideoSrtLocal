@@ -1,4 +1,4 @@
-"""OmniTranslateRunner: full-language video translation pipeline.
+﻿"""OmniTranslateRunner: full-language video translation pipeline.
 
 Independent, opt-in module that adds:
 - ASR engine dispatch by source language: zh/en→Doubao, others→ElevenLabs Scribe
@@ -118,7 +118,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         from pipeline.extract import get_video_duration
         from pipeline.lang_labels import lang_label
-        from web.preview_artifacts import build_asr_artifact
+        from appcore.preview_artifacts import build_asr_artifact
         from appcore.runtime import (
             _resolve_original_video_passthrough,
             _save_json,
@@ -340,7 +340,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
         )
         from pipeline.localization import build_source_full_text_zh
         from pipeline.translate import generate_localized_translation, get_model_display_name
-        from web.preview_artifacts import build_asr_artifact, build_translate_artifact
+        from appcore.preview_artifacts import build_asr_artifact, build_translate_artifact
 
         task = task_state.get(task_id)
         task_dir = task["task_dir"]

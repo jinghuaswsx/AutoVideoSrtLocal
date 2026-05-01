@@ -64,6 +64,7 @@ def ensure_up_to_date() -> None:
                     return
                 if bootstrap_empty is False:
                     # 老部署首次引入跟踪：baseline 标记已有文件，不重跑
+                    _verify_legacy_baseline_schema(cur)
                     for fname in files:
                         cur.execute(
                             "INSERT IGNORE INTO schema_migrations (filename, baseline) "
@@ -127,6 +128,38 @@ def _ensure_tracking_table(cur):
     cur.execute("SHOW TABLES LIKE 'projects'")
     projects_exists = cur.fetchone() is not None
     return not projects_exists  # True=empty DB, False=legacy deployment
+
+
+_LEGACY_BASELINE_REQUIRED_COLUMNS = {
+    "projects": {"id", "user_id", "type", "status", "task_dir", "state_json"},
+}
+
+
+def _row_field(row, key: str, index: int = 0):
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        return row[index]
+    except Exception:
+        return None
+
+
+def _verify_legacy_baseline_schema(cur) -> None:
+    """Fail fast before baselining an existing database with an incomplete schema."""
+    missing: list[str] = []
+    for table, required_columns in _LEGACY_BASELINE_REQUIRED_COLUMNS.items():
+        cur.execute(f"SHOW COLUMNS FROM {table}")
+        rows = cur.fetchall() or []
+        present = {str(_row_field(row, "Field") or "").strip() for row in rows}
+        for column in sorted(required_columns - present):
+            missing.append(f"{table}.{column}")
+
+    if missing:
+        joined = ", ".join(missing)
+        raise RuntimeError(
+            "baseline schema check failed; existing database is missing required "
+            f"columns: {joined}. Run or repair historical migrations before startup."
+        )
 
 
 def _apply_file(cur, filename: str) -> None:

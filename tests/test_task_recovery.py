@@ -15,6 +15,21 @@ def test_register_and_unregister_active_task():
     assert task_recovery.is_task_active("video_creation", "vc-active") is False
 
 
+def test_try_register_active_task_is_atomic():
+    from appcore import task_recovery
+
+    task_recovery.unregister_active_task("video_creation", "vc-atomic")
+
+    try:
+        assert task_recovery.try_register_active_task("video_creation", "vc-atomic") is True
+        assert task_recovery.try_register_active_task("video_creation", "vc-atomic") is False
+        assert task_recovery.is_task_active("video_creation", "vc-atomic") is True
+    finally:
+        task_recovery.unregister_active_task("video_creation", "vc-atomic")
+
+    assert task_recovery.is_task_active("video_creation", "vc-atomic") is False
+
+
 def test_recover_project_state_marks_video_creation_orphan_running_as_error():
     from appcore import task_recovery
 

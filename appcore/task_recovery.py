@@ -38,6 +38,15 @@ def register_active_task(project_type: str, task_id: str) -> None:
         _active_tasks.add((project_type, task_id))
 
 
+def try_register_active_task(project_type: str, task_id: str) -> bool:
+    key = (project_type, task_id)
+    with _active_lock:
+        if key in _active_tasks:
+            return False
+        _active_tasks.add(key)
+        return True
+
+
 def unregister_active_task(project_type: str, task_id: str) -> None:
     with _active_lock:
         _active_tasks.discard((project_type, task_id))
@@ -334,7 +343,7 @@ def _auto_resume_after_recovery(task_id: str, project_type: str, recovered: dict
     except (TypeError, ValueError):
         user_id = None
     try:
-        from web.routes.image_translate import start_image_translate_runner
+        from appcore.runner_dispatch import start_image_translate_runner
         started = start_image_translate_runner(task_id, user_id)
         log.warning(
             "[task_recovery] auto-resumed image_translate task %s (started=%s)",

@@ -61,6 +61,7 @@ def test_multi_translate_start_keeps_ja_on_multi_module(tmp_path, authed_client_
         "/api/multi-translate/start",
         data={
             "target_lang": "ja",
+            "source_language": "en",
             "video": (io.BytesIO(b"ja-video"), "demo.mp4"),
         },
         content_type="multipart/form-data",

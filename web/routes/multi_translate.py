@@ -595,7 +595,10 @@ def get_artifact(task_id, name):
 
     variant = request.args.get("variant") or None
 
-    from web.services.artifact_download import preview_artifact_tos_redirect
+    from web.services.artifact_download import (
+        preview_artifact_tos_redirect,
+        safe_task_file_response,
+    )
     tos_resp = preview_artifact_tos_redirect(task, name, variant=variant)
     if tos_resp is not None:
         return tos_resp
@@ -605,8 +608,8 @@ def get_artifact(task_id, name):
         preview_files = (task.get("variants") or {}).get(variant, {}).get("preview_files", {})
 
     path = preview_files.get(name)
-    if path and os.path.exists(path):
-        return send_file(os.path.abspath(path))
+    if path:
+        return safe_task_file_response(task, path)
     return jsonify({"error": "Artifact not found"}), 404
 
 
@@ -634,12 +637,16 @@ def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
 
     filename = f"localized_translation.round_{round_index}.attempt_{attempt}.json"
     path = os.path.join(task.get("task_dir", ""), filename)
-    if not os.path.exists(path):
-        return jsonify({"error": "File not ready"}), 404
-
-    return send_file(os.path.abspath(path), mimetype="application/json",
-                     as_attachment=False, download_name=filename,
-                     conditional=False)
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response(
+        task,
+        path,
+        not_found_message="File not ready",
+        mimetype="application/json",
+        as_attachment=False,
+        download_name=filename,
+        conditional=False,
+    )
 
 
 @bp.route("/api/multi-translate/<task_id>/round-file/<int:round_index>/<kind>")
@@ -656,12 +663,16 @@ def get_round_file(task_id: str, round_index: int, kind: str):
         return jsonify({"error": "Task not found"}), 404
 
     path = os.path.join(task.get("task_dir", ""), filename)
-    if not os.path.exists(path):
-        return jsonify({"error": "File not ready"}), 404
-
-    return send_file(os.path.abspath(path), mimetype=mime,
-                     as_attachment=False, download_name=filename,
-                     conditional=False)
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response(
+        task,
+        path,
+        not_found_message="File not ready",
+        mimetype=mime,
+        as_attachment=False,
+        download_name=filename,
+        conditional=False,
+    )
 
 
 @bp.route("/api/multi-translate/<task_id>/analysis/run", methods=["POST"])

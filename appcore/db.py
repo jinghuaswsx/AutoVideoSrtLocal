@@ -8,7 +8,7 @@ import pymysql
 import pymysql.cursors
 from dbutils.pooled_db import PooledDB
 
-from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+from config import DB_HOST, DB_NAME, DB_PASSWORD, DB_POOL_MAX_CONNECTIONS, DB_PORT, DB_USER
 
 _pool: PooledDB | None = None
 _pool_lock = threading.Lock()
@@ -22,7 +22,7 @@ def _get_pool() -> PooledDB:
         if _pool is None:
             _pool = PooledDB(
                 creator=pymysql,
-                maxconnections=10,
+                maxconnections=DB_POOL_MAX_CONNECTIONS,
                 mincached=2,
                 host=DB_HOST,
                 port=DB_PORT,

@@ -10,6 +10,8 @@ import threading
 
 from appcore.events import EventBus
 from appcore.image_translate_runtime import ImageTranslateRuntime
+from appcore import runner_dispatch
+from appcore.task_recovery import try_register_active_task, unregister_active_task
 from web.extensions import socketio
 
 _running_tasks: set[str] = set()
@@ -32,6 +34,10 @@ def start(task_id: str, user_id: int | None = None) -> bool:
         if task_id in _running_tasks:
             return False
         _running_tasks.add(task_id)
+    if not try_register_active_task("image_translate", task_id):
+        with _running_tasks_lock:
+            _running_tasks.discard(task_id)
+        return False
 
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
@@ -41,9 +47,22 @@ def start(task_id: str, user_id: int | None = None) -> bool:
         try:
             runtime.start(task_id)
         finally:
+            unregister_active_task("image_translate", task_id)
             with _running_tasks_lock:
                 _running_tasks.discard(task_id)
 
     thread = threading.Thread(target=run, daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except BaseException:
+        unregister_active_task("image_translate", task_id)
+        with _running_tasks_lock:
+            _running_tasks.discard(task_id)
+        raise
     return True
+
+
+runner_dispatch.register_image_translate_runner(
+    start=lambda task_id, user_id=None: start(task_id, user_id=user_id),
+    is_running=lambda task_id: is_running(task_id),
+)

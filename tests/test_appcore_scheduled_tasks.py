@@ -79,6 +79,23 @@ def test_task_definitions_include_server_and_app_timers():
     assert definitions["tts_convergence_stats"]["source_type"] == "cron"
 
 
+def test_task_definitions_expose_control_strategy_and_log_source():
+    from appcore import scheduled_tasks
+
+    definitions = scheduled_tasks.task_definitions()
+
+    missing_control = [item["code"] for item in definitions if not item.get("control_strategy")]
+    missing_log_source = [item["code"] for item in definitions if not item.get("log_source")]
+
+    assert missing_control == []
+    assert missing_log_source == []
+
+    by_code = {item["code"]: item for item in definitions}
+    assert by_code["cleanup"]["log_source"] == "service:autovideosrt"
+    assert by_code["roi_hourly_sync"]["log_source"] == "db:roi_hourly_sync_runs"
+    assert by_code["tts_convergence_stats"]["log_source"] == "file:/var/log/tts_convergence.log"
+
+
 def test_task_definitions_include_audited_external_and_in_process_timers():
     from appcore import scheduled_tasks
 

@@ -51,6 +51,21 @@ def test_start_when_idle(monkeypatch):
     assert cur["sync_id"] == tid
 
 
+def test_emit_uses_registered_admin_realtime_emitter():
+    from appcore import realtime_events
+
+    emitted = []
+    realtime_events.register_admin_emitter(
+        lambda event, payload: emitted.append((event, payload))
+    )
+    try:
+        vlst._emit("voice_library.sync.progress", {"done": 1})
+    finally:
+        realtime_events.clear_admin_emitter()
+
+    assert emitted == [("voice_library.sync.progress", {"done": 1})]
+
+
 def test_start_raises_when_busy():
     vlst._CURRENT["task"] = {
         "sync_id": "x",

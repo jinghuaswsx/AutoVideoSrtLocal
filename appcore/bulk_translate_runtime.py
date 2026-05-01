@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from appcore import local_media_storage, medias
+from appcore import local_media_storage, medias, task_state as store
 from appcore.bulk_translate_backfill import (
     refresh_translated_video_item_covers_for_scope,
     sync_detail_images_result,
@@ -35,6 +35,8 @@ from appcore.bulk_translate_estimator import (
 from appcore.bulk_translate_plan import generate_plan
 from appcore.db import execute, query, query_one
 from appcore.events import EVT_BT_DONE, EVT_BT_PROGRESS, Event, EventBus
+from appcore.project_state import save_project_state
+from appcore import runner_dispatch
 from config import OUTPUT_DIR, UPLOAD_DIR
 
 log = logging.getLogger(__name__)
@@ -614,11 +616,10 @@ def _retry_failed_image_child_items(item: dict, user_id: int) -> int:
         return 0
 
     from appcore.image_translate_runtime import reset_failed_items_for_retry
-    from web.services import image_translate_runner
 
     reset_count = reset_failed_items_for_retry(child_task_id, user_id=user_id)
     if reset_count > 0:
-        image_translate_runner.start(child_task_id, user_id=user_id)
+        runner_dispatch.start_image_translate_runner(child_task_id, user_id=user_id)
     return reset_count
 
 
@@ -966,7 +967,6 @@ def _create_copy_child(parent_id: str, item: dict, parent_state: dict) -> tuple[
 def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
     from appcore import image_translate_settings as its
     from appcore.task_state import create_image_translate
-    from web.routes.image_translate import start_image_translate_runner
 
     product_id = int(parent_state.get("product_id") or 0)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
@@ -1020,14 +1020,13 @@ def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) 
         medias_context=medias_context,
         concurrency_mode="parallel",
     )
-    start_image_translate_runner(child_task_id, user_id)
+    runner_dispatch.start_image_translate_runner(child_task_id, user_id)
     return child_task_id, "image_translate", "running"
 
 
 def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
     from appcore import image_translate_settings as its
     from appcore.task_state import create_image_translate
-    from web.routes.image_translate import start_image_translate_runner
 
     product_id = int(parent_state.get("product_id") or 0)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
@@ -1076,21 +1075,17 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
         medias_context=medias_context,
         concurrency_mode="parallel",
     )
-    start_image_translate_runner(child_task_id, user_id)
+    runner_dispatch.start_image_translate_runner(child_task_id, user_id)
     return child_task_id, "image_translate", "running"
 
 
 def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
-    from web import store
-    from web.services import multi_pipeline_runner
-
     product_id = int(parent_state.get("product_id") or 0)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
     lang = (item.get("lang") or "").strip()
     if lang not in _MULTI_TRANSLATE_SUPPORTED_LANGS:
         raise ValueError(f"unsupported multi_translate target lang: {lang}")
     child_project_type = "multi_translate"
-    runner = multi_pipeline_runner
 
     source_raw_id = int((item.get("ref") or {}).get("source_raw_id") or 0)
     raw_source = medias.get_raw_source(source_raw_id)
@@ -1146,7 +1141,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
         },
     )
     store.set_preview_file(child_task_id, "source_video", video_path)
-    runner.start(child_task_id, user_id=user_id)
+    runner_dispatch.start_multi_translate_runner(child_task_id, user_id=user_id)
     return child_task_id, child_project_type, "running"
 
 
@@ -1330,17 +1325,7 @@ def _normalized_status(status: str | None) -> str:
 
 def _save_state(task_id: str, state: dict, status: str | None = None) -> None:
     state["progress"] = compute_progress(state.get("plan") or [])
-    payload = json.dumps(state, ensure_ascii=False, default=str)
-    if status is not None:
-        execute(
-            "UPDATE projects SET state_json = %s, status = %s WHERE id = %s",
-            (payload, status, task_id),
-        )
-    else:
-        execute(
-            "UPDATE projects SET state_json = %s WHERE id = %s",
-            (payload, task_id),
-        )
+    save_project_state(task_id, state, status=status, execute_func=execute)
 
 
 def _audit(user_id: int, action: str, detail: dict | None = None) -> dict:

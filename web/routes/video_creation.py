@@ -19,6 +19,8 @@ from appcore.task_recovery import (
 )
 from appcore.settings import get_retention_hours
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
+from appcore.project_state import update_project_state
+from appcore.safe_paths import PathSafetyError, remove_file_under_roots
 from config import DOUBAO_LLM_BASE_URL_DEFAULT, UPLOAD_DIR, OUTPUT_DIR
 from pipeline.storage import upload_file as public_exchange_upload
 from web.background import start_background_task
@@ -41,6 +43,18 @@ EVT_VC_ERROR = "vc_error"
 
 def _emit_to_task(task_id: str, event: str, payload: dict):
     socketio.emit(event, payload, room=task_id)
+
+
+def _remove_video_creation_asset_file(path: str | None, state: dict) -> None:
+    if not path:
+        return
+    roots = [OUTPUT_DIR, UPLOAD_DIR, state.get("task_dir") or ""]
+    try:
+        remove_file_under_roots(path, roots)
+    except PathSafetyError:
+        log.warning("skip unsafe video_creation asset delete: %s", path)
+    except Exception:
+        log.warning("video_creation asset delete failed: %s", path, exc_info=True)
 
 
 def _build_public_exchange_key(task_id: str, state: dict, asset_kind: str, filename: str, *, index: int | None = None) -> str:
@@ -475,7 +489,13 @@ def get_result_video(task_id: str):
     path = state.get("result_video_path")
     if not path or not os.path.exists(path):
         return "Not Found", 404
-    return send_file(path, as_attachment=True, download_name="generated_video.mp4")
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response(
+        {"task_dir": state.get("task_dir") or ""},
+        path,
+        as_attachment=True,
+        download_name="generated_video.mp4",
+    )
 
 
 @bp.route("/api/video-creation/<task_id>/asset/<kind>/<int:idx>")
@@ -508,7 +528,8 @@ def get_asset(task_id: str, kind: str, idx: int):
 
     if not path or not os.path.exists(path):
         return "Not Found", 404
-    return send_file(path)
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response({"task_dir": state.get("task_dir") or ""}, path)
 
 
 @bp.route("/api/video-creation/<task_id>/asset/<kind>/<int:idx>", methods=["DELETE"])
@@ -533,22 +554,14 @@ def delete_asset(task_id: str, kind: str, idx: int):
         path = state.get("video_path")
         if not path:
             return jsonify(error="not found"), 404
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            pass
+        _remove_video_creation_asset_file(path, state)
         state["video_path"] = None
     elif kind == "image":
         paths = state.get("image_paths", [])
         if idx >= len(paths):
             return jsonify(error="not found"), 404
         path = paths[idx]
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            pass
+        _remove_video_creation_asset_file(path, state)
         paths.pop(idx)
         state["image_paths"] = paths
     elif kind == "audio":
@@ -557,11 +570,7 @@ def delete_asset(task_id: str, kind: str, idx: int):
         path = state.get("audio_path")
         if not path:
             return jsonify(error="not found"), 404
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            pass
+        _remove_video_creation_asset_file(path, state)
         state["audio_path"] = None
     else:
         return jsonify(error="unknown kind"), 400
@@ -698,17 +707,9 @@ def delete(task_id: str):
 
 def _update_state(task_id: str, updates: dict):
     """更新 state_json 中的字段，支持点号路径（如 steps.generate）。"""
-    row = db_query_one("SELECT state_json FROM projects WHERE id = %s", (task_id,))
-    if not row:
-        return
-    state = json.loads(row.get("state_json") or "{}")
-    for key, val in updates.items():
-        parts = key.split(".")
-        target = state
-        for p in parts[:-1]:
-            target = target.setdefault(p, {})
-        target[parts[-1]] = val
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
+    update_project_state(
+        task_id,
+        updates,
+        query_one_func=db_query_one,
+        execute_func=db_execute,
     )

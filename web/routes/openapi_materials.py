@@ -16,6 +16,7 @@ from appcore import medias, pushes, shopify_image_tasks
 from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 from appcore.llm_provider_configs import get_provider_config
+from appcore.openapi_auth import validate_openapi_key
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
@@ -35,11 +36,16 @@ def _media_download_url(object_key: str | None) -> str | None:
 
 _LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
-def _api_key_valid() -> bool:
+def _api_key_valid(required_scope: str = "materials:read") -> bool:
     cfg = get_provider_config("openapi_materials")
-    expected = ((cfg.api_key if cfg else "") or "").strip()
     provided = (request.headers.get("X-API-Key") or "").strip()
-    return bool(expected) and provided == expected
+    return bool(
+        validate_openapi_key(
+            provided,
+            (cfg.api_key if cfg else "") or "",
+            required_scope=required_scope,
+        )
+    )
 
 
 def _iso_or_none(value: Any) -> Any:
@@ -564,7 +570,7 @@ def list_materials():
 
 
 def _push_api_key_valid() -> bool:
-    return _api_key_valid()
+    return _api_key_valid("push:write")
 
 
 def _serialize_push_item(item: dict, product: dict) -> dict:

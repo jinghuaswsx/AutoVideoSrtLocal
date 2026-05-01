@@ -11,7 +11,7 @@ from datetime import datetime
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import local_media_storage, medias, task_state
+from appcore import local_media_storage, medias, runner_dispatch, task_state
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import is_valid_image_model, list_image_models
@@ -144,6 +144,12 @@ def _task_runner_user_id(task: dict) -> int:
 
 def start_image_translate_runner(task_id: str, uid: int) -> bool:
     return _start_runner(task_id, uid)
+
+
+runner_dispatch.register_image_translate_runner(
+    start=lambda task_id, user_id=None: start_image_translate_runner(task_id, int(user_id or 0)),
+    is_running=lambda task_id: image_translate_runner.is_running(task_id),
+)
 
 
 def _build_source_object_key(user_id: int, task_id: str, idx: int, ext: str) -> str:

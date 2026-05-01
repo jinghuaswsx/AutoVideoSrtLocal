@@ -4,6 +4,21 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+LLM_PROVIDER_CODES = frozenset({
+    "openrouter",
+    "doubao",
+    "gemini_aistudio",
+    "gemini_vertex",
+    "gemini_vertex_adc",
+})
+
+NON_LLM_PROVIDER_CODES = frozenset({
+    "elevenlabs",
+    "doubao_asr",
+})
+
+KNOWN_USE_CASE_PROVIDER_CODES = LLM_PROVIDER_CODES | NON_LLM_PROVIDER_CODES
+
 
 class UseCase(TypedDict):
     code: str
