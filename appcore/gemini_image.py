@@ -16,12 +16,18 @@ import re
 import time
 from typing import Any, Callable
 
-from google import genai
-from google.genai import types as genai_types
 from PIL import Image
 import requests
 
 from appcore import ai_billing
+from appcore.llm_providers._helpers.gemini_calls import (
+    genai_types,
+    get_image_client,
+)
+from appcore.llm_providers._helpers.openrouter_image import (
+    make_openrouter_image_client,
+    request_openrouter_image,
+)
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     get_provider_config,
@@ -192,39 +198,9 @@ class GeminiImageRetryable(RuntimeError):
     """可重试的图像生成错误（网络、429、5xx）。"""
 
 
-_image_clients: dict[tuple[str, str], genai.Client] = {}
-
-
-def _get_image_client(
-    api_key: str,
-    *,
-    backend: str = "aistudio",
-    project: str = "",
-    location: str = "",
-) -> genai.Client:
-    """按 backend 创建/缓存 google-genai 客户端。
-
-    backend="cloud" 时走 Vertex AI（vertexai=True）；
-    - project 非空 → 走正式 Vertex（project+location）
-    - 否则 → 走 Express Mode（api_key）
-    其他情况走 AI Studio（vertexai=False）。
-    """
-    cache_key = (backend, api_key, project, location)
-    client = _image_clients.get(cache_key)
-    if client is None:
-        if backend == "cloud":
-            if project:
-                client = genai.Client(
-                    vertexai=True,
-                    project=project,
-                    location=location or "global",
-                )
-            else:
-                client = genai.Client(vertexai=True, api_key=api_key)
-        else:
-            client = genai.Client(api_key=api_key)
-        _image_clients[cache_key] = client
-    return client
+# google-genai 客户端创建迁到 appcore.llm_providers._helpers.gemini_calls.get_image_client
+# 共享缓存，避免业务模块直接 `from google import genai` 形成新的 SDK 直连点。
+_get_image_client = get_image_client
 
 
 def _extract_image_part(resp: Any) -> tuple[bytes, str] | None:
@@ -574,9 +550,11 @@ def _generate_via_openrouter(
         raise GeminiImageError(
             "缺少供应商配置 openrouter_image.api_key，请在 /settings 的「服务商接入」页填写。"
         )
-    from openai import OpenAI
 
-    client = OpenAI(api_key=api_key, base_url=base_url or OPENROUTER_BASE_URL_DEFAULT)
+    client = make_openrouter_image_client(
+        api_key=api_key,
+        base_url=base_url or OPENROUTER_BASE_URL_DEFAULT,
+    )
     parsed = parse_openrouter_openai_image2_model(model_id)
     if parsed is not None:
         or_model, image_quality = parsed
@@ -598,18 +576,11 @@ def _generate_via_openrouter(
     if image_quality is not None:
         extra_body["quality"] = image_quality
     try:
-        resp = client.chat.completions.create(
+        resp = request_openrouter_image(
+            client,
             model=or_model,
             messages=messages,
-            modalities=["image", "text"],
             extra_body=extra_body,
-        )
-    except TypeError:
-        # 旧版 SDK 不认 modalities 参数，退回 extra_body
-        resp = client.chat.completions.create(
-            model=or_model,
-            messages=messages,
-            extra_body={"modalities": ["image", "text"], **extra_body},
         )
     except Exception as e:
         raise _classify_error(e)(str(e)) from e

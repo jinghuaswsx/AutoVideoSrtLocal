@@ -164,6 +164,40 @@ def _extract_gemini_tokens(resp: Any) -> tuple[int | None, int | None]:
         return None, None
 
 
+_image_clients: dict[tuple[str, str, str, str], genai.Client] = {}
+
+
+def get_image_client(
+    api_key: str,
+    *,
+    backend: str = "aistudio",
+    project: str = "",
+    location: str = "",
+) -> genai.Client:
+    """图片通道用的 google-genai 客户端。
+
+    backend="cloud" + project → 正式 Vertex；只传 api_key → Express Mode；
+    其它走 AI Studio。被 appcore.gemini_image 复用，避免业务模块直接
+    `from google import genai`。
+    """
+    cache_key = (backend, api_key, project, location)
+    client = _image_clients.get(cache_key)
+    if client is None:
+        if backend == "cloud":
+            if project:
+                client = genai.Client(
+                    vertexai=True,
+                    project=project,
+                    location=location or "global",
+                )
+            else:
+                client = genai.Client(vertexai=True, api_key=api_key)
+        else:
+            client = genai.Client(api_key=api_key)
+        _image_clients[cache_key] = client
+    return client
+
+
 __all__ = [
     "GeminiError",
     "_INLINE_MAX_BYTES",
@@ -179,6 +213,7 @@ __all__ = [
     "_build_config",
     "_is_retryable",
     "_extract_gemini_tokens",
+    "get_image_client",
     "genai_types",
     "genai_errors",
 ]

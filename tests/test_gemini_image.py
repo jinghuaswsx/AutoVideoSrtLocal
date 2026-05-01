@@ -147,7 +147,7 @@ def test_generate_image_openrouter_channel_returns_decoded_image():
             self.chat.completions = MagicMock()
             self.chat.completions.create = MagicMock(return_value=or_resp)
 
-    with patch("openai.OpenAI", _FakeOpenAI), \
+    with patch("appcore.llm_providers._helpers.openrouter_image.OpenAI", _FakeOpenAI), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
          patch.object(gemini_image, "_resolve_openrouter_image_credentials",
                       return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
@@ -495,7 +495,7 @@ def test_generate_image_openrouter_image2_passes_quality_to_openrouter():
 
             self.chat.completions.create = _create
 
-    with patch("openai.OpenAI", _FakeOpenAI), \
+    with patch("appcore.llm_providers._helpers.openrouter_image.OpenAI", _FakeOpenAI), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
          patch.object(gemini_image, "_resolve_openrouter_image_credentials",
                       return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
@@ -543,7 +543,7 @@ def test_generate_image_openrouter_non_image2_does_not_set_quality():
 
             self.chat.completions.create = _create
 
-    with patch("openai.OpenAI", _FakeOpenAI), \
+    with patch("appcore.llm_providers._helpers.openrouter_image.OpenAI", _FakeOpenAI), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
          patch.object(gemini_image, "_resolve_openrouter_image_credentials",
                       return_value=("OR-KEY", "https://openrouter.ai/api/v1")):
@@ -587,7 +587,7 @@ def test_generate_image_openrouter_image2_historical_task_runs_even_when_switch_
 
             self.chat.completions.create = _create
 
-    with patch("openai.OpenAI", _FakeOpenAI), \
+    with patch("appcore.llm_providers._helpers.openrouter_image.OpenAI", _FakeOpenAI), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
          patch.object(gemini_image, "_resolve_openrouter_image_credentials",
                       return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
