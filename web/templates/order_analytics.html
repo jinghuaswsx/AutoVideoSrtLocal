@@ -1336,6 +1336,7 @@
             <th>总销售额</th>
             <th>广告费</th>
             <th>真实 ROAS</th>
+            <th>Meta ROAS</th>
             <th>Meta 转化价值</th>
           </tr>
         </thead>
@@ -2223,20 +2224,12 @@
         document.getElementById('realtimeRevenue').textContent = fmtMoney(s.order_revenue);
         document.getElementById('realtimeSpend').textContent = fmtMoney(s.ad_spend);
         document.getElementById('realtimeRoas').textContent = fmtRoasValue(s.true_roas);
-        var metaAdSource = (data.scope || {}).ad_source;
         var metaSpend = Number(s.ad_spend);
         var metaPurchase = Number(s.meta_purchase_value);
-        var metaRoas = null;
-        if (metaAdSource === 'meta_ad_daily_campaign_metrics'
-            && Number.isFinite(metaSpend) && metaSpend > 0
-            && Number.isFinite(metaPurchase)) {
-          metaRoas = metaPurchase / metaSpend;
-        }
+        var metaRoas = (Number.isFinite(metaSpend) && metaSpend > 0 && Number.isFinite(metaPurchase))
+          ? metaPurchase / metaSpend : null;
         document.getElementById('realtimeMetaRoas').textContent = fmtRoasValue(metaRoas);
-        document.getElementById('realtimeMetaRoasSub').textContent =
-          metaAdSource === 'meta_ad_daily_campaign_metrics'
-            ? 'Meta 后台成效口径'
-            : 'Meta 后台数据待同步';
+        document.getElementById('realtimeMetaRoasSub').textContent = 'Meta 后台成效口径';
         document.getElementById('realtimeRevenueSub').textContent =
           '订单 ' + fmtInt(s.order_count || 0) + ' 单';
         document.getElementById('realtimeOrderCount').textContent = fmtInt(s.order_count || 0);
@@ -2402,7 +2395,7 @@
     var summaryEl = document.getElementById('trueRoasSummary');
     var body = document.getElementById('trueRoasTableBody');
     summaryEl.innerHTML = '';
-    body.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="11">加载中...</td></tr>';
     fetch('/order-analytics/true-roas?start_date=' + encodeURIComponent(start) + '&end_date=' + encodeURIComponent(end))
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
@@ -2416,6 +2409,7 @@
           statCard('总销售额', fmtMoney(s.revenue_with_shipping)) +
           statCard('广告费', fmtMoney(s.ad_spend)) +
           statCard('真实 ROAS', fmtRoasValue(s.true_roas)) +
+          statCard('Meta ROAS', fmtRoasValue(s.meta_roas)) +
           statCard('订单数', s.order_count || 0);
         body.innerHTML = '';
         (data.rows || []).forEach(function(row) {
@@ -2430,6 +2424,7 @@
             fmtMoney(row.revenue_with_shipping),
             fmtMoney(row.ad_spend),
             fmtRoasValue(row.true_roas),
+            fmtRoasValue(row.meta_roas),
             fmtMoney(row.meta_purchase_value)
           ].forEach(function(value) {
             var td = document.createElement('td');
@@ -2439,11 +2434,11 @@
           body.appendChild(tr);
         });
         if (!body.children.length) {
-          body.innerHTML = '<tr><td colspan="8">暂无数据</td></tr>';
+          body.innerHTML = '<tr><td colspan="11">暂无数据</td></tr>';
         }
       })
       .catch(function(err) {
-        body.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+        body.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
       });
   }
 

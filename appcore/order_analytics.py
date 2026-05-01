@@ -814,6 +814,40 @@ def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -
     return campaigns
 
 
+def _get_today_realtime_meta_totals(business_date: date) -> dict[str, Any] | None:
+    """对当天广告系统日，从 Meta 实时抓取表汇总最新 snapshot 的总值。
+
+    每天导出的 daily report 在当日往往还没有数据；为了让"真实 ROAS"列表对当天行
+    也能展示真实的 Meta 广告费/购物价值，落到实时表上拿最近一次 partial snapshot。
+    没数据时返回 None。
+    """
+    rows = query(
+        "SELECT MAX(snapshot_at) AS snapshot_at FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s",
+        (business_date,),
+    )
+    snapshot_at = rows[0].get("snapshot_at") if rows else None
+    if not snapshot_at:
+        return None
+    agg = query(
+        "SELECT SUM(spend_usd) AS ad_spend, "
+        "SUM(purchase_value_usd) AS meta_purchase_value, "
+        "SUM(result_count) AS meta_purchases "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at=%s",
+        (business_date, snapshot_at),
+    )
+    if not agg:
+        return None
+    row = agg[0]
+    return {
+        "ad_spend": _money(row.get("ad_spend")),
+        "meta_purchase_value": _money(row.get("meta_purchase_value")),
+        "meta_purchases": int(row.get("meta_purchases") or 0),
+        "snapshot_at": snapshot_at,
+    }
+
+
 def _get_realtime_ad_updated_at(target: date, snapshot_at: datetime | None) -> datetime | None:
     if not snapshot_at:
         return None
@@ -922,8 +956,8 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
                 "line_revenue": 0.0,
                 "shipping_revenue": shipping_revenue,
                 "ad_spend": ad_spend,
-                "meta_purchase_value": 0.0,
-                "meta_purchases": 0,
+                "meta_purchase_value": round(sum(c["purchase_value_usd"] for c in campaign_details), 2) if campaign_details else 0.0,
+                "meta_purchases": sum(c["result_count"] for c in campaign_details) if campaign_details else 0,
                 "true_roas": _roas(revenue_with_shipping, ad_spend),
                 "order_data_status": snap.get("order_data_status") or "ok",
                 "ad_data_status": snap.get("ad_data_status") or "pending_source",
@@ -1071,6 +1105,7 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
 
     orders_by_day = {row["meta_business_date"]: row for row in order_rows}
     ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
+    today_business = (_beijing_now() - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
     rows: list[dict[str, Any]] = []
     totals = {
         "order_count": 0,
@@ -1088,11 +1123,17 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     while current <= end:
         order = orders_by_day.get(current, {})
         ad = ads_by_day.get(current, {})
+        # 当天行：daily report 还没出，从 Meta 实时抓取表覆盖
+        if current == today_business:
+            realtime = _get_today_realtime_meta_totals(current)
+            if realtime:
+                ad = realtime
         window_start, window_end = compute_meta_business_window_bj(current)
         order_revenue = _money(order.get("order_revenue"))
         shipping_revenue = _money(order.get("shipping_revenue"))
         revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
         ad_spend = _money(ad.get("ad_spend"))
+        meta_purchase_value = _money(ad.get("meta_purchase_value"))
         item = {
             "meta_business_date": current,
             "window_start_at": window_start,
@@ -1106,7 +1147,8 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
             "revenue_with_shipping": revenue_with_shipping,
             "ad_spend": ad_spend,
             "true_roas": _roas(revenue_with_shipping, ad_spend),
-            "meta_purchase_value": _money(ad.get("meta_purchase_value")),
+            "meta_purchase_value": meta_purchase_value,
+            "meta_roas": _roas(meta_purchase_value, ad_spend),
             "meta_purchases": int(ad.get("meta_purchases") or 0),
         }
         rows.append(item)
@@ -1119,6 +1161,7 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     summary = dict(totals)
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
     return {
         "period": {
             "start": start,
