@@ -82,6 +82,7 @@ def test_copywriting_generate_uses_background_helper(authed_client, monkeypatch)
 
 def test_video_creation_upload_uses_background_helper(authed_client, monkeypatch, tmp_path):
     background_calls = []
+    active_registrations = []
 
     monkeypatch.setattr(
         "web.routes.video_creation._resolve_seedance_config",
@@ -91,7 +92,11 @@ def test_video_creation_upload_uses_background_helper(authed_client, monkeypatch
             "model_id": "seedance-test",
         },
     )
-    monkeypatch.setattr("web.routes.video_creation.register_active_task", lambda *args: None)
+    monkeypatch.setattr(
+        "web.routes.video_creation.try_register_active_task",
+        lambda *args, **kwargs: active_registrations.append((args, kwargs)) or True,
+        raising=False,
+    )
     monkeypatch.setattr("web.routes.video_creation.get_retention_hours", lambda *_: 24)
     monkeypatch.setattr(
         "web.routes.video_creation.start_background_task",
@@ -108,8 +113,108 @@ def test_video_creation_upload_uses_background_helper(authed_client, monkeypatch
     )
 
     assert response.status_code == 201
+    task_id = response.get_json()["id"]
     assert len(background_calls) == 1
+    assert background_calls[0][1][0] == task_id
     assert len(background_calls[0][1]) == 5
+    assert active_registrations[0][0] == ("video_creation", task_id)
+    assert active_registrations[0][1]["user_id"] == 1
+    assert active_registrations[0][1]["runner"] == "web.routes.video_creation._run_generate_with_tracking"
+    assert active_registrations[0][1]["entrypoint"] == "video_creation.upload"
+    assert active_registrations[0][1]["stage"] == "queued_generate"
+    assert active_registrations[0][1]["details"]["model_id"] == "seedance-test"
+
+
+def test_video_creation_regenerate_uses_active_guard(authed_client, monkeypatch):
+    background_calls = []
+    active_registrations = []
+    state = {
+        "task_dir": "output/vc-regenerate",
+        "prompt": "make a new ad",
+        "steps": {"generate": "done"},
+        "ratio": "16:9",
+        "duration": 8,
+        "generate_audio": False,
+        "watermark": False,
+        "result_video_url": "https://old.example/video.mp4",
+        "result_video_path": "old.mp4",
+        "seedance_task_id": "old-task",
+    }
+
+    monkeypatch.setattr("web.routes.video_creation.recover_project_if_needed", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.video_creation._resolve_seedance_config",
+        lambda: {
+            "api_key": "seedance-key",
+            "base_url": "https://seedance.example.test",
+            "model_id": "seedance-test",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.db_query_one",
+        lambda *args, **kwargs: {"state_json": json.dumps(state, ensure_ascii=False)},
+    )
+    monkeypatch.setattr("web.routes.video_creation.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.video_creation.try_register_active_task",
+        lambda *args, **kwargs: active_registrations.append((args, kwargs)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    response = authed_client.post("/api/video-creation/vc-regenerate/regenerate")
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
+    assert len(background_calls) == 1
+    assert background_calls[0][1][0] == "vc-regenerate"
+    assert active_registrations[0][0] == ("video_creation", "vc-regenerate")
+    assert active_registrations[0][1]["user_id"] == 1
+    assert active_registrations[0][1]["entrypoint"] == "video_creation.regenerate"
+    assert active_registrations[0][1]["stage"] == "queued_generate"
+    assert active_registrations[0][1]["details"]["model_id"] == "seedance-test"
+
+
+def test_video_creation_regenerate_rejects_duplicate_active_task(authed_client, monkeypatch):
+    background_calls = []
+    state = {
+        "task_dir": "output/vc-duplicate",
+        "prompt": "make a new ad",
+        "steps": {"generate": "done"},
+    }
+
+    monkeypatch.setattr("web.routes.video_creation.recover_project_if_needed", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.video_creation._resolve_seedance_config",
+        lambda: {
+            "api_key": "seedance-key",
+            "base_url": "https://seedance.example.test",
+            "model_id": "seedance-test",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.db_query_one",
+        lambda *args, **kwargs: {"state_json": json.dumps(state, ensure_ascii=False)},
+    )
+    monkeypatch.setattr("web.routes.video_creation.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.video_creation.try_register_active_task",
+        lambda *args, **kwargs: False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    response = authed_client.post("/api/video-creation/vc-duplicate/regenerate")
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "already_running"
+    assert background_calls == []
 
 
 def test_video_review_start_review_uses_background_helper(authed_client, monkeypatch, tmp_path):

@@ -14,7 +14,7 @@ from appcore.llm_provider_configs import ProviderConfigError, require_provider_c
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
     recover_project_if_needed,
-    register_active_task,
+    try_register_active_task,
     unregister_active_task,
 )
 from appcore.settings import get_retention_hours
@@ -314,7 +314,49 @@ def upload():
     except RuntimeError as exc:
         return jsonify(error=str(exc) or "请先在 API 配置中设置 Seedance API Key"), 400
 
-    register_active_task("video_creation", task_id)
+    if not _register_generation_task(
+        task_id,
+        state,
+        user_id=current_user.id,
+        model_id=seedance_cfg["model_id"],
+        entrypoint="video_creation.upload",
+    ):
+        return jsonify({"status": "already_running"}), 409
+    try:
+        _start_generation_background(task_id, seedance_cfg, state)
+    except BaseException:
+        unregister_active_task("video_creation", task_id)
+        raise
+
+    return jsonify({"id": task_id}), 201
+
+
+def _register_generation_task(
+    task_id: str,
+    state: dict,
+    *,
+    user_id: int,
+    model_id: str | None,
+    entrypoint: str,
+) -> bool:
+    return try_register_active_task(
+        "video_creation",
+        task_id,
+        user_id=user_id,
+        runner="web.routes.video_creation._run_generate_with_tracking",
+        entrypoint=entrypoint,
+        stage="queued_generate",
+        details={
+            "model_id": (model_id or _DEFAULT_SEEDANCE_MODEL_ID).strip(),
+            "ratio": state.get("ratio", "9:16"),
+            "duration": state.get("duration", 5),
+            "generate_audio": state.get("generate_audio", True),
+            "watermark": state.get("watermark", False),
+        },
+    )
+
+
+def _start_generation_background(task_id: str, seedance_cfg: dict, state: dict) -> None:
     start_background_task(
         _run_generate_with_tracking,
         task_id,
@@ -323,8 +365,6 @@ def upload():
         seedance_cfg["base_url"],
         seedance_cfg["model_id"],
     )
-
-    return jsonify({"id": task_id}), 201
 
 
 def _do_generate_v2(
@@ -462,7 +502,6 @@ def _run_generate_with_tracking(
     base_url: str | None = None,
     model_id: str | None = None,
 ):
-    register_active_task("video_creation", task_id)
     try:
         return _do_generate_v2(
             task_id,
@@ -662,25 +701,29 @@ def regenerate(task_id: str):
     except RuntimeError as exc:
         return jsonify(error=str(exc) or "请先在 API 配置中设置 Seedance API Key"), 400
 
+    if not _register_generation_task(
+        task_id,
+        state,
+        user_id=current_user.id,
+        model_id=seedance_cfg["model_id"],
+        entrypoint="video_creation.regenerate",
+    ):
+        return jsonify({"status": "already_running"})
+
     # 重置状态
     state.setdefault("steps", {})["generate"] = "pending"
     state["result_video_url"] = None
     state["result_video_path"] = None
     state["seedance_task_id"] = None
-    db_execute(
-        "UPDATE projects SET state_json = %s, status = 'uploaded' WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
-    )
-
-    register_active_task("video_creation", task_id)
-    start_background_task(
-        _run_generate_with_tracking,
-        task_id,
-        seedance_cfg["api_key"],
-        state,
-        seedance_cfg["base_url"],
-        seedance_cfg["model_id"],
-    )
+    try:
+        db_execute(
+            "UPDATE projects SET state_json = %s, status = 'uploaded' WHERE id = %s",
+            (json.dumps(state, ensure_ascii=False), task_id),
+        )
+        _start_generation_background(task_id, seedance_cfg, state)
+    except BaseException:
+        unregister_active_task("video_creation", task_id)
+        raise
     return jsonify({"status": "ok"})
 
 
