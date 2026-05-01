@@ -719,9 +719,14 @@
       <div class="oar-sub">Meta 实际消耗，包含无出单消耗</div>
     </div>
     <div class="oar-card is-primary">
-      <div class="oar-label">整体 ROAS</div>
+      <div class="oar-label">真实 ROAS（总销售额 / 总广告费）</div>
       <div class="oar-value" id="realtimeRoas">-</div>
       <div class="oar-sub" id="realtimeWindow">公式: 总销售额 / 广告消耗费用</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">Meta ROAS（Meta 销售额 / Meta 广告费）</div>
+      <div class="oar-value" id="realtimeMetaRoas">-</div>
+      <div class="oar-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
     </div>
   </div>
 
@@ -2204,6 +2209,20 @@
         document.getElementById('realtimeRevenue').textContent = fmtMoney(s.order_revenue);
         document.getElementById('realtimeSpend').textContent = fmtMoney(s.ad_spend);
         document.getElementById('realtimeRoas').textContent = fmtRoasValue(s.true_roas);
+        var metaAdSource = (data.scope || {}).ad_source;
+        var metaSpend = Number(s.ad_spend);
+        var metaPurchase = Number(s.meta_purchase_value);
+        var metaRoas = null;
+        if (metaAdSource === 'meta_ad_daily_campaign_metrics'
+            && Number.isFinite(metaSpend) && metaSpend > 0
+            && Number.isFinite(metaPurchase)) {
+          metaRoas = metaPurchase / metaSpend;
+        }
+        document.getElementById('realtimeMetaRoas').textContent = fmtRoasValue(metaRoas);
+        document.getElementById('realtimeMetaRoasSub').textContent =
+          metaAdSource === 'meta_ad_daily_campaign_metrics'
+            ? 'Meta 后台成效口径'
+            : 'Meta 后台数据待同步';
         document.getElementById('realtimeRevenueSub').textContent =
           '订单 ' + fmtInt(s.order_count || 0) + ' 单';
         document.getElementById('realtimeOrderCount').textContent = fmtInt(s.order_count || 0);
