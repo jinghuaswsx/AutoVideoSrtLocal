@@ -251,7 +251,7 @@
 
 /* ── 控件区 ───────────────────────────────────── */
 .oar-hero {
-  display: grid; grid-template-columns: repeat(5, minmax(170px, 1fr));
+  display: grid; grid-template-columns: repeat(6, minmax(150px, 1fr));
   gap: var(--space-4); margin-bottom: var(--space-5);
 }
 .oar-card {
@@ -260,6 +260,14 @@
 }
 .oar-card.is-primary {
   border-color: var(--accent); background: var(--accent-subtle);
+}
+.oar-roas-pair {
+  grid-column: span 2;
+  display: flex; align-items: stretch; gap: var(--space-5);
+}
+.oar-roas-cell { flex: 1 1 0; min-width: 0; }
+.oar-roas-divider {
+  flex: 0 0 1px; background: var(--accent); opacity: 0.25; align-self: stretch;
 }
 .oar-label {
   font-size: var(--text-sm); color: var(--fg-muted); font-weight: 600; margin-bottom: var(--space-2);
@@ -642,6 +650,7 @@
   .oar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .oar-card { padding: 14px; }
   .oar-value { font-size: 24px; }
+  .oar-roas-pair { grid-column: span 2; gap: 12px; }
   .oar-time-rule { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
   .oa-controls { gap: 8px; }
   .oa-controls label,
@@ -662,6 +671,8 @@
   .oar-grid { grid-template-columns: 1fr; }
   .oar-value { font-size: 22px; }
   .oar-card { padding: 12px; }
+  .oar-roas-pair { grid-column: 1; flex-direction: column; gap: 10px; }
+  .oar-roas-divider { width: 100%; height: 1px; flex: 0 0 1px; }
 }
 {% endblock %}
 
@@ -718,15 +729,18 @@
       <div class="oar-value" id="realtimeSpend">$0.00</div>
       <div class="oar-sub">Meta 实际消耗，包含无出单消耗</div>
     </div>
-    <div class="oar-card is-primary">
-      <div class="oar-label">真实 ROAS（总销售额 / 总广告费）</div>
-      <div class="oar-value" id="realtimeRoas">-</div>
-      <div class="oar-sub" id="realtimeWindow">公式: 总销售额 / 广告消耗费用</div>
-    </div>
-    <div class="oar-card is-primary">
-      <div class="oar-label">Meta ROAS（Meta 销售额 / Meta 广告费）</div>
-      <div class="oar-value" id="realtimeMetaRoas">-</div>
-      <div class="oar-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
+    <div class="oar-card is-primary oar-roas-pair">
+      <div class="oar-roas-cell">
+        <div class="oar-label">真实 ROAS（总销售额 / 总广告费）</div>
+        <div class="oar-value" id="realtimeRoas">-</div>
+        <div class="oar-sub" id="realtimeWindow">公式: 总销售额 / 广告消耗费用</div>
+      </div>
+      <div class="oar-roas-divider" aria-hidden="true"></div>
+      <div class="oar-roas-cell">
+        <div class="oar-label">Meta ROAS（Meta 销售额 / Meta 广告费）</div>
+        <div class="oar-value" id="realtimeMetaRoas">-</div>
+        <div class="oar-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
+      </div>
     </div>
   </div>
 
