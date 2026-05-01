@@ -182,6 +182,8 @@ def _invoke_chat_for_use_case(
     project_id: str | None = None,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ):
     """跑一次 use_case 走的 invoke_chat，返回 (payload, usage)。
 
@@ -193,6 +195,9 @@ def _invoke_chat_for_use_case(
     runtime_de / runtime_fr / ...）外层的 _log_translate_billing 仍是唯一计费
     入口，迁移期间不会因为同一调用既被外层、又被 invoke_chat 计费而出现 ai_billing
     重复行。Phase A-4 删除外层 _log_translate_billing 后，再恢复透传 user_id。
+
+    provider_override / model_override 让评测脚本（tools/translate_quality_eval
+    等）跳过 binding 默认值，直接指定 provider+model 跑 A/B 对比。
     """
     from appcore import llm_client
 
@@ -204,6 +209,8 @@ def _invoke_chat_for_use_case(
         response_format=response_format,
         temperature=temperature if temperature is not None else 0.2,
         max_tokens=max_tokens if max_tokens is not None else 4096,
+        provider_override=provider_override,
+        model_override=model_override,
     )
 
     payload = result.get("json")
@@ -345,6 +352,8 @@ def _generate_localized_translation_single(
     openrouter_api_key: str | None = None,
     use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Single-shot translation: original logic, no batching. Used directly for
     short videos and as the per-batch primitive for long-video batching."""
@@ -359,6 +368,8 @@ def _generate_localized_translation_single(
         payload, usage = _invoke_chat_for_use_case(
             use_case, messages, LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
             user_id=user_id, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     else:
         provider = _resolve_use_case_provider(provider)
@@ -399,6 +410,8 @@ def _generate_localized_translation_batched(
     batch_size: int,
     use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Long-video translation: split source segments into ~batch_size batches,
     call _single per batch, normalize per-batch indices to global, then merge.
@@ -424,6 +437,8 @@ def _generate_localized_translation_batched(
             provider=provider, user_id=user_id,
             openrouter_api_key=openrouter_api_key,
             use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
         batch_indices = [int(s["index"]) for s in batch]
         _normalize_batch_source_indices(batch_result.get("sentences") or [], batch_indices)
@@ -459,6 +474,8 @@ def generate_localized_translation(
     openrouter_api_key: str | None = None,
     use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Public entry: dispatches to single-shot for short videos and to the
     batched path for long videos based on config thresholds. Long-prompt LLM
@@ -480,6 +497,8 @@ def generate_localized_translation(
             openrouter_api_key=openrouter_api_key,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
             use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     return _generate_localized_translation_single(
         source_full_text_zh, script_segments,
@@ -487,6 +506,8 @@ def generate_localized_translation(
         provider=provider, user_id=user_id,
         openrouter_api_key=openrouter_api_key,
         use_case=use_case, project_id=project_id,
+        provider_override=provider_override,
+        model_override=model_override,
     )
 
 
@@ -501,6 +522,8 @@ def _generate_tts_script_single(
     validator=None,
     use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Single-shot tts_script generation: original logic, no batching."""
     builder = messages_builder or build_tts_script_messages
@@ -511,6 +534,8 @@ def _generate_tts_script_single(
         payload, usage = _invoke_chat_for_use_case(
             use_case, messages, rf,
             user_id=user_id, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     else:
         provider = _resolve_use_case_provider(provider)
@@ -557,6 +582,8 @@ def _generate_tts_script_batched(
     batch_size: int,
     use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Long-translation tts_script: split sentences into ~batch_size batches,
     generate per-batch blocks/subtitle_chunks, merge, then run a single
@@ -587,6 +614,8 @@ def _generate_tts_script_batched(
             response_format_override=response_format_override,
             validator=validator,
             use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
         all_blocks.extend(batch_result.get("blocks") or [])
         all_chunks.extend(batch_result.get("subtitle_chunks") or [])
@@ -629,6 +658,8 @@ def generate_tts_script(
     validator=None,
     use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Public entry. Long sentences trigger batched generation; per-batch
     blocks/subtitle_chunks are merged and the full sentence list drives a
@@ -652,6 +683,8 @@ def generate_tts_script(
             validator=validator,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
             use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     return _generate_tts_script_single(
         localized_translation,
@@ -661,6 +694,8 @@ def generate_tts_script(
         response_format_override=response_format_override,
         validator=validator,
         use_case=use_case, project_id=project_id,
+        provider_override=provider_override,
+        model_override=model_override,
     )
 
 
