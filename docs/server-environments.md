@@ -57,6 +57,8 @@ systemctl status autovideosrt --no-pager -l
 - 启动命令：`/opt/autovideosrt/venv/bin/gunicorn --config /opt/autovideosrt-test/deploy/gunicorn.conf.py main:app`
 - Gunicorn bind：`0.0.0.0:8080`
 - Gunicorn 运行方式：`gthread`，`workers=1`，测试服务环境变量设置 `AUTOVIDEOSRT_GUNICORN_THREADS=16`
+- Graceful stop：测试服务已设置 `AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT=45`
+- systemd stop timeout：测试服务已设置 `TimeoutStopSec=60`
 - 当前代码远程：`origin = https://github.com/jinghuaswsx/AutoVideoSrtLocal.git`
 - 数据库：服务器本机 MySQL，`DB_HOST=127.0.0.1`，`DB_PORT=3306`，`DB_NAME=auto_video_test`
 - 数据目录：`UPLOAD_DIR=/data/autovideosrt-test/uploads`
