@@ -179,6 +179,10 @@ def _database_enabled() -> bool:
     return True
 
 
+def _snapshot_enabled() -> bool:
+    return _truthy(os.getenv("AUTOVIDEOSRT_ACTIVE_TASK_SNAPSHOT_ENABLED"), default=True)
+
+
 def _persist_live_task(task: ActiveTask) -> None:
     if not _database_enabled():
         return
@@ -403,6 +407,8 @@ def _persist_snapshot_rows(reason: str, tasks: list[ActiveTask]) -> None:
 
 def snapshot_active_tasks(reason: str, tasks: list[ActiveTask] | None = None) -> dict[str, Any]:
     selected = list(tasks) if tasks is not None else list_active_tasks()
+    if not _snapshot_enabled():
+        return {"count": len(selected), "target": "disabled"}
     snapshot_reason = _normalize_text(reason) or "manual"
     if _database_enabled():
         try:

@@ -80,6 +80,25 @@ def test_snapshot_active_tasks_writes_jsonl_when_database_disabled(tmp_path, mon
     assert payload["active_tasks"][0]["task_id"] == "mt-snapshot"
 
 
+def test_snapshot_active_tasks_can_be_disabled_with_env(tmp_path, monkeypatch):
+    from appcore import active_tasks
+
+    calls = []
+    snapshot_path = tmp_path / "disabled-active-task-snapshots.jsonl"
+    task = active_tasks.ActiveTask(project_type="video_creation", task_id="vc-disabled")
+
+    monkeypatch.setattr(active_tasks, "_database_enabled", lambda: True)
+    monkeypatch.setattr(active_tasks, "db_execute", lambda sql, args=(): calls.append((sql, args)) or 1)
+    monkeypatch.setenv("AUTOVIDEOSRT_ACTIVE_TASK_SNAPSHOT_ENABLED", "0")
+    monkeypatch.setenv("AUTOVIDEOSRT_ACTIVE_TASK_SNAPSHOT_PATH", str(snapshot_path))
+
+    result = active_tasks.snapshot_active_tasks("shutdown_signal", tasks=[task])
+
+    assert result == {"count": 1, "target": "disabled"}
+    assert calls == []
+    assert not snapshot_path.exists()
+
+
 def test_load_persisted_active_tasks_keeps_stale_rows_for_safe_preflight(monkeypatch):
     from appcore import active_tasks
 

@@ -40,6 +40,7 @@
 - 2026-05-02 当前工作区补齐启动恢复后的 live active 行清理：`recover_all_interrupted_tasks` 在任务状态已恢复并写库后，会清理旧进程遗留的 `runtime_active_tasks` 记录，避免后续 `pre-restart` 被已不存在的线程误阻断；相关生命周期回归 `50 passed, 2 warnings`。
 - 2026-05-02 当前工作区重新运行第 7 项关键组合回归：`125 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `e78459b9`，服务端运行 `tests/test_task_recovery.py tests/test_active_tasks.py tests/test_active_tasks_cli.py`：`43 passed`；`pre-restart` 返回 `no active tasks`，服务保持 `active/running`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
+- 2026-05-02 当前工作区补齐 active task 快照降级开关 `AUTOVIDEOSRT_ACTIVE_TASK_SNAPSHOT_ENABLED=0`，用于快照写入异常时快速回滚；重新运行第 7 项关键组合回归：`126 passed, 2 warnings`。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
