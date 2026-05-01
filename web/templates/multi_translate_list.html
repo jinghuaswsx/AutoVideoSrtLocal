@@ -265,6 +265,21 @@
   text-align: center; font-size: 12px; color: #6b7280;
   margin: 8px auto 0; max-width: 180px; word-break: break-all;
 }
+
+/* ── 移动端适配 ── */
+@media (max-width: 768px) {
+  .page-header { flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  .page-header h1 { font-size: 18px; flex: 1 1 100%; }
+  .page-header-right { flex: 1 1 100%; flex-wrap: wrap; gap: 8px; }
+  .lang-pills { gap: 6px; margin: 12px 0 16px; }
+  .lang-pill { padding: 5px 12px; font-size: 12px; }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .project-card .info { padding: 10px; }
+  .project-card .filename { font-size: 13px; min-height: 2.6em; }
+  .list-item { padding: 8px 10px; gap: 10px; }
+  .list-item .list-thumb { width: 40px; height: 40px; }
+  .list-item .list-filename { font-size: 13px; }
+}
 {% endblock %}
 {% block content %}
 <div class="page-header">

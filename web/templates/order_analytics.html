@@ -618,10 +618,67 @@
 }
 .oam-detail-row-empty td { color: var(--fg-subtle); }
 .oam-detail-cell-warn { color: var(--danger); font-weight: 600; }
+
+/* ── 移动端适配 (< 768px) ────────────────────────── */
+.oa-mobile-tabs {
+  display: none;
+  margin: 0 -12px var(--space-4);
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap;
+}
+.oa-mobile-tabs::-webkit-scrollbar { display: none; }
+.oa-mobile-tabs .oa-tab {
+  display: inline-flex;
+  margin-right: 4px;
+}
+@media (max-width: 768px) {
+  .oa-mobile-tabs { display: block; }
+  .oar-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .oar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .oar-card { padding: 14px; }
+  .oar-value { font-size: 24px; }
+  .oar-time-rule { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
+  .oa-controls { gap: 8px; }
+  .oa-controls label,
+  .oa-controls select,
+  .oa-controls input { width: auto; min-width: 0; }
+  .oar-subtabs { gap: 4px; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .oar-subtabs::-webkit-scrollbar { display: none; }
+  .oar-subtab { white-space: nowrap; flex: 0 0 auto; }
+  /* 桌面表格在小屏走横滚（mobile.css 已兜底，但 .oa-table 用了 display:table，
+   * 这里允许其包裹元素在主内容里横滚） */
+  .oa-table { font-size: 12px; min-width: 0; }
+  .oa-table th, .oa-table td { padding: 8px 10px; }
+  .oar-product-cell { min-width: 200px; max-width: 280px; }
+}
+
+@media (max-width: 480px) {
+  .oar-hero { grid-template-columns: 1fr; }
+  .oar-grid { grid-template-columns: 1fr; }
+  .oar-value { font-size: 22px; }
+  .oar-card { padding: 12px; }
+}
 {% endblock %}
 
 {% block content %}
 <div class="oa-error" id="errorBox"></div>
+
+<nav class="oa-mobile-tabs" role="tablist" aria-label="数据分析模块（移动）">
+  <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
+  <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
+  <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
+  <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
+  <button type="button" class="oa-tab" data-tab="countryDashboard" role="tab" aria-selected="false">国家看板</button>
+  <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
+  <button type="button" class="oa-tab" data-tab="import" role="tab" aria-selected="false">Shopify 订单导入</button>
+  <button type="button" class="oa-tab" data-tab="analytics" role="tab" aria-selected="false">Shopify 订单分析</button>
+</nav>
+
 
 <section class="oa-panel active" id="panelRealtime">
   <div class="oar-toolbar">
