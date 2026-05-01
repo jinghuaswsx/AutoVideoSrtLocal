@@ -1,6 +1,6 @@
 """Vertex AI Gemini Adapter 测试（gemini_vertex_adapter）。
 
-本测试 mock 掉 pipeline.translate._call_vertex_json，
+本测试 mock 掉 appcore.llm_providers._helpers.vertex_json._call_vertex_json，
 因此不依赖真实 Vertex / google.genai SDK。
 """
 from unittest.mock import Mock, patch
@@ -15,7 +15,7 @@ from appcore.llm_providers.gemini_vertex_adapter import GeminiVertexADCAdapter
 
 def test_vertex_chat_delegates_to_translate_vertex_call():
     adapter = GeminiVertexAdapter()
-    with patch("pipeline.translate._call_vertex_json",
+    with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
                return_value=({"ok": True},
                              {"input_tokens": 5, "output_tokens": 3},
                              '{"ok":true}')) as m:
@@ -59,7 +59,7 @@ def test_vertex_generate_supports_media_with_schema(tmp_path):
 
 def test_vertex_generate_wraps_schema_into_response_format():
     adapter = GeminiVertexAdapter()
-    with patch("pipeline.translate._call_vertex_json",
+    with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
                return_value=({"v": 1}, None, '{"v":1}')) as m:
         adapter.generate(
             model="gemini-3.1-pro-preview",
@@ -74,7 +74,7 @@ def test_vertex_generate_wraps_schema_into_response_format():
 
 def test_vertex_generate_composes_messages_with_system():
     adapter = GeminiVertexAdapter()
-    with patch("pipeline.translate._call_vertex_json",
+    with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
                return_value=({"v": 1}, None, '{"v":1}')) as m:
         adapter.generate(
             model="gemini-3.1-pro-preview",

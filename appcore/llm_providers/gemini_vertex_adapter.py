@@ -104,7 +104,7 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def _call(self, *, model, messages, response_format, temperature, max_output_tokens):
         # Keep text-only behavior aligned with the legacy translation path.
-        from pipeline.translate import _call_vertex_json
+        from appcore.llm_providers._helpers.vertex_json import _call_vertex_json
 
         return _call_vertex_json(
             messages, model, response_format,
@@ -257,7 +257,7 @@ class GeminiVertexADCAdapter(GeminiVertexAdapter):
     def _call_with_adc(self, *, model, messages, response_format, temperature,
                        max_output_tokens):
         from google.genai import types as genai_types
-        from pipeline.translate import (
+        from appcore.llm_providers._helpers.vertex_json import (
             _extract_gemini_schema,
             _split_oai_messages,
             parse_json_content,
