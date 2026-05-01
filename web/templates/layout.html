@@ -435,6 +435,11 @@
         <span class="nav-icon">🚀</span> 推送管理
       </a>
       {% endif %}
+      {% if has_permission('data_analytics') %}
+      <a href="/order-analytics" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics') %}class="active"{% endif %}>
+        <span class="nav-icon">📊</span> 数据分析
+      </a>
+      {% endif %}
       {% if has_permission('multi_translate') %}
       <a href="/multi-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🌐</span> 多语种视频翻译
@@ -507,11 +512,6 @@
       {% if has_permission('projects') %}
       <a href="{{ url_for('projects.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.index' %}class="active"{% endif %}>
         <span class="nav-icon">🎬</span> 视频翻译传统
-      </a>
-      {% endif %}
-      {% if has_permission('data_analytics') %}
-      <a href="/order-analytics" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics') %}class="active"{% endif %}>
-        <span class="nav-icon">📊</span> 数据分析
       </a>
       {% endif %}
       {% if has_permission('productivity_stats') %}

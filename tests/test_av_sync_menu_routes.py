@@ -60,17 +60,18 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
     nav_html = html[html.index('<nav class="sidebar-nav">'):html.index("</nav>")]
 
     medias_idx = nav_html.index('href="/medias"')
+    pushes_idx = nav_html.index('href="/pushes"')
+    order_analytics_idx = nav_html.index('href="/order-analytics"')
     multi_translate_idx = nav_html.index('href="/multi-translate"')
     title_translate_idx = nav_html.index('href="/title-translate"')
     image_translate_idx = nav_html.index('href="/image-translate"')
     subtitle_removal_idx = nav_html.index('href="/subtitle-removal"')
     mk_selection_idx = nav_html.index('href="/medias/mk-selection"')
-    pushes_idx = nav_html.index('href="/pushes"')
 
-    assert medias_idx < multi_translate_idx < title_translate_idx
+    assert medias_idx < pushes_idx < order_analytics_idx
+    assert order_analytics_idx < multi_translate_idx < title_translate_idx
     assert title_translate_idx < image_translate_idx < subtitle_removal_idx
     assert subtitle_removal_idx < mk_selection_idx
-    assert subtitle_removal_idx < pushes_idx
 
 
 def test_dashboard_sidebar_moves_lab_group_to_bottom():
@@ -92,9 +93,8 @@ def test_dashboard_sidebar_moves_lab_group_to_bottom():
     av_sync_idx = nav_html.index("url_for('projects.av_sync_page')")
 
     assert "实验室" in nav_html
-    assert lab_group_idx > order_analytics_idx > video_translate_idx
+    assert lab_group_idx > video_translate_idx
     assert lab_group_idx == nav_html.rfind(lab_group_marker)
-    assert nav_html.index("<details") > nav_html.rfind('href="/order-analytics"')
     assert voice_library_idx > lab_group_idx
     assert voice_library_idx < prompt_library_idx < copywriting_idx
     assert copywriting_idx < text_translate_idx < video_creation_idx
