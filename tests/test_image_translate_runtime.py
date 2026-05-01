@@ -1204,3 +1204,63 @@ def test_recovery_non_apimart_channel_skips_recovery_logic():
     m_gen.assert_called_once()
     # non-apimart 通道，on_apimart_submitted 应该传 None
     assert m_gen.call_args.kwargs.get("on_apimart_submitted") is None
+
+
+def test_runtime_marks_interrupted_when_shutdown_requested_before_start(tmp_path):
+    """SIGTERM lands before start() reaches the loop -> task interrupted."""
+    from appcore import image_translate_runtime as rt
+    from appcore import shutdown_coordinator
+    from web import store
+
+    task = _fake_task([_item(i) for i in range(3)])
+    shutdown_coordinator.reset()
+    shutdown_coordinator.request_shutdown("test-pre-start")
+    try:
+        with patch.object(store, "get", return_value=task), \
+             patch.object(store, "update"), \
+             patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as gen:
+            rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+        assert gen.call_count == 0  # never reached the per-item work
+        assert task["status"] == "interrupted"
+        assert task["steps"]["process"] == "interrupted"
+        for it in task["items"]:
+            assert it["status"] == "interrupted"
+    finally:
+        shutdown_coordinator.reset()
+
+
+def test_runtime_marks_interrupted_mid_sequential_loop(tmp_path):
+    """SIGTERM lands between two items in sequential mode -> stop and mark interrupted."""
+    from appcore import image_translate_runtime as rt
+    from appcore import shutdown_coordinator
+    from web import store
+
+    task = _fake_task([_item(i) for i in range(4)])
+    task["concurrency_mode"] = "sequential"  # serialize for deterministic timing
+    shutdown_coordinator.reset()
+
+    call_count = [0]
+
+    def fake_gen(*a, **kw):
+        call_count[0] += 1
+        if call_count[0] == 2:
+            # Mid-loop: signal handler flips the flag while a task runs
+            shutdown_coordinator.request_shutdown("test-mid-loop")
+        return b"OUT", "image/png"
+
+    try:
+        with patch.object(store, "get", return_value=task), \
+             patch.object(store, "update"), \
+             patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+            rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+        # First two items processed before cancellation fires; remaining
+        # items must end in 'interrupted'.
+        assert task["items"][0]["status"] == "done"
+        assert task["items"][1]["status"] == "done"
+        assert task["items"][2]["status"] == "interrupted"
+        assert task["items"][3]["status"] == "interrupted"
+        assert task["status"] == "interrupted"
+    finally:
+        shutdown_coordinator.reset()
