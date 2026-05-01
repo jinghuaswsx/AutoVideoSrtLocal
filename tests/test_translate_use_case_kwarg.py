@@ -71,7 +71,9 @@ def test_generate_localized_translation_use_case_invokes_chat(monkeypatch):
     assert not m_openai.called, "use_case path must not call _call_openai_compat"
     call_kwargs = m_chat.call_args.kwargs
     assert m_chat.call_args.args[0] == "video_translate.localize"
-    assert call_kwargs["user_id"] == 42
+    # 过渡期：translate.py 的 use_case 路径强制 user_id=None 给 invoke_chat，
+    # 让外层 _log_translate_billing 保持唯一计费，避免 ai_billing 重复行。
+    assert call_kwargs["user_id"] is None
     assert call_kwargs["project_id"] == "task-x"
     # response_format 必传 LOCALIZED_TRANSLATION_RESPONSE_FORMAT
     rf = call_kwargs["response_format"]
@@ -113,7 +115,7 @@ def test_generate_tts_script_use_case_invokes_chat():
             user_id=99,
         )
     assert m_chat.call_args.args[0] == "video_translate.tts_script"
-    assert m_chat.call_args.kwargs["user_id"] == 99
+    assert m_chat.call_args.kwargs["user_id"] is None  # 过渡期：见 _invoke_chat_for_use_case docstring
     assert not m_vertex.called and not m_openai.called
     assert "_usage" in result
 
@@ -140,5 +142,6 @@ def test_generate_localized_rewrite_use_case_invokes_chat():
     assert m_chat.call_args.args[0] == "video_translate.rewrite"
     # 重写要求把 temperature 透传到 invoke_chat
     assert m_chat.call_args.kwargs["temperature"] == 0.4
+    assert m_chat.call_args.kwargs["user_id"] is None  # 同上
     assert not m_vertex.called and not m_openai.called
     assert result["sentences"][0]["text"] == "hello world"

@@ -698,6 +698,8 @@ class PipelineRunner:
                         user_id=self.user_id,
                         temperature=attempt_temperature,
                         feedback_notes=feedback_notes,
+                        use_case="video_translate.rewrite",
+                        project_id=task_id,
                     )
                     cand_words = _count_words(candidate.get("full_text", ""))
                     diff = abs(cand_words - target_words)
@@ -827,6 +829,8 @@ class PipelineRunner:
                 provider=provider, user_id=self.user_id,
                 messages_builder=loc_mod.build_tts_script_messages,
                 validator=validator,
+                use_case="video_translate.tts_script",
+                project_id=task_id,
             )
             _save_json(task_dir, f"tts_script.round_{round_index}.json", tts_script)
             round_record["artifact_paths"]["tts_script"] = f"tts_script.round_{round_index}.json"
@@ -1703,6 +1707,8 @@ class PipelineRunner:
             source_full_text_zh, script_segments, variant=variant,
             custom_system_prompt=custom_prompt,
             provider=provider, user_id=self.user_id,
+            use_case="video_translate.localize",
+            project_id=task_id,
         )
 
         # 先把初始翻译的 Prompt 单独落盘，后续时长迭代 round 1 可以复用

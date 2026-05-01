@@ -187,13 +187,19 @@ def _invoke_chat_for_use_case(
 
     把不同 adapter（openrouter/doubao/gemini_vertex/...）的返回值统一为
     业务函数期望的 (parsed_payload_dict_or_list, usage_dict_or_None) 二元组。
+
+    过渡期注意：调用 invoke_chat 时刻意把 user_id 置 None，让 invoke_chat 内部
+    _log_usage 立即 return（user_id is None → skip）。这样老业务（runtime.py /
+    runtime_de / runtime_fr / ...）外层的 _log_translate_billing 仍是唯一计费
+    入口，迁移期间不会因为同一调用既被外层、又被 invoke_chat 计费而出现 ai_billing
+    重复行。Phase A-4 删除外层 _log_translate_billing 后，再恢复透传 user_id。
     """
     from appcore import llm_client
 
     result = llm_client.invoke_chat(
         use_case,
         messages=messages,
-        user_id=user_id,
+        user_id=None,
         project_id=project_id,
         response_format=response_format,
         temperature=temperature if temperature is not None else 0.2,
