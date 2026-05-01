@@ -1254,13 +1254,13 @@
             <th>归因日</th>
             <th>北京时间窗口</th>
             <th>订单数</th>
+            <th>Meta 成效</th>
             <th>商品销售额</th>
             <th>运费</th>
             <th>总销售额</th>
             <th>广告费</th>
             <th>真实 ROAS</th>
             <th>Meta 转化价值</th>
-            <th>Meta 成效</th>
           </tr>
         </thead>
         <tbody id="trueRoasTableBody"></tbody>
@@ -2334,13 +2334,13 @@
             row.meta_business_date,
             formatRoasWindow(row.window_start_at, row.window_end_at),
             row.order_count || 0,
+            row.meta_purchases || 0,
             fmtMoney(row.order_revenue),
             fmtMoney(row.shipping_revenue),
             fmtMoney(row.revenue_with_shipping),
             fmtMoney(row.ad_spend),
             fmtRoasValue(row.true_roas),
-            fmtMoney(row.meta_purchase_value),
-            row.meta_purchases || 0
+            fmtMoney(row.meta_purchase_value)
           ].forEach(function(value) {
             var td = document.createElement('td');
             td.textContent = value;

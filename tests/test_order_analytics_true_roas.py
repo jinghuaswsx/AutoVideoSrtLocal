@@ -203,6 +203,31 @@ def test_true_roas_tab_displays_revenue_shipping_and_total_sales(authed_client_n
     assert "fmtMoney(row.revenue_with_shipping)" in body
 
 
+def test_true_roas_tab_places_meta_result_after_order_count(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    header_start = body.index('<div class="oa-table-title">真实 ROAS 日报</div>')
+    header_end = body.index('<tbody id="trueRoasTableBody"></tbody>', header_start)
+    header = body[header_start:header_end]
+    assert (
+        header.index("<th>订单数</th>")
+        < header.index("<th>Meta 成效</th>")
+        < header.index("<th>商品销售额</th>")
+    )
+
+    render_start = body.index("function loadTrueRoas()")
+    render_end = body.index("function fmtRoasValue", render_start)
+    render = body[render_start:render_end]
+    assert (
+        render.index("row.order_count || 0")
+        < render.index("row.meta_purchases || 0")
+        < render.index("fmtMoney(row.order_revenue)")
+    )
+
+
 def test_data_analysis_tabs_put_order_and_ads_after_realtime(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
