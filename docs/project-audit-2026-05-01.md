@@ -55,6 +55,7 @@
 - 2026-05-02 当前工作区补齐视频评估后台任务的原子启动保护：`/api/video-review/<task_id>/review` 启动前改用 `try_register_active_task` 抢占 active 记录，重复点击会返回 `already_running` 且不再派发第二个后台任务；active 记录同步写入 user、runner、entrypoint、stage 和模型信息，便于 `pre-restart` 排查。重新运行第 7 项关键组合回归：`137 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `24d01b9f` 并重启 `autovideosrt-test.service` 加载新路由；服务端运行视频评估启动保护聚焦回归：`2 passed`，`py_compile` 通过；`pre-restart` 返回 `no active tasks`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐视频创作生成任务的原子启动保护：上传后自动生成与 `/api/video-creation/<task_id>/regenerate` 均改用 `try_register_active_task` 抢占 active 记录，重复 regenerate 会返回 `already_running` 且不再派发第二个后台任务；active 记录同步写入 user、runner、entrypoint、stage、模型和生成参数。重新运行第 7 项关键组合回归：`139 passed, 2 warnings`。
+- 2026-05-02 测试环境已拉取提交 `03cf3fb3` 并重启 `autovideosrt-test.service` 加载新路由；服务端运行视频创作启动保护聚焦回归：`3 passed`，`py_compile` 通过；`pre-restart` 返回 `no active tasks`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
