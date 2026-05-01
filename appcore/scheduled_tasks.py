@@ -137,6 +137,18 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "weekly_roas_report": {
+        "code": "weekly_roas_report",
+        "name": "ROAS 周报快照",
+        "description": "每周二 09:00 把上一个完整 ISO 周（周一到周日）的真实/Meta ROAS 对比固化成快照，存入 weekly_roas_report_snapshots。",
+        "schedule": "每周二 09:00",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "weekly_roas_report",
+        "runner": "appcore.weekly_roas_report.run_scheduled_snapshot",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "subtitle_removal_vod_tick": {
         "code": "subtitle_removal_vod_tick",
         "name": "字幕移除 VOD 接力",

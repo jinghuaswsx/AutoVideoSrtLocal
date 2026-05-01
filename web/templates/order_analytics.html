@@ -9,6 +9,7 @@
   <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
   <button type="button" class="oa-tab" data-tab="countryDashboard" role="tab" aria-selected="false">国家看板</button>
   <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
+  <button type="button" class="oa-tab" data-tab="weeklyRoas" role="tab" aria-selected="false">ROAS 周报</button>
   <button type="button" class="oa-tab" data-tab="import" role="tab" aria-selected="false">Shopify 订单导入</button>
   <button type="button" class="oa-tab" data-tab="analytics" role="tab" aria-selected="false">Shopify 订单分析</button>
 </span>
@@ -686,6 +687,7 @@
   <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
   <button type="button" class="oa-tab" data-tab="countryDashboard" role="tab" aria-selected="false">国家看板</button>
   <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
+  <button type="button" class="oa-tab" data-tab="weeklyRoas" role="tab" aria-selected="false">ROAS 周报</button>
   <button type="button" class="oa-tab" data-tab="import" role="tab" aria-selected="false">Shopify 订单导入</button>
   <button type="button" class="oa-tab" data-tab="analytics" role="tab" aria-selected="false">Shopify 订单分析</button>
 </nav>
@@ -1346,6 +1348,47 @@
   </div>
 </div>
 
+<!-- Tab: ROAS 周报 -->
+<div class="oa-panel" id="panelWeeklyRoas">
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      <button type="button" class="oad-btn-secondary" id="weeklyRoasPrev" aria-label="上一周">←</button>
+      <input type="date" id="weeklyRoasWeekStart" aria-label="周一日期">
+      <button type="button" class="oad-btn-secondary" id="weeklyRoasNext" aria-label="下一周">→</button>
+      <span class="oar-note" id="weeklyRoasRangeLabel">周一 ~ 周日</span>
+      <button type="button" class="oad-btn-primary" id="weeklyRoasRefresh">刷新</button>
+      <span class="oar-note" id="weeklyRoasSnapshotInfo"></span>
+    </div>
+    <div class="oar-note">每周二 09:00 自动冻结上一个完整 ISO 周（周一至周日）的对比数据；其他时间打开即时计算。</div>
+  </div>
+
+  <div id="weeklyRoasSummary" class="oa-stats"></div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">真实 vs Meta 口径 周对比</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>归因日</th>
+            <th>周几</th>
+            <th>订单数</th>
+            <th>广告费</th>
+            <th>真实 ROAS</th>
+            <th>Meta ROAS</th>
+            <th>Meta 销售额</th>
+            <th>店铺销售额</th>
+            <th>销售额差</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyRoasTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
 <div class="oa-panel" id="panelImport">
   <div class="oa-upload-zone" id="uploadZone">
@@ -1715,6 +1758,8 @@
         initAds();
       } else if (tab.dataset.tab === 'trueRoas') {
         initTrueRoas();
+      } else if (tab.dataset.tab === 'weeklyRoas') {
+        initWeeklyRoas();
       } else if (tab.dataset.tab === 'realtime') {
         loadRealtimeOverview();
       } else if (tab.dataset.tab === 'countryDashboard') {
@@ -2439,6 +2484,99 @@
       })
       .catch(function(err) {
         body.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
+      });
+  }
+
+  var weeklyRoasInited = false;
+
+  function initWeeklyRoas() {
+    if (!weeklyRoasInited) {
+      weeklyRoasInited = true;
+      var lastMon = addDays(startOfWeek(new Date()), -7);
+      var input = document.getElementById('weeklyRoasWeekStart');
+      if (input && !input.value) input.value = formatDateInput(lastMon);
+      var prev = document.getElementById('weeklyRoasPrev');
+      if (prev) prev.addEventListener('click', function() { shiftWeeklyRoasWeek(-7); });
+      var next = document.getElementById('weeklyRoasNext');
+      if (next) next.addEventListener('click', function() { shiftWeeklyRoasWeek(7); });
+      var refresh = document.getElementById('weeklyRoasRefresh');
+      if (refresh) refresh.addEventListener('click', loadWeeklyRoas);
+      if (input) input.addEventListener('change', loadWeeklyRoas);
+    }
+    loadWeeklyRoas();
+  }
+
+  function shiftWeeklyRoasWeek(days) {
+    var input = document.getElementById('weeklyRoasWeekStart');
+    if (!input) return;
+    var base = input.value ? new Date(input.value + 'T00:00:00') : new Date();
+    base = addDays(base, days);
+    input.value = formatDateInput(base);
+    loadWeeklyRoas();
+  }
+
+  function loadWeeklyRoas() {
+    var weekStart = (document.getElementById('weeklyRoasWeekStart') || {}).value || '';
+    var summaryEl = document.getElementById('weeklyRoasSummary');
+    var body = document.getElementById('weeklyRoasTableBody');
+    var snapInfo = document.getElementById('weeklyRoasSnapshotInfo');
+    var rangeLabel = document.getElementById('weeklyRoasRangeLabel');
+    summaryEl.innerHTML = '';
+    body.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
+    snapInfo.textContent = '';
+    var url = '/order-analytics/weekly-roas-report' + (weekStart ? '?week_start=' + encodeURIComponent(weekStart) : '');
+    fetch(url)
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        var period = data.period || {};
+        var ws = period.week_start ? String(period.week_start).slice(0, 10) : '';
+        var we = period.week_end ? String(period.week_end).slice(0, 10) : '';
+        rangeLabel.textContent = ws && we ? (ws + ' ~ ' + we) : '周一 ~ 周日';
+        if (ws) document.getElementById('weeklyRoasWeekStart').value = ws;
+        if (data.snapshot && data.snapshot.generated_at) {
+          snapInfo.textContent = '快照 · ' + formatShortDateTime(data.snapshot.generated_at) + ' (' + (data.snapshot.generated_by || '') + ')';
+        } else {
+          snapInfo.textContent = '实时计算';
+        }
+        var s = data.summary || {};
+        summaryEl.innerHTML =
+          statCard('真实 ROAS', fmtRoasValue(s.true_roas)) +
+          statCard('Meta ROAS', fmtRoasValue(s.meta_roas)) +
+          statCard('店铺销售额', fmtMoney(s.revenue_with_shipping)) +
+          statCard('Meta 销售额', fmtMoney(s.meta_purchase_value)) +
+          statCard('销售额差', fmtMoney(s.sales_gap)) +
+          statCard('广告费', fmtMoney(s.ad_spend)) +
+          statCard('订单数', s.order_count || 0);
+        body.innerHTML = '';
+        var weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+        (data.rows || []).forEach(function(row, idx) {
+          var tr = document.createElement('tr');
+          [
+            String(row.meta_business_date || '').slice(0, 10),
+            weekdays[idx] || '-',
+            row.order_count || 0,
+            fmtMoney(row.ad_spend),
+            fmtRoasValue(row.true_roas),
+            fmtRoasValue(row.meta_roas),
+            fmtMoney(row.meta_purchase_value),
+            fmtMoney(row.revenue_with_shipping),
+            fmtMoney(row.sales_gap)
+          ].forEach(function(value) {
+            var td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          body.appendChild(tr);
+        });
+        if (!body.children.length) {
+          body.innerHTML = '<tr><td colspan="9">暂无数据</td></tr>';
+        }
+      })
+      .catch(function(err) {
+        body.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       });
   }
 

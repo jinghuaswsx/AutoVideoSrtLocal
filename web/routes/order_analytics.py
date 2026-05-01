@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import io
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from flask import Blueprint, render_template, request, jsonify, make_response
@@ -11,6 +11,7 @@ from flask_login import login_required
 from web.auth import admin_required
 
 from appcore import order_analytics as oa
+from appcore import weekly_roas_report as wrr
 
 log = logging.getLogger(__name__)
 
@@ -180,6 +181,29 @@ def true_roas():
         return jsonify(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("true roas query failed: %s", exc)
+        return jsonify(error="internal_error", detail=str(exc)), 500
+
+
+@bp.route("/order-analytics/weekly-roas-report")
+@login_required
+@admin_required
+def weekly_roas_report():
+    week_start_text = (request.args.get("week_start") or "").strip()
+    try:
+        if week_start_text:
+            week_start = datetime.strptime(week_start_text, "%Y-%m-%d").date()
+            if week_start.weekday() != 0:
+                week_start = week_start - timedelta(days=week_start.weekday())
+            week_end = week_start + timedelta(days=6)
+        else:
+            week_start, week_end = wrr.previous_complete_week()
+        report = wrr.get_or_compute_report(week_start, week_end)
+        report["recent_weeks"] = wrr.list_recent_snapshot_weeks(limit=12)
+        return jsonify(_json_safe(report))
+    except ValueError as exc:
+        return jsonify(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("weekly roas report query failed: %s", exc)
         return jsonify(error="internal_error", detail=str(exc)), 500
 
 

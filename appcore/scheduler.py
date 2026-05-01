@@ -20,6 +20,8 @@ def get_scheduler() -> BackgroundScheduler:
         product_cover_backfill_scheduler.register(_scheduler)
         from appcore import tos_backup_job
         tos_backup_job.register(_scheduler)
+        from appcore import weekly_roas_report
+        weekly_roas_report.register(_scheduler)
         scheduled_tasks.apply_scheduler_controls(_scheduler)
     return _scheduler
 
