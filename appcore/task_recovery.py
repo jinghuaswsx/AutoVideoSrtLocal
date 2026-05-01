@@ -57,6 +57,34 @@ def is_task_active(project_type: str, task_id: str) -> bool:
         return (project_type, task_id) in _active_tasks
 
 
+def snapshot_active_tasks() -> list[dict]:
+    """Snapshot of in-process active tasks for the restart probe.
+
+    Each item: ``{"project_type", "task_id", "display_name", "status", "type"}``.
+    display_name / status / type come from ``task_state.get(task_id)``;
+    on lookup failure they fall back to empty strings. The probe must
+    always return a stable response -- one bad task must not turn the
+    endpoint into a 500.
+    """
+    with _active_lock:
+        keys = list(_active_tasks)
+    items: list[dict] = []
+    for project_type, task_id in keys:
+        try:
+            task = task_state.get(task_id) or {}
+        except Exception:
+            task = {}
+        items.append({
+            "project_type": project_type,
+            "task_id": task_id,
+            "display_name": str(task.get("display_name") or task.get("original_filename") or ""),
+            "status": str(task.get("status") or ""),
+            "type": str(task.get("type") or ""),
+        })
+    items.sort(key=lambda r: (r["project_type"], r["task_id"]))
+    return items
+
+
 def _mark_running_steps_as_error(state: dict) -> bool:
     steps = state.setdefault("steps", {})
     step_messages = state.setdefault("step_messages", {})
