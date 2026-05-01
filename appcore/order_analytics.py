@@ -814,6 +814,39 @@ def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -
     return campaigns
 
 
+def _get_daily_campaigns(target: date) -> list[dict[str, Any]]:
+    """从 Meta 日级最终报表按 campaign 聚合，字段对齐实时表的 campaign_details。"""
+    rows = query(
+        "SELECT ad_account_id, ad_account_name, campaign_name, normalized_campaign_code, "
+        "SUM(result_count) AS result_count, "
+        "SUM(spend_usd) AS spend, "
+        "SUM(purchase_value_usd) AS purchase_value "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date=%s "
+        "GROUP BY ad_account_id, ad_account_name, campaign_name, normalized_campaign_code "
+        "ORDER BY spend DESC, campaign_name",
+        (target,),
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        spend = _money(row.get("spend"))
+        purchase_value = _money(row.get("purchase_value"))
+        out.append({
+            "ad_account_id": row.get("ad_account_id"),
+            "ad_account_name": row.get("ad_account_name"),
+            "campaign_id": None,
+            "campaign_name": row.get("campaign_name"),
+            "normalized_campaign_code": row.get("normalized_campaign_code"),
+            "result_count": int(row.get("result_count") or 0),
+            "spend_usd": spend,
+            "purchase_value_usd": purchase_value,
+            "platform_roas": _roas(purchase_value, spend),
+            "impressions": 0,
+            "clicks": 0,
+        })
+    return out
+
+
 def _get_today_realtime_meta_totals(business_date: date) -> dict[str, Any] | None:
     """对当天广告系统日，从 Meta 实时抓取表汇总最新 snapshot 的总值。
 
@@ -907,12 +940,14 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         for hour in range(24)
     ]
 
+    # 历史日期直接走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
+    # 仅"当天"和"未来"日期下才尝试 ROI 实时快照。
     latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
         "ORDER BY CASE WHEN ad_data_status='ok' THEN 0 ELSE 1 END, snapshot_at DESC, id DESC LIMIT 1",
         (target,),
-    )
+    ) if target >= current_business_date else []
     if latest_snapshot:
         snap = latest_snapshot[0]
         snapshot_at = snap.get("snapshot_at") or data_until
@@ -1069,7 +1104,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         "hourly": hourly,
         "roas_points": roas_points,
         "order_details": _get_realtime_order_details(target, day_start, data_until),
-        "campaigns": [],
+        "campaigns": _get_daily_campaigns(target),
     }
 
 
