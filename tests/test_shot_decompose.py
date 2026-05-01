@@ -4,12 +4,17 @@ from pipeline.shot_decompose import decompose_shots, align_asr_to_shots
 
 def test_decompose_shots_parses_response_and_normalizes_boundaries():
     fake_response = {
-        "shots": [
-            {"index": 1, "start": 0.0, "end": 5.2,
-             "description": "女主角走进咖啡厅"},
-            {"index": 2, "start": 5.3, "end": 9.8,
-             "description": "镜头切到吧台"},
-        ]
+        "json": {
+            "shots": [
+                {"index": 1, "start": 0.0, "end": 5.2,
+                 "description": "女主角走进咖啡厅"},
+                {"index": 2, "start": 5.3, "end": 9.8,
+                 "description": "镜头切到吧台"},
+            ]
+        },
+        "text": None,
+        "raw": None,
+        "usage": {},
     }
     with patch("pipeline.shot_decompose.gemini_generate",
                return_value=fake_response):
@@ -30,7 +35,7 @@ def test_decompose_shots_parses_response_and_normalizes_boundaries():
 
 def test_decompose_shots_raises_when_empty():
     with patch("pipeline.shot_decompose.gemini_generate",
-               return_value={"shots": []}):
+               return_value={"json": {"shots": []}, "text": None, "raw": None, "usage": {}}):
         try:
             decompose_shots(video_path="/tmp/v.mp4", user_id=1,
                              duration_seconds=10.0)

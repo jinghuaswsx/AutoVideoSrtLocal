@@ -5,7 +5,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from appcore import gemini
 from pipeline.llm_util import parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -109,16 +108,18 @@ def analyze_video(video_path: str | Path, *, user_id: int | None = None,
     if not p.is_file():
         raise FileNotFoundError(f"视频不存在：{p}")
 
-    raw = gemini.generate(
-        CSK_PROMPT,
-        media=p,
+    from appcore.llm_client import invoke_generate
+    result = invoke_generate(
+        "video_csk.analyze",
+        prompt=CSK_PROMPT,
+        media=[p],
         temperature=0.2,
         max_output_tokens=4096,
         user_id=user_id,
         project_id=project_id,
-        service="video_csk.analyze",
-        default_model=CSK_MODEL,
+        model_override=CSK_MODEL,
     )
+    raw = result.get("json") if result.get("json") is not None else (result.get("text") or "")
     data = raw if isinstance(raw, dict) else parse_json_response(raw)
 
     va = data.get("video_analysis") or {}

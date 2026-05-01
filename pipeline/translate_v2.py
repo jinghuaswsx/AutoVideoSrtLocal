@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from appcore.gemini import generate as gemini_generate
+from appcore.llm_client import invoke_generate as gemini_generate
 
 TRANSLATE_SCHEMA = {
     "type": "object",
@@ -44,13 +44,14 @@ def compute_char_limit(shot_duration: float, chars_per_second: float,
 
 def _call_llm(prompt: str, user_id: int) -> str:
     """调用 Gemini 生成 JSON 翻译，返回 translated_text。"""
-    resp = gemini_generate(
-        prompt,
+    invoked = gemini_generate(
+        "translate_lab.shot_translate",
+        prompt=prompt,
         user_id=user_id,
         response_schema=TRANSLATE_SCHEMA,
-        service="translate_lab.shot_translate",
     )
-    text = (resp or {}).get("translated_text", "") or ""
+    resp = invoked.get("json") or {}
+    text = resp.get("translated_text", "") or ""
     return text.strip()
 
 

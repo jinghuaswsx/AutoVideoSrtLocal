@@ -217,16 +217,20 @@ def review_video(
     log.info("[VideoReview] 开始评估: model=%s, video=%s (%.1fMB)",
              resolved_model, video_path, file_size_mb)
 
-    raw = gemini_api.generate(
+    from appcore.llm_client import invoke_generate
+    invoked = invoke_generate(
+        "video_review.analyze",
         prompt="请评估这段视频，返回 JSON 格式的评估报告。",
         system=system,
-        media=video_path,
+        media=[video_path],
         user_id=user_id,
-        service="video_review.analyze",
-        default_model=model,
+        model_override=model,
         temperature=0.3,
         max_output_tokens=4096,
     )
+    raw = invoked.get("text") or ""
+    if not raw and isinstance(invoked.get("json"), dict):
+        raw = json.dumps(invoked["json"], ensure_ascii=False)
     log.info("[VideoReview] 原始响应长度: %d", len(raw))
 
     result = _parse_json_response(raw)
