@@ -57,3 +57,10 @@ def test_scheduled_tasks_route_uses_view_and_task_filters():
     assert "management_tasks" in source
     assert '@bp.post("/<task_code>/control")' in source
     assert "set_task_enabled" in source
+
+
+def test_scheduled_tasks_management_links_queryable_log_sources():
+    source = _read("web/templates/scheduled_tasks.html")
+
+    assert "item.log_link_available" in source
+    assert "item.log_source or item.log_table" in source

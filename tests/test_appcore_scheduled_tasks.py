@@ -94,6 +94,9 @@ def test_task_definitions_expose_control_strategy_and_log_source():
     assert by_code["cleanup"]["log_source"] == "service:autovideosrt"
     assert by_code["roi_hourly_sync"]["log_source"] == "db:roi_hourly_sync_runs"
     assert by_code["tts_convergence_stats"]["log_source"] == "file:/var/log/tts_convergence.log"
+    assert by_code["roi_hourly_sync"]["log_link_available"] is True
+    assert by_code["active_task_pre_restart_check"]["log_link_available"] is True
+    assert by_code["tts_convergence_stats"]["log_link_available"] is False
 
 
 def test_task_definitions_include_active_task_pre_restart_check():

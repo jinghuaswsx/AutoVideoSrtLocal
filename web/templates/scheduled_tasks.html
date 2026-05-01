@@ -199,8 +199,8 @@
               </td>
               <td class="scheduled-mono">{{ item.runner }}</td>
               <td>
-                {% if item.log_table %}
-                  <a class="scheduled-log-link" href="{{ url_for('scheduled_tasks.page', view='logs', task=item.code) }}">{{ item.log_table }}</a>
+                {% if item.log_link_available %}
+                  <a class="scheduled-log-link" href="{{ url_for('scheduled_tasks.page', view='logs', task=item.code) }}">{{ item.log_source or item.log_table }}</a>
                 {% elif item.output_file %}
                   <span class="scheduled-output">{{ item.output_file }}</span>
                 {% else %}

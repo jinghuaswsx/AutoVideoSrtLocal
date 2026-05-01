@@ -307,6 +307,10 @@ def _with_definition_metadata(task: TaskDefinition) -> TaskDefinition:
     item.setdefault("control_strategy", _control_strategy(item))
     item.setdefault("log_source", _log_source(item))
     item.setdefault("log_available", bool(item["log_source"] and item["log_source"] != "unknown"))
+    item.setdefault(
+        "log_link_available",
+        bool(item.get("log_table")) or item["log_source"] == "db:runtime_active_task_snapshots",
+    )
     return item
 
 
