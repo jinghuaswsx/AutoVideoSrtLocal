@@ -45,6 +45,7 @@
 - 2026-05-02 当前工作区补齐 `active_tasks list` 首次部署缺表指导，避免普通 list 命令在 runtime active task 表尚未创建时直接抛原始异常；重新运行第 7 项关键组合回归：`127 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `96e33d29`，服务端运行 `tests/test_active_tasks_cli.py`：`7 passed`；实际 `list` 与 `pre-restart` 均返回 `no active tasks`，服务保持 `active/running`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐 Gunicorn `worker_exit` 停机日志明细：shutdown snapshot 会使用同一批 active task，并逐条输出未完成任务的 `project_type:task_id`、policy、stage、runner；重新运行第 7 项关键组合回归：`128 passed, 2 warnings`。
+- 2026-05-02 测试环境已拉取提交 `0bd168dd` 并重启 `autovideosrt-test.service` 加载新 Gunicorn 配置；服务端运行 `tests/test_web_service_tuning.py`：`6 passed`，重启前 `pre-restart` 返回 `no active tasks`，重启后服务保持 `active/running`、根路径返回 `302`、journal 出现 `active task shutdown snapshot` 记录，最近 3 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
