@@ -20,62 +20,40 @@ from appcore.db import query, query_one, execute, get_conn
 
 log = logging.getLogger(__name__)
 
-META_ATTRIBUTION_CUTOVER_HOUR_BJ = 16
-META_ATTRIBUTION_TIMEZONE = "Asia/Shanghai"
-
-# Shopify CSV 列名映射
-_SHOPIFY_COLS = {
-    "Id":                   "shopify_order_id",
-    "Name":                 "order_name",
-    "Created at":           "created_at_order",
-    "Lineitem name":        "lineitem_name",
-    "Lineitem sku":         "lineitem_sku",
-    "Lineitem quantity":    "lineitem_quantity",
-    "Lineitem price":       "lineitem_price",
-    "Billing Country":      "billing_country",
-    "Total":                "total",
-    "Subtotal":             "subtotal",
-    "Shipping":             "shipping",
-    "Currency":             "currency",
-    "Financial Status":     "financial_status",
-    "Fulfillment Status":   "fulfillment_status",
-    "Vendor":               "vendor",
-}
-
-_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-_SHOP_TS_FMT = "%Y-%m-%d %H:%M:%S %z"  # "2026-04-22 23:00:14 -0700"
-
-_META_AD_REQUIRED_COLS = [
-    "报告开始日期",
-    "报告结束日期",
-    "广告系列名称",
-    "已花费金额 (USD)",
-]
-
-_META_AD_NUMERIC_FIELDS: dict[str, tuple[str, str]] = {
-    "成效": ("result_count", "int"),
-    "已花费金额 (USD)": ("spend_usd", "float"),
-    "购物转化价值": ("purchase_value_usd", "float"),
-    "广告花费回报 (ROAS) - 购物": ("roas_purchase", "float"),
-    "CPM（千次展示费用） (USD)": ("cpm_usd", "float"),
-    "单次链接点击费用 - 独立用户 (USD)": ("unique_link_click_cost_usd", "float"),
-    "链接点击率": ("link_ctr", "float"),
-    "链接点击量": ("link_clicks", "int"),
-    "加入购物车次数": ("add_to_cart_count", "int"),
-    "结账发起次数": ("initiate_checkout_count", "int"),
-    "单次加入购物车费用 (USD)": ("add_to_cart_cost_usd", "float"),
-    "单次发起结账费用 (USD)": ("initiate_checkout_cost_usd", "float"),
-    "单次成效费用": ("cost_per_result_usd", "float"),
-    "平均购物转化价值": ("average_purchase_value_usd", "float"),
-    "展示次数": ("impressions", "int"),
-    "视频平均播放时长": ("video_avg_play_time", "float"),
-}
-
-_DIANXIAOMI_SITE_DOMAINS: dict[str, tuple[str, ...]] = {
-    "newjoy": ("newjoyloo.com",),
-    "omurio": ("omurio.com", "omurio"),
-}
-_DIANXIAOMI_EXCLUDED_DOMAINS = ("smartgearx.com", "smartgearx")
+from ._constants import (
+    META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+    META_ATTRIBUTION_TIMEZONE,
+    _SHOPIFY_COLS,
+    _TITLE_RE,
+    _SHOP_TS_FMT,
+    _META_AD_REQUIRED_COLS,
+    _META_AD_NUMERIC_FIELDS,
+    _DIANXIAOMI_SITE_DOMAINS,
+    _DIANXIAOMI_EXCLUDED_DOMAINS,
+    _META_AD_SUMMARY_NUMERIC_FIELDS,
+    COUNTRY_TO_LANG,
+    LANG_PRIORITY_COUNTRIES,
+    _DASHBOARD_SORT_FIELDS,
+)
+from ._helpers import (
+    _safe_decimal_float,
+    _parse_dianxiaomi_ts,
+    _combined_link_text,
+    _canonical_product_handle,
+    _json_dumps_for_db,
+    _parse_shopify_ts,
+    _safe_int,
+    _safe_float,
+    _safe_float_default,
+    _parse_meta_date,
+    _parse_iso_date_param,
+    _money,
+    _roas,
+    _revenue_with_shipping,
+    _beijing_now,
+    _business_hour,
+    _compute_pct_change,
+)
 
 
 @dataclass(frozen=True)
@@ -85,38 +63,6 @@ class DianxiaomiProductScope:
     excluded_shopify_ids: set[str]
     excluded_handles: set[str]
     requested_site_codes: set[str]
-
-
-def _safe_decimal_float(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        return round(float(str(value).replace(",", "").strip()), 2)
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_dianxiaomi_ts(value: Any) -> datetime | None:
-    if isinstance(value, (int, float)):
-        timestamp = float(value)
-        if timestamp > 10_000_000_000:
-            timestamp = timestamp / 1000
-        try:
-            return datetime.fromtimestamp(timestamp).replace(microsecond=0)
-        except (OSError, OverflowError, ValueError):
-            return None
-    text = str(value or "").strip()
-    if not text:
-        return None
-    if text.isdigit():
-        return _parse_dianxiaomi_ts(int(text))
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-        candidate = text[:19] if fmt.endswith("%S") else text[:10]
-        try:
-            return datetime.strptime(candidate, fmt)
-        except ValueError:
-            continue
-    return None
 
 
 def compute_meta_business_window_bj(day_value: date) -> tuple[datetime, datetime]:
@@ -149,10 +95,6 @@ def compute_order_meta_attribution(
     }
 
 
-def _combined_link_text(*values: Any) -> str:
-    return " ".join(str(value or "") for value in values).lower()
-
-
 def _infer_dianxiaomi_site_code_from_text(text: str, requested_site_codes: set[str]) -> str | None:
     normalized = (text or "").lower()
     if not normalized:
@@ -177,20 +119,6 @@ def extract_dianxiaomi_shopify_product_id(line: dict[str, Any]) -> str | None:
         if match:
             return match.group(1)
     return None
-
-
-def _canonical_product_handle(value: Any) -> str | None:
-    text = str(value or "").strip().lower()
-    if not text:
-        return None
-    if "/products/" in text:
-        text = text.split("/products/", 1)[1]
-    text = text.split("?", 1)[0].split("#", 1)[0].strip("/")
-    if not text:
-        return None
-    if text.endswith("-rjc"):
-        text = text[:-4]
-    return text or None
 
 
 def extract_dianxiaomi_product_handle(line: dict[str, Any]) -> str | None:
@@ -422,12 +350,6 @@ def finish_dianxiaomi_order_import_batch(
     )
 
 
-def _json_dumps_for_db(value: Any) -> str | None:
-    if value is None:
-        return None
-    return json.dumps(value, ensure_ascii=False, default=str)
-
-
 _DIANXIAOMI_ORDER_LINE_COLUMNS = [
     "batch_id",
     "site_code",
@@ -598,55 +520,6 @@ def _parse_excel(stream) -> list[dict]:
     return result
 
 
-def _parse_shopify_ts(ts_str: str) -> datetime | None:
-    """解析 Shopify 时间戳 '2026-04-22 23:00:14 -0700' 为 naive UTC-ish datetime。"""
-    ts_str = (ts_str or "").strip()
-    if not ts_str:
-        return None
-    try:
-        dt = datetime.strptime(ts_str, _SHOP_TS_FMT)
-        # 转为 UTC（去掉时区信息）
-        return dt.replace(tzinfo=None) - dt.utcoffset()
-    except Exception:
-        pass
-    # fallback: 只取日期时间部分
-    try:
-        return datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return None
-
-
-def _safe_int(val: str, default: int = 0) -> int:
-    try:
-        return int(float((val or "").strip()))
-    except (ValueError, TypeError):
-        return default
-
-
-def _safe_float(val: str) -> float | None:
-    try:
-        return float((val or "").strip())
-    except (ValueError, TypeError):
-        return None
-
-
-def _safe_float_default(val: str, default: float = 0.0) -> float:
-    parsed = _safe_float(val)
-    return default if parsed is None else parsed
-
-
-def _parse_meta_date(value: str) -> date:
-    value = (value or "").strip()
-    if not value:
-        raise ValueError("Meta 广告报表日期不能为空")
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            pass
-    raise ValueError(f"无法解析 Meta 广告报表日期：{value}")
-
-
 def product_code_candidates_for_ad_campaign(campaign_name: str) -> list[str]:
     code = (campaign_name or "").strip().lower()
     if not code:
@@ -705,38 +578,6 @@ def parse_meta_ad_file(file_stream, filename: str) -> list[dict]:
         for row in rows
         if (row.get("广告系列名称") or "").strip()
     ]
-
-
-def _parse_iso_date_param(value: str, name: str) -> date:
-    try:
-        return datetime.strptime((value or "").strip(), "%Y-%m-%d").date()
-    except ValueError as exc:
-        raise ValueError(f"{name} must be YYYY-MM-DD") from exc
-
-
-def _money(value: Any) -> float:
-    return round(float(value or 0), 2)
-
-
-def _roas(revenue: float, spend: float) -> float | None:
-    if spend <= 0:
-        return None
-    return round(revenue / spend, 4)
-
-
-def _revenue_with_shipping(order_revenue: float, shipping_revenue: float) -> float:
-    return round(float(order_revenue or 0) + float(shipping_revenue or 0), 2)
-
-
-def _beijing_now() -> datetime:
-    return datetime.now(ZoneInfo(META_ATTRIBUTION_TIMEZONE)).replace(tzinfo=None)
-
-
-def _business_hour(value: datetime | None, day_start: datetime) -> int | None:
-    if not value:
-        return None
-    hour = int((value - day_start).total_seconds() // 3600)
-    return max(0, min(23, hour))
 
 
 def _get_realtime_order_details(target: date, day_start: datetime, data_until: datetime) -> list[dict[str, Any]]:
@@ -1754,17 +1595,6 @@ def _resolve_meta_ad_period(
     return latest.get("report_start_date"), latest.get("report_end_date"), latest.get("batch_id")
 
 
-_META_AD_SUMMARY_NUMERIC_FIELDS = (
-    "result_count",
-    "spend_usd",
-    "purchase_value_usd",
-    "link_clicks",
-    "add_to_cart_count",
-    "initiate_checkout_count",
-    "impressions",
-)
-
-
 def _coerce_meta_product_id(value: Any) -> int | None:
     if value in (None, ""):
         return None
@@ -2093,30 +1923,6 @@ def match_orders_to_products() -> int:
 # ── 国家 ↔ 语种映射 ───────────────────────────────────────
 
 
-COUNTRY_TO_LANG: dict[str, str] = {
-    "US": "en", "GB": "en", "UK": "en",
-    "AU": "en", "CA": "en", "IE": "en", "NZ": "en",
-    "DE": "de", "AT": "de",
-    "FR": "fr",
-    "ES": "es",
-    "IT": "it",
-    "NL": "nl",
-    "SE": "sv",
-    "FI": "fi",
-    "JP": "ja",
-    "KR": "ko",
-    "BR": "pt-BR",
-    "PT": "pt",
-}
-
-
-# 同语种多国家时，列输出顺序固定走这张表（不出现的语种按 dict 插入序）
-LANG_PRIORITY_COUNTRIES: dict[str, list[str]] = {
-    "en": ["US", "GB", "AU", "CA", "IE", "NZ"],
-    "de": ["DE", "AT"],
-}
-
-
 def _load_enabled_lang_codes() -> list[str]:
     """读取 media_languages.enabled=1 的语种 code，按 sort_order 升序。
 
@@ -2423,17 +2229,6 @@ def get_available_months() -> list[dict]:
 
 # ── 产品看板 V1 ───────────────────────────────────────────
 
-def _compute_pct_change(now, prev) -> float | None:
-    """环比百分比。返回 None 表示无法计算（prev=0 且 now>0）。"""
-    now_v = float(now or 0)
-    prev_v = float(prev or 0)
-    if prev_v == 0 and now_v == 0:
-        return 0.0
-    if prev_v == 0:
-        return None
-    return round((now_v - prev_v) / prev_v * 100, 2)
-
-
 def _resolve_period_range(
     period: str,
     *,
@@ -2656,9 +2451,6 @@ def _join_and_compute_dashboard_rows(
             })
         rows.append(row)
     return rows
-
-
-_DASHBOARD_SORT_FIELDS = frozenset({"spend", "revenue", "orders", "units", "roas"})
 
 
 def get_dashboard(
