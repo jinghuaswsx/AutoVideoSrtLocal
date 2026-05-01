@@ -108,6 +108,48 @@ def test_task_definitions_include_active_task_pre_restart_check():
     assert task["log_source"] == "db:runtime_active_task_snapshots"
 
 
+def test_list_runs_supports_active_task_snapshot_logs(monkeypatch):
+    from appcore import scheduled_tasks
+
+    def fake_query(sql, params):
+        assert "runtime_active_task_snapshots" in sql
+        assert params == (60,)
+        return [
+            {
+                "id": 17,
+                "snapshot_reason": "pre_restart",
+                "project_type": "image_translate",
+                "task_id": "task-100",
+                "user_id": 9,
+                "runner": "image_translate_runner",
+                "entrypoint": "web.routes.image_translate.start",
+                "stage": "uploading",
+                "thread_name": "worker-1",
+                "process_id": 1234,
+                "interrupt_policy": "block_restart",
+                "started_at": datetime(2026, 5, 2, 9, 0),
+                "last_heartbeat_at": datetime(2026, 5, 2, 9, 3),
+                "captured_at": datetime(2026, 5, 2, 9, 5),
+                "details_json": '{"product_id": "p-1"}',
+            }
+        ]
+
+    monkeypatch.setattr(scheduled_tasks, "query", fake_query)
+
+    runs = scheduled_tasks.list_runs("active_task_pre_restart_check")
+
+    assert runs[0]["task_code"] == "active_task_pre_restart_check"
+    assert runs[0]["task_name"] == "Active task pre-restart check"
+    assert runs[0]["status"] == "failed"
+    assert runs[0]["started_at"] == datetime(2026, 5, 2, 9, 5)
+    assert runs[0]["duration_seconds"] is None
+    assert runs[0]["summary"]["snapshot_reason"] == "pre_restart"
+    assert runs[0]["summary"]["project_type"] == "image_translate"
+    assert runs[0]["summary"]["task_id"] == "task-100"
+    assert runs[0]["summary"]["interrupt_policy"] == "block_restart"
+    assert runs[0]["summary"]["details"] == {"product_id": "p-1"}
+
+
 def test_task_definitions_include_audited_external_and_in_process_timers():
     from appcore import scheduled_tasks
 
@@ -130,6 +172,8 @@ def test_list_runs_all_merges_scheduled_task_and_roi_tables(monkeypatch):
     from appcore import scheduled_tasks
 
     def fake_query(sql, params):
+        if "runtime_active_task_snapshots" in sql:
+            return []
         if "dianxiaomi_order_import_batches" in sql:
             return [
                 {
@@ -215,6 +259,41 @@ def test_list_runs_all_merges_scheduled_task_and_roi_tables(monkeypatch):
     assert runs[1]["task_name"] == "店小秘订单导入"
     assert runs[1]["summary"]["fetched_orders"] == 12
     assert runs[2]["summary"] == {"order_hours_upserted": 3}
+
+
+def test_list_runs_all_includes_active_task_snapshot_logs(monkeypatch):
+    from appcore import scheduled_tasks
+
+    def fake_query(sql, params):
+        if "runtime_active_task_snapshots" in sql:
+            return [
+                {
+                    "id": 21,
+                    "snapshot_reason": "shutdown_signal",
+                    "project_type": "copywriting",
+                    "task_id": "task-200",
+                    "user_id": None,
+                    "runner": "copywriting_runner",
+                    "entrypoint": "",
+                    "stage": "generating",
+                    "thread_name": "worker-2",
+                    "process_id": 4321,
+                    "interrupt_policy": "block_restart",
+                    "started_at": datetime(2026, 5, 2, 10, 0),
+                    "last_heartbeat_at": datetime(2026, 5, 2, 10, 3),
+                    "captured_at": datetime(2026, 5, 2, 10, 5),
+                    "details_json": None,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(scheduled_tasks, "query", fake_query)
+
+    runs = scheduled_tasks.list_runs("all")
+
+    assert [run["task_code"] for run in runs] == ["active_task_pre_restart_check"]
+    assert runs[0]["summary"]["snapshot_reason"] == "shutdown_signal"
+    assert runs[0]["summary"]["project_type"] == "copywriting"
 
 
 def test_list_runs_supports_dianxiaomi_order_import_batches(monkeypatch):

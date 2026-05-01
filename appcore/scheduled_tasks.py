@@ -889,6 +889,53 @@ def _meta_realtime_import_runs(*, limit: int) -> list[dict[str, Any]]:
     ]
 
 
+def _active_task_snapshot_runs(*, limit: int) -> list[dict[str, Any]]:
+    task = TASK_DEFINITIONS["active_task_pre_restart_check"]
+    rows = _safe_query_rows(
+        """
+        SELECT id, snapshot_reason, project_type, task_id, user_id, runner,
+               entrypoint, stage, thread_name, process_id, interrupt_policy,
+               started_at AS task_started_at, last_heartbeat_at, captured_at,
+               details_json
+        FROM runtime_active_task_snapshots
+        ORDER BY captured_at DESC, id DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+    runs: list[dict[str, Any]] = []
+    for row in rows:
+        if not row:
+            continue
+        interrupt_policy = str(row.get("interrupt_policy") or "").strip()
+        summary = {
+            "snapshot_reason": row.get("snapshot_reason"),
+            "project_type": row.get("project_type"),
+            "task_id": row.get("task_id"),
+            "user_id": row.get("user_id"),
+            "runner": row.get("runner"),
+            "stage": row.get("stage"),
+            "interrupt_policy": interrupt_policy,
+            "task_started_at": row.get("task_started_at"),
+            "last_heartbeat_at": row.get("last_heartbeat_at"),
+            "details": _decode_json_value(row.get("details_json")),
+        }
+        runs.append({
+            "id": row.get("id"),
+            "task_code": task["code"],
+            "task_name": task["name"],
+            "status": "failed" if interrupt_policy == "block_restart" else "success",
+            "scheduled_for": None,
+            "started_at": row.get("captured_at"),
+            "finished_at": row.get("captured_at"),
+            "duration_seconds": None,
+            "summary": {key: value for key, value in summary.items() if value not in (None, "")},
+            "error_message": None,
+            "output_file": None,
+        })
+    return runs
+
+
 def _sort_runs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         rows,
@@ -907,6 +954,7 @@ def list_runs(task_code: str = "all", *, limit: int = 60) -> list[dict[str, Any]
         rows.extend(_roi_hourly_runs(limit=safe_limit))
         rows.extend(_dianxiaomi_order_import_runs(limit=safe_limit))
         rows.extend(_meta_realtime_import_runs(limit=safe_limit))
+        rows.extend(_active_task_snapshot_runs(limit=safe_limit))
         return _sort_runs(rows)[:safe_limit]
 
     task = TASK_DEFINITIONS.get(code)
@@ -929,6 +977,8 @@ def list_runs(task_code: str = "all", *, limit: int = 60) -> list[dict[str, Any]
             *_meta_realtime_import_runs(limit=safe_limit),
             *_scheduled_task_runs(code, limit=safe_limit),
         ])[:safe_limit]
+    if code == "active_task_pre_restart_check":
+        return _active_task_snapshot_runs(limit=safe_limit)
     return []
 
 
