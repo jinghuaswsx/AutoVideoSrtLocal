@@ -1,4 +1,5 @@
 import io
+import importlib.util
 import json
 from pathlib import Path
 
@@ -163,3 +164,47 @@ def test_gunicorn_service_uses_threaded_config():
     assert "TimeoutStopSec=60" in service
     assert "simple-websocket" in requirements
     assert "\neventlet" not in requirements
+
+
+def test_gunicorn_worker_exit_logs_active_task_details(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    config_path = root / "deploy" / "gunicorn.conf.py"
+    spec = importlib.util.spec_from_file_location("autovideosrt_gunicorn_conf_test", config_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    from appcore import active_tasks
+
+    task = active_tasks.ActiveTask(
+        project_type="video_creation",
+        task_id="vc-shutdown",
+        runner="web.routes.video_creation.generate",
+        stage="compose",
+    )
+    monkeypatch.setattr(active_tasks, "list_active_tasks", lambda: [task])
+    monkeypatch.setattr(
+        active_tasks,
+        "snapshot_active_tasks",
+        lambda reason, tasks=None: {"count": len(tasks or []), "target": "database"},
+    )
+
+    messages = []
+
+    class FakeLog:
+        def info(self, message, *args):
+            messages.append(message % args if args else message)
+
+        def warning(self, message, *args):
+            messages.append(message % args if args else message)
+
+    class FakeWorker:
+        log = FakeLog()
+
+    module.worker_exit(None, FakeWorker())
+
+    joined = "\n".join(messages)
+    assert "active unfinished task" in joined
+    assert "video_creation:vc-shutdown" in joined
+    assert "stage=compose" in joined
+    assert "runner=web.routes.video_creation.generate" in joined

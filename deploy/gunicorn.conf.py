@@ -31,9 +31,19 @@ proc_name = "autovideosrt-web"
 
 def worker_exit(server, worker):
     try:
-        from appcore.active_tasks import snapshot_active_tasks
+        from appcore.active_tasks import list_active_tasks, snapshot_active_tasks
 
-        result = snapshot_active_tasks("shutdown_signal")
+        tasks = list_active_tasks()
+        result = snapshot_active_tasks("shutdown_signal", tasks=tasks)
         worker.log.info("active task shutdown snapshot: %s", result)
+        for task in tasks:
+            worker.log.info(
+                "active unfinished task: %s:%s policy=%s stage=%s runner=%s",
+                task.project_type,
+                task.task_id,
+                task.interrupt_policy,
+                task.stage or "-",
+                task.runner or "-",
+            )
     except Exception as exc:
         worker.log.warning("active task shutdown snapshot failed: %s", exc)
