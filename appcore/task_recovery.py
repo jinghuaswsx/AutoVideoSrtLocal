@@ -305,6 +305,7 @@ def recover_all_interrupted_tasks() -> int:
         log.warning("[task_recovery] startup recovery query failed", exc_info=True)
         return 0
     recovered_count = 0
+    recovered_snapshot_tasks: list[active_tasks.ActiveTask] = []
     for row in rows:
         task_id = row.get("id")
         project_type = row.get("type") or ""
@@ -317,7 +318,25 @@ def recover_all_interrupted_tasks() -> int:
             _persist_project_recovery(task_id, recovered, status)
             recovered_count += 1
             log.warning("[task_recovery] recovered interrupted %s task %s during startup", project_type, task_id)
+            recovered_snapshot_tasks.append(
+                active_tasks.ActiveTask(
+                    project_type=project_type,
+                    task_id=str(task_id),
+                    runner="appcore.task_recovery.recover_all_interrupted_tasks",
+                    entrypoint="startup_recovery",
+                    stage=status,
+                    details={
+                        "database_status": row.get("status") or "",
+                        "recovery_status": status,
+                    },
+                )
+            )
             _auto_resume_after_recovery(task_id, project_type, recovered, status)
+    if recovered_snapshot_tasks:
+        try:
+            active_tasks.snapshot_active_tasks("startup_recovery", tasks=recovered_snapshot_tasks)
+        except Exception:
+            log.warning("[task_recovery] failed to snapshot startup recovery tasks", exc_info=True)
     return recovered_count
 
 

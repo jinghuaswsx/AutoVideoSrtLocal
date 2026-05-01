@@ -34,7 +34,16 @@ def start(task_id: str, user_id: int | None = None) -> bool:
         if task_id in _running_tasks:
             return False
         _running_tasks.add(task_id)
-    if not try_register_active_task("image_translate", task_id):
+    if not try_register_active_task(
+        "image_translate",
+        task_id,
+        user_id=user_id,
+        runner="web.services.image_translate_runner.start",
+        entrypoint="image_translate.start",
+        stage="process",
+        details={"daemon_thread": True},
+        interrupt_policy="cautious",
+    ):
         with _running_tasks_lock:
             _running_tasks.discard(task_id)
         return False

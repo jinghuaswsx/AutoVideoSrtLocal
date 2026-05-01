@@ -825,6 +825,42 @@ def test_recover_all_interrupted_tasks_picks_up_image_translate_rows(monkeypatch
     assert persisted[0][1]["items"][1]["status"] == "pending"
 
 
+def test_recover_all_interrupted_tasks_snapshots_startup_recovery(monkeypatch):
+    from appcore import task_recovery
+
+    row = {
+        "id": "vc-snapshot",
+        "type": "video_creation",
+        "status": "running",
+        "state_json": json.dumps({"steps": {"generate": "running"}}, ensure_ascii=False),
+    }
+    snapshots = []
+
+    monkeypatch.setattr(task_recovery, "db_query", lambda sql, args=(): [row])
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
+    monkeypatch.setattr(task_recovery, "_persist_project_recovery", lambda *args: None)
+    monkeypatch.setattr(
+        task_recovery.active_tasks,
+        "snapshot_active_tasks",
+        lambda reason, tasks=None: snapshots.append((reason, tasks)) or {"count": len(tasks or [])},
+    )
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 1
+    assert snapshots
+    reason, tasks = snapshots[0]
+    assert reason == "startup_recovery"
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.project_type == "video_creation"
+    assert task.task_id == "vc-snapshot"
+    assert task.runner == "appcore.task_recovery.recover_all_interrupted_tasks"
+    assert task.entrypoint == "startup_recovery"
+    assert task.stage == "error"
+    assert task.interrupt_policy == "block_restart"
+
+
 def test_startup_recovery_does_not_resume_runners(monkeypatch):
     import web.app as web_app
 
