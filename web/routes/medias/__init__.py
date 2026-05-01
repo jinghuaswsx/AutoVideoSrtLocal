@@ -221,140 +221,6 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
 # ---------- 浜у搧 API ----------
 
 
-def _product_links_push_error_response(exc: Exception):
-    message = str(exc)
-    if isinstance(exc, pushes.ProductNotListedError):
-        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送投放链接"}), 409
-    if isinstance(exc, pushes.ProductLinksPushConfigError):
-        return jsonify({"error": message or "push_product_links_config_missing"}), 500
-    if isinstance(exc, pushes.ProductLinksPayloadError):
-        status = 400
-        return jsonify({"error": message or "product_links_payload_invalid"}), status
-    return jsonify({"error": "product_links_push_failed", "message": message}), 500
-
-
-def _product_localized_texts_push_error_response(exc: Exception):
-    message = str(exc)
-    if isinstance(exc, pushes.ProductNotListedError):
-        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送小语种文案"}), 409
-    if isinstance(exc, pushes.ProductLocalizedTextsPushConfigError):
-        return jsonify({"error": message or "push_localized_texts_config_missing"}), 500
-    if isinstance(exc, pushes.ProductLocalizedTextsPayloadError):
-        return jsonify({"error": message or "localized_texts_payload_invalid"}), 400
-    return jsonify({"error": "product_localized_texts_push_failed", "message": message}), 500
-
-
-def _product_unsuitable_push_error_response(exc: Exception):
-    message = str(exc)
-    if isinstance(exc, pushes.ProductNotListedError):
-        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送不合适标注"}), 409
-    if isinstance(exc, pushes.ProductLocalizedTextsPushConfigError):
-        return jsonify({"error": message or "push_localized_texts_config_missing"}), 500
-    if isinstance(exc, pushes.ProductLinksPushConfigError):
-        return jsonify({"error": message or "push_product_links_config_missing"}), 500
-    if isinstance(exc, pushes.ProductLocalizedTextsPayloadError):
-        return jsonify({"error": message or "localized_texts_payload_invalid"}), 400
-    if isinstance(exc, pushes.ProductLinksPayloadError):
-        return jsonify({"error": message or "product_links_payload_invalid"}), 400
-    return jsonify({"error": "product_unsuitable_push_failed", "message": message}), 500
-
-
-@bp.route("/api/products/<int:pid>/product-links-push/payload", methods=["GET"])
-@login_required
-def api_product_links_push_payload(pid: int):
-    if not _is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
-    product = medias.get_product(pid)
-    if not _can_access_product(product):
-        abort(404)
-    try:
-        return jsonify(pushes.build_product_links_push_preview(product))
-    except Exception as exc:
-        return _product_links_push_error_response(exc)
-
-
-@bp.route("/api/products/<int:pid>/product-links-push", methods=["POST"])
-@login_required
-def api_product_links_push(pid: int):
-    if not _is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
-    product = medias.get_product(pid)
-    if not _can_access_product(product):
-        abort(404)
-    try:
-        result = pushes.push_product_links(product)
-    except Exception as exc:
-        return _product_links_push_error_response(exc)
-    status = 200 if result.get("ok") else 502
-    return jsonify(result), status
-
-
-@bp.route("/api/products/<int:pid>/product-unsuitable-push/payload", methods=["GET"])
-@login_required
-def api_product_unsuitable_push_payload(pid: int):
-    if not _is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
-    product = medias.get_product(pid)
-    if not _can_access_product(product):
-        abort(404)
-    try:
-        return jsonify(pushes.build_unsuitable_product_push_preview(product))
-    except Exception as exc:
-        return _product_unsuitable_push_error_response(exc)
-
-
-@bp.route("/api/products/<int:pid>/product-unsuitable-push", methods=["POST"])
-@login_required
-def api_product_unsuitable_push(pid: int):
-    if not _is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
-    product = medias.get_product(pid)
-    if not _can_access_product(product):
-        abort(404)
-    body = request.get_json(silent=True) or {}
-    raw_type = (body.get("type") or "").strip().lower() if isinstance(body, dict) else ""
-    only_type = raw_type if raw_type in {"copy", "links"} else None
-    try:
-        if only_type:
-            result = pushes.push_unsuitable_product(product, only_type=only_type)
-        else:
-            result = pushes.push_unsuitable_product(product)
-    except Exception as exc:
-        return _product_unsuitable_push_error_response(exc)
-    status = 200 if result.get("ok") else 502
-    return jsonify(result), status
-
-
-@bp.route("/api/products/<int:pid>/product-localized-texts-push/payload", methods=["GET"])
-@login_required
-def api_product_localized_texts_push_payload(pid: int):
-    if not _is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
-    product = medias.get_product(pid)
-    if not _can_access_product(product):
-        abort(404)
-    try:
-        return jsonify(pushes.build_product_localized_texts_push_preview(product))
-    except Exception as exc:
-        return _product_localized_texts_push_error_response(exc)
-
-
-@bp.route("/api/products/<int:pid>/product-localized-texts-push", methods=["POST"])
-@login_required
-def api_product_localized_texts_push(pid: int):
-    if not _is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
-    product = medias.get_product(pid)
-    if not _can_access_product(product):
-        abort(404)
-    try:
-        result = pushes.push_product_localized_texts(product)
-    except Exception as exc:
-        return _product_localized_texts_push_error_response(exc)
-    status = 200 if result.get("ok") else 502
-    return jsonify(result), status
-
-
 
 def _shopify_image_lang_or_404(pid: int, lang: str) -> tuple[dict, str]:
     p = medias.get_product(pid)
@@ -2299,6 +2165,10 @@ def _get_mk_token() -> str:
 
 from . import pages as _pages
 from . import products as _products
+_appcore_pushes = pushes
+import importlib as _importlib
+_push_routes = _importlib.import_module(f"{__name__}.pushes")
+pushes = _appcore_pushes
 
 _medias_page_context = _pages._medias_page_context
 index = _pages.index
@@ -2320,3 +2190,13 @@ api_get_product = _products.api_get_product
 api_update_product = _products.api_update_product
 api_update_product_owner = _products.api_update_product_owner
 api_delete_product = _products.api_delete_product
+
+_product_links_push_error_response = _push_routes._product_links_push_error_response
+_product_localized_texts_push_error_response = _push_routes._product_localized_texts_push_error_response
+_product_unsuitable_push_error_response = _push_routes._product_unsuitable_push_error_response
+api_product_links_push_payload = _push_routes.api_product_links_push_payload
+api_product_links_push = _push_routes.api_product_links_push
+api_product_unsuitable_push_payload = _push_routes.api_product_unsuitable_push_payload
+api_product_unsuitable_push = _push_routes.api_product_unsuitable_push
+api_product_localized_texts_push_payload = _push_routes.api_product_localized_texts_push_payload
+api_product_localized_texts_push = _push_routes.api_product_localized_texts_push
