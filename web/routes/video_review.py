@@ -15,7 +15,7 @@ from appcore.project_state import update_project_state
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
     recover_project_if_needed,
-    register_active_task,
+    try_register_active_task,
     unregister_active_task,
 )
 from appcore.settings import get_retention_hours
@@ -170,6 +170,19 @@ def start_review(task_id: str):
     if file_size > 100 * 1024 * 1024:
         return jsonify(error=f"视频文件过大（{file_size / 1024 / 1024:.1f}MB），请压缩到 100MB 以内"), 400
 
+    active_metadata = {
+        "user_id": current_user.id,
+        "runner": "web.routes.video_review._run_review_with_tracking",
+        "entrypoint": "video_review.review",
+        "stage": "queued_review",
+        "details": {
+            "model": model,
+            "prompt_lang": prompt_lang,
+        },
+    }
+    if not try_register_active_task("video_review", task_id, **active_metadata):
+        return jsonify({"status": "already_running"})
+
     _update_state(task_id, {
         "model": model,
         "custom_prompt": custom_prompt,
@@ -180,16 +193,19 @@ def start_review(task_id: str):
     })
     db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
 
-    register_active_task("video_review", task_id)
-    start_background_task(
-        _run_review_with_tracking,
-        task_id,
-        video_path,
-        model,
-        custom_prompt,
-        current_user.id,
-        prompt_lang,
-    )
+    try:
+        start_background_task(
+            _run_review_with_tracking,
+            task_id,
+            video_path,
+            model,
+            custom_prompt,
+            current_user.id,
+            prompt_lang,
+        )
+    except BaseException:
+        unregister_active_task("video_review", task_id)
+        raise
 
     return jsonify({"status": "started"})
 
@@ -254,7 +270,6 @@ def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
 
 def _run_review_with_tracking(task_id: str, video_path: str, model: str, custom_prompt: str,
                               user_id: int, prompt_lang: str = "en"):
-    register_active_task("video_review", task_id)
     try:
         return _do_review(task_id, video_path, model, custom_prompt, user_id, prompt_lang)
     finally:

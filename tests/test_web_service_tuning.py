@@ -116,6 +116,7 @@ def test_video_review_start_review_uses_background_helper(authed_client, monkeyp
     video_path = tmp_path / "review.mp4"
     video_path.write_bytes(b"video-bytes")
     background_calls = []
+    active_registrations = []
 
     row = {
         "id": "vr-task",
@@ -135,7 +136,11 @@ def test_video_review_start_review_uses_background_helper(authed_client, monkeyp
     monkeypatch.setattr("web.routes.video_review.db_query_one", lambda *args, **kwargs: row)
     monkeypatch.setattr("web.routes.video_review._update_state", lambda *args, **kwargs: None)
     monkeypatch.setattr("web.routes.video_review.db_execute", lambda *args, **kwargs: None)
-    monkeypatch.setattr("web.routes.video_review.register_active_task", lambda *args: None)
+    monkeypatch.setattr(
+        "web.routes.video_review.try_register_active_task",
+        lambda *args, **kwargs: active_registrations.append((args, kwargs)) or True,
+        raising=False,
+    )
     monkeypatch.setattr(
         "web.routes.video_review.start_background_task",
         lambda fn, *args: background_calls.append((fn, args)),
@@ -147,6 +152,61 @@ def test_video_review_start_review_uses_background_helper(authed_client, monkeyp
     assert response.get_json()["status"] == "started"
     assert len(background_calls) == 1
     assert background_calls[0][1][0] == "vr-task"
+    assert active_registrations == [
+        (
+            ("video_review", "vr-task"),
+            {
+                "user_id": 1,
+                "runner": "web.routes.video_review._run_review_with_tracking",
+                "entrypoint": "video_review.review",
+                "stage": "queued_review",
+                "details": {
+                    "model": "gemini-3.1-pro-preview",
+                    "prompt_lang": "en",
+                },
+            },
+        )
+    ]
+
+
+def test_video_review_start_review_rejects_duplicate_active_task(authed_client, monkeypatch, tmp_path):
+    video_path = tmp_path / "review.mp4"
+    video_path.write_bytes(b"video-bytes")
+    background_calls = []
+
+    row = {
+        "id": "vr-duplicate",
+        "user_id": 1,
+        "type": "video_review",
+        "deleted_at": None,
+        "state_json": json.dumps(
+            {
+                "video_path": str(video_path),
+                "model": "gemini-3.1-pro-preview",
+                "steps": {"review": "running"},
+            },
+            ensure_ascii=False,
+        ),
+    }
+
+    monkeypatch.setattr("web.routes.video_review.db_query_one", lambda *args, **kwargs: row)
+    monkeypatch.setattr("web.routes.video_review._update_state", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.video_review.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.video_review.try_register_active_task",
+        lambda *args, **kwargs: False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.video_review.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    response = authed_client.post("/api/video-review/vr-duplicate/review", json={})
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "already_running"
+    assert background_calls == []
 
 
 def test_gunicorn_service_uses_threaded_config():
