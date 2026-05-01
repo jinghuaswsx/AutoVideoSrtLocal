@@ -2,8 +2,21 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from appcore.events import EventBus
 from appcore import task_state
+
+
+@pytest.fixture(autouse=True)
+def no_task_state_db_sync(monkeypatch):
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    with task_state._lock:
+        task_state._tasks.clear()
+    yield
+    with task_state._lock:
+        task_state._tasks.clear()
 
 
 def test_runtime_success_downloads_result_and_finishes_locally(monkeypatch, tmp_path):

@@ -23,6 +23,7 @@ class TestSecretKeyValidation:
     def test_valid_secret_key_works(self, monkeypatch):
         """设置了 FLASK_SECRET_KEY 时应正常启动。"""
         monkeypatch.setenv("FLASK_SECRET_KEY", "a-proper-secret-key-for-production")
+        monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
 
         from web.app import create_app
         app = create_app()

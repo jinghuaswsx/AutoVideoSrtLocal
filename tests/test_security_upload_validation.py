@@ -23,6 +23,19 @@ def _make_file(filename: str, content: bytes = b"fake-video-data"):
 def client(monkeypatch, tmp_path):
     """Flask test client with mocked user, no DB dependency for upload tests."""
     fake_user = {"id": 1, "username": "test-admin", "role": "admin", "is_active": 1}
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.task_state._db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.task_state._sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.task.db_query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.task.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.de_translate.db_query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.de_translate.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.fr_translate.db_query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.fr_translate.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.video_review.get_retention_hours", lambda project_type: 24)
     monkeypatch.setattr("web.auth.get_by_id", lambda uid: fake_user if int(uid) == 1 else None)
 
     from web.app import create_app
@@ -39,12 +52,12 @@ def client(monkeypatch, tmp_path):
 class TestTaskUploadValidation:
     """task 蓝图上传端点应该校验视频扩展名。"""
 
-    def test_rejects_local_mp4_upload_and_requires_tos_direct_upload(self, client):
-        resp = client.post("/api/tasks", data={"video": _make_file("test.mp4")},
+    def test_accepts_local_mp4_upload(self, client):
+        resp = client.post("/api/tasks", data={"video": _make_file("test.mp4"), "source_language": "en"},
                            content_type="multipart/form-data")
-        assert resp.status_code == 410
+        assert resp.status_code == 201
         data = resp.get_json()
-        assert "TOS" in data["error"]
+        assert "task_id" in data
 
     @pytest.mark.parametrize("ext", REJECTED_EXTS)
     def test_rejects_non_video_extensions(self, client, ext):
@@ -57,22 +70,22 @@ class TestTaskUploadValidation:
 
 class TestDeTranslateUploadValidation:
 
-    def test_rejects_local_mp4_upload_and_requires_tos_direct_upload(self, client):
+    def test_accepts_local_mp4_upload(self, client):
         resp = client.post("/api/de-translate/start", data={"video": _make_file("test.mp4")},
                            content_type="multipart/form-data")
-        assert resp.status_code == 410
+        assert resp.status_code == 201
         data = resp.get_json()
-        assert "TOS" in data["error"]
+        assert "task_id" in data
 
 
 class TestFrTranslateUploadValidation:
 
-    def test_rejects_local_mp4_upload_and_requires_tos_direct_upload(self, client):
+    def test_accepts_local_mp4_upload(self, client):
         resp = client.post("/api/fr-translate/start", data={"video": _make_file("test.mp4")},
                            content_type="multipart/form-data")
-        assert resp.status_code == 410
+        assert resp.status_code == 201
         data = resp.get_json()
-        assert "TOS" in data["error"]
+        assert "task_id" in data
 
 
 # ── video_review upload (/api/video-review/upload) ──

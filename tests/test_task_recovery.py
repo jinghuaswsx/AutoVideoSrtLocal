@@ -893,6 +893,7 @@ def test_create_app_runs_interrupted_task_recovery(monkeypatch):
         lambda: called.update({"bulk": called["bulk"] + 1}),
         raising=False,
     )
+    monkeypatch.setattr(web_app, "_seed_default_prompts", lambda: None)
 
     app = create_app()
 
