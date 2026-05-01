@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import requests
 from datetime import datetime
 from functools import lru_cache
@@ -154,7 +155,9 @@ def _validate_product_code(code: str) -> tuple[bool, str | None]:
 
 @lru_cache(maxsize=1)
 def _dianxiaomi_rankings_columns() -> frozenset[str]:
-    rows = db_query("SHOW COLUMNS FROM dianxiaomi_rankings")
+    route_mod = sys.modules.get("web.routes.medias")
+    query_fn = getattr(route_mod, "db_query", db_query)
+    rows = query_fn("SHOW COLUMNS FROM dianxiaomi_rankings")
     return frozenset(
         str(row.get("Field") or "").strip()
         for row in rows
