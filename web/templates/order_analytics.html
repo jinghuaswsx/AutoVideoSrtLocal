@@ -1333,11 +1333,11 @@
             <th>Meta 成效</th>
             <th>商品销售额</th>
             <th>运费</th>
-            <th>总销售额</th>
             <th>广告费</th>
             <th>真实 ROAS</th>
             <th>Meta ROAS</th>
-            <th>Meta 转化价值</th>
+            <th>Meta 销售额</th>
+            <th>店铺销售额</th>
           </tr>
         </thead>
         <tbody id="trueRoasTableBody"></tbody>
@@ -2421,11 +2421,11 @@
             row.meta_purchases || 0,
             fmtMoney(row.order_revenue),
             fmtMoney(row.shipping_revenue),
-            fmtMoney(row.revenue_with_shipping),
             fmtMoney(row.ad_spend),
             fmtRoasValue(row.true_roas),
             fmtRoasValue(row.meta_roas),
-            fmtMoney(row.meta_purchase_value)
+            fmtMoney(row.meta_purchase_value),
+            fmtMoney(row.revenue_with_shipping)
           ].forEach(function(value) {
             var td = document.createElement('td');
             td.textContent = value;
