@@ -92,6 +92,7 @@
 
 <script>
 const RVP_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+const RVP_CAN_PROCESS = {{ 'true' if can_process_raw_video else 'false' }};
 
 function rvpEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function rvpFmtSize(b) {
@@ -129,7 +130,11 @@ function rvpRenderSection(elId, countId, items, kind) {
   const rows = items.map(t => {
     let actions = '';
     if (kind === 'pending') {
+      if (!RVP_CAN_PROCESS) {
+        actions = `<button class="rvp-btn" disabled>&#26080;&#22788;&#29702;&#26435;&#38480;</button>`;
+      } else {
       actions = `<button class="rvp-btn rvp-btn--primary" onclick="rvpClaim(${t.task_id}, this)">认领</button>`;
+      }
     } else if (kind === 'in_progress') {
       actions = `<div class="rvp-action-group">
         <button class="rvp-btn" onclick="rvpDownload(${t.task_id})">下载原始</button>

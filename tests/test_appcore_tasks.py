@@ -24,6 +24,19 @@ def test_high_level_status_rollup():
     assert tasks.high_level_status("cancelled") == "terminated"
 
 
+def test_find_target_lang_item_normalizes_country_code(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append(args)
+        return {"id": 123}
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+
+    assert tasks._find_target_lang_item(7, " DE ") == {"id": 123}
+    assert calls[0] == (7, "de")
+
+
 import pytest
 from appcore.db import execute, query_one, query_all
 

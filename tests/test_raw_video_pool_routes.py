@@ -9,6 +9,18 @@ def test_api_list_smoke(authed_client_no_db):
     assert rsp.status_code in (200, 500)
 
 
+def test_index_exposes_admin_processing_capability(authed_client_no_db):
+    rsp = authed_client_no_db.get("/raw-video-pool/")
+    body = rsp.data.decode("utf-8")
+    assert "const RVP_CAN_PROCESS = true;" in body
+
+
+def test_index_exposes_non_processor_capability_false(authed_user_client_no_db):
+    rsp = authed_user_client_no_db.get("/raw-video-pool/")
+    body = rsp.data.decode("utf-8")
+    assert "const RVP_CAN_PROCESS = false;" in body
+
+
 def test_api_download_smoke(authed_client_no_db):
     rsp = authed_client_no_db.get("/raw-video-pool/api/task/9999/download")
     assert rsp.status_code in (200, 403, 404, 500)
