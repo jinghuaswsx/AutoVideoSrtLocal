@@ -306,8 +306,8 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["prompts"]["user"]
     assert payload["response_schema"]["type"] == "object"
     assert payload["llm"]["use_case"] == "material_evaluation.evaluate"
-    assert payload["llm"]["provider"] == "openrouter"
-    assert payload["llm"]["model"] == "google/gemini-3.1-pro-preview"
+    assert payload["llm"]["provider"] == "gemini_vertex_adc"
+    assert payload["llm"]["model"] == "gemini-3.1-pro-preview"
     assert payload["llm"]["google_search"] is True
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
 
@@ -326,10 +326,10 @@ def test_manual_ai_evaluate_request_payload_includes_full_base64(
     assert payload["request"]["media"][0]["data_base64"] == "Y292ZXItYnl0ZXM="
     assert payload["request"]["media"][1]["data_base64"] == "dmlkZW8tYnl0ZXM="
     assert payload["request"]["prompt"] == payload["prompts"]["user"]
-    assert payload["request"]["provider"] == "openrouter"
-    assert payload["request"]["model"] == "google/gemini-3.1-pro-preview"
+    assert payload["request"]["provider"] == "gemini_vertex_adc"
+    assert payload["request"]["model"] == "gemini-3.1-pro-preview"
     assert payload["request"]["google_search"] is True
-    assert payload["request"]["tools"] == [{"type": "openrouter:web_search"}]
+    assert payload["request"]["tools"] == [{"google_search": {}}]
 
 
 def test_item_bootstrap_rejects_bad_localized_material_filename(
@@ -1532,7 +1532,7 @@ def test_product_code_route_renders_full_page_detail_config(
     assert '"productId": 77' in html
     assert "rotary-lock-metal-box-cutter-rjc" in html
     assert 'class="oc-modal-mask oc oc-product-detail-mask" id="edMask"' in html
-    detail_mask_css = html.split("#edMask.oc-product-detail-mask {", 1)[1].split(
+    detail_mask_css = html.rsplit("#edMask.oc-product-detail-mask {", 1)[1].split(
         "#edMask.oc-product-detail-mask > .oc-modal-edit {", 1
     )[0]
     assert "position:fixed;" in detail_mask_css
