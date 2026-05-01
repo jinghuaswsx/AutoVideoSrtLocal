@@ -263,11 +263,12 @@ class NotReadyError(RuntimeError):
 
 
 def _find_target_lang_item(product_id: int, lang: str) -> dict | None:
+    lang_code = (lang or "").strip().lower()
     return query_one(
         "SELECT * FROM media_items "
         "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
         "ORDER BY id DESC LIMIT 1",
-        (int(product_id), lang),
+        (int(product_id), lang_code),
     )
 
 

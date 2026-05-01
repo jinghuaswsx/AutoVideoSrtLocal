@@ -98,6 +98,17 @@ def test_get_list_returns_json(authed_client_no_db, monkeypatch):
     assert data["products"][0]["id"] == 1
 
 
+def test_get_index_includes_page_scripts(authed_client_no_db, monkeypatch):
+    _patch_list_deps(monkeypatch)
+
+    resp = authed_client_no_db.get("/new-product-review/")
+
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert "function nprToast" in body
+    assert "window.nprOpenCellDetail" in body
+
+
 def test_get_list_admin_only(authed_user_client_no_db, monkeypatch):
     """普通用户访问 GET /api/list → 403。"""
     _patch_list_deps(monkeypatch)

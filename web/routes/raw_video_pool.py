@@ -22,12 +22,25 @@ def _is_admin() -> bool:
     return _viewer_role() in ("admin", "superadmin")
 
 
+def _can_process_raw_video() -> bool:
+    if _is_admin():
+        return True
+    has_permission = getattr(current_user, "has_permission", None)
+    if callable(has_permission):
+        return bool(has_permission("can_process_raw_video"))
+    perms = getattr(current_user, "permissions", None) or {}
+    if isinstance(perms, dict):
+        return bool(perms.get("can_process_raw_video"))
+    return False
+
+
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
     return render_template(
         "raw_video_pool_list.html",
         is_admin=_is_admin(),
+        can_process_raw_video=_can_process_raw_video(),
     )
 
 
