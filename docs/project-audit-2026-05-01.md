@@ -49,6 +49,7 @@
 - 2026-05-02 当前工作区补齐 `pre-restart` snapshot 写入失败时的降级处理：CLI 会打印 warning，并继续输出活跃任务和 blocking 结果，避免发布前检查被日志写入异常截断；重新运行第 7 项关键组合回归：`129 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `94fd7ff4`，服务端运行 `tests/test_active_tasks_cli.py`：`8 passed`；实际 `pre-restart` 返回 `no active tasks`，服务保持 `active/running`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐定时任务后台对 active task snapshot 的运行日志展示：`active_task_pre_restart_check` 会读取 `runtime_active_task_snapshots`，且默认“全部日志”也会合入该快照表；`block_restart` 快照在后台标记为失败以突出重启风险。重新运行第 7 项关键组合回归：`135 passed, 2 warnings`。
+- 2026-05-02 测试环境已拉取提交 `62e6cfa3` 并重启 `autovideosrt-test.service` 加载新代码；服务端运行 `tests/test_appcore_scheduled_tasks.py tests/test_scheduled_tasks_ui.py`：`24 passed`。测试环境实际写入一条 `scheduled_log_smoke` active task snapshot，`list_runs('active_task_pre_restart_check')` 与 `list_runs('all')` 均可读到该记录，登录后访问 `/scheduled-tasks?view=logs&task=active_task_pre_restart_check` 返回 `200` 且页面包含 smoke 快照。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
