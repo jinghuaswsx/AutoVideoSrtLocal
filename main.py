@@ -28,9 +28,13 @@ db_migrations.ensure_up_to_date()
 
 app = create_app()
 
-from appcore.scheduler import get_scheduler
+from appcore.scheduler import get_scheduler, register_atexit_shutdown
 _scheduler = get_scheduler()
 _scheduler.start()
+# atexit fallback for shutting down APScheduler so its non-daemon thread
+# does not block process exit. The Gunicorn worker_exit hook also calls
+# shutdown_scheduler; this covers paths that bypass the hook.
+register_atexit_shutdown()
 
 if __name__ == "__main__":
     print("AutoVideoSrt 启动中...")
