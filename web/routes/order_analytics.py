@@ -158,8 +158,14 @@ def ad_summary():
 @admin_required
 def realtime_overview():
     date_text = (request.args.get("date") or "").strip() or None
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
     try:
-        return jsonify(_json_safe(oa.get_realtime_roas_overview(date_text)))
+        return jsonify(_json_safe(oa.get_realtime_roas_overview(
+            date_text,
+            start_date=start_date,
+            end_date=end_date,
+        )))
     except ValueError as exc:
         return jsonify(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
