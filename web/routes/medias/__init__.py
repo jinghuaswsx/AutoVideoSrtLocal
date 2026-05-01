@@ -222,58 +222,6 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
 
 
 
-def _shopify_image_lang_or_404(pid: int, lang: str) -> tuple[dict, str]:
-    p = medias.get_product(pid)
-    if not _can_access_product(p):
-        abort(404)
-    normalized_lang = (lang or "").strip().lower()
-    if not normalized_lang or normalized_lang == "en" or not medias.is_valid_language(normalized_lang):
-        abort(404)
-    return p, normalized_lang
-
-
-@bp.route("/api/products/<int:pid>/shopify-image/<lang>/confirm", methods=["POST"])
-@login_required
-def api_product_shopify_image_confirm(pid: int, lang: str):
-    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
-    status = shopify_image_tasks.confirm_lang(
-        pid,
-        normalized_lang,
-        getattr(current_user, "id", None),
-    )
-    return jsonify({"ok": True, "status": status})
-
-
-@bp.route("/api/products/<int:pid>/shopify-image/<lang>/unavailable", methods=["POST"])
-@login_required
-def api_product_shopify_image_unavailable(pid: int, lang: str):
-    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
-    body = request.get_json(silent=True) or {}
-    status = shopify_image_tasks.mark_link_unavailable(
-        pid,
-        normalized_lang,
-        (body.get("reason") or "").strip(),
-    )
-    return jsonify({"ok": True, "status": status})
-
-
-@bp.route("/api/products/<int:pid>/shopify-image/<lang>/clear", methods=["POST"])
-@login_required
-def api_product_shopify_image_clear(pid: int, lang: str):
-    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
-    status = shopify_image_tasks.reset_lang(pid, normalized_lang)
-    return jsonify({"ok": True, "status": status})
-
-
-@bp.route("/api/products/<int:pid>/shopify-image/<lang>/requeue", methods=["POST"])
-@login_required
-def api_product_shopify_image_requeue(pid: int, lang: str):
-    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
-    shopify_image_tasks.reset_lang(pid, normalized_lang)
-    task = shopify_image_tasks.create_or_reuse_task(pid, normalized_lang)
-    status_code = 202 if task.get("status") != shopify_image_tasks.TASK_BLOCKED else 409
-    return jsonify({"ok": status_code == 202, "task": task}), status_code
-
 
 @bp.route("/api/products/<int:pid>/link-check", methods=["POST"])
 @login_required
@@ -2169,6 +2117,7 @@ _appcore_pushes = pushes
 import importlib as _importlib
 _push_routes = _importlib.import_module(f"{__name__}.pushes")
 pushes = _appcore_pushes
+from . import shopify_image as _shopify_image_routes
 
 _medias_page_context = _pages._medias_page_context
 index = _pages.index
@@ -2200,3 +2149,9 @@ api_product_unsuitable_push_payload = _push_routes.api_product_unsuitable_push_p
 api_product_unsuitable_push = _push_routes.api_product_unsuitable_push
 api_product_localized_texts_push_payload = _push_routes.api_product_localized_texts_push_payload
 api_product_localized_texts_push = _push_routes.api_product_localized_texts_push
+
+_shopify_image_lang_or_404 = _shopify_image_routes._shopify_image_lang_or_404
+api_product_shopify_image_confirm = _shopify_image_routes.api_product_shopify_image_confirm
+api_product_shopify_image_unavailable = _shopify_image_routes.api_product_shopify_image_unavailable
+api_product_shopify_image_clear = _shopify_image_routes.api_product_shopify_image_clear
+api_product_shopify_image_requeue = _shopify_image_routes.api_product_shopify_image_requeue
