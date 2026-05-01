@@ -878,6 +878,23 @@
   .drawer { width: 100%; }
 }
 
+@media (max-width: 480px) {
+  /* 紧凑模式：表格保持横滚（兜底由 mobile.css 提供），列内紧凑 */
+  .push-table { font-size: 12px; }
+  .push-table th,
+  .push-table td { padding: 8px 10px; white-space: nowrap; }
+  .thumb { width: 48px; height: 48px; }
+  .audit-cell-wrap { min-width: 200px; max-width: 240px; }
+  .audit-cell-wrap .audit-cell { white-space: normal; }
+  /* 让 cell 包含的多行文字能换行 */
+  .push-table td .product-name,
+  .push-table td .item-name,
+  .push-table td .audit-line { white-space: normal; }
+  .pagination { flex-wrap: wrap; gap: 4px; }
+  /* 警告条 */
+  .warning-banner { padding: 10px 12px; font-size: 12px; }
+}
+
 /* ================================================================
  * 推送确认弹窗（4 胶囊） pm- = push-modal
  * ================================================================ */
