@@ -251,6 +251,18 @@ def _persist_project_recovery(task_id: str, recovered: dict, status: str) -> Non
     )
 
 
+def _clear_stale_live_active_task(project_type: str, task_id: str) -> None:
+    try:
+        active_tasks.unregister(project_type, str(task_id))
+    except Exception:
+        log.warning(
+            "[task_recovery] failed to clear stale live active row for %s task %s",
+            project_type,
+            task_id,
+            exc_info=True,
+        )
+
+
 def recover_project_if_needed(task_id: str, project_type: str) -> dict | None:
     try:
         row = db_query_one(
@@ -316,6 +328,7 @@ def recover_all_interrupted_tasks() -> int:
         changed, recovered, status = recover_project_state(project_type, task_id, state)
         if changed and status:
             _persist_project_recovery(task_id, recovered, status)
+            _clear_stale_live_active_task(project_type, task_id)
             recovered_count += 1
             log.warning("[task_recovery] recovered interrupted %s task %s during startup", project_type, task_id)
             recovered_snapshot_tasks.append(

@@ -861,6 +861,33 @@ def test_recover_all_interrupted_tasks_snapshots_startup_recovery(monkeypatch):
     assert task.interrupt_policy == "block_restart"
 
 
+def test_recover_all_interrupted_tasks_clears_stale_live_active_rows(monkeypatch):
+    from appcore import task_recovery
+
+    row = {
+        "id": "vc-stale-live",
+        "type": "video_creation",
+        "status": "running",
+        "state_json": json.dumps({"steps": {"generate": "running"}}, ensure_ascii=False),
+    }
+    cleared = []
+
+    monkeypatch.setattr(task_recovery, "db_query", lambda sql, args=(): [row])
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
+    monkeypatch.setattr(task_recovery, "_persist_project_recovery", lambda *args: None)
+    monkeypatch.setattr(task_recovery.active_tasks, "snapshot_active_tasks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        task_recovery.active_tasks,
+        "unregister",
+        lambda project_type, task_id: cleared.append((project_type, task_id)),
+    )
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 1
+    assert cleared == [("video_creation", "vc-stale-live")]
+
+
 def test_startup_recovery_does_not_resume_runners(monkeypatch):
     import web.app as web_app
 
