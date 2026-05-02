@@ -7,8 +7,6 @@ This module only bridges EventBus events to Socket.IO rooms.
 
 from __future__ import annotations
 
-import threading
-
 import appcore.task_state as task_state
 from appcore.events import EventBus
 from appcore.runner_lifecycle import start_tracked_thread
@@ -77,12 +75,16 @@ def run_analysis(task_id: str, user_id: int | None = None):
     """手动触发单次 AI 视频分析，不影响任务整体 status。"""
     from appcore.runtime import run_analysis_only
 
-    bus = EventBus()
-    bus.subscribe(_make_socketio_handler(task_id))
-    runner = PipelineRunner(bus=bus, user_id=user_id)
-    thread = threading.Thread(
+    runner = _make_runner(task_id, user_id)
+    return start_tracked_thread(
+        project_type=runner.project_type,
+        task_id=task_id,
         target=run_analysis_only,
         args=(task_id, runner),
         daemon=False,
+        user_id=user_id,
+        runner="appcore.runtime.run_analysis_only",
+        entrypoint="web.services.pipeline_runner.run_analysis",
+        stage="analysis",
+        details={"action": "manual_analysis"},
     )
-    thread.start()

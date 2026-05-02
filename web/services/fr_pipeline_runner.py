@@ -1,8 +1,6 @@
 """French pipeline SocketIO adapter — mirrors pipeline_runner.py for FrTranslateRunner."""
 from __future__ import annotations
 
-import threading
-
 from appcore.events import EventBus
 from appcore.runner_lifecycle import start_tracked_thread
 from appcore.runtime_fr import FrTranslateRunner
@@ -55,9 +53,15 @@ def run_analysis(task_id: str, user_id: int | None = None):
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
     runner = FrTranslateRunner(bus=bus, user_id=user_id)
-    thread = threading.Thread(
+    return start_tracked_thread(
+        project_type=runner.project_type,
+        task_id=task_id,
         target=run_analysis_only,
         args=(task_id, runner),
         daemon=False,
+        user_id=user_id,
+        runner="appcore.runtime.run_analysis_only",
+        entrypoint="web.services.fr_pipeline_runner.run_analysis",
+        stage="analysis",
+        details={"action": "manual_analysis"},
     )
-    thread.start()

@@ -458,5 +458,6 @@ def run_ai_analysis(task_id):
     if (task.get("steps") or {}).get("analysis") == "running":
         return jsonify({"error": "AI 分析正在运行中"}), 409
 
-    fr_pipeline_runner.run_analysis(task_id, user_id=current_user.id)
+    if not fr_pipeline_runner.run_analysis(task_id, user_id=current_user.id):
+        return jsonify({"error": "AI 分析正在运行中"}), 409
     return jsonify({"status": "started"})

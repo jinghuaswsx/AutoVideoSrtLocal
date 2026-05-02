@@ -1936,6 +1936,50 @@ def test_start_route_materializes_source_video_from_tos_before_processing(tmp_pa
     assert started == [("task-start-tos", 1)]
 
 
+@pytest.mark.parametrize(
+    ("url", "route_module", "runner_path", "task_id"),
+    [
+        (
+            "/api/tasks/task-analysis-busy/analysis/run",
+            "web.routes.task",
+            "web.services.pipeline_runner.run_analysis",
+            "task-analysis-busy",
+        ),
+        (
+            "/api/de-translate/de-analysis-busy/analysis/run",
+            "web.routes.de_translate",
+            "web.services.de_pipeline_runner.run_analysis",
+            "de-analysis-busy",
+        ),
+        (
+            "/api/fr-translate/fr-analysis-busy/analysis/run",
+            "web.routes.fr_translate",
+            "web.services.fr_pipeline_runner.run_analysis",
+            "fr-analysis-busy",
+        ),
+    ],
+)
+def test_run_analysis_route_returns_409_when_runner_is_active(
+    authed_client_no_db,
+    monkeypatch,
+    url,
+    route_module,
+    runner_path,
+    task_id,
+):
+    store.create(task_id, "video.mp4", f"output/{task_id}", user_id=1)
+    monkeypatch.setattr(
+        f"{route_module}.db_query_one",
+        lambda sql, args: {"id": task_id},
+    )
+    monkeypatch.setattr(runner_path, lambda task_id, user_id=None: False)
+
+    response = authed_client_no_db.post(url)
+
+    assert response.status_code == 409
+    assert "正在运行" in response.get_json()["error"]
+
+
 def test_admin_can_fetch_other_users_task_thumbnail(tmp_path, authed_client_no_db, monkeypatch):
     thumb = tmp_path / "foreign-thumbnail.jpg"
     thumb.write_bytes(b"jpeg-thumbnail")

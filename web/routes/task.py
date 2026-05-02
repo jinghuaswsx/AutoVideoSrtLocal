@@ -1469,5 +1469,6 @@ def run_ai_analysis(task_id):
         return jsonify({"error": "AI 分析正在运行中"}), 409
 
     user_id = current_user.id if current_user.is_authenticated else None
-    pipeline_runner.run_analysis(task_id, user_id=user_id)
+    if not pipeline_runner.run_analysis(task_id, user_id=user_id):
+        return jsonify({"error": "AI 分析正在运行中"}), 409
     return jsonify({"status": "started"})

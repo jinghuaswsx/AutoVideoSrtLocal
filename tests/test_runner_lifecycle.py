@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import importlib
+
+import pytest
+
 
 class _FakeRunner:
     project_type = "translation"
@@ -12,7 +16,7 @@ class _FakeRunner:
 
 
 def test_pipeline_runner_start_prevents_duplicate_active_thread(monkeypatch):
-    from appcore import task_recovery
+    from appcore import runner_lifecycle, task_recovery
     from web.services import pipeline_runner
 
     task_id = "runner-dup"
@@ -29,7 +33,7 @@ def test_pipeline_runner_start_prevents_duplicate_active_thread(monkeypatch):
             threads.append(self)
 
     monkeypatch.setattr(pipeline_runner, "_make_runner", lambda task_id, user_id: _FakeRunner())
-    monkeypatch.setattr(pipeline_runner.threading, "Thread", FakeThread)
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
 
     try:
         assert pipeline_runner.start(task_id, user_id=1) is True
@@ -217,6 +221,101 @@ def test_link_check_runner_rejects_duplicate_global_active_task(monkeypatch):
         task_recovery.unregister_active_task("link_check", task_id)
         with link_check_runner._lock:
             link_check_runner._running.discard(task_id)
+
+
+@pytest.mark.parametrize(
+    ("module_name", "runner_attr", "project_type"),
+    [
+        ("web.services.pipeline_runner", "PipelineRunner", "translation"),
+        ("web.services.de_pipeline_runner", "DeTranslateRunner", "de_translate"),
+        ("web.services.fr_pipeline_runner", "FrTranslateRunner", "fr_translate"),
+    ],
+)
+def test_run_analysis_registers_active_task(monkeypatch, module_name, runner_attr, project_type):
+    from appcore import active_tasks, runner_lifecycle
+
+    module = importlib.import_module(module_name)
+    task_id = f"{project_type}-analysis-active"
+    active_tasks.clear_active_tasks_for_tests()
+    threads = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    class FakeAnalysisRunner:
+        def __init__(self, *args, **kwargs):
+            self.project_type = project_type
+
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+    if hasattr(module, "threading"):
+        monkeypatch.setattr(module.threading, "Thread", FakeThread)
+    monkeypatch.setattr(module, runner_attr, FakeAnalysisRunner)
+    if hasattr(module, "_make_runner"):
+        monkeypatch.setattr(module, "_make_runner", lambda task_id, user_id=None: FakeAnalysisRunner())
+
+    try:
+        assert module.run_analysis(task_id, user_id=7) is True
+        assert active_tasks.is_active(project_type, task_id) is True
+        task = active_tasks.list_active_tasks()[0]
+        assert task.project_type == project_type
+        assert task.task_id == task_id
+        assert task.runner == "appcore.runtime.run_analysis_only"
+        assert task.stage == "analysis"
+        assert task.details["action"] == "manual_analysis"
+        assert len(threads) == 1
+    finally:
+        active_tasks.clear_active_tasks_for_tests()
+
+
+@pytest.mark.parametrize(
+    ("module_name", "runner_attr", "project_type"),
+    [
+        ("web.services.pipeline_runner", "PipelineRunner", "translation"),
+        ("web.services.de_pipeline_runner", "DeTranslateRunner", "de_translate"),
+        ("web.services.fr_pipeline_runner", "FrTranslateRunner", "fr_translate"),
+    ],
+)
+def test_run_analysis_rejects_duplicate_active_task(monkeypatch, module_name, runner_attr, project_type):
+    from appcore import active_tasks, task_recovery
+
+    module = importlib.import_module(module_name)
+    task_id = f"{project_type}-analysis-dup"
+    active_tasks.clear_active_tasks_for_tests()
+    threads = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+
+    class FakeAnalysisRunner:
+        def __init__(self, *args, **kwargs):
+            self.project_type = project_type
+
+    if hasattr(module, "threading"):
+        monkeypatch.setattr(module.threading, "Thread", FakeThread)
+    monkeypatch.setattr(module, runner_attr, FakeAnalysisRunner)
+    if hasattr(module, "_make_runner"):
+        monkeypatch.setattr(module, "_make_runner", lambda task_id, user_id=None: FakeAnalysisRunner())
+    task_recovery.register_active_task(project_type, task_id)
+
+    try:
+        assert module.run_analysis(task_id, user_id=7) is False
+        assert threads == []
+    finally:
+        active_tasks.clear_active_tasks_for_tests()
 
 
 def test_start_tracked_thread_records_active_task_metadata(monkeypatch):
