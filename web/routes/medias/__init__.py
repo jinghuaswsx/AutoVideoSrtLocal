@@ -89,29 +89,8 @@ from ._serializers import (
 
 log = logging.getLogger(__name__)
 
-_MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
-
-
 bp = Blueprint("medias", __name__, url_prefix="/medias")
 
-@bp.route("/api/local-media-upload/<upload_id>", methods=["PUT"])
-@login_required
-def api_local_media_upload(upload_id: str):
-    with _local_upload_guard:
-        reservation = _local_upload_reservations.get(upload_id)
-    if not reservation or int(reservation.get("user_id") or 0) != int(current_user.id):
-        abort(404)
-    local_media_storage.write_stream(reservation["object_key"], request.stream)
-    return ("", 204)
-
-
-@bp.route("/object", methods=["GET"])
-@login_required
-def media_object_proxy():
-    object_key = (request.args.get("object_key") or "").strip()
-    if not object_key:
-        abort(404)
-    return _send_media_object(object_key)
 
 # ---------- 椤甸潰 ----------
 
@@ -137,24 +116,6 @@ def media_object_proxy():
 # 安全模型：知 object_key 者即可访问。
 # 下游 Dify / Shopify 工作流在内网，主项目也在内网，不暴露到公网。
 # ----------------------------------------------------------------
-@bp.route("/obj/<path:object_key>")
-def public_media_object(object_key: str):
-    key = (object_key or "").strip()
-    # 最低限度的防护：禁止 path traversal 和空值
-    if not key or ".." in key.split("/") or key.startswith("/"):
-        abort(404)
-    # 项目内合法 object_key 命名空间（local_media_storage 已做 traversal 校验）：
-    #   <uid>/medias/<pid>/<filename>              -- 原始素材 / 封面 / raw_sources
-    #   artifacts/<variant>/<uid>/<tid>/<file>    -- 产物（image_translate 译图/译封面等）
-    #   uploads/<variant>/<uid>/<tid>/<file>      -- 上传源文件
-    parts = key.split("/")
-    if len(parts) < 3:
-        abort(404)
-    if not (parts[1] == "medias" or parts[0] in ("artifacts", "uploads")):
-        abort(404)
-    return _send_media_object(key)
-
-
 # ---------- 明空选品 ----------
 
 from . import pages as _pages
@@ -172,6 +133,7 @@ from . import items as _items
 from . import covers as _covers
 from . import detail_images as _detail_images
 from . import mk_selection as _mk_selection
+from . import media_upload as _media_upload
 
 from ._helpers import _can_access_product, _material_evaluation_message, _schedule_material_evaluation
 from ._helpers import _delete_media_object, _MAX_IMAGE_BYTES, _MAX_RAW_VIDEO_BYTES, _ALLOWED_IMAGE_TYPES, _ALLOWED_RAW_VIDEO_TYPES
@@ -192,6 +154,9 @@ _is_mk_login_expired = _mk_selection._is_mk_login_expired
 _normalize_mk_media_path = _mk_selection._normalize_mk_media_path
 _mk_video_cache_object_key = _mk_selection._mk_video_cache_object_key
 _cache_mk_video = _mk_selection._cache_mk_video
+api_local_media_upload = _media_upload.api_local_media_upload
+media_object_proxy = _media_upload.media_object_proxy
+public_media_object = _media_upload.public_media_object
 api_mk_selection = _mk_selection.api_mk_selection
 api_mk_selection_refresh = _mk_selection.api_mk_selection_refresh
 api_mk_media_proxy = _mk_selection.api_mk_media_proxy
