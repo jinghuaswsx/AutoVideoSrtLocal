@@ -1,8 +1,10 @@
 """视频翻译（测试）V2 流水线 runner 单元测试。"""
 from __future__ import annotations
 
+import pytest
 from unittest.mock import patch
 
+from appcore.cancellation import OperationCancelled
 from appcore.events import EventBus
 from appcore.runtime_v2 import PipelineRunnerV2
 
@@ -37,7 +39,7 @@ def test_await_voice_confirmation_returns_chosen_when_available():
     with patch("appcore.runtime_v2.task_state.get",
                side_effect=lambda tid: next(states)), \
          patch("appcore.runtime_v2.task_state.update"), \
-         patch("appcore.runtime_v2.time.sleep"):
+         patch("appcore.runtime_v2.cancellable_sleep"):
         result = runner._await_voice_confirmation(
             "t1", [{"voice_id": "a"}], poll_interval=0.0, timeout_seconds=5,
         )
@@ -51,11 +53,26 @@ def test_await_voice_confirmation_times_out_to_none():
     with patch("appcore.runtime_v2.task_state.get",
                return_value={"chosen_voice": None}), \
          patch("appcore.runtime_v2.task_state.update"), \
-         patch("appcore.runtime_v2.time.sleep"):
+         patch("appcore.runtime_v2.cancellable_sleep"):
         result = runner._await_voice_confirmation(
             "t1", [], poll_interval=0.0, timeout_seconds=0,
         )
     assert result is None
+
+
+def test_await_voice_confirmation_exits_when_shutdown_requested():
+    bus = EventBus()
+    runner = PipelineRunnerV2(bus=bus, user_id=1)
+
+    with patch("appcore.runtime_v2.task_state.get",
+               return_value={"chosen_voice": None}), \
+         patch("appcore.runtime_v2.task_state.update"), \
+         patch("appcore.runtime_v2.cancellable_sleep",
+               side_effect=OperationCancelled("shutdown requested")):
+        with pytest.raises(OperationCancelled, match="shutdown requested"):
+            runner._await_voice_confirmation(
+                "t1", [], poll_interval=1.0, timeout_seconds=5,
+            )
 
 
 def test_step_voice_match_requests_top10_candidates():

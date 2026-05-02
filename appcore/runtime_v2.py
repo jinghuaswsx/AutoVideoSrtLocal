@@ -14,13 +14,16 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from appcore import task_state
 from appcore.api_keys import resolve_key
-from appcore.cancellation import OperationCancelled, throw_if_cancel_requested
+from appcore.cancellation import (
+    OperationCancelled,
+    cancellable_sleep,
+    throw_if_cancel_requested,
+)
 from appcore.events import (
     EVT_LAB_PIPELINE_DONE,
     EVT_LAB_PIPELINE_ERROR,
@@ -304,7 +307,7 @@ class PipelineRunnerV2(PipelineRunner):
                 chosen = t.get("chosen_voice")
                 if chosen:
                     return chosen
-                time.sleep(0)
+                cancellable_sleep(0)
             return None
 
         waited = 0.0
@@ -313,7 +316,7 @@ class PipelineRunnerV2(PipelineRunner):
             chosen = t.get("chosen_voice")
             if chosen:
                 return chosen
-            time.sleep(poll_interval)
+            cancellable_sleep(poll_interval)
             waited += poll_interval
         return None
 
