@@ -46,6 +46,43 @@ class TestDbPasswordNotHardcoded:
         assert config.DB_PASSWORD == "", "DB_PASSWORD 默认值不应包含实际密码"
 
 
+class TestSessionCookieSecurity:
+    """Session/remember cookies should have explicit security defaults."""
+
+    def _create_app(self, monkeypatch):
+        monkeypatch.setenv("FLASK_SECRET_KEY", "cookie-security-test-secret")
+        monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+        monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+
+        from web.app import create_app
+
+        return create_app()
+
+    def test_cookie_security_defaults_keep_http_usable(self, monkeypatch):
+        monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+        monkeypatch.delenv("SESSION_COOKIE_SAMESITE", raising=False)
+
+        app = self._create_app(monkeypatch)
+
+        assert app.config["SESSION_COOKIE_HTTPONLY"] is True
+        assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+        assert app.config["SESSION_COOKIE_SECURE"] is False
+        assert app.config["REMEMBER_COOKIE_HTTPONLY"] is True
+        assert app.config["REMEMBER_COOKIE_SAMESITE"] == "Lax"
+        assert app.config["REMEMBER_COOKIE_SECURE"] is False
+
+    def test_cookie_secure_can_be_enabled_by_environment(self, monkeypatch):
+        monkeypatch.setenv("SESSION_COOKIE_SECURE", "1")
+        monkeypatch.setenv("SESSION_COOKIE_SAMESITE", "Strict")
+
+        app = self._create_app(monkeypatch)
+
+        assert app.config["SESSION_COOKIE_SECURE"] is True
+        assert app.config["SESSION_COOKIE_SAMESITE"] == "Strict"
+        assert app.config["REMEMBER_COOKIE_SECURE"] is True
+        assert app.config["REMEMBER_COOKIE_SAMESITE"] == "Strict"
+
+
 class TestInternalCookieApiCsrfGuard:
     """Cookie session JSON APIs must have a lightweight request guard."""
 

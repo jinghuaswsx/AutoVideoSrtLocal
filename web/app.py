@@ -120,6 +120,36 @@ def _has_cookie_api_csrf_signal() -> bool:
     )
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cookie_samesite_from_env() -> str:
+    value = (os.getenv("SESSION_COOKIE_SAMESITE") or "Lax").strip()
+    if value.lower() == "none":
+        return "None"
+    if value.lower() == "strict":
+        return "Strict"
+    return "Lax"
+
+
+def _configure_cookie_security(app: Flask) -> None:
+    same_site = _cookie_samesite_from_env()
+    secure = _env_bool("SESSION_COOKIE_SECURE", False)
+    if same_site == "None":
+        secure = True
+
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = same_site
+    app.config["SESSION_COOKIE_SECURE"] = secure
+    app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+    app.config["REMEMBER_COOKIE_SAMESITE"] = same_site
+    app.config["REMEMBER_COOKIE_SECURE"] = secure
+
+
 def _register_cookie_api_csrf_guard(app: Flask) -> None:
     @app.before_request
     def _guard_cookie_api_csrf():
@@ -168,6 +198,7 @@ def create_app() -> Flask:
     # 登录会话有效期 1 个月，并允许同一账号多地同时登录
     app.config["PERMANENT_SESSION_LIFETIME"] = SESSION_LIFETIME
     app.config["REMEMBER_COOKIE_DURATION"] = SESSION_LIFETIME
+    _configure_cookie_security(app)
     # 关闭 Flask-Login 的 session protection，避免不同 IP/User-Agent 时
     # 把已登录用户挤下线，从而支持多地同时在线
     login_manager.session_protection = None
