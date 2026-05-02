@@ -167,7 +167,7 @@ iPhone 16 / 15 Pro Max 全部落在 <480px。
 
 webapp-testing 在 Playwright iPhone 14 Pro / iPhone 14 Pro Max 设备 emulation 下：
 1. 启动 dev server (`python main.py` 或 `python -m web`)
-2. 登录 admin/709709@（来自 testuser.md）
+2. 使用 `testuser.md` 中的管理员凭据登录
 3. 逐一访问 7 个核心页，截图 + 点击关键交互（hamburger / 卡片 / 抽屉 / 模态）
 4. 输出失败页清单，回到对应模板修，再跑一轮直到 0 fail
 

@@ -113,7 +113,7 @@ PC-only 工作台。允许横滚不强求塌陷。
 ### 4.1 webapp-testing 跑 iPhone 16 viewport
 脚本 `tests/manual/mobile_smoke.py`（新建，可丢弃）：
 1. 启 Playwright iPhone 14 Pro Max（接近 iPhone 16 Pro Max viewport）
-2. 登录 admin/709709@
+2. 使用 `testuser.md` 中的管理员凭据登录
 3. 依次访问：
    - `/`
    - `/pushes`（点 hamburger 打开抽屉、关闭）

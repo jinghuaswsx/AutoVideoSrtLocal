@@ -5,6 +5,7 @@ import importlib
 
 PRODUCTION_OPENAPI_KEY = "autovideosrt-materials-openapi"
 HARDCODED_GOOGLE_AI_PREFIX = "AIzaSy"
+HARDCODED_ADMIN_PASSWORD = "709709@"
 
 
 def test_repository_does_not_embed_production_api_keys():
@@ -30,6 +31,28 @@ def test_repository_does_not_embed_production_api_keys():
     root_config = Path("shopify_image_localizer_config.json")
     if root_config.is_file() and PRODUCTION_OPENAPI_KEY in root_config.read_text(encoding="utf-8"):
         offenders.append(str(root_config))
+
+    assert offenders == []
+
+
+def test_repository_does_not_embed_smoke_admin_password():
+    scanned_roots = [
+        Path("docs"),
+        Path("scripts"),
+        Path("tests/manual"),
+    ]
+    suffixes = {".md", ".py"}
+
+    offenders: list[str] = []
+    for root in scanned_roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.suffix.lower() not in suffixes or not path.is_file():
+                continue
+            content = path.read_text(encoding="utf-8")
+            if HARDCODED_ADMIN_PASSWORD in content:
+                offenders.append(str(path))
 
     assert offenders == []
 

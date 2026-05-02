@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -187,12 +188,15 @@ def evaluate(metrics: dict) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://172.30.254.14:8080")
-    parser.add_argument("--user", default="admin")
-    parser.add_argument("--pwd", default="709709@")
+    parser.add_argument("--user", default=os.environ.get("AUTOVIDEOSRT_SMOKE_USER", "admin"))
+    parser.add_argument("--pwd", default=os.environ.get("AUTOVIDEOSRT_SMOKE_PASSWORD", ""))
     parser.add_argument("--device", default="iPhone 15 Pro Max")
     parser.add_argument("--timeout", type=int, default=30000)
     parser.add_argument("--only", default="", help="逗号分隔，只跑指定 name 的页面")
     args = parser.parse_args()
+    if not args.pwd:
+        print("[!] set AUTOVIDEOSRT_SMOKE_PASSWORD or pass --pwd", file=sys.stderr)
+        return 2
 
     only = set(s.strip() for s in args.only.split(",") if s.strip())
     pages = [p for p in PAGES if not only or p[0] in only]

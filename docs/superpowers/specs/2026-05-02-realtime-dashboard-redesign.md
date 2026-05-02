@@ -171,7 +171,7 @@
    - 移动端 (375×812)：toolbar 一行能 wrap、preset 横滚或换行；卡片 2 列；无横向滚动
    - 视觉：无任何 `oklch(56% 0.16 230)`（accent 蓝）作为大面积背景；卡片外观与「国家看板」tab 一致
 3. **既有测试不破**：`pytest tests/test_order_analytics*.py -q` 全过
-4. **手动**：登录 `http://172.30.254.14`（admin/709709@），切到「数据分析」 tab，确认 PC + Chrome DevTools mobile 都正常。
+4. **手动**：登录 `http://172.30.254.14`（使用 `testuser.md` 中的管理员凭据），切到「数据分析」 tab，确认 PC + Chrome DevTools mobile 都正常。
 
 ## 部署
 
