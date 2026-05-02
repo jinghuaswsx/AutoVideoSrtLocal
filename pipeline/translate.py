@@ -2,14 +2,13 @@ import json
 import logging
 from typing import Dict, List
 
-from openai import OpenAI
-
 log = logging.getLogger(__name__)
 
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     require_provider_config,
 )
+from appcore.llm_providers._helpers.openai_compat import make_openai_compat_client
 from config import (
     DOUBAO_LLM_BASE_URL_DEFAULT,
     OPENROUTER_BASE_URL_DEFAULT,
@@ -113,7 +112,7 @@ def resolve_provider_config(
     provider: str,
     user_id: int | None = None,
     api_key_override: str | None = None,
-) -> tuple[OpenAI, str]:
+):
     """Return (client, model_id) for the given provider (OpenAI-compatible only).
 
     Vertex provider 不走这里——由 _call_vertex_json 单独处理。
@@ -145,7 +144,7 @@ def resolve_provider_config(
         else:
             model = _OPENROUTER_PREF_MODELS.get(provider, _DEFAULT_CLAUDE_MODEL)
 
-    return OpenAI(api_key=key, base_url=base_url), model
+    return make_openai_compat_client(api_key=key, base_url=base_url), model
 
 
 def get_model_display_name(provider: str, user_id: int | None = None) -> str:

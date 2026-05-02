@@ -46,9 +46,10 @@ result = invoke_chat(
 | `appcore/llm_providers/_helpers/vertex_json.py` | text → Vertex `generate_content` 转换 + retry | `genai.Client(vertexai=True, ...)` |
 | `appcore/llm_providers/_helpers/gemini_calls.py` | Gemini `_build_config` / `_build_contents` / `get_image_client` 等共享 helper | `genai.Client(...)`（image 通道复用） |
 | `appcore/llm_providers/_helpers/openrouter_image.py` | OpenRouter image2 客户端薄封装 | `OpenAI(api_key, base_url)` |
+| `appcore/llm_providers/_helpers/openai_compat.py` | OpenAI 兼容（OpenRouter / 豆包 LLM）客户端薄封装 | `OpenAI(api_key, base_url)` |
 | `appcore/gemini_image.py` | image generate 顶层入口（5 channel 路由） | 不再直 import，只 import 上面 helper |
-| `appcore/gemini.py` | 历史 generate / generate_stream / resolve_config 兼容入口 | `genai.Client(...)`（兼容老 service= 路径，待 Phase C-3 删除） |
-| `pipeline/translate.py` | 历史 generate_localized_translation 兼容入口 | `OpenAI(...)`（`_call_openai_compat`，待 Phase C-3 删除） |
+| `appcore/gemini.py` | 历史 generate / generate_stream / resolve_config 兼容入口 | `genai.Client(...)`（兼容老 service= 路径，待 follow-up 删除） |
+| `pipeline/translate.py` | 历史 generate_localized_translation 兼容入口 | C-3 后不再直接 `OpenAI(...)`；通过 `_helpers/openai_compat.make_openai_compat_client` 创建 |
 | `pipeline/video_csk.py` / `video_review.py` / `video_score.py` | 视频分析业务 | 仅 import gemini_api 拿 `resolve_config` 等读取工具，不再直接创建客户端（Phase B-3 完成迁移） |
 | `link_check_desktop/gemini_client.py` | 独立桌面端工具（不属于 web 路径） | `genai.Client(api_key=...)` |
 | `scripts/debug_vertex.py` / `scripts/debug_vertex_image.py` | 调试脚本 | `genai.Client(...)` |

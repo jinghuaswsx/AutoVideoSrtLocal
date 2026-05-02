@@ -66,7 +66,9 @@ def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
         "appcore/llm_providers/openrouter_adapter.py",
         # Phase B-4：image OpenAI 客户端创建迁到 _helpers，gemini_image 不再直连
         "appcore/llm_providers/_helpers/openrouter_image.py",
-        "pipeline/translate.py",
+        # Phase C-3：pipeline.translate._call_openai_compat 的 OpenAI() 客户端创建
+        # 迁到这里，pipeline/translate.py 顶部不再 `from openai import OpenAI`
+        "appcore/llm_providers/_helpers/openai_compat.py",
         "pipeline/video_csk.py",
         "pipeline/video_review.py",
         "pipeline/video_score.py",
