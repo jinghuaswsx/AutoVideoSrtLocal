@@ -10,8 +10,7 @@ import threading
 
 from appcore.events import EventBus
 from appcore.image_translate_runtime import ImageTranslateRuntime
-from appcore import runner_dispatch
-from appcore.task_recovery import try_register_active_task, unregister_active_task
+from appcore import runner_dispatch, runner_lifecycle
 from web.extensions import socketio
 
 _running_tasks: set[str] = set()
@@ -34,40 +33,39 @@ def start(task_id: str, user_id: int | None = None) -> bool:
         if task_id in _running_tasks:
             return False
         _running_tasks.add(task_id)
-    if not try_register_active_task(
-        "image_translate",
-        task_id,
-        user_id=user_id,
-        runner="web.services.image_translate_runner.start",
-        entrypoint="image_translate.start",
-        stage="process",
-        details={"daemon_thread": True},
-        interrupt_policy="cautious",
-    ):
-        with _running_tasks_lock:
-            _running_tasks.discard(task_id)
-        return False
 
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
     runtime = ImageTranslateRuntime(bus=bus, user_id=user_id)
 
-    def run():
+    def run() -> None:
         try:
             runtime.start(task_id)
         finally:
-            unregister_active_task("image_translate", task_id)
             with _running_tasks_lock:
                 _running_tasks.discard(task_id)
 
-    thread = threading.Thread(target=run, daemon=True)
     try:
-        thread.start()
+        started = runner_lifecycle.start_tracked_thread(
+            project_type="image_translate",
+            task_id=task_id,
+            target=run,
+            daemon=True,
+            user_id=user_id,
+            runner="web.services.image_translate_runner.start",
+            entrypoint="image_translate.start",
+            stage="process",
+            details={"daemon_thread": True},
+            interrupt_policy="cautious",
+        )
     except BaseException:
-        unregister_active_task("image_translate", task_id)
         with _running_tasks_lock:
             _running_tasks.discard(task_id)
         raise
+    if not started:
+        with _running_tasks_lock:
+            _running_tasks.discard(task_id)
+        return False
     return True
 
 

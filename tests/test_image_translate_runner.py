@@ -20,19 +20,17 @@ def test_start_spawns_thread_and_tracks_running():
 
 
 def test_start_registers_active_task_metadata(monkeypatch):
+    from appcore import runner_lifecycle
     from web.services import image_translate_runner as runner
 
     registered = []
-    thread = MagicMock()
 
-    monkeypatch.setattr(
-        runner,
-        "try_register_active_task",
-        lambda project_type, task_id, **metadata: registered.append((project_type, task_id, metadata)) or True,
-    )
-    monkeypatch.setattr(runner, "unregister_active_task", lambda *args: None)
+    def fake_start_tracked_thread(**kwargs):
+        registered.append(kwargs)
+        return True
+
+    monkeypatch.setattr(runner_lifecycle, "start_tracked_thread", fake_start_tracked_thread)
     monkeypatch.setattr(runner, "ImageTranslateRuntime", MagicMock())
-    monkeypatch.setattr(runner.threading, "Thread", lambda target=None, daemon=None: thread)
     with runner._running_tasks_lock:
         runner._running_tasks.discard("tid-meta")
 
@@ -42,15 +40,48 @@ def test_start_registers_active_task_metadata(monkeypatch):
         with runner._running_tasks_lock:
             runner._running_tasks.discard("tid-meta")
 
-    assert registered
-    project_type, task_id, metadata = registered[0]
-    assert project_type == "image_translate"
-    assert task_id == "tid-meta"
+    assert len(registered) == 1
+    metadata = registered[0]
+    assert metadata["project_type"] == "image_translate"
+    assert metadata["task_id"] == "tid-meta"
     assert metadata["user_id"] == 12
     assert metadata["runner"] == "web.services.image_translate_runner.start"
     assert metadata["entrypoint"] == "image_translate.start"
     assert metadata["stage"] == "process"
     assert metadata["interrupt_policy"] == "cautious"
+
+
+def test_start_delegates_thread_start_to_runner_lifecycle(monkeypatch):
+    from appcore import runner_lifecycle
+    from web.services import image_translate_runner as runner
+
+    calls = []
+
+    def fake_start_tracked_thread(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(runner_lifecycle, "start_tracked_thread", fake_start_tracked_thread)
+    monkeypatch.setattr(runner, "ImageTranslateRuntime", MagicMock())
+    with runner._running_tasks_lock:
+        runner._running_tasks.discard("tid-lifecycle")
+
+    try:
+        assert runner.start("tid-lifecycle", user_id=9) is True
+    finally:
+        with runner._running_tasks_lock:
+            runner._running_tasks.discard("tid-lifecycle")
+
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["project_type"] == "image_translate"
+    assert call["task_id"] == "tid-lifecycle"
+    assert call["daemon"] is True
+    assert call["user_id"] == 9
+    assert call["runner"] == "web.services.image_translate_runner.start"
+    assert call["entrypoint"] == "image_translate.start"
+    assert call["stage"] == "process"
+    assert call["interrupt_policy"] == "cautious"
 
 
 def test_start_ignores_duplicate():
