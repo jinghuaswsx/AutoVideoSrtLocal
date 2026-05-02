@@ -114,6 +114,44 @@ def _store_state(fake_db: _FakeProjectsDB, task_id: str, state: dict) -> None:
     fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
 
 
+def test_create_copy_child_registers_active_runner(runtime_env, monkeypatch):
+    mod, _fake_db = runtime_env
+    tracked = []
+    monkeypatch.setattr(
+        "appcore.runner_lifecycle.start_tracked_thread",
+        lambda **kwargs: tracked.append(kwargs) or True,
+    )
+    monkeypatch.setattr(mod, "_spawn_daemon", lambda fn: None)
+
+    item = _item(
+        0,
+        kind="copy",
+        lang="de",
+        ref={"source_copy_id": 101},
+    )
+    child_id, child_type, status = mod._create_copy_child(
+        "bulk-parent-1",
+        item,
+        {"product_id": 77, "initiator": {"user_id": 9}},
+    )
+
+    assert child_type == "copywriting_translate"
+    assert status == "running"
+    assert tracked[0]["project_type"] == "copywriting_translate"
+    assert tracked[0]["task_id"] == child_id
+    assert tracked[0]["args"] == (child_id,)
+    assert tracked[0]["user_id"] == 9
+    assert tracked[0]["runner"] == "appcore.copywriting_translate_runtime.CopywritingTranslateRunner.start"
+    assert tracked[0]["entrypoint"] == "bulk_translate.copy_child"
+    assert tracked[0]["stage"] == "queued_translate"
+    assert tracked[0]["details"] == {
+        "parent_task_id": "bulk-parent-1",
+        "target_lang": "de",
+        "source_copy_id": 101,
+    }
+    assert tracked[0]["daemon"] is True
+
+
 def test_create_detail_images_child_skips_gif_sources(runtime_env, monkeypatch, tmp_path):
     mod, _fake_db = runtime_env
     created = {}

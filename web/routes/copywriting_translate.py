@@ -17,6 +17,7 @@ from flask_login import current_user, login_required
 from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
 from appcore.db import execute as db_execute
 from appcore.events import Event, EventBus, EVT_CT_PROGRESS
+from appcore.task_recovery import try_register_active_task, unregister_active_task
 from web.background import start_background_task
 
 bp = Blueprint("copywriting_translate", __name__,
@@ -49,6 +50,37 @@ def _spawn_runner(task_id: str) -> None:
     except Exception:
         # 错误状态已写入 projects 行,异常吞掉防 greenthread 崩溃日志刷屏。
         pass
+
+
+def _start_runner_background(
+    task_id: str,
+    *,
+    user_id: int,
+    details: dict,
+) -> bool:
+    if not try_register_active_task(
+        "copywriting_translate",
+        task_id,
+        user_id=user_id,
+        runner="web.routes.copywriting_translate._run_runner_with_tracking",
+        entrypoint="copywriting_translate.start",
+        stage="queued_translate",
+        details=details,
+    ):
+        return False
+    try:
+        start_background_task(_run_runner_with_tracking, task_id)
+    except BaseException:
+        unregister_active_task("copywriting_translate", task_id)
+        raise
+    return True
+
+
+def _run_runner_with_tracking(task_id: str) -> None:
+    try:
+        _spawn_runner(task_id)
+    finally:
+        unregister_active_task("copywriting_translate", task_id)
 
 
 @bp.post("/start")
@@ -93,5 +125,15 @@ def start():
         (task_id, current_user.id, json.dumps(state, ensure_ascii=False)),
     )
 
-    start_background_task(_spawn_runner, task_id)
+    if not _start_runner_background(
+        task_id,
+        user_id=current_user.id,
+        details={
+            "source_copy_id": source_copy_id,
+            "source_lang": source_lang,
+            "target_lang": target_lang,
+            "parent_task_id": parent_task_id,
+        },
+    ):
+        return jsonify({"status": "already_running"}), 409
     return jsonify({"task_id": task_id}), 202

@@ -942,15 +942,16 @@ def _refresh_video_item_covers_for_scope(*, product_id: int, lang: str) -> None:
 
 
 def _create_copy_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
-    from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
+    from appcore import runner_lifecycle
 
     child_task_id = _ensure_child_identity(parent_id, item)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
+    source_copy_id = (item.get("ref") or {}).get("source_copy_id")
     state = {
         "product_id": parent_state.get("product_id"),
         "source_lang": "en",
         "target_lang": item.get("lang"),
-        "source_copy_id": (item.get("ref") or {}).get("source_copy_id"),
+        "source_copy_id": source_copy_id,
         "parent_task_id": parent_id,
     }
     execute(
@@ -960,8 +961,29 @@ def _create_copy_child(parent_id: str, item: dict, parent_state: dict) -> tuple[
         """,
         (child_task_id, user_id, json.dumps(state, ensure_ascii=False, default=str)),
     )
-    _spawn_daemon(lambda: CopywritingTranslateRunner(child_task_id).start())
+    runner_lifecycle.start_tracked_thread(
+        project_type="copywriting_translate",
+        task_id=child_task_id,
+        target=_run_copywriting_translate_child,
+        args=(child_task_id,),
+        daemon=True,
+        user_id=user_id,
+        runner="appcore.copywriting_translate_runtime.CopywritingTranslateRunner.start",
+        entrypoint="bulk_translate.copy_child",
+        stage="queued_translate",
+        details={
+            "parent_task_id": parent_id,
+            "target_lang": item.get("lang"),
+            "source_copy_id": source_copy_id,
+        },
+    )
     return child_task_id, "copywriting_translate", "running"
+
+
+def _run_copywriting_translate_child(child_task_id: str) -> None:
+    from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
+
+    CopywritingTranslateRunner(child_task_id).start()
 
 
 def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:

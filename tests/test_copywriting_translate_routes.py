@@ -12,6 +12,8 @@ def client_patched(monkeypatch):
     # 这里也顺带避免测试在 DB 不可用时崩溃)
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
 
     fake_user = {"id": 1, "username": "test-admin",
                  "role": "admin", "is_active": 1}
@@ -23,6 +25,7 @@ def client_patched(monkeypatch):
     # Patch DB + eventlet.spawn
     inserted = []
     spawned = []
+    active = []
 
     def fake_execute(sql, args=None):
         inserted.append({"sql": sql, "args": args})
@@ -33,6 +36,16 @@ def client_patched(monkeypatch):
 
     monkeypatch.setattr("web.routes.copywriting_translate.db_execute", fake_execute)
     monkeypatch.setattr("web.routes.copywriting_translate.start_background_task", fake_spawn)
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.try_register_active_task",
+        lambda *args, **kwargs: active.append((args, kwargs)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.unregister_active_task",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
 
     from web.app import create_app
     app = create_app()
@@ -44,6 +57,7 @@ def client_patched(monkeypatch):
     # 暴露观察点给测试
     client._inserted = inserted
     client._spawned = spawned
+    client._active = active
     return client
 
 
@@ -105,6 +119,40 @@ def test_start_returns_task_id_and_spawns_runner(client_patched):
     # 已 spawn runner
     assert len(client_patched._spawned) == 1
     assert client_patched._spawned[0]["args"] == (data["task_id"],)
+    assert client_patched._active == [
+        (
+            ("copywriting_translate", data["task_id"]),
+            {
+                "user_id": 1,
+                "runner": "web.routes.copywriting_translate._run_runner_with_tracking",
+                "entrypoint": "copywriting_translate.start",
+                "stage": "queued_translate",
+                "details": {
+                    "source_copy_id": 101,
+                    "source_lang": "en",
+                    "target_lang": "de",
+                    "parent_task_id": "parent_xxx",
+                },
+            },
+        )
+    ]
+
+
+def test_start_rejects_duplicate_active_runner(client_patched, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.try_register_active_task",
+        lambda *args, **kwargs: False,
+        raising=False,
+    )
+
+    resp = client_patched.post(
+        "/api/copywriting-translate/start",
+        json={"source_copy_id": 101, "target_lang": "de"},
+    )
+
+    assert resp.status_code == 409
+    assert resp.get_json()["status"] == "already_running"
+    assert client_patched._spawned == []
 
 
 def test_start_parent_task_id_optional(client_patched):
@@ -140,11 +188,20 @@ def test_start_unauthenticated_rejected():
     import web.app as webapp
     # 手动禁用 recovery 避免 create_app 崩溃
     original_recover = webapp._run_startup_recovery
+    original_all_recover = webapp.recover_all_interrupted_tasks
+    original_bulk_recover = webapp.mark_interrupted_bulk_translate_tasks
+    original_seed = webapp._seed_default_prompts
     webapp._run_startup_recovery = lambda: None
+    webapp.recover_all_interrupted_tasks = lambda: None
+    webapp.mark_interrupted_bulk_translate_tasks = lambda: None
+    webapp._seed_default_prompts = lambda: None
     try:
         app = create_app()
     finally:
         webapp._run_startup_recovery = original_recover
+        webapp.recover_all_interrupted_tasks = original_all_recover
+        webapp.mark_interrupted_bulk_translate_tasks = original_bulk_recover
+        webapp._seed_default_prompts = original_seed
 
     c = app.test_client()
     resp = c.post("/api/copywriting-translate/start",
