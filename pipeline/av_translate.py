@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 from appcore import llm_client
+from appcore.cancellation import cancellable_sleep
 from pipeline import speech_rate_model
 
 FALLBACK_CPS = {
@@ -329,7 +329,7 @@ def generate_av_localized_translation(
             last_error = exc
             if attempt == 1:
                 raise
-            time.sleep(0.1)
+            cancellable_sleep(0.1)
 
     if last_error is not None:
         raise last_error

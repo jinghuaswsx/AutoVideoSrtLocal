@@ -81,7 +81,7 @@ def test_detect_language_normal_returns_parsed_dict_and_usage(
     mock_invoke.assert_called_once()
 
 
-@patch("pipeline.asr_normalize.time.sleep")  # 跳过真实 sleep
+@patch("pipeline.asr_normalize.cancellable_sleep")  # 跳过真实 sleep
 @patch("pipeline.asr_normalize.resolve_prompt_config")
 @patch("pipeline.asr_normalize.llm_client.invoke_chat")
 def test_detect_language_retries_once_on_api_error(
@@ -100,7 +100,7 @@ def test_detect_language_retries_once_on_api_error(
     mock_sleep.assert_called_once_with(2)
 
 
-@patch("pipeline.asr_normalize.time.sleep")
+@patch("pipeline.asr_normalize.cancellable_sleep")
 @patch("pipeline.asr_normalize.resolve_prompt_config")
 @patch("pipeline.asr_normalize.llm_client.invoke_chat")
 def test_detect_language_fails_after_two_attempts(
@@ -115,7 +115,7 @@ def test_detect_language_fails_after_two_attempts(
     assert mock_invoke.call_count == 2
 
 
-@patch("pipeline.asr_normalize.time.sleep")
+@patch("pipeline.asr_normalize.cancellable_sleep")
 @patch("pipeline.asr_normalize.resolve_prompt_config")
 @patch("pipeline.asr_normalize.llm_client.invoke_chat")
 def test_detect_language_handles_invalid_json_in_response(
@@ -377,7 +377,14 @@ def test_run_asr_normalize_raises_unsupported_on_other(mock_detect, mock_transla
 
 @patch("pipeline.asr_normalize.translate_to_en")
 @patch("pipeline.asr_normalize.detect_language")
-def test_run_asr_normalize_artifact_includes_token_metadata(mock_detect, mock_translate):
+@patch("pipeline.asr_normalize._resolve_model_id")
+def test_run_asr_normalize_artifact_includes_token_metadata(
+    mock_resolve_model, mock_detect, mock_translate,
+):
+    mock_resolve_model.side_effect = lambda code: {
+        "asr_normalize.detect_language": "gemini-3.1-flash-lite-preview",
+        "asr_normalize.translate_es_to_en": "anthropic/claude-sonnet-4.6",
+    }.get(code)
     mock_detect.return_value = ({"language": "es", "confidence": 0.97, "is_mixed": False},
                                  {"input_tokens": 320, "output_tokens": 40})
     mock_translate.return_value = (
@@ -404,9 +411,13 @@ def test_run_asr_normalize_artifact_includes_token_metadata(mock_detect, mock_tr
 
 @patch("pipeline.asr_normalize.translate_to_en")
 @patch("pipeline.asr_normalize.detect_language")
+@patch("pipeline.asr_normalize._resolve_model_id")
 def test_run_user_specified_es_routes_to_es_specialized_translates(
-    mock_detect, mock_translate,
+    mock_resolve_model, mock_detect, mock_translate,
 ):
+    mock_resolve_model.side_effect = lambda code: {
+        "asr_normalize.translate_es_to_en": "anthropic/claude-sonnet-4.6",
+    }.get(code)
     mock_translate.return_value = (
         [{"index": 0, "start": 0.5, "end": 2.3, "text": "Hi"},
          {"index": 1, "start": 2.3, "end": 4.8, "text": "Look"}],

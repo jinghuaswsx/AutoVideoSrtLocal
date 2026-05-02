@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from decimal import Decimal
 from typing import Any
 
 from appcore import llm_client
+from appcore.cancellation import cancellable_sleep
 from pipeline import speech_rate_model
 from pipeline.languages import ja as ja_rules
 
@@ -344,7 +344,7 @@ def generate_ja_localized_translation(
             last_error = exc
             if attempt == 1:
                 raise
-            time.sleep(0.1)
+            cancellable_sleep(0.1)
     if last_error is not None:
         raise last_error
     raise RuntimeError("ja_translate failed without exception")

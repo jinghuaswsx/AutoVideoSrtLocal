@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from appcore import llm_client
+from appcore.cancellation import cancellable_sleep
 from appcore.llm_prompt_configs import resolve_prompt_config
 
 
@@ -148,7 +149,7 @@ def detect_language(
         except Exception as exc:
             last_exc = exc
             if attempt == 0:
-                time.sleep(2)
+                cancellable_sleep(2)
                 continue
     raise DetectLanguageFailedError(
         f"detect_language failed after 2 attempts: {last_exc}"

@@ -208,6 +208,88 @@ def test_subtitle_removal_vod_runtime_propagates_shutdown_cancellation(monkeypat
 
 
 # ---------------------------------------------------------------------------
+# pipeline retry sleeps used by background runners
+# ---------------------------------------------------------------------------
+
+
+def test_asr_detect_retry_sleep_raises_on_shutdown(monkeypatch):
+    from appcore import cancellation, shutdown_coordinator
+    from pipeline import asr_normalize
+
+    monkeypatch.setattr(
+        asr_normalize,
+        "resolve_prompt_config",
+        lambda *args, **kwargs: {"content": "detect"},
+    )
+    monkeypatch.setattr(
+        asr_normalize.llm_client,
+        "invoke_chat",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("temporary")),
+    )
+
+    shutdown_coordinator.request_shutdown("test-asr-detect")
+    with pytest.raises(cancellation.OperationCancelled):
+        asr_normalize.detect_language("hello", task_id="asr-cancel", user_id=1)
+
+
+def test_av_translate_retry_sleep_raises_on_shutdown(monkeypatch):
+    from appcore import cancellation, shutdown_coordinator
+    from pipeline import av_translate
+
+    monkeypatch.setattr(
+        av_translate.speech_rate_model,
+        "get_rate",
+        lambda voice_id, language: 10.0,
+    )
+    monkeypatch.setattr(
+        av_translate.llm_client,
+        "invoke_chat",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("temporary")),
+    )
+
+    shutdown_coordinator.request_shutdown("test-av-translate")
+    with pytest.raises(cancellation.OperationCancelled):
+        av_translate.generate_av_localized_translation(
+            script_segments=[
+                {"index": 0, "start_time": 0.0, "end_time": 1.0, "text": "source"},
+            ],
+            shot_notes={"global": {}, "sentences": []},
+            av_inputs={
+                "target_language": "en",
+                "target_language_name": "English",
+                "target_market": "US",
+                "product_overrides": {},
+            },
+            voice_id="voice-1",
+        )
+
+
+def test_ja_translate_retry_sleep_raises_on_shutdown(monkeypatch):
+    from appcore import cancellation, shutdown_coordinator
+    from pipeline import ja_translate
+
+    monkeypatch.setattr(
+        ja_translate.speech_rate_model,
+        "get_rate",
+        lambda voice_id, language: 5.0,
+    )
+    monkeypatch.setattr(
+        ja_translate.llm_client,
+        "invoke_chat",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("temporary")),
+    )
+
+    shutdown_coordinator.request_shutdown("test-ja-translate")
+    with pytest.raises(cancellation.OperationCancelled):
+        ja_translate.generate_ja_localized_translation(
+            script_segments=[
+                {"index": 0, "start_time": 0.0, "end_time": 1.0, "text": "source"},
+            ],
+            voice_id="voice-ja",
+        )
+
+
+# ---------------------------------------------------------------------------
 # runtime_v2.PipelineRunnerV2._run
 # ---------------------------------------------------------------------------
 
