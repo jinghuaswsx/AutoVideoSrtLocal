@@ -1518,7 +1518,9 @@ def test_alignment_route_compiles_script_segments(authed_client_no_db):
     assert saved["artifacts"]["alignment"]["items"][1]["segments"][0]["text"] == "浣犲ソ涓栫晫"
 
 
-def test_segments_route_updates_translate_artifact(authed_client_no_db):
+def test_segments_route_updates_translate_artifact(authed_client_no_db, monkeypatch):
+    resumed = []
+    monkeypatch.setattr("web.routes.task.pipeline_runner.resume", lambda *args, **kwargs: resumed.append((args, kwargs)))
     store.create("task-translate", "video.mp4", "output/task-translate", user_id=1)
     store.update(
         "task-translate",
@@ -1536,10 +1538,13 @@ def test_segments_route_updates_translate_artifact(authed_client_no_db):
     assert saved["_segments_confirmed"] is True
     normal_translate = saved["variants"]["normal"]["artifacts"]["translate"]
     # The translate artifact now uses text_item + sentences layout, not segments
-    assert normal_translate["items"][1]["content"] == "Hello there"  # "整段本土化英文" text_item
+    assert normal_translate["items"][0]["right"]["content"] == "Hello there"  # "整段本土化英文" text_item
+    assert resumed and resumed[0][0][:2] == ("task-translate", "tts")
 
 
-def test_segments_route_updates_localized_translation_for_future_tts(authed_client_no_db):
+def test_segments_route_updates_localized_translation_for_future_tts(authed_client_no_db, monkeypatch):
+    resumed = []
+    monkeypatch.setattr("web.routes.task.pipeline_runner.resume", lambda *args, **kwargs: resumed.append((args, kwargs)))
     store.create("task-translate-localized", "video.mp4", "output/task-translate-localized", user_id=1)
     store.update(
         "task-translate-localized",
@@ -1558,6 +1563,7 @@ def test_segments_route_updates_localized_translation_for_future_tts(authed_clie
     assert saved["script_segments"][0]["text"] == "你好世界"
     assert saved["localized_translation"]["full_text"] == "Hello there"
     assert saved["localized_translation"]["sentences"][0]["source_segment_indices"] == [0]
+    assert resumed and resumed[0][0][:2] == ("task-translate-localized", "tts")
 
 
 def test_task_payload_exposes_tts_script_and_corrected_subtitle(authed_client_no_db):

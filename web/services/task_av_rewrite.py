@@ -6,7 +6,9 @@ import os
 import subprocess
 from dataclasses import dataclass
 
+from appcore.preview_artifacts import build_translate_artifact, build_variant_compare_artifact
 from pipeline import tts
+from web import store
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,30 @@ def rebuild_tts_full_audio(
     if result.returncode != 0:
         raise RuntimeError(f"音频拼接失败: {result.stderr}")
     return full_audio_path
+
+
+def build_translate_compare_artifact(
+    task: dict,
+    *,
+    set_variant_artifact=None,
+    build_translate=build_translate_artifact,
+    build_variant_compare=build_variant_compare_artifact,
+) -> dict:
+    variants = dict(task.get("variants", {}))
+    compare_variants = {}
+    source_full_text_zh = task.get("source_full_text_zh", "")
+    persist_variant_artifact = set_variant_artifact or store.set_variant_artifact
+
+    for variant, variant_state in variants.items():
+        localized_translation = variant_state.get("localized_translation", {})
+        payload = build_translate(source_full_text_zh, localized_translation)
+        persist_variant_artifact(task["id"], variant, "translate", payload)
+        compare_variants[variant] = {
+            "label": variant_state.get("label", variant),
+            "items": payload.get("items", []),
+        }
+
+    return build_variant_compare("翻译本土化", compare_variants)
 
 
 def clear_av_compose_outputs(

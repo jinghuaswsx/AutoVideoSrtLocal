@@ -154,3 +154,73 @@ def test_rebuild_tts_full_audio_rejects_missing_segment(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         rebuild_tts_full_audio(str(tmp_path), [{"tts_path": str(tmp_path / "missing.mp3")}])
+
+
+def test_build_translate_compare_artifact_persists_variant_payloads():
+    from web.services.task_av_rewrite import build_translate_compare_artifact
+
+    persisted = []
+
+    def fake_set_variant_artifact(task_id, variant, artifact_name, payload):
+        persisted.append((task_id, variant, artifact_name, payload))
+
+    def fake_build_translate_artifact(source_text, localized_translation):
+        return {
+            "items": [
+                {
+                    "source": source_text,
+                    "target": localized_translation["full_text"],
+                }
+            ],
+        }
+
+    def fake_build_variant_compare_artifact(title, variants):
+        return {"title": title, "variants": variants}
+
+    result = build_translate_compare_artifact(
+        {
+            "id": "task-translate",
+            "source_full_text_zh": "源文案",
+            "variants": {
+                "normal": {
+                    "label": "普通版",
+                    "localized_translation": {"full_text": "Normal copy"},
+                },
+                "hook_cta": {
+                    "label": "Hook CTA",
+                    "localized_translation": {"full_text": "Hook copy"},
+                },
+            },
+        },
+        set_variant_artifact=fake_set_variant_artifact,
+        build_translate=fake_build_translate_artifact,
+        build_variant_compare=fake_build_variant_compare_artifact,
+    )
+
+    assert persisted == [
+        (
+            "task-translate",
+            "normal",
+            "translate",
+            {"items": [{"source": "源文案", "target": "Normal copy"}]},
+        ),
+        (
+            "task-translate",
+            "hook_cta",
+            "translate",
+            {"items": [{"source": "源文案", "target": "Hook copy"}]},
+        ),
+    ]
+    assert result == {
+        "title": "翻译本土化",
+        "variants": {
+            "normal": {
+                "label": "普通版",
+                "items": [{"source": "源文案", "target": "Normal copy"}],
+            },
+            "hook_cta": {
+                "label": "Hook CTA",
+                "items": [{"source": "源文案", "target": "Hook copy"}],
+            },
+        },
+    }

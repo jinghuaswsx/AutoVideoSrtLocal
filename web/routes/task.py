@@ -39,8 +39,6 @@ from web.preview_artifacts import (
     build_alignment_artifact,
     build_subtitle_artifact,
     build_tts_artifact,
-    build_translate_artifact,
-    build_variant_compare_artifact,
 )
 from web import store
 from web.services import pipeline_runner
@@ -59,7 +57,12 @@ from web.services.task_av_inputs import (
     merge_av_step_maps,
     validate_av_translate_inputs,
 )
-from web.services.task_av_rewrite import clear_av_compose_outputs, rebuild_tts_full_audio, resolve_av_voice_ids
+from web.services.task_av_rewrite import (
+    build_translate_compare_artifact,
+    clear_av_compose_outputs,
+    rebuild_tts_full_audio,
+    resolve_av_voice_ids,
+)
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -100,23 +103,6 @@ def _get_current_user_task(task_id: str) -> dict | None:
     if not task or task.get("_user_id") != current_user.id:
         return None
     return task
-
-
-def _build_translate_compare_artifact(task: dict) -> dict:
-    variants = dict(task.get("variants", {}))
-    compare_variants = {}
-    source_full_text_zh = task.get("source_full_text_zh", "")
-
-    for variant, variant_state in variants.items():
-        localized_translation = variant_state.get("localized_translation", {})
-        payload = build_translate_artifact(source_full_text_zh, localized_translation)
-        store.set_variant_artifact(task["id"], variant, "translate", payload)
-        compare_variants[variant] = {
-            "label": variant_state.get("label", variant),
-            "items": payload.get("items", []),
-        }
-
-    return build_variant_compare_artifact("翻译本土化", compare_variants)
 
 
 @bp.route("/upload-page", endpoint="upload_page")
@@ -827,7 +813,7 @@ def update_segments(task_id):
         )
         store.update(task_id, localized_translation=localized_translation, segments=av_sentences)
         updated_task = store.get(task_id) or updated_task
-    store.set_artifact(task_id, "translate", _build_translate_compare_artifact(updated_task))
+    store.set_artifact(task_id, "translate", build_translate_compare_artifact(updated_task))
     store.set_current_review_step(task_id, "")
     store.set_step(task_id, "translate", "done")
     store.set_step_message(task_id, "translate", "翻译确认完成")
