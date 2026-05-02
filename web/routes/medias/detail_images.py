@@ -31,6 +31,7 @@ from web.services.media_detail_uploads import (
     validate_upload_files,
 )
 from web.services.media_detail_translation import (
+    apply_detail_translate_task,
     build_detail_translate_task_payload,
     project_detail_translate_task_rows,
 )
@@ -612,37 +613,20 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
         return jsonify({"error": "english detail images do not need manual apply"}), 400
 
     task = store.get(task_id)
-    if not task or task.get("type") != "image_translate":
+    outcome = apply_detail_translate_task(
+        task,
+        task_id=task_id,
+        product_id=pid,
+        target_lang=lang,
+        user_id=int(current_user.id),
+        is_running=image_translate_runner.is_running,
+        apply_translated_detail_images=image_translate_runtime.apply_translated_detail_images_from_task,
+    )
+    if outcome.not_found:
         abort(404)
-    task_user_id = task.get("_user_id")
-    if task_user_id is not None and int(task_user_id) != int(current_user.id):
-        abort(404)
-
-    ctx = task.get("medias_context") or {}
-    if int(ctx.get("product_id") or 0) != pid:
-        return jsonify({"error": "task does not belong to this product"}), 400
-    if (ctx.get("target_lang") or "").strip().lower() != lang:
-        return jsonify({"error": "task target language does not match current language"}), 400
-
-    if image_translate_runner.is_running(task_id):
-        return jsonify({"error": "task is still running"}), 409
-    if (task.get("status") or "") not in {"done", "error"}:
-        return jsonify({"error": "task has not finished yet"}), 409
-
-    try:
-        result = image_translate_runtime.apply_translated_detail_images_from_task(
-            task, allow_partial=True, user_id=int(current_user.id),
-        )
-    except (ValueError, RuntimeError) as e:
-        return jsonify({"error": str(e)}), 409
-
-    return jsonify({
-        "ok": True,
-        "applied": len(result["applied_ids"]),
-        "skipped_failed": len(result["skipped_failed_indices"]),
-        "apply_status": result["apply_status"],
-        "applied_detail_image_ids": result["applied_ids"],
-    })
+    if outcome.error:
+        return jsonify({"error": outcome.error}), outcome.status_code
+    return jsonify(outcome.payload)
 
 
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])

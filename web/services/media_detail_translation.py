@@ -19,6 +19,14 @@ class DetailTranslateTaskPayload:
     create_kwargs: dict
 
 
+@dataclass(frozen=True)
+class DetailTranslateApplyOutcome:
+    payload: dict | None = None
+    error: str | None = None
+    status_code: int = 200
+    not_found: bool = False
+
+
 def build_detail_translate_task_payload(
     *,
     output_dir: str,
@@ -118,6 +126,59 @@ def project_detail_translate_task_rows(
             "created_at": _isoformat_or_none(row.get("created_at")),
         })
     return items
+
+
+def apply_detail_translate_task(
+    task: Mapping[str, object] | None,
+    *,
+    task_id: str,
+    product_id: int,
+    target_lang: str,
+    user_id: int,
+    is_running: Callable[[str], bool],
+    apply_translated_detail_images: Callable[..., Mapping[str, object]],
+) -> DetailTranslateApplyOutcome:
+    if not isinstance(task, MappingABC) or task.get("type") != "image_translate":
+        return DetailTranslateApplyOutcome(not_found=True, status_code=404)
+
+    task_user_id = task.get("_user_id")
+    if task_user_id is not None and _optional_int(task_user_id) != int(user_id):
+        return DetailTranslateApplyOutcome(not_found=True, status_code=404)
+
+    ctx = task.get("medias_context") or {}
+    if not isinstance(ctx, MappingABC):
+        ctx = {}
+    if _optional_int(ctx.get("product_id")) != product_id:
+        return _apply_error("task does not belong to this product", 400)
+    normalized_target_lang = (target_lang or "").strip().lower()
+    if str(ctx.get("target_lang") or "").strip().lower() != normalized_target_lang:
+        return _apply_error("task target language does not match current language", 400)
+
+    if is_running(task_id):
+        return _apply_error("task is still running", 409)
+    if (task.get("status") or "") not in {"done", "error"}:
+        return _apply_error("task has not finished yet", 409)
+
+    try:
+        result = apply_translated_detail_images(task, allow_partial=True, user_id=int(user_id))
+    except (ValueError, RuntimeError) as exc:
+        return _apply_error(str(exc), 409)
+
+    applied_ids = list(result.get("applied_ids") or [])
+    skipped_failed_indices = list(result.get("skipped_failed_indices") or [])
+    return DetailTranslateApplyOutcome(
+        payload={
+            "ok": True,
+            "applied": len(applied_ids),
+            "skipped_failed": len(skipped_failed_indices),
+            "apply_status": result.get("apply_status"),
+            "applied_detail_image_ids": applied_ids,
+        }
+    )
+
+
+def _apply_error(message: str, status_code: int) -> DetailTranslateApplyOutcome:
+    return DetailTranslateApplyOutcome(error=message, status_code=status_code)
 
 
 def _load_state(value: object) -> object:

@@ -146,6 +146,22 @@ def test_detail_image_translate_task_projection_lives_outside_route_module():
     assert Path("web/services/media_detail_translation.py").exists()
 
 
+def test_detail_image_translate_apply_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_detail_images_apply_translate_task"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "ctx.get(\"product_id\")" not in route_source
+    assert "ctx.get(\"target_lang\")" not in route_source
+    assert "skipped_failed_indices" not in route_source
+    assert Path("web/services/media_detail_translation.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",
