@@ -67,7 +67,7 @@ from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
-from web.services.task_start_inputs import parse_bool
+from web.services.task_start_inputs import parse_bool, request_payload_from
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -83,12 +83,6 @@ from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
 
 def _is_admin_user() -> bool:
     return getattr(current_user, "is_admin", False)
-
-
-def _request_payload() -> dict:
-    if request.is_json:
-        return request.get_json(silent=True) or {}
-    return request.form.to_dict(flat=True)
 
 
 def _get_current_user_task(task_id: str) -> dict | None:
@@ -447,7 +441,7 @@ def restart(task_id):
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
-    body = _request_payload()
+    body = request_payload_from(request)
     av_inputs = collect_av_translate_inputs(body, current_task=task)
     av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
@@ -489,7 +483,7 @@ def start(task_id):
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
-    body = _request_payload()
+    body = request_payload_from(request)
     av_inputs = collect_av_translate_inputs(body, current_task=task)
     av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
