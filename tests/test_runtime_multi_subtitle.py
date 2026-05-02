@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from appcore.events import EventBus
 from appcore.runtime_multi import MultiTranslateRunner
@@ -23,8 +24,10 @@ def test_step_subtitle_uses_lang_rules_for_weak_starters_and_post_process():
          patch("appcore.task_state.update"), \
          patch("appcore.task_state.set_artifact"), \
          patch("appcore.task_state.set_preview_file"), \
-         patch("appcore.runtime_multi.transcribe_local_audio",
-               return_value=[{"text": "Bonjour les amis", "start_time": 0, "end_time": 1}]), \
+         patch("appcore.asr_router.resolve_adapter",
+               return_value=(SimpleNamespace(display_name="Scribe", model_id="scribe_v2"), {})), \
+         patch("appcore.asr_router.transcribe",
+               return_value={"utterances": [{"text": "Bonjour les amis", "start_time": 0, "end_time": 1}]}), \
          patch("appcore.runtime_multi._get_audio_duration", return_value=1.0), \
          patch("appcore.runtime_multi.align_subtitle_chunks_to_asr") as m_align, \
          patch("appcore.runtime_multi.build_srt_from_chunks") as m_build, \

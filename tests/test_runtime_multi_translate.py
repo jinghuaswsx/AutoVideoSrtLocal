@@ -1,3 +1,4 @@
+import importlib
 from unittest.mock import patch
 
 import pytest
@@ -29,7 +30,7 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
          patch("appcore.runtime_multi._save_json"), \
          patch("appcore.runtime.ai_billing.log_request") as m_log_request, \
          patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
-         patch("appcore.runtime._translate_billing_model", return_value="gpt"), \
+         patch("appcore.runtime._helpers._translate_billing_model", return_value="gpt"), \
          patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
          patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
          patch("pipeline.extract.get_video_duration", return_value=1.0), \
@@ -135,7 +136,8 @@ def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, 
 
     runner = _make_runner()
     monkeypatch.setattr(runner, "_run_tts_duration_loop", fake_tts_loop)
-    monkeypatch.setattr("appcore.runtime._resolve_translate_provider", lambda user_id: "openrouter")
+    runtime_helpers = importlib.import_module("appcore.runtime._helpers")
+    monkeypatch.setattr(runtime_helpers, "_resolve_translate_provider", lambda user_id: "openrouter")
     monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
@@ -381,7 +383,7 @@ def test_step_translate_resolves_en_prompt_and_uses_eleven_multilingual():
          patch("appcore.runtime_multi._save_json"), \
          patch("appcore.runtime.ai_billing.log_request"), \
          patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
-         patch("appcore.runtime._translate_billing_model", return_value="gpt"), \
+         patch("appcore.runtime._helpers._translate_billing_model", return_value="gpt"), \
          patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
          patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
          patch("pipeline.extract.get_video_duration", return_value=1.0), \

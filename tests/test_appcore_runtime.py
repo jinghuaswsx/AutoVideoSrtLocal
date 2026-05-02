@@ -36,10 +36,9 @@ def test_set_step_publishes_step_update_event():
     assert task_state.get(task_id)["steps"]["asr"] == "running"
 
 
-def test_emit_substep_msg_publishes_event_without_persisting(monkeypatch):
+def test_emit_substep_msg_publishes_event_and_persists_message(monkeypatch):
     """_emit_substep_msg should publish EVT_STEP_UPDATE reflecting the current
-    step status, but not call task_state.set_step_message / set_step (avoid
-    per-segment disk writes)."""
+    step status and persist the refreshed step message for polling clients."""
     task_id = "substep-task"
     _make_task(task_id)
     runner, events = _make_runner()
@@ -64,7 +63,9 @@ def test_emit_substep_msg_publishes_event_without_persisting(monkeypatch):
     assert step_events[0].payload["status"] == "running"
     assert step_events[0].payload["message"] == "正在生成英语配音 · 第 1 轮 · 切分朗读文案中"
     assert set_step_calls == []
-    assert set_msg_calls == []
+    assert set_msg_calls == [
+        ((task_id, "tts", "正在生成英语配音 · 第 1 轮 · 切分朗读文案中"), {}),
+    ]
 
 
 def test_step_tts_emits_loading_voice_substep(tmp_path, monkeypatch):
@@ -86,6 +87,7 @@ def test_step_tts_emits_loading_voice_substep(tmp_path, monkeypatch):
         lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here")),
     )
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda p: 30.0)
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
     monkeypatch.setattr(runner, "_resolve_voice", lambda task, mod: {
         "id": 1, "elevenlabs_voice_id": "vid"})
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *a, **kw: "fake")

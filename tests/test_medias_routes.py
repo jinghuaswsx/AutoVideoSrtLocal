@@ -379,6 +379,8 @@ def test_media_cover_rejects_cached_file_outside_thumb_dir(
     import os
     import subprocess
     import web.routes.medias as route
+    import web.routes.medias._helpers as medias_helpers
+    import web.routes.medias.covers as covers_route
 
     thumb_dir = tmp_path / "thumbs"
     outside_dir = tmp_path / "outside"
@@ -399,6 +401,8 @@ def test_media_cover_rejects_cached_file_outside_thumb_dir(
             pytest.skip(f"junction creation not available: {result.stderr or result.stdout}")
 
     monkeypatch.setattr(route, "THUMB_DIR", thumb_dir)
+    monkeypatch.setattr(covers_route, "THUMB_DIR", thumb_dir)
+    monkeypatch.setattr(medias_helpers, "THUMB_DIR", thumb_dir)
     monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: {"id": pid, "user_id": 1})
     monkeypatch.setattr("web.routes.medias._can_access_product", lambda product: True)
     monkeypatch.setattr("web.routes.medias.medias.resolve_cover", lambda pid, lang: "1/medias/123/cover.jpg")

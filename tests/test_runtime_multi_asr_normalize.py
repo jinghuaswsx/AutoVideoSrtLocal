@@ -198,11 +198,11 @@ def test_get_pipeline_steps_inserts_asr_normalize_after_asr_before_voice_match()
 # CRITICAL #1: _step_alignment uses utterances_en when present
 # ---------------------------------------------------------------------------
 
-@patch("appcore.runtime.task_state")
+@patch("appcore.runtime.task_state.get")
 @patch("pipeline.alignment.compile_alignment")
-def test_step_alignment_uses_utterances_en_when_present(mock_compile, mock_state):
+def test_step_alignment_uses_utterances_en_when_present(mock_compile, mock_get):
     """utterances_en 存在时，alignment 走英文文本（不是原始外语）。"""
-    mock_state.get.return_value = {
+    mock_get.return_value = {
         "utterances": [{"index": 0, "start": 0, "end": 1, "text": "Hola"}],
         "utterances_en": [{"index": 0, "start": 0, "end": 1, "text": "Hi"}],
         "scene_cuts": [],
@@ -214,6 +214,11 @@ def test_step_alignment_uses_utterances_en_when_present(mock_compile, mock_state
     # patch detect_scene_cuts and get_voice_library to avoid heavy I/O
     with patch("pipeline.alignment.detect_scene_cuts", return_value=[]), \
          patch("pipeline.voice_library.get_voice_library") as mock_vl, \
+         patch("appcore.runtime.task_state.set_step"), \
+         patch("appcore.runtime.task_state.set_step_message"), \
+         patch("appcore.runtime.task_state.update"), \
+         patch("appcore.runtime.task_state.set_artifact"), \
+         patch("appcore.runtime.task_state.set_current_review_step"), \
          patch("appcore.runtime._save_json"), \
          patch("appcore.runtime.build_alignment_artifact", return_value={}):
         mock_vl.return_value.recommend_voice.return_value = None
@@ -224,11 +229,11 @@ def test_step_alignment_uses_utterances_en_when_present(mock_compile, mock_state
     assert called_utterances[0]["text"] == "Hi"
 
 
-@patch("appcore.runtime.task_state")
+@patch("appcore.runtime.task_state.get")
 @patch("pipeline.alignment.compile_alignment")
-def test_step_alignment_falls_back_to_utterances_when_en_missing(mock_compile, mock_state):
+def test_step_alignment_falls_back_to_utterances_when_en_missing(mock_compile, mock_get):
     """utterances_en 缺失时，alignment 走原 utterances（zh/en 路径）。"""
-    mock_state.get.return_value = {
+    mock_get.return_value = {
         "utterances": [{"index": 0, "start": 0, "end": 1, "text": "你好"}],
         "scene_cuts": [],
         "_user_id": 1,
@@ -238,6 +243,11 @@ def test_step_alignment_falls_back_to_utterances_when_en_missing(mock_compile, m
     mock_compile.return_value = {"script_segments": [], "break_after": []}
     with patch("pipeline.alignment.detect_scene_cuts", return_value=[]), \
          patch("pipeline.voice_library.get_voice_library") as mock_vl, \
+         patch("appcore.runtime.task_state.set_step"), \
+         patch("appcore.runtime.task_state.set_step_message"), \
+         patch("appcore.runtime.task_state.update"), \
+         patch("appcore.runtime.task_state.set_artifact"), \
+         patch("appcore.runtime.task_state.set_current_review_step"), \
          patch("appcore.runtime._save_json"), \
          patch("appcore.runtime.build_alignment_artifact", return_value={}):
         mock_vl.return_value.recommend_voice.return_value = None
