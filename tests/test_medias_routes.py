@@ -1690,7 +1690,7 @@ def test_product_code_route_renders_full_page_detail_config(
     assert '"productId": 77' in html
     assert "rotary-lock-metal-box-cutter-rjc" in html
     assert 'class="oc-modal-mask oc oc-product-detail-mask" id="edMask"' in html
-    detail_mask_css = html.split("#edMask.oc-product-detail-mask {", 1)[1].split(
+    detail_mask_css = html.rsplit("#edMask.oc-product-detail-mask {", 1)[1].split(
         "#edMask.oc-product-detail-mask > .oc-modal-edit {", 1
     )[0]
     assert "position:fixed;" in detail_mask_css

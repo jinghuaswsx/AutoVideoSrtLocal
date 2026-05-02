@@ -15,7 +15,7 @@ def test_create_material_link_check_task_collects_cover_and_detail_refs(authed_u
         "web.routes.medias.medias.list_detail_images",
         lambda pid, lang: [{"id": 11, "object_key": "details/de_1.jpg"}],
     )
-    monkeypatch.setattr("web.routes.medias.tos_clients.download_media_file", lambda key, path: str(path))
+    monkeypatch.setattr(medias_route, "_download_media_object", lambda key, path: str(path))
     monkeypatch.setattr(medias_route, "link_check_runner", SimpleNamespace(start=lambda task_id: True), raising=False)
 
     def fake_create(task_id, task_dir, **kwargs):
