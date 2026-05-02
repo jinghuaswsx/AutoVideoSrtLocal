@@ -331,6 +331,13 @@ def test_task_av_rewrite_translate_compare_artifact_lives_outside_route_module()
     assert Path("web/services/task_av_rewrite.py").exists()
 
 
+def test_task_start_bool_parsing_lives_outside_route_module():
+    source = Path("web/routes/task.py").read_text(encoding="utf-8")
+
+    assert "def _parse_bool" not in source
+    assert Path("web/services/task_start_inputs.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

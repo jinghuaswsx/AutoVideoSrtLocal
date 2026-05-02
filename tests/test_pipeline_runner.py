@@ -1086,8 +1086,10 @@ def test_video_creation_tracking_swallows_shutdown_cancellation(monkeypatch):
     assert unregistered == [("video_creation", "vc-cancel")]
 
 
-def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):
-    store.create("task-start-auto", "video.mp4", "output/task-start-auto", user_id=1)
+def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch, tmp_path):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"video")
+    store.create("task-start-auto", str(video_path), str(tmp_path / "task-start-auto"), user_id=1)
     captured = {}
 
     monkeypatch.setattr(
@@ -1095,7 +1097,7 @@ def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, m
         lambda task_id, user_id=None: captured.setdefault("task_id", task_id),
     )
 
-    response = authed_client_no_db.post("/api/tasks/task-start-auto/start", json={})
+    response = authed_client_no_db.post("/api/tasks/task-start-auto/start", json={"source_language": "en"})
 
     assert response.status_code == 200
     assert captured["task_id"] == "task-start-auto"

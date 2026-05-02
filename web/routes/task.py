@@ -67,6 +67,7 @@ from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
+from web.services.task_start_inputs import parse_bool
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -78,14 +79,6 @@ bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
 
 from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
-
-
-def _parse_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on", "manual"}
-    return bool(value)
 
 
 def _is_admin_user() -> bool:
@@ -479,7 +472,7 @@ def restart(task_id):
         subtitle_size=body.get("subtitle_size", 14),
         subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
         subtitle_position=body.get("subtitle_position", "bottom"),
-        interactive_review=_parse_bool(body.get("interactive_review", False)),
+        interactive_review=parse_bool(body.get("interactive_review", False)),
         user_id=current_user.id if current_user.is_authenticated else None,
         runner=pipeline_runner,
         step_order=AV_SYNC_STEPS,
@@ -517,7 +510,7 @@ def start(task_id):
         subtitle_font=body.get("subtitle_font", "Impact"),
         subtitle_size=body.get("subtitle_size", 14),
         subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
-        interactive_review=_parse_bool(body.get("interactive_review", False)),
+        interactive_review=parse_bool(body.get("interactive_review", False)),
         pipeline_version="av",
         av_translate_inputs=av_inputs,
         target_lang=av_inputs["target_language"],
