@@ -79,6 +79,7 @@
 - 2026-05-02 当前工作区收敛视频创作路由内的状态写入：删除/追加素材和重新生成重置状态改用 `appcore.project_state.save_project_state`，并新增架构边界测试禁止 `video_creation` 路由直接拼写 `UPDATE projects SET state_json`。本地回归：`10 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
 - 2026-05-02 测试环境已拉取提交 `0ce3cae6` 并重启 `autovideosrt-test.service` 加载视频创作状态写入收敛；服务端运行视频创作与架构边界聚焦回归：`10 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区继续收敛多语种/全能/日语翻译路由的语音状态写入：`update_voice`、`rematch`、`confirm_voice` 相关写回改用 `appcore.project_state.save_project_state`，并新增架构边界测试禁止这些路由直接拼写 `UPDATE projects SET state_json`。本地回归：`26 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
+- 2026-05-02 测试环境已拉取提交 `60c8ee0b` 并重启 `autovideosrt-test.service` 加载翻译语音状态写入收敛；服务端运行架构边界、多语种、日语和全能翻译聚焦回归：`26 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
