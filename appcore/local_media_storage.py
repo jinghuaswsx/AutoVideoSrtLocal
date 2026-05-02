@@ -44,7 +44,7 @@ def _commit_written_file(temp_name: str, destination: Path) -> None:
 
 
 def exists(object_key: str) -> bool:
-    path = local_path_for(object_key)
+    path = safe_local_path_for(object_key)
     if path.is_file():
         return True
     if tos_backup_storage.is_enabled() and tos_backup_storage.storage_mode() == "tos_primary":
@@ -53,7 +53,7 @@ def exists(object_key: str) -> bool:
 
 
 def write_bytes(object_key: str, payload: bytes) -> Path:
-    destination = local_path_for(object_key)
+    destination = safe_local_path_for(object_key)
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix="media_store_", dir=str(destination.parent))
     try:
@@ -70,7 +70,7 @@ def write_bytes(object_key: str, payload: bytes) -> Path:
 
 
 def write_stream(object_key: str, stream: BinaryIO, *, chunk_size: int = _CHUNK_SIZE) -> Path:
-    destination = local_path_for(object_key)
+    destination = safe_local_path_for(object_key)
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix="media_store_", dir=str(destination.parent))
     try:
@@ -91,7 +91,7 @@ def write_stream(object_key: str, stream: BinaryIO, *, chunk_size: int = _CHUNK_
 
 
 def download_to(object_key: str, destination: str | os.PathLike[str]) -> str:
-    source = local_path_for(object_key)
+    source = safe_local_path_for(object_key)
     if not source.is_file():
         tos_backup_storage.ensure_local_copy_for_local_path(source)
     if not source.is_file():
@@ -105,14 +105,15 @@ def download_to(object_key: str, destination: str | os.PathLike[str]) -> str:
 
 
 def delete(object_key: str) -> None:
-    path = local_path_for(object_key)
+    path = safe_local_path_for(object_key)
     try:
         path.unlink()
     except FileNotFoundError:
         return
 
-    current = path.parent
-    while current != MEDIA_STORE_DIR and current.exists():
+    media_store_dir = MEDIA_STORE_DIR.expanduser().resolve()
+    current = path.parent.expanduser().resolve()
+    while current != media_store_dir and current.exists():
         try:
             current.rmdir()
         except OSError:

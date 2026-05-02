@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import importlib
+import io
 import os
 import sys
 from pathlib import Path
 
 import pytest
+
+from appcore.safe_paths import PathSafetyError
 
 
 @pytest.fixture(autouse=True)
@@ -114,3 +117,68 @@ def test_exists_returns_true_from_remote_in_tos_primary(tmp_path, monkeypatch):
 
     assert storage.exists("1/medias/10/a.jpg") is True
     assert storage.exists("1/medias/10/missing.jpg") is False
+
+
+def test_write_bytes_rejects_resolved_path_outside_media_store(tmp_path, monkeypatch):
+    storage = _reload_local_media_storage(monkeypatch, tmp_path)
+    outside_file = tmp_path / "outside" / "escaped.jpg"
+    outside_file.parent.mkdir()
+    monkeypatch.setattr(storage, "local_path_for", lambda key: outside_file)
+    monkeypatch.setattr(storage.tos_backup_storage, "ensure_remote_copy_for_local_path", lambda local_path: None)
+
+    with pytest.raises(PathSafetyError):
+        storage.write_bytes("1/medias/10/a.jpg", b"image")
+
+    assert not outside_file.exists()
+
+
+def test_write_stream_rejects_resolved_path_outside_media_store(tmp_path, monkeypatch):
+    storage = _reload_local_media_storage(monkeypatch, tmp_path)
+    outside_file = tmp_path / "outside" / "escaped.jpg"
+    outside_file.parent.mkdir()
+    monkeypatch.setattr(storage, "local_path_for", lambda key: outside_file)
+    monkeypatch.setattr(storage.tos_backup_storage, "ensure_remote_copy_for_local_path", lambda local_path: None)
+
+    with pytest.raises(PathSafetyError):
+        storage.write_stream("1/medias/10/a.jpg", io.BytesIO(b"image"))
+
+    assert not outside_file.exists()
+
+
+def test_exists_rejects_resolved_path_outside_media_store(tmp_path, monkeypatch):
+    storage = _reload_local_media_storage(monkeypatch, tmp_path)
+    outside_file = tmp_path / "outside" / "escaped.jpg"
+    outside_file.parent.mkdir()
+    outside_file.write_bytes(b"escaped")
+    monkeypatch.setattr(storage, "local_path_for", lambda key: outside_file)
+
+    with pytest.raises(PathSafetyError):
+        storage.exists("1/medias/10/a.jpg")
+
+
+def test_download_to_rejects_resolved_source_outside_media_store(tmp_path, monkeypatch):
+    storage = _reload_local_media_storage(monkeypatch, tmp_path)
+    outside_file = tmp_path / "outside" / "escaped.jpg"
+    outside_file.parent.mkdir()
+    outside_file.write_bytes(b"escaped")
+    target = tmp_path / "target.jpg"
+    monkeypatch.setattr(storage, "local_path_for", lambda key: outside_file)
+
+    with pytest.raises(PathSafetyError):
+        storage.download_to("1/medias/10/a.jpg", target)
+
+    assert outside_file.read_bytes() == b"escaped"
+    assert not target.exists()
+
+
+def test_delete_rejects_resolved_path_outside_media_store(tmp_path, monkeypatch):
+    storage = _reload_local_media_storage(monkeypatch, tmp_path)
+    outside_file = tmp_path / "outside" / "escaped.jpg"
+    outside_file.parent.mkdir()
+    outside_file.write_bytes(b"escaped")
+    monkeypatch.setattr(storage, "local_path_for", lambda key: outside_file)
+
+    with pytest.raises(PathSafetyError):
+        storage.delete("1/medias/10/a.jpg")
+
+    assert outside_file.read_bytes() == b"escaped"
