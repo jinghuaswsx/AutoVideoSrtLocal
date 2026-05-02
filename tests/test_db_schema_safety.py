@@ -14,6 +14,14 @@ def test_schema_sql_does_not_hardcode_database_name():
     assert "USE auto_video" not in body
 
 
+def test_schema_sql_includes_system_audit_logs_baseline():
+    body = Path("db/schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS system_audit_logs" in body
+    assert "actor_user_id" in body
+    assert "detail_json JSON" in body
+
+
 def test_migrate_import_does_not_open_database_connection(monkeypatch):
     import pymysql
 

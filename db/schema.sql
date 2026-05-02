@@ -236,3 +236,26 @@ CREATE TABLE IF NOT EXISTS runtime_active_task_snapshots (
   KEY idx_runtime_active_task_snapshots_task (project_type, task_id),
   KEY idx_runtime_active_task_snapshots_reason (snapshot_reason)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS system_audit_logs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  actor_user_id INT NULL,
+  actor_username VARCHAR(64) NULL,
+  action VARCHAR(64) NOT NULL,
+  module VARCHAR(64) NOT NULL,
+  target_type VARCHAR(64) NULL,
+  target_id VARCHAR(64) NULL,
+  target_label VARCHAR(255) NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'success',
+  request_method VARCHAR(8) NULL,
+  request_path VARCHAR(512) NULL,
+  ip_address VARCHAR(64) NULL,
+  user_agent VARCHAR(512) NULL,
+  detail_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_created_at (created_at),
+  KEY idx_actor_created (actor_user_id, created_at),
+  KEY idx_action_created (action, created_at),
+  KEY idx_module_created (module, created_at),
+  KEY idx_target (target_type, target_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
