@@ -83,6 +83,18 @@ def safe_task_file_response(
     return send_file(os.path.abspath(safe_path), **send_file_kwargs)
 
 
+def safe_task_dir_path(task: dict, path: str | None) -> str | None:
+    if not path:
+        return None
+    try:
+        safe_path = resolve_under_allowed_roots(path, _artifact_allowed_roots(task))
+    except PathSafetyError:
+        return None
+    if not os.path.isdir(safe_path):
+        return None
+    return str(safe_path)
+
+
 def artifact_kind_for_download(file_type: str) -> str | None:
     return _ARTIFACT_KIND_MAP.get(file_type)
 

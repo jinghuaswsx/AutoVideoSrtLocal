@@ -646,6 +646,31 @@ def test_capcut_export_names_archives_by_variant(tmp_path, monkeypatch):
     assert Path(export["archive_path"]).name == "sample_capcut_hook_cta.zip"
 
 
+def test_capcut_export_keeps_variant_paths_inside_output_dir(tmp_path):
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    output_dir = tmp_path / "output"
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={"segments": []},
+        output_dir=str(output_dir),
+        subtitle_position="bottom",
+        variant=r"..\..\..\escape",
+    )
+
+    output_root = output_dir.resolve()
+    assert Path(export["project_dir"]).resolve().is_relative_to(output_root)
+    assert Path(export["archive_path"]).resolve().is_relative_to(output_root)
+    assert not (tmp_path / "escape").exists()
+
+
 def test_capcut_export_does_not_auto_copy_into_jianying_project_dir(tmp_path, monkeypatch):
     fake_module = types.ModuleType("pyJianYingDraft")
 

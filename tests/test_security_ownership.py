@@ -10,6 +10,12 @@ import pytest
 @pytest.fixture
 def user1_client(monkeypatch):
     """以 user_id=1 登录的 client。"""
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.latest_failure_alert", lambda: None)
     fake_user = {"id": 1, "username": "user1", "role": "user", "is_active": 1}
     monkeypatch.setattr("web.auth.get_by_id", lambda uid: fake_user if int(uid) == 1 else None)
 
@@ -42,16 +48,18 @@ class TestDeployCapcutOwnership:
 
     def test_allows_own_task(self, user1_client, monkeypatch, tmp_path):
         """user_id=1 应能部署自己的任务。"""
-        project_dir = str(tmp_path / "capcut")
-        (tmp_path / "capcut").mkdir()
+        task_dir = tmp_path / "task"
+        project_dir = str(task_dir / "capcut")
+        (task_dir / "capcut").mkdir(parents=True)
 
         fake_task = {
             "_user_id": 1,
+            "task_dir": str(task_dir),
             "exports": {"capcut_project": project_dir},
         }
         monkeypatch.setattr("web.routes.task.store.get", lambda tid: fake_task)
         monkeypatch.setattr("web.routes.task.store.update", lambda *a, **kw: None)
-        monkeypatch.setattr("pipeline.capcut.deploy_capcut_project",
+        monkeypatch.setattr("web.routes.task.deploy_capcut_project",
                             lambda p: str(tmp_path / "deployed"))
 
         resp = user1_client.post("/api/tasks/some-task-id/deploy/capcut")
@@ -63,7 +71,13 @@ class TestAdminUserIdValidation:
 
     @pytest.fixture
     def admin_client(self, monkeypatch):
-        fake_user = {"id": 1, "username": "admin", "role": "admin", "is_active": 1}
+        monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+        monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+        monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+        monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+        monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+        monkeypatch.setattr("appcore.scheduled_tasks.latest_failure_alert", lambda: None)
+        fake_user = {"id": 1, "username": "admin", "role": "superadmin", "is_active": 1}
         monkeypatch.setattr("web.auth.get_by_id", lambda uid: fake_user if int(uid) == 1 else None)
 
         from web.app import create_app

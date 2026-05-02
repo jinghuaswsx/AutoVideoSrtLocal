@@ -2617,11 +2617,11 @@ def test_medias_normal_user_can_read_update_and_delete_other_users_product(authe
     assert not failures, "\n".join(failures)
 
 
-def test_deploy_route_copies_variant_capcut_project(tmp_path, logged_in_client, monkeypatch):
+def test_deploy_route_copies_variant_capcut_project(tmp_path, authed_client_no_db, monkeypatch):
     project_dir = tmp_path / "capcut_hook_cta"
     project_dir.mkdir()
     (project_dir / "draft_content.json").write_text("{}", encoding="utf-8")
-    store.create("task-deploy-variant", "video.mp4", str(tmp_path))
+    store.create("task-deploy-variant", "video.mp4", str(tmp_path), user_id=1)
     store.update_variant(
         "task-deploy-variant",
         "hook_cta",
@@ -2638,12 +2638,37 @@ def test_deploy_route_copies_variant_capcut_project(tmp_path, logged_in_client, 
 
     monkeypatch.setattr("web.routes.task.deploy_capcut_project", fake_deploy_capcut_project)
 
-    response = logged_in_client.post("/api/tasks/task-deploy-variant/deploy/capcut?variant=hook_cta")
+    response = authed_client_no_db.post("/api/tasks/task-deploy-variant/deploy/capcut?variant=hook_cta")
 
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["deployed_project_dir"].endswith("capcut_hook_cta")
     assert store.get("task-deploy-variant")["variants"]["hook_cta"]["exports"]["jianying_project_dir"].endswith("capcut_hook_cta")
+
+
+def test_deploy_route_rejects_capcut_project_outside_task_roots(tmp_path, authed_client_no_db, monkeypatch):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    outside_project = tmp_path / "outside_capcut"
+    outside_project.mkdir()
+    (outside_project / "draft_content.json").write_text("{}", encoding="utf-8")
+    store.create("task-deploy-outside-capcut", "video.mp4", str(task_dir), user_id=1)
+    store.update(
+        "task-deploy-outside-capcut",
+        exports={"capcut_project": str(outside_project)},
+    )
+    called = []
+
+    def fake_deploy_capcut_project(path):
+        called.append(path)
+        return str(tmp_path / "deployed")
+
+    monkeypatch.setattr("web.routes.task.deploy_capcut_project", fake_deploy_capcut_project)
+
+    response = authed_client_no_db.post("/api/tasks/task-deploy-outside-capcut/deploy/capcut")
+
+    assert response.status_code == 404
+    assert called == []
 
 
 def test_medias_create_product_rejects_bad_slug(logged_in_client):

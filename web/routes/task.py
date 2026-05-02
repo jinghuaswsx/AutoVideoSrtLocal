@@ -50,7 +50,7 @@ from web.preview_artifacts import (
 )
 from web import store
 from web.services import pipeline_runner
-from web.services.artifact_download import serve_artifact_download
+from web.services.artifact_download import safe_task_dir_path, serve_artifact_download
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -1339,10 +1339,11 @@ def deploy_capcut(task_id):
     variant_state = task.get("variants", {}).get(variant, {}) if variant else {}
     exports = variant_state.get("exports", {}) if variant else task.get("exports", {})
     project_dir = exports.get("capcut_project")
-    if not project_dir or not os.path.isdir(project_dir):
+    safe_project_dir = safe_task_dir_path(task, project_dir)
+    if not safe_project_dir:
         return jsonify({"error": "CapCut project not ready"}), 404
 
-    deployed_project_dir = deploy_capcut_project(project_dir)
+    deployed_project_dir = deploy_capcut_project(safe_project_dir)
     exports = dict(exports)
     exports["jianying_project_dir"] = deployed_project_dir
 

@@ -9,6 +9,7 @@ from pathlib import Path, PureWindowsPath
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT
+from appcore.safe_paths import remove_tree_under_roots, resolve_under_allowed_roots
 from config import CAPCUT_TEMPLATE_DIR, JIANYING_PROJECT_DIR
 
 
@@ -28,9 +29,10 @@ def export_capcut_project(
 ) -> dict:
     source_name = draft_title or Path(video_path).name
     draft_name = build_capcut_draft_name(source_name, variant=variant)
-    project_dir = Path(output_dir) / draft_name
+    output_root = Path(output_dir)
+    project_dir = resolve_under_allowed_roots(output_root / draft_name, [output_root])
     if project_dir.exists():
-        shutil.rmtree(project_dir)
+        remove_tree_under_roots(project_dir, [output_root], ignore_errors=True)
 
     export_backend = "template_scaffold"
     backend_error = None
@@ -51,7 +53,7 @@ def export_capcut_project(
     except Exception as exc:
         backend_error = str(exc)
         if project_dir.exists():
-            shutil.rmtree(project_dir)
+            remove_tree_under_roots(project_dir, [output_root], ignore_errors=True)
         _export_with_template_scaffold(
             project_dir=project_dir,
             video_path=Path(video_path),
@@ -76,7 +78,10 @@ def export_capcut_project(
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(export_manifest, fh, ensure_ascii=False, indent=2)
 
-    archive_path = Path(output_dir) / build_capcut_archive_name(source_name, variant=variant)
+    archive_path = resolve_under_allowed_roots(
+        output_root / build_capcut_archive_name(source_name, variant=variant),
+        [output_root],
+    )
     jianying_project_dir = rewrite_capcut_project_paths(
         project_dir=str(project_dir),
         manifest_path=str(manifest_path),
@@ -121,7 +126,7 @@ def deploy_capcut_project(project_dir: str, target_root: str | None = None) -> s
         raise RuntimeError("Jianying project directory is not configured and no default path is available")
 
     if deployed_project_dir.exists():
-        shutil.rmtree(deployed_project_dir)
+        remove_tree_under_roots(deployed_project_dir, [deployed_project_dir.parent], ignore_errors=True)
     shutil.copytree(source_dir, deployed_project_dir)
     return str(deployed_project_dir)
 
@@ -545,7 +550,8 @@ def build_capcut_draft_name(source_name: str, variant: str | None = None) -> str
     stem = p.stem if p.suffix.lower() in _VIDEO_SUFFIXES else source_name
     stem = _sanitize_draft_name(stem)[:50]
     if variant:
-        return f"{stem}_capcut_{variant}"
+        safe_variant = _sanitize_draft_name(str(variant))[:50]
+        return f"{stem}_capcut_{safe_variant}"
     return f"{stem}_capcut"
 
 

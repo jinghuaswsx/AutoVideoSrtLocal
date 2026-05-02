@@ -25,6 +25,26 @@ from appcore.settings import (
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
+def _render_users_page(error=None, status: int = 200):
+    all_users = list_users()
+    # 为模板序列化 permissions JSON
+    import json as _json
+    for u in all_users:
+        raw = u.get("permissions")
+        if raw is None:
+            u["permissions_json"] = "{}"
+        elif isinstance(raw, dict):
+            u["permissions_json"] = _json.dumps(raw, ensure_ascii=False)
+        elif isinstance(raw, str):
+            u["permissions_json"] = raw
+        else:
+            u["permissions_json"] = _json.dumps(raw) if raw else "{}"
+    return render_template("admin_users.html", users=all_users, error=error,
+                           role_labels=ROLE_LABELS, current_user_id=current_user.id,
+                           perm_groups=grouped_permissions(),
+                           role_defaults={r: default_permissions_for_role(r) for r in ROLES}), status
+
+
 @bp.route("/users", methods=["GET", "POST"])
 @login_required
 @superadmin_required
@@ -52,8 +72,7 @@ def users():
                 user_id = int(request.form.get("user_id"))
             except (TypeError, ValueError):
                 error = "无效的用户 ID"
-                all_users = list_users()
-                return render_template("admin_users.html", users=all_users, error=error), 400
+                return _render_users_page(error=error, status=400)
             active = request.form.get("active") == "1"
             set_active(user_id, active)
             return redirect(url_for("admin.users"))
@@ -62,8 +81,7 @@ def users():
                 user_id = int(request.form.get("user_id"))
             except (TypeError, ValueError):
                 error = "无效的用户 ID"
-                all_users = list_users()
-                return render_template("admin_users.html", users=all_users, error=error), 400
+                return _render_users_page(error=error, status=400)
             new_role = request.form.get("new_role", "").strip()
             if new_role not in (ROLE_ADMIN, ROLE_USER):
                 error = f"无效的角色: {new_role}"
@@ -74,23 +92,7 @@ def users():
                 except ValueError as exc:
                     error = str(exc)
             return redirect(url_for("admin.users"))
-    all_users = list_users()
-    # 为模板序列化 permissions JSON
-    import json as _json
-    for u in all_users:
-        raw = u.get("permissions")
-        if raw is None:
-            u["permissions_json"] = "{}"
-        elif isinstance(raw, dict):
-            u["permissions_json"] = _json.dumps(raw, ensure_ascii=False)
-        elif isinstance(raw, str):
-            u["permissions_json"] = raw
-        else:
-            u["permissions_json"] = _json.dumps(raw) if raw else "{}"
-    return render_template("admin_users.html", users=all_users, error=error,
-                           role_labels=ROLE_LABELS, current_user_id=current_user.id,
-                           perm_groups=grouped_permissions(),
-                           role_defaults={r: default_permissions_for_role(r) for r in ROLES})
+    return _render_users_page(error=error)
 
 
 @bp.route("/api/users/<int:user_id>/permissions", methods=["GET"])
