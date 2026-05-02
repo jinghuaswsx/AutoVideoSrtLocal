@@ -1017,6 +1017,75 @@ def test_video_creation_generate_forwards_db_seedance_connection(tmp_path, monke
     assert logged[0]["response_payload"]["task_id"] == "seed-db-task"
 
 
+def test_video_creation_generate_propagates_shutdown_cancellation(tmp_path, monkeypatch):
+    import pytest
+
+    from appcore.cancellation import OperationCancelled
+    from web.routes.video_creation import _do_generate_v2
+
+    state = {
+        "task_dir": str(tmp_path),
+        "prompt": "make video",
+        "ratio": "9:16",
+        "duration": 6,
+        "generate_audio": False,
+        "watermark": False,
+        "user_id": 3,
+    }
+    updates = []
+    sql_calls = []
+    events = []
+    billing_calls = []
+
+    monkeypatch.setattr(
+        "web.routes.video_creation._update_state",
+        lambda task_id, payload: updates.append(payload),
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.db_execute",
+        lambda sql, args: sql_calls.append((sql, args)),
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation._emit_to_task",
+        lambda task_id, event, payload: events.append((event, payload)),
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.ai_billing.log_request",
+        lambda **kwargs: billing_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "pipeline.seedance.generate_video_v2",
+        lambda **kwargs: (_ for _ in ()).throw(OperationCancelled("signal=SIGTERM")),
+    )
+
+    with pytest.raises(OperationCancelled):
+        _do_generate_v2("vc-cancel", "seedance-key", state)
+
+    assert {"steps.generate": "error"} not in updates
+    assert not any("status = 'error'" in sql for sql, _args in sql_calls)
+    assert not any(event == "vc_error" for event, _payload in events)
+    assert billing_calls == []
+
+
+def test_video_creation_tracking_swallows_shutdown_cancellation(monkeypatch):
+    from appcore.cancellation import OperationCancelled
+    from web.routes.video_creation import _run_generate_with_tracking
+
+    unregistered = []
+
+    monkeypatch.setattr(
+        "web.routes.video_creation._do_generate_v2",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OperationCancelled("signal=SIGTERM")),
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.unregister_active_task",
+        lambda project_type, task_id: unregistered.append((project_type, task_id)),
+    )
+
+    assert _run_generate_with_tracking("vc-cancel", "key", {}, None, None) is None
+    assert unregistered == [("video_creation", "vc-cancel")]
+
+
 def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):
     store.create("task-start-auto", "video.mp4", "output/task-start-auto", user_id=1)
     captured = {}

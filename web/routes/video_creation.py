@@ -10,6 +10,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore import ai_billing
+from appcore.cancellation import OperationCancelled
 from appcore.llm_provider_configs import ProviderConfigError, require_provider_config
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
@@ -484,6 +485,9 @@ def _do_generate_v2(
             "local_path": os.path.basename(local_video_path) if local_video_path else None,
         })
 
+    except OperationCancelled:
+        log.warning("[VC] 视频生成收到停机取消: %s", task_id)
+        raise
     except Exception as e:
         if not billing_logged:
             _log_video_creation_billing(
@@ -510,6 +514,9 @@ def _run_generate_with_tracking(
             base_url=base_url,
             model_id=model_id,
         )
+    except OperationCancelled as exc:
+        log.warning("[VC] 视频生成后台线程已按停机信号退出: %s (%s)", task_id, exc)
+        return None
     finally:
         unregister_active_task("video_creation", task_id)
 

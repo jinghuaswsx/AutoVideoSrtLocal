@@ -10,6 +10,7 @@ import time
 
 import requests
 
+from appcore.cancellation import cancellable_sleep, throw_if_cancel_requested
 from config import DOUBAO_LLM_BASE_URL_DEFAULT
 
 log = logging.getLogger(__name__)
@@ -109,6 +110,7 @@ def poll_video_task(
     start = time.time()
 
     while True:
+        throw_if_cancel_requested("seedance.poll")
         elapsed = time.time() - start
         if elapsed > timeout:
             raise RuntimeError(f"Seedance 任务超时（{timeout}s）: {task_id}")
@@ -138,7 +140,7 @@ def poll_video_task(
             error_msg = data.get("error", {}).get("message", "") or data.get("message", "")
             raise RuntimeError(f"Seedance 任务失败: {error_msg or status}")
 
-        time.sleep(interval)
+        cancellable_sleep(interval)
 
 
 def _extract_video_url(data: dict) -> str:
