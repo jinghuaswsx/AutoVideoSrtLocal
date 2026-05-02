@@ -72,6 +72,7 @@ from web.services.task_rename import prepare_task_rename
 from web.services.task_responses import task_not_found_response
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
+from web.services.task_thumbnail import resolve_task_thumbnail_row
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -345,17 +346,13 @@ def confirm_voice(task_id: str):
 @bp.route("/<task_id>/thumbnail")
 @login_required
 def thumbnail(task_id: str):
-    if is_admin_user(current_user):
-        row = db_query_one(
-            "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND deleted_at IS NULL",
-            (task_id,),
-        )
-    else:
-        row = db_query_one(
-            "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND user_id = %s",
-            (task_id, current_user.id),
-        )
-    if not row or not row.get("thumbnail_path") or not os.path.exists(row["thumbnail_path"]):
+    row = resolve_task_thumbnail_row(
+        task_id,
+        user_id=current_user.id,
+        is_admin=is_admin_user(current_user),
+        query_one=db_query_one,
+    )
+    if not row:
         abort(404)
     from web.services.artifact_download import safe_task_file_response
     return safe_task_file_response(
