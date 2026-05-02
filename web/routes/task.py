@@ -65,6 +65,7 @@ from web.services.task_av_rewrite import (
 )
 from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id, refresh_task
 from web.services.task_deletion import cleanup_deleted_task_storage
+from web.services.task_llm import resolve_translate_billing_provider
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_prompts import resolve_task_prompt_text
 from web.services.task_rename import prepare_task_rename
@@ -589,14 +590,7 @@ def retranslate(task_id):
 
     script_segments = task.get("script_segments") or []
     source_full_text_zh = build_source_full_text_zh(script_segments)
-    if model_provider == "doubao":
-        billing_provider = "doubao"
-    elif model_provider.startswith("vertex_adc_"):
-        billing_provider = "gemini_vertex_adc"
-    elif model_provider.startswith("vertex_"):
-        billing_provider = "gemini_vertex"
-    else:
-        billing_provider = "openrouter"
+    billing_provider = resolve_translate_billing_provider(model_provider)
     resolved_model = get_model_display_name(model_provider, current_user.id)
 
     try:

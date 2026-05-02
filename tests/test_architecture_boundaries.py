@@ -372,6 +372,14 @@ def test_task_prompt_lookup_lives_outside_route_module():
     assert Path("web/services/task_prompts.py").exists()
 
 
+def test_task_translate_billing_provider_mapping_lives_outside_route_module():
+    source = Path("web/routes/task.py").read_text(encoding="utf-8")
+
+    assert 'model_provider.startswith("vertex_adc_")' not in source
+    assert 'billing_provider = "doubao"' not in source
+    assert Path("web/services/task_llm.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",
