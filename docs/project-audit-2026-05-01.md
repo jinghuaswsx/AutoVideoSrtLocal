@@ -73,6 +73,7 @@
 - 2026-05-02 当前工作区补齐内部 cookie 会话 JSON API 的统一请求门禁：保留 OpenAPI 的 `X-API-Key` 豁免；对批量翻译、素材、推送、图片翻译、订单分析等仍使用 cookie 登录的旧 exempt 蓝图，非 GET 请求必须携带 `X-CSRFToken`/`X-CSRF-Token` 或 `X-Requested-With: XMLHttpRequest`，并在全局模板中给同源 fetch/XHR 自动补 header。重新运行第 7 项关键组合加安全回归：`187 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `6c722ead` 并重启 `autovideosrt-test.service` 加载内部 cookie API 请求门禁；服务端运行 `tests/test_security_config.py::TestInternalCookieApiCsrfGuard`：`4 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐设置页敏感凭据回显保护：`/settings?tab=providers` 不再把真实 provider API key 放入 HTML，`/settings?tab=push` 不再回显 Authorization、Cookie 和 Basic Auth 密码；敏感输入留空默认保留旧值，只有勾选“清空该字段”才清除。无本地 DB 相关回归：`35 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
+- 2026-05-02 测试环境已拉取提交 `ed2da7fa` 并重启 `autovideosrt-test.service` 加载设置页凭据掩码；服务端运行 `tests/test_settings_routes_new.py tests/test_security_config.py`：`34 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
