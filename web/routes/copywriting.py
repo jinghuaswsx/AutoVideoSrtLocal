@@ -8,7 +8,7 @@ import json
 import os
 import uuid
 
-from flask import Blueprint, render_template, request, jsonify, send_file
+from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 
 from appcore import task_state
@@ -24,6 +24,7 @@ from appcore.events import EventBus
 from appcore.db import get_conn as get_connection
 from config import UPLOAD_DIR, OUTPUT_DIR
 from web.background import start_background_task
+from web.services.artifact_download import safe_task_file_response
 
 bp = Blueprint("copywriting", __name__)
 
@@ -549,7 +550,7 @@ def download(task_id: str, file_type: str):
     path = result.get(file_type)  # "soft_video", "hard_video", "srt"
     if not path or not os.path.isfile(path):
         return jsonify(error="文件不存在"), 404
-    return send_file(path, as_attachment=True)
+    return safe_task_file_response(task, path, not_found_message="file not found", as_attachment=True)
 
 
 @bp.route("/api/copywriting/<task_id>/keyframe/<int:index>")
@@ -564,7 +565,7 @@ def get_keyframe(task_id: str, index: int):
     if index < 0 or index >= len(keyframes):
         return jsonify(error="帧不存在"), 404
 
-    return send_file(keyframes[index])
+    return safe_task_file_response(task, keyframes[index], not_found_message="frame not found")
 
 
 @bp.route("/api/copywriting/<task_id>/artifact/<name>")
@@ -578,7 +579,7 @@ def get_artifact(task_id: str, name: str):
     if name == "video_source":
         video_path = task.get("video_path")
         if video_path and os.path.isfile(video_path):
-            return send_file(video_path)
+            return safe_task_file_response(task, video_path, not_found_message="artifact not found")
     elif name == "product_image":
         conn = get_connection()
         try:
@@ -589,7 +590,11 @@ def get_artifact(task_id: str, name: str):
                 )
                 row = cur.fetchone()
                 if row and row.get("product_image_url") and os.path.isfile(row["product_image_url"]):
-                    return send_file(row["product_image_url"])
+                    return safe_task_file_response(
+                        task,
+                        row["product_image_url"],
+                        not_found_message="artifact not found",
+                    )
         finally:
             conn.close()
     elif name == "thumbnail":
@@ -602,7 +607,11 @@ def get_artifact(task_id: str, name: str):
                 )
                 row = cur.fetchone()
                 if row and row.get("thumbnail_path") and os.path.isfile(row["thumbnail_path"]):
-                    return send_file(row["thumbnail_path"])
+                    return safe_task_file_response(
+                        task,
+                        row["thumbnail_path"],
+                        not_found_message="artifact not found",
+                    )
         finally:
             conn.close()
     elif name == "tts_audio":
@@ -610,12 +619,12 @@ def get_artifact(task_id: str, name: str):
         tts = artifacts.get("tts", {})
         audio_path = tts.get("audio_path")
         if audio_path and os.path.isfile(audio_path):
-            return send_file(audio_path)
+            return safe_task_file_response(task, audio_path, not_found_message="artifact not found")
     elif name == "video":
         result = task.get("result", {})
         video_path = result.get("soft_video")
         if video_path and os.path.isfile(video_path):
-            return send_file(video_path)
+            return safe_task_file_response(task, video_path, not_found_message="artifact not found")
 
     return jsonify(error="产物不存在"), 404
 
