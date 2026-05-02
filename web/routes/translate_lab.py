@@ -17,7 +17,7 @@ import os
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, render_template, abort, request, jsonify, send_file
+from flask import Blueprint, render_template, abort, request, jsonify
 from flask_login import login_required, current_user
 
 from web.auth import admin_required
@@ -32,6 +32,7 @@ from pipeline.voice_library_sync import (
     sync_all_shared_voices,
 )
 from web import store
+from web.services.artifact_download import safe_task_file_response
 from web.services import translate_lab_runner
 from web.upload_util import save_uploaded_file_to_path, validate_video_extension
 
@@ -347,8 +348,10 @@ def download_subtitle(task_id: str):
     srt_path = task.get("subtitle_path")
     if not srt_path or not os.path.isfile(srt_path):
         return jsonify({"error": "subtitle not ready"}), 404
-    return send_file(
+    return safe_task_file_response(
+        task,
         srt_path,
+        not_found_message="subtitle not ready",
         mimetype="application/x-subrip",
         as_attachment=True,
         download_name=f"{task_id}.srt",
@@ -374,7 +377,12 @@ def stream_shot_audio(task_id: str, shot_index: int):
     audio_path = target["audio_path"]
     if not os.path.isfile(audio_path):
         return jsonify({"error": "file missing"}), 404
-    return send_file(audio_path, mimetype="audio/mpeg")
+    return safe_task_file_response(
+        task,
+        audio_path,
+        not_found_message="file missing",
+        mimetype="audio/mpeg",
+    )
 
 
 @bp.route("/api/translate-lab/<task_id>/final-video", methods=["GET"])
@@ -393,7 +401,12 @@ def stream_final_video(task_id: str):
     )
     if not path or not os.path.isfile(path):
         return jsonify({"error": "video not ready"}), 404
-    return send_file(path, mimetype="video/mp4")
+    return safe_task_file_response(
+        task,
+        path,
+        not_found_message="video not ready",
+        mimetype="video/mp4",
+    )
 
 
 @bp.route("/api/translate-lab/voice-library/sync", methods=["POST"])
