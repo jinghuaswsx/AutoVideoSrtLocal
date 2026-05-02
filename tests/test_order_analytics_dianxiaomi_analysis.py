@@ -496,20 +496,43 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert "end_date: end" in body
 
 
-def test_data_analysis_page_has_dianxiaomi_store_filter_below_dates(authed_client_no_db):
+def test_data_analysis_page_dianxiaomi_uses_compact_country_style_toolbar(authed_client_no_db):
+    """订单分析 tab 工具栏改造（2026-05-02）：仿国家看板/实时大盘的紧凑 segmented 工具栏。"""
     response = authed_client_no_db.get("/order-analytics")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'id="dxmDateFilterRow"' in body
-    assert 'id="dxmStoreFilterRow"' in body
-    assert 'id="dxmStoreFilter"' in body
-    assert 'value="newjoy"' in body
-    assert 'value="omurio"' in body
-    assert body.index('id="dxmDateFilterRow"') < body.index('id="dxmStoreFilterRow"')
-    assert body.index('id="dxmStoreFilter"') < body.index('id="dxmOrderRefresh"')
+
+    panel_start = body.index('id="panelDxmOrders"')
+    panel_end = body.index('class="oa-panel"', panel_start + 1) if 'class="oa-panel"' in body[panel_start + 1:] else len(body)
+    panel = body[panel_start:panel_end]
+
+    # 6 个紧凑 segmented 预设按钮（替换原 .btn.btn-default）
+    for preset in ("today", "yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth"):
+        assert f'data-dxm-range="{preset}"' in panel, f"缺时间预设 {preset}"
+    # 默认"本月"高亮
+    assert 'class="oad-seg is-active" data-dxm-range="thisMonth"' in panel
+    # 紧凑 range picker（含分隔符"至"）
+    assert 'id="dxmStartDate"' in panel
+    assert 'id="dxmEndDate"' in panel
+    assert 'oad-date-range-sep' in panel
+    # 查询按钮换成 .oad-btn-primary
+    assert 'class="oad-btn-primary" id="dxmOrderRefresh"' in panel
+    # 店铺下拉仍在
+    assert 'id="dxmStoreFilter"' in panel
+    assert 'value="newjoy"' in panel
+    assert 'value="omurio"' in panel
+    # 蓝底 oar-time-rule 已被一行小灰字 note 取代
+    assert 'oar-time-rule' not in panel, "订单分析 tab 内仍有蓝底 oar-time-rule"
+    assert 'dxmOrderRangeLabel' not in panel, "应已删除老的 range label 显示"
+    # 旧的 .oa-filter-stack/-row 也不再使用
+    assert 'id="dxmDateFilterRow"' not in panel
+    assert 'id="dxmStoreFilterRow"' not in panel
+    # 业务 JS 仍然按原签名读取店铺
     assert "var store = document.getElementById('dxmStoreFilter').value;" in body
     assert "params.set('store', store);" in body
+    # 高亮 sync 函数已加入
+    assert "function syncDxmRangeSelection(" in body
 
 
 def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_client_no_db):
