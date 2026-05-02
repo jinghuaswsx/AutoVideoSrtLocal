@@ -2173,7 +2173,13 @@ def thumb(item_id: int):
     full = Path(OUTPUT_DIR) / it["thumbnail_path"]
     if not full.exists():
         abort(404)
-    return send_file(str(full), mimetype="image/jpeg")
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response(
+        {},
+        str(full),
+        not_found_message="thumbnail not found",
+        mimetype="image/jpeg",
+    )
 
 
 @bp.route("/cover/<int:pid>")

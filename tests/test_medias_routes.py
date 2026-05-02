@@ -312,6 +312,47 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
 
 
+def test_media_thumb_serves_thumbnail_inside_output_dir(authed_client_no_db, monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    thumb = output / "media_thumbs" / "item.jpg"
+    thumb.parent.mkdir(parents=True)
+    thumb.write_bytes(b"jpeg-thumbnail")
+
+    monkeypatch.setattr("web.routes.medias.OUTPUT_DIR", str(output))
+    monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", str(output))
+    monkeypatch.setattr(
+        "web.routes.medias.medias.get_item",
+        lambda item_id: {"id": item_id, "product_id": 123, "thumbnail_path": "media_thumbs/item.jpg"},
+    )
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr("web.routes.medias._can_access_product", lambda product: True)
+
+    response = authed_client_no_db.get("/medias/thumb/701")
+
+    assert response.status_code == 200
+    assert response.data == b"jpeg-thumbnail"
+
+
+def test_media_thumb_rejects_thumbnail_outside_output_dir(authed_client_no_db, monkeypatch, tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"jpeg-thumbnail")
+
+    monkeypatch.setattr("web.routes.medias.OUTPUT_DIR", str(output))
+    monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", str(output))
+    monkeypatch.setattr(
+        "web.routes.medias.medias.get_item",
+        lambda item_id: {"id": item_id, "product_id": 123, "thumbnail_path": "../outside.jpg"},
+    )
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr("web.routes.medias._can_access_product", lambda product: True)
+
+    response = authed_client_no_db.get("/medias/thumb/701")
+
+    assert response.status_code == 404
+
+
 def test_manual_ai_evaluate_request_payload_includes_full_base64(
     authed_client_no_db, monkeypatch, tmp_path
 ):
