@@ -238,6 +238,29 @@ def test_task_delete_storage_cleanup_lives_outside_route_module():
     assert Path("web/services/task_deletion.py").exists()
 
 
+def test_task_rename_validation_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "rename_task"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+    direct_conflict_calls = [
+        call.func.id
+        for call in ast.walk(route_function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "_resolve_name_conflict"
+    ]
+
+    assert direct_conflict_calls == []
+    assert "display_name required" not in route_source
+    assert "名称不超过50个字符" not in route_source
+    assert Path("web/services/task_rename.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

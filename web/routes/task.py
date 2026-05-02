@@ -52,6 +52,7 @@ from web import store
 from web.services import pipeline_runner
 from web.services.artifact_download import safe_task_dir_path, serve_artifact_download
 from web.services.task_deletion import cleanup_deleted_task_storage
+from web.services.task_rename import prepare_task_rename
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -1369,18 +1370,19 @@ def rename_task(task_id):
     if not row:
         return jsonify({"error": "Task not found"}), 404
 
-    body = request.get_json(silent=True) or {}
-    new_name = (body.get("display_name") or "").strip()
-    if not new_name:
-        return jsonify({"error": "display_name required"}), 400
-    if len(new_name) > 50:
-        return jsonify({"error": "名称不超过50个字符"}), 400
-
-    resolved = _resolve_name_conflict(current_user.id, new_name, exclude_task_id=task_id)
+    outcome = prepare_task_rename(
+        request.get_json(silent=True) or {},
+        user_id=current_user.id,
+        task_id=task_id,
+        resolve_name_conflict=_resolve_name_conflict,
+    )
+    if outcome.error:
+        return jsonify({"error": outcome.error}), outcome.status_code
+    resolved = outcome.display_name
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (resolved, task_id))
     store.get(task_id)
     store.update(task_id, display_name=resolved)
-    return jsonify({"status": "ok", "display_name": resolved})
+    return jsonify(outcome.payload)
 
 
 @bp.route("/<task_id>", methods=["DELETE"])
