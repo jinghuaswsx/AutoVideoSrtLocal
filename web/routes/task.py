@@ -66,6 +66,7 @@ from web.services.task_av_rewrite import (
 from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id, refresh_task
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
+from web.services.task_prompts import resolve_task_prompt_text
 from web.services.task_rename import prepare_task_rename
 from web.services.task_responses import task_not_found_response
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
@@ -533,16 +534,11 @@ def start_translate(task_id):
     body = json_payload_from(request)
     model_provider = body.get("model_provider", "").strip()
     prompt_id = body.get("prompt_id")
-    prompt_text = (body.get("prompt_text") or "").strip()
-
-    # Resolve prompt
-    if not prompt_text and prompt_id:
-        row = db_query_one(
-            "SELECT prompt_text FROM user_prompts WHERE id = %s AND user_id = %s",
-            (prompt_id, current_user.id),
-        )
-        if row:
-            prompt_text = row["prompt_text"]
+    prompt_text = resolve_task_prompt_text(
+        (body.get("prompt_text") or "").strip(),
+        prompt_id,
+        user_id=current_user.id,
+    )
 
     # Save choices to task state so runtime can read them
     updates = {"_translate_pre_select": False}
@@ -572,17 +568,13 @@ def retranslate(task_id):
         return jsonify({"error": "翻译步骤尚未完成，无法重新翻译"}), 400
 
     body = json_payload_from(request)
-    prompt_text = (body.get("prompt_text") or "").strip()
     prompt_id = body.get("prompt_id")
+    prompt_text = resolve_task_prompt_text(
+        (body.get("prompt_text") or "").strip(),
+        prompt_id,
+        user_id=current_user.id,
+    )
     model_provider = body.get("model_provider", "").strip()
-
-    if not prompt_text and prompt_id:
-        row = db_query_one(
-            "SELECT prompt_text FROM user_prompts WHERE id = %s AND user_id = %s",
-            (prompt_id, current_user.id),
-        )
-        if row:
-            prompt_text = row["prompt_text"]
 
     if not prompt_text:
         return jsonify({"error": "需要提供 prompt_text 或有效的 prompt_id"}), 400
