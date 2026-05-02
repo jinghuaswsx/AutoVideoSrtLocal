@@ -13,12 +13,12 @@
 
 线上 `systemctl restart autovideosrt.service` 时，旧 Gunicorn 进程经常在 `TimeoutStopSec=900s` 后被 systemd `SIGKILL` 强杀。本方案在不引入 Redis/MQ 的前提下，分两阶段解决这个问题：
 
-- **阶段 1（低风险止血）**：补全信号传递链 + 引入进程级取消令牌 + 在长任务循环里加可中断点 + APScheduler 显式 shutdown + 提供"重启前活跃任务检查"探针，并把 `TimeoutStopSec` / `graceful_timeout` 从 900s 收紧到 300s/240s。落地后预期：常规重启在 60s 内完成，异常情况下不超过 5 分钟仍能正常 `systemctl restart`，再不被 `SIGKILL`。
+- **阶段 1（低风险止血）**：补全信号传递链 + 引入进程级取消令牌 + 在长任务循环里加可中断点 + APScheduler 显式 shutdown + 提供"重启前活跃任务检查"探针，并把 `TimeoutStopSec` / `graceful_timeout` 从 900s 收紧到 120s/60s。落地后预期：常规重启在 60s 内完成，异常情况下不超过 2 分钟仍能正常 `systemctl restart`，再不被 `SIGKILL`。
 - **阶段 2（结构性演进）**：把长任务从 web 进程内迁出到独立的 `autovideosrt-worker.service`，DB 当作任务队列，web 进程只负责 HTTP/WS + 入队，重启 web 不再影响正在跑的任务。
 
 阶段 1 必须先落地、跑稳一周以上再启动阶段 2；阶段 2 落地后阶段 1 的 cancellation 机制仍保留（worker 进程自己也要支持 graceful 停机）。
 
-> 2026-05-02 合并说明：当前整改分支同时保留 `appcore.ops.active_tasks pre-restart`、`runtime_active_tasks` / `runtime_active_task_snapshots`、停机时 active task 快照和后台“定时任务”登记；部署配置采用本设计的 300s systemd / 240s Gunicorn 停机窗口，并在 `worker_exit` 中先写快照再等待 tracked thread 协作退出。
+> 2026-05-02 合并说明：当前整改分支同时保留 `appcore.ops.active_tasks pre-restart`、`runtime_active_tasks` / `runtime_active_task_snapshots`、停机时 active task 快照和后台“定时任务”登记；部署配置采用本设计的 120s systemd / 60s Gunicorn 停机窗口，SIGTERM/SIGINT 先停止 APScheduler，并在 `worker_exit` 中先写快照再等待 tracked thread 协作退出。
 
 ---
 
@@ -142,8 +142,8 @@
 - `tools/active_tasks_probe.py`：CLI 包装，运维 `ssh + python -m tools.active_tasks_probe` 可读 JSON。
 
 **修改**
-- `deploy/gunicorn.conf.py`：补 `post_worker_init` / `worker_exit` hook，把 `graceful_timeout` 从 900 → 240。
-- `deploy/autovideosrt.service`：把 `TimeoutStopSec` 从 900 → 300，更新注释。
+- `deploy/gunicorn.conf.py`：补 `post_worker_init` / `worker_exit` hook，把 `graceful_timeout` 从 900 → 60。
+- `deploy/autovideosrt.service`：把 `TimeoutStopSec` 从 900 → 120，更新注释。
 - `appcore/scheduler.py`：新增 `shutdown_scheduler(wait: bool=False)`。
 - `appcore/runner_lifecycle.py`：在 `start_tracked_thread` 启动前检查 `is_shutdown_requested`；启动后捕获 `OperationCancelled` 在 finally 里走正常的 `unregister_active_task`。
 - `appcore/task_recovery.py`：增加 `snapshot_active_tasks()` 返回 `[(project_type, task_id, started_at)]` 给探针 API 用。
@@ -217,11 +217,11 @@ def worker_exit(server, worker):
 
     request_shutdown("worker_exit")
     shutdown_scheduler(wait=False)
-    # 给活跃任务最多 200 秒退出窗口；超时不强杀，只记日志，让 systemd 兜底。
-    wait_for_active_tasks(timeout=200)
+    # 给活跃任务最多 45 秒退出窗口；超时不强杀，只记日志，让 systemd 兜底。
+    wait_for_active_tasks(timeout=45)
 ```
 
-**graceful_timeout** 从 900 → 240。具体数值的选择和与 systemd `TimeoutStopSec` 的对位关系见 6.2.6。
+**graceful_timeout** 从 900 → 60。具体数值的选择和与 systemd `TimeoutStopSec` 的对位关系见 6.2.6。
 
 **不可逆改动**：gunicorn worker 行为变化。
 
@@ -314,15 +314,16 @@ def shutdown_scheduler(wait: bool = False) -> None:
 
 #### 6.2.6 timeout 调整与文档同步
 
-- `deploy/autovideosrt.service` `TimeoutStopSec`: 900 → 300。注释从"等长任务跑完"改成"等任务收到 cancel 信号 + 当前迭代结束"。
-- `deploy/gunicorn.conf.py` `graceful_timeout`: 900 → 240。注释同步更新。
+- `deploy/autovideosrt.service` `TimeoutStopSec`: 900 → 120。注释从"等长任务跑完"改成"等任务收到 cancel 信号 + 当前迭代结束"。
+- `deploy/gunicorn.conf.py` `graceful_timeout`: 900 → 60。注释同步更新。
 - `web/routes/admin_runtime.py` 探针接口 + 部署脚本说明写进 README 部署章节。
 
-**为什么 300/240 这组数**：
-- 240s = 200s（让 active task 跑完最后一次迭代 + 标 interrupted）+ 40s（HTTP 请求 + 余量）。
-- 300s = 240s + 60s（systemd 兜底缓冲）。
-- 不再取 900s 的原因：信号链补全后 60s 就够了；300s 是异常情况兜底；900s 反而会让真正"卡死"的进程被埋藏 15 分钟才发现。
-- 极端情况（比如某 ffmpeg 卡死 200s+）systemd 会发 SIGKILL——但这种情况现在反正也跑不完任务，强杀和不强杀结果一致；强杀让重启快、问题暴露快。
+**为什么 120/60 这组数**：
+- 60s = 45s（让 active task 跑完最后一次迭代 + 标 interrupted）+ 15s（HTTP 请求 + 余量）。
+- 120s = 60s + 60s（systemd 兜底缓冲）。
+- 不再取 900s 的原因：信号链补全后 60s 就够了；120s 是异常情况兜底；900s 反而会让真正"卡死"的进程被埋藏 15 分钟才发现。
+- 线上验证显示浏览器 Socket.IO 长轮询会把 240s drain 窗口拖满；长后台任务由 `pre-restart` 强制阻断，发布窗口不再承担长任务保护职责。
+- 极端情况（比如某 ffmpeg 卡死 45s+）systemd 会发 SIGKILL——但这种情况现在反正也跑不完任务，强杀和不强杀结果一致；强杀让重启快、问题暴露快。
 
 ### 6.3 风险全景
 
@@ -330,7 +331,7 @@ def shutdown_scheduler(wait: bool = False) -> None:
 |------|------|----------|
 | signal handler 跟 Gunicorn 内部 SIGTERM 冲突 | chain 调用原 handler；测试环境先验证 SIGTERM/SIGINT 都能正常退出 | post_worker_init 没执行成功 |
 | `OperationCancelled` 在某些 step 没被捕获，traceback 脏日志 | runner 顶层 except 链兜底；阶段 1 测试覆盖每种 runner | 漏改某个 runner 的顶层 except |
-| ffmpeg subprocess 跑超过 240s | 接受这种情况会被 SIGKILL，因为没有更优方案；后续 Phase 2 worker 化再优化 | 超长视频 + 复杂 filter |
+| ffmpeg subprocess 跑超过 60s | 接受这种情况会被 SIGKILL，因为发布前必须先用 `pre-restart` 阻断 tracked long task；后续 Phase 2 worker 化再优化 | 超长视频 + 复杂 filter |
 | 探针接口被 abuse 高频调用 | 内部接口，限 admin；并把响应缓存 1s | 第三方爬到 |
 | 测试环境验证不够 → 线上首次 restart 暴露 bug | 阶段 1 强制要求测试环境跑 ≥ 3 天，并模拟"长任务途中重启"场景 | 紧急发布跳过测试环境 |
 | TimeoutStopSec 变短后，老旧版本部署机回滚时仍然 SIGKILL | 灰度发布 + journalctl 跟踪 24h；阶段 1 落地后保留旧 unit 文件备份 | 回滚到无 hook 的旧版本 |
@@ -372,7 +373,7 @@ def shutdown_scheduler(wait: bool = False) -> None:
 2. **6.2.5 探针**：`admin_runtime.py` route + `tools/active_tasks_probe.py`。先把"看活跃任务"能力上线，方便后续 step 排查问题。
 3. **6.2.4 长任务可中断点**：分两步走，先改 image_translate 一个 runner（最高频任务）跑 24h，再批量铺开其他 runner。
 4. **6.2.2 Gunicorn signal hook**：上线 hook，但 graceful_timeout 暂不改，先验证 hook 正常触发。
-5. **6.2.6 timeout 收紧**：把 `TimeoutStopSec` 900 → 300、`graceful_timeout` 900 → 240，跑 24h 灰度。
+5. **6.2.6 timeout 收紧**：把 `TimeoutStopSec` 900 → 120、`graceful_timeout` 900 → 60，跑 24h 灰度。
 6. 验收 + 监控一周。
 
 如果 step 3/4 出问题，前置 step 仍然有效（hook 拿不到 cancellation 协议响应，但至少 scheduler 会 shutdown）。
@@ -382,7 +383,7 @@ def shutdown_scheduler(wait: bool = False) -> None:
 阶段 1 是 6 个独立 commit / patch，回滚粒度：
 
 - **整体回滚**：`git revert <merge-commit>`，把 `gunicorn.conf.py` / `autovideosrt.service` / 几个 runner 文件全部还原；新增的 `shutdown_coordinator.py` / `cancellation.py` / `admin_runtime.py` 留着无害（无人调）。
-- **仅回滚 timeout 改动**：把 `TimeoutStopSec=300` / `graceful_timeout=240` 改回 `900`，重启服务。`shutdown_coordinator` 等保留。
+- **仅回滚 timeout 改动**：把 `TimeoutStopSec=120` / `graceful_timeout=60` 改回 `900`，重启服务。`shutdown_coordinator` 等保留。
 - **仅关闭 signal hook**：把 `post_worker_init` / `worker_exit` 函数体改成 `return`；scheduler 仍然能跑，cancellation 仍然有效，只是收不到 SIGTERM 信号——退化到现状。
 
 每个 commit 单独可逆。
@@ -417,7 +418,7 @@ def shutdown_scheduler(wait: bool = False) -> None:
 ┌─────────────────────────────────────────┐
 │  systemd: autovideosrt-worker.service   │
 │  Python entrypoint: appcore.worker     │
-│  TimeoutStopSec=300（沿用阶段 1）       │
+│  TimeoutStopSec=300（worker 独立缓冲） │
 │  · 单进程 + N 线程消费队列              │
 │  · 跑 PipelineRunner 等所有长任务       │
 │  · 跑 APScheduler                      │

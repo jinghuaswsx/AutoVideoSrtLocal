@@ -11,12 +11,11 @@ docs/superpowers/specs/2026-05-01-graceful-shutdown-worker-lifecycle-design.md):
   process-level shutdown coordinator and stops APScheduler before
   deferring to Gunicorn's own handler.
 - worker_exit snapshots active tasks, triggers the coordinator one more
-  time, stops APScheduler as a fallback, and waits up to 200s for in-flight
+  time, stops APScheduler as a fallback, and waits up to 45s for in-flight
   tracked threads to honour the cooperative cancellation points and
   unregister.
-- graceful_timeout shrunk from 900s to 240s now that the signal chain
-  exists -- 15 min was needed because nothing was telling the threads
-  to leave; with the chain a clean exit takes 30-60s.
+- graceful_timeout shrunk from 900s to 60s now that pre-restart blocks
+  tracked long-running tasks and the signal chain stops new scheduled work.
 """
 
 from __future__ import annotations
@@ -36,10 +35,11 @@ threads = 32
 bind = os.getenv("AUTOVIDEOSRT_GUNICORN_BIND", bind)
 threads = int(os.getenv("AUTOVIDEOSRT_GUNICORN_THREADS", str(threads)))
 timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_TIMEOUT", "300"))
-# 240s = 200s drain window for tracked threads + 40s buffer for HTTP
-# request shutdown + APScheduler teardown. Paired with systemd
-# TimeoutStopSec=300, leaving a 60s systemd buffer.
-graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "240"))
+# 60s keeps deploy downtime bounded even when browser Socket.IO polling
+# requests are open. Long background tasks are protected by the mandatory
+# pre-restart active task check rather than by a long Gunicorn drain window.
+graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "60"))
+drain_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_DRAIN_TIMEOUT", "45"))
 keepalive = int(os.getenv("AUTOVIDEOSRT_GUNICORN_KEEPALIVE", "10"))
 capture_output = True
 accesslog = "-"
@@ -123,8 +123,8 @@ def worker_exit(server, worker):
        that bypass our post_worker_init handler).
     2. Shut down APScheduler so its non-daemon thread does not block
        process exit.
-    3. Wait up to 200s for tracked threads to drain. Threads that miss
-       the window will be SIGKILLed by systemd a moment later.
+    3. Wait for tracked threads to drain. Threads that miss the window
+       will be SIGKILLed by systemd a moment later.
     """
     try:
         from appcore.shutdown_coordinator import (
@@ -139,7 +139,7 @@ def worker_exit(server, worker):
             shutdown_scheduler(wait=False)
         except Exception:  # pragma: no cover
             _log.exception("worker_exit: shutdown_scheduler raised")
-        remaining = wait_for_active_tasks(timeout=200)
+        remaining = wait_for_active_tasks(timeout=drain_timeout)
         if remaining:
             _log.warning(
                 "[shutdown] worker_exit: %s tracked task(s) still active after drain window",
