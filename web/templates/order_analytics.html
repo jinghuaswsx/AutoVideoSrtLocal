@@ -727,6 +727,7 @@
   <div class="oar-note" style="margin-top: var(--space-5); margin-bottom: var(--space-2);">以下明细仅展示「当前广告系统日」 · 不跟随上方时间范围</div>
   <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
     <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
+    <button type="button" class="oar-subtab" data-realtime-subtab="products">产品销量</button>
     <button type="button" class="oar-subtab" data-realtime-subtab="campaigns">广告计划</button>
     <button type="button" class="oar-subtab" data-realtime-subtab="trend">ROAS 走势</button>
   </div>
@@ -754,6 +755,28 @@
             </tr>
           </thead>
           <tbody id="realtimeOrderBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="oar-subpanel" id="realtimeSubProducts">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">产品销量统计</div>
+        <div class="oar-note">按当前广告系统日汇总店小秘订单商品金额</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>产品</th>
+              <th>商品净销售额</th>
+              <th>运费</th>
+              <th>总销售额</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeProductSalesBody"></tbody>
         </table>
       </div>
     </div>
@@ -1604,6 +1627,26 @@
   <div class="oa-stats" id="dxmOrderSummary"></div>
   <div class="oa-table-wrap">
     <div class="oa-table-header">
+      <div class="oa-table-title">商品销量统计</div>
+      <div class="oar-note">按当前日期范围和店铺筛选汇总</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table oar-compact-table">
+        <thead>
+          <tr>
+            <th>商品</th>
+            <th>单量</th>
+            <th>商品净销售额</th>
+            <th>运费</th>
+            <th>总销售额</th>
+          </tr>
+        </thead>
+        <tbody id="dxmProductStatsBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
       <div class="oa-table-title">店小秘订单明细</div>
       <div class="oar-note" id="dxmOrderPageInfo">第 1 页</div>
     </div>
@@ -2079,11 +2122,13 @@
     var store = document.getElementById('dxmStoreFilter').value;
     var summaryEl = document.getElementById('dxmOrderSummary');
     var bodyEl = document.getElementById('dxmOrderBody');
+    var productBodyEl = document.getElementById('dxmProductStatsBody');
     var pageInfo = document.getElementById('dxmOrderPageInfo');
     if (!summaryEl || !bodyEl) return;
     dxmOrderState.page = page || 1;
     summaryEl.innerHTML = '';
     bodyEl.innerHTML = '<tr><td colspan="13" class="oad-loading">加载中...</td></tr>';
+    if (productBodyEl) productBodyEl.innerHTML = '<tr><td colspan="5" class="oad-loading">加载中...</td></tr>';
     if (pageInfo) pageInfo.textContent = '加载中...';
     setDxmPaginationDisabled(true);
 
@@ -2113,6 +2158,10 @@
         setDxmPaginationDisabled(true);
         bodyEl.innerHTML = '<tr><td colspan="13" class="oad-error">加载失败：' +
           escapeHtml(err.message || String(err)) + '</td></tr>';
+        if (productBodyEl) {
+          productBodyEl.innerHTML = '<tr><td colspan="5" class="oad-error">加载失败：' +
+            escapeHtml(err.message || String(err)) + '</td></tr>';
+        }
         if (pageInfo) pageInfo.textContent = '加载失败';
       });
   }
@@ -2130,6 +2179,8 @@
       statCard('销售件数', fmtInt(summary.units)) +
       statCard('运费', fmtMoney(summary.shipping)) +
       statCard('商品净销售额', fmtMoney(summary.product_net_sales));
+
+    renderDxmProductStats(data.product_stats || []);
 
     var pageInfo = document.getElementById('dxmOrderPageInfo');
     if (pageInfo) {
@@ -2165,6 +2216,27 @@
         '<td>' + fmtMoney(row.ship_amount) + '</td>' +
         '<td>' + fmtMoney(row.total_sales) + '</td>' +
         '<td>' + escapeHtml(row.order_state || '') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderDxmProductStats(productStats) {
+    var bodyEl = document.getElementById('dxmProductStatsBody');
+    if (!bodyEl) return;
+    var rows = Array.isArray(productStats) ? productStats : [];
+    if (!rows.length) {
+      bodyEl.innerHTML = '<tr><td colspan="5" class="oad-empty">暂无商品销量数据</td></tr>';
+      return;
+    }
+    bodyEl.innerHTML = rows.map(function(row) {
+      var product = (row.product_name || '未知商品') +
+        (row.product_code ? ' · ' + row.product_code : '');
+      return '<tr>' +
+        '<td>' + escapeHtml(product) + '</td>' +
+        '<td>' + fmtInt(row.order_count) + '</td>' +
+        '<td>' + fmtMoney(row.product_net_sales) + '</td>' +
+        '<td>' + fmtMoney(row.shipping) + '</td>' +
+        '<td>' + fmtMoney(row.total_sales) + '</td>' +
       '</tr>';
     }).join('');
   }
@@ -2381,9 +2453,11 @@
   function loadRealtimeSubTabs() {
     var hourlyBody = document.getElementById('realtimeHourlyBody');
     var orderBody = document.getElementById('realtimeOrderBody');
+    var productSalesBody = document.getElementById('realtimeProductSalesBody');
     var campaignBody = document.getElementById('realtimeCampaignBody');
     if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
     if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
     fetch('/order-analytics/realtime-overview')
       .then(function(r) {
@@ -2396,6 +2470,7 @@
           '每 10 分钟记录当天累计订单、商品销售额、运费、广告费和 ROAS；ROAS=总销售额/广告消耗费用';
         renderRealtimeRoasChart(data.roas_points || []);
         renderRealtimeOrders(data.order_details || []);
+        renderRealtimeProductSales(data.product_sales_stats || []);
         renderRealtimeCampaigns(data.campaigns || []);
         hourlyBody.innerHTML = '';
         var rows = data.hourly || [];
@@ -2438,6 +2513,7 @@
       .catch(function(err) {
         if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
         if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+        if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
         if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       });
   }
@@ -2462,6 +2538,25 @@
     });
     if (!body.children.length) {
       body.innerHTML = '<tr><td colspan="10">暂无订单数据</td></tr>';
+    }
+  }
+
+  function renderRealtimeProductSales(rows) {
+    var body = document.getElementById('realtimeProductSalesBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var product = (row.product_name || '未知商品') +
+        (row.product_code ? ' · ' + row.product_code : '');
+      var tr = document.createElement('tr');
+      addTextCell(tr, product, 'oar-product-cell');
+      addTextCell(tr, fmtMoney(row.product_net_sales));
+      addTextCell(tr, fmtMoney(row.shipping));
+      addTextCell(tr, fmtMoney(row.total_sales));
+      body.appendChild(tr);
+    });
+    if (!body.children.length) {
+      body.innerHTML = '<tr><td colspan="4">暂无产品销量数据</td></tr>';
     }
   }
 
@@ -3067,7 +3162,8 @@
 
     var head = document.getElementById('adTableHead');
     head.innerHTML = '';
-    ['产品 / 广告系列', '匹配', '广告花费', 'Meta购买', '购物价值', 'ROAS', 'CPA', '链接点击',
+    ['产品 / 广告系列', '匹配', '广告花费', 'Meta购买', '购物价值', 'ROAS',
+     '店小秘销量', '店小秘总销售额', '店小秘 ROAS', 'CPA', '链接点击',
      '加购', '发起结账', '展示', 'Shopify订单', 'Shopify件数', 'Shopify收入'].forEach(function(text, idx) {
       addTh(head, idx === 0 ? 'oa-col-product' : 'oa-col-num', text);
     });
@@ -3083,6 +3179,9 @@
       addTd(tr, 'oa-col-num', fmtInt(row.result_count));
       addTd(tr, 'oa-col-num', fmtMoney(row.purchase_value_usd));
       addTd(tr, 'oa-col-num', fmtRatio(row.roas_purchase));
+      addTd(tr, 'oa-col-num', fmtInt(row.dianxiaomi_order_count));
+      addTd(tr, 'oa-col-num', fmtMoney(row.dianxiaomi_total_sales));
+      addTd(tr, 'oa-col-num', fmtRatio(row.dianxiaomi_roas));
       addTd(tr, 'oa-col-num', fmtMoney(row.cost_per_result_usd));
       addTd(tr, 'oa-col-num', fmtInt(row.link_clicks));
       addTd(tr, 'oa-col-num', fmtInt(row.add_to_cart_count));

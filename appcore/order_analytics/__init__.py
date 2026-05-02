@@ -67,6 +67,7 @@ from .dianxiaomi import (
     finish_dianxiaomi_order_import_batch,
     upsert_dianxiaomi_order_lines,
     get_dianxiaomi_order_import_batches,
+    get_dianxiaomi_product_sales_stats,
     get_dianxiaomi_order_analysis,
     _infer_dianxiaomi_site_code_from_text,
     _dianxiaomi_order_lines,
