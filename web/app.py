@@ -79,6 +79,7 @@ from web.routes.link_check import bp as link_check_bp
 from web.routes.voice_library import bp as voice_library_bp
 from web.routes.order_analytics import bp as order_analytics_bp
 from web.routes.scheduled_tasks import bp as scheduled_tasks_bp
+from web.routes.security_audit import bp as security_audit_bp
 from web.routes.mk_import import bp as mk_import_bp
 from web.routes.raw_video_pool import bp as raw_video_pool_bp
 from web.routes.new_product_review import new_product_review_bp
@@ -290,6 +291,7 @@ def create_app() -> Flask:
     app.register_blueprint(order_analytics_bp)
     csrf.exempt(order_analytics_bp)
     app.register_blueprint(scheduled_tasks_bp)
+    app.register_blueprint(security_audit_bp)
     app.register_blueprint(mk_import_bp)
     # mk-import 蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
     csrf.exempt(mk_import_bp)
