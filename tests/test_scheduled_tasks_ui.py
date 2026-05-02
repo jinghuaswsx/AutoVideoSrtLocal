@@ -45,6 +45,7 @@ def test_scheduled_tasks_page_has_log_and_management_capsules():
     assert "control_supported" in source
     assert "control_unavailable_reason" in source
     assert "csrf_token()" in source
+    assert "confirm_task_code" in source
     assert "max-width:none" in source
 
 
@@ -57,6 +58,7 @@ def test_scheduled_tasks_route_uses_view_and_task_filters():
     assert "management_tasks" in source
     assert '@bp.post("/<task_code>/control")' in source
     assert "set_task_enabled" in source
+    assert 'request.form.get("confirm_task_code")' in source
 
 
 def test_scheduled_tasks_management_links_queryable_log_sources():

@@ -66,6 +66,7 @@ def control(task_code: str):
             task_code,
             enabled,
             actor=getattr(current_user, "username", "") or None,
+            confirmation=request.form.get("confirm_task_code"),
         )
         flash(f"{task['name']} 已{'启用' if enabled else '停用'}")
     except Exception as exc:

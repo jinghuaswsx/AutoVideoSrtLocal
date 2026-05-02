@@ -452,11 +452,34 @@ def test_set_task_enabled_runs_systemctl_for_systemd_timer(monkeypatch):
     monkeypatch.setattr(scheduled_tasks, "_run_control_command", fake_run_command)
     monkeypatch.setattr(scheduled_tasks, "execute", lambda sql, params=(): writes.append((sql, params)) or 1)
 
-    result = scheduled_tasks.set_task_enabled("shopifyid", False, actor="admin")
+    result = scheduled_tasks.set_task_enabled(
+        "shopifyid",
+        False,
+        actor="admin",
+        confirmation="shopifyid",
+    )
 
     assert result["control_state"] == "disabled"
     assert commands == [["systemctl", "disable", "--now", "autovideosrt-shopifyid-sync.timer"]]
     assert any(params[0] == "shopifyid" and params[1] == 0 for _, params in writes if params)
+
+
+def test_set_task_enabled_requires_confirmation_for_systemd_timer(monkeypatch):
+    from appcore import scheduled_tasks
+
+    commands = []
+
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "_run_control_command",
+        lambda command: commands.append(command) or {"ok": True, "message": "ok"},
+    )
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *args, **kwargs: 1)
+
+    with pytest.raises(ValueError, match="确认"):
+        scheduled_tasks.set_task_enabled("shopifyid", False, actor="admin")
+
+    assert commands == []
 
 
 def test_set_task_enabled_writes_guarded_subtask_without_external_command(monkeypatch):

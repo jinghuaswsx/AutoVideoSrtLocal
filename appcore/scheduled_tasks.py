@@ -281,6 +281,7 @@ CONTROL_LABELS = {
 }
 
 CONTROLLABLE_STRATEGIES = {"apscheduler", "systemd", "windows", "guard"}
+CONFIRMATION_REQUIRED_STRATEGIES = {"systemd", "windows"}
 
 
 def _log_source(task: TaskDefinition) -> str:
@@ -398,6 +399,10 @@ def _is_control_supported(task: TaskDefinition) -> bool:
     return (not _is_deprecated(task)) and _control_strategy(task) in CONTROLLABLE_STRATEGIES
 
 
+def _requires_control_confirmation(task: TaskDefinition) -> bool:
+    return _control_strategy(task) in CONFIRMATION_REQUIRED_STRATEGIES
+
+
 def _control_unavailable_reason(task: TaskDefinition) -> str:
     if _is_deprecated(task):
         return "该任务已标记为废弃，不再提供启停入口。"
@@ -465,6 +470,8 @@ def _with_control_state(task: TaskDefinition, control: dict[str, Any] | None = N
     item.update({
         "control_strategy": strategy,
         "control_supported": supported,
+        "control_requires_confirmation": _requires_control_confirmation(item),
+        "control_confirmation_value": item.get("code") or "",
         "control_enabled": enabled,
         "control_state": state,
         "control_label": CONTROL_LABELS.get(state, CONTROL_LABELS["unknown"]),
@@ -581,7 +588,13 @@ def _apply_control_strategy(task: TaskDefinition, enabled: bool) -> dict[str, An
     return {"ok": False, "message": "该任务来源暂不支持从 Web 后台直接启停。"}
 
 
-def set_task_enabled(task_code: str, enabled: bool, *, actor: str | None = None) -> TaskDefinition:
+def set_task_enabled(
+    task_code: str,
+    enabled: bool,
+    *,
+    actor: str | None = None,
+    confirmation: str | None = None,
+) -> TaskDefinition:
     code = (task_code or "").strip()
     task = TASK_DEFINITIONS.get(code)
     if not task:
@@ -590,6 +603,8 @@ def set_task_enabled(task_code: str, enabled: bool, *, actor: str | None = None)
         reason = _control_unavailable_reason(task)
         suffix = f"：{reason}" if reason else ""
         raise ValueError(f"{task['name']} 不支持从 Web 后台直接启停{suffix}")
+    if _requires_control_confirmation(task) and (confirmation or "").strip() != code:
+        raise ValueError(f"{task['name']} 需要输入任务代码确认后才能启停")
     result = _apply_control_strategy(task, bool(enabled))
     if not result.get("ok"):
         current_enabled = is_task_enabled(code)
