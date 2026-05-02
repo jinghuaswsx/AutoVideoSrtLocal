@@ -149,10 +149,12 @@ def _cleanup_expired() -> None:
 
 
 def _cleanup_loop() -> None:
-    from appcore import scheduled_tasks
+    from appcore import scheduled_tasks, shutdown_coordinator
 
     while True:
-        time.sleep(_CLEANUP_INTERVAL)
+        if shutdown_coordinator.wait(_CLEANUP_INTERVAL):
+            log.info("voice match cleanup loop exiting on shutdown")
+            return
         try:
             scheduled_tasks.run_if_enabled("voice_match_cleanup", _cleanup_expired)
         except Exception:

@@ -85,10 +85,12 @@ def _cleanup_expired() -> None:
 
 
 def _cleanup_loop() -> None:
-    from appcore import scheduled_tasks
+    from appcore import scheduled_tasks, shutdown_coordinator
 
     while True:
-        time.sleep(_CLEANUP_INTERVAL)
+        if shutdown_coordinator.wait(_CLEANUP_INTERVAL):
+            log.info("medias_detail_fetch cleanup loop exiting on shutdown")
+            return
         try:
             scheduled_tasks.run_if_enabled("medias_detail_fetch_cleanup", _cleanup_expired)
         except Exception:

@@ -98,3 +98,20 @@ def test_ttl_cleanup_removes_old_tasks(monkeypatch):
     vmt._TASKS[tid]["_expires_at"] = time.time() - 1
     vmt._cleanup_expired()
     assert vmt.get_task(tid, user_id=1) is None
+
+
+def test_cleanup_loop_exits_without_tick_when_shutdown_requested(monkeypatch):
+    from appcore import shutdown_coordinator
+
+    monkeypatch.setattr(shutdown_coordinator, "wait", lambda seconds: True)
+
+    def fail_sleep(_seconds):
+        raise AssertionError("cleanup loop must use shutdown_coordinator.wait")
+
+    def fail_tick(*_args, **_kwargs):
+        raise AssertionError("cleanup tick should not run after shutdown")
+
+    monkeypatch.setattr(vmt.time, "sleep", fail_sleep)
+    monkeypatch.setattr("appcore.scheduled_tasks.run_if_enabled", fail_tick)
+
+    vmt._cleanup_loop()

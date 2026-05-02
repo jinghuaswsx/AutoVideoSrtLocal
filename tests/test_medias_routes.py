@@ -318,7 +318,7 @@ def test_media_thumb_serves_thumbnail_inside_output_dir(authed_client_no_db, mon
     thumb.parent.mkdir(parents=True)
     thumb.write_bytes(b"jpeg-thumbnail")
 
-    monkeypatch.setattr("web.routes.medias.OUTPUT_DIR", str(output))
+    monkeypatch.setattr("web.routes.medias.covers.OUTPUT_DIR", str(output))
     monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", str(output))
     monkeypatch.setattr(
         "web.routes.medias.medias.get_item",
@@ -339,7 +339,7 @@ def test_media_thumb_rejects_thumbnail_outside_output_dir(authed_client_no_db, m
     outside = tmp_path / "outside.jpg"
     outside.write_bytes(b"jpeg-thumbnail")
 
-    monkeypatch.setattr("web.routes.medias.OUTPUT_DIR", str(output))
+    monkeypatch.setattr("web.routes.medias.covers.OUTPUT_DIR", str(output))
     monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", str(output))
     monkeypatch.setattr(
         "web.routes.medias.medias.get_item",
@@ -917,6 +917,24 @@ def test_detail_images_from_url_background_worker_uses_captured_user_id(
     assert task_state["status"] == "done"
     assert task_state["errors"] == []
     assert len(task_state["inserted"]) == 1
+
+
+def test_detail_images_cleanup_loop_exits_without_tick_when_shutdown_requested(monkeypatch):
+    from appcore import medias_detail_fetch_tasks as mdf
+    from appcore import shutdown_coordinator
+
+    monkeypatch.setattr(shutdown_coordinator, "wait", lambda seconds: True)
+
+    def fail_sleep(_seconds):
+        raise AssertionError("cleanup loop must use shutdown_coordinator.wait")
+
+    def fail_tick(*_args, **_kwargs):
+        raise AssertionError("cleanup tick should not run after shutdown")
+
+    monkeypatch.setattr(mdf.time, "sleep", fail_sleep)
+    monkeypatch.setattr("appcore.scheduled_tasks.run_if_enabled", fail_tick)
+
+    mdf._cleanup_loop()
 
 
 def test_detail_images_download_zip_returns_sorted_archive(authed_client_no_db, monkeypatch):
@@ -1690,7 +1708,7 @@ def test_product_code_route_renders_full_page_detail_config(
     assert '"productId": 77' in html
     assert "rotary-lock-metal-box-cutter-rjc" in html
     assert 'class="oc-modal-mask oc oc-product-detail-mask" id="edMask"' in html
-    detail_mask_css = html.rsplit("#edMask.oc-product-detail-mask {", 1)[1].split(
+    detail_mask_css = html.split("#edMask.oc-product-detail-mask {", 1)[1].split(
         "#edMask.oc-product-detail-mask > .oc-modal-edit {", 1
     )[0]
     assert "position:fixed;" in detail_mask_css
