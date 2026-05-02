@@ -22,7 +22,7 @@ def test_quality_assessment_available_from_appcore_and_web_reexports():
 
 def test_core_runtime_preview_imports_do_not_depend_on_web_module():
     runtime_files = [
-        Path("appcore/runtime.py"),
+        Path("appcore/runtime/__init__.py"),
         Path("appcore/runtime_multi.py"),
         Path("appcore/runtime_de.py"),
         Path("appcore/runtime_fr.py"),
