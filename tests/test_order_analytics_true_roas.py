@@ -401,6 +401,22 @@ def test_realtime_tab_has_country_style_time_picker(authed_client_no_db):
     assert 'id="realtimeRefresh"' in panel
 
 
+def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
+    """实时大盘的“今天”应按 Meta 广告系统日，而不是北京时间自然日。"""
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    panel_start = body.index('id="panelRealtime"')
+    panel_end = body.index('id="panelDxmOrders"', panel_start) if 'id="panelDxmOrders"' in body[panel_start:] else len(body)
+    panel = body[panel_start:panel_end]
+
+    assert "北京时间 16:00 切日" in panel
+    assert "var META_REALTIME_CUTOVER_HOUR_BJ = 16;" in body
+    assert "function getRealtimeBusinessDate(now)" in body
+    assert "var now = getRealtimeBusinessDate(new Date());" in body
+
+
 def test_realtime_tab_drops_blue_primary_card_class(authed_client_no_db):
     """实时大盘 panel 内不应再使用 .oar-card.is-primary（浅蓝底大卡）。"""
     response = authed_client_no_db.get("/order-analytics")

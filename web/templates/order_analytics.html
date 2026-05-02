@@ -668,7 +668,7 @@
       </div>
       <button type="button" class="oad-btn-primary" id="realtimeRefresh">刷新</button>
     </div>
-    <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 04:00 切日</div>
+    <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 16:00 切日</div>
   </div>
 
   <div class="oa-stats" id="realtimeSummary">
@@ -2182,6 +2182,9 @@
   var realtimeRefresh = document.getElementById('realtimeRefresh');
   if (realtimeRefresh) {
     realtimeRefresh.addEventListener('click', function() {
+      if (realtimeState.range && realtimeState.range !== 'custom') {
+        setRealtimeRange(realtimeState.range, true);
+      }
       loadRealtimeTopCards();
       loadRealtimeSubTabs();
     });
@@ -2218,9 +2221,34 @@
     return y + '-' + m + '-' + d;
   }
 
+  var META_REALTIME_CUTOVER_HOUR_BJ = 16;
+
+  function getRealtimeBusinessDate(now) {
+    var parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(now).reduce(function(acc, part) {
+      if (part.type !== 'literal') acc[part.type] = part.value;
+      return acc;
+    }, {});
+    var businessDate = new Date(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day)
+    );
+    if (Number(parts.hour) < META_REALTIME_CUTOVER_HOUR_BJ) {
+      businessDate.setDate(businessDate.getDate() - 1);
+    }
+    return businessDate;
+  }
+
   // ── 时间范围预设（仿国家看板）───────────────────────
   function resolveRealtimeRange(range) {
-    var now = new Date();
+    var now = getRealtimeBusinessDate(new Date());
     var start = new Date(now);
     var end = new Date(now);
     if (range === 'yesterday') {
