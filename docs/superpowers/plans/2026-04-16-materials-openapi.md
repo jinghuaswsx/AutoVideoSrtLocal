@@ -487,7 +487,7 @@ X-API-Key: your-api-key
 只修改本地开发/部署环境 `.env`，不要把真实值提交到 Git：
 
 ```dotenv
-OPENAPI_MEDIA_API_KEY=autovideosrt-materials-openapi
+OPENAPI_MEDIA_API_KEY=<your-api-key>
 ```
 
 如果部署到线上，同步把服务器 `/opt/autovideosrt/.env` 也加上同一项。
@@ -497,7 +497,7 @@ OPENAPI_MEDIA_API_KEY=autovideosrt-materials-openapi
 本地或测试环境执行：
 
 ```bash
-curl -H "X-API-Key: autovideosrt-materials-openapi" \
+curl -H "X-API-Key: $OPENAPI_MEDIA_API_KEY" \
   http://127.0.0.1:5000/openapi/materials/sonic-lens-refresher
 ```
 

@@ -1066,7 +1066,7 @@ class LinkCheckApp:
         try:
             result = controller.run_link_check(
                 base_url="http://172.30.254.14",
-                api_key="autovideosrt-materials-openapi",
+                api_key="demo-key",
                 target_url=target_url,
                 status_cb=lambda message: self.root.after(0, self.status_var.set, message),
             )

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 
 PRODUCTION_BASE_URL = "http://172.30.254.14"
-DEFAULT_API_KEY = "autovideosrt-materials-openapi"
+DEFAULT_API_KEY = os.getenv("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "").strip()
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 CONFIG_FILENAME = "shopify_image_localizer_config.json"
 

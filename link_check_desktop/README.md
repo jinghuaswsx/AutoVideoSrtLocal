@@ -88,6 +88,8 @@ link_check_desktop_config.json
 ```json
 {
   "base_url": "http://172.30.254.14",
-  "api_key": "autovideosrt-materials-openapi"
+  "api_key": ""
 }
 ```
+
+`api_key` 由服务端运维分发，也可以通过环境变量 `LINK_CHECK_DESKTOP_API_KEY` 注入。仓库和绿色包默认不内置生产密钥。

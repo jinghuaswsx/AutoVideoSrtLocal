@@ -482,7 +482,7 @@ Expected: FAIL，提示模块不存在。
 ```python
 # tools/shopify_image_localizer/settings.py
 DEFAULT_BASE_URL = "http://172.30.254.14"
-DEFAULT_API_KEY = "autovideosrt-materials-openapi"
+DEFAULT_API_KEY = ""
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 CONFIG_FILENAME = "shopify_image_localizer_config.json"
 ```

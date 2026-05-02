@@ -36,7 +36,7 @@ python main.py
 复制 `.env.example` 后按需调整这些值：
 
 - `AUTOVIDEO_BASE_URL=http://172.30.254.14`
-- `AUTOVIDEO_API_KEY=autovideosrt-materials-openapi`
+- `AUTOVIDEO_API_KEY=<your-api-key>`
 - `PUSH_MEDIAS_TARGET=http://172.17.254.77:22400/dify/shopify/medias`
 - `AUTOPUSH_PORT=8787`
 

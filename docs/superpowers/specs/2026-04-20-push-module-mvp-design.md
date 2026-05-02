@@ -86,7 +86,7 @@ initTabs();
 ```python
 # 推送管理 - 纯前端直连模式（push-module 方案）
 AUTOVIDEO_BASE_URL = _env("AUTOVIDEO_BASE_URL", "http://172.30.254.14")
-AUTOVIDEO_API_KEY = _env("AUTOVIDEO_API_KEY", "autovideosrt-materials-openapi")
+AUTOVIDEO_API_KEY = _env("AUTOVIDEO_API_KEY", "")
 PUSH_MEDIAS_TARGET = _env("PUSH_MEDIAS_TARGET", "http://172.17.254.77:22400/dify/shopify/medias")
 ```
 

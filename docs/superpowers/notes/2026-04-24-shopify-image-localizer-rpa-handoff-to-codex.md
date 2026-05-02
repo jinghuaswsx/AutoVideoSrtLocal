@@ -55,7 +55,7 @@
 接口验收命令：
 ```bash
 curl -X POST 'http://172.30.254.14/openapi/medias/shopify-image-localizer/bootstrap' \
-  -H 'X-API-Key: autovideosrt-materials-openapi' \
+  -H 'X-API-Key: $OPENAPI_MEDIA_API_KEY' \
   -H 'Content-Type: application/json' \
   -d '{"product_code":"dino-glider-launcher-toy-rjc","lang":"it"}'
 ```

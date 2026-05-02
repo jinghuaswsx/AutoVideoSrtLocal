@@ -28,7 +28,7 @@ X-API-Key: <your-api-key>
 ## 请求示例
 
 ```bash
-curl -H "X-API-Key: autovideosrt-materials-openapi" \
+curl -H "X-API-Key: $OPENAPI_MEDIA_API_KEY" \
   "http://your-host/openapi/materials/sonic-lens-refresher"
 ```
 

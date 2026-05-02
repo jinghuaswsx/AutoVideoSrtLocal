@@ -12,6 +12,15 @@ from tools.shopify_image_localizer import cancellation, gui
 
 def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_languages_async", lambda self: None)
+    monkeypatch.setattr(
+        gui.settings,
+        "load_runtime_config",
+        lambda: {
+            "base_url": "http://172.30.254.14",
+            "api_key": "demo-key",
+            "browser_user_data_dir": r"C:\chrome-shopify-image",
+        },
+    )
     monkeypatch.setattr(gui.messagebox, "showinfo", lambda *args, **kwargs: None)
     monkeypatch.setattr(gui.messagebox, "showerror", lambda *args, **kwargs: None)
     monkeypatch.setattr(gui.messagebox, "showwarning", lambda *args, **kwargs: None)

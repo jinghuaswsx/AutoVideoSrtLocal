@@ -66,7 +66,7 @@ def test_autovideo_base_url_env_override(monkeypatch):
 def test_autovideo_api_key_default(monkeypatch):
     monkeypatch.delenv("AUTOVIDEO_API_KEY", raising=False)
     cfg = _reload_config(monkeypatch, {})
-    assert cfg.AUTOVIDEO_API_KEY == "autovideosrt-materials-openapi"
+    assert cfg.AUTOVIDEO_API_KEY == ""
 
 
 def test_push_medias_target_default(monkeypatch):
@@ -91,7 +91,7 @@ Expected: FAIL — `AttributeError: module 'config' has no attribute 'AUTOVIDEO_
 ```python
 # 推送管理 - push-module 纯前端直连模式
 AUTOVIDEO_BASE_URL = _env("AUTOVIDEO_BASE_URL", "http://172.30.254.14")
-AUTOVIDEO_API_KEY = _env("AUTOVIDEO_API_KEY", "autovideosrt-materials-openapi")
+AUTOVIDEO_API_KEY = _env("AUTOVIDEO_API_KEY", "")
 PUSH_MEDIAS_TARGET = _env(
     "PUSH_MEDIAS_TARGET",
     "http://172.17.254.77:22400/dify/shopify/medias",

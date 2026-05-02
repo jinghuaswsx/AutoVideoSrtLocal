@@ -106,6 +106,7 @@
 - 2026-05-02 测试环境已拉取提交 `93432070` 并重启 `autovideosrt-test.service` 加载 CapCut 路径边界与管理员用户页错误分支修复；服务端运行同组 CapCut / artifact / ownership 聚焦回归为 `30 passed`，`py_compile` 通过；重启后 `pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐定时任务外部控制二次确认：`systemd` / `windows` 控制策略在调用 `set_task_enabled` 时必须提供任务代码确认，Web 管理页仅对这类外部调度任务展示确认输入；`guard` / `apscheduler` 应用内开关不增加额外确认。聚焦回归：`tests/test_appcore_scheduled_tasks.py tests/test_scheduled_tasks_ui.py` 为 `26 passed`，`py_compile` 通过。
 - 2026-05-02 当前工作区补齐 TOS 下载本地文件替换安全：`download_file` 与 `download_media_file` 改为先下载到同目录临时文件，SDK 下载成功后再 `os.replace` 原子替换目标；若下载失败，旧目标文件保持不变，避免“先删后下”造成可恢复文件丢失。聚焦回归：`tests/test_tos_clients.py` 为 `13 passed`，`py_compile` 通过。
+- 2026-05-02 当前工作区补齐公开文档与桌面工具默认配置的密钥泄露防护：移除生产 OpenAPI key 与桌面 Gemini key 的硬编码默认值，Link Check Desktop 与 Shopify Image Localizer 改为默认空密钥并支持环境变量注入；公开 API 文档改用占位符/环境变量示例。新增静态回归防止同类生产 key 再进入文档、桌面工具代码和默认配置。聚焦回归：`tests/test_project_docs.py`、Link Check Desktop 相关测试和 Shopify Image Localizer 相关测试通过。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
