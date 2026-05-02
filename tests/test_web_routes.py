@@ -95,7 +95,10 @@ def test_task_upload_route_accepts_local_multipart_and_marks_local_primary(tmp_p
 
     response = authed_client_no_db.post(
         "/api/tasks",
-        data={"video": (io.BytesIO(b"video-bytes"), "demo.mp4")},
+        data={
+            "video": (io.BytesIO(b"video-bytes"), "demo.mp4"),
+            "source_language": "zh",
+        },
         content_type="multipart/form-data",
     )
 

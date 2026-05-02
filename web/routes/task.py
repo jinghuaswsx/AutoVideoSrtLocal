@@ -52,6 +52,7 @@ from web import store
 from web.services import pipeline_runner
 from web.services.artifact_download import safe_task_dir_path, serve_artifact_download
 from web.services.task_deletion import cleanup_deleted_task_storage
+from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
@@ -265,38 +266,6 @@ def _clear_av_compose_outputs(
     )
 
 
-def _default_display_name(original_filename: str) -> str:
-    """取文件名（去扩展名）前10个字符作为默认展示名。"""
-    name = os.path.splitext(original_filename)[0] if original_filename else ""
-    return name[:10] or "未命名"
-
-
-def _resolve_name_conflict(user_id: int, desired_name: str, exclude_task_id: str | None = None) -> str:
-    """
-    检查 desired_name 是否已被同用户其他项目占用。
-    若冲突则在末尾追加 (2)、(3)… 直到不冲突。
-    exclude_task_id: 重命名时排除自身。
-    """
-    base = desired_name
-    candidate = base
-    n = 2
-    while True:
-        if exclude_task_id:
-            row = db_query_one(
-                "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND id!=%s AND deleted_at IS NULL",
-                (user_id, candidate, exclude_task_id),
-            )
-        else:
-            row = db_query_one(
-                "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND deleted_at IS NULL",
-                (user_id, candidate),
-            )
-        if not row:
-            return candidate
-        candidate = f"{base} ({n})"
-        n += 1
-
-
 def _build_translate_compare_artifact(task: dict) -> dict:
     variants = dict(task.get("variants", {}))
     compare_variants = {}
@@ -439,9 +408,13 @@ def upload():
     )
 
     desired_name = (form_payload.get("display_name") or "").strip()[:200]
-    display_name = desired_name or _default_display_name(original_filename)
+    display_name = desired_name or default_display_name(original_filename)
     if user_id is not None:
-        display_name = _resolve_name_conflict(user_id, display_name)
+        display_name = resolve_task_display_name_conflict(
+            user_id,
+            display_name,
+            query_one=db_query_one,
+        )
         db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
 
     steps, step_messages = _av_step_maps()
@@ -1374,7 +1347,12 @@ def rename_task(task_id):
         request.get_json(silent=True) or {},
         user_id=current_user.id,
         task_id=task_id,
-        resolve_name_conflict=_resolve_name_conflict,
+        resolve_name_conflict=lambda user_id, desired_name, *, exclude_task_id=None: resolve_task_display_name_conflict(
+            user_id,
+            desired_name,
+            query_one=db_query_one,
+            exclude_task_id=exclude_task_id,
+        ),
     )
     if outcome.error:
         return jsonify({"error": outcome.error}), outcome.status_code
