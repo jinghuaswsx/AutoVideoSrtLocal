@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import os
 
-from flask import Blueprint, jsonify, render_template, request, send_file
+from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import raw_video_pool as rvp_svc
+from web.services.artifact_download import safe_task_file_response
 
 bp = Blueprint("raw_video_pool", __name__, url_prefix="/raw-video-pool")
 
@@ -65,8 +66,14 @@ def api_download(tid: int):
         return jsonify({"error": "state_error", "detail": str(e)}), 422
     if not os.path.exists(path):
         return jsonify({"error": "file_not_found", "detail": path}), 404
-    return send_file(path, as_attachment=True, download_name=fname,
-                     mimetype="video/mp4")
+    return safe_task_file_response(
+        {},
+        path,
+        not_found_message="file_not_found",
+        as_attachment=True,
+        download_name=fname,
+        mimetype="video/mp4",
+    )
 
 
 @bp.route("/api/task/<int:tid>/upload", methods=["POST"])

@@ -332,6 +332,29 @@ def test_match_status_missing_returns_404(authed_client_no_db, monkeypatch):
 
 
 def test_match_sample_audio_serves_owned_file(tmp_path, authed_client_no_db, monkeypatch):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    clip = uploads / "clip.wav"
+    clip.write_bytes(b"wav-data")
+    monkeypatch.setattr(
+        "web.routes.voice_library.vmt.get_task",
+        lambda tid, user_id: {
+            "task_id": tid,
+            "result": {"sample_audio_path": str(clip)},
+        },
+    )
+    monkeypatch.setattr("web.services.artifact_download.UPLOAD_DIR", str(uploads))
+    monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", str(tmp_path / "output"))
+
+    resp = authed_client_no_db.get("/voice-library/api/match/artifact/vm_x/sample-audio")
+
+    assert resp.status_code == 200
+    assert resp.data == b"wav-data"
+
+
+def test_match_sample_audio_rejects_file_outside_storage_roots(tmp_path, authed_client_no_db, monkeypatch):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
     clip = tmp_path / "clip.wav"
     clip.write_bytes(b"wav-data")
     monkeypatch.setattr(
@@ -341,8 +364,9 @@ def test_match_sample_audio_serves_owned_file(tmp_path, authed_client_no_db, mon
             "result": {"sample_audio_path": str(clip)},
         },
     )
+    monkeypatch.setattr("web.services.artifact_download.UPLOAD_DIR", str(uploads))
+    monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", str(tmp_path / "output"))
 
     resp = authed_client_no_db.get("/voice-library/api/match/artifact/vm_x/sample-audio")
 
-    assert resp.status_code == 200
-    assert resp.data == b"wav-data"
+    assert resp.status_code == 404

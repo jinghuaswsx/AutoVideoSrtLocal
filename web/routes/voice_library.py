@@ -6,13 +6,14 @@ import os
 import threading
 import uuid as _uuid
 
-from flask import Blueprint, abort, jsonify, render_template, request, send_file, url_for
+from flask import Blueprint, abort, jsonify, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import medias
 from appcore import voice_match_tasks as vmt
 from appcore.voice_library_browse import list_filter_options, list_voices
 from config import UPLOAD_DIR
+from web.services.artifact_download import safe_task_file_response
 from web.upload_util import write_stream_to_path
 
 log = logging.getLogger(__name__)
@@ -213,4 +214,9 @@ def api_match_sample_audio(task_id: str):
     sample_audio_path = (result.get("sample_audio_path") or "").strip()
     if not sample_audio_path or not os.path.exists(sample_audio_path):
         abort(404)
-    return send_file(sample_audio_path, mimetype="audio/wav")
+    return safe_task_file_response(
+        task,
+        sample_audio_path,
+        not_found_message="sample audio not found",
+        mimetype="audio/wav",
+    )
