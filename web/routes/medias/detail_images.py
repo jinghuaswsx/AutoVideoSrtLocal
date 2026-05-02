@@ -25,6 +25,11 @@ from web.services.media_detail_archives import (
     DetailImagesZipGroup,
     build_detail_images_archive,
 )
+from web.services.media_detail_mutations import (
+    clear_detail_images,
+    delete_detail_image,
+    reorder_detail_images as reorder_detail_images_command,
+)
 from web.services.media_detail_uploads import (
     optional_int,
     validate_completed_images,
@@ -457,16 +462,16 @@ def api_detail_images_delete(pid: int, image_id: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    row = medias.get_detail_image(image_id)
-    if not row or int(row["product_id"]) != pid or row.get("deleted_at") is not None:
+    outcome = delete_detail_image(
+        image_id,
+        product_id=pid,
+        get_detail_image=medias.get_detail_image,
+        soft_delete_detail_image=medias.soft_delete_detail_image,
+        delete_media_object=_delete_media_object,
+    )
+    if outcome.not_found:
         abort(404)
-
-    medias.soft_delete_detail_image(image_id)
-    try:
-        _delete_media_object(row["object_key"])
-    except Exception:
-        pass
-    return jsonify({"ok": True})
+    return jsonify(outcome.payload)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/clear", methods=["POST"])
@@ -480,17 +485,17 @@ def api_detail_images_clear_all(pid: int):
     lang, err = _parse_lang(body, default="")
     if err:
         return jsonify({"error": err}), 400
-    if lang == "en":
-        return jsonify({"error": "english detail images cannot be cleared via this endpoint"}), 400
 
-    rows = medias.list_detail_images(pid, lang)
-    cleared = medias.soft_delete_detail_images_by_lang(pid, lang)
-    for row in rows:
-        try:
-            _delete_media_object(row["object_key"])
-        except Exception:
-            pass
-    return jsonify({"ok": True, "cleared": cleared})
+    outcome = clear_detail_images(
+        pid,
+        lang,
+        list_detail_images=medias.list_detail_images,
+        soft_delete_detail_images_by_lang=medias.soft_delete_detail_images_by_lang,
+        delete_media_object=_delete_media_object,
+    )
+    if outcome.error:
+        return jsonify({"error": outcome.error}), outcome.status_code
+    return jsonify(outcome.payload)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/reorder", methods=["POST"])
@@ -503,15 +508,15 @@ def api_detail_images_reorder(pid: int):
     lang, err = _parse_lang(body)
     if err:
         return jsonify({"error": err}), 400
-    ids = body.get("ids") or []
-    if not isinstance(ids, list):
-        return jsonify({"error": "ids must be list"}), 400
-    try:
-        ids_int = [int(x) for x in ids]
-    except (TypeError, ValueError):
-        return jsonify({"error": "ids must be integers"}), 400
-    updated = medias.reorder_detail_images(pid, lang, ids_int)
-    return jsonify({"ok": True, "updated": updated})
+    outcome = reorder_detail_images_command(
+        pid,
+        lang,
+        body.get("ids") or [],
+        reorder_detail_images=medias.reorder_detail_images,
+    )
+    if outcome.error:
+        return jsonify({"error": outcome.error}), outcome.status_code
+    return jsonify(outcome.payload)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/translate-from-en", methods=["POST"])

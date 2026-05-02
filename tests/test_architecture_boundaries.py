@@ -162,6 +162,42 @@ def test_detail_image_translate_apply_workflow_lives_outside_route_module():
     assert Path("web/services/media_detail_translation.py").exists()
 
 
+def test_detail_image_mutation_workflows_live_outside_route_module():
+    module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "api_detail_images_delete",
+        "api_detail_images_clear_all",
+        "api_detail_images_reorder",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+        direct_dao_calls = [
+            call.func.attr
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "medias"
+            and call.func.attr
+            in {
+                "soft_delete_detail_image",
+                "soft_delete_detail_images_by_lang",
+                "reorder_detail_images",
+            }
+        ]
+        assert direct_dao_calls == []
+    route_source = "\n".join(route_sources)
+
+    assert "english detail images cannot be cleared via this endpoint" not in route_source
+    assert Path("web/services/media_detail_mutations.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",
