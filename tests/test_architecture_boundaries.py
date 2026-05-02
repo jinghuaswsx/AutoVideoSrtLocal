@@ -58,6 +58,12 @@ def test_appcore_modules_do_not_import_web_package():
     assert offenders == []
 
 
+def test_video_creation_route_uses_project_state_helper_for_state_json_writes():
+    source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
+
+    assert "UPDATE projects SET state_json" not in source
+
+
 def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
     allowed_paths = {
         "appcore/gemini_image.py",

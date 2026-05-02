@@ -19,7 +19,7 @@ from appcore.task_recovery import (
 )
 from appcore.settings import get_retention_hours
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
-from appcore.project_state import update_project_state
+from appcore.project_state import save_project_state, update_project_state
 from appcore.safe_paths import PathSafetyError, remove_file_under_roots
 from config import DOUBAO_LLM_BASE_URL_DEFAULT, UPLOAD_DIR, OUTPUT_DIR
 from pipeline.storage import upload_file as public_exchange_upload
@@ -614,10 +614,7 @@ def delete_asset(task_id: str, kind: str, idx: int):
     else:
         return jsonify(error="unknown kind"), 400
 
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
-    )
+    save_project_state(task_id, state, execute_func=db_execute)
     return jsonify({"status": "ok"})
 
 
@@ -674,10 +671,7 @@ def add_asset(task_id: str, kind: str):
     else:
         return jsonify(error="unknown kind"), 400
 
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
-    )
+    save_project_state(task_id, state, execute_func=db_execute)
     return jsonify({"status": "ok"})
 
 
@@ -716,9 +710,11 @@ def regenerate(task_id: str):
     state["result_video_path"] = None
     state["seedance_task_id"] = None
     try:
-        db_execute(
-            "UPDATE projects SET state_json = %s, status = 'uploaded' WHERE id = %s",
-            (json.dumps(state, ensure_ascii=False), task_id),
+        save_project_state(
+            task_id,
+            state,
+            status="uploaded",
+            execute_func=db_execute,
         )
         _start_generation_background(task_id, seedance_cfg, state)
     except BaseException:
