@@ -47,7 +47,12 @@ from config import OUTPUT_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
 from web.routes import image_translate as image_translate_routes
-from web.services import image_translate_runner, link_check_runner, media_object_storage
+from web.services import (
+    image_translate_runner,
+    link_check_runner,
+    media_object_storage,
+    media_product_translate,
+)
 
 import re
 
@@ -1602,67 +1607,17 @@ def api_product_translate(pid: int):
         return blocked
 
     body = request.get_json(silent=True) or {}
-    raw_ids = body.get("raw_ids") or []
-    target_langs = body.get("target_langs") or []
-    content_types = body.get("content_types") or ["copywriting", "detail_images", "video_covers", "videos"]
-    allowed_content_types = {"copywriting", "detail_images", "video_covers", "videos"}
-
-    if ("videos" in content_types or "video_covers" in content_types) and not raw_ids:
-        return jsonify({"error": "raw_ids 涓嶈兘涓虹┖"}), 400
-    if not target_langs:
-        return jsonify({"error": "target_langs 涓嶈兘涓虹┖"}), 400
-
-    if not isinstance(content_types, list) or not content_types:
-        return jsonify({"error": "content_types 娑撳秷鍏樻稉铏光敄"}), 400
-
-    try:
-        raw_ids_int = [int(x) for x in raw_ids]
-    except (TypeError, ValueError):
-        return jsonify({"error": "raw_ids must be integers"}), 400
-
-    rows = medias.list_raw_sources(pid)
-    valid_ids = {int(r["id"]) for r in rows}
-    bad = [rid for rid in raw_ids_int if rid not in valid_ids]
-    if bad:
-        return jsonify({"error": f"raw_ids 涓嶅睘浜庤浜у搧鎴栧凡鍒犻櫎: {bad}"}), 400
-
-    for lang in target_langs:
-        if lang == "en" or not medias.is_valid_language(lang):
-            return jsonify({"error": f"target_langs 闈炴硶: {lang}"}), 400
-
-    for content_type in content_types:
-        if content_type not in allowed_content_types:
-            return jsonify({"error": f"content_types 闂堢偞纭? {content_type}"}), 400
-
-    from appcore.bulk_translate_runtime import create_bulk_translate_task, start_task
-    from web.routes.bulk_translate import start_bulk_scheduler_background
-
-    initiator = {
-        "user_id": current_user.id,
-        "user_name": getattr(current_user, "username", "") or "",
-        "ip": request.remote_addr or "",
-        "user_agent": request.headers.get("User-Agent", "") or "",
-        "source": "medias_raw_translate",
-    }
-    task_id = create_bulk_translate_task(
+    result = media_product_translate.start_product_translation(
         user_id=current_user.id,
         product_id=pid,
-        target_langs=target_langs,
-        content_types=content_types,
-        force_retranslate=bool(body.get("force_retranslate")),
-        video_params=body.get("video_params") or {},
-        initiator=initiator,
-        raw_source_ids=raw_ids_int,
+        user_name=getattr(current_user, "username", "") or "",
+        body=body,
+        ip=request.remote_addr or "",
+        user_agent=request.headers.get("User-Agent", "") or "",
     )
-    start_task(task_id, current_user.id)
-    start_bulk_scheduler_background(
-        task_id,
-        user_id=current_user.id,
-        entrypoint="medias.raw_translate",
-        action="start",
-        details={"source": "medias_raw_translate"},
-    )
-    return jsonify({"task_id": task_id}), 202
+    if not result.ok:
+        return jsonify({"error": result.error}), result.status_code
+    return jsonify({"task_id": result.task_id}), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/translation-tasks", methods=["GET"])

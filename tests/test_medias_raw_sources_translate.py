@@ -19,11 +19,14 @@ def pid():
 def patch_bt(monkeypatch):
     fake_create = MagicMock(return_value="task-xyz")
     fake_start = MagicMock()
-    fake_background = MagicMock()
+    fake_scheduler = MagicMock(return_value=True)
     monkeypatch.setattr(btr, "create_bulk_translate_task", fake_create)
     monkeypatch.setattr(btr, "start_task", fake_start)
-    monkeypatch.setattr("web.routes.medias.start_background_task", fake_background)
-    return fake_create, fake_start, fake_background
+    monkeypatch.setattr(
+        "web.services.media_product_translate.start_bulk_scheduler_background",
+        fake_scheduler,
+    )
+    return fake_create, fake_start, fake_scheduler
 
 
 def _stub_product(monkeypatch, pid, *, raw_sources=None, valid_langs=None):
@@ -55,7 +58,7 @@ def test_translate_empty_raw_ids(authed_client_no_db, pid, monkeypatch, patch_bt
 
 def test_translate_non_video_types_do_not_require_raw_ids(authed_client_no_db, pid, monkeypatch, patch_bt):
     _stub_product(monkeypatch, pid, raw_sources=[], valid_langs={"de", "fr"})
-    fake_create, _fake_start, _fake_background = patch_bt
+    fake_create, _fake_start, _fake_scheduler = patch_bt
 
     resp = authed_client_no_db.post(
         f"/medias/api/products/{pid}/translate",
@@ -110,7 +113,7 @@ def test_translate_invalid_lang(authed_client_no_db, pid, monkeypatch, patch_bt)
 
 def test_translate_ok(authed_client_no_db, pid, monkeypatch, patch_bt):
     _stub_product(monkeypatch, pid, raw_sources=[{"id": 88}], valid_langs={"de", "fr"})
-    fake_create, fake_start, fake_background = patch_bt
+    fake_create, fake_start, fake_scheduler = patch_bt
 
     resp = authed_client_no_db.post(
         f"/medias/api/products/{pid}/translate",
@@ -124,9 +127,13 @@ def test_translate_ok(authed_client_no_db, pid, monkeypatch, patch_bt):
     assert kwargs["target_langs"] == ["de", "fr"]
     assert kwargs["content_types"] == ["copywriting", "detail_images", "video_covers", "videos"]
     fake_start.assert_called_once_with("task-xyz", 1)
-    bg_args, _bg_kwargs = fake_background.call_args
-    assert callable(bg_args[0])
-    assert bg_args[1] == "task-xyz"
+    fake_scheduler.assert_called_once_with(
+        "task-xyz",
+        user_id=1,
+        entrypoint="medias.raw_translate",
+        action="start",
+        details={"source": "medias_raw_translate"},
+    )
 
 
 def test_product_detail_items_include_raw_source_provenance(authed_client_no_db, monkeypatch):
