@@ -25,6 +25,10 @@ from appcore import image_translate_settings as its
 
 
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
+_MAX_RAW_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
+_MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
+_ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+_ALLOWED_RAW_VIDEO_TYPES = ("video/mp4", "video/quicktime")
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$")
 _PRODUCT_CODE_SUFFIX = "-rjc"
 _PRODUCT_CODE_SUFFIX_ERROR = "Product ID 必须以 -RJC 结尾"
@@ -436,3 +440,14 @@ def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
     archive_name = f"{base_code}_{lang}_detail-images"
     country_prefix = _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES.get((lang or "").strip().lower())
     return f"{country_prefix}-{archive_name}" if country_prefix else archive_name
+
+
+
+def _delete_media_object(object_key: str | None) -> None:
+    key = (object_key or "").strip()
+    if not key:
+        return
+    try:
+        local_media_storage.delete(key)
+    except Exception:
+        pass
