@@ -7,7 +7,7 @@ import os
 import time
 import uuid
 
-from flask import Blueprint, render_template, request, jsonify, send_file
+from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
@@ -23,6 +23,7 @@ from config import UPLOAD_DIR, OUTPUT_DIR
 from pipeline.video_review import get_review_prompts, save_review_prompts
 from web.background import start_background_task
 from web.extensions import socketio
+from web.services.artifact_download import safe_task_file_response
 from web.upload_util import save_uploaded_file_to_path
 
 log = logging.getLogger(__name__)
@@ -288,9 +289,7 @@ def get_video(task_id: str):
         return "Not Found", 404
     state = json.loads(row.get("state_json") or "{}")
     path = state.get("video_path")
-    if not path or not os.path.exists(path):
-        return "Not Found", 404
-    return send_file(path)
+    return safe_task_file_response(state, path, not_found_message="Not Found")
 
 
 @bp.route("/api/video-review/prompts", methods=["GET"])
