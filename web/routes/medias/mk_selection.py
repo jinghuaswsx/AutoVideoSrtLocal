@@ -21,6 +21,14 @@ from . import bp
 from ._helpers import _MAX_MK_VIDEO_BYTES, _MK_VIDEO_CACHE_PREFIX, _dianxiaomi_rankings_columns
 
 
+_MK_TOKEN_FILE = Path("C:/店小秘/mk_token.txt")
+_MK_CREDENTIALS_MISSING_ERROR = "明空凭据未配置，请先在设置页同步 wedev 凭据"
+
+
+class MkCredentialsMissingError(RuntimeError):
+    pass
+
+
 def _routes():
     from web.routes import medias as routes
     return routes
@@ -142,6 +150,8 @@ def api_mk_media_proxy():
     headers = _build_mk_request_headers()
     headers.pop("Content-Type", None)
     headers["Accept"] = "image/*,*/*;q=0.8"
+    if not _has_mk_credentials(headers):
+        return _mk_credentials_missing_response()
     url = f"{_get_mk_api_base_url()}/medias/{quote(media_path, safe='/')}"
     try:
         resp = requests.get(url, headers=headers, timeout=20)
@@ -174,6 +184,8 @@ def api_mk_video_proxy():
 
     try:
         object_key = _cache_mk_video(media_path)
+    except MkCredentialsMissingError:
+        return _mk_credentials_missing_response()
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except requests.HTTPError as exc:
@@ -250,6 +262,8 @@ def _cache_mk_video(media_path: str) -> str:
         return object_key
 
     headers = _build_mk_request_headers()
+    if not _has_mk_credentials(headers):
+        raise MkCredentialsMissingError()
     headers.pop("Content-Type", None)
     headers["Accept"] = "video/*,*/*;q=0.8"
     url = f"{_get_mk_api_base_url()}/medias/{quote(media_path, safe='/')}"
@@ -307,6 +321,14 @@ def _build_mk_request_headers() -> dict[str, str]:
     return headers
 
 
+def _has_mk_credentials(headers: dict[str, str]) -> bool:
+    return bool((headers.get("Authorization") or "").strip() or (headers.get("Cookie") or "").strip())
+
+
+def _mk_credentials_missing_response():
+    return jsonify({"error": _MK_CREDENTIALS_MISSING_ERROR}), 500
+
+
 def _is_mk_login_expired(data: dict) -> bool:
     if not isinstance(data, dict):
         return False
@@ -319,9 +341,6 @@ def _get_mk_token() -> str:
     token = os.environ.get("MK_API_TOKEN", "").strip()
     if token:
         return token
-    # 从文件读取
-    token_file = Path("C:/店小秘/mk_token.txt")
-    if token_file.is_file():
-        return token_file.read_text(encoding="utf-8").strip()
-    # 硬编码 fallback（应尽快迁移到配置）
-    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlmYSIsImV4cCI6MTc3OTUxOTA5MSwiaWF0IjoxNzc2OTI3MDkxLCJqdGkiOiIzNSJ9.Rq_jgNz-f3WHg586FGQIs4DmFhnMHoIDCggJhBWDacM"
+    if _MK_TOKEN_FILE.is_file():
+        return _MK_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    return ""

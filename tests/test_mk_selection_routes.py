@@ -3,6 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def test_mk_selection_token_has_no_hardcoded_fallback(monkeypatch, tmp_path):
+    from web.routes.medias import mk_selection
+
+    monkeypatch.delenv("MK_API_TOKEN", raising=False)
+    monkeypatch.setattr(
+        mk_selection,
+        "_MK_TOKEN_FILE",
+        tmp_path / "missing-mk-token.txt",
+        raising=False,
+    )
+
+    assert mk_selection._get_mk_token() == ""
+
+
+def test_mk_selection_source_does_not_embed_jwt_fallback():
+    source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+
+    assert "eyJhbGci" not in source
+
+
 def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     response = authed_client_no_db.get("/medias/mk-selection")
 
@@ -182,6 +202,30 @@ def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(
     assert captured["timeout"] == 20
 
 
+def test_mk_media_proxy_rejects_missing_wedev_credentials_without_request(
+    authed_client_no_db,
+    monkeypatch,
+):
+    import requests
+    from web.routes.medias import mk_selection
+
+    monkeypatch.setattr(mk_selection.pushes, "build_localized_texts_headers", lambda: {})
+    monkeypatch.setattr(mk_selection, "_get_mk_token", lambda: "")
+    monkeypatch.setattr(mk_selection, "_get_mk_api_base_url", lambda: "https://wedev.example")
+
+    def fail_get(*_args, **_kwargs):
+        raise requests.ConnectionError("should not request wedev without credentials")
+
+    monkeypatch.setattr(mk_selection.requests, "get", fail_get)
+
+    response = authed_client_no_db.get(
+        "/medias/api/mk-media?path=./medias/uploads2/202505/1747910543.jpg"
+    )
+
+    assert response.status_code == 500
+    assert response.get_json()["error"] == "明空凭据未配置，请先在设置页同步 wedev 凭据"
+
+
 def test_mk_video_proxy_caches_wedev_video_for_local_preview(
     authed_client_no_db,
     monkeypatch,
@@ -252,12 +296,37 @@ def test_mk_video_proxy_caches_wedev_video_for_local_preview(
     assert cached_response.data == payload
 
 
+def test_mk_video_proxy_rejects_missing_wedev_credentials_without_request(
+    authed_client_no_db,
+    monkeypatch,
+):
+    import requests
+    from web.routes.medias import mk_selection
+
+    monkeypatch.setattr(mk_selection.pushes, "build_localized_texts_headers", lambda: {})
+    monkeypatch.setattr(mk_selection, "_get_mk_token", lambda: "")
+    monkeypatch.setattr(mk_selection, "_get_mk_api_base_url", lambda: "https://wedev.example")
+
+    def fail_get(*_args, **_kwargs):
+        raise requests.ConnectionError("should not request wedev without credentials")
+
+    monkeypatch.setattr(mk_selection.requests, "get", fail_get)
+
+    response = authed_client_no_db.get(
+        "/medias/api/mk-video?path=./medias/uploads2/202505/1747910543.mp4"
+    )
+
+    assert response.status_code == 500
+    assert response.get_json()["error"] == "明空凭据未配置，请先在设置页同步 wedev 凭据"
+
+
 def test_mk_video_proxy_rejects_local_media_path_escape(
     authed_client_no_db,
     monkeypatch,
     tmp_path,
 ):
     from web.routes import medias as r
+    from web.routes.medias import mk_selection
 
     media_store = tmp_path / "media_store"
     media_store.mkdir()
@@ -266,7 +335,7 @@ def test_mk_video_proxy_rejects_local_media_path_escape(
     object_key = "mk-selection/videos/demo.mp4"
 
     monkeypatch.setattr(r.local_media_storage, "MEDIA_STORE_DIR", media_store)
-    monkeypatch.setattr(r, "_cache_mk_video", lambda media_path: object_key)
+    monkeypatch.setattr(mk_selection, "_cache_mk_video", lambda media_path: object_key)
     monkeypatch.setattr(r.local_media_storage, "local_path_for", lambda key: outside_file)
 
     response = authed_client_no_db.get(
