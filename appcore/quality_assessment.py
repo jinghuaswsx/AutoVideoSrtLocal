@@ -10,7 +10,7 @@ import logging
 import threading
 from typing import Any
 
-from appcore import task_state
+from appcore import runner_lifecycle, task_state
 from appcore.db import execute as db_execute, query_one as db_query_one
 from pipeline import translation_quality
 
@@ -100,14 +100,42 @@ def trigger_assessment(
     )
 
     if run_in_thread:
-        threading.Thread(
-            target=_run_assessment_job,
-            kwargs={
-                "task_id": task_id, "project_type": project_type,
-                "run_id": run_id, "user_id": user_id,
-            },
-            daemon=True,
-        ).start()
+        try:
+            started = runner_lifecycle.start_tracked_thread(
+                project_type="translation_quality",
+                task_id=task_id,
+                target=_run_assessment_job,
+                kwargs={
+                    "task_id": task_id, "project_type": project_type,
+                    "run_id": run_id, "user_id": user_id,
+                },
+                daemon=True,
+                user_id=user_id,
+                runner="appcore.quality_assessment._run_assessment_job",
+                entrypoint="quality_assessment.trigger",
+                stage="queued_assessment",
+                details={
+                    "run_id": run_id,
+                    "source_project_type": project_type,
+                    "triggered_by": triggered_by,
+                },
+            )
+        except BaseException as exc:
+            db_execute(
+                "UPDATE translation_quality_assessments SET "
+                "status='failed', error_text=%s, completed_at=NOW() "
+                "WHERE task_id=%s AND run_id=%s",
+                (str(exc), task_id, run_id),
+            )
+            raise
+        if not started:
+            db_execute(
+                "UPDATE translation_quality_assessments SET "
+                "status='failed', error_text=%s, completed_at=NOW() "
+                "WHERE task_id=%s AND run_id=%s",
+                ("assessment already running", task_id, run_id),
+            )
+            raise AssessmentInProgressError(run_id)
     return run_id
 
 
