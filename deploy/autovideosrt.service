@@ -19,11 +19,10 @@ RestartSec=5
 # Cooperative shutdown is wired in deploy/gunicorn.conf.py:
 # post_worker_init chains SIGTERM into the process shutdown coordinator
 # and stops APScheduler before Gunicorn drains. Tracked tasks honour the
-# cancellation points; worker_exit waits up to 45s for them to drain.
-# 120s here = 60s gunicorn graceful_timeout + 60s systemd buffer; if a
-# single ffmpeg/curl call genuinely refuses to return inside that window
-# we accept SIGKILL (better fast restart than silent 15-minute wait).
-TimeoutStopSec=120
+# cancellation points; worker_exit waits up to 10s for them to drain.
+# 45s here = 15s gunicorn graceful_timeout + systemd buffer; publishing must
+# still run the active task pre-restart check before restarting the service.
+TimeoutStopSec=45
 LimitNOFILE=65535
 
 [Install]

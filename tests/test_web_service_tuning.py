@@ -451,9 +451,9 @@ def test_gunicorn_service_uses_threaded_config():
     assert 'worker_class = "gthread"' in config
     assert "workers = 1" in config
     assert "threads = 32" in config
-    assert 'AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "60"' in config
-    assert 'AUTOVIDEOSRT_GUNICORN_DRAIN_TIMEOUT", "45"' in config
-    assert "TimeoutStopSec=120" in service
+    assert 'AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "15"' in config
+    assert 'AUTOVIDEOSRT_GUNICORN_DRAIN_TIMEOUT", "10"' in config
+    assert "TimeoutStopSec=45" in service
     assert "simple-websocket" in requirements
     assert "\neventlet" not in requirements
 
@@ -546,7 +546,7 @@ def test_gunicorn_worker_exit_logs_active_task_details(monkeypatch):
 
     module.worker_exit(None, FakeWorker())
 
-    assert wait_timeouts == [45]
+    assert wait_timeouts == [10]
     joined = "\n".join(messages)
     assert "active unfinished task" in joined
     assert "video_creation:vc-shutdown" in joined

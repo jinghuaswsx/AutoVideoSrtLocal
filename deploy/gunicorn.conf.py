@@ -11,11 +11,11 @@ docs/superpowers/specs/2026-05-01-graceful-shutdown-worker-lifecycle-design.md):
   process-level shutdown coordinator and stops APScheduler before
   deferring to Gunicorn's own handler.
 - worker_exit snapshots active tasks, triggers the coordinator one more
-  time, stops APScheduler as a fallback, and waits up to 45s for in-flight
+  time, stops APScheduler as a fallback, and waits up to 10s for in-flight
   tracked threads to honour the cooperative cancellation points and
   unregister.
-- graceful_timeout shrunk from 900s to 60s now that pre-restart blocks
-  tracked long-running tasks and the signal chain stops new scheduled work.
+- graceful_timeout shrunk from 900s to 15s now that pre-restart blocks
+  tracked long-running tasks and Socket.IO polling requests can reconnect.
 """
 
 from __future__ import annotations
@@ -35,11 +35,11 @@ threads = 32
 bind = os.getenv("AUTOVIDEOSRT_GUNICORN_BIND", bind)
 threads = int(os.getenv("AUTOVIDEOSRT_GUNICORN_THREADS", str(threads)))
 timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_TIMEOUT", "300"))
-# 60s keeps deploy downtime bounded even when browser Socket.IO polling
-# requests are open. Long background tasks are protected by the mandatory
-# pre-restart active task check rather than by a long Gunicorn drain window.
-graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "60"))
-drain_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_DRAIN_TIMEOUT", "45"))
+# Keep deploy downtime bounded even when browser Socket.IO polling requests
+# are open. Long background tasks are protected by the mandatory pre-restart
+# active task check rather than by a long Gunicorn drain window.
+graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "15"))
+drain_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_DRAIN_TIMEOUT", "10"))
 keepalive = int(os.getenv("AUTOVIDEOSRT_GUNICORN_KEEPALIVE", "10"))
 capture_output = True
 accesslog = "-"
