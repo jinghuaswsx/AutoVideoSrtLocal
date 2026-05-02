@@ -733,7 +733,7 @@ def test_generate_via_apimart_uses_dynamic_model_id():
 
     with patch("appcore.gemini_image.requests.post", return_value=submit_mock) as m_post, \
          patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
-         patch("appcore.gemini_image.time.sleep"):
+         patch("appcore.gemini_image.cancellable_sleep"):
         gemini_image._generate_via_apimart(
             "p", b"R", "image/png",
             api_key="key",
@@ -779,7 +779,7 @@ def test_generate_via_apimart_success():
 
     with patch("appcore.gemini_image.requests.post", return_value=submit_mock), \
          patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
-         patch("appcore.gemini_image.time.sleep"):
+         patch("appcore.gemini_image.cancellable_sleep"):
         result_bytes, result_mime, raw = gemini_image._generate_via_apimart(
             "翻译这张图",
             b"RAW-IMAGE",
@@ -821,7 +821,7 @@ def test_generate_via_apimart_uses_configured_base_url():
 
     with patch("appcore.gemini_image.requests.post", return_value=submit_mock) as m_post, \
          patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
-         patch("appcore.gemini_image.time.sleep"):
+         patch("appcore.gemini_image.cancellable_sleep"):
         gemini_image._generate_via_apimart(
             "prompt",
             b"RAW",
@@ -856,7 +856,7 @@ def test_generate_via_apimart_task_failed():
 
     with patch("appcore.gemini_image.requests.post", return_value=submit_mock), \
          patch("appcore.gemini_image.requests.get", return_value=poll_mock), \
-         patch("appcore.gemini_image.time.sleep"):
+         patch("appcore.gemini_image.cancellable_sleep"):
         with pytest.raises(gemini_image.GeminiImageError, match="content policy violation"):
             gemini_image._generate_via_apimart(
                 "prompt",
@@ -960,7 +960,7 @@ def test_poll_apimart_task_returns_result_for_completed():
         return poll_mock if "tasks" in url else img_mock
 
     with patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
-         patch("appcore.gemini_image.time.sleep") as m_sleep:
+         patch("appcore.gemini_image.cancellable_sleep") as m_sleep:
         out, mime, raw = gemini_image.poll_apimart_task(
             "task_resumed", api_key="key", initial_wait=False,
         )
@@ -993,7 +993,7 @@ def test_poll_apimart_task_uses_configured_base_url():
         return poll_mock if "/v1/tasks/" in url else img_mock
 
     with patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
-         patch("appcore.gemini_image.time.sleep"):
+         patch("appcore.gemini_image.cancellable_sleep"):
         gemini_image.poll_apimart_task(
             "task_custom_poll",
             api_key="key",
@@ -1017,7 +1017,7 @@ def test_poll_apimart_task_raises_on_failed_status():
         },
     }
     with patch("appcore.gemini_image.requests.get", return_value=poll_mock), \
-         patch("appcore.gemini_image.time.sleep"):
+         patch("appcore.gemini_image.cancellable_sleep"):
         with pytest.raises(gemini_image.GeminiImageError, match="blocked by content policy"):
             gemini_image.poll_apimart_task("task_fail", api_key="key", initial_wait=False)
 
@@ -1085,7 +1085,7 @@ def test_generate_via_apimart_invokes_on_submitted_callback():
     captured = []
     with patch("appcore.gemini_image.requests.post", return_value=submit_mock), \
          patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
-         patch("appcore.gemini_image.time.sleep"):
+         patch("appcore.gemini_image.cancellable_sleep"):
         gemini_image._generate_via_apimart(
             "prompt", b"RAW", "image/png",
             api_key="key",
