@@ -35,3 +35,13 @@ def test_is_admin_user_reads_flask_login_user_shape():
     assert is_admin_user(SimpleNamespace(is_admin=True)) is True
     assert is_admin_user(SimpleNamespace(is_admin=False)) is False
     assert is_admin_user(SimpleNamespace()) is False
+
+
+def test_optional_user_id_reads_authenticated_flask_login_user():
+    from types import SimpleNamespace
+
+    from web.services.task_access import optional_user_id
+
+    assert optional_user_id(SimpleNamespace(id=42, is_authenticated=True)) == 42
+    assert optional_user_id(SimpleNamespace(id=42, is_authenticated=False)) is None
+    assert optional_user_id(SimpleNamespace(id=42)) is None

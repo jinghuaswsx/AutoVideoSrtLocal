@@ -63,7 +63,7 @@ from web.services.task_av_rewrite import (
     rebuild_tts_full_audio,
     resolve_av_voice_ids,
 )
-from web.services.task_access import get_user_task, is_admin_user
+from web.services.task_access import get_user_task, is_admin_user, optional_user_id
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -128,7 +128,7 @@ def upload():
     os.makedirs(task_dir, exist_ok=True)
 
     video_path, file_size, content_type = save_uploaded_video(file, UPLOAD_DIR, task_id, original_filename)
-    user_id = current_user.id if current_user.is_authenticated else None
+    user_id = optional_user_id(current_user)
 
     store.create(
         task_id,
@@ -334,7 +334,7 @@ def confirm_voice(task_id: str):
     pipeline_runner.resume(
         task_id,
         "alignment",
-        user_id=current_user.id if current_user.is_authenticated else None,
+        user_id=optional_user_id(current_user),
     )
     return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
 
@@ -457,7 +457,7 @@ def restart(task_id):
         subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
         subtitle_position=body.get("subtitle_position", "bottom"),
         interactive_review=parse_bool(body.get("interactive_review", False)),
-        user_id=current_user.id if current_user.is_authenticated else None,
+        user_id=optional_user_id(current_user),
         runner=pipeline_runner,
         step_order=AV_SYNC_STEPS,
     )
@@ -512,7 +512,7 @@ def start(task_id):
         updated_task = store.get(task_id) or task
         return jsonify({"status": "source_ready", "task": updated_task})
 
-    user_id = current_user.id if current_user.is_authenticated else None
+    user_id = optional_user_id(current_user)
     pipeline_runner.start(task_id, user_id=user_id)
     updated_task = store.get(task_id) or task
     return jsonify({"status": "started", "task": updated_task})
@@ -553,7 +553,7 @@ def start_translate(task_id):
     store.update(task_id, **updates)
     store.set_current_review_step(task_id, "")
 
-    user_id = current_user.id if current_user.is_authenticated else None
+    user_id = optional_user_id(current_user)
     pipeline_runner.resume(task_id, "translate", user_id=user_id)
     return jsonify({"status": "started"})
 
@@ -732,7 +732,7 @@ def update_alignment(task_id):
         store.set_step_message(task_id, "translate", "请选择翻译模型和提示词")
         store.update(task_id, _translate_pre_select=True)
     else:
-        pipeline_runner.resume(task_id, "translate", user_id=current_user.id if current_user.is_authenticated else None)
+        pipeline_runner.resume(task_id, "translate", user_id=optional_user_id(current_user))
     return jsonify({"status": "ok", "script_segments": script_segments})
 
 
@@ -794,7 +794,7 @@ def update_segments(task_id):
     store.set_current_review_step(task_id, "")
     store.set_step(task_id, "translate", "done")
     store.set_step_message(task_id, "translate", "翻译确认完成")
-    pipeline_runner.resume(task_id, "tts", user_id=current_user.id if current_user.is_authenticated else None)
+    pipeline_runner.resume(task_id, "tts", user_id=optional_user_id(current_user))
     return jsonify({"status": "ok"})
 
 
@@ -1123,7 +1123,7 @@ def resume_from_step(task_id):
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 409
 
-    user_id = current_user.id if current_user.is_authenticated else None
+    user_id = optional_user_id(current_user)
     pipeline_runner.resume(task_id, start_step, user_id=user_id)
     return jsonify({"status": "started", "start_step": start_step})
 
@@ -1146,7 +1146,7 @@ def run_ai_analysis(task_id):
     if (task.get("steps") or {}).get("analysis") == "running":
         return jsonify({"error": "AI 分析正在运行中"}), 409
 
-    user_id = current_user.id if current_user.is_authenticated else None
+    user_id = optional_user_id(current_user)
     if not pipeline_runner.run_analysis(task_id, user_id=user_id):
         return jsonify({"error": "AI 分析正在运行中"}), 409
     return jsonify({"status": "started"})

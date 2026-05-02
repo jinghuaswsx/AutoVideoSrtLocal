@@ -14,3 +14,9 @@ def get_user_task(task_id: str, *, user_id: int, task_store=store) -> dict | Non
 
 def is_admin_user(user) -> bool:
     return getattr(user, "is_admin", False)
+
+
+def optional_user_id(user) -> int | None:
+    if not getattr(user, "is_authenticated", False):
+        return None
+    return getattr(user, "id", None)
