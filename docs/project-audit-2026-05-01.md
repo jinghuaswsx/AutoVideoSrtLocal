@@ -94,6 +94,8 @@
 - 2026-05-02 测试环境已拉取提交 `248cc564` 并重启 `autovideosrt-test.service` 加载 raw-video-pool/voice-library 文件响应路径边界；服务端运行 `tests/test_raw_video_pool_routes.py tests/test_voice_library_routes.py tests/test_artifact_download_safety.py`：`33 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐任务缩略图路径边界：`/api/tasks/<task_id>/thumbnail` 查询同步带出 `task_dir` 并改用 `safe_task_file_response`，管理员仍可按既有规则查看其他用户缩略图，但文件路径必须位于任务目录或存储根内。聚焦回归：`7 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
 - 2026-05-02 测试环境已拉取提交 `da25c8db` 并重启 `autovideosrt-test.service` 加载任务缩略图路径边界；服务端运行任务缩略图聚焦用例及 `tests/test_artifact_download_safety.py`：`7 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
+- 2026-05-02 当前工作区补齐素材缩略图路径边界：`/medias/thumb/<item_id>` 保留既有产品访问校验，同时改用 `safe_task_file_response` 约束 `thumbnail_path` 必须位于输出存储根内；新增输出根内正常返回与 `../` 逃逸拒绝用例。聚焦回归：`6 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
+- 2026-05-02 测试环境已拉取提交 `c9a8d625` 并重启 `autovideosrt-test.service` 加载素材缩略图路径边界；服务端运行素材缩略图聚焦用例及 `tests/test_artifact_download_safety.py`：`6 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
