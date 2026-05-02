@@ -26,6 +26,11 @@ from appcore.bulk_translate_backfill import (
     sync_video_cover_result,
     sync_video_result,
 )
+from appcore.cancellation import (
+    OperationCancelled,
+    cancellable_sleep,
+    throw_if_cancel_requested,
+)
 from appcore.bulk_translate_estimator import (
     COST_PER_1K_TOKENS_CNY,
     COST_PER_IMAGE_CNY,
@@ -183,12 +188,21 @@ def run_scheduler(
     bus: EventBus | None = None,
     *,
     now_provider=time.time,
-    sleep_fn=time.sleep,
+    sleep_fn=cancellable_sleep,
     max_loops: int | None = None,
 ) -> None:
+    """Drive the bulk-translate parent task scheduler loop.
+
+    ``sleep_fn`` defaults to ``cancellable_sleep`` so a graceful shutdown
+    wakes the scheduler immediately; tests can still inject a fake.
+    The top of every loop also calls ``throw_if_cancel_requested`` so a
+    shutdown that lands while we are between sleeps still aborts in
+    bounded time.
+    """
     loops = 0
     while max_loops is None or loops < max_loops:
         loops += 1
+        throw_if_cancel_requested("bulk_translate.scheduler")
         task = get_task(task_id)
         if not task:
             return
