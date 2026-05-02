@@ -255,6 +255,7 @@ def raw_source_video_url(rid: int):
     p = medias.get_product(int(row["product_id"]))
     if not _can_access_product(p):
         abort(404)
+    _routes()._audit_raw_source_video_access(row)
     return _send_media_object(row["video_object_key"])
 
 

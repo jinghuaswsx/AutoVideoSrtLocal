@@ -28,6 +28,7 @@ from appcore import (
     pushes,
     shopify_image_localizer_release,
     shopify_image_tasks,
+    system_audit,
     task_state,
 )
 from appcore import image_translate_runtime
@@ -90,6 +91,108 @@ from ._serializers import (
 log = logging.getLogger(__name__)
 
 bp = Blueprint("medias", __name__, url_prefix="/medias")
+
+
+def _media_row_label(row: dict | None) -> str:
+    row = row or {}
+    return (
+        str(row.get("display_name") or "").strip()
+        or str(row.get("filename") or "").strip()
+        or str(row.get("name") or "").strip()
+        or str(row.get("product_code") or "").strip()
+        or str(row.get("object_key") or "").strip()
+    )
+
+
+def _audit_media_item_access(item: dict | None) -> None:
+    if not item:
+        return
+    object_key = str(item.get("object_key") or "").strip()
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action="media_video_access",
+        module="medias",
+        target_type="media_item",
+        target_id=item.get("id"),
+        target_label=_media_row_label(item),
+        detail={
+            "product_id": item.get("product_id"),
+            "lang": item.get("lang"),
+            "filename": item.get("filename"),
+            "display_name": item.get("display_name"),
+            "object_key": object_key,
+            "file_size": item.get("file_size"),
+            "range": request.headers.get("Range"),
+        },
+    )
+
+
+def _audit_raw_source_video_access(row: dict | None) -> None:
+    if not row:
+        return
+    object_key = str(row.get("video_object_key") or "").strip()
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action="raw_source_video_access",
+        module="medias",
+        target_type="raw_source",
+        target_id=row.get("id"),
+        target_label=_media_row_label(row),
+        detail={
+            "product_id": row.get("product_id"),
+            "display_name": row.get("display_name"),
+            "object_key": object_key,
+            "file_size": row.get("file_size"),
+            "range": request.headers.get("Range"),
+        },
+    )
+
+
+def _audit_detail_images_zip_download(
+    product: dict | None,
+    product_id: int,
+    *,
+    action: str,
+    detail: dict,
+) -> None:
+    product = product or {}
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action=action,
+        module="medias",
+        target_type="media_product",
+        target_id=product_id,
+        target_label=_media_row_label(product) or str(product_id),
+        detail={
+            "product_id": product_id,
+            "product_code": product.get("product_code"),
+            **detail,
+        },
+    )
+
+
+def _audit_media_item_deleted(item: dict | None) -> None:
+    if not item:
+        return
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action="media_item_deleted",
+        module="medias",
+        target_type="media_item",
+        target_id=item.get("id"),
+        target_label=_media_row_label(item),
+        detail={
+            "product_id": item.get("product_id"),
+            "lang": item.get("lang"),
+            "filename": item.get("filename"),
+            "display_name": item.get("display_name"),
+            "object_key": item.get("object_key"),
+        },
+    )
 
 
 # ---------- 椤甸潰 ----------

@@ -803,6 +803,18 @@ def get_item(item_id: int) -> dict | None:
     )
 
 
+def find_item_by_object_key(object_key: str) -> dict | None:
+    key = str(object_key or "").strip()
+    if not key:
+        return None
+    return query_one(
+        "SELECT * FROM media_items "
+        "WHERE object_key=%s AND deleted_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (key,),
+    )
+
+
 def find_item_by_keys(product_id: int, lang: str, filename: str) -> dict | None:
     """按 (product_id, lang, filename) 三元组精确定位素材。
 

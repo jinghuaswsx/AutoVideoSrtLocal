@@ -130,6 +130,18 @@ def api_detail_images_download_zip(pid: int):
     if not rows:
         abort(404)
 
+    _routes()._audit_detail_images_zip_download(
+        p,
+        pid,
+        action="detail_images_zip_download",
+        detail={
+            "lang": lang,
+            "kind": kind,
+            "file_count": len(rows),
+            "object_keys": [str(row.get("object_key") or "").strip() for row in rows],
+        },
+    )
+
     base = _detail_images_archive_basename(p or {}, pid, lang)
     archive_base = f"{base}_gif" if kind == "gif" else base
     buf = io.BytesIO()
@@ -161,7 +173,7 @@ def api_detail_images_download_localized_zip(pid: int):
 
     product_code = _detail_images_archive_product_code(p or {}, pid)
     archive_base = f"小语种-{product_code}"
-    groups: list[tuple[str, list[dict]]] = []
+    groups: list[tuple[str, str, list[dict]]] = []
     for lang_row in medias.list_languages():
         lang = str(lang_row.get("code") or "").strip().lower()
         if not lang or lang == "en":
@@ -174,15 +186,30 @@ def api_detail_images_download_localized_zip(pid: int):
             continue
         lang_name = _detail_images_archive_part(lang_row.get("name_zh"), lang)
         folder = f"{lang_name}-{product_code}"
-        groups.append((folder, rows))
+        groups.append((lang, folder, rows))
 
     if not groups:
         abort(404)
 
+    _routes()._audit_detail_images_zip_download(
+        p,
+        pid,
+        action="localized_detail_images_zip_download",
+        detail={
+            "languages": [lang for lang, _folder, _rows in groups],
+            "file_count": sum(len(rows) for _lang, _folder, rows in groups),
+            "object_keys": [
+                str(row.get("object_key") or "").strip()
+                for _lang, _folder, rows in groups
+                for row in rows
+            ],
+        },
+    )
+
     buf = io.BytesIO()
     with tempfile.TemporaryDirectory(prefix="localized_detail_images_zip_") as tmp_dir:
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for folder, rows in groups:
+            for _lang, folder, rows in groups:
                 for idx, row in enumerate(rows, start=1):
                     object_key = str(row.get("object_key") or "").strip()
                     suffix = Path(object_key).suffix or ".jpg"

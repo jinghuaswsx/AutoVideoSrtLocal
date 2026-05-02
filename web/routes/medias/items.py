@@ -218,6 +218,7 @@ def api_delete_item(item_id: int):
     if not _can_access_product(p):
         abort(404)
     medias.soft_delete_item(item_id)
+    _routes()._audit_media_item_deleted(it)
     try:
         _delete_media_object(it["object_key"])
     except Exception:

@@ -42,6 +42,8 @@ def media_object_proxy():
     object_key = (request.args.get("object_key") or "").strip()
     if not object_key:
         abort(404)
+    routes = _routes()
+    routes._audit_media_item_access(routes.medias.find_item_by_object_key(object_key))
     return _send_media_object(object_key)
 
 
