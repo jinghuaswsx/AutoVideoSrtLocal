@@ -47,7 +47,11 @@ from web.preview_artifacts import (
 )
 from web import store
 from web.services import pipeline_runner
-from web.services.artifact_download import safe_task_dir_path, serve_artifact_download
+from web.services.artifact_download import (
+    resolve_preview_artifact_path,
+    safe_task_dir_path,
+    serve_artifact_download,
+)
 from web.services.task_av_inputs import (
     AV_SYNC_STEPS,
     av_task_target_lang,
@@ -219,57 +223,6 @@ def upload_page():
         av_target_markets=AV_TARGET_MARKET_OPTIONS,
         av_translate_defaults=build_available_av_translate_inputs(),
     )
-
-
-def _artifact_candidates(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> list[str]:
-    task_dir = (task or {}).get("task_dir") or os.path.join(OUTPUT_DIR, task_id)
-    candidates: list[str] = []
-
-    preview_files = (
-        ((task or {}).get("variants", {}).get(variant, {}).get("preview_files", {}))
-        if variant
-        else (task or {}).get("preview_files", {})
-    )
-    preview_path = preview_files.get(name)
-    if preview_path:
-        candidates.append(preview_path)
-
-    if variant:
-        filename_map = {
-            "tts_full_audio": [f"tts_full.{variant}.mp3", f"tts_full.{variant}.wav"],
-            "soft_video": [f"{task_id}_soft.{variant}.mp4"],
-            "hard_video": [f"{task_id}_hard.{variant}.mp4"],
-        }
-    else:
-        filename_map = {
-            "audio_extract": [f"{task_id}_audio.mp3", f"{task_id}_audio.wav"],
-            "tts_full_audio": ["tts_full.mp3", "tts_full.wav"],
-            "soft_video": [f"{task_id}_soft.mp4", "soft.mp4"],
-            "hard_video": [f"{task_id}_hard.mp4", "hard.mp4"],
-        }
-
-    for filename in filename_map.get(name, []):
-        candidates.append(os.path.join(task_dir, filename))
-
-    return candidates
-
-
-def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> str | None:
-    if not task:
-        return None
-    from appcore.safe_paths import PathSafetyError, resolve_under_allowed_roots
-    from web.services.artifact_download import artifact_allowed_roots
-
-    for path in _artifact_candidates(task_id, name, task, variant=variant):
-        if not path:
-            continue
-        try:
-            safe_path = resolve_under_allowed_roots(path, artifact_allowed_roots(task))
-        except PathSafetyError:
-            continue
-        if safe_path.is_file():
-            return str(safe_path)
-    return None
 
 
 @bp.route("", methods=["POST"])
@@ -549,7 +502,7 @@ def get_artifact(task_id, name):
     if tos_resp is not None:
         return tos_resp
 
-    path = _resolve_artifact_path(task_id, name, task, variant=variant)
+    path = resolve_preview_artifact_path(task_id, name, task, variant=variant)
     if not path:
         return jsonify({"error": "Artifact not found"}), 404
 

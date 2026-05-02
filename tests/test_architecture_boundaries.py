@@ -288,6 +288,14 @@ def test_task_source_video_helpers_live_outside_route_module():
     assert Path("web/services/task_source_video.py").exists()
 
 
+def test_task_preview_artifact_path_helpers_live_outside_route_module():
+    source = Path("web/routes/task.py").read_text(encoding="utf-8")
+
+    assert "def _artifact_candidates" not in source
+    assert "def _resolve_artifact_path" not in source
+    assert Path("web/services/artifact_download.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

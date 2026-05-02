@@ -29,6 +29,61 @@ def preview_artifact_tos_redirect(task: dict, name: str, variant: str | None = N
     return None
 
 
+def _preview_artifact_candidates(
+    task_id: str,
+    name: str,
+    task: dict | None = None,
+    variant: str | None = None,
+) -> list[str]:
+    task_payload = task or {}
+    task_dir = task_payload.get("task_dir") or os.path.join(OUTPUT_DIR, task_id)
+    candidates: list[str] = []
+
+    preview_files = (
+        (task_payload.get("variants", {}).get(variant, {}).get("preview_files", {}))
+        if variant
+        else task_payload.get("preview_files", {})
+    )
+    preview_path = preview_files.get(name)
+    if preview_path:
+        candidates.append(preview_path)
+
+    if variant:
+        filename_map = {
+            "tts_full_audio": [f"tts_full.{variant}.mp3", f"tts_full.{variant}.wav"],
+            "soft_video": [f"{task_id}_soft.{variant}.mp4"],
+            "hard_video": [f"{task_id}_hard.{variant}.mp4"],
+        }
+    else:
+        filename_map = {
+            "audio_extract": [f"{task_id}_audio.mp3", f"{task_id}_audio.wav"],
+            "tts_full_audio": ["tts_full.mp3", "tts_full.wav"],
+            "soft_video": [f"{task_id}_soft.mp4", "soft.mp4"],
+            "hard_video": [f"{task_id}_hard.mp4", "hard.mp4"],
+        }
+
+    for filename in filename_map.get(name, []):
+        candidates.append(os.path.join(task_dir, filename))
+
+    return candidates
+
+
+def resolve_preview_artifact_path(
+    task_id: str,
+    name: str,
+    task: dict | None = None,
+    variant: str | None = None,
+) -> str | None:
+    if not task:
+        return None
+
+    for path in _preview_artifact_candidates(task_id, name, task, variant=variant):
+        safe_path = _safe_artifact_path(task, path)
+        if safe_path and os.path.isfile(safe_path):
+            return safe_path
+    return None
+
+
 def _resolved_variant_key(variant: str | None) -> str:
     return variant or "normal"
 

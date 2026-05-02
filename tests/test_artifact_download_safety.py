@@ -117,3 +117,53 @@ def test_safe_task_file_response_sends_allowed_path(monkeypatch, tmp_path):
     assert result == "sent"
     assert called[0][0][0].endswith("artifact.json")
     assert called[0][1]["mimetype"] == "application/json"
+
+
+def test_resolve_preview_artifact_path_prefers_variant_preview_file(tmp_path):
+    from pathlib import Path
+    from web.services import artifact_download
+
+    task_dir = tmp_path / "task-preview"
+    task_dir.mkdir()
+    preview_file = task_dir / "variant-preview.mp4"
+    fallback_file = task_dir / "task-preview_soft.normal.mp4"
+    preview_file.write_bytes(b"preview")
+    fallback_file.write_bytes(b"fallback")
+
+    task = {
+        "task_dir": str(task_dir),
+        "variants": {
+            "normal": {
+                "preview_files": {"soft_video": str(preview_file)},
+            },
+        },
+    }
+
+    resolved = artifact_download.resolve_preview_artifact_path(
+        "task-preview",
+        "soft_video",
+        task,
+        variant="normal",
+    )
+
+    assert Path(resolved) == preview_file
+
+
+def test_resolve_preview_artifact_path_rejects_paths_outside_allowed_roots(tmp_path):
+    from web.services import artifact_download
+
+    task_dir = tmp_path / "task-preview"
+    task_dir.mkdir()
+    outside_file = tmp_path / "outside.mp3"
+    outside_file.write_bytes(b"outside")
+
+    resolved = artifact_download.resolve_preview_artifact_path(
+        "task-preview",
+        "audio_extract",
+        {
+            "task_dir": str(task_dir),
+            "preview_files": {"audio_extract": str(outside_file)},
+        },
+    )
+
+    assert resolved is None
