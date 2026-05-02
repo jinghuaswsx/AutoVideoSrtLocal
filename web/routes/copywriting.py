@@ -12,7 +12,12 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore import task_state
-from appcore.task_recovery import recover_all_interrupted_tasks, recover_task_if_needed, register_active_task, unregister_active_task
+from appcore.task_recovery import (
+    recover_all_interrupted_tasks,
+    recover_task_if_needed,
+    try_register_active_task,
+    unregister_active_task,
+)
 from appcore.settings import get_retention_hours
 from appcore.copywriting_runtime import CopywritingRunner
 from appcore.events import EventBus
@@ -207,8 +212,22 @@ def upload():
     bus = EventBus()
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
-    register_active_task("copywriting", task_id)
-    start_background_task(_run_copywriting_with_tracking, task_id, runner.start)
+    if not _register_copywriting_task(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="copywriting.upload",
+        stage="queued_start",
+        details={
+            "action": "start",
+            "original_filename": video_filename,
+        },
+    ):
+        return jsonify({"status": "already_running"}), 409
+    try:
+        _start_copywriting_background(task_id, runner.start)
+    except BaseException:
+        unregister_active_task("copywriting", task_id)
+        raise
 
     return jsonify(task_id=task_id), 201
 
@@ -326,19 +345,38 @@ def generate(task_id: str):
 
     # 可选：前端传入 prompt_id 和 provider
     data = request.get_json(silent=True) or {}
+    active_details = {"action": "generate"}
     if data.get("prompt_id"):
-        task_state.update(task_id, prompt_id=data["prompt_id"])
+        active_details["prompt_id"] = data["prompt_id"]
     if data.get("provider"):
-        task_state.update(task_id, cw_provider=data["provider"])
+        active_details["provider"] = data["provider"]
     if data.get("model"):
-        task_state.update(task_id, cw_model=data["model"])
+        active_details["model"] = data["model"]
+
+    if not _register_copywriting_task(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="copywriting.generate",
+        stage="queued_generate",
+        details=active_details,
+    ):
+        return jsonify({"status": "already_running"})
 
     from web.extensions import socketio
     bus = EventBus()
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
-    register_active_task("copywriting", task_id)
-    start_background_task(_run_copywriting_with_tracking, task_id, runner.generate_copy)
+    try:
+        if data.get("prompt_id"):
+            task_state.update(task_id, prompt_id=data["prompt_id"])
+        if data.get("provider"):
+            task_state.update(task_id, cw_provider=data["provider"])
+        if data.get("model"):
+            task_state.update(task_id, cw_model=data["model"])
+        _start_copywriting_background(task_id, runner.generate_copy)
+    except BaseException:
+        unregister_active_task("copywriting", task_id)
+        raise
 
     return jsonify(ok=True)
 
@@ -457,15 +495,30 @@ def start_tts(task_id: str):
 
     # 可选：前端传入 voice_id
     data = request.get_json(silent=True) or {}
+    active_details = {"action": "tts"}
     if data.get("voice_id"):
-        task_state.update(task_id, voice_id=data["voice_id"])
+        active_details["voice_id"] = data["voice_id"]
+
+    if not _register_copywriting_task(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="copywriting.tts",
+        stage="queued_tts",
+        details=active_details,
+    ):
+        return jsonify({"status": "already_running"})
 
     from web.extensions import socketio
     bus = EventBus()
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
-    register_active_task("copywriting", task_id)
-    start_background_task(_run_copywriting_with_tracking, task_id, runner.start_tts_compose)
+    try:
+        if data.get("voice_id"):
+            task_state.update(task_id, voice_id=data["voice_id"])
+        _start_copywriting_background(task_id, runner.start_tts_compose)
+    except BaseException:
+        unregister_active_task("copywriting", task_id)
+        raise
 
     return jsonify(ok=True)
 
@@ -572,8 +625,30 @@ def get_artifact(task_id: str, name: str):
 from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
 
 
+def _register_copywriting_task(
+    task_id: str,
+    *,
+    user_id: int,
+    entrypoint: str,
+    stage: str,
+    details: dict | None = None,
+) -> bool:
+    return try_register_active_task(
+        "copywriting",
+        task_id,
+        user_id=user_id,
+        runner="web.routes.copywriting._run_copywriting_with_tracking",
+        entrypoint=entrypoint,
+        stage=stage,
+        details=details or {},
+    )
+
+
+def _start_copywriting_background(task_id: str, runner_method) -> None:
+    start_background_task(_run_copywriting_with_tracking, task_id, runner_method)
+
+
 def _run_copywriting_with_tracking(task_id: str, runner_method):
-    register_active_task("copywriting", task_id)
     try:
         return runner_method(task_id)
     finally:

@@ -60,8 +60,13 @@ def test_copywriting_generate_uses_background_helper(authed_client, monkeypatch)
 
     task_state._tasks["cw-task"] = {"id": "cw-task", "_user_id": 1, "type": "copywriting"}
     background_calls = []
+    active_registrations = []
 
-    monkeypatch.setattr("web.routes.copywriting.register_active_task", lambda *args: None)
+    monkeypatch.setattr(
+        "web.routes.copywriting.try_register_active_task",
+        lambda *args, **kwargs: active_registrations.append((args, kwargs)) or True,
+        raising=False,
+    )
     monkeypatch.setattr(
         "web.routes.copywriting.start_background_task",
         lambda fn, *args: background_calls.append((fn, args)),
@@ -78,6 +83,126 @@ def test_copywriting_generate_uses_background_helper(authed_client, monkeypatch)
     assert response.status_code == 200
     assert len(background_calls) == 1
     assert background_calls[0][1][0] == "cw-task"
+    assert active_registrations == [
+        (
+            ("copywriting", "cw-task"),
+            {
+                "user_id": 1,
+                "runner": "web.routes.copywriting._run_copywriting_with_tracking",
+                "entrypoint": "copywriting.generate",
+                "stage": "queued_generate",
+                "details": {"action": "generate"},
+            },
+        )
+    ]
+
+
+def test_copywriting_generate_rejects_duplicate_active_task(authed_client, monkeypatch):
+    from appcore import task_state
+
+    task_state._tasks["cw-duplicate"] = {
+        "id": "cw-duplicate",
+        "_user_id": 1,
+        "type": "copywriting",
+    }
+    background_calls = []
+
+    monkeypatch.setattr(
+        "web.routes.copywriting.try_register_active_task",
+        lambda *args, **kwargs: False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.copywriting.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    class FakeRunner:
+        def __init__(self, bus, user_id):
+            self.generate_copy = lambda task_id: None
+
+    monkeypatch.setattr("web.routes.copywriting.CopywritingRunner", FakeRunner)
+
+    response = authed_client.post("/api/copywriting/cw-duplicate/generate", json={})
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "already_running"
+    assert background_calls == []
+
+
+def test_copywriting_tts_uses_active_guard(authed_client, monkeypatch):
+    from appcore import task_state
+
+    task_state._tasks["cw-tts"] = {"id": "cw-tts", "_user_id": 1, "type": "copywriting"}
+    background_calls = []
+    active_registrations = []
+
+    monkeypatch.setattr(
+        "web.routes.copywriting.try_register_active_task",
+        lambda *args, **kwargs: active_registrations.append((args, kwargs)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.copywriting.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    class FakeRunner:
+        def __init__(self, bus, user_id):
+            self.start_tts_compose = lambda task_id: None
+
+    monkeypatch.setattr("web.routes.copywriting.CopywritingRunner", FakeRunner)
+
+    response = authed_client.post("/api/copywriting/cw-tts/tts", json={"voice_id": "voice-1"})
+
+    assert response.status_code == 200
+    assert len(background_calls) == 1
+    assert background_calls[0][1][0] == "cw-tts"
+    assert active_registrations == [
+        (
+            ("copywriting", "cw-tts"),
+            {
+                "user_id": 1,
+                "runner": "web.routes.copywriting._run_copywriting_with_tracking",
+                "entrypoint": "copywriting.tts",
+                "stage": "queued_tts",
+                "details": {"action": "tts", "voice_id": "voice-1"},
+            },
+        )
+    ]
+
+
+def test_copywriting_tts_rejects_duplicate_active_task(authed_client, monkeypatch):
+    from appcore import task_state
+
+    task_state._tasks["cw-tts-duplicate"] = {
+        "id": "cw-tts-duplicate",
+        "_user_id": 1,
+        "type": "copywriting",
+    }
+    background_calls = []
+
+    monkeypatch.setattr(
+        "web.routes.copywriting.try_register_active_task",
+        lambda *args, **kwargs: False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.copywriting.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    class FakeRunner:
+        def __init__(self, bus, user_id):
+            self.start_tts_compose = lambda task_id: None
+
+    monkeypatch.setattr("web.routes.copywriting.CopywritingRunner", FakeRunner)
+
+    response = authed_client.post("/api/copywriting/cw-tts-duplicate/tts", json={})
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "already_running"
+    assert background_calls == []
 
 
 def test_video_creation_upload_uses_background_helper(authed_client, monkeypatch, tmp_path):
