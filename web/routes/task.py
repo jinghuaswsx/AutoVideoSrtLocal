@@ -62,6 +62,7 @@ from web.services.task_av_rewrite import (
     resolve_av_voice_ids,
 )
 from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id, refresh_task
+from web.services.task_analysis import start_task_analysis
 from web.services.task_capcut import deploy_task_capcut_project
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_llm import resolve_translate_billing_provider
@@ -1102,21 +1103,12 @@ def resume_from_step(task_id):
 @login_required
 def run_ai_analysis(task_id):
     """手动触发 AI 视频分析（评分 + CSK），不影响任务整体 status。"""
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    outcome = start_task_analysis(
+        task_id,
+        user_id=current_user.id,
+        query_one=db_query_one,
+        load_task=load_task,
     )
-    if not row:
+    if outcome.not_found:
         return task_not_found_response()
-
-    task = load_task(task_id)
-    if not task:
-        return task_not_found_response()
-
-    if (task.get("steps") or {}).get("analysis") == "running":
-        return jsonify({"error": "AI 分析正在运行中"}), 409
-
-    user_id = optional_user_id(current_user)
-    if not pipeline_runner.run_analysis(task_id, user_id=user_id):
-        return jsonify({"error": "AI 分析正在运行中"}), 409
-    return jsonify({"status": "started"})
+    return jsonify(outcome.payload), outcome.status_code
