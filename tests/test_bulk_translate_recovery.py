@@ -30,7 +30,7 @@ def test_mark_interrupted_bulk_translate_tasks_marks_running_items(monkeypatch):
     count = mod.mark_interrupted_bulk_translate_tasks()
 
     assert count == 1
-    status, payload, task_id = updates[0]
+    payload, status, task_id = updates[0]
     state = json.loads(payload)
     assert status == "interrupted"
     assert state["plan"][0]["status"] == "interrupted"
@@ -39,6 +39,49 @@ def test_mark_interrupted_bulk_translate_tasks_marks_running_items(monkeypatch):
     assert state["progress"]["interrupted"] == 2
     assert state["progress"]["awaiting_voice"] == 1
     assert task_id == "bt-1"
+
+
+def test_mark_interrupted_bulk_translate_tasks_saves_via_project_state(monkeypatch):
+    from appcore import bulk_translate_recovery as mod
+
+    rows = [
+        {
+            "id": "bt-state-helper",
+            "status": "running",
+            "state_json": json.dumps(
+                {
+                    "plan": [
+                        {"idx": 0, "status": "running"},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        }
+    ]
+    saves = []
+    direct_updates = []
+
+    monkeypatch.setattr(mod, "query", lambda sql, args=None: rows)
+    monkeypatch.setattr(mod, "execute", lambda sql, args=None: direct_updates.append((sql, args)) or 1)
+    monkeypatch.setattr(
+        mod,
+        "save_project_state",
+        lambda task_id, state, *, status=None, execute_func=None: saves.append(
+            (task_id, state, status, execute_func)
+        ),
+        raising=False,
+    )
+
+    count = mod.mark_interrupted_bulk_translate_tasks()
+
+    assert count == 1
+    assert len(saves) == 1
+    task_id, state, status, execute_func = saves[0]
+    assert task_id == "bt-state-helper"
+    assert status == "interrupted"
+    assert execute_func is mod.execute
+    assert state["plan"][0]["status"] == "interrupted"
+    assert direct_updates == []
 
 
 def test_mark_interrupted_bulk_translate_tasks_does_not_resume(monkeypatch):
@@ -84,7 +127,7 @@ def test_mark_interrupted_bulk_translate_tasks_marks_running_parent_even_without
     count = mod.mark_interrupted_bulk_translate_tasks()
 
     assert count == 1
-    status, payload, task_id = updates[0]
+    payload, status, task_id = updates[0]
     state = json.loads(payload)
     assert status == "interrupted"
     assert task_id == "bt-pending"

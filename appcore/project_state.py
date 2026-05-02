@@ -31,13 +31,26 @@ def save_project_state(
     state: dict[str, Any],
     *,
     status: str | None = None,
+    display_name: str | None = None,
     execute_func: ExecuteFunc = execute,
 ) -> None:
     payload = json.dumps(state, ensure_ascii=False, default=str)
-    if status is None:
+    if status is None and display_name is None:
         execute_func(
             "UPDATE projects SET state_json = %s WHERE id = %s",
             (payload, task_id),
+        )
+        return
+    if status is None and display_name is not None:
+        execute_func(
+            "UPDATE projects SET state_json = %s, display_name = %s WHERE id = %s",
+            (payload, display_name, task_id),
+        )
+        return
+    if display_name is not None:
+        execute_func(
+            "UPDATE projects SET state_json = %s, status = %s, display_name = %s WHERE id = %s",
+            (payload, status, display_name, task_id),
         )
         return
     execute_func(

@@ -17,6 +17,7 @@ from appcore import llm_client, title_translate_settings
 from appcore.bulk_translate_associations import mark_auto_translated
 from appcore.db import execute, query_one
 from appcore.events import Event, EventBus, EVT_CT_PROGRESS
+from appcore.project_state import save_project_state
 
 log = logging.getLogger(__name__)
 
@@ -250,10 +251,7 @@ class CopywritingTranslateRunner:
     def _save_state(self, patch: dict) -> None:
         self.state.update(patch)
         persist = {k: v for k, v in self.state.items() if not k.startswith("_")}
-        execute(
-            "UPDATE projects SET state_json = %s WHERE id = %s",
-            (json.dumps(persist, ensure_ascii=False, default=str), self.task_id),
-        )
+        save_project_state(self.task_id, persist, execute_func=execute)
 
     def _set_status(self, status: str) -> None:
         execute(

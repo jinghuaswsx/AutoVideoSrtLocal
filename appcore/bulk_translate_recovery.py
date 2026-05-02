@@ -5,6 +5,7 @@ import logging
 
 from appcore.bulk_translate_runtime import compute_progress
 from appcore.db import execute, query
+from appcore.project_state import save_project_state
 
 log = logging.getLogger(__name__)
 _INTERRUPTIBLE_ITEM_STATUSES = {"pending", "dispatching", "running", "syncing_result"}
@@ -43,10 +44,7 @@ def mark_interrupted_bulk_translate_tasks() -> int:
         state["scheduler_anchor_ts"] = None
         state["progress"] = compute_progress(state.get("plan") or [])
         try:
-            execute(
-                "UPDATE projects SET status = %s, state_json = %s WHERE id = %s",
-                ("interrupted", json.dumps(state, ensure_ascii=False), task_id),
-            )
+            save_project_state(task_id, state, status="interrupted", execute_func=execute)
         except Exception:
             log.warning("bulk_translate startup recovery update failed task_id=%s", task_id, exc_info=True)
             continue

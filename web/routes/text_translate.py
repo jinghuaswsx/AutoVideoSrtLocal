@@ -12,6 +12,7 @@ from flask_login import current_user, login_required
 
 from appcore import llm_client
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
+from appcore.project_state import save_project_state
 from pipeline.translate import get_model_display_name, parse_json_content, resolve_provider_config
 
 log = logging.getLogger(__name__)
@@ -224,9 +225,12 @@ def translate(task_id: str):
     if len(source_text or "") > 30:
         display_name += "..."
 
-    db_execute(
-        "UPDATE projects SET status = 'done', display_name = %s, state_json = %s WHERE id = %s",
-        (display_name, json.dumps(state, ensure_ascii=False), task_id),
+    save_project_state(
+        task_id,
+        state,
+        status="done",
+        display_name=display_name,
+        execute_func=db_execute,
     )
     return jsonify({"result": state["result"], "model": model_name})
 

@@ -43,3 +43,27 @@ def test_save_project_state_updates_status_when_provided():
 
     assert "status = %s" in executed["sql"]
     assert executed["args"][1] == "done"
+
+
+def test_save_project_state_updates_status_and_display_name_when_provided():
+    from appcore.project_state import save_project_state
+
+    executed = {}
+
+    def fake_execute(sql, args):
+        executed["sql"] = sql
+        executed["args"] = args
+        return 1
+
+    save_project_state(
+        "task-3",
+        {"status": "done"},
+        status="done",
+        display_name="Translated sample",
+        execute_func=fake_execute,
+    )
+
+    assert executed["sql"] == (
+        "UPDATE projects SET state_json = %s, status = %s, display_name = %s WHERE id = %s"
+    )
+    assert executed["args"] == ('{"status": "done"}', "done", "Translated sample", "task-3")

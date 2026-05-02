@@ -79,6 +79,24 @@ def test_translate_voice_routes_use_project_state_helper_for_state_json_writes()
     assert offenders == []
 
 
+def test_copywriting_translate_runtime_uses_project_state_helper_for_state_json_writes():
+    source = Path("appcore/copywriting_translate_runtime.py").read_text(encoding="utf-8")
+
+    assert "UPDATE projects SET state_json" not in source
+
+
+def test_bulk_translate_recovery_uses_project_state_helper_for_state_json_writes():
+    source = Path("appcore/bulk_translate_recovery.py").read_text(encoding="utf-8")
+
+    assert "UPDATE projects SET status = %s, state_json" not in source
+
+
+def test_text_translate_route_uses_project_state_helper_for_state_json_writes():
+    source = Path("web/routes/text_translate.py").read_text(encoding="utf-8")
+
+    assert "UPDATE projects SET status = 'done', display_name" not in source
+
+
 def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
     allowed_paths = {
         "appcore/gemini_image.py",
