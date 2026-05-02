@@ -90,6 +90,8 @@
 - 2026-05-02 测试环境已拉取提交 `d105a70a` 并重启 `autovideosrt-test.service` 加载字幕去除 artifact 路径边界；服务端运行 `tests/test_subtitle_removal_routes.py tests/test_artifact_download_safety.py`：`46 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐 translate-lab artifact 路径边界：字幕下载、分镜音频和最终视频均改用 `safe_task_file_response`，并新增三类目录外拒绝用例，同时保持任务目录内文件正常返回。聚焦回归：`27 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
 - 2026-05-02 测试环境已拉取提交 `816393bd` 并重启 `autovideosrt-test.service` 加载 translate-lab artifact 路径边界；服务端运行 `tests/test_translate_lab_routes.py tests/test_artifact_download_safety.py`：`27 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
+- 2026-05-02 当前工作区补齐 raw-video-pool 下载和 voice-library 匹配样本音频路径边界：两个接口均改用 `safe_task_file_response`，仅允许返回上传/输出存储根内文件；新增允许根内下载与根外拒绝用例。聚焦回归：`33 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
+- 2026-05-02 测试环境已拉取提交 `248cc564` 并重启 `autovideosrt-test.service` 加载 raw-video-pool/voice-library 文件响应路径边界；服务端运行 `tests/test_raw_video_pool_routes.py tests/test_voice_library_routes.py tests/test_artifact_download_safety.py`：`33 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
