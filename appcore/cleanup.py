@@ -115,7 +115,9 @@ def _cleanup_orphan_uploads() -> None:
         if not os.path.isfile(file_path):
             continue
         try:
-            os.remove(file_path)
+            remove_file_under_roots(file_path, [UPLOAD_DIR])
             log.info("Deleted orphan upload: %s", filename)
+        except PathSafetyError:
+            log.warning("Skip deleting orphan upload outside UPLOAD_DIR: %s", file_path)
         except Exception:
             pass
