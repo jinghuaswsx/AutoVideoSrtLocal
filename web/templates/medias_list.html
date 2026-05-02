@@ -2113,46 +2113,6 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   .oc-pl-info-list { grid-template-columns:1fr; }
 }
 
-/* ── 移动端适配（卡片网格 2 列 + 紧凑工具栏） ── */
-@media (max-width: 768px) {
-  .oc-grid {
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--oc-sp-3);
-  }
-  .oc-card .info { padding: var(--oc-sp-3); }
-  .oc-card .name { font-size: 13px; }
-  .oc-card .color { font-size: 11px; }
-  .oc-card .meta { font-size: 10px; }
-  .oc-header { gap: var(--oc-sp-3); padding-bottom: var(--oc-sp-3); top: 52px; }
-  .oc-header .title { font-size: 18px; }
-  .oc-toolbar { gap: var(--oc-sp-2); padding: var(--oc-sp-3); top: var(--sticky-toolbar-top, 110px); }
-  .oc-search { max-width: none; }
-  .oc-tool-download-btn { padding: 0 12px; height: 32px; font-size: 12px; }
-  /* 产品详情页：去掉桌面 220px 左 inset，移动端全屏化 */
-  #edMask.oc-product-detail-mask {
-    --oc-product-detail-panel-left: 0px;
-    --oc-product-detail-panel-top: 52px;
-    inset: 52px 0 0 0;
-    padding: var(--oc-sp-3);
-  }
-  #edMask.oc-product-detail-mask > .oc-modal-edit {
-    width: calc(100vw - 24px);
-    max-height: calc(100dvh - 76px);
-  }
-}
-
-@media (max-width: 480px) {
-  .oc-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-  .oc-card .info { padding: 8px; gap: 2px; }
-  .oc-card .name { font-size: 12px; }
-  .oc-header .title { font-size: 17px; }
-  .oc-tool-download-meta { font-size: 11px; }
-}
-
 .oc-product-detail-page .oc-header,
 .oc-product-detail-page .oc-toolbar,
 .oc-product-detail-page .oc-list,
@@ -2191,6 +2151,46 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-product-detail-loading {
   min-height:calc(100vh - 112px);
+}
+
+/* ── 移动端适配（卡片网格 2 列 + 紧凑工具栏） ── */
+@media (max-width: 768px) {
+  .oc-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--oc-sp-3);
+  }
+  .oc-card .info { padding: var(--oc-sp-3); }
+  .oc-card .name { font-size: 13px; }
+  .oc-card .color { font-size: 11px; }
+  .oc-card .meta { font-size: 10px; }
+  .oc-header { gap: var(--oc-sp-3); padding-bottom: var(--oc-sp-3); top: 52px; }
+  .oc-header .title { font-size: 18px; }
+  .oc-toolbar { gap: var(--oc-sp-2); padding: var(--oc-sp-3); top: var(--sticky-toolbar-top, 110px); }
+  .oc-search { max-width: none; }
+  .oc-tool-download-btn { padding: 0 12px; height: 32px; font-size: 12px; }
+  /* 产品详情页：去掉桌面 220px 左 inset，移动端全屏化 */
+  #edMask.oc-product-detail-mask {
+    --oc-product-detail-panel-left: 0px;
+    --oc-product-detail-panel-top: 52px;
+    inset: 52px 0 0 0;
+    padding: var(--oc-sp-3);
+  }
+  #edMask.oc-product-detail-mask > .oc-modal-edit {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 76px);
+  }
+}
+
+@media (max-width: 480px) {
+  .oc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .oc-card .info { padding: 8px; gap: 2px; }
+  .oc-card .name { font-size: 12px; }
+  .oc-header .title { font-size: 17px; }
+  .oc-tool-download-meta { font-size: 11px; }
 }
 {% endblock %}
 
