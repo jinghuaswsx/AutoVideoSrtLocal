@@ -6,6 +6,8 @@ import threading
 import types
 from pathlib import Path
 
+import pytest
+
 
 def _reload_tos_clients(monkeypatch, *, use_private: bool):
     monkeypatch.setenv("TOS_PUBLIC_ENDPOINT", "public.tos.example.com")
@@ -267,31 +269,56 @@ def test_upload_media_object_succeeds_when_head_confirms(monkeypatch):
     assert op_names == ["put", "head"]
 
 
-def test_download_file_removes_existing_destination_before_sdk_write(monkeypatch, tmp_path):
+def test_download_file_writes_temp_before_replacing_destination(monkeypatch, tmp_path):
     observed = {}
+    destination = tmp_path / "existing.bin"
 
     class FakeClient:
         def __init__(self, *, endpoint, **kwargs):
             self.endpoint = endpoint
 
         def get_object_to_file(self, bucket, object_key, local_path):
-            observed["exists_before_sdk_write"] = Path(local_path).exists()
+            observed["local_path"] = Path(local_path)
+            observed["destination_before_sdk_write"] = destination.read_bytes()
+            observed["temp_exists_before_sdk_write"] = Path(local_path).exists()
             Path(local_path).write_bytes(b"downloaded")
 
     monkeypatch.setitem(sys.modules, "tos", types.SimpleNamespace(TosClientV2=FakeClient))
     tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
 
-    destination = tmp_path / "existing.bin"
     destination.write_bytes(b"stale")
 
     tos_clients.download_file("artifacts/demo.bin", str(destination))
 
-    assert observed["exists_before_sdk_write"] is False
+    assert observed["local_path"] != destination
+    assert observed["destination_before_sdk_write"] == b"stale"
+    assert observed["temp_exists_before_sdk_write"] is False
     assert destination.read_bytes() == b"downloaded"
 
 
-def test_download_media_file_removes_existing_destination_before_sdk_write(monkeypatch, tmp_path):
+def test_download_file_keeps_existing_destination_when_sdk_fails(monkeypatch, tmp_path):
+    class FakeClient:
+        def __init__(self, *, endpoint, **kwargs):
+            self.endpoint = endpoint
+
+        def get_object_to_file(self, bucket, object_key, local_path):
+            raise RuntimeError("download failed")
+
+    monkeypatch.setitem(sys.modules, "tos", types.SimpleNamespace(TosClientV2=FakeClient))
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
+
+    destination = tmp_path / "existing.bin"
+    destination.write_bytes(b"keep-me")
+
+    with pytest.raises(RuntimeError, match="download failed"):
+        tos_clients.download_file("artifacts/demo.bin", str(destination))
+
+    assert destination.read_bytes() == b"keep-me"
+
+
+def test_download_media_file_writes_temp_before_replacing_destination(monkeypatch, tmp_path):
     observed = {}
+    destination = tmp_path / "existing-media.bin"
 
     class FakeClient:
         def __init__(self, *, endpoint, **kwargs):
@@ -299,18 +326,42 @@ def test_download_media_file_removes_existing_destination_before_sdk_write(monke
 
         def get_object_to_file(self, bucket, object_key, local_path):
             observed["bucket"] = bucket
-            observed["exists_before_sdk_write"] = Path(local_path).exists()
+            observed["local_path"] = Path(local_path)
+            observed["destination_before_sdk_write"] = destination.read_bytes()
+            observed["temp_exists_before_sdk_write"] = Path(local_path).exists()
             Path(local_path).write_bytes(b"media-download")
 
     monkeypatch.setitem(sys.modules, "tos", types.SimpleNamespace(TosClientV2=FakeClient))
     monkeypatch.setenv("TOS_MEDIA_BUCKET", "auto-video-srt-media")
     tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
 
-    destination = tmp_path / "existing-media.bin"
     destination.write_bytes(b"stale")
 
     tos_clients.download_media_file("1/medias/1/source.jpg", destination)
 
     assert observed["bucket"] == "auto-video-srt-media"
-    assert observed["exists_before_sdk_write"] is False
+    assert observed["local_path"] != destination
+    assert observed["destination_before_sdk_write"] == b"stale"
+    assert observed["temp_exists_before_sdk_write"] is False
     assert destination.read_bytes() == b"media-download"
+
+
+def test_download_media_file_keeps_existing_destination_when_sdk_fails(monkeypatch, tmp_path):
+    class FakeClient:
+        def __init__(self, *, endpoint, **kwargs):
+            self.endpoint = endpoint
+
+        def get_object_to_file(self, bucket, object_key, local_path):
+            raise RuntimeError("media download failed")
+
+    monkeypatch.setitem(sys.modules, "tos", types.SimpleNamespace(TosClientV2=FakeClient))
+    monkeypatch.setenv("TOS_MEDIA_BUCKET", "auto-video-srt-media")
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
+
+    destination = tmp_path / "existing-media.bin"
+    destination.write_bytes(b"keep-media")
+
+    with pytest.raises(RuntimeError, match="media download failed"):
+        tos_clients.download_media_file("1/medias/1/source.jpg", destination)
+
+    assert destination.read_bytes() == b"keep-media"

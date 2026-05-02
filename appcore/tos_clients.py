@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -150,13 +152,29 @@ def upload_file(local_path: str, object_key: str, bucket: str | None = None) -> 
     get_server_client().put_object_from_file(_default_bucket(bucket), object_key, local_path)
 
 
-def download_file(object_key: str, local_path: str) -> str:
+def _download_to_temp_then_replace(bucket: str, object_key: str, local_path: str | Path) -> str:
     destination = Path(local_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
-        destination.unlink()
-    get_server_client().get_object_to_file(config.TOS_BUCKET, object_key, str(destination))
+    fd, temp_name = tempfile.mkstemp(prefix="tos_download_", dir=str(destination.parent))
+    os.close(fd)
+    try:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+        get_server_client().get_object_to_file(bucket, object_key, temp_name)
+        os.replace(temp_name, destination)
+    finally:
+        if os.path.exists(temp_name):
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
     return str(destination)
+
+
+def download_file(object_key: str, local_path: str) -> str:
+    return _download_to_temp_then_replace(config.TOS_BUCKET, object_key, local_path)
 
 
 def delete_object(object_key: str, bucket: str | None = None) -> None:
@@ -335,12 +353,7 @@ def download_media_file(
     local_path: str | Path,
     bucket: str | None = None,
 ) -> str:
-    destination = Path(local_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
-        destination.unlink()
-    get_server_client().get_object_to_file(get_media_bucket(bucket), object_key, str(destination))
-    return str(destination)
+    return _download_to_temp_then_replace(get_media_bucket(bucket), object_key, local_path)
 
 
 def upload_media_object(
