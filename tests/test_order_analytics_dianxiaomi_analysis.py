@@ -476,7 +476,7 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert '"/order-analytics/country-dashboard?"' in body
     assert "function initDxmOrders()" in body
     assert "function initCountryDashboard()" in body
-    assert "function setDxmRange(range)" in body
+    assert "function setDxmRange(range, skipLoad)" in body
     assert "function loadDxmOrders(page)" in body
     assert "function renderDxmOrderAnalysis(data)" in body
     assert "function loadCountryDashboard()" in body

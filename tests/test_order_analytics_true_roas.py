@@ -412,9 +412,8 @@ def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
     panel = body[panel_start:panel_end]
 
     assert "北京时间 16:00 切日" in panel
-    assert "var META_REALTIME_CUTOVER_HOUR_BJ = 16;" in body
-    assert "function getRealtimeBusinessDate(now)" in body
-    assert "var now = getRealtimeBusinessDate(new Date());" in body
+    assert "window.orderAnalyticsMetaCalendar" in body
+    assert "function resolveRealtimeRange(range) {\n    return window.orderAnalyticsMetaCalendar.resolveRange(range);\n  }" in body
 
 
 def test_realtime_tab_drops_blue_primary_card_class(authed_client_no_db):

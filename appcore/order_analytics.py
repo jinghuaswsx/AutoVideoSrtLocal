@@ -732,6 +732,11 @@ def _beijing_now() -> datetime:
     return datetime.now(ZoneInfo(META_ATTRIBUTION_TIMEZONE)).replace(tzinfo=None)
 
 
+def current_meta_business_date(now: datetime | None = None) -> date:
+    value = (now or _beijing_now()).replace(microsecond=0)
+    return (value - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+
+
 def _business_hour(value: datetime | None, day_start: datetime) -> int | None:
     if not value:
         return None
@@ -1025,9 +1030,9 @@ def get_realtime_roas_overview(
         # start == end → 走单日分支，把 start_date 作为目标日
         date_text = start_date
 
-    target = _parse_iso_date_param(date_text, "date") if date_text else (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    target = _parse_iso_date_param(date_text, "date") if date_text else current_meta_business_date(now)
     day_start, day_end = compute_meta_business_window_bj(target)
-    current_business_date = (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    current_business_date = current_meta_business_date(now)
     if target == current_business_date:
         data_until = min(now, day_end)
         complete_hour_until = now.replace(minute=0, second=0, microsecond=0)
@@ -1267,7 +1272,7 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
 
     orders_by_day = {row["meta_business_date"]: row for row in order_rows}
     ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
-    today_business = (_beijing_now() - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    today_business = current_meta_business_date()
     rows: list[dict[str, Any]] = []
     totals = {
         "order_count": 0,
@@ -2449,7 +2454,7 @@ def _resolve_period_range(
     - week: ISO 周一 ~ 周日；若为当周，end = 昨日
     - day: date_str ~ date_str
     """
-    today = today or date.today()
+    today = today or current_meta_business_date()
     yesterday = today - timedelta(days=1)
 
     if period == "month":
@@ -2678,7 +2683,7 @@ def get_dashboard(
     today: date | None = None,
 ) -> dict:
     """产品看板查询主入口。详见 spec。"""
-    today = today or date.today()
+    today = today or current_meta_business_date()
     period_type = period
     if start_date and end_date:
         start = _parse_iso_date_param(start_date, "start_date")

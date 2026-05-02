@@ -14,7 +14,7 @@ from typing import Any
 
 from appcore import scheduled_tasks
 from appcore.db import execute, query, query_one
-from appcore.order_analytics import _beijing_now, get_true_roas_summary
+from appcore.order_analytics import current_meta_business_date, get_true_roas_summary
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _week_start_of(value: date) -> date:
 
 def previous_complete_week(now: datetime | None = None) -> tuple[date, date]:
     """返回上一个完整 ISO 周 (week_start=Mon, week_end=Sun)。"""
-    today = (now or _beijing_now()).date()
+    today = current_meta_business_date(now)
     this_week_monday = _week_start_of(today)
     last_week_monday = this_week_monday - timedelta(days=7)
     last_week_sunday = last_week_monday + timedelta(days=6)

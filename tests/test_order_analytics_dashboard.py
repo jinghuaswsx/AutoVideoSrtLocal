@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -65,6 +65,20 @@ def test_resolve_period_range_day():
 def test_resolve_period_range_invalid_period_raises():
     with pytest.raises(ValueError, match="invalid period"):
         oa._resolve_period_range("year", year=2026, today=date(2026, 4, 26))
+
+
+def test_current_meta_business_date_uses_16_bj_cutover():
+    assert oa.current_meta_business_date(datetime(2026, 5, 2, 15, 59, 59)) == date(2026, 5, 1)
+    assert oa.current_meta_business_date(datetime(2026, 5, 2, 16, 0, 0)) == date(2026, 5, 2)
+
+
+def test_resolve_period_range_default_uses_meta_business_today(monkeypatch):
+    monkeypatch.setattr(oa, "_beijing_now", lambda: datetime(2026, 5, 2, 15, 59, 59))
+
+    start, end = oa._resolve_period_range("month", year=2026, month=5)
+
+    assert start == date(2026, 5, 1)
+    assert end == date(2026, 5, 1)
 
 
 def test_resolve_compare_range_full_month_to_prev_full_month():
