@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Optional
 
 from appcore.db import query
-from appcore import realtime_events
+from appcore import realtime_events, runner_lifecycle
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +59,10 @@ def start_sync(*, language: str) -> str:
     with _LOCK:
         if _CURRENT["task"] and _CURRENT["task"].get("status") == "running":
             raise RuntimeError("another sync is running")
+    api_key = _get_api_key()
+    with _LOCK:
+        if _CURRENT["task"] and _CURRENT["task"].get("status") == "running":
+            raise RuntimeError("another sync is running")
         sync_id = "sync_" + uuid.uuid4().hex
         _CURRENT["task"] = {
             "sync_id": sync_id,
@@ -69,13 +73,23 @@ def start_sync(*, language: str) -> str:
             "status": "running",
             "error": None,
         }
-    api_key = _get_api_key()
-    threading.Thread(
+    started = runner_lifecycle.start_tracked_thread(
+        project_type="voice_library_sync",
+        task_id="global",
         target=_run_sync_sync,
         args=(sync_id, language, api_key),
         daemon=True,
-        name="voice-sync",
-    ).start()
+        runner="appcore.voice_library_sync_task._run_sync_sync",
+        entrypoint="voice_library_sync.start",
+        stage="pull_metadata",
+        details={"sync_id": sync_id, "language": language},
+    )
+    if not started:
+        with _LOCK:
+            current = _CURRENT.get("task")
+            if current and current.get("sync_id") == sync_id:
+                _CURRENT["task"] = None
+        raise RuntimeError("another sync is running")
     return sync_id
 
 

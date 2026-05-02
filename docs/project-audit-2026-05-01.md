@@ -64,6 +64,7 @@
 - 2026-05-02 测试环境已拉取提交 `f92223c7` 并重启 `autovideosrt-test.service` 加载文案翻译子任务保护；服务端运行文案翻译子任务启动保护聚焦回归：`3 passed`，`py_compile` 通过；`pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐素材 AI 评估任务的 active 可见性：素材页触发的后台评估改走 `runner_lifecycle.start_tracked_thread`，定时任务 `material_evaluation_tick` 在同步评估每个商品前登记 `material_evaluation:<product_id>` active 记录，重复活跃商品会跳过，评估完成或异常后统一清理。重新运行第 7 项关键组合回归：`222 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `7e162dd6` 并重启 `autovideosrt-test.service` 加载素材 AI 评估 active 保护；服务端运行素材评估后台入口与定时 tick 聚焦回归：`4 passed`，`py_compile` 通过；`pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
+- 2026-05-02 当前工作区补齐管理员语音库同步任务的 active 可见性：`start_sync` 改走 `runner_lifecycle.start_tracked_thread` 登记 `voice_library_sync:global`，保留原有进程内忙碌保护，并新增 active registry 全局防重；API Key 缺失时不再留下假 running 状态。重新运行第 7 项关键组合回归：`148 passed, 2 warnings`。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。

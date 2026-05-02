@@ -15,11 +15,15 @@ from appcore import voice_library_sync_task as vlst
 
 @pytest.fixture(autouse=True)
 def reset():
+    from appcore import active_tasks
+
     vlst._CURRENT["task"] = None
     vlst._CURRENT["summary"] = {}
+    active_tasks.clear_active_tasks_for_tests()
     yield
     vlst._CURRENT["task"] = None
     vlst._CURRENT["summary"] = {}
+    active_tasks.clear_active_tasks_for_tests()
 
 
 class _FakeThread:
@@ -33,7 +37,9 @@ class _FakeThread:
         pass
 
 
-def test_start_when_idle(monkeypatch):
+def test_start_when_idle_registers_active_task(monkeypatch):
+    from appcore import active_tasks
+
     emit = MagicMock()
     monkeypatch.setattr(vlst, "_emit", emit)
     monkeypatch.setattr(vlst, "_get_api_key", lambda: "k")
@@ -49,6 +55,16 @@ def test_start_when_idle(monkeypatch):
     assert cur["status"] == "running"
     assert cur["phase"] == "pull_metadata"
     assert cur["sync_id"] == tid
+    assert active_tasks.is_active("voice_library_sync", "global") is True
+    task = active_tasks.list_active_tasks()[0]
+    assert task.project_type == "voice_library_sync"
+    assert task.task_id == "global"
+    assert task.runner == "appcore.voice_library_sync_task._run_sync_sync"
+    assert task.entrypoint == "voice_library_sync.start"
+    assert task.stage == "pull_metadata"
+    assert task.details["sync_id"] == tid
+    assert task.details["language"] == "de"
+    assert task.details["daemon"] is True
 
 
 def test_emit_uses_registered_admin_realtime_emitter():
@@ -66,7 +82,12 @@ def test_emit_uses_registered_admin_realtime_emitter():
     assert emitted == [("voice_library.sync.progress", {"done": 1})]
 
 
-def test_start_raises_when_busy():
+def test_start_raises_when_busy(monkeypatch):
+    monkeypatch.setattr(
+        vlst,
+        "_get_api_key",
+        lambda: (_ for _ in ()).throw(AssertionError("api key lookup skipped when busy")),
+    )
     vlst._CURRENT["task"] = {
         "sync_id": "x",
         "language": "de",
@@ -74,6 +95,42 @@ def test_start_raises_when_busy():
     }
     with pytest.raises(RuntimeError, match="another sync"):
         vlst.start_sync(language="fr")
+
+
+def test_start_raises_when_global_active_task_exists(monkeypatch):
+    from appcore import task_recovery
+
+    started = []
+
+    class FakeThread(_FakeThread):
+        def start(self):
+            started.append(self)
+
+    monkeypatch.setattr(vlst, "_get_api_key", lambda: "k")
+    monkeypatch.setattr(vlst.threading, "Thread", FakeThread)
+    task_recovery.register_active_task("voice_library_sync", "global")
+
+    with pytest.raises(RuntimeError, match="another sync"):
+        vlst.start_sync(language="de")
+
+    assert started == []
+    assert vlst.get_current() is None
+
+
+def test_start_does_not_mark_running_when_api_key_missing(monkeypatch):
+    from appcore import active_tasks
+
+    monkeypatch.setattr(
+        vlst,
+        "_get_api_key",
+        lambda: (_ for _ in ()).throw(RuntimeError("api key missing")),
+    )
+
+    with pytest.raises(RuntimeError, match="api key missing"):
+        vlst.start_sync(language="de")
+
+    assert vlst.get_current() is None
+    assert active_tasks.list_active_tasks() == []
 
 
 def test_get_current_returns_none_when_idle():
