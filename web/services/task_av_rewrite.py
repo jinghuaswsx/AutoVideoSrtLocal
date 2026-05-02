@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pipeline import tts
+
 
 @dataclass(frozen=True)
 class AvComposeOutputs:
@@ -16,6 +18,29 @@ class AvComposeOutputs:
     variant_exports: dict
     variant_artifacts: dict
     variant_preview_files: dict
+
+
+def resolve_av_voice_ids(
+    task: dict,
+    variant_state: dict,
+    *,
+    user_id: int,
+    get_voice_by_id=None,
+) -> tuple[str | None, str | None]:
+    stored_voice_id = variant_state.get("voice_id") or task.get("voice_id") or task.get("recommended_voice_id")
+    voice = None
+    if stored_voice_id:
+        try:
+            lookup_voice = get_voice_by_id or tts.get_voice_by_id
+            voice = lookup_voice(stored_voice_id, user_id)
+        except Exception:
+            voice = None
+    if not isinstance(voice, dict):
+        elevenlabs_voice_id = stored_voice_id if isinstance(stored_voice_id, str) else None
+        return stored_voice_id, elevenlabs_voice_id
+    resolved_voice_id = voice.get("id") or stored_voice_id
+    elevenlabs_voice_id = voice.get("elevenlabs_voice_id") or voice.get("voice_id") or voice.get("id")
+    return resolved_voice_id, elevenlabs_voice_id
 
 
 def clear_av_compose_outputs(

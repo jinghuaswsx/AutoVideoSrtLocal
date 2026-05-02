@@ -60,7 +60,7 @@ from web.services.task_av_inputs import (
     merge_av_step_maps,
     validate_av_translate_inputs,
 )
-from web.services.task_av_rewrite import clear_av_compose_outputs
+from web.services.task_av_rewrite import clear_av_compose_outputs, resolve_av_voice_ids
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -125,22 +125,6 @@ def _rebuild_tts_full_audio(task_dir: str, segments: list[dict], variant: str = 
     if result.returncode != 0:
         raise RuntimeError(f"音频拼接失败: {result.stderr}")
     return full_audio_path
-
-
-def _resolve_av_voice_ids(task: dict, variant_state: dict) -> tuple[str | None, str | None]:
-    stored_voice_id = variant_state.get("voice_id") or task.get("voice_id") or task.get("recommended_voice_id")
-    voice = None
-    if stored_voice_id:
-        try:
-            voice = tts.get_voice_by_id(stored_voice_id, current_user.id)
-        except Exception:
-            voice = None
-    if not isinstance(voice, dict):
-        elevenlabs_voice_id = stored_voice_id if isinstance(stored_voice_id, str) else None
-        return stored_voice_id, elevenlabs_voice_id
-    resolved_voice_id = voice.get("id") or stored_voice_id
-    elevenlabs_voice_id = voice.get("elevenlabs_voice_id") or voice.get("voice_id") or voice.get("id")
-    return resolved_voice_id, elevenlabs_voice_id
 
 
 def _build_translate_compare_artifact(task: dict) -> dict:
@@ -911,7 +895,7 @@ def av_rewrite_sentence(task_id):
     if not task_dir:
         return jsonify({"error": "任务目录缺失，无法重写"}), 400
 
-    resolved_voice_id, elevenlabs_voice_id = _resolve_av_voice_ids(task, variant_state)
+    resolved_voice_id, elevenlabs_voice_id = resolve_av_voice_ids(task, variant_state, user_id=current_user.id)
     if not elevenlabs_voice_id:
         return jsonify({"error": "未找到可用音色，无法重写配音"}), 400
 

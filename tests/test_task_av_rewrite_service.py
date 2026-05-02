@@ -57,3 +57,44 @@ def test_clear_av_compose_outputs_removes_stale_compose_and_export_state_without
     assert task["result"]["hard_video"] == "/task/hard.mp4"
     assert "av:srt" in task["tos_uploads"]
     assert variant_state["result"]["hard_video"] == "/task/av-hard.mp4"
+
+
+def test_resolve_av_voice_ids_uses_variant_voice_and_database_mapping():
+    from web.services.task_av_rewrite import resolve_av_voice_ids
+
+    calls = []
+
+    def fake_get_voice_by_id(voice_id, user_id):
+        calls.append((voice_id, user_id))
+        return {
+            "id": "voice-row-id",
+            "elevenlabs_voice_id": "elevenlabs-voice-id",
+        }
+
+    resolved_voice_id, elevenlabs_voice_id = resolve_av_voice_ids(
+        {"voice_id": "task-voice", "recommended_voice_id": "recommended-voice"},
+        {"voice_id": "variant-voice"},
+        user_id=42,
+        get_voice_by_id=fake_get_voice_by_id,
+    )
+
+    assert calls == [("variant-voice", 42)]
+    assert resolved_voice_id == "voice-row-id"
+    assert elevenlabs_voice_id == "elevenlabs-voice-id"
+
+
+def test_resolve_av_voice_ids_falls_back_to_stored_string_when_lookup_fails():
+    from web.services.task_av_rewrite import resolve_av_voice_ids
+
+    def failing_get_voice_by_id(_voice_id, _user_id):
+        raise RuntimeError("voice lookup failed")
+
+    resolved_voice_id, elevenlabs_voice_id = resolve_av_voice_ids(
+        {"recommended_voice_id": "recommended-voice"},
+        {},
+        user_id=42,
+        get_voice_by_id=failing_get_voice_by_id,
+    )
+
+    assert resolved_voice_id == "recommended-voice"
+    assert elevenlabs_voice_id == "recommended-voice"
