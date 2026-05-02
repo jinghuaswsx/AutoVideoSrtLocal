@@ -30,7 +30,7 @@ from appcore.av_translate_inputs import (
 )
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import cleanup, tos_backup_storage
+from appcore import cleanup
 from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
@@ -60,6 +60,7 @@ from web.services.task_av_inputs import (
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
+from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -269,23 +270,6 @@ def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, va
         if safe_path.is_file():
             return str(safe_path)
     return None
-
-
-def _ensure_local_source_video(task_id: str, task: dict) -> None:
-    video_path = (task.get("video_path") or "").strip()
-    if not video_path or os.path.exists(video_path):
-        return
-    tos_backup_storage.ensure_local_copy_for_local_path(video_path)
-    if os.path.exists(video_path):
-        return
-    raise FileNotFoundError(
-        f"本地源视频缺失: {video_path}。请先运行本地存储迁移回填，或重新上传源视频。"
-    )
-
-
-def _task_requires_source_sync(task: dict) -> bool:
-    video_path = (task.get("video_path") or "").strip()
-    return bool(video_path and not os.path.exists(video_path))
 
 
 @bp.route("", methods=["POST"])
@@ -516,7 +500,7 @@ def confirm_voice(task_id: str):
 
     updated_task = store.get(task_id) or task
     try:
-        _ensure_local_source_video(task_id, updated_task)
+        ensure_local_source_video(task_id, updated_task)
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 409
 
@@ -732,9 +716,9 @@ def start(task_id):
     )
     task = store.get(task_id) or task
 
-    if _task_requires_source_sync(task):
+    if task_requires_source_sync(task):
         try:
-            _ensure_local_source_video(task_id, task)
+            ensure_local_source_video(task_id, task)
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 409
         updated_task = store.get(task_id) or task
@@ -1348,7 +1332,7 @@ def resume_from_step(task_id):
     store.update(task_id, **resume_payload)
     task = store.get(task_id) or task
     try:
-        _ensure_local_source_video(task_id, task)
+        ensure_local_source_video(task_id, task)
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 409
 

@@ -280,6 +280,14 @@ def test_task_av_input_helpers_live_outside_route_module():
     assert Path("web/services/task_av_inputs.py").exists()
 
 
+def test_task_source_video_helpers_live_outside_route_module():
+    source = Path("web/routes/task.py").read_text(encoding="utf-8")
+
+    assert "def _ensure_local_source_video" not in source
+    assert "def _task_requires_source_sync" not in source
+    assert Path("web/services/task_source_video.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",
