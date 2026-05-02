@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 
 import config
-from flask import Blueprint, render_template, abort, jsonify, request, redirect, send_file, url_for
+from flask import Blueprint, render_template, abort, jsonify, request, redirect, url_for
 from flask_login import login_required, current_user
 
 from appcore import object_keys, subtitle_removal_source_storage, task_state
@@ -19,6 +19,7 @@ from appcore.vod_erase_provider import VodEraseError, get_play_info
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.ffutil import extract_thumbnail, probe_media_info
 from web import store
+from web.services.artifact_download import safe_task_file_response
 from web.services import subtitle_removal_runner
 from web.upload_util import validate_video_extension, write_stream_to_path
 
@@ -789,7 +790,12 @@ def get_source_artifact(task_id: str):
     thumbnail_path = (task.get("thumbnail_path") or "").strip()
     if not thumbnail_path or not os.path.exists(thumbnail_path):
         abort(404)
-    return send_file(thumbnail_path, mimetype="image/jpeg")
+    return safe_task_file_response(
+        task,
+        thumbnail_path,
+        not_found_message="artifact not found",
+        mimetype="image/jpeg",
+    )
 
 
 @bp.route("/api/subtitle-removal/<task_id>/artifact/source-video", methods=["GET"])
@@ -798,7 +804,12 @@ def get_source_video_artifact(task_id: str):
     task = _get_owned_task(task_id)
     video_path = (task.get("video_path") or "").strip()
     if video_path and os.path.exists(video_path):
-        return send_file(video_path, mimetype="video/mp4")
+        return safe_task_file_response(
+            task,
+            video_path,
+            not_found_message="artifact not found",
+            mimetype="video/mp4",
+        )
 
     abort(404)
 
@@ -830,8 +841,19 @@ def _result_response(task: dict, *, as_attachment: bool = False):
     if result_video_path and os.path.exists(result_video_path):
         if as_attachment:
             download_name = f"{(task.get('display_name') or task.get('original_filename') or task.get('id') or 'subtitle-removal').strip()}.cleaned.mp4"
-            return send_file(result_video_path, as_attachment=True, download_name=download_name)
-        return send_file(result_video_path, mimetype="video/mp4")
+            return safe_task_file_response(
+                task,
+                result_video_path,
+                not_found_message="artifact not found",
+                as_attachment=True,
+                download_name=download_name,
+            )
+        return safe_task_file_response(
+            task,
+            result_video_path,
+            not_found_message="artifact not found",
+            mimetype="video/mp4",
+        )
 
     # VOD provider: 产物托管在 VOD，MainPlayUrl 带过期时间，每次都实时重取
     task_id = (task.get("id") or "").strip()

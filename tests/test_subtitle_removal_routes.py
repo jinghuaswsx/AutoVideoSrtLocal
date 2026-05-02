@@ -314,12 +314,14 @@ def test_subtitle_removal_complete_upload_rejects_when_local_file_missing(
 
 
 def test_subtitle_removal_source_artifact_serves_owned_task_thumbnail(tmp_path, authed_client_no_db, monkeypatch):
-    thumbnail = tmp_path / "thumbnail.jpg"
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    thumbnail = task_dir / "thumbnail.jpg"
     thumbnail.write_bytes(b"jpg")
     task = store.create_subtitle_removal(
         "sr-artifact",
         str(tmp_path / "video.mp4"),
-        str(tmp_path / "task"),
+        str(task_dir),
         original_filename="video.mp4",
         user_id=1,
     )
@@ -346,12 +348,14 @@ def test_subtitle_removal_source_artifact_returns_404_without_thumbnail(authed_c
 
 
 def test_subtitle_removal_source_artifact_serves_other_users_task_when_global_visible(tmp_path, authed_client_no_db):
-    thumbnail = tmp_path / "thumbnail.jpg"
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    thumbnail = task_dir / "thumbnail.jpg"
     thumbnail.write_bytes(b"jpg")
     task = store.create_subtitle_removal(
         "sr-artifact-other-user",
         str(tmp_path / "video.mp4"),
-        str(tmp_path / "task"),
+        str(task_dir),
         original_filename="video.mp4",
         user_id=2,
     )
@@ -380,13 +384,34 @@ def test_subtitle_removal_source_artifact_returns_404_for_non_subtitle_removal_t
     assert response.status_code == 404
 
 
+def test_subtitle_removal_source_artifact_rejects_thumbnail_outside_task_storage(tmp_path, authed_client_no_db):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    thumbnail = tmp_path / "thumbnail.jpg"
+    thumbnail.write_bytes(b"jpg")
+    task = store.create_subtitle_removal(
+        "sr-artifact-outside",
+        str(task_dir / "video.mp4"),
+        str(task_dir),
+        original_filename="video.mp4",
+        user_id=1,
+    )
+    store.update(task["id"], thumbnail_path=str(thumbnail))
+
+    response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}/artifact/source")
+
+    assert response.status_code == 404
+
+
 def test_subtitle_removal_source_video_artifact_serves_owned_task_video(tmp_path, authed_client_no_db):
-    video_path = tmp_path / "source.mp4"
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    video_path = task_dir / "source.mp4"
     video_path.write_bytes(b"video")
     task = store.create_subtitle_removal(
         "sr-source-video",
         str(video_path),
-        str(tmp_path / "task"),
+        str(task_dir),
         original_filename="video.mp4",
         user_id=1,
     )
@@ -750,12 +775,14 @@ def test_subtitle_removal_submit_rejects_when_task_lock_is_held_and_does_not_res
 
 
 def test_subtitle_removal_result_artifact_serves_local_result_file(tmp_path, authed_client_no_db):
-    result_path = tmp_path / "result.cleaned.mp4"
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    result_path = task_dir / "result.cleaned.mp4"
     result_path.write_bytes(b"result-video")
     task = store.create_subtitle_removal(
         "sr-result-artifact",
         "uploads/source.mp4",
-        "output/sr-result-artifact",
+        str(task_dir),
         original_filename="source.mp4",
         user_id=1,
     )
@@ -765,6 +792,25 @@ def test_subtitle_removal_result_artifact_serves_local_result_file(tmp_path, aut
 
     assert response.status_code == 200
     assert response.data == b"result-video"
+
+
+def test_subtitle_removal_result_artifact_rejects_local_result_outside_task_storage(tmp_path, authed_client_no_db):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    result_path = tmp_path / "result.cleaned.mp4"
+    result_path.write_bytes(b"result-video")
+    task = store.create_subtitle_removal(
+        "sr-result-outside",
+        "uploads/source.mp4",
+        str(task_dir),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(task["id"], status="done", result_video_path=str(result_path))
+
+    response = authed_client_no_db.get("/api/subtitle-removal/sr-result-outside/artifact/result")
+
+    assert response.status_code == 404
 
 
 def test_subtitle_removal_download_result_redirects_to_tos_when_local_file_missing(authed_client_no_db, monkeypatch):
