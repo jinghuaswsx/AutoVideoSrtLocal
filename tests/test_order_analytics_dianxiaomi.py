@@ -56,6 +56,37 @@ def test_build_dianxiaomi_product_scope_excludes_smartgearx(monkeypatch):
     assert scope.excluded_handles == {"smart-demo"}
 
 
+def test_build_dianxiaomi_product_scope_keeps_handle_without_site_link(monkeypatch):
+    monkeypatch.setattr(
+        oa,
+        "query",
+        lambda sql, args=(): [
+            {
+                "id": 9,
+                "product_code": "sonic-lens-refresher-rjc",
+                "shopifyid": "8560559554733",
+                "product_link": None,
+                "localized_links_json": "{}",
+            },
+        ],
+    )
+
+    scope = oa.build_dianxiaomi_product_scope(["newjoy", "omurio"])
+    product = oa._resolve_dianxiaomi_line_product(
+        {
+            "productId": "45931658477741",
+            "productUrl": "https://newjoyloo.com/products/sonic-lens-refresher",
+        },
+        "45931658477741",
+        scope,
+    )
+
+    assert scope.by_handle["sonic-lens-refresher"]["product_id"] == 9
+    assert product["product_id"] == 9
+    assert product["product_code"] == "sonic-lens-refresher-rjc"
+    assert product["site_code"] == "newjoy"
+
+
 def test_normalize_dianxiaomi_order_lines_keeps_requested_sites_and_amounts():
     scope = oa.DianxiaomiProductScope(
         by_shopify_id={

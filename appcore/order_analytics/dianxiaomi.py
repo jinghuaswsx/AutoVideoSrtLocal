@@ -161,7 +161,7 @@ def build_dianxiaomi_product_scope(site_codes: list[str]) -> DianxiaomiProductSc
             if handle:
                 excluded_handles.add(handle)
             continue
-        if site_code in requested:
+        if site_code in requested or (site_code is None and handle):
             product = {
                 "product_id": row.get("id"),
                 "product_code": product_code,
@@ -200,17 +200,27 @@ def _resolve_dianxiaomi_line_product(
         return None
     if shopify_product_id in scope.excluded_shopify_ids:
         return None
-    product = scope.by_shopify_id.get(shopify_product_id)
-    if product:
-        return product
-    if handle:
-        product = scope.by_handle.get(handle)
-        if product:
-            return product
     site_code = _infer_dianxiaomi_site_code_from_text(
         _combined_link_text(line.get("productUrl"), line.get("sourceUrl")),
         scope.requested_site_codes,
     )
+
+    def resolve_site(product: dict[str, Any]) -> dict[str, Any] | None:
+        if product.get("site_code"):
+            return product
+        if site_code == "smartgearx" or site_code not in scope.requested_site_codes:
+            return None
+        resolved = dict(product)
+        resolved["site_code"] = site_code
+        return resolved
+
+    product = scope.by_shopify_id.get(shopify_product_id)
+    if product:
+        return resolve_site(product)
+    if handle:
+        product = scope.by_handle.get(handle)
+        if product:
+            return resolve_site(product)
     if site_code == "smartgearx" or site_code not in scope.requested_site_codes:
         return None
     return {
