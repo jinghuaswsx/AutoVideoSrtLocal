@@ -61,6 +61,7 @@
 - 2026-05-02 当前工作区补齐批量翻译父调度器的 active 启动保护：`/api/bulk-translate/<task_id>/start`、`resume`、`retry-item`、`retry-failed` 以及素材页原始素材翻译、语音确认后恢复父任务链路均改走 `start_bulk_scheduler_background`，启动前写入 `bulk_translate:<task_id>` active 记录，重复调度返回 `already_running` 且不再派发第二个父调度器；active 记录包含 user、runner、entrypoint、stage 和动作参数。重新运行第 7 项关键组合回归：`184 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `a8154705` 并重启 `autovideosrt-test.service` 加载 bulk 父调度器保护；服务端运行 bulk 调度器启动保护与语音确认父任务恢复聚焦回归：`6 passed`，`py_compile` 通过；`pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐文案翻译子任务的 active 启动保护：手动 `/api/copywriting-translate/start` 与 bulk 父调度器创建 `copywriting_translate` 子任务时均会先登记 `copywriting_translate:<task_id>` active 记录，再启动 runner；bulk runtime 中 Runner 构造已移动到后台线程内，避免启动线程前读库并确保 active 先登记。重新运行第 7 项关键组合回归：`193 passed, 2 warnings`。
+- 2026-05-02 测试环境已拉取提交 `f92223c7` 并重启 `autovideosrt-test.service` 加载文案翻译子任务保护；服务端运行文案翻译子任务启动保护聚焦回归：`3 passed`，`py_compile` 通过；`pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
