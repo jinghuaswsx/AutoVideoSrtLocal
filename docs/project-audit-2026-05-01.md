@@ -99,6 +99,7 @@
 - 2026-05-02 当前工作区补齐素材封面缓存路径边界：`/medias/cover/<pid>` 在写入/读取本地封面缓存前校验语言码只允许 `[a-z0-9_-]`，避免污染的语言码参与缓存文件名拼接后形成目录逃逸。聚焦回归：`7 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
 - 2026-05-02 测试环境已拉取提交 `59fbc68d` 并重启 `autovideosrt-test.service` 加载素材封面缓存路径边界；服务端运行素材缩略图、封面缓存和 artifact 下载安全聚焦用例：`7 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐素材对象键异常收口：`/medias/object` 和素材上传完成链路遇到 `../`、绝对路径等非法 `object_key` 时不再抛 500，统一按 404 或 `object not found` 拒绝；正常共享素材访问模型不变。路径安全组合回归扩展为 `113 passed, 2 warnings`。完整 `tests/test_medias_routes.py` 当前另有 3 个既有断言失败，分别是 LLM 默认 provider 已变为 `gemini_vertex_adc` 以及产品详情模板 CSS 断言与现状不一致，未纳入本次安全补丁。
+- 2026-05-02 测试环境已拉取提交 `10d46a3e` 并重启 `autovideosrt-test.service` 加载素材对象键异常收口；服务端路径安全组合回归 `113 passed`，`py_compile` 通过；重启后 `pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
