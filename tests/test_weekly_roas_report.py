@@ -67,8 +67,21 @@ def test_previous_complete_week_basic():
 
 
 def test_previous_complete_week_on_monday():
-    # 周一 2026-05-04，应得到上一个完整周（4-27 ~ 5-03）
+    # 周一 2026-05-04 00:00 北京时间仍属于周日 2026-05-03 这个 Meta 广告系统日。
     week_start, week_end = wrr.previous_complete_week(datetime(2026, 5, 4, 0, 0, 1))
+    assert week_start == date(2026, 4, 20)
+    assert week_end == date(2026, 4, 26)
+
+
+def test_previous_complete_week_uses_meta_business_day_before_cutover():
+    # 2026-05-04 15:59 北京时间仍属于 2026-05-03 这个 Meta 广告系统日。
+    week_start, week_end = wrr.previous_complete_week(datetime(2026, 5, 4, 15, 59, 59))
+    assert week_start == date(2026, 4, 20)
+    assert week_end == date(2026, 4, 26)
+
+
+def test_previous_complete_week_uses_new_meta_day_after_cutover():
+    week_start, week_end = wrr.previous_complete_week(datetime(2026, 5, 4, 16, 0, 0))
     assert week_start == date(2026, 4, 27)
     assert week_end == date(2026, 5, 3)
 

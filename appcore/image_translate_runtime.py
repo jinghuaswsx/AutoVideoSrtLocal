@@ -18,6 +18,7 @@ from appcore import (
     object_keys,
     task_state,
 )
+from appcore.cancellation import OperationCancelled, throw_if_cancel_requested
 from appcore.events import Event, EventBus
 
 store = task_state
@@ -169,7 +170,11 @@ class ImageTranslateRuntime:
                      step_model_tags=task.get("step_model_tags", {}))
 
         circuit_msg = ""
+        cancelled = False
         try:
+            # Cooperative cancellation checkpoint before starting the
+            # potentially-thousand-item loop.
+            throw_if_cancel_requested("image_translate.start")
             mode = (
                 task.get("concurrency_mode")
                 or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
@@ -178,6 +183,12 @@ class ImageTranslateRuntime:
                 self._run_parallel(task, task_id)
             else:
                 self._run_sequential(task, task_id)
+        except OperationCancelled as exc:
+            cancelled = True
+            logger.warning(
+                "[image_translate] cancelled for task %s reason=%s",
+                task_id, exc,
+            )
         except _CircuitOpen as exc:
             circuit_msg = str(exc) or "上游持续限流，已熔断"
             logger.warning(
@@ -186,7 +197,14 @@ class ImageTranslateRuntime:
             )
             self._abort_remaining_items(task, task_id, circuit_msg)
 
-        if circuit_msg:
+        if cancelled:
+            # Mark items still in flight as interrupted so the recovery
+            # path treats them like a normal mid-batch service restart.
+            self._mark_remaining_items_interrupted(task)
+            task["status"] = "interrupted"
+            task["steps"]["process"] = "interrupted"
+            task["error"] = "service restart in progress, please retry"
+        elif circuit_msg:
             task["status"] = "error"
             task["steps"]["process"] = "error"
             task["error"] = circuit_msg
@@ -219,6 +237,9 @@ class ImageTranslateRuntime:
     def _run_sequential(self, task: dict, task_id: str) -> None:
         items = task.get("items") or []
         for idx in range(len(items)):
+            # Per-item cancellation checkpoint -- the most likely place for
+            # SIGTERM to land in a long batch.
+            throw_if_cancel_requested("image_translate.item")
             if items[idx]["status"] in {"done", "failed"}:
                 continue
             self._process_one(task, task_id, idx)
@@ -230,6 +251,10 @@ class ImageTranslateRuntime:
             if it["status"] not in {"done", "failed"}
         ]
         for batch_start in range(0, len(pending_idxs), _BATCH_SIZE):
+            # Cancel between batches; items already in-flight inside this
+            # batch's ThreadPoolExecutor will finish their current attempt
+            # and the next batch will not start.
+            throw_if_cancel_requested("image_translate.batch")
             batch = pending_idxs[batch_start: batch_start + _BATCH_SIZE]
             with ThreadPoolExecutor(max_workers=_BATCH_SIZE) as pool:
                 futures = [
@@ -248,6 +273,16 @@ class ImageTranslateRuntime:
             self._emit_item(task_id, it)
         _update_progress(task)
         self._emit_progress(task_id, task["progress"])
+
+    def _mark_remaining_items_interrupted(self, task: dict) -> None:
+        """Stamp not-yet-terminal items so startup recovery can resume them."""
+        for it in task.get("items") or []:
+            status = it.get("status") or ""
+            if status in {"done", "failed"}:
+                continue
+            it["status"] = "interrupted"
+            it["error"] = "service restart in progress, please retry"
+        _update_progress(task)
 
     def _detect_source_text(self, task: dict, task_id: str, item: dict, src_path: str) -> bool:
         cached = item.get("text_detect_has_text")

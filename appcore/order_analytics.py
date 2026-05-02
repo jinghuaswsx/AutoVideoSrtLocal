@@ -732,6 +732,11 @@ def _beijing_now() -> datetime:
     return datetime.now(ZoneInfo(META_ATTRIBUTION_TIMEZONE)).replace(tzinfo=None)
 
 
+def current_meta_business_date(now: datetime | None = None) -> date:
+    value = (now or _beijing_now()).replace(microsecond=0)
+    return (value - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+
+
 def _business_hour(value: datetime | None, day_start: datetime) -> int | None:
     if not value:
         return None
@@ -896,11 +901,138 @@ def _get_realtime_ad_updated_at(target: date, snapshot_at: datetime | None) -> d
     return row[0].get("last_ad_updated_at")
 
 
-def get_realtime_roas_overview(date_text: str | None = None, now: datetime | None = None) -> dict:
+def _build_realtime_overview_for_range(start: date, end: date, now: datetime) -> dict:
+    """范围分支：只返回 summary + freshness + period，不返回 hourly / 明细。
+
+    复用 get_true_roas_summary 同款 SQL（按 meta_business_date 聚合 dxm 订单和 Meta 广告），
+    但不依赖 _beijing_now，避免范围内的"今天" partial 覆盖逻辑。
+    """
+    order_rows = query(
+        "SELECT meta_business_date, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "COUNT(*) AS line_count, "
+        "SUM(quantity) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "MAX(COALESCE(order_paid_at, attribution_time_at, order_created_at)) AS last_order_at "
+        "FROM dianxiaomi_order_lines "
+        "WHERE site_code IN ('newjoy', 'omurio') "
+        "AND meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY meta_business_date",
+        (start, end),
+    )
+    ad_rows = query(
+        "SELECT meta_business_date, "
+        "SUM(spend_usd) AS ad_spend, "
+        "SUM(purchase_value_usd) AS meta_purchase_value, "
+        "SUM(result_count) AS meta_purchases, "
+        "MAX(updated_at) AS last_ad_updated_at "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY meta_business_date",
+        (start, end),
+    )
+
+    summary = {
+        "order_count": 0,
+        "line_count": 0,
+        "units": 0,
+        "order_revenue": 0.0,
+        "line_revenue": 0.0,
+        "shipping_revenue": 0.0,
+        "ad_spend": 0.0,
+        "meta_purchase_value": 0.0,
+        "meta_purchases": 0,
+    }
+    last_order_at: datetime | None = None
+    last_ad_updated_at: datetime | None = None
+
+    for row in order_rows:
+        summary["order_count"] += int(row.get("order_count") or 0)
+        summary["line_count"] += int(row.get("line_count") or 0)
+        summary["units"] += int(row.get("units") or 0)
+        summary["order_revenue"] += float(row.get("order_revenue") or 0)
+        summary["line_revenue"] += float(row.get("line_revenue") or 0)
+        summary["shipping_revenue"] += float(row.get("shipping_revenue") or 0)
+        if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
+            last_order_at = row["last_order_at"]
+    for row in ad_rows:
+        summary["ad_spend"] += float(row.get("ad_spend") or 0)
+        summary["meta_purchase_value"] += float(row.get("meta_purchase_value") or 0)
+        summary["meta_purchases"] += int(row.get("meta_purchases") or 0)
+        if row.get("last_ad_updated_at") and (last_ad_updated_at is None or row["last_ad_updated_at"] > last_ad_updated_at):
+            last_ad_updated_at = row["last_ad_updated_at"]
+
+    for key in ("order_revenue", "line_revenue", "shipping_revenue", "ad_spend", "meta_purchase_value"):
+        summary[key] = round(summary[key], 2)
+
+    summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
+    summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
+    summary["order_data_status"] = "ok"
+    summary["ad_data_status"] = "ok"
+
+    range_start_at, _ = compute_meta_business_window_bj(start)
+    _, range_end_at = compute_meta_business_window_bj(end)
+
+    return {
+        "period": {
+            "start_date": start,
+            "end_date": end,
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+            "day_start_at": range_start_at,
+            "day_end_at": range_end_at,
+            "data_until_at": last_ad_updated_at or last_order_at,
+            "complete_hour_until_at": range_end_at,
+            "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+            "day_definition": "meta_ad_platform_business_day_range",
+        },
+        "scope": {
+            "stores": ["newjoy", "omurio"],
+            "ad_platforms": ["meta"],
+            "order_source": "dianxiaomi",
+            "ad_source": "meta_ad_daily_campaign_metrics",
+            "ad_granularity": "daily",
+            "hourly_ad_ready": False,
+        },
+        "freshness": {
+            "first_order_at": None,
+            "last_order_at": last_order_at,
+            "last_ad_updated_at": last_ad_updated_at,
+        },
+        "summary": summary,
+        "hourly": [],
+        "roas_points": [],
+        "snapshots": [],
+        "order_details": [],
+        "campaigns": [],
+    }
+
+
+def get_realtime_roas_overview(
+    date_text: str | None = None,
+    now: datetime | None = None,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
     now = (now or _beijing_now()).replace(microsecond=0)
-    target = _parse_iso_date_param(date_text, "date") if date_text else (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+
+    # 范围模式：start_date / end_date 同时给出，且为不同日期 → 走范围聚合分支
+    if start_date and end_date:
+        start = _parse_iso_date_param(start_date, "start_date")
+        end = _parse_iso_date_param(end_date, "end_date")
+        if end < start:
+            raise ValueError("end_date must be >= start_date")
+        if start != end:
+            return _build_realtime_overview_for_range(start, end, now)
+        # start == end → 走单日分支，把 start_date 作为目标日
+        date_text = start_date
+
+    target = _parse_iso_date_param(date_text, "date") if date_text else current_meta_business_date(now)
     day_start, day_end = compute_meta_business_window_bj(target)
-    current_business_date = (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    current_business_date = current_meta_business_date(now)
     if target == current_business_date:
         data_until = min(now, day_end)
         complete_hour_until = now.replace(minute=0, second=0, microsecond=0)
@@ -1140,7 +1272,7 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
 
     orders_by_day = {row["meta_business_date"]: row for row in order_rows}
     ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
-    today_business = (_beijing_now() - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    today_business = current_meta_business_date()
     rows: list[dict[str, Any]] = []
     totals = {
         "order_count": 0,
@@ -2322,7 +2454,7 @@ def _resolve_period_range(
     - week: ISO 周一 ~ 周日；若为当周，end = 昨日
     - day: date_str ~ date_str
     """
-    today = today or date.today()
+    today = today or current_meta_business_date()
     yesterday = today - timedelta(days=1)
 
     if period == "month":
@@ -2551,7 +2683,7 @@ def get_dashboard(
     today: date | None = None,
 ) -> dict:
     """产品看板查询主入口。详见 spec。"""
-    today = today or date.today()
+    today = today or current_meta_business_date()
     period_type = period
     if start_date and end_date:
         start = _parse_iso_date_param(start_date, "start_date")

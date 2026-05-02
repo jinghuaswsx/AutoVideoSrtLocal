@@ -20,6 +20,7 @@ import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
 from appcore import ai_billing
 from appcore import tts_generation_stats
+from appcore.cancellation import OperationCancelled, throw_if_cancel_requested
 from appcore.events import (
     EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
@@ -1352,12 +1353,26 @@ class PipelineRunner:
                     should_run = True
                 if not should_run:
                     continue
+                # Cooperative cancellation: graceful-shutdown checkpoint
+                # before each step so the worker can drop everything when
+                # systemd / Gunicorn hands us SIGTERM.
+                throw_if_cancel_requested(f"pipeline step={step_name}")
                 step_fn()
                 current = task_state.get(task_id) or {}
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
                 if current.get("status") in {"failed", "error", "done"}:
                     return
+        except OperationCancelled as exc:
+            current_step = (task_state.get(task_id) or {}).get("current_step") or "?"
+            log.warning(
+                "[task %s] pipeline cancelled at step=%s reason=%s",
+                task_id, current_step, exc,
+            )
+            self._mark_pipeline_interrupted(task_id, str(exc))
+            # Re-raise so start_tracked_thread's outer handler logs and
+            # cleans up _active_tasks; it will not show a traceback.
+            raise
         except Exception as exc:
             current_step = (task_state.get(task_id) or {}).get("current_step") or "?"
             logger.exception(
@@ -1366,6 +1381,40 @@ class PipelineRunner:
             task_state.update(task_id, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
+
+    def _mark_pipeline_interrupted(self, task_id: str, reason: str) -> None:
+        """Record cooperative cancellation in task_state.
+
+        Mark the in-flight step (running / queued) AND any not-yet-started
+        step (pending) as ``interrupted``; flip the task status so the UI
+        surfaces a "service restart" explanation instead of a generic
+        error. Steps already in a terminal state (done / failed / error)
+        are left alone.
+        """
+        task = task_state.get(task_id) or {}
+        steps = dict(task.get("steps") or {})
+        step_messages = dict(task.get("step_messages") or {})
+        changed = False
+        for step, status in list(steps.items()):
+            if status in {"queued", "running", "pending"}:
+                steps[step] = "interrupted"
+                step_messages[step] = "service restart in progress, please retry"
+                changed = True
+        update_kwargs: dict = {
+            "status": "interrupted",
+            "error": "service restart in progress, please retry",
+        }
+        if changed:
+            update_kwargs["steps"] = steps
+            update_kwargs["step_messages"] = step_messages
+        task_state.update(task_id, **update_kwargs)
+        try:
+            self._emit(task_id, EVT_PIPELINE_ERROR, {
+                "error": f"cancelled: {reason}",
+                "cancelled": True,
+            })
+        except Exception:
+            log.warning("emit pipeline_error during cancellation failed", exc_info=True)
 
     def _skip_original_video_passthrough_step(
         self,

@@ -9,7 +9,6 @@ Environment="PATH=/opt/autovideosrt/venv/bin:/usr/bin:/usr/local/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="AUTOVIDEOSRT_GUNICORN_BIND=0.0.0.0:80"
 Environment="AUTOVIDEOSRT_GUNICORN_THREADS=32"
-Environment="AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT=45"
 Environment="OMP_NUM_THREADS=1"
 Environment="OPENBLAS_NUM_THREADS=1"
 Environment="MKL_NUM_THREADS=1"
@@ -17,10 +16,14 @@ Environment="NUMEXPR_NUM_THREADS=1"
 ExecStart=/opt/autovideosrt/venv/bin/gunicorn --config /opt/autovideosrt/deploy/gunicorn.conf.py main:app
 Restart=always
 RestartSec=5
-# Long-running tasks are guarded by appcore.ops.active_tasks pre-restart and
-# startup recovery. Stop should be short enough for releases but long enough
-# for ordinary requests and shutdown snapshots to finish.
-TimeoutStopSec=60
+# Cooperative shutdown is wired in deploy/gunicorn.conf.py:
+# post_worker_init chains SIGTERM into the process shutdown coordinator,
+# tracked tasks honour the cancellation points, worker_exit waits up to
+# 200s for them to drain. 300s here = 240s gunicorn graceful_timeout +
+# 60s systemd buffer; if a single ffmpeg/curl call genuinely refuses to
+# return inside that window we accept SIGKILL (better fast restart than
+# silent 15-minute wait).
+TimeoutStopSec=300
 LimitNOFILE=65535
 
 [Install]

@@ -450,8 +450,8 @@ def test_gunicorn_service_uses_threaded_config():
     assert 'worker_class = "gthread"' in config
     assert "workers = 1" in config
     assert "threads = 32" in config
-    assert 'AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "45"' in config
-    assert "TimeoutStopSec=60" in service
+    assert 'AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "240"' in config
+    assert "TimeoutStopSec=300" in service
     assert "simple-websocket" in requirements
     assert "\neventlet" not in requirements
 
@@ -477,6 +477,14 @@ def test_gunicorn_worker_exit_logs_active_task_details(monkeypatch):
         active_tasks,
         "snapshot_active_tasks",
         lambda reason, tasks=None: {"count": len(tasks or []), "target": "database"},
+    )
+    monkeypatch.setattr(
+        "appcore.shutdown_coordinator.wait_for_active_tasks",
+        lambda timeout: 1,
+    )
+    monkeypatch.setattr(
+        "appcore.scheduler.shutdown_scheduler",
+        lambda wait=False: None,
     )
 
     messages = []

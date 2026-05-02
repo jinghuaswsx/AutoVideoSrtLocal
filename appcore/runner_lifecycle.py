@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 
+from appcore.cancellation import OperationCancelled
 from appcore.task_recovery import try_register_active_task, unregister_active_task
+
+log = logging.getLogger(__name__)
 
 
 def _target_name(target: Callable[..., Any]) -> str:
@@ -48,6 +52,14 @@ def start_tracked_thread(
     def run() -> None:
         try:
             target(*args, **call_kwargs)
+        except OperationCancelled as exc:
+            # Cooperative cancellation is the *expected* exit path during
+            # graceful shutdown. Treat it as a clean return so the worker
+            # log does not show a stray traceback per cancelled task.
+            log.warning(
+                "[lifecycle] task cancelled (project=%s task=%s reason=%s)",
+                project_type, task_id, exc,
+            )
         finally:
             unregister_active_task(project_type, task_id)
 

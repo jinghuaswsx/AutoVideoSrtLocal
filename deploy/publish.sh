@@ -34,10 +34,21 @@ echo "[1/3] 推送到远程..."
 git push
 
 # 2) SSH 到服务器拉取 & 重启
-echo "[2/3] 远端 pull + restart..."
+# 同步 systemd unit 文件后再 daemon-reload，避免 deploy/autovideosrt.service
+# 改动（如 TimeoutStopSec / 环境变量）发布后不生效。cmp 在内容一致时不更新 mtime，
+# 避免无谓 daemon-reload。
+echo "[2/3] 远端 pull + sync unit + restart..."
 ssh -i "$KEY" -p "$SERVER_PORT" -o StrictHostKeyChecking=accept-new \
   "$SERVER_USER@$SERVER_HOST" \
-  "cd $APP_DIR && git pull && systemctl restart $SERVICE && systemctl status $SERVICE --no-pager | head -n 15"
+  "set -e
+   cd $APP_DIR && git pull
+   if ! cmp -s $APP_DIR/deploy/autovideosrt.service /etc/systemd/system/$SERVICE.service; then
+     cp $APP_DIR/deploy/autovideosrt.service /etc/systemd/system/$SERVICE.service
+     systemctl daemon-reload
+     echo 'systemd unit synced + daemon-reload'
+   fi
+   systemctl restart $SERVICE
+   systemctl status $SERVICE --no-pager | head -n 15"
 
 # 3) 健康检查
 echo "[3/3] 健康检查..."
