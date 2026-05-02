@@ -69,6 +69,13 @@ def _can_access_product(product: dict | None) -> bool:
     return product is not None
 
 
+def _is_admin() -> bool:
+    return getattr(current_user, "is_admin", False)
+
+
+_MK_VIDEO_CACHE_PREFIX = "mk-selection/videos"
+
+
 def _schedule_material_evaluation(pid: int, *, force: bool = False,
                                   manual: bool = False) -> None:
     start_background_task(
