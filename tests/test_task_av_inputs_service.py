@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from web.services.task_av_inputs import (
+    av_task_target_lang,
     av_step_maps,
     collect_av_source_language,
     collect_av_translate_inputs,
+    merge_av_step_maps,
     validate_av_translate_inputs,
 )
 
@@ -101,3 +103,29 @@ def test_av_step_maps_builds_status_and_empty_messages_for_all_steps():
     assert steps["export"] == "running"
     assert messages["extract"] == ""
     assert messages["export"] == ""
+
+
+def test_merge_av_step_maps_preserves_existing_values_and_fills_missing_defaults():
+    steps, messages = merge_av_step_maps(
+        {"extract": "done"},
+        {"extract": "source ready"},
+    )
+
+    assert steps["extract"] == "done"
+    assert steps["asr"] == "pending"
+    assert messages["extract"] == "source ready"
+    assert messages["asr"] == ""
+
+
+def test_av_task_target_lang_prefers_task_field_then_inputs():
+    assert (
+        av_task_target_lang(
+            {
+                "target_lang": " JA ",
+                "av_translate_inputs": {"target_language": "de"},
+            }
+        )
+        == "ja"
+    )
+    assert av_task_target_lang({"av_translate_inputs": {"target_language": " DE "}}) == "de"
+    assert av_task_target_lang({}) == ""

@@ -53,6 +53,20 @@ def av_step_maps(status: str = "pending") -> tuple[dict, dict]:
     return {step: status for step in AV_SYNC_STEPS}, {step: "" for step in AV_SYNC_STEPS}
 
 
+def merge_av_step_maps(current_steps: dict | None, current_messages: dict | None = None) -> tuple[dict, dict]:
+    steps = current_steps or {}
+    messages = current_messages or {}
+    return (
+        {step: steps.get(step, "pending") for step in AV_SYNC_STEPS},
+        {step: messages.get(step, "") for step in AV_SYNC_STEPS},
+    )
+
+
+def av_task_target_lang(task: dict) -> str:
+    av_inputs = task.get("av_translate_inputs") if isinstance(task.get("av_translate_inputs"), dict) else {}
+    return str(task.get("target_lang") or av_inputs.get("target_language") or "").strip().lower()
+
+
 def collect_av_translate_inputs(payload: dict | None, current_task: dict | None = None) -> dict:
     current_inputs = (current_task or {}).get("av_translate_inputs") or {}
     data = payload or {}

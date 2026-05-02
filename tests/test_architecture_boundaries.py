@@ -272,6 +272,7 @@ def test_task_name_helpers_live_outside_route_module():
 def test_task_av_input_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 
+    assert "def _av_task_target_lang" not in source
     assert "def _collect_av_source_language" not in source
     assert "def _collect_av_translate_inputs" not in source
     assert "def _validate_av_translate_inputs" not in source

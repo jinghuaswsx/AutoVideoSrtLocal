@@ -50,9 +50,11 @@ from web.services import pipeline_runner
 from web.services.artifact_download import safe_task_dir_path, serve_artifact_download
 from web.services.task_av_inputs import (
     AV_SYNC_STEPS,
+    av_task_target_lang,
     av_step_maps,
     collect_av_source_language,
     collect_av_translate_inputs,
+    merge_av_step_maps,
     validate_av_translate_inputs,
 )
 from web.services.task_deletion import cleanup_deleted_task_storage
@@ -94,11 +96,6 @@ def _get_current_user_task(task_id: str) -> dict | None:
     if not task or task.get("_user_id") != current_user.id:
         return None
     return task
-
-
-def _av_task_target_lang(task: dict) -> str:
-    av_inputs = task.get("av_translate_inputs") if isinstance(task.get("av_translate_inputs"), dict) else {}
-    return str(task.get("target_lang") or av_inputs.get("target_language") or "").strip().lower()
 
 
 def _rebuild_tts_full_audio(task_dir: str, segments: list[dict], variant: str = "av") -> str:
@@ -408,7 +405,7 @@ def voice_library_for_task(task_id: str):
     task = _get_current_user_task(task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
-    lang = _av_task_target_lang(task)
+    lang = av_task_target_lang(task)
     if not lang:
         return jsonify({"error": "task has no target_lang"}), 400
 
@@ -440,7 +437,7 @@ def rematch_voice(task_id: str):
     task = _get_current_user_task(task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
-    lang = _av_task_target_lang(task)
+    lang = av_task_target_lang(task)
     if not lang:
         return jsonify({"error": "task has no target_lang"}), 400
 
@@ -487,7 +484,7 @@ def confirm_voice(task_id: str):
     task = _get_current_user_task(task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
-    lang = _av_task_target_lang(task)
+    lang = av_task_target_lang(task)
     body = request.get_json(silent=True) or {}
 
     from appcore.video_translate_defaults import resolve_default_voice
@@ -712,10 +709,10 @@ def start(task_id):
     source_updates, source_error = collect_av_source_language(body, current_task=task)
     if source_error:
         return jsonify({"error": source_error}), 400
-    current_steps = task.get("steps") or {}
-    current_messages = task.get("step_messages") or {}
-    av_steps = {step: current_steps.get(step, "pending") for step in AV_SYNC_STEPS}
-    av_step_messages = {step: current_messages.get(step, "") for step in AV_SYNC_STEPS}
+    av_steps, av_step_messages = merge_av_step_maps(
+        task.get("steps"),
+        task.get("step_messages"),
+    )
     store.update(
         task_id,
         type="translation",
