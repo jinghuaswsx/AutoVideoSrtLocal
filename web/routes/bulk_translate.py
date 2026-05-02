@@ -36,6 +36,7 @@ from appcore.bulk_translate_runtime import (
 from appcore.bulk_translate_projection import list_admin_tasks
 from appcore.db import query
 from appcore.events import EVT_BT_DONE, EVT_BT_PROGRESS, Event, EventBus
+from appcore.task_recovery import try_register_active_task, unregister_active_task
 from appcore.video_translate_defaults import (
     SYSTEM_DEFAULTS,
     load_effective_params,
@@ -204,6 +205,44 @@ def _spawn_scheduler(task_id: str) -> None:
         log.exception("bulk_translate scheduler crashed task_id=%s", task_id)
 
 
+def start_bulk_scheduler_background(
+    task_id: str,
+    *,
+    user_id: int | None,
+    entrypoint: str,
+    action: str,
+    details: dict | None = None,
+) -> bool:
+    active_details = {"action": action, **(details or {})}
+    if not try_register_active_task(
+        "bulk_translate",
+        task_id,
+        user_id=user_id,
+        runner="web.routes.bulk_translate._run_scheduler_with_tracking",
+        entrypoint=entrypoint,
+        stage="queued_scheduler",
+        details=active_details,
+    ):
+        return False
+    try:
+        start_background_task(_run_scheduler_with_tracking, task_id)
+    except BaseException:
+        unregister_active_task("bulk_translate", task_id)
+        raise
+    return True
+
+
+def _run_scheduler_with_tracking(task_id: str) -> None:
+    try:
+        _spawn_scheduler(task_id)
+    finally:
+        unregister_active_task("bulk_translate", task_id)
+
+
+def _scheduler_already_running_response():
+    return jsonify({"ok": True, "status": "already_running"}), 202
+
+
 def _load_and_check_ownership(task_id: str):
     """加载父任务并做 owner 校验。返回 task dict 或 Flask Response。"""
     task = get_task(task_id)
@@ -263,7 +302,13 @@ def start_endpoint(task_id):
         start_task(task_id, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    start_background_task(_spawn_scheduler, task_id)
+    if not start_bulk_scheduler_background(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="bulk_translate.start",
+        action="start",
+    ):
+        return _scheduler_already_running_response()
     return jsonify({"ok": True}), 202
 
 
@@ -362,7 +407,13 @@ def resume_endpoint(task_id):
         resume_task(task_id, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    start_background_task(_spawn_scheduler, task_id)
+    if not start_bulk_scheduler_background(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="bulk_translate.resume",
+        action="resume",
+    ):
+        return _scheduler_already_running_response()
     return jsonify({"ok": True}), 202
 
 
@@ -399,7 +450,14 @@ def retry_item_endpoint(task_id):
         retry_item(task_id, idx=idx, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    start_background_task(_spawn_scheduler, task_id)
+    if not start_bulk_scheduler_background(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="bulk_translate.retry_item",
+        action="retry_item",
+        details={"idx": idx},
+    ):
+        return _scheduler_already_running_response()
     return jsonify({"ok": True}), 202
 
 
@@ -416,7 +474,13 @@ def retry_failed_endpoint(task_id):
         retry_failed_items(task_id, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    start_background_task(_spawn_scheduler, task_id)
+    if not start_bulk_scheduler_background(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="bulk_translate.retry_failed",
+        action="retry_failed",
+    ):
+        return _scheduler_already_running_response()
     return jsonify({"ok": True}), 202
 
 

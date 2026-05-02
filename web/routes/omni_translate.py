@@ -924,10 +924,15 @@ def confirm_voice(task_id: str):
     parent_task_id = (medias_context.get("parent_task_id") or "").strip()
     if parent_task_id:
         try:
-            from web.background import start_background_task
-            from web.routes.bulk_translate import _spawn_scheduler
+            from web.routes.bulk_translate import start_bulk_scheduler_background
 
-            start_background_task(_spawn_scheduler, parent_task_id)
+            start_bulk_scheduler_background(
+                parent_task_id,
+                user_id=current_user.id,
+                entrypoint="omni_translate.voice_confirm",
+                action="resume_after_voice_confirm",
+                details={"child_task_id": task_id},
+            )
         except Exception:
             log.exception("failed to resume parent bulk_translate task after voice confirm")
 

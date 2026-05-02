@@ -737,7 +737,7 @@ def test_confirm_voice_resumes_parent_bulk_translate_scheduler(authed_client_no_
         },
     }
     resume_calls = []
-    bg_calls = []
+    scheduler_calls = []
 
     with patch(
         "web.routes.multi_translate.db_query_one",
@@ -754,8 +754,8 @@ def test_confirm_voice_resumes_parent_bulk_translate_scheduler(authed_client_no_
         "web.routes.multi_translate.multi_pipeline_runner.resume",
         side_effect=lambda task_id, start_step, user_id=None: resume_calls.append((task_id, start_step, user_id)),
     ), patch(
-        "web.background.start_background_task",
-        side_effect=lambda fn, task_id: bg_calls.append((fn, task_id)),
+        "web.routes.bulk_translate.start_bulk_scheduler_background",
+        side_effect=lambda task_id, **kwargs: scheduler_calls.append((task_id, kwargs)) or True,
     ):
         resp = authed_client_no_db.post(
             "/api/multi-translate/task-voice-1/confirm-voice",
@@ -764,9 +764,17 @@ def test_confirm_voice_resumes_parent_bulk_translate_scheduler(authed_client_no_
 
     assert resp.status_code == 200
     assert resume_calls == [("task-voice-1", "alignment", 1)]
-    assert len(bg_calls) == 1
-    assert callable(bg_calls[0][0])
-    assert bg_calls[0][1] == "bulk-parent-1"
+    assert scheduler_calls == [
+        (
+            "bulk-parent-1",
+            {
+                "user_id": 1,
+                "entrypoint": "multi_translate.voice_confirm",
+                "action": "resume_after_voice_confirm",
+                "details": {"child_task_id": "task-voice-1"},
+            },
+        )
+    ]
 
 
 def test_multi_translate_start_accepts_target_lang_en(tmp_path, authed_client_no_db, monkeypatch):

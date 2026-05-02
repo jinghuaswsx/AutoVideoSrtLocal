@@ -238,13 +238,25 @@ def phase5_client(client, monkeypatch):
     retry_failed_items 等 runtime 函数 + run_scheduler spawn,都 patch 成记录器。"""
     spawn_log = []
     action_log = []
+    active_log = []
 
     monkeypatch.setattr(
         "web.routes.bulk_translate.start_background_task",
         lambda fn, *a, **k: spawn_log.append((fn.__name__, a, k)),
     )
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.try_register_active_task",
+        lambda *args, **kwargs: active_log.append((args, kwargs)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.unregister_active_task",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
     client._spawn_log = spawn_log
     client._action_log = action_log
+    client._active_log = active_log
     return client
 
 
@@ -332,8 +344,19 @@ def test_start_endpoint_spawns_scheduler(phase5_client, monkeypatch):
 
     resp = phase5_client.post("/api/bulk-translate/bt_xxx/start")
     assert resp.status_code == 202
-    # eventlet.spawn 被调用,调度 _spawn_scheduler
-    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+    assert any("scheduler" in s[0] for s in phase5_client._spawn_log)
+    assert phase5_client._active_log == [
+        (
+            ("bulk_translate", "bt_xxx"),
+            {
+                "user_id": 1,
+                "runner": "web.routes.bulk_translate._run_scheduler_with_tracking",
+                "entrypoint": "bulk_translate.start",
+                "stage": "queued_scheduler",
+                "details": {"action": "start"},
+            },
+        )
+    ]
 
 
 def test_start_not_found(phase5_client, monkeypatch):
@@ -458,7 +481,28 @@ def test_resume_endpoint_spawns_scheduler(phase5_client, monkeypatch):
                          lambda *a, **k: None)
     resp = phase5_client.post("/api/bulk-translate/bt_xxx/resume")
     assert resp.status_code == 202
-    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+    assert any("scheduler" in s[0] for s in phase5_client._spawn_log)
+
+
+def test_resume_endpoint_reuses_active_scheduler(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="error")
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.resume_task",
+        lambda task_id, user_id: called.append((task_id, user_id)),
+    )
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.try_register_active_task",
+        lambda *args, **kwargs: False,
+        raising=False,
+    )
+
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/resume")
+
+    assert resp.status_code == 202
+    assert resp.get_json()["status"] == "already_running"
+    assert called == [("bt_xxx", 1)]
+    assert phase5_client._spawn_log == []
 
 
 # ----- retry-item / retry-failed -----
@@ -474,7 +518,7 @@ def test_retry_item_endpoint(phase5_client, monkeypatch):
                                json={"idx": 2})
     assert resp.status_code == 202
     assert called == [("bt_xxx", 2, 1)]
-    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+    assert any("scheduler" in s[0] for s in phase5_client._spawn_log)
 
 
 def test_retry_item_requires_idx(phase5_client, monkeypatch):
@@ -493,7 +537,7 @@ def test_retry_failed_endpoint(phase5_client, monkeypatch):
     resp = phase5_client.post("/api/bulk-translate/bt_xxx/retry-failed")
     assert resp.status_code == 202
     assert called == [("bt_xxx", 1)]
-    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+    assert any("scheduler" in s[0] for s in phase5_client._spawn_log)
 
 
 def test_force_backfill_item_endpoint(phase5_client, monkeypatch):

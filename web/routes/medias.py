@@ -1632,7 +1632,7 @@ def api_product_translate(pid: int):
             return jsonify({"error": f"content_types 闂堢偞纭? {content_type}"}), 400
 
     from appcore.bulk_translate_runtime import create_bulk_translate_task, start_task
-    from web.routes.bulk_translate import _spawn_scheduler
+    from web.routes.bulk_translate import start_bulk_scheduler_background
 
     initiator = {
         "user_id": current_user.id,
@@ -1652,7 +1652,13 @@ def api_product_translate(pid: int):
         raw_source_ids=raw_ids_int,
     )
     start_task(task_id, current_user.id)
-    start_background_task(_spawn_scheduler, task_id)
+    start_bulk_scheduler_background(
+        task_id,
+        user_id=current_user.id,
+        entrypoint="medias.raw_translate",
+        action="start",
+        details={"source": "medias_raw_translate"},
+    )
     return jsonify({"task_id": task_id}), 202
 
 
