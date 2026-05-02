@@ -121,6 +121,15 @@ def test_detail_image_upload_validation_lives_outside_route_module():
     assert Path("web/services/media_detail_uploads.py").exists()
 
 
+def test_detail_image_translate_payload_construction_lives_outside_route_module():
+    route_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+
+    assert "source_detail_image_id" not in route_source
+    assert "source_detail_image_ids" not in route_source
+    assert "auto_apply_detail_images" not in route_source
+    assert Path("web/services/media_detail_translation.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

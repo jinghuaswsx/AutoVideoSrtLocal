@@ -5,8 +5,6 @@
 from __future__ import annotations
 
 import json
-import os
-import uuid
 
 import requests
 from flask import abort, jsonify, request, send_file
@@ -32,6 +30,7 @@ from web.services.media_detail_uploads import (
     validate_completed_images,
     validate_upload_files,
 )
+from web.services.media_detail_translation import build_detail_translate_task_payload
 
 from . import bp
 from ._helpers import (
@@ -546,47 +545,26 @@ def api_detail_images_translate_from_en(pid: int):
     if not prompt_tpl:
         return jsonify({"error": "褰撳墠璇鏈厤缃鎯呭浘缈昏瘧 prompt"}), 409
     lang_name = medias.get_language_name(lang)
-    task_id = uuid.uuid4().hex
-    task_dir = os.path.join(OUTPUT_DIR, task_id)
-    items = []
-    for idx, row in enumerate(translatable_rows):
-        items.append({
-            "idx": idx,
-            "filename": os.path.basename(row.get("object_key") or "") or f"detail_{idx}.png",
-            "src_tos_key": row["object_key"],
-            "source_bucket": "media",
-            "source_detail_image_id": row["id"],
-        })
-    medias_context = {
-        "entry": "medias_edit_detail",
-        "product_id": pid,
-        "source_lang": "en",
-        "target_lang": lang,
-        "source_bucket": "media",
-        "source_detail_image_ids": [row["id"] for row in translatable_rows],
-        "auto_apply_detail_images": True,
-        "apply_status": "pending",
-        "applied_at": "",
-        "applied_detail_image_ids": [],
-        "last_apply_error": "",
-    }
-    task_state.create_image_translate(
-        task_id,
-        task_dir,
+    task_payload = build_detail_translate_task_payload(
+        output_dir=OUTPUT_DIR,
         user_id=current_user.id,
-        preset="detail",
-        target_language=lang,
+        product_id=pid,
+        product=p or {},
+        target_lang=lang,
         target_language_name=lang_name,
+        prompt_template=prompt_tpl,
+        source_rows=translatable_rows,
         model_id=(body.get("model_id") or "").strip() or _default_image_translate_model_id(),
-        prompt=prompt_tpl.replace("{target_language_name}", lang_name),
-        items=items,
-        product_name=(p.get("name") or "").strip(),
-        project_name=image_translate_routes._compose_project_name((p.get("name") or "").strip(), "detail", lang_name),
-        medias_context=medias_context,
         concurrency_mode=mode_raw,
+        compose_project_name=image_translate_routes._compose_project_name,
     )
-    _start_image_translate_runner(task_id, current_user.id)
-    return jsonify({"task_id": task_id, "detail_url": f"/image-translate/{task_id}"}), 201
+    task_state.create_image_translate(
+        task_payload.task_id,
+        task_payload.task_dir,
+        **task_payload.create_kwargs,
+    )
+    _start_image_translate_runner(task_payload.task_id, current_user.id)
+    return jsonify({"task_id": task_payload.task_id, "detail_url": f"/image-translate/{task_payload.task_id}"}), 201
 
 
 @bp.route("/api/products/<int:pid>/detail-image-translate-tasks", methods=["GET"])
