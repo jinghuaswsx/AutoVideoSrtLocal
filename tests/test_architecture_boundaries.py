@@ -214,6 +214,30 @@ def test_detail_image_from_url_request_planning_lives_outside_route_module():
     assert Path("web/services/media_detail_from_url.py").exists()
 
 
+def test_task_delete_storage_cleanup_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "delete_task"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+    direct_cleanup_calls = [
+        call.func.attr
+        for call in ast.walk(route_function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "cleanup"
+        and call.func.attr in {"collect_task_tos_keys", "delete_task_storage"}
+    ]
+
+    assert direct_cleanup_calls == []
+    assert "cleanup_payload" not in route_source
+    assert Path("web/services/task_deletion.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

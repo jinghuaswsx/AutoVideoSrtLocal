@@ -51,6 +51,7 @@ from web.preview_artifacts import (
 from web import store
 from web.services import pipeline_runner
 from web.services.artifact_download import safe_task_dir_path, serve_artifact_download
+from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -1393,15 +1394,12 @@ def delete_task(task_id):
     if not row:
         return jsonify({"error": "Task not found"}), 404
 
-    task = store.get(task_id) or {}
-    cleanup_payload = dict(task)
-    cleanup_payload["task_dir"] = row.get("task_dir") or cleanup_payload.get("task_dir", "")
-    cleanup_payload["state_json"] = row.get("state_json") or ""
-    cleanup_payload["tos_keys"] = cleanup.collect_task_tos_keys(cleanup_payload)
-    try:
-        cleanup.delete_task_storage(cleanup_payload)
-    except Exception:
-        pass
+    cleanup_deleted_task_storage(
+        store.get(task_id) or {},
+        row,
+        collect_task_tos_keys=cleanup.collect_task_tos_keys,
+        delete_task_storage=cleanup.delete_task_storage,
+    )
 
     db_execute(
         "UPDATE projects SET deleted_at=%s WHERE id=%s",
