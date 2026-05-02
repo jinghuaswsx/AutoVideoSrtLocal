@@ -6,6 +6,7 @@ import hashlib
 import logging
 import mimetypes
 import os
+import re
 import tempfile
 import threading
 import uuid
@@ -2194,6 +2195,8 @@ def cover(pid: int):
         abort(404)
     covers = medias.get_product_covers(pid)
     actual_lang = lang if lang in covers else "en"
+    if not re.fullmatch(r"[a-z0-9_-]{1,32}", actual_lang):
+        abort(404)
     product_dir = THUMB_DIR / str(pid)
     for ext in (".jpg", ".jpeg", ".png", ".webp"):
         f = product_dir / f"cover_{actual_lang}{ext}"

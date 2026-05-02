@@ -353,6 +353,26 @@ def test_media_thumb_rejects_thumbnail_outside_output_dir(authed_client_no_db, m
     assert response.status_code == 404
 
 
+def test_media_cover_rejects_unsafe_language_cache_path(authed_client_no_db, monkeypatch, tmp_path):
+    import web.routes.medias as route
+
+    downloaded = []
+    monkeypatch.setattr(route, "THUMB_DIR", tmp_path / "thumbs")
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr("web.routes.medias._can_access_product", lambda product: True)
+    monkeypatch.setattr("web.routes.medias.medias.resolve_cover", lambda pid, lang: "1/medias/123/cover.jpg")
+    monkeypatch.setattr("web.routes.medias.medias.get_product_covers", lambda pid: {"../../outside": "x"})
+    monkeypatch.setattr(
+        "web.routes.medias._download_media_object",
+        lambda object_key, destination: downloaded.append(destination) or destination,
+    )
+
+    response = authed_client_no_db.get("/medias/cover/123?lang=..%2F..%2Foutside")
+
+    assert response.status_code == 404
+    assert downloaded == []
+
+
 def test_manual_ai_evaluate_request_payload_includes_full_base64(
     authed_client_no_db, monkeypatch, tmp_path
 ):
