@@ -103,6 +103,15 @@ def test_task_recovery_uses_project_state_helper_for_state_json_writes():
     assert "UPDATE projects SET state_json = %s, status = %s" not in source
 
 
+def test_detail_image_zip_archive_construction_lives_outside_route_module():
+    route_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+
+    assert "import zipfile" not in route_source
+    assert "TemporaryDirectory(prefix=\"detail_images_zip_\")" not in route_source
+    assert "TemporaryDirectory(prefix=\"localized_detail_images_zip_\")" not in route_source
+    assert Path("web/services/media_detail_archives.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

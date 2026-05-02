@@ -4,13 +4,9 @@
 """
 from __future__ import annotations
 
-import io
 import json
 import os
-import tempfile
 import uuid
-import zipfile
-from pathlib import Path
 
 import requests
 from flask import abort, jsonify, request, send_file
@@ -27,6 +23,10 @@ from config import OUTPUT_DIR
 from web import store
 from web.routes import image_translate as image_translate_routes
 from web.services import image_translate_runner
+from web.services.media_detail_archives import (
+    DetailImagesZipGroup,
+    build_detail_images_archive,
+)
 
 from . import bp
 from ._helpers import (
@@ -144,23 +144,16 @@ def api_detail_images_download_zip(pid: int):
 
     base = _detail_images_archive_basename(p or {}, pid, lang)
     archive_base = f"{base}_gif" if kind == "gif" else base
-    buf = io.BytesIO()
-    with tempfile.TemporaryDirectory(prefix="detail_images_zip_") as tmp_dir:
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for idx, row in enumerate(rows, start=1):
-                object_key = str(row.get("object_key") or "").strip()
-                if not object_key:
-                    continue
-                suffix = Path(object_key).suffix or ".jpg"
-                local_path = Path(tmp_dir) / f"detail_{idx:02d}{suffix}"
-                _download_media_object(object_key, str(local_path))
-                zf.write(local_path, arcname=f"{archive_base}/{idx:02d}{suffix}")
-    buf.seek(0)
+    archive = build_detail_images_archive(
+        archive_base=archive_base,
+        groups=[DetailImagesZipGroup(folder=archive_base, rows=rows)],
+        download_media_object=_download_media_object,
+    )
     return send_file(
-        buf,
+        archive.buffer,
         mimetype="application/zip",
         as_attachment=True,
-        download_name=f"{archive_base}.zip",
+        download_name=f"{archive.archive_base}.zip",
     )
 
 
@@ -206,22 +199,20 @@ def api_detail_images_download_localized_zip(pid: int):
         },
     )
 
-    buf = io.BytesIO()
-    with tempfile.TemporaryDirectory(prefix="localized_detail_images_zip_") as tmp_dir:
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for _lang, folder, rows in groups:
-                for idx, row in enumerate(rows, start=1):
-                    object_key = str(row.get("object_key") or "").strip()
-                    suffix = Path(object_key).suffix or ".jpg"
-                    local_path = Path(tmp_dir) / f"{uuid.uuid4().hex}{suffix}"
-                    _download_media_object(object_key, str(local_path))
-                    zf.write(local_path, arcname=f"{folder}/{idx:02d}{suffix}")
-    buf.seek(0)
+    archive = build_detail_images_archive(
+        archive_base=archive_base,
+        groups=[
+            DetailImagesZipGroup(folder=folder, rows=rows)
+            for _lang, folder, rows in groups
+        ],
+        download_media_object=_download_media_object,
+        temp_prefix="localized_detail_images_zip_",
+    )
     return send_file(
-        buf,
+        archive.buffer,
         mimetype="application/zip",
         as_attachment=True,
-        download_name=f"{archive_base}.zip",
+        download_name=f"{archive.archive_base}.zip",
     )
 
 
