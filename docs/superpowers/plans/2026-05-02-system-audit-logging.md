@@ -52,7 +52,7 @@
 - Create: `appcore/system_audit.py`
 - Test: `tests/test_system_audit.py`
 
-- [ ] **Step 1: Write failing DAO tests**
+- [x] **Step 1: Write failing DAO tests**
 
 Create `tests/test_system_audit.py`:
 
@@ -165,7 +165,7 @@ def test_list_daily_media_downloads_limits_actions(monkeypatch):
     assert captured["args"][:2] == ("2026-05-02", "2026-05-02")
 ```
 
-- [ ] **Step 2: Run DAO tests to verify RED**
+- [x] **Step 2: Run DAO tests to verify RED**
 
 Run:
 
@@ -175,7 +175,7 @@ pytest tests/test_system_audit.py -q
 
 Expected: fails with `ModuleNotFoundError` or missing `appcore.system_audit`.
 
-- [ ] **Step 3: Add migration**
+- [x] **Step 3: Add migration**
 
 Create `db/migrations/2026_05_02_system_audit_logs.sql`:
 
@@ -204,7 +204,7 @@ CREATE TABLE IF NOT EXISTS system_audit_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-- [ ] **Step 4: Implement DAO**
+- [x] **Step 4: Implement DAO**
 
 Create `appcore/system_audit.py` with:
 
@@ -402,7 +402,7 @@ def list_daily_media_downloads(
     )
 ```
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run:
 
@@ -412,7 +412,7 @@ pytest tests/test_system_audit.py -q
 
 Expected: `4 passed`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add db/migrations/2026_05_02_system_audit_logs.sql appcore/system_audit.py tests/test_system_audit.py
@@ -431,7 +431,7 @@ git commit -m "feat: add system audit log storage"
 - Modify: `web/templates/layout.html`
 - Test: `tests/test_security_audit_routes.py`
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Create `tests/test_security_audit_routes.py`:
 
@@ -503,7 +503,7 @@ def test_layout_shows_security_audit_only_to_superadmin(monkeypatch):
     assert "/admin/security-audit" not in resp.get_data(as_text=True)
 ```
 
-- [ ] **Step 2: Run route tests to verify RED**
+- [x] **Step 2: Run route tests to verify RED**
 
 Run:
 
@@ -513,7 +513,7 @@ pytest tests/test_security_audit_routes.py -q
 
 Expected: failures for missing route/blueprint/template.
 
-- [ ] **Step 3: Implement `web/routes/security_audit.py`**
+- [x] **Step 3: Implement `web/routes/security_audit.py`**
 
 Use `current_user.is_superadmin`, not `admin_required`:
 
@@ -591,11 +591,11 @@ def api_media_downloads():
     return jsonify({"items": rows, "total": total, "page": f["page"], "page_size": f["page_size"]})
 ```
 
-- [ ] **Step 4: Extend DAO count functions**
+- [x] **Step 4: Extend DAO count functions**
 
 Add `count_logs()` and `count_daily_media_downloads()` to `appcore/system_audit.py` using the same filters as the list functions, returning `int(row["cnt"] or 0)`.
 
-- [ ] **Step 5: Register blueprint**
+- [x] **Step 5: Register blueprint**
 
 Modify `web/app.py`:
 
@@ -609,7 +609,7 @@ and in `create_app()`:
 app.register_blueprint(security_audit_bp)
 ```
 
-- [ ] **Step 6: Add sidebar link**
+- [x] **Step 6: Add sidebar link**
 
 Modify `web/templates/layout.html` near other system links:
 
@@ -621,7 +621,7 @@ Modify `web/templates/layout.html` near other system links:
 {% endif %}
 ```
 
-- [ ] **Step 7: Create template and JS**
+- [x] **Step 7: Create template and JS**
 
 `web/templates/admin_security_audit.html` must include:
 
@@ -662,7 +662,7 @@ Modify `web/templates/layout.html` near other system links:
 
 `web/static/admin_security_audit.js` should fetch `/admin/security-audit/api/logs` or `/admin/security-audit/api/media-downloads` and render rows with escaped HTML.
 
-- [ ] **Step 8: Verify GREEN**
+- [x] **Step 8: Verify GREEN**
 
 Run:
 
@@ -672,7 +672,7 @@ pytest tests/test_security_audit_routes.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```powershell
 git add appcore/system_audit.py web/routes/security_audit.py web/app.py web/templates/layout.html web/templates/admin_security_audit.html web/static/admin_security_audit.js tests/test_security_audit_routes.py
@@ -687,7 +687,7 @@ git commit -m "feat: add superadmin security audit page"
 - Modify: `web/routes/auth.py`
 - Test: `tests/test_auth_audit.py`
 
-- [ ] **Step 1: Write failing auth audit tests**
+- [x] **Step 1: Write failing auth audit tests**
 
 Create `tests/test_auth_audit.py`:
 
@@ -736,7 +736,7 @@ def test_login_failure_records_audit(monkeypatch):
     assert calls[0]["detail"]["username"] == "missing"
 ```
 
-- [ ] **Step 2: Run auth audit tests to verify RED**
+- [x] **Step 2: Run auth audit tests to verify RED**
 
 Run:
 
@@ -746,7 +746,7 @@ pytest tests/test_auth_audit.py -q
 
 Expected: failures because `web.routes.auth` does not import/use `system_audit`.
 
-- [ ] **Step 3: Implement audit in auth routes**
+- [x] **Step 3: Implement audit in auth routes**
 
 Modify `web/routes/auth.py`:
 
@@ -797,7 +797,7 @@ system_audit.record_from_request(
 )
 ```
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run:
 
@@ -807,7 +807,7 @@ pytest tests/test_auth_audit.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/routes/auth.py tests/test_auth_audit.py
@@ -822,7 +822,7 @@ git commit -m "feat: audit authentication events"
 - Modify: `web/routes/medias.py`
 - Test: `tests/test_medias_audit.py`
 
-- [ ] **Step 1: Write failing media audit tests**
+- [x] **Step 1: Write failing media audit tests**
 
 Create `tests/test_medias_audit.py`:
 
@@ -895,7 +895,7 @@ def test_detail_images_zip_download_records_audit(authed_client_no_db, monkeypat
     assert calls[0]["target_id"] == 2
 ```
 
-- [ ] **Step 2: Run media audit tests to verify RED**
+- [x] **Step 2: Run media audit tests to verify RED**
 
 Run:
 
@@ -905,7 +905,7 @@ pytest tests/test_medias_audit.py -q
 
 Expected: failures for missing `system_audit` import and `find_item_by_object_key`.
 
-- [ ] **Step 3: Add DAO helper**
+- [x] **Step 3: Add DAO helper**
 
 Modify `appcore/medias.py`:
 
@@ -917,7 +917,7 @@ def find_item_by_object_key(object_key: str) -> dict | None:
     )
 ```
 
-- [ ] **Step 4: Add media audit helpers**
+- [x] **Step 4: Add media audit helpers**
 
 Modify `web/routes/medias.py`:
 
@@ -953,7 +953,7 @@ def _audit_media_item_access(item: dict, product: dict | None, *, action: str = 
 
 Add a similar `_audit_raw_source_video_access(row, product)`.
 
-- [ ] **Step 5: Wire media object routes**
+- [x] **Step 5: Wire media object routes**
 
 In `media_object_proxy()`, after object key validation and before returning:
 
@@ -987,7 +987,7 @@ system_audit.record_from_request(
 
 Use `localized_detail_images_zip_download` for localized ZIP.
 
-- [ ] **Step 6: Verify GREEN**
+- [x] **Step 6: Verify GREEN**
 
 Run:
 
@@ -997,7 +997,7 @@ pytest tests/test_medias_audit.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add appcore/medias.py web/routes/medias.py tests/test_medias_audit.py
@@ -1015,7 +1015,7 @@ git commit -m "feat: audit media access and downloads"
 - Modify: `web/routes/admin.py`
 - Test: extend `tests/test_medias_audit.py`, create `tests/test_task_push_admin_audit.py`
 
-- [ ] **Step 1: Write failing mutation tests**
+- [x] **Step 1: Write failing mutation tests**
 
 Create `tests/test_task_push_admin_audit.py` with route-level monkeypatch tests:
 
@@ -1072,7 +1072,7 @@ def test_delete_media_item_records_audit(authed_client_no_db, monkeypatch):
     assert calls[0]["target_id"] == 12
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -1082,7 +1082,7 @@ pytest tests/test_medias_audit.py tests/test_task_push_admin_audit.py -q
 
 Expected: failures for missing imports/audit calls.
 
-- [ ] **Step 3: Implement lightweight audit calls**
+- [x] **Step 3: Implement lightweight audit calls**
 
 Add `from appcore import system_audit` to `web/routes/tasks.py`, `web/routes/pushes.py`, and `web/routes/admin.py`.
 
@@ -1119,7 +1119,7 @@ system_audit.record_from_request(
 )
 ```
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run:
 
@@ -1129,7 +1129,7 @@ pytest tests/test_medias_audit.py tests/test_task_push_admin_audit.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/routes/medias.py web/routes/tasks.py web/routes/pushes.py web/routes/admin.py tests/test_medias_audit.py tests/test_task_push_admin_audit.py
@@ -1143,7 +1143,7 @@ git commit -m "feat: audit key platform actions"
 **Files:**
 - No new files unless fixes are needed.
 
-- [ ] **Step 1: Run focused audit suite**
+- [x] **Step 1: Run focused audit suite**
 
 Run:
 
@@ -1153,7 +1153,7 @@ pytest tests/test_system_audit.py tests/test_security_audit_routes.py tests/test
 
 Expected: all pass.
 
-- [ ] **Step 2: Run adjacent route tests**
+- [x] **Step 2: Run adjacent route tests**
 
 Run:
 
@@ -1163,7 +1163,7 @@ pytest tests/test_web_routes.py tests/test_tasks_routes.py tests/test_pushes_rou
 
 Expected: all pass or identify pre-existing failures with evidence.
 
-- [ ] **Step 3: Inspect git status**
+- [x] **Step 3: Inspect git status**
 
 Run:
 
@@ -1173,7 +1173,7 @@ git status --short --branch
 
 Expected: clean worktree on feature branch after commits.
 
-- [ ] **Step 4: Commit any verification fixes**
+- [x] **Step 4: Commit any verification fixes**
 
 If fixes were needed:
 
@@ -1189,7 +1189,7 @@ git commit -m "fix: stabilize system audit logging"
 **Files:**
 - No code edits expected.
 
-- [ ] **Step 1: Sync with origin**
+- [x] **Step 1: Sync with origin**
 
 Run:
 
@@ -1201,7 +1201,7 @@ git rebase origin/master
 
 Expected: branch rebased or conflicts resolved manually.
 
-- [ ] **Step 2: Re-run focused verification after rebase**
+- [x] **Step 2: Re-run focused verification after rebase**
 
 Run:
 
@@ -1211,7 +1211,7 @@ pytest tests/test_system_audit.py tests/test_security_audit_routes.py tests/test
 
 Expected: all pass.
 
-- [ ] **Step 3: Merge to master**
+- [x] **Step 3: Merge to master**
 
 Because this work is in an isolated worktree, merge through git refs without editing the main checkout:
 
@@ -1223,7 +1223,7 @@ git merge --no-ff feat/system-audit-logging -m "Merge system audit logging"
 
 Expected: merge succeeds.
 
-- [ ] **Step 4: Push master**
+- [x] **Step 4: Push master**
 
 Run:
 
@@ -1233,7 +1233,7 @@ git push origin master
 
 Expected: push succeeds.
 
-- [ ] **Step 5: Publish online**
+- [x] **Step 5: Publish online**
 
 Use project release rule: user requested online release, so commit, merge to main, then publish online. The current repository publish script is `deploy/publish.sh`; it pushes the current branch, SSHes to `/opt/autovideosrt`, runs `git pull`, restarts `autovideosrt`, and performs a local HTTP health check. New SQL migrations under `db/migrations/` are applied by `main.py` startup through `appcore.db_migrations.ensure_up_to_date()`.
 
