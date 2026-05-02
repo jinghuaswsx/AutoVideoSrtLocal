@@ -11,7 +11,8 @@ from urllib.parse import urlparse
 from flask import jsonify
 from flask_login import current_user
 
-from appcore import local_media_storage, medias, object_keys, task_state
+from appcore import local_media_storage, material_evaluation, medias, object_keys, task_state
+from web.background import start_background_task
 from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
 from appcore.material_filename_rules import (
@@ -52,6 +53,21 @@ _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES = {
     "sv": "瑞典",
     "fi": "芬兰",
 }
+
+
+def _can_access_product(product: dict | None) -> bool:
+    # 共享媒体库：只要产品存在就允许访问
+    return product is not None
+
+
+def _schedule_material_evaluation(pid: int, *, force: bool = False,
+                                  manual: bool = False) -> None:
+    start_background_task(
+        material_evaluation.evaluate_product_if_ready,
+        int(pid),
+        force=force,
+        manual=manual,
+    )
 
 
 def _material_evaluation_message(result: dict) -> str:

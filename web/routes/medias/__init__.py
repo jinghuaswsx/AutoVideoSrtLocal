@@ -97,16 +97,6 @@ _MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 _MK_VIDEO_CACHE_PREFIX = "mk-selection/videos"
 
 
-def _schedule_material_evaluation(pid: int, *, force: bool = False,
-                                  manual: bool = False) -> None:
-    start_background_task(
-        material_evaluation.evaluate_product_if_ready,
-        int(pid),
-        force=force,
-        manual=manual,
-    )
-
-
 bp = Blueprint("medias", __name__, url_prefix="/medias")
 
 THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
@@ -177,12 +167,6 @@ def media_object_proxy():
         abort(404)
     return _send_media_object(object_key)
 
-def _can_access_product(product: dict | None) -> bool:
-    # 鍏变韩濯掍綋搴擄細鍙浜у搧瀛樺湪灏卞厑璁歌闂€?
-    return product is not None
-
-
-
 # ---------- 椤甸潰 ----------
 
 # ---------- 缈昏瘧浠诲姟 ----------
@@ -193,47 +177,6 @@ def _can_access_product(product: dict | None) -> bool:
 
 
 
-
-
-@bp.route("/api/products/<int:pid>/evaluate", methods=["POST"])
-@login_required
-def api_product_evaluate(pid: int):
-    p = medias.get_product(pid)
-    if not _can_access_product(p):
-        abort(404)
-    result = material_evaluation.evaluate_product_if_ready(pid, force=True, manual=True)
-    message = _material_evaluation_message(result)
-    payload = {"ok": result.get("status") == "evaluated", "message": message, "result": result}
-    if result.get("status") == "evaluated":
-        return jsonify(payload)
-    return jsonify({**payload, "error": message}), 400
-
-
-@bp.route("/api/products/<int:pid>/evaluate/request-preview", methods=["GET"])
-@login_required
-def api_product_evaluate_request_preview(pid: int):
-    p = medias.get_product(pid)
-    if not _can_access_product(p):
-        abort(404)
-    try:
-        payload = material_evaluation.build_request_debug_payload(pid, include_base64=False)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    payload["full_payload_url"] = f"/medias/api/products/{pid}/evaluate/request-payload"
-    return jsonify({"ok": True, "payload": payload})
-
-
-@bp.route("/api/products/<int:pid>/evaluate/request-payload", methods=["GET"])
-@login_required
-def api_product_evaluate_request_payload(pid: int):
-    p = medias.get_product(pid)
-    if not _can_access_product(p):
-        abort(404)
-    try:
-        payload = material_evaluation.build_request_debug_payload(pid, include_base64=True)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify({"ok": True, "payload": payload})
 
 
 
@@ -1980,6 +1923,12 @@ _push_routes = _importlib.import_module(f"{__name__}.pushes")
 pushes = _appcore_pushes
 from . import shopify_image as _shopify_image_routes
 from . import link_check as _link_check_routes
+from . import evaluation as _evaluation
+
+from ._helpers import _can_access_product, _material_evaluation_message, _schedule_material_evaluation
+api_product_evaluate = _evaluation.api_product_evaluate
+api_product_evaluate_request_preview = _evaluation.api_product_evaluate_request_preview
+api_product_evaluate_request_payload = _evaluation.api_product_evaluate_request_payload
 
 _medias_page_context = _pages._medias_page_context
 index = _pages.index
