@@ -47,7 +47,7 @@ from config import OUTPUT_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
 from web.routes import image_translate as image_translate_routes
-from web.services import image_translate_runner, link_check_runner
+from web.services import image_translate_runner, link_check_runner, media_object_storage
 
 import re
 
@@ -360,44 +360,19 @@ def _reserve_local_media_upload(object_key: str) -> dict[str, str]:
 
 
 def _is_media_available(object_key: str) -> bool:
-    if not object_key:
-        return False
-    try:
-        return local_media_storage.exists(object_key)
-    except ValueError:
-        return False
+    return media_object_storage.is_media_available(object_key)
 
 
 def _download_media_object(object_key: str, destination: str | os.PathLike[str]) -> str:
-    try:
-        if local_media_storage.exists(object_key):
-            return local_media_storage.download_to(object_key, destination)
-    except ValueError as exc:
-        raise FileNotFoundError(f"invalid local media object: {object_key}") from exc
-    raise FileNotFoundError(f"local media object not found: {object_key}")
+    return media_object_storage.download_media_object(object_key, destination)
 
 
 def _delete_media_object(object_key: str | None) -> None:
-    key = (object_key or "").strip()
-    if not key:
-        return
-    try:
-        local_media_storage.delete(key)
-    except Exception:
-        pass
+    media_object_storage.delete_media_object(object_key)
 
 
 def _send_media_object(object_key: str):
-    if _is_media_available(object_key):
-        try:
-            local_path = local_media_storage.safe_local_path_for(object_key)
-        except ValueError:
-            abort(404)
-        return send_file(
-            str(local_path),
-            mimetype=mimetypes.guess_type(object_key)[0] or "application/octet-stream",
-        )
-    abort(404)
+    return media_object_storage.send_media_object(object_key)
 
 
 def _safe_thumb_cache_path(path: Path) -> Path:
