@@ -63,7 +63,7 @@ from web.services.task_av_rewrite import (
     rebuild_tts_full_audio,
     resolve_av_voice_ids,
 )
-from web.services.task_access import get_user_task, is_admin_user, optional_user_id, refresh_task
+from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id, refresh_task
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -1050,7 +1050,7 @@ def rename_task(task_id):
         return jsonify({"error": outcome.error}), outcome.status_code
     resolved = outcome.display_name
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (resolved, task_id))
-    store.get(task_id)
+    load_task(task_id)
     store.update(task_id, display_name=resolved)
     return jsonify(outcome.payload)
 
@@ -1096,7 +1096,7 @@ def resume_from_step(task_id):
     if not row:
         return task_not_found_response()
 
-    task = store.get(task_id)
+    task = load_task(task_id)
     if not task:
         return task_not_found_response()
 
@@ -1140,7 +1140,7 @@ def run_ai_analysis(task_id):
     if not row:
         return task_not_found_response()
 
-    task = store.get(task_id)
+    task = load_task(task_id)
     if not task:
         return task_not_found_response()
 

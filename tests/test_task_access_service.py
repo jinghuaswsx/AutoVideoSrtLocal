@@ -56,3 +56,13 @@ def test_refresh_task_returns_latest_task_or_fallback():
 
     assert refresh_task("task-1", fallback, task_store=store) is latest
     assert refresh_task("missing", fallback, task_store=store) is fallback
+
+
+def test_load_task_returns_store_task_or_none():
+    from web.services.task_access import load_task
+
+    task = {"id": "task-1", "status": "loaded"}
+    store = FakeTaskStore({"task-1": task})
+
+    assert load_task("task-1", task_store=store) is task
+    assert load_task("missing", task_store=store) is None

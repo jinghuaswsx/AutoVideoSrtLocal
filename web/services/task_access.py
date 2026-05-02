@@ -22,5 +22,9 @@ def optional_user_id(user) -> int | None:
     return getattr(user, "id", None)
 
 
+def load_task(task_id: str, *, task_store=store) -> dict | None:
+    return task_store.get(task_id)
+
+
 def refresh_task(task_id: str, fallback, *, task_store=store):
     return task_store.get(task_id) or fallback
