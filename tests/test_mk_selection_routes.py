@@ -252,6 +252,30 @@ def test_mk_video_proxy_caches_wedev_video_for_local_preview(
     assert cached_response.data == payload
 
 
+def test_mk_video_proxy_rejects_local_media_path_escape(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import medias as r
+
+    media_store = tmp_path / "media_store"
+    media_store.mkdir()
+    outside_file = tmp_path / "outside.mp4"
+    outside_file.write_bytes(b"outside-video")
+    object_key = "mk-selection/videos/demo.mp4"
+
+    monkeypatch.setattr(r.local_media_storage, "MEDIA_STORE_DIR", media_store)
+    monkeypatch.setattr(r, "_cache_mk_video", lambda media_path: object_key)
+    monkeypatch.setattr(r.local_media_storage, "local_path_for", lambda key: outside_file)
+
+    response = authed_client_no_db.get(
+        "/medias/api/mk-video?path=medias/uploads2/202505/1747910543.mp4"
+    )
+
+    assert response.status_code == 404
+
+
 def test_mk_detail_proxy_uses_server_side_wedev_credentials(
     authed_client_no_db,
     monkeypatch,

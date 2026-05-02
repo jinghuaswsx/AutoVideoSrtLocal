@@ -370,9 +370,8 @@ def test_update_raw_source_rejects_display_name_with_space(authed_client_no_db, 
     assert updated == []
 
 
-def test_raw_source_video_redirects_to_signed_url(authed_client_no_db, monkeypatch):
+def test_raw_source_video_redirects_to_signed_url(authed_client_no_db, monkeypatch, tmp_path):
     from web.routes import medias as r
-    from pathlib import Path
 
     monkeypatch.setattr(
         r.medias,
@@ -381,11 +380,11 @@ def test_raw_source_video_redirects_to_signed_url(authed_client_no_db, monkeypat
     )
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "t-rs"})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
-    temp_video = Path(authed_client_no_db.application.instance_path) / "raw-source-video.mp4"
+    media_store = tmp_path / "media_store"
+    temp_video = media_store / "vvv.mp4"
     temp_video.parent.mkdir(parents=True, exist_ok=True)
     temp_video.write_bytes(b"raw-video-bytes")
-    monkeypatch.setattr(r.local_media_storage, "exists", lambda object_key: object_key == "vvv.mp4")
-    monkeypatch.setattr(r.local_media_storage, "local_path_for", lambda object_key: temp_video)
+    monkeypatch.setattr(r.local_media_storage, "MEDIA_STORE_DIR", media_store)
 
     resp = authed_client_no_db.get("/medias/raw-sources/66/video")
 

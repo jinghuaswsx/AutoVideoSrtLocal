@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
 from config import OUTPUT_DIR
+from appcore.safe_paths import resolve_under_allowed_roots
 from appcore import tos_backup_storage
 
 
@@ -26,6 +27,10 @@ def _normalize_object_key(object_key: str) -> PurePosixPath:
 
 def local_path_for(object_key: str) -> Path:
     return MEDIA_STORE_DIR.joinpath(*_normalize_object_key(object_key).parts)
+
+
+def safe_local_path_for(object_key: str) -> Path:
+    return resolve_under_allowed_roots(local_path_for(object_key), [MEDIA_STORE_DIR])
 
 
 def _commit_written_file(temp_name: str, destination: Path) -> None:

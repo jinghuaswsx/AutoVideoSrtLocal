@@ -373,8 +373,64 @@ def test_media_cover_rejects_unsafe_language_cache_path(authed_client_no_db, mon
     assert downloaded == []
 
 
+def test_media_cover_rejects_cached_file_outside_thumb_dir(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    import os
+    import subprocess
+    import web.routes.medias as route
+
+    thumb_dir = tmp_path / "thumbs"
+    outside_dir = tmp_path / "outside"
+    thumb_dir.mkdir()
+    outside_dir.mkdir()
+    (outside_dir / "cover_en.jpg").write_bytes(b"outside-cover")
+    try:
+        (thumb_dir / "123").symlink_to(outside_dir, target_is_directory=True)
+    except OSError as exc:
+        if os.name != "nt":
+            pytest.skip(f"symlink creation not available: {exc}")
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(thumb_dir / "123"), str(outside_dir)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            pytest.skip(f"junction creation not available: {result.stderr or result.stdout}")
+
+    monkeypatch.setattr(route, "THUMB_DIR", thumb_dir)
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr("web.routes.medias._can_access_product", lambda product: True)
+    monkeypatch.setattr("web.routes.medias.medias.resolve_cover", lambda pid, lang: "1/medias/123/cover.jpg")
+    monkeypatch.setattr("web.routes.medias.medias.get_product_covers", lambda pid: {"en": "x"})
+
+    response = authed_client_no_db.get("/medias/cover/123?lang=en")
+
+    assert response.status_code == 404
+
+
 def test_media_object_proxy_rejects_invalid_object_key_without_500(authed_client_no_db):
     response = authed_client_no_db.get("/medias/object?object_key=..%2Foutside.mp4")
+
+    assert response.status_code == 404
+
+
+def test_media_object_proxy_rejects_local_media_path_escape(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    from web.routes import medias as r
+
+    object_key = "1/medias/123/detail_en_demo.jpg"
+    media_store = tmp_path / "media_store"
+    media_store.mkdir()
+    outside_file = tmp_path / "outside.jpg"
+    outside_file.write_bytes(b"outside-bytes")
+
+    monkeypatch.setattr(r.local_media_storage, "MEDIA_STORE_DIR", media_store)
+    monkeypatch.setattr(r.local_media_storage, "exists", lambda key: key == object_key)
+    monkeypatch.setattr(r.local_media_storage, "local_path_for", lambda key: outside_file)
+
+    response = authed_client_no_db.get(f"/medias/object?object_key={object_key}")
 
     assert response.status_code == 404
 
@@ -1520,9 +1576,12 @@ def test_detail_image_proxy_serves_local_media_store_file(
     from web.routes import medias as r
 
     object_key = "1/medias/123/detail_en_demo.jpg"
-    local_file = tmp_path / "detail.jpg"
+    media_store = tmp_path / "media_store"
+    local_file = media_store / object_key
+    local_file.parent.mkdir(parents=True)
     local_file.write_bytes(b"detail-bytes")
 
+    monkeypatch.setattr(r.local_media_storage, "MEDIA_STORE_DIR", media_store)
     monkeypatch.setattr(
         r.medias,
         "get_detail_image",

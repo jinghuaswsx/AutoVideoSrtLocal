@@ -42,6 +42,7 @@ from appcore.material_filename_rules import (
     validate_material_filename,
     validate_video_filename_no_spaces,
 )
+from appcore.safe_paths import resolve_under_allowed_roots
 from config import OUTPUT_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
@@ -389,7 +390,7 @@ def _delete_media_object(object_key: str | None) -> None:
 def _send_media_object(object_key: str):
     if _is_media_available(object_key):
         try:
-            local_path = local_media_storage.local_path_for(object_key)
+            local_path = local_media_storage.safe_local_path_for(object_key)
         except ValueError:
             abort(404)
         return send_file(
@@ -397,6 +398,10 @@ def _send_media_object(object_key: str):
             mimetype=mimetypes.guess_type(object_key)[0] or "application/octet-stream",
         )
     abort(404)
+
+
+def _safe_thumb_cache_path(path: Path) -> Path:
+    return resolve_under_allowed_roots(path, [THUMB_DIR])
 
 
 @bp.route("/api/local-media-upload/<upload_id>", methods=["PUT"])
@@ -2211,12 +2216,16 @@ def cover(pid: int):
     for ext in (".jpg", ".jpeg", ".png", ".webp"):
         f = product_dir / f"cover_{actual_lang}{ext}"
         if f.exists():
+            try:
+                safe_file = _safe_thumb_cache_path(f)
+            except ValueError:
+                abort(404)
             mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
-            return send_file(str(f), mimetype=mime)
+            return send_file(str(safe_file), mimetype=mime)
     try:
         product_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(object_key).suffix or ".jpg"
-        local = product_dir / f"cover_{actual_lang}{ext}"
+        local = _safe_thumb_cache_path(product_dir / f"cover_{actual_lang}{ext}")
         _download_media_object(object_key, str(local))
         mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
         return send_file(str(local), mimetype=mime)
@@ -3201,8 +3210,12 @@ def api_mk_video_proxy():
         return jsonify({"error": str(exc)}), 502
 
     mimetype = mimetypes.guess_type(object_key)[0] or guessed_type or "video/mp4"
+    try:
+        local_path = local_media_storage.safe_local_path_for(object_key)
+    except ValueError:
+        abort(404)
     return send_file(
-        str(local_media_storage.local_path_for(object_key)),
+        str(local_path),
         mimetype=mimetype,
         conditional=True,
     )
@@ -3280,7 +3293,7 @@ def _cache_mk_video(media_path: str) -> str:
         if declared_size > _MAX_MK_VIDEO_BYTES:
             raise ValueError("明空视频过大，超过 2GB")
 
-        destination = local_media_storage.local_path_for(object_key)
+        destination = local_media_storage.safe_local_path_for(object_key)
         destination.parent.mkdir(parents=True, exist_ok=True)
         fd, temp_name = tempfile.mkstemp(prefix="mk_video_", dir=str(destination.parent))
         total = 0
