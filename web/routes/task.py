@@ -63,7 +63,7 @@ from web.services.task_av_rewrite import (
     rebuild_tts_full_audio,
     resolve_av_voice_ids,
 )
-from web.services.task_access import get_user_task, is_admin_user, optional_user_id
+from web.services.task_access import get_user_task, is_admin_user, optional_user_id, refresh_task
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -325,7 +325,7 @@ def confirm_voice(task_id: str):
     store.set_step(task_id, "voice_match", "done")
     store.set_current_review_step(task_id, "")
 
-    updated_task = store.get(task_id) or task
+    updated_task = refresh_task(task_id, task)
     try:
         ensure_local_source_video(task_id, updated_task)
     except FileNotFoundError as exc:
@@ -461,7 +461,7 @@ def restart(task_id):
         runner=pipeline_runner,
         step_order=AV_SYNC_STEPS,
     )
-    updated = store.get(task_id) or updated
+    updated = refresh_task(task_id, updated)
     return jsonify({"status": "restarted", "task": updated})
 
 
@@ -502,19 +502,19 @@ def start(task_id):
         steps=av_steps,
         step_messages=av_step_messages,
     )
-    task = store.get(task_id) or task
+    task = refresh_task(task_id, task)
 
     if task_requires_source_sync(task):
         try:
             ensure_local_source_video(task_id, task)
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 409
-        updated_task = store.get(task_id) or task
+        updated_task = refresh_task(task_id, task)
         return jsonify({"status": "source_ready", "task": updated_task})
 
     user_id = optional_user_id(current_user)
     pipeline_runner.start(task_id, user_id=user_id)
-    updated_task = store.get(task_id) or task
+    updated_task = refresh_task(task_id, task)
     return jsonify({"status": "started", "task": updated_task})
 
 
@@ -749,7 +749,7 @@ def update_segments(task_id):
         return jsonify({"error": "segments required"}), 400
 
     store.confirm_segments(task_id, body["segments"])
-    updated_task = store.get(task_id) or task
+    updated_task = refresh_task(task_id, task)
     if str(updated_task.get("pipeline_version") or "").strip() == "av":
         variant_state = dict((updated_task.get("variants") or {}).get("av") or {})
         existing_sentences = [
@@ -789,7 +789,7 @@ def update_segments(task_id):
             localized_translation=localized_translation,
         )
         store.update(task_id, localized_translation=localized_translation, segments=av_sentences)
-        updated_task = store.get(task_id) or updated_task
+        updated_task = refresh_task(task_id, updated_task)
     store.set_artifact(task_id, "translate", build_translate_compare_artifact(updated_task))
     store.set_current_review_step(task_id, "")
     store.set_step(task_id, "translate", "done")
@@ -968,7 +968,7 @@ def av_rewrite_sentence(task_id):
         tos_uploads=tos_uploads,
         voice_id=resolved_voice_id or task.get("voice_id"),
     )
-    updated_task = store.get(task_id) or task
+    updated_task = refresh_task(task_id, task)
     return jsonify(
         {
             "ok": True,
@@ -1066,7 +1066,7 @@ def delete_task(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     cleanup_deleted_task_storage(
-        store.get(task_id) or {},
+        refresh_task(task_id, {}),
         row,
         collect_task_tos_keys=cleanup.collect_task_tos_keys,
         delete_task_storage=cleanup.delete_task_storage,
@@ -1117,7 +1117,7 @@ def resume_from_step(task_id):
     if (task.get("pipeline_version") or "") == "av":
         resume_payload["type"] = "translation"
     store.update(task_id, **resume_payload)
-    task = store.get(task_id) or task
+    task = refresh_task(task_id, task)
     try:
         ensure_local_source_video(task_id, task)
     except FileNotFoundError as exc:

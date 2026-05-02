@@ -20,3 +20,7 @@ def optional_user_id(user) -> int | None:
     if not getattr(user, "is_authenticated", False):
         return None
     return getattr(user, "id", None)
+
+
+def refresh_task(task_id: str, fallback, *, task_store=store):
+    return task_store.get(task_id) or fallback

@@ -45,3 +45,14 @@ def test_optional_user_id_reads_authenticated_flask_login_user():
     assert optional_user_id(SimpleNamespace(id=42, is_authenticated=True)) == 42
     assert optional_user_id(SimpleNamespace(id=42, is_authenticated=False)) is None
     assert optional_user_id(SimpleNamespace(id=42)) is None
+
+
+def test_refresh_task_returns_latest_task_or_fallback():
+    from web.services.task_access import refresh_task
+
+    fallback = {"id": "task-1", "status": "old"}
+    latest = {"id": "task-1", "status": "new"}
+    store = FakeTaskStore({"task-1": latest})
+
+    assert refresh_task("task-1", fallback, task_store=store) is latest
+    assert refresh_task("missing", fallback, task_store=store) is fallback
