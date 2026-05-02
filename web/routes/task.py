@@ -68,7 +68,7 @@ from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
-from web.services.task_start_inputs import parse_bool, request_payload_from
+from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -195,7 +195,7 @@ def subtitle_preview(task_id: str):
 @bp.route("/user-default-voice", methods=["PUT"])
 @login_required
 def set_user_default_voice_route():
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     lang = (body.get("lang") or "").strip().lower()
     voice_id = (body.get("voice_id") or "").strip()
     voice_name = (body.get("voice_name") or "").strip() or None
@@ -252,7 +252,7 @@ def rematch_voice(task_id: str):
     if not lang:
         return jsonify({"error": "task has no target_lang"}), 400
 
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     gender = (body.get("gender") or "").strip().lower() or None
     if gender and gender not in {"male", "female"}:
         return jsonify({"error": "gender must be male|female|null"}), 400
@@ -296,7 +296,7 @@ def confirm_voice(task_id: str):
     if not task:
         return jsonify({"error": "Task not found"}), 404
     lang = av_task_target_lang(task)
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
 
     from appcore.video_translate_defaults import resolve_default_voice
 
@@ -529,7 +529,7 @@ def start_translate(task_id):
     if not task.get("_translate_pre_select"):
         return jsonify({"error": "翻译步骤不在预选状态"}), 400
 
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     model_provider = body.get("model_provider", "").strip()
     prompt_id = body.get("prompt_id")
     prompt_text = (body.get("prompt_text") or "").strip()
@@ -570,7 +570,7 @@ def retranslate(task_id):
     if step_status not in ("done", "error"):
         return jsonify({"error": "翻译步骤尚未完成，无法重新翻译"}), 400
 
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     prompt_text = (body.get("prompt_text") or "").strip()
     prompt_id = body.get("prompt_id")
     model_provider = body.get("model_provider", "").strip()
@@ -682,7 +682,7 @@ def select_translation(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     index = body.get("index")
     if index is None:
         return jsonify({"error": "index is required"}), 400
@@ -705,7 +705,7 @@ def update_alignment(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     break_after = body.get("break_after")
     if not isinstance(break_after, list):
         return jsonify({"error": "break_after required"}), 400
@@ -811,7 +811,7 @@ def av_rewrite_sentence(task_id):
     if not sentences:
         return jsonify({"error": "当前任务没有可重写的音画同步句子"}), 400
 
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     try:
         asr_index = int(body.get("asr_index"))
     except (TypeError, ValueError):
@@ -1035,7 +1035,7 @@ def rename_task(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     outcome = prepare_task_rename(
-        request.get_json(silent=True) or {},
+        json_payload_from(request),
         user_id=current_user.id,
         task_id=task_id,
         resolve_name_conflict=lambda user_id, desired_name, *, exclude_task_id=None: resolve_task_display_name_conflict(
@@ -1099,7 +1099,7 @@ def resume_from_step(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    body = request.get_json(silent=True) or {}
+    body = json_payload_from(request)
     start_step = body.get("start_step", "")
     if start_step not in RESUMABLE_STEPS:
         return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400

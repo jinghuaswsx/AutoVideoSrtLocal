@@ -342,6 +342,7 @@ def test_task_start_request_payload_parsing_lives_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 
     assert "def _request_payload" not in source
+    assert "request.get_json(silent=True) or {}" not in source
     assert Path("web/services/task_start_inputs.py").exists()
 
 

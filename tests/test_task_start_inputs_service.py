@@ -52,3 +52,19 @@ def test_request_payload_from_form_body():
         "source_language": "zh",
         "interactive_review": "on",
     }
+
+
+def test_json_payload_from_silent_json_body():
+    from web.services.task_start_inputs import json_payload_from
+
+    request_obj = SimpleNamespace(get_json=lambda silent=False: {"index": 1})
+
+    assert json_payload_from(request_obj) == {"index": 1}
+
+
+def test_json_payload_from_empty_or_invalid_body_defaults_to_empty_dict():
+    from web.services.task_start_inputs import json_payload_from
+
+    request_obj = SimpleNamespace(get_json=lambda silent=False: None)
+
+    assert json_payload_from(request_obj) == {}

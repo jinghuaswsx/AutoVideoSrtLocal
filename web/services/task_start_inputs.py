@@ -15,3 +15,7 @@ def request_payload_from(request_obj) -> dict:
     if request_obj.is_json:
         return request_obj.get_json(silent=True) or {}
     return request_obj.form.to_dict(flat=True)
+
+
+def json_payload_from(request_obj) -> dict:
+    return request_obj.get_json(silent=True) or {}
