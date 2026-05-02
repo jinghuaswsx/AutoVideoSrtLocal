@@ -9,9 +9,16 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
+from pathlib import Path
 from typing import Any
 
+from config import OUTPUT_DIR
+from appcore.safe_paths import (
+    PathSafetyError,
+    remove_file_under_roots,
+    remove_tree_under_roots,
+    resolve_under_allowed_roots,
+)
 from appcore.source_video import ensure_local_source_video
 from appcore.task_state import _empty_variant_state
 from web import store
@@ -90,15 +97,24 @@ _TASK_DIR_KEEP_PREFIXES: tuple[str, ...] = ("thumbnail",)
 def _purge_task_dir(task_dir: str) -> None:
     if not task_dir or not os.path.isdir(task_dir):
         return
-    for entry in os.listdir(task_dir):
+    try:
+        safe_task_dir = resolve_under_allowed_roots(task_dir, [OUTPUT_DIR])
+    except PathSafetyError:
+        log.warning("[restart] skip purge outside output root: %s", task_dir)
+        return
+    if not safe_task_dir.is_dir():
+        return
+    for entry in os.listdir(safe_task_dir):
         if entry.startswith(_TASK_DIR_KEEP_PREFIXES):
             continue
-        full = os.path.join(task_dir, entry)
+        full = Path(safe_task_dir) / entry
         try:
-            if os.path.isdir(full):
-                shutil.rmtree(full, ignore_errors=True)
+            if full.is_dir() and not full.is_symlink():
+                remove_tree_under_roots(full, [safe_task_dir], ignore_errors=True)
             else:
-                os.remove(full)
+                remove_file_under_roots(full, [safe_task_dir])
+        except PathSafetyError:
+            log.warning("[restart] skip unsafe task_dir entry: %s", full)
         except Exception:
             log.warning("[restart] purge task_dir entry failed: %s", full, exc_info=True)
 

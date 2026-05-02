@@ -10,6 +10,12 @@ from web.services import task_restart
 
 @pytest.fixture
 def done_task(tmp_path, monkeypatch):
+    import appcore.task_state as task_state
+
+    monkeypatch.setattr(task_restart, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **k: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **k: None)
+
     task_id = "task-restart-1"
     task_dir = tmp_path / task_id
     task_dir.mkdir()
@@ -121,6 +127,21 @@ def test_restart_purges_intermediate_and_result_files(done_task):
     assert "thumbnail.jpg" in leftover
 
 
+def test_purge_task_dir_ignores_directory_outside_output_root(tmp_path, monkeypatch):
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    outside_dir = tmp_path / "outside-task"
+    outside_dir.mkdir()
+    protected_file = outside_dir / "artifact.txt"
+    protected_file.write_text("do not delete", encoding="utf-8")
+
+    monkeypatch.setattr(task_restart, "OUTPUT_DIR", str(output_root), raising=False)
+
+    task_restart._purge_task_dir(str(outside_dir))
+
+    assert protected_file.exists()
+
+
 def test_restart_resets_state_and_persists_new_config(done_task):
     task_restart.restart_task(
         done_task["task_id"],
@@ -184,6 +205,7 @@ def test_restart_payload_does_not_share_mutable_state_across_tasks(tmp_path, mon
     import appcore.task_state as task_state
 
     monkeypatch.setattr(task_restart, "ensure_local_source_video", lambda tid: None)
+    monkeypatch.setattr(task_restart, "OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **k: None)
     monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **k: None)
 
