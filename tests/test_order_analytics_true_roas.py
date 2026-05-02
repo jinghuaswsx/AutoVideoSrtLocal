@@ -122,6 +122,45 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
     assert any("site_code IN ('newjoy', 'omurio')" in sql for sql, _args in calls)
 
 
+def test_get_realtime_roas_overview_includes_today_product_sales_stats(monkeypatch):
+    def fake_query(sql, args=()):
+        if "GROUP BY product_id" in sql:
+            assert "meta_business_date=%s" in sql
+            assert args[0] == oa._parse_meta_date("2026-04-29")
+            return [
+                {
+                    "product_id": 42,
+                    "product_name": "Glow Set",
+                    "product_code": "glow-set-rjc",
+                    "product_net_sales": 2000.0,
+                    "shipping": 125.0,
+                }
+            ]
+        if "GROUP BY HOUR" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"ad_spend": 0, "meta_purchase_value": 0, "meta_purchases": 0}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-04-29",
+        now=datetime(2026, 4, 29, 14, 10),
+    )
+
+    assert result["product_sales_stats"] == [
+        {
+            "product_id": 42,
+            "product_name": "Glow Set",
+            "product_code": "glow-set-rjc",
+            "product_net_sales": 2000.0,
+            "shipping": 125.0,
+            "total_sales": 2125.0,
+        }
+    ]
+
+
 def test_get_realtime_roas_overview_reports_snapshot_ad_updated_at(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM roi_daily_roas_nodes" in sql:
@@ -427,3 +466,18 @@ def test_realtime_tab_drops_blue_primary_card_class(authed_client_no_db):
     panel = body[panel_start:panel_end]
     assert "is-primary" not in panel, "实时大盘内仍有蓝底 is-primary 卡片"
     assert "oar-time-rule" not in panel, "实时大盘内仍有蓝底 oar-time-rule 提示框"
+
+
+def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    panel_start = body.index('id="panelRealtime"')
+    panel_end = body.index('id="panelDxmOrders"', panel_start) if 'id="panelDxmOrders"' in body[panel_start:] else len(body)
+    panel = body[panel_start:panel_end]
+
+    assert 'data-realtime-subtab="products"' in panel
+    assert 'id="realtimeSubProducts"' in panel
+    assert 'id="realtimeProductSalesBody"' in panel
+    assert "renderRealtimeProductSales(data.product_sales_stats || [])" in body

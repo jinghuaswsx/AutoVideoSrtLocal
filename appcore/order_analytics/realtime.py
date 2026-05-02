@@ -20,7 +20,7 @@ from ._helpers import (
     _revenue_with_shipping,
     _roas,
 )
-from .dianxiaomi import compute_meta_business_window_bj
+from .dianxiaomi import compute_meta_business_window_bj, get_dianxiaomi_product_sales_stats
 
 
 # DB 入口走 module-level wrapper（与其他 sub-module 同样原理）。
@@ -117,6 +117,26 @@ def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -
             "clicks": int(row.get("clicks") or 0),
         })
     return campaigns
+
+
+def _get_realtime_product_sales_stats(target: date, data_until: datetime) -> list[dict[str, Any]]:
+    rows = get_dianxiaomi_product_sales_stats(
+        target,
+        target,
+        site_codes=["newjoy", "omurio"],
+        data_until=data_until,
+    )
+    return [
+        {
+            "product_id": row.get("product_id"),
+            "product_name": row.get("product_name"),
+            "product_code": row.get("product_code"),
+            "product_net_sales": row.get("product_net_sales"),
+            "shipping": row.get("shipping"),
+            "total_sales": row.get("total_sales"),
+        }
+        for row in rows
+    ]
 
 
 def _get_daily_campaigns(target: date) -> list[dict[str, Any]]:
@@ -307,6 +327,7 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime) ->
         "snapshots": [],
         "order_details": [],
         "campaigns": [],
+        "product_sales_stats": [],
     }
 
 
@@ -389,6 +410,7 @@ def get_realtime_roas_overview(
         ad_spend = _money(snap.get("ad_spend_usd"))
         order_details = _get_realtime_order_details(target, day_start, snapshot_at)
         campaign_details = _get_realtime_campaign_details(target, snapshot_at)
+        product_sales_stats = _get_realtime_product_sales_stats(target, snapshot_at)
         last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
         return {
             "period": {
@@ -434,6 +456,7 @@ def get_realtime_roas_overview(
             "snapshots": [snap],
             "order_details": order_details,
             "campaigns": campaign_details,
+            "product_sales_stats": product_sales_stats,
         }
 
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
@@ -537,6 +560,7 @@ def get_realtime_roas_overview(
         "roas_points": roas_points,
         "order_details": _get_realtime_order_details(target, day_start, data_until),
         "campaigns": _get_daily_campaigns(target),
+        "product_sales_stats": _get_realtime_product_sales_stats(target, data_until),
     }
 
 

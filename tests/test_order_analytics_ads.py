@@ -256,6 +256,8 @@ def test_get_meta_ad_summary_aggregates_metric_rows_in_python(monkeypatch):
                     "shopify_revenue": 99.0,
                 }
             ]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
         if "FROM meta_ad_campaign_metrics" in sql and "product_id IS NULL" in sql:
             return [
                 {
@@ -289,6 +291,9 @@ def test_get_meta_ad_summary_aggregates_metric_rows_in_python(monkeypatch):
     assert product_row["shopify_order_count"] == 2
     assert product_row["shopify_quantity"] == 3
     assert product_row["shopify_revenue"] == 99.0
+    assert product_row["dianxiaomi_order_count"] == 0
+    assert product_row["dianxiaomi_total_sales"] == 0
+    assert product_row["dianxiaomi_roas"] == 0.0
 
     unmatched_row = summary["rows"][1]
     assert unmatched_row["product_id"] is None
@@ -332,6 +337,8 @@ def test_get_meta_ad_summary_uses_daily_metrics_for_explicit_range(monkeypatch):
             ]
         if "FROM shopify_orders" in sql:
             return []
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
         if "FROM meta_ad_daily_campaign_metrics" in sql and "product_id IS NULL" in sql:
             assert "meta_business_date >= %s" in sql
             assert "meta_business_date <= %s" in sql
@@ -359,6 +366,61 @@ def test_get_meta_ad_summary_uses_daily_metrics_for_explicit_range(monkeypatch):
     assert summary["rows"][0]["roas_purchase"] == 3.0
     assert summary["unmatched"][0]["campaign_name"] == "Unmatched Campaign"
     assert all("meta_ad_campaign_metrics" not in sql for sql, _args in queries)
+
+
+def test_get_meta_ad_summary_merges_dianxiaomi_order_metrics(monkeypatch):
+    report_start = oa._parse_meta_date("2026-04-01")
+    report_end = oa._parse_meta_date("2026-04-18")
+
+    monkeypatch.setattr(
+        oa,
+        "query_one",
+        lambda sql, args=(): (_ for _ in ()).throw(AssertionError("batch lookup should not run")),
+    )
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics m" in sql and "LEFT JOIN media_products" in sql:
+            return [
+                {
+                    "product_id": 42,
+                    "product_name": "Glow Set",
+                    "media_product_code": "glow-set-rjc",
+                    "matched_product_code": "glow-set-rjc",
+                    "campaign_name": "Campaign A",
+                    "result_count": 6,
+                    "spend_usd": 20.0,
+                    "purchase_value_usd": 45.0,
+                    "link_clicks": 0,
+                    "add_to_cart_count": 0,
+                    "initiate_checkout_count": 0,
+                    "impressions": 0,
+                }
+            ]
+        if "FROM shopify_orders" in sql:
+            return []
+        if "FROM dianxiaomi_order_lines" in sql:
+            assert "meta_business_date >= %s" in sql
+            assert "meta_business_date <= %s" in sql
+            assert args == (42, report_start, report_end)
+            return [
+                {
+                    "product_id": 42,
+                    "dianxiaomi_order_count": 3,
+                    "dianxiaomi_total_sales": 125.0,
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "product_id IS NULL" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    summary = oa.get_meta_ad_summary(start_date="2026-04-01", end_date="2026-04-18")
+
+    row = summary["rows"][0]
+    assert row["dianxiaomi_order_count"] == 3
+    assert row["dianxiaomi_total_sales"] == 125.0
+    assert row["dianxiaomi_roas"] == 6.25
 
 
 def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
@@ -433,6 +495,19 @@ def test_ads_stats_card_shows_report_roas(authed_client_no_db):
     assert "statCard('购物转化价值', fmtMoney(s.total_purchase_value_usd))" in body
     assert "statCard('ROAS', fmtAdRoas(s.total_purchase_value_usd, s.total_spend_usd))" in body
     assert "function fmtAdRoas(purchaseValue, spend)" in body
+
+
+def test_ads_analysis_table_includes_dianxiaomi_order_columns(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "'店小秘销量'" in body
+    assert "'店小秘总销售额'" in body
+    assert "'店小秘 ROAS'" in body
+    assert "row.dianxiaomi_order_count" in body
+    assert "row.dianxiaomi_total_sales" in body
+    assert "row.dianxiaomi_roas" in body
 
 
 def test_ad_upload_route_imports_meta_report(authed_client_no_db, monkeypatch):

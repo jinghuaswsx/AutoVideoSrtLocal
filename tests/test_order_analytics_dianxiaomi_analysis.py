@@ -23,6 +23,23 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
 
     def fake_query(sql, args=()):
         calls.append(("many", sql, args))
+        if "GROUP BY product_id" in sql:
+            assert "meta_business_date >= %s" in sql
+            assert "meta_business_date <= %s" in sql
+            assert args == (
+                oa._parse_meta_date("2026-04-01"),
+                oa._parse_meta_date("2026-04-30"),
+            )
+            return [
+                {
+                    "product_id": 42,
+                    "product_name": "Product B",
+                    "product_code": "product-b-rjc",
+                    "order_count": 2,
+                    "product_net_sales": 100.0,
+                    "shipping": 12.5,
+                }
+            ]
         assert "meta_business_date >= %s" in sql
         assert "meta_business_date <= %s" in sql
         assert "ORDER BY order_time DESC" in sql
@@ -77,6 +94,17 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
         "shipping": 12.5,
         "product_net_sales": 100.0,
     }
+    assert result["product_stats"] == [
+        {
+            "product_id": 42,
+            "product_name": "Product B",
+            "product_code": "product-b-rjc",
+            "order_count": 2,
+            "product_net_sales": 100.0,
+            "shipping": 12.5,
+            "total_sales": 112.5,
+        }
+    ]
     assert result["pagination"] == {
         "page": 2,
         "page_size": 10,
@@ -106,6 +134,13 @@ def test_get_dianxiaomi_order_analysis_filters_by_store(monkeypatch):
 
     def fake_query(sql, args=()):
         calls.append(("many", sql, args))
+        if "GROUP BY product_id" in sql:
+            assert "site_code = %s" in sql
+            assert args == (
+                oa._parse_meta_date("2026-04-01"),
+                oa._parse_meta_date("2026-04-30"),
+                "newjoy",
+            )
         return []
 
     monkeypatch.setattr(oa, "query_one", fake_query_one)
@@ -479,6 +514,9 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert "function setDxmRange(range, skipLoad)" in body
     assert "function loadDxmOrders(page)" in body
     assert "function renderDxmOrderAnalysis(data)" in body
+    assert 'id="dxmProductStatsBody"' in body
+    assert "function renderDxmProductStats(productStats)" in body
+    assert "renderDxmProductStats(data.product_stats || [])" in body
     assert "function loadCountryDashboard()" in body
     assert "setDxmRange('thisMonth')" in body
     assert "renderCountryDashboard(data)" in body

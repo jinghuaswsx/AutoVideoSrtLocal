@@ -18,7 +18,7 @@ from ._constants import (
     _META_AD_REQUIRED_COLS,
     _META_AD_SUMMARY_NUMERIC_FIELDS,
 )
-from ._helpers import _parse_meta_date, _safe_float_default, _safe_int
+from ._helpers import _money, _parse_meta_date, _roas, _safe_float_default, _safe_int
 from .dianxiaomi import compute_meta_business_window_bj
 from .shopify_orders import parse_shopify_file
 
@@ -434,6 +434,27 @@ def get_meta_ad_summary(
         row["shopify_order_count"] = order_metrics.get("shopify_order_count") or 0
         row["shopify_quantity"] = order_metrics.get("shopify_quantity") or 0
         row["shopify_revenue"] = order_metrics.get("shopify_revenue") or 0
+
+    dianxiaomi_by_product: dict[int, dict] = {}
+    if product_ids:
+        placeholders = ",".join(["%s"] * len(product_ids))
+        dxm_rows = query(
+            "SELECT product_id, COUNT(DISTINCT dxm_package_id) AS dianxiaomi_order_count, "
+            "SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS dianxiaomi_total_sales "
+            "FROM dianxiaomi_order_lines "
+            f"WHERE product_id IN ({placeholders}) "
+            "AND meta_business_date >= %s AND meta_business_date <= %s "
+            "GROUP BY product_id",
+            tuple(product_ids + [report_start, report_end]),
+        )
+        dianxiaomi_by_product = {int(row["product_id"]): row for row in dxm_rows}
+
+    for row in rows:
+        dxm_metrics = dianxiaomi_by_product.get(int(row["product_id"] or 0), {})
+        dxm_total_sales = _money(dxm_metrics.get("dianxiaomi_total_sales"))
+        row["dianxiaomi_order_count"] = int(dxm_metrics.get("dianxiaomi_order_count") or 0)
+        row["dianxiaomi_total_sales"] = dxm_total_sales
+        row["dianxiaomi_roas"] = _roas(dxm_total_sales, float(row.get("spend_usd") or 0))
 
     if use_daily_metrics:
         unmatched = query(

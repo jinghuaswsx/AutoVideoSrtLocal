@@ -492,6 +492,103 @@ def get_dianxiaomi_order_import_batches(limit: int = 20) -> list[dict]:
     )
 
 
+def _coerce_product_sales_date(value: str | date, name: str) -> date:
+    if isinstance(value, date):
+        return value
+    return _parse_iso_date_param(value, name)
+
+
+def get_dianxiaomi_product_sales_stats(
+    start_date: str | date,
+    end_date: str | date,
+    *,
+    store: str | None = None,
+    site_codes: list[str] | None = None,
+    product_ids: list[int] | set[int] | tuple[int, ...] | None = None,
+    data_until: datetime | None = None,
+) -> list[dict[str, Any]]:
+    start = _coerce_product_sales_date(start_date, "start_date")
+    end = _coerce_product_sales_date(end_date, "end_date")
+    if end < start:
+        raise ValueError("end_date must be >= start_date")
+
+    where_clauses: list[str] = []
+    where_args: list[Any] = []
+
+    normalized_product_ids = [
+        int(product_id) for product_id in (product_ids or [])
+        if product_id not in (None, "")
+    ]
+    if product_ids is not None and not normalized_product_ids:
+        return []
+    if normalized_product_ids:
+        placeholders = ", ".join(["%s"] * len(normalized_product_ids))
+        where_clauses.append(f"product_id IN ({placeholders})")
+        where_args.extend(normalized_product_ids)
+
+    if start == end:
+        where_clauses.append("meta_business_date=%s")
+        where_args.append(start)
+    else:
+        where_clauses.extend([
+            "meta_business_date >= %s",
+            "meta_business_date <= %s",
+        ])
+        where_args.extend([start, end])
+
+    if data_until is not None:
+        where_clauses.append(_dianxiaomi_order_time_expr() + " <= %s")
+        where_args.append(data_until)
+
+    store_code = str(store or "").strip().lower()
+    if store_code == "all":
+        store_code = ""
+    if store_code:
+        where_clauses.append("site_code = %s")
+        where_args.append(store_code)
+    elif site_codes:
+        normalized_site_codes = [
+            str(code).strip().lower()
+            for code in site_codes
+            if str(code).strip()
+        ]
+        if normalized_site_codes:
+            placeholders = ", ".join(["%s"] * len(normalized_site_codes))
+            where_clauses.append(f"site_code IN ({placeholders})")
+            where_args.extend(normalized_site_codes)
+
+    where_clauses.append("product_id IS NOT NULL")
+    rows = query(
+        "SELECT product_id, "
+        "MAX(COALESCE(mp.name, dianxiaomi_order_lines.product_name, '')) AS product_name, "
+        "MAX(COALESCE(mp.product_code, dianxiaomi_order_lines.product_code, '')) AS product_code, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping "
+        "FROM dianxiaomi_order_lines "
+        "LEFT JOIN media_products mp ON mp.id = dianxiaomi_order_lines.product_id "
+        "WHERE " + " AND ".join(where_clauses) + " "
+        "GROUP BY product_id "
+        "ORDER BY product_net_sales DESC, order_count DESC",
+        tuple(where_args),
+    )
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        product_net_sales = _money(row.get("product_net_sales"))
+        shipping = _money(row.get("shipping"))
+        out.append({
+            "product_id": row.get("product_id"),
+            "product_name": row.get("product_name") or "",
+            "product_code": row.get("product_code") or "",
+            "order_count": int(row.get("order_count") or 0),
+            "product_net_sales": product_net_sales,
+            "shipping": shipping,
+            "total_sales": _revenue_with_shipping(product_net_sales, shipping),
+        })
+    return out
+
+
 def _dianxiaomi_order_time_expr() -> str:
     return "COALESCE(order_paid_at, paid_at, order_created_at, shipped_at, attribution_time_at)"
 
@@ -555,6 +652,11 @@ def get_dianxiaomi_order_analysis(
     total = int(total_row.get("total") or 0)
     product_net_sales = _money(summary_row.get("product_net_sales"))
     shipping = _money(summary_row.get("shipping"))
+    product_stats = _facade().get_dianxiaomi_product_sales_stats(
+        start,
+        end,
+        store=store_code,
+    )
     return {
         "period": {
             "start_date": start,
@@ -578,6 +680,7 @@ def get_dianxiaomi_order_analysis(
             "total": total,
             "total_pages": (total + page_size - 1) // page_size if total else 0,
         },
+        "product_stats": product_stats,
         "rows": [
             {
                 **row,
