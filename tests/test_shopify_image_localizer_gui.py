@@ -5,7 +5,8 @@ import threading
 import time
 
 import pytest
-import tkinter as tk
+
+tk = pytest.importorskip("tkinter")
 
 from tools.shopify_image_localizer import cancellation, gui
 

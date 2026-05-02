@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
+
+pytest.importorskip("tkinter")
+
 
 class _FakeRoot:
     def __init__(self) -> None:
