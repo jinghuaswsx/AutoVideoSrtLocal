@@ -15,7 +15,7 @@ from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from flask import Flask
+from flask import Flask, jsonify, request
 from flask_socketio import join_room
 from flask_wtf.csrf import CSRFProtect
 
@@ -87,6 +87,52 @@ from web.routes.tools import bp as tools_bp
 
 log = logging.getLogger(__name__)
 
+_UNSAFE_CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_COOKIE_API_CSRF_GUARDED_BLUEPRINTS = {
+    "bulk_translate",
+    "video_translate_profile",
+    "copywriting_translate",
+    "de_translate",
+    "fr_translate",
+    "multi_translate",
+    "omni_translate",
+    "ja_translate",
+    "translation_quality",
+    "medias",
+    "pushes",
+    "image_translate",
+    "link_check",
+    "order_analytics",
+    "mk_import",
+    "raw_video_pool",
+    "new_product_review",
+}
+
+
+def _has_cookie_api_csrf_signal() -> bool:
+    if (request.headers.get("X-CSRFToken") or "").strip():
+        return True
+    if (request.headers.get("X-CSRF-Token") or "").strip():
+        return True
+    return (
+        (request.headers.get("X-Requested-With") or "").strip().lower()
+        == "xmlhttprequest"
+    )
+
+
+def _register_cookie_api_csrf_guard(app: Flask) -> None:
+    @app.before_request
+    def _guard_cookie_api_csrf():
+        if not app.config.get("WTF_CSRF_ENABLED", True):
+            return None
+        if request.method.upper() not in _UNSAFE_CSRF_METHODS:
+            return None
+        if (request.blueprint or "") not in _COOKIE_API_CSRF_GUARDED_BLUEPRINTS:
+            return None
+        if _has_cookie_api_csrf_signal():
+            return None
+        return jsonify({"error": "csrf_required"}), 400
+
 
 def _run_startup_recovery() -> None:
     """Startup recovery is intentionally state-only.
@@ -137,6 +183,7 @@ def create_app() -> Flask:
     # 初始化扩展
     login_manager.init_app(app)
     csrf.init_app(app)
+    _register_cookie_api_csrf_guard(app)
     socketio.init_app(app)
     realtime_events.register_admin_emitter(
         lambda event, payload: socketio.emit(event, payload, to="admin")

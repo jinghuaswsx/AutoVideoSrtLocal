@@ -46,6 +46,73 @@ class TestDbPasswordNotHardcoded:
         assert config.DB_PASSWORD == "", "DB_PASSWORD 默认值不应包含实际密码"
 
 
+class TestInternalCookieApiCsrfGuard:
+    """Cookie session JSON APIs must have a lightweight request guard."""
+
+    def _create_app(self, monkeypatch):
+        monkeypatch.setenv("FLASK_SECRET_KEY", "csrf-guard-test-secret")
+        monkeypatch.setenv("WTF_CSRF_ENABLED", "1")
+        monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+        monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+
+        from web.app import create_app
+
+        return create_app()
+
+    def test_cookie_json_api_rejects_unsafe_request_without_ajax_or_csrf_header(
+        self,
+        monkeypatch,
+    ):
+        app = self._create_app(monkeypatch)
+        client = app.test_client()
+
+        response = client.post("/api/bulk-translate/estimate", json={})
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "csrf_required"
+
+    def test_cookie_json_api_allows_ajax_header_to_reach_auth_layer(
+        self,
+        monkeypatch,
+    ):
+        app = self._create_app(monkeypatch)
+        client = app.test_client()
+
+        response = client.post(
+            "/api/bulk-translate/estimate",
+            json={},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+
+        assert (
+            response.status_code != 400
+            or response.get_json().get("error") != "csrf_required"
+        )
+
+    def test_openapi_blueprints_remain_outside_cookie_csrf_guard(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            "web.routes.openapi_materials._api_key_valid",
+            lambda required_scope="materials:read": False,
+        )
+        app = self._create_app(monkeypatch)
+        client = app.test_client()
+
+        response = client.post("/openapi/link-check/bootstrap", json={})
+
+        assert response.status_code == 401
+        assert response.get_json()["error"] == "invalid api key"
+
+    def test_layout_adds_csrf_to_fetch_and_xhr(self):
+        source = open("web/templates/layout.html", encoding="utf-8").read()
+
+        assert "window.fetch" in source
+        assert "XMLHttpRequest.prototype.open" in source
+        assert "X-CSRFToken" in source
+
+
 class TestCorsRestriction:
     """SocketIO CORS 不应为 '*'。"""
 

@@ -877,11 +877,22 @@
       var csrfMeta = document.querySelector('meta[name="csrf-token"]');
       if (!csrfMeta) return;
       var csrfToken = csrfMeta.getAttribute('content');
+      var unsafeMethods = ['POST','PUT','PATCH','DELETE'];
+      function isUnsafe(method) {
+        return unsafeMethods.indexOf((method || 'GET').toUpperCase()) >= 0;
+      }
+      function isSameOrigin(url) {
+        try {
+          return new URL(url, window.location.href).origin === window.location.origin;
+        } catch (e) {
+          return true;
+        }
+      }
       var _origFetch = window.fetch;
       window.fetch = function(url, opts) {
         opts = opts || {};
         var method = (opts.method || 'GET').toUpperCase();
-        if (['POST','PUT','PATCH','DELETE'].indexOf(method) >= 0) {
+        if (isUnsafe(method) && isSameOrigin(url)) {
           opts.headers = opts.headers || {};
           if (opts.headers instanceof Headers) {
             if (!opts.headers.has('X-CSRFToken')) opts.headers.set('X-CSRFToken', csrfToken);
@@ -891,6 +902,22 @@
         }
         return _origFetch.call(this, url, opts);
       };
+      if (window.XMLHttpRequest && window.XMLHttpRequest.prototype) {
+        var _origOpen = window.XMLHttpRequest.prototype.open;
+        var _origSend = window.XMLHttpRequest.prototype.send;
+        window.XMLHttpRequest.prototype.open = function(method, url) {
+          this.__csrfMethod = method || 'GET';
+          this.__csrfUrl = url;
+          return _origOpen.apply(this, arguments);
+        };
+        window.XMLHttpRequest.prototype.send = function() {
+          if (isUnsafe(this.__csrfMethod) && isSameOrigin(this.__csrfUrl || window.location.href)) {
+            try { this.setRequestHeader('X-CSRFToken', csrfToken); } catch (e) {}
+            try { this.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); } catch (e) {}
+          }
+          return _origSend.apply(this, arguments);
+        };
+      }
     })();
   </script>
   {% block scripts %}{% endblock %}
