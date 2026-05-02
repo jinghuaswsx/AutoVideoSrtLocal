@@ -380,6 +380,22 @@ def test_task_thumbnail_lookup_lives_outside_route_module():
     assert Path("web/services/task_thumbnail.py").exists()
 
 
+def test_task_capcut_deploy_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "deploy_capcut"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "safe_task_dir_path" not in route_source
+    assert "deploy_capcut_project" not in route_source
+    assert "jianying_project_dir" not in route_source
+    assert Path("web/services/task_capcut.py").exists()
+
+
 def test_task_translate_billing_provider_mapping_lives_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 

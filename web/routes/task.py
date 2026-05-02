@@ -30,7 +30,6 @@ from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import cleanup
 from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
-from pipeline.capcut import deploy_capcut_project
 from pipeline import tts
 from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
 from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, duration_ratio
@@ -44,7 +43,6 @@ from web import store
 from web.services import pipeline_runner
 from web.services.artifact_download import (
     resolve_preview_artifact_path,
-    safe_task_dir_path,
     send_file_with_range,
     serve_artifact_download,
 )
@@ -64,6 +62,7 @@ from web.services.task_av_rewrite import (
     resolve_av_voice_ids,
 )
 from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id, refresh_task
+from web.services.task_capcut import deploy_task_capcut_project
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_llm import resolve_translate_billing_provider
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
@@ -988,23 +987,10 @@ def deploy_capcut(task_id):
         return task_not_found_response()
 
     variant = request.args.get("variant") or None
-    variant_state = task.get("variants", {}).get(variant, {}) if variant else {}
-    exports = variant_state.get("exports", {}) if variant else task.get("exports", {})
-    project_dir = exports.get("capcut_project")
-    safe_project_dir = safe_task_dir_path(task, project_dir)
-    if not safe_project_dir:
+    result = deploy_task_capcut_project(task_id, task, variant=variant)
+    if result is None:
         return jsonify({"error": "CapCut project not ready"}), 404
-
-    deployed_project_dir = deploy_capcut_project(safe_project_dir)
-    exports = dict(exports)
-    exports["jianying_project_dir"] = deployed_project_dir
-
-    if variant:
-        store.update_variant(task_id, variant, exports=exports)
-    else:
-        store.update(task_id, exports=exports)
-
-    return jsonify({"status": "ok", "deployed_project_dir": deployed_project_dir})
+    return jsonify({"status": "ok", **result})
 
 
 @bp.route("/<task_id>", methods=["PATCH"])

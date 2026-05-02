@@ -59,7 +59,7 @@ class TestDeployCapcutOwnership:
         }
         monkeypatch.setattr("web.routes.task.store.get", lambda tid: fake_task)
         monkeypatch.setattr("web.routes.task.store.update", lambda *a, **kw: None)
-        monkeypatch.setattr("web.routes.task.deploy_capcut_project",
+        monkeypatch.setattr("web.services.task_capcut.deploy_capcut_project",
                             lambda p: str(tmp_path / "deployed"))
 
         resp = user1_client.post("/api/tasks/some-task-id/deploy/capcut")

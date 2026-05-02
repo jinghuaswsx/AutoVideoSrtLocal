@@ -2646,7 +2646,7 @@ def test_deploy_route_copies_variant_capcut_project(tmp_path, authed_client_no_d
         (target / "draft_content.json").write_text("{}", encoding="utf-8")
         return str(target)
 
-    monkeypatch.setattr("web.routes.task.deploy_capcut_project", fake_deploy_capcut_project)
+    monkeypatch.setattr("web.services.task_capcut.deploy_capcut_project", fake_deploy_capcut_project)
 
     response = authed_client_no_db.post("/api/tasks/task-deploy-variant/deploy/capcut?variant=hook_cta")
 
@@ -2673,7 +2673,7 @@ def test_deploy_route_rejects_capcut_project_outside_task_roots(tmp_path, authed
         called.append(path)
         return str(tmp_path / "deployed")
 
-    monkeypatch.setattr("web.routes.task.deploy_capcut_project", fake_deploy_capcut_project)
+    monkeypatch.setattr("web.services.task_capcut.deploy_capcut_project", fake_deploy_capcut_project)
 
     response = authed_client_no_db.post("/api/tasks/task-deploy-outside-capcut/deploy/capcut")
 
