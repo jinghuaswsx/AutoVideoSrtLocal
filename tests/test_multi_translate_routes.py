@@ -934,6 +934,9 @@ def test_resume_accepts_asr_normalize_as_start_step(
         json={"start_step": "asr_normalize"},
     )
     assert resp.status_code == 200
+    task = store.get(task_id)
+    assert task.get("source_language") == "en"
+    assert task.get("user_specified_source_language") is True
 
 
 # ── Critic review: resume from asr_normalize clears stale state ─────────────

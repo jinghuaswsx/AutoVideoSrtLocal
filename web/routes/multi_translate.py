@@ -519,7 +519,7 @@ def resume(task_id):
         return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
 
     if start_step == "asr_normalize":
-        source_language = (task.get("source_language") or "").strip()
+        source_language = (task.get("source_language") or "en").strip()
         if source_language not in ALLOWED_SOURCE_LANGUAGES:
             return jsonify({
                 "error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
