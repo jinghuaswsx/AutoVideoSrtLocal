@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from dataclasses import dataclass
 
 from pipeline import tts
@@ -41,6 +43,37 @@ def resolve_av_voice_ids(
     resolved_voice_id = voice.get("id") or stored_voice_id
     elevenlabs_voice_id = voice.get("elevenlabs_voice_id") or voice.get("voice_id") or voice.get("id")
     return resolved_voice_id, elevenlabs_voice_id
+
+
+def rebuild_tts_full_audio(
+    task_dir: str,
+    segments: list[dict],
+    variant: str = "av",
+    *,
+    run_command=None,
+) -> str:
+    seg_dir = os.path.join(task_dir, "tts_segments", variant) if variant else os.path.join(task_dir, "tts_segments")
+    os.makedirs(seg_dir, exist_ok=True)
+    concat_list_path = os.path.join(seg_dir, "concat.rewrite.txt")
+    with open(concat_list_path, "w", encoding="utf-8") as concat_file:
+        for segment in segments:
+            segment_path = os.path.abspath(str(segment.get("tts_path") or ""))
+            if not segment_path or not os.path.exists(segment_path):
+                raise FileNotFoundError(f"找不到配音片段: {segment_path}")
+            escaped_segment_path = segment_path.replace("'", "'\\''")
+            concat_file.write(f"file '{escaped_segment_path}'\n")
+
+    full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
+    full_audio_path = os.path.join(task_dir, full_audio_name)
+    run = run_command or subprocess.run
+    result = run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path, "-c", "copy", full_audio_path],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"音频拼接失败: {result.stderr}")
+    return full_audio_path
 
 
 def clear_av_compose_outputs(

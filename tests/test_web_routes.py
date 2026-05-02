@@ -2269,7 +2269,7 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
         Path(full_audio_path).write_bytes(b"rebuilt-full-audio")
         return str(full_audio_path)
 
-    monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", fake_rebuild_full_audio)
+    monkeypatch.setattr("web.routes.task.rebuild_tts_full_audio", fake_rebuild_full_audio)
     built_chunks = []
 
     def fake_build_srt_from_chunks(chunks):
@@ -2387,7 +2387,7 @@ def test_av_rewrite_sentence_route_marks_long_warning_without_out_of_range_speed
 
     monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
     monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 2.4)
-    monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
+    monkeypatch.setattr("web.routes.task.rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
 
     response = authed_client_no_db.post(
         f"/api/tasks/{task_id}/av/rewrite_sentence",
@@ -2456,7 +2456,7 @@ def test_av_rewrite_sentence_route_marks_short_warning_without_needs_expand(
 
     monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
     monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 1.6)
-    monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
+    monkeypatch.setattr("web.routes.task.rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
 
     response = authed_client_no_db.post(
         f"/api/tasks/{task_id}/av/rewrite_sentence",

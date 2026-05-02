@@ -5,7 +5,6 @@
 不包含任何业务执行逻辑，执行逻辑在 services/pipeline_runner.py。
 """
 import os
-import subprocess
 import uuid
 from datetime import datetime, timezone
 
@@ -60,7 +59,7 @@ from web.services.task_av_inputs import (
     merge_av_step_maps,
     validate_av_translate_inputs,
 )
-from web.services.task_av_rewrite import clear_av_compose_outputs, resolve_av_voice_ids
+from web.services.task_av_rewrite import clear_av_compose_outputs, rebuild_tts_full_audio, resolve_av_voice_ids
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -101,30 +100,6 @@ def _get_current_user_task(task_id: str) -> dict | None:
     if not task or task.get("_user_id") != current_user.id:
         return None
     return task
-
-
-def _rebuild_tts_full_audio(task_dir: str, segments: list[dict], variant: str = "av") -> str:
-    seg_dir = os.path.join(task_dir, "tts_segments", variant) if variant else os.path.join(task_dir, "tts_segments")
-    os.makedirs(seg_dir, exist_ok=True)
-    concat_list_path = os.path.join(seg_dir, "concat.rewrite.txt")
-    with open(concat_list_path, "w", encoding="utf-8") as concat_file:
-        for segment in segments:
-            segment_path = os.path.abspath(str(segment.get("tts_path") or ""))
-            if not segment_path or not os.path.exists(segment_path):
-                raise FileNotFoundError(f"找不到配音片段: {segment_path}")
-            escaped_segment_path = segment_path.replace("'", "'\\''")
-            concat_file.write(f"file '{escaped_segment_path}'\n")
-
-    full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
-    full_audio_path = os.path.join(task_dir, full_audio_name)
-    result = subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path, "-c", "copy", full_audio_path],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"音频拼接失败: {result.stderr}")
-    return full_audio_path
 
 
 def _build_translate_compare_artifact(task: dict) -> dict:
@@ -953,7 +928,7 @@ def av_rewrite_sentence(task_id):
     sentences[sentence_index] = updated_sentence
     localized_translation = _build_av_localized_translation(sentences)
     tts_segments = _build_av_tts_segments(sentences)
-    full_audio_path = _rebuild_tts_full_audio(task_dir, tts_segments, variant)
+    full_audio_path = rebuild_tts_full_audio(task_dir, tts_segments, variant)
 
     sync_granularity = str((av_inputs or {}).get("sync_granularity") or "hybrid")
     subtitle_units = build_subtitle_units_from_sentences(sentences, mode=sync_granularity)
