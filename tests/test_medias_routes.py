@@ -373,6 +373,44 @@ def test_media_cover_rejects_unsafe_language_cache_path(authed_client_no_db, mon
     assert downloaded == []
 
 
+def test_media_object_proxy_rejects_invalid_object_key_without_500(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/object?object_key=..%2Foutside.mp4")
+
+    assert response.status_code == 404
+
+
+def test_item_complete_rejects_invalid_object_key_before_insert(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    created = []
+    monkeypatch.setattr(
+        r.medias,
+        "create_item",
+        lambda *args, **kwargs: created.append((args, kwargs)) or 99,
+    )
+    monkeypatch.setattr(
+        r,
+        "_validate_material_filename_for_product",
+        lambda *args, **kwargs: (SimpleNamespace(effective_lang="en"), None),
+    )
+
+    response = authed_client_no_db.post(
+        "/medias/api/products/123/items/complete",
+        json={
+            "object_key": "../outside.mp4",
+            "filename": "valid.mp4",
+            "file_size": 123,
+            "lang": "en",
+            "skip_validation": True,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "object not found"
+    assert created == []
+
+
 def test_manual_ai_evaluate_request_payload_includes_full_base64(
     authed_client_no_db, monkeypatch, tmp_path
 ):

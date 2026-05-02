@@ -361,12 +361,18 @@ def _reserve_local_media_upload(object_key: str) -> dict[str, str]:
 def _is_media_available(object_key: str) -> bool:
     if not object_key:
         return False
-    return local_media_storage.exists(object_key)
+    try:
+        return local_media_storage.exists(object_key)
+    except ValueError:
+        return False
 
 
 def _download_media_object(object_key: str, destination: str | os.PathLike[str]) -> str:
-    if local_media_storage.exists(object_key):
-        return local_media_storage.download_to(object_key, destination)
+    try:
+        if local_media_storage.exists(object_key):
+            return local_media_storage.download_to(object_key, destination)
+    except ValueError as exc:
+        raise FileNotFoundError(f"invalid local media object: {object_key}") from exc
     raise FileNotFoundError(f"local media object not found: {object_key}")
 
 
@@ -382,8 +388,12 @@ def _delete_media_object(object_key: str | None) -> None:
 
 def _send_media_object(object_key: str):
     if _is_media_available(object_key):
+        try:
+            local_path = local_media_storage.local_path_for(object_key)
+        except ValueError:
+            abort(404)
         return send_file(
-            str(local_media_storage.local_path_for(object_key)),
+            str(local_path),
             mimetype=mimetypes.guess_type(object_key)[0] or "application/octet-stream",
         )
     abort(404)
