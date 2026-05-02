@@ -101,6 +101,7 @@
 - 2026-05-02 当前工作区补齐素材对象键异常收口：`/medias/object` 和素材上传完成链路遇到 `../`、绝对路径等非法 `object_key` 时不再抛 500，统一按 404 或 `object not found` 拒绝；正常共享素材访问模型不变。同时修正素材评估调试请求测试对旧 OpenRouter 默认值的断言，并调整产品详情页 CSS 顺序，避免桌面规则覆盖移动端全屏化规则。路径安全组合回归扩展为 `113 passed, 2 warnings`，完整 `tests/test_medias_routes.py` 恢复为 `66 passed, 2 warnings`。
 - 2026-05-02 测试环境已拉取提交 `7d96a49c` 并重启 `autovideosrt-test.service` 加载素材对象键异常收口与素材路由测试修正；服务端完整 `tests/test_medias_routes.py` 为 `66 passed`，路径安全组合回归为 `113 passed`，`py_compile` 通过；重启后 `pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐任务重启清理路径边界：`web.services.task_restart._purge_task_dir` 现在要求待清理目录位于 `OUTPUT_DIR` 内，且每个子项删除前再次校验在该任务目录下；污染的 `task_dir` 会跳过清理而不是删除目录内容。`tests/test_task_restart.py` 同步隔离 DB 写入，避免本地测试误连 Windows MySQL。聚焦回归：`tests/test_safe_paths.py tests/test_task_restart.py` 为 `11 passed`，`py_compile` 通过。
+- 2026-05-02 测试环境已拉取提交 `639e8d6a` 并重启 `autovideosrt-test.service` 加载任务重启清理路径边界；服务端运行 `tests/test_safe_paths.py tests/test_task_restart.py` 为 `11 passed`，`py_compile` 通过；重启后 `pre-restart` 返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
