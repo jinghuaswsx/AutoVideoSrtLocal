@@ -60,6 +60,7 @@ from web.services.task_av_inputs import (
     merge_av_step_maps,
     validate_av_translate_inputs,
 )
+from web.services.task_av_rewrite import clear_av_compose_outputs
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -140,54 +141,6 @@ def _resolve_av_voice_ids(task: dict, variant_state: dict) -> tuple[str | None, 
     resolved_voice_id = voice.get("id") or stored_voice_id
     elevenlabs_voice_id = voice.get("elevenlabs_voice_id") or voice.get("voice_id") or voice.get("id")
     return resolved_voice_id, elevenlabs_voice_id
-
-
-def _clear_av_compose_outputs(
-    task: dict,
-    variant_state: dict,
-    variant: str = "av",
-) -> tuple[dict, dict, dict, dict, dict, dict, dict, dict, dict]:
-    result = dict(task.get("result") or {})
-    exports = dict(task.get("exports") or {})
-    artifacts = dict(task.get("artifacts") or {})
-    preview_files = dict(task.get("preview_files") or {})
-    tos_uploads = dict(task.get("tos_uploads") or {})
-
-    result.pop("hard_video", None)
-    exports.pop("capcut_archive", None)
-    exports.pop("capcut_project", None)
-    exports.pop("jianying_project_dir", None)
-    artifacts.pop("compose", None)
-    artifacts.pop("export", None)
-    preview_files.pop("hard_video", None)
-
-    for key, payload in list(tos_uploads.items()):
-        payload_variant = payload.get("variant") if isinstance(payload, dict) else None
-        if key.startswith(f"{variant}:") or payload_variant == variant:
-            tos_uploads.pop(key, None)
-
-    variant_result = dict(variant_state.get("result") or {})
-    variant_exports = dict(variant_state.get("exports") or {})
-    variant_artifacts = dict(variant_state.get("artifacts") or {})
-    variant_preview_files = dict(variant_state.get("preview_files") or {})
-
-    variant_result.clear()
-    variant_exports.clear()
-    variant_artifacts.pop("compose", None)
-    variant_artifacts.pop("export", None)
-    variant_preview_files.pop("hard_video", None)
-
-    return (
-        result,
-        exports,
-        artifacts,
-        preview_files,
-        tos_uploads,
-        variant_result,
-        variant_exports,
-        variant_artifacts,
-        variant_preview_files,
-    )
 
 
 def _build_translate_compare_artifact(task: dict) -> dict:
@@ -1023,17 +976,16 @@ def av_rewrite_sentence(task_id):
     srt_content = build_srt_from_chunks(subtitle_units)
     srt_path = save_srt(srt_content, os.path.join(task_dir, f"subtitle.{variant}.srt"))
 
-    (
-        result,
-        exports,
-        artifacts,
-        preview_files,
-        tos_uploads,
-        variant_result,
-        variant_exports,
-        variant_artifacts,
-        variant_preview_files,
-    ) = _clear_av_compose_outputs(task, variant_state, variant=variant)
+    cleared_outputs = clear_av_compose_outputs(task, variant_state, variant=variant)
+    result = cleared_outputs.result
+    exports = cleared_outputs.exports
+    artifacts = cleared_outputs.artifacts
+    preview_files = cleared_outputs.preview_files
+    tos_uploads = cleared_outputs.tos_uploads
+    variant_result = cleared_outputs.variant_result
+    variant_exports = cleared_outputs.variant_exports
+    variant_artifacts = cleared_outputs.variant_artifacts
+    variant_preview_files = cleared_outputs.variant_preview_files
 
     artifacts["tts"] = build_tts_artifact(tts_segments)
     artifacts["subtitle"] = build_subtitle_artifact(srt_content, target_language=target_language)
