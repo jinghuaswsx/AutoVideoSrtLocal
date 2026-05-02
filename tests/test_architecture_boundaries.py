@@ -103,6 +103,28 @@ def test_task_recovery_uses_project_state_helper_for_state_json_writes():
     assert "UPDATE projects SET state_json = %s, status = %s" not in source
 
 
+def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
+    allowed_direct_thread_files = {
+        "appcore/runner_lifecycle.py",
+        "appcore/medias_detail_fetch_tasks.py",
+        "appcore/voice_match_tasks.py",
+    }
+    offenders: list[str] = []
+
+    for root in (Path("appcore"), Path("web")):
+        for path in root.rglob("*.py"):
+            path_key = path.as_posix()
+            if path_key in allowed_direct_thread_files:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                    if node.func.attr == "Thread":
+                        offenders.append(f"{path}:{node.lineno}")
+
+    assert offenders == []
+
+
 def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
     allowed_paths = {
         "appcore/gemini_image.py",

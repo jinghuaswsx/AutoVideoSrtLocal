@@ -121,7 +121,6 @@ def test_create_copy_child_registers_active_runner(runtime_env, monkeypatch):
         "appcore.runner_lifecycle.start_tracked_thread",
         lambda **kwargs: tracked.append(kwargs) or True,
     )
-    monkeypatch.setattr(mod, "_spawn_daemon", lambda fn: None)
 
     item = _item(
         0,

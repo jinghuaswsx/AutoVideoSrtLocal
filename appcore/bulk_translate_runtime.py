@@ -13,7 +13,6 @@ import json
 import logging
 import os
 import tempfile
-import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -1234,10 +1233,6 @@ def _default_image_translate_model_id(_user_id: int | None) -> str:
         return its.get_default_model(channel)
     except Exception:
         return coerce_image_model("", channel=channel)
-
-
-def _spawn_daemon(fn) -> None:
-    threading.Thread(target=fn, daemon=True).start()
 
 
 def _child_needs_voice(child_state: dict) -> bool:
