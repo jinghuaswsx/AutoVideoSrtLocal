@@ -137,10 +137,10 @@ def test_list_all_merges_db_overrides_and_defaults():
 
     disabled = by_code["copywriting.generate"]
     # enabled=0 视为无覆盖，应走默认
-    assert disabled["provider"] == "openrouter"
-    assert disabled["model"] == "anthropic/claude-sonnet-4.6"
+    assert disabled["provider"] == USE_CASES["copywriting.generate"]["default_provider"]
+    assert disabled["model"] == USE_CASES["copywriting.generate"]["default_model"]
     assert disabled["is_custom"] is False
 
     untouched = by_code["video_translate.localize"]
-    assert untouched["provider"] == "gemini_vertex"
+    assert untouched["provider"] == USE_CASES["video_translate.localize"]["default_provider"]
     assert untouched["is_custom"] is False
