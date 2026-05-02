@@ -25,10 +25,12 @@ import time
 from pathlib import Path
 
 TARGET_LANGS = ["de", "es", "fr", "it", "ja", "nl", "pt", "sv"]
-LOCALIZE_PROVIDER = "claude_sonnet"   # Phase 1 固定用 Claude（公平起点）
+# Phase 1 固定用 Claude（公平起点）
+LOCALIZE_OVERRIDE = ("openrouter", "anthropic/claude-sonnet-4.6")
+# (key, display_name, provider_override, model_override) 走 invoke_chat binding 路径
 TTS_MODELS = [
-    ("claude_sonnet", "Claude Sonnet 4.6"),
-    ("gemini_3_flash", "Gemini 3 Flash"),
+    ("claude_sonnet", "Claude Sonnet 4.6", "openrouter", "anthropic/claude-sonnet-4.6"),
+    ("gemini_3_flash", "Gemini 3 Flash", "openrouter", "google/gemini-3-flash-preview"),
 ]
 
 
@@ -64,10 +66,14 @@ def run_localize(source_full_text: str, script_segments: list[dict],
     system_prompt = build_localize_prompt(lang)
     t0 = time.time()
     try:
+        prov_override, mod_override = LOCALIZE_OVERRIDE
         result = generate_localized_translation(
             source_full_text, script_segments, variant="normal",
             custom_system_prompt=system_prompt,
-            provider=LOCALIZE_PROVIDER, user_id=None,
+            user_id=None,
+            use_case="video_translate.localize",
+            provider_override=prov_override,
+            model_override=mod_override,
         )
         return {
             "ok": True,
@@ -85,7 +91,8 @@ def run_localize(source_full_text: str, script_segments: list[dict],
         }
 
 
-def run_tts_script(localized_translation: dict, provider_key: str) -> dict:
+def run_tts_script(localized_translation: dict,
+                   provider_override: str, model_override: str) -> dict:
     """Phase 2: 给 localized 结果做 tts_script 切分。"""
     from pipeline.translate import generate_tts_script
     # tts_script 需要纯净的 localized_translation（不能带 _usage / _messages）
@@ -96,7 +103,10 @@ def run_tts_script(localized_translation: dict, provider_key: str) -> dict:
     t0 = time.time()
     try:
         result = generate_tts_script(
-            clean, provider=provider_key, user_id=None,
+            clean, user_id=None,
+            use_case="video_translate.tts_script",
+            provider_override=provider_override,
+            model_override=model_override,
         )
         return {
             "ok": True,
@@ -283,13 +293,14 @@ def main() -> None:
     models = TTS_MODELS[:1] if args.smoke else TTS_MODELS
 
     for (label, lang), localized in list(localize_cache.items())[:1 if args.smoke else None]:
-        for prov_key, prov_name in models:
+        for prov_key, prov_name, prov_override, mod_override in models:
             key = f"{label}/{lang}/{prov_key}"
             print(f"  → {key} ...", end=" ", flush=True)
-            r = run_tts_script(localized, prov_key)
+            r = run_tts_script(localized, prov_override, mod_override)
             entry = {
                 "label": label, "target_lang": lang,
                 "provider_key": prov_key, "provider_name": prov_name,
+                "provider_override": prov_override, "model_override": mod_override,
                 **r,
             }
             output["phase2_tts_script"].append(entry)

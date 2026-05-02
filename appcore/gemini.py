@@ -8,32 +8,47 @@
   - service 为传统 service 名（"gemini"、"gemini_video_analysis" 等）：默认走
     AI Studio 文本凭据（gemini_aistudio_text）
   - 所有凭据均来自 appcore.llm_provider_configs，禁止读 .env / google_api_key
+
+调用 helper（_build_contents / _build_config / _extract_gemini_tokens / _is_retryable
+/ _guess_mime / _to_part / _upload_and_wait / GeminiError / genai_types）已迁到
+`appcore.llm_providers._helpers.gemini_calls`，本模块 re-export 保留对外 API；
+adapter 不应再 `from appcore import gemini as gemini_api` 反向 import 业务模块。
 """
 from __future__ import annotations
 
 import json
 import logging
-import mimetypes
 import time
 from pathlib import Path
 from typing import Any, Generator, Iterable
 
 from google import genai
-from google.genai import types as genai_types
-from google.genai import errors as genai_errors
 
 from appcore import ai_billing
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     get_provider_config,
 )
+from appcore.llm_providers._helpers.gemini_calls import (
+    GeminiError,
+    _FILE_ACTIVE_TIMEOUT,
+    _FILE_POLL_INTERVAL,
+    _GEMINI_UNSUPPORTED_SCHEMA_KEYS,
+    _INLINE_MAX_BYTES,
+    _RETRYABLE_STATUS,
+    _build_config,
+    _build_contents,
+    _extract_gemini_tokens,
+    _guess_mime,
+    _is_retryable,
+    _sanitize_schema_for_gemini,
+    _to_part,
+    _upload_and_wait,
+    genai_errors,
+    genai_types,
+)
 
 logger = logging.getLogger(__name__)
-
-_INLINE_MAX_BYTES = 20 * 1024 * 1024  # 小于 20MB 走 inline，避免 Files API 往返
-_FILE_ACTIVE_TIMEOUT = 900
-_FILE_POLL_INTERVAL = 2
-_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 _DEFAULT_AISTUDIO_PROVIDER = "gemini_aistudio_text"
 _DEFAULT_CLOUD_PROVIDER = "gemini_cloud_text"
@@ -41,26 +56,15 @@ _DEFAULT_ADC_PROVIDER = "gemini_vertex_adc_text"
 _FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 
-class GeminiError(RuntimeError):
-    """Gemini 调用错误，业务侧捕获用。"""
-
-
 _clients: dict[str, genai.Client] = {}
 
-# 支持视频分析的 Gemini 3 系列模型
-VIDEO_CAPABLE_MODELS: list[tuple[str, str]] = [
-    ("gemini-3.1-pro-preview",        "Gemini 3.1 Pro"),
-    ("gemini-3-flash-preview",        "Gemini 3 Flash"),
-    ("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash-Lite"),
-]
-
-
-def model_display_name(model_id: str) -> str:
-    """根据 model_id 返回可展示的名称；找不到时回退原始 id。"""
-    for mid, label in VIDEO_CAPABLE_MODELS:
-        if mid == model_id:
-            return label
-    return model_id or ""
+# VIDEO_CAPABLE_MODELS / model_display_name 迁到 appcore.llm_models（纯数据
+# 模块，不 import SDK），本模块以 re-export 保留对外路径不变；老调用方
+# 应当陆续直接 import 自 appcore.llm_models 而不是 appcore.gemini。
+from appcore.llm_models import (  # noqa: E402,F401
+    VIDEO_CAPABLE_MODELS,
+    model_display_name,
+)
 
 
 def _binding_lookup(service: str) -> dict | None:
@@ -193,136 +197,10 @@ def _get_client_for_service(service: str) -> tuple[genai.Client, str]:
     return client, model_id
 
 
-def _guess_mime(path: Path) -> str:
-    mt, _ = mimetypes.guess_type(str(path))
-    if mt:
-        return mt
-    suffix = path.suffix.lower()
-    return {
-        ".mp4": "video/mp4", ".mov": "video/quicktime",
-        ".webm": "video/webm", ".mkv": "video/x-matroska",
-        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".png": "image/png", ".webp": "image/webp",
-    }.get(suffix, "application/octet-stream")
-
-
-def _upload_and_wait(client: genai.Client, path: Path) -> genai_types.File:
-    # google-genai SDK 会把文件名塞到 HTTP header；中文/非 ASCII 会触发
-    # UnicodeEncodeError（httpx headers 要求 ASCII）。为稳妥，总是拷贝到
-    # 一个 ASCII 安全的临时文件再上传。
-    import hashlib
-    import shutil
-    import tempfile
-
-    safe_name = hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:16] + (path.suffix or ".bin")
-    tmp_path = Path(tempfile.gettempdir()) / f"gemini_upload_{safe_name}"
-    try:
-        shutil.copy2(path, tmp_path)
-        f = client.files.upload(file=str(tmp_path))
-    finally:
-        try:
-            tmp_path.unlink()
-        except OSError:
-            pass
-
-    deadline = time.time() + _FILE_ACTIVE_TIMEOUT
-    while f.state and f.state.name == "PROCESSING":
-        if time.time() > deadline:
-            raise GeminiError(f"视频上传超时未就绪：{path.name}")
-        time.sleep(_FILE_POLL_INTERVAL)
-        f = client.files.get(name=f.name)
-    if f.state and f.state.name == "FAILED":
-        raise GeminiError(f"视频处理失败：{path.name}")
-    return f
-
-
-def _to_part(client: genai.Client, media: str | Path) -> genai_types.Part:
-    p = Path(media)
-    if not p.is_file():
-        raise GeminiError(f"文件不存在：{p}")
-    mime = _guess_mime(p)
-    size = p.stat().st_size
-    if size <= _INLINE_MAX_BYTES and not mime.startswith("video/"):
-        return genai_types.Part.from_bytes(data=p.read_bytes(), mime_type=mime)
-    uploaded = _upload_and_wait(client, p)
-    return genai_types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime)
-
-
-def _build_contents(client: genai.Client, prompt: str,
-                    media: Iterable[str | Path] | None) -> list[genai_types.Part]:
-    parts: list[genai_types.Part] = []
-    if media:
-        for m in media:
-            parts.append(_to_part(client, m))
-    parts.append(genai_types.Part.from_text(text=prompt))
-    return parts
-
-
-_GEMINI_UNSUPPORTED_SCHEMA_KEYS = frozenset({
-    "additionalProperties", "additional_properties",
-    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-    "minLength", "maxLength", "pattern", "default",
-    "minItems", "maxItems", "uniqueItems",
-})
-
-
-def _sanitize_schema_for_gemini(schema: dict | list | Any) -> Any:
-    """递归清洗 JSON Schema，去掉 Gemini API 不支持的关键字。"""
-    if isinstance(schema, dict):
-        return {
-            k: _sanitize_schema_for_gemini(v)
-            for k, v in schema.items()
-            if k not in _GEMINI_UNSUPPORTED_SCHEMA_KEYS
-        }
-    if isinstance(schema, list):
-        return [_sanitize_schema_for_gemini(item) for item in schema]
-    return schema
-
-
-def _build_config(
-    *,
-    system: str | None,
-    temperature: float | None,
-    response_schema: dict | None,
-    max_output_tokens: int | None,
-    google_search: bool | None = None,
-) -> genai_types.GenerateContentConfig:
-    kwargs: dict[str, Any] = {}
-    if system:
-        kwargs["system_instruction"] = system
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    if max_output_tokens is not None:
-        kwargs["max_output_tokens"] = max_output_tokens
-    if response_schema is not None:
-        kwargs["response_mime_type"] = "application/json"
-        if google_search:
-            kwargs["response_json_schema"] = response_schema
-        else:
-            kwargs["response_schema"] = _sanitize_schema_for_gemini(response_schema)
-    if google_search:
-        kwargs["tools"] = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
-    return genai_types.GenerateContentConfig(**kwargs)
-
-
-def _is_retryable(exc: Exception) -> bool:
-    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-    if isinstance(code, int) and code in _RETRYABLE_STATUS:
-        return True
-    return isinstance(exc, genai_errors.ServerError)
-
-
-def _extract_gemini_tokens(resp: Any) -> tuple[int | None, int | None]:
-    meta = getattr(resp, "usage_metadata", None)
-    if not meta:
-        return None, None
-    prompt = getattr(meta, "prompt_token_count", None)
-    output = getattr(meta, "candidates_token_count", None)
-    try:
-        return (int(prompt) if prompt is not None else None,
-                int(output) if output is not None else None)
-    except (TypeError, ValueError):
-        return None, None
+# helper 函数（_guess_mime / _upload_and_wait / _to_part / _build_contents /
+# _GEMINI_UNSUPPORTED_SCHEMA_KEYS / _sanitize_schema_for_gemini / _build_config /
+# _is_retryable / _extract_gemini_tokens）已迁到 appcore.llm_providers._helpers
+# .gemini_calls，本模块顶部 import 后可直接使用。
 
 
 def _resolve_billing_use_case(service: str) -> str | None:

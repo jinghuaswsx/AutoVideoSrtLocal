@@ -938,6 +938,8 @@ def retranslate(task_id):
             source_full_text_zh, script_segments, variant="normal",
             custom_system_prompt=prompt_text,
             provider=model_provider, user_id=current_user.id,
+            use_case="video_translate.localize",
+            project_id=task_id,
         )
         usage = result.get("_usage") or {}
         ai_billing.log_request(

@@ -5,7 +5,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from appcore import gemini
 from pipeline.llm_util import parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -57,17 +56,19 @@ def score_video(video_path: str | Path, *, user_id: int | None = None,
     if not p.is_file():
         raise FileNotFoundError(f"视频不存在：{p}")
 
-    raw = gemini.generate(
-        USER_PROMPT,
+    from appcore.llm_client import invoke_generate
+    result = invoke_generate(
+        "video_score.run",
+        prompt=USER_PROMPT,
         system=SYSTEM_PROMPT,
-        media=p,
+        media=[p],
         temperature=0.2,
         max_output_tokens=4096,
         user_id=user_id,
         project_id=project_id,
-        service="video_score.run",
-        default_model=SCORE_MODEL,
+        model_override=SCORE_MODEL,
     )
+    raw = result.get("json") if result.get("json") is not None else (result.get("text") or "")
     if isinstance(raw, dict):
         data = raw
     else:

@@ -100,15 +100,16 @@ def test_call_llm_uses_translate_lab_use_case():
 
     captured = {}
 
-    def fake_generate(prompt, **kwargs):
-        captured["prompt"] = prompt
+    def fake_generate(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["prompt"] = kwargs.get("prompt")
         captured["kwargs"] = kwargs
-        return {"translated_text": "Hello"}
+        return {"json": {"translated_text": "Hello"}, "text": None, "raw": None, "usage": {}}
 
     with patch("pipeline.translate_v2.gemini_generate", side_effect=fake_generate):
         translated = mod._call_llm("translate me", 5)
 
     assert translated == "Hello"
     assert captured["prompt"] == "translate me"
-    assert captured["kwargs"]["service"] == "translate_lab.shot_translate"
+    assert captured["use_case_code"] == "translate_lab.shot_translate"
     assert captured["kwargs"]["user_id"] == 5

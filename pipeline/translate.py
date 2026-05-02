@@ -2,14 +2,13 @@ import json
 import logging
 from typing import Dict, List
 
-from openai import OpenAI
-
 log = logging.getLogger(__name__)
 
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     require_provider_config,
 )
+from appcore.llm_providers._helpers.openai_compat import make_openai_compat_client
 from config import (
     DOUBAO_LLM_BASE_URL_DEFAULT,
     OPENROUTER_BASE_URL_DEFAULT,
@@ -113,7 +112,7 @@ def resolve_provider_config(
     provider: str,
     user_id: int | None = None,
     api_key_override: str | None = None,
-) -> tuple[OpenAI, str]:
+):
     """Return (client, model_id) for the given provider (OpenAI-compatible only).
 
     Vertex provider 不走这里——由 _call_vertex_json 单独处理。
@@ -145,7 +144,7 @@ def resolve_provider_config(
         else:
             model = _OPENROUTER_PREF_MODELS.get(provider, _DEFAULT_CLAUDE_MODEL)
 
-    return OpenAI(api_key=key, base_url=base_url), model
+    return make_openai_compat_client(api_key=key, base_url=base_url), model
 
 
 def get_model_display_name(provider: str, user_id: int | None = None) -> str:
@@ -156,142 +155,79 @@ def get_model_display_name(provider: str, user_id: int | None = None) -> str:
     return model
 
 
-def parse_json_content(raw: str):
-    if raw is None:
-        raise TypeError("LLM 返回内容为 None")
-    content = raw.strip()
-    if content.startswith("```"):
-        content = content.split("```")[1]
-        if content.startswith("json"):
-            content = content[4:]
-    return json.loads(content.strip())
+# Vertex JSON helper 与公共 messages/schema 工具迁到
+# `appcore.llm_providers._helpers.vertex_json`，本模块以 re-export 保留
+# 历史 import 路径，方便老调用方/测试 patch。
+from appcore.llm_providers._helpers.vertex_json import (  # noqa: F401
+    _GEMINI_VERTEX_UNSUPPORTED_SCHEMA_KEYS,
+    _call_vertex_json,
+    _extract_gemini_schema,
+    _split_oai_messages,
+    _strip_unsupported_schema,
+    parse_json_content,
+)
 
 
 # ---------------------------------------------------------------------------
-# Vertex AI (Google Cloud Express Mode) 分支 —— 复用图片翻译模块的授权方式
+# use_case 入口 —— 直接走 appcore.llm_client.invoke_chat
 # ---------------------------------------------------------------------------
 
-_GEMINI_VERTEX_UNSUPPORTED_SCHEMA_KEYS = frozenset({
-    "additionalProperties",
-    "additional_properties",
-    "strict",
-    "$schema",
-})
-
-
-def _strip_unsupported_schema(obj):
-    """Gemini response_schema 不认识部分 OpenAI JSON Schema 关键字，递归剥掉。"""
-    if isinstance(obj, dict):
-        return {
-            k: _strip_unsupported_schema(v)
-            for k, v in obj.items()
-            if k not in _GEMINI_VERTEX_UNSUPPORTED_SCHEMA_KEYS
-        }
-    if isinstance(obj, list):
-        return [_strip_unsupported_schema(x) for x in obj]
-    return obj
-
-
-def _extract_gemini_schema(response_format: dict | None) -> dict | None:
-    """把 OpenAI json_schema response_format 提取成 Gemini response_schema 需要的结构。"""
-    if not response_format:
-        return None
-    schema = response_format.get("json_schema", {}).get("schema", response_format)
-    return _strip_unsupported_schema(schema)
-
-
-def _split_oai_messages(messages: list[dict]) -> tuple[str, str]:
-    """拆 OpenAI 风格 [{system},{user}] 为 (system_prompt, user_content)。"""
-    system_parts: list[str] = []
-    user_parts: list[str] = []
-    for m in messages:
-        role = m.get("role")
-        content = m.get("content") or ""
-        if role == "system":
-            system_parts.append(content)
-        else:
-            user_parts.append(content)
-    return "\n\n".join(system_parts), "\n\n".join(user_parts)
-
-
-def _call_vertex_json(
+def _invoke_chat_for_use_case(
+    use_case: str,
     messages: list[dict],
-    model_id: str,
     response_format: dict | None,
-    temperature: float = 0.2,
-    max_output_tokens: int = 4096,
-    provider_config_code: str = "gemini_cloud_text",
+    *,
+    user_id: int | None,
+    project_id: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ):
-    """走 Vertex AI 返回 (parsed_payload, usage_dict, raw_text)。
+    """跑一次 use_case 走的 invoke_chat，返回 (payload, usage)。
 
-    凭据从 llm_provider_configs.gemini_cloud_text 读取：api_key 或
-    extra_config.project（Vertex 官方项目形式）至少一项非空即可。
+    把不同 adapter（openrouter/doubao/gemini_vertex/...）的返回值统一为
+    业务函数期望的 (parsed_payload_dict_or_list, usage_dict_or_None) 二元组。
+
+    过渡期注意：调用 invoke_chat 时刻意把 user_id 置 None，让 invoke_chat 内部
+    _log_usage 立即 return（user_id is None → skip）。这样老业务（runtime.py /
+    runtime_de / runtime_fr / ...）外层的 _log_translate_billing 仍是唯一计费
+    入口，迁移期间不会因为同一调用既被外层、又被 invoke_chat 计费而出现 ai_billing
+    重复行。Phase A-4 删除外层 _log_translate_billing 后，再恢复透传 user_id。
+
+    provider_override / model_override 让评测脚本（tools/translate_quality_eval
+    等）跳过 binding 默认值，直接指定 provider+model 跑 A/B 对比。
     """
-    from google import genai
-    from google.genai import types as genai_types
+    from appcore import llm_client
 
-    try:
-        provider_cfg = require_provider_config(provider_config_code)
-    except ProviderConfigError as exc:
-        raise RuntimeError(str(exc)) from exc
-
-    api_key = (provider_cfg.api_key or "").strip()
-    extra = provider_cfg.extra_config or {}
-    project = (extra.get("project") or "").strip()
-    location = (extra.get("location") or "global").strip() or "global"
-
-    if provider_config_code == "gemini_vertex_adc_text":
-        api_key = ""
-        if not project:
-            raise RuntimeError(
-                "Missing provider config gemini_vertex_adc_text.extra_config.project; "
-                "set it in /settings provider access."
-            )
-
-    if provider_config_code != "gemini_vertex_adc_text" and not (api_key or project):
-        raise RuntimeError(
-            "缺少供应商配置 gemini_cloud_text.api_key 或 extra_config.project，"
-            "请在 /settings 的「服务商接入」页填写。"
-        )
-
-    system_prompt, user_content = _split_oai_messages(messages)
-    schema = _extract_gemini_schema(response_format)
-
-    cfg_kwargs: dict = {"temperature": temperature, "max_output_tokens": max_output_tokens}
-    if system_prompt:
-        cfg_kwargs["system_instruction"] = system_prompt
-    if schema:
-        cfg_kwargs["response_mime_type"] = "application/json"
-        cfg_kwargs["response_schema"] = schema
-    cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
-
-    if project:
-        client = genai.Client(vertexai=True, project=project, location=location)
-    else:
-        client = genai.Client(vertexai=True, api_key=api_key)
-    resp = client.models.generate_content(
-        model=model_id,
-        contents=user_content,
-        config=cfg,
+    result = llm_client.invoke_chat(
+        use_case,
+        messages=messages,
+        user_id=None,
+        project_id=project_id,
+        response_format=response_format,
+        temperature=temperature if temperature is not None else 0.2,
+        max_tokens=max_tokens if max_tokens is not None else 4096,
+        provider_override=provider_override,
+        model_override=model_override,
     )
-    raw = resp.text or ""
-    log.info("vertex raw response (model=%s): %s", model_id, raw[:2000])
 
-    parsed = getattr(resp, "parsed", None)
-    payload = parsed if isinstance(parsed, (dict, list)) else parse_json_content(raw)
+    payload = result.get("json")
+    if payload is None:
+        text = result.get("text") or ""
+        payload = parse_json_content(text)
 
+    raw_usage = result.get("usage") or {}
     usage = None
-    meta = getattr(resp, "usage_metadata", None)
-    if meta is not None:
-        usage = {
-            "input_tokens": getattr(meta, "prompt_token_count", None),
-            "output_tokens": getattr(meta, "candidates_token_count", None),
-        }
-        log.info(
-            "vertex token usage (model=%s): input=%s, output=%s",
-            model_id, usage["input_tokens"], usage["output_tokens"],
-        )
-    return payload, usage, raw
+    if raw_usage:
+        input_tokens = raw_usage.get("input_tokens")
+        output_tokens = raw_usage.get("output_tokens")
+        if input_tokens is not None or output_tokens is not None:
+            usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+    return payload, usage
 
 
 def _vertex_model_id(provider: str) -> str:
@@ -413,10 +349,13 @@ def _generate_localized_translation_single(
     provider: str = "openrouter",
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
+    use_case: str | None = None,
+    project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Single-shot translation: original logic, no batching. Used directly for
     short videos and as the per-batch primitive for long-video batching."""
-    provider = _resolve_use_case_provider(provider)
     messages = build_localized_translation_messages(
         source_full_text_zh,
         script_segments,
@@ -424,17 +363,26 @@ def _generate_localized_translation_single(
         custom_system_prompt=custom_system_prompt,
     )
 
-    if provider.startswith("vertex_"):
-        payload, usage, _ = _call_vertex_json(
-            messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-            provider_config_code=_vertex_provider_config_code(provider),
+    if use_case:
+        payload, usage = _invoke_chat_for_use_case(
+            use_case, messages, LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+            user_id=user_id, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     else:
-        payload, usage, _, _ = _call_openai_compat(
-            messages, provider=provider, user_id=user_id,
-            api_key_override=openrouter_api_key,
-            response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-        )
+        provider = _resolve_use_case_provider(provider)
+        if provider.startswith("vertex_"):
+            payload, usage, _ = _call_vertex_json(
+                messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+                provider_config_code=_vertex_provider_config_code(provider),
+            )
+        else:
+            payload, usage, _, _ = _call_openai_compat(
+                messages, provider=provider, user_id=user_id,
+                api_key_override=openrouter_api_key,
+                response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+            )
 
     log.info("localized_translation parsed payload type=%s keys=%s",
              type(payload).__name__,
@@ -459,6 +407,10 @@ def _generate_localized_translation_batched(
     user_id: int | None,
     openrouter_api_key: str | None,
     batch_size: int,
+    use_case: str | None = None,
+    project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Long-video translation: split source segments into ~batch_size batches,
     call _single per batch, normalize per-batch indices to global, then merge.
@@ -483,6 +435,9 @@ def _generate_localized_translation_batched(
             variant=variant, custom_system_prompt=custom_system_prompt,
             provider=provider, user_id=user_id,
             openrouter_api_key=openrouter_api_key,
+            use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
         batch_indices = [int(s["index"]) for s in batch]
         _normalize_batch_source_indices(batch_result.get("sentences") or [], batch_indices)
@@ -516,11 +471,19 @@ def generate_localized_translation(
     provider: str = "openrouter",
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
+    use_case: str | None = None,
+    project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Public entry: dispatches to single-shot for short videos and to the
     batched path for long videos based on config thresholds. Long-prompt LLM
     calls are the root cause of intermittent missing-field failures across
-    Claude/Gemini; batching keeps each call's prompt size small."""
+    Claude/Gemini; batching keeps each call's prompt size small.
+
+    传 use_case 时直接走 appcore.llm_client.invoke_chat（adapter 解析 binding），
+    不再走 provider 字符串映射；老 provider= 入参仍兼容。优先级：use_case > provider。
+    """
     import config as _cfg
     if (
         getattr(_cfg, "MULTI_TRANSLATE_BATCH_ENABLED", True)
@@ -532,12 +495,18 @@ def generate_localized_translation(
             provider=provider, user_id=user_id,
             openrouter_api_key=openrouter_api_key,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
+            use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     return _generate_localized_translation_single(
         source_full_text_zh, script_segments,
         variant=variant, custom_system_prompt=custom_system_prompt,
         provider=provider, user_id=user_id,
         openrouter_api_key=openrouter_api_key,
+        use_case=use_case, project_id=project_id,
+        provider_override=provider_override,
+        model_override=model_override,
     )
 
 
@@ -550,24 +519,36 @@ def _generate_tts_script_single(
     messages_builder=None,
     response_format_override=None,
     validator=None,
+    use_case: str | None = None,
+    project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Single-shot tts_script generation: original logic, no batching."""
-    provider = _resolve_use_case_provider(provider)
     builder = messages_builder or build_tts_script_messages
     messages = builder(localized_translation)
     rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
 
-    if provider.startswith("vertex_"):
-        payload, usage, _ = _call_vertex_json(
-            messages, _vertex_model_id(provider), rf,
-            provider_config_code=_vertex_provider_config_code(provider),
+    if use_case:
+        payload, usage = _invoke_chat_for_use_case(
+            use_case, messages, rf,
+            user_id=user_id, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     else:
-        payload, usage, _, _ = _call_openai_compat(
-            messages, provider=provider, user_id=user_id,
-            api_key_override=openrouter_api_key,
-            response_format=rf,
-        )
+        provider = _resolve_use_case_provider(provider)
+        if provider.startswith("vertex_"):
+            payload, usage, _ = _call_vertex_json(
+                messages, _vertex_model_id(provider), rf,
+                provider_config_code=_vertex_provider_config_code(provider),
+            )
+        else:
+            payload, usage, _, _ = _call_openai_compat(
+                messages, provider=provider, user_id=user_id,
+                api_key_override=openrouter_api_key,
+                response_format=rf,
+            )
 
     log.info("tts_script parsed payload type=%s keys=%s",
              type(payload).__name__,
@@ -598,6 +579,10 @@ def _generate_tts_script_batched(
     response_format_override,
     validator,
     batch_size: int,
+    use_case: str | None = None,
+    project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Long-translation tts_script: split sentences into ~batch_size batches,
     generate per-batch blocks/subtitle_chunks, merge, then run a single
@@ -627,6 +612,9 @@ def _generate_tts_script_batched(
             messages_builder=messages_builder,
             response_format_override=response_format_override,
             validator=validator,
+            use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
         all_blocks.extend(batch_result.get("blocks") or [])
         all_chunks.extend(batch_result.get("subtitle_chunks") or [])
@@ -667,11 +655,18 @@ def generate_tts_script(
     messages_builder=None,
     response_format_override=None,
     validator=None,
+    use_case: str | None = None,
+    project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Public entry. Long sentences trigger batched generation; per-batch
     blocks/subtitle_chunks are merged and the full sentence list drives a
     single validate_tts_script(sentences=...) so derive can recompute all
-    nested indices coherently."""
+    nested indices coherently.
+
+    传 use_case 时走 invoke_chat；老 provider= 入参兼容。
+    """
     import config as _cfg
     sentences = (localized_translation or {}).get("sentences") or []
     if (
@@ -686,6 +681,9 @@ def generate_tts_script(
             response_format_override=response_format_override,
             validator=validator,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
+            use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     return _generate_tts_script_single(
         localized_translation,
@@ -694,6 +692,9 @@ def generate_tts_script(
         messages_builder=messages_builder,
         response_format_override=response_format_override,
         validator=validator,
+        use_case=use_case, project_id=project_id,
+        provider_override=provider_override,
+        model_override=model_override,
     )
 
 
@@ -765,10 +766,11 @@ def _generate_localized_rewrite_single(
     openrouter_api_key: str | None = None,
     temperature: float = 0.2,
     feedback_notes: str | None = None,
+    use_case: str | None = None,
+    project_id: str | None = None,
 ) -> dict:
     """Single-shot rewrite: original logic, no batching. Used directly for
     short translations and as the per-batch primitive for long ones."""
-    provider = _resolve_use_case_provider(provider)
     builder_kwargs = dict(
         source_full_text=source_full_text,
         prev_localized_translation=prev_localized_translation,
@@ -780,19 +782,27 @@ def _generate_localized_rewrite_single(
         builder_kwargs["feedback_notes"] = feedback_notes
     messages = messages_builder(**builder_kwargs)
 
-    if provider.startswith("vertex_"):
-        payload, usage, _ = _call_vertex_json(
-            messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+    if use_case:
+        payload, usage = _invoke_chat_for_use_case(
+            use_case, messages, LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+            user_id=user_id, project_id=project_id,
             temperature=temperature,
-            provider_config_code=_vertex_provider_config_code(provider),
         )
     else:
-        payload, usage, _, _ = _call_openai_compat(
-            messages, provider=provider, user_id=user_id,
-            api_key_override=openrouter_api_key,
-            response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-            temperature=temperature,
-        )
+        provider = _resolve_use_case_provider(provider)
+        if provider.startswith("vertex_"):
+            payload, usage, _ = _call_vertex_json(
+                messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+                temperature=temperature,
+                provider_config_code=_vertex_provider_config_code(provider),
+            )
+        else:
+            payload, usage, _, _ = _call_openai_compat(
+                messages, provider=provider, user_id=user_id,
+                api_key_override=openrouter_api_key,
+                response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+                temperature=temperature,
+            )
 
     log.info(
         "localized_rewrite parsed (provider=%s, direction=%s, target_words=%d, "
@@ -829,6 +839,8 @@ def _generate_localized_rewrite_batched(
     temperature: float,
     feedback_notes: str | None,
     batch_size: int,
+    use_case: str | None = None,
+    project_id: str | None = None,
 ) -> dict:
     """Long-translation rewrite: split prev sentences into ~batch_size batches,
     allocate sub-target words proportionally by char count, rewrite each batch
@@ -860,6 +872,7 @@ def _generate_localized_rewrite_batched(
             provider=provider, user_id=user_id,
             openrouter_api_key=openrouter_api_key,
             temperature=temperature, feedback_notes=feedback_notes,
+            use_case=use_case, project_id=project_id,
         )
         batch_global_indices = sorted({
             int(idx)
@@ -905,6 +918,8 @@ def generate_localized_rewrite(
     openrouter_api_key: str | None = None,
     temperature: float = 0.2,
     feedback_notes: str | None = None,
+    use_case: str | None = None,
+    project_id: str | None = None,
 ) -> dict:
     """Rewrite an existing localized_translation to a target word count.
 
@@ -917,6 +932,8 @@ def generate_localized_rewrite(
 
     长 sentences 时自动走分批 rewrite（每批分配子目标字数），避免长 prompt 下
     Claude/Gemini 漏返 source_segment_indices 等嵌套字段。
+
+    传 use_case 时走 invoke_chat；老 provider= 入参兼容。
     """
     import config as _cfg
     sentences = prev_localized_translation.get("sentences") or []
@@ -931,6 +948,7 @@ def generate_localized_rewrite(
             openrouter_api_key=openrouter_api_key,
             temperature=temperature, feedback_notes=feedback_notes,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
+            use_case=use_case, project_id=project_id,
         )
     return _generate_localized_rewrite_single(
         source_full_text, prev_localized_translation, target_words,
@@ -938,4 +956,5 @@ def generate_localized_rewrite(
         provider=provider, user_id=user_id,
         openrouter_api_key=openrouter_api_key,
         temperature=temperature, feedback_notes=feedback_notes,
+        use_case=use_case, project_id=project_id,
     )
