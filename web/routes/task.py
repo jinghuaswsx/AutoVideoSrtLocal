@@ -177,8 +177,8 @@ def upload():
 @login_required
 def get_task(task_id):
     recover_task_if_needed(task_id)
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
     return jsonify(task)
 
@@ -366,8 +366,8 @@ def thumbnail(task_id: str):
 @bp.route("/<task_id>/artifact/<name>", methods=["GET"])
 @login_required
 def get_artifact(task_id, name):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
     variant = request.args.get("variant") or None
 
@@ -401,8 +401,8 @@ def get_round_file(task_id: str, round_index: int, kind: str):
     if kind not in _ALLOWED_ROUND_KINDS:
         abort(404)
 
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
@@ -427,8 +427,8 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 @login_required
 def restart(task_id):
     """清掉上一轮的中间/结果/TOS 产物，按新参数从头跑一遍。"""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     body = request_payload_from(request)
@@ -469,8 +469,8 @@ def restart(task_id):
 @login_required
 def start(task_id):
     """配置并启动流水线"""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     body = request_payload_from(request)
@@ -522,8 +522,8 @@ def start(task_id):
 @login_required
 def start_translate(task_id):
     """User picks model + prompt, then starts the translate step."""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     if not task.get("_translate_pre_select"):
@@ -562,8 +562,8 @@ def start_translate(task_id):
 @login_required
 def retranslate(task_id):
     """Re-run translation with a different prompt. Stores result alongside existing translations."""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     step_status = (task.get("steps") or {}).get("translate")
@@ -678,8 +678,8 @@ def retranslate(task_id):
 @login_required
 def select_translation(task_id):
     """Select one of the translation attempts as the active translation."""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -701,8 +701,8 @@ def select_translation(task_id):
 @bp.route("/<task_id>/alignment", methods=["PUT"])
 @login_required
 def update_alignment(task_id):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -740,8 +740,8 @@ def update_alignment(task_id):
 @login_required
 def update_segments(task_id):
     """用户确认/编辑翻译结果"""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json()
@@ -801,8 +801,8 @@ def update_segments(task_id):
 @bp.route("/<task_id>/av/rewrite_sentence", methods=["POST"])
 @login_required
 def av_rewrite_sentence(task_id):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     variant = "av"
@@ -988,8 +988,8 @@ def download(task_id, file_type):
     实际下载逻辑见 web.services.artifact_download.serve_artifact_download，
     三个翻译模块共用同一套 TOS-优先 / 本地-兜底 策略。
     """
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     variant = request.args.get("variant") or None
@@ -999,8 +999,8 @@ def download(task_id, file_type):
 @bp.route("/<task_id>/deploy/capcut", methods=["POST"])
 @login_required
 def deploy_capcut(task_id):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = get_user_task(task_id, user_id=current_user.id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     variant = request.args.get("variant") or None

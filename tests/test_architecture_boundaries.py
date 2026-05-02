@@ -350,6 +350,7 @@ def test_task_user_access_helper_lives_outside_route_module():
 
     assert "def _get_current_user_task" not in source
     assert "def _is_admin_user" not in source
+    assert 'task.get("_user_id") != current_user.id' not in source
     assert Path("web/services/task_access.py").exists()
 
 
