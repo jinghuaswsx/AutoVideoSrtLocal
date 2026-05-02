@@ -58,20 +58,13 @@ _FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 _clients: dict[str, genai.Client] = {}
 
-# 支持视频分析的 Gemini 3 系列模型
-VIDEO_CAPABLE_MODELS: list[tuple[str, str]] = [
-    ("gemini-3.1-pro-preview",        "Gemini 3.1 Pro"),
-    ("gemini-3-flash-preview",        "Gemini 3 Flash"),
-    ("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash-Lite"),
-]
-
-
-def model_display_name(model_id: str) -> str:
-    """根据 model_id 返回可展示的名称；找不到时回退原始 id。"""
-    for mid, label in VIDEO_CAPABLE_MODELS:
-        if mid == model_id:
-            return label
-    return model_id or ""
+# VIDEO_CAPABLE_MODELS / model_display_name 迁到 appcore.llm_models（纯数据
+# 模块，不 import SDK），本模块以 re-export 保留对外路径不变；老调用方
+# 应当陆续直接 import 自 appcore.llm_models 而不是 appcore.gemini。
+from appcore.llm_models import (  # noqa: E402,F401
+    VIDEO_CAPABLE_MODELS,
+    model_display_name,
+)
 
 
 def _binding_lookup(service: str) -> dict | None:

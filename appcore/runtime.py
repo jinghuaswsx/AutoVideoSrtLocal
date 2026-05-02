@@ -2349,7 +2349,8 @@ class PipelineRunner:
     def _step_analysis(self, task_id: str) -> None:
         """用 Gemini 对硬字幕视频做评分 + CSK 深度分析，结果并列展示。"""
         from pipeline import video_csk, video_score
-        from appcore.gemini import resolve_config, model_display_name
+        from appcore.gemini import resolve_config
+        from appcore.llm_models import model_display_name
 
         task = task_state.get(task_id) or {}
         if self._skip_original_video_passthrough_step(task_id, "analysis", task=task):
