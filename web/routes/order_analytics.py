@@ -7,10 +7,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from flask import Blueprint, render_template, request, jsonify, make_response
-from flask_login import login_required
+from flask_login import current_user, login_required
 from web.auth import admin_required
 
 from appcore import order_analytics as oa
+from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,28 @@ def _json_safe(value):
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
     return value
+
+
+def _audit_order_analytics_action(
+    action: str,
+    *,
+    target_type: str | None = None,
+    target_id: int | str | None = None,
+    target_label: str | None = None,
+    status: str = "success",
+    detail: dict | None = None,
+) -> None:
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action=action,
+        module="order_analytics",
+        target_type=target_type,
+        target_id=target_id,
+        target_label=target_label,
+        status=status,
+        detail=detail,
+    )
 
 
 # ── 页面路由 ──────────────────────────────────────────
@@ -50,15 +73,35 @@ def upload():
     """接收 CSV 或 Excel 文件，解析后写入数据库并返回导入结果。"""
     f = request.files.get("file")
     if not f or not f.filename:
+        _audit_order_analytics_action(
+            "order_analytics_shopify_orders_uploaded",
+            target_type="order_import",
+            status="failure",
+            detail={"error": "missing_file"},
+        )
         return jsonify(error="请选择文件"), 400
 
     try:
         rows = oa.parse_shopify_file(f.stream, f.filename)
     except Exception as exc:
         log.warning("order_analytics upload parse error: %s", exc, exc_info=True)
+        _audit_order_analytics_action(
+            "order_analytics_shopify_orders_uploaded",
+            target_type="order_import",
+            target_label=f.filename,
+            status="failure",
+            detail={"filename": f.filename, "error": str(exc)},
+        )
         return jsonify(error=f"文件解析失败：{exc}"), 400
 
     if not rows:
+        _audit_order_analytics_action(
+            "order_analytics_shopify_orders_uploaded",
+            target_type="order_import",
+            target_label=f.filename,
+            status="failure",
+            detail={"filename": f.filename, "error": "empty_or_invalid_file"},
+        )
         return jsonify(error="文件为空或格式不正确"), 400
 
     result = oa.import_orders(rows)
@@ -67,6 +110,21 @@ def upload():
     matched = oa.match_orders_to_products()
 
     stats = oa.get_import_stats()
+    _audit_order_analytics_action(
+        "order_analytics_shopify_orders_uploaded",
+        target_type="order_import",
+        target_label=f.filename,
+        detail={
+            "filename": f.filename,
+            "imported": result["imported"],
+            "skipped": result["skipped"],
+            "matched": matched,
+            "total_rows": stats.get("total_rows", 0),
+            "product_count": stats.get("product_count", 0),
+            "country_count": stats.get("country_count", 0),
+            "matched_rows": stats.get("matched_rows", 0),
+        },
+    )
     return jsonify({
         "imported": result["imported"],
         "skipped": result["skipped"],
@@ -87,6 +145,12 @@ def ad_upload():
     """接收 Meta 广告 CSV/Excel，按报表周期 upsert 到长期广告数据表。"""
     f = request.files.get("file")
     if not f or not f.filename:
+        _audit_order_analytics_action(
+            "order_analytics_meta_ads_uploaded",
+            target_type="meta_ad_import",
+            status="failure",
+            detail={"error": "missing_file"},
+        )
         return jsonify(error="请选择广告报表文件"), 400
 
     frequency = (request.form.get("frequency") or "custom").strip().lower()
@@ -96,9 +160,23 @@ def ad_upload():
         rows = oa.parse_meta_ad_file(io.BytesIO(file_bytes), f.filename)
     except Exception as exc:
         log.warning("order_analytics ad upload parse error: %s", exc, exc_info=True)
+        _audit_order_analytics_action(
+            "order_analytics_meta_ads_uploaded",
+            target_type="meta_ad_import",
+            target_label=f.filename,
+            status="failure",
+            detail={"filename": f.filename, "frequency": frequency, "error": str(exc)},
+        )
         return jsonify(error=f"广告报表解析失败：{exc}"), 400
 
     if not rows:
+        _audit_order_analytics_action(
+            "order_analytics_meta_ads_uploaded",
+            target_type="meta_ad_import",
+            target_label=f.filename,
+            status="failure",
+            detail={"filename": f.filename, "frequency": frequency, "error": "empty_or_invalid_file"},
+        )
         return jsonify(error="广告报表为空或格式不正确"), 400
 
     result = oa.import_meta_ad_rows(
@@ -108,6 +186,23 @@ def ad_upload():
         import_frequency=frequency,
     )
     stats = oa.get_meta_ad_stats()
+    _audit_order_analytics_action(
+        "order_analytics_meta_ads_uploaded",
+        target_type="meta_ad_import",
+        target_id=result.get("batch_id"),
+        target_label=f.filename,
+        detail={
+            "filename": f.filename,
+            "frequency": frequency,
+            "batch_id": result.get("batch_id"),
+            "imported": result.get("imported"),
+            "updated": result.get("updated"),
+            "skipped": result.get("skipped"),
+            "matched": result.get("matched"),
+            "total_rows": stats.get("total_rows", 0),
+            "matched_rows": stats.get("matched_rows", 0),
+        },
+    )
     return jsonify(_json_safe({
         **result,
         "total_rows": stats.get("total_rows", 0),
@@ -314,7 +409,37 @@ def dianxiaomi_import():
         )
     except Exception as exc:
         log.warning("dianxiaomi import failed: %s", exc, exc_info=True)
+        _audit_order_analytics_action(
+            "order_analytics_dianxiaomi_import_run",
+            target_type="dianxiaomi_import",
+            target_label=f"{start_date}..{end_date}",
+            status="failure",
+            detail={
+                "start_date": start_date,
+                "end_date": end_date,
+                "site_codes": site_codes,
+                "states": states,
+                "dry_run": dry_run,
+                "error": str(exc),
+            },
+        )
         return jsonify(error=f"店小秘订单导入失败：{exc}"), 500
+    _audit_order_analytics_action(
+        "order_analytics_dianxiaomi_import_run",
+        target_type="dianxiaomi_import",
+        target_label=f"{start_date}..{end_date}",
+        detail={
+            "start_date": start_date,
+            "end_date": end_date,
+            "site_codes": site_codes,
+            "states": states,
+            "dry_run": dry_run,
+            "status": result.get("status") if isinstance(result, dict) else None,
+            "inserted_lines": result.get("inserted_lines") if isinstance(result, dict) else None,
+            "updated_lines": result.get("updated_lines") if isinstance(result, dict) else None,
+            "skipped_lines": result.get("skipped_lines") if isinstance(result, dict) else None,
+        },
+    )
     return jsonify(_json_safe(result))
 
 
@@ -415,6 +540,15 @@ def refresh_titles():
     """批量抓取产品网页标题。"""
     product_ids = request.json.get("product_ids") if request.is_json else None
     result = oa.refresh_product_titles(product_ids)
+    _audit_order_analytics_action(
+        "order_analytics_product_titles_refreshed",
+        target_type="media_product",
+        detail={
+            "product_ids": product_ids,
+            "updated": result.get("updated") if isinstance(result, dict) else None,
+            "result": result,
+        },
+    )
     return jsonify(result)
 
 
@@ -424,6 +558,11 @@ def refresh_titles():
 def match():
     """执行产品匹配。"""
     affected = oa.match_orders_to_products()
+    _audit_order_analytics_action(
+        "order_analytics_orders_matched",
+        target_type="order_import",
+        detail={"matched": affected},
+    )
     return jsonify({"matched": affected})
 
 
@@ -433,6 +572,11 @@ def match():
 def ad_match():
     """重新执行广告系列到素材库产品的匹配。"""
     affected = oa.match_meta_ads_to_products()
+    _audit_order_analytics_action(
+        "order_analytics_meta_ads_matched",
+        target_type="meta_ad_import",
+        detail={"matched": affected},
+    )
     return jsonify({"matched": affected})
 
 
