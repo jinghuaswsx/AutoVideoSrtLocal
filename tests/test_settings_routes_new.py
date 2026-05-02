@@ -2,7 +2,7 @@
 
 关键变化：
   - providers Tab 模板改用 provider_groups 迭代，每个 provider_code 一行
-    独立 api_key / base_url / model_id / extra_config 输入，明文 + 复制按钮。
+    独立 api_key / base_url / model_id / extra_config 输入，敏感凭据不回显。
   - 保存 POST 走 `provider_<code>_*` 字段，经 DAO.save_provider_config 落 DB。
   - 旧 SERVICES 硬编码字段（openrouter_key / doubao_llm_key 等）已移除。
 """
@@ -96,6 +96,8 @@ def _fake_provider_groups(rows: list[dict] | None = None) -> list[dict]:
             "provider_code": "openrouter_text",
             "display_name": "OpenRouter 文本",
             "api_key": "sk-openrouter-visible",
+            "api_key_present": True,
+            "api_key_mask": "已配置（末四位 ible）",
             "base_url": "https://openrouter.example/api",
             "model_id": "model-visible",
             "extra_config_json": "",
@@ -105,6 +107,8 @@ def _fake_provider_groups(rows: list[dict] | None = None) -> list[dict]:
             "provider_code": "doubao_llm",
             "display_name": "豆包 ARK 文本",
             "api_key": "ark-visible",
+            "api_key_present": True,
+            "api_key_mask": "已配置（末四位 ible）",
             "base_url": "https://ark.example/api",
             "model_id": "doubao-visible",
             "extra_config_json": "",
@@ -112,6 +116,32 @@ def _fake_provider_groups(rows: list[dict] | None = None) -> list[dict]:
         },
     ]
     return [{"code": "text_llm", "label": "文本 / 本土化 LLM", "rows": rows}]
+
+
+def test_provider_rows_by_group_masks_api_key_in_view(monkeypatch):
+    from appcore.llm_provider_configs import LlmProviderConfig
+    from web.routes import settings as settings_routes
+
+    monkeypatch.setattr(
+        settings_routes.llm_provider_configs,
+        "list_provider_configs",
+        lambda: [
+            LlmProviderConfig(
+                provider_code="openrouter_text",
+                display_name="OpenRouter 文本",
+                group_code="text_llm",
+                api_key="sk-openrouter-visible",
+                base_url="https://openrouter.example/api",
+                model_id="model-visible",
+            ),
+        ],
+    )
+
+    provider_groups = settings_routes._provider_rows_by_group()
+    row = provider_groups[0]["rows"][0]
+    assert "api_key" not in row
+    assert row["api_key_present"] is True
+    assert row["api_key_mask"] == "已配置（末四位 ible）"
 
 
 # ---------------------------------------------------------------------------
@@ -178,10 +208,10 @@ def test_settings_get_renders_gpt_5_5_translate_option(admin_no_db_client):
 
 
 # ---------------------------------------------------------------------------
-# GET /settings?tab=providers —— 供应商凭据明文 + 复制按钮
+# GET /settings?tab=providers —— 供应商凭据不回显
 # ---------------------------------------------------------------------------
 
-def test_settings_provider_secrets_render_as_plain_text(admin_no_db_client):
+def test_settings_provider_secrets_do_not_render_plain_text(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
          patch("web.routes.settings._provider_rows_by_group",
                return_value=_fake_provider_groups()), \
@@ -193,15 +223,17 @@ def test_settings_provider_secrets_render_as_plain_text(admin_no_db_client):
 
     body = resp.get_data(as_text=True)
     assert resp.status_code == 200
-    assert 'type="password"' not in body, "密码框不应出现，供应商字段必须明文"
-    assert 'value="sk-openrouter-visible"' in body
+    assert 'type="password"' in body
+    assert "sk-openrouter-visible" not in body
+    assert "ark-visible" not in body
+    assert "已配置，留空不变" in body
+    assert "已配置（末四位 ible）" in body
     assert 'value="https://openrouter.example/api"' in body
-    assert 'value="ark-visible"' in body
+    assert 'value="provider_openrouter_text_api_key"' in body
+    assert 'value="provider_doubao_llm_api_key"' in body
     # 新输入名约定：provider_<code>_(api_key|base_url|model_id|extra_config)
     assert 'name="provider_openrouter_text_api_key"' in body
     assert 'name="provider_doubao_llm_api_key"' in body
-    # 复制按钮由 JS 自动增强——检查辅助 data attribute 会被挂上
-    assert 'data-settings-copy' in body or 'enhanceField' in body
 
 
 def test_settings_provider_rows_show_provider_code_and_extra_config(admin_no_db_client):
@@ -211,6 +243,8 @@ def test_settings_provider_rows_show_provider_code_and_extra_config(admin_no_db_
                    "provider_code": "gemini_cloud_text",
                    "display_name": "Google Cloud Vertex 文本",
                    "api_key": "cloud-visible",
+                   "api_key_present": True,
+                   "api_key_mask": "已配置（末四位 ible）",
                    "base_url": "",
                    "model_id": "",
                    "extra_config_json": '{"project": "demo-gcp", "location": "us-central1"}',
@@ -222,6 +256,7 @@ def test_settings_provider_rows_show_provider_code_and_extra_config(admin_no_db_
     body = resp.get_data(as_text=True)
     assert resp.status_code == 200
     assert "gemini_cloud_text" in body
+    assert "cloud-visible" not in body
     assert "demo-gcp" in body
     assert 'name="provider_gemini_cloud_text_extra_config"' in body
 
@@ -230,7 +265,7 @@ def test_settings_provider_rows_show_provider_code_and_extra_config(admin_no_db_
 # Push / 其他 Tab
 # ---------------------------------------------------------------------------
 
-def test_settings_push_secrets_render_values(admin_no_db_client):
+def test_settings_push_secrets_do_not_render_plain_text(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
          patch("web.routes.settings._provider_rows_by_group",
                return_value=_fake_provider_groups([])), \
@@ -246,8 +281,10 @@ def test_settings_push_secrets_render_values(admin_no_db_client):
 
     body = resp.get_data(as_text=True)
     assert resp.status_code == 200
-    assert 'value="Bearer visible-token"' in body
-    assert 'value="sessionid=visible-cookie"' in body
+    assert "Bearer visible-token" not in body
+    assert "sessionid=visible-cookie" not in body
+    assert "已配置，留空不变" in body
+    assert "状态：已配置" in body
 
 
 def test_settings_get_renders_seedream_channel_label(admin_no_db_client):
@@ -361,6 +398,52 @@ def test_settings_post_providers_saves_provider_api_key_via_dao(admin_no_db_clie
     assert fields["model_id"] == "anthropic/claude-sonnet-4.6"
     # 空 extra_config 传为 {}
     assert fields["extra_config"] == {}
+
+
+def test_settings_post_providers_keeps_existing_api_key_when_secret_input_blank(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config") as m_save:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "translate_pref": "vertex_gemini_31_flash_lite",
+            "provider_openrouter_text_api_key": "",
+            "provider_openrouter_text_base_url": "https://openrouter.example/api",
+            "provider_openrouter_text_model_id": "anthropic/claude-sonnet-4.6",
+            "provider_openrouter_text_extra_config": "",
+            "image_translate_channel": "openrouter",
+            "image_translate_default_model": "gemini-3-pro-image-preview",
+        })
+
+    assert resp.status_code in (302, 303)
+    save_call = next(c for c in m_save.call_args_list if c.args[0] == "openrouter_text")
+    assert "api_key" not in save_call.args[1]
+    assert save_call.args[1]["base_url"] == "https://openrouter.example/api"
+
+
+def test_settings_post_providers_clears_api_key_only_when_requested(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config") as m_save:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "translate_pref": "vertex_gemini_31_flash_lite",
+            "provider_openrouter_text_api_key": "",
+            "provider_openrouter_text_base_url": "https://openrouter.example/api",
+            "provider_openrouter_text_model_id": "anthropic/claude-sonnet-4.6",
+            "provider_openrouter_text_extra_config": "",
+            "clear": "provider_openrouter_text_api_key",
+            "image_translate_channel": "openrouter",
+            "image_translate_default_model": "gemini-3-pro-image-preview",
+        })
+
+    assert resp.status_code in (302, 303)
+    save_call = next(c for c in m_save.call_args_list if c.args[0] == "openrouter_text")
+    assert save_call.args[1]["api_key"] == ""
 
 
 def test_settings_post_providers_parses_json_extra_config(admin_no_db_client):

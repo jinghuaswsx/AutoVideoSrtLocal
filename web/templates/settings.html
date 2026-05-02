@@ -282,8 +282,16 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <p class="hint" style="margin-top:2px;margin-bottom:8px;"><code>{{ row.provider_code }}</code></p>
 
     <label>API Key</label>
-    <input type="text" name="{{ prefix }}api_key" placeholder="API Key"
-           value="{{ row.api_key }}" autocomplete="off">
+    <input type="password" name="{{ prefix }}api_key"
+           placeholder="{{ '已配置，留空不变' if row.api_key_present else '未配置，输入后保存' }}"
+           value="" autocomplete="new-password">
+    <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+      <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
+        <input type="checkbox" name="clear" value="{{ prefix }}api_key" {% if not row.api_key_present %}disabled{% endif %}>
+        清空该字段
+      </label>
+      <span class="hint" style="margin:0">状态：{{ row.api_key_mask if row.api_key_present else '未配置' }}</span>
+    </div>
 
     <label>Base URL</label>
     <input type="text" name="{{ prefix }}base_url" placeholder="https://..."
@@ -546,25 +554,27 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
            placeholder="https://os.wedev.vip">
 
     <label for="push_localized_texts_authorization">Authorization（Bearer token）</label>
-    <input type="text" id="push_localized_texts_authorization" name="push_localized_texts_authorization"
-           value="{{ push_credentials_view.push_localized_texts_authorization or '' }}" placeholder="Bearer eyJhbGciOi...">
+    <input type="password" id="push_localized_texts_authorization" name="push_localized_texts_authorization"
+           value=""
+           placeholder="{{ '已配置，留空不变' if push_credentials_view.push_localized_texts_authorization_present else '未配置，输入后保存' }}">
     <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
       <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
-        <input type="checkbox" name="clear" value="push_localized_texts_authorization">
+        <input type="checkbox" name="clear" value="push_localized_texts_authorization" {% if not push_credentials_view.push_localized_texts_authorization_present %}disabled{% endif %}>
         清空该字段
       </label>
-      <span class="hint" style="margin:0">状态：{{ '已配置' if push_credentials_view.push_localized_texts_authorization_present else '未配置' }}</span>
+      <span class="hint" style="margin:0">状态：{{ push_credentials_view.push_localized_texts_authorization_mask if push_credentials_view.push_localized_texts_authorization_present else '未配置' }}</span>
     </div>
 
     <label for="push_localized_texts_cookie">Cookie（完整 cookie header）</label>
-    <input type="text" id="push_localized_texts_cookie" name="push_localized_texts_cookie"
-           value="{{ push_credentials_view.push_localized_texts_cookie or '' }}" placeholder="sessionid=...; token=...">
+    <input type="password" id="push_localized_texts_cookie" name="push_localized_texts_cookie"
+           value=""
+           placeholder="{{ '已配置，留空不变' if push_credentials_view.push_localized_texts_cookie_present else '未配置，输入后保存' }}">
     <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
       <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
-        <input type="checkbox" name="clear" value="push_localized_texts_cookie">
+        <input type="checkbox" name="clear" value="push_localized_texts_cookie" {% if not push_credentials_view.push_localized_texts_cookie_present %}disabled{% endif %}>
         清空该字段
       </label>
-      <span class="hint" style="margin:0">状态：{{ '已配置' if push_credentials_view.push_localized_texts_cookie_present else '未配置' }}</span>
+      <span class="hint" style="margin:0">状态：{{ push_credentials_view.push_localized_texts_cookie_mask if push_credentials_view.push_localized_texts_cookie_present else '未配置' }}</span>
     </div>
   </div>
 
@@ -590,10 +600,10 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
            value="" placeholder="{{ '已配置，留空不变' if push_credentials_view.push_product_links_password_present else '未配置' }}">
     <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
       <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
-        <input type="checkbox" name="clear" value="push_product_links_password">
+        <input type="checkbox" name="clear" value="push_product_links_password" {% if not push_credentials_view.push_product_links_password_present %}disabled{% endif %}>
         清空该字段
       </label>
-      <span class="hint" style="margin:0">状态：{{ '已配置' if push_credentials_view.push_product_links_password_present else '未配置' }}</span>
+      <span class="hint" style="margin:0">状态：{{ push_credentials_view.push_product_links_password_mask if push_credentials_view.push_product_links_password_present else '未配置' }}</span>
     </div>
   </div>
 

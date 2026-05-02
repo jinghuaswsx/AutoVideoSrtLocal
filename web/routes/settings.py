@@ -1,13 +1,13 @@
 """API 设置页。
 
 4-tab 结构：
-  - providers: 服务商 Key / Base URL / model_id / extra_config，admin only，明文
+  - providers: 服务商 Key / Base URL / model_id / extra_config，admin only，凭据不回显
   - bindings:  模块模型分配（UseCase × Provider × Model）
   - pricing:   AI 定价
   - push:      推送配置
 
 2026-04-25 变更：providers Tab 完全由 llm_provider_configs 驱动。每个业务功能
-一条独立 provider_code，字段明文渲染 + 自动复制按钮。admin 保存后新请求立即
+一条独立 provider_code，敏感凭据不回显。admin 保存后新请求立即
 读取最新 DB 行。历史 "translate_pref" 选择器保留（走老 api_keys 表）。
 """
 from __future__ import annotations
@@ -94,6 +94,15 @@ def _image_translate_models_by_channel() -> dict[str, list[dict]]:
     }
 
 
+def _mask_secret(value: str | None) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if len(text) <= 4:
+        return "已配置（已隐藏）"
+    return f"已配置（末四位 {text[-4:]}）"
+
+
 # ---------------------------------------------------------------------------
 # Providers Tab helpers
 # ---------------------------------------------------------------------------
@@ -118,7 +127,8 @@ def _provider_rows_by_group() -> list[dict]:
                 {
                     "provider_code": r.provider_code,
                     "display_name": r.display_name,
-                    "api_key": r.api_key or "",
+                    "api_key_present": bool(r.api_key),
+                    "api_key_mask": _mask_secret(r.api_key),
                     "base_url": r.base_url or "",
                     "model_id": r.model_id or "",
                     "extra_config_json": (
@@ -194,22 +204,20 @@ def index():
         active_tab = "providers"
 
     from appcore import pushes as _pushes_mod
+    localized_texts_authorization = _pushes_mod.get_localized_texts_authorization()
+    localized_texts_cookie = _pushes_mod.get_localized_texts_cookie()
+    product_links_password = _pushes_mod.get_product_links_password()
     push_credentials_view = {
         "push_target_url": _pushes_mod.get_push_target_url(),
         "push_localized_texts_base_url": _pushes_mod.get_localized_texts_base_url(),
-        "push_localized_texts_authorization": _pushes_mod.get_localized_texts_authorization(),
-        "push_localized_texts_cookie": _pushes_mod.get_localized_texts_cookie(),
-        "push_localized_texts_authorization_present": bool(
-            _pushes_mod.get_localized_texts_authorization()
-        ),
-        "push_localized_texts_cookie_present": bool(
-            _pushes_mod.get_localized_texts_cookie()
-        ),
+        "push_localized_texts_authorization_present": bool(localized_texts_authorization),
+        "push_localized_texts_authorization_mask": _mask_secret(localized_texts_authorization),
+        "push_localized_texts_cookie_present": bool(localized_texts_cookie),
+        "push_localized_texts_cookie_mask": _mask_secret(localized_texts_cookie),
         "push_product_links_base_url": _pushes_mod.get_product_links_base_url(),
         "push_product_links_username": _pushes_mod.get_product_links_username(),
-        "push_product_links_password_present": bool(
-            _pushes_mod.get_product_links_password()
-        ),
+        "push_product_links_password_present": bool(product_links_password),
+        "push_product_links_password_mask": _mask_secret(product_links_password),
     }
 
     try:
@@ -260,6 +268,7 @@ def _handle_providers_post() -> None:
     """保存 providers Tab：每个 provider_code 独立保存，admin-only。"""
     user_id = current_user.id
     known_codes = set(llm_provider_configs.known_provider_codes())
+    clear_keys = set(request.form.getlist("clear") or [])
     for provider_code in known_codes:
         prefix = f"provider_{provider_code}_"
         touched = any(field.startswith(prefix) for field in request.form.keys())
@@ -268,7 +277,11 @@ def _handle_providers_post() -> None:
         fields: dict[str, object] = {}
         raw_api_key = request.form.get(f"{prefix}api_key")
         if raw_api_key is not None:
-            fields["api_key"] = raw_api_key
+            api_key = raw_api_key.strip()
+            if api_key:
+                fields["api_key"] = api_key
+            elif f"{prefix}api_key" in clear_keys:
+                fields["api_key"] = ""
         raw_base_url = request.form.get(f"{prefix}base_url")
         if raw_base_url is not None:
             fields["base_url"] = raw_base_url
