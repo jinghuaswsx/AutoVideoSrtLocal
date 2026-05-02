@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-from appcore.gemini import generate as gemini_generate
+from appcore.llm_client import invoke_generate as gemini_generate
 from pipeline.speech_rate_model import get_rate, update_rate
 
 TOLERANCE = 1.10  # 允许实际音频时长 ≤ 分镜时长 × 1.10
@@ -47,13 +47,14 @@ def _refine_text(previous_text: str, over_ratio: float,
         over_pct=int(round(over_ratio * 100)),
         target_chars=target_chars,
     )
-    resp = gemini_generate(
-        prompt,
+    invoked = gemini_generate(
+        "translate_lab.tts_refine",
+        prompt=prompt,
         user_id=user_id,
         response_schema=REFINE_SCHEMA,
-        service="translate_lab.tts_refine",
     )
-    return (resp or {}).get("translated_text", "").strip()
+    resp = invoked.get("json") or {}
+    return resp.get("translated_text", "").strip()
 
 
 def generate_and_verify_shot(

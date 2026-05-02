@@ -10,6 +10,11 @@ import requests
 
 import config
 from appcore import subtitle_removal_source_storage, task_state
+from appcore.cancellation import (
+    OperationCancelled,
+    cancellable_sleep,
+    throw_if_cancel_requested,
+)
 from appcore.events import Event, EventBus, EVT_SR_DONE, EVT_SR_ERROR, EVT_SR_STEP_UPDATE
 from appcore.subtitle_removal_provider import SubtitleRemovalProviderError, query_progress, submit_task
 
@@ -106,6 +111,14 @@ class SubtitleRemovalRuntime:
             task_state.set_expires_at(task_id, "subtitle_removal")
         except SubtitleRemovalTaskDeleted:
             return
+        except OperationCancelled:
+            # Bubble cancellation up to start_tracked_thread for clean
+            # handling. Do NOT mark this task as error: leave status=running
+            # so startup_recovery (SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES
+            # path) marks it interrupted and preserves provider_task_id /
+            # vod_result_vid so the resume flow can keep polling upstream.
+            log.warning("[subtitle_removal] cancelled task_id=%s", task_id)
+            raise
         except Exception as exc:
             log.exception("[subtitle_removal] runtime failed task_id=%s", task_id)
             task_state.update(task_id, status="error", error=str(exc))
@@ -203,6 +216,10 @@ class SubtitleRemovalRuntime:
     def _poll_until_terminal(self, task_id: str) -> None:
         first_phase_deadline = time.time() + 60
         while True:
+            # Cooperative shutdown checkpoint: wakes the loop immediately
+            # via cancellable_sleep below; this guards the path where a
+            # signal arrives between sleep and the next iteration.
+            throw_if_cancel_requested("subtitle_removal.poll")
             task = task_state.get(task_id)
             if not task:
                 raise RuntimeError("subtitle removal task not found")
@@ -243,7 +260,11 @@ class SubtitleRemovalRuntime:
                 if time.time() < first_phase_deadline
                 else config.SUBTITLE_REMOVAL_POLL_SLOW_SECONDS
             )
-            time.sleep(max(1, int(sleep_seconds)))
+            # cancellable_sleep wakes early on shutdown and raises
+            # OperationCancelled, which propagates out of start() and
+            # leaves task_state at status=running so startup recovery
+            # marks it interrupted.
+            cancellable_sleep(max(1, int(sleep_seconds)))
 
     def _download_and_finalize_result(self, task_id: str, progress: dict) -> None:
         task = task_state.get(task_id)

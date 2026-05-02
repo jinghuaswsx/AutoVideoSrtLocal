@@ -194,10 +194,21 @@ def _spawn_scheduler(task_id: str) -> None:
     """在 eventlet 绿色线程跑父任务调度循环。铁律:所有调度必须经过这里,
     绝不在进程启动或定时器里触发。"""
     from web.extensions import socketio
+
+    from appcore.cancellation import OperationCancelled
+
     bus = EventBus()
     _subscribe_socketio(bus, socketio)
     try:
         run_scheduler(task_id, bus=bus)
+    except OperationCancelled as exc:
+        # Graceful shutdown: clean exit, no traceback. The next startup
+        # recovery (bulk_translate_recovery.mark_interrupted_bulk_translate_tasks)
+        # will flip in-flight items + parent to ``interrupted``.
+        log.warning(
+            "bulk_translate scheduler cancelled task_id=%s reason=%s",
+            task_id, exc,
+        )
     except Exception:
         # 调度器 greenthread 死掉时绝大多数 pending 项会永远 stuck，必须留下
         # traceback 才能事后定位。原先 silent pass 让 2026-04-27 的事故彻底

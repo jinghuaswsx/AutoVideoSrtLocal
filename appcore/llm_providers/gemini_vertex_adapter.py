@@ -15,6 +15,14 @@ from pathlib import Path
 from google import genai
 
 from appcore.llm_providers.base import LLMAdapter
+from appcore.llm_providers._helpers.gemini_calls import (
+    GeminiError,
+    _build_config,
+    _extract_gemini_tokens,
+    _guess_mime,
+    _is_retryable,
+    genai_types,
+)
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     credential_provider_for_adapter,
@@ -33,21 +41,21 @@ def _normalize_media(media):
     return list(media)
 
 
-def _build_inline_contents(gemini_api, prompt: str, media) -> list:
+def _build_inline_contents(prompt: str, media) -> list:
     parts = []
     if media:
         for item in media:
             path = Path(item)
             if not path.is_file():
-                raise gemini_api.GeminiError(f"文件不存在：{path}")
-            mime = gemini_api._guess_mime(path)
+                raise GeminiError(f"文件不存在：{path}")
+            mime = _guess_mime(path)
             parts.append(
-                gemini_api.genai_types.Part.from_bytes(
+                genai_types.Part.from_bytes(
                     data=path.read_bytes(),
                     mime_type=mime,
                 )
             )
-    parts.append(gemini_api.genai_types.Part.from_text(text=prompt))
+    parts.append(genai_types.Part.from_text(text=prompt))
     return parts
 
 
@@ -104,7 +112,7 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def _call(self, *, model, messages, response_format, temperature, max_output_tokens):
         # Keep text-only behavior aligned with the legacy translation path.
-        from pipeline.translate import _call_vertex_json
+        from appcore.llm_providers._helpers.vertex_json import _call_vertex_json
 
         return _call_vertex_json(
             messages, model, response_format,
@@ -166,14 +174,12 @@ class GeminiVertexAdapter(LLMAdapter):
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
                              max_output_tokens=None, google_search=None):
-        # Reuse shared Gemini media/schema helpers, but resolve creds via DAO
-        # so image flows can pick gemini_cloud_image when desired.
-        from appcore import gemini as gemini_api
-
+        # 直接调 gemini_calls helper + SDK；不再 from appcore import gemini，
+        # 避免业务模块对 adapter 形成反向依赖（B-1/B-2 收尾的关键约束）。
         creds = self.resolve_credentials(user_id, media_kind="image" if media else "text")
         client = _get_client(creds["api_key"], creds["project"], creds["location"])
-        contents = _build_inline_contents(gemini_api, prompt, media)
-        cfg = gemini_api._build_config(
+        contents = _build_inline_contents(prompt, media)
+        cfg = _build_config(
             system=system,
             temperature=temperature,
             response_schema=response_schema,
@@ -189,7 +195,7 @@ class GeminiVertexAdapter(LLMAdapter):
                     contents=contents,
                     config=cfg,
                 )
-                input_tokens, output_tokens = gemini_api._extract_gemini_tokens(resp)
+                input_tokens, output_tokens = _extract_gemini_tokens(resp)
                 usage = {
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
@@ -212,7 +218,7 @@ class GeminiVertexAdapter(LLMAdapter):
                 }
             except Exception as exc:
                 last_err = exc
-                if attempt < 2 and gemini_api._is_retryable(exc):
+                if attempt < 2 and _is_retryable(exc):
                     time.sleep(2 ** attempt)
                     continue
                 break
@@ -257,7 +263,7 @@ class GeminiVertexADCAdapter(GeminiVertexAdapter):
     def _call_with_adc(self, *, model, messages, response_format, temperature,
                        max_output_tokens):
         from google.genai import types as genai_types
-        from pipeline.translate import (
+        from appcore.llm_providers._helpers.vertex_json import (
             _extract_gemini_schema,
             _split_oai_messages,
             parse_json_content,

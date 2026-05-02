@@ -19,24 +19,31 @@ class _FakeClient:
 
 
 def test_generate_copy_openrouter_requests_usage_cost(monkeypatch, tmp_path):
+    """C-2 后 generate_copy 走 llm_client.invoke_chat；测 usage_cost 透传。"""
     keyframe_path = tmp_path / "kf1.jpg"
     keyframe_path.write_bytes(b"fake-image")
 
-    response = SimpleNamespace(
-        choices=[
-            SimpleNamespace(
-                message=SimpleNamespace(
-                    content='{"segments":[],"full_text":"","tone":"","target_duration":0}',
-                ),
-            ),
-        ],
-        usage=SimpleNamespace(prompt_tokens=11, completion_tokens=22, cost="0.5"),
-    )
-    client = _FakeClient(response)
+    captured = {}
+
     monkeypatch.setattr(
-        "pipeline.translate.resolve_provider_config",
-        lambda provider, user_id=None: (client, "anthropic/claude-sonnet-4.6"),
+        copywriting,
+        "_resolve_model_only",
+        lambda provider, user_id=None: "anthropic/claude-sonnet-4.6",
     )
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {
+            "text": '{"segments":[],"full_text":"","tone":"","target_duration":0}',
+            "usage": {
+                "input_tokens": 11,
+                "output_tokens": 22,
+                "cost_cny": Decimal("3.400000"),
+            },
+        }
+
+    monkeypatch.setattr(copywriting.llm_client, "invoke_chat", fake_invoke_chat)
 
     result = copywriting.generate_copy(
         keyframe_paths=[str(keyframe_path)],
@@ -46,10 +53,12 @@ def test_generate_copy_openrouter_requests_usage_cost(monkeypatch, tmp_path):
         language="en",
     )
 
-    assert client.last_kwargs["extra_body"] == {
-        "plugins": [{"id": "response-healing"}],
-        "usage": {"include": True},
-    }
+    assert captured["use_case_code"] == "copywriting.generate"
+    assert captured["kwargs"]["provider_override"] == "openrouter"
+    assert captured["kwargs"]["model_override"] == "anthropic/claude-sonnet-4.6"
+    # 过渡期：generate_copy 内部 user_id=None 让 invoke_chat 跳过计费，
+    # 外层 copywriting_runtime 自己写 ai_billing。
+    assert captured["kwargs"]["user_id"] is None
     assert result["_usage"] == {
         "input_tokens": 11,
         "output_tokens": 22,
@@ -61,8 +70,9 @@ def test_rewrite_segment_uses_llm_client(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(
-        "pipeline.translate.resolve_provider_config",
-        lambda provider, user_id=None: (object(), "anthropic/claude-sonnet-4.6"),
+        copywriting,
+        "_resolve_model_only",
+        lambda provider, user_id=None: "anthropic/claude-sonnet-4.6",
     )
 
     def fake_invoke_chat(use_case_code, **kwargs):

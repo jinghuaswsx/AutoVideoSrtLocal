@@ -13,7 +13,8 @@ from flask_login import current_user, login_required
 from appcore import llm_client
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 from appcore.project_state import save_project_state
-from pipeline.translate import get_model_display_name, parse_json_content, resolve_provider_config
+from appcore.llm_providers._helpers.vertex_json import parse_json_content
+from pipeline.text_translate import _resolve_provider_and_model
 
 log = logging.getLogger(__name__)
 
@@ -155,13 +156,15 @@ def translate(task_id: str):
     system_prompt = _build_translate_prompt(source_lang, target_lang, custom_prompt)
 
     try:
-        _, model = resolve_provider_config(provider, current_user.id)
+        provider_code, model = _resolve_provider_and_model(
+            provider=provider, user_id=current_user.id, openrouter_api_key=None,
+        )
         items = [{"index": segment["index"], "text": segment["text"]} for segment in script_segments]
         user_content = (
             f"Source full text:\n{source_full_text}\n\n"
             f"Source segments:\n{json.dumps(items, ensure_ascii=False, indent=2)}"
         )
-        extra_body = {"plugins": [{"id": "response-healing"}]} if provider == "openrouter" else None
+        extra_body = {"plugins": [{"id": "response-healing"}]} if provider_code == "openrouter" else None
         response = llm_client.invoke_chat(
             "text_translate.generate",
             messages=[
@@ -173,7 +176,7 @@ def translate(task_id: str):
             temperature=0.2,
             max_tokens=4096,
             extra_body=extra_body,
-            provider_override=provider,
+            provider_override=provider_code,
             model_override=model,
         )
         raw = response.get("text") or ""
@@ -189,7 +192,9 @@ def translate(task_id: str):
         log.exception("text_translate error")
         return jsonify({"error": str(exc)}), 500
 
-    model_name = get_model_display_name(provider, current_user.id)
+    # 经过 _resolve_provider_and_model 后 model 已是 binding 解析好的真实 model_id；
+    # 无需再走 pipeline.translate.get_model_display_name 老路径。
+    model_name = model
     src_label = LANG_MAP.get(source_lang, source_lang)
     tgt_label = LANG_MAP.get(target_lang, target_lang)
 

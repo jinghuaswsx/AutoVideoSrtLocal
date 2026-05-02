@@ -35,8 +35,13 @@ def test_text_translate_route_uses_llm_client_and_persists_result(authed_client_
     monkeypatch.setattr(r, "db_query_one", fake_query_one)
     monkeypatch.setattr(r, "db_execute", lambda sql, args: updates.append((sql, args)))
     monkeypatch.setattr(r.llm_client, "invoke_chat", fake_invoke_chat)
-    monkeypatch.setattr(r, "resolve_provider_config", lambda provider, user_id: (object(), "doubao-1-5-pro-32k"))
-    monkeypatch.setattr(r, "get_model_display_name", lambda provider, user_id: "Doubao 1.5 Pro")
+    # Phase C-2 后 web/routes/text_translate 用 pipeline.text_translate
+    # ._resolve_provider_and_model 替代 resolve_provider_config + get_model_display_name；
+    # model 直接来自 binding，不再单独 patch get_model_display_name。
+    monkeypatch.setattr(
+        r, "_resolve_provider_and_model",
+        lambda **kwargs: ("doubao", "doubao-1-5-pro-32k"),
+    )
 
     resp = authed_client_no_db.post(
         "/api/text-translate/task-1/translate",
@@ -56,4 +61,4 @@ def test_text_translate_route_uses_llm_client_and_persists_result(authed_client_
     assert captured["messages"][1]["content"].startswith("Source full text:\n你好世界")
     assert updates, "route should persist translated result"
     assert resp.get_json()["result"]["full_text"] == "Hello world"
-    assert resp.get_json()["model"] == "Doubao 1.5 Pro"
+    assert resp.get_json()["model"] == "doubao-1-5-pro-32k"

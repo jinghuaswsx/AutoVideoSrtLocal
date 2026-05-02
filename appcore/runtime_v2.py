@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from appcore import task_state
 from appcore.api_keys import resolve_key
+from appcore.cancellation import OperationCancelled, throw_if_cancel_requested
 from appcore.events import (
     EVT_LAB_PIPELINE_DONE,
     EVT_LAB_PIPELINE_ERROR,
@@ -106,6 +107,10 @@ class PipelineRunnerV2(PipelineRunner):
                     should_run = True
                 if not should_run:
                     continue
+                # Cooperative cancellation checkpoint -- aligned with
+                # PipelineRunner._run; lets graceful shutdown drop the
+                # remaining steps when systemd / Gunicorn signals SIGTERM.
+                throw_if_cancel_requested(f"runtime_v2 step={step_name}")
                 step_fn()
                 current = task_state.get(task_id) or {}
                 if (current.get("steps") or {}).get(step_name) == "waiting":
@@ -117,12 +122,49 @@ class PipelineRunnerV2(PipelineRunner):
                 "task_id": task_id,
                 "video": final.get("final_video"),
             })
+        except OperationCancelled as exc:
+            log.warning("[runtime_v2] cancelled task=%s reason=%s", task_id, exc)
+            self._mark_pipeline_interrupted_v2(task_id, str(exc))
+            raise
         except Exception as exc:
             log.warning("[runtime_v2] pipeline failed task=%s error=%s",
                         task_id, exc, exc_info=True)
             task_state.update(task_id, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_LAB_PIPELINE_ERROR, {"error": str(exc)})
+
+    def _mark_pipeline_interrupted_v2(self, task_id: str, reason: str) -> None:
+        """Mark V2 task as ``interrupted`` and emit the lab pipeline error event.
+
+        V2 has its own EVT_LAB_PIPELINE_ERROR; otherwise the bookkeeping
+        mirrors PipelineRunner._mark_pipeline_interrupted -- queued /
+        running / pending step states become ``interrupted`` while
+        terminal states (done / failed / error) are preserved.
+        """
+        task = task_state.get(task_id) or {}
+        steps = dict(task.get("steps") or {})
+        step_messages = dict(task.get("step_messages") or {})
+        changed = False
+        for step, status in list(steps.items()):
+            if status in {"queued", "running", "pending"}:
+                steps[step] = "interrupted"
+                step_messages[step] = "service restart in progress, please retry"
+                changed = True
+        update_kwargs: dict = {
+            "status": "interrupted",
+            "error": "service restart in progress, please retry",
+        }
+        if changed:
+            update_kwargs["steps"] = steps
+            update_kwargs["step_messages"] = step_messages
+        task_state.update(task_id, **update_kwargs)
+        try:
+            self._emit(task_id, EVT_LAB_PIPELINE_ERROR, {
+                "error": f"cancelled: {reason}",
+                "cancelled": True,
+            })
+        except Exception:
+            log.warning("emit lab pipeline_error during cancellation failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # Step 1: extract（含视频元数据）

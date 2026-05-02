@@ -95,10 +95,14 @@ def test_invoke_translation_chat_routes_through_llm_client(monkeypatch):
 
     captured = {}
 
+    # Phase C-2 之后 _invoke_translation_chat 不再 import resolve_provider_config，
+    # provider/model 解析改走 _resolve_provider_and_model（内部 binding lookup +
+    # _LEGACY_PROVIDER_MODEL_MAP）。本测试直接 mock _resolve_provider_and_model
+    # 控制返回值。
     monkeypatch.setattr(
         mod,
-        "resolve_provider_config",
-        lambda provider, user_id=None, api_key_override=None: (object(), "anthropic/claude-sonnet-4.6"),
+        "_resolve_provider_and_model",
+        lambda **kwargs: ("openrouter", "anthropic/claude-sonnet-4.6"),
     )
 
     def fake_invoke_chat(use_case_code, **kwargs):

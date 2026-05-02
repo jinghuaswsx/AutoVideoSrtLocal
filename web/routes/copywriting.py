@@ -77,13 +77,15 @@ def detail_page(task_id: str):
         conn.close()
 
     from pipeline.copywriting import DEFAULT_SYSTEM_PROMPT_EN, DEFAULT_SYSTEM_PROMPT_ZH
-    from pipeline.translate import resolve_provider_config
+    from pipeline.copywriting import _resolve_model_only
 
     # 构建模型列表: (value, label, provider, model_id)
     # value 格式: provider:model_id (provider 和 model 用冒号分隔)
+    # _resolve_model_only 内部读 user-level api_keys.{provider}.extra.model_id，
+    # 不再走 pipeline.translate.resolve_provider_config（会创建 OpenAI client）。
     models = []
     try:
-        _, or_model = resolve_provider_config("openrouter", user_id=current_user.id)
+        or_model = _resolve_model_only("openrouter", user_id=current_user.id)
         models.append((f"openrouter:{or_model}", f"OpenRouter ({or_model})"))
     except Exception:
         models.append(("openrouter:", "OpenRouter (Claude)"))
@@ -91,7 +93,7 @@ def detail_page(task_id: str):
     models.append(("openrouter:google/gemini-3-flash-preview", "Gemini 3 Flash Preview (支持视频)"))
     models.append(("openrouter:google/gemini-2.5-flash", "Gemini 2.5 Flash (支持视频)"))
     try:
-        _, db_model = resolve_provider_config("doubao", user_id=current_user.id)
+        db_model = _resolve_model_only("doubao", user_id=current_user.id)
         models.append((f"doubao:{db_model}", f"豆包 ({db_model})"))
     except Exception:
         models.append(("doubao:", "豆包 (Doubao)"))

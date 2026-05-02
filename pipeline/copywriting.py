@@ -454,15 +454,9 @@ def generate_copy(
     Returns:
         dict: {segments, full_text, tone, target_duration}
     """
-    from pipeline.translate import resolve_provider_config
-
-    # doubao 多模态走 Ark SDK，不需要 OpenAI client
+    # doubao 多模态走 Ark SDK，OpenRouter 走 llm_client.invoke_chat（adapter）。
     is_doubao = provider == "doubao"
-    if is_doubao:
-        model = _resolve_model_only(provider, user_id=user_id)
-        client = None
-    else:
-        client, model = resolve_provider_config(provider, user_id=user_id)
+    model = _resolve_model_only(provider, user_id=user_id)
     if model_override:
         model = model_override
 
@@ -621,60 +615,55 @@ def generate_copy(
             base_url=doubao_base_url,
         )
     else:
-        # OpenRouter / 豆包纯文本：用 OpenAI SDK
+        # OpenRouter / 豆包纯文本：走 appcore.llm_client.invoke_chat（adapter 内部
+        # 调 OpenAI 兼容 SDK），不再 from pipeline.translate import resolve_provider_config。
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": content},
         ]
-
-        extra_kwargs: dict[str, Any] = {"temperature": 0.7, "max_tokens": 4096}
-        if provider == "openrouter":
-            extra_kwargs["extra_body"] = {
-                "plugins": [{"id": "response-healing"}],
-                "usage": {"include": True},
-            }
-        extra_kwargs["response_format"] = COPYWRITING_RESPONSE_FORMAT
-
-        base_url = client.base_url if hasattr(client, 'base_url') else "unknown"
+        provider_code = "doubao" if is_doubao else "openrouter"
         full_request_log = {
-            "endpoint": f"{base_url}chat/completions",
+            "endpoint": "(adapter-managed)",
             "method": "POST",
-            "headers": {"Authorization": "Bearer ***REDACTED***", "Content-Type": "application/json"},
+            "sdk": "appcore.llm_client.invoke_chat",
             "body": {
-                "model": model,
+                "use_case": "copywriting.generate",
+                "provider_override": provider_code,
+                "model_override": model,
                 "messages": _truncate_data(messages),
                 "temperature": 0.7,
                 "max_tokens": 4096,
-                "response_format": extra_kwargs.get("response_format"),
+                "response_format": COPYWRITING_RESPONSE_FORMAT,
             },
         }
         log.info("完整请求报文:\n%s", json.dumps(full_request_log, ensure_ascii=False, indent=2))
 
-        response = client.chat.completions.create(
-            model=model,
+        # 过渡期：copywriting_runtime / web/routes/copywriting 在调完 generate_copy
+        # 之后会显式写 ai_billing.log_request；这里把 user_id 置 None，让 invoke_chat
+        # 内部 _log_usage 跳过计费，外层成为唯一计费入口（与 A-3 模式一致）。
+        invoked = llm_client.invoke_chat(
+            "copywriting.generate",
             messages=messages,
-            **extra_kwargs,
+            user_id=None,
+            temperature=0.7,
+            max_tokens=4096,
+            response_format=COPYWRITING_RESPONSE_FORMAT,
+            provider_override=provider_code,
+            model_override=model,
         )
-        raw = response.choices[0].message.content
-        # 提取 OpenAI SDK token 用量
+        raw = invoked.get("text") or ""
+        if not raw and isinstance(invoked.get("json"), (dict, list)):
+            raw = json.dumps(invoked["json"], ensure_ascii=False)
         token_usage = None
-        usage = getattr(response, "usage", None)
+        usage = invoked.get("usage") or {}
         if usage:
             token_usage = {
-                "input_tokens": getattr(usage, "prompt_tokens", None),
-                "output_tokens": getattr(usage, "completion_tokens", None),
+                "input_tokens": usage.get("input_tokens"),
+                "output_tokens": usage.get("output_tokens"),
             }
-            if provider == "openrouter":
-                from config import USD_TO_CNY
-
-                cost_usd = getattr(usage, "cost", None)
-                if cost_usd not in (None, ""):
-                    try:
-                        token_usage["cost_cny"] = (
-                            Decimal(str(cost_usd)) * Decimal(str(USD_TO_CNY))
-                        ).quantize(Decimal("0.000001"))
-                    except Exception:
-                        pass
+            cost_cny = usage.get("cost_cny")
+            if cost_cny is not None:
+                token_usage["cost_cny"] = cost_cny
             log.info("copywriting token usage: input=%s, output=%s",
                      token_usage["input_tokens"], token_usage["output_tokens"])
 
@@ -716,68 +705,11 @@ def rewrite_segment(
     user_id: int | None = None,
     language: str = "en",
 ) -> dict:
-    """重写文案的某一段。
-
-    Args:
-        full_text: 完整文案文本（上下文）
-        segment: 要重写的段落 dict（label, text, duration_hint）
-        user_instruction: 用户的修改要求
-        provider: LLM provider
-        user_id: 用户 ID
-        language: 语言
-
-    Returns:
-        dict: {label, text, duration_hint}
-    """
-    from pipeline.translate import resolve_provider_config
-
-    client, model = resolve_provider_config(provider, user_id=user_id)
-
-    template = REWRITE_SEGMENT_PROMPT_ZH if language == "zh" else REWRITE_SEGMENT_PROMPT_EN
-    if not user_instruction:
-        user_instruction = "请重写这一段，使其更有吸引力。" if language == "zh" else "Rewrite to be more engaging."
-
-    prompt = template.format(
-        full_text=full_text,
-        label=segment["label"],
-        original_text=segment["text"],
-        duration_hint=segment.get("duration_hint", 3.0),
-        user_instruction=f"User request: {user_instruction}",
-    )
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-        max_tokens=1024,
-    )
-
-    raw = response.choices[0].message.content
-    result = _parse_json_content(raw)
-    # 提取 token 用量
-    usage = getattr(response, "usage", None)
-    if usage:
-        result["_usage"] = {
-            "input_tokens": getattr(usage, "prompt_tokens", None),
-            "output_tokens": getattr(usage, "completion_tokens", None),
-        }
-        log.info("rewrite_segment token usage: input=%s, output=%s",
-                 result["_usage"]["input_tokens"], result["_usage"]["output_tokens"])
-    return result
-
-
-def rewrite_segment(
-    full_text: str,
-    segment: dict,
-    user_instruction: str = "",
-    provider: str = "openrouter",
-    user_id: int | None = None,
-    language: str = "en",
-) -> dict:
     """重写文案中的某一段。"""
-    from pipeline.translate import resolve_provider_config
-
-    _, model = resolve_provider_config(provider, user_id=user_id)
+    # 不再 import pipeline.translate.resolve_provider_config；用 _resolve_model_only
+    # 只取 model_id（兼容用户级 api_keys.openrouter.extra.model_id 老配置），
+    # 真正的客户端创建/凭据加载交给 invoke_chat 内部 adapter。
+    model = _resolve_model_only(provider, user_id=user_id)
     provider_code = "doubao" if provider == "doubao" else "openrouter"
 
     template = REWRITE_SEGMENT_PROMPT_ZH if language == "zh" else REWRITE_SEGMENT_PROMPT_EN

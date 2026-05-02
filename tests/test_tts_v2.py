@@ -130,15 +130,16 @@ def test_refine_text_uses_translate_lab_use_case():
 
     captured = {}
 
-    def fake_generate(prompt, **kwargs):
-        captured["prompt"] = prompt
+    def fake_generate(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["prompt"] = kwargs.get("prompt")
         captured["kwargs"] = kwargs
-        return {"translated_text": "Short."}
+        return {"json": {"translated_text": "Short."}, "text": None, "raw": None, "usage": {}}
 
     with patch("pipeline.tts_v2.gemini_generate", side_effect=fake_generate):
         out = mod._refine_text("Long text", 0.36, 18, 9)
 
     assert out == "Short."
     assert "Long text" in captured["prompt"]
-    assert captured["kwargs"]["service"] == "translate_lab.tts_refine"
+    assert captured["use_case_code"] == "translate_lab.tts_refine"
     assert captured["kwargs"]["user_id"] == 9

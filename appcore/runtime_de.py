@@ -86,6 +86,8 @@ class DeTranslateRunner(PipelineRunner):
             source_full_text, script_segments, variant=variant,
             custom_system_prompt=system_prompt,
             provider=provider, user_id=self.user_id,
+            use_case="video_translate.localize",
+            project_id=task_id,
         )
 
         initial_messages = localized_translation.pop("_messages", None)

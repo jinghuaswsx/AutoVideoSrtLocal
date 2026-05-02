@@ -1,30 +1,64 @@
-"""Google AI Studio Gemini Adapter 测试（gemini_aistudio_adapter）。"""
-from unittest.mock import patch
+"""Google AI Studio Gemini Adapter 测试（gemini_aistudio_adapter）。
+
+B-2 后 adapter 不再 from appcore import gemini，而是直接用
+appcore.llm_providers._helpers.gemini_calls 的 helper + 自跑 SDK。
+本测试通过 mock _get_client / _build_config / _build_contents 等局部
+名字，把 SDK 与凭据全部替换掉。
+"""
+from unittest.mock import Mock, patch
 
 import pytest
 
 from appcore.llm_providers.gemini_aistudio_adapter import GeminiAIStudioAdapter
 
 
-def test_aistudio_generate_delegates_to_gemini_api():
+def _make_resp(*, text=None, parsed=None, prompt_tokens=10, output_tokens=5):
+    resp = Mock()
+    resp.text = text or ""
+    resp.parsed = parsed
+    resp.usage_metadata.prompt_token_count = prompt_tokens
+    resp.usage_metadata.candidates_token_count = output_tokens
+    return resp
+
+
+def test_aistudio_generate_returns_text_for_plain_prompt():
     adapter = GeminiAIStudioAdapter()
-    with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
-               return_value={"text": "result-text", "json": None, "raw": None, "usage": {}}) as m:
+    client = Mock()
+    client.models.generate_content.return_value = _make_resp(text="hello there")
+    with patch.object(adapter, "resolve_credentials",
+                      return_value={"api_key": "k", "extra": {}}), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._get_client",
+               return_value=client), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._build_contents",
+               return_value=["contents-stub"]), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._build_config",
+               return_value="cfg-stub") as m_cfg:
         result = adapter.generate(
             model="gemini-3.1-pro-preview",
-            prompt="hello", user_id=42,
-            system="you are helpful", temperature=0.1,
+            prompt="hello", system="be helpful", temperature=0.1,
         )
-    assert result["text"] == "result-text"
-    assert m.call_args.kwargs["model"] == "gemini-3.1-pro-preview"
-    assert m.call_args.kwargs["user_id"] == 42
-    assert m.call_args.kwargs["system"] == "you are helpful"
+
+    assert result["text"] == "hello there"
+    assert result["json"] is None
+    assert result["usage"] == {"input_tokens": 10, "output_tokens": 5}
+    assert m_cfg.call_args.kwargs["system"] == "be helpful"
+    assert m_cfg.call_args.kwargs["temperature"] == 0.1
+    assert client.models.generate_content.call_args.kwargs["model"] == "gemini-3.1-pro-preview"
+    assert client.models.generate_content.call_args.kwargs["config"] == "cfg-stub"
 
 
 def test_aistudio_generate_returns_json_when_schema_given():
     adapter = GeminiAIStudioAdapter()
-    with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
-               return_value={"text": None, "json": {"score": 95}, "raw": None, "usage": {}}):
+    client = Mock()
+    client.models.generate_content.return_value = _make_resp(parsed={"score": 95})
+    with patch.object(adapter, "resolve_credentials",
+                      return_value={"api_key": "k", "extra": {}}), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._get_client",
+               return_value=client), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._build_contents",
+               return_value=["c"]), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._build_config",
+               return_value="cfg"):
         result = adapter.generate(
             model="gemini-3.1-pro-preview",
             prompt="score this",
@@ -36,8 +70,14 @@ def test_aistudio_generate_returns_json_when_schema_given():
 
 def test_aistudio_chat_folds_messages_into_system_and_prompt():
     adapter = GeminiAIStudioAdapter()
-    with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
-               return_value="ok") as m:
+    captured = {}
+
+    def fake_generate(self, *, model, prompt, **kwargs):
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
+        return {"text": "ok", "json": None, "raw": None, "usage": {}}
+
+    with patch.object(GeminiAIStudioAdapter, "generate", fake_generate):
         adapter.chat(
             model="gemini-3.1-pro-preview",
             messages=[
@@ -46,35 +86,46 @@ def test_aistudio_chat_folds_messages_into_system_and_prompt():
                 {"role": "user", "content": "U2"},
             ],
         )
-    # gemini_api.generate 的 prompt 是位置参数
-    prompt = m.call_args.args[0]
-    kwargs = m.call_args.kwargs
-    assert kwargs["system"] == "S1"
-    assert "U1" in prompt and "U2" in prompt
+
+    assert captured["kwargs"]["system"] == "S1"
+    assert "U1" in captured["prompt"] and "U2" in captured["prompt"]
 
 
 def test_aistudio_chat_extracts_json_schema_from_response_format():
     adapter = GeminiAIStudioAdapter()
+    captured = {}
+
+    def fake_generate(self, *, model, prompt, **kwargs):
+        captured.update(kwargs)
+        return {"text": None, "json": {"ok": True}, "raw": None, "usage": {}}
+
     rf = {"type": "json_schema",
           "json_schema": {"name": "x", "schema": {"type": "object"}}}
-    with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
-               return_value={"ok": True}) as m:
+    with patch.object(GeminiAIStudioAdapter, "generate", fake_generate):
         adapter.chat(
             model="gemini-3.1-flash-lite-preview",
             messages=[{"role": "user", "content": "hi"}],
             response_format=rf,
         )
-    assert m.call_args.kwargs["response_schema"] == {"type": "object"}
+    assert captured["response_schema"] == {"type": "object"}
 
 
 def test_aistudio_generate_forwards_google_search_flag():
     adapter = GeminiAIStudioAdapter()
-    with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
-               return_value={"text": "ok", "json": None, "raw": None, "usage": {}}) as m:
+    client = Mock()
+    client.models.generate_content.return_value = _make_resp(text="ok")
+    with patch.object(adapter, "resolve_credentials",
+                      return_value={"api_key": "k", "extra": {}}), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._get_client",
+               return_value=client), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._build_contents",
+               return_value=["c"]), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._build_config",
+               return_value="cfg") as m_cfg:
         adapter.generate(
             model="gemini-3.1-pro-preview",
             prompt="hello",
             google_search=True,
         )
 
-    assert m.call_args.kwargs["google_search"] is True
+    assert m_cfg.call_args.kwargs["google_search"] is True

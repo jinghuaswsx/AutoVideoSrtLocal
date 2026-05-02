@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 # 用 alias 便于测试 mock（patch 本模块的 gemini_generate，不触发真实调用）
-from appcore.gemini import generate as gemini_generate
+from appcore.llm_client import invoke_generate as gemini_generate
 
 SHOT_DECOMPOSE_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -62,16 +62,16 @@ def decompose_shots(
     # appcore.gemini.generate 的 media 参数接受路径字符串/Path 或其列表。
     # 测试通过 patch pipeline.shot_decompose.gemini_generate 拦截整条调用，
     # 不会真实走到 Gemini。
-    response = gemini_generate(
-        prompt,
+    invoked = gemini_generate(
+        "shot_decompose.run",
+        prompt=prompt,
         media=[video_path],
         user_id=user_id,
-        model=model,
+        model_override=model,
         response_schema=SHOT_DECOMPOSE_SCHEMA,
-        service="shot_decompose.run",
-        default_model=model,
     )
-    shots = (response or {}).get("shots") or []
+    response = invoked.get("json") or {}
+    shots = response.get("shots") or []
     _normalize_shots(shots, duration_seconds)
     return shots
 
