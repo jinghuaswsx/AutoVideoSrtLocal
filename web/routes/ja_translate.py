@@ -12,6 +12,7 @@ from flask_login import current_user, login_required
 
 from appcore import task_state
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
+from appcore.project_state import save_project_state
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -369,10 +370,7 @@ def rematch_voice(task_id: str):
 
     if is_owner:
         state["voice_match_candidates"] = candidates
-        db_execute(
-            "UPDATE projects SET state_json = %s WHERE id = %s",
-            (json.dumps(state, ensure_ascii=False), task_id),
-        )
+        save_project_state(task_id, state, execute_func=db_execute)
         task_state.update(task_id, voice_match_candidates=candidates)
     return jsonify({
         "ok": True, "gender": gender,
@@ -410,10 +408,7 @@ def confirm_voice(task_id: str):
     state["subtitle_size"] = normalized["subtitle_size"]
     state["subtitle_position_y"] = normalized["subtitle_position_y"]
     state["subtitle_position"] = normalized["subtitle_position"]
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
-    )
+    save_project_state(task_id, state, execute_func=db_execute)
 
     task_state.update(
         task_id,

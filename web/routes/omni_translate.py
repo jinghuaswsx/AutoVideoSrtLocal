@@ -14,6 +14,7 @@ from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import task_state, medias
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
+from appcore.project_state import save_project_state
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from web import store
@@ -746,10 +747,7 @@ def update_voice(task_id: str):
     state["selected_voice_id"] = voice_id
     if body.get("voice_name"):
         state["selected_voice_name"] = body["voice_name"]
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
-    )
+    save_project_state(task_id, state, execute_func=db_execute)
     return jsonify({"ok": True, "voice_id": voice_id})
 
 
@@ -850,10 +848,7 @@ def rematch_voice(task_id: str):
 
     if is_owner:
         state["voice_match_candidates"] = candidates
-        db_execute(
-            "UPDATE projects SET state_json = %s WHERE id = %s",
-            (json.dumps(state, ensure_ascii=False), task_id),
-        )
+        save_project_state(task_id, state, execute_func=db_execute)
         # 同步内存态，避免其他路径读到旧值
         try:
             from appcore import task_state as _ts
@@ -900,10 +895,7 @@ def confirm_voice(task_id: str):
     state["subtitle_size"] = normalized["subtitle_size"]
     state["subtitle_position_y"] = normalized["subtitle_position_y"]
     state["subtitle_position"] = normalized["subtitle_position"]
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
-    )
+    save_project_state(task_id, state, execute_func=db_execute)
 
     task_state.update(
         task_id,

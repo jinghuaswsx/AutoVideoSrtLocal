@@ -64,6 +64,21 @@ def test_video_creation_route_uses_project_state_helper_for_state_json_writes():
     assert "UPDATE projects SET state_json" not in source
 
 
+def test_translate_voice_routes_use_project_state_helper_for_state_json_writes():
+    route_files = [
+        Path("web/routes/multi_translate.py"),
+        Path("web/routes/omni_translate.py"),
+        Path("web/routes/ja_translate.py"),
+    ]
+    offenders = [
+        str(path)
+        for path in route_files
+        if "UPDATE projects SET state_json" in path.read_text(encoding="utf-8")
+    ]
+
+    assert offenders == []
+
+
 def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
     allowed_paths = {
         "appcore/gemini_image.py",
