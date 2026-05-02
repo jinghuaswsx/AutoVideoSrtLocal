@@ -836,8 +836,11 @@ def test_subtitle_removal_download_result_redirects_to_tos_when_local_file_missi
 
 
 def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_client_no_db, monkeypatch, tmp_path):
-    result_path = tmp_path / "result.cleaned.mp4"
+    output_root = tmp_path / "output"
+    result_path = output_root / "sr-resubmit" / "result.cleaned.mp4"
+    result_path.parent.mkdir(parents=True)
     result_path.write_bytes(b"result-video")
+    monkeypatch.setattr(subtitle_removal, "OUTPUT_DIR", str(output_root))
     task = store.create_subtitle_removal(
         "sr-resubmit",
         "uploads/source.mp4",
@@ -893,6 +896,30 @@ def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_clien
     assert saved["remove_mode"] == "full"
     assert saved["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
     assert saved["position_payload"] == {"l": 0, "t": 0, "w": 720, "h": 1280}
+
+
+def test_subtitle_removal_cleanup_skips_result_path_outside_storage_roots(monkeypatch, tmp_path):
+    outside_result = tmp_path / "outside-result.mp4"
+    outside_result.write_bytes(b"result")
+    deleted_tos_keys = []
+
+    monkeypatch.setattr(subtitle_removal, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(subtitle_removal, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(
+        subtitle_removal.tos_clients,
+        "delete_object",
+        lambda key: deleted_tos_keys.append(key),
+    )
+
+    subtitle_removal._cleanup_result_artifacts(
+        {
+            "result_tos_key": "artifacts/1/sr-clean/subtitle_removal/result.cleaned.mp4",
+            "result_video_path": str(outside_result),
+        }
+    )
+
+    assert deleted_tos_keys == ["artifacts/1/sr-clean/subtitle_removal/result.cleaned.mp4"]
+    assert outside_result.read_bytes() == b"result"
 
 
 def test_subtitle_removal_resubmit_recent_provider_task_resumes_poll_without_new_submit(
@@ -1000,8 +1027,11 @@ def test_subtitle_removal_resume_poll_rejects_duplicate_runner_start(authed_clie
 def test_subtitle_removal_delete_soft_deletes_project_and_cleans_result_artifacts_only(
     authed_client_no_db, monkeypatch, tmp_path
 ):
-    result_path = tmp_path / "result.cleaned.mp4"
+    output_root = tmp_path / "output"
+    result_path = output_root / "sr-delete" / "result.cleaned.mp4"
+    result_path.parent.mkdir(parents=True)
     result_path.write_bytes(b"result-video")
+    monkeypatch.setattr(subtitle_removal, "OUTPUT_DIR", str(output_root))
     task = store.create_subtitle_removal(
         "sr-delete",
         "uploads/source.mp4",

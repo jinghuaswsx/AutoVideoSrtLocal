@@ -15,6 +15,7 @@ from flask_login import login_required, current_user
 from appcore import object_keys, subtitle_removal_source_storage, task_state
 from appcore import tos_clients
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
+from appcore.safe_paths import PathSafetyError, remove_file_under_roots
 from appcore.vod_erase_provider import VodEraseError, get_play_info
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.ffutil import extract_thumbnail, probe_media_info
@@ -213,7 +214,9 @@ def _cleanup_result_artifacts(task: dict) -> None:
     result_video_path = (task.get("result_video_path") or "").strip()
     if result_video_path and os.path.isfile(result_video_path):
         try:
-            os.remove(result_video_path)
+            remove_file_under_roots(result_video_path, [OUTPUT_DIR, UPLOAD_DIR])
+        except PathSafetyError:
+            log.warning("[subtitle_removal] skip deleting result outside storage roots: %s", result_video_path)
         except Exception:
             pass
 
