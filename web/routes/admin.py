@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from web.auth import admin_required, superadmin_required
-from appcore import medias, product_roas
+from appcore import medias, product_roas, system_audit
 from appcore import voice_library_sync_task as vlst
 from appcore.users import (
     list_users, create_user, set_active, get_by_username,
@@ -45,6 +45,26 @@ def _render_users_page(error=None, status: int = 200):
                            role_defaults={r: default_permissions_for_role(r) for r in ROLES}), status
 
 
+def _audit_admin_action(
+    action: str,
+    *,
+    target_type: str | None = None,
+    target_id: int | str | None = None,
+    target_label: str | None = None,
+    detail: dict | None = None,
+) -> None:
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action=action,
+        module="admin",
+        target_type=target_type,
+        target_id=target_id,
+        target_label=target_label,
+        detail=detail,
+    )
+
+
 @bp.route("/users", methods=["GET", "POST"])
 @login_required
 @superadmin_required
@@ -62,7 +82,14 @@ def users():
                 error = f"用户名 '{username}' 已存在"
             else:
                 try:
-                    create_user(username, password, role=role)
+                    created_user_id = create_user(username, password, role=role)
+                    _audit_admin_action(
+                        "admin_user_created",
+                        target_type="user",
+                        target_id=created_user_id,
+                        target_label=username,
+                        detail={"role": role},
+                    )
                     flash(f"用户 '{username}' 创建成功")
                 except ValueError as exc:
                     error = str(exc)
@@ -75,6 +102,12 @@ def users():
                 return _render_users_page(error=error, status=400)
             active = request.form.get("active") == "1"
             set_active(user_id, active)
+            _audit_admin_action(
+                "admin_user_active_changed",
+                target_type="user",
+                target_id=user_id,
+                detail={"active": active},
+            )
             return redirect(url_for("admin.users"))
         elif action == "update_role":
             try:
@@ -88,6 +121,12 @@ def users():
             else:
                 try:
                     update_role(user_id, new_role)
+                    _audit_admin_action(
+                        "admin_user_role_updated",
+                        target_type="user",
+                        target_id=user_id,
+                        detail={"new_role": new_role},
+                    )
                     flash("角色已更新，权限已同步重置为新角色默认值")
                 except ValueError as exc:
                     error = str(exc)
@@ -138,6 +177,13 @@ def api_update_user_role(user_id: int):
         update_role(user_id, new_role)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    _audit_admin_action(
+        "admin_user_role_updated",
+        target_type="user",
+        target_id=user_id,
+        target_label=user.get("username"),
+        detail={"old_role": user.get("role"), "new_role": new_role},
+    )
     return jsonify({"ok": True, "role": new_role,
                      "role_label": ROLE_LABELS.get(new_role, new_role)})
 
@@ -158,6 +204,13 @@ def set_user_permissions(user_id: int):
         cleaned = reset_permissions_to_role_default(user_id)
     else:
         cleaned = update_permissions(user_id, body.get("permissions"))
+    _audit_admin_action(
+        "admin_user_permissions_reset" if action == "reset" else "admin_user_permissions_updated",
+        target_type="user",
+        target_id=user_id,
+        target_label=user.get("username"),
+        detail={"permission_keys": sorted(cleaned.keys())},
+    )
     return jsonify({"ok": True, "permissions": cleaned})
 
 
@@ -276,6 +329,17 @@ def api_create_media_language():
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    _audit_admin_action(
+        "admin_media_language_created",
+        target_type="media_language",
+        target_id=body.get("code", ""),
+        target_label=body.get("name_zh", ""),
+        detail={
+            "code": body.get("code", ""),
+            "enabled": bool(body.get("enabled", True)),
+            "sort_order": body.get("sort_order", 0),
+        },
+    )
     return jsonify({"ok": True}), 201
 
 
@@ -294,6 +358,16 @@ def api_update_media_language(code: str):
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    _audit_admin_action(
+        "admin_media_language_updated",
+        target_type="media_language",
+        target_id=code,
+        target_label=body.get("name_zh", ""),
+        detail={
+            "enabled": bool(body.get("enabled", True)),
+            "sort_order": body.get("sort_order", 0),
+        },
+    )
     return jsonify({"ok": True})
 
 
@@ -305,6 +379,11 @@ def api_delete_media_language(code: str):
         medias.delete_language(code)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    _audit_admin_action(
+        "admin_media_language_deleted",
+        target_type="media_language",
+        target_id=code,
+    )
     return jsonify({"ok": True})
 
 
@@ -351,6 +430,12 @@ def set_image_translate_prompt():
     if not value:
         return jsonify({"error": "value required"}), 400
     update_prompt(preset, lang, value)
+    _audit_admin_action(
+        "admin_image_translate_prompt_updated",
+        target_type="image_translate_prompt",
+        target_id=f"{preset}:{lang}",
+        detail={"preset": preset, "lang": lang},
+    )
     return jsonify({"ok": True})
 
 
@@ -367,6 +452,12 @@ def voice_library_sync(language: str):
         if "another sync" in msg:
             return jsonify({"error": msg}), 409
         return jsonify({"error": msg}), 500
+    _audit_admin_action(
+        "admin_voice_library_sync_started",
+        target_type="voice_library",
+        target_id=language,
+        detail={"sync_id": sync_id},
+    )
     return jsonify({"sync_id": sync_id}), 202
 
 

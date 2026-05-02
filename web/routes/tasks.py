@@ -7,6 +7,7 @@ from functools import wraps
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 
+from appcore import system_audit
 from appcore import tasks as tasks_svc
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,18 @@ def capability_required(code: str):
             return fn(*a, **kw)
         return _wrap
     return _dec
+
+
+def _audit_task_action(task_id: int, action: str, detail: dict | None = None) -> None:
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action=action,
+        module="tasks",
+        target_type="task",
+        target_id=task_id,
+        detail=detail,
+    )
 
 
 @bp.route("/")
@@ -181,6 +194,16 @@ def api_create_parent():
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(
+        parent_id,
+        "task_parent_created",
+        {
+            "media_product_id": product_id,
+            "media_item_id": item_id,
+            "countries": countries,
+            "translator_id": translator_id,
+        },
+    )
     return jsonify({"parent_task_id": parent_id})
 
 
@@ -192,6 +215,7 @@ def api_parent_claim(tid: int):
         tasks_svc.claim_parent(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.ConflictError as e:
         return jsonify({"error": str(e)}), 409
+    _audit_task_action(tid, "task_parent_claimed")
     return jsonify({"ok": True})
 
 
@@ -202,6 +226,7 @@ def api_parent_upload_done(tid: int):
         tasks_svc.mark_uploaded(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.StateError as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_parent_upload_done")
     return jsonify({"ok": True})
 
 
@@ -213,6 +238,7 @@ def api_parent_approve(tid: int):
         tasks_svc.approve_raw(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.StateError as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_parent_approved")
     return jsonify({"ok": True})
 
 
@@ -227,6 +253,7 @@ def api_parent_reject(tid: int):
                              reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_parent_rejected", {"reason": reason})
     return jsonify({"ok": True})
 
 
@@ -241,6 +268,7 @@ def api_parent_cancel(tid: int):
                                 reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_parent_cancelled", {"reason": reason})
     return jsonify({"ok": True})
 
 
@@ -269,6 +297,7 @@ def api_parent_bind_item(tid: int):
         return jsonify({"error": "media_item not found or not under this product"}), 400
     execute("UPDATE tasks SET media_item_id=%s, updated_at=NOW() WHERE id=%s",
             (int(item_id), tid))
+    _audit_task_action(tid, "task_parent_bound_item", {"media_item_id": int(item_id)})
     return jsonify({"ok": True})
 
 
@@ -281,6 +310,7 @@ def api_child_submit(tid: int):
         return jsonify({"error": "readiness_failed", "missing": e.missing}), 422
     except tasks_svc.StateError as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_child_submitted")
     return jsonify({"ok": True})
 
 
@@ -292,6 +322,7 @@ def api_child_approve(tid: int):
         tasks_svc.approve_child(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.StateError as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_child_approved")
     return jsonify({"ok": True})
 
 
@@ -306,6 +337,7 @@ def api_child_reject(tid: int):
                                reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_child_rejected", {"reason": reason})
     return jsonify({"ok": True})
 
 
@@ -320,6 +352,7 @@ def api_child_cancel(tid: int):
                                reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
         return jsonify({"error": str(e)}), 400
+    _audit_task_action(tid, "task_child_cancelled", {"reason": reason})
     return jsonify({"ok": True})
 
 

@@ -48,10 +48,30 @@ def index():
     )
 
 
-from appcore import medias, push_quality_checks, pushes
+from appcore import medias, push_quality_checks, pushes, system_audit
 
 _PAGE_SIZE_DEFAULT = 20
 _AUDIT_RESULT_FILTERS = {"适合推广", "部分适合推广", "不适合推广"}
+
+
+def _audit_push_action(
+    item_id: int | None,
+    action: str,
+    *,
+    target_type: str = "media_item",
+    status: str = "success",
+    detail: dict | None = None,
+) -> None:
+    system_audit.record_from_request(
+        user=current_user,
+        request_obj=request,
+        action=action,
+        module="pushes",
+        target_type=target_type,
+        target_id=item_id,
+        status=status,
+        detail=detail,
+    )
 
 
 def _serialize_ai_score(value):
@@ -245,6 +265,12 @@ def api_build_payload(item_id: int):
 def api_retry_quality_check(item_id: int):
     result = push_quality_checks.evaluate_item(item_id, source="manual")
     status = 200 if result.get("status") != "error" else 500
+    _audit_push_action(
+        item_id,
+        "push_quality_check_retried",
+        status="success" if status == 200 else "failed",
+        detail={"result_status": result.get("status")},
+    )
     return jsonify(result), status
 
 
@@ -300,6 +326,12 @@ def api_push(item_id: int):
             error_message=f"network_error: {exc}",
             response_body=None,
         )
+        _audit_push_action(
+            item_id,
+            "push_failed",
+            status="failed",
+            detail={"error": "downstream_unreachable"},
+        )
         return jsonify({"error": "downstream_unreachable", "detail": str(exc)}), 502
 
     body_text = resp.text or ""
@@ -309,6 +341,11 @@ def api_push(item_id: int):
             operator_user_id=current_user.id,
             payload=payload,
             response_body=body_text,
+        )
+        _audit_push_action(
+            item_id,
+            "push_succeeded",
+            detail={"upstream_status": resp.status_code},
         )
 
         # 推送成功后，回填 mk_id（失败不阻塞主响应，只附在 mk_id_match 里告诉前端）
@@ -348,6 +385,12 @@ def api_push(item_id: int):
         error_message=f"HTTP {resp.status_code}",
         response_body=body_text,
     )
+    _audit_push_action(
+        item_id,
+        "push_failed",
+        status="failed",
+        detail={"upstream_status": resp.status_code},
+    )
     return jsonify({
         "error": "downstream_error",
         "upstream_status": resp.status_code,
@@ -368,6 +411,7 @@ def api_mark_pushed(item_id: int):
         payload=payload,
         response_body=response_body,
     )
+    _audit_push_action(item_id, "push_marked_succeeded")
     return ("", 204)
 
 
@@ -384,6 +428,12 @@ def api_mark_failed(item_id: int):
         error_message=body.get("error_message"),
         response_body=body.get("response_body"),
     )
+    _audit_push_action(
+        item_id,
+        "push_marked_failed",
+        status="failed",
+        detail={"error_message": body.get("error_message")},
+    )
     return ("", 204)
 
 
@@ -392,6 +442,7 @@ def api_mark_failed(item_id: int):
 @admin_required
 def api_reset(item_id: int):
     pushes.reset_push_state(item_id)
+    _audit_push_action(item_id, "push_reset")
     return ("", 204)
 
 
@@ -479,6 +530,12 @@ def api_push_localized_texts(item_id: int):
     try:
         resp = requests.post(target_url, json=body, headers=headers, timeout=30)
     except requests.RequestException as exc:
+        _audit_push_action(
+            item_id,
+            "push_localized_texts_failed",
+            status="failed",
+            detail={"error": "downstream_unreachable"},
+        )
         return jsonify({
             "error": "downstream_unreachable",
             "detail": str(exc),
@@ -487,12 +544,23 @@ def api_push_localized_texts(item_id: int):
 
     body_text = resp.text or ""
     if resp.ok:
+        _audit_push_action(
+            item_id,
+            "push_localized_texts_succeeded",
+            detail={"upstream_status": resp.status_code},
+        )
         return jsonify({
             "ok": True,
             "upstream_status": resp.status_code,
             "response_body": body_text[:4000],
             "target_url": target_url,
         })
+    _audit_push_action(
+        item_id,
+        "push_localized_texts_failed",
+        status="failed",
+        detail={"upstream_status": resp.status_code},
+    )
     return jsonify({
         "error": "downstream_error",
         "upstream_status": resp.status_code,
@@ -516,6 +584,12 @@ def api_push_product_links(item_id: int):
     except Exception as exc:
         return _product_links_push_error_response(exc)
     status = 200 if result.get("ok") else 502
+    _audit_push_action(
+        item_id,
+        "push_product_links_succeeded" if result.get("ok") else "push_product_links_failed",
+        status="success" if result.get("ok") else "failed",
+        detail={"http_status": status},
+    )
     return jsonify(result), status
 
 
@@ -582,4 +656,13 @@ def api_set_push_credentials():
             if value or clear_flags.get(key):
                 set_setting(key, value)
                 updated.append(key)
+    _audit_push_action(
+        None,
+        "push_credentials_updated",
+        target_type="system_setting",
+        detail={
+            "updated_keys": updated,
+            "cleared_keys": [key for key in updated if clear_flags.get(key)],
+        },
+    )
     return jsonify({"ok": True, "updated": updated})
