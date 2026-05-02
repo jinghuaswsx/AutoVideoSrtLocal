@@ -67,6 +67,7 @@ from web.services.task_access import get_user_task, is_admin_user, optional_user
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
+from web.services.task_responses import task_not_found_response
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.translate_detail_protocol import (
@@ -179,7 +180,7 @@ def get_task(task_id):
     recover_task_if_needed(task_id)
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
     return jsonify(task)
 
 
@@ -188,7 +189,7 @@ def get_task(task_id):
 def subtitle_preview(task_id: str):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
     return jsonify(build_multi_translate_preview_payload(task_id, current_user.id, api_base="/api/tasks"))
 
 
@@ -215,7 +216,7 @@ def set_user_default_voice_route():
 def voice_library_for_task(task_id: str):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
     lang = av_task_target_lang(task)
     if not lang:
         return jsonify({"error": "task has no target_lang"}), 400
@@ -247,7 +248,7 @@ def voice_library_for_task(task_id: str):
 def rematch_voice(task_id: str):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
     lang = av_task_target_lang(task)
     if not lang:
         return jsonify({"error": "task has no target_lang"}), 400
@@ -294,7 +295,7 @@ def rematch_voice(task_id: str):
 def confirm_voice(task_id: str):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
     lang = av_task_target_lang(task)
     body = json_payload_from(request)
 
@@ -368,7 +369,7 @@ def thumbnail(task_id: str):
 def get_artifact(task_id, name):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
     variant = request.args.get("variant") or None
 
     from web.services.artifact_download import preview_artifact_tos_redirect
@@ -403,7 +404,7 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
     filename = filename_pattern.format(r=round_index)
@@ -429,7 +430,7 @@ def restart(task_id):
     """清掉上一轮的中间/结果/TOS 产物，按新参数从头跑一遍。"""
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     body = request_payload_from(request)
     av_inputs = collect_av_translate_inputs(body, current_task=task)
@@ -471,7 +472,7 @@ def start(task_id):
     """配置并启动流水线"""
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     body = request_payload_from(request)
     av_inputs = collect_av_translate_inputs(body, current_task=task)
@@ -524,7 +525,7 @@ def start_translate(task_id):
     """User picks model + prompt, then starts the translate step."""
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     if not task.get("_translate_pre_select"):
         return jsonify({"error": "翻译步骤不在预选状态"}), 400
@@ -564,7 +565,7 @@ def retranslate(task_id):
     """Re-run translation with a different prompt. Stores result alongside existing translations."""
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     step_status = (task.get("steps") or {}).get("translate")
     if step_status not in ("done", "error"):
@@ -680,7 +681,7 @@ def select_translation(task_id):
     """Select one of the translation attempts as the active translation."""
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     body = json_payload_from(request)
     index = body.get("index")
@@ -703,7 +704,7 @@ def select_translation(task_id):
 def update_alignment(task_id):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     body = json_payload_from(request)
     break_after = body.get("break_after")
@@ -742,7 +743,7 @@ def update_segments(task_id):
     """用户确认/编辑翻译结果"""
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     body = request.get_json()
     if not body or "segments" not in body:
@@ -803,7 +804,7 @@ def update_segments(task_id):
 def av_rewrite_sentence(task_id):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     variant = "av"
     variant_state = dict((task.get("variants") or {}).get(variant) or {})
@@ -990,7 +991,7 @@ def download(task_id, file_type):
     """
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     variant = request.args.get("variant") or None
     return serve_artifact_download(task, task_id, file_type, variant=variant)
@@ -1001,7 +1002,7 @@ def download(task_id, file_type):
 def deploy_capcut(task_id):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     variant = request.args.get("variant") or None
     variant_state = task.get("variants", {}).get(variant, {}) if variant else {}
@@ -1032,7 +1033,7 @@ def rename_task(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     outcome = prepare_task_rename(
         json_payload_from(request),
@@ -1063,7 +1064,7 @@ def delete_task(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     cleanup_deleted_task_storage(
         refresh_task(task_id, {}),
@@ -1093,11 +1094,11 @@ def resume_from_step(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     task = store.get(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     body = json_payload_from(request)
     start_step = body.get("start_step", "")
@@ -1137,11 +1138,11 @@ def run_ai_analysis(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     task = store.get(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return task_not_found_response()
 
     if (task.get("steps") or {}).get("analysis") == "running":
         return jsonify({"error": "AI 分析正在运行中"}), 409
