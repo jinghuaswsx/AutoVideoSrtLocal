@@ -38,6 +38,71 @@ def test_material_evaluation_scheduler_tick_evaluates_ready_products(monkeypatch
     assert evaluated == [7, 8]
 
 
+def test_material_evaluation_scheduler_tick_tracks_active_product(monkeypatch):
+    from appcore import material_evaluation_scheduler, task_recovery
+
+    evaluated = []
+    registrations = []
+    unregistered = []
+    monkeypatch.setattr(
+        material_evaluation_scheduler.material_evaluation,
+        "find_ready_product_ids",
+        lambda limit=10: [7],
+    )
+    monkeypatch.setattr(
+        material_evaluation_scheduler.material_evaluation,
+        "evaluate_product_if_ready",
+        lambda product_id: evaluated.append(product_id),
+    )
+    monkeypatch.setattr(
+        task_recovery,
+        "try_register_active_task",
+        lambda *args, **kwargs: registrations.append((args, kwargs)) or True,
+    )
+    monkeypatch.setattr(
+        task_recovery,
+        "unregister_active_task",
+        lambda *args: unregistered.append(args),
+    )
+
+    material_evaluation_scheduler.tick_once()
+
+    assert evaluated == [7]
+    assert registrations == [
+        (
+            ("material_evaluation", "7"),
+            {
+                "runner": "appcore.material_evaluation_scheduler.tick_once",
+                "entrypoint": "material_evaluation_tick",
+                "stage": "running_evaluation",
+                "details": {"source": "scheduler"},
+            },
+        )
+    ]
+    assert unregistered == [("material_evaluation", "7")]
+
+
+def test_material_evaluation_scheduler_tick_skips_active_product(monkeypatch):
+    from appcore import material_evaluation_scheduler, task_recovery
+
+    evaluated = []
+    monkeypatch.setattr(
+        material_evaluation_scheduler.material_evaluation,
+        "find_ready_product_ids",
+        lambda limit=10: [7],
+    )
+    monkeypatch.setattr(
+        material_evaluation_scheduler.material_evaluation,
+        "evaluate_product_if_ready",
+        lambda product_id: evaluated.append(product_id),
+    )
+    monkeypatch.setattr(task_recovery, "try_register_active_task", lambda *args, **kwargs: False)
+
+    material_evaluation_scheduler.tick_once()
+
+    assert evaluated == []
+
+
 def test_material_evaluation_scheduler_tick_uses_batch_size_10(monkeypatch):
     from appcore import material_evaluation_scheduler
 

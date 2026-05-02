@@ -20,6 +20,7 @@ from flask import Blueprint, Response, render_template, request, jsonify, abort,
 from flask_login import login_required, current_user
 
 from appcore import (
+    runner_lifecycle,
     local_media_storage,
     material_evaluation,
     medias,
@@ -43,7 +44,6 @@ from appcore.material_filename_rules import (
 from config import OUTPUT_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
-from web.background import start_background_task
 from web.routes import image_translate as image_translate_routes
 from web.services import image_translate_runner, link_check_runner
 
@@ -62,12 +62,24 @@ _MK_VIDEO_CACHE_PREFIX = "mk-selection/videos"
 
 
 def _schedule_material_evaluation(pid: int, *, force: bool = False,
-                                  manual: bool = False) -> None:
-    start_background_task(
-        material_evaluation.evaluate_product_if_ready,
-        int(pid),
-        force=force,
-        manual=manual,
+                                  manual: bool = False) -> bool:
+    product_id = int(pid)
+    try:
+        user_id = int(getattr(current_user, "id", 0) or 0) or None
+    except Exception:
+        user_id = None
+    return runner_lifecycle.start_tracked_thread(
+        project_type="material_evaluation",
+        task_id=str(product_id),
+        target=material_evaluation.evaluate_product_if_ready,
+        args=(product_id,),
+        kwargs={"force": force, "manual": manual},
+        daemon=True,
+        user_id=user_id,
+        runner="appcore.material_evaluation.evaluate_product_if_ready",
+        entrypoint="medias.material_evaluation",
+        stage="queued_evaluation",
+        details={"force": force, "manual": manual},
     )
 
 

@@ -1022,19 +1022,45 @@ def test_first_english_video_skips_image_items():
 
 def test_medias_route_schedules_material_evaluation_in_background(monkeypatch):
     from web.routes import medias as route
+    from appcore import runner_lifecycle
 
     calls = []
     monkeypatch.setattr(
-        route,
-        "start_background_task",
-        lambda fn, *args, **kwargs: calls.append((fn, args, kwargs)),
+        runner_lifecycle,
+        "start_tracked_thread",
+        lambda **kwargs: calls.append(kwargs) or True,
     )
 
-    route._schedule_material_evaluation(7, force=True)
+    assert route._schedule_material_evaluation(7, force=True) is True
 
     assert calls == [
-        (route.material_evaluation.evaluate_product_if_ready, (7,), {"force": True, "manual": False})
+        {
+            "project_type": "material_evaluation",
+            "task_id": "7",
+            "target": route.material_evaluation.evaluate_product_if_ready,
+            "args": (7,),
+            "kwargs": {"force": True, "manual": False},
+            "daemon": True,
+            "user_id": None,
+            "runner": "appcore.material_evaluation.evaluate_product_if_ready",
+            "entrypoint": "medias.material_evaluation",
+            "stage": "queued_evaluation",
+            "details": {"force": True, "manual": False},
+        }
     ]
+
+
+def test_medias_route_skips_duplicate_material_evaluation_thread(monkeypatch):
+    from web.routes import medias as route
+    from appcore import runner_lifecycle
+
+    monkeypatch.setattr(
+        runner_lifecycle,
+        "start_tracked_thread",
+        lambda **kwargs: False,
+    )
+
+    assert route._schedule_material_evaluation(7) is False
 
 
 def test_find_ready_product_ids_uses_exists_without_distinct(monkeypatch):
