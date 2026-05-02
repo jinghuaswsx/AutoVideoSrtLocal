@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import mimetypes
 import os
 import re
 import sys
+import threading
+import uuid
 import requests
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from urllib.parse import urlparse
 
-from flask import jsonify
+from flask import abort, jsonify, send_file, url_for
 from flask_login import current_user
 
 from appcore import local_media_storage, material_evaluation, medias, object_keys, task_state
+from config import OUTPUT_DIR
 from web.background import start_background_task
 from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
@@ -451,3 +456,42 @@ def _delete_media_object(object_key: str | None) -> None:
         local_media_storage.delete(key)
     except Exception:
         pass
+
+
+THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
+_local_upload_guard = threading.Lock()
+_local_upload_reservations: dict[str, dict] = {}
+
+
+def _reserve_local_media_upload(object_key: str) -> dict[str, str]:
+    upload_id = uuid.uuid4().hex
+    with _local_upload_guard:
+        _local_upload_reservations[upload_id] = {
+            "user_id": int(current_user.id),
+            "object_key": object_key,
+        }
+    return {
+        "object_key": object_key,
+        "upload_url": url_for("medias.api_local_media_upload", upload_id=upload_id),
+    }
+
+
+def _is_media_available(object_key: str) -> bool:
+    if not object_key:
+        return False
+    return local_media_storage.exists(object_key)
+
+
+def _download_media_object(object_key: str, destination: str | os.PathLike[str]) -> str:
+    if local_media_storage.exists(object_key):
+        return local_media_storage.download_to(object_key, destination)
+    raise FileNotFoundError(f"local media object not found: {object_key}")
+
+
+def _send_media_object(object_key: str):
+    if _is_media_available(object_key):
+        return send_file(
+            str(local_media_storage.local_path_for(object_key)),
+            mimetype=mimetypes.guess_type(object_key)[0] or "application/octet-stream",
+        )
+    abort(404)
