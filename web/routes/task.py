@@ -63,6 +63,7 @@ from web.services.task_av_rewrite import (
     rebuild_tts_full_audio,
     resolve_av_voice_ids,
 )
+from web.services.task_access import get_user_task, is_admin_user
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -79,17 +80,6 @@ bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
 
 from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
-
-
-def _is_admin_user() -> bool:
-    return getattr(current_user, "is_admin", False)
-
-
-def _get_current_user_task(task_id: str) -> dict | None:
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
-        return None
-    return task
 
 
 @bp.route("/upload-page", endpoint="upload_page")
@@ -196,7 +186,7 @@ def get_task(task_id):
 @bp.route("/<task_id>/subtitle-preview", methods=["GET"])
 @login_required
 def subtitle_preview(task_id: str):
-    task = _get_current_user_task(task_id)
+    task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
     return jsonify(build_multi_translate_preview_payload(task_id, current_user.id, api_base="/api/tasks"))
@@ -223,7 +213,7 @@ def set_user_default_voice_route():
 @bp.route("/<task_id>/voice-library", methods=["GET"])
 @login_required
 def voice_library_for_task(task_id: str):
-    task = _get_current_user_task(task_id)
+    task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
     lang = av_task_target_lang(task)
@@ -255,7 +245,7 @@ def voice_library_for_task(task_id: str):
 @bp.route("/<task_id>/rematch", methods=["POST"])
 @login_required
 def rematch_voice(task_id: str):
-    task = _get_current_user_task(task_id)
+    task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
     lang = av_task_target_lang(task)
@@ -302,7 +292,7 @@ def rematch_voice(task_id: str):
 @bp.route("/<task_id>/confirm-voice", methods=["POST"])
 @login_required
 def confirm_voice(task_id: str):
-    task = _get_current_user_task(task_id)
+    task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
     lang = av_task_target_lang(task)
@@ -352,7 +342,7 @@ def confirm_voice(task_id: str):
 @bp.route("/<task_id>/thumbnail")
 @login_required
 def thumbnail(task_id: str):
-    if _is_admin_user():
+    if is_admin_user(current_user):
         row = db_query_one(
             "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND deleted_at IS NULL",
             (task_id,),

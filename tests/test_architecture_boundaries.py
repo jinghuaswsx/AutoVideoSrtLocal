@@ -345,6 +345,14 @@ def test_task_start_request_payload_parsing_lives_outside_route_module():
     assert Path("web/services/task_start_inputs.py").exists()
 
 
+def test_task_user_access_helper_lives_outside_route_module():
+    source = Path("web/routes/task.py").read_text(encoding="utf-8")
+
+    assert "def _get_current_user_task" not in source
+    assert "def _is_admin_user" not in source
+    assert Path("web/services/task_access.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",
