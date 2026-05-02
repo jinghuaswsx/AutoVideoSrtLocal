@@ -97,6 +97,12 @@ def test_text_translate_route_uses_project_state_helper_for_state_json_writes():
     assert "UPDATE projects SET status = 'done', display_name" not in source
 
 
+def test_task_recovery_uses_project_state_helper_for_state_json_writes():
+    source = Path("appcore/task_recovery.py").read_text(encoding="utf-8")
+
+    assert "UPDATE projects SET state_json = %s, status = %s" not in source
+
+
 def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
     allowed_paths = {
         "appcore/gemini_image.py",

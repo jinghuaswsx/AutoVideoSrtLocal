@@ -28,6 +28,7 @@
 验收状态：
 
 - 2026-05-02 当前工作区继续收敛 P1-5 任务状态入口：`copywriting_translate_runtime`、`bulk_translate_recovery`、`text_translate` 的 `projects.state_json` 写回改走 `appcore.project_state.save_project_state`，并为文案翻译 runtime、bulk 启动恢复、文本翻译完成态补充架构防回归测试。P1-5 聚焦回归：`80 passed, 2 warnings`。
+- 2026-05-02 当前工作区继续收敛 P1-5 启动恢复状态写回：`task_recovery._persist_project_recovery` 改走 `appcore.project_state.save_project_state`，启动恢复矩阵和架构边界回归：`48 passed, 2 warnings`；扫描确认直接 `projects.state_json` 更新仅剩 `project_state` / `task_state` 状态基础设施。
 - 2026-05-01 当前工作区已重新执行 P1/P2 聚焦回归：`275 passed, 2 warnings`。覆盖数据库迁移安全、路径安全、架构边界、OpenAPI、调度元数据、任务状态、runner dispatch / lifecycle、图片翻译 runtime、字幕去除 runtime、translate_lab 路由、link_check runner、视频创作素材删除等。
 - 2026-05-02 当前工作区继续补齐 P1-8 第 7 项 Phase 1 验收：本地可执行组合回归已扩展到 `383 passed, 2 warnings`，并修正会误连 Windows 本机 MySQL 的测试隔离问题。
 - 2026-05-02 测试环境 `http://172.30.254.14:8080/` 已部署 `docs/graceful-shutdown-worker-lifecycle-spec` 分支，服务启动后已创建 `runtime_active_tasks` / `runtime_active_task_snapshots` 表，`python -m appcore.ops.active_tasks pre-restart` 在无活跃任务时返回 `no active tasks`。

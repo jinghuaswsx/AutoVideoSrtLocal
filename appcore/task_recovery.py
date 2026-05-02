@@ -6,6 +6,7 @@ import logging
 
 from appcore import active_tasks
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
+from appcore.project_state import save_project_state
 import appcore.task_state as task_state
 
 log = logging.getLogger(__name__)
@@ -245,10 +246,7 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
 
 
 def _persist_project_recovery(task_id: str, recovered: dict, status: str) -> None:
-    db_execute(
-        "UPDATE projects SET state_json = %s, status = %s WHERE id = %s",
-        (json.dumps(recovered, ensure_ascii=False), status, task_id),
-    )
+    save_project_state(task_id, recovered, status=status, execute_func=db_execute)
 
 
 def _clear_stale_live_active_task(project_type: str, task_id: str) -> None:

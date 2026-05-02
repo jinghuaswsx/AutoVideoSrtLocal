@@ -154,6 +154,43 @@ def test_recover_project_state_keeps_active_task_running():
     assert status is None
 
 
+def test_persist_project_recovery_uses_project_state_helper(monkeypatch):
+    from appcore import task_recovery
+
+    saves = []
+    direct_updates = []
+
+    monkeypatch.setattr(
+        task_recovery,
+        "save_project_state",
+        lambda task_id, state, *, status=None, execute_func=None: saves.append(
+            (task_id, state, status, execute_func)
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        task_recovery,
+        "db_execute",
+        lambda sql, args=None: direct_updates.append((sql, args)) or 1,
+    )
+
+    task_recovery._persist_project_recovery(
+        "recover-1",
+        {"steps": {"generate": "error"}},
+        "error",
+    )
+
+    assert saves == [
+        (
+            "recover-1",
+            {"steps": {"generate": "error"}},
+            "error",
+            task_recovery.db_execute,
+        )
+    ]
+    assert direct_updates == []
+
+
 def test_recover_project_state_marks_orphaned_link_check_as_failed():
     from appcore import task_recovery
 
