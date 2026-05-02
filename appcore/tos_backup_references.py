@@ -60,7 +60,7 @@ def _add_object_key(
     if not key:
         return
     try:
-        local_path = local_media_storage.local_path_for(key)
+        local_path = local_media_storage.safe_local_path_for(key)
     except ValueError:
         return
     _add_local_path(grouped, local_path, source, key)

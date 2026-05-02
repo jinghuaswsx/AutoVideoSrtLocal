@@ -8,6 +8,7 @@ def test_collects_protected_project_and_media_files(monkeypatch, tmp_path):
     from appcore import tos_backup_references as refs
 
     media_root = tmp_path / "media_store"
+    monkeypatch.setattr(refs.local_media_storage, "MEDIA_STORE_DIR", media_root)
     monkeypatch.setattr(refs.local_media_storage, "local_path_for", lambda key: media_root.joinpath(*str(key).split("/")))
 
     def fake_query(sql, args=()):
@@ -62,6 +63,7 @@ def test_collects_duplicate_paths_once_with_all_sources(monkeypatch, tmp_path):
     from appcore import tos_backup_references as refs
 
     media_root = tmp_path / "media_store"
+    monkeypatch.setattr(refs.local_media_storage, "MEDIA_STORE_DIR", media_root)
     monkeypatch.setattr(refs.local_media_storage, "local_path_for", lambda key: media_root.joinpath(*str(key).split("/")))
 
     def fake_query(sql, args=()):
@@ -84,3 +86,23 @@ def test_collects_duplicate_paths_once_with_all_sources(monkeypatch, tmp_path):
             object_keys=("shared/a.jpg",),
         )
     ]
+
+
+def test_collect_skips_object_keys_that_resolve_outside_media_store(monkeypatch, tmp_path):
+    from appcore import tos_backup_references as refs
+
+    media_root = tmp_path / "media_store"
+    outside_path = tmp_path / "outside" / "escape.jpg"
+    monkeypatch.setattr(refs.local_media_storage, "MEDIA_STORE_DIR", media_root)
+    monkeypatch.setattr(refs.local_media_storage, "local_path_for", lambda key: outside_path)
+
+    def fake_query(sql, args=()):
+        if "FROM projects" in sql:
+            return []
+        if "FROM media_items" in sql:
+            return [{"source": "media_item", "object_key": "shared/a.jpg", "cover_object_key": ""}]
+        return []
+
+    monkeypatch.setattr(refs, "query", fake_query)
+
+    assert refs.collect_protected_file_refs() == []

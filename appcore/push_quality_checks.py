@@ -633,7 +633,7 @@ def _materialize_media(object_key: str) -> Path:
     key = str(object_key or "").strip()
     if not key:
         raise ValueError("object_key required")
-    local_path = local_media_storage.local_path_for(key)
+    local_path = local_media_storage.safe_local_path_for(key)
     if local_path.is_file():
         return local_path
     if local_media_storage.exists(key):

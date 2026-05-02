@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from appcore import raw_source_filename_sync as mod
+from appcore.safe_paths import PathSafetyError
 
 
 def test_collect_sync_report_prefers_oldest_english_video(monkeypatch):
@@ -217,6 +218,38 @@ def test_apply_sync_renames_storage_and_updates_db(monkeypatch):
         }
     ]
     assert result["new_object_key"] == "1/medias/101/raw_sources/2025.07.19-older.mp4"
+
+
+def test_rename_storage_object_rejects_paths_outside_media_store(monkeypatch, tmp_path):
+    media_root = tmp_path / "media_store"
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    outside_source = outside_dir / "raw.mp4"
+    outside_source.write_bytes(b"raw-video")
+    outside_destination = outside_dir / "renamed.mp4"
+
+    def fake_local_path_for(key):
+        if key == "1/medias/101/raw_sources/raw.mp4":
+            return outside_source
+        if key == "1/medias/101/raw_sources/renamed.mp4":
+            return outside_destination
+        raise AssertionError(key)
+
+    monkeypatch.setattr(mod.local_media_storage, "MEDIA_STORE_DIR", media_root)
+    monkeypatch.setattr(mod.local_media_storage, "local_path_for", fake_local_path_for)
+
+    try:
+        mod._rename_storage_object(
+            "1/medias/101/raw_sources/raw.mp4",
+            "1/medias/101/raw_sources/renamed.mp4",
+        )
+    except PathSafetyError:
+        pass
+    else:
+        raise AssertionError("expected PathSafetyError")
+
+    assert outside_source.read_bytes() == b"raw-video"
+    assert not outside_destination.exists()
 
 
 def test_cli_main_writes_json_report_and_applies(monkeypatch, tmp_path):

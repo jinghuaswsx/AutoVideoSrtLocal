@@ -154,10 +154,10 @@ def build_target_object_key(old_object_key: str, target_filename: str) -> str:
 def _rename_storage_object(old_object_key: str, new_object_key: str) -> None:
     if old_object_key == new_object_key:
         return
-    source = local_media_storage.local_path_for(old_object_key)
+    source = local_media_storage.safe_local_path_for(old_object_key)
     if not source.is_file():
         raise FileNotFoundError(old_object_key)
-    destination = local_media_storage.local_path_for(new_object_key)
+    destination = local_media_storage.safe_local_path_for(new_object_key)
     destination.parent.mkdir(parents=True, exist_ok=True)
     os.replace(source, destination)
 

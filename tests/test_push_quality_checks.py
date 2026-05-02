@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from appcore.safe_paths import PathSafetyError
+
 
 def test_build_fingerprints_changes_when_copy_changes(monkeypatch):
     from appcore import push_quality_checks as qc
@@ -279,6 +283,35 @@ def test_visual_checks_use_openrouter_gemini_flash_lite(monkeypatch, tmp_path):
     assert all(call[1]["model_override"] == qc.MODEL for call in calls)
     assert calls[1][1]["media"] == [clip_path]
     assert calls[1][1]["billing_extra"]["clip_seconds"] == 5
+
+
+def test_materialize_media_rejects_local_paths_outside_media_store(monkeypatch, tmp_path):
+    from appcore import push_quality_checks as qc
+
+    media_root = tmp_path / "media_store"
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    outside_file = outside_dir / "cover.jpg"
+    outside_file.write_bytes(b"image")
+
+    monkeypatch.setattr(qc.local_media_storage, "MEDIA_STORE_DIR", media_root)
+    monkeypatch.setattr(qc.local_media_storage, "local_path_for", lambda key: outside_file)
+    monkeypatch.setattr(qc.local_media_storage, "exists", lambda key: True)
+    monkeypatch.setattr(
+        qc.local_media_storage,
+        "download_to",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not download unsafe path")),
+    )
+    monkeypatch.setattr(
+        qc.tos_clients,
+        "download_media_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not fallback unsafe path")),
+    )
+
+    with pytest.raises(PathSafetyError):
+        qc._materialize_media("covers/demo.jpg")
+
+    assert outside_file.read_bytes() == b"image"
 
 
 def test_push_quality_schema_requires_language_evidence_fields():
