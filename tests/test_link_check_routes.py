@@ -264,6 +264,106 @@ def test_get_task_backfills_locale_evidence_defaults_from_empty_or_partial_state
     }
 
 
+def test_link_check_site_image_rejects_path_outside_task_storage(
+    authed_user_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web import store
+    from web.services import artifact_download
+
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    outside = tmp_path / "site.jpg"
+    outside.write_bytes(b"site-image")
+
+    state = {
+        "id": "lc-site-outside",
+        "type": "link_check",
+        "status": "done",
+        "task_dir": str(task_dir),
+        "items": [{"id": "site-1", "_local_path": str(outside)}],
+        "reference_images": [],
+    }
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": args[0],
+            "type": "link_check",
+            "status": "done",
+            "task_dir": str(task_dir),
+            "state_json": json.dumps(state, ensure_ascii=False),
+        },
+    )
+    monkeypatch.setattr(store, "get", lambda task_id: None)
+
+    sent = []
+
+    def fake_send_file(*args, **kwargs):
+        sent.append((args, kwargs))
+        return "sent"
+
+    monkeypatch.setattr(artifact_download, "send_file", fake_send_file)
+
+    response = authed_user_client_no_db.get(
+        "/api/link-check/tasks/lc-site-outside/images/site/site-1",
+    )
+
+    assert response.status_code == 404
+    assert sent == []
+
+
+def test_link_check_reference_image_serves_path_inside_task_storage(
+    authed_user_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web import store
+    from web.services import artifact_download
+
+    task_dir = tmp_path / "task"
+    reference_dir = task_dir / "reference"
+    reference_dir.mkdir(parents=True)
+    inside = reference_dir / "ref.jpg"
+    inside.write_bytes(b"reference-image")
+
+    state = {
+        "id": "lc-ref-inside",
+        "type": "link_check",
+        "status": "done",
+        "task_dir": str(task_dir),
+        "items": [],
+        "reference_images": [{"id": "ref-1", "local_path": str(inside)}],
+    }
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": args[0],
+            "type": "link_check",
+            "status": "done",
+            "task_dir": str(task_dir),
+            "state_json": json.dumps(state, ensure_ascii=False),
+        },
+    )
+    monkeypatch.setattr(store, "get", lambda task_id: None)
+
+    sent = []
+
+    def fake_send_file(*args, **kwargs):
+        sent.append((args, kwargs))
+        return "sent"
+
+    monkeypatch.setattr(artifact_download, "send_file", fake_send_file)
+
+    response = authed_user_client_no_db.get(
+        "/api/link-check/tasks/lc-ref-inside/images/reference/ref-1",
+    )
+
+    assert response.status_code == 200
+    assert response.text == "sent"
+    assert sent[0][0][0].endswith("ref.jpg")
+
+
 def test_get_task_normalizes_invalid_locale_evidence_values(authed_user_client_no_db, monkeypatch):
     from web import store
 

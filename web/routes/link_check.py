@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, abort, jsonify, render_template, request, send_file, url_for
+from flask import Blueprint, abort, jsonify, render_template, request, url_for
 from flask_login import current_user, login_required
 from appcore import cleanup, medias
 from appcore.db import execute, query, query_one
@@ -13,6 +13,7 @@ from appcore.link_check_locale import build_link_check_display_name, detect_targ
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
 from config import OUTPUT_DIR
 from web import store
+from web.services.artifact_download import safe_task_file_response
 from web.services import link_check_runner
 
 bp = Blueprint("link_check", __name__)
@@ -333,7 +334,7 @@ def get_site_image(task_id: str, image_id: str):
     item = next((it for it in task.get("items", []) if it["id"] == image_id), None)
     if not item:
         abort(404)
-    return send_file(item["_local_path"])
+    return safe_task_file_response(task, item.get("_local_path"), not_found_message="Not Found")
 
 
 @bp.route("/api/link-check/tasks/<task_id>/images/reference/<reference_id>")
@@ -343,4 +344,4 @@ def get_reference_image(task_id: str, reference_id: str):
     ref = next((it for it in task.get("reference_images", []) if it["id"] == reference_id), None)
     if not ref:
         abort(404)
-    return send_file(ref["local_path"])
+    return safe_task_file_response(task, ref.get("local_path"), not_found_message="Not Found")
