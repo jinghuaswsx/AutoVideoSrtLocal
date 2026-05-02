@@ -4,12 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from appcore import ai_billing, llm_bindings, llm_client
-from pipeline.translate import (
-    _resolve_use_case_provider,
-    get_model_display_name,
-    resolve_provider_config,
-)
+from appcore import llm_bindings, llm_client
 
 log = logging.getLogger(__name__)
 
@@ -33,24 +28,29 @@ def _resolve_provider_and_model(
     *,
     provider: str,
     user_id: int | None,
-    openrouter_api_key: str | None,
+    openrouter_api_key: str | None,  # 保留入参签名，仅向后兼容；当前实现忽略
 ) -> tuple[str, str]:
+    """解析最终走哪个 provider+model。
+
+    支持入参形态：
+      - use_case code（含 '.'）→ 直接查 llm_bindings
+      - 老 provider 字符串（如 "openrouter" / "doubao" / "vertex_*"）→ 通过
+        llm_bindings.resolve("text_translate.generate") 拿默认 binding，
+        然后用 provider 字符串覆盖 provider_code
+    """
+    del openrouter_api_key  # noqa: F841 — 兼容签名
     if isinstance(provider, str) and "." in provider:
         binding = llm_bindings.resolve(provider)
         return binding["provider"], binding["model"]
 
-    normalized = _resolve_use_case_provider(provider)
-    if normalized.startswith("vertex_adc_"):
-        return "gemini_vertex_adc", get_model_display_name(normalized, user_id)
-    if normalized.startswith("vertex_"):
-        return "gemini_vertex", get_model_display_name(normalized, user_id)
-
-    _, model = resolve_provider_config(
-        normalized,
-        user_id,
-        api_key_override=openrouter_api_key,
-    )
-    return ("doubao" if normalized == "doubao" else "openrouter"), model
+    binding = llm_bindings.resolve("text_translate.generate")
+    if provider == "doubao":
+        return "doubao", binding["model"]
+    if isinstance(provider, str) and provider.startswith("vertex_adc_"):
+        return "gemini_vertex_adc", binding["model"]
+    if isinstance(provider, str) and provider.startswith("vertex_"):
+        return "gemini_vertex", binding["model"]
+    return "openrouter", binding["model"]
 
 
 def _invoke_translation_chat(
@@ -67,49 +67,6 @@ def _invoke_translation_chat(
         user_id=user_id,
         openrouter_api_key=openrouter_api_key,
     )
-
-    # 保留极少数显式覆盖 OpenRouter key 的兼容路径。
-    if openrouter_api_key and provider_code == "openrouter":
-        client, model = resolve_provider_config(
-            "openrouter",
-            user_id,
-            api_key_override=openrouter_api_key,
-        )
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        text = (response.choices[0].message.content or "").strip()
-        usage = getattr(response, "usage", None)
-        usage_dict = {
-            "input_tokens": int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0,
-            "output_tokens": int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0,
-        }
-        ai_billing.log_request(
-            use_case_code="text_translate.generate",
-            user_id=user_id,
-            project_id=None,
-            provider=provider_code,
-            model=model,
-            input_tokens=usage_dict["input_tokens"],
-            output_tokens=usage_dict["output_tokens"],
-            units_type="tokens",
-            success=True,
-            request_payload={
-                "type": "chat",
-                "use_case_code": "text_translate.generate",
-                "provider": provider_code,
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
-            response_payload={"text": text, "usage": usage_dict},
-        )
-        return {"text": text, "usage": usage_dict}
-
     return llm_client.invoke_chat(
         "text_translate.generate",
         messages=messages,
