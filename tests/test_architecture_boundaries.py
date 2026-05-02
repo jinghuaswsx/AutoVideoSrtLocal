@@ -261,6 +261,24 @@ def test_task_rename_validation_lives_outside_route_module():
     assert Path("web/services/task_rename.py").exists()
 
 
+def test_task_rename_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "rename_task"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL" not in route_source
+    assert "UPDATE projects SET display_name=%s WHERE id=%s" not in route_source
+    assert "resolve_task_display_name_conflict" not in route_source
+    assert "store.update" not in route_source
+    assert "rename_task_display_name" in route_source
+    assert Path("web/services/task_rename.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 

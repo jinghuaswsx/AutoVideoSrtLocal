@@ -68,7 +68,7 @@ from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_llm import resolve_translate_billing_provider
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_prompts import resolve_task_prompt_text
-from web.services.task_rename import prepare_task_rename
+from web.services.task_rename import rename_task_display_name
 from web.services.task_responses import task_not_found_response
 from web.services.task_resume import resume_task_from_step
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
@@ -999,30 +999,17 @@ def deploy_capcut(task_id):
 @login_required
 def rename_task(task_id):
     """重命名任务展示名称"""
-    row = db_query_one(
-        "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
-    )
-    if not row:
-        return task_not_found_response()
-
-    outcome = prepare_task_rename(
+    outcome = rename_task_display_name(
+        task_id,
         json_payload_from(request),
         user_id=current_user.id,
-        task_id=task_id,
-        resolve_name_conflict=lambda user_id, desired_name, *, exclude_task_id=None: resolve_task_display_name_conflict(
-            user_id,
-            desired_name,
-            query_one=db_query_one,
-            exclude_task_id=exclude_task_id,
-        ),
+        query_one=db_query_one,
+        execute=db_execute,
     )
+    if outcome.not_found:
+        return task_not_found_response()
     if outcome.error:
         return jsonify({"error": outcome.error}), outcome.status_code
-    resolved = outcome.display_name
-    db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (resolved, task_id))
-    load_task(task_id)
-    store.update(task_id, display_name=resolved)
     return jsonify(outcome.payload)
 
 
