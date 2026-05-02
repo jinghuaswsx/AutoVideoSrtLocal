@@ -638,17 +638,23 @@ def confirm_voice(task_id: str):
 def thumbnail(task_id: str):
     if _is_admin_user():
         row = db_query_one(
-            "SELECT thumbnail_path FROM projects WHERE id = %s AND deleted_at IS NULL",
+            "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND deleted_at IS NULL",
             (task_id,),
         )
     else:
         row = db_query_one(
-            "SELECT thumbnail_path FROM projects WHERE id = %s AND user_id = %s",
+            "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND user_id = %s",
             (task_id, current_user.id),
         )
     if not row or not row.get("thumbnail_path") or not os.path.exists(row["thumbnail_path"]):
         abort(404)
-    return send_file(row["thumbnail_path"], mimetype="image/jpeg")
+    from web.services.artifact_download import safe_task_file_response
+    return safe_task_file_response(
+        row,
+        row["thumbnail_path"],
+        not_found_message="thumbnail not found",
+        mimetype="image/jpeg",
+    )
 
 
 @bp.route("/<task_id>/artifact/<name>", methods=["GET"])

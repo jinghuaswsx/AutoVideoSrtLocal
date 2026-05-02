@@ -1981,13 +1981,15 @@ def test_run_analysis_route_returns_409_when_runner_is_active(
 
 
 def test_admin_can_fetch_other_users_task_thumbnail(tmp_path, authed_client_no_db, monkeypatch):
-    thumb = tmp_path / "foreign-thumbnail.jpg"
+    task_dir = tmp_path / "foreign-task"
+    task_dir.mkdir()
+    thumb = task_dir / "foreign-thumbnail.jpg"
     thumb.write_bytes(b"jpeg-thumbnail")
 
     def fake_query_one(sql, args):
         if "user_id" in sql.lower():
             return None
-        return {"thumbnail_path": str(thumb)}
+        return {"thumbnail_path": str(thumb), "task_dir": str(task_dir)}
 
     monkeypatch.setattr("web.routes.task.db_query_one", fake_query_one)
 
@@ -1995,6 +1997,24 @@ def test_admin_can_fetch_other_users_task_thumbnail(tmp_path, authed_client_no_d
 
     assert response.status_code == 200
     assert response.data == b"jpeg-thumbnail"
+
+
+def test_task_thumbnail_rejects_path_outside_task_storage(tmp_path, authed_client_no_db, monkeypatch):
+    task_dir = tmp_path / "foreign-task"
+    task_dir.mkdir()
+    thumb = tmp_path / "foreign-thumbnail.jpg"
+    thumb.write_bytes(b"jpeg-thumbnail")
+
+    def fake_query_one(sql, args):
+        if "user_id" in sql.lower():
+            return None
+        return {"thumbnail_path": str(thumb), "task_dir": str(task_dir)}
+
+    monkeypatch.setattr("web.routes.task.db_query_one", fake_query_one)
+
+    response = authed_client_no_db.get("/api/tasks/foreign-task/thumbnail")
+
+    assert response.status_code == 404
 
 
 def test_normal_user_cannot_fetch_other_users_task_thumbnail(tmp_path, authed_user_client_no_db, monkeypatch):
