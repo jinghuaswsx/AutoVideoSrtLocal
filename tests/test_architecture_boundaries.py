@@ -412,6 +412,24 @@ def test_task_analysis_run_workflow_lives_outside_route_module():
     assert Path("web/services/task_analysis.py").exists()
 
 
+def test_task_resume_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "resume_from_step"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "recover_task_if_needed" not in route_source
+    assert "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL" not in route_source
+    assert "store.set_step" not in route_source
+    assert "ensure_local_source_video" not in route_source
+    assert "pipeline_runner.resume" not in route_source
+    assert Path("web/services/task_resume.py").exists()
+
+
 def test_task_translate_billing_provider_mapping_lives_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 

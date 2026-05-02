@@ -58,11 +58,11 @@ def test_av_resume_clears_stale_error_and_keeps_db_type_translation(authed_clien
     )
     resume_calls = []
     monkeypatch.setattr(
-        "web.routes.task.pipeline_runner.resume",
+        "web.services.task_resume.pipeline_runner.resume",
         lambda task_id, step, user_id=None: resume_calls.append((task_id, step, user_id)),
     )
     monkeypatch.setattr("web.routes.task.db_query_one", lambda sql, args: {"id": task_id})
-    monkeypatch.setattr("web.routes.task.ensure_local_source_video", lambda task_id, task: None)
+    monkeypatch.setattr("web.services.task_resume.ensure_local_source_video", lambda task_id, task: None)
 
     resp = authed_client_no_db.post(
         f"/api/tasks/{task_id}/resume",

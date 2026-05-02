@@ -70,6 +70,7 @@ from web.services.task_names import default_display_name, resolve_task_display_n
 from web.services.task_prompts import resolve_task_prompt_text
 from web.services.task_rename import prepare_task_rename
 from web.services.task_responses import task_not_found_response
+from web.services.task_resume import resume_task_from_step
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
@@ -1057,46 +1058,18 @@ RESUMABLE_STEPS = list(AV_SYNC_STEPS)
 @bp.route("/<task_id>/resume", methods=["POST"])
 @login_required
 def resume_from_step(task_id):
-    recover_task_if_needed(task_id)
     """从指定步骤重新开始流水线，该步骤之前已完成的结果保留不动。"""
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
-    )
-    if not row:
-        return task_not_found_response()
-
-    task = load_task(task_id)
-    if not task:
-        return task_not_found_response()
-
     body = json_payload_from(request)
-    start_step = body.get("start_step", "")
-    if start_step not in RESUMABLE_STEPS:
-        return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
-
-    # 把 start_step 及之后的步骤状态重置为 pending
-    started = False
-    for s in RESUMABLE_STEPS:
-        if s == start_step:
-            started = True
-        if started:
-            store.set_step(task_id, s, "pending")
-            store.set_step_message(task_id, s, "等待中...")
-
-    resume_payload = {"status": "running", "error": "", "current_review_step": ""}
-    if (task.get("pipeline_version") or "") == "av":
-        resume_payload["type"] = "translation"
-    store.update(task_id, **resume_payload)
-    task = refresh_task(task_id, task)
-    try:
-        ensure_local_source_video(task_id, task)
-    except FileNotFoundError as exc:
-        return jsonify({"error": str(exc)}), 409
-
-    user_id = optional_user_id(current_user)
-    pipeline_runner.resume(task_id, start_step, user_id=user_id)
-    return jsonify({"status": "started", "start_step": start_step})
+    outcome = resume_task_from_step(
+        task_id,
+        user_id=current_user.id,
+        start_step=body.get("start_step", ""),
+        resumable_steps=RESUMABLE_STEPS,
+        query_one=db_query_one,
+    )
+    if outcome.not_found:
+        return task_not_found_response()
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/analysis/run", methods=["POST"])
