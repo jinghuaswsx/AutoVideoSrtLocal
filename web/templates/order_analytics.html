@@ -1571,28 +1571,24 @@
 </div>
 
 <div class="oa-panel" id="panelDxmOrders">
-  <div class="oar-time-rule">
-    <div>
-      <strong>日期口径：广告系统日</strong>
-      <div class="oar-note">按店小秘订单的 meta_business_date 统计，与真实 ROAS 对齐。</div>
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      <div class="oad-range-presets" role="group" aria-label="订单分析时间范围">
+        <button type="button" class="oad-seg" data-dxm-range="today" aria-pressed="false">今天</button>
+        <button type="button" class="oad-seg" data-dxm-range="yesterday" aria-pressed="false">昨天</button>
+        <button type="button" class="oad-seg" data-dxm-range="thisWeek" aria-pressed="false">本周</button>
+        <button type="button" class="oad-seg" data-dxm-range="lastWeek" aria-pressed="false">上周</button>
+        <button type="button" class="oad-seg is-active" data-dxm-range="thisMonth" aria-pressed="true">本月</button>
+        <button type="button" class="oad-seg" data-dxm-range="lastMonth" aria-pressed="false">上月</button>
+      </div>
+      <div class="oad-date-range-field" role="group" aria-label="订单分析自定义日期范围">
+        <input type="date" id="dxmStartDate" aria-label="开始日期">
+        <span class="oad-date-range-sep">至</span>
+        <input type="date" id="dxmEndDate" aria-label="结束日期">
+      </div>
+      <button type="button" class="oad-btn-primary" id="dxmOrderRefresh">查询</button>
     </div>
-    <span id="dxmOrderRangeLabel">本月</span>
-  </div>
-
-  <div class="oa-filter-stack">
-    <div class="oa-controls oa-filter-row" id="dxmDateFilterRow">
-      <label>开始日期：</label>
-      <input type="date" id="dxmStartDate">
-      <label>结束日期：</label>
-      <input type="date" id="dxmEndDate">
-      <button type="button" class="btn btn-default btn-sm" data-dxm-range="today">今天</button>
-      <button type="button" class="btn btn-default btn-sm" data-dxm-range="yesterday">昨天</button>
-      <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisWeek">本周</button>
-      <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastWeek">上周</button>
-      <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisMonth">本月</button>
-      <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastMonth">上月</button>
-    </div>
-    <div class="oa-controls oa-filter-row" id="dxmStoreFilterRow">
+    <div class="oad-toolbar-row">
       <div class="oa-filter-field">
         <label for="dxmStoreFilter">店铺：</label>
         <select id="dxmStoreFilter">
@@ -1601,8 +1597,8 @@
           <option value="omurio">Omurio</option>
         </select>
       </div>
-      <button type="button" class="btn btn-primary btn-sm" id="dxmOrderRefresh">查询</button>
     </div>
+    <div class="oar-note">日期口径：广告系统日 · 按店小秘 meta_business_date 统计，与真实 ROAS 对齐</div>
   </div>
 
   <div class="oa-stats" id="dxmOrderSummary"></div>
@@ -1901,7 +1897,7 @@
       ['dxmStartDate', 'dxmEndDate'].forEach(function(id) {
         var input = document.getElementById(id);
         if (input) input.addEventListener('change', function() {
-          dxmOrderState.range = 'custom';
+          syncDxmRangeSelection();
         });
       });
       var prev = document.getElementById('dxmPrevPage');
@@ -2048,28 +2044,33 @@
 
   function setDxmRange(range, skipLoad) {
     var bounds = window.orderAnalyticsMetaCalendar.resolveRange(range || 'thisMonth');
-    var start = bounds.start;
-    var end = bounds.end;
-    var label = '本月';
-    if (range === 'today') {
-      label = '今天';
-    } else if (range === 'yesterday') {
-      label = '昨天';
-    } else if (range === 'thisWeek') {
-      label = '本周';
-    } else if (range === 'lastWeek') {
-      label = '上周';
-    } else if (range === 'lastMonth') {
-      label = '上月';
-    } else {
-      label = '本月';
-    }
     dxmOrderState.range = range || 'thisMonth';
-    setInputValue('dxmStartDate', formatDateInput(start));
-    setInputValue('dxmEndDate', formatDateInput(end));
-    var labelEl = document.getElementById('dxmOrderRangeLabel');
-    if (labelEl) labelEl.textContent = label;
+    setInputValue('dxmStartDate', formatDateInput(bounds.start));
+    setInputValue('dxmEndDate', formatDateInput(bounds.end));
+    syncDxmRangeSelection();
     if (!skipLoad) loadDxmOrders(1);
+  }
+
+  function syncDxmRangeSelection() {
+    var startEl = document.getElementById('dxmStartDate');
+    var endEl = document.getElementById('dxmEndDate');
+    var currentStart = startEl ? startEl.value : '';
+    var currentEnd = endEl ? endEl.value : '';
+    var matched = '';
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+      var bounds = window.orderAnalyticsMetaCalendar.resolveRange(range);
+      if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
+        matched = range;
+        return true;
+      }
+      return false;
+    });
+    dxmOrderState.range = matched || 'custom';
+    document.querySelectorAll('[data-dxm-range]').forEach(function(btn) {
+      var isActive = btn.dataset.dxmRange === matched;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
   }
 
   function loadDxmOrders(page) {
