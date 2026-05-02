@@ -82,6 +82,8 @@
 - 2026-05-02 测试环境已拉取提交 `60c8ee0b` 并重启 `autovideosrt-test.service` 加载翻译语音状态写入收敛；服务端运行架构边界、多语种、日语和全能翻译聚焦回归：`26 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 2026-05-02 当前工作区补齐视频评分播放接口路径边界：`/api/video-review/<task_id>/video` 改用 `safe_task_file_response`，只允许返回任务目录、输出目录或上传目录内的文件；新增路由级测试覆盖任务目录内正常播放和目录外路径拒绝。聚焦回归：`8 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
 - 2026-05-02 测试环境已拉取提交 `2be0ca61` 并重启 `autovideosrt-test.service` 加载视频评分文件服务路径边界；服务端运行 `tests/test_video_review_routes.py tests/test_artifact_download_safety.py` 及视频评分启动保护用例：`8 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
+- 2026-05-02 当前工作区补齐 link-check 图片预览路径边界：站点图片与参考图片预览接口改用 `safe_task_file_response`，只允许返回任务目录、输出目录或上传目录内的图片；新增路由测试覆盖目录外拒绝与目录内正常返回。聚焦回归：`13 passed, 2 warnings`，`py_compile` 与 `git diff --check` 通过。
+- 2026-05-02 测试环境已拉取提交 `d55ef34c` 并重启 `autovideosrt-test.service` 加载 link-check 图片预览路径边界；服务端运行 `tests/test_link_check_routes.py tests/test_artifact_download_safety.py`：`13 passed`，`py_compile` 通过；重启前后 `pre-restart` 均返回 `no active tasks`，服务为 `active`，根路径返回 `302`，最近 10 分钟 warning journal 无记录。
 - 首次部署 Phase 1 到尚未创建 `runtime_active_tasks` 表的环境时，普通 `pre-restart` 会安全阻塞；CLI 已识别 MySQL 1146 缺少 runtime active task 表的场景，并提示这只应发生在首次部署 migration 前。测试环境采用一次性 `pre-restart --force` 后重启服务触发 migration，再恢复普通 `pre-restart` 验收。后续环境已有表后应使用普通 `pre-restart`。
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
