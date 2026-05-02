@@ -269,6 +269,16 @@ def test_task_name_helpers_live_outside_route_module():
     assert Path("web/services/task_names.py").exists()
 
 
+def test_task_av_input_helpers_live_outside_route_module():
+    source = Path("web/routes/task.py").read_text(encoding="utf-8")
+
+    assert "def _collect_av_source_language" not in source
+    assert "def _collect_av_translate_inputs" not in source
+    assert "def _validate_av_translate_inputs" not in source
+    assert "def _av_step_maps" not in source
+    assert Path("web/services/task_av_inputs.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

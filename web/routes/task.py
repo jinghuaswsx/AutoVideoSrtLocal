@@ -24,12 +24,9 @@ from appcore.runtime import (
 )
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_CODES,
-    AV_TARGET_MARKET_CODES,
     AV_TARGET_MARKET_OPTIONS,
-    available_av_target_language_codes,
     build_available_av_translate_inputs,
     list_available_av_target_language_options,
-    normalize_av_translate_inputs,
 )
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -51,6 +48,13 @@ from web.preview_artifacts import (
 from web import store
 from web.services import pipeline_runner
 from web.services.artifact_download import safe_task_dir_path, serve_artifact_download
+from web.services.task_av_inputs import (
+    AV_SYNC_STEPS,
+    av_step_maps,
+    collect_av_source_language,
+    collect_av_translate_inputs,
+    validate_av_translate_inputs,
+)
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_rename import prepare_task_rename
@@ -62,48 +66,6 @@ from web.services.translate_detail_protocol import (
 from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
-
-AV_SYNC_STEPS = (
-    "extract",
-    "asr",
-    "asr_normalize",
-    "voice_match",
-    "alignment",
-    "translate",
-    "tts",
-    "subtitle",
-    "compose",
-    "export",
-)
-
-
-ALLOWED_SOURCE_LANGUAGES = (
-    "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
-)
-
-
-def _collect_av_source_language(payload: dict | None, current_task: dict | None = None) -> tuple[dict, str | None]:
-    data = payload or {}
-    if "source_language" not in data and current_task:
-        source_language = str(current_task.get("source_language") or "").strip().lower()
-        if source_language not in ALLOWED_SOURCE_LANGUAGES:
-            return {}, f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
-        return {
-            "source_language": source_language,
-            "user_specified_source_language": True,
-        }, None
-
-    raw_source_language = str(data.get("source_language") or "").strip().lower()
-    if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
-        return {}, f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
-    return {
-        "source_language": raw_source_language,
-        "user_specified_source_language": True,
-    }, None
-
-
-def _av_step_maps(status: str = "pending") -> tuple[dict, dict]:
-    return {step: status for step in AV_SYNC_STEPS}, {step: "" for step in AV_SYNC_STEPS}
 
 
 from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
@@ -125,45 +87,6 @@ def _request_payload() -> dict:
     if request.is_json:
         return request.get_json(silent=True) or {}
     return request.form.to_dict(flat=True)
-
-
-def _collect_av_translate_inputs(payload: dict | None, current_task: dict | None = None) -> dict:
-    current_inputs = (current_task or {}).get("av_translate_inputs") or {}
-    data = payload or {}
-    nested = data.get("av_translate_inputs") or {}
-    nested_inputs = nested if isinstance(nested, dict) else {}
-    override_inputs = dict(nested_inputs.get("product_overrides") or {})
-
-    flat_map = {
-        "product_name": data.get("override_product_name"),
-        "brand": data.get("override_brand"),
-        "selling_points": data.get("override_selling_points"),
-        "price": data.get("override_price"),
-        "target_audience": data.get("override_target_audience"),
-        "extra_info": data.get("override_extra_info"),
-    }
-    for key, value in flat_map.items():
-        if value is not None:
-            override_inputs[key] = value
-
-    raw_inputs = {
-        "target_language": data.get("target_language") or data.get("target_lang") or nested_inputs.get("target_language"),
-        "target_language_name": data.get("target_language_name", nested_inputs.get("target_language_name")),
-        "target_market": data.get("target_market", nested_inputs.get("target_market")),
-        "sync_granularity": data.get("sync_granularity", nested_inputs.get("sync_granularity")),
-        "product_overrides": override_inputs,
-    }
-    return normalize_av_translate_inputs(raw_inputs, base=current_inputs)
-
-
-def _validate_av_translate_inputs(av_inputs: dict) -> str | None:
-    target_language = str(av_inputs.get("target_language") or "").strip().lower()
-    if target_language not in available_av_target_language_codes():
-        return "target_language 非法"
-    target_market = str(av_inputs.get("target_market") or "").strip().upper()
-    if target_market not in AV_TARGET_MARKET_CODES:
-        return "target_market 非法"
-    return None
 
 
 def _get_current_user_task(task_id: str) -> dict | None:
@@ -384,11 +307,11 @@ def upload():
     if not validate_video_extension(original_filename):
         return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
     form_payload = request.form.to_dict(flat=True)
-    av_inputs = _collect_av_translate_inputs(form_payload)
-    av_error = _validate_av_translate_inputs(av_inputs)
+    av_inputs = collect_av_translate_inputs(form_payload)
+    av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
-    source_updates, source_error = _collect_av_source_language(form_payload)
+    source_updates, source_error = collect_av_source_language(form_payload)
     if source_error:
         return jsonify({"error": source_error}), 400
 
@@ -417,7 +340,7 @@ def upload():
         )
         db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
 
-    steps, step_messages = _av_step_maps()
+    steps, step_messages = av_step_maps()
     store.update(
         task_id,
         display_name=display_name,
@@ -740,11 +663,11 @@ def restart(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     body = _request_payload()
-    av_inputs = _collect_av_translate_inputs(body, current_task=task)
-    av_error = _validate_av_translate_inputs(av_inputs)
+    av_inputs = collect_av_translate_inputs(body, current_task=task)
+    av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
-    source_updates, source_error = _collect_av_source_language(body, current_task=task)
+    source_updates, source_error = collect_av_source_language(body, current_task=task)
     if source_error:
         return jsonify({"error": source_error}), 400
     store.update(
@@ -782,11 +705,11 @@ def start(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     body = _request_payload()
-    av_inputs = _collect_av_translate_inputs(body, current_task=task)
-    av_error = _validate_av_translate_inputs(av_inputs)
+    av_inputs = collect_av_translate_inputs(body, current_task=task)
+    av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
-    source_updates, source_error = _collect_av_source_language(body, current_task=task)
+    source_updates, source_error = collect_av_source_language(body, current_task=task)
     if source_error:
         return jsonify({"error": source_error}), 400
     current_steps = task.get("steps") or {}
