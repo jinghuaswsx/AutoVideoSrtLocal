@@ -4,8 +4,6 @@
 """
 from __future__ import annotations
 
-import json
-
 import requests
 from flask import abort, jsonify, request, send_file
 from flask_login import current_user, login_required
@@ -25,6 +23,7 @@ from web.services.media_detail_archives import (
     DetailImagesZipGroup,
     build_detail_images_archive,
 )
+from web.services.media_detail_from_url import build_detail_images_from_url_plan
 from web.services.media_detail_mutations import (
     clear_detail_images,
     delete_detail_image,
@@ -236,32 +235,17 @@ def api_detail_images_from_url(pid: int):
         abort(404)
 
     body = request.get_json(silent=True) or {}
-    lang = (body.get("lang") or "en").strip().lower()
-    if not medias.is_valid_language(lang):
-        return jsonify({"error": f"unsupported language: {lang}"}), 400
-    clear_existing = bool(body.get("clear_existing"))
-
-    # 瑙ｆ瀽鍟嗗搧閾炬帴
-    url = (body.get("url") or "").strip()
-    if not url:
-        raw_links = p.get("localized_links_json")
-        links: dict = {}
-        if isinstance(raw_links, dict):
-            links = raw_links
-        elif isinstance(raw_links, str):
-            try:
-                parsed = json.loads(raw_links)
-                if isinstance(parsed, dict):
-                    links = parsed
-            except (json.JSONDecodeError, ValueError):
-                pass
-        url = (links.get(lang) or "").strip()
-        if not url:
-            code = (p.get("product_code") or "").strip()
-            if not code:
-                return jsonify({"error": "product_code required before inferring a default link"}), 400
-            url = (f"https://newjoyloo.com/products/{code}" if lang == "en"
-                   else f"https://newjoyloo.com/{lang}/products/{code}")
+    plan_outcome = build_detail_images_from_url_plan(
+        p or {},
+        body,
+        is_valid_language=medias.is_valid_language,
+    )
+    if plan_outcome.error:
+        return jsonify({"error": plan_outcome.error}), plan_outcome.status_code
+    plan = plan_outcome.plan
+    lang = plan.lang
+    url = plan.url
+    clear_existing = plan.clear_existing
 
     uid = current_user.id
 
