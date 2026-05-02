@@ -134,6 +134,79 @@ def test_subtitle_removal_poll_cancellable_sleep_unblocks_loop(monkeypatch):
     assert elapsed < 1.0, f"cancellable_sleep failed to wake early: {elapsed}s"
 
 
+def test_vod_upload_wait_raises_on_shutdown_without_sleep(monkeypatch):
+    from appcore import cancellation, shutdown_coordinator, vod_erase_provider
+
+    shutdown_coordinator.request_shutdown("test-vod-upload")
+    calls = []
+
+    monkeypatch.setattr(
+        vod_erase_provider,
+        "query_upload_task_info",
+        lambda job_id: calls.append(job_id) or {"State": "Running"},
+    )
+    monkeypatch.setattr(
+        vod_erase_provider.time,
+        "sleep",
+        lambda seconds: pytest.fail("wait_for_upload should use cancellable sleep"),
+    )
+
+    with pytest.raises(cancellation.OperationCancelled):
+        vod_erase_provider.wait_for_upload("job-cancel", timeout_seconds=60)
+
+    assert calls == []
+
+
+def test_vod_execution_wait_raises_on_shutdown_without_sleep(monkeypatch):
+    from appcore import cancellation, shutdown_coordinator, vod_erase_provider
+
+    shutdown_coordinator.request_shutdown("test-vod-execution")
+    calls = []
+
+    monkeypatch.setattr(
+        vod_erase_provider,
+        "get_execution",
+        lambda run_id: calls.append(run_id) or {"Status": "Running"},
+    )
+    monkeypatch.setattr(
+        vod_erase_provider.time,
+        "sleep",
+        lambda seconds: pytest.fail("wait_for_execution should use cancellable sleep"),
+    )
+
+    with pytest.raises(cancellation.OperationCancelled):
+        vod_erase_provider.wait_for_execution("run-cancel", timeout_seconds=60)
+
+    assert calls == []
+
+
+def test_subtitle_removal_vod_runtime_propagates_shutdown_cancellation(monkeypatch):
+    from appcore import cancellation, task_state
+    from appcore.events import EventBus
+    from appcore.subtitle_removal_runtime_vod import SubtitleRemovalVodRuntime
+
+    task_id = "sr-vod-cancel"
+    task_state._tasks[task_id] = {
+        "id": task_id,
+        "type": "subtitle_removal",
+        "status": "running",
+        "steps": {"submit": "pending"},
+        "step_messages": {},
+    }
+    runtime = SubtitleRemovalVodRuntime(bus=EventBus(), user_id=1)
+
+    monkeypatch.setattr(
+        runtime,
+        "_submit",
+        lambda task_id: (_ for _ in ()).throw(cancellation.OperationCancelled("signal=SIGTERM")),
+    )
+
+    with pytest.raises(cancellation.OperationCancelled):
+        runtime.start(task_id)
+
+    assert task_state._tasks[task_id]["status"] == "running"
+
+
 # ---------------------------------------------------------------------------
 # runtime_v2.PipelineRunnerV2._run
 # ---------------------------------------------------------------------------

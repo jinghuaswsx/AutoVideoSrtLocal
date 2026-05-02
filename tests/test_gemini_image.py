@@ -1022,6 +1022,35 @@ def test_poll_apimart_task_raises_on_failed_status():
             gemini_image.poll_apimart_task("task_fail", api_key="key", initial_wait=False)
 
 
+def test_poll_apimart_task_exits_immediately_when_shutdown_requested(monkeypatch):
+    from appcore import cancellation, gemini_image, shutdown_coordinator
+
+    shutdown_coordinator.request_shutdown("test-apimart")
+    calls = []
+
+    monkeypatch.setattr(
+        gemini_image.requests,
+        "get",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        gemini_image.time,
+        "sleep",
+        lambda seconds: pytest.fail("poll_apimart_task should use cancellable sleep"),
+    )
+
+    try:
+        with pytest.raises(cancellation.OperationCancelled):
+            gemini_image.poll_apimart_task(
+                "task-cancel",
+                api_key="key",
+                initial_wait=True,
+            )
+        assert calls == []
+    finally:
+        shutdown_coordinator.reset()
+
+
 def test_poll_apimart_task_rejects_empty_task_id():
     from appcore import gemini_image
     with pytest.raises(gemini_image.GeminiImageError, match="task_id"):

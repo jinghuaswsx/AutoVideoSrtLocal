@@ -7,6 +7,7 @@ from typing import Any
 
 import config
 from appcore import subtitle_removal_source_storage, task_state
+from appcore.cancellation import OperationCancelled
 from appcore.events import Event, EventBus, EVT_SR_DONE, EVT_SR_ERROR, EVT_SR_STEP_UPDATE
 from appcore.subtitle_removal_runtime import SubtitleRemovalTaskDeleted, _task_is_deleted
 from appcore.vod_erase_provider import (
@@ -69,6 +70,9 @@ class SubtitleRemovalVodRuntime:
                 self._submit(task_id)
         except SubtitleRemovalTaskDeleted:
             return
+        except OperationCancelled:
+            log.warning("[subtitle_removal_vod] cancelled task_id=%s", task_id)
+            raise
         except Exception as exc:
             log.exception("[subtitle_removal_vod] runtime submit failed task_id=%s", task_id)
             task_state.update(task_id, status="error", error=str(exc))

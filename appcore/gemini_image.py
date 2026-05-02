@@ -20,6 +20,7 @@ from PIL import Image
 import requests
 
 from appcore import ai_billing
+from appcore.cancellation import cancellable_sleep, throw_if_cancel_requested
 from appcore.llm_providers._helpers.gemini_calls import (
     genai_types,
     get_image_client,
@@ -687,10 +688,11 @@ def poll_apimart_task(
     api_base = (base_url or _resolve_apimart_base_url()).rstrip("/")
 
     if initial_wait:
-        time.sleep(_APIMART_INITIAL_WAIT)
+        cancellable_sleep(_APIMART_INITIAL_WAIT)
 
     deadline = time.monotonic() + _APIMART_POLL_TIMEOUT
     while True:
+        throw_if_cancel_requested("apimart.poll")
         try:
             poll_resp = requests.get(
                 f"{api_base}/v1/tasks/{task_id}",
@@ -740,7 +742,7 @@ def poll_apimart_task(
                 f"APIMART 任务超时（>{_APIMART_POLL_TIMEOUT}s，task_id={task_id}）"
             )
 
-        time.sleep(_APIMART_POLL_INTERVAL)
+        cancellable_sleep(_APIMART_POLL_INTERVAL)
 
 
 def _generate_via_apimart(

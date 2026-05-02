@@ -17,6 +17,7 @@ from typing import Any
 
 import config
 
+from appcore.cancellation import cancellable_sleep, throw_if_cancel_requested
 from appcore.vod_client import VodClientError, call
 
 __all__ = [
@@ -97,6 +98,7 @@ def wait_for_upload(
     deadline = time.time() + timeout_seconds
     last_state = ""
     while time.time() < deadline:
+        throw_if_cancel_requested("vod.upload")
         info = query_upload_task_info(job_id)
         state = (info.get("State") or info.get("Status") or "").strip()
         last_state = state
@@ -105,7 +107,7 @@ def wait_for_upload(
             return str(vid)
         if state.lower() in {"fail", "failed", "error"}:
             raise VodEraseError(f"UploadMediaByUrl failed: {info}")
-        time.sleep(poll_interval)
+        cancellable_sleep(poll_interval)
     raise VodEraseError(f"UploadMediaByUrl timed out after {timeout_seconds}s (last state={last_state})")
 
 
@@ -193,6 +195,7 @@ def wait_for_execution(
     start = time.time()
     deadline = start + timeout_seconds
     while time.time() < deadline:
+        throw_if_cancel_requested("vod.execution")
         result = get_execution(run_id)
         status = (result.get("Status") or "").strip().lower()
         if callable(on_progress):
@@ -206,7 +209,7 @@ def wait_for_execution(
             raise VodEraseError(f"GetExecution terminal failure: {result}")
         elapsed = time.time() - start
         interval = fast_interval if elapsed < fast_phase_seconds else slow_interval
-        time.sleep(max(1, interval))
+        cancellable_sleep(max(1, interval))
     raise VodEraseError(f"GetExecution timed out after {timeout_seconds}s (run_id={run_id})")
 
 
