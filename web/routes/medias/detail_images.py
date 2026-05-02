@@ -30,7 +30,10 @@ from web.services.media_detail_uploads import (
     validate_completed_images,
     validate_upload_files,
 )
-from web.services.media_detail_translation import build_detail_translate_task_payload
+from web.services.media_detail_translation import (
+    build_detail_translate_task_payload,
+    project_detail_translate_task_rows,
+)
 
 from . import bp
 from ._helpers import (
@@ -584,32 +587,7 @@ def api_detail_image_translate_tasks(pid: int):
         "ORDER BY created_at DESC LIMIT 50",
         (current_user.id,),
     )
-    items = []
-    for row in rows:
-        try:
-            state = json.loads(row.get("state_json") or "{}")
-        except (TypeError, ValueError, json.JSONDecodeError):
-            continue
-        ctx = state.get("medias_context") or {}
-        if state.get("preset") != "detail":
-            continue
-        if ctx.get("entry") != "medias_edit_detail":
-            continue
-        if int(ctx.get("product_id") or 0) != pid:
-            continue
-        if (ctx.get("target_lang") or "") != lang:
-            continue
-        progress = dict(state.get("progress") or {})
-        items.append({
-            "task_id": row["id"],
-            "status": state.get("status") or "queued",
-            "apply_status": ctx.get("apply_status") or "",
-            "applied_detail_image_ids": list(ctx.get("applied_detail_image_ids") or []),
-            "last_apply_error": ctx.get("last_apply_error") or "",
-            "progress": progress,
-            "detail_url": f"/image-translate/{row['id']}",
-            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
-        })
+    items = project_detail_translate_task_rows(rows, product_id=pid, target_lang=lang)
     return jsonify({"items": items})
 
 

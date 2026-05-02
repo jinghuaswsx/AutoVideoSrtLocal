@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence
+
+DETAIL_TRANSLATE_CONTEXT_ENTRY = "medias_edit_detail"
 
 
 @dataclass(frozen=True)
@@ -44,7 +48,7 @@ def build_detail_translate_task_payload(
         for idx, row in enumerate(source_rows)
     ]
     medias_context = {
-        "entry": "medias_edit_detail",
+        "entry": DETAIL_TRANSLATE_CONTEXT_ENTRY,
         "product_id": product_id,
         "source_lang": "en",
         "target_lang": target_lang,
@@ -73,3 +77,67 @@ def build_detail_translate_task_payload(
             "concurrency_mode": concurrency_mode,
         },
     )
+
+
+def project_detail_translate_task_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    product_id: int,
+    target_lang: str,
+) -> list[dict]:
+    items = []
+    normalized_target_lang = (target_lang or "").strip().lower()
+    for row in rows:
+        state = _load_state(row.get("state_json"))
+        if not isinstance(state, MappingABC):
+            continue
+        ctx = state.get("medias_context") or {}
+        if not isinstance(ctx, MappingABC):
+            continue
+        if state.get("preset") != "detail":
+            continue
+        if ctx.get("entry") != DETAIL_TRANSLATE_CONTEXT_ENTRY:
+            continue
+        if _optional_int(ctx.get("product_id")) != product_id:
+            continue
+        if str(ctx.get("target_lang") or "").strip().lower() != normalized_target_lang:
+            continue
+
+        progress = state.get("progress") or {}
+        if not isinstance(progress, MappingABC):
+            progress = {}
+        task_id = str(row["id"])
+        items.append({
+            "task_id": task_id,
+            "status": state.get("status") or "queued",
+            "apply_status": ctx.get("apply_status") or "",
+            "applied_detail_image_ids": list(ctx.get("applied_detail_image_ids") or []),
+            "last_apply_error": ctx.get("last_apply_error") or "",
+            "progress": dict(progress),
+            "detail_url": f"/image-translate/{task_id}",
+            "created_at": _isoformat_or_none(row.get("created_at")),
+        })
+    return items
+
+
+def _load_state(value: object) -> object:
+    try:
+        return json.loads(value or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _optional_int(value: object) -> int | None:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _isoformat_or_none(value: object) -> str | None:
+    if not value:
+        return None
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return isoformat()
+    return str(value)
