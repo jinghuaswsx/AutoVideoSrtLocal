@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from flask import Flask, jsonify, request
 from flask_socketio import join_room
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, validate_csrf
+from wtforms.validators import ValidationError
 
 from appcore import task_state
 from appcore import realtime_events
@@ -111,11 +112,14 @@ _COOKIE_API_CSRF_GUARDED_BLUEPRINTS = {
 }
 
 
-def _has_cookie_api_csrf_signal() -> bool:
-    if (request.headers.get("X-CSRFToken") or "").strip():
-        return True
-    if (request.headers.get("X-CSRF-Token") or "").strip():
-        return True
+def _csrf_header_token() -> str:
+    return (
+        (request.headers.get("X-CSRFToken") or "").strip()
+        or (request.headers.get("X-CSRF-Token") or "").strip()
+    )
+
+
+def _has_ajax_header() -> bool:
     return (
         (request.headers.get("X-Requested-With") or "").strip().lower()
         == "xmlhttprequest"
@@ -161,7 +165,14 @@ def _register_cookie_api_csrf_guard(app: Flask) -> None:
             return None
         if (request.blueprint or "") not in _COOKIE_API_CSRF_GUARDED_BLUEPRINTS:
             return None
-        if _has_cookie_api_csrf_signal():
+        token = _csrf_header_token()
+        if token:
+            try:
+                validate_csrf(token)
+            except ValidationError:
+                return jsonify({"error": "csrf_invalid"}), 400
+            return None
+        if _has_ajax_header():
             return None
         return jsonify({"error": "csrf_required"}), 400
 

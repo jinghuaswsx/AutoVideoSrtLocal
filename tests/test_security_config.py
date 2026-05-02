@@ -126,6 +126,44 @@ class TestInternalCookieApiCsrfGuard:
             or response.get_json().get("error") != "csrf_required"
         )
 
+    def test_cookie_json_api_rejects_invalid_csrf_header(
+        self,
+        monkeypatch,
+    ):
+        app = self._create_app(monkeypatch)
+        client = app.test_client()
+
+        response = client.post(
+            "/api/bulk-translate/estimate",
+            json={},
+            headers={"X-CSRFToken": "forged-token"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "csrf_invalid"
+
+    def test_cookie_json_api_allows_valid_csrf_header_to_reach_auth_layer(
+        self,
+        monkeypatch,
+    ):
+        from flask_wtf.csrf import generate_csrf
+
+        app = self._create_app(monkeypatch)
+        client = app.test_client()
+        with client:
+            client.get("/login")
+            token = generate_csrf()
+            response = client.post(
+                "/api/bulk-translate/estimate",
+                json={},
+                headers={"X-CSRFToken": token},
+            )
+
+        assert (
+            response.status_code != 400
+            or response.get_json().get("error") not in {"csrf_required", "csrf_invalid"}
+        )
+
     def test_openapi_blueprints_remain_outside_cookie_csrf_guard(
         self,
         monkeypatch,
