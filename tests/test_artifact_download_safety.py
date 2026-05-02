@@ -167,3 +167,20 @@ def test_resolve_preview_artifact_path_rejects_paths_outside_allowed_roots(tmp_p
     )
 
     assert resolved is None
+
+
+def test_send_file_with_range_returns_partial_response(tmp_path):
+    from flask import Flask
+    from web.services import artifact_download
+
+    artifact = tmp_path / "clip.mp4"
+    artifact.write_bytes(b"0123456789")
+
+    app = Flask(__name__)
+    with app.test_request_context(headers={"Range": "bytes=2-5"}):
+        response = artifact_download.send_file_with_range(str(artifact))
+
+    assert response.status_code == 206
+    assert response.get_data() == b"2345"
+    assert response.headers["Content-Range"] == "bytes 2-5/10"
+    assert response.headers["Accept-Ranges"] == "bytes"

@@ -9,9 +9,7 @@ import subprocess
 import uuid
 from datetime import datetime, timezone
 
-import mimetypes
-
-from flask import Blueprint, request, jsonify, send_file, render_template, abort, redirect, Response, make_response
+from flask import Blueprint, request, jsonify, render_template, abort, redirect, make_response
 from flask_login import login_required, current_user
 
 from appcore import ai_billing
@@ -50,6 +48,7 @@ from web.services import pipeline_runner
 from web.services.artifact_download import (
     resolve_preview_artifact_path,
     safe_task_dir_path,
+    send_file_with_range,
     serve_artifact_download,
 )
 from web.services.task_av_inputs import (
@@ -506,46 +505,7 @@ def get_artifact(task_id, name):
     if not path:
         return jsonify({"error": "Artifact not found"}), 404
 
-    return _send_with_range(path)
-
-
-def _send_with_range(path: str):
-    """Serve a file with HTTP Range support for audio/video streaming."""
-    mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
-    file_size = os.path.getsize(path)
-    range_header = request.headers.get("Range")
-
-    if not range_header:
-        start, end = 0, file_size - 1
-        status = 200
-    else:
-        try:
-            ranges = range_header.replace("bytes=", "").split("-")
-            start = int(ranges[0]) if ranges[0] else 0
-            end = int(ranges[1]) if ranges[1] else file_size - 1
-        except (ValueError, IndexError):
-            start, end = 0, file_size - 1
-        start = max(0, start)
-        end = min(end, file_size - 1)
-        if start > end:
-            start, end = 0, file_size - 1
-            status = 200
-        else:
-            status = 206
-
-    length = end - start + 1
-
-    with open(path, "rb") as f:
-        f.seek(start)
-        data = f.read(length)
-
-    resp = Response(data, status=status, mimetype=mime, direct_passthrough=True)
-    if status == 206:
-        resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-    resp.headers["Accept-Ranges"] = "bytes"
-    resp.headers["Content-Length"] = length
-    resp.headers["Cache-Control"] = "no-cache"
-    return resp
+    return send_file_with_range(path)
 
 
 _ALLOWED_ROUND_KINDS = {
