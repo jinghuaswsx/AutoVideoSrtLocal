@@ -27,14 +27,17 @@ from web.services.media_detail_archives import (
     DetailImagesZipGroup,
     build_detail_images_archive,
 )
+from web.services.media_detail_uploads import (
+    optional_int,
+    validate_completed_images,
+    validate_upload_files,
+)
 
 from . import bp
 from ._helpers import (
-    _ALLOWED_IMAGE_TYPES,
     _DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES,
     _DETAIL_IMAGE_KIND_LABELS,
     _DETAIL_IMAGE_LIMITS,
-    _MAX_IMAGE_BYTES,
     _default_image_translate_model_id,
     _detail_image_empty_counts,
     _detail_image_existing_counts,
@@ -378,35 +381,10 @@ def api_detail_images_bootstrap(pid: int):
     if err:
         return jsonify({"error": err}), 400
 
-    files = body.get("files") or []
-    if not isinstance(files, list) or not files:
-        return jsonify({"error": "files required"}), 400
-
-    validated_files: list[dict] = []
-    for idx, f in enumerate(files):
-        if not isinstance(f, dict):
-            return jsonify({"error": f"files[{idx}] must be an object"}), 400
-        raw_name = (f.get("filename") or "").strip()
-        if not raw_name:
-            return jsonify({"error": f"files[{idx}].filename required"}), 400
-        filename = os.path.basename(raw_name)
-        if not filename:
-            return jsonify({"error": f"files[{idx}].filename is invalid"}), 400
-        ct = (f.get("content_type") or "").strip().lower()
-        if ct not in _ALLOWED_IMAGE_TYPES:
-            return jsonify({"error": f"files[{idx}] unsupported image content_type: {ct}"}), 400
-        try:
-            size = int(f.get("size") or 0)
-        except (TypeError, ValueError):
-            size = 0
-        if size and size > _MAX_IMAGE_BYTES:
-            return jsonify({"error": f"files[{idx}] exceeds 15MB"}), 400
-
-        validated_files.append({
-            "filename": filename,
-            "content_type": ct,
-            "size": size,
-        })
+    validation = validate_upload_files(body.get("files") or [])
+    if validation.error:
+        return jsonify({"error": validation.error}), 400
+    validated_files = validation.items
 
     limit_error = _detail_image_limit_error(pid, lang, validated_files)
     if limit_error:
@@ -441,23 +419,13 @@ def api_detail_images_complete(pid: int):
     if err:
         return jsonify({"error": err}), 400
 
-    images = body.get("images") or []
-    if not isinstance(images, list) or not images:
-        return jsonify({"error": "images required"}), 400
-
-    validated_images: list[dict] = []
-    for idx, img in enumerate(images):
-        if not isinstance(img, dict):
-            return jsonify({"error": f"images[{idx}] must be an object"}), 400
-        object_key = (img.get("object_key") or "").strip()
-        if not object_key:
-            return jsonify({"error": f"images[{idx}].object_key required"}), 400
-        if not _is_media_available(object_key):
-            return jsonify({"error": f"images[{idx}] object missing: {object_key}"}), 400
-        normalized = dict(img)
-        normalized["object_key"] = object_key
-        normalized["content_type"] = (img.get("content_type") or "").strip().lower()
-        validated_images.append(normalized)
+    validation = validate_completed_images(
+        body.get("images") or [],
+        is_media_available=_is_media_available,
+    )
+    if validation.error:
+        return jsonify({"error": validation.error}), 400
+    validated_images = validation.items
 
     limit_error = _detail_image_limit_error(pid, lang, validated_images)
     if limit_error:
@@ -465,19 +433,12 @@ def api_detail_images_complete(pid: int):
 
     created: list[dict] = []
     for img in validated_images:
-
-        def _opt_int(v):
-            try:
-                return int(v) if v is not None else None
-            except (TypeError, ValueError):
-                return None
-
         new_id = medias.add_detail_image(
             pid, lang, img["object_key"],
             content_type=img.get("content_type") or None,
-            file_size=_opt_int(img.get("file_size") or img.get("size")),
-            width=_opt_int(img.get("width")),
-            height=_opt_int(img.get("height")),
+            file_size=optional_int(img.get("file_size") or img.get("size")),
+            width=optional_int(img.get("width")),
+            height=optional_int(img.get("height")),
             origin_type="manual",
         )
         row = medias.get_detail_image(new_id)
