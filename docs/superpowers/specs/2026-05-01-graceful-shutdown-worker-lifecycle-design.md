@@ -75,7 +75,7 @@
 |---|------|------|-------------|
 | 1 | **信号链路断开** | Gunicorn 拦了 SIGTERM 但只用来停 HTTP 接受；spawned 后台线程没人通知。 | 在 Gunicorn `post_worker_init` hook 里 chain SIGTERM/SIGINT，触发进程级 cancel 事件。 |
 | 2 | **任务没有可中断点** | `runtime.py` / `image_translate_runner.py` 等长循环里没有"如果 cancel 就早退"的检查。 | 引入 `appcore/shutdown_coordinator.py` + 每个 runner 在循环顶部检查 `is_shutdown_requested()`。 |
-| 3 | **APScheduler 不退出** | scheduler 是 non-daemon thread，停机时没调用 `scheduler.shutdown()`。 | `worker_exit` / `atexit` 调 `scheduler.shutdown(wait=False)`。 |
+| 3 | **APScheduler 不退出** | scheduler 是 non-daemon thread，停机时没调用 `scheduler.shutdown()`。 | SIGTERM/SIGINT signal handler、`worker_exit` / `atexit` 调 `scheduler.shutdown(wait=False)`。 |
 | 4 | **non-daemon spawned thread 阻塞 process exit** | `start_tracked_thread(daemon=False)` 让进程必须等线程结束。 | 任务收到 cancel → 抛 `OperationCancelled` → 在 finally 里 `unregister_active_task` → 线程自然退出。worker_exit 兜底再做一次活跃集合扫描，超时则记 warning（不强杀）。 |
 
 阶段 1 落地后，"重启 = 通知线程取消 → 标 interrupted → 进程退出"这个完整链路成立，常规情况下进程 30~60s 退出，最差也只剩"当前正在执行的单步硬等结束"——比如某个 ffmpeg subprocess 在跑，那就等它跑完。
@@ -189,17 +189,20 @@ def post_worker_init(worker):
     """Worker fork 完成后挂钩。"""
     import signal
     from appcore.shutdown_coordinator import request_shutdown
+    from appcore.scheduler import shutdown_scheduler
 
     original_term = signal.getsignal(signal.SIGTERM)
     original_int = signal.getsignal(signal.SIGINT)
 
     def _term(signum, frame):
         request_shutdown(f"signal={signum}")
+        shutdown_scheduler(wait=False)
         if callable(original_term):
             original_term(signum, frame)
 
     def _int(signum, frame):
         request_shutdown(f"signal={signum}")
+        shutdown_scheduler(wait=False)
         if callable(original_int):
             original_int(signum, frame)
 
@@ -248,7 +251,7 @@ def shutdown_scheduler(wait: bool = False) -> None:
         _scheduler = None
 ```
 
-`worker_exit` 已经调它（见 6.2.2）；另外 `atexit.register` 兜底。
+`post_worker_init` signal handler 和 `worker_exit` 已经调它（见 6.2.2）；另外 `atexit.register` 兜底。
 
 **风险**：scheduler 内部 worker thread 挂在某个 IO 调用上，`shutdown(wait=False)` 不等它——这是预期行为，让 OS 在进程退出时清理（daemon thread 配合）。
 

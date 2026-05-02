@@ -1,6 +1,7 @@
 import io
 import importlib.util
 import json
+import signal
 from pathlib import Path
 
 import pytest
@@ -454,6 +455,48 @@ def test_gunicorn_service_uses_threaded_config():
     assert "TimeoutStopSec=300" in service
     assert "simple-websocket" in requirements
     assert "\neventlet" not in requirements
+
+
+def test_gunicorn_signal_handler_stops_scheduler_before_delegating(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    config_path = root / "deploy" / "gunicorn.conf.py"
+    spec = importlib.util.spec_from_file_location("autovideosrt_gunicorn_conf_signal_test", config_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    events = []
+    monkeypatch.setattr(
+        "appcore.shutdown_coordinator.request_shutdown",
+        lambda reason: events.append(("shutdown", reason)),
+    )
+    monkeypatch.setattr(
+        "appcore.scheduler.shutdown_scheduler",
+        lambda wait=False: events.append(("scheduler", wait)),
+    )
+
+    previous_term = signal.getsignal(signal.SIGTERM)
+    previous_int = signal.getsignal(signal.SIGINT)
+
+    def original_term(signum, frame):
+        events.append(("original", signum))
+
+    try:
+        signal.signal(signal.SIGTERM, original_term)
+        module.post_worker_init(None)
+
+        handler = signal.getsignal(signal.SIGTERM)
+        assert callable(handler)
+        handler(signal.SIGTERM, None)
+    finally:
+        signal.signal(signal.SIGTERM, previous_term)
+        signal.signal(signal.SIGINT, previous_int)
+
+    assert events == [
+        ("shutdown", f"signal={signal.SIGTERM}"),
+        ("scheduler", False),
+        ("original", signal.SIGTERM),
+    ]
 
 
 def test_gunicorn_worker_exit_logs_active_task_details(monkeypatch):

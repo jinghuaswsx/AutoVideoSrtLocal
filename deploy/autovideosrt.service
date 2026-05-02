@@ -17,9 +17,10 @@ ExecStart=/opt/autovideosrt/venv/bin/gunicorn --config /opt/autovideosrt/deploy/
 Restart=always
 RestartSec=5
 # Cooperative shutdown is wired in deploy/gunicorn.conf.py:
-# post_worker_init chains SIGTERM into the process shutdown coordinator,
-# tracked tasks honour the cancellation points, worker_exit waits up to
-# 200s for them to drain. 300s here = 240s gunicorn graceful_timeout +
+# post_worker_init chains SIGTERM into the process shutdown coordinator
+# and stops APScheduler before Gunicorn drains. Tracked tasks honour the
+# cancellation points; worker_exit waits up to 200s for them to drain.
+# 300s here = 240s gunicorn graceful_timeout +
 # 60s systemd buffer; if a single ffmpeg/curl call genuinely refuses to
 # return inside that window we accept SIGKILL (better fast restart than
 # silent 15-minute wait).

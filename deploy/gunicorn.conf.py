@@ -8,10 +8,10 @@ shared message queue, which this deployment does not yet provide.
 Graceful-shutdown plumbing (see
 docs/superpowers/specs/2026-05-01-graceful-shutdown-worker-lifecycle-design.md):
 - post_worker_init chains a SIGTERM / SIGINT handler that flips the
-  process-level shutdown coordinator before deferring to Gunicorn's
-  own handler.
+  process-level shutdown coordinator and stops APScheduler before
+  deferring to Gunicorn's own handler.
 - worker_exit snapshots active tasks, triggers the coordinator one more
-  time, shuts down APScheduler, and waits up to 200s for in-flight
+  time, stops APScheduler as a fallback, and waits up to 200s for in-flight
   tracked threads to honour the cooperative cancellation points and
   unregister.
 - graceful_timeout shrunk from 900s to 240s now that the signal chain
@@ -67,30 +67,36 @@ def _snapshot_shutdown_active_tasks(worker) -> None:
         worker.log.warning("active task shutdown snapshot failed: %s", exc)
 
 
+def _request_shutdown_and_stop_scheduler(reason: str, context: str) -> None:
+    try:
+        from appcore.shutdown_coordinator import request_shutdown
+
+        request_shutdown(reason)
+    except Exception:  # pragma: no cover
+        _log.exception("%s: request_shutdown failed", context)
+    try:
+        from appcore.scheduler import shutdown_scheduler
+
+        shutdown_scheduler(wait=False)
+    except Exception:  # pragma: no cover
+        _log.exception("%s: shutdown_scheduler failed", context)
+
+
 def post_worker_init(worker):
     """Chain SIGTERM / SIGINT into the shutdown coordinator.
 
     Gunicorn already installs handlers for these signals (set
     worker.alive = False and stop accepting new connections). We want
     both: flip the shutdown coordinator first so all in-process
-    tracked threads can react via throw_if_cancel_requested, then
-    defer to the original handler so Gunicorn does its own
-    bookkeeping.
+    tracked threads can react via throw_if_cancel_requested, stop
+    APScheduler so no new scheduled work starts during drain, then
+    defer to the original handler so Gunicorn does its own bookkeeping.
     """
-    try:
-        from appcore.shutdown_coordinator import request_shutdown
-    except Exception:  # pragma: no cover -- defensive against import races
-        _log.exception("post_worker_init: failed to import shutdown_coordinator")
-        return
-
     original_term = signal.getsignal(signal.SIGTERM)
     original_int = signal.getsignal(signal.SIGINT)
 
     def _term(signum, frame):
-        try:
-            request_shutdown(f"signal={signum}")
-        except Exception:  # pragma: no cover
-            _log.exception("post_worker_init: request_shutdown(SIGTERM) failed")
+        _request_shutdown_and_stop_scheduler(f"signal={signum}", "post_worker_init: SIGTERM")
         if callable(original_term):
             try:
                 original_term(signum, frame)
@@ -98,10 +104,7 @@ def post_worker_init(worker):
                 _log.exception("post_worker_init: original SIGTERM handler raised")
 
     def _int(signum, frame):
-        try:
-            request_shutdown(f"signal={signum}")
-        except Exception:  # pragma: no cover
-            _log.exception("post_worker_init: request_shutdown(SIGINT) failed")
+        _request_shutdown_and_stop_scheduler(f"signal={signum}", "post_worker_init: SIGINT")
         if callable(original_int):
             try:
                 original_int(signum, frame)
