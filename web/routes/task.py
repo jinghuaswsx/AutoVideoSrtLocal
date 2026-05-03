@@ -6,7 +6,6 @@
 """
 import os
 import uuid
-from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify, render_template, abort, redirect, make_response
 from flask_login import login_required, current_user
@@ -23,7 +22,6 @@ from appcore.av_translate_inputs import (
 )
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import cleanup
 from appcore.task_recovery import recover_task_if_needed
 from pipeline import tts
 from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
@@ -56,7 +54,7 @@ from web.services.task_access import get_user_task, is_admin_user, load_task, op
 from web.services.task_alignment import confirm_task_alignment
 from web.services.task_analysis import start_task_analysis
 from web.services.task_capcut import deploy_task_capcut_project
-from web.services.task_deletion import cleanup_deleted_task_storage
+from web.services.task_deletion import delete_task_workflow
 from web.services.task_rename import rename_task_display_name
 from web.services.task_responses import task_not_found_response
 from web.services.task_resume import resume_task_from_step
@@ -705,26 +703,15 @@ def rename_task(task_id):
 @login_required
 def delete_task(task_id):
     """软删除任务（设置 deleted_at）"""
-    row = db_query_one(
-        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    outcome = delete_task_workflow(
+        task_id,
+        user_id=current_user.id,
+        query_one=db_query_one,
+        execute=db_execute,
     )
-    if not row:
+    if outcome.not_found:
         return task_not_found_response()
-
-    cleanup_deleted_task_storage(
-        refresh_task(task_id, {}),
-        row,
-        collect_task_tos_keys=cleanup.collect_task_tos_keys,
-        delete_task_storage=cleanup.delete_task_storage,
-    )
-
-    db_execute(
-        "UPDATE projects SET deleted_at=%s WHERE id=%s",
-        (datetime.now(timezone.utc), task_id),
-    )
-    store.update(task_id, status="deleted")
-    return jsonify({"status": "ok"})
+    return jsonify(outcome.payload), outcome.status_code
 
 
 RESUMABLE_STEPS = list(AV_SYNC_STEPS)

@@ -235,6 +235,11 @@ def test_task_delete_storage_cleanup_lives_outside_route_module():
 
     assert direct_cleanup_calls == []
     assert "cleanup_payload" not in route_source
+    assert "SELECT id, task_dir, state_json FROM projects" not in route_source
+    assert "UPDATE projects SET deleted_at=%s WHERE id=%s" not in route_source
+    assert "cleanup_deleted_task_storage" not in route_source
+    assert "store.update" not in route_source
+    assert "delete_task_workflow" in route_source
     assert Path("web/services/task_deletion.py").exists()
 
 

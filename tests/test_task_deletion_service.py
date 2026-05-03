@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from web.services.task_deletion import cleanup_deleted_task_storage
+from datetime import datetime, timezone
+
+from web.services.task_deletion import cleanup_deleted_task_storage, delete_task_workflow
 
 
 def test_cleanup_deleted_task_storage_merges_db_row_and_collects_tos_keys():
@@ -57,3 +59,45 @@ def test_cleanup_deleted_task_storage_swallows_storage_delete_errors():
 
     assert calls == [payload]
     assert payload["tos_keys"] == ["uploads/1/task/source.mp4"]
+
+
+def test_delete_task_workflow_cleans_storage_soft_deletes_project_and_marks_store():
+    calls = []
+    now = datetime(2026, 5, 3, tzinfo=timezone.utc)
+
+    outcome = delete_task_workflow(
+        "task-1",
+        user_id=7,
+        query_one=lambda sql, args: {"id": "task-1", "task_dir": "db-dir", "state_json": "{}"},
+        execute=lambda sql, args: calls.append(("execute", sql, args)),
+        load_task=lambda task_id, fallback: {"id": task_id, "task_dir": "store-dir"},
+        collect_task_tos_keys=lambda payload: ["uploads/1/task/source.mp4"],
+        delete_task_storage=lambda payload: calls.append(("delete_storage", payload)),
+        update_task=lambda *args, **kwargs: calls.append(("update_task", args, kwargs)),
+        now_factory=lambda: now,
+    )
+
+    assert outcome.not_found is False
+    assert outcome.payload == {"status": "ok"}
+    assert calls[0][0] == "delete_storage"
+    assert calls[0][1]["task_dir"] == "db-dir"
+    assert calls[0][1]["tos_keys"] == ["uploads/1/task/source.mp4"]
+    assert calls[1] == ("execute", "UPDATE projects SET deleted_at=%s WHERE id=%s", (now, "task-1"))
+    assert calls[2] == ("update_task", ("task-1",), {"status": "deleted"})
+
+
+def test_delete_task_workflow_returns_not_found_without_writes():
+    calls = []
+
+    outcome = delete_task_workflow(
+        "missing",
+        user_id=7,
+        query_one=lambda sql, args: None,
+        execute=lambda *args: calls.append(args),
+        delete_task_storage=lambda payload: calls.append(payload),
+        update_task=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    assert outcome.not_found is True
+    assert outcome.status_code == 404
+    assert calls == []
