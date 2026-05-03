@@ -359,6 +359,29 @@ def test_task_start_translate_workflow_lives_outside_route_module():
     assert Path("web/services/task_translate.py").exists()
 
 
+def test_task_retranslate_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "retranslate"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "generate_localized_translation" not in route_source
+    assert "get_model_display_name" not in route_source
+    assert "build_source_full_text_zh" not in route_source
+    assert "ai_billing.log_request" not in route_source
+    assert "_llm_request_payload" not in route_source
+    assert "_llm_response_payload" not in route_source
+    assert "resolve_translate_billing_provider" not in route_source
+    assert "translation_history" not in route_source
+    assert "store.update" not in route_source
+    assert "retranslate_task" in route_source
+    assert Path("web/services/task_retranslate.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 

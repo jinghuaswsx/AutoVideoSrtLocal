@@ -101,7 +101,7 @@ def test_retranslate_logs_ai_billing_on_success(authed_client_no_db, monkeypatch
     monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "google/gemini-2.5-flash")
 
     billing_calls = []
-    monkeypatch.setattr("web.routes.task.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
+    monkeypatch.setattr("web.services.task_retranslate.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
 
     resp = authed_client_no_db.post(
         "/api/tasks/task-retranslate-billing/retranslate",
@@ -151,7 +151,7 @@ def test_retranslate_accepts_openrouter_gpt_5_mini(authed_client_no_db, monkeypa
     monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "openai/gpt-5-mini")
 
     billing_calls = []
-    monkeypatch.setattr("web.routes.task.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
+    monkeypatch.setattr("web.services.task_retranslate.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
 
     resp = authed_client_no_db.post(
         "/api/tasks/task-retranslate-gpt5-mini/retranslate",
@@ -192,7 +192,7 @@ def test_retranslate_accepts_openrouter_gpt_5_5(authed_client_no_db, monkeypatch
     monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "openai/gpt-5.5")
 
     billing_calls = []
-    monkeypatch.setattr("web.routes.task.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
+    monkeypatch.setattr("web.services.task_retranslate.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
 
     resp = authed_client_no_db.post(
         "/api/tasks/task-retranslate-gpt5-5/retranslate",
@@ -222,7 +222,7 @@ def test_retranslate_logs_ai_billing_on_failure(authed_client_no_db, monkeypatch
     monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "doubao-seed-1.6")
 
     billing_calls = []
-    monkeypatch.setattr("web.routes.task.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
+    monkeypatch.setattr("web.services.task_retranslate.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
 
     resp = authed_client_no_db.post(
         "/api/tasks/task-retranslate-failure/retranslate",

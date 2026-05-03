@@ -11,13 +11,9 @@ from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, render_template, abort, redirect, make_response
 from flask_login import login_required, current_user
 
-from appcore import ai_billing
 from appcore.runtime import (
-    _VALID_TRANSLATE_PREFS,
     _build_av_localized_translation,
     _build_av_tts_segments,
-    _llm_request_payload,
-    _llm_response_payload,
 )
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_CODES,
@@ -63,11 +59,10 @@ from web.services.task_access import get_user_task, is_admin_user, load_task, op
 from web.services.task_analysis import start_task_analysis
 from web.services.task_capcut import deploy_task_capcut_project
 from web.services.task_deletion import cleanup_deleted_task_storage
-from web.services.task_llm import resolve_translate_billing_provider
-from web.services.task_prompts import resolve_task_prompt_text
 from web.services.task_rename import rename_task_display_name
 from web.services.task_responses import task_not_found_response
 from web.services.task_resume import resume_task_from_step
+from web.services.task_retranslate import retranslate_task
 from web.services.task_start import start_task_pipeline
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
@@ -460,101 +455,14 @@ def retranslate(task_id):
     if not task:
         return task_not_found_response()
 
-    step_status = (task.get("steps") or {}).get("translate")
-    if step_status not in ("done", "error"):
-        return jsonify({"error": "翻译步骤尚未完成，无法重新翻译"}), 400
-
     body = json_payload_from(request)
-    prompt_id = body.get("prompt_id")
-    prompt_text = resolve_task_prompt_text(
-        (body.get("prompt_text") or "").strip(),
-        prompt_id,
-        user_id=current_user.id,
+    outcome = retranslate_task(
+        task_id,
+        task,
+        body,
+        user_id=optional_user_id(current_user),
     )
-    model_provider = body.get("model_provider", "").strip()
-
-    if not prompt_text:
-        return jsonify({"error": "需要提供 prompt_text 或有效的 prompt_id"}), 400
-
-    # Resolve provider: explicit param > user pref > default
-    if model_provider not in _VALID_TRANSLATE_PREFS:
-        from appcore.api_keys import get_key
-        model_provider = get_key(current_user.id, "translate_pref") or "openrouter"
-
-    from pipeline.translate import generate_localized_translation, get_model_display_name
-    from pipeline.localization import build_source_full_text_zh
-
-    script_segments = task.get("script_segments") or []
-    source_full_text_zh = build_source_full_text_zh(script_segments)
-    billing_provider = resolve_translate_billing_provider(model_provider)
-    resolved_model = get_model_display_name(model_provider, current_user.id)
-
-    try:
-        result = generate_localized_translation(
-            source_full_text_zh, script_segments, variant="normal",
-            custom_system_prompt=prompt_text,
-            provider=model_provider, user_id=current_user.id,
-            use_case="video_translate.localize",
-            project_id=task_id,
-        )
-        usage = result.get("_usage") or {}
-        ai_billing.log_request(
-            use_case_code="video_translate.localize",
-            user_id=current_user.id,
-            project_id=task_id,
-            provider=billing_provider,
-            model=resolved_model,
-            input_tokens=usage.get("input_tokens"),
-            output_tokens=usage.get("output_tokens"),
-            units_type="tokens",
-            response_cost_cny=usage.get("cost_cny"),
-            success=True,
-            extra={"source": "task.retranslate"},
-            request_payload=_llm_request_payload(
-                result, model_provider, "video_translate.localize"
-            ),
-            response_payload=_llm_response_payload(result),
-        )
-    except Exception as exc:
-        ai_billing.log_request(
-            use_case_code="video_translate.localize",
-            user_id=current_user.id,
-            project_id=task_id,
-            provider=billing_provider,
-            model=resolved_model,
-            units_type="tokens",
-            success=False,
-            extra={"source": "task.retranslate", "error": str(exc)[:500]},
-            request_payload={
-                "type": "chat",
-                "use_case_code": "video_translate.localize",
-                "provider": model_provider,
-                "source_full_text": source_full_text_zh,
-                "script_segments": script_segments,
-                "custom_system_prompt": prompt_text,
-            },
-            response_payload={"error": str(exc)[:500]},
-        )
-        return jsonify({"error": f"翻译失败: {exc}"}), 500
-
-    # Store as additional translation attempt
-    translation_history = task.get("translation_history") or []
-    translation_history.append({
-        "prompt_text": prompt_text,
-        "prompt_id": prompt_id,
-        "model_provider": model_provider,
-        "result": result,
-    })
-    if len(translation_history) > 3:
-        translation_history = translation_history[-3:]
-
-    store.update(task_id, translation_history=translation_history)
-
-    return jsonify({
-        "translation": result,
-        "history_index": len(translation_history) - 1,
-        "translation_history": translation_history,
-    })
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/select-translation", methods=["PUT"])
