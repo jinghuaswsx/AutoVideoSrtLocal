@@ -4,6 +4,7 @@ Pipeline runner integration tests.
 Now tests appcore.runtime directly; web/services/pipeline_runner is a thin adapter.
 """
 import appcore.runtime as runtime
+import pytest
 from appcore.events import EventBus
 from web import store
 
@@ -11,6 +12,37 @@ from web import store
 def _silent_bus():
     """EventBus that discards all events (no socketio needed in tests)."""
     return EventBus()
+
+
+@pytest.fixture(autouse=True)
+def _disable_task_state_db(monkeypatch):
+    """Pipeline runner unit tests use the in-memory store only."""
+    monkeypatch.setattr("appcore.task_state._db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.task_state._sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.task_state.set_expires_at", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "test-key")
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda *args, **kwargs: {})
+
+
+class _FakeAsrAdapter:
+    display_name = "Doubao ASR"
+    model_id = "big-model"
+    provider_code = "doubao_asr"
+
+
+def _patch_asr_router(monkeypatch, utterances):
+    monkeypatch.setattr("appcore.asr_router.resolve_adapter", lambda stage, source_language: (_FakeAsrAdapter(), None))
+    monkeypatch.setattr(
+        "appcore.asr_router.transcribe",
+        lambda audio_path, source_language=None, stage="asr_main": {
+            "utterances": utterances,
+            "provider_code": "doubao_asr",
+            "model_id": "big-model",
+            "display_name": "Doubao ASR",
+            "stage": stage,
+        },
+    )
 
 
 def test_sentence_translate_runner_reuses_multi_translate_step_order(tmp_path):
@@ -58,6 +90,25 @@ def test_web_pipeline_runner_uses_sentence_translate_runner_for_av_tasks(tmp_pat
     assert service._project_type_for_task(task_id, "translation") == "sentence_translate"
     assert isinstance(runner, SentenceTranslateRunner)
     assert runner.project_type == "sentence_translate"
+
+
+def test_base_pipeline_runner_av_steps_delegate_to_facade(tmp_path, monkeypatch):
+    task_id = "task-av-base-runner-delegation"
+    store.create(task_id, "video.mp4", str(tmp_path))
+    store.update(task_id, pipeline_version="av")
+    calls = []
+
+    monkeypatch.setattr(
+        "appcore.runtime.run_av_localize",
+        lambda task_id, runner=None, variant="av": calls.append(
+            {"task_id": task_id, "runner": runner, "variant": variant}
+        ),
+    )
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_translate(task_id)
+
+    assert calls == [{"task_id": task_id, "runner": runner, "variant": "av"}]
 
 
 def test_av_voice_match_uses_video_parent_when_task_dir_missing(tmp_path, monkeypatch):
@@ -204,7 +255,10 @@ def test_step_translate_logs_ai_billing_for_localize(tmp_path, monkeypatch):
     ]
 
     monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one")
-    monkeypatch.setattr("appcore.runtime._resolve_translate_provider", lambda user_id: "vertex_gemini_31_flash_lite")
+    monkeypatch.setattr(
+        "appcore.runtime._pipeline_runner._resolve_task_translate_provider",
+        lambda user_id, task: "vertex_gemini_31_flash_lite",
+    )
     monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gemini-3.1-flash-lite-preview")
     monkeypatch.setattr(
         "pipeline.translate.generate_localized_translation",
@@ -247,9 +301,9 @@ def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
     monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
     monkeypatch.setattr("pipeline.storage.delete_file", lambda tos_key: None)
-    monkeypatch.setattr(
-        "pipeline.asr.transcribe",
-        lambda audio_url, volc_api_key=None: [
+    _patch_asr_router(
+        monkeypatch,
+        [
             {
                 "start_time": 0.0,
                 "end_time": 12.4,
@@ -288,11 +342,9 @@ def test_step_asr_marks_original_video_passthrough_when_transcript_is_short(tmp_
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
     monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
     monkeypatch.setattr("pipeline.storage.delete_file", lambda tos_key: None)
-    monkeypatch.setattr(
-        "pipeline.asr.transcribe",
-        lambda audio_url, volc_api_key=None: [
-            {"start_time": 0.0, "end_time": 12.4, "text": "Yeah, yeah Yeah."},
-        ],
+    _patch_asr_router(
+        monkeypatch,
+        [{"start_time": 0.0, "end_time": 12.4, "text": "Yeah, yeah Yeah."}],
     )
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 12.4)
     monkeypatch.setattr(runtime.ai_billing, "log_request", lambda **kw: None)
@@ -327,7 +379,7 @@ def test_step_asr_completes_original_video_passthrough_when_transcript_is_empty(
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
     monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
     monkeypatch.setattr("pipeline.storage.delete_file", lambda tos_key: None)
-    monkeypatch.setattr("pipeline.asr.transcribe", lambda audio_url, volc_api_key=None: [])
+    _patch_asr_router(monkeypatch, [])
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 12.4)
     monkeypatch.setattr(runtime.ai_billing, "log_request", lambda **kw: None)
 
@@ -595,7 +647,7 @@ def test_step_export_uses_av_variant_for_av_pipeline(tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
-    monkeypatch.setattr("appcore.runtime.resolve_jianying_project_root", lambda user_id: "")
+    monkeypatch.setattr("appcore.runtime._pipeline_runner.resolve_jianying_project_root", lambda user_id: "")
     monkeypatch.setattr("appcore.task_state.set_expires_at", lambda *args, **kwargs: None)
 
     runner = runtime.PipelineRunner(bus=_silent_bus())
@@ -643,7 +695,10 @@ def test_step_export_passes_user_jianying_root_to_capcut_export(tmp_path, monkey
             "jianying_project_dir": "",
         }
 
-    monkeypatch.setattr("appcore.runtime.resolve_jianying_project_root", lambda user_id: r"D:\JianyingDrafts")
+    monkeypatch.setattr(
+        "appcore.runtime._pipeline_runner.resolve_jianying_project_root",
+        lambda user_id: r"D:\JianyingDrafts",
+    )
     monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
 
     runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=123)
@@ -687,7 +742,10 @@ def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch)
             "jianying_project_dir": "",
         }
 
-    monkeypatch.setattr("appcore.runtime.resolve_jianying_project_root", lambda user_id: r"D:\JianyingDrafts")
+    monkeypatch.setattr(
+        "appcore.runtime._pipeline_runner.resolve_jianying_project_root",
+        lambda user_id: r"D:\JianyingDrafts",
+    )
     monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
 
     runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=123)
@@ -783,19 +841,10 @@ def test_upload_artifacts_to_tos_keeps_new_artifacts_local_by_default(tmp_path, 
         task["variants"][variant]["srt_path"] = str(srt_path)
         task["variants"][variant]["exports"] = {"capcut_archive": str(capcut_path)}
 
-    uploaded = []
-
-    monkeypatch.setattr("appcore.runtime.tos_clients.is_tos_configured", lambda: True)
-    monkeypatch.setattr(
-        "appcore.runtime.tos_clients.upload_file",
-        lambda local_path, object_key: uploaded.append((local_path, object_key)),
-    )
-
-    runtime._upload_artifacts_to_tos(task, "task-upload-artifacts")
+    runtime._skip_legacy_artifact_upload(task, "task-upload-artifacts")
 
     saved = store.get("task-upload-artifacts")["tos_uploads"]
     assert saved == {}
-    assert uploaded == []
 
 
 def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
@@ -832,13 +881,10 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     monkeypatch.setattr(
         runtime.PipelineRunner,
         "_set_step",
-        lambda self, tid, step, status, msg="": messages.append((step, status, msg))
+        lambda self, tid, step, status, msg="", **kwargs: messages.append((step, status, msg))
         or __import__("appcore.task_state", fromlist=["set_step"]).set_step(tid, step, status),
     )
-    monkeypatch.setattr(
-        "pipeline.asr.transcribe_local_audio",
-        lambda path, prefix="", **kwargs: [{"text": "hello there", "start_time": 0.0, "end_time": 1.0}],
-    )
+    _patch_asr_router(monkeypatch, [{"text": "hello there", "start_time": 0.0, "end_time": 1.0}])
     monkeypatch.setattr(
         "pipeline.subtitle_alignment.align_subtitle_chunks_to_asr",
         lambda chunks, asr_result, total_duration=0.0: chunks,

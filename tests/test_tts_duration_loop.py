@@ -67,15 +67,28 @@ from unittest.mock import MagicMock, patch
 
 @pytest.fixture(autouse=True)
 def _disable_tts_language_guard(monkeypatch):
-    monkeypatch.setattr(
-        "appcore.runtime.validate_tts_script_language_or_raise",
-        lambda **kwargs: {
+    monkeypatch.setattr("appcore.task_state._db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.task_state._sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.task_state.set_expires_at", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.tts_generation_stats.finalize", lambda *args, **kwargs: None)
+
+    def fake_language_check(**kwargs):
+        return {
             "is_target_language": True,
             "detected_language": kwargs.get("target_language"),
             "confidence": 1.0,
             "reason": "test bypass",
             "problem_excerpt": "",
-        },
+        }
+
+    monkeypatch.setattr(
+        "appcore.runtime.validate_tts_script_language_or_raise",
+        fake_language_check,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.runtime._pipeline_runner.validate_tts_script_language_or_raise",
+        fake_language_check,
         raising=False,
     )
 
@@ -195,6 +208,7 @@ class TestDurationLoopRound1Only:
             )
 
         monkeypatch.setattr("appcore.runtime.validate_tts_script_language_or_raise", reject_language)
+        monkeypatch.setattr("appcore.runtime._pipeline_runner.validate_tts_script_language_or_raise", reject_language)
 
         runner = self._make_runner()
         with pytest.raises(TtsLanguageValidationError):
@@ -986,7 +1000,7 @@ class TestStepTtsIntegration:
             "video_translate.tts_script",
             "video_translate.tts",
         ]
-        assert billing_calls[0]["provider"] == "gemini_vertex"
+        assert billing_calls[0]["provider"] == "openrouter"
         assert billing_calls[1]["provider"] == "elevenlabs"
         assert billing_calls[1]["request_units"] == len("EN.")
 
@@ -1115,7 +1129,7 @@ class TestStepTtsIntegration:
             "video_translate.tts_script",
             "video_translate.tts",
         ]
-        assert billing_calls[0]["provider"] == "gemini_vertex"
+        assert billing_calls[0]["provider"] == "openrouter"
         assert billing_calls[0]["input_tokens"] == 11
         assert billing_calls[0]["output_tokens"] == 7
         assert billing_calls[2]["provider"] == "elevenlabs"

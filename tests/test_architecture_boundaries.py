@@ -40,6 +40,14 @@ def test_core_runtime_preview_imports_do_not_depend_on_web_module():
     assert offenders == []
 
 
+def test_pipeline_runner_class_lives_outside_runtime_facade():
+    runtime_facade = Path("appcore/runtime/__init__.py").read_text(encoding="utf-8")
+
+    assert "class PipelineRunner" not in runtime_facade
+    assert "from ._pipeline_runner import PipelineRunner" in runtime_facade
+    assert Path("appcore/runtime/_pipeline_runner.py").exists()
+
+
 def test_appcore_modules_do_not_import_web_package():
     offenders: list[str] = []
 
