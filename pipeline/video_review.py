@@ -7,7 +7,6 @@ import json
 import logging
 import os
 
-from appcore import gemini as gemini_api
 from appcore.llm_models import VIDEO_CAPABLE_MODELS
 
 log = logging.getLogger(__name__)
@@ -212,9 +211,8 @@ def review_video(
         system += f"\n\nAdditional requirements:\n{custom_prompt}"
 
     file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-    _, resolved_model = gemini_api.resolve_config(
-        user_id, service="video_review.analyze", default_model=model,
-    )
+    from appcore import llm_bindings
+    resolved_model = llm_bindings.resolve("video_review.analyze").get("model") or model
     log.info("[VideoReview] 开始评估: model=%s, video=%s (%.1fMB)",
              resolved_model, video_path, file_size_mb)
 
