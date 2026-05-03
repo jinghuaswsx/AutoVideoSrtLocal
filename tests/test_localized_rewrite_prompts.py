@@ -112,35 +112,31 @@ class TestFrenchRewritePrompt:
 
 class TestGenerateLocalizedRewrite:
     def test_rewrite_calls_llm_with_custom_messages_builder(self, monkeypatch):
-        """generate_localized_rewrite 必须走语言专属 messages_builder 路径。"""
+        """generate_localized_rewrite 必须走语言专属 messages_builder 路径。
+
+        D-4 之后 generate_localized_rewrite 走 invoke_chat（use_case 必传），
+        本测试 patch llm_client.invoke_chat 替代老 resolve_provider_config。
+        """
         from pipeline import translate
 
-        # Mock resolve_provider_config
         captured = {}
-        class FakeResponse:
-            class choices: pass
-        class FakeChoice:
-            class message: pass
 
-        def fake_resolve(provider, user_id=None, api_key_override=None):
-            class FakeClient:
-                class chat:
-                    class completions:
-                        @staticmethod
-                        def create(**kwargs):
-                            captured["messages"] = kwargs["messages"]
-                            captured["model"] = kwargs["model"]
-                            r = type("R", (), {})()
-                            c = type("C", (), {})()
-                            m = type("M", (), {})()
-                            m.content = '{"full_text": "Short.", "sentences": [{"index": 0, "text": "Short.", "source_segment_indices": [0]}]}'
-                            c.message = m
-                            r.choices = [c]
-                            r.usage = type("U", (), {"prompt_tokens": 10, "completion_tokens": 5})()
-                            return r
-            return FakeClient(), "fake-model"
+        def fake_invoke_chat(use_case_code, **kwargs):
+            captured["use_case_code"] = use_case_code
+            captured["messages"] = kwargs.get("messages")
+            return {
+                "json": {
+                    "full_text": "Short.",
+                    "sentences": [
+                        {"index": 0, "text": "Short.", "source_segment_indices": [0]}
+                    ],
+                },
+                "text": None,
+                "raw": None,
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            }
 
-        monkeypatch.setattr(translate, "resolve_provider_config", fake_resolve)
+        monkeypatch.setattr("appcore.llm_client.invoke_chat", fake_invoke_chat)
 
         from pipeline.localization_de import build_localized_rewrite_messages
         result = translate.generate_localized_rewrite(
@@ -153,10 +149,11 @@ class TestGenerateLocalizedRewrite:
             direction="shrink",
             source_language="en",
             messages_builder=build_localized_rewrite_messages,
-            provider="openrouter",
+            use_case="video_translate.rewrite",
         )
         assert result["full_text"] == "Short."
         assert len(result["sentences"]) == 1
+        assert captured["use_case_code"] == "video_translate.rewrite"
         # Confirm messages_builder was called with rewrite-specific args
         assert "50" in captured["messages"][1]["content"]
         assert "shrink" in captured["messages"][1]["content"].lower()

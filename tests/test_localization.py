@@ -284,7 +284,9 @@ def test_generate_localized_translation_short_video_skips_batching(monkeypatch):
         }
 
     monkeypatch.setattr(translate_mod, "_generate_localized_translation_single", fake_single)
-    translate_mod.generate_localized_translation("source", segments)
+    translate_mod.generate_localized_translation(
+        "source", segments, use_case="video_translate.localize",
+    )
     assert call_count["n"] == 1
 
 
@@ -306,7 +308,9 @@ def test_generate_localized_translation_long_video_splits_into_batches(monkeypat
         }
 
     monkeypatch.setattr(translate_mod, "_generate_localized_translation_single", fake_single)
-    result = translate_mod.generate_localized_translation("source", segments)
+    result = translate_mod.generate_localized_translation(
+        "source", segments, use_case="video_translate.localize",
+    )
 
     assert call_count["n"] == 3  # 30/12 → 3 批
     assert len(result["sentences"]) == 30
@@ -333,7 +337,9 @@ def test_generate_localized_translation_batched_normalizes_relative_indices(monk
         }
 
     monkeypatch.setattr(translate_mod, "_generate_localized_translation_single", fake_single)
-    result = translate_mod.generate_localized_translation("source", segments)
+    result = translate_mod.generate_localized_translation(
+        "source", segments, use_case="video_translate.localize",
+    )
 
     assert len(result["sentences"]) == 24
     # 第 2 批的第 1 句应当映射到全局 segment index 12
@@ -509,93 +515,15 @@ def test_hook_cta_prompt_mentions_first_three_seconds_and_single_cta():
     assert "exactly one clear purchase CTA" in system_prompt
 
 
-def test_generate_localized_translation_parses_structured_output(monkeypatch):
-    captured = {}
-
-    def fake_create(**kwargs):
-        captured.update(kwargs)
-        return types.SimpleNamespace(
-            choices=[
-                types.SimpleNamespace(
-                    message=types.SimpleNamespace(
-                        content='{"full_text":"Hook line. Closing line.","sentences":[{"index":0,"text":"Hook line.","source_segment_indices":[0]},{"index":1,"text":"Closing line.","source_segment_indices":[1]}]}'
-                    )
-                )
-            ]
-        )
-
-    monkeypatch.setattr(
-        "pipeline.translate.resolve_provider_config",
-        lambda *args, **kwargs: (_fake_openai_client(fake_create), "anthropic/claude-sonnet-4.5"),
-    )
-
-    payload = generate_localized_translation(
-        source_full_text_zh="part one\npart two",
-        script_segments=[
-            {"index": 0, "text": "part one"},
-            {"index": 1, "text": "part two"},
-        ],
-    )
-
-    assert payload["sentences"][0]["text"] == "Hook line."
-    assert captured["model"] == "anthropic/claude-sonnet-4.5"
-
-
-def test_generate_localized_translation_passes_variant_specific_prompt(monkeypatch):
-    captured = {}
-
-    def fake_create(**kwargs):
-        captured["messages"] = kwargs["messages"]
-        return types.SimpleNamespace(
-            choices=[
-                types.SimpleNamespace(
-                    message=types.SimpleNamespace(
-                        content='{"full_text":"Hook line.","sentences":[{"index":0,"text":"Hook line.","source_segment_indices":[0]}]}'
-                    )
-                )
-            ]
-        )
-
-    monkeypatch.setattr(
-        "pipeline.translate.resolve_provider_config",
-        lambda *args, **kwargs: (_fake_openai_client(fake_create), "anthropic/claude-sonnet-4.5"),
-    )
-
-    generate_localized_translation(
-        source_full_text_zh="test chinese",
-        script_segments=[{"index": 0, "text": "test chinese"}],
-        variant="hook_cta",
-    )
-
-    assert "exactly one clear purchase CTA" in captured["messages"][0]["content"]
-
-
-def test_generate_tts_script_returns_validated_blocks(monkeypatch):
-    def fake_create(**kwargs):
-        return types.SimpleNamespace(
-            choices=[
-                types.SimpleNamespace(
-                    message=types.SimpleNamespace(
-                        content='{"full_text":"Say it smooth. Keep it fun.","blocks":[{"index":0,"text":"Say it smooth.","sentence_indices":[0],"source_segment_indices":[0]},{"index":1,"text":"Keep it fun.","sentence_indices":[1],"source_segment_indices":[1]}],"subtitle_chunks":[{"index":0,"text":"Say it smooth.","block_indices":[0],"sentence_indices":[0],"source_segment_indices":[0]},{"index":1,"text":"Keep it fun.","block_indices":[1],"sentence_indices":[1],"source_segment_indices":[1]}]}'
-                    )
-                )
-            ]
-        )
-
-    monkeypatch.setattr(
-        "pipeline.translate.resolve_provider_config",
-        lambda *args, **kwargs: (_fake_openai_client(fake_create), "anthropic/claude-sonnet-4.5"),
-    )
-
-    payload = generate_tts_script(
-        localized_translation={
-            "full_text": "Say it smooth. Keep it fun.",
-            "sentences": [
-                {"index": 0, "text": "Say it smooth.", "source_segment_indices": [0]},
-                {"index": 1, "text": "Keep it fun.", "source_segment_indices": [1]},
-            ],
-        }
-    )
-
-    assert payload["subtitle_chunks"][0]["text"] == "Say it smooth"
-    assert payload["subtitle_chunks"][1]["text"] == "Keep it fun"
+# D-4 之后 generate_localized_translation / generate_tts_script 走 invoke_chat
+# （use_case 必传）。下面 3 个测试原本通过 patch resolve_provider_config + fake
+# OpenAI client.chat.completions.create 测老 _call_openai_compat 路径，但该路径
+# 已被删除。等价行为由 tests/test_translate_use_case_kwarg.py 中的
+# test_generate_localized_translation_use_case_invokes_chat / test_generate_tts_script_use_case_invokes_chat
+# 覆盖（直接 patch invoke_chat 验证调用入参）。
+def test_generate_localized_translation_use_case_path_covered_elsewhere():
+    """占位说明：parses_structured_output / passes_variant_specific_prompt /
+    test_generate_tts_script_returns_validated_blocks 三个老 _call_openai_compat
+    路径测试已废弃（D-4 删除老入口），等价覆盖在
+    tests/test_translate_use_case_kwarg.py。"""
+    assert True

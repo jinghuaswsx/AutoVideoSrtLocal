@@ -28,4 +28,51 @@ def model_display_name(model_id: str) -> str:
     return model_id or ""
 
 
-__all__ = ["VIDEO_CAPABLE_MODELS", "model_display_name"]
+# 老式 admin 偏好字符串 → 具体 model_id（用于 UI 显示 / invoke_chat 的
+# model_override）。只用作纯数据映射，不创建客户端、不触发 SDK。
+LEGACY_PROVIDER_MODEL_MAP: dict[str, str] = {
+    "vertex_gemini_31_flash_lite":     "gemini-3.1-flash-lite-preview",
+    "vertex_gemini_3_flash":           "gemini-3-flash-preview",
+    "vertex_gemini_31_pro":            "gemini-3.1-pro-preview",
+    "vertex_adc_gemini_31_flash_lite": "gemini-3.1-flash-lite-preview",
+    "vertex_adc_gemini_3_flash":       "gemini-3-flash-preview",
+    "vertex_adc_gemini_31_pro":        "gemini-3.1-pro-preview",
+    "gemini_31_flash":                 "google/gemini-3.1-flash-lite-preview",
+    "gemini_31_pro":                   "google/gemini-3.1-pro-preview",
+    "gemini_3_flash":                  "google/gemini-3-flash-preview",
+    "gpt_5_mini":                      "openai/gpt-5-mini",
+    "gpt_5_5":                         "openai/gpt-5.5",
+    "claude_sonnet":                   "anthropic/claude-sonnet-4.6",
+    "openrouter":                      "anthropic/claude-sonnet-4.6",
+    "doubao":                          "doubao-seed-2-0-pro-260215",
+}
+
+
+def legacy_provider_to_model(provider: str | None) -> str | None:
+    """老 provider 字符串 → model_id；不命中返回 None。"""
+    if not provider:
+        return None
+    return LEGACY_PROVIDER_MODEL_MAP.get(provider)
+
+
+def legacy_provider_to_provider_code(provider: str | None) -> str | None:
+    """老 provider 字符串 → adapter provider_code（doubao / openrouter /
+    gemini_vertex / gemini_vertex_adc）。"""
+    if not provider:
+        return None
+    if provider == "doubao":
+        return "doubao"
+    if provider.startswith("vertex_adc_"):
+        return "gemini_vertex_adc"
+    if provider.startswith("vertex_"):
+        return "gemini_vertex"
+    return "openrouter"
+
+
+__all__ = [
+    "VIDEO_CAPABLE_MODELS",
+    "model_display_name",
+    "LEGACY_PROVIDER_MODEL_MAP",
+    "legacy_provider_to_model",
+    "legacy_provider_to_provider_code",
+]
