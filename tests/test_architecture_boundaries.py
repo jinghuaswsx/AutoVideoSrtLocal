@@ -320,6 +320,25 @@ def test_task_confirm_voice_workflow_lives_outside_route_module():
     assert Path("web/services/task_voice.py").exists()
 
 
+def test_task_start_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "start"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "store.update" not in route_source
+    assert "merge_av_step_maps" not in route_source
+    assert "task_requires_source_sync" not in route_source
+    assert "ensure_local_source_video" not in route_source
+    assert "pipeline_runner.start" not in route_source
+    assert "start_task_pipeline" in route_source
+    assert Path("web/services/task_start.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 

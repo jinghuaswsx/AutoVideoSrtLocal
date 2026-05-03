@@ -51,7 +51,6 @@ from web.services.task_av_inputs import (
     av_task_target_lang,
     collect_av_source_language,
     collect_av_translate_inputs,
-    merge_av_step_maps,
     validate_av_translate_inputs,
 )
 from web.services.task_av_rewrite import (
@@ -69,7 +68,7 @@ from web.services.task_prompts import resolve_task_prompt_text
 from web.services.task_rename import rename_task_display_name
 from web.services.task_responses import task_not_found_response
 from web.services.task_resume import resume_task_from_step
-from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
+from web.services.task_start import start_task_pipeline
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
 from web.services.task_upload import initialize_uploaded_av_task
@@ -421,41 +420,16 @@ def start(task_id):
     source_updates, source_error = collect_av_source_language(body, current_task=task)
     if source_error:
         return jsonify({"error": source_error}), 400
-    av_steps, av_step_messages = merge_av_step_maps(
-        task.get("steps"),
-        task.get("step_messages"),
-    )
-    store.update(
+    outcome = start_task_pipeline(
         task_id,
-        type="translation",
-        voice_gender=body.get("voice_gender", "male"),
-        voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
-        subtitle_position=body.get("subtitle_position", "bottom"),
-        subtitle_font=body.get("subtitle_font", "Impact"),
-        subtitle_size=body.get("subtitle_size", 14),
-        subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
-        interactive_review=parse_bool(body.get("interactive_review", False)),
-        pipeline_version="av",
-        av_translate_inputs=av_inputs,
-        target_lang=av_inputs["target_language"],
-        **source_updates,
-        steps=av_steps,
-        step_messages=av_step_messages,
+        task,
+        body,
+        av_inputs=av_inputs,
+        source_updates=source_updates,
+        user_id=optional_user_id(current_user),
+        runner=pipeline_runner,
     )
-    task = refresh_task(task_id, task)
-
-    if task_requires_source_sync(task):
-        try:
-            ensure_local_source_video(task_id, task)
-        except FileNotFoundError as exc:
-            return jsonify({"error": str(exc)}), 409
-        updated_task = refresh_task(task_id, task)
-        return jsonify({"status": "source_ready", "task": updated_task})
-
-    user_id = optional_user_id(current_user)
-    pipeline_runner.start(task_id, user_id=user_id)
-    updated_task = refresh_task(task_id, task)
-    return jsonify({"status": "started", "task": updated_task})
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/start-translate", methods=["POST"])

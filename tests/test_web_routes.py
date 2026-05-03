@@ -1919,26 +1919,31 @@ def test_start_route_materializes_source_video_from_tos_before_processing(tmp_pa
     downloaded = []
     started = []
 
-    def fake_download_file(object_key, local_path):
-        downloaded.append((object_key, local_path))
+    def fake_ensure_local_copy(local_path):
+        downloaded.append(local_path)
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
         Path(local_path).write_bytes(b"video")
-        return local_path
+        return None
 
-    monkeypatch.setattr("web.routes.task.tos_clients.download_file", fake_download_file)
+    monkeypatch.setattr(
+        "web.services.task_source_video.tos_backup_storage.ensure_local_copy_for_local_path",
+        fake_ensure_local_copy,
+    )
     monkeypatch.setattr("web.routes.task._extract_thumbnail", lambda video_path, task_dir: None)
     monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
     monkeypatch.setattr("web.services.pipeline_runner.start", lambda task_id, user_id=None: started.append((task_id, user_id)))
 
-    first_response = authed_client_no_db.post("/api/tasks/task-start-tos/start", json={})
+    start_payload = {"source_language": "zh", "target_language": "de", "target_market": "OTHER"}
+
+    first_response = authed_client_no_db.post("/api/tasks/task-start-tos/start", json=start_payload)
 
     assert first_response.status_code == 200
     first_payload = first_response.get_json()
     assert first_payload["status"] == "source_ready"
-    assert downloaded == [("uploads/1/task-start-tos/demo.mp4", str(video_path))]
+    assert downloaded == [str(video_path)]
     assert started == []
 
-    second_response = authed_client_no_db.post("/api/tasks/task-start-tos/start", json={})
+    second_response = authed_client_no_db.post("/api/tasks/task-start-tos/start", json=start_payload)
     assert second_response.status_code == 200
     second_payload = second_response.get_json()
     assert second_payload["status"] == "started"
