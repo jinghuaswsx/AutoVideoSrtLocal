@@ -49,7 +49,6 @@ from web.services.artifact_download import (
 from web.services.task_av_inputs import (
     AV_SYNC_STEPS,
     av_task_target_lang,
-    av_step_maps,
     collect_av_source_language,
     collect_av_translate_inputs,
     merge_av_step_maps,
@@ -66,7 +65,6 @@ from web.services.task_analysis import start_task_analysis
 from web.services.task_capcut import deploy_task_capcut_project
 from web.services.task_deletion import cleanup_deleted_task_storage
 from web.services.task_llm import resolve_translate_billing_provider
-from web.services.task_names import default_display_name, resolve_task_display_name_conflict
 from web.services.task_prompts import resolve_task_prompt_text
 from web.services.task_rename import rename_task_display_name
 from web.services.task_responses import task_not_found_response
@@ -74,6 +72,7 @@ from web.services.task_resume import resume_task_from_step
 from web.services.task_source_video import ensure_local_source_video, task_requires_source_sync
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
+from web.services.task_upload import initialize_uploaded_av_task
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -114,7 +113,7 @@ def upload():
     if not file.filename:
         return jsonify({"error": "Empty filename"}), 400
 
-    from web.upload_util import build_source_object_info, save_uploaded_video, validate_video_extension
+    from web.upload_util import save_uploaded_video, validate_video_extension
 
     original_filename = os.path.basename(file.filename)
     if not validate_video_extension(original_filename):
@@ -135,47 +134,21 @@ def upload():
     video_path, file_size, content_type = save_uploaded_video(file, UPLOAD_DIR, task_id, original_filename)
     user_id = optional_user_id(current_user)
 
-    store.create(
+    result = initialize_uploaded_av_task(
         task_id,
-        video_path,
-        task_dir,
+        video_path=video_path,
+        task_dir=task_dir,
         original_filename=original_filename,
+        form_payload=form_payload,
+        av_inputs=av_inputs,
+        source_updates=source_updates,
+        file_size=file_size,
+        content_type=content_type,
         user_id=user_id,
+        query_one=db_query_one,
+        execute=db_execute,
     )
-
-    desired_name = (form_payload.get("display_name") or "").strip()[:200]
-    display_name = desired_name or default_display_name(original_filename)
-    if user_id is not None:
-        display_name = resolve_task_display_name_conflict(
-            user_id,
-            display_name,
-            query_one=db_query_one,
-        )
-        db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
-
-    steps, step_messages = av_step_maps()
-    store.update(
-        task_id,
-        display_name=display_name,
-        type="translation",
-        source_language=source_updates["source_language"],
-        user_specified_source_language=source_updates["user_specified_source_language"],
-        pipeline_version="av",
-        target_lang=av_inputs["target_language"],
-        av_translate_inputs=av_inputs,
-        steps=steps,
-        step_messages=step_messages,
-        source_tos_key="",
-        source_object_info=build_source_object_info(
-            original_filename=original_filename,
-            content_type=content_type,
-            file_size=file_size,
-            storage_backend="local",
-            uploaded_at=datetime.now().isoformat(timespec="seconds"),
-        ),
-        delivery_mode="local_primary",
-    )
-    return jsonify({"task_id": task_id, "redirect_url": f"/sentence_translate/{task_id}"}), 201
+    return jsonify(result.payload), 201
 
 
 @bp.route("/<task_id>", methods=["GET"])

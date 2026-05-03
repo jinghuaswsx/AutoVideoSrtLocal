@@ -279,6 +279,26 @@ def test_task_rename_workflow_lives_outside_route_module():
     assert Path("web/services/task_rename.py").exists()
 
 
+def test_task_upload_initialization_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "upload"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "store.create" not in route_source
+    assert "store.update" not in route_source
+    assert "resolve_task_display_name_conflict" not in route_source
+    assert "UPDATE projects SET display_name=%s WHERE id=%s" not in route_source
+    assert "av_step_maps" not in route_source
+    assert "build_source_object_info" not in route_source
+    assert "initialize_uploaded_av_task" in route_source
+    assert Path("web/services/task_upload.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 
