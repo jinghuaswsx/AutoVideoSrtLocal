@@ -71,6 +71,7 @@ from web.services.task_resume import resume_task_from_step
 from web.services.task_start import start_task_pipeline
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
+from web.services.task_translate import start_task_translate
 from web.services.task_upload import initialize_uploaded_av_task
 from web.services.task_voice import confirm_task_voice
 from web.services.translate_detail_protocol import (
@@ -440,31 +441,15 @@ def start_translate(task_id):
     if not task:
         return task_not_found_response()
 
-    if not task.get("_translate_pre_select"):
-        return jsonify({"error": "翻译步骤不在预选状态"}), 400
-
     body = json_payload_from(request)
-    model_provider = body.get("model_provider", "").strip()
-    prompt_id = body.get("prompt_id")
-    prompt_text = resolve_task_prompt_text(
-        (body.get("prompt_text") or "").strip(),
-        prompt_id,
-        user_id=current_user.id,
+    outcome = start_task_translate(
+        task_id,
+        task,
+        body,
+        user_id=optional_user_id(current_user),
+        runner=pipeline_runner,
     )
-
-    # Save choices to task state so runtime can read them
-    updates = {"_translate_pre_select": False}
-    if model_provider in _VALID_TRANSLATE_PREFS:
-        updates["custom_translate_provider"] = model_provider
-    if prompt_text:
-        updates["custom_translate_prompt"] = prompt_text
-
-    store.update(task_id, **updates)
-    store.set_current_review_step(task_id, "")
-
-    user_id = optional_user_id(current_user)
-    pipeline_runner.resume(task_id, "translate", user_id=user_id)
-    return jsonify({"status": "started"})
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/retranslate", methods=["POST"])

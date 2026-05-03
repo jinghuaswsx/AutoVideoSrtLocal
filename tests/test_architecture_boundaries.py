@@ -339,6 +339,26 @@ def test_task_start_workflow_lives_outside_route_module():
     assert Path("web/services/task_start.py").exists()
 
 
+def test_task_start_translate_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "start_translate"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "_translate_pre_select" not in route_source
+    assert "_VALID_TRANSLATE_PREFS" not in route_source
+    assert "resolve_task_prompt_text" not in route_source
+    assert "store.update" not in route_source
+    assert "store.set_current_review_step" not in route_source
+    assert "pipeline_runner.resume" not in route_source
+    assert "start_task_translate" in route_source
+    assert Path("web/services/task_translate.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 
