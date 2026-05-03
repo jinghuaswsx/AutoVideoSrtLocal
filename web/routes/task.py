@@ -25,13 +25,11 @@ from appcore.subtitle_preview_payload import build_multi_translate_preview_paylo
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import cleanup
 from appcore.task_recovery import recover_task_if_needed
-from pipeline.alignment import build_script_segments
 from pipeline import tts
 from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
 from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, duration_ratio
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from web.preview_artifacts import (
-    build_alignment_artifact,
     build_subtitle_artifact,
     build_tts_artifact,
 )
@@ -56,6 +54,7 @@ from web.services.task_av_rewrite import (
     resolve_av_voice_ids,
 )
 from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id, refresh_task
+from web.services.task_alignment import confirm_task_alignment
 from web.services.task_analysis import start_task_analysis
 from web.services.task_capcut import deploy_task_capcut_project
 from web.services.task_deletion import cleanup_deleted_task_storage
@@ -487,34 +486,14 @@ def update_alignment(task_id):
         return task_not_found_response()
 
     body = json_payload_from(request)
-    break_after = body.get("break_after")
-    if not isinstance(break_after, list):
-        return jsonify({"error": "break_after required"}), 400
-
-    try:
-        script_segments = build_script_segments(task.get("utterances", []), break_after)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    store.confirm_alignment(task_id, break_after, script_segments)
-    store.set_artifact(
+    outcome = confirm_task_alignment(
         task_id,
-        "alignment",
-        build_alignment_artifact(task.get("scene_cuts", []), script_segments, break_after),
+        task,
+        body,
+        user_id=optional_user_id(current_user),
+        runner=pipeline_runner,
     )
-    store.set_current_review_step(task_id, "")
-    store.set_step(task_id, "alignment", "done")
-    store.set_step_message(task_id, "alignment", "分段确认完成")
-
-    if task.get("interactive_review"):
-        # 手动确认模式：暂停让用户先选模型和提示词
-        store.set_current_review_step(task_id, "translate")
-        store.set_step(task_id, "translate", "waiting")
-        store.set_step_message(task_id, "translate", "请选择翻译模型和提示词")
-        store.update(task_id, _translate_pre_select=True)
-    else:
-        pipeline_runner.resume(task_id, "translate", user_id=optional_user_id(current_user))
-    return jsonify({"status": "ok", "script_segments": script_segments})
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/segments", methods=["PUT"])

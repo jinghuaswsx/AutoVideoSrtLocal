@@ -399,6 +399,28 @@ def test_task_select_translation_workflow_lives_outside_route_module():
     assert Path("web/services/task_translation_selection.py").exists()
 
 
+def test_task_alignment_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "update_alignment"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "build_script_segments" not in route_source
+    assert "build_alignment_artifact" not in route_source
+    assert "store.confirm_alignment" not in route_source
+    assert "store.set_artifact" not in route_source
+    assert "store.set_current_review_step" not in route_source
+    assert "store.set_step" not in route_source
+    assert "store.update" not in route_source
+    assert "pipeline_runner.resume" not in route_source
+    assert "confirm_task_alignment" in route_source
+    assert Path("web/services/task_alignment.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 

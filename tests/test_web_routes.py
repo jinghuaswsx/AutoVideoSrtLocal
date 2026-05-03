@@ -1499,7 +1499,9 @@ def test_artifact_route_falls_back_to_output_dir_when_task_state_is_missing(tmp_
     assert response.data == b"soft-video-preview"
 
 
-def test_alignment_route_compiles_script_segments(authed_client_no_db):
+def test_alignment_route_compiles_script_segments(authed_client_no_db, monkeypatch):
+    resumed = []
+    monkeypatch.setattr("web.routes.task.pipeline_runner.resume", lambda *args, **kwargs: resumed.append((args, kwargs)))
     task = store.create("task-1", "video.mp4", "output/task-1", user_id=1)
     task["utterances"] = [
         {"text": "浣犲ソ", "start_time": 0.0, "end_time": 0.8, "words": []},
@@ -1515,7 +1517,8 @@ def test_alignment_route_compiles_script_segments(authed_client_no_db):
     saved = store.get("task-1")
     assert saved["_alignment_confirmed"] is True
     assert saved["script_segments"][0]["text"] == "浣犲ソ涓栫晫"
-    assert saved["artifacts"]["alignment"]["items"][1]["segments"][0]["text"] == "浣犲ソ涓栫晫"
+    assert saved["artifacts"]["alignment"]["items"][0]["segments"][0]["text"] == "浣犲ソ涓栫晫"
+    assert resumed == [(("task-1", "translate"), {"user_id": 1})]
 
 
 def test_segments_route_updates_translate_artifact(authed_client_no_db, monkeypatch):
