@@ -254,9 +254,10 @@ def test_image_model_registry_is_channel_scoped():
 
 
 def test_long_running_image_timeouts_are_tripled():
-    from appcore import gemini, gemini_image
+    from appcore.llm_providers._helpers.gemini_calls import _FILE_ACTIVE_TIMEOUT
+    from appcore import gemini_image
 
-    assert gemini._FILE_ACTIVE_TIMEOUT == 900
+    assert _FILE_ACTIVE_TIMEOUT == 900
     assert gemini_image._SEEDREAM_REQUEST_TIMEOUT == 360
     assert gemini_image._APIMART_POLL_TIMEOUT == 900
 

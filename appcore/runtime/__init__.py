@@ -2006,7 +2006,7 @@ class PipelineRunner:
     def _step_analysis(self, task_id: str) -> None:
         """用 Gemini 对硬字幕视频做评分 + CSK 深度分析，结果并列展示。"""
         from pipeline import video_csk, video_score
-        from appcore.gemini import resolve_config
+        from appcore import llm_bindings
         from appcore.llm_models import model_display_name
 
         task = task_state.get(task_id) or {}
@@ -2016,9 +2016,11 @@ class PipelineRunner:
         variant_state = variants.get("normal") or {}
         hard_video = (variant_state.get("result") or {}).get("hard_video")
 
-        _, resolved_model = resolve_config(
-            self.user_id, service="gemini_video_analysis",
-            default_model=video_score.SCORE_MODEL,
+        # 直接读 binding（USE_CASES 默认 model 与 video_score.SCORE_MODEL 一致），
+        # 不再走 appcore.gemini.resolve_config。
+        resolved_model = (
+            llm_bindings.resolve("video_score.run").get("model")
+            or video_score.SCORE_MODEL
         )
         model_label = model_display_name(resolved_model)
         _analysis_model_tag = f"gemini · {resolved_model}"

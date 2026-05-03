@@ -203,9 +203,8 @@ class PipelineRunnerV2(PipelineRunner):
     ) -> None:
         from pipeline.shot_decompose import align_asr_to_shots, decompose_shots
 
-        from appcore.gemini import resolve_config as _resolve_gemini
-        _, _sd_model = _resolve_gemini(self.user_id, service="shot_decompose.run",
-                                        default_model="gemini-3.1-pro-preview")
+        from appcore import llm_bindings
+        _sd_model = llm_bindings.resolve("shot_decompose.run").get("model") or "gemini-3.1-pro-preview"
         self._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...",
                        model_tag=f"gemini · {_sd_model}")
         task = task_state.get(task_id) or {}
@@ -328,8 +327,8 @@ class PipelineRunnerV2(PipelineRunner):
         from pipeline.speech_rate_model import get_rate
         from pipeline.translate_v2 import compute_char_limit, translate_shot
 
-        from appcore.gemini import resolve_config as _resolve_gemini
-        _, _tr_model = _resolve_gemini(self.user_id, service="translate_lab.shot_translate")
+        from appcore import llm_bindings
+        _tr_model = llm_bindings.resolve("translate_lab.shot_translate").get("model") or ""
         self._set_step(task_id, "translate", "running", "正在翻译分镜...",
                        model_tag=f"gemini · {_tr_model}")
         task = task_state.get(task_id) or {}

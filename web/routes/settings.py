@@ -22,7 +22,7 @@ from appcore import asr_routing_config, llm_bindings, llm_provider_configs, pric
 from appcore.api_keys import get_all, set_key
 from appcore.db import execute, query
 from web.auth import superadmin_required
-from appcore.gemini import VIDEO_CAPABLE_MODELS
+from appcore.llm_models import VIDEO_CAPABLE_MODELS
 from appcore.image_translate_settings import (
     CHANNEL_LABELS as IMAGE_TRANSLATE_CHANNEL_LABELS,
     CHANNELS as IMAGE_TRANSLATE_CHANNELS,

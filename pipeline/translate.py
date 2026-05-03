@@ -1,22 +1,26 @@
+"""Localized translation / TTS-script / rewrite —— 全部走
+appcore.llm_client.invoke_chat（adapter 解析 binding + 调 LLM SDK）。
+
+本模块不再创建任何 OpenAI / google.genai 客户端，也不接受老 provider= 字符串
+分流（vertex_* / openrouter / doubao）。三个对外函数 use_case= 必传。
+
+D-4 之前曾保留 `from openai import OpenAI` + `_call_openai_compat /
+resolve_provider_config / _resolve_use_case_provider / _vertex_model_id /
+_OPENROUTER_PREF_MODELS / _VERTEX_PREF_MODELS` 等老入口作为兼容；本次
+全部删除。所有业务调用方都已传 use_case=（A-3 / B-3 / C-2 完成）。
+"""
+from __future__ import annotations
+
 import json
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List
 
-log = logging.getLogger(__name__)
-
-from appcore.llm_provider_configs import (
-    ProviderConfigError,
-    require_provider_config,
+from appcore import llm_bindings
+from appcore.llm_models import (
+    LEGACY_PROVIDER_MODEL_MAP,
+    legacy_provider_to_model,
+    legacy_provider_to_provider_code,
 )
-from appcore.llm_providers._helpers.openai_compat import make_openai_compat_client
-from config import (
-    DOUBAO_LLM_BASE_URL_DEFAULT,
-    OPENROUTER_BASE_URL_DEFAULT,
-)
-
-# 默认 model_id 作为 DB 行为空时的兜底
-_DEFAULT_CLAUDE_MODEL = "anthropic/claude-sonnet-4-5"
-_DEFAULT_DOUBAO_MODEL = "doubao-seed-2-0-pro-260215"
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
     TTS_SCRIPT_RESPONSE_FORMAT,
@@ -27,137 +31,8 @@ from pipeline.localization import (
     validate_tts_script,
 )
 
-
-# 走 OpenRouter 的 provider 值 → 具体模型 ID
-_OPENROUTER_PREF_MODELS = {
-    "gemini_31_flash":  "google/gemini-3.1-flash-lite-preview",
-    "gemini_31_pro":    "google/gemini-3.1-pro-preview",
-    "gemini_3_flash":   "google/gemini-3-flash-preview",
-    "gpt_5_mini":       "openai/gpt-5-mini",
-    "gpt_5_5":          "openai/gpt-5.5",
-    "claude_sonnet":    "anthropic/claude-sonnet-4.6",
-    "openrouter":       "anthropic/claude-sonnet-4.6",  # legacy 值回落 claude
-}
-
-# 走 Vertex AI（Google Cloud Express Mode）的 provider 值 → Gemini model ID
-_VERTEX_PREF_MODELS = {
-    "vertex_gemini_31_flash_lite": "gemini-3.1-flash-lite-preview",
-    "vertex_gemini_3_flash":       "gemini-3-flash-preview",
-    "vertex_gemini_31_pro":        "gemini-3.1-pro-preview",
-}
-
-
-# ---------------------------------------------------------------------------
-# use_case code 前置解析（对接 appcore.llm_bindings）
-# ---------------------------------------------------------------------------
-
-def _binding_lookup_for_use_case(code: str) -> dict | None:
-    """如果入参看起来像 use_case code（含 '.'），查 bindings 表；否则 None。
-
-    返回 {provider, model, extra, source} 或 None。
-    """
-    if not isinstance(code, str) or "." not in code:
-        return None
-    try:
-        from appcore import llm_bindings
-        return llm_bindings.resolve(code)
-    except KeyError:
-        return None
-
-
-def _resolve_use_case_provider(provider_arg: str) -> str:
-    """入口映射：use_case code → 老式 provider 字符串（保留业务函数 vertex_* 分流不变）。
-
-    映射规则：
-      gemini_vertex + 模型命中 _VERTEX_PREF_MODELS 反向表 → 返 vertex_*
-      gemini_vertex + 未命中 → 写入 _VERTEX_PREF_MODELS["vertex_custom"] 并返 "vertex_custom"
-      gemini_aistudio → translate.py 无此分支；best-effort 走 OpenRouter 的 google/<model>
-      openrouter / doubao → 原样返回
-    """
-    binding = _binding_lookup_for_use_case(provider_arg)
-    if not binding:
-        return provider_arg
-
-    p = binding["provider"]
-    m = binding["model"]
-    if p == "gemini_vertex":
-        reverse = {
-            v: k for k, v in _VERTEX_PREF_MODELS.items()
-            if k.startswith("vertex_") and not k.startswith("vertex_adc_")
-        }
-        if m in reverse:
-            return reverse[m]
-        _VERTEX_PREF_MODELS["vertex_custom"] = m
-        return "vertex_custom"
-    if p == "gemini_vertex_adc":
-        reverse = {
-            v: "vertex_adc_" + k[len("vertex_"):]
-            for k, v in _VERTEX_PREF_MODELS.items()
-            if k.startswith("vertex_") and not k.startswith("vertex_adc_")
-        }
-        if m in reverse:
-            return reverse[m]
-        _VERTEX_PREF_MODELS["vertex_adc_custom"] = m
-        return "vertex_adc_custom"
-    if p == "gemini_aistudio":
-        # translate.py 内没有 AIStudio 分支；回退到 OpenRouter 并补 google/ 前缀
-        model_id = m if m.startswith("google/") else f"google/{m}"
-        _OPENROUTER_PREF_MODELS["_gemini_aistudio_fallback"] = model_id
-        return "_gemini_aistudio_fallback"
-    # openrouter / doubao 原样
-    return p
-
-
-def resolve_provider_config(
-    provider: str,
-    user_id: int | None = None,
-    api_key_override: str | None = None,
-):
-    """Return (client, model_id) for the given provider (OpenAI-compatible only).
-
-    Vertex provider 不走这里——由 _call_vertex_json 单独处理。
-    """
-    from appcore.api_keys import resolve_extra, resolve_key
-
-    if provider == "doubao":
-        try:
-            cfg = require_provider_config("doubao_llm")
-            key = api_key_override or cfg.require_api_key()
-            base_url = cfg.require_base_url(default=DOUBAO_LLM_BASE_URL_DEFAULT)
-        except ProviderConfigError as exc:
-            raise RuntimeError(str(exc)) from exc
-        extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
-        model = extra.get("model_id") or cfg.model_id or _DEFAULT_DOUBAO_MODEL
-    else:
-        # 非 doubao 统一走 openrouter；根据 provider 字符串选模型
-        try:
-            cfg = require_provider_config("openrouter_text")
-            key = api_key_override or cfg.require_api_key()
-            base_url = cfg.require_base_url(default=OPENROUTER_BASE_URL_DEFAULT)
-        except ProviderConfigError as exc:
-            raise RuntimeError(str(exc)) from exc
-        extra = resolve_extra(user_id, "openrouter") if user_id else {}
-        # 优先级：用户在 OpenRouter 设置里显式 override 的 model_id > provider 映射 > legacy 默认
-        user_override = (extra.get("model_id") or cfg.model_id or "").strip()
-        if user_override:
-            model = user_override
-        else:
-            model = _OPENROUTER_PREF_MODELS.get(provider, _DEFAULT_CLAUDE_MODEL)
-
-    return make_openai_compat_client(api_key=key, base_url=base_url), model
-
-
-def get_model_display_name(provider: str, user_id: int | None = None) -> str:
-    """Return the model ID string for logging/display."""
-    if provider.startswith("vertex_"):
-        return _vertex_model_id(provider)
-    _, model = resolve_provider_config(provider, user_id)
-    return model
-
-
-# Vertex JSON helper 与公共 messages/schema 工具迁到
-# `appcore.llm_providers._helpers.vertex_json`，本模块以 re-export 保留
-# 历史 import 路径，方便老调用方/测试 patch。
+# Vertex JSON helper / parse_json_content / messages-schema 工具仍保留 re-export，
+# 让历史 `from pipeline.translate import parse_json_content` 调用方继续 work。
 from appcore.llm_providers._helpers.vertex_json import (  # noqa: F401
     _GEMINI_VERTEX_UNSUPPORTED_SCHEMA_KEYS,
     _call_vertex_json,
@@ -166,6 +41,37 @@ from appcore.llm_providers._helpers.vertex_json import (  # noqa: F401
     _strip_unsupported_schema,
     parse_json_content,
 )
+
+
+log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# UI 展示用：把任意 provider/use_case 字符串解析为 model_id（仅做字符串映射，
+# 不创建客户端、不读 user-level api_keys；老调用方继续 work）
+# ---------------------------------------------------------------------------
+
+def get_model_display_name(provider: str, user_id: int | None = None) -> str:
+    """Return model_id for UI display / model_tag.
+
+    入参可以是：
+      - use_case code（含 '.'）→ 查 binding，返回 binding.model
+      - 老 provider 字符串（vertex_* / openrouter / doubao / claude_sonnet 等）
+        → 查 LEGACY_PROVIDER_MODEL_MAP
+      - 其它字符串 → 原样返回
+    """
+    del user_id  # 不再读 user-level api_keys；保留参数仅向后兼容
+    if not isinstance(provider, str) or not provider:
+        return ""
+    if "." in provider:
+        try:
+            return llm_bindings.resolve(provider).get("model") or provider
+        except KeyError:
+            return provider
+    mapped = legacy_provider_to_model(provider)
+    if mapped:
+        return mapped
+    return provider
 
 
 # ---------------------------------------------------------------------------
@@ -190,9 +96,8 @@ def _invoke_chat_for_use_case(
     业务函数期望的 (parsed_payload_dict_or_list, usage_dict_or_None) 二元组。
 
     过渡期注意：调用 invoke_chat 时刻意把 user_id 置 None，让 invoke_chat 内部
-    _log_usage 立即 return（user_id is None → skip）。这样老业务（runtime.py /
-    runtime_de / runtime_fr / ...）外层的 _log_translate_billing 仍是唯一计费
-    入口，迁移期间不会因为同一调用既被外层、又被 invoke_chat 计费而出现 ai_billing
+    _log_usage 立即 return（user_id is None → skip）。这样老业务 runtime
+    外层的 _log_translate_billing 仍是唯一计费入口，迁移期间不会出现 ai_billing
     重复行。Phase A-4 删除外层 _log_translate_billing 后，再恢复透传 user_id。
 
     provider_override / model_override 让评测脚本（tools/translate_quality_eval
@@ -230,69 +135,9 @@ def _invoke_chat_for_use_case(
     return payload, usage
 
 
-def _vertex_model_id(provider: str) -> str:
-    if provider.startswith("vertex_adc_"):
-        legacy_provider = "vertex_" + provider[len("vertex_adc_"):]
-        return _VERTEX_PREF_MODELS.get(
-            provider,
-            _VERTEX_PREF_MODELS.get(legacy_provider, "gemini-3.1-flash-lite-preview"),
-        )
-    return _VERTEX_PREF_MODELS.get(provider, "gemini-3.1-flash-lite-preview")
-
-
-def _vertex_provider_config_code(provider: str) -> str:
-    if provider.startswith("vertex_adc_"):
-        return "gemini_vertex_adc_text"
-    return "gemini_cloud_text"
-
-
 # ---------------------------------------------------------------------------
-# OpenAI-兼容分支（OpenRouter / 豆包）
-# ---------------------------------------------------------------------------
-
-def _call_openai_compat(
-    messages: list[dict],
-    *,
-    provider: str,
-    user_id: int | None,
-    api_key_override: str | None,
-    response_format: dict | None,
-    temperature: float = 0.2,
-    max_tokens: int = 4096,
-):
-    """走 OpenAI 兼容接口返回 (parsed_payload, usage_dict, raw_text, model_id)。"""
-    client, model = resolve_provider_config(provider, user_id, api_key_override=api_key_override)
-    extra_body: dict = {}
-    if provider != "doubao" and response_format is not None:
-        extra_body["response_format"] = response_format
-    if provider == "openrouter" or provider in _OPENROUTER_PREF_MODELS:
-        # 非 doubao 都走 OpenRouter，启用 response-healing 让 JSON 更稳
-        if provider != "doubao":
-            extra_body["plugins"] = [{"id": "response-healing"}]
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        **({"extra_body": extra_body} if extra_body else {}),
-    )
-    raw_content = response.choices[0].message.content
-    log.info("openai-compat raw response (provider=%s, model=%s): %s",
-             provider, model, (raw_content or "")[:2000])
-    payload = parse_json_content(raw_content)
-    usage_obj = getattr(response, "usage", None)
-    usage = None
-    if usage_obj is not None:
-        usage = {
-            "input_tokens": getattr(usage_obj, "prompt_tokens", None),
-            "output_tokens": getattr(usage_obj, "completion_tokens", None),
-        }
-    return payload, usage, raw_content, model
-
-
-# ---------------------------------------------------------------------------
-# 对外业务函数
+# 业务函数（generate_localized_translation / generate_tts_script /
+# generate_localized_rewrite）—— 全部走 invoke_chat，use_case 必传。
 # ---------------------------------------------------------------------------
 
 def _normalize_batch_source_indices(sentences: list[dict], batch_indices: list[int]) -> None:
@@ -340,22 +185,31 @@ def _normalize_batch_source_indices(sentences: list[dict], batch_indices: list[i
         s["source_segment_indices"] = sorted(normalized)
 
 
+def _require_use_case(use_case: str | None, *, fn: str) -> str:
+    if not use_case or "." not in use_case:
+        raise ValueError(
+            f"{fn}: use_case= is required (must be a use_case code containing '.', "
+            "e.g. 'video_translate.localize'). Old provider= dispatch was removed in D-4; "
+            "all callers should pass use_case=. See appcore.llm_use_cases.USE_CASES."
+        )
+    return use_case
+
+
 def _generate_localized_translation_single(
     source_full_text_zh: str,
     script_segments: list[dict],
     variant: str = "normal",
     custom_system_prompt: str | None = None,
     *,
-    provider: str = "openrouter",
+    use_case: str,
     user_id: int | None = None,
-    openrouter_api_key: str | None = None,
-    use_case: str | None = None,
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
 ) -> dict:
     """Single-shot translation: original logic, no batching. Used directly for
     short videos and as the per-batch primitive for long-video batching."""
+    use_case = _require_use_case(use_case, fn="_generate_localized_translation_single")
     messages = build_localized_translation_messages(
         source_full_text_zh,
         script_segments,
@@ -363,26 +217,12 @@ def _generate_localized_translation_single(
         custom_system_prompt=custom_system_prompt,
     )
 
-    if use_case:
-        payload, usage = _invoke_chat_for_use_case(
-            use_case, messages, LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-            user_id=user_id, project_id=project_id,
-            provider_override=provider_override,
-            model_override=model_override,
-        )
-    else:
-        provider = _resolve_use_case_provider(provider)
-        if provider.startswith("vertex_"):
-            payload, usage, _ = _call_vertex_json(
-                messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-                provider_config_code=_vertex_provider_config_code(provider),
-            )
-        else:
-            payload, usage, _, _ = _call_openai_compat(
-                messages, provider=provider, user_id=user_id,
-                api_key_override=openrouter_api_key,
-                response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-            )
+    payload, usage = _invoke_chat_for_use_case(
+        use_case, messages, LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+        user_id=user_id, project_id=project_id,
+        provider_override=provider_override,
+        model_override=model_override,
+    )
 
     log.info("localized_translation parsed payload type=%s keys=%s",
              type(payload).__name__,
@@ -403,11 +243,9 @@ def _generate_localized_translation_batched(
     variant: str,
     custom_system_prompt: str | None,
     *,
-    provider: str,
+    use_case: str,
     user_id: int | None,
-    openrouter_api_key: str | None,
     batch_size: int,
-    use_case: str | None = None,
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
@@ -433,9 +271,7 @@ def _generate_localized_translation_batched(
         batch_result = _generate_localized_translation_single(
             batch_source_text, batch,
             variant=variant, custom_system_prompt=custom_system_prompt,
-            provider=provider, user_id=user_id,
-            openrouter_api_key=openrouter_api_key,
-            use_case=use_case, project_id=project_id,
+            use_case=use_case, user_id=user_id, project_id=project_id,
             provider_override=provider_override,
             model_override=model_override,
         )
@@ -468,22 +304,26 @@ def generate_localized_translation(
     variant: str = "normal",
     custom_system_prompt: str | None = None,
     *,
-    provider: str = "openrouter",
     user_id: int | None = None,
-    openrouter_api_key: str | None = None,
     use_case: str | None = None,
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    # 已废弃；仅保留以避免老调用方 TypeError，值被忽略。
+    provider: str | None = None,
+    openrouter_api_key: str | None = None,
 ) -> dict:
     """Public entry: dispatches to single-shot for short videos and to the
     batched path for long videos based on config thresholds. Long-prompt LLM
     calls are the root cause of intermittent missing-field failures across
     Claude/Gemini; batching keeps each call's prompt size small.
 
-    传 use_case 时直接走 appcore.llm_client.invoke_chat（adapter 解析 binding），
-    不再走 provider 字符串映射；老 provider= 入参仍兼容。优先级：use_case > provider。
+    use_case 必传，走 appcore.llm_client.invoke_chat（adapter 解析 binding）。
+    provider= / openrouter_api_key= 仅作为废弃 kwargs 保留以避免老调用方崩溃，
+    实际值被忽略；如果要切 provider/model 用 provider_override / model_override。
     """
+    del provider, openrouter_api_key  # noqa: F841 — 兼容签名但忽略
+    use_case = _require_use_case(use_case, fn="generate_localized_translation")
     import config as _cfg
     if (
         getattr(_cfg, "MULTI_TRANSLATE_BATCH_ENABLED", True)
@@ -492,19 +332,16 @@ def generate_localized_translation(
         return _generate_localized_translation_batched(
             source_full_text_zh, script_segments,
             variant=variant, custom_system_prompt=custom_system_prompt,
-            provider=provider, user_id=user_id,
-            openrouter_api_key=openrouter_api_key,
+            use_case=use_case, user_id=user_id,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
-            use_case=use_case, project_id=project_id,
+            project_id=project_id,
             provider_override=provider_override,
             model_override=model_override,
         )
     return _generate_localized_translation_single(
         source_full_text_zh, script_segments,
         variant=variant, custom_system_prompt=custom_system_prompt,
-        provider=provider, user_id=user_id,
-        openrouter_api_key=openrouter_api_key,
-        use_case=use_case, project_id=project_id,
+        use_case=use_case, user_id=user_id, project_id=project_id,
         provider_override=provider_override,
         model_override=model_override,
     )
@@ -513,42 +350,27 @@ def generate_localized_translation(
 def _generate_tts_script_single(
     localized_translation: dict,
     *,
-    provider: str = "openrouter",
+    use_case: str,
     user_id: int | None = None,
-    openrouter_api_key: str | None = None,
     messages_builder=None,
     response_format_override=None,
     validator=None,
-    use_case: str | None = None,
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
 ) -> dict:
     """Single-shot tts_script generation: original logic, no batching."""
+    use_case = _require_use_case(use_case, fn="_generate_tts_script_single")
     builder = messages_builder or build_tts_script_messages
     messages = builder(localized_translation)
     rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
 
-    if use_case:
-        payload, usage = _invoke_chat_for_use_case(
-            use_case, messages, rf,
-            user_id=user_id, project_id=project_id,
-            provider_override=provider_override,
-            model_override=model_override,
-        )
-    else:
-        provider = _resolve_use_case_provider(provider)
-        if provider.startswith("vertex_"):
-            payload, usage, _ = _call_vertex_json(
-                messages, _vertex_model_id(provider), rf,
-                provider_config_code=_vertex_provider_config_code(provider),
-            )
-        else:
-            payload, usage, _, _ = _call_openai_compat(
-                messages, provider=provider, user_id=user_id,
-                api_key_override=openrouter_api_key,
-                response_format=rf,
-            )
+    payload, usage = _invoke_chat_for_use_case(
+        use_case, messages, rf,
+        user_id=user_id, project_id=project_id,
+        provider_override=provider_override,
+        model_override=model_override,
+    )
 
     log.info("tts_script parsed payload type=%s keys=%s",
              type(payload).__name__,
@@ -558,8 +380,6 @@ def _generate_tts_script_single(
     try:
         result = validate_fn(payload, sentences=sentences)
     except TypeError:
-        # Custom validators (test injection / language overrides) may not accept the
-        # sentences kwarg yet. Fall back to the legacy single-arg call.
         result = validate_fn(payload)
     if usage:
         result["_usage"] = usage
@@ -572,14 +392,12 @@ def _generate_tts_script_single(
 def _generate_tts_script_batched(
     localized_translation: dict,
     *,
-    provider: str,
+    use_case: str,
     user_id: int | None,
-    openrouter_api_key: str | None,
     messages_builder,
     response_format_override,
     validator,
     batch_size: int,
-    use_case: str | None = None,
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
@@ -607,12 +425,10 @@ def _generate_tts_script_batched(
         }
         batch_result = _generate_tts_script_single(
             sub_localized,
-            provider=provider, user_id=user_id,
-            openrouter_api_key=openrouter_api_key,
+            use_case=use_case, user_id=user_id, project_id=project_id,
             messages_builder=messages_builder,
             response_format_override=response_format_override,
             validator=validator,
-            use_case=use_case, project_id=project_id,
             provider_override=provider_override,
             model_override=model_override,
         )
@@ -649,24 +465,27 @@ def _generate_tts_script_batched(
 def generate_tts_script(
     localized_translation: dict,
     *,
-    provider: str = "openrouter",
     user_id: int | None = None,
-    openrouter_api_key: str | None = None,
+    use_case: str | None = None,
+    project_id: str | None = None,
     messages_builder=None,
     response_format_override=None,
     validator=None,
-    use_case: str | None = None,
-    project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    # 已废弃；保留以避免老调用方 TypeError。
+    provider: str | None = None,
+    openrouter_api_key: str | None = None,
 ) -> dict:
     """Public entry. Long sentences trigger batched generation; per-batch
     blocks/subtitle_chunks are merged and the full sentence list drives a
     single validate_tts_script(sentences=...) so derive can recompute all
     nested indices coherently.
 
-    传 use_case 时走 invoke_chat；老 provider= 入参兼容。
+    use_case 必传。
     """
+    del provider, openrouter_api_key  # noqa: F841
+    use_case = _require_use_case(use_case, fn="generate_tts_script")
     import config as _cfg
     sentences = (localized_translation or {}).get("sentences") or []
     if (
@@ -675,24 +494,20 @@ def generate_tts_script(
     ):
         return _generate_tts_script_batched(
             localized_translation,
-            provider=provider, user_id=user_id,
-            openrouter_api_key=openrouter_api_key,
+            use_case=use_case, user_id=user_id, project_id=project_id,
             messages_builder=messages_builder,
             response_format_override=response_format_override,
             validator=validator,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
-            use_case=use_case, project_id=project_id,
             provider_override=provider_override,
             model_override=model_override,
         )
     return _generate_tts_script_single(
         localized_translation,
-        provider=provider, user_id=user_id,
-        openrouter_api_key=openrouter_api_key,
+        use_case=use_case, user_id=user_id, project_id=project_id,
         messages_builder=messages_builder,
         response_format_override=response_format_override,
         validator=validator,
-        use_case=use_case, project_id=project_id,
         provider_override=provider_override,
         model_override=model_override,
     )
@@ -761,16 +576,17 @@ def _generate_localized_rewrite_single(
     source_language: str,
     messages_builder,
     *,
-    provider: str = "openrouter",
+    use_case: str,
     user_id: int | None = None,
-    openrouter_api_key: str | None = None,
     temperature: float = 0.2,
     feedback_notes: str | None = None,
-    use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Single-shot rewrite: original logic, no batching. Used directly for
     short translations and as the per-batch primitive for long ones."""
+    use_case = _require_use_case(use_case, fn="_generate_localized_rewrite_single")
     builder_kwargs = dict(
         source_full_text=source_full_text,
         prev_localized_translation=prev_localized_translation,
@@ -782,38 +598,23 @@ def _generate_localized_rewrite_single(
         builder_kwargs["feedback_notes"] = feedback_notes
     messages = messages_builder(**builder_kwargs)
 
-    if use_case:
-        payload, usage = _invoke_chat_for_use_case(
-            use_case, messages, LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-            user_id=user_id, project_id=project_id,
-            temperature=temperature,
-        )
-    else:
-        provider = _resolve_use_case_provider(provider)
-        if provider.startswith("vertex_"):
-            payload, usage, _ = _call_vertex_json(
-                messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-                temperature=temperature,
-                provider_config_code=_vertex_provider_config_code(provider),
-            )
-        else:
-            payload, usage, _, _ = _call_openai_compat(
-                messages, provider=provider, user_id=user_id,
-                api_key_override=openrouter_api_key,
-                response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-                temperature=temperature,
-            )
+    payload, usage = _invoke_chat_for_use_case(
+        use_case, messages, LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+        user_id=user_id, project_id=project_id,
+        temperature=temperature,
+        provider_override=provider_override,
+        model_override=model_override,
+    )
 
     log.info(
-        "localized_rewrite parsed (provider=%s, direction=%s, target_words=%d, "
+        "localized_rewrite parsed (use_case=%s, direction=%s, target_words=%d, "
         "temperature=%.2f, feedback=%s)",
-        provider, direction, target_words, temperature,
+        use_case, direction, target_words, temperature,
         "yes" if feedback_notes else "no",
     )
     # Rewrite 不应该改 source segment 对应关系——只是按字数重写文本。
     # 长 prompt / 高 temperature 下 LLM 偶尔漏 source_segment_indices，从
-    # prev_localized_translation.sentences 按位补回（同位 → 取对应 prev sentence；
-    # 兜底 → 取整批 prev sentences 的 union），避免 validate 失败炸流水线。
+    # prev_localized_translation.sentences 按位补回。
     _patch_missing_source_indices_from_prev(
         (payload or {}).get("sentences") if isinstance(payload, dict) else None,
         (prev_localized_translation or {}).get("sentences") or [],
@@ -833,14 +634,14 @@ def _generate_localized_rewrite_batched(
     source_language: str,
     messages_builder,
     *,
-    provider: str,
+    use_case: str,
     user_id: int | None,
-    openrouter_api_key: str | None,
     temperature: float,
     feedback_notes: str | None,
     batch_size: int,
-    use_case: str | None = None,
     project_id: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """Long-translation rewrite: split prev sentences into ~batch_size batches,
     allocate sub-target words proportionally by char count, rewrite each batch
@@ -869,10 +670,10 @@ def _generate_localized_rewrite_batched(
         batch_result = _generate_localized_rewrite_single(
             source_full_text, sub_prev, sub_target, direction, source_language,
             messages_builder,
-            provider=provider, user_id=user_id,
-            openrouter_api_key=openrouter_api_key,
+            use_case=use_case, user_id=user_id, project_id=project_id,
             temperature=temperature, feedback_notes=feedback_notes,
-            use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
         batch_global_indices = sorted({
             int(idx)
@@ -913,18 +714,20 @@ def generate_localized_rewrite(
     source_language: str,
     messages_builder,
     *,
-    provider: str = "openrouter",
     user_id: int | None = None,
-    openrouter_api_key: str | None = None,
-    temperature: float = 0.2,
-    feedback_notes: str | None = None,
     use_case: str | None = None,
     project_id: str | None = None,
+    temperature: float = 0.2,
+    feedback_notes: str | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
+    # 已废弃；保留以避免老调用方 TypeError。
+    provider: str | None = None,
+    openrouter_api_key: str | None = None,
 ) -> dict:
     """Rewrite an existing localized_translation to a target word count.
 
-    provider 可以是 openrouter 派生值、vertex_* 或 doubao；所有路径都把实际发给
-    LLM 的 messages 放在 result["_messages"] 里，供 UI/审计。
+    use_case 必传；走 invoke_chat（adapter 解析 binding）。
 
     temperature 让上层（duration loop 内部 5 次 retry）逐次升温，避免 LLM 对同一
     prompt 输出字符级一致的同一份译文。feedback_notes 让上层把"前几次 attempt
@@ -932,9 +735,9 @@ def generate_localized_rewrite(
 
     长 sentences 时自动走分批 rewrite（每批分配子目标字数），避免长 prompt 下
     Claude/Gemini 漏返 source_segment_indices 等嵌套字段。
-
-    传 use_case 时走 invoke_chat；老 provider= 入参兼容。
     """
+    del provider, openrouter_api_key  # noqa: F841
+    use_case = _require_use_case(use_case, fn="generate_localized_rewrite")
     import config as _cfg
     sentences = prev_localized_translation.get("sentences") or []
     if (
@@ -944,17 +747,17 @@ def generate_localized_rewrite(
         return _generate_localized_rewrite_batched(
             source_full_text, prev_localized_translation, target_words,
             direction, source_language, messages_builder,
-            provider=provider, user_id=user_id,
-            openrouter_api_key=openrouter_api_key,
+            use_case=use_case, user_id=user_id, project_id=project_id,
             temperature=temperature, feedback_notes=feedback_notes,
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
-            use_case=use_case, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
         )
     return _generate_localized_rewrite_single(
         source_full_text, prev_localized_translation, target_words,
         direction, source_language, messages_builder,
-        provider=provider, user_id=user_id,
-        openrouter_api_key=openrouter_api_key,
+        use_case=use_case, user_id=user_id, project_id=project_id,
         temperature=temperature, feedback_notes=feedback_notes,
-        use_case=use_case, project_id=project_id,
+        provider_override=provider_override,
+        model_override=model_override,
     )

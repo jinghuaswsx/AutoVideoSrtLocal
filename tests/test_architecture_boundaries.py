@@ -599,21 +599,33 @@ def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allo
 
 
 def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
+    """SDK 直连白名单：openai / google.genai 的 import 只允许出现在
+    adapter 或 _helpers 薄封装里。
+
+    Phase D 完成后状态：
+      - 业务代码（pipeline / web / tools / appcore 业务模块）100% 走
+        appcore.llm_client.invoke_chat / invoke_generate
+      - appcore/gemini.py 已删除（D-3）
+      - pipeline/translate.py 不再 from openai import OpenAI（D-4）
+      - pipeline/video_csk / video_review / video_score / shot_decompose /
+        translate_v2 / tts_v2 通过 invoke_generate 调用（B-3）
+      - 流式 generate_stream 已随 gemini.py 一并删除（D-2 合并入 D-3）
+    """
     allowed_paths = {
-        "appcore/gemini_image.py",
+        # adapter（实现 LLMAdapter.chat / generate，唯一允许直连 SDK 的层）
+        "appcore/llm_providers/openrouter_adapter.py",
         "appcore/llm_providers/gemini_aistudio_adapter.py",
         "appcore/llm_providers/gemini_vertex_adapter.py",
-        "appcore/llm_providers/openrouter_adapter.py",
-        # Phase B-4：image OpenAI 客户端创建迁到 _helpers，gemini_image 不再直连
-        "appcore/llm_providers/_helpers/openrouter_image.py",
-        # Phase C-3：pipeline.translate._call_openai_compat 的 OpenAI() 客户端创建
-        # 迁到这里，pipeline/translate.py 顶部不再 `from openai import OpenAI`
+        # adapter 间共享 helper（不暴露给业务代码）
         "appcore/llm_providers/_helpers/openai_compat.py",
-        "pipeline/video_csk.py",
-        "pipeline/video_review.py",
-        "pipeline/video_score.py",
+        "appcore/llm_providers/_helpers/openrouter_image.py",
+        "appcore/llm_providers/_helpers/gemini_calls.py",
+        "appcore/llm_providers/_helpers/vertex_json.py",
     }
     offenders: list[str] = []
+
+    def _is_sdk_module(name: str) -> bool:
+        return name == "openai" or name == "google" or name == "google.genai" or name.startswith("google.genai.")
 
     for root in (Path("appcore"), Path("pipeline"), Path("web"), Path("tools")):
         if not root.exists():
@@ -625,15 +637,23 @@ def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():
                 if isinstance(node, ast.ImportFrom):
                     module = node.module or ""
                     imports_openai = module == "openai"
+                    imports_genai = (
+                        module == "google" and any(alias.name == "genai" for alias in node.names)
+                        or module == "google.genai"
+                        or module.startswith("google.genai.")
+                    )
                     imports_legacy_gemini = (
                         module == "appcore"
                         and any(alias.name == "gemini" for alias in node.names)
                     )
-                    if (imports_openai or imports_legacy_gemini) and path_key not in allowed_paths:
+                    if (imports_openai or imports_genai or imports_legacy_gemini) and path_key not in allowed_paths:
                         offenders.append(f"{path}:{node.lineno}")
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name in {"openai", "appcore.gemini"} and path_key not in allowed_paths:
+                        if (
+                            alias.name in {"openai", "appcore.gemini"}
+                            or _is_sdk_module(alias.name)
+                        ) and path_key not in allowed_paths:
                             offenders.append(f"{path}:{node.lineno}")
 
-    assert offenders == []
+    assert offenders == [], f"unauthorised SDK direct-import: {offenders}"
