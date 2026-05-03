@@ -48,7 +48,6 @@ from web.services.task_av_inputs import (
     validate_av_translate_inputs,
 )
 from web.services.task_av_rewrite import (
-    build_translate_compare_artifact,
     clear_av_compose_outputs,
     rebuild_tts_full_audio,
     resolve_av_voice_ids,
@@ -62,6 +61,7 @@ from web.services.task_rename import rename_task_display_name
 from web.services.task_responses import task_not_found_response
 from web.services.task_resume import resume_task_from_step
 from web.services.task_retranslate import retranslate_task
+from web.services.task_segments import confirm_task_segments
 from web.services.task_start import start_task_pipeline
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
@@ -504,58 +504,15 @@ def update_segments(task_id):
     if not task:
         return task_not_found_response()
 
-    body = request.get_json()
-    if not body or "segments" not in body:
-        return jsonify({"error": "segments required"}), 400
-
-    store.confirm_segments(task_id, body["segments"])
-    updated_task = refresh_task(task_id, task)
-    if str(updated_task.get("pipeline_version") or "").strip() == "av":
-        variant_state = dict((updated_task.get("variants") or {}).get("av") or {})
-        existing_sentences = [
-            dict(item)
-            for item in (variant_state.get("sentences") or [])
-            if isinstance(item, dict)
-        ]
-        existing_by_asr = {
-            int(sentence.get("asr_index", sentence.get("index", idx))): sentence
-            for idx, sentence in enumerate(existing_sentences)
-        }
-        av_sentences = []
-        for fallback_index, segment in enumerate(body["segments"]):
-            if not isinstance(segment, dict):
-                continue
-            asr_index = int(segment.get("asr_index", segment.get("index", fallback_index)))
-            base = dict(existing_by_asr.get(asr_index, {}))
-            translated = str(segment.get("translated") or segment.get("target_text") or segment.get("text") or "")
-            base.update(
-                {
-                    "asr_index": asr_index,
-                    "text": translated,
-                    "est_chars": len(translated),
-                    "start_time": float(segment.get("start_time", base.get("start_time", 0.0)) or 0.0),
-                    "end_time": float(segment.get("end_time", base.get("end_time", 0.0)) or 0.0),
-                    "source_text": str(segment.get("text") or base.get("source_text") or ""),
-                }
-            )
-            if "target_duration" not in base:
-                base["target_duration"] = max(0.0, base["end_time"] - base["start_time"])
-            av_sentences.append(base)
-        localized_translation = _build_av_localized_translation(av_sentences)
-        store.update_variant(
-            task_id,
-            "av",
-            sentences=av_sentences,
-            localized_translation=localized_translation,
-        )
-        store.update(task_id, localized_translation=localized_translation, segments=av_sentences)
-        updated_task = refresh_task(task_id, updated_task)
-    store.set_artifact(task_id, "translate", build_translate_compare_artifact(updated_task))
-    store.set_current_review_step(task_id, "")
-    store.set_step(task_id, "translate", "done")
-    store.set_step_message(task_id, "translate", "翻译确认完成")
-    pipeline_runner.resume(task_id, "tts", user_id=optional_user_id(current_user))
-    return jsonify({"status": "ok"})
+    body = json_payload_from(request)
+    outcome = confirm_task_segments(
+        task_id,
+        task,
+        body,
+        user_id=optional_user_id(current_user),
+        runner=pipeline_runner,
+    )
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/av/rewrite_sentence", methods=["POST"])
