@@ -73,10 +73,10 @@ from web.services.task_source_video import ensure_local_source_video, task_requi
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
 from web.services.task_upload import initialize_uploaded_av_task
+from web.services.task_voice import confirm_task_voice
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
-    normalize_confirm_voice_payload,
 )
 from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
 
@@ -273,48 +273,14 @@ def confirm_voice(task_id: str):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return task_not_found_response()
-    lang = av_task_target_lang(task)
-    body = json_payload_from(request)
-
-    from appcore.video_translate_defaults import resolve_default_voice
-
-    try:
-        normalized = normalize_confirm_voice_payload(
-            body=body,
-            lang=lang or "",
-            default_voice_id=resolve_default_voice(lang, user_id=current_user.id) if lang else None,
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    store.update(
+    outcome = confirm_task_voice(
         task_id,
-        type="translation",
-        selected_voice_id=normalized["voice_id"],
-        selected_voice_name=normalized["voice_name"],
-        voice_id=normalized["voice_id"],
-        subtitle_font=normalized["subtitle_font"],
-        subtitle_size=normalized["subtitle_size"],
-        subtitle_position_y=normalized["subtitle_position_y"],
-        subtitle_position=normalized["subtitle_position"],
-        pipeline_version="av",
-        target_lang=lang or task.get("target_lang"),
-    )
-    store.set_step(task_id, "voice_match", "done")
-    store.set_current_review_step(task_id, "")
-
-    updated_task = refresh_task(task_id, task)
-    try:
-        ensure_local_source_video(task_id, updated_task)
-    except FileNotFoundError as exc:
-        return jsonify({"error": str(exc)}), 409
-
-    pipeline_runner.resume(
-        task_id,
-        "alignment",
+        task,
+        json_payload_from(request),
         user_id=optional_user_id(current_user),
+        runner=pipeline_runner,
     )
-    return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/thumbnail")

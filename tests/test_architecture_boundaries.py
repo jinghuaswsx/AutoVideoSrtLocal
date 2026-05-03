@@ -299,6 +299,27 @@ def test_task_upload_initialization_lives_outside_route_module():
     assert Path("web/services/task_upload.py").exists()
 
 
+def test_task_confirm_voice_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "confirm_voice"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "normalize_confirm_voice_payload" not in route_source
+    assert "resolve_default_voice" not in route_source
+    assert "store.update" not in route_source
+    assert "store.set_step" not in route_source
+    assert "store.set_current_review_step" not in route_source
+    assert "ensure_local_source_video" not in route_source
+    assert "pipeline_runner.resume" not in route_source
+    assert "confirm_task_voice" in route_source
+    assert Path("web/services/task_voice.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 
