@@ -440,6 +440,7 @@ def get_meta_ad_summary(
         placeholders = ",".join(["%s"] * len(product_ids))
         dxm_rows = query(
             "SELECT product_id, COUNT(DISTINCT dxm_package_id) AS dianxiaomi_order_count, "
+            "SUM(COALESCE(quantity, 0)) AS dianxiaomi_units, "
             "SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS dianxiaomi_total_sales "
             "FROM dianxiaomi_order_lines "
             f"WHERE product_id IN ({placeholders}) "
@@ -453,6 +454,7 @@ def get_meta_ad_summary(
         dxm_metrics = dianxiaomi_by_product.get(int(row["product_id"] or 0), {})
         dxm_total_sales = _money(dxm_metrics.get("dianxiaomi_total_sales"))
         row["dianxiaomi_order_count"] = int(dxm_metrics.get("dianxiaomi_order_count") or 0)
+        row["dianxiaomi_units"] = int(dxm_metrics.get("dianxiaomi_units") or 0)
         row["dianxiaomi_total_sales"] = dxm_total_sales
         row["dianxiaomi_roas"] = _roas(dxm_total_sales, float(row.get("spend_usd") or 0))
 

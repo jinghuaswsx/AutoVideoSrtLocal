@@ -334,8 +334,18 @@ def test_get_dashboard_month_view_happy_path(monkeypatch):
     assert result["products"][0]["roas"] == 5.0
     assert result["country"] is None
     assert result["summary"]["total_orders"] == 10
+    assert result["summary"]["total_units"] == 12
     assert result["summary"]["total_revenue"] == 500.0
     assert result["summary"]["total_spend"] == 100.0
+
+
+def test_product_dashboard_frontend_displays_total_units(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "fmtNum(s.total_units)" in body
+    assert "销售件数" in body
 
 
 def test_get_dashboard_accepts_explicit_date_range(monkeypatch):

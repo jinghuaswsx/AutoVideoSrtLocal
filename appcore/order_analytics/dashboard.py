@@ -401,9 +401,11 @@ def _load_products(ids: set[int], *, search: str | None = None) -> dict[int, dic
 
 def _summarize_dashboard(rows: list[dict], ad_data_available: bool) -> dict:
     total_orders = sum(r.get("orders") or 0 for r in rows)
+    total_units = sum(r.get("units") or 0 for r in rows)
     total_revenue = round(sum(r.get("revenue") or 0 for r in rows), 2)
     summary = {
         "total_orders": total_orders,
+        "total_units": total_units,
         "total_revenue": total_revenue,
     }
     if ad_data_available:
