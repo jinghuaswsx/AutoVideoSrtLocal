@@ -224,3 +224,21 @@ def test_build_translate_compare_artifact_persists_variant_payloads():
             },
         },
     }
+
+
+def test_rewrite_task_av_sentence_rejects_task_without_sentences_without_persisting():
+    from web.services.task_av_rewrite import rewrite_task_av_sentence
+
+    persisted = []
+
+    outcome = rewrite_task_av_sentence(
+        "task-empty-sentences",
+        {"variants": {"av": {"sentences": []}}},
+        {"asr_index": 0, "text": "Fresh line"},
+        user_id=1,
+        update_task=lambda *args, **kwargs: persisted.append((args, kwargs)),
+    )
+
+    assert outcome.status_code == 400
+    assert "error" in outcome.payload
+    assert persisted == []

@@ -10,10 +10,6 @@ import uuid
 from flask import Blueprint, request, jsonify, render_template, abort, redirect, make_response
 from flask_login import login_required, current_user
 
-from appcore.runtime import (
-    _build_av_localized_translation,
-    _build_av_tts_segments,
-)
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_CODES,
     AV_TARGET_MARKET_OPTIONS,
@@ -23,14 +19,6 @@ from appcore.av_translate_inputs import (
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore.task_recovery import recover_task_if_needed
-from pipeline import tts
-from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
-from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, duration_ratio
-from pipeline.subtitle import build_srt_from_chunks, save_srt
-from web.preview_artifacts import (
-    build_subtitle_artifact,
-    build_tts_artifact,
-)
 from web import store
 from web.services import pipeline_runner
 from web.services.artifact_download import (
@@ -45,12 +33,8 @@ from web.services.task_av_inputs import (
     collect_av_translate_inputs,
     validate_av_translate_inputs,
 )
-from web.services.task_av_rewrite import (
-    clear_av_compose_outputs,
-    rebuild_tts_full_audio,
-    resolve_av_voice_ids,
-)
-from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id, refresh_task
+from web.services.task_av_rewrite import rewrite_task_av_sentence
+from web.services.task_access import get_user_task, is_admin_user, load_task, optional_user_id
 from web.services.task_alignment import confirm_task_alignment
 from web.services.task_analysis import start_task_analysis
 from web.services.task_capcut import deploy_task_capcut_project
@@ -476,179 +460,13 @@ def av_rewrite_sentence(task_id):
     if not task:
         return task_not_found_response()
 
-    variant = "av"
-    variant_state = dict((task.get("variants") or {}).get(variant) or {})
-    sentences = [dict(item) for item in (variant_state.get("sentences") or []) if isinstance(item, dict)]
-    if not sentences:
-        return jsonify({"error": "当前任务没有可重写的音画同步句子"}), 400
-
-    body = json_payload_from(request)
-    try:
-        asr_index = int(body.get("asr_index"))
-    except (TypeError, ValueError):
-        return jsonify({"error": "asr_index 非法"}), 400
-    new_text = str(body.get("text") or "").strip()
-    if not new_text:
-        return jsonify({"error": "text 不能为空"}), 400
-
-    sentence_index = None
-    for idx, sentence in enumerate(sentences):
-        current_asr_index = int(sentence.get("asr_index", sentence.get("index", idx)))
-        if current_asr_index == asr_index:
-            sentence_index = idx
-            break
-    if sentence_index is None:
-        return jsonify({"error": "未找到对应句子"}), 404
-
-    task_dir = str(task.get("task_dir") or "").strip()
-    if not task_dir:
-        return jsonify({"error": "任务目录缺失，无法重写"}), 400
-
-    resolved_voice_id, elevenlabs_voice_id = resolve_av_voice_ids(task, variant_state, user_id=current_user.id)
-    if not elevenlabs_voice_id:
-        return jsonify({"error": "未找到可用音色，无法重写配音"}), 400
-
-    av_inputs = task.get("av_translate_inputs") or {}
-    target_language = str(av_inputs.get("target_language") or "en").strip().lower() or "en"
-
-    updated_sentence = dict(sentences[sentence_index])
-    attempts = updated_sentence.get("attempts")
-    updated_sentence["attempts"] = attempts if isinstance(attempts, list) else []
-    segment_path = updated_sentence.get("tts_path") or os.path.join(
-        task_dir,
-        "tts_segments",
-        variant,
-        f"seg_{sentence_index:04d}.mp3",
-    )
-    updated_sentence["text"] = new_text
-    updated_sentence["est_chars"] = len(new_text)
-    updated_sentence["tts_path"] = segment_path
-
-    tts.generate_segment_audio(
-        text=new_text,
-        voice_id=elevenlabs_voice_id,
-        output_path=segment_path,
-        language_code=target_language,
-    )
-    tts_duration = float(tts.get_audio_duration(segment_path) or 0.0)
-    target_duration = float(updated_sentence.get("target_duration", 0.0) or 0.0)
-    status, _speed = classify_overshoot(target_duration, tts_duration)
-    updated_sentence["tts_duration"] = tts_duration
-    updated_sentence["status"] = status
-    updated_sentence["speed"] = 1.0
-    updated_sentence["duration_ratio"] = duration_ratio(target_duration, tts_duration)
-
-    if status == "ok":
-        speed = compute_speed_for_target(target_duration, tts_duration)
-        if speed is not None and speed != 1.0:
-            tts.generate_segment_audio(
-                text=new_text,
-                voice_id=elevenlabs_voice_id,
-                output_path=segment_path,
-                language_code=target_language,
-                speed=speed,
-            )
-            updated_sentence["tts_duration"] = float(tts.get_audio_duration(segment_path) or 0.0)
-            updated_sentence["duration_ratio"] = duration_ratio(target_duration, updated_sentence["tts_duration"])
-            updated_sentence["status"] = "speed_adjusted"
-            updated_sentence["speed"] = speed
-    elif status == "needs_rewrite":
-        updated_sentence["status"] = "warning_long"
-        updated_sentence["speed"] = 1.0
-    elif status == "needs_expand":
-        updated_sentence["status"] = "warning_short"
-        updated_sentence["speed"] = 1.0
-
-    sentences[sentence_index] = updated_sentence
-    localized_translation = _build_av_localized_translation(sentences)
-    tts_segments = _build_av_tts_segments(sentences)
-    full_audio_path = rebuild_tts_full_audio(task_dir, tts_segments, variant)
-
-    sync_granularity = str((av_inputs or {}).get("sync_granularity") or "hybrid")
-    subtitle_units = build_subtitle_units_from_sentences(sentences, mode=sync_granularity)
-    srt_content = build_srt_from_chunks(subtitle_units)
-    srt_path = save_srt(srt_content, os.path.join(task_dir, f"subtitle.{variant}.srt"))
-
-    cleared_outputs = clear_av_compose_outputs(task, variant_state, variant=variant)
-    result = cleared_outputs.result
-    exports = cleared_outputs.exports
-    artifacts = cleared_outputs.artifacts
-    preview_files = cleared_outputs.preview_files
-    tos_uploads = cleared_outputs.tos_uploads
-    variant_result = cleared_outputs.variant_result
-    variant_exports = cleared_outputs.variant_exports
-    variant_artifacts = cleared_outputs.variant_artifacts
-    variant_preview_files = cleared_outputs.variant_preview_files
-
-    artifacts["tts"] = build_tts_artifact(tts_segments)
-    artifacts["subtitle"] = build_subtitle_artifact(srt_content, target_language=target_language)
-    preview_files["tts_full_audio"] = full_audio_path
-    preview_files["srt"] = srt_path
-
-    variant_artifacts["tts"] = build_tts_artifact(tts_segments)
-    variant_artifacts["subtitle"] = build_subtitle_artifact(srt_content, target_language=target_language)
-    variant_preview_files["tts_full_audio"] = full_audio_path
-    variant_preview_files["srt"] = srt_path
-
-    steps = dict(task.get("steps") or {})
-    steps["tts"] = "done"
-    steps["subtitle"] = "done"
-    steps["compose"] = "done"
-    steps["export"] = "done"
-
-    step_messages = dict(task.get("step_messages") or {})
-    step_messages["tts"] = f"句子 #{asr_index} 配音已更新"
-    step_messages["subtitle"] = "字幕已基于最新配音重新生成"
-    step_messages["compose"] = "配音或字幕已更新，请从此步继续重新合成"
-    step_messages["export"] = "配音或字幕已更新，请从此步继续重新导出"
-
-    variant_state.update(
-        {
-            "voice_id": resolved_voice_id or variant_state.get("voice_id"),
-            "sentences": sentences,
-            "localized_translation": localized_translation,
-            "tts_result": {"full_audio_path": full_audio_path, "segments": tts_segments},
-            "tts_audio_path": full_audio_path,
-            "subtitle_units": subtitle_units,
-            "srt_path": srt_path,
-            "corrected_subtitle": {"chunks": subtitle_units, "srt_content": srt_content},
-            "result": variant_result,
-            "exports": variant_exports,
-            "artifacts": variant_artifacts,
-            "preview_files": variant_preview_files,
-        }
-    )
-    variants = dict(task.get("variants") or {})
-    variants[variant] = variant_state
-
-    store.update(
+    outcome = rewrite_task_av_sentence(
         task_id,
-        status="done",
-        variants=variants,
-        steps=steps,
-        step_messages=step_messages,
-        segments=tts_segments,
-        localized_translation=localized_translation,
-        tts_audio_path=full_audio_path,
-        srt_path=srt_path,
-        corrected_subtitle={"chunks": subtitle_units, "srt_content": srt_content},
-        result=result,
-        exports=exports,
-        artifacts=artifacts,
-        preview_files=preview_files,
-        tos_uploads=tos_uploads,
-        voice_id=resolved_voice_id or task.get("voice_id"),
+        task,
+        json_payload_from(request),
+        user_id=current_user.id,
     )
-    updated_task = refresh_task(task_id, task)
-    return jsonify(
-        {
-            "ok": True,
-            "status": updated_sentence["status"],
-            "tts_duration": updated_sentence["tts_duration"],
-            "compose_stale": True,
-            "task": updated_task,
-        }
-    )
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/download/<file_type>", methods=["GET"])

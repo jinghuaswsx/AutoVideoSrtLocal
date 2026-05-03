@@ -2260,7 +2260,7 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
     rebuilt = []
 
     monkeypatch.setattr(
-        "web.routes.task.tts.get_voice_by_id",
+        "web.services.task_av_rewrite.tts.get_voice_by_id",
         lambda voice_id, user_id: {"id": voice_id, "elevenlabs_voice_id": "voice-el-id"},
     )
 
@@ -2269,8 +2269,8 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
         Path(output_path).write_bytes(f"audio:{text}".encode("utf-8"))
         return output_path
 
-    monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
-    monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 1.95 if str(path).endswith("seg_0000.mp3") else 1.2)
+    monkeypatch.setattr("web.services.task_av_rewrite.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("web.services.task_av_rewrite.tts.get_audio_duration", lambda path: 1.95 if str(path).endswith("seg_0000.mp3") else 1.2)
 
     def fake_rebuild_full_audio(task_dir_arg, segments, variant):
         rebuilt.append(
@@ -2283,14 +2283,14 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
         Path(full_audio_path).write_bytes(b"rebuilt-full-audio")
         return str(full_audio_path)
 
-    monkeypatch.setattr("web.routes.task.rebuild_tts_full_audio", fake_rebuild_full_audio)
+    monkeypatch.setattr("web.services.task_av_rewrite.rebuild_tts_full_audio", fake_rebuild_full_audio)
     built_chunks = []
 
     def fake_build_srt_from_chunks(chunks):
         built_chunks.append(chunks)
         return "1\n00:00:00,000 --> 00:00:03,150\nFresh new hook Keep this one\n"
 
-    monkeypatch.setattr("web.routes.task.build_srt_from_chunks", fake_build_srt_from_chunks, raising=False)
+    monkeypatch.setattr("web.services.task_av_rewrite.build_srt_from_chunks", fake_build_srt_from_chunks, raising=False)
 
     response = authed_client_no_db.post(
         f"/api/tasks/{task_id}/av/rewrite_sentence",
@@ -2390,7 +2390,7 @@ def test_av_rewrite_sentence_route_marks_long_warning_without_out_of_range_speed
 
     generated = []
     monkeypatch.setattr(
-        "web.routes.task.tts.get_voice_by_id",
+        "web.services.task_av_rewrite.tts.get_voice_by_id",
         lambda voice_id, user_id: {"id": voice_id, "elevenlabs_voice_id": "voice-el-id"},
     )
 
@@ -2399,9 +2399,9 @@ def test_av_rewrite_sentence_route_marks_long_warning_without_out_of_range_speed
         Path(output_path).write_bytes(b"audio")
         return output_path
 
-    monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
-    monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 2.4)
-    monkeypatch.setattr("web.routes.task.rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
+    monkeypatch.setattr("web.services.task_av_rewrite.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("web.services.task_av_rewrite.tts.get_audio_duration", lambda path: 2.4)
+    monkeypatch.setattr("web.services.task_av_rewrite.rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
 
     response = authed_client_no_db.post(
         f"/api/tasks/{task_id}/av/rewrite_sentence",
@@ -2459,7 +2459,7 @@ def test_av_rewrite_sentence_route_marks_short_warning_without_needs_expand(
 
     generated = []
     monkeypatch.setattr(
-        "web.routes.task.tts.get_voice_by_id",
+        "web.services.task_av_rewrite.tts.get_voice_by_id",
         lambda voice_id, user_id: {"id": voice_id, "elevenlabs_voice_id": "voice-el-id"},
     )
 
@@ -2468,9 +2468,9 @@ def test_av_rewrite_sentence_route_marks_short_warning_without_needs_expand(
         Path(output_path).write_bytes(b"audio")
         return output_path
 
-    monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
-    monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 1.6)
-    monkeypatch.setattr("web.routes.task.rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
+    monkeypatch.setattr("web.services.task_av_rewrite.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("web.services.task_av_rewrite.tts.get_audio_duration", lambda path: 1.6)
+    monkeypatch.setattr("web.services.task_av_rewrite.rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
 
     response = authed_client_no_db.post(
         f"/api/tasks/{task_id}/av/rewrite_sentence",

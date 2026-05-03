@@ -550,6 +550,31 @@ def test_task_av_rewrite_tts_audio_rebuild_lives_outside_route_module():
     assert Path("web/services/task_av_rewrite.py").exists()
 
 
+def test_task_av_rewrite_sentence_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "av_rewrite_sentence"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "tts.generate_segment_audio" not in route_source
+    assert "tts.get_audio_duration" not in route_source
+    assert "classify_overshoot" not in route_source
+    assert "compute_speed_for_target" not in route_source
+    assert "duration_ratio" not in route_source
+    assert "rebuild_tts_full_audio" not in route_source
+    assert "build_subtitle_units_from_sentences" not in route_source
+    assert "build_srt_from_chunks" not in route_source
+    assert "save_srt" not in route_source
+    assert "clear_av_compose_outputs" not in route_source
+    assert "store.update" not in route_source
+    assert "rewrite_task_av_sentence" in route_source
+    assert Path("web/services/task_av_rewrite.py").exists()
+
+
 def test_task_av_rewrite_translate_compare_artifact_lives_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 
