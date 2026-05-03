@@ -198,6 +198,60 @@ def test_restart_triggers_pipeline_start(done_task):
     assert runner.started == [(done_task["task_id"], 1)]
 
 
+def test_restart_task_workflow_persists_av_config_then_restarts():
+    calls = []
+
+    def restart_task(task_id, **kwargs):
+        calls.append(("restart_task", task_id, kwargs))
+        return {"id": task_id, "status": "uploaded"}
+
+    def refresh_task(task_id, fallback):
+        calls.append(("refresh_task", task_id, fallback))
+        return {"id": task_id, "status": "running"}
+
+    outcome = task_restart.restart_task_workflow(
+        "task-1",
+        {
+            "voice_id": "auto",
+            "voice_gender": "female",
+            "subtitle_font": "Impact",
+            "subtitle_size": 18,
+            "subtitle_position_y": "0.72",
+            "subtitle_position": "top",
+            "interactive_review": "true",
+        },
+        av_inputs={"target_language": "de"},
+        source_updates={"source_language": "en", "user_specified_source_language": True},
+        user_id=7,
+        runner=_Runner(),
+        step_order=("extract", "translate"),
+        update_task=lambda *args, **kwargs: calls.append(("update_task", args, kwargs)),
+        restart=restart_task,
+        refresh_task=refresh_task,
+    )
+
+    assert outcome.payload == {"status": "restarted", "task": {"id": "task-1", "status": "running"}}
+    assert calls[0] == (
+        "update_task",
+        ("task-1",),
+        {
+            "type": "translation",
+            "pipeline_version": "av",
+            "target_lang": "de",
+            "av_translate_inputs": {"target_language": "de"},
+            "source_language": "en",
+            "user_specified_source_language": True,
+        },
+    )
+    assert calls[1][0] == "restart_task"
+    assert calls[1][2]["voice_id"] is None
+    assert calls[1][2]["voice_gender"] == "female"
+    assert calls[1][2]["subtitle_position_y"] == 0.72
+    assert calls[1][2]["interactive_review"] is True
+    assert calls[1][2]["step_order"] == ("extract", "translate")
+    assert calls[2] == ("refresh_task", "task-1", {"id": "task-1", "status": "uploaded"})
+
+
 def test_restart_payload_does_not_share_mutable_state_across_tasks(tmp_path, monkeypatch):
     # Regression: restart_task once aliased preview_files / result / exports / artifacts /
     # tos_uploads to a shared module-level dict, so set_preview_file from one task

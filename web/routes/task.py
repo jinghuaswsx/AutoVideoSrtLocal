@@ -61,6 +61,7 @@ from web.services.task_rename import rename_task_display_name
 from web.services.task_responses import task_not_found_response
 from web.services.task_resume import resume_task_from_step
 from web.services.task_retranslate import retranslate_task
+from web.services.task_restart import restart_task_workflow
 from web.services.task_segments import confirm_task_segments
 from web.services.task_start import start_task_pipeline
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
@@ -374,30 +375,16 @@ def restart(task_id):
     source_updates, source_error = collect_av_source_language(body, current_task=task)
     if source_error:
         return jsonify({"error": source_error}), 400
-    store.update(
+    outcome = restart_task_workflow(
         task_id,
-        type="translation",
-        pipeline_version="av",
-        target_lang=av_inputs["target_language"],
-        av_translate_inputs=av_inputs,
-        **source_updates,
-    )
-    from web.services.task_restart import restart_task
-    updated = restart_task(
-        task_id,
-        voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
-        voice_gender=body.get("voice_gender", "male"),
-        subtitle_font=body.get("subtitle_font", "Impact"),
-        subtitle_size=body.get("subtitle_size", 14),
-        subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
-        subtitle_position=body.get("subtitle_position", "bottom"),
-        interactive_review=parse_bool(body.get("interactive_review", False)),
+        body,
+        av_inputs=av_inputs,
+        source_updates=source_updates,
         user_id=optional_user_id(current_user),
         runner=pipeline_runner,
         step_order=AV_SYNC_STEPS,
     )
-    updated = refresh_task(task_id, updated)
-    return jsonify({"status": "restarted", "task": updated})
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/start", methods=["POST"])

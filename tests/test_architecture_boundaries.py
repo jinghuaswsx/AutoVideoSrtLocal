@@ -339,6 +339,23 @@ def test_task_start_workflow_lives_outside_route_module():
     assert Path("web/services/task_start.py").exists()
 
 
+def test_task_restart_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "restart"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "store.update" not in route_source
+    assert "restart_task(" not in route_source
+    assert "refresh_task" not in route_source
+    assert "restart_task_workflow" in route_source
+    assert Path("web/services/task_restart.py").exists()
+
+
 def test_task_start_translate_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

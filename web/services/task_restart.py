@@ -11,6 +11,8 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
 from config import OUTPUT_DIR
 from appcore.safe_paths import (
@@ -22,8 +24,16 @@ from appcore.safe_paths import (
 from appcore.source_video import ensure_local_source_video
 from appcore.task_state import _empty_variant_state
 from web import store
+from web.services.task_access import refresh_task as refresh_task_state
+from web.services.task_start_inputs import parse_bool
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class TaskRestartWorkflowOutcome:
+    payload: dict
+    status_code: int = 200
 
 
 _STEPS = (
@@ -183,3 +193,41 @@ def restart_task(
 
     runner.start(task_id, user_id=user_id)
     return store.get(task_id) or {}
+
+
+def restart_task_workflow(
+    task_id: str,
+    body: Mapping[str, object],
+    *,
+    av_inputs: Mapping[str, object],
+    source_updates: Mapping[str, object],
+    user_id: int | None,
+    runner,
+    step_order: tuple[str, ...] | None = None,
+    update_task: Callable[..., object] = store.update,
+    restart: Callable[..., dict] = restart_task,
+    refresh_task: Callable[..., dict] = refresh_task_state,
+) -> TaskRestartWorkflowOutcome:
+    update_task(
+        task_id,
+        type="translation",
+        pipeline_version="av",
+        target_lang=av_inputs["target_language"],
+        av_translate_inputs=dict(av_inputs),
+        **source_updates,
+    )
+    updated = restart(
+        task_id,
+        voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
+        voice_gender=body.get("voice_gender", "male"),
+        subtitle_font=body.get("subtitle_font", "Impact"),
+        subtitle_size=body.get("subtitle_size", 14),
+        subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
+        subtitle_position=body.get("subtitle_position", "bottom"),
+        interactive_review=parse_bool(body.get("interactive_review", False)),
+        user_id=user_id,
+        runner=runner,
+        step_order=step_order,
+    )
+    updated = refresh_task(task_id, updated)
+    return TaskRestartWorkflowOutcome({"status": "restarted", "task": updated})
