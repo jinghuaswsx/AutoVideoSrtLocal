@@ -67,6 +67,7 @@ from web.services.task_start import start_task_pipeline
 from web.services.task_start_inputs import json_payload_from, parse_bool, request_payload_from
 from web.services.task_thumbnail import resolve_task_thumbnail_row
 from web.services.task_translate import start_task_translate
+from web.services.task_translation_selection import select_task_translation
 from web.services.task_upload import initialize_uploaded_av_task
 from web.services.task_voice import confirm_task_voice
 from web.services.translate_detail_protocol import (
@@ -474,19 +475,8 @@ def select_translation(task_id):
         return task_not_found_response()
 
     body = json_payload_from(request)
-    index = body.get("index")
-    if index is None:
-        return jsonify({"error": "index is required"}), 400
-
-    translation_history = task.get("translation_history") or []
-    if not (0 <= index < len(translation_history)):
-        return jsonify({"error": "无效的翻译索引"}), 400
-
-    selected = translation_history[index]["result"]
-    store.update_variant(task_id, "normal", localized_translation=selected)
-    store.update(task_id, selected_translation_index=index)
-
-    return jsonify({"status": "ok", "selected_index": index})
+    outcome = select_task_translation(task_id, task, body)
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/alignment", methods=["PUT"])

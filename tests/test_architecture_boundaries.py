@@ -382,6 +382,23 @@ def test_task_retranslate_workflow_lives_outside_route_module():
     assert Path("web/services/task_retranslate.py").exists()
 
 
+def test_task_select_translation_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "select_translation"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "translation_history" not in route_source
+    assert "store.update_variant" not in route_source
+    assert "store.update" not in route_source
+    assert "select_task_translation" in route_source
+    assert Path("web/services/task_translation_selection.py").exists()
+
+
 def test_task_name_helpers_live_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 
