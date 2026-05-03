@@ -132,6 +132,8 @@ def test_get_realtime_roas_overview_includes_today_product_sales_stats(monkeypat
                     "product_id": 42,
                     "product_name": "Glow Set",
                     "product_code": "glow-set-rjc",
+                    "order_count": 2,
+                    "units": 4,
                     "product_net_sales": 2000.0,
                     "shipping": 125.0,
                 }
@@ -154,6 +156,8 @@ def test_get_realtime_roas_overview_includes_today_product_sales_stats(monkeypat
             "product_id": 42,
             "product_name": "Glow Set",
             "product_code": "glow-set-rjc",
+            "order_count": 2,
+            "units": 4,
             "product_net_sales": 2000.0,
             "shipping": 125.0,
             "total_sales": 2125.0,
@@ -480,4 +484,8 @@ def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
     assert 'data-realtime-subtab="products"' in panel
     assert 'id="realtimeSubProducts"' in panel
     assert 'id="realtimeProductSalesBody"' in panel
+    assert "<th>订单数</th>" in panel
+    assert "<th>销售件数</th>" in panel
+    assert "fmtInt(row.order_count)" in body
+    assert "fmtInt(row.units)" in body
     assert "renderRealtimeProductSales(data.product_sales_stats || [])" in body

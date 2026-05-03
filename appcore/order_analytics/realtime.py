@@ -131,6 +131,8 @@ def _get_realtime_product_sales_stats(target: date, data_until: datetime) -> lis
             "product_id": row.get("product_id"),
             "product_name": row.get("product_name"),
             "product_code": row.get("product_code"),
+            "order_count": int(row.get("order_count") or 0),
+            "units": int(row.get("units") or 0),
             "product_net_sales": row.get("product_net_sales"),
             "shipping": row.get("shipping"),
             "total_sales": row.get("total_sales"),

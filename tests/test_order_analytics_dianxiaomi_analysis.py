@@ -36,6 +36,7 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
                     "product_name": "Product B",
                     "product_code": "product-b-rjc",
                     "order_count": 2,
+                    "units": 5,
                     "product_net_sales": 100.0,
                     "shipping": 12.5,
                 }
@@ -100,6 +101,7 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
             "product_name": "Product B",
             "product_code": "product-b-rjc",
             "order_count": 2,
+            "units": 5,
             "product_net_sales": 100.0,
             "shipping": 12.5,
             "total_sales": 112.5,
@@ -517,6 +519,10 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert 'id="dxmProductStatsBody"' in body
     assert "function renderDxmProductStats(productStats)" in body
     assert "renderDxmProductStats(data.product_stats || [])" in body
+    assert "<th>订单数</th>" in body
+    assert "<th>销售件数</th>" in body
+    assert "fmtInt(row.order_count)" in body
+    assert "fmtInt(row.units)" in body
     assert "function loadCountryDashboard()" in body
     assert "setDxmRange('thisMonth')" in body
     assert "renderCountryDashboard(data)" in body

@@ -292,6 +292,7 @@ def test_get_meta_ad_summary_aggregates_metric_rows_in_python(monkeypatch):
     assert product_row["shopify_quantity"] == 3
     assert product_row["shopify_revenue"] == 99.0
     assert product_row["dianxiaomi_order_count"] == 0
+    assert product_row["dianxiaomi_units"] == 0
     assert product_row["dianxiaomi_total_sales"] == 0
     assert product_row["dianxiaomi_roas"] == 0.0
 
@@ -406,6 +407,7 @@ def test_get_meta_ad_summary_merges_dianxiaomi_order_metrics(monkeypatch):
                 {
                     "product_id": 42,
                     "dianxiaomi_order_count": 3,
+                    "dianxiaomi_units": 7,
                     "dianxiaomi_total_sales": 125.0,
                 }
             ]
@@ -419,6 +421,7 @@ def test_get_meta_ad_summary_merges_dianxiaomi_order_metrics(monkeypatch):
 
     row = summary["rows"][0]
     assert row["dianxiaomi_order_count"] == 3
+    assert row["dianxiaomi_units"] == 7
     assert row["dianxiaomi_total_sales"] == 125.0
     assert row["dianxiaomi_roas"] == 6.25
 
@@ -502,10 +505,12 @@ def test_ads_analysis_table_includes_dianxiaomi_order_columns(authed_client_no_d
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "'店小秘销量'" in body
+    assert "'店小秘订单数'" in body
+    assert "'店小秘销售件数'" in body
     assert "'店小秘总销售额'" in body
     assert "'店小秘 ROAS'" in body
     assert "row.dianxiaomi_order_count" in body
+    assert "row.dianxiaomi_units" in body
     assert "row.dianxiaomi_total_sales" in body
     assert "row.dianxiaomi_roas" in body
 

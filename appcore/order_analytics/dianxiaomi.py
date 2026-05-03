@@ -563,6 +563,7 @@ def get_dianxiaomi_product_sales_stats(
         "MAX(COALESCE(mp.name, dianxiaomi_order_lines.product_name, '')) AS product_name, "
         "MAX(COALESCE(mp.product_code, dianxiaomi_order_lines.product_code, '')) AS product_code, "
         "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SUM(COALESCE(quantity, 0)) AS units, "
         "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping "
         "FROM dianxiaomi_order_lines "
@@ -582,6 +583,7 @@ def get_dianxiaomi_product_sales_stats(
             "product_name": row.get("product_name") or "",
             "product_code": row.get("product_code") or "",
             "order_count": int(row.get("order_count") or 0),
+            "units": int(row.get("units") or 0),
             "product_net_sales": product_net_sales,
             "shipping": shipping,
             "total_sales": _revenue_with_shipping(product_net_sales, shipping),
