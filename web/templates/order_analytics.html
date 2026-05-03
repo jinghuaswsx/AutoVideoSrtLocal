@@ -715,6 +715,10 @@
       <div class="oa-stat-value" id="realtimeFreshness">-</div>
     </div>
     <div class="oa-stat-card">
+      <div class="oa-stat-label">订单数据更新时间</div>
+      <div class="oa-stat-value" id="realtimeOrderDataUpdatedAt">-</div>
+    </div>
+    <div class="oa-stat-card">
       <div class="oa-stat-label">广告数据更新时间</div>
       <div class="oa-stat-value" id="realtimeAdFreshness">-</div>
     </div>
@@ -2444,6 +2448,7 @@
         document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
         document.getElementById('realtimeRevenueWithShipping').textContent = fmtMoney(revenueWithShipping);
         document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
+        document.getElementById('realtimeOrderDataUpdatedAt').textContent = formatShortDateTime((data.freshness || {}).last_order_updated_at);
         document.getElementById('realtimeAdFreshness').textContent = formatShortDateTime((data.freshness || {}).last_ad_updated_at);
         document.getElementById('realtimeSnapshotAt').textContent = formatShortDateTime((data.period || {}).data_until_at);
         document.getElementById('realtimeWindow').textContent = '截止 ' + formatShortDateTime((data.period || {}).data_until_at);

@@ -223,6 +223,37 @@ def _get_realtime_ad_updated_at(target: date, snapshot_at: datetime | None) -> d
     return row[0].get("last_ad_updated_at")
 
 
+def _get_realtime_order_updated_at(
+    target: date,
+    snapshot_at: datetime | None,
+    source_run_id: Any | None = None,
+) -> datetime | None:
+    if source_run_id:
+        row = query(
+            "SELECT COALESCE(MAX(b.finished_at), MAX(r.sync_finished_at), MAX(r.updated_at), MAX(r.created_at)) "
+            "AS last_order_updated_at "
+            "FROM roi_hourly_sync_runs r "
+            "LEFT JOIN dianxiaomi_order_import_batches b ON b.id=r.dxm_import_batch_id "
+            "WHERE r.id=%s",
+            (source_run_id,),
+        )
+        if row and row[0].get("last_order_updated_at"):
+            return row[0].get("last_order_updated_at")
+    if not snapshot_at:
+        return None
+    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    row = query(
+        "SELECT MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
+        "FROM dianxiaomi_order_lines "
+        "WHERE site_code IN ('newjoy', 'omurio') "
+        "AND meta_business_date=%s AND " + order_time_expr + " <= %s",
+        (target, snapshot_at),
+    )
+    if not row:
+        return None
+    return row[0].get("last_order_updated_at")
+
+
 def _build_realtime_overview_for_range(start: date, end: date, now: datetime) -> dict:
     """范围分支：只返回 summary + freshness + period，不返回 hourly / 明细。
 
@@ -237,7 +268,8 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime) ->
         "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
         "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
-        "MAX(COALESCE(order_paid_at, attribution_time_at, order_created_at)) AS last_order_at "
+        "MAX(COALESCE(order_paid_at, attribution_time_at, order_created_at)) AS last_order_at, "
+        "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
         "FROM dianxiaomi_order_lines "
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND meta_business_date >= %s AND meta_business_date <= %s "
@@ -268,6 +300,7 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime) ->
         "meta_purchases": 0,
     }
     last_order_at: datetime | None = None
+    last_order_updated_at: datetime | None = None
     last_ad_updated_at: datetime | None = None
 
     for row in order_rows:
@@ -279,6 +312,10 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime) ->
         summary["shipping_revenue"] += float(row.get("shipping_revenue") or 0)
         if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
             last_order_at = row["last_order_at"]
+        if row.get("last_order_updated_at") and (
+            last_order_updated_at is None or row["last_order_updated_at"] > last_order_updated_at
+        ):
+            last_order_updated_at = row["last_order_updated_at"]
     for row in ad_rows:
         summary["ad_spend"] += float(row.get("ad_spend") or 0)
         summary["meta_purchase_value"] += float(row.get("meta_purchase_value") or 0)
@@ -321,6 +358,7 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime) ->
         "freshness": {
             "first_order_at": None,
             "last_order_at": last_order_at,
+            "last_order_updated_at": last_order_updated_at,
             "last_ad_updated_at": last_ad_updated_at,
         },
         "summary": summary,
@@ -413,6 +451,7 @@ def get_realtime_roas_overview(
         order_details = _get_realtime_order_details(target, day_start, snapshot_at)
         campaign_details = _get_realtime_campaign_details(target, snapshot_at)
         product_sales_stats = _get_realtime_product_sales_stats(target, snapshot_at)
+        last_order_updated_at = _get_realtime_order_updated_at(target, snapshot_at, snap.get("source_run_id"))
         last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
         return {
             "period": {
@@ -436,6 +475,7 @@ def get_realtime_roas_overview(
             "freshness": {
                 "first_order_at": None,
                 "last_order_at": snap.get("last_order_at"),
+                "last_order_updated_at": last_order_updated_at,
                 "last_ad_updated_at": last_ad_updated_at,
             },
             "summary": {
@@ -471,7 +511,8 @@ def get_realtime_roas_overview(
         "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
         "MIN(" + order_time_expr + ") AS first_order_at, "
-        "MAX(" + order_time_expr + ") AS last_order_at "
+        "MAX(" + order_time_expr + ") AS last_order_at, "
+        "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
         "FROM dianxiaomi_order_lines "
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
@@ -504,6 +545,7 @@ def get_realtime_roas_overview(
     }
     first_order_at = None
     last_order_at = None
+    last_order_updated_at = None
     hourly: list[dict[str, Any]] = []
     for hour in range(24):
         row = orders_by_hour.get(hour, {})
@@ -530,6 +572,10 @@ def get_realtime_roas_overview(
             first_order_at = row["first_order_at"]
         if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
             last_order_at = row["last_order_at"]
+        if row.get("last_order_updated_at") and (
+            last_order_updated_at is None or row["last_order_updated_at"] > last_order_updated_at
+        ):
+            last_order_updated_at = row["last_order_updated_at"]
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
@@ -555,6 +601,7 @@ def get_realtime_roas_overview(
         "freshness": {
             "first_order_at": first_order_at,
             "last_order_at": last_order_at,
+            "last_order_updated_at": last_order_updated_at,
             "last_ad_updated_at": ad.get("last_ad_updated_at"),
         },
         "summary": summary,
