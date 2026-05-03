@@ -490,6 +490,9 @@ class TestDurationLoopMultiRound:
                           original_filename="v.mp4", user_id=1)
         call_counter = {"i": 0}
 
+        def words(count):
+            return " ".join(f"word{i}" for i in range(max(1, int(count))))
+
         def fake_gen_full_audio(tts_segments, voice_id, task_dir, variant=None, **kw):
             out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             with open(out, "wb") as f:
@@ -506,9 +509,7 @@ class TestDurationLoopMultiRound:
             return {"full_text": loc.get("full_text", ""), "blocks": [], "subtitle_chunks": []}
 
         def fake_gen_rewrite(**kwargs):
-            # Pretend rewrite shortens by 30%
-            prev = kwargs["prev_localized_translation"]
-            new_text = prev["full_text"][: int(len(prev["full_text"]) * 0.7)]
+            new_text = words(kwargs["target_words"])
             return {
                 "full_text": new_text,
                 "sentences": [{"index": 0, "text": new_text, "source_segment_indices": [0]}],
@@ -533,7 +534,13 @@ class TestDurationLoopMultiRound:
         from appcore.runtime import PipelineRunner
         runner = PipelineRunner(bus=EventBus(), user_id=1)
 
-        initial = {"full_text": "A" * 400, "sentences": [{"index": 0, "text": "A" * 400, "source_segment_indices": [0]}]}
+        initial_text = words(120)
+        initial = {
+            "full_text": initial_text,
+            "sentences": [
+                {"index": 0, "text": initial_text, "source_segment_indices": [0]},
+            ],
+        }
         return runner, loc_mod, initial
 
     def test_round2_shrink_converges(self, tmp_path, monkeypatch):

@@ -422,10 +422,13 @@ def test_step_translate_waits_when_interactive_review_enabled(tmp_path, monkeypa
     assert saved["_segments_confirmed"] is False
     assert saved["current_review_step"] == "translate"
     assert saved["segments"][0]["translated"] == "Hello there"
-    assert saved["artifacts"]["translate"]["layout"] == "variant_compare"
+    translate_artifact = saved["artifacts"]["translate"]
+    assert translate_artifact["items"][0]["type"] == "side_by_side"
+    assert translate_artifact["items"][0]["right"]["content"] == "Hello there"
+    assert translate_artifact["items"][1]["type"] == "sentences"
 
 
-def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
+def test_step_translate_populates_normal_variant_only(tmp_path, monkeypatch):
     task = store.create("task-variant-translate", "video.mp4", str(tmp_path))
     task["script_segments"] = [
         {"index": 0, "text": "part one", "start_time": 0.0, "end_time": 1.0},
@@ -435,13 +438,7 @@ def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
     monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one\npart two")
 
     def fake_generate_localized_translation(source_full_text_zh, script_segments, variant="normal", **kwargs):
-        if variant == "hook_cta":
-            return {
-                "full_text": "Hook CTA copy.",
-                "sentences": [
-                    {"index": 0, "text": "Hook CTA copy.", "source_segment_indices": [0, 1]},
-                ],
-            }
+        assert variant == "normal"
         return {
             "full_text": "Normal copy.",
             "sentences": [
@@ -456,7 +453,9 @@ def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
 
     saved = store.get("task-variant-translate")
     assert saved["variants"]["normal"]["localized_translation"]["full_text"] == "Normal copy."
-    assert saved["variants"]["hook_cta"]["localized_translation"]["full_text"] == "Hook CTA copy."
+    assert saved["variants"]["hook_cta"]["localized_translation"] == {}
+    assert (tmp_path / "localized_translation.normal.json").exists()
+    assert not (tmp_path / "localized_translation.hook_cta.json").exists()
 
 
 def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
@@ -536,23 +535,22 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
     assert saved["variants"]["hook_cta"]["tts_audio_path"].endswith("tts_full.hook_cta.mp3")
 
 
-def test_step_export_populates_variant_capcut_download_urls(tmp_path, monkeypatch):
+def test_step_export_populates_normal_capcut_download_url(tmp_path, monkeypatch):
     task = store.create("task-export-download-links", "video.mp4", str(tmp_path))
     task["video_path"] = "video.mp4"
     task["subtitle_position"] = "bottom"
 
-    for variant in ("normal", "hook_cta"):
-        audio_path = tmp_path / f"tts_full.{variant}.mp3"
-        audio_path.write_bytes(b"fake-audio")
-        srt_path = tmp_path / f"subtitle.{variant}.srt"
-        srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
-        task["variants"][variant].update(
-            {
-                "tts_audio_path": str(audio_path),
-                "srt_path": str(srt_path),
-                "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
-            }
-        )
+    audio_path = tmp_path / "tts_full.normal.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["variants"]["normal"].update(
+        {
+            "tts_audio_path": str(audio_path),
+            "srt_path": str(srt_path),
+            "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+        }
+    )
 
     def fake_export_capcut_project(video_path=None, tts_audio_path=None, srt_path=None, output_dir=None, timeline_manifest=None, variant="normal", **kwargs):
         manifest_path = tmp_path / f"manifest.{variant}.json"
@@ -572,8 +570,9 @@ def test_step_export_populates_variant_capcut_download_urls(tmp_path, monkeypatc
     saved = store.get("task-export-download-links")
     export_artifact = saved["artifacts"]["export"]
 
-    assert export_artifact["variants"]["normal"]["items"][0]["url"] == "/api/tasks/task-export-download-links/download/capcut?variant=normal"
-    assert export_artifact["variants"]["hook_cta"]["items"][0]["url"] == "/api/tasks/task-export-download-links/download/capcut?variant=hook_cta"
+    assert export_artifact["items"][0]["url"] == "/api/tasks/task-export-download-links/download/capcut?variant=normal"
+    assert saved["variants"]["normal"]["exports"]["capcut_archive"].endswith("capcut_normal.zip")
+    assert saved["variants"]["hook_cta"]["exports"] == {}
 
 
 def test_step_compose_uses_av_variant_for_av_pipeline(tmp_path, monkeypatch):
@@ -669,18 +668,17 @@ def test_step_export_passes_user_jianying_root_to_capcut_export(tmp_path, monkey
     task["video_path"] = "video.mp4"
     task["subtitle_position"] = "bottom"
 
-    for variant in ("normal", "hook_cta"):
-        audio_path = tmp_path / f"tts_full.{variant}.mp3"
-        audio_path.write_bytes(b"fake-audio")
-        srt_path = tmp_path / f"subtitle.{variant}.srt"
-        srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
-        task["variants"][variant].update(
-            {
-                "tts_audio_path": str(audio_path),
-                "srt_path": str(srt_path),
-                "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
-            }
-        )
+    audio_path = tmp_path / "tts_full.normal.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["variants"]["normal"].update(
+        {
+            "tts_audio_path": str(audio_path),
+            "srt_path": str(srt_path),
+            "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+        }
+    )
 
     captured_roots = {}
 
@@ -704,10 +702,7 @@ def test_step_export_passes_user_jianying_root_to_capcut_export(tmp_path, monkey
     runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=123)
     runner._step_export("task-export-jianying-root", "video.mp4", str(tmp_path))
 
-    assert captured_roots == {
-        "normal": r"D:\JianyingDrafts",
-        "hook_cta": r"D:\JianyingDrafts",
-    }
+    assert captured_roots == {"normal": r"D:\JianyingDrafts"}
 
 
 def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch):
@@ -716,18 +711,17 @@ def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch)
     task["display_name"] = "example"
     task["subtitle_position"] = "bottom"
 
-    for variant in ("normal", "hook_cta"):
-        audio_path = tmp_path / f"tts_full.{variant}.mp3"
-        audio_path.write_bytes(b"fake-audio")
-        srt_path = tmp_path / f"subtitle.{variant}.srt"
-        srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
-        task["variants"][variant].update(
-            {
-                "tts_audio_path": str(audio_path),
-                "srt_path": str(srt_path),
-                "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
-            }
-        )
+    audio_path = tmp_path / "tts_full.normal.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["variants"]["normal"].update(
+        {
+            "tts_audio_path": str(audio_path),
+            "srt_path": str(srt_path),
+            "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+        }
+    )
 
     captured_titles = {}
 
@@ -751,10 +745,7 @@ def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch)
     runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=123)
     runner._step_export("task-export-display-name", "video.mp4", str(tmp_path))
 
-    assert captured_titles == {
-        "normal": "example",
-        "hook_cta": "example",
-    }
+    assert captured_titles == {"normal": "example"}
 
 
 def test_step_compose_copies_original_video_when_passthrough_enabled(tmp_path, monkeypatch):
