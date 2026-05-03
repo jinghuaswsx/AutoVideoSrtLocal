@@ -70,6 +70,7 @@ from web.services.task_translate import start_task_translate
 from web.services.task_translation_selection import select_task_translation
 from web.services.task_upload import initialize_uploaded_av_task
 from web.services.task_voice import confirm_task_voice
+from web.services.task_voice_rematch import rematch_task_voice
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -222,45 +223,13 @@ def rematch_voice(task_id: str):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return task_not_found_response()
-    lang = av_task_target_lang(task)
-    if not lang:
-        return jsonify({"error": "task has no target_lang"}), 400
-
-    body = json_payload_from(request)
-    gender = (body.get("gender") or "").strip().lower() or None
-    if gender and gender not in {"male", "female"}:
-        return jsonify({"error": "gender must be male|female|null"}), 400
-
-    embedding_b64 = task.get("voice_match_query_embedding")
-    if not embedding_b64:
-        return jsonify({"error": "voice_match 尚未完成，无法重新匹配"}), 409
-
-    import base64
-    from appcore.video_translate_defaults import resolve_default_voice
-    from appcore.voice_library_browse import fetch_voices_by_ids
-    from pipeline.voice_embedding import deserialize_embedding
-    from pipeline.voice_match import match_candidates
-
-    try:
-        vec = deserialize_embedding(base64.b64decode(embedding_b64))
-    except Exception:
-        return jsonify({"error": "query embedding 解码失败"}), 500
-
-    default_voice_id = resolve_default_voice(lang, user_id=current_user.id)
-    candidates = match_candidates(
-        vec,
-        language=lang,
-        gender=gender,
-        top_k=10,
-        exclude_voice_ids={default_voice_id} if default_voice_id else None,
-    ) or []
-    for candidate in candidates:
-        candidate["similarity"] = float(candidate.get("similarity", 0.0))
-
-    candidate_ids = [candidate["voice_id"] for candidate in candidates if candidate.get("voice_id")]
-    extra_items = fetch_voices_by_ids(language=lang, voice_ids=candidate_ids) if candidate_ids else []
-    store.update(task_id, voice_match_candidates=candidates)
-    return jsonify({"ok": True, "gender": gender, "candidates": candidates, "extra_items": extra_items})
+    outcome = rematch_task_voice(
+        task_id,
+        task,
+        json_payload_from(request),
+        user_id=optional_user_id(current_user),
+    )
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/<task_id>/confirm-voice", methods=["POST"])

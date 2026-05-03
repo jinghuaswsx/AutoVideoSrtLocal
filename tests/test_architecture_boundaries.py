@@ -320,6 +320,26 @@ def test_task_confirm_voice_workflow_lives_outside_route_module():
     assert Path("web/services/task_voice.py").exists()
 
 
+def test_task_voice_rematch_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "rematch_voice"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "base64" not in route_source
+    assert "deserialize_embedding" not in route_source
+    assert "resolve_default_voice" not in route_source
+    assert "match_candidates" not in route_source
+    assert "fetch_voices_by_ids" not in route_source
+    assert "store.update" not in route_source
+    assert "rematch_task_voice" in route_source
+    assert Path("web/services/task_voice_rematch.py").exists()
+
+
 def test_task_start_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
