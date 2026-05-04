@@ -107,7 +107,7 @@ def test_run_evaluation_timeout_writes_failed_row(tmp_path, _stub_db):
     post = tmp_path / "post.mp3"; post.write_bytes(b"\xff\xfb\x10\x00")
 
     def slow(*args, **kwargs):
-        time.sleep(5)  # 超过测试用的小 timeout
+        time.sleep(0.8)  # 超过测试用的小 timeout（0.5s），但调用方应在 ~0.5s 后立即返回
         return _llm_ok()
 
     with patch("appcore.tts_speedup_eval.llm_client.invoke_generate", side_effect=slow), \

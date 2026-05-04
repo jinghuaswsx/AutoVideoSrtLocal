@@ -12,6 +12,9 @@
 - audio_pre_path / audio_post_path 是 task_dir 相对路径（一致与 _maybe_tempo_align 风格），
   实际传给 invoke_generate(media=...) 时由调用方拼成绝对路径
 - llm_client.invoke_generate 没有原生 timeout，用 ThreadPoolExecutor.submit().result(timeout=...)
+- timeout/异常路径用 pool.shutdown(wait=False)：worker 线程会泄漏直到 LLM 调用自然
+  终止（_call_with_network_retry 上限 ~14s），但调用方等待时间硬 cap 到
+  EVAL_TIMEOUT_SECONDS，不会因 LLM 卡住而拖累整个 TTS pipeline
 """
 from __future__ import annotations
 
@@ -86,36 +89,44 @@ def run_evaluation(
     user_id: int | None,
 ) -> int:
     """同步执行评估。返回 eval_id。永远不抛异常 — 失败也写 status=failed 行。"""
-    db_execute(
-        """
-        INSERT INTO tts_speedup_evaluations
-          (task_id, round_index, language, video_duration,
-           audio_pre_duration, audio_post_duration, speed_ratio, hit_final_range,
-           audio_pre_path, audio_post_path, status, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', CURRENT_TIMESTAMP)
-        ON DUPLICATE KEY UPDATE
-          audio_pre_duration=VALUES(audio_pre_duration),
-          audio_post_duration=VALUES(audio_post_duration),
-          speed_ratio=VALUES(speed_ratio),
-          hit_final_range=VALUES(hit_final_range),
-          audio_pre_path=VALUES(audio_pre_path),
-          audio_post_path=VALUES(audio_post_path),
-          status='pending', error_text=NULL,
-          score_naturalness=NULL, score_pacing=NULL, score_timbre=NULL,
-          score_intelligibility=NULL, score_overall=NULL, summary_text=NULL,
-          flags_json=NULL, llm_input_tokens=NULL, llm_output_tokens=NULL,
-          llm_cost_usd=NULL, evaluated_at=NULL
-        """,
-        (task_id, round_index, language, video_duration,
-         audio_pre_duration, audio_post_duration, speed_ratio,
-         1 if hit_final_range else 0,
-         audio_pre_path, audio_post_path),
-    )
-    row = db_query_one(
-        "SELECT id FROM tts_speedup_evaluations WHERE task_id=%s AND round_index=%s",
-        (task_id, round_index),
-    )
-    eval_id: int = int(row["id"]) if row else 0
+    try:
+        db_execute(
+            """
+            INSERT INTO tts_speedup_evaluations
+              (task_id, round_index, language, video_duration,
+               audio_pre_duration, audio_post_duration, speed_ratio, hit_final_range,
+               audio_pre_path, audio_post_path, status, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', CURRENT_TIMESTAMP)
+            ON DUPLICATE KEY UPDATE
+              audio_pre_duration=VALUES(audio_pre_duration),
+              audio_post_duration=VALUES(audio_post_duration),
+              speed_ratio=VALUES(speed_ratio),
+              hit_final_range=VALUES(hit_final_range),
+              audio_pre_path=VALUES(audio_pre_path),
+              audio_post_path=VALUES(audio_post_path),
+              status='pending', error_text=NULL,
+              score_naturalness=NULL, score_pacing=NULL, score_timbre=NULL,
+              score_intelligibility=NULL, score_overall=NULL, summary_text=NULL,
+              flags_json=NULL, llm_input_tokens=NULL, llm_output_tokens=NULL,
+              llm_cost_usd=NULL, evaluated_at=NULL
+            """,
+            (task_id, round_index, language, video_duration,
+             audio_pre_duration, audio_post_duration, speed_ratio,
+             1 if hit_final_range else 0,
+             audio_pre_path, audio_post_path),
+        )
+        row = db_query_one(
+            "SELECT id FROM tts_speedup_evaluations WHERE task_id=%s AND round_index=%s",
+            (task_id, round_index),
+        )
+        eval_id: int = int(row["id"]) if row else 0
+    except Exception:
+        log.exception("[tts_speedup_eval] failed to insert/select eval row for task %s round %s",
+                      task_id, round_index)
+        return 0
+
+    if eval_id == 0:
+        return 0
 
     prompt = _build_prompt(
         language=language, speed_ratio=speed_ratio,
@@ -136,19 +147,22 @@ def run_evaluation(
             temperature=0.2,
         )
 
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(_do_call)
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_do_call)
-            result = future.result(timeout=EVAL_TIMEOUT_SECONDS)
+        result = future.result(timeout=EVAL_TIMEOUT_SECONDS)
     except FuturesTimeoutError:
+        pool.shutdown(wait=False)  # 不等 worker，超时即返回；worker 线程会自然终止
         log.warning("[tts_speedup_eval] timeout for task %s round %s", task_id, round_index)
         _write_failed(eval_id, f"timeout after {EVAL_TIMEOUT_SECONDS}s")
         return eval_id
     except Exception as exc:
+        pool.shutdown(wait=False)
         log.exception("[tts_speedup_eval] LLM error for task %s round %s",
                       task_id, round_index)
         _write_failed(eval_id, str(exc)[:1000])
         return eval_id
+    pool.shutdown(wait=False)  # happy path 也不等：worker 已 done
 
     _write_ok(eval_id, result)
     return eval_id
@@ -197,16 +211,19 @@ def retry_evaluation(*, eval_id: int, user_id: int | None) -> bool:
             temperature=0.2,
         )
 
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(_do_call)
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_do_call)
-            result = future.result(timeout=EVAL_TIMEOUT_SECONDS)
+        result = future.result(timeout=EVAL_TIMEOUT_SECONDS)
     except FuturesTimeoutError:
+        pool.shutdown(wait=False)  # 不等 worker，超时即返回；worker 线程会自然终止
         _write_failed(eval_id, f"timeout after {EVAL_TIMEOUT_SECONDS}s")
         return False
     except Exception as exc:
+        pool.shutdown(wait=False)
         _write_failed(eval_id, str(exc)[:1000])
         return False
+    pool.shutdown(wait=False)  # happy path 也不等：worker 已 done
 
     _write_ok(eval_id, result)
     return True
@@ -216,41 +233,47 @@ def _write_ok(eval_id: int, result: dict) -> None:
     payload = result.get("json") or {}
     usage = result.get("usage") or {}
     binding = _resolve_binding_for_log()
-    db_execute(
-        """UPDATE tts_speedup_evaluations
-           SET status=%s, error_text=NULL,
-               score_naturalness=%s, score_pacing=%s, score_timbre=%s,
-               score_intelligibility=%s, score_overall=%s,
-               summary_text=%s, flags_json=%s,
-               model_provider=%s, model_id=%s,
-               llm_input_tokens=%s, llm_output_tokens=%s, llm_cost_usd=%s,
-               evaluated_at=CURRENT_TIMESTAMP
-           WHERE id=%s""",
-        (
-            "ok",
-            payload.get("score_naturalness"), payload.get("score_pacing"),
-            payload.get("score_timbre"), payload.get("score_intelligibility"),
-            payload.get("score_overall"),
-            payload.get("summary") or "",
-            json.dumps(payload.get("flags") or [], ensure_ascii=False),
-            binding["provider"], binding["model"],
-            usage.get("input_tokens"), usage.get("output_tokens"),
-            usage.get("cost_usd"),
-            eval_id,
-        ),
-    )
+    try:
+        db_execute(
+            """UPDATE tts_speedup_evaluations
+               SET status=%s, error_text=NULL,
+                   score_naturalness=%s, score_pacing=%s, score_timbre=%s,
+                   score_intelligibility=%s, score_overall=%s,
+                   summary_text=%s, flags_json=%s,
+                   model_provider=%s, model_id=%s,
+                   llm_input_tokens=%s, llm_output_tokens=%s, llm_cost_usd=%s,
+                   evaluated_at=CURRENT_TIMESTAMP
+               WHERE id=%s""",
+            (
+                "ok",
+                payload.get("score_naturalness"), payload.get("score_pacing"),
+                payload.get("score_timbre"), payload.get("score_intelligibility"),
+                payload.get("score_overall"),
+                payload.get("summary") or "",
+                json.dumps(payload.get("flags") or [], ensure_ascii=False),
+                binding["provider"], binding["model"],
+                usage.get("input_tokens"), usage.get("output_tokens"),
+                usage.get("cost_usd"),
+                eval_id,
+            ),
+        )
+    except Exception:
+        log.exception("[tts_speedup_eval] _write_ok DB write failed for eval_id=%s", eval_id)
 
 
 def _write_failed(eval_id: int, error_text: str) -> None:
     binding = _resolve_binding_for_log()
-    db_execute(
-        """UPDATE tts_speedup_evaluations
-           SET status=%s, error_text=%s,
-               model_provider=%s, model_id=%s,
-               evaluated_at=CURRENT_TIMESTAMP
-           WHERE id=%s""",
-        ("failed", error_text, binding["provider"], binding["model"], eval_id),
-    )
+    try:
+        db_execute(
+            """UPDATE tts_speedup_evaluations
+               SET status=%s, error_text=%s,
+                   model_provider=%s, model_id=%s,
+                   evaluated_at=CURRENT_TIMESTAMP
+               WHERE id=%s""",
+            ("failed", error_text, binding["provider"], binding["model"], eval_id),
+        )
+    except Exception:
+        log.exception("[tts_speedup_eval] _write_failed DB write failed for eval_id=%s", eval_id)
 
 
 def _resolve_binding_for_log() -> dict:
