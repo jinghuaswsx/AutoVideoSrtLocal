@@ -65,6 +65,18 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上已启用",
         "log_table": "dianxiaomi_order_import_batches",
     },
+    "order_profit_incremental": {
+        "code": "order_profit_incremental",
+        "name": "订单利润增量核算",
+        "description": "增量重算最近 2 天订单的 SKU 行利润（含 Shopify 手续费、广告分摊、采购、小包、退货占用 1%），upsert 到 order_profit_lines。完备性失败的 SKU 标 incomplete 不出数字。",
+        "schedule": "建议每 20 分钟（与 ROI 同步频率一致）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer（待启用）",
+        "source_ref": "autovideosrt-order-profit-incremental.timer",
+        "runner": "tools/order_profit_incremental.py",
+        "deployment": "需手工配置 systemd timer 或追加到 ROI 同步流程后",
+        "log_table": "order_profit_runs",
+    },
     "meta_realtime_import": {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",

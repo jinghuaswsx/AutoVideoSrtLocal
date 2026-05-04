@@ -79,6 +79,7 @@ from web.routes.image_translate import bp as image_translate_bp
 from web.routes.link_check import bp as link_check_bp
 from web.routes.voice_library import bp as voice_library_bp
 from web.routes.order_analytics import bp as order_analytics_bp
+from web.routes.order_profit import bp as order_profit_bp
 from web.routes.scheduled_tasks import bp as scheduled_tasks_bp
 from web.routes.security_audit import bp as security_audit_bp
 from web.routes.mk_import import bp as mk_import_bp
@@ -301,6 +302,8 @@ def create_app() -> Flask:
     csrf.exempt(link_check_bp)
     app.register_blueprint(order_analytics_bp)
     csrf.exempt(order_analytics_bp)
+    app.register_blueprint(order_profit_bp)
+    csrf.exempt(order_profit_bp)
     app.register_blueprint(scheduled_tasks_bp)
     app.register_blueprint(security_audit_bp)
     app.register_blueprint(mk_import_bp)

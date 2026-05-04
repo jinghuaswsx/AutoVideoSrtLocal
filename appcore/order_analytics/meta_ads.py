@@ -66,6 +66,12 @@ def resolve_ad_product_match(campaign_name: str) -> dict | None:
         )
         if product:
             return product
+    # 自动匹配失败 → 查人工配对兜底（plan 阶段 5 扩展）
+    from .campaign_overrides import resolve_override
+    normalized = (campaign_name or "").strip().lower()
+    override = resolve_override(normalized)
+    if override:
+        return override
     return None
 
 
