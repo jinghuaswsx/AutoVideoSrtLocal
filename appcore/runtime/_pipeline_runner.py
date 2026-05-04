@@ -1658,11 +1658,15 @@ class PipelineRunner:
             for round_record in loop_result["rounds"]:
                 round_idx = round_record["round"]
                 round_products = loop_result.get("round_products") or []
-                round_product = (
+                _candidate = (
                     round_products[round_idx - 1]
                     if 0 <= round_idx - 1 < len(round_products)
-                    else {}
+                    else None
                 )
+                # round_products 列表里某些 round 可能塞 None（例如该轮 LLM
+                # 调用失败但被 catch 后只 append None 占位）；下面要 .get()，
+                # 必须先确保是 dict。
+                round_product = _candidate if isinstance(_candidate, dict) else {}
                 round_translation = round_product.get("localized_translation") or {}
                 round_tts_script = round_product.get("tts_script") or {}
                 if round_idx >= 2:
