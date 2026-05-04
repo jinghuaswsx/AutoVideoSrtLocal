@@ -153,30 +153,38 @@ def main():
         best_url = None
         match_method = ""
 
-        # Method A: Exact SKU match
+        def _is_1688(url: str | None) -> bool:
+            return bool(url and "1688.com" in url)
+
+        # Method A: Exact SKU match (1688 URLs only for purchase_1688_url)
         for sku in skus:
             if sku in sku_index:
-                items = sku_index[sku]
-                url = supply_pairing.extract_1688_url(items[0])
-                if url:
-                    best_url = url
-                    match_method = f"exact_sku={sku}"
+                for item in sku_index[sku]:
+                    url = supply_pairing.extract_1688_url(item)
+                    if _is_1688(url):
+                        best_url = url
+                        match_method = f"exact_sku={sku}"
+                        break
+                if best_url:
                     break
 
-        # Method B: Substring SKU match (the DB SKU might be part of the pairing SKU)
+        # Method B: Substring SKU match (1688 URLs only)
         if not best_url and skus:
             for db_sku in skus:
                 for paired_sku, items in sku_index.items():
                     if db_sku in paired_sku or paired_sku in db_sku:
-                        url = supply_pairing.extract_1688_url(items[0])
-                        if url:
-                            best_url = url
-                            match_method = f"partial_sku={db_sku}≈{paired_sku}"
+                        for item in items:
+                            url = supply_pairing.extract_1688_url(item)
+                            if _is_1688(url):
+                                best_url = url
+                                match_method = f"partial_sku={db_sku}≈{paired_sku}"
+                                break
+                        if best_url:
                             break
                 if best_url:
                     break
 
-        # Method C: Local product name keyword → dianxiaomi name
+        # Method C: Local product name keyword → dianxiaomi name (1688 URLs only)
         if not best_url and name:
             keywords = _product_keywords(name)
             for kw in keywords:
@@ -186,14 +194,14 @@ def main():
                     paired_name = str(item.get("name") or "")
                     if kw in paired_name:
                         url = supply_pairing.extract_1688_url(item)
-                        if url:
+                        if _is_1688(url):
                             best_url = url
                             match_method = f"keyword={kw}"
                             break
                 if best_url:
                     break
 
-        # Method D: Dianxiaomi name keyword → local product name (bidirectional)
+        # Method D: Dianxiaomi name keyword → local product name (1688 URLs only)
         if not best_url and name:
             for item in all_paired:
                 paired_name = str(item.get("name") or "")
@@ -205,7 +213,7 @@ def main():
                         continue
                     if kw in name:
                         url = supply_pairing.extract_1688_url(item)
-                        if url:
+                        if _is_1688(url):
                             best_url = url
                             match_method = f"rev_kw={kw}"
                             break
