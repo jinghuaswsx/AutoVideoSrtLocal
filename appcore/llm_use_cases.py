@@ -97,6 +97,17 @@ USE_CASES: dict[str, UseCase] = {
         "gemini_vertex",
         "tokens",
     ),
+    # AI 视频分析（手动触发，多模态：视频 + 音频 + 文案 + 产品图）
+    "video_ai_review.assess": _uc(
+        "video_ai_review.assess",
+        "video_ai_review",
+        "AI 视频分析",
+        "多模态评估翻译后的视频：源/目标视频对比、文案/TTS 一致性、产品契合度",
+        "gemini_vertex_adc",
+        "gemini-3.1-pro-preview",
+        "gemini_vertex_adc",
+        "tokens",
+    ),
     # 视频翻译 v1
     "video_translate.localize": _uc(
         "video_translate.localize",
@@ -508,4 +519,5 @@ MODULE_LABELS: dict[str, str] = {
     "video_creation": "视频创作",
     "asr_clean": "ASR 同语言纯净化",
     "translation_quality": "翻译质量评估",
+    "video_ai_review": "AI 视频分析",
 }

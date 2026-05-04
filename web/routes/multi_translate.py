@@ -698,6 +698,52 @@ def run_ai_analysis(task_id):
     return jsonify({"error": "analysis not supported for multi_translate"}), 501
 
 
+@bp.route("/api/multi-translate/<task_id>/video-ai-review/run", methods=["POST"])
+@login_required
+def run_video_ai_review(task_id):
+    """手动触发 AI 视频分析（多模态评估），异步跑，结果落 video_ai_reviews 表。"""
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    from appcore import video_ai_review
+    try:
+        run_id = video_ai_review.trigger_review(
+            source_type="multi_translate_task",
+            source_id=task_id,
+            user_id=current_user.id,
+            triggered_by="manual",
+        )
+    except video_ai_review.ReviewInProgressError as exc:
+        return jsonify({
+            "error": "AI 视频分析正在运行中",
+            "in_flight_run_id": exc.run_id,
+        }), 409
+    except Exception as exc:
+        log.exception("[video-ai-review] trigger failed task=%s", task_id)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"status": "started", "run_id": run_id, "channel": video_ai_review.CHANNEL,
+                    "model": video_ai_review.MODEL})
+
+
+@bp.route("/api/multi-translate/<task_id>/video-ai-review", methods=["GET"])
+@login_required
+def get_video_ai_review(task_id):
+    """读取最新一次 AI 视频分析结果（含 pending/running 进度）。"""
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+    from appcore import video_ai_review
+    payload = video_ai_review.latest_review("multi_translate_task", task_id)
+    return jsonify({"review": payload})
+
+
 @bp.route("/api/multi-translate/user-default-voice", methods=["PUT"])
 @login_required
 def set_user_default_voice_route():

@@ -36,6 +36,27 @@ def test_medias_js_wires_roas_button_and_calculation():
     assert "roas_calculation" in js
 
 
+def test_medias_html_has_parcel_cost_suggest_button():
+    # Button lives in the shared partial (used by both modal and standalone page)
+    partial = PARTIAL.read_text(encoding="utf-8")
+
+    assert 'id="roasParcelSuggestBtn"' in partial
+    assert 'id="roasParcelSuggestResult"' in partial
+    assert "店小秘自动建议小包成本" in partial
+
+
+def test_medias_js_calls_parcel_cost_suggest_endpoint():
+    # Parcel-cost logic moved to roas_form.js (RoasFormController) so it works
+    # in both the modal (medias.js context) and the standalone page.
+    controller_js = (ROOT / "web" / "static" / "roas_form.js").read_text(encoding="utf-8")
+
+    assert "/parcel-cost-suggest" in controller_js
+    assert "_fetchParcelCostSuggestion" in controller_js
+    assert "roasParcelSuggestBtn" in controller_js
+    assert "packet_cost_estimated" in controller_js
+    assert "packet_cost_actual" in controller_js
+
+
 def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     html = PARTIAL.read_text(encoding="utf-8")
 
@@ -46,7 +67,7 @@ def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     site_section = html.split('id="roasSiteSection"', 1)[1].split('id="roasTkSection"', 1)[0]
     tk_section = html.split('id="roasTkSection"', 1)[1].split("</section>", 1)[0]
     site_fields = site_section.split('<div class="oc-roas-field-list">', 1)[1].split(
-        "              </div>\n            </section>", 1
+        "\n              </div>", 1
     )[0]
 
     assert 'data-roas-field="standalone_shipping_fee"' in site_section

@@ -59,6 +59,7 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         ("/medias/api/products/<int:pid>/link-check/<lang>", ("GET",), "medias.api_product_link_check_get"),
         ("/medias/api/products/<int:pid>/link-check/<lang>/detail", ("GET",), "medias.api_product_link_check_detail"),
         ("/medias/api/products/<int:pid>/owner", ("PATCH",), "medias.api_update_product_owner"),
+        ("/medias/api/products/<int:pid>/parcel-cost-suggest", ("GET",), "medias.api_parcel_cost_suggest"),
         ("/medias/api/products/<int:pid>/product-links-push", ("POST",), "medias.api_product_links_push"),
         ("/medias/api/products/<int:pid>/product-links-push/payload", ("GET",), "medias.api_product_links_push_payload"),
         ("/medias/api/products/<int:pid>/product-localized-texts-push", ("POST",), "medias.api_product_localized_texts_push"),

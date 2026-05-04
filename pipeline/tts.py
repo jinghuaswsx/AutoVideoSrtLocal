@@ -1,8 +1,12 @@
 import logging
 import os
+import ssl
 import subprocess
 import threading
+import time
 from typing import Callable, List, Dict, Optional
+
+import httpx
 
 log = logging.getLogger(__name__)
 
@@ -16,6 +20,46 @@ from appcore.llm_provider_configs import (
     require_provider_api_key,
 )
 from pipeline.voice_library import get_voice_library
+
+
+_NETWORK_RETRY_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    httpx.RemoteProtocolError,
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.WriteError,
+    httpx.PoolTimeout,
+    ssl.SSLError,
+)
+
+
+def _call_with_network_retry(
+    fn,
+    *,
+    attempts: int = 3,
+    base_delay: float = 2.0,
+    label: str = "elevenlabs",
+):
+    """Wrap a single ElevenLabs SDK call so transient SSL / connection errors
+    get exponential-backoff retries (long videos do 100+ TTS requests; if any
+    one hits an SSL EOF on TCP handshake the whole pipeline blows up otherwise).
+    Same shape as the OpenRouter adapter helper."""
+    total = max(1, attempts)
+    for attempt in range(total):
+        try:
+            return fn()
+        except _NETWORK_RETRY_EXCEPTIONS as exc:
+            if attempt >= total - 1:
+                log.exception(
+                    "%s network retry exhausted (%d/%d): %s",
+                    label, attempt + 1, total, exc,
+                )
+                raise
+            delay = base_delay * (2 ** attempt)
+            log.warning(
+                "%s network error (%d/%d), retrying in %.1fs: %s",
+                label, attempt + 1, total, delay, exc,
+            )
+            time.sleep(delay)
 
 _client: ElevenLabs | None = None
 _client_lock = threading.Lock()
@@ -55,6 +99,22 @@ def get_voice_by_id(voice_id: int, user_id: int) -> Dict | None:
     return get_voice_library().get_voice(voice_id, user_id)
 
 
+def _audio_file_already_valid(output_path: str, *, min_bytes: int = 1024) -> bool:
+    """已经在 output_path 落盘的 mp3 是否可直接复用——文件存在 + 体积合理 +
+    ffprobe 能读到 > 0 的时长。任务重跑时跳过已经成功生成的 ElevenLabs 调用，
+    既省额度又把 130 段 audio 的重跑时间从分钟级降到秒级。"""
+    try:
+        if not os.path.isfile(output_path):
+            return False
+        if os.path.getsize(output_path) < min_bytes:
+            return False
+        if _get_audio_duration(output_path) <= 0:
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def generate_segment_audio(
     text: str,
     voice_id: str,
@@ -65,6 +125,9 @@ def generate_segment_audio(
     speed: float | None = None,
 ) -> str:
     """生成单段音频，返回文件路径（mp3）"""
+    if _audio_file_already_valid(output_path):
+        log.info("tts segment cache hit, skipping ElevenLabs call: %s", output_path)
+        return output_path
     client = _get_client(api_key=elevenlabs_api_key)
     kwargs = dict(
         text=text,
@@ -82,11 +145,21 @@ def generate_segment_audio(
                 kwargs["voice_settings"] = {"speed": float(speed)}
         else:
             kwargs["voice_settings"] = {"speed": float(speed)}
-    audio = client.text_to_speech.convert(**kwargs)
+    # ElevenLabs SDK convert() 返回的是一个 generator/iterator —— 真正的 HTTP
+    # 请求在迭代它时才发出。如果只把 convert() 调用放进 retry 包装，generator
+    # 拿出来后在 retry 之外迭代时 SSL/连接异常就抓不到了。所以把整段 drain 都
+    # 放进 lambda 里，让 retry 能看到所有网络层异常。
+    def _do_tts_call() -> bytes:
+        chunks = client.text_to_speech.convert(**kwargs)
+        return b"".join(chunks)
+
+    audio_bytes = _call_with_network_retry(
+        _do_tts_call,
+        label="elevenlabs.text_to_speech",
+    )
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:
-        for chunk in audio:
-            f.write(chunk)
+        f.write(audio_bytes)
     return output_path
 
 

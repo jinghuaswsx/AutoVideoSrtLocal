@@ -80,10 +80,101 @@
       if (retry) {
         retry.addEventListener('click', () => this.save({ immediate: true }));
       }
+      const suggestBtn = this.root.querySelector('#roasParcelSuggestBtn');
+      if (suggestBtn) {
+        suggestBtn.addEventListener('click', () => this._fetchParcelCostSuggestion());
+      }
+    }
+
+    resetParcelSuggestPanel() {
+      const result = this.root.querySelector('#roasParcelSuggestResult');
+      const btn = this.root.querySelector('#roasParcelSuggestBtn');
+      if (result) {
+        result.hidden = true;
+        result.innerHTML = '';
+        result.classList.remove('is-error', 'is-loading');
+      }
+      if (btn) btn.disabled = false;
+    }
+
+    _renderParcelSuggestResult(suggestion) {
+      const result = this.root.querySelector('#roasParcelSuggestResult');
+      if (!result) return;
+      const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      if (!suggestion || !Number.isFinite(Number(suggestion.median))) {
+        result.classList.remove('is-loading');
+        result.classList.add('is-error');
+        result.innerHTML = `时间窗 ${esc(suggestion?.window_start || '')}–${esc(suggestion?.window_end || '')} 内未找到 SKU ${esc(suggestion?.sku || '')} 的有效物流费记录。`;
+        result.hidden = false;
+        return;
+      }
+      const median = Number(suggestion.median).toFixed(2);
+      const min = Number(suggestion.min).toFixed(2);
+      const max = Number(suggestion.max).toFixed(2);
+      const sample = suggestion.sample_size || 0;
+      const window = `${suggestion.window_start} ~ ${suggestion.window_end}`;
+      result.classList.remove('is-error', 'is-loading');
+      result.innerHTML = `
+        <div>SKU <strong>${esc(suggestion.sku)}</strong> · 店小秘 shop ${esc(String(suggestion.dxm_shop_id || ''))}</div>
+        <div>时间窗 ${esc(window)} · 命中 <span class="stat">${sample}</span> 单（共拉取 ${suggestion.orders_pulled || 0} 单）</div>
+        <div>中位数 <span class="stat">${median} RMB</span> · 范围 ${min} ~ ${max} RMB</div>
+        <div class="oc-roas-suggest-actions">
+          <button type="button" class="oc-roas-suggest-adopt" id="roasParcelSuggestAdopt">采纳到预估 + 实际小包成本</button>
+        </div>
+      `;
+      result.hidden = false;
+      const adoptBtn = this.root.querySelector('#roasParcelSuggestAdopt');
+      if (adoptBtn) {
+        adoptBtn.addEventListener('click', () => {
+          const estInput = this.root.querySelector('[data-roas-field="packet_cost_estimated"]');
+          const actInput = this.root.querySelector('[data-roas-field="packet_cost_actual"]');
+          if (estInput) estInput.value = median;
+          if (actInput) actInput.value = median;
+          this.renderResult();
+          this._scheduleAutoSave();
+          adoptBtn.disabled = true;
+          adoptBtn.textContent = '已采纳，请点底部「保存」落库';
+        });
+      }
+    }
+
+    async _fetchParcelCostSuggestion() {
+      if (!this.productId) return;
+      const btn = this.root.querySelector('#roasParcelSuggestBtn');
+      const result = this.root.querySelector('#roasParcelSuggestResult');
+      if (btn) btn.disabled = true;
+      if (result) {
+        result.hidden = false;
+        result.classList.remove('is-error');
+        result.classList.add('is-loading');
+        result.textContent = '正在拉取店小秘订单数据，约需 30~60 秒…';
+      }
+      try {
+        const resp = await fetch(`/medias/api/products/${this.productId}/parcel-cost-suggest`, {
+          credentials: 'same-origin',
+        });
+        if (!resp.ok) {
+          let msg = '拉取建议失败';
+          try { const d = await resp.json(); msg = d.message || d.error || msg; } catch (e) {}
+          throw new Error(msg);
+        }
+        const data = await resp.json();
+        this._renderParcelSuggestResult(data && data.suggestion);
+      } catch (err) {
+        if (result) {
+          result.classList.remove('is-loading');
+          result.classList.add('is-error');
+          result.textContent = (err && err.message) ? err.message : '拉取建议失败';
+          result.hidden = false;
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     fillFromProduct(product) {
       if (!product) return;
+      this.resetParcelSuggestPanel();
       ROAS_FIELDS.forEach((field) => {
         const input = this.root.querySelector(`[data-roas-field="${field}"]`);
         if (!input) return;

@@ -30,6 +30,10 @@
                 <div class="oc-roas-field"><label for="roasPacketEstimated">预估小包成本 (RMB)</label><input id="roasPacketEstimated" data-roas-field="packet_cost_estimated" type="number" min="0" step="0.01"></div>
                 <div class="oc-roas-field"><label for="roasPacketActual">实际小包成本 (RMB)</label><input id="roasPacketActual" data-roas-field="packet_cost_actual" type="number" min="0" step="0.01"></div>
               </div>
+              <div class="oc-roas-parcel-suggest">
+                <button type="button" id="roasParcelSuggestBtn" class="oc-roas-suggest-btn">店小秘自动建议小包成本</button>
+                <div id="roasParcelSuggestResult" class="oc-roas-suggest-result" hidden></div>
+              </div>
             </section>
             <section class="oc-roas-section">
               <div class="oc-roas-section-head">

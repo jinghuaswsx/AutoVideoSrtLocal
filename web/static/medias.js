@@ -529,6 +529,7 @@
       state.roasController.productId = product.id;
     }
     state.roasController.fillFromProduct(product);
+    state.roasController.resetParcelSuggestPanel();
     mask.hidden = false;
   }
 
