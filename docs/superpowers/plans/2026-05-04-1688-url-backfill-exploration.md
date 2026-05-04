@@ -184,8 +184,42 @@ X-Requested-With: XMLHttpRequest
 
 1. **店小秘 API 已完全 API 化**：不再需要 UI 交互，直接 `POST` 调用 `alibabaProductPairPageList.json` 即可
 2. **"已配对"tab 不会触发额外 API**：页面初始加载的 `status=2` 就是全部已配对数据
-3. **店小秘中绝大多数产品没有 1688 URL**：用户假设"每个有订单的产品都有配对记录"不成立。73/102 条记录没有任何 URL，只有 15 条有 1688 URL（且仅覆盖 3 个产品）
-4. **本地 SKU 与店小秘 SKU 分属不同体系**：本地 SKU（dianxiaomi_sku / xmyc_storage_skus）和店小秘记录 SKU 几乎不重叠，SKU 精确匹配从未命中 1688 URL
+3. **~~店小秘中绝大多数产品没有 1688 URL~~**：~~73/102 条记录没有任何 URL，只有 15 条有 1688 URL~~ —— **2026-05-05 更新：此结论错误**，详见第 10 节
+4. **本地 SKU 与店小秘 SKU 分属不同体系**：本地 SKU（dianxiaomi_sku / xmyc_storage_skus）和店小秘记录 SKU 几乎不重叠，SKU 精确匹配从未命中 1688 URL —— **2026-05-05 更新：扩大店小秘数据后，95 个本地待回填产品中有 51 个能精确 SKU 命中**
+
+---
+
+## 10. 2026-05-05 增补：alibabaProductId 字段彻底改变结论
+
+**用户反馈**：UI 上"已配对"看到 100+ 而不是 11，触发再次探查（[tools/probe_supply_pairing_v4.py](../../tools/probe_supply_pairing_v4.py)）。
+
+### 真正的事实
+
+之前探索只看 `sourceUrl` 字段，忽略了 `alibabaProductId` 字段：
+
+| status | totalSize | 实际拉到 | 有 alibabaProductId | 有 1688 sourceUrl |
+|--------|-----------|----------|---------------------|-------------------|
+| status=1 (待配对) | 367 | 337（去重后） | **337（100%）** | 4 |
+| status=2 (已配对) | 11 | 11 | 11 | 11 |
+| **合计** | **378** | **348** | **348（100%）** | **15** |
+
+`status=1` 全部 337 条都已被店小秘自动匹配到一个 1688 候选供应商，`alibabaProductId` 字段非空，仅 `sourceUrl` 为 null（因为用户尚未在 UI 上点击"确认配对"）。
+
+### 解决方案
+
+1. **`extract_1688_url` 增加 alibabaProductId fallback**：当 `sourceUrl` 不是 1688 链接时，从 `alibabaProductId` 构造 `https://detail.1688.com/offer/{id}.html`
+2. **翻页修复**：dxm 翻页 API 在最后一页之后会循环回到某一页（同 ID 重复），改用 ID 去重 + totalSize 双重判停
+3. **search_supply_pairing 默认 status="" 拉全部**（覆盖 waiting + paired 共 ~378 条）
+4. **backfill 加 URL 唯一性保护**：每个 1688 URL 仅回填给一个本地产品，按 exact_sku > partial_sku > keyword > rev_kw 优先级裁决，去除约 13 个 keyword 阶段产生的扇出误匹
+
+### 实际效果
+
+| 指标 | 旧版（2026-05-04） | 新版（2026-05-05） |
+|------|--------------------|--------------------|
+| 店小秘可拉记录数 | 102 | 348（去重后） |
+| 可识别 1688 URL 数 | 15 (3 个唯一产品) | 348 (348 个唯一产品) |
+| 本地 95 个待回填产品 → 命中 | 4 | **70 (73.7%)** |
+| 数据库 `media_products` 含 1688 URL 总数 | 17 | **87** |
 
 ---
 

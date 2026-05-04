@@ -64,18 +64,28 @@ def _product_keywords(name: str) -> list[str]:
 
 
 def main():
-    # 1. Pull ALL paired records from supply pairing
-    print("[1] Pulling ALL paired supply pairing records...")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="match products and print would-be updates, but do not write to the DB",
+    )
+    args = parser.parse_args()
+    dry_run = bool(args.dry_run)
+
+    # 1. Pull ALL supply pairing records (waiting + paired) in one shot.
+    # Empty status hits all rows (~378 on MKTT); status="2" alone is only the
+    # 11 user-confirmed pairings, which is ~3% of the actual 1688-linkable
+    # surface.
+    print("[1] Pulling ALL supply pairing records (waiting + paired)...")
     all_paired: list[dict] = []
-    # Pull all records: status=2 (已配对) + status=1 (待配对)
-    for st in ("2", "1"):
-        try:
-            result = supply_pairing.search_supply_pairing("", status=st, page_size=100)
-            items = result.get("items") or []
-            all_paired.extend(items)
-            print(f"  status={st}: {len(items)} items")
-        except Exception as exc:
-            print(f"  status={st}: ERROR {exc}")
+    try:
+        result = supply_pairing.search_supply_pairing("", status="", page_size=100)
+        all_paired = result.get("items") or []
+        print(f"  pulled: {len(all_paired)} items")
+    except Exception as exc:
+        print(f"  ERROR {exc}")
 
     if not all_paired:
         print("  No paired records found at all.")
@@ -144,7 +154,9 @@ def main():
     # 3. Match products to supply pairing records
     matched = 0
     no_match = 0
-    updates: list[tuple[str, int]] = []  # (url, product_id)
+    # candidate update with priority: lower number = higher priority
+    # 0=exact_sku, 1=partial_sku, 2=keyword, 3=rev_kw
+    candidates: list[dict] = []  # {pid, name, url, method, priority}
 
     for prod in products:
         pid = prod["id"]
@@ -152,6 +164,7 @@ def main():
         skus = prod["skus"]
         best_url = None
         match_method = ""
+        priority = None
 
         def _is_1688(url: str | None) -> bool:
             return bool(url and "1688.com" in url)
@@ -164,6 +177,7 @@ def main():
                     if _is_1688(url):
                         best_url = url
                         match_method = f"exact_sku={sku}"
+                        priority = 0
                         break
                 if best_url:
                     break
@@ -178,6 +192,7 @@ def main():
                             if _is_1688(url):
                                 best_url = url
                                 match_method = f"partial_sku={db_sku}≈{paired_sku}"
+                                priority = 1
                                 break
                         if best_url:
                             break
@@ -197,6 +212,7 @@ def main():
                         if _is_1688(url):
                             best_url = url
                             match_method = f"keyword={kw}"
+                            priority = 2
                             break
                 if best_url:
                     break
@@ -216,32 +232,61 @@ def main():
                         if _is_1688(url):
                             best_url = url
                             match_method = f"rev_kw={kw}"
+                            priority = 3
                             break
                 if best_url:
                     break
 
         if best_url:
-            updates.append((best_url, pid))
+            candidates.append({
+                "pid": pid, "name": name, "url": best_url,
+                "method": match_method, "priority": priority,
+            })
             matched += 1
-            print(f"  [{match_method}] #{pid} {name[:30]} -> {best_url[:80]}")
         else:
             no_match += 1
             # Print first few no-match cases for debugging
-            if no_match <= 5:
+            if no_match <= 10:
                 sku_preview = ", ".join(list(skus)[:3])
                 print(f"  [no_match] #{pid} {name[:40]} (SKUs: {sku_preview})")
 
+    # 3.5. Deduplicate by URL: same 1688 URL can only be assigned to ONE
+    # local product (otherwise keyword fan-out yields obvious mis-matches
+    # like "证书套装" and "钢针套装" sharing the same offer). Tie-break
+    # by priority: exact_sku wins over keyword.
+    candidates.sort(key=lambda c: (c["priority"], c["pid"]))
+    seen_urls: set[str] = set()
+    updates: list[tuple[str, int]] = []
+    dropped: list[dict] = []
+    for c in candidates:
+        if c["url"] in seen_urls:
+            dropped.append(c)
+            continue
+        seen_urls.add(c["url"])
+        updates.append((c["url"], c["pid"]))
+        print(f"  [{c['method']}] #{c['pid']} {c['name'][:30]} -> {c['url'][:80]}")
+
+    if dropped:
+        print(f"\n[3.5] dropped {len(dropped)} fan-out duplicates (URL already taken):")
+        for d in dropped:
+            print(f"    [{d['method']}] #{d['pid']} {d['name'][:30]} (URL {d['url'][:60]} reserved by higher-priority match)")
+
     # 4. Apply updates
-    print(f"\n[3] Applying {len(updates)} updates...")
-    for url, pid in updates:
-        execute("UPDATE media_products SET purchase_1688_url = %s WHERE id = %s", (url, pid))
+    if dry_run:
+        print(f"\n[4] DRY RUN: would apply {len(updates)} updates (no DB write)")
+    else:
+        print(f"\n[4] Applying {len(updates)} updates...")
+        for url, pid in updates:
+            execute("UPDATE media_products SET purchase_1688_url = %s WHERE id = %s",
+                    (url, pid))
 
     print(f"\n=== Summary ===")
     print(f"Total paired records : {len(all_paired)}")
     print(f"Products scanned     : {len(products)}")
     print(f"Products matched     : {matched}")
     print(f"Products no match    : {no_match}")
-    print(f"Products updated     : {len(set(p for _, p in updates))}")
+    label = "Products would update" if dry_run else "Products updated"
+    print(f"{label:<21}: {len(set(p for _, p in updates))}")
 
 
 if __name__ == "__main__":

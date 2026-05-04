@@ -69,8 +69,16 @@ def _search_once(
     page_size: int = DEFAULT_PAGE_SIZE,
     max_pages: int = MAX_PAGES,
 ) -> list[dict[str, Any]]:
-    """Call the supply pairing API and return all items across pages."""
+    """Call the supply pairing API and return all items across pages.
+
+    Pagination caveats observed on dianxiaomi (2026-05-05):
+    * a non-final page can return fewer than page_size rows;
+    * after the real last page, the API loops back and re-emits an earlier
+      page (same row IDs) instead of returning an empty list.
+    Stop on: empty list, no new unique IDs, or cumulative >= totalSize.
+    """
     out: list[dict[str, Any]] = []
+    seen_ids: set[Any] = set()
     for page_no in range(1, max_pages + 1):
         payload = {
             "pageNo": str(page_no),
@@ -86,8 +94,14 @@ def _search_once(
             raise RuntimeError(f"dxm supply pairing error: {body.get('msg')} (code={code})")
         page_data = ((body.get("data") or {}).get("page") or {})
         items = page_data.get("list") or []
-        out.extend(items)
-        if len(items) < page_size:
+        total_size = page_data.get("totalSize") or 0
+        new_items = [it for it in items if it.get("id") not in seen_ids]
+        for it in new_items:
+            seen_ids.add(it.get("id"))
+        out.extend(new_items)
+        if not items or not new_items:
+            break
+        if total_size and len(out) >= total_size:
             break
     return out
 
@@ -125,7 +139,7 @@ def _open_supply_page(cdp_url: str = DEFAULT_DXM_CDP_URL):
 def search_supply_pairing(
     query: str,
     *,
-    status: str = "0",
+    status: str = "",
     page_size: int = DEFAULT_PAGE_SIZE,
     cdp_url: str = DEFAULT_DXM_CDP_URL,
 ) -> dict[str, Any]:
@@ -133,6 +147,12 @@ def search_supply_pairing(
 
     Tries SKU search (searchType=1) first; if no results, falls back to
     keyword search (searchType=2).
+
+    Default ``status=""`` returns items across all states (waiting + paired),
+    which on the MKTT account totals ~378 records vs. only 11 with
+    ``status="0"`` (paired only). The waiting-list items each carry an
+    auto-matched ``alibabaProductId`` that ``extract_1688_url`` can turn
+    into a 1688 link.
 
     Returns:
         {"items": [...], "query": str, "search_type_used": "1"|"2", "total": int}
@@ -178,15 +198,38 @@ def search_supply_pairing(
 
 
 def extract_1688_url(item: dict[str, Any]) -> str | None:
-    """Extract the 1688 purchase URL from a supply pairing item."""
-    url = item.get("sourceUrl")
-    if url:
-        return str(url)
-    # Some items may have URL inside alibabaProductList
+    """Extract a 1688 purchase URL from a supply pairing item.
+
+    Resolution order:
+      1. ``sourceUrl`` if it is a 1688 link (most authoritative — user
+         confirmed pair).
+      2. ``alibabaProductList[*].sourceUrl`` if any is a 1688 link.
+      3. ``alibabaProductId`` constructed into ``detail.1688.com/offer/{id}.html``
+         (dxm auto-matched candidate; covers status=1 'waiting list' items
+         where the user has not yet confirmed the pair).
+      4. ``sourceUrl`` if it is non-empty but not 1688 (Amazon / TikTok).
+
+    Step 3 is the unlock found on 2026-05-05: the supply pairing UI shows
+    100+ items because dxm pre-attaches an alibabaProductId to almost every
+    waiting-list item, even when the user has not pressed 'confirm pair'.
+    """
+    raw_source = item.get("sourceUrl")
+    if raw_source and "1688.com" in str(raw_source):
+        return str(raw_source)
+
     alibaba_list = item.get("alibabaProductList") or []
     for prod in alibaba_list:
         if isinstance(prod, dict):
             source = prod.get("sourceUrl")
-            if source:
+            if source and "1688.com" in str(source):
                 return str(source)
+
+    alibaba_id = item.get("alibabaProductId")
+    if alibaba_id:
+        alibaba_id = str(alibaba_id).strip()
+        if alibaba_id and alibaba_id.lower() not in ("0", "null", "none"):
+            return f"https://detail.1688.com/offer/{alibaba_id}.html"
+
+    if raw_source:
+        return str(raw_source)
     return None
