@@ -23,9 +23,16 @@
   --danger: oklch(58% 0.18 25);
   --danger-bg: oklch(96% 0.04 25);
   --danger-fg: oklch(42% 0.14 25);
+  --bg-card: oklch(99% 0.004 230);
+  --shadow-xs: 0 1px 2px 0 oklch(22% 0.02 235 / 0.04);
+  --accent-ring: oklch(56% 0.16 230 / 0.22);
   --radius: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-full: 9999px;
+  --text-sm: 13px;
+  --duration-fast: 120ms;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-7: 32px;
 }
@@ -67,6 +74,8 @@
 .op-table th, .op-table td { padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--border); }
 .op-table th { font-weight: 500; color: var(--fg-muted); font-size: 13px; background: var(--bg-subtle); }
 .op-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.op-cost-breakdown th.num,
+.op-cost-breakdown td.num { text-align: center; }
 .op-table tr.loss td.num.profit { color: var(--danger); font-weight: 500; }
 
 .op-banner {
@@ -93,26 +102,33 @@
 .op-segmented {
   display: inline-flex; align-items: center; gap: var(--space-1);
   padding: var(--space-1); border: 1px solid var(--border-strong);
-  border-radius: 9999px; background: var(--bg-subtle);
+  border-radius: var(--radius-full); background: var(--bg-subtle);
 }
 .op-seg {
   height: 30px; padding: 0 var(--space-3); background: transparent;
-  border: 1px solid transparent; border-radius: 9999px;
-  color: var(--fg-muted); cursor: pointer; font-size: 13px;
+  border: 1px solid transparent; border-radius: var(--radius-full);
+  color: var(--fg-muted); cursor: pointer; font-size: var(--text-sm);
   font-weight: 600; white-space: nowrap;
-  transition: background-color 120ms, border-color 120ms, color 120ms;
+  transition: background-color var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
 }
-.op-seg:hover { background: white; border-color: var(--border); color: var(--fg); }
-.op-seg.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.op-seg:hover { background: var(--bg-card); border-color: var(--border); color: var(--fg); }
+.op-seg.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); box-shadow: var(--shadow-xs); }
+.op-seg:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
 .op-date-range-field {
   min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2);
   padding: 0 var(--space-2); border: 1px solid var(--border-strong);
-  border-radius: var(--radius); background: white;
+  border-radius: var(--radius); background: var(--bg-card);
+}
+.op-date-range-field:focus-within {
+  border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring);
 }
 .op-date-range-field input {
-  width: 130px; height: 30px; padding: 0; border: 0; background: transparent; font-size: 14px;
+  width: 130px; height: 30px; padding: 0;
+  border: 0; border-radius: 0; background: transparent; font-size: 14px;
 }
-.op-date-range-field input:focus-visible { outline: none; }
+.op-date-range-field input:focus-visible { outline: none; box-shadow: none; }
 .op-date-range-sep { color: var(--fg-subtle); font-size: 13px; }
 {% endblock %}
 
@@ -158,7 +174,7 @@
 
     <div class="op-section">
       <h2>成本拆分（已核算行）</h2>
-      <table class="op-table">
+      <table class="op-table op-cost-breakdown">
         <thead><tr><th>项目</th><th class="num">USD</th><th class="num">占营收 %</th></tr></thead>
         <tbody id="opCostBreakdownBody"></tbody>
       </table>
