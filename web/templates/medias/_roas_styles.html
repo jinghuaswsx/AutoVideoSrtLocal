@@ -409,6 +409,103 @@
   font-size: 12px;
 }
 
+/* === 采购价输入旁的"小秘云仓匹配"按钮 + 模态框 === */
+.oc-roas-field-with-action label { display: block; margin-bottom: 4px; }
+.oc-roas-input-row { display: flex; gap: 8px; align-items: center; }
+.oc-roas-input-row input { flex: 1 1 auto; min-width: 0; }
+.oc-roas-inline-btn {
+  flex: 0 0 auto;
+  background: var(--oc-bg-subtle);
+  color: var(--oc-fg);
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-radius);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--oc-duration-fast) var(--oc-ease);
+}
+.oc-roas-inline-btn:hover { background: var(--oc-bg-muted); }
+.oc-roas-inline-btn:disabled { opacity: 0.55; cursor: wait; }
+
+.oc-xmyc-match-modal {
+  width: min(960px, 90vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+.oc-xmyc-match-body {
+  padding: 16px 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.oc-xmyc-match-product {
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.oc-xmyc-match-product strong { font-size: 14px; }
+.oc-xmyc-match-toolbar { display: flex; gap: 8px; align-items: center; }
+.oc-xmyc-match-toolbar input[type="search"] {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-radius);
+  font-size: 13px;
+}
+.oc-xmyc-match-toolbar select {
+  padding: 6px 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-radius);
+  font-size: 13px;
+  background: var(--oc-bg);
+}
+.oc-xmyc-match-list {
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+.oc-xmyc-match-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.oc-xmyc-match-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--oc-bg-subtle);
+  border-bottom: 1px solid var(--oc-border);
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--oc-fg-muted);
+  z-index: 1;
+}
+.oc-xmyc-match-table tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--oc-border);
+  vertical-align: middle;
+}
+.oc-xmyc-match-table tr:hover td { background: var(--oc-bg-subtle); }
+.oc-xmyc-match-table .ta-r { text-align: right; font-variant-numeric: tabular-nums; }
+.oc-xmyc-match-table .w-checkbox { width: 28px; }
+.oc-xmyc-match-table .matched-other { color: var(--oc-danger); font-size: 12px; }
+.oc-xmyc-match-table .matched-self { color: var(--oc-accent); font-size: 12px; font-weight: 600; }
+.oc-xmyc-match-empty { text-align: center; color: var(--oc-fg-muted); padding: 40px 0 !important; }
+.oc-xmyc-match-foot {
+  border-top: 1px solid var(--oc-border);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.oc-xmyc-match-summary { font-size: 13px; }
+.oc-xmyc-match-foot-actions { display: flex; gap: 8px; }
+
 /* === 独立路由页面专属布局 === */
 .oc-roas-page {
   max-width: 1440px;

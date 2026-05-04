@@ -57,6 +57,29 @@ def test_medias_js_calls_parcel_cost_suggest_endpoint():
     assert "packet_cost_actual" in controller_js
 
 
+def test_xmyc_match_modal_assets_present():
+    list_html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    partial_html = PARTIAL.read_text(encoding="utf-8")
+    modal_js = (ROOT / "web" / "static" / "xmyc_match_modal.js").read_text(encoding="utf-8")
+    roas_js = (ROOT / "web" / "static" / "roas_form.js").read_text(encoding="utf-8")
+
+    assert 'id="xmycMatchModalMask"' in list_html
+    assert 'id="xmycMatchSearch"' in list_html
+    assert 'id="xmycMatchSaveBtn"' in list_html
+    assert 'id="xmycMatchTbody"' in list_html
+    assert "xmyc_match_modal.js" in list_html
+
+    assert 'id="xmycMatchOpenBtn"' in partial_html
+    assert "小秘云仓匹配" in partial_html
+
+    assert "window.XmycMatchModal" in modal_js
+    assert "/medias/api/xmyc-skus" in modal_js
+    assert "/xmyc-skus" in modal_js
+
+    assert "_openXmycMatch" in roas_js
+    assert "XmycMatchModal" in roas_js
+
+
 def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     html = PARTIAL.read_text(encoding="utf-8")
 

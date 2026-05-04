@@ -84,6 +84,30 @@
       if (suggestBtn) {
         suggestBtn.addEventListener('click', () => this._fetchParcelCostSuggestion());
       }
+      const xmycBtn = this.root.querySelector('#xmycMatchOpenBtn');
+      if (xmycBtn) {
+        xmycBtn.addEventListener('click', () => this._openXmycMatch());
+      }
+    }
+
+    _openXmycMatch() {
+      if (!window.XmycMatchModal || !this.productId) return;
+      const nameEl = this.root.querySelector('#roasProductName');
+      const codeEl = this.root.querySelector('#roasProductEnglish');
+      window.XmycMatchModal.open({
+        productId: this.productId,
+        productName: nameEl ? (nameEl.textContent || '').trim() : '',
+        productCode: codeEl ? (codeEl.textContent || '').trim() : '',
+        onSaved: (result) => {
+          if (result && result.purchasePrice !== null && result.purchasePrice !== undefined) {
+            const input = this.root.querySelector('[data-roas-field="purchase_price"]');
+            if (input) {
+              input.value = result.purchasePrice;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
+        },
+      });
     }
 
     resetParcelSuggestPanel() {
