@@ -292,70 +292,56 @@ Adapter `provider_code` 枚举：`openrouter` / `doubao` / `gemini_aistudio` / `
 
 GitHub remote：`https://github.com/jinghuaswsx/AutoVideoSrtLocal.git`，prod 仓库当前分支固定 `master`。
 
+> **历史背景**：早期 cjh 没 GitHub 凭据，需要绕路；2026-05-04 起，cjh `~/.git-credentials` 已配 PAT、sudo 密码也已就位 → **本机能自主闭环部署**，不再需要外部开发机或 worktree fetch 绕路。
+
 ## agent 能做什么 / 不能做什么
 
-| 操作 | cjh agent 自己 | 必须用户 sudo |
-|------|----------------|---------------|
+| 操作 | cjh agent 自己 | 需要 sudo（cjh 输密码） |
+|------|---------------|------------------------|
 | 在 worktree 改代码 / 跑测试 / 起 dev server | ✅ | — |
-| `git commit` 在 worktree | ✅ | — |
-| `git push` 到 GitHub | ❌ cjh 无凭据 | ✅ root 有 |
-| `git pull` / 写 `/opt/autovideosrt/` | ❌ root 拥有 | ✅ |
+| `git commit` / `git push origin <branch>:master` | ✅（PAT 自动从 `~/.git-credentials` 读） | — |
+| 写 `/opt/autovideosrt/`、`git pull` 那个目录 | ❌ root 拥有 | ✅ |
 | `systemctl restart autovideosrt` | ❌ | ✅ |
 
-**结论**：发布到线上必须**用户输入 sudo 密码**执行命令；agent 不能自己完成。**不要走 `deploy/publish.sh`**——那是给外部开发机用的、需要 SSH key（CC.pem 在 Windows 上）；本机直接 sudo 即可。
+**关键认知**：
+- 仓库 `jinghuaswsx/AutoVideoSrtLocal` 是 **public**：`git pull` 不需要任何凭据（root 在 prod 仓库直接 `git pull` 即通），`git push` 才需要 PAT（cjh 已有）
+- 端到端 = cjh 自己 push GitHub + sudo 一条命令做 prod git pull + restart
+- **不要走 `deploy/publish.sh`**——那是给外部开发机的 SSH 跳板（依赖 Windows 上的 CC.pem），本机不需要
 
-## 标准发布流程（agent → 用户）
+## 标准发布流程（自主闭环）
 
-### 1. agent 在 worktree 里做完所有事
+### 1. 在 worktree 完成开发
 
-- 改代码、写测试、跑测试通过
-- 起 dev server 在空闲端口（如 5090）做端到端验证（用 prod `.env` + prod 数据库）
+- 改代码、写测试（pytest）、跑测试通过
+- 起 dev server 在空闲端口（如 5090）端到端验证（用 prod `.env` + prod 数据库）
 - 测试账号：见 [testuser.md](testuser.md)（admin/709709@）
 - 必测：未登录路由跳 302 + 登录后跳 200
+- 路由必加 `@login_required` + `@admin_required`（详见下面"路由守卫规范"）
 
-### 2. agent 准备 git 状态
+### 2. cjh 自己 commit + push 到 GitHub master
 
 ```bash
 git fetch origin master
-# 如本地分支落后 master：stash → rebase → pop
+
+# 落后则 rebase（worktree 通常在某个分支，要把它推到 master）
 git stash push -u -m "pre-rebase"   # 仅当 working tree 有未 commit 改动
 git rebase origin/master
 git stash pop
 
-# commit（用 HEREDOC，带 Co-Authored-By）
-git add -A && git commit -m "..."
+git add -A && git commit -m "..."   # HEREDOC + Co-Authored-By
+git push origin HEAD:master         # 当前分支 → GitHub master，自动用 ~/.git-credentials
 ```
 
-确保 agent 当前 worktree 分支是 `origin/master` 的**纯 fast-forward 后代**（没有 origin/master 没有的祖先）。
+push 报 `non-fast-forward` 说明 master 又被推了 commit → 重复 fetch + rebase + push。
 
-### 3. agent 给用户**一条 sudo 命令**
-
-见下方"一键发布命令模板"。用户在 cjh 终端粘贴 + 输 sudo 密码即可。
-
-### 4. sudo 命令自带验证
-
-让命令最后 curl `http://127.0.0.1<新路由>` 输出 HTTP 码 + `systemctl is-active`，部署成功与否一目了然，不需要等用户回贴。
-
-## 一键发布命令模板
-
-把 `<WORKTREE_DIR>` 和 `<NEW_ROUTE>` 替换为实际值给用户：
+### 3. sudo 同步 prod + 重启服务（一条命令）
 
 ```bash
-sudo bash -c '
+echo 'cjh123' | sudo -S -k bash -c '
 set -e
-WORKTREE=<WORKTREE_DIR>           # 例：/home/cjh/.paseo/worktrees/0ubtzq57/hip-falcon
 git config --global --add safe.directory /opt/autovideosrt
-git config --global --add safe.directory $WORKTREE
-
 cd /opt/autovideosrt
-git fetch origin master
-git reset --hard origin/master                    # 清掉历史半成功状态
-BRANCH=$(git -C $WORKTREE rev-parse --abbrev-ref HEAD)
-git fetch $WORKTREE $BRANCH:_deploy_incoming
-git merge --ff-only _deploy_incoming
-git branch -d _deploy_incoming
-git push origin master
-
+git pull origin master --ff-only
 systemctl restart autovideosrt
 sleep 3
 systemctl is-active autovideosrt
@@ -363,11 +349,18 @@ curl -s -o /dev/null -w "<NEW_ROUTE>: HTTP %{http_code}\n" http://127.0.0.1<NEW_
 '
 ```
 
-**关键点**：
-- `git reset --hard origin/master` 必须在 fetch worktree **之前**——清掉之前 sudo 命令半成功留下的乱状态
-- `git fetch <worktree-path> <branch>:_deploy_incoming` 用本地路径作为 remote，绕开 cjh 没 GitHub 凭据的问题
-- `git merge --ff-only` 失败 = worktree 分支不是 master 后代 → agent 必须重新 rebase 后再给命令
-- 末尾 curl 验证：HTTP 302（跳 login）= 路由生效；404 = 部署失败；500 = 模板/代码挂
+把 `<NEW_ROUTE>` 替换为本次新增/改动的路由（例：`/order-profit`）。期望末尾输出：
+- `active`
+- HTTP **302**（跳 login）= 路由生效；404 = 部署失败；500 = 模板/代码挂
+
+### 4. 故障兜底
+
+| 现象 | 原因 + 处置 |
+|------|-----------|
+| `git pull --ff-only` 失败 | prod 本地脏改动（理论不该有）→ 改用 `git fetch origin master && git reset --hard origin/master` |
+| GitHub push 报 403/401 | cjh PAT 失效 → 见顶部"GitHub 凭据 / push 流程"小节的兜底 |
+| restart 后 HTTP 500 | 路由没加 `@login_required`，layout.html 访问 `current_user.username` 抛 `UndefinedError` |
+| restart 后 HTTP 404 | 蓝图没注册到 `web/app.py`，或路由名拼错 |
 
 ## 路由守卫规范（避免 500）
 
