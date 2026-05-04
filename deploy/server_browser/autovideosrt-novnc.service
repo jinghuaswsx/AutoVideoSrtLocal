@@ -1,0 +1,15 @@
+[Unit]
+Description=AutoVideoSrt noVNC Web Proxy (websockify on 0.0.0.0:6082 -> [::1]:5900)
+After=network-online.target graphical.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc 0.0.0.0:6082 [::1]:5900
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

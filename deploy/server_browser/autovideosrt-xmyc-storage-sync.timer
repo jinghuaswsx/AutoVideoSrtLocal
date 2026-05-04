@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt XMYC Storage SKU sync every day
+
+[Timer]
+OnCalendar=*-*-* 12:33:00
+Persistent=true
+Unit=autovideosrt-xmyc-storage-sync.service
+
+[Install]
+WantedBy=timers.target

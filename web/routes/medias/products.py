@@ -5,7 +5,7 @@ import pymysql.err
 from flask import abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, parcel_cost_suggest, product_roas, pushes
+from appcore import medias, parcel_cost_suggest, product_roas, pushes, xmyc_storage
 from . import bp
 from ._serializers import _int_or_none, _serialize_item, _serialize_product
 
@@ -259,6 +259,55 @@ def api_parcel_cost_suggest(pid: int):
     except Exception as exc:  # pragma: no cover - safety net for browser glue
         return jsonify({"error": "dxm_failed", "message": str(exc)}), 502
     return jsonify({"ok": True, "suggestion": suggestion})
+
+
+@bp.route("/api/xmyc-skus", methods=["GET"])
+@login_required
+def api_list_xmyc_skus():
+    keyword = (request.args.get("keyword") or "").strip() or None
+    matched_filter = (request.args.get("matched") or "all").strip().lower()
+    if matched_filter not in ("all", "matched", "unmatched"):
+        matched_filter = "all"
+    try:
+        limit = max(1, min(500, int(request.args.get("limit") or 200)))
+        offset = max(0, int(request.args.get("offset") or 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid_pagination"}), 400
+    rows = xmyc_storage.list_skus(
+        keyword=keyword,
+        matched_filter=matched_filter,
+        limit=limit,
+        offset=offset,
+    )
+    return jsonify({"ok": True, "items": rows, "limit": limit, "offset": offset})
+
+
+@bp.route("/api/products/<int:pid>/xmyc-skus", methods=["GET"])
+@login_required
+def api_get_product_xmyc_skus(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    rows = xmyc_storage.get_skus_for_product(pid)
+    return jsonify({"ok": True, "items": rows})
+
+
+@bp.route("/api/products/<int:pid>/xmyc-skus", methods=["POST"])
+@login_required
+def api_set_product_xmyc_skus(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    raw_skus = body.get("skus") or []
+    if not isinstance(raw_skus, list):
+        return jsonify({"error": "skus_must_be_list"}), 400
+    skus = [str(s).strip() for s in raw_skus if str(s).strip()]
+    matched_by = int(current_user.id) if getattr(current_user, "id", None) else None
+    result = xmyc_storage.set_product_skus(pid, skus, matched_by=matched_by)
+    return jsonify({"ok": True, **result})
 
 
 @bp.route("/api/products/<int:pid>", methods=["PUT"])
