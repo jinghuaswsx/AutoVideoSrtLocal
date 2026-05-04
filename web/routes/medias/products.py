@@ -154,8 +154,17 @@ def api_list_products():
     limit = 20
     offset = (page - 1) * limit
 
+    xmyc_match = (request.args.get("xmyc_match") or "all").strip().lower()
+    if xmyc_match not in medias.XMYC_MATCH_FILTERS:
+        xmyc_match = "all"
+    roas_status = (request.args.get("roas_status") or "all").strip().lower()
+    if roas_status not in medias.ROAS_STATUS_FILTERS:
+        roas_status = "all"
+
     rows, total = medias.list_products(None, keyword=keyword, archived=archived,
-                                       offset=offset, limit=limit)
+                                       offset=offset, limit=limit,
+                                       xmyc_match=xmyc_match,
+                                       roas_status=roas_status)
     pids = [r["id"] for r in rows]
     counts = medias.count_items_by_product(pids)
     raw_counts = medias.count_raw_sources_by_product(pids)

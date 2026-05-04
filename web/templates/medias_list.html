@@ -45,6 +45,8 @@
 .oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
 .oc-search input::placeholder { color:var(--oc-fg-subtle); }
 .oc-search input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-toolbar select.oc-select { height:32px; padding:0 28px 0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; cursor:pointer; appearance:none; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat:no-repeat; background-position:right 8px center; }
+.oc-toolbar select.oc-select:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
 
 .oc-chip { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:32px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r-full,9999px); background:var(--oc-bg); color:var(--oc-fg-muted); font-size:12px; font-weight:500; cursor:pointer; user-select:none; transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
 .oc-chip input { display:none; }
@@ -1964,6 +1966,17 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
       <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
       <input id="kw" placeholder="搜索产品名称、产品 ID 或 mk_id">
     </div>
+    <select id="filterXmycMatch" class="oc-select" title="按是否已配对小秘云仓 SKU 筛选">
+      <option value="all">小秘云仓：全部</option>
+      <option value="matched">已配对</option>
+      <option value="unmatched">未配对</option>
+    </select>
+    <select id="filterRoasStatus" class="oc-select" title="按 ROAS 数据完整度筛选">
+      <option value="all">ROAS 数据：全部</option>
+      <option value="complete">数据已完成</option>
+      <option value="missing_estimated">缺失（预估）</option>
+      <option value="missing_actual">缺失（实际）</option>
+    </select>
     <span class="oc-spacer"></span>
     <button class="oc-btn ghost" id="searchBtn">
       <svg width="14" height="14"><use href="#ic-search"/></svg>
