@@ -684,6 +684,10 @@ def get_artifact(task_id, name):
         preview_files = (task.get("variants") or {}).get(variant, {}).get("preview_files", {})
 
     path = preview_files.get(name)
+    if not path and name in {"separation_vocals", "separation_accompaniment"}:
+        # 兼容上线前跑过的老任务：从 task["separation"] 直接读分离结果路径
+        sep = task.get("separation") or {}
+        path = sep.get("vocals_path") if name == "separation_vocals" else sep.get("accompaniment_path")
     if path:
         return safe_task_file_response(task, path)
     return jsonify({"error": "Artifact not found"}), 404

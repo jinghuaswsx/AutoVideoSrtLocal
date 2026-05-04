@@ -474,13 +474,26 @@ class MultiTranslateRunner(PipelineRunner):
 
         self._set_step(task_id, "voice_match", "running", f"{lang.upper()} 音色库加载中...")
 
+        # 优先用上一步「人声分离」产出的纯 vocals.wav 做 embedding——比从原视频
+        # 混合音轨（vocals + BGM + 环境音）截取的样本更干净，匹配候选更准。
+        # 分离失败 / 未启用时退回旧逻辑：从原视频按 utterances 时间戳截 8s+ 样本。
+        from pipeline import audio_separation as _sep_pkg
+        separation = task.get("separation") or {}
+
         candidates: list = []
         if utterances and video_path:
             try:
-                clip = extract_sample_from_utterances(
-                    video_path, utterances, out_dir=task["task_dir"],
-                    min_duration=8.0,
-                )
+                if _sep_pkg.is_usable(separation):
+                    clip = separation["vocals_path"]
+                    log.info(
+                        "[voice_match] task=%s using separated vocals for embedding: %s",
+                        task_id, clip,
+                    )
+                else:
+                    clip = extract_sample_from_utterances(
+                        video_path, utterances, out_dir=task["task_dir"],
+                        min_duration=8.0,
+                    )
                 vec = embed_audio_file(clip)
                 candidates = match_candidates(
                     vec,

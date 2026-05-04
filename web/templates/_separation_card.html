@@ -95,8 +95,9 @@
             '</div>' +
           '</div>' +
           '<div class="separation-handoff">' +
-            '↓ 这两段产物会在 TTS 完成后被「响度匹配」step 使用' +
-            '：accompaniment 跟 TTS amix 成 mp4 整体音轨，vocals_lufs / video_lufs 当作目标' +
+            '↑ 上方「音色选择」step 用 vocals.wav 做 voice embedding 匹配候选音色' +
+            '<br>↓ 下方「响度匹配」step 用 video_lufs 当目标、accompaniment 跟 TTS amix 成 mp4 主音轨' +
+            '<br>↓ CapCut 工程包导出时 accompaniment 作为独立 ambience 音轨保留' +
           '</div>' +
         '</div>';
       return;

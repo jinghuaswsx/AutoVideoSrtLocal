@@ -36,12 +36,25 @@ class TaskRestartWorkflowOutcome:
     status_code: int = 200
 
 
+# 多语种 / 全能视频翻译完整 step list。restart_task 会把 ``task["steps"]``
+# 整个替换成 ``{step: "pending"}``，所以这里缺哪个 step 哪个就在 restart
+# 后留 undefined ——前端进度卡和 task_workbench step 卡片就乱套。
+#
+# 必须跟 :meth:`MultiTranslateRunner._get_pipeline_steps` 与
+# :meth:`OmniTranslateRunner._get_pipeline_steps` 注册的 step 顺序一致。
+# omni 用 asr_clean 替代 asr_normalize；这里包含两者，restart 后未跑到的会
+# 留 pending（运行时只会激活其中一个，前端按 pipeline_kind 显示哪个 step 卡片）。
 _STEPS = (
     "extract",
     "asr",
+    "asr_normalize",
+    "asr_clean",
+    "separate",
+    "voice_match",
     "alignment",
     "translate",
     "tts",
+    "loudness_match",
     "subtitle",
     "compose",
     "export",
@@ -51,10 +64,12 @@ _AV_SYNC_STEPS = (
     "extract",
     "asr",
     "asr_normalize",
+    "separate",
     "voice_match",
     "alignment",
     "translate",
     "tts",
+    "loudness_match",
     "subtitle",
     "compose",
     "export",

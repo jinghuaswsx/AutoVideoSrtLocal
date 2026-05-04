@@ -627,9 +627,24 @@ def get_artifact(task_id, name):
         preview_files = (task.get("variants") or {}).get(variant, {}).get("preview_files", {})
 
     path = preview_files.get(name)
+    if not path:
+        # 兼容老任务：分离结果路径直接从 task["separation"] 读，避免回填 preview_files
+        path = _separation_artifact_path(task, name)
     if path:
         return safe_task_file_response(task, path)
     return jsonify({"error": "Artifact not found"}), 404
+
+
+def _separation_artifact_path(task: dict, name: str) -> str | None:
+    """老任务回填：preview_files 里没有 separation_vocals / separation_accompaniment
+    时，从 task[\"separation\"] 读路径。新任务 _step_separate 会注册到 preview_files
+    所以这里走不到；这是给上线前已经跑过的老任务做兼容。"""
+    if name not in {"separation_vocals", "separation_accompaniment"}:
+        return None
+    sep = task.get("separation") or {}
+    if name == "separation_vocals":
+        return sep.get("vocals_path")
+    return sep.get("accompaniment_path")
 
 
 _ALLOWED_ROUND_KINDS = {
