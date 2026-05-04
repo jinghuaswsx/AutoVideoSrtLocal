@@ -160,7 +160,7 @@ def main():
                 if best_url:
                     break
 
-        # Method C: Product name keyword match
+        # Method C: Local product name keyword → dianxiaomi name
         if not best_url and name:
             keywords = _product_keywords(name)
             for kw in keywords:
@@ -173,6 +173,25 @@ def main():
                         if url:
                             best_url = url
                             match_method = f"keyword={kw}"
+                            break
+                if best_url:
+                    break
+
+        # Method D: Dianxiaomi name keyword → local product name (bidirectional)
+        if not best_url and name:
+            for item in all_paired:
+                paired_name = str(item.get("name") or "")
+                if not paired_name:
+                    continue
+                paired_kws = _product_keywords(paired_name)
+                for kw in paired_kws:
+                    if len(kw) < 2:
+                        continue
+                    if kw in name:
+                        url = supply_pairing.extract_1688_url(item)
+                        if url:
+                            best_url = url
+                            match_method = f"rev_kw={kw}"
                             break
                 if best_url:
                     break
