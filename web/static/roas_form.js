@@ -70,6 +70,9 @@
         });
       }
       const avgInput = this.root.querySelector('#roasAverageShippingInput');
+      // roasAverageShippingTool is exported by medias.js — present in the modal context
+      // (medias_list.html loads both scripts). On the standalone page, medias.js is not
+      // loaded; this branch silently no-ops, which is the intended behavior.
       if (avgInput && window.roasAverageShippingTool) {
         avgInput.addEventListener('input', window.roasAverageShippingTool.updateView);
       }
@@ -168,7 +171,10 @@
       }, DEBOUNCE_MS);
     }
 
-    async save(opts) {
+    async save(opts = {}) {
+      // opts.immediate is informational only — debounce timer is cleared
+      // unconditionally below; behavior is identical for immediate vs. debounced paths.
+      void opts;
       const payload = this.collectPayload();
       if (this._inFlight) {
         this._pendingPayload = payload;
