@@ -16,6 +16,7 @@ from appcore.settings import (
     PROJECT_TYPE_LABELS,
     get_all_retention_settings,
     get_retention_hours,
+    get_setting,
     has_retention_override,
     set_setting,
     adjust_expires_for_type,
@@ -244,6 +245,16 @@ def settings():
             return redirect(url_for("admin.settings"))
         set_setting(product_roas.RMB_PER_USD_SETTING_KEY, product_roas.format_decimal(roas_rate))
 
+        # TTS 全局并发上限：1 ≤ n ≤ 15（ElevenLabs Business 套餐硬上限），默认 12
+        raw_tts_concurrency = request.form.get("tts_max_concurrency", "").strip()
+        if raw_tts_concurrency:
+            try:
+                n = int(raw_tts_concurrency)
+            except (ValueError, TypeError):
+                n = 12
+            n = max(1, min(n, 15))
+            set_setting("tts_max_concurrency", str(n))
+
         old_default = get_retention_hours("__nonexistent__")
         old_per_type = {pt: get_retention_hours(pt) for pt in PROJECT_TYPE_LABELS}
         old_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}
@@ -298,12 +309,18 @@ def settings():
         return redirect(url_for("admin.settings"))
 
     current = get_all_retention_settings()
+    tts_concurrency_raw = get_setting("tts_max_concurrency")
+    try:
+        tts_concurrency = int(tts_concurrency_raw) if tts_concurrency_raw else 12
+    except (ValueError, TypeError):
+        tts_concurrency = 12
     return render_template(
         "admin_settings.html",
         project_types=PROJECT_TYPE_LABELS,
         current=current,
         roas_rmb_per_usd=product_roas.format_decimal(product_roas.get_configured_rmb_per_usd()),
         media_languages=medias.list_languages_for_admin(),
+        tts_max_concurrency=tts_concurrency,
     )
 
 

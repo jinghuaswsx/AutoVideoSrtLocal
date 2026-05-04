@@ -96,6 +96,16 @@
         <div class="field-hint">用于素材管理 ROAS 计算，采购价和小包成本按该汇率换算成 USD。</div>
       </div>
 
+      <div class="field-group">
+        <label>TTS 并发上限</label>
+        <div class="field-row">
+          <input type="number" name="tts_max_concurrency" min="1" max="15" step="1"
+                 value="{{ tts_max_concurrency or 12 }}">
+          <span class="unit">路</span>
+        </div>
+        <div class="field-hint">所有翻译任务共享的 ElevenLabs TTS 全局并发上限（默认 12，Business 套餐硬上限 15）。改后需 systemctl restart autovideosrt 生效。</div>
+      </div>
+
       <div class="section-divider"></div>
 
       <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">按模块覆盖，留空表示使用全局默认。</p>
