@@ -21,7 +21,7 @@ SUPPLY_PAIRING_API = (
 SUPPLY_PAIRING_PAGE = "https://www.dianxiaomi.com/web/supply/pairing"
 DEFAULT_DXM_CDP_URL = "http://127.0.0.1:9222"
 DEFAULT_PAGE_SIZE = 20
-MAX_PAGES = 10
+MAX_PAGES = 50
 
 
 def _post_form_via_page(page, url: str, payload: dict[str, str]) -> dict[str, Any]:
@@ -140,8 +140,7 @@ def search_supply_pairing(
         alibabaProductId, imgUrl, state, etc.
     """
     query = str(query).strip()
-    if not query:
-        return {"items": [], "query": query, "search_type_used": "", "total": 0}
+    # Empty query = fetch all without keyword filter (used by backfill scripts)
 
     with browser_automation_lock(
         task_code="supply_pairing_search",
