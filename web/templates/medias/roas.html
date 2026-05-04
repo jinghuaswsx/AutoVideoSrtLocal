@@ -6,10 +6,31 @@
 {% endblock %}
 {% block content %}
 <div class="oc oc-roas-page" data-product-id="{{ product.id }}">
+  <div class="oc-roas-status-bar" data-roas-status data-state="idle">
+    <span class="oc-roas-status-text">尚未编辑</span>
+    <button type="button" class="oc-roas-status-retry" hidden>重试</button>
+  </div>
   <header class="oc-roas-page-head">
     <a class="oc-btn ghost" href="/medias">← 返回素材管理</a>
     <h1>独立站保本 ROAS</h1>
   </header>
   {% include "medias/_roas_form.html" %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  window.MATERIAL_ROAS_RMB_PER_USD = {{ roas_rmb_per_usd or 6.83 }};
+</script>
+<script src="{{ url_for('static', filename='roas_form.js') }}"></script>
+<script>
+  (function () {
+    const root = document.querySelector('.oc-roas-page');
+    const statusBar = document.querySelector('[data-roas-status]');
+    const product = {{ product | tojson }};
+    new RoasFormController(root, {
+      productId: product.id,
+      statusBarEl: statusBar,
+    }).fillFromProduct(product);
+  })();
+</script>
 {% endblock %}

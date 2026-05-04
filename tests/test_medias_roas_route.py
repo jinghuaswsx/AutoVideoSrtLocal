@@ -16,6 +16,7 @@ def test_roas_page_returns_html_for_owner(authed_client_no_db, monkeypatch):
             "standalone_price": "20.95",
         },
     )
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda pid: {})
     monkeypatch.setattr(r, "_can_access_product", lambda product: product is not None)
     monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 6.83)
 
@@ -73,3 +74,48 @@ def test_roas_page_redirects_to_login_when_anonymous(monkeypatch):
 
     assert resp.status_code in (301, 302)
     assert "/login" in resp.headers.get("Location", "")
+
+
+def test_roas_page_includes_status_bar_and_back_link(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "x", "product_code": "x-rjc"},
+    )
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda pid: {})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: product is not None)
+    monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 6.83)
+
+    body = authed_client_no_db.get("/medias/6/roas").get_data(as_text=True)
+
+    assert 'class="oc-roas-status-bar"' in body
+    assert 'data-roas-status' in body
+    assert 'href="/medias"' in body
+    assert "返回素材管理" in body
+
+
+def test_roas_page_loads_controller_script_and_bootstraps(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {
+            "id": pid,
+            "user_id": 1,
+            "name": "x",
+            "product_code": "x-rjc",
+            "purchase_price": "7.4",
+        },
+    )
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda pid: {})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: product is not None)
+    monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 6.83)
+
+    body = authed_client_no_db.get("/medias/6/roas").get_data(as_text=True)
+
+    assert "roas_form.js" in body
+    assert "new RoasFormController" in body
+    assert '"id": 6' in body or "'id': 6" in body or '"id":6' in body

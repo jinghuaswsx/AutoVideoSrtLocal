@@ -375,10 +375,8 @@ def roas_page(pid: int):
     routes = _routes_module()
     if not product or not routes._can_access_product(product):
         abort(404)
-    # covers={} skips the DB-touching get_product_covers lookup; the page does
-    # not render the cover server-side and the controller loads it client-side.
     return render_template(
         "medias/roas.html",
-        product=_serialize_product(product, covers={}),
+        product=_serialize_product(product),
         roas_rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
     )
