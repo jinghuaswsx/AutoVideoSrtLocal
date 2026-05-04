@@ -11,4 +11,4 @@ INSERT IGNORE INTO system_settings (`key`, `value`) VALUES
   ('audio_separation_api_url',          ''),
   ('audio_separation_preset',           'vocal_balanced'),
   ('audio_separation_task_timeout',     '300'),
-  ('audio_separation_background_volume','0.6');
+  ('audio_separation_background_volume','0.8');

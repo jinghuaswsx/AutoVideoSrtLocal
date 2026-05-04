@@ -78,9 +78,13 @@ def load_settings() -> SeparationSettings:
         task_timeout = DEFAULT_TASK_TIMEOUT
 
     try:
-        bg = float(get_setting(SETTING_BACKGROUND_VOLUME) or 0.6)
+        # 默认 0.8：让翻译版 mp4 里 vocals/BG 响度比例跟原片质感接近
+        # （原片 vocals 跟 BG 差通常 10-12 dB，TTS 单独输出 -11~-15 LUFS、
+        # accompaniment 分离结果 -20~-25 LUFS，bg_volume=0.8 ≈ -2 dB 衰减
+        # 让 BG 进 mp4 后跟 TTS 差 ~11 dB，符合原片听感）。
+        bg = float(get_setting(SETTING_BACKGROUND_VOLUME) or 0.8)
     except (TypeError, ValueError):
-        bg = 0.6
+        bg = 0.8
     bg = max(0.0, min(2.0, bg))
 
     return SeparationSettings(
