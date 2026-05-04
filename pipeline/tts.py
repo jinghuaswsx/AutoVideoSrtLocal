@@ -126,14 +126,21 @@ def generate_segment_audio(
                 kwargs["voice_settings"] = {"speed": float(speed)}
         else:
             kwargs["voice_settings"] = {"speed": float(speed)}
-    audio = _call_with_network_retry(
-        lambda: client.text_to_speech.convert(**kwargs),
+    # ElevenLabs SDK convert() 返回的是一个 generator/iterator —— 真正的 HTTP
+    # 请求在迭代它时才发出。如果只把 convert() 调用放进 retry 包装，generator
+    # 拿出来后在 retry 之外迭代时 SSL/连接异常就抓不到了。所以把整段 drain 都
+    # 放进 lambda 里，让 retry 能看到所有网络层异常。
+    def _do_tts_call() -> bytes:
+        chunks = client.text_to_speech.convert(**kwargs)
+        return b"".join(chunks)
+
+    audio_bytes = _call_with_network_retry(
+        _do_tts_call,
         label="elevenlabs.text_to_speech",
     )
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:
-        for chunk in audio:
-            f.write(chunk)
+        f.write(audio_bytes)
     return output_path
 
 
