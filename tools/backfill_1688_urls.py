@@ -28,7 +28,11 @@ from appcore.db import execute, query
 
 
 def _product_keywords(name: str) -> list[str]:
-    """Split Chinese product name into searchable keywords, longest first."""
+    """Split Chinese product name into searchable keywords, longest first.
+
+    Includes n-gram substrings (2-char min) so that e.g. 全自动水枪 and
+    ARP9电动水枪 can match on the shared bigram 水枪.
+    """
     if not name:
         return []
     # Remove variant suffixes like color/size
@@ -40,11 +44,23 @@ def _product_keywords(name: str) -> list[str]:
         cleaned = name.strip()
     # Split by common delimiters
     parts = re.split(r'[，,\s]+', cleaned)
-    # Return unique non-empty parts, longest first
-    parts = sorted(set(p for p in parts if len(p) >= 2), key=len, reverse=True)
-    if not parts and len(name) >= 2:
-        parts = [name.strip()]
-    return parts
+    # Also extract CJK bigrams from each part for fuzzy matching
+    result = set()
+    for p in parts:
+        p = p.strip()
+        if len(p) >= 2:
+            result.add(p)
+            # Generate 2-gram and 3-gram substrings for CJK-heavy strings
+            if len(p) >= 3:
+                for i in range(len(p) - 1):
+                    result.add(p[i:i + 2])
+                for i in range(len(p) - 2):
+                    result.add(p[i:i + 3])
+    # Return unique, longest first
+    result = sorted(result, key=len, reverse=True)
+    if not result and len(name) >= 2:
+        result = [name.strip()]
+    return result
 
 
 def main():
