@@ -51,11 +51,15 @@ def main():
     # 1. Pull ALL paired records from supply pairing
     print("[1] Pulling ALL paired supply pairing records...")
     all_paired: list[dict] = []
-    try:
-        result = supply_pairing.search_supply_pairing("", status="2", page_size=100)
-        all_paired = result.get("items") or []
-        total_from_api = result.get("total", len(all_paired))
-        print(f"  Pulled {len(all_paired)} items (API reports total={total_from_api})")
+    # Pull all records: status=2 (已配对) + status=1 (待配对)
+    for st in ("2", "1"):
+        try:
+            result = supply_pairing.search_supply_pairing("", status=st, page_size=100)
+            items = result.get("items") or []
+            all_paired.extend(items)
+            print(f"  status={st}: {len(items)} items")
+        except Exception as exc:
+            print(f"  status={st}: ERROR {exc}")
         # If there are more pages, we may need to paginate; but search_supply_pairing
         # with empty query should return all. If not, we rely on the function's pagination.
     except Exception as exc:
