@@ -121,6 +121,103 @@ def test_matching_and_refresh_actions_record_audit(authed_client_no_db, monkeypa
     assert calls[2]["detail"]["updated"] == 2
 
 
+def test_meta_ad_manual_match_success_records_audit(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as route_mod
+
+    calls = []
+
+    def fake_manual_match(normalized_campaign_code, product_id):
+        return {
+            "matched_periodic": 2,
+            "matched_daily": 5,
+            "product_id": product_id,
+            "product_code": "glow-go-insect-set-rjc",
+            "product_name": "Glow Set",
+        }
+
+    monkeypatch.setattr(route_mod.oa, "manual_match_meta_ad_campaign", fake_manual_match)
+    monkeypatch.setattr(
+        route_mod,
+        "system_audit",
+        SimpleNamespace(record_from_request=lambda **kwargs: calls.append(kwargs)),
+        raising=False,
+    )
+
+    response = authed_client_no_db.post(
+        "/order-analytics/ad-match-manual",
+        json={"normalized_campaign_code": "glow-go-insect-set-rjc", "product_id": 42},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["matched_periodic"] == 2
+    assert body["matched_daily"] == 5
+    assert body["product_code"] == "glow-go-insect-set-rjc"
+
+    assert calls[0]["action"] == "order_analytics_meta_ad_manual_matched"
+    assert calls[0]["target_type"] == "meta_ad_campaign"
+    assert calls[0]["target_label"] == "glow-go-insect-set-rjc"
+    assert calls[0]["status"] == "success"
+    assert calls[0]["detail"]["matched_periodic"] == 2
+    assert calls[0]["detail"]["matched_daily"] == 5
+
+
+def test_meta_ad_manual_match_missing_params_returns_400(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as route_mod
+
+    monkeypatch.setattr(
+        route_mod.oa,
+        "manual_match_meta_ad_campaign",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+
+    r1 = authed_client_no_db.post(
+        "/order-analytics/ad-match-manual",
+        json={"normalized_campaign_code": "", "product_id": 42},
+    )
+    assert r1.status_code == 400
+
+    r2 = authed_client_no_db.post(
+        "/order-analytics/ad-match-manual",
+        json={"normalized_campaign_code": "code", "product_id": "abc"},
+    )
+    assert r2.status_code == 400
+
+    r3 = authed_client_no_db.post(
+        "/order-analytics/ad-match-manual",
+        json={"normalized_campaign_code": "code", "product_id": 0},
+    )
+    assert r3.status_code == 400
+
+
+def test_meta_ad_manual_match_product_missing_returns_404(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as route_mod
+
+    calls = []
+
+    def boom(normalized_campaign_code, product_id):
+        raise LookupError(f"product {product_id} not found or deleted")
+
+    monkeypatch.setattr(route_mod.oa, "manual_match_meta_ad_campaign", boom)
+    monkeypatch.setattr(
+        route_mod,
+        "system_audit",
+        SimpleNamespace(record_from_request=lambda **kwargs: calls.append(kwargs)),
+        raising=False,
+    )
+
+    response = authed_client_no_db.post(
+        "/order-analytics/ad-match-manual",
+        json={"normalized_campaign_code": "code-x", "product_id": 999},
+    )
+
+    assert response.status_code == 404
+    assert calls[0]["action"] == "order_analytics_meta_ad_manual_matched"
+    assert calls[0]["status"] == "failure"
+    assert "product 999 not found" in calls[0]["detail"]["error"]
+
+
 def test_dianxiaomi_import_records_success_and_failure_audit(authed_client_no_db, monkeypatch):
     from web.routes import order_analytics as route_mod
 

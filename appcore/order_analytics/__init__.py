@@ -91,6 +91,7 @@ from .meta_ads import (
     parse_meta_ad_file,
     import_meta_ad_rows,
     match_meta_ads_to_products,
+    manual_match_meta_ad_campaign,
     get_meta_ad_stats,
     get_meta_ad_periods,
     get_meta_ad_summary,

@@ -269,6 +269,52 @@ def match_meta_ads_to_products() -> int:
     return affected
 
 
+def manual_match_meta_ad_campaign(
+    normalized_campaign_code: str,
+    product_id: int,
+) -> dict:
+    """把指定归一化广告系列名下所有未匹配的行人工配对到 media_products 产品。
+
+    同时更新 ``meta_ad_campaign_metrics`` 与 ``meta_ad_daily_campaign_metrics``
+    两张表里 ``normalized_campaign_code`` 命中且 ``product_id IS NULL`` 的所有行。
+    """
+    code = (normalized_campaign_code or "").strip().lower()
+    if not code:
+        raise ValueError("normalized_campaign_code is required")
+    try:
+        pid = int(product_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("product_id must be an integer") from exc
+    if pid <= 0:
+        raise ValueError("product_id must be positive")
+
+    product = query_one(
+        "SELECT id, product_code, name FROM media_products "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (pid,),
+    )
+    if not product:
+        raise LookupError(f"product {pid} not found or deleted")
+
+    matched_periodic = execute(
+        "UPDATE meta_ad_campaign_metrics SET product_id=%s, matched_product_code=%s "
+        "WHERE normalized_campaign_code=%s AND product_id IS NULL",
+        (product["id"], product["product_code"], code),
+    )
+    matched_daily = execute(
+        "UPDATE meta_ad_daily_campaign_metrics SET product_id=%s, matched_product_code=%s "
+        "WHERE normalized_campaign_code=%s AND product_id IS NULL",
+        (product["id"], product["product_code"], code),
+    )
+    return {
+        "matched_periodic": int(matched_periodic or 0),
+        "matched_daily": int(matched_daily or 0),
+        "product_id": product["id"],
+        "product_code": product["product_code"],
+        "product_name": product["name"],
+    }
+
+
 def get_meta_ad_stats() -> dict:
     row = query_one(
         "SELECT COUNT(*) AS total_rows, "
