@@ -125,22 +125,30 @@
         .map(function (s) { return (s && s.shopify_sku) ? String(s.shopify_sku).trim() : ''; })
         .filter(Boolean);
       const allCandidates = skuValues.concat(shopifySkus.filter(function (v) { return skuValues.indexOf(v) < 0; }));
+      const defaultLabel = '从店小秘1688已配对商品获取';
       if (!allCandidates.length) {
-        if (btn) { btn.textContent = '无SKU'; setTimeout(function () { btn.textContent = '从1688获取'; }, 2000); }
+        if (btn) { btn.textContent = '无SKU'; setTimeout(function () { btn.textContent = defaultLabel; }, 2000); }
         return;
       }
       if (btn) { btn.disabled = true; btn.textContent = '搜索中…'; }
       var foundUrl = null;
       for (var i = 0; i < allCandidates.length && !foundUrl; i++) {
         try {
-          var resp = await fetch('/medias/api/supply-pairing/search?q=' + encodeURIComponent(allCandidates[i]) + '&status=0', { credentials: 'same-origin' });
+          // Don't pin status — backend default ("") spans both
+          // status=1 (waiting list, with alibabaProductId) and
+          // status=2 (user-confirmed pairs). The backend already runs
+          // extract_1688_url() and exposes extracted_1688_url, which
+          // applies the alibabaProductId fallback, so we just take the
+          // first item with a 1688 URL.
+          var resp = await fetch('/medias/api/supply-pairing/search?q=' + encodeURIComponent(allCandidates[i]), { credentials: 'same-origin' });
           if (!resp.ok) continue;
           var data = await resp.json();
           var items = (data && data.items) || [];
-          if (items.length > 0) {
-            var url = items[0].sourceUrl || '';
-            if (url) {
+          for (var j = 0; j < items.length; j++) {
+            var url = items[j].extracted_1688_url || '';
+            if (url && url.indexOf('1688.com') >= 0) {
               foundUrl = url;
+              break;
             }
           }
         } catch (e) { /* try next SKU */ }
@@ -151,9 +159,9 @@
           input.value = foundUrl;
           input.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        if (btn) { btn.textContent = '已获取'; setTimeout(function () { btn.textContent = '从1688获取'; }, 2000); }
+        if (btn) { btn.textContent = '已获取'; setTimeout(function () { btn.textContent = defaultLabel; }, 2000); }
       } else {
-        if (btn) { btn.textContent = '未找到'; setTimeout(function () { btn.textContent = '从1688获取'; }, 2000); }
+        if (btn) { btn.textContent = '未找到'; setTimeout(function () { btn.textContent = defaultLabel; }, 2000); }
       }
       if (btn) btn.disabled = false;
     }
