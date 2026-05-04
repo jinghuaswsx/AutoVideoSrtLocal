@@ -38,6 +38,7 @@ def test_partial_contains_tk_fields_and_average_shipping_tool():
         assert f'data-roas-field="{field}"' in html
     assert 'id="roasAverageShippingInput"' in html
     assert 'id="roasAverageShippingResult"' in html
+    assert 'id="roasAverageShippingMeta"' in html
 
 
 def test_partial_contains_calculate_button_and_results():

@@ -1,4 +1,10 @@
-{# Shared ROAS form partial — used by medias_list.html modal and medias/roas.html standalone page #}
+{#
+  Shared ROAS form partial — used by medias_list.html modal and medias/roas.html standalone page.
+  Required context variables (at least one must be truthy):
+    roas_rmb_per_usd          — passed by the standalone route (products.roas_page)
+    material_roas_rmb_per_usd — passed by the medias_list.html context
+  Fallback when both are missing: 6.83 RMB/USD (hardcoded in <p id="roasNote">).
+#}
       <div class="oc-roas-product">
         <div id="roasProductCover" class="roas-cover-ph"><svg width="24" height="24"><use href="#ic-package"/></svg></div>
         <dl class="oc-roas-meta">
