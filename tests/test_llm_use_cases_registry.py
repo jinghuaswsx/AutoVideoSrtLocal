@@ -72,7 +72,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 41
+    assert len(USE_CASES) == 43
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -196,3 +196,17 @@ def test_list_by_module_groups_correctly():
     for module, items in groups.items():
         assert items, f"module {module} has no use cases"
         assert module in MODULE_LABELS, f"module {module} missing from MODULE_LABELS"
+
+
+def test_tts_speedup_quality_review_use_case_registered():
+    assert "tts.speedup_quality_review" in USE_CASES, (
+        "tts.speedup_quality_review use_case 未注册"
+    )
+    uc = get_use_case("tts.speedup_quality_review")
+    assert uc["module"] == "video_translate"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3-flash-preview"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+    assert uc["label"]
+    assert uc["description"]
