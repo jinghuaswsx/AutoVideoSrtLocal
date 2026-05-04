@@ -141,3 +141,27 @@ from .dashboard import (
 )
 
 
+def get_orphan_orders(*, limit: int = 200, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+    """Return unmatched shopify_orders grouped by lineitem_name, sorted by order count DESC."""
+    count_sql = (
+        "SELECT COUNT(DISTINCT lineitem_name) AS total "
+        "FROM shopify_orders WHERE product_id IS NULL"
+    )
+    total_row = query_one(count_sql)
+    total = int(total_row["total"]) if total_row else 0
+    rows_sql = (
+        "SELECT lineitem_name, COUNT(*) AS order_count, "
+        "       SUM(lineitem_quantity) AS total_qty, "
+        "       SUM(lineitem_price * lineitem_quantity) AS total_revenue, "
+        "       MIN(created_at_order) AS first_seen, "
+        "       MAX(created_at_order) AS last_seen "
+        "FROM shopify_orders "
+        "WHERE product_id IS NULL "
+        "GROUP BY lineitem_name "
+        "ORDER BY order_count DESC "
+        "LIMIT %s OFFSET %s"
+    )
+    rows = query(rows_sql, (int(limit), int(offset)))
+    return list(rows), total
+
+

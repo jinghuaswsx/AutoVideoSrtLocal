@@ -80,6 +80,18 @@ def test_xmyc_match_modal_assets_present():
     assert "XmycMatchModal" in roas_js
 
 
+def test_xmyc_match_modal_has_roas_row_highlighting():
+    modal_js = (ROOT / "web" / "static" / "xmyc_match_modal.js").read_text(encoding="utf-8")
+    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
+
+    assert "row-roas-missing" in modal_js
+    assert "row-roas-danger" in modal_js
+    assert "roas-negative" in modal_js
+    assert ".row-roas-missing" in styles
+    assert ".row-roas-danger" in styles
+    assert ".roas-negative" in styles
+
+
 def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     html = PARTIAL.read_text(encoding="utf-8")
 

@@ -1,0 +1,167 @@
+{% extends "layout.html" %}
+{% block title %}未建档订单审计 — AutoVideoSrt{% endblock %}
+{% block page_title %}未建档订单审计{% endblock %}
+{% block extra_style %}
+<style>
+  .orphan-toolbar {
+    display: flex; gap: 12px; align-items: center; padding: 16px 24px 0;
+  }
+  .orphan-toolbar input[type="search"] {
+    flex: 1; max-width: 480px; height: 32px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    padding: 0 12px; font-size: 13px; outline: none;
+  }
+  .orphan-toolbar input[type="search"]:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
+  .orphan-stats { padding: 8px 24px; font-size: 13px; color: var(--fg-muted); }
+  .orphan-table-wrap { padding: 0 24px 40px; overflow-x: auto; }
+  .orphan-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .orphan-table thead th {
+    text-align: left; font-weight: 600; padding: 10px 12px;
+    border-bottom: 2px solid var(--border); white-space: nowrap;
+    position: sticky; top: 0; background: var(--bg);
+  }
+  .orphan-table tbody td {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .orphan-table tbody tr:hover td { background: var(--bg-subtle); }
+  .orphan-table .ta-r { text-align: right; font-variant-numeric: tabular-nums; }
+  .orphan-table .product-name { max-width: 420px; word-break: break-word; }
+  .orphan-pagination { display: flex; gap: 8px; align-items: center; padding: 12px 24px 24px; font-size: 13px; }
+  .orphan-pagination button {
+    height: 28px; padding: 0 12px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius); background: var(--bg); cursor: pointer;
+    font-size: 12px; color: var(--fg);
+  }
+  .orphan-pagination button:hover { background: var(--bg-muted); }
+  .orphan-pagination button:disabled { opacity: 0.4; cursor: default; }
+  .orphan-pagination span { color: var(--fg-muted); }
+  #orphanTbody tr { cursor: pointer; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="orphan-toolbar">
+  <input type="search" id="orphanSearch" placeholder="搜索产品名…" autofocus>
+  <button type="button" id="orphanRefreshBtn" class="oc-btn primary sm">刷新</button>
+</div>
+<div class="orphan-stats" id="orphanStats">加载中…</div>
+<div class="orphan-table-wrap">
+  <table class="orphan-table">
+    <thead>
+      <tr>
+        <th>产品名 (lineitem_name)</th>
+        <th class="ta-r">订单数</th>
+        <th class="ta-r">总数量</th>
+        <th class="ta-r">总金额</th>
+        <th>首次出现</th>
+        <th>最近出现</th>
+      </tr>
+    </thead>
+    <tbody id="orphanTbody">
+      <tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:40px 0">加载中…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="orphan-pagination" id="orphanPagination"></div>
+{% endblock %}
+{% block extra_script %}
+<script>
+(function() {
+  'use strict';
+  var state = { rows: [], total: 0, page: 1, pageSize: 50, search: '' };
+
+  function escapeHtml(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  function formatMoney(v) {
+    if (v === null || v === undefined) return '—';
+    var n = Number(v);
+    return Number.isFinite(n) ? '$' + n.toFixed(2) : String(v);
+  }
+
+  function formatDate(v) {
+    if (!v) return '—';
+    return String(v).substring(0, 10);
+  }
+
+  function fetchData() {
+    var tbody = document.getElementById('orphanTbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:40px 0">加载中…</td></tr>';
+    var params = new URLSearchParams();
+    params.set('limit', String(state.pageSize));
+    params.set('offset', String((state.page - 1) * state.pageSize));
+    fetch('/order-analytics/orphan-orders/data?' + params.toString(), { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(json) {
+        state.rows = json.rows || [];
+        state.total = json.total || 0;
+        render();
+      })
+      .catch(function(err) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:40px 0">加载失败：' + escapeHtml(err.message || '网络错误') + '</td></tr>';
+      });
+  }
+
+  function render() {
+    var tbody = document.getElementById('orphanTbody');
+    var stats = document.getElementById('orphanStats');
+    var pagination = document.getElementById('orphanPagination');
+    if (stats) stats.textContent = '共 ' + state.total + ' 条未建档产品';
+    if (!tbody) return;
+    if (!state.rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--fg-muted);padding:40px 0">所有订单均已建档</td></tr>';
+      if (pagination) pagination.innerHTML = '';
+      return;
+    }
+    var search = state.search.toLowerCase();
+    var filtered = state.rows;
+    if (search) {
+      filtered = state.rows.filter(function(r) {
+        return (r.lineitem_name || '').toLowerCase().indexOf(search) !== -1;
+      });
+    }
+    var html = filtered.map(function(r) {
+      return (
+        '<tr>' +
+          '<td class="product-name">' + escapeHtml(r.lineitem_name || '') + '</td>' +
+          '<td class="ta-r"><strong>' + (r.order_count || 0) + '</strong></td>' +
+          '<td class="ta-r">' + (r.total_qty || 0) + '</td>' +
+          '<td class="ta-r">' + formatMoney(r.total_revenue) + '</td>' +
+          '<td>' + formatDate(r.first_seen) + '</td>' +
+          '<td>' + formatDate(r.last_seen) + '</td>' +
+        '</tr>'
+      );
+    }).join('');
+    tbody.innerHTML = html;
+    if (pagination && state.total > state.pageSize) {
+      var totalPages = Math.ceil(state.total / state.pageSize);
+      pagination.innerHTML = (
+        '<button id="orphanPrev"' + (state.page <= 1 ? ' disabled' : '') + '>上一页</button>' +
+        '<span>第 ' + state.page + ' / ' + totalPages + ' 页</span>' +
+        '<button id="orphanNext"' + (state.page >= totalPages ? ' disabled' : '') + '>下一页</button>'
+      );
+      var prev = document.getElementById('orphanPrev');
+      var next = document.getElementById('orphanNext');
+      if (prev) prev.addEventListener('click', function() { if (state.page > 1) { state.page--; fetchData(); } });
+      if (next) next.addEventListener('click', function() { if (state.page * state.pageSize < state.total) { state.page++; fetchData(); } });
+    } else if (pagination) {
+      pagination.innerHTML = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    fetchData();
+    var searchEl = document.getElementById('orphanSearch');
+    var refreshBtn = document.getElementById('orphanRefreshBtn');
+    if (searchEl) {
+      var t = null;
+      searchEl.addEventListener('input', function() {
+        clearTimeout(t);
+        state.search = searchEl.value;
+        t = setTimeout(render, 300);
+      });
+    }
+    if (refreshBtn) refreshBtn.addEventListener('click', fetchData);
+  });
+})();
+</script>
+{% endblock %}

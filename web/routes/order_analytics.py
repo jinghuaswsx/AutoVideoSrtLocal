@@ -672,3 +672,23 @@ def dashboard():
         return jsonify(error="internal_error", detail=str(exc)), 500
 
     return jsonify(_json_safe(data))
+
+
+@bp.route("/order-analytics/orphan-orders")
+@login_required
+@admin_required
+def orphan_orders_page():
+    return render_template("orphan_orders.html")
+
+
+@bp.route("/order-analytics/orphan-orders/data")
+@login_required
+@admin_required
+def orphan_orders_data():
+    try:
+        limit = max(1, min(1000, int(request.args.get("limit") or 200)))
+        offset = max(0, int(request.args.get("offset") or 0))
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_pagination"), 400
+    rows, total = oa.get_orphan_orders(limit=limit, offset=offset)
+    return jsonify(_json_safe({"rows": rows, "total": total, "limit": limit, "offset": offset}))

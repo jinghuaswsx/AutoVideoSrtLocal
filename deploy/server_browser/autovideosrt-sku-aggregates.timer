@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt SKU aggregates backfill every day
+
+[Timer]
+OnCalendar=*-*-* 13:37:00
+Persistent=true
+Unit=autovideosrt-sku-aggregates.service
+
+[Install]
+WantedBy=timers.target

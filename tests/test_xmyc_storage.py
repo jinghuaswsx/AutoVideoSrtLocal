@@ -251,3 +251,66 @@ def test_list_skus_builds_filter_sql(monkeypatch):
     params = list(captured["params"])
     assert params[-2:] == [50, 10]
     assert params[0] == "%昆虫%"
+
+
+def test_update_sku_writes_decimal_and_returns_row(monkeypatch):
+    from appcore import xmyc_storage as mod
+
+    fake_execute_calls = []
+
+    def fake_execute(sql, params):
+        fake_execute_calls.append((sql, params))
+
+    def fake_query_one(sql, params):
+        assert params == (42,)
+        return {"id": 42, "sku": "115-18103480", "standalone_price_sku": "25.00",
+                "standalone_shipping_fee_sku": None, "packet_cost_actual_sku": None}
+
+    monkeypatch.setattr(mod, "execute", fake_execute)
+    monkeypatch.setattr(mod, "query_one", fake_query_one)
+
+    row = mod.update_sku(42, {"standalone_price_sku": "25.00"})
+    assert row["standalone_price_sku"] == "25.00"
+    assert len(fake_execute_calls) == 1
+    assert "standalone_price_sku = %s" in fake_execute_calls[0][0]
+    assert fake_execute_calls[0][1][0] == mod.Decimal("25.00")
+
+
+def test_update_sku_allows_null(monkeypatch):
+    from appcore import xmyc_storage as mod
+
+    fake_execute_calls = []
+
+    def fake_execute(sql, params):
+        fake_execute_calls.append((sql, params))
+
+    monkeypatch.setattr(mod, "execute", fake_execute)
+    monkeypatch.setattr(mod, "query_one", lambda sql, params: {"id": 1})
+
+    mod.update_sku(1, {"packet_cost_actual_sku": None})
+    assert len(fake_execute_calls) == 1
+    assert fake_execute_calls[0][1][0] is None
+
+
+def test_update_sku_rejects_invalid_decimal():
+    from appcore import xmyc_storage as mod
+    import pytest
+    with pytest.raises(ValueError, match="invalid decimal"):
+        mod.update_sku(1, {"standalone_price_sku": "twelve"})
+
+
+def test_update_sku_raises_on_no_editable_fields():
+    from appcore import xmyc_storage as mod
+    import pytest
+    with pytest.raises(ValueError, match="no editable fields"):
+        mod.update_sku(1, {"sku": "should-not-be-editable"})
+
+
+def test_update_sku_raises_lookup_error(monkeypatch):
+    from appcore import xmyc_storage as mod
+    import pytest
+
+    monkeypatch.setattr(mod, "execute", lambda sql, params: None)
+    monkeypatch.setattr(mod, "query_one", lambda sql, params: None)
+    with pytest.raises(LookupError, match="not found"):
+        mod.update_sku(99999, {"standalone_price_sku": "10.00"})

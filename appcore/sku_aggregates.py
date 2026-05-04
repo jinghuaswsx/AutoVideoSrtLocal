@@ -148,7 +148,7 @@ def enrich_skus_with_roas(rows: list[dict[str, Any]], rmb_per_usd: Any = None) -
     return [{**r, "roas": compute_sku_roas(r, rmb_per_usd)} for r in rows]
 
 
-def _xmyc_skus_with_shop() -> dict[str, str]:
+def _xmyc_skus_with_shop() -> tuple[dict[str, str], dict[str, set[str]]]:
     rows = query(
         """
         SELECT s.sku, d.dxm_shop_id, COUNT(*) AS n
@@ -160,11 +160,14 @@ def _xmyc_skus_with_shop() -> dict[str, str]:
         """
     )
     sku_to_shop: dict[str, str] = {}
+    shop_to_skus: dict[str, set[str]] = defaultdict(set)
     for r in rows:
         sku = str(r["sku"])
+        shop = str(r["dxm_shop_id"])
+        shop_to_skus[shop].add(sku)
         if sku not in sku_to_shop:
-            sku_to_shop[sku] = str(r["dxm_shop_id"])
-    return sku_to_shop
+            sku_to_shop[sku] = shop
+    return sku_to_shop, shop_to_skus
 
 
 def _extract_logistic_fees_by_sku(orders: list[dict[str, Any]], skus: set[str]) -> dict[str, list[float]]:
@@ -201,12 +204,9 @@ def update_xmyc_sku_parcel_costs(
     now_func: Callable[[], datetime] | None = None,
     page_provider: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
-    sku_to_shop = _xmyc_skus_with_shop()
+    sku_to_shop, shop_to_skus = _xmyc_skus_with_shop()
     if not sku_to_shop:
         return {"candidates": 0, "shops": 0, "with_fees": 0, "updated": 0}
-    shop_to_skus: dict[str, set[str]] = defaultdict(set)
-    for sku, shop in sku_to_shop.items():
-        shop_to_skus[shop].add(sku)
     now = (now_func or datetime.now)()
     end_time = now - timedelta(days=settlement_delay_days)
     start_time = end_time - timedelta(days=int(days))

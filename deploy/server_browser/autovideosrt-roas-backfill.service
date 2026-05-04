@@ -1,0 +1,16 @@
+[Unit]
+Description=AutoVideoSrt ROAS fields daily backfill (shopify pricing + dianxiaomi parcel costs)
+Wants=autovideosrt-browser.service
+After=network-online.target autovideosrt-browser.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=BROWSER_AUTOMATION_LOCK_TIMEOUT_SECONDS=600
+Environment=BROWSER_AUTOMATION_LOCK_RETRY_SECONDS=10
+Environment=BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=roas_fields_backfill
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/roas_fields_backfill.py --kind all --days 30
+TimeoutStartSec=3600
