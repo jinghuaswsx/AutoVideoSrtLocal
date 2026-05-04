@@ -1318,3 +1318,169 @@ class TestLanguageSpecificRunners:
         from appcore.runtime_fr import FrTranslateRunner
         from appcore.runtime import PipelineRunner
         assert FrTranslateRunner._step_tts is PipelineRunner._step_tts
+
+
+class TestSpeedupShortcut:
+    """变速短路分支集成测试。
+    每个用例 fake 出 audio_duration 落入 ±10% 但不在 final，触发新分支。"""
+
+    def _make_runner(self):
+        from appcore.events import EventBus
+        from appcore.runtime import PipelineRunner
+        return PipelineRunner(bus=EventBus(), user_id=1)
+
+    def _common_patches(self, monkeypatch, audio_dur, speedup_dur=None,
+                         speedup_raises=None):
+        """统一打桩：translate / tts_script / generate_full_audio /
+        regenerate_full_audio_with_speed / _get_audio_duration / 评估。"""
+        import os
+        # 把所有外部依赖都桩成同步 deterministic 行为
+        monkeypatch.setattr(
+            "pipeline.translate.generate_localized_rewrite",
+            lambda **kw: {"full_text": "x" * 80, "sentences": [{"text": "x"}],
+                          "_usage": {}, "_messages": []},
+        )
+        monkeypatch.setattr(
+            "pipeline.translate.generate_tts_script",
+            lambda loc, **kw: {"full_text": "x", "blocks": [
+                {"index": 0, "text": "x", "sentence_indices": [0],
+                 "source_segment_indices": [0]}],
+                "subtitle_chunks": [], "_usage": {}},
+        )
+        # generate_full_audio：写一个空 mp3，segments 占位
+        def fake_full_audio(segs, voice_id, task_dir, variant=None, **kw):
+            out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            with open(out, "wb") as f:
+                f.write(b"\xff\xfb\x10\x00")
+            return {"full_audio_path": out,
+                    "segments": [{"index": 0, "tts_path": out,
+                                   "tts_duration": audio_dur, "tts_text": "x"}]}
+        monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_full_audio)
+
+        # 变速重合成：抛错或写文件
+        if speedup_raises is not None:
+            def boom(*a, **kw):
+                raise speedup_raises
+            monkeypatch.setattr(
+                "pipeline.tts.regenerate_full_audio_with_speed", boom,
+            )
+        else:
+            def fake_speedup(segs, voice_id, task_dir, variant=None, **kw):
+                out = os.path.join(task_dir,
+                                    f"tts_full.{variant}.speedup.mp3")
+                with open(out, "wb") as f:
+                    f.write(b"\xff\xfb\x10\x00")
+                return {"full_audio_path": out,
+                        "segments": [{"index": 0, "tts_path": out,
+                                       "tts_duration": speedup_dur or audio_dur,
+                                       "tts_text": "x"}]}
+            monkeypatch.setattr(
+                "pipeline.tts.regenerate_full_audio_with_speed", fake_speedup,
+            )
+
+        # _get_audio_duration：根据路径返回不同长度（区分 pre vs post）
+        from pipeline import tts as _tts_mod
+        def fake_dur(path):
+            if path.endswith(".speedup.mp3"):
+                return speedup_dur if speedup_dur is not None else audio_dur
+            return audio_dur
+        monkeypatch.setattr(_tts_mod, "_get_audio_duration", fake_dur)
+
+        # 评估调用全部 stub 成 noop（测的是分支，不是评估）
+        called = {"eval": []}
+        monkeypatch.setattr(
+            "appcore.tts_speedup_eval.run_evaluation",
+            lambda **kw: (called["eval"].append(kw) or 999),
+        )
+        # tempo align 简化为 identity（不真的走 ffmpeg）
+        from appcore.runtime._pipeline_runner import PipelineRunner
+        monkeypatch.setattr(
+            PipelineRunner, "_maybe_tempo_align",
+            lambda self, **kw: kw["audio_path"],
+        )
+
+        # patch build_tts_segments 以避免依赖 start_time/end_time 字段
+        import importlib
+        loc_mod = importlib.import_module("pipeline.localization")
+        monkeypatch.setattr(
+            loc_mod, "build_tts_segments",
+            lambda script, segs: [{"index": 0, "tts_text": "x",
+                                    "tts_duration": 0.0,
+                                    "source_segment_indices": [0]}],
+        )
+
+        return called
+
+    def _run(self, runner, tmp_path, video_duration=60.0):
+        """触发 _run_tts_duration_loop 的简化入口。"""
+        import importlib
+        loc_mod = importlib.import_module("pipeline.localization")
+        return runner._run_tts_duration_loop(
+            task_id="t-speedup",
+            task_dir=str(tmp_path),
+            loc_mod=loc_mod,
+            provider="openrouter",
+            video_duration=video_duration,
+            voice={"elevenlabs_voice_id": "v-fake"},
+            initial_localized_translation={
+                "full_text": "x", "sentences": [{"text": "x"}], "_usage": {},
+            },
+            source_full_text="x",
+            source_language="en",
+            elevenlabs_api_key="fake",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 1}],
+            variant="normal",
+            target_language_label="es",
+            tts_model_id="eleven_turbo_v2_5",
+            tts_language_code="es",
+        )
+
+    def test_speedup_triggered_when_audio_in_window(self, tmp_path, monkeypatch):
+        """video=60, audio=64 (in stage1, not in final) → 触发变速。"""
+        called = self._common_patches(monkeypatch, audio_dur=64.0,
+                                       speedup_dur=60.5)
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+        assert result["final_round"] == 1
+        round_rec = result["rounds"][0]
+        assert round_rec.get("speedup_applied") is True
+        assert round_rec["speedup_pre_duration"] == 64.0
+        assert round_rec["speedup_post_duration"] == 60.5
+        assert round_rec["speedup_hit_final"] is True
+        assert round_rec["final_reason"] == "speedup_converged"
+        assert len(called["eval"]) == 1
+
+    def test_speedup_miss_final_uses_atempo(self, tmp_path, monkeypatch):
+        """变速后 63s 仍 > final_hi=62 → 走 speedup_then_atempo。"""
+        called = self._common_patches(monkeypatch, audio_dur=64.0,
+                                       speedup_dur=63.0)
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+        round_rec = result["rounds"][0]
+        assert round_rec.get("speedup_applied") is True
+        assert round_rec["speedup_hit_final"] is False
+        assert round_rec["final_reason"] == "speedup_then_atempo"
+        assert len(called["eval"]) == 1  # 仍然评估
+
+    def test_speedup_failure_falls_back_to_original(self, tmp_path, monkeypatch):
+        """ElevenLabs 变速调用抛错 → 用原始音频 atempo 收敛 + 不评估。"""
+        called = self._common_patches(
+            monkeypatch, audio_dur=64.0,
+            speedup_raises=RuntimeError("simulated SSL EOF"),
+        )
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+        round_rec = result["rounds"][0]
+        assert round_rec.get("speedup_applied") is True
+        assert "speedup_failed_reason" in round_rec
+        assert round_rec["final_reason"] == "speedup_failed_fallback"
+        assert called["eval"] == []  # 变速失败不发起评估
+
+    def test_speedup_skipped_when_audio_already_in_final(self, tmp_path, monkeypatch):
+        """audio=60.5 已在 final [59,62] → 不触发变速分支。"""
+        called = self._common_patches(monkeypatch, audio_dur=60.5)
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+        round_rec = result["rounds"][0]
+        assert not round_rec.get("speedup_applied")
+        assert called["eval"] == []
