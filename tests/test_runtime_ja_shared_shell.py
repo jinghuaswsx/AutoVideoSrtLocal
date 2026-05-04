@@ -99,13 +99,20 @@ def test_ja_step_tts_emits_per_segment_substeps(tmp_path, monkeypatch):
     bus.subscribe(lambda e: captured.append(e))
 
     def fake_gen_full_audio(tts_segments, voice_id, output_dir, *, variant=None,
-                             on_segment_done=None, **kw):
+                             on_progress=None, on_segment_done=None, **kw):
         out = os.path.join(output_dir, f"tts_full.{variant}.mp3")
         with open(out, "wb") as f:
             f.write(b"fake")
-        if on_segment_done:
-            on_segment_done(1, 2, {"segment_index": 0})
-            on_segment_done(2, 2, {"segment_index": 1})
+
+        def _emit_done(done, total, info):
+            if on_progress:
+                on_progress({"state": "completed", "total": total, "done": done,
+                              "active": 0, "queued": total - done, "info": info})
+            if on_segment_done:
+                on_segment_done(done, total, info)
+
+        _emit_done(1, 2, {"segment_index": 0})
+        _emit_done(2, 2, {"segment_index": 1})
         return {"full_audio_path": out, "segments": [
             {"index": 0, "tts_path": out, "tts_duration": 1.0},
             {"index": 1, "tts_path": out, "tts_duration": 1.5},
@@ -153,5 +160,6 @@ def test_ja_step_tts_emits_per_segment_substeps(tmp_path, monkeypatch):
     runner._step_tts("ja-substep-task", str(tmp_path))
 
     msgs = [e.payload["message"] for e in captured if e.type == EVT_STEP_UPDATE]
-    assert any("ElevenLabs 音频 1/2" in m for m in msgs), f"got: {msgs}"
-    assert any("ElevenLabs 音频 2/2" in m for m in msgs), f"got: {msgs}"
+    # 并发改造后文案统一为 "1/2（活跃 N 路）"
+    assert any("1/2" in m and "活跃" in m for m in msgs), f"got: {msgs}"
+    assert any("2/2" in m and "活跃" in m for m in msgs), f"got: {msgs}"
