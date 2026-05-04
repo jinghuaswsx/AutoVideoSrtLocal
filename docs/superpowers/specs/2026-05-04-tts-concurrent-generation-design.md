@@ -30,11 +30,13 @@ ElevenLabs 各订阅套餐有明确的并发上限（[官方支持文档](https:
 
 ### 包含
 - 把 [pipeline/tts.py:generate_full_audio](../../../pipeline/tts.py) 的串行循环改成基于全局线程池的并发提交。
-- 引入进程级单例 `ThreadPoolExecutor`，所有 ElevenLabs TTS segment 调用都走它，自然实现跨任务 FIFO 排队。
+- 引入**进程级单例 `ThreadPoolExecutor`**，所有 ElevenLabs TTS segment 调用都走它，自然实现跨任务 FIFO 排队。
 - 扩展现有 `_call_with_network_retry`：除网络层异常外，再识别 ElevenLabs 的 HTTP 429 / `concurrent_limit_exceeded`，按 0.5/1/2/4s 退避重试（顶多 4 次）。
-- `system_settings` 表加 `tts_max_concurrency` 配置项（默认 12，可调），admin 后台不强求新增 UI（直接走 `/settings` 既有"系统配置"输入框，与其他 system_settings 一致），改后通过 `systemctl restart autovideosrt` 生效。
-- 进度回调改成线程安全的 atomic counter，前端 `audio_segments_done` 仍单调递增。
-- 单测覆盖并发分支、429 退避、回调线程安全、跨任务排队。
+- `system settings` 表加 `tts_max_concurrency` 配置项（默认 12，硬上限 15），改后 `systemctl restart autovideosrt` 生效。
+- **进度回调 API 升级**：从 `on_segment_done(done, total, info)` 升级到 `on_progress(snapshot)`，snapshot 包含 `state / total / done / active / queued`。旧 `on_segment_done` 接口保留兼容（内部转接）。
+- **统一 substep 文案 helper**：新建公共函数，覆盖全部五个 TTS 调用方（多语言视频翻译 / 全能翻译 / 视频翻译音画同步 / 日语翻译 / 文案配音），让"排队中"提示对所有模块一致显示。
+- 前端在排队期间显示"TTS 排队中（等待 ElevenLabs 并发槽位）"；slot 一空、第一段开始执行就自动切换为"正在生成配音 X/Y"。
+- 单测覆盖并发分支、429 退避、active/queued counter 线程安全、跨任务排队、排队 → 执行状态切换。
 
 ### 不包含
 - 不改 ElevenLabs SDK 调用本身的参数、speed、voice_settings 等。
@@ -96,86 +98,234 @@ def _get_tts_pool() -> ThreadPoolExecutor:
 | 任务 B 启动延迟 | ≈ 1 个 segment 时长（2-5 秒），不需等 A 整体跑完 |
 | 任意时刻总在跑的 segments | 永远 ≤ `max_concurrency`，物理上不可能超 ElevenLabs 上限 |
 
-### 3.3 generate_full_audio 改造
+### 3.3 五个 TTS 调用方一览（必须全部覆盖）
+
+| 模块（前端名）| 入口文件 | 现有 substep 文案 | 现有 on_segment_done |
+|------|---------|------|---------|
+| **多语言视频翻译** | [appcore/runtime/_pipeline_runner.py:548](../../../appcore/runtime/_pipeline_runner.py) | 动态："生成 ElevenLabs 音频 done/total" | ✅ 已接 |
+| **全能翻译** | [appcore/runtime/__init__.py:303](../../../appcore/runtime/__init__.py) | 静态："正在生成{lang}配音..." | ❌ 未接 |
+| **视频翻译音画同步** | [appcore/runtime_sentence_translate.py:267](../../../appcore/runtime_sentence_translate.py) | 静态："正在生成{lang}首轮配音..." | ❌ 未接 |
+| 日语翻译 | [appcore/runtime_ja.py:300](../../../appcore/runtime_ja.py) | 动态：日语专属文案 | ✅ 已接 |
+| 文案配音（小工具） | [appcore/copywriting_runtime.py:201](../../../appcore/copywriting_runtime.py) | 静态文案 | ❌ 未接 |
+
+**关键风险**：核心并发改造只动一处 `generate_full_audio`，所有调用方天然受益于全局并发上限；但**只有"已接 on_segment_done"的两处能感知排队/进度**。omni、av-sync、copywriting 三个调用方目前根本没传进度回调，前端只能看到一个"正在生成配音..."的死字面，看不到排队，也看不到进度。
+
+**所以必须同步改全部五处的 runtime**，统一接入新的 `on_progress` 回调和 substep 文案 helper。
+
+### 3.4 进度回调 API 升级
+
+升级 `generate_full_audio` 接口：
+
+```python
+def generate_full_audio(
+    segments, voice_id, output_dir, *,
+    variant=None, elevenlabs_api_key=None,
+    model_id="eleven_turbo_v2_5", language_code=None,
+    on_progress: Callable[[dict], None] | None = None,        # 新接口（推荐）
+    on_segment_done: Callable[[int, int, dict], None] | None = None,  # 兼容旧接口
+) -> Dict:
+    ...
+```
+
+`on_progress(snapshot)` 的 snapshot 字段：
+
+```python
+{
+    "state": "submitted" | "started" | "completed",  # 触发原因
+    "total": int,        # 全部段数
+    "done": int,         # 已完成段数（concat-able）
+    "active": int,       # 当前正在跑（已从 pool 拉出执行）的段数
+    "queued": int,       # 还在 pool work queue 等待中的段数
+    "info": dict,        # state 相关补充信息（比如 segment_index / duration / text_preview）
+}
+```
+
+触发时机：
+- `submitted`：所有 segment 都已 submit 到 pool 之后立刻触发一次（active=0, queued=total, done=0）
+- `started`：每段从 pool 拉出开始执行时触发（active +=1, queued -=1）
+- `completed`：每段完成、`as_completed` 主线程收回时触发（active -=1, done +=1）
+
+旧接口 `on_segment_done(done, total, info)` 在内部由 "completed" 状态转接调用一次，保留向下兼容（如果调用方两个都传，两个都会被调）。
+
+### 3.5 统一 substep 文案 helper
+
+新建 [appcore/runtime/_helpers.py](../../../appcore/runtime/_helpers.py)（或更细分模块）函数：
+
+```python
+def make_tts_progress_emitter(
+    runner, task_id, *,
+    lang_label: str,
+    round_label: str = "",
+    extra_state_update: Callable[[dict], None] | None = None,
+) -> Callable[[dict], None]:
+    """
+    返回一个 on_progress 回调，把 snapshot 转成统一的 substep 文案。
+    各 runtime 把这个回调传给 generate_full_audio(on_progress=...)。
+    """
+    def _emit(snapshot: dict) -> None:
+        active = snapshot["active"]
+        done = snapshot["done"]
+        total = snapshot["total"]
+        queued = snapshot["queued"]
+
+        prefix = f"正在生成{lang_label}配音"
+        if round_label:
+            prefix = f"{prefix} · {round_label}"
+
+        if active == 0 and done == 0 and total > 0:
+            msg = f"{prefix} · 排队中等待 ElevenLabs 并发槽位（{queued} 段待派发）"
+        else:
+            msg = f"{prefix} · {done}/{total}（活跃 {active} 路）"
+
+        runner._emit_substep_msg(task_id, "tts", msg)
+        if extra_state_update is not None:
+            try:
+                extra_state_update(snapshot)
+            except Exception:
+                log.exception("extra_state_update raised; ignoring")
+
+    return _emit
+```
+
+**全部五处 runtime 改为统一调用**（伪代码）：
+
+```python
+on_progress = make_tts_progress_emitter(
+    self, task_id,
+    lang_label=target_language_label,
+    round_label=f"第 {round_index} 轮" if round_index else "",
+)
+result = generate_full_audio(
+    tts_segments, voice_id, task_dir,
+    variant=..., language_code=...,
+    on_progress=on_progress,
+)
+```
+
+`_pipeline_runner.py` 之前同时维护 `round_record["audio_segments_done"]` 这个数据库字段，可以通过 `extra_state_update` 在同一个回调里更新，避免双重维护。
+
+### 3.6 generate_full_audio 改造
 
 ```python
 def generate_full_audio(segments, voice_id, output_dir, *, variant=None,
                        elevenlabs_api_key=None, model_id="eleven_turbo_v2_5",
-                       language_code=None, on_segment_done=None) -> Dict:
+                       language_code=None,
+                       on_progress=None, on_segment_done=None) -> Dict:
     seg_dir = ...
     os.makedirs(seg_dir, exist_ok=True)
 
     total = len(segments)
     pool = _get_tts_pool()
 
-    # 1. 把每段封装成可独立执行的 task，submit 到全局 pool
+    # active/queued/done 计数（由 worker thread 修改，必须 lock）
+    state = {"total": total, "active": 0, "queued": total, "done": 0}
+    state_lock = threading.Lock()
+
+    def _emit_progress(reason: str, info: dict | None = None) -> None:
+        if on_progress is None:
+            return
+        with state_lock:
+            snapshot = {
+                "state": reason,
+                "total": state["total"],
+                "active": state["active"],
+                "queued": state["queued"],
+                "done": state["done"],
+                "info": info or {},
+            }
+        try:
+            on_progress(snapshot)
+        except Exception:
+            log.exception("on_progress callback raised; ignoring")
+
+    def _segment_wrapper(text, voice_id_, seg_path, **kwargs) -> tuple[str, float]:
+        """worker 线程的入口：进入时 active+1 / queued-1 + emit 'started'，
+        完成（无论成功失败）后 active-1 + emit done 状态由主线程统一发。"""
+        with state_lock:
+            state["active"] += 1
+            state["queued"] -= 1
+        _emit_progress("started", {"text_preview": (text or "")[:60]})
+        try:
+            generate_segment_audio(text, voice_id_, seg_path,
+                                   elevenlabs_api_key=elevenlabs_api_key,
+                                   model_id=model_id, language_code=language_code,
+                                   **kwargs)
+            duration = _get_audio_duration(seg_path)
+            return seg_path, duration
+        finally:
+            with state_lock:
+                state["active"] -= 1
+
+    # 1. 提交全部 segment 到全局 pool（受 _get_tts_pool 的 max_workers 限流）
     tasks: list[tuple[int, dict, str, str, Future]] = []
     for i, seg in enumerate(segments):
         text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
         seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
-        future = pool.submit(
-            generate_segment_audio,
-            text, voice_id, seg_path,
-            elevenlabs_api_key=elevenlabs_api_key,
-            model_id=model_id, language_code=language_code,
-        )
+        future = pool.submit(_segment_wrapper, text, voice_id, seg_path)
         tasks.append((i, seg, text, seg_path, future))
 
-    # 2. as_completed 顺序回收（不一定按 i 顺序），更新进度回调
+    # 2. submit 完毕：emit 一次 "submitted"。此时 active=0、queued=total、done=0
+    #    各 runtime 的 progress emitter 看到这个状态会显示"排队中"。
+    _emit_progress("submitted")
+
+    # 3. as_completed 顺序收回（按完成时间，不一定按 i 顺序），更新进度
     seg_results: dict[int, dict] = {}
-    done = 0
     failures: list[tuple[int, BaseException]] = []
     for fut in as_completed([t[4] for t in tasks]):
         idx_for_fut = next(t for t in tasks if t[4] is fut)
         i, seg, text, seg_path, _ = idx_for_fut
         try:
-            fut.result()
+            _, duration = fut.result()
         except BaseException as exc:
             failures.append((i, exc))
             continue
-        duration = _get_audio_duration(seg_path)
         seg_copy = dict(seg)
         seg_copy["tts_path"] = seg_path
         seg_copy["tts_duration"] = duration
         seg_results[i] = seg_copy
 
-        done += 1
+        with state_lock:
+            state["done"] += 1
+            done_now = state["done"]
+        info = {
+            "segment_index": i,
+            "tts_duration": duration,
+            "tts_text_preview": (text or "")[:60],
+        }
+        _emit_progress("completed", info)
         if on_segment_done is not None:
             try:
-                on_segment_done(done, total, {
-                    "segment_index": i,
-                    "tts_duration": duration,
-                    "tts_text_preview": (text or "")[:60],
-                })
+                on_segment_done(done_now, total, info)
             except Exception:
                 log.exception("on_segment_done callback raised; ignoring")
 
     if failures:
-        # 任一段失败：取消尚未启动的 future（已启动的等结束），抛第一个异常
         for _, _, _, _, f in tasks:
-            f.cancel()
+            f.cancel()  # 未启动的 future 直接取消
         first_idx, first_exc = failures[0]
         raise RuntimeError(
             f"TTS segment generation failed at index {first_idx} "
             f"({len(failures)}/{total} failed): {first_exc}"
         ) from first_exc
 
-    # 3. 按 i 顺序拼 concat 列表（保持音轨时序）
+    # 4. 按 i 顺序拼 concat 列表（保持音轨时序）
     updated_segments = [seg_results[i] for i in range(total)]
     concat_list_path = os.path.join(seg_dir, "concat.txt")
     with open(concat_list_path, "w", encoding="utf-8") as f:
         for seg_copy in updated_segments:
             f.write(f"file '{os.path.abspath(seg_copy['tts_path'])}'\n")
 
-    # 4. ffmpeg concat（不变）
+    # 5. ffmpeg concat（不变）
     ...
     return {"full_audio_path": full_audio_path, "segments": updated_segments}
 ```
 
 关键点：
+- `state` dict + `state_lock` 是唯一共享可变状态；所有 worker 修改都加锁；snapshot 值在锁内拷贝再传给回调，回调本身不持锁（避免回调阻塞 worker）。
 - `concat.txt` 必须按 `i` 顺序写，**不能**按完成顺序，否则音轨乱序。
-- `on_segment_done` 在 `as_completed` 主线程调用，无线程安全担忧（counter 单线程 +1）。
+- `submitted` 事件触发"排队中"状态显示——即使 pool 有空 slot，从 submit 到 first segment_started 之间也会出现一瞬间的"排队中"状态，这是预期行为（让前端有机会显示）。
 - 第一个失败立即触发 cancel + 抛异常；已经在跑的 segment 由 ElevenLabs 自身返回后被丢弃。
+- 关于"前端展示状态切换的轮询"：**不需要前端做轮询**。后端通过现有 SSE / substep_msg 推送机制把每次 `_emit_progress` 转成一条 substep 消息，前端订阅即可（详见 3.5 helper）。"submitted → started → completed"事件之间已有完整状态信号，省去轮询。
 
 ### 3.4 429 退避重试
 
@@ -240,11 +390,19 @@ def _call_with_throttle_retry(fn, *, label="elevenlabs"):
 
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
-| [pipeline/tts.py](../../../pipeline/tts.py) | 修改 | 新增 `_TTS_POOL` / `_get_tts_pool` / `_resolve_tts_max_concurrency` / `_call_with_throttle_retry` / `_is_concurrent_limit_429`；改写 `generate_full_audio` 为并发提交 + `as_completed` 收回 + cancellation 检查；保留接口签名（`segments, voice_id, output_dir, variant, elevenlabs_api_key, model_id, language_code, on_segment_done`） |
-| [appcore/settings.py](../../../appcore/settings.py) | 不改 | 复用现有 `get_setting / set_setting` API，无需新增模块 |
+| [pipeline/tts.py](../../../pipeline/tts.py) | 修改 | 新增 `_TTS_POOL` / `_get_tts_pool` / `_resolve_tts_max_concurrency` / `_call_with_throttle_retry` / `_is_concurrent_limit_429`；改写 `generate_full_audio` 为并发提交 + `as_completed` 收回 + active/queued/done state；新增 `on_progress` 回调，保留 `on_segment_done` 兼容；其他签名不变 |
+| [appcore/runtime/_helpers.py](../../../appcore/runtime/_helpers.py) | 修改 | 新增 `make_tts_progress_emitter` 公共函数 |
+| [appcore/runtime/_pipeline_runner.py:548](../../../appcore/runtime/_pipeline_runner.py) | 修改 | **多语言视频翻译**：把现有 `_on_seg_done` 改成 `make_tts_progress_emitter(...)` + `extra_state_update` 同步 `round_record["audio_segments_done"]` |
+| [appcore/runtime/__init__.py:303](../../../appcore/runtime/__init__.py) | 修改 | **全能翻译**：从静态 substep 文案升级为 `on_progress=make_tts_progress_emitter(...)` |
+| [appcore/runtime_sentence_translate.py:267](../../../appcore/runtime_sentence_translate.py) | 修改 | **视频翻译音画同步**：同上，加 `on_progress=...`（`round_label="首轮"`） |
+| [appcore/runtime_ja.py:300](../../../appcore/runtime_ja.py) | 修改 | **日语翻译**：把日语专属文案逻辑迁移到 helper（保持文案语义不变） |
+| [appcore/copywriting_runtime.py:201](../../../appcore/copywriting_runtime.py) | 修改 | **文案配音**：加 `on_progress=...`（`lang_label` 用文案的语种） |
+| [appcore/settings.py](../../../appcore/settings.py) | 不改 | 复用现有 `get_setting / set_setting` API |
 | `web/templates/settings.html` + `web/routes/admin.py` | 修改 | 加 TTS 并发上限输入框（与现有 retention/RMB 等 system settings 编辑入口一致） |
-| `tests/test_tts_concurrent_generation.py` | **新建** | 并发提交、429 退避、回调 atomic counter、concat 顺序、第一失败抛错、cancellation 行为、跨任务排队（多线程模拟） |
+| `tests/test_tts_concurrent_generation.py` | **新建** | 并发提交、429 退避、active/queued counter 线程安全、concat 顺序、第一失败抛错、cancellation 行为、跨任务排队（多线程模拟）、`on_progress` 状态机 |
+| `tests/test_tts_progress_emitter.py` | **新建** | `make_tts_progress_emitter` 文案产出（排队中 / 进度 / 完成）+ `extra_state_update` 调用 |
 | [tests/test_tts_duration_loop.py](../../../tests/test_tts_duration_loop.py) | 微调（如需） | 把现有 `generate_full_audio` mock 适配新的并发提交路径，确保 duration loop 测试仍绿 |
+| [tests/test_pipeline_runner.py](../../../tests/test_pipeline_runner.py) | 微调（如需） | `fake_generate_full_audio` 接受 `on_progress` kwarg |
 
 预估改动行数：核心 ~120 行，测试 ~150 行；零数据库迁移；零新依赖（`concurrent.futures` 标准库）。
 
