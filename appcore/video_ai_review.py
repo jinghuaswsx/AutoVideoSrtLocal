@@ -110,7 +110,6 @@ def _download_to_tmp(url: str | None, label: str) -> str | None:
     返回的临时文件由调用方清理。"""
     if not url:
         return None
-    import os
     import tempfile
     import urllib.parse
     import urllib.request
@@ -130,6 +129,113 @@ def _download_to_tmp(url: str | None, label: str) -> str | None:
     except Exception:
         log.exception("[video_ai_review] download failed: %s", url)
         return None
+
+
+def _download_object_key_to_tmp(object_key: str | None, label: str) -> str | None:
+    """当 file_url 为空但素材有 object_key 时（补充上传素材常见），直接走 TOS 客户端拉。"""
+    if not object_key:
+        return None
+    import tempfile
+    try:
+        from appcore import tos_clients
+    except Exception:
+        log.exception("[video_ai_review] tos_clients unavailable")
+        return None
+    try:
+        ext = os.path.splitext(object_key)[1] or ".mp4"
+        fd, tmp_path = tempfile.mkstemp(prefix=f"video_ai_review_{label}_raw_", suffix=ext)
+        os.close(fd)
+        tos_clients.download_file(object_key, tmp_path)
+        if not os.path.isfile(tmp_path) or os.path.getsize(tmp_path) <= 0:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return None
+        return tmp_path
+    except Exception:
+        log.exception("[video_ai_review] tos download failed: %s", object_key)
+        return None
+
+
+# Vertex Gemini inline base64 上限 ~20MB，留 buffer 用 18MB 作 target。
+_INLINE_TARGET_BYTES = 18 * 1024 * 1024
+
+
+def _compress_for_inline(raw_path: str, label: str) -> str | None:
+    """把原始视频转码到 ≤18MB 以塞进 Vertex Gemini inline 通道。
+
+    单遍 H.264 + AAC mono 64k；目标视频码率按 (target_bytes*8/duration - audio)
+    现算。720p 不达标降 480p；都不行就返回最后一次输出（让 LLM 试一下，
+    pipeline 那边的 _validate_media_path 会 warn）。"""
+    import subprocess
+    import tempfile
+    from pipeline.ffutil import probe_media_info
+
+    info = probe_media_info(raw_path)
+    duration = float(info.get("duration") or 0.0)
+    if duration <= 0:
+        # 没探到时长就不敢算 bitrate，直接返回原文件让上层 warn 处理。
+        log.warning("[video_ai_review] probe duration=0 for %s, skip compress", raw_path)
+        return raw_path
+
+    fd, out_path = tempfile.mkstemp(prefix=f"video_ai_review_{label}_", suffix=".mp4")
+    os.close(fd)
+    audio_bitrate = 64_000
+
+    def _encode(max_height: int) -> bool:
+        video_bitrate = max(150_000,
+                            int(_INLINE_TARGET_BYTES * 8 / duration) - audio_bitrate)
+        cmd = [
+            "ffmpeg", "-y", "-i", raw_path,
+            "-vf", f"scale=-2:'min({max_height},ih)'",
+            "-c:v", "libx264", "-preset", "veryfast",
+            "-b:v", str(video_bitrate),
+            "-maxrate", str(int(video_bitrate * 1.3)),
+            "-bufsize", str(int(video_bitrate * 2)),
+            "-c:a", "aac", "-b:a", str(audio_bitrate), "-ac", "1",
+            "-movflags", "+faststart",
+            out_path,
+        ]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=600, check=True)
+            return True
+        except subprocess.SubprocessError as exc:
+            log.warning("[video_ai_review] ffmpeg encode @%dp failed: %s",
+                        max_height, getattr(exc, "stderr", exc))
+            return False
+
+    if _encode(720) and os.path.getsize(out_path) <= int(_INLINE_TARGET_BYTES * 1.1):
+        return out_path
+    if _encode(480) and os.path.getsize(out_path) <= int(_INLINE_TARGET_BYTES * 1.15):
+        return out_path
+    if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
+        return out_path
+    try:
+        os.unlink(out_path)
+    except OSError:
+        pass
+    return None
+
+
+def _fetch_and_prepare_media_video(file_url: str | None,
+                                   object_key: str | None,
+                                   label: str) -> tuple[str | None, list[str]]:
+    """把素材视频拉到本地 + 压缩到 inline 限制内。
+
+    返回 (final_path_for_llm, all_tmp_files_to_cleanup)。
+    file_url 优先，缺失再走 object_key（补充上传的素材常见 file_url=NULL）。"""
+    tmp_files: list[str] = []
+    raw = _download_to_tmp(file_url, label)
+    if raw is None:
+        raw = _download_object_key_to_tmp(object_key, label)
+    if raw is None:
+        return None, tmp_files
+    tmp_files.append(raw)
+    compressed = _compress_for_inline(raw, label)
+    if compressed and compressed != raw:
+        tmp_files.append(compressed)
+    return compressed, tmp_files
 
 
 def _build_inputs_for_media(media_item_id: int) -> dict:
@@ -169,7 +275,11 @@ def _build_inputs_for_media(media_item_id: int) -> dict:
             target_text_parts.append(cw_row["description"])
     target_text = "\n".join(t.strip() for t in target_text_parts if t and t.strip())
 
-    target_video_path = _download_to_tmp(item_row.get("file_url"), f"target_{media_item_id}")
+    target_video_path, tmp_files = _fetch_and_prepare_media_video(
+        item_row.get("file_url"),
+        item_row.get("object_key"),
+        f"target_{media_item_id}",
+    )
 
     product_info = {
         "name": item_row.get("product_name"),
@@ -190,7 +300,7 @@ def _build_inputs_for_media(media_item_id: int) -> dict:
         "target_video_path": target_video_path,
         "product_info": product_info,
         "product_image_paths": [],
-        "_tmp_files": [p for p in (target_video_path,) if p],
+        "_tmp_files": tmp_files,
     }
 
 
