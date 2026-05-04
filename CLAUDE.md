@@ -269,6 +269,6 @@ Adapter `provider_code` 枚举：`openrouter` / `doubao` / `gemini_aistudio` / `
 ## TTS Duration Loop 变速短路（2026-05-04）
 
 - 当 multi-translate 任务某一轮 TTS 音频落入 `[0.9v, 1.1v]` 但不在 `[v-1, v+2]`，会**自动**用 ElevenLabs `voice_settings.speed` 重生成一遍音频试图直接收敛。命中即终结；未命中走 atempo 兜底；变速调用失败回退原始音频走 atempo。**任何分支都不再继续后续 rewrite 轮次**。
-- 每次变速 pass 都会**同步**调用 `video_translate.tts_speedup_quality_review`（默认 OpenRouter + google/gemini-3-flash-preview）做双轨对比 AI 评分，120s 超时不阻塞任务。结果写入 `tts_speedup_evaluations` 表。
+- 每次变速 pass 都会**同步**调用 `video_translate.tts_speedup_quality_review`（默认 OpenRouter + google/gemini-3-flash-preview）做双轨对比 AI 评分，120s 超时不阻塞任务（写 `status=failed` 的 eval 行）。
 - admin 可在 `/admin/tts-speedup-evaluations/` 跨任务查询样本，并在 `/settings?tab=bindings` 切换评估模型。
 - 想下线该功能：把 `_in_speedup_window` 改为永远返回 False（或加 settings 开关）即可，不会破坏现有 5 轮 rewrite 主路径。
