@@ -230,6 +230,87 @@ def generate_full_audio(
     return {"full_audio_path": full_audio_path, "segments": updated_segments}
 
 
+def regenerate_full_audio_with_speed(
+    segments: List[Dict],
+    voice_id: str,
+    output_dir: str,
+    *,
+    variant: str,
+    speed: float,
+    elevenlabs_api_key: str | None = None,
+    model_id: str = "eleven_turbo_v2_5",
+    language_code: str | None = None,
+    on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
+) -> Dict:
+    """以指定 speed 重新合成 segments 并 concat。
+
+    用于 TTS Duration Loop 的"变速短路"分支：当某轮原始音频落入 ±10% 但不在
+    final range，通过 voice_settings.speed 一击直接收敛到 [v-1, v+2]。
+
+    Args:
+        segments: 与 generate_full_audio 相同的输入（含 tts_text）
+        variant: 用于命名 segment 子目录和 concat 产物，例如 "round_2"
+        speed: ElevenLabs voice_settings.speed，合法范围 [0.7, 1.2]，调用方须先 clamp
+        on_segment_done: 同 generate_full_audio
+
+    Returns:
+        {"full_audio_path": str, "segments": [...]}  # 每段含 tts_path / tts_duration
+
+    Raises:
+        透出 ElevenLabs SDK 的网络异常（已通过 _call_with_network_retry 重试），
+        让 _run_tts_duration_loop 走原始音频 atempo fallback。
+    """
+    if not (0.7 <= speed <= 1.2):
+        raise ValueError(f"speed must be in [0.7, 1.2], got {speed}")
+    seg_dir = os.path.join(output_dir, "tts_segments", f"{variant}_speedup")
+    os.makedirs(seg_dir, exist_ok=True)
+
+    updated_segments = []
+    concat_list_path = os.path.join(seg_dir, "concat.txt")
+    total = len(segments)
+
+    with open(concat_list_path, "w", encoding="utf-8") as concat_f:
+        for i, seg in enumerate(segments):
+            text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
+            seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
+
+            generate_segment_audio(
+                text, voice_id, seg_path,
+                elevenlabs_api_key=elevenlabs_api_key,
+                model_id=model_id, language_code=language_code,
+                speed=speed,
+            )
+            duration = _get_audio_duration(seg_path)
+
+            seg_copy = dict(seg)
+            seg_copy["tts_path"] = seg_path
+            seg_copy["tts_duration"] = duration
+            updated_segments.append(seg_copy)
+            concat_f.write(f"file '{os.path.abspath(seg_path)}'\n")
+
+            if on_segment_done is not None:
+                try:
+                    on_segment_done(i + 1, total, {
+                        "segment_index": i,
+                        "tts_duration": duration,
+                        "tts_text_preview": (text or "")[:60],
+                        "speed": speed,
+                    })
+                except Exception:
+                    log.exception("on_segment_done callback raised; ignoring")
+
+    full_audio_path = os.path.join(output_dir, f"tts_full.{variant}.speedup.mp3")
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path,
+         "-c", "copy", full_audio_path],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"音频拼接失败 (speedup): {result.stderr}")
+
+    return {"full_audio_path": full_audio_path, "segments": updated_segments}
+
+
 def _get_audio_duration(audio_path: str) -> float:
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
