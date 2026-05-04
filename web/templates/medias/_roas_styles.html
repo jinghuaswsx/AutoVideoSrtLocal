@@ -10,6 +10,7 @@
   --oc-fg-muted:      oklch(48%  0.018 230);
   --oc-fg-subtle:     oklch(62%  0.015 230);
   --oc-accent:        oklch(56%  0.16  230);
+  --oc-accent-fg:     oklch(99%  0     0);
   --oc-accent-hover:  oklch(50%  0.17  230);
   --oc-accent-subtle: oklch(94%  0.04  225);
   --oc-accent-ring:   oklch(56%  0.16  230 / 0.22);
@@ -24,7 +25,7 @@
   --oc-danger-fg:     oklch(42%  0.14  25);
 
   --oc-r-sm: 4px;  --oc-r: 6px;    --oc-r-md: 8px;
-  --oc-r-lg: 12px; --oc-r-xl: 16px;
+  --oc-r-lg: 12px; --oc-r-xl: 16px; --oc-r-full: 9999px;
   --oc-sp-1: 4px;  --oc-sp-2: 8px;  --oc-sp-3: 12px;
   --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
   --oc-sp-7: 32px; --oc-sp-8: 40px; --oc-sp-9: 56px;
@@ -66,6 +67,7 @@
 
 .oc, .oc * { box-sizing: border-box; }
 .oc svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+/* Controls [hidden] on .oc-modal-mask (base styles live in medias_list.html). Removing this breaks modal hide. */
 .oc [hidden], .oc-modal-mask[hidden], [hidden].oc-modal-mask { display: none !important; }
 
 /* ────────── ROAS modal ────────── */
