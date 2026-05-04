@@ -642,6 +642,175 @@ class PipelineRunner:
                     "final_round": round_index,
                 }
 
+            # ============= 变速短路分支（2026-05-04） =============
+            # 进入 ±10% 但不在 [v-1, v+2] 时，用 ElevenLabs voice_settings.speed
+            # 重新合成一遍音频。命中 final 即收敛；未命中走 atempo 兜底；变速本身
+            # 失败则回退到原始音频走 atempo。无论哪条路径，都立即终结，不再继续
+            # 后续 rewrite 轮次。
+            from appcore.runtime import _in_speedup_window, _speedup_ratio
+            if _in_speedup_window(
+                audio_duration=audio_duration, video_duration=video_duration,
+            ):
+                speed = _speedup_ratio(audio_duration, video_duration)
+                round_record["speedup_applied"] = True
+                round_record["speedup_speed"] = round(speed, 4)
+                round_record["speedup_pre_duration"] = audio_duration
+                round_record["is_final"] = True
+                _substep(f"变速短路：speed={speed:.4f}, 重生成 ElevenLabs 音频")
+                self._emit_duration_round(task_id, round_index, "speedup_start", round_record)
+
+                speedup_audio_path = None
+                speedup_duration = None
+                speedup_result = None
+                speedup_failed_reason = None
+                try:
+                    from pipeline.tts import regenerate_full_audio_with_speed
+
+                    def _on_speedup_seg_done(done, total, info):
+                        self._emit_substep_msg(
+                            task_id, "tts",
+                            f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 变速重生成 ElevenLabs 音频 {done}/{total}",
+                        )
+                        # 不更新 round_record 的 audio_segments_done（那是原始 round 的字段），
+                        # 用专门的 speedup 字段，避免混淆 UI
+                        round_record["speedup_segments_done"] = done
+                        round_record["speedup_segments_total"] = total
+                        self._emit_duration_round(task_id, round_index, "speedup_progress", round_record)
+
+                    speedup_result = regenerate_full_audio_with_speed(
+                        result["segments"],
+                        voice["elevenlabs_voice_id"],
+                        task_dir,
+                        variant=f"round_{round_index}",
+                        speed=speed,
+                        elevenlabs_api_key=elevenlabs_api_key,
+                        model_id=tts_model_id,
+                        language_code=tts_language_code,
+                        on_segment_done=_on_speedup_seg_done,
+                    )
+                    speedup_audio_path = speedup_result["full_audio_path"]
+                    speedup_duration = _get_audio_duration(speedup_audio_path)
+                    round_record["speedup_audio_path"] = (
+                        os.path.relpath(speedup_audio_path, task_dir)
+                    )
+                    round_record["speedup_post_duration"] = speedup_duration
+                    round_record["speedup_chars_used"] = sum(
+                        len((s.get("tts_text") or "")) for s in result["segments"]
+                    )
+                except Exception as exc:
+                    log.exception(
+                        "[task %s] speedup regeneration failed at round %d, falling back",
+                        task_id, round_index,
+                    )
+                    speedup_failed_reason = str(exc)[:500]
+                    round_record["speedup_failed_reason"] = speedup_failed_reason
+
+                # Decide which audio is the final adopted one.
+                if speedup_audio_path is None:
+                    # Fallback：原始音频 + atempo
+                    final_audio_path = self._maybe_tempo_align(
+                        audio_path=result["full_audio_path"],
+                        audio_duration=audio_duration,
+                        video_duration=video_duration,
+                        task_dir=task_dir, variant=variant,
+                        round_record=round_record, task_id=task_id,
+                    )
+                    round_record["final_reason"] = "speedup_failed_fallback"
+                    round_record["speedup_hit_final"] = False
+                else:
+                    hit_final = (
+                        final_target_lo <= speedup_duration <= final_target_hi
+                    )
+                    round_record["speedup_hit_final"] = hit_final
+                    if hit_final:
+                        # 命中：再走一次 atempo 兜底精确对齐（误差 ≤ 5% 时拉伸到精确等长）
+                        final_audio_path = self._maybe_tempo_align(
+                            audio_path=speedup_audio_path,
+                            audio_duration=speedup_duration,
+                            video_duration=video_duration,
+                            task_dir=task_dir, variant=f"{variant}_speedup",
+                            round_record=round_record, task_id=task_id,
+                        )
+                        round_record["final_reason"] = "speedup_converged"
+                    else:
+                        # 未命中 final：仍然终结，对变速产物跑 atempo
+                        final_audio_path = self._maybe_tempo_align(
+                            audio_path=speedup_audio_path,
+                            audio_duration=speedup_duration,
+                            video_duration=video_duration,
+                            task_dir=task_dir, variant=f"{variant}_speedup",
+                            round_record=round_record, task_id=task_id,
+                        )
+                        round_record["final_reason"] = "speedup_then_atempo"
+
+                # 同步 AI 评估（仅当变速成功有 audio_post 才跑）
+                eval_id = None
+                if speedup_audio_path is not None:
+                    try:
+                        from appcore import tts_speedup_eval
+                        eval_id = tts_speedup_eval.run_evaluation(
+                            task_id=task_id,
+                            round_index=round_index,
+                            language=target_language_label or "",
+                            video_duration=video_duration,
+                            audio_pre_path=result["full_audio_path"],
+                            audio_pre_duration=audio_duration,
+                            audio_post_path=speedup_audio_path,
+                            audio_post_duration=speedup_duration,
+                            speed_ratio=speed,
+                            hit_final_range=bool(
+                                round_record.get("speedup_hit_final")
+                            ),
+                            user_id=self.user_id,
+                        )
+                    except Exception:
+                        log.exception(
+                            "[task %s] tts_speedup_eval.run_evaluation raised; ignoring",
+                            task_id,
+                        )
+                round_record["speedup_eval_id"] = eval_id
+
+                round_products[-1]["tts_audio_path"] = final_audio_path
+                rounds[-1] = round_record
+                if round_record["final_reason"] == "speedup_converged":
+                    final_distance = 0.0
+                else:
+                    # speedup_failed_fallback or speedup_then_atempo
+                    measured_duration = speedup_duration if speedup_duration is not None else audio_duration
+                    final_distance = round(_distance_to_duration_range(
+                        measured_duration, final_target_lo, final_target_hi,
+                    ), 3)
+                round_record["final_distance"] = final_distance
+                task_state.update(
+                    task_id,
+                    tts_duration_rounds=rounds,
+                    tts_duration_status="converged",
+                    tts_final_round=round_index,
+                    tts_final_reason=round_record["final_reason"],
+                    tts_final_distance=final_distance,
+                )
+                self._emit_duration_round(
+                    task_id, round_index, "speedup_done", round_record,
+                )
+                tts_generation_stats.finalize(
+                    task_id=task_id,
+                    task=task_state.get(task_id) or {},
+                    rounds=rounds,
+                )
+                return {
+                    "localized_translation": localized_translation,
+                    "tts_script": tts_script,
+                    "tts_audio_path": final_audio_path,
+                    "tts_segments": (
+                        speedup_result["segments"] if speedup_audio_path is not None
+                        else result["segments"]
+                    ),
+                    "rounds": rounds,
+                    "round_products": round_products,
+                    "final_round": round_index,
+                }
+            # ============= 变速短路分支结束 =============
+
             # Note: do NOT update `prev_localized` — every rewrite uses the initial.
             last_audio_duration = audio_duration
             last_word_count = word_count

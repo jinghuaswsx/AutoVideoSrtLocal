@@ -5,7 +5,7 @@ import pymysql.err
 from flask import abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, parcel_cost_suggest, product_roas, pushes, xmyc_storage
+from appcore import medias, parcel_cost_suggest, product_roas, pushes, sku_aggregates, xmyc_storage
 from . import bp
 from ._serializers import (
     _int_or_none,
@@ -309,6 +309,8 @@ def api_list_xmyc_skus():
         limit=limit,
         offset=offset,
     )
+    rate = product_roas.get_configured_rmb_per_usd()
+    rows = sku_aggregates.enrich_skus_with_roas(rows, rate)
     return jsonify({"ok": True, "items": rows, "limit": limit, "offset": offset})
 
 
@@ -320,6 +322,8 @@ def api_get_product_xmyc_skus(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     rows = xmyc_storage.get_skus_for_product(pid)
+    rate = product_roas.get_configured_rmb_per_usd()
+    rows = sku_aggregates.enrich_skus_with_roas(rows, rate)
     return jsonify({"ok": True, "items": rows})
 
 

@@ -1590,3 +1590,44 @@ video.media-player {
     align-items: stretch;
   }
 }
+
+/* ============================================================
+   TTS 变速短路子卡片 (Task 9)
+   ============================================================ */
+.tts-speedup-card {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.tts-speedup-header {
+  display: flex; align-items: center; gap: var(--space-3);
+  font-size: var(--text-sm); color: var(--fg);
+  margin-bottom: var(--space-3); flex-wrap: wrap;
+}
+.tts-speedup-header .tag {
+  font-family: var(--font-mono); padding: 2px 8px;
+  border-radius: var(--radius-md); background: var(--accent-subtle);
+  color: var(--accent); font-size: var(--text-xs);
+}
+.tts-speedup-players { display: flex; gap: var(--space-4); flex-wrap: wrap; }
+.tts-speedup-players audio { width: min(380px, 100%); }
+.tts-speedup-players .col-label {
+  font-size: var(--text-xs); color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+.tts-speedup-summary {
+  margin-top: var(--space-3); font-size: var(--text-sm);
+  line-height: var(--leading);
+}
+.tts-speedup-status-pending { color: var(--fg-muted); }
+.tts-speedup-status-failed { color: var(--danger); }
+.tts-speedup-retry-btn {
+  margin-left: 8px; height: 28px; padding: 0 12px;
+  border: 1px solid var(--border-strong); background: white;
+  border-radius: var(--radius); font-size: var(--text-xs);
+  cursor: pointer; color: var(--fg);
+}
+.tts-speedup-retry-btn:hover { background: var(--bg-muted); }
+.tts-speedup-retry-btn:disabled { opacity: 0.6; cursor: progress; }
