@@ -1,6 +1,6 @@
 (function() {
   window.MEDIAS_UPLOAD_READY = window.MEDIAS_UPLOAD_READY !== false;
-  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0, roasProduct: null };
+  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0, roasProduct: null, roasController: null };
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
   const $ = (id) => document.getElementById(id);
@@ -460,63 +460,6 @@
     return text ? escapeHtml(text) : '<span class="muted">—</span>';
   }
 
-  const ROAS_FIELDS = [
-    'purchase_1688_url',
-    'purchase_price',
-    'packet_cost_estimated',
-    'packet_cost_actual',
-    'package_length_cm',
-    'package_width_cm',
-    'package_height_cm',
-    'tk_sea_cost',
-    'tk_air_cost',
-    'tk_sale_price',
-    'standalone_price',
-    'standalone_shipping_fee',
-  ];
-
-  function numberOrNull(value) {
-    const raw = String(value ?? '').trim();
-    if (!raw) return null;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  function formatRoas(value) {
-    return Number.isFinite(value) ? value.toFixed(2) : '无法保本';
-  }
-
-  function currentRoasRmbPerUsd() {
-    const parsed = Number(window.MATERIAL_ROAS_RMB_PER_USD || 6.83);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 6.83;
-  }
-
-  function calculateRoasBreakEven(values) {
-    const price = numberOrNull(values.standalone_price);
-    const shippingFee = numberOrNull(values.standalone_shipping_fee) || 0;
-    const revenue = price === null ? null : price + shippingFee;
-    const rmbPerUsd = currentRoasRmbPerUsd();
-    const purchase = numberOrNull(values.purchase_price);
-    const estimatedPacket = numberOrNull(values.packet_cost_estimated);
-    const actualPacket = numberOrNull(values.packet_cost_actual);
-    const calc = (packetCost) => {
-      if (revenue === null || purchase === null || packetCost === null) return null;
-      const available = revenue * 0.9 - (purchase / rmbPerUsd) - (packetCost / rmbPerUsd);
-      if (available <= 0) return null;
-      return revenue / available;
-    };
-    const estimated = calc(estimatedPacket);
-    const actual = calc(actualPacket);
-    const useActual = actualPacket !== null;
-    return {
-      estimated_roas: estimated,
-      actual_roas: actual,
-      effective_basis: useActual ? 'actual' : 'estimated',
-      effective_roas: useActual ? actual : estimated,
-      rmb_per_usd: rmbPerUsd,
-    };
-  }
-
   function parseAverageShippingValues(text) {
     return String(text || '')
       .split(/\r?\n/)
@@ -561,175 +504,40 @@
     updateView: updateRoasAverageShipping,
   };
 
-  function setRoasFieldValues(product) {
-    ROAS_FIELDS.forEach((field) => {
-      const input = document.querySelector(`[data-roas-field="${field}"]`);
-      if (!input) return;
-      const value = product && product[field] !== null && product[field] !== undefined ? product[field] : '';
-      input.value = value;
-    });
-  }
-
-  function collectRoasPayload() {
-    const payload = {};
-    ROAS_FIELDS.forEach((field) => {
-      const input = document.querySelector(`[data-roas-field="${field}"]`);
-      if (!input) return;
-      const raw = String(input.value || '').trim();
-      payload[field] = raw || null;
-    });
-    return payload;
-  }
-
-  function renderRoasResult() {
-    const payload = collectRoasPayload();
-    const result = calculateRoasBreakEven(payload);
-    if ($('roasEstimatedValue')) $('roasEstimatedValue').textContent = formatRoas(result.estimated_roas);
-    if ($('roasActualValue')) $('roasActualValue').textContent = numberOrNull(payload.packet_cost_actual) === null ? '待回填' : formatRoas(result.actual_roas);
-    if ($('roasEffectiveValue')) $('roasEffectiveValue').textContent = formatRoas(result.effective_roas);
-    if ($('roasEffectiveBasis')) $('roasEffectiveBasis').textContent = result.effective_basis === 'actual' ? '实际保本 ROAS' : '预估保本 ROAS';
-    if ($('roasEstimatedBox')) $('roasEstimatedBox').classList.toggle('active', result.effective_basis === 'estimated');
-    if ($('roasActualBox')) $('roasActualBox').classList.toggle('active', result.effective_basis === 'actual');
-  }
-
-  function markRoasResultDirty() {
-    if ($('roasEstimatedValue')) $('roasEstimatedValue').textContent = '待计算';
-    if ($('roasActualValue')) $('roasActualValue').textContent = '待计算';
-    if ($('roasEffectiveValue')) $('roasEffectiveValue').textContent = '待计算';
-    if ($('roasEffectiveBasis')) $('roasEffectiveBasis').textContent = '待计算';
-    if ($('roasEstimatedBox')) $('roasEstimatedBox').classList.remove('active');
-    if ($('roasActualBox')) $('roasActualBox').classList.remove('active');
-  }
-
   function openRoasModal(product) {
     if (!product) return;
     state.roasProduct = product;
     const mask = $('roasModalMask');
     if (!mask) return;
-    $('roasProductId').textContent = product.id || '—';
-    $('roasProductName').textContent = product.name || '—';
-    $('roasProductEnglish').textContent = product.product_code || '—';
-    const cover = $('roasProductCover');
-    if (cover) {
-      cover.innerHTML = product.cover_thumbnail_url
-        ? `<img src="${escapeHtml(product.cover_thumbnail_url)}" alt="">`
-        : `<div class="roas-cover-ph">${icon('package', 24)}</div>`;
+    const root = mask.querySelector('.oc-modal');
+    const statusBar = root && root.querySelector('[data-roas-status]');
+    const openLink = $('roasOpenInPage');
+    if (openLink) {
+      openLink.href = '/medias/' + product.id + '/roas';
+      openLink.hidden = false;
     }
-    setRoasFieldValues(product);
-    if ($('roasSaveMsg')) $('roasSaveMsg').textContent = '';
-    markRoasResultDirty();
-    resetParcelSuggestPanel();
-    mask.hidden = false;
-  }
-
-  function resetParcelSuggestPanel() {
-    const result = $('roasParcelSuggestResult');
-    const btn = $('roasParcelSuggestBtn');
-    if (result) {
-      result.hidden = true;
-      result.innerHTML = '';
-      result.classList.remove('is-error', 'is-loading');
-    }
-    if (btn) btn.disabled = false;
-  }
-
-  function renderParcelSuggestResult(suggestion) {
-    const result = $('roasParcelSuggestResult');
-    if (!result) return;
-    if (!suggestion || !Number.isFinite(Number(suggestion.median))) {
-      result.classList.remove('is-loading');
-      result.classList.add('is-error');
-      result.innerHTML = `时间窗 ${escapeHtml(suggestion?.window_start || '')}–${escapeHtml(suggestion?.window_end || '')} 内未找到 SKU ${escapeHtml(suggestion?.sku || '')} 的有效物流费记录。`;
-      result.hidden = false;
-      return;
-    }
-    const median = Number(suggestion.median).toFixed(2);
-    const min = Number(suggestion.min).toFixed(2);
-    const max = Number(suggestion.max).toFixed(2);
-    const sample = suggestion.sample_size || 0;
-    const window = `${suggestion.window_start} ~ ${suggestion.window_end}`;
-    result.classList.remove('is-error', 'is-loading');
-    result.innerHTML = `
-      <div>SKU <strong>${escapeHtml(suggestion.sku)}</strong> · 店小秘 shop ${escapeHtml(String(suggestion.dxm_shop_id || ''))}</div>
-      <div>时间窗 ${escapeHtml(window)} · 命中 <span class="stat">${sample}</span> 单（共拉取 ${suggestion.orders_pulled || 0} 单）</div>
-      <div>中位数 <span class="stat">${median} RMB</span> · 范围 ${min} ~ ${max} RMB</div>
-      <div class="oc-roas-suggest-actions">
-        <button type="button" class="oc-roas-suggest-adopt" id="roasParcelSuggestAdopt">采纳到预估 + 实际小包成本</button>
-      </div>
-    `;
-    result.hidden = false;
-    const adoptBtn = document.getElementById('roasParcelSuggestAdopt');
-    if (adoptBtn) {
-      adoptBtn.addEventListener('click', () => {
-        const estInput = document.querySelector('[data-roas-field="packet_cost_estimated"]');
-        const actInput = document.querySelector('[data-roas-field="packet_cost_actual"]');
-        if (estInput) estInput.value = median;
-        if (actInput) actInput.value = median;
-        markRoasResultDirty();
-        adoptBtn.disabled = true;
-        adoptBtn.textContent = '已采纳，请点底部「保存」落库';
+    if (!state.roasController || state.roasController.root !== root) {
+      state.roasController = new RoasFormController(root, {
+        productId: product.id,
+        statusBarEl: statusBar,
+        onAfterSave: (payload) => {
+          Object.assign(product, payload);
+          product.roas_calculation = state.roasController.computeRoas();
+        },
       });
+    } else {
+      state.roasController.productId = product.id;
     }
-  }
-
-  async function fetchParcelCostSuggestion() {
-    const product = state.roasProduct;
-    if (!product) return;
-    const btn = $('roasParcelSuggestBtn');
-    const result = $('roasParcelSuggestResult');
-    if (btn) btn.disabled = true;
-    if (result) {
-      result.hidden = false;
-      result.classList.remove('is-error');
-      result.classList.add('is-loading');
-      result.textContent = '正在拉取店小秘订单数据，约需 30~60 秒…';
-    }
-    try {
-      const data = await fetchJSON(`/medias/api/products/${product.id}/parcel-cost-suggest`);
-      renderParcelSuggestResult(data && data.suggestion);
-    } catch (err) {
-      if (result) {
-        result.classList.remove('is-loading');
-        result.classList.add('is-error');
-        result.textContent = (err && err.message) ? err.message : '拉取建议失败';
-        result.hidden = false;
-      }
-    } finally {
-      if (btn) btn.disabled = false;
-    }
+    state.roasController.fillFromProduct(product);
+    state.roasController.resetParcelSuggestPanel();
+    mask.hidden = false;
   }
 
   function closeRoasModal() {
     const mask = $('roasModalMask');
     if (mask) mask.hidden = true;
     state.roasProduct = null;
-  }
-
-  async function saveRoas() {
-    const product = state.roasProduct;
-    const form = $('roasForm');
-    if (!product || !form) return;
-    const btn = $('roasSaveBtn');
-    const msg = $('roasSaveMsg');
-    if (btn) btn.disabled = true;
-    if (msg) msg.textContent = '保存中...';
-    try {
-      const payload = collectRoasPayload();
-      await fetchJSON('/medias/api/products/' + product.id, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      Object.assign(product, payload);
-      product.roas_calculation = calculateRoasBreakEven(payload);
-      closeRoasModal();
-      loadList();
-    } catch (e) {
-      if (msg) msg.textContent = e.message || '保存失败';
-      alert(e.message || '保存失败');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
+    loadList();   // refresh list once, on close, to reflect any saves
   }
 
   function showAiEvaluationDetail(product) {
@@ -5353,16 +5161,11 @@
     $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') hideModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('editMask').hidden) hideModal(); });
     $('roasCloseBtn') && $('roasCloseBtn').addEventListener('click', closeRoasModal);
-    $('roasCancelBtn') && $('roasCancelBtn').addEventListener('click', closeRoasModal);
-    $('roasSaveBtn') && $('roasSaveBtn').addEventListener('click', saveRoas);
-    $('roasCalculateBtn') && $('roasCalculateBtn').addEventListener('click', renderRoasResult);
-    $('roasParcelSuggestBtn') && $('roasParcelSuggestBtn').addEventListener('click', () => fetchParcelCostSuggestion());
     $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
       if (e.target.id === 'roasModalMask') closeRoasModal();
     });
-    document.querySelectorAll('[data-roas-field]').forEach((input) => {
-      input.addEventListener('input', markRoasResultDirty);
-    });
+    // Note: RoasFormController.bind() also wires this same listener for the standalone page.
+    // Both fire in modal context; updateRoasAverageShipping is idempotent so this is harmless.
     const roasAverageShippingInput = $('roasAverageShippingInput');
     if (roasAverageShippingInput) {
       roasAverageShippingInput.addEventListener('input', updateRoasAverageShipping);
