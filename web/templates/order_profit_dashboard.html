@@ -43,16 +43,12 @@
   display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap;
   margin-bottom: var(--space-5);
 }
-.op-toolbar input[type="date"] {
-  height: 32px; padding: 0 var(--space-3); border: 1px solid var(--border-strong);
-  border-radius: var(--radius); font-size: 14px; color: var(--fg);
+.op-btn-primary {
+  height: 32px; padding: 0 16px; background: var(--accent);
+  color: var(--accent-fg); border: 0; border-radius: var(--radius);
+  cursor: pointer; font-size: 14px; font-weight: 500;
 }
-.op-toolbar button {
-  height: 32px; padding: 0 var(--space-4); border-radius: var(--radius);
-  background: var(--accent); color: var(--accent-fg); border: 0; cursor: pointer;
-  font-size: 14px; font-weight: 500;
-}
-.op-toolbar button:hover { background: var(--accent-hover); }
+.op-btn-primary:hover { background: var(--accent-hover); }
 
 .op-cards {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -126,7 +122,8 @@
 }
 .op-date-range-field input {
   width: 130px; height: 30px; padding: 0;
-  border: 0; border-radius: 0; background: transparent; font-size: 14px;
+  border: 0; border-radius: 0; background: transparent;
+  font-size: 14px; color: var(--fg);
 }
 .op-date-range-field input:focus-visible { outline: none; box-shadow: none; }
 .op-date-range-sep { color: var(--fg-subtle); font-size: 13px; }
@@ -148,7 +145,7 @@
       <span class="op-date-range-sep">至</span>
       <input type="date" id="opDateTo" aria-label="结束日期">
     </span>
-    <button id="opRefreshBtn" style="height:32px; padding:0 16px; background:var(--accent); color:#fff; border:0; border-radius:6px; cursor:pointer; font-size:14px;">刷新</button>
+    <button type="button" id="opRefreshBtn" class="op-btn-primary">刷新</button>
     <span style="color: var(--fg-subtle); font-size: 12px; margin-left: auto;">
       汇率：system_settings.material_roas_rmb_per_usd ｜ 退货占用 1% ｜ 手续费策略 C
     </span>
