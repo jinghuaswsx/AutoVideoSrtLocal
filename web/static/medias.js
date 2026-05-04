@@ -618,7 +618,85 @@
     setRoasFieldValues(product);
     if ($('roasSaveMsg')) $('roasSaveMsg').textContent = '';
     markRoasResultDirty();
+    resetParcelSuggestPanel();
     mask.hidden = false;
+  }
+
+  function resetParcelSuggestPanel() {
+    const result = $('roasParcelSuggestResult');
+    const btn = $('roasParcelSuggestBtn');
+    if (result) {
+      result.hidden = true;
+      result.innerHTML = '';
+      result.classList.remove('is-error', 'is-loading');
+    }
+    if (btn) btn.disabled = false;
+  }
+
+  function renderParcelSuggestResult(suggestion) {
+    const result = $('roasParcelSuggestResult');
+    if (!result) return;
+    if (!suggestion || !Number.isFinite(Number(suggestion.median))) {
+      result.classList.remove('is-loading');
+      result.classList.add('is-error');
+      result.innerHTML = `时间窗 ${escapeHtml(suggestion?.window_start || '')}–${escapeHtml(suggestion?.window_end || '')} 内未找到 SKU ${escapeHtml(suggestion?.sku || '')} 的有效物流费记录。`;
+      result.hidden = false;
+      return;
+    }
+    const median = Number(suggestion.median).toFixed(2);
+    const min = Number(suggestion.min).toFixed(2);
+    const max = Number(suggestion.max).toFixed(2);
+    const sample = suggestion.sample_size || 0;
+    const window = `${suggestion.window_start} ~ ${suggestion.window_end}`;
+    result.classList.remove('is-error', 'is-loading');
+    result.innerHTML = `
+      <div>SKU <strong>${escapeHtml(suggestion.sku)}</strong> · 店小秘 shop ${escapeHtml(String(suggestion.dxm_shop_id || ''))}</div>
+      <div>时间窗 ${escapeHtml(window)} · 命中 <span class="stat">${sample}</span> 单（共拉取 ${suggestion.orders_pulled || 0} 单）</div>
+      <div>中位数 <span class="stat">${median} RMB</span> · 范围 ${min} ~ ${max} RMB</div>
+      <div class="oc-roas-suggest-actions">
+        <button type="button" class="oc-roas-suggest-adopt" id="roasParcelSuggestAdopt">采纳到预估 + 实际小包成本</button>
+      </div>
+    `;
+    result.hidden = false;
+    const adoptBtn = document.getElementById('roasParcelSuggestAdopt');
+    if (adoptBtn) {
+      adoptBtn.addEventListener('click', () => {
+        const estInput = document.querySelector('[data-roas-field="packet_cost_estimated"]');
+        const actInput = document.querySelector('[data-roas-field="packet_cost_actual"]');
+        if (estInput) estInput.value = median;
+        if (actInput) actInput.value = median;
+        markRoasResultDirty();
+        adoptBtn.disabled = true;
+        adoptBtn.textContent = '已采纳，请点底部「保存」落库';
+      });
+    }
+  }
+
+  async function fetchParcelCostSuggestion() {
+    const product = state.roasProduct;
+    if (!product) return;
+    const btn = $('roasParcelSuggestBtn');
+    const result = $('roasParcelSuggestResult');
+    if (btn) btn.disabled = true;
+    if (result) {
+      result.hidden = false;
+      result.classList.remove('is-error');
+      result.classList.add('is-loading');
+      result.textContent = '正在拉取店小秘订单数据，约需 30~60 秒…';
+    }
+    try {
+      const data = await fetchJSON(`/medias/api/products/${product.id}/parcel-cost-suggest`);
+      renderParcelSuggestResult(data && data.suggestion);
+    } catch (err) {
+      if (result) {
+        result.classList.remove('is-loading');
+        result.classList.add('is-error');
+        result.textContent = (err && err.message) ? err.message : '拉取建议失败';
+        result.hidden = false;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function closeRoasModal() {
@@ -5278,6 +5356,7 @@
     $('roasCancelBtn') && $('roasCancelBtn').addEventListener('click', closeRoasModal);
     $('roasSaveBtn') && $('roasSaveBtn').addEventListener('click', saveRoas);
     $('roasCalculateBtn') && $('roasCalculateBtn').addEventListener('click', renderRoasResult);
+    $('roasParcelSuggestBtn') && $('roasParcelSuggestBtn').addEventListener('click', () => fetchParcelCostSuggestion());
     $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
       if (e.target.id === 'roasModalMask') closeRoasModal();
     });
