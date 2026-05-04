@@ -572,6 +572,8 @@ class TestDurationLoopMultiRound:
         monkeypatch.setattr("pipeline.translate.generate_localized_rewrite", fake_gen_rewrite)
         monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda v, l: 15.0)
         monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
+        # 禁用变速短路分支，让多轮 rewrite 测试走原始路径（不依赖 ElevenLabs API）
+        monkeypatch.setattr("appcore.runtime._in_speedup_window", lambda **kw: False)
 
         import importlib
         loc_mod = importlib.import_module("pipeline.localization")
