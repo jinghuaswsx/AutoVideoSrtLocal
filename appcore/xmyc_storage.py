@@ -224,13 +224,12 @@ def auto_match_products() -> dict[str, int]:
 
 
 def sync_from_xmyc(cdp_url: str = DEFAULT_CDP_URL) -> dict[str, Any]:
-    with browser_automation_lock(
-        task_code="xmyc_storage_sync",
-        timeout_seconds=300,
-        command="sync_from_xmyc",
-    ):
-        with open_xmyc_page(cdp_url) as page:
-            rows = fetch_all_skus(page)
+    # The shared shopify-style automation lock is taken by the systemd unit
+    # via deploy/server_browser/with_browser_lock.sh, so we don't re-acquire
+    # it here — that nested flock would deadlock against the parent's lock
+    # on the same file path.
+    with open_xmyc_page(cdp_url) as page:
+        rows = fetch_all_skus(page)
     upsert_summary = upsert_skus(rows)
     auto_summary = auto_match_products()
     refresh_summary = refresh_purchase_prices_for_matched()
