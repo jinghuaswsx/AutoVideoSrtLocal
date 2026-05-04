@@ -37,7 +37,7 @@ def test_public_functions_importable():
         "match_orders_to_products",
         "parse_meta_ad_file", "product_code_candidates_for_ad_campaign",
         "resolve_ad_product_match", "import_meta_ad_rows",
-        "match_meta_ads_to_products",
+        "match_meta_ads_to_products", "manual_match_meta_ad_campaign",
         "get_meta_ad_stats", "get_meta_ad_periods", "get_meta_ad_summary",
         "get_realtime_roas_overview", "get_true_roas_summary",
         "get_country_dashboard",

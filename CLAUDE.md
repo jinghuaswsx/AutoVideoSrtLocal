@@ -7,6 +7,29 @@
 - When this project gets real source files, update this file with exact run, test, lint, typecheck, and build commands.
 - Prefer installed skills when relevant, especially `superpowers:*`, `claude-api`, `pdf`, `docx`, `pptx`, `xlsx`, `webapp-testing`, `frontend-design`, and `mcp-builder`.
 
+## GitHub 凭据 / push 流程（本机）
+
+本机已配 GitHub Personal Access Token，直接跑 `git push` / `git pull` 即可，**不要再问凭据、不要 `gh auth login`、不要让用户重新发 token**。
+
+- 凭据存储位置：`~/.git-credentials`（`chmod 600`），通过 `git config --global credential.helper store` 持久化。
+- 账号：`jinghuaswsx`；token 不过期；scope 为 `jinghuaswsx/AutoVideoSrtLocal` 的 Contents Read/Write。
+- 直接用法：在主仓库或任何 worktree 跑 `git push origin <branch>`，git 自动从 `~/.git-credentials` 读 token，无交互。
+- 安全约束：
+  - 不要 `cat ~/.git-credentials`、不要把 token 出现在命令行参数里、不要把它写进任何 commit 或日志。
+  - 不要把 token 拷到对话里（即便用户原始提供的那条消息已经在 transcript 里，也不要在新消息里复述）。
+- 失效兜底：如果 push 报 403/401，先确认 `~/.git-credentials` 还在、文件权限是 600；只有当确认 token 被 revoke 时，才请用户重新签发并直接 `printf 'https://jinghuaswsx:NEW_TOKEN@github.com\n' > ~/.git-credentials && chmod 600 ~/.git-credentials` 覆盖更新。
+
+## 发布到生产（172.30.254.14）
+
+**唯一发布入口：** `bash deploy/publish.sh "<commit message>"`（commit message 仅当 working tree 有未提交改动时生效；干净状态下脚本只跑 push + 远端 pull + restart + 健康检查）。
+
+- 脚本在 [deploy/publish.sh](deploy/publish.sh)，依赖 `~/.ssh/CC.pem` 内网 SSH key（已就位）。
+- 服务器固定参数：`root@172.30.254.14:22`、项目目录 `/opt/autovideosrt`、systemd 服务 `autovideosrt.service`（gunicorn）。
+- 脚本自动：本地 commit/push（如有变更）→ 远端 `git pull` → 同步 `deploy/autovideosrt.service` 到 `/etc/systemd/system/` 并 `daemon-reload`（如有 unit 文件变化）→ `systemctl restart autovideosrt` → `systemctl status` → `curl http://127.0.0.1/` 健康检查。
+- **不要手写 `ssh root@172.30.254.14 ...`**：~/.ssh/config 没有 LocalServer alias，IP 直连密码也不通；必须走 publish.sh（它用 `-i ~/.ssh/CC.pem` 显式指定 key）。
+- 发布后 systemd 启动会自动 apply 所有未登记的 SQL migration（参考全局 memory `deploy_migration_workflow`）。**不要手动跑 SQL**——除非同时 `INSERT INTO schema_migrations` 登记，否则启动器会重复执行报错。
+- 用户没说 "发布" / "deploy" / "上线" 等明确字眼前，**不要主动跑 publish.sh**（CLAUDE.md 全局规则：未经许可禁止重启服务）。一旦用户授权（一次说"发布"），就一次性走完 publish.sh，不要中途再问"要不要 restart"。
+
 ## Shopify Image Localizer 发布打包
 
 - 打包发布：`python -m tools.shopify_image_localizer.build_exe --version 1.0`。产物固定使用版本号后缀：目录 `dist/ShopifyImageLocalizer-1.0`，绿色包 `dist/ShopifyImageLocalizer-portable-1.0.zip`；同版本目录或 zip 已存在时脚本会报错退出，不要覆盖旧版本。后续发布 `2.0` 时改用 `--version 2.0`，必须保持 `1.0` 原样不动。
@@ -252,3 +275,119 @@ Adapter `provider_code` 枚举：`openrouter` / `doubao` / `gemini_aistudio` / `
 - `pipeline/copywriting.py` 前端已有 provider picker，走 UI 传参，不经过 bindings 默认
 
 完整实施细节：[docs/superpowers/plans/2026-04-19-llm-call-unification.md](docs/superpowers/plans/2026-04-19-llm-call-unification.md)
+
+---
+
+# 本机部署到线上的标准流程（Claude Code agent 必读）
+
+## 环境拓扑（important）
+
+**本机就是线上生产服务器**（172.30.254.14）。所有 Claude Code agent / Codex / paseo agent 都跑在这台机器上，**开发机就是部署机**。
+
+| 路径 | owner | 用途 |
+|------|-------|------|
+| `/home/cjh/.paseo/worktrees/<id>/<name>/` | cjh | 各 agent 的 git worktree（开发态） |
+| `/opt/autovideosrt/` | root | **生产部署目录**，systemd 服务 `autovideosrt.service` 从这里跑（端口 80） |
+| `/opt/autovideosrt-test/` | root | 测试部署目录，`autovideosrt-test.service` |
+
+GitHub remote：`https://github.com/jinghuaswsx/AutoVideoSrtLocal.git`，prod 仓库当前分支固定 `master`。
+
+## agent 能做什么 / 不能做什么
+
+| 操作 | cjh agent 自己 | 必须用户 sudo |
+|------|----------------|---------------|
+| 在 worktree 改代码 / 跑测试 / 起 dev server | ✅ | — |
+| `git commit` 在 worktree | ✅ | — |
+| `git push` 到 GitHub | ❌ cjh 无凭据 | ✅ root 有 |
+| `git pull` / 写 `/opt/autovideosrt/` | ❌ root 拥有 | ✅ |
+| `systemctl restart autovideosrt` | ❌ | ✅ |
+
+**结论**：发布到线上必须**用户输入 sudo 密码**执行命令；agent 不能自己完成。**不要走 `deploy/publish.sh`**——那是给外部开发机用的、需要 SSH key（CC.pem 在 Windows 上）；本机直接 sudo 即可。
+
+## 标准发布流程（agent → 用户）
+
+### 1. agent 在 worktree 里做完所有事
+
+- 改代码、写测试、跑测试通过
+- 起 dev server 在空闲端口（如 5090）做端到端验证（用 prod `.env` + prod 数据库）
+- 测试账号：见 [testuser.md](testuser.md)（admin/709709@）
+- 必测：未登录路由跳 302 + 登录后跳 200
+
+### 2. agent 准备 git 状态
+
+```bash
+git fetch origin master
+# 如本地分支落后 master：stash → rebase → pop
+git stash push -u -m "pre-rebase"   # 仅当 working tree 有未 commit 改动
+git rebase origin/master
+git stash pop
+
+# commit（用 HEREDOC，带 Co-Authored-By）
+git add -A && git commit -m "..."
+```
+
+确保 agent 当前 worktree 分支是 `origin/master` 的**纯 fast-forward 后代**（没有 origin/master 没有的祖先）。
+
+### 3. agent 给用户**一条 sudo 命令**
+
+见下方"一键发布命令模板"。用户在 cjh 终端粘贴 + 输 sudo 密码即可。
+
+### 4. sudo 命令自带验证
+
+让命令最后 curl `http://127.0.0.1<新路由>` 输出 HTTP 码 + `systemctl is-active`，部署成功与否一目了然，不需要等用户回贴。
+
+## 一键发布命令模板
+
+把 `<WORKTREE_DIR>` 和 `<NEW_ROUTE>` 替换为实际值给用户：
+
+```bash
+sudo bash -c '
+set -e
+WORKTREE=<WORKTREE_DIR>           # 例：/home/cjh/.paseo/worktrees/0ubtzq57/hip-falcon
+git config --global --add safe.directory /opt/autovideosrt
+git config --global --add safe.directory $WORKTREE
+
+cd /opt/autovideosrt
+git fetch origin master
+git reset --hard origin/master                    # 清掉历史半成功状态
+BRANCH=$(git -C $WORKTREE rev-parse --abbrev-ref HEAD)
+git fetch $WORKTREE $BRANCH:_deploy_incoming
+git merge --ff-only _deploy_incoming
+git branch -d _deploy_incoming
+git push origin master
+
+systemctl restart autovideosrt
+sleep 3
+systemctl is-active autovideosrt
+curl -s -o /dev/null -w "<NEW_ROUTE>: HTTP %{http_code}\n" http://127.0.0.1<NEW_ROUTE>
+'
+```
+
+**关键点**：
+- `git reset --hard origin/master` 必须在 fetch worktree **之前**——清掉之前 sudo 命令半成功留下的乱状态
+- `git fetch <worktree-path> <branch>:_deploy_incoming` 用本地路径作为 remote，绕开 cjh 没 GitHub 凭据的问题
+- `git merge --ff-only` 失败 = worktree 分支不是 master 后代 → agent 必须重新 rebase 后再给命令
+- 末尾 curl 验证：HTTP 302（跳 login）= 路由生效；404 = 部署失败；500 = 模板/代码挂
+
+## 路由守卫规范（避免 500）
+
+新增 web 路由必须加 `@login_required` + `@admin_required`，跟 [web/routes/order_analytics.py](web/routes/order_analytics.py) 同款：
+
+```python
+from flask_login import login_required
+from web.auth import admin_required
+
+@bp.route("/your-path")
+@login_required
+@admin_required
+def page():
+    ...
+```
+
+不加守卫的两个事故：
+- 未登录访问 → layout.html 访问 `current_user.username` 抛 `UndefinedError` → HTTP 500
+- API 敞开访问 → 任意人能查业务数据（安全问题）
+
+## 测试账号
+
+[testuser.md](testuser.md) 已纳入仓库；admin 账号 / 密码 / 测试图片视频路径都在那里。dev server 跑起来后用这个账号 login 测端到端流程。

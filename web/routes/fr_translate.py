@@ -286,7 +286,11 @@ def update_segments(task_id):
         )
         variant_state["localized_translation"] = localized_translation
         variants[variant] = variant_state
-        store.update(task_id, variants=variants, localized_translation=localized_translation, _segments_confirmed=True)
+        # 用户改了译文，已有的 QA / AI Review 评估都对应旧译文，标记为过期。
+        from datetime import datetime, timezone
+        store.update(task_id, variants=variants, localized_translation=localized_translation,
+                     _segments_confirmed=True,
+                     evals_invalidated_at=datetime.now(timezone.utc).isoformat())
 
     store.set_current_review_step(task_id, "")
     fr_pipeline_runner.resume(task_id, "tts", user_id=current_user.id)

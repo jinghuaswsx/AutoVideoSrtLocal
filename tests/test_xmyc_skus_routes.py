@@ -1,0 +1,92 @@
+def test_list_xmyc_skus_returns_items(authed_client_no_db, monkeypatch):
+    from appcore import xmyc_storage as mod
+
+    captured = {}
+
+    def fake_list(**kwargs):
+        captured.update(kwargs)
+        return [
+            {"sku": "115-18103480", "sku_code": "83527156514", "goods_name": "求生多功能锤",
+             "unit_price": "16.57", "stock_available": 50, "product_id": None,
+             "match_type": None, "warehouse": "小秘云仓-东莞黄江仓"},
+            {"sku": "0331-16555368", "sku_code": "83527075155", "goods_name": "全自动水枪 蓝色",
+             "unit_price": "54.52", "stock_available": 3, "product_id": 1,
+             "match_type": "auto", "warehouse": "小秘云仓-东莞黄江仓"},
+        ]
+
+    monkeypatch.setattr(mod, "list_skus", fake_list)
+
+    resp = authed_client_no_db.get("/medias/api/xmyc-skus?keyword=昆虫&matched=unmatched&limit=10&offset=0")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert len(body["items"]) == 2
+    assert captured["keyword"] == "昆虫"
+    assert captured["matched_filter"] == "unmatched"
+    assert captured["limit"] == 10
+    assert captured["offset"] == 0
+
+
+def test_list_xmyc_skus_clamps_invalid_pagination(authed_client_no_db, monkeypatch):
+    from appcore import xmyc_storage as mod
+    monkeypatch.setattr(mod, "list_skus", lambda **kw: [])
+    resp = authed_client_no_db.get("/medias/api/xmyc-skus?limit=abc")
+    assert resp.status_code == 400
+
+
+def test_set_product_xmyc_skus_writes_assignment(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+    from appcore import xmyc_storage as mod
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    captured = {}
+
+    def fake_set(product_id, skus, *, matched_by=None):
+        captured["product_id"] = product_id
+        captured["skus"] = skus
+        captured["matched_by"] = matched_by
+        return {"product_id": product_id, "cleared": 0, "attached": len(skus), "purchase_price": 16.57}
+
+    monkeypatch.setattr(mod, "set_product_skus", fake_set)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/317/xmyc-skus",
+        json={"skus": ["115-18103480", "  ", "0331-16555368"]},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["attached"] == 2
+    assert body["purchase_price"] == 16.57
+    assert captured["product_id"] == 317
+    assert captured["skus"] == ["115-18103480", "0331-16555368"]
+
+
+def test_set_product_xmyc_skus_rejects_non_list(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    resp = authed_client_no_db.post(
+        "/medias/api/products/1/xmyc-skus",
+        json={"skus": "not-a-list"},
+    )
+    assert resp.status_code == 400
+
+
+def test_get_product_xmyc_skus_returns_attached(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+    from appcore import xmyc_storage as mod
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(mod, "get_skus_for_product", lambda pid: [
+        {"sku": "115-18103480", "unit_price": "16.57", "match_type": "manual"},
+    ])
+    resp = authed_client_no_db.get("/medias/api/products/317/xmyc-skus")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert len(body["items"]) == 1
+    assert body["items"][0]["match_type"] == "manual"

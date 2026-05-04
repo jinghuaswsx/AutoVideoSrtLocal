@@ -104,6 +104,71 @@ def test_match_meta_ads_to_products_updates_report_and_daily_tables(monkeypatch)
     assert updates[1][1] == (42, "glow-go-insect-set-rjc", 2)
 
 
+def test_manual_match_meta_ad_campaign_updates_both_tables(monkeypatch):
+    queried = []
+    updates = []
+
+    def fake_query_one(sql, args=()):
+        queried.append((sql, args))
+        return {"id": 42, "product_code": "glow-go-insect-set-rjc", "name": "Glow Set"}
+
+    def fake_execute(sql, args=()):
+        updates.append((sql, args))
+        return 3 if "meta_ad_campaign_metrics" in sql else 7
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "execute", fake_execute)
+
+    result = oa.manual_match_meta_ad_campaign("  Glow-Go-Insect-Set-RJC  ", 42)
+
+    assert result == {
+        "matched_periodic": 3,
+        "matched_daily": 7,
+        "product_id": 42,
+        "product_code": "glow-go-insect-set-rjc",
+        "product_name": "Glow Set",
+    }
+    assert queried[0][1] == (42,)
+    assert "FROM media_products" in queried[0][0]
+    assert "deleted_at IS NULL" in queried[0][0]
+    # 整合后 source of truth 是 campaign_product_overrides 表：
+    # 一次 INSERT override + 两次 UPDATE 事实表
+    assert any("INSERT INTO campaign_product_overrides" in u[0] for u in updates)
+    update_steps = [(s, a) for s, a in updates if s.lstrip().startswith("UPDATE")]
+    update_sqls = [s for s, _ in update_steps]
+    assert any("UPDATE meta_ad_campaign_metrics" in s for s in update_sqls)
+    assert any("UPDATE meta_ad_daily_campaign_metrics" in s for s in update_sqls)
+    for sql, args in update_steps:
+        assert "product_id IS NULL" in sql
+        assert args == (42, "glow-go-insect-set-rjc", "glow-go-insect-set-rjc")
+
+
+def test_manual_match_meta_ad_campaign_rejects_blank_code():
+    import pytest
+
+    with pytest.raises(ValueError):
+        oa.manual_match_meta_ad_campaign("   ", 42)
+
+
+def test_manual_match_meta_ad_campaign_rejects_non_positive_product_id():
+    import pytest
+
+    with pytest.raises(ValueError):
+        oa.manual_match_meta_ad_campaign("glow-go-insect-set", 0)
+    with pytest.raises(ValueError):
+        oa.manual_match_meta_ad_campaign("glow-go-insect-set", "abc")
+
+
+def test_manual_match_meta_ad_campaign_raises_when_product_missing(monkeypatch):
+    import pytest
+
+    monkeypatch.setattr(oa, "query_one", lambda sql, args=(): None)
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): 0)
+
+    with pytest.raises(LookupError):
+        oa.manual_match_meta_ad_campaign("glow-go-insect-set", 999)
+
+
 def test_import_meta_ad_rows_creates_batch_and_upserts_metrics(monkeypatch):
     rows = [
         {

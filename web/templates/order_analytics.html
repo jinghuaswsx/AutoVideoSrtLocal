@@ -590,6 +590,99 @@
 .oam-detail-row-empty td { color: var(--fg-subtle); }
 .oam-detail-cell-warn { color: var(--danger); font-weight: 600; }
 
+/* ── 广告系列人工配对弹窗 ─────────────────────────── */
+.oam-modal-card.oam-modal-card--narrow {
+  width: min(520px, 96vw);
+  max-height: 80vh;
+}
+.oa-match-search {
+  position: relative; margin-bottom: var(--space-4);
+}
+.oa-match-search svg {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; color: var(--fg-subtle); pointer-events: none;
+}
+.oa-match-search input {
+  width: 100%; height: 36px;
+  padding: 0 12px 0 36px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--bg-card); color: var(--fg);
+  font-size: var(--text-sm);
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+.oa-match-search input:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.oa-match-results {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  max-height: 320px; overflow-y: auto;
+  background: var(--bg-card);
+  margin-bottom: var(--space-4);
+}
+.oa-match-hint {
+  padding: var(--space-6) var(--space-4);
+  text-align: center; color: var(--fg-subtle); font-size: var(--text-sm);
+}
+.oa-match-item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.oa-match-item:last-child { border-bottom: 0; }
+.oa-match-item:hover { background: var(--bg-subtle); }
+.oa-match-item.is-selected {
+  background: var(--accent-subtle);
+}
+.oa-match-item.is-selected .oa-mi-name { color: var(--accent); font-weight: 600; }
+.oa-mi-name {
+  flex: 1; min-width: 0;
+  font-size: var(--text-sm); color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.oa-mi-code {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  color: var(--fg-subtle); flex-shrink: 0;
+}
+.oa-match-selected {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: 10px var(--space-3);
+  background: var(--info-bg); border-radius: var(--radius-md);
+  font-size: var(--text-sm); color: var(--fg);
+  margin-bottom: var(--space-4);
+}
+.oa-match-selected[hidden] { display: none; }
+.oa-match-selected-label { color: var(--fg-muted); }
+.oa-match-selected-name { font-weight: 600; color: var(--accent); }
+.oa-match-selected-code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-subtle); }
+.oa-match-selected-clear {
+  margin-left: auto;
+  height: 24px; padding: 0 8px;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--fg-subtle); font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast), background var(--duration-fast);
+}
+.oa-match-selected-clear:hover { color: var(--danger); background: var(--bg-card); }
+.oa-match-footer {
+  display: flex; justify-content: flex-end; gap: var(--space-2);
+}
+.oad-btn-ghost {
+  height: 32px; padding: 0 16px;
+  background: var(--bg-card); color: var(--fg);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  cursor: pointer; font-size: var(--text-sm);
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+.oad-btn-ghost:hover { background: var(--bg-muted); border-color: var(--border-strong); }
+.oad-btn-primary[disabled] {
+  background: var(--bg-muted); color: var(--fg-subtle);
+  cursor: not-allowed;
+}
+
 /* ── 移动端适配 (< 768px) ────────────────────────── */
 .oa-mobile-tabs {
   display: none;
@@ -1291,6 +1384,65 @@
     }
   };
 
+  // ===== 北京时间范围标注（业务日按 16:00 切日 → 北京时间 [start 16:00, end+1 16:00)）=====
+  // 自动扫描所有 input[type="date"]，按 id 后缀 StartDate/EndDate（或 Start/End）配对，
+  // 在外层容器之后插入 hint，并通过轮询同步（兼容快捷按钮直接 .value= 不触发 change）。
+  function describeBjWindow(startStr, endStr) {
+    if (!startStr || !endStr) return '';
+    var start = new Date(startStr + 'T00:00:00');
+    var end = new Date(endStr + 'T00:00:00');
+    if (isNaN(start) || isNaN(end)) return '';
+    function pad(n) { return String(n).padStart(2,'0'); }
+    function fmt(d) { return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+    var bjStart = fmt(start) + ' 16:00';
+    var nextDay = new Date(end); nextDay.setDate(nextDay.getDate()+1);
+    var bjEnd = fmt(nextDay) + ' 16:00';
+    var days = Math.round((end - start) / 86400000) + 1;
+    return '📅 北京时间 ' + bjStart + ' → ' + bjEnd + '（' + days + ' 个 Meta 业务日，按 16:00 切日）';
+  }
+  function findDateInputPairs() {
+    var pairs = {};
+    document.querySelectorAll('input[type="date"]').forEach(function(inp) {
+      var m = inp.id.match(/^(.+?)(StartDate|EndDate|Start|End)$/);
+      if (!m) return;
+      var key = m[1], side = (m[2] === 'StartDate' || m[2] === 'Start') ? 'start' : 'end';
+      pairs[key] = pairs[key] || {};
+      pairs[key][side] = inp;
+    });
+    return pairs;
+  }
+  function attachBjHints() {
+    var pairs = findDateInputPairs();
+    Object.keys(pairs).forEach(function(key) {
+      var pair = pairs[key];
+      if (!pair.start || !pair.end) return;
+      var anchor = pair.end.closest('.oad-date-range-field, .oad-toolbar-row, label, span') || pair.end.parentElement;
+      var hint = document.getElementById(key + 'BjHint');
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.id = key + 'BjHint';
+        hint.style.cssText = 'color: var(--fg-muted); font-size: 12px; margin: 4px 0 0; flex-basis: 100%;';
+        anchor.parentElement.insertBefore(hint, anchor.nextSibling);
+      }
+      hint.textContent = describeBjWindow(pair.start.value, pair.end.value);
+    });
+  }
+  function syncAllBjHints() {
+    var pairs = findDateInputPairs();
+    Object.keys(pairs).forEach(function(key) {
+      var hint = document.getElementById(key + 'BjHint');
+      var pair = pairs[key];
+      if (hint && pair.start && pair.end) {
+        var txt = describeBjWindow(pair.start.value, pair.end.value);
+        if (hint.textContent !== txt) hint.textContent = txt;
+      }
+    });
+  }
+  // 初次挂载稍延后（等其他 tab 渲染完）+ 200ms 轮询同步快捷按钮
+  setTimeout(attachBjHints, 100);
+  setTimeout(attachBjHints, 500);
+  setInterval(syncAllBjHints, 250);
+
   document.addEventListener('DOMContentLoaded', function() {
     setDashboardRange('today', true);
     document.querySelectorAll('[data-dashboard-range]').forEach(function(b) {
@@ -1701,6 +1853,40 @@
     </div>
     <div class="oam-modal-body" id="oamModalBody">
       <div class="oam-modal-loading">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- 广告系列人工配对弹窗 -->
+<div class="oam-modal-overlay" id="adManualMatchModal" hidden>
+  <div class="oam-modal-card oam-modal-card--narrow" role="dialog" aria-labelledby="adMatchModalTitle">
+    <div class="oam-modal-header">
+      <div>
+        <div class="oam-modal-title" id="adMatchModalTitle">配对广告系列</div>
+        <div class="oam-modal-subtitle" id="adMatchModalSubtitle">搜索系统内产品，选中后点击「完成配对」</div>
+      </div>
+      <button type="button" class="oam-modal-close" id="adMatchModalClose" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="oam-modal-body">
+      <div class="oa-match-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="adMatchSearchInput" placeholder="按产品名称或编码搜索…" autocomplete="off">
+      </div>
+      <div id="adMatchResults" class="oa-match-results">
+        <div class="oa-match-hint">输入关键字开始搜索…</div>
+      </div>
+      <div id="adMatchSelected" class="oa-match-selected" hidden>
+        <span class="oa-match-selected-label">已选：</span>
+        <span class="oa-match-selected-name" id="adMatchSelectedName"></span>
+        <span class="oa-match-selected-code" id="adMatchSelectedCode"></span>
+        <button type="button" class="oa-match-selected-clear" id="adMatchSelectedClear" aria-label="清除已选">清除</button>
+      </div>
+      <div class="oa-match-footer">
+        <button type="button" class="oad-btn-ghost" id="adMatchCancel">取消</button>
+        <button type="button" class="oad-btn-primary" id="adMatchConfirm" disabled>完成配对</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3213,7 +3399,7 @@
     if (!rows.length) { wrap.style.display = 'none'; return; }
     var head = document.getElementById('adUnmatchedHead');
     head.innerHTML = '';
-    ['广告系列', '花费', 'Meta购买', '购物价值'].forEach(function(text, idx) {
+    ['广告系列', '花费', 'Meta购买', '购物价值', '操作'].forEach(function(text, idx) {
       addTh(head, idx === 0 ? 'oa-col-product' : 'oa-col-num', text);
     });
     var body = document.getElementById('adUnmatchedBody');
@@ -3224,10 +3410,202 @@
       addTd(tr, 'oa-col-num', fmtMoney(row.spend_usd));
       addTd(tr, 'oa-col-num', fmtInt(row.result_count));
       addTd(tr, 'oa-col-num', fmtMoney(row.purchase_value_usd));
+
+      var actionTd = document.createElement('td');
+      actionTd.className = 'oa-col-num';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'oam-detail-btn';
+      btn.textContent = '配对';
+      btn.addEventListener('click', function() { openAdMatchModal(row); });
+      actionTd.appendChild(btn);
+      tr.appendChild(actionTd);
+
       body.appendChild(tr);
     });
     wrap.style.display = '';
   }
+
+  // ── 广告系列人工配对弹窗 ──────────────────────────
+  var adMatchState = {
+    campaign: null,
+    selectedProduct: null,
+    searchTimer: null,
+    searchSeq: 0,
+    submitting: false,
+  };
+
+  function openAdMatchModal(row) {
+    var code = (row.normalized_campaign_code || '').trim();
+    if (!code) {
+      alert('该广告系列缺少归一化名称，无法配对');
+      return;
+    }
+    adMatchState.campaign = {
+      normalized_campaign_code: code,
+      campaign_name: row.campaign_name || code,
+    };
+    adMatchState.selectedProduct = null;
+    adMatchState.submitting = false;
+    document.getElementById('adMatchModalTitle').textContent =
+      '配对广告系列：' + (row.campaign_name || code);
+    document.getElementById('adMatchSearchInput').value = '';
+    var resultsEl = document.getElementById('adMatchResults');
+    resultsEl.innerHTML = '<div class="oa-match-hint">输入关键字开始搜索…</div>';
+    document.getElementById('adMatchSelected').hidden = true;
+    document.getElementById('adMatchConfirm').disabled = true;
+    document.getElementById('adMatchConfirm').textContent = '完成配对';
+    document.getElementById('adManualMatchModal').hidden = false;
+    setTimeout(function() {
+      var input = document.getElementById('adMatchSearchInput');
+      if (input) input.focus();
+    }, 50);
+  }
+
+  function closeAdMatchModal() {
+    document.getElementById('adManualMatchModal').hidden = true;
+    adMatchState.campaign = null;
+    adMatchState.selectedProduct = null;
+    if (adMatchState.searchTimer) {
+      clearTimeout(adMatchState.searchTimer);
+      adMatchState.searchTimer = null;
+    }
+  }
+
+  function searchAdMatchProducts(q) {
+    var seq = ++adMatchState.searchSeq;
+    var resultsEl = document.getElementById('adMatchResults');
+    var keyword = (q || '').trim();
+    if (!keyword) {
+      resultsEl.innerHTML = '<div class="oa-match-hint">输入关键字开始搜索…</div>';
+      return;
+    }
+    resultsEl.innerHTML = '<div class="oa-match-hint">搜索中…</div>';
+    fetch('/api/products?keyword=' + encodeURIComponent(keyword))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (seq !== adMatchState.searchSeq) return;
+        var items = (data && data.items) || [];
+        if (!items.length) {
+          resultsEl.innerHTML = '<div class="oa-match-hint">未找到匹配的产品</div>';
+          return;
+        }
+        resultsEl.innerHTML = '';
+        items.forEach(function(p) {
+          var div = document.createElement('div');
+          div.className = 'oa-match-item';
+          div.dataset.productId = String(p.id);
+          if (adMatchState.selectedProduct && adMatchState.selectedProduct.id === p.id) {
+            div.classList.add('is-selected');
+          }
+          var nameSpan = document.createElement('span');
+          nameSpan.className = 'oa-mi-name';
+          nameSpan.textContent = p.name || '(无名称)';
+          var codeSpan = document.createElement('span');
+          codeSpan.className = 'oa-mi-code';
+          codeSpan.textContent = p.product_code || '';
+          div.appendChild(nameSpan);
+          div.appendChild(codeSpan);
+          div.addEventListener('click', function() { selectAdMatchProduct(p); });
+          resultsEl.appendChild(div);
+        });
+      })
+      .catch(function() {
+        if (seq !== adMatchState.searchSeq) return;
+        resultsEl.innerHTML = '<div class="oa-match-hint" style="color: var(--danger-fg);">搜索失败，请重试</div>';
+      });
+  }
+
+  function selectAdMatchProduct(product) {
+    adMatchState.selectedProduct = product;
+    document.getElementById('adMatchSelectedName').textContent = product.name || '(无名称)';
+    document.getElementById('adMatchSelectedCode').textContent =
+      product.product_code ? '· ' + product.product_code : '';
+    document.getElementById('adMatchSelected').hidden = false;
+    document.getElementById('adMatchConfirm').disabled = false;
+    document.querySelectorAll('#adMatchResults .oa-match-item').forEach(function(el) {
+      el.classList.toggle('is-selected', String(el.dataset.productId) === String(product.id));
+    });
+  }
+
+  function clearAdMatchSelected() {
+    adMatchState.selectedProduct = null;
+    document.getElementById('adMatchSelected').hidden = true;
+    document.getElementById('adMatchConfirm').disabled = true;
+    document.querySelectorAll('#adMatchResults .oa-match-item.is-selected').forEach(function(el) {
+      el.classList.remove('is-selected');
+    });
+  }
+
+  function confirmAdMatch() {
+    if (!adMatchState.campaign || !adMatchState.selectedProduct || adMatchState.submitting) return;
+    adMatchState.submitting = true;
+    var btn = document.getElementById('adMatchConfirm');
+    btn.disabled = true;
+    btn.textContent = '配对中…';
+    fetch('/order-analytics/ad-match-manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        normalized_campaign_code: adMatchState.campaign.normalized_campaign_code,
+        product_id: adMatchState.selectedProduct.id,
+      }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+      .then(function(res) {
+        if (res.status >= 200 && res.status < 300 && res.body && res.body.ok) {
+          var total = (res.body.matched_periodic || 0) + (res.body.matched_daily || 0);
+          alert('配对成功，共更新 ' + total + ' 条记录\n（周期表 ' +
+                (res.body.matched_periodic || 0) + ' 条，日表 ' + (res.body.matched_daily || 0) + ' 条）');
+          closeAdMatchModal();
+          loadAdStats();
+          loadAdSummary();
+        } else {
+          var msg = (res.body && (res.body.detail || res.body.error)) || '请求失败';
+          alert('配对失败：' + msg);
+          adMatchState.submitting = false;
+          btn.disabled = false;
+          btn.textContent = '完成配对';
+        }
+      })
+      .catch(function(err) {
+        alert('配对失败：' + (err && err.message ? err.message : '网络错误'));
+        adMatchState.submitting = false;
+        btn.disabled = false;
+        btn.textContent = '完成配对';
+      });
+  }
+
+  // 弹窗事件绑定
+  (function bindAdMatchModal() {
+    var input = document.getElementById('adMatchSearchInput');
+    if (input) {
+      input.addEventListener('input', function(e) {
+        if (adMatchState.searchTimer) clearTimeout(adMatchState.searchTimer);
+        var val = e.target.value;
+        adMatchState.searchTimer = setTimeout(function() {
+          searchAdMatchProducts(val);
+        }, 220);
+      });
+    }
+    var closeBtn = document.getElementById('adMatchModalClose');
+    if (closeBtn) closeBtn.addEventListener('click', closeAdMatchModal);
+    var cancelBtn = document.getElementById('adMatchCancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeAdMatchModal);
+    var confirmBtn = document.getElementById('adMatchConfirm');
+    if (confirmBtn) confirmBtn.addEventListener('click', confirmAdMatch);
+    var clearBtn = document.getElementById('adMatchSelectedClear');
+    if (clearBtn) clearBtn.addEventListener('click', clearAdMatchSelected);
+    var overlay = document.getElementById('adManualMatchModal');
+    if (overlay) {
+      overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) closeAdMatchModal();
+      });
+    }
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && overlay && !overlay.hidden) closeAdMatchModal();
+    });
+  })();
 
   window.matchAdProducts = function() {
     fetch('/order-analytics/ad-match', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })

@@ -374,8 +374,14 @@ def _media_product_owner_name_expr() -> str:
     if row:
         return "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)"
     return "u.username"
+XMYC_MATCH_FILTERS = ("all", "matched", "unmatched")
+ROAS_STATUS_FILTERS = ("all", "complete", "missing_estimated", "missing_actual")
+
+
 def list_products(user_id: int | None, keyword: str = "", archived: bool = False,
-                  offset: int = 0, limit: int = 20) -> tuple[list[dict], int]:
+                  offset: int = 0, limit: int = 20,
+                  xmyc_match: str = "all",
+                  roas_status: str = "all") -> tuple[list[dict], int]:
     where = ["p.deleted_at IS NULL"]
     args: list[Any] = []
     if user_id is not None:
@@ -394,6 +400,25 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
             keyword_args.append(int(keyword))
         where.append(f"({' OR '.join(keyword_clauses)})")
         args.extend(keyword_args)
+    if xmyc_match == "matched":
+        where.append("EXISTS (SELECT 1 FROM xmyc_storage_skus xs WHERE xs.product_id = p.id)")
+    elif xmyc_match == "unmatched":
+        where.append("NOT EXISTS (SELECT 1 FROM xmyc_storage_skus xs WHERE xs.product_id = p.id)")
+    if roas_status == "complete":
+        where.append(
+            "(p.standalone_price IS NOT NULL AND p.purchase_price IS NOT NULL "
+            "AND p.packet_cost_estimated IS NOT NULL AND p.packet_cost_actual IS NOT NULL)"
+        )
+    elif roas_status == "missing_estimated":
+        where.append(
+            "(p.standalone_price IS NULL OR p.purchase_price IS NULL "
+            "OR p.packet_cost_estimated IS NULL)"
+        )
+    elif roas_status == "missing_actual":
+        where.append(
+            "(p.standalone_price IS NULL OR p.purchase_price IS NULL "
+            "OR p.packet_cost_actual IS NULL)"
+        )
     where_sql = " AND ".join(where)
     owner_name_expr = _media_product_owner_name_expr()
 

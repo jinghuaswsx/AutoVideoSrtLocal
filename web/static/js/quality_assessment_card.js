@@ -47,23 +47,47 @@ window.QualityAssessmentCard = (function () {
       const resp = await fetch(`${apiBase}/${taskId}/quality-assessments`);
       if (!resp.ok) return;
       const data = await resp.json();
-      render(root, data.assessments || []);
+      // task_evals_invalidated_at 是 task_state 里 restart / segments-confirm 写入的时间戳；
+      // 比这个时间早的评估都已过期（评估的是上一轮译文/TTS），不该再展示给用户
+      // 误以为是本次结果。
+      const invalidatedAt = data.task_evals_invalidated_at || null;
+      const fresh = (data.assessments || []).filter(a => !_isStale(a, invalidatedAt));
+      render(root, fresh);
     } catch (err) { /* swallow */ }
+  }
+
+  function _isStale(assessment, invalidatedAt) {
+    if (!invalidatedAt) return false;
+    // 正在跑的评估 (pending/running) 不算 stale——要让用户看到状态
+    if (assessment.status === "pending" || assessment.status === "running") return false;
+    const created = assessment.created_at || assessment.completed_at || null;
+    if (!created) return false;
+    try {
+      return new Date(created).getTime() <= new Date(invalidatedAt).getTime();
+    } catch (_) { return false; }
   }
 
   async function triggerRun(root) {
     const { taskId, projectType } = root.dataset;
     const apiBase = projectType === "omni_translate" ? "/api/omni-translate" : "/api/multi-translate";
-    const resp = await fetch(`${apiBase}/${taskId}/quality-assessments/run`, { method: "POST" });
-    if (resp.status === 409) {
-      alert("评估已经在跑");
-      return;
+    // 立刻显示"评估中"占位，避免请求往返 + 8s 轮询间隙仍显示旧分数误导用户
+    const body = root.querySelector(".qa-body");
+    if (body) {
+      body.innerHTML = `<div class="qa-loading">评估中… (启动中)</div>`;
     }
-    if (!resp.ok) {
-      alert("触发失败：" + (await resp.text()));
-      return;
+    try {
+      const resp = await fetch(`${apiBase}/${taskId}/quality-assessments/run`, { method: "POST" });
+      if (resp.status === 409) {
+        alert("评估已经在跑");
+        return;
+      }
+      if (!resp.ok) {
+        alert("触发失败：" + (await resp.text()));
+        return;
+      }
+    } finally {
+      refresh(root);
     }
-    refresh(root);
   }
 
   function tierByScore(score) {

@@ -9,8 +9,19 @@ import json
 import logging
 import math
 import os
+import time
 import uuid
 from datetime import datetime
+
+# Task-level auto-retry budget：失败时不直接阻塞流水线，先指数退避自愈几次。
+# 配合 LLM 网络重试 + ElevenLabs 网络重试 + TTS segment 段缓存复用，瞬时
+# 抖动最多让任务"慢一点"，不会让整条流水线一次失败就报死。
+_TASK_AUTO_RETRY_MAX = 3
+_TASK_AUTO_RETRY_DELAYS = [5, 30, 120]  # seconds before retry 1, 2, 3
+_ALL_STEP_NAMES = (
+    "extract", "asr", "asr_normalize", "voice_match", "alignment",
+    "translate", "tts", "subtitle", "compose", "export",
+)
 
 import config
 
@@ -365,6 +376,7 @@ class PipelineRunner:
                         feedback_notes=feedback_notes,
                         use_case="video_translate.rewrite",
                         project_id=task_id,
+                        checkpoint_key=f"rewrite.{variant}.r{round_index}.a{attempt}",
                     )
                     cand_words = _count_words(candidate.get("full_text", ""))
                     diff = abs(cand_words - target_words)
@@ -496,6 +508,7 @@ class PipelineRunner:
                 validator=validator,
                 use_case="video_translate.tts_script",
                 project_id=task_id,
+                checkpoint_key=f"tts_script.{variant}.r{round_index}",
             )
             _save_json(task_dir, f"tts_script.round_{round_index}.json", tts_script)
             round_record["artifact_paths"]["tts_script"] = f"tts_script.round_{round_index}.json"
@@ -595,6 +608,15 @@ class PipelineRunner:
                 # 标记本轮为最终采用：UI 画 ✨ 徽章 + 底部摘要说明
                 round_record["is_final"] = True
                 round_record["final_reason"] = "converged"
+                # 已落入 range，但常常仍差 1-2s；用 ffmpeg atempo 兜底精确对齐
+                final_audio_path = self._maybe_tempo_align(
+                    audio_path=result["full_audio_path"],
+                    audio_duration=audio_duration,
+                    video_duration=video_duration,
+                    task_dir=task_dir, variant=variant,
+                    round_record=round_record, task_id=task_id,
+                )
+                round_products[-1]["tts_audio_path"] = final_audio_path
                 rounds[-1] = round_record
                 task_state.update(
                     task_id,
@@ -613,7 +635,7 @@ class PipelineRunner:
                 return {
                     "localized_translation": localized_translation,
                     "tts_script": tts_script,
-                    "tts_audio_path": result["full_audio_path"],
+                    "tts_audio_path": final_audio_path,
                     "tts_segments": result["segments"],
                     "rounds": rounds,
                     "round_products": round_products,
@@ -653,6 +675,15 @@ class PipelineRunner:
         best_record["is_final"] = True
         best_record["final_reason"] = "best_pick"
         best_record["final_distance"] = round(best_distance, 3)
+        # ffmpeg atempo 兜底：误差 ≤5% 时拉伸/压缩到精确等于视频长度
+        final_best_audio = self._maybe_tempo_align(
+            audio_path=best_product["tts_audio_path"],
+            audio_duration=best_record["audio_duration"],
+            video_duration=video_duration,
+            task_dir=task_dir, variant=variant,
+            round_record=best_record, task_id=task_id,
+        )
+        best_product["tts_audio_path"] = final_best_audio
         rounds[best_i] = best_record
         self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
         task_state.update(
@@ -677,6 +708,39 @@ class PipelineRunner:
             "round_products": round_products,
             "final_round": best_i + 1,
         }
+
+    def _maybe_tempo_align(
+        self, *, audio_path: str, audio_duration: float, video_duration: float,
+        task_dir: str, variant: str, round_record: dict, task_id: str,
+    ) -> str:
+        """误差在 ±5% 内时跑一次 ffmpeg atempo 兜底，把音频精确对齐 video_duration。
+        把变速过程的 ratio / pre / post / new_delta 写进 round_record，前端 TTS 卡片
+        读这些字段渲染日志行。失败 / 不需要时返回原 audio_path。"""
+        from appcore.runtime._helpers import _apply_audio_tempo_fallback as _do_tempo
+        import os
+        out_path = os.path.join(task_dir, f"tts_full.tempo.{variant}.mp3")
+        info = _do_tempo(
+            audio_path=audio_path, audio_duration=audio_duration,
+            video_duration=video_duration, output_path=out_path,
+        )
+        if info is None:
+            log.info(
+                "[task %s] tempo fallback skipped (audio=%.3fs video=%.3fs delta=%.3fs)",
+                task_id, audio_duration, video_duration, audio_duration - video_duration,
+            )
+            round_record["tempo_applied"] = False
+            return audio_path
+        round_record["tempo_applied"] = True
+        round_record["tempo_ratio"] = info["ratio"]
+        round_record["tempo_pre_duration"] = info["pre_duration"]
+        round_record["tempo_post_duration"] = info["post_duration"]
+        round_record["tempo_new_delta"] = info["new_delta"]
+        log.info(
+            "[task %s] tempo fallback applied: ratio=%.4f, %.3fs → %.3fs (target %.3fs, new_delta=%+.3fs)",
+            task_id, info["ratio"], info["pre_duration"], info["post_duration"],
+            video_duration, info["new_delta"],
+        )
+        return info["new_audio_path"]
 
     def _promote_final_artifacts(self, task_dir: str, final_round: int, variant: str) -> None:
         """Copy tts_full.round_{N}.mp3 to tts_full.{variant}.mp3 for downstream compatibility."""
@@ -1028,6 +1092,10 @@ class PipelineRunner:
                 throw_if_cancel_requested(f"pipeline step={step_name}")
                 step_fn()
                 current = task_state.get(task_id) or {}
+                # 每个 step 成功完成都把 retry 计数清零，让下一个 step 的失败有
+                # 完整的 retry budget，避免不同 step 各失败 1 次就累加触顶。
+                if int(current.get("_failure_count") or 0) > 0:
+                    task_state.update(task_id, _failure_count=0)
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
                 if current.get("status") in {"failed", "error", "done"}:
@@ -1043,11 +1111,44 @@ class PipelineRunner:
             # cleans up _active_tasks; it will not show a traceback.
             raise
         except Exception as exc:
-            current_step = (task_state.get(task_id) or {}).get("current_step") or "?"
+            current_step = (task_state.get(task_id) or {}).get("current_step") or start_step or "?"
             logger.exception(
                 "[task %s] pipeline failed at step=%s: %s", task_id, current_step, exc,
             )
-            task_state.update(task_id, status="error", error=str(exc))
+            # Auto-retry budget：单点失败不直接阻塞整条流水线，先指数退避自愈几次。
+            # 已失败次数累加到 task_state，超过 _TASK_AUTO_RETRY_MAX 才标 error。
+            current_task = task_state.get(task_id) or {}
+            failure_count = int(current_task.get("_failure_count") or 0) + 1
+            task_state.update(task_id, _failure_count=failure_count)
+            if failure_count < _TASK_AUTO_RETRY_MAX:
+                delay_idx = min(failure_count - 1, len(_TASK_AUTO_RETRY_DELAYS) - 1)
+                delay = _TASK_AUTO_RETRY_DELAYS[delay_idx]
+                resume_from = current_step if current_step in _ALL_STEP_NAMES else start_step
+                log.warning(
+                    "[task %s] auto-retry %d/%d after %ds (resume_from=%s): %s",
+                    task_id, failure_count, _TASK_AUTO_RETRY_MAX,
+                    delay, resume_from, exc,
+                )
+                try:
+                    time.sleep(delay)
+                except Exception:
+                    pass
+                # 重置 step 状态让 _run 主循环知道要从 resume_from 重新跑
+                try:
+                    started_marker = False
+                    for step_name, _fn in steps:
+                        if step_name == resume_from:
+                            started_marker = True
+                        if started_marker:
+                            self._set_step(task_id, step_name, "pending")
+                except Exception:
+                    pass
+                return self._run(task_id, start_step=resume_from)
+            log.error(
+                "[task %s] auto-retry exhausted (%d/%d), marking task failed",
+                task_id, failure_count, _TASK_AUTO_RETRY_MAX,
+            )
+            task_state.update(task_id, _failure_count=0, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
 
@@ -1374,6 +1475,7 @@ class PipelineRunner:
             provider=provider, user_id=self.user_id,
             use_case="video_translate.localize",
             project_id=task_id,
+            checkpoint_key="translate.initial",
         )
 
         # 先把初始翻译的 Prompt 单独落盘，后续时长迭代 round 1 可以复用

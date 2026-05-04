@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import requests
 import pymysql.err
-from flask import abort, jsonify, request
+from flask import abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, product_roas, pushes
+from appcore import medias, parcel_cost_suggest, product_roas, pushes, xmyc_storage
 from . import bp
 from ._serializers import (
     _int_or_none,
@@ -159,8 +159,17 @@ def api_list_products():
     limit = 20
     offset = (page - 1) * limit
 
+    xmyc_match = (request.args.get("xmyc_match") or "all").strip().lower()
+    if xmyc_match not in medias.XMYC_MATCH_FILTERS:
+        xmyc_match = "all"
+    roas_status = (request.args.get("roas_status") or "all").strip().lower()
+    if roas_status not in medias.ROAS_STATUS_FILTERS:
+        roas_status = "all"
+
     rows, total = medias.list_products(None, keyword=keyword, archived=archived,
-                                       offset=offset, limit=limit)
+                                       offset=offset, limit=limit,
+                                       xmyc_match=xmyc_match,
+                                       roas_status=roas_status)
     pids = [r["id"] for r in rows]
     counts = medias.count_items_by_product(pids)
     raw_counts = medias.count_raw_sources_by_product(pids)
@@ -253,6 +262,82 @@ def api_get_product(pid: int):
         "copywritings": medias.list_copywritings(pid),
         "items": [_serialize_item(i, raw_sources_by_id) for i in items],
     })
+
+
+@bp.route("/api/products/<int:pid>/parcel-cost-suggest", methods=["GET"])
+@login_required
+def api_parcel_cost_suggest(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    try:
+        days = int(request.args.get("days") or parcel_cost_suggest.DEFAULT_LOOKBACK_DAYS)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid_days"}), 400
+    days = max(7, min(90, days))
+    try:
+        suggestion = parcel_cost_suggest.suggest_parcel_cost(pid, days=days)
+    except parcel_cost_suggest.ParcelCostSuggestError as exc:
+        msg = str(exc)
+        if msg == "no_orders":
+            return jsonify({
+                "error": "no_orders",
+                "message": "该产品在店小秘还没有订单数据，无法估算实际小包成本",
+            }), 404
+        return jsonify({"error": "dxm_failed", "message": msg}), 502
+    except Exception as exc:  # pragma: no cover - safety net for browser glue
+        return jsonify({"error": "dxm_failed", "message": str(exc)}), 502
+    return jsonify({"ok": True, "suggestion": suggestion})
+
+
+@bp.route("/api/xmyc-skus", methods=["GET"])
+@login_required
+def api_list_xmyc_skus():
+    keyword = (request.args.get("keyword") or "").strip() or None
+    matched_filter = (request.args.get("matched") or "all").strip().lower()
+    if matched_filter not in ("all", "matched", "unmatched"):
+        matched_filter = "all"
+    try:
+        limit = max(1, min(500, int(request.args.get("limit") or 200)))
+        offset = max(0, int(request.args.get("offset") or 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid_pagination"}), 400
+    rows = xmyc_storage.list_skus(
+        keyword=keyword,
+        matched_filter=matched_filter,
+        limit=limit,
+        offset=offset,
+    )
+    return jsonify({"ok": True, "items": rows, "limit": limit, "offset": offset})
+
+
+@bp.route("/api/products/<int:pid>/xmyc-skus", methods=["GET"])
+@login_required
+def api_get_product_xmyc_skus(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    rows = xmyc_storage.get_skus_for_product(pid)
+    return jsonify({"ok": True, "items": rows})
+
+
+@bp.route("/api/products/<int:pid>/xmyc-skus", methods=["POST"])
+@login_required
+def api_set_product_xmyc_skus(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    raw_skus = body.get("skus") or []
+    if not isinstance(raw_skus, list):
+        return jsonify({"error": "skus_must_be_list"}), 400
+    skus = [str(s).strip() for s in raw_skus if str(s).strip()]
+    matched_by = int(current_user.id) if getattr(current_user, "id", None) else None
+    result = xmyc_storage.set_product_skus(pid, skus, matched_by=matched_by)
+    return jsonify({"ok": True, **result})
 
 
 @bp.route("/api/products/<int:pid>", methods=["PUT"])
@@ -459,3 +544,17 @@ def api_refresh_product_shopify_sku(pid: int):
             "pairs_with_dxm": sum(1 for r in pairs if r.get("dianxiaomi_sku_code")),
         },
     })
+
+
+@bp.route("/<int:pid>/roas")
+@login_required
+def roas_page(pid: int):
+    product = medias.get_product(pid)
+    routes = _routes_module()
+    if not product or not routes._can_access_product(product):
+        abort(404)
+    return render_template(
+        "medias/roas.html",
+        product=_serialize_product(product),
+        roas_rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
+    )

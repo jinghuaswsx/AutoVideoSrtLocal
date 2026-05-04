@@ -66,6 +66,12 @@ def resolve_ad_product_match(campaign_name: str) -> dict | None:
         )
         if product:
             return product
+    # 自动匹配失败 → 查人工配对兜底（plan 阶段 5 扩展）
+    from .campaign_overrides import resolve_override
+    normalized = (campaign_name or "").strip().lower()
+    override = resolve_override(normalized)
+    if override:
+        return override
     return None
 
 
@@ -261,6 +267,44 @@ def match_meta_ads_to_products() -> int:
                 (product["id"], product["product_code"], row["id"]),
             )
     return affected
+
+
+def manual_match_meta_ad_campaign(
+    normalized_campaign_code: str,
+    product_id: int,
+    *,
+    reason: str = "",
+    created_by: str = "admin",
+) -> dict:
+    """把指定归一化广告系列名下所有未匹配的行人工配对到 media_products 产品。
+
+    Source of truth：``campaign_product_overrides`` 表。委托给
+    ``appcore.order_analytics.campaign_overrides.create_override``，
+    它会同时：
+      1. INSERT/UPDATE ``campaign_product_overrides`` 表（持久化映射）
+      2. UPDATE ``meta_ad_campaign_metrics`` + ``meta_ad_daily_campaign_metrics``
+         两张事实表（让历史 dashboard / 利润核算立即看到匹配）
+
+    未来同步流程的 ``resolve_ad_product_match`` 也会查 override 表，
+    同名 campaign 自动应用，无需再手工配对。
+
+    Returns 跟原 schema 兼容：
+        {matched_periodic, matched_daily, product_id, product_code, product_name}
+    """
+    from .campaign_overrides import create_override
+    res = create_override(
+        normalized_campaign_code=normalized_campaign_code,
+        product_id=product_id,
+        reason=reason,
+        created_by=created_by,
+    )
+    return {
+        "matched_periodic": res["matched_periodic"],
+        "matched_daily": res["matched_daily"],
+        "product_id": res["product_id"],
+        "product_code": res["product_code"],
+        "product_name": res["product_name"],
+    }
 
 
 def get_meta_ad_stats() -> dict:

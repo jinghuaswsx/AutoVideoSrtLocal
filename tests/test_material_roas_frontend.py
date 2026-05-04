@@ -2,32 +2,86 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PARTIAL = ROOT / "web" / "templates" / "medias" / "_roas_form.html"
 
 
 def test_medias_list_has_roas_modal_mount():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
 
+    # Outer shell stays in medias_list.html
     assert 'id="roasModalMask"' in html
-    assert 'id="roasForm"' in html
     assert "独立站保本 ROAS" in html
-    assert "TK 可选项" in html
+
+    # Field-level content lives in the partial
+    assert 'id="roasForm"' in partial
+    assert "TK 可选项" in partial
 
 
 def test_medias_js_wires_roas_button_and_calculation():
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    controller_js = (ROOT / "web" / "static" / "roas_form.js").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
 
     assert "data-roas" in js
     assert "openRoasModal" in js
-    assert "calculateRoasBreakEven" in js
-    assert "roasCalculateBtn" in js
-    assert "packet_cost_actual" in js
-    assert "standalone_shipping_fee" in js
-    assert "MATERIAL_ROAS_RMB_PER_USD" in js
+    # calculateRoasBreakEven was removed — the controller's computeRoas() handles it
+    assert "RoasFormController" in js
+    # roasCalculateBtn DOM element lives in the partial; controller wires it via bind()
+    assert 'id="roasCalculateBtn"' in partial
+    # Field names and constants live in roas_form.js (RoasFormController) after refactor
+    assert "packet_cost_actual" in controller_js
+    assert "standalone_shipping_fee" in controller_js
+    assert "MATERIAL_ROAS_RMB_PER_USD" in controller_js
     assert "roas_calculation" in js
 
 
+def test_medias_html_has_parcel_cost_suggest_button():
+    # Button lives in the shared partial (used by both modal and standalone page)
+    partial = PARTIAL.read_text(encoding="utf-8")
+
+    assert 'id="roasParcelSuggestBtn"' in partial
+    assert 'id="roasParcelSuggestResult"' in partial
+    assert "店小秘自动建议小包成本" in partial
+
+
+def test_medias_js_calls_parcel_cost_suggest_endpoint():
+    # Parcel-cost logic moved to roas_form.js (RoasFormController) so it works
+    # in both the modal (medias.js context) and the standalone page.
+    controller_js = (ROOT / "web" / "static" / "roas_form.js").read_text(encoding="utf-8")
+
+    assert "/parcel-cost-suggest" in controller_js
+    assert "_fetchParcelCostSuggestion" in controller_js
+    assert "roasParcelSuggestBtn" in controller_js
+    assert "packet_cost_estimated" in controller_js
+    assert "packet_cost_actual" in controller_js
+
+
+def test_xmyc_match_modal_assets_present():
+    list_html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    partial_html = PARTIAL.read_text(encoding="utf-8")
+    modal_js = (ROOT / "web" / "static" / "xmyc_match_modal.js").read_text(encoding="utf-8")
+    roas_js = (ROOT / "web" / "static" / "roas_form.js").read_text(encoding="utf-8")
+
+    assert 'id="xmycMatchModalMask"' in list_html
+    assert 'id="xmycMatchSearch"' in list_html
+    assert 'id="xmycMatchSaveBtn"' in list_html
+    assert 'id="xmycMatchTbody"' in list_html
+    assert "xmyc_match_modal.js" in list_html
+
+    assert 'id="xmycMatchOpenBtn"' in partial_html
+    assert "小秘云仓匹配" in partial_html
+
+    assert "window.XmycMatchModal" in modal_js
+    assert "/medias/api/xmyc-skus" in modal_js
+    assert "/xmyc-skus" in modal_js
+
+    assert "_openXmycMatch" in roas_js
+    assert "XmycMatchModal" in roas_js
+
+
 def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
-    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    html = PARTIAL.read_text(encoding="utf-8")
 
     assert 'class="oc-roas-layout"' in html
     assert 'id="roasSiteSection"' in html
@@ -36,7 +90,7 @@ def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     site_section = html.split('id="roasSiteSection"', 1)[1].split('id="roasTkSection"', 1)[0]
     tk_section = html.split('id="roasTkSection"', 1)[1].split("</section>", 1)[0]
     site_fields = site_section.split('<div class="oc-roas-field-list">', 1)[1].split(
-        "              </div>\n            </section>", 1
+        "\n              </div>", 1
     )[0]
 
     assert 'data-roas-field="standalone_shipping_fee"' in site_section
@@ -78,40 +132,51 @@ def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
 
 def test_roas_modal_uses_manual_calculate_button_and_injected_exchange_rate():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert 'id="roasCalculateBtn"' in html
-    assert "计算 ROAS" in html
-    assert "material_roas_rmb_per_usd" in html
+    # These field-level elements live in the partial
+    assert 'id="roasCalculateBtn"' in partial
+    assert "计算 ROAS" in partial
+    assert "material_roas_rmb_per_usd" in partial
+
+    # The JS injection lives in medias_list.html
     assert "window.MATERIAL_ROAS_RMB_PER_USD" in html
-    assert "roasCalculateBtn" in js
-    assert "markRoasResultDirty" in js
-    assert "input.addEventListener('input', markRoasResultDirty)" in js
-    assert "input.addEventListener('input', renderRoasResult)" not in js
-    assert "markRoasResultDirty();\n    mask.hidden = false;" in js
-    roas_js = js[js.index("function renderRoasResult"):js.index("function closeRoasModal")]
-    assert "reportValidity" not in roas_js
+
+    # New controller-based contract: RoasFormController owns calculate + input handling
+    assert "RoasFormController" in js
+    assert "fillFromProduct" in js
+    # roasCalculateBtn DOM element lives in partial; controller wires it via bind()
+    assert 'id="roasCalculateBtn"' in partial
+
+    # Legacy functions must be gone — they caused double-binding and UX breakage
+    assert "markRoasResultDirty" not in js
+    assert "renderRoasResult" not in js
+    assert "function closeRoasModal" in js
 
 
 def test_roas_modal_fills_main_area_outside_sidebar():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
 
-    assert "#roasModalMask" in html
-    assert "inset:0 0 0 220px" in html
-    assert "align-items:stretch" in html
-    roas_modal_css = html.split(".oc-roas-modal {", 1)[1].split("}", 1)[0]
+    # Outer shell element remains in medias_list.html
+    assert 'id="roasModalMask"' in html
+    # CSS moved to shared partial
+    assert "inset:0 0 0 220px" in styles
+    assert "align-items:stretch" in styles
+    roas_modal_css = styles.split(".oc-roas-modal {", 1)[1].split("}", 1)[0]
     assert "width:100%" in roas_modal_css
     assert "height:100%" in roas_modal_css
 
 
 def test_roas_modal_uses_full_height_scroll_area_and_tighter_field_spacing():
-    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
 
-    form_css = html.split("#roasForm {", 1)[1].split("}", 1)[0]
-    layout_css = html.split(".oc-roas-layout {", 1)[1].split("}", 1)[0]
-    column_css = html.split(".oc-roas-column {", 1)[1].split("}", 1)[0]
-    field_list_css = html.split(".oc-roas-field-list {", 1)[1].split("}", 1)[0]
-    field_label_css = html.split(".oc-roas-field label {", 1)[1].split("}", 1)[0]
+    form_css = styles.split("#roasForm {", 1)[1].split("}", 1)[0]
+    layout_css = styles.split(".oc-roas-layout {", 1)[1].split("}", 1)[0]
+    column_css = styles.split(".oc-roas-column {", 1)[1].split("}", 1)[0]
+    field_list_css = styles.split(".oc-roas-field-list {", 1)[1].split("}", 1)[0]
+    field_label_css = styles.split(".oc-roas-field label {", 1)[1].split("}", 1)[0]
 
     assert "display:flex" in form_css
     assert "flex:1 1 auto" in form_css
@@ -126,23 +191,26 @@ def test_roas_modal_uses_full_height_scroll_area_and_tighter_field_spacing():
 
 
 def test_roas_modal_embeds_average_shipping_in_bottom_half_of_tk_column():
-    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert 'class="oc-roas-column oc-roas-tk-column"' in html
-    assert 'id="roasAverageShippingSection"' in html
-    assert ">平均运费计算器</h4>" in html
-    assert 'id="roasAverageShippingInput"' in html
-    assert 'id="roasAverageShippingResult"' in html
-    assert 'id="roasAverageShippingMeta"' in html
+    # HTML elements live in partial
+    assert 'class="oc-roas-column oc-roas-tk-column"' in partial
+    assert 'id="roasAverageShippingSection"' in partial
+    assert ">平均运费计算器</h4>" in partial
+    assert 'id="roasAverageShippingInput"' in partial
+    assert 'id="roasAverageShippingResult"' in partial
+    assert 'id="roasAverageShippingMeta"' in partial
 
-    tk_column = html.split('class="oc-roas-column oc-roas-tk-column"', 1)[1].split("</form>", 1)[0]
+    tk_column = partial.split('class="oc-roas-column oc-roas-tk-column"', 1)[1].split("</form>", 1)[0]
     assert tk_column.index('id="roasTkSection"') < tk_column.index('id="roasAverageShippingSection"')
 
-    tk_column_css = html.split(".oc-roas-tk-column {", 1)[1].split("}", 1)[0]
-    half_section_css = html.split(".oc-roas-tk-column .oc-roas-section {", 1)[1].split("}", 1)[0]
-    avg_heading_css = html.split(".oc-roas-avg-head h4 {", 1)[1].split("}", 1)[0]
-    avg_input_css = html.split(".oc-roas-avg-input {", 1)[1].split("}", 1)[0]
+    # CSS lives in the shared styles partial
+    tk_column_css = styles.split(".oc-roas-tk-column {", 1)[1].split("}", 1)[0]
+    half_section_css = styles.split(".oc-roas-tk-column .oc-roas-section {", 1)[1].split("}", 1)[0]
+    avg_heading_css = styles.split(".oc-roas-avg-head h4 {", 1)[1].split("}", 1)[0]
+    avg_input_css = styles.split(".oc-roas-avg-input {", 1)[1].split("}", 1)[0]
     assert "overflow:hidden" in tk_column_css
     assert "flex:1 1 0" in half_section_css
     assert "min-height:0" in half_section_css
@@ -162,3 +230,37 @@ def test_roas_button_is_after_ai_evaluate_button():
     row_actions = js.split('<div class="oc-row-actions">', 1)[1].split("</div>", 1)[0]
 
     assert row_actions.index("data-ai-evaluate") < row_actions.index("data-roas")
+
+
+def test_modal_head_contains_open_in_page_pill_button():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert 'id="roasOpenInPage"' in html
+    assert 'class="oc-btn pill ghost"' in html or 'class="oc-btn ghost pill"' in html
+    assert 'target="_blank"' in html
+    assert 'rel="noopener"' in html
+    assert "在新页面打开" in html
+
+
+def test_modal_has_status_bar():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert 'class="oc-roas-status-bar"' in html
+    assert 'data-roas-status' in html
+
+
+def test_modal_footer_no_longer_has_save_button():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert 'id="roasSaveBtn"' not in html
+    assert 'id="roasSaveMsg"' not in html
+
+
+def test_medias_list_loads_roas_form_script():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert "roas_form.js" in html
+
+
+def test_medias_js_uses_controller_class():
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    assert "RoasFormController" in js
+    assert "new RoasFormController" in js
+    # 旧函数应已被替换或移除
+    assert "async function saveRoas" not in js

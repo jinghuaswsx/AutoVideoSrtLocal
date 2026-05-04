@@ -64,7 +64,6 @@ package-lock.json
 *.png
 
 # Test notes
-testuser.md
 .omc/
 google_api_key
 link_check_desktop_config.json

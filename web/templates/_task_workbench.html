@@ -668,7 +668,10 @@
       </div>
       <div class="step-preview" id="preview-export"></div>
     </div>
-    <div class="step" id="step-analysis">
+    <div class="step" id="step-analysis"
+         data-task-id="{{ project.id if project is defined and project else '' }}"
+         data-is-admin="{{ '1' if current_user.is_admin else '0' }}"
+         data-project-type="{% if request.path.startswith('/omni-translate') %}omni_translate{% elif request.path.startswith('/multi-translate') %}multi_translate{% else %}av_sync{% endif %}">
       <div class="step-main">
         <div class="step-icon" id="icon-analysis">9</div>
         <div style="flex:1">

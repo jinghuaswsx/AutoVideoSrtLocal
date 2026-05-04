@@ -565,3 +565,57 @@ def run_ai_analysis(task_id):
     if outcome.not_found:
         return task_not_found_response()
     return jsonify(outcome.payload), outcome.status_code
+
+
+# AI 视频分析（多模态，ADC 通道）—— 与 multi/omni 共用 service + DB 表，
+# source_type='av_sync_task' 单独归类。视频翻译音画通话详情页的按钮调这里。
+def _can_view_av_task(task_id: str) -> bool:
+    task = load_task(task_id)
+    if not task:
+        return False
+    if is_admin_user(current_user):
+        return True
+    return task.get("_user_id") == current_user.id
+
+
+@bp.route("/<task_id>/video-ai-review/run", methods=["POST"])
+@login_required
+def run_video_ai_review(task_id):
+    if not _can_view_av_task(task_id):
+        return task_not_found_response()
+    from appcore import video_ai_review
+    try:
+        run_id = video_ai_review.trigger_review(
+            source_type="av_sync_task",
+            source_id=task_id,
+            user_id=current_user.id,
+            triggered_by="manual",
+        )
+    except video_ai_review.ReviewInProgressError as exc:
+        return jsonify({
+            "error": "AI 视频分析正在运行中",
+            "in_flight_run_id": exc.run_id,
+        }), 409
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("[video-ai-review] av_sync trigger failed task=%s", task_id)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({
+        "status": "started", "run_id": run_id,
+        "channel": video_ai_review.CHANNEL,
+        "model": video_ai_review.MODEL,
+    })
+
+
+@bp.route("/<task_id>/video-ai-review", methods=["GET"])
+@login_required
+def get_video_ai_review(task_id):
+    if not _can_view_av_task(task_id):
+        return task_not_found_response()
+    from appcore import video_ai_review, task_state
+    payload = video_ai_review.latest_review("av_sync_task", task_id)
+    ts_state = task_state.get(task_id) or {}
+    return jsonify({
+        "review": payload,
+        "task_evals_invalidated_at": ts_state.get("evals_invalidated_at"),
+    })

@@ -1,0 +1,343 @@
+/* AI 视频分析卡片 + Modal — 海洋蓝风格 */
+
+/* CLAUDE.md 描述的 Ocean Blue token 在 medias / task 页 :root 上实际**没定义**
+   （这些页面用的是 --primary-color / --bg-body / --bg-card 一套老变量），所以本组件
+   的 var(--accent) / var(--radius-full) / var(--bg-muted) 等会全部 fallback 到空，
+   导致胶囊 tab 渲染成透明矩形。这里在 :root 上自带一份组件作用域用得到的 token，
+   有则不覆盖（@supports + custom-property fallback 不可控，所以直接 :root 写入；
+   命中已有定义时 cascade 顺序由 video_ai_review.css 后加载决定，但没冲突）。 */
+:root {
+  --accent:        oklch(56% 0.16  230);
+  --accent-hover:  oklch(50% 0.17  230);
+  --accent-fg:     #ffffff;
+  --accent-subtle: oklch(94% 0.04  225);
+  --accent-ring:   oklch(56% 0.16  230 / 0.22);
+  --bg-muted:      oklch(94% 0.010 230);
+  --bg-subtle:     oklch(97% 0.006 230);
+  --border:        oklch(91% 0.012 230);
+  --border-strong: oklch(84% 0.015 230);
+  --fg:            oklch(22% 0.020 235);
+  --fg-muted:      oklch(48% 0.018 230);
+  --fg-subtle:     oklch(62% 0.015 230);
+  --radius:        6px;
+  --radius-md:     8px;
+  --radius-lg:     12px;
+  --radius-full:   9999px;
+  --text-xs:       12px;
+  --text-sm:       13px;
+  --text-base:     14px;
+  --text-lg:       18px;
+  --duration-fast: 120ms;
+  --info:          oklch(62% 0.12 230);
+  --info-bg:       oklch(95% 0.04 230);
+  --success:       oklch(62% 0.13 165);
+  --success-bg:    oklch(95% 0.04 165);
+  --success-fg:    oklch(38% 0.09 165);
+  --warning:       oklch(72% 0.14 80);
+  --warning-bg:    oklch(96% 0.05 85);
+  --warning-fg:    oklch(42% 0.10 60);
+  --danger:        oklch(58% 0.18 25);
+  --danger-bg:     oklch(96% 0.04 25);
+  --danger-fg:     oklch(42% 0.14 25);
+  --font-mono:     "JetBrains Mono", "Geist Mono", ui-monospace,
+                   "SF Mono", Consolas, monospace;
+}
+
+.vr-inline {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  padding: 8px 0;
+}
+
+/* 媒体卡底部「AI 视频分析」按钮——撑满整张卡片宽度，文字居中。
+   medias.js 给的容器是 .vactions-vr，里面唯一一个 .oc-btn[data-act="vr-run"]。 */
+.vactions-vr { display: flex; width: 100%; }
+.vactions-vr > .oc-btn[data-act="vr-run"] {
+  flex: 1 1 auto;
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+.vr-dim {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--bg-subtle); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 4px 10px;
+  font-size: var(--text-xs);
+}
+.vr-dim-label { color: var(--fg-muted); }
+.vr-dim-score { color: var(--fg); font-weight: 600; }
+.vr-reason {
+  margin-top: 4px; font-size: var(--text-xs); color: var(--fg-muted);
+  width: 100%;
+}
+
+/* tier 颜色（仅做一点点区分） */
+.vr-inline.tier-top    .vr-dim-score { color: var(--success); }
+.vr-inline.tier-good   .vr-dim-score { color: var(--accent); }
+.vr-inline.tier-mid    .vr-dim-score { color: var(--warning); }
+.vr-inline.tier-low    .vr-dim-score { color: var(--danger); }
+
+/* Modal */
+.vr-modal {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+}
+.vr-modal.hidden { display: none; }
+.vr-modal-backdrop {
+  position: absolute; inset: 0;
+  background: oklch(22% 0.02 235 / 0.55);
+  z-index: 1;
+}
+.vr-modal-panel {
+  position: relative; z-index: 2;
+  background: #ffffff;             /* 显式白色，避免 var(--bg) 在某些 cascade 下视觉发虚 */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 50px -10px oklch(22% 0.05 235 / 0.30);
+  width: min(880px, 92vw); max-height: 86vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.vr-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.vr-modal-header h3 {
+  margin: 0; font-size: var(--text-lg); color: var(--fg);
+}
+.vr-modal-close {
+  background: transparent; border: 0; font-size: 22px; line-height: 1;
+  color: var(--fg-muted); cursor: pointer; padding: 4px 8px;
+  border-radius: var(--radius); transition: background var(--duration-fast);
+}
+.vr-modal-close:hover { background: var(--bg-muted); color: var(--fg); }
+.vr-modal-body {
+  padding: 20px; overflow: auto; font-size: var(--text-sm); color: var(--fg);
+}
+.vr-modal-body h4 {
+  margin: 16px 0 8px; font-size: var(--text-sm);
+  color: var(--fg); text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+.vr-row {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.vr-row:last-of-type { border-bottom: 0; }
+.vr-kv {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.vr-k {
+  color: var(--fg-muted); font-size: var(--text-xs);
+}
+.vr-v {
+  color: var(--fg); font-family: var(--font-mono); font-size: var(--text-xs);
+}
+.vr-meta { color: var(--fg-subtle); font-size: var(--text-xs); }
+
+.vr-summary {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px; margin-top: 8px;
+  background: var(--bg-subtle); border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+.vr-summary.tier-top  { background: var(--success-bg); }
+.vr-summary.tier-good { background: var(--accent-subtle); }
+.vr-summary.tier-mid  { background: var(--warning-bg); }
+.vr-summary.tier-low  { background: var(--danger-bg); }
+.vr-score-big {
+  font-size: 36px; font-weight: 700; color: var(--fg);
+  font-family: var(--font-mono); min-width: 64px; text-align: center;
+}
+.vr-verdict-text {
+  font-size: var(--text-base); font-weight: 600; color: var(--fg);
+}
+
+.vr-inputs {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px; padding: 8px 0;
+}
+
+.vr-details {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+.vr-details > summary {
+  cursor: pointer; color: var(--fg-muted); font-size: var(--text-xs);
+  user-select: none;
+}
+.vr-pre {
+  margin: 8px 0 0; padding: 12px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 300px; overflow: auto;
+}
+.vr-pre.vr-error { color: var(--danger-fg); background: var(--danger-bg); }
+
+.vr-table {
+  width: 100%; border-collapse: collapse;
+}
+.vr-table td {
+  padding: 6px 12px; font-size: var(--text-xs);
+  border-bottom: 1px solid var(--border);
+}
+.vr-table td:first-child {
+  color: var(--fg-muted); width: 40%;
+}
+.vr-table td:last-child {
+  color: var(--fg); font-family: var(--font-mono);
+}
+
+.vr-cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  margin-top: 8px;
+}
+.vr-list {
+  margin: 0; padding-left: 18px;
+  font-size: var(--text-xs); color: var(--fg);
+}
+.vr-list li { margin: 4px 0; }
+
+.vr-empty {
+  text-align: center; color: var(--fg-muted);
+  padding: 32px; font-size: var(--text-sm);
+}
+
+/* ---- 状态栏（顶部，header 和 tabs 之间） ---- */
+.vr-status-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 12px 20px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+.vr-status-bar .vr-empty {
+  padding: 4px 0; text-align: left; font-size: var(--text-xs);
+}
+
+.vr-meta-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 3px 8px;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+.vr-meta-pill b {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.vr-chip {
+  display: inline-flex; align-items: center;
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+.vr-chip-idle {
+  background: var(--bg-muted); color: var(--fg-muted);
+  border-color: var(--border);
+}
+.vr-chip-pending {
+  background: var(--info-bg); color: var(--info);
+  border-color: oklch(85% 0.04 230);
+}
+.vr-chip-running {
+  background: var(--accent-subtle); color: var(--accent);
+  border-color: oklch(85% 0.06 225);
+  position: relative;
+}
+.vr-chip-running::before {
+  content: ""; display: inline-block;
+  width: 6px; height: 6px; margin-right: 6px;
+  border-radius: 50%; background: var(--accent);
+  animation: vrPulse 1.2s ease-in-out infinite;
+}
+@keyframes vrPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.vr-chip-done {
+  background: var(--success-bg); color: var(--success-fg);
+  border-color: oklch(85% 0.05 165);
+}
+.vr-chip-failed {
+  background: var(--danger-bg); color: var(--danger-fg);
+  border-color: oklch(85% 0.07 25);
+}
+.vr-chip-cancelled {
+  background: var(--bg-muted); color: var(--fg-subtle);
+  border-color: var(--border);
+}
+
+/* ---- Tabs（胶囊样式 + 右侧操作区） ---- */
+.vr-tabs {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: #ffffff;
+}
+.vr-tabs-left  { display: inline-flex; gap: 6px; align-items: center; }
+.vr-tabs-right { display: inline-flex; gap: 8px; align-items: center; }
+
+.vr-tab {
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 6px 16px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast),
+              border-color var(--duration-fast);
+}
+.vr-tab:hover {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: oklch(85% 0.06 225);
+}
+.vr-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.vr-rerun-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 5px 12px;
+  font-size: var(--text-xs);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast),
+              color var(--duration-fast);
+}
+.vr-rerun-btn:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.vr-rerun-btn[hidden] { display: none; }
+
+.vr-tab-pane { display: none; }
+.vr-tab-pane.active { display: block; }
+
+@media (max-width: 768px) {
+  .vr-inputs, .vr-cols { grid-template-columns: 1fr; }
+  .vr-modal-panel { width: 96vw; max-height: 92vh; }
+  .vr-status-bar { padding: 10px 16px; }
+  .vr-tabs { padding: 10px 16px; }
+}

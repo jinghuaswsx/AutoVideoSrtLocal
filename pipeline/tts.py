@@ -99,6 +99,22 @@ def get_voice_by_id(voice_id: int, user_id: int) -> Dict | None:
     return get_voice_library().get_voice(voice_id, user_id)
 
 
+def _audio_file_already_valid(output_path: str, *, min_bytes: int = 1024) -> bool:
+    """已经在 output_path 落盘的 mp3 是否可直接复用——文件存在 + 体积合理 +
+    ffprobe 能读到 > 0 的时长。任务重跑时跳过已经成功生成的 ElevenLabs 调用，
+    既省额度又把 130 段 audio 的重跑时间从分钟级降到秒级。"""
+    try:
+        if not os.path.isfile(output_path):
+            return False
+        if os.path.getsize(output_path) < min_bytes:
+            return False
+        if _get_audio_duration(output_path) <= 0:
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def generate_segment_audio(
     text: str,
     voice_id: str,
@@ -109,6 +125,9 @@ def generate_segment_audio(
     speed: float | None = None,
 ) -> str:
     """生成单段音频，返回文件路径（mp3）"""
+    if _audio_file_already_valid(output_path):
+        log.info("tts segment cache hit, skipping ElevenLabs call: %s", output_path)
+        return output_path
     client = _get_client(api_key=elevenlabs_api_key)
     kwargs = dict(
         text=text,

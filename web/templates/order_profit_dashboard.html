@@ -1,0 +1,545 @@
+{% extends "layout.html" %}
+{% block title %}订单利润核算 — AutoVideoSrt{% endblock %}
+{% block page_title %}<span class="op-page-heading">订单利润核算</span>{% endblock %}
+
+{% block extra_style %}
+:root {
+  --bg: oklch(99% 0.004 230);
+  --bg-subtle: oklch(97% 0.006 230);
+  --bg-muted: oklch(94% 0.010 230);
+  --border: oklch(91% 0.012 230);
+  --border-strong: oklch(84% 0.015 230);
+  --fg: oklch(22% 0.020 235);
+  --fg-muted: oklch(48% 0.018 230);
+  --fg-subtle: oklch(62% 0.015 230);
+  --accent: oklch(56% 0.16 230);
+  --accent-hover: oklch(50% 0.17 230);
+  --accent-fg: oklch(99% 0 0);
+  --warning-bg: oklch(96% 0.05 85);
+  --warning-fg: oklch(42% 0.10 60);
+  --success: oklch(62% 0.13 165);
+  --success-bg: oklch(95% 0.04 165);
+  --success-fg: oklch(38% 0.09 165);
+  --danger: oklch(58% 0.18 25);
+  --danger-bg: oklch(96% 0.04 25);
+  --danger-fg: oklch(42% 0.14 25);
+  --radius: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 32px;
+}
+
+.op-page { max-width: 1440px; margin: 0 auto; padding: var(--space-6); }
+.op-page-heading { font-weight: 600; }
+.op-toolbar {
+  display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+.op-toolbar input[type="date"] {
+  height: 32px; padding: 0 var(--space-3); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); font-size: 14px; color: var(--fg);
+}
+.op-toolbar button {
+  height: 32px; padding: 0 var(--space-4); border-radius: var(--radius);
+  background: var(--accent); color: var(--accent-fg); border: 0; cursor: pointer;
+  font-size: 14px; font-weight: 500;
+}
+.op-toolbar button:hover { background: var(--accent-hover); }
+
+.op-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4); margin-bottom: var(--space-6);
+}
+.op-card {
+  background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+.op-card h3 { font-size: 13px; color: var(--fg-muted); margin: 0 0 var(--space-3); font-weight: 500; }
+.op-card .value { font-size: 28px; font-weight: 600; color: var(--fg); }
+.op-card .sub { font-size: 12px; color: var(--fg-subtle); margin-top: var(--space-2); }
+.op-card.neg .value { color: var(--danger); }
+.op-card.warn .value { color: var(--warning-fg); }
+
+.op-section { background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-6); margin-bottom: var(--space-6); }
+.op-section h2 { font-size: 16px; font-weight: 600; margin: 0 0 var(--space-4); }
+.op-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.op-table th, .op-table td { padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--border); }
+.op-table th { font-weight: 500; color: var(--fg-muted); font-size: 13px; background: var(--bg-subtle); }
+.op-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.op-table tr.loss td.num.profit { color: var(--danger); font-weight: 500; }
+
+.op-banner {
+  background: var(--warning-bg); color: var(--warning-fg); padding: var(--space-4);
+  border-radius: var(--radius-md); margin-bottom: var(--space-5);
+  display: flex; gap: var(--space-3); align-items: center;
+}
+.op-banner.danger { background: var(--danger-bg); color: var(--danger-fg); }
+
+.op-tabs { display: flex; gap: var(--space-3); margin-bottom: var(--space-5); border-bottom: 1px solid var(--border); }
+.op-tab {
+  padding: var(--space-3) var(--space-4); border: 0; background: transparent; cursor: pointer;
+  color: var(--fg-muted); font-size: 14px; font-weight: 500; border-bottom: 2px solid transparent;
+  transition: color 120ms;
+}
+.op-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.op-completeness-row td.missing { color: var(--danger); font-size: 12px; }
+.op-completeness-row td.gmv { color: var(--fg-muted); }
+
+.op-loading { padding: var(--space-7); text-align: center; color: var(--fg-subtle); }
+
+/* 日期快捷按钮（对齐 order_analytics 的 oad-seg 风格） */
+.op-segmented {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1); border: 1px solid var(--border-strong);
+  border-radius: 9999px; background: var(--bg-subtle);
+}
+.op-seg {
+  height: 30px; padding: 0 var(--space-3); background: transparent;
+  border: 1px solid transparent; border-radius: 9999px;
+  color: var(--fg-muted); cursor: pointer; font-size: 13px;
+  font-weight: 600; white-space: nowrap;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
+}
+.op-seg:hover { background: white; border-color: var(--border); color: var(--fg); }
+.op-seg.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.op-date-range-field {
+  min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 0 var(--space-2); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: white;
+}
+.op-date-range-field input {
+  width: 130px; height: 30px; padding: 0; border: 0; background: transparent; font-size: 14px;
+}
+.op-date-range-field input:focus-visible { outline: none; }
+.op-date-range-sep { color: var(--fg-subtle); font-size: 13px; }
+{% endblock %}
+
+{% block content %}
+<div class="op-page">
+  <div class="op-toolbar">
+    <span class="op-segmented" role="group" aria-label="日期快捷">
+      <button type="button" class="op-seg is-active" data-op-range="today">今天</button>
+      <button type="button" class="op-seg" data-op-range="yesterday">昨天</button>
+      <button type="button" class="op-seg" data-op-range="thisWeek">本周</button>
+      <button type="button" class="op-seg" data-op-range="lastWeek">上周</button>
+      <button type="button" class="op-seg" data-op-range="thisMonth">本月</button>
+      <button type="button" class="op-seg" data-op-range="lastMonth">上月</button>
+    </span>
+    <span class="op-date-range-field">
+      <input type="date" id="opDateFrom" aria-label="开始日期">
+      <span class="op-date-range-sep">至</span>
+      <input type="date" id="opDateTo" aria-label="结束日期">
+    </span>
+    <button id="opRefreshBtn" style="height:32px; padding:0 16px; background:var(--accent); color:#fff; border:0; border-radius:6px; cursor:pointer; font-size:14px;">刷新</button>
+    <span style="color: var(--fg-subtle); font-size: 12px; margin-left: auto;">
+      汇率：system_settings.material_roas_rmb_per_usd ｜ 退货占用 1% ｜ 手续费策略 C
+    </span>
+  </div>
+  <div id="opTimeWindowHint" style="margin: -8px 0 var(--space-5); color: var(--fg-muted); font-size: 12px;"></div>
+
+  <div id="opAlertsBanner"></div>
+
+  <div class="op-tabs">
+    <button class="op-tab active" data-op-tab="summary">总览</button>
+    <button class="op-tab" data-op-tab="losses">亏损订单</button>
+    <button class="op-tab" data-op-tab="completeness">成本完备性</button>
+    <button class="op-tab" data-op-tab="matching">Campaign 配对</button>
+  </div>
+
+  <div data-op-panel="summary">
+    <div class="op-cards">
+      <div class="op-card"><h3>已核算营收</h3><div class="value" id="opRevenue">-</div><div class="sub" id="opRevenueLines">-</div></div>
+      <div class="op-card" id="opProfitCard"><h3>已核算利润</h3><div class="value" id="opProfit">-</div><div class="sub" id="opMargin">-</div></div>
+      <div class="op-card warn"><h3>未分摊广告费</h3><div class="value" id="opUnallocated">-</div><div class="sub">campaign 未匹配 product，待人工配对</div></div>
+      <div class="op-card warn"><h3>不完备 SKU 行</h3><div class="value" id="opIncomplete">-</div><div class="sub">缺采购价 / 包装成本</div></div>
+    </div>
+
+    <div class="op-section">
+      <h2>成本拆分（已核算行）</h2>
+      <table class="op-table">
+        <thead><tr><th>项目</th><th class="num">USD</th><th class="num">占营收 %</th></tr></thead>
+        <tbody id="opCostBreakdownBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div data-op-panel="losses" hidden>
+    <div class="op-section">
+      <h2>亏损订单（profit_usd &lt; 0）</h2>
+      <table class="op-table">
+        <thead><tr>
+          <th>SKU</th><th>日期</th><th>国家</th>
+          <th class="num">营收</th><th class="num">手续费</th><th class="num">广告</th>
+          <th class="num">采购</th><th class="num">物流</th><th class="num profit">亏损</th>
+        </tr></thead>
+        <tbody id="opLossBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div data-op-panel="matching" hidden>
+    <div class="op-section">
+      <h2>未匹配 Campaign（近 90 天，按 spend 降序）</h2>
+      <p style="color: var(--fg-muted); font-size: 13px; margin: 0 0 var(--space-4);">
+        这些 campaign 名没自动匹配到 media_products，导致广告费没分摊到订单。
+        从下拉选 product 后保存，会立即回填历史 meta_ad_daily_campaign_metrics
+        并写入 campaign_product_overrides 表（未来同步进来的同名 campaign 也会用上）。
+      </p>
+      <table class="op-table">
+        <thead><tr>
+          <th>Campaign Code</th>
+          <th class="num">天数</th>
+          <th class="num">未分摊 spend</th>
+          <th>选择 Product</th>
+          <th>备注</th>
+          <th>操作</th>
+        </tr></thead>
+        <tbody id="opUnmatchedBody"></tbody>
+      </table>
+    </div>
+
+    <div class="op-section">
+      <h2>已有人工配对</h2>
+      <table class="op-table">
+        <thead><tr>
+          <th>Campaign Code</th>
+          <th>→ Product</th>
+          <th>备注</th>
+          <th>创建者 / 时间</th>
+          <th>操作</th>
+        </tr></thead>
+        <tbody id="opOverridesBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div data-op-panel="completeness" hidden>
+    <div class="op-section">
+      <h2>成本完备性看板（按近 30 天 GMV 排序）</h2>
+      <p style="color: var(--fg-muted); font-size: 13px; margin: 0 0 var(--space-4);">
+        不完备产品在前。请优先维护这些产品的采购价 / 包装成本（在 素材管理 → ROAS 入口）。
+      </p>
+      <table class="op-table">
+        <thead><tr>
+          <th>Product Code</th><th>状态</th><th>缺失字段</th>
+          <th class="num">近 30 天订单</th><th class="num">近 30 天 GMV</th>
+        </tr></thead>
+        <tbody id="opCompletenessBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fmtUSD = v => v == null ? '-' : '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const fmtInt = v => v == null ? '-' : Number(v).toLocaleString('en-US');
+
+// ===================================================================
+// Meta 业务日历（对齐 order_analytics 的 orderAnalyticsMetaCalendar）
+// 北京时间 16:00 切日：业务日 X = 北京时间 [X 16:00, X+1 16:00)
+// ===================================================================
+const META_TZ = 'Asia/Shanghai';
+const META_CUTOVER_HOUR = 16;
+
+function fmtIsoDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function startOfWeek(d) { const x = new Date(d); const day = x.getDay() || 7; x.setDate(x.getDate()-day+1); return x; }
+function endOfWeek(d) { return addDays(startOfWeek(d), 6); }
+
+// 当前 Meta 业务日（北京时间 16:00 切日）
+function metaBusinessToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: META_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', hourCycle:'h23'
+  }).formatToParts(new Date()).reduce((a,p)=>{ if(p.type!=='literal') a[p.type]=p.value; return a; }, {});
+  const d = new Date(Number(parts.year), Number(parts.month)-1, Number(parts.day));
+  if (Number(parts.hour) < META_CUTOVER_HOUR) d.setDate(d.getDate()-1);
+  return d;
+}
+
+function resolveOpRange(range) {
+  const today = metaBusinessToday();
+  if (range === 'today') return {start: today, end: today};
+  if (range === 'yesterday') { const y = addDays(today,-1); return {start:y, end:y}; }
+  if (range === 'thisWeek') return {start: startOfWeek(today), end: endOfWeek(today)};
+  if (range === 'lastWeek') return {start: addDays(startOfWeek(today),-7), end: addDays(endOfWeek(today),-7)};
+  if (range === 'thisMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth(), 1),
+            end: new Date(today.getFullYear(), today.getMonth()+1, 0)};
+  }
+  if (range === 'lastMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth()-1, 1),
+            end: new Date(today.getFullYear(), today.getMonth(), 0)};
+  }
+  return {start: today, end: today};
+}
+
+// 业务日范围 → 对应北京时间范围说明
+function describeBjWindow(startStr, endStr) {
+  if (!startStr || !endStr) return '';
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  const bjStart = fmtIsoDate(start) + ' 16:00';
+  const bjEnd = fmtIsoDate(addDays(end, 1)) + ' 16:00';
+  const dayCount = Math.round((end - start) / 86400000) + 1;
+  return `📅 北京时间 ${bjStart} → ${bjEnd}（${dayCount} 个 Meta 业务日，按 16:00 切日）`;
+}
+
+function syncBjHint() {
+  const f = document.getElementById('opDateFrom').value;
+  const t = document.getElementById('opDateTo').value;
+  document.getElementById('opTimeWindowHint').textContent = describeBjWindow(f, t);
+  // 同步快捷按钮 active 状态
+  let matched = '';
+  ['today','yesterday','thisWeek','lastWeek','thisMonth','lastMonth'].forEach(r => {
+    const b = resolveOpRange(r);
+    if (fmtIsoDate(b.start) === f && fmtIsoDate(b.end) === t) matched = r;
+  });
+  document.querySelectorAll('[data-op-range]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.opRange === matched);
+  });
+}
+
+function setOpRange(range) {
+  const b = resolveOpRange(range);
+  document.getElementById('opDateFrom').value = fmtIsoDate(b.start);
+  document.getElementById('opDateTo').value = fmtIsoDate(b.end);
+  syncBjHint();
+}
+
+async function fetchJSON(url) {
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error(`${url} → ${r.status}`);
+  return r.json();
+}
+
+async function refreshSummary() {
+  const f = document.getElementById('opDateFrom').value;
+  const t = document.getElementById('opDateTo').value;
+  const data = await fetchJSON(`/order-profit/api/summary?from=${f}&to=${t}`);
+  const ok = data.summary.ok;
+  const inc = data.summary.incomplete;
+
+  document.getElementById('opRevenue').textContent = fmtUSD(ok.revenue);
+  document.getElementById('opRevenueLines').textContent = `${fmtInt(ok.lines)} 行已核算`;
+  document.getElementById('opProfit').textContent = fmtUSD(ok.profit);
+  if ((ok.profit || 0) < 0) document.getElementById('opProfitCard').classList.add('neg');
+  else document.getElementById('opProfitCard').classList.remove('neg');
+  document.getElementById('opMargin').textContent = data.margin_pct == null ? '毛利率：-' : `毛利率：${data.margin_pct}%`;
+  document.getElementById('opUnallocated').textContent = fmtUSD(data.unallocated_ad_spend_usd);
+  document.getElementById('opIncomplete').textContent = `${fmtInt(inc.lines)} 行`;
+
+  // 成本拆分
+  const rev = ok.revenue || 0;
+  const items = [
+    ['Shopify 手续费 (策略 C)', ok.shopify_fee],
+    ['广告费分摊', ok.ad_cost],
+    ['采购成本 (RMB→USD)', ok.purchase],
+    ['小包物流 (RMB→USD)', ok.shipping_cost],
+    ['退货占用 (1%)', ok.return_reserve],
+  ];
+  const tbody = document.getElementById('opCostBreakdownBody');
+  tbody.innerHTML = items.map(([name, val]) => {
+    const pct = rev > 0 ? (100 * val / rev).toFixed(2) + '%' : '-';
+    return `<tr><td>${name}</td><td class="num">${fmtUSD(val)}</td><td class="num">${pct}</td></tr>`;
+  }).join('');
+
+  // 异常 banner
+  const banner = document.getElementById('opAlertsBanner');
+  const alerts = [];
+  if (data.unallocated_ad_spend_usd > 0) {
+    alerts.push(`未分摊广告费 ${fmtUSD(data.unallocated_ad_spend_usd)}（最近一次跑），请补 campaign-product 配对`);
+  }
+  if (inc.lines > ok.lines) {
+    alerts.push(`不完备 SKU 行 ${fmtInt(inc.lines)} > 已核算 ${fmtInt(ok.lines)}，请优先维护成本字段`);
+  }
+  banner.innerHTML = alerts.length
+    ? `<div class="op-banner">⚠ ${alerts.join('；')}</div>`
+    : '';
+}
+
+async function refreshLosses() {
+  const f = document.getElementById('opDateFrom').value;
+  const t = document.getElementById('opDateTo').value;
+  const data = await fetchJSON(`/order-profit/api/loss_alerts?from=${f}&to=${t}&limit=100`);
+  const tbody = document.getElementById('opLossBody');
+  if (!data.loss_lines || data.loss_lines.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="op-loading">无亏损订单</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.loss_lines.map(r => `
+    <tr class="loss">
+      <td>${r.product_id || '-'}</td>
+      <td>${r.business_date}</td>
+      <td>${r.buyer_country || '-'}</td>
+      <td class="num">${fmtUSD(r.revenue_usd)}</td>
+      <td class="num">${fmtUSD(r.shopify_fee_usd)}</td>
+      <td class="num">${fmtUSD(r.ad_cost_usd)}</td>
+      <td class="num">${fmtUSD(r.purchase_usd)}</td>
+      <td class="num">${fmtUSD(r.shipping_cost_usd)}</td>
+      <td class="num profit">${fmtUSD(r.profit_usd)}</td>
+    </tr>`).join('');
+}
+
+async function refreshCompleteness() {
+  const data = await fetchJSON('/order-profit/api/cost_completeness?days=30');
+  const tbody = document.getElementById('opCompletenessBody');
+  if (!data.products || data.products.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="op-loading">无产品</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.products.map(p => {
+    const status = p.completeness.ok
+      ? '<span style="color: var(--success-fg)">完备</span>'
+      : '<span style="color: var(--danger-fg)">缺失</span>';
+    const missing = p.completeness.missing.length
+      ? p.completeness.missing.join(' / ')
+      : '-';
+    return `<tr class="op-completeness-row">
+      <td>${p.product_code || '#'+p.product_id}</td>
+      <td>${status}</td>
+      <td class="missing">${missing}</td>
+      <td class="num">${fmtInt(p.order_lines)}</td>
+      <td class="num gmv">${fmtUSD(p.gmv_usd)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ---- Campaign 配对（人工兜底）----
+let _productsCache = null;
+async function loadProductsCache() {
+  if (_productsCache) return _productsCache;
+  const data = await fetchJSON('/order-profit/api/products_for_match');
+  _productsCache = data.products || [];
+  return _productsCache;
+}
+
+function buildProductSelect(currentProductId) {
+  const products = _productsCache || [];
+  const opts = products.map(p =>
+    `<option value="${p.id}" ${p.id === currentProductId ? 'selected' : ''}>${p.product_code || '#' + p.id} — ${p.name || ''}</option>`
+  ).join('');
+  return `<select class="op-product-select" data-op-product-select><option value="">— 选择产品 —</option>${opts}</select>`;
+}
+
+async function refreshMatching() {
+  await loadProductsCache();
+  const data = await fetchJSON('/order-profit/api/unmatched_campaigns?days=90&limit=100');
+  const tbody = document.getElementById('opUnmatchedBody');
+  if (!data.campaigns || data.campaigns.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="op-loading">无未匹配 campaign 🎉</td></tr>';
+  } else {
+    tbody.innerHTML = data.campaigns.map(c => `
+      <tr data-campaign="${c.normalized_campaign_code}">
+        <td><code>${c.normalized_campaign_code}</code></td>
+        <td class="num">${fmtInt(c.days)}</td>
+        <td class="num" style="font-weight: 500;">${fmtUSD(c.spend)}</td>
+        <td>${buildProductSelect()}</td>
+        <td><input type="text" class="op-reason-input" placeholder="备注（可选）" style="width:160px; height:28px; padding:0 8px; border:1px solid var(--border-strong); border-radius:4px;"></td>
+        <td><button class="op-save-btn" style="height:28px; padding:0 12px; background:var(--accent); color:#fff; border:0; border-radius:4px; cursor:pointer;">保存</button></td>
+      </tr>
+    `).join('');
+    tbody.querySelectorAll('.op-save-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const tr = e.target.closest('tr');
+        const code = tr.dataset.campaign;
+        const pid = tr.querySelector('.op-product-select').value;
+        const reason = tr.querySelector('.op-reason-input').value;
+        if (!pid) { alert('请先选择一个产品'); return; }
+        btn.disabled = true; btn.textContent = '保存中...';
+        try {
+          const r = await fetch('/order-profit/api/manual_match', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({normalized_campaign_code: code, product_id: parseInt(pid), reason}),
+          });
+          const json = await r.json();
+          if (!r.ok) { alert('保存失败：' + (json.error || r.status)); btn.disabled = false; btn.textContent = '保存'; return; }
+          tr.remove();
+          refreshOverrides();
+          refreshSummary();  // 顶部卡片的 unallocated 数字会变
+        } catch (e) {
+          alert('保存出错：' + e.message);
+          btn.disabled = false; btn.textContent = '保存';
+        }
+      });
+    });
+  }
+}
+
+async function refreshOverrides() {
+  const data = await fetchJSON('/order-profit/api/manual_matches');
+  const tbody = document.getElementById('opOverridesBody');
+  if (!data.overrides || data.overrides.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="op-loading">还没有人工配对记录</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.overrides.map(o => `
+    <tr>
+      <td><code>${o.normalized_campaign_code}</code></td>
+      <td>${o.product_code || '#' + o.product_id}</td>
+      <td>${o.reason || '-'}</td>
+      <td style="color: var(--fg-muted); font-size: 12px;">${o.created_by || '-'} · ${o.created_at}</td>
+      <td><button class="op-delete-btn" data-id="${o.id}" data-code="${o.normalized_campaign_code}" style="height:28px; padding:0 12px; background:var(--bg-muted); color:var(--danger-fg); border:1px solid var(--border); border-radius:4px; cursor:pointer;">删除</button></td>
+    </tr>
+  `).join('');
+  tbody.querySelectorAll('.op-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      if (!confirm(`删除 ${btn.dataset.code} 的人工配对？\n会把 meta_ad_daily_campaign_metrics 里对应的 product_id 清空。`)) return;
+      const r = await fetch('/order-profit/api/manual_match/' + btn.dataset.id, {
+        method: 'DELETE', credentials: 'same-origin',
+      });
+      if (r.ok) { refreshOverrides(); refreshMatching(); refreshSummary(); }
+      else alert('删除失败');
+    });
+  });
+}
+
+function refreshAll() {
+  refreshSummary();
+  refreshLosses();
+  refreshCompleteness();
+  refreshMatching();
+  refreshOverrides();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // 默认选"今天"（=Meta 业务日今天，北京时间 16:00 后是当日，之前是昨天）
+  setOpRange('today');
+
+  // 快捷按钮
+  document.querySelectorAll('[data-op-range]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setOpRange(btn.dataset.opRange);
+      refreshAll();
+    });
+  });
+
+  // 手动改日期 → 同步 hint + active 状态
+  document.getElementById('opDateFrom').addEventListener('change', syncBjHint);
+  document.getElementById('opDateTo').addEventListener('change', syncBjHint);
+
+  document.getElementById('opRefreshBtn').addEventListener('click', refreshAll);
+
+  // tab 切换
+  document.querySelectorAll('.op-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.op-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const target = btn.dataset.opTab;
+      document.querySelectorAll('[data-op-panel]').forEach(p => {
+        p.hidden = p.dataset.opPanel !== target;
+      });
+    });
+  });
+
+  refreshAll();
+});
+</script>
+{% endblock %}

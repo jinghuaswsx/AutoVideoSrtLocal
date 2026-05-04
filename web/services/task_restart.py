@@ -163,6 +163,9 @@ def restart_task(
     if source_video_path:
         payload["preview_files"] = {"source_video": source_video_path}
     steps = step_order or (_AV_SYNC_STEPS if task.get("pipeline_version") == "av" else _STEPS)
+    # 重启时打个时间戳，让前端 QA / AI Review 卡片把比这早的评估视为 stale，
+    # 避免 reload 后还显示上一轮的评分（DB 里 latest 评估表保留历史 run，不主动删）。
+    from datetime import datetime, timezone
     payload.update(
         {
             "steps": {step: "pending" for step in steps},
@@ -175,6 +178,7 @@ def restart_task(
             "subtitle_position_y": subtitle_position_y,
             "subtitle_position": subtitle_position,
             "interactive_review": interactive_review,
+            "evals_invalidated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
     if source_language is not None:

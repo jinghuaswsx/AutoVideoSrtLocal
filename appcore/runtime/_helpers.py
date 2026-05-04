@@ -365,6 +365,75 @@ def _distance_to_duration_range(duration: float, lower: float, upper: float) -> 
     return lower - duration
 
 
+def _apply_audio_tempo_fallback(
+    *,
+    audio_path: str,
+    audio_duration: float,
+    video_duration: float,
+    output_path: str,
+    max_error_ratio: float = 0.05,
+    min_delta_seconds: float = 0.10,
+) -> dict | None:
+    """Last-mile fallback：当生成音频与视频长度误差在 ±max_error_ratio 之内
+    （默认 5%），用 ffmpeg atempo 把音频精确拉伸/压缩到等于 video_duration。
+
+    返回 None 表示不需要变速（误差太大或太小）；返回 dict 表示已生效，包含：
+      ratio / pre_duration / post_duration / new_delta / new_audio_path
+
+    设计：
+    - atempo 合法范围 0.5-2.0，5% 内 ratio ∈ [0.95, 1.05] 完全在范围里
+    - 误差 <0.1s 跳过——本身就是对齐的，没必要再过 ffmpeg 浪费一次重编码
+    - 失败不抛异常，返回 None 让上层 fallback 到原音频
+    """
+    import os
+    import subprocess
+
+    if not audio_path or not os.path.isfile(audio_path):
+        return None
+    if not audio_duration or not video_duration:
+        return None
+    delta = audio_duration - video_duration
+    abs_delta = abs(delta)
+    if abs_delta < min_delta_seconds:
+        return None
+    if abs_delta / video_duration > max_error_ratio:
+        return None
+
+    ratio = audio_duration / video_duration  # >1 时变快、变短；<1 时变慢、变长
+    cmd = [
+        "ffmpeg", "-y", "-i", audio_path,
+        "-filter:a", f"atempo={ratio:.4f}",
+        "-vn", "-acodec", "libmp3lame", "-q:a", "3",
+        output_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
+    except Exception:
+        return None
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", output_path],
+        capture_output=True, text=True,
+    )
+    try:
+        post_duration = float(probe.stdout.strip())
+    except (ValueError, AttributeError):
+        return None
+    if post_duration <= 0:
+        return None
+
+    return {
+        "ratio": round(ratio, 4),
+        "pre_duration": round(audio_duration, 3),
+        "post_duration": round(post_duration, 3),
+        "new_delta": round(post_duration - video_duration, 3),
+        "new_audio_path": output_path,
+    }
+
+
 def _fit_tts_segments_to_duration(tts_segments: list[dict], target_duration: float) -> list[dict]:
     """Keep only the audible prefix of TTS segments within target_duration."""
     kept: list[dict] = []

@@ -580,6 +580,59 @@ def ad_match():
     return jsonify({"matched": affected})
 
 
+@bp.route("/order-analytics/ad-match-manual", methods=["POST"])
+@login_required
+@admin_required
+def ad_match_manual():
+    """人工把指定归一化广告系列名下所有未匹配行绑定到 media_products 产品。"""
+    body = request.get_json(silent=True) or {}
+    normalized_campaign_code = (body.get("normalized_campaign_code") or "").strip()
+    raw_product_id = body.get("product_id")
+
+    if not normalized_campaign_code:
+        return jsonify(error="missing_param",
+                       detail="normalized_campaign_code is required"), 400
+    try:
+        product_id = int(raw_product_id) if raw_product_id is not None else 0
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_param",
+                       detail="product_id must be an integer"), 400
+    if product_id <= 0:
+        return jsonify(error="missing_param", detail="product_id is required"), 400
+
+    try:
+        result = oa.manual_match_meta_ad_campaign(normalized_campaign_code, product_id)
+    except LookupError as exc:
+        _audit_order_analytics_action(
+            "order_analytics_meta_ad_manual_matched",
+            target_type="meta_ad_campaign",
+            target_label=normalized_campaign_code,
+            status="failure",
+            detail={
+                "normalized_campaign_code": normalized_campaign_code,
+                "product_id": product_id,
+                "error": str(exc),
+            },
+        )
+        return jsonify(error="product_not_found", detail=str(exc)), 404
+    except ValueError as exc:
+        return jsonify(error="invalid_param", detail=str(exc)), 400
+
+    _audit_order_analytics_action(
+        "order_analytics_meta_ad_manual_matched",
+        target_type="meta_ad_campaign",
+        target_label=normalized_campaign_code,
+        detail={
+            "normalized_campaign_code": normalized_campaign_code,
+            "product_id": result["product_id"],
+            "product_code": result["product_code"],
+            "matched_periodic": result["matched_periodic"],
+            "matched_daily": result["matched_daily"],
+        },
+    )
+    return jsonify({"ok": True, **result})
+
+
 @bp.route("/order-analytics/dashboard")
 @login_required
 @admin_required

@@ -511,7 +511,11 @@ def update_segments(task_id):
         )
         variant_state["localized_translation"] = localized_translation
         variants[variant] = variant_state
-        store.update(task_id, variants=variants, localized_translation=localized_translation, _segments_confirmed=True)
+        # 用户改了译文，已有的 QA / AI Review 评估都对应旧译文，标记为过期。
+        from datetime import datetime, timezone
+        store.update(task_id, variants=variants, localized_translation=localized_translation,
+                     _segments_confirmed=True,
+                     evals_invalidated_at=datetime.now(timezone.utc).isoformat())
 
     store.set_current_review_step(task_id, "")
     omni_pipeline_runner.resume(task_id, "tts", user_id=current_user.id)
@@ -569,6 +573,50 @@ def download(task_id, file_type):
 
     variant = request.args.get("variant", "normal")
     return serve_artifact_download(task, task_id, file_type, variant=variant)
+
+
+# AI 视频分析（手动触发，多模态 ADC 通道）—— 与 multi_translate 共用同一个
+# service 与 DB 表，只是 source_type='omni_translate_task' 单独归类。
+@bp.route("/api/omni-translate/<task_id>/video-ai-review/run", methods=["POST"])
+@login_required
+def run_video_ai_review(task_id):
+    if not _get_viewable_task(task_id):
+        return jsonify({"error": "Task not found"}), 404
+    from appcore import video_ai_review
+    try:
+        run_id = video_ai_review.trigger_review(
+            source_type="omni_translate_task",
+            source_id=task_id,
+            user_id=current_user.id,
+            triggered_by="manual",
+        )
+    except video_ai_review.ReviewInProgressError as exc:
+        return jsonify({
+            "error": "AI 视频分析正在运行中",
+            "in_flight_run_id": exc.run_id,
+        }), 409
+    except Exception as exc:
+        log.exception("[video-ai-review] omni trigger failed task=%s", task_id)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({
+        "status": "started", "run_id": run_id,
+        "channel": video_ai_review.CHANNEL,
+        "model": video_ai_review.MODEL,
+    })
+
+
+@bp.route("/api/omni-translate/<task_id>/video-ai-review", methods=["GET"])
+@login_required
+def get_video_ai_review(task_id):
+    if not _get_viewable_task(task_id):
+        return jsonify({"error": "Task not found"}), 404
+    from appcore import video_ai_review, task_state
+    payload = video_ai_review.latest_review("omni_translate_task", task_id)
+    ts_state = task_state.get(task_id) or {}
+    return jsonify({
+        "review": payload,
+        "task_evals_invalidated_at": ts_state.get("evals_invalidated_at"),
+    })
 
 
 @bp.route("/api/omni-translate/<task_id>", methods=["DELETE"])
