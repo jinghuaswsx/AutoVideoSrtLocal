@@ -17,6 +17,29 @@
 {% set sep = state.separation or {} %}
 <script>
 (function () {
+  // ───────────────────────────────────────────────────────────────────
+  // DOM 重排：把分离 step 卡片移到 voice-selector-multi（音色选择卡）上方。
+  // 后端 step 顺序是 extract → asr → asr_normalize → separate → voice_match
+  // → ...，但 voice_selector_multi 这个 partial 在 _translate_detail_shell.html
+  // 里 include 在 task_workbench 之前，所以默认视觉上 voice_match 在最顶部、
+  // separate 在 task_workbench 中部第 4 个，跟"vocals 是音色匹配输入"的逻辑
+  // 视觉上反过来。这里把 #step-separate 节点 move 到 voice_selector 之前，
+  // 保持后端模板结构不变。step icon 编号（"4"）保留显示，task_workbench 里
+  // 第 4 位置会跳号——这是用户能接受的代价（其它 step 仍在原位）。
+  // ───────────────────────────────────────────────────────────────────
+  function moveSeparateBeforeVoiceSelector() {
+    var step = document.getElementById("step-separate");
+    var voiceSel = document.getElementById("voice-selector-multi");
+    if (step && voiceSel && voiceSel.parentNode) {
+      voiceSel.parentNode.insertBefore(step, voiceSel);
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", moveSeparateBeforeVoiceSelector);
+  } else {
+    moveSeparateBeforeVoiceSelector();
+  }
+
   var TASK_ID = {{ project.id|tojson }};
   var API_BASE = {{ api_base|tojson }};
   var separation = {{ sep|tojson }} || null;
