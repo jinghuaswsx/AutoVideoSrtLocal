@@ -1646,10 +1646,21 @@ class PipelineRunner:
             if not audio_path or not os.path.isfile(audio_path):
                 continue
 
+            # B 算法会 in-place 修改 audio_path（TTS 文件）。如果 B 跑完发现
+            # 偏差过大需要切 A 兜底，A 必须用原始 TTS 而不是 B 改过的版本，
+            # 否则 A 跑出的响度也偏。先备份 TTS 原始 mp3。
+            backup = audio_path + ".pre_loudness.bak.mp3"
+            backup_consumed = False
+            try:
+                shutil.copy2(audio_path, backup)
+            except Exception:  # noqa: BLE001
+                pass
+
             summary = None
+            b_summary_excess = None
             try:
                 if algorithm == "B":
-                    summary = self._b_overall_match(
+                    b_summary = self._b_overall_match(
                         audio_path=audio_path,
                         accompaniment_path=accompaniment_path,
                         video_lufs=float(video_lufs),
@@ -1657,7 +1668,27 @@ class PipelineRunner:
                         loudness_dir=loudness_dir,
                         variant_name=variant_name,
                     )
-                    summary["algorithm"] = "B"
+                    b_summary["algorithm"] = "B"
+                    # B 跑完检查实际偏差。如果 > 3 LU（远超 ±3% LUFS 容差），
+                    # 说明 BG 太弱让 B 物理上不适用——例如纯人声视频分离出的
+                    # accompaniment 几乎静音，"mp4 整体 ≈ video 整体" 要 TTS
+                    # 爆响，但 ffmpeg loudnorm 的 I 参数和 true peak limiter
+                    # 都阻止 TTS 推这么响。自动还原 TTS 切 A 算法。
+                    b_dev = abs(b_summary.get("overall_deviation_lu") or 0)
+                    if b_dev > 3.0:
+                        log.info(
+                            "[loudness_match] task=%s B 偏差 %.2f LU > 3，"
+                            "accompaniment 太弱不适用 B，切 A 算法",
+                            task_id, b_dev,
+                        )
+                        if os.path.isfile(backup):
+                            shutil.move(backup, audio_path)
+                            backup_consumed = True
+                        b_summary_excess = b_summary
+                        raise RuntimeError(
+                            f"B 偏差过大 ({b_dev:.1f} LU)，accompaniment 太弱"
+                        )
+                    summary = b_summary
                 else:
                     summary = self._a_vocals_match(
                         audio_path=audio_path,
@@ -1665,27 +1696,38 @@ class PipelineRunner:
                     )
                     summary["algorithm"] = "A"
             except Exception as b_exc:  # noqa: BLE001
-                # B 算法失败（最常见：ffmpeg loudnorm I 参数超 [-70,-5] 范围、
-                # mix_with_background ffmpeg 报错等）→ 自动 fallback A 算法
-                # （把 TTS 拉到 vocals_lufs，TTS 单独对齐 vocals 单独，至少有
-                # 部分响度匹配，不整体跳过）。
+                # B 失败（ffmpeg 报错）或 B 偏差过大切 A——都用原始 TTS 跑 A
                 log.warning(
-                    "[loudness_match] task=%s variant=%s B 失败 (%s)，回退 A 算法",
+                    "[loudness_match] task=%s variant=%s B 不可用 (%s)，回退 A 算法",
                     task_id, variant_name, b_exc,
                 )
+                if not backup_consumed and os.path.isfile(backup):
+                    shutil.move(backup, audio_path)
+                    backup_consumed = True
                 try:
                     summary = self._a_vocals_match(
                         audio_path=audio_path,
                         target_lufs=float(separation.get("vocals_lufs") or -23.0),
                     )
-                    summary["algorithm"] = "A_after_B_failure"
-                    summary["b_error"] = str(b_exc)[:200]
+                    if b_summary_excess is not None:
+                        summary["algorithm"] = "A_after_B_excess_deviation"
+                        summary["b_overall_deviation_lu"] = b_summary_excess.get("overall_deviation_lu")
+                        summary["b_post_amix_lufs"] = b_summary_excess.get("post_amix_lufs")
+                    else:
+                        summary["algorithm"] = "A_after_B_failure"
+                        summary["b_error"] = str(b_exc)[:200]
                 except Exception as a_exc:  # noqa: BLE001
                     log.warning(
                         "[loudness_match] task=%s variant=%s A 兜底也失败：%s",
                         task_id, variant_name, a_exc,
                     )
                     summary = None
+            finally:
+                if not backup_consumed and os.path.isfile(backup):
+                    try:
+                        os.unlink(backup)
+                    except OSError:
+                        pass
 
             if not summary:
                 continue
@@ -1716,13 +1758,19 @@ class PipelineRunner:
                     f"{primary['post_amix_lufs']:.1f} LUFS，目标 {video_lufs:.1f} LUFS，"
                     f"偏差 {pct:.2f}% {'✓ 在 ±3% 内' if conv else '⚠ 超出 ±3%'}"
                 )
-            elif primary_algo == "A_after_B_failure":
+            elif primary_algo in ("A_after_B_failure", "A_after_B_excess_deviation"):
                 pct = primary.get("deviation_pct")
                 conv = primary.get("converged", False)
+                if primary_algo == "A_after_B_excess_deviation":
+                    why = (
+                        f"B 整体偏差 {abs(primary.get('b_overall_deviation_lu') or 0):.1f} LU "
+                        "过大（accompaniment 太弱，BG 几乎静音）"
+                    )
+                else:
+                    why = f"B 失败：{(primary.get('b_error') or '')[:60]}"
                 msg = (
-                    f"响度匹配完成（B 失败回退 A）：TTS {primary['output_lufs']:.1f} LUFS，"
-                    f"偏差 {pct:.2f}% {'✓' if conv else '⚠'} · "
-                    f"B 失败原因：{primary.get('b_error', '')[:60]}"
+                    f"响度匹配完成（{why}，已切 A）：TTS {primary['output_lufs']:.1f} LUFS，"
+                    f"偏差 {pct:.2f}% {'✓' if conv else '⚠'}"
                 )
             else:  # algorithm A（video_lufs 缺失主动走 A）
                 pct = primary.get("deviation_pct")

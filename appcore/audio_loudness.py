@@ -208,10 +208,15 @@ def mix_with_background(
     out_p = Path(output_path)
     out_p.parent.mkdir(parents=True, exist_ok=True)
 
+    # ffmpeg amix 默认 normalize=1 会把 N 路输出再除以 N（求平均），即使其中
+    # 一路几乎静音也会让输出比单路输入响度低 ~6 dB——这个对 B 算法（"反推 TTS
+    # 让 mp4 整体 ≈ 原视频整体"）破坏巨大：测得的 pre_amix_lufs 偏低 6 dB →
+    # delta 偏大 → 反推 TTS target 偏高 → 触发 ffmpeg loudnorm 上限报错。
+    # 加 normalize=0 让 amix 直接相加（保留真实响度），与人感知 mix 一致。
     filter_graph = (
         f"[0:a]volume={main_volume}[m];"
         f"[1:a]volume={background_volume}[b];"
-        f"[m][b]amix=inputs=2:duration={duration}:dropout_transition=0[out]"
+        f"[m][b]amix=inputs=2:duration={duration}:dropout_transition=0:normalize=0[out]"
     )
     cmd = [
         "ffmpeg", "-hide_banner", "-nostats", "-y",
