@@ -1646,6 +1646,7 @@ class PipelineRunner:
             if not audio_path or not os.path.isfile(audio_path):
                 continue
 
+            summary = None
             try:
                 if algorithm == "B":
                     summary = self._b_overall_match(
@@ -1656,18 +1657,38 @@ class PipelineRunner:
                         loudness_dir=loudness_dir,
                         variant_name=variant_name,
                     )
+                    summary["algorithm"] = "B"
                 else:
                     summary = self._a_vocals_match(
                         audio_path=audio_path,
                         target_lufs=float(separation["vocals_lufs"]),
                     )
-            except Exception as exc:  # noqa: BLE001 — 不阻塞主流程
+                    summary["algorithm"] = "A"
+            except Exception as b_exc:  # noqa: BLE001
+                # B 算法失败（最常见：ffmpeg loudnorm I 参数超 [-70,-5] 范围、
+                # mix_with_background ffmpeg 报错等）→ 自动 fallback A 算法
+                # （把 TTS 拉到 vocals_lufs，TTS 单独对齐 vocals 单独，至少有
+                # 部分响度匹配，不整体跳过）。
                 log.warning(
-                    "[loudness_match] task=%s variant=%s failed: %s",
-                    task_id, variant_name, exc,
+                    "[loudness_match] task=%s variant=%s B 失败 (%s)，回退 A 算法",
+                    task_id, variant_name, b_exc,
                 )
-                continue
+                try:
+                    summary = self._a_vocals_match(
+                        audio_path=audio_path,
+                        target_lufs=float(separation.get("vocals_lufs") or -23.0),
+                    )
+                    summary["algorithm"] = "A_after_B_failure"
+                    summary["b_error"] = str(b_exc)[:200]
+                except Exception as a_exc:  # noqa: BLE001
+                    log.warning(
+                        "[loudness_match] task=%s variant=%s A 兜底也失败：%s",
+                        task_id, variant_name, a_exc,
+                    )
+                    summary = None
 
+            if not summary:
+                continue
             summary["variant"] = variant_name
             summaries.append(summary)
 
@@ -1685,15 +1706,25 @@ class PipelineRunner:
 
         if summaries:
             primary = summaries[0]
-            if algorithm == "B":
+            primary_algo = primary.get("algorithm", algorithm)
+            if primary_algo == "B":
                 pct = primary.get("overall_deviation_pct")
                 conv = primary.get("converged", False)
+                clamped_note = "（target 已 clamp）" if primary.get("target_clamped") else ""
                 msg = (
-                    f"响度匹配完成（B）：mp4 整体 {primary['post_amix_lufs']:.1f} LUFS，"
-                    f"目标 {video_lufs:.1f} LUFS，偏差 {pct:.2f}% "
-                    f"{'✓ 在 ±3% 内' if conv else '⚠ 超出 ±3%'}"
+                    f"响度匹配完成（B）{clamped_note}：mp4 整体 "
+                    f"{primary['post_amix_lufs']:.1f} LUFS，目标 {video_lufs:.1f} LUFS，"
+                    f"偏差 {pct:.2f}% {'✓ 在 ±3% 内' if conv else '⚠ 超出 ±3%'}"
                 )
-            else:
+            elif primary_algo == "A_after_B_failure":
+                pct = primary.get("deviation_pct")
+                conv = primary.get("converged", False)
+                msg = (
+                    f"响度匹配完成（B 失败回退 A）：TTS {primary['output_lufs']:.1f} LUFS，"
+                    f"偏差 {pct:.2f}% {'✓' if conv else '⚠'} · "
+                    f"B 失败原因：{primary.get('b_error', '')[:60]}"
+                )
+            else:  # algorithm A（video_lufs 缺失主动走 A）
                 pct = primary.get("deviation_pct")
                 conv = primary.get("converged", False)
                 msg = (
@@ -1701,7 +1732,16 @@ class PipelineRunner:
                     f"偏差 {pct:.2f}% {'✓' if conv else '⚠'}"
                 )
         else:
-            msg = "无 TTS 音频，跳过响度匹配"
+            # 区分两种 summaries 空：tts_audio 不存在 vs B+A 都失败
+            had_audio = any(
+                isinstance(v, dict) and v.get("tts_audio_path")
+                and os.path.isfile(v.get("tts_audio_path") or "")
+                for v in variants.values()
+            )
+            msg = (
+                "响度匹配失败（B 和 A 都跑不通，详见 server log）"
+                if had_audio else "无 TTS 音频，跳过响度匹配"
+            )
         self._set_step(task_id, "loudness_match", "done", msg)
 
     def _b_overall_match(
@@ -1738,7 +1778,14 @@ class PipelineRunner:
 
         # 3) 反推 TTS 目标响度
         delta = pre_amix_lufs - video_lufs
-        tts_target_lufs = tts_orig_lufs - delta
+        tts_target_raw = tts_orig_lufs - delta
+        # ffmpeg loudnorm 的 I 参数必须在 [-70, -5] LUFS。如果原视频特别响
+        # （video_lufs > -10 LUFS）+ TTS_orig 也偏响，反推 target 可能 > -5
+        # 触发 ffmpeg 报错；clamp 到合法范围让管线能跑，summary 里标 clamped
+        # 让 UI 警告"已 clamp"。
+        LOUDNORM_I_MIN, LOUDNORM_I_MAX = -70.0, -5.0
+        tts_target_lufs = max(LOUDNORM_I_MIN, min(LOUDNORM_I_MAX, tts_target_raw))
+        target_clamped = abs(tts_target_lufs - tts_target_raw) > 1e-6
 
         # 4) Loudnorm TTS_orig → TTS_norm，in-place 替换原 mp3
         tmp_norm = audio_path + ".loudnorm.mp3"
@@ -1779,7 +1826,9 @@ class PipelineRunner:
 
         return {
             "tts_orig_lufs": tts_orig_lufs,
+            "tts_target_lufs_raw": tts_target_raw,
             "tts_target_lufs": tts_target_lufs,
+            "target_clamped": target_clamped,
             "tts_output_lufs": norm_result.output_lufs,
             "pre_amix_lufs": pre_amix_lufs,
             "post_amix_lufs": post_amix_lufs,
