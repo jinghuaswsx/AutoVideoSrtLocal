@@ -1535,6 +1535,18 @@ class PipelineRunner:
             task_timeout=settings.task_timeout,
         )
         task_state.update(task_id, separation=result)
+        # 把 vocals / accompaniment 暴露到 preview_files，前端通过
+        # /api/<project>/<task_id>/artifact/separation_{vocals,accompaniment}
+        # 直接 serve 出来供试听。
+        if result.get("status") == "done":
+            if result.get("vocals_path"):
+                task_state.set_preview_file(
+                    task_id, "separation_vocals", result["vocals_path"],
+                )
+            if result.get("accompaniment_path"):
+                task_state.set_preview_file(
+                    task_id, "separation_accompaniment", result["accompaniment_path"],
+                )
 
         status = result["status"]
         if status == "done":
@@ -1559,13 +1571,27 @@ class PipelineRunner:
         self._set_step(task_id, "separate", "done", msg)
 
     def _step_loudness_match(self, task_id: str, task_dir: str) -> None:
-        """把每个 variant 的 TTS 音频用 EBU R128 二阶段归一化到 vocals_lufs L₀。
+        """B 算法（整体对整体）响度匹配。
 
-        完整链路：``vocals_lufs (L₀)`` 来自 :meth:`_step_separate` 测得的原视频
-        人声基准，目标偏差 ≤ ±3% LUFS（约 ±0.7 LU）。直接 in-place 替换原 mp3
-        文件，下游 :meth:`_step_compose` / :meth:`_step_subtitle` 不感知这层。
+        让 ``mix(TTS_norm, accompaniment×bg_volume)`` 整体 LUFS 收敛到原视频
+        整体 LUFS （``video_lufs``）。算法：
 
-        分离未启用 / 失败时直接 skipped；归一化失败不阻塞主任务。
+        1. 测 TTS 当前响度 ``tts_orig_lufs``
+        2. ``pre_mix = amix(TTS_orig, BG×bg)``，测 ``pre_amix_lufs``
+        3. ``delta = pre_amix_lufs - video_lufs``（mp4 整体偏多少）
+        4. ``tts_target_lufs = tts_orig_lufs - delta``（反推 TTS 该到多少）
+        5. ``loudnorm`` TTS_orig → TTS_norm，target = tts_target_lufs，
+           in-place 替换原 mp3
+        6. ``post_mix = amix(TTS_norm, BG×bg)``，测 ``post_amix_lufs``
+        7. 验收：``|post_amix - video_lufs| / |video_lufs| ≤ 3%``
+        8. 把 ``post_mix_path`` 留给 :meth:`_step_compose` 复用，省一次 amix
+
+        降级链：
+
+        - 分离未启用 / 失败 → step=done，无操作（保留 TTS 原响度）
+        - ``video_lufs is None``（分离时整体测量失败）→ 退回 A 算法
+          （target = vocals_lufs），跟旧版行为一致
+        - 任何中间 ffmpeg 失败 → 该 variant 跳过，主任务继续
         """
         from pipeline import audio_separation as sep
 
@@ -1584,15 +1610,32 @@ class PipelineRunner:
             self._set_step(task_id, "loudness_match", "done", msg)
             return
 
-        target = float(separation["vocals_lufs"])
+        video_lufs = separation.get("video_lufs")
+        accompaniment_path = separation["accompaniment_path"]
+        settings = sep.load_settings()
+        bg_volume = float(settings.background_volume)
+
+        # video_lufs 为 None → 回退 A 算法（target=vocals_lufs，旧行为）
+        algorithm = "B" if video_lufs is not None else "A"
+        target_label = (
+            f"video_lufs={video_lufs:.1f} LUFS（B 整体对整体）"
+            if video_lufs is not None
+            else f"vocals_lufs={separation['vocals_lufs']:.1f} LUFS（A 人声对人声）"
+        )
         self._set_step(
             task_id, "loudness_match", "running",
-            f"匹配 TTS 响度到 L₀={target:.1f} LUFS（EBU R128 二阶段）...",
+            f"匹配 mp4 整体响度到 {target_label}...",
         )
 
         import shutil
+        from appcore.audio_loudness import (
+            measure_integrated_lufs,
+            mix_with_background,
+            normalize_to_lufs,
+        )
 
-        from appcore.audio_loudness import normalize_to_lufs
+        loudness_dir = os.path.join(task_dir, "loudness_match")
+        os.makedirs(loudness_dir, exist_ok=True)
 
         variants = dict(task.get("variants") or {})
         summaries: list[dict] = []
@@ -1602,48 +1645,180 @@ class PipelineRunner:
             audio_path = variant_state.get("tts_audio_path")
             if not audio_path or not os.path.isfile(audio_path):
                 continue
-            tmp_path = audio_path + ".loudnorm.mp3"
+
             try:
-                result = normalize_to_lufs(
-                    audio_path, tmp_path, target_lufs=target,
-                )
+                if algorithm == "B":
+                    summary = self._b_overall_match(
+                        audio_path=audio_path,
+                        accompaniment_path=accompaniment_path,
+                        video_lufs=float(video_lufs),
+                        bg_volume=bg_volume,
+                        loudness_dir=loudness_dir,
+                        variant_name=variant_name,
+                    )
+                else:
+                    summary = self._a_vocals_match(
+                        audio_path=audio_path,
+                        target_lufs=float(separation["vocals_lufs"]),
+                    )
             except Exception as exc:  # noqa: BLE001 — 不阻塞主流程
                 log.warning(
                     "[loudness_match] task=%s variant=%s failed: %s",
                     task_id, variant_name, exc,
                 )
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
                 continue
-            shutil.move(tmp_path, audio_path)
-            summaries.append({
-                "variant": variant_name,
-                "input_lufs": result.input_lufs,
-                "output_lufs": result.output_lufs,
-                "deviation_lu": result.deviation_lu,
-                "deviation_pct": result.deviation_pct,
-                "converged": result.converged,
-            })
+
+            summary["variant"] = variant_name
+            summaries.append(summary)
 
         separation = dict(separation)
         separation["tts_loudness"] = {
-            "target_lufs": target,
+            "algorithm": algorithm,
+            "video_lufs": video_lufs,
+            "vocals_lufs": separation.get("vocals_lufs"),
+            "background_volume": bg_volume,
             "variants": summaries,
         }
+        # 暴露 background_volume 给 UI（前端 separation_card 直接读）
+        separation["background_volume"] = bg_volume
         task_state.update(task_id, separation=separation)
 
         if summaries:
             primary = summaries[0]
-            msg = (
-                f"响度匹配完成：{primary['output_lufs']:.1f} LUFS，"
-                f"偏差 {primary['deviation_pct']:.2f}%（"
-                f"{'✓ 在 ±3% 内' if primary['converged'] else '⚠ 超出 ±3%'}）"
-            )
+            if algorithm == "B":
+                pct = primary.get("overall_deviation_pct")
+                conv = primary.get("converged", False)
+                msg = (
+                    f"响度匹配完成（B）：mp4 整体 {primary['post_amix_lufs']:.1f} LUFS，"
+                    f"目标 {video_lufs:.1f} LUFS，偏差 {pct:.2f}% "
+                    f"{'✓ 在 ±3% 内' if conv else '⚠ 超出 ±3%'}"
+                )
+            else:
+                pct = primary.get("deviation_pct")
+                conv = primary.get("converged", False)
+                msg = (
+                    f"响度匹配完成（A 兜底）：TTS {primary['output_lufs']:.1f} LUFS，"
+                    f"偏差 {pct:.2f}% {'✓' if conv else '⚠'}"
+                )
         else:
             msg = "无 TTS 音频，跳过响度匹配"
         self._set_step(task_id, "loudness_match", "done", msg)
+
+    def _b_overall_match(
+        self,
+        *,
+        audio_path: str,
+        accompaniment_path: str,
+        video_lufs: float,
+        bg_volume: float,
+        loudness_dir: str,
+        variant_name: str,
+    ) -> dict:
+        """B 算法核心：mp4 整体响度对齐到原视频整体 LUFS。返回 summary dict。"""
+        import shutil
+        from appcore.audio_loudness import (
+            measure_integrated_lufs,
+            mix_with_background,
+            normalize_to_lufs,
+        )
+
+        # 1) 测 TTS 当前响度
+        tts_orig_lufs = measure_integrated_lufs(audio_path)
+
+        # 2) Pre-mix（TTS_orig + BG×bg_volume），测整体响度
+        pre_mix_path = os.path.join(loudness_dir, f"premix.{variant_name}.wav")
+        mix_with_background(
+            main_path=audio_path,
+            background_path=accompaniment_path,
+            output_path=pre_mix_path,
+            background_volume=bg_volume,
+            duration="longest",
+        )
+        pre_amix_lufs = measure_integrated_lufs(pre_mix_path)
+
+        # 3) 反推 TTS 目标响度
+        delta = pre_amix_lufs - video_lufs
+        tts_target_lufs = tts_orig_lufs - delta
+
+        # 4) Loudnorm TTS_orig → TTS_norm，in-place 替换原 mp3
+        tmp_norm = audio_path + ".loudnorm.mp3"
+        try:
+            norm_result = normalize_to_lufs(
+                audio_path, tmp_norm, target_lufs=tts_target_lufs,
+            )
+            shutil.move(tmp_norm, audio_path)
+        finally:
+            try:
+                os.unlink(tmp_norm)
+            except OSError:
+                pass
+
+        # 5) Post-mix 验证 mp4 整体响度
+        post_mix_path = os.path.join(loudness_dir, f"postmix.{variant_name}.wav")
+        mix_with_background(
+            main_path=audio_path,
+            background_path=accompaniment_path,
+            output_path=post_mix_path,
+            background_volume=bg_volume,
+            duration="longest",
+        )
+        post_amix_lufs = measure_integrated_lufs(post_mix_path)
+
+        # 6) 整体偏差 + 收敛判定（±3% LUFS = 约 ±0.7 LU at -23 LUFS）
+        overall_dev_lu = post_amix_lufs - video_lufs
+        overall_dev_pct = (
+            abs(overall_dev_lu / video_lufs) * 100.0
+            if abs(video_lufs) > 1e-6 else 0.0
+        )
+
+        # 清理 pre_mix（仅 post_mix 留给 _step_compose 复用）
+        try:
+            os.unlink(pre_mix_path)
+        except OSError:
+            pass
+
+        return {
+            "tts_orig_lufs": tts_orig_lufs,
+            "tts_target_lufs": tts_target_lufs,
+            "tts_output_lufs": norm_result.output_lufs,
+            "pre_amix_lufs": pre_amix_lufs,
+            "post_amix_lufs": post_amix_lufs,
+            "overall_deviation_lu": overall_dev_lu,
+            "overall_deviation_pct": overall_dev_pct,
+            "converged": overall_dev_pct <= 3.0,
+            "post_mix_path": post_mix_path,
+        }
+
+    def _a_vocals_match(
+        self,
+        *,
+        audio_path: str,
+        target_lufs: float,
+    ) -> dict:
+        """A 算法兜底：人声对人声匹配（旧行为）。返回 summary dict。"""
+        import shutil
+        from appcore.audio_loudness import normalize_to_lufs
+
+        tmp_norm = audio_path + ".loudnorm.mp3"
+        try:
+            result = normalize_to_lufs(
+                audio_path, tmp_norm, target_lufs=target_lufs,
+            )
+            shutil.move(tmp_norm, audio_path)
+        finally:
+            try:
+                os.unlink(tmp_norm)
+            except OSError:
+                pass
+
+        return {
+            "input_lufs": result.input_lufs,
+            "target_lufs": result.target_lufs,
+            "output_lufs": result.output_lufs,
+            "deviation_lu": result.deviation_lu,
+            "deviation_pct": result.deviation_pct,
+            "converged": result.converged,
+        }
 
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
@@ -2436,8 +2611,11 @@ class PipelineRunner:
     ) -> str:
         """硬字幕视频合成前的混音：TTS 主轨 + 分离出来的 accompaniment。
 
-        如果 ``task["separation"]`` 可用，用 :func:`audio_loudness.mix_with_background`
-        amix 两轨成单音轨 wav 给硬字幕 mp4 用；否则原 TTS 路径返回（旧行为）。
+        优先复用 :meth:`_step_loudness_match` (B 算法) 已经 mix 好的 ``post_mix_path``
+        ——里面的 TTS 已经按 mp4 整体响度反推归一化过、跟 BG amix 后整体 LUFS 已对齐
+        到原视频整体 LUFS，直接用就是最终混音；省一次 ffmpeg amix。
+
+        旧路径（A 算法 / 没分离 / loudness_match 跳过）：现场 mix(TTS, BG×bg_volume)。
 
         CapCut 工程包导出走 :meth:`_step_export`，那里**不**走这里——工程包要保留
         独立 accompaniment 音轨让用户能在编辑器里单独调音量。
@@ -2450,6 +2628,24 @@ class PipelineRunner:
         if not sep.is_usable(separation):
             return tts_audio_path
 
+        # 优先复用 B 算法 post_mix_path
+        tl = separation.get("tts_loudness") or {}
+        for variant_summary in (tl.get("variants") or []):
+            if variant_summary.get("variant") != variant:
+                continue
+            post_mix = variant_summary.get("post_mix_path")
+            if post_mix and os.path.isfile(post_mix):
+                log.info(
+                    "[compose] reusing post_mix from loudness_match (B): %s",
+                    post_mix,
+                )
+                separation = dict(separation)
+                separation["composite_audio_path"] = post_mix
+                task_state.update(task_id, separation=separation)
+                return post_mix
+            break
+
+        # 没有 post_mix（A 算法 / loudness_match 跳过）→ 现场 mix
         settings = sep.load_settings()
         mixed_path = os.path.join(
             task_dir, f"final_audio_mixed.{variant}.wav",
@@ -2470,10 +2666,9 @@ class PipelineRunner:
             return tts_audio_path
 
         log.info(
-            "[compose] mixed TTS + accompaniment (bg_volume=%.2f) -> %s",
+            "[compose] mixed TTS + accompaniment on the fly (bg_volume=%.2f) -> %s",
             settings.background_volume, mixed_path,
         )
-        # 回写元数据供 UI 显示 / debug
         separation = dict(separation)
         separation["composite_audio_path"] = mixed_path
         separation["background_volume"] = settings.background_volume

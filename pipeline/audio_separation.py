@@ -136,6 +136,10 @@ def run_separation(
         "vocals_path": None,
         "accompaniment_path": None,
         "vocals_lufs": None,
+        # B 算法（整体对整体）反推 TTS 目标响度时用：原视频整体（vocals + BGM
+        # 一起测）的 integrated LUFS。done 时填好；失败时为 None，loudness_match
+        # 自动降级到 A 算法（target=vocals_lufs）。
+        "video_lufs": None,
         "error": None,
         "error_kind": None,
     }
@@ -179,6 +183,16 @@ def run_separation(
                        error_kind="failed")
 
     base["vocals_lufs"] = vocals_lufs
+
+    # B 算法（整体对整体匹配）需要原视频整体 LUFS：合成阶段反推 TTS 目标响度，
+    # 让 mix(TTS_norm, BG×bg_vol) 整体跟原视频整体 LUFS 收敛。
+    # 测量失败时降级到 A 算法（仅人声响度），不影响主流程。
+    try:
+        video_lufs = measure_integrated_lufs(audio_path)
+        base["video_lufs"] = video_lufs
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[audio_separation] video LUFS measure failed: %s", exc)
+        base["video_lufs"] = None
 
     if is_likely_silence(vocals_lufs):
         # vocals 几乎静音 → 分离结果不可用（原视频可能本就纯音乐 / 纯人声）

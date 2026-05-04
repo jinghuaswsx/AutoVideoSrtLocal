@@ -558,10 +558,23 @@
       </div>
       <div class="step-preview" id="preview-asr_normalize"></div>
     </div>
+    <div class="step" id="step-separate">
+      <div class="step-main">
+        <div class="step-icon" id="icon-separate">4</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">人声分离</span>
+            <button class="resume-btn hidden" id="resume-separate" data-step="separate">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-separate">等待中...<span class="step-model-tag hidden" id="model-tag-separate"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-separate"></div>
+    </div>
     {% endif %}
     <div class="step" id="step-alignment">
       <div class="step-main">
-        <div class="step-icon" id="icon-alignment">{{ 4 if pipeline_kind == 'multi_translate' else 3 }}</div>
+        <div class="step-icon" id="icon-alignment">{{ 5 if pipeline_kind == 'multi_translate' else 3 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">分段确认</span>
@@ -574,7 +587,7 @@
     </div>
     <div class="step" id="step-translate">
       <div class="step-main">
-        <div class="step-icon" id="icon-translate">{{ 5 if pipeline_kind == 'multi_translate' else 4 }}</div>
+        <div class="step-icon" id="icon-translate">{{ 6 if pipeline_kind == 'multi_translate' else 4 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">翻译本土化</span>
@@ -592,7 +605,7 @@
     </div>
     <div class="step" id="step-tts">
       <div class="step-main">
-        <div class="step-icon" id="icon-tts">{{ 6 if pipeline_kind == 'multi_translate' else 5 }}</div>
+        <div class="step-icon" id="icon-tts">{{ 7 if pipeline_kind == 'multi_translate' else 5 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">语音生成</span>
@@ -604,9 +617,24 @@
       <div class="step-preview" id="preview-tts"></div>
       <div id="ttsDurationLog" class="duration-log" hidden></div>
     </div>
+    {% if pipeline_kind == 'multi_translate' %}
+    <div class="step" id="step-loudness_match">
+      <div class="step-main">
+        <div class="step-icon" id="icon-loudness_match">8</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">响度匹配</span>
+            <button class="resume-btn hidden" id="resume-loudness_match" data-step="loudness_match">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-loudness_match">等待中...<span class="step-model-tag hidden" id="model-tag-loudness_match"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-loudness_match"></div>
+    </div>
+    {% endif %}
     <div class="step" id="step-subtitle">
       <div class="step-main">
-        <div class="step-icon" id="icon-subtitle">{{ 7 if pipeline_kind == 'multi_translate' else 6 }}</div>
+        <div class="step-icon" id="icon-subtitle">{{ 9 if pipeline_kind == 'multi_translate' else 6 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">字幕生成</span>
@@ -644,7 +672,7 @@
     {% endif %}
     <div class="step" id="step-compose">
       <div class="step-main">
-        <div class="step-icon" id="icon-compose">{{ 8 if pipeline_kind == 'multi_translate' else 7 }}</div>
+        <div class="step-icon" id="icon-compose">{{ 10 if pipeline_kind == 'multi_translate' else 7 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">视频合成</span>
@@ -657,7 +685,7 @@
     </div>
     <div class="step" id="step-export">
       <div class="step-main">
-        <div class="step-icon" id="icon-export">{{ 9 if pipeline_kind == 'multi_translate' else 8 }}</div>
+        <div class="step-icon" id="icon-export">{{ 11 if pipeline_kind == 'multi_translate' else 8 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">CapCut 导出</span>

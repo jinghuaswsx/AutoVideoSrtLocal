@@ -1,10 +1,12 @@
 ﻿<script>
   const socket = io();
   {% if pipeline_kind == 'multi_translate' %}
-  const STEP_ORDER = ["extract", "asr", "asr_normalize", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
+  const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
   // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
-  // 进入 MAIN_STEPS 让顶部状态卡能反映「等待用户确认音色」并计入 10/10 进度。
-  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+  // 进入 MAIN_STEPS 让顶部状态卡能反映「等待用户确认音色」并计入 12/12 进度。
+  // separate 与 loudness_match 是人声分离 + 响度匹配链路（管理员未启用时各自 step
+  // 直接 done，不影响进度计数）。
+  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
   {% else %}
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
@@ -451,10 +453,12 @@
       extract: "音频提取",
       asr: "语音识别",
       asr_normalize: "原文标准化",
+      separate: "人声分离",
       voice_match: "音色选择",
       alignment: "分段确认",
       translate: "翻译本土化",
       tts: "语音生成",
+      loudness_match: "响度匹配",
       subtitle: "字幕生成",
       compose: "视频合成",
       analysis: "AI 视频分析",
