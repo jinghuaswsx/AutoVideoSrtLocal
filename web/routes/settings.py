@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import asr_routing_config, llm_bindings, llm_provider_configs, pricing
+from appcore import asr_routing_config, infra_credentials, llm_bindings, llm_provider_configs, pricing
 from appcore.api_keys import get_all, set_key
 from appcore.db import execute, query
 from web.auth import superadmin_required
@@ -107,6 +107,50 @@ def _mask_secret(value: str | None) -> str:
 # Providers Tab helpers
 # ---------------------------------------------------------------------------
 
+def _infrastructure_rows_by_group() -> list[dict]:
+    """基础设施凭据 tab 数据视图。
+
+    与 providers tab 不同，这里**明文回显**所有字段（包括 access_key /
+    secret_key），admin 自己运维需要直接看到当前值方便对照修改。
+    """
+    rows = infra_credentials.list_configs()
+    by_code = {r.code: r for r in rows}
+    view: list[dict] = []
+    for group_code, group_label in infra_credentials.GROUP_ORDER:
+        group_rows: list[dict] = []
+        for code in infra_credentials.known_codes():
+            if infra_credentials.display_meta(code)[1] != group_code:
+                continue
+            cred = by_code.get(code)
+            cfg_data = cred.config if cred else {}
+            display_name = (
+                cred.display_name if cred else infra_credentials.display_meta(code)[0]
+            )
+            enabled = bool(cred.enabled) if cred else True
+            group_rows.append({
+                "code": code,
+                "display_name": display_name,
+                "enabled": enabled,
+                "fields": [
+                    {
+                        "json_key": spec.json_key,
+                        "label": spec.label,
+                        "config_attr": spec.config_attr,
+                        "is_secret": spec.is_secret,
+                        "value": str(cfg_data.get(spec.json_key, "") or ""),
+                    }
+                    for spec in infra_credentials.schema_for(code)
+                ],
+            })
+        if group_rows:
+            view.append({
+                "code": group_code,
+                "label": group_label,
+                "rows": group_rows,
+            })
+    return view
+
+
 def _provider_rows_by_group() -> list[dict]:
     """返回 [{group_code, group_label, rows: [...]}]。
     group 顺序固定，rows 来自 llm_provider_configs 表。
@@ -155,6 +199,8 @@ def index():
             _handle_push_post()
         elif tab == "asr_routing":
             _handle_asr_routing_post()
+        elif tab == "infrastructure":
+            _handle_infrastructure_post()
         else:
             _handle_providers_post()  # tab=providers 或兼容老表单
         flash("配置已保存")
@@ -200,6 +246,7 @@ def index():
         allowed_tabs.add("pricing")
         allowed_tabs.add("push")
         allowed_tabs.add("asr_routing")
+        allowed_tabs.add("infrastructure")
     if active_tab not in allowed_tabs:
         active_tab = "providers"
 
@@ -232,6 +279,7 @@ def index():
     return render_template(
         "settings.html",
         provider_groups=_provider_rows_by_group(),
+        infrastructure_groups=_infrastructure_rows_by_group() if is_admin else [],
         translate_pref=translate_pref_value,
         video_analysis_models=VIDEO_CAPABLE_MODELS,
         image_translate_channel=current_image_channel,
@@ -382,6 +430,34 @@ def _handle_asr_routing_post() -> None:
     for stage in asr_routing_config.STAGES:
         payload[stage] = (request.form.get(f"asr_stage_{stage}") or "").strip()
     asr_routing_config.set_stage_providers(payload)
+
+
+def _handle_infrastructure_post() -> None:
+    """基础设施凭据 tab：每个 code 的所有字段一起保存。
+
+    save_config 内部会自动调用 :func:`infra_credentials.sync_to_runtime` 同步
+    到 ``config`` 模块属性 + ``os.environ``，并清掉持有旧 ak/sk 的 SDK client
+    缓存，下次业务调用立即用新值。
+    """
+    if not getattr(current_user, "is_admin", False):
+        return
+    user_id = current_user.id
+    for code in infra_credentials.known_codes():
+        prefix = f"infra_{code}_"
+        touched = any(field.startswith(prefix) for field in request.form.keys())
+        if not touched:
+            continue
+        fields: dict[str, object] = {}
+        for spec in infra_credentials.schema_for(code):
+            form_key = f"{prefix}{spec.json_key}"
+            if form_key in request.form:
+                fields[spec.json_key] = (request.form.get(form_key) or "").strip()
+        if not fields:
+            continue
+        try:
+            infra_credentials.save_config(code, fields, updated_by=user_id)
+        except ValueError as exc:
+            flash(str(exc), "error")
 
 
 def _handle_push_post() -> None:

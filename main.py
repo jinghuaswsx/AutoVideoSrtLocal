@@ -21,10 +21,19 @@ from web.extensions import socketio
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-validate_runtime_config()
-
+# 先 apply DB migrations，再把基础设施凭据从 DB 同步到 config/os.environ，
+# 最后才校验 required credentials —— 顺序很关键：
+#   1) ensure_up_to_date() 建表 + seed infra_credentials 三行
+#   2) infra_credentials.sync_to_runtime() 用 DB 值覆盖 .env 兜底（DB 留空时
+#      保留 .env 值，平滑过渡），同时清 SDK client 缓存
+#   3) validate_runtime_config() 校验最终的 TOS_ACCESS_KEY / TOS_SECRET_KEY
 from appcore import db_migrations
 db_migrations.ensure_up_to_date()
+
+from appcore import infra_credentials
+infra_credentials.sync_to_runtime()
+
+validate_runtime_config()
 
 app = create_app()
 

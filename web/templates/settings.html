@@ -118,6 +118,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
      class="settings-tab {{ 'active' if active_tab == 'push' }}">推送</a>
   <a href="{{ url_for('settings.index', tab='asr_routing') }}"
      class="settings-tab {{ 'active' if active_tab == 'asr_routing' }}">ASR 路由</a>
+  <a href="{{ url_for('settings.index', tab='infrastructure') }}"
+     class="settings-tab {{ 'active' if active_tab == 'infrastructure' }}">基础设施凭据</a>
   {% endif %}
 </div>
 
@@ -742,5 +744,65 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     }
   })();
 </script>
+
+{# ═════════════════════════════════════════════════════════════
+   Tab 6 · 基础设施凭据（admin-only）
+   火山 TOS 主桶 / TOS 灾备桶 / VOD 视频点播。所有字段明文展示，
+   admin 自己运维需要直接看到当前值方便对照修改。
+   保存后会同步刷新 config 模块属性 + os.environ + 失效 SDK 缓存。
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'infrastructure' %}
+<form method="post" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="infrastructure">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:var(--settings-fg);margin:0">基础设施凭据</h1>
+    <button class="btn btn-primary save-btn" type="submit" style="margin:0">保存</button>
+  </div>
+
+  <div class="bindings-hint">
+    凭据存储在 MySQL <code>infra_credentials</code> 表，<strong>启动时</strong>同步到
+    <code>config.TOS_ACCESS_KEY</code> 等模块属性 + <code>os.environ</code>，运行期间业务代码不再查 DB。
+    保存后立即刷新进程内变量并失效 SDK 缓存，下次调用自动用新值。<br>
+    DB 留空字段会保留 <code>.env</code> 兜底值（平滑过渡），所以可以分批迁移。
+  </div>
+
+  {% for group in infrastructure_groups %}
+  <div class="settings-card">
+    <h2>{{ group.label }}</h2>
+    {% for row in group.rows %}
+    <div style="margin-top:{{ '20px' if not loop.first else '0' }};padding-top:{{ '18px' if not loop.first else '0' }};{% if not loop.first %}border-top:1px dashed var(--settings-border);{% endif %}">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
+        <h3 style="font-size:14px;font-weight:700;color:var(--settings-fg);margin:0">{{ row.display_name }}</h3>
+        <span class="binding-code">{{ row.code }}</span>
+      </div>
+      {% for field in row.fields %}
+      <label for="infra_{{ row.code }}_{{ field.json_key }}">
+        {{ field.label }}
+        {% if field.is_secret %}<span style="color:var(--settings-danger-fg);font-weight:700;margin-left:4px;">·敏感</span>{% endif %}
+        <span class="binding-code" style="margin-left:6px;font-weight:400;text-transform:none;">→ config.{{ field.config_attr }}</span>
+      </label>
+      <input type="text"
+             id="infra_{{ row.code }}_{{ field.json_key }}"
+             name="infra_{{ row.code }}_{{ field.json_key }}"
+             value="{{ field.value }}"
+             autocomplete="off"
+             spellcheck="false">
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+
+  {% if not infrastructure_groups %}
+  <div class="settings-card">
+    <p style="color:var(--settings-fg-muted);font-size:13px;margin:0">
+      尚未在数据库初始化基础设施凭据行。请确认服务已应用 <code>2026_05_04_infra_credentials.sql</code> migration。
+    </p>
+  </div>
+  {% endif %}
+</form>
+{% endif %}
 
 {% endblock %}
