@@ -20,6 +20,7 @@ def test_medias_list_has_roas_modal_mount():
 
 def test_medias_js_wires_roas_button_and_calculation():
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    controller_js = (ROOT / "web" / "static" / "roas_form.js").read_text(encoding="utf-8")
     partial = PARTIAL.read_text(encoding="utf-8")
 
     assert "data-roas" in js
@@ -28,9 +29,10 @@ def test_medias_js_wires_roas_button_and_calculation():
     assert "RoasFormController" in js
     # roasCalculateBtn DOM element lives in the partial; controller wires it via bind()
     assert 'id="roasCalculateBtn"' in partial
-    assert "packet_cost_actual" in js
-    assert "standalone_shipping_fee" in js
-    assert "MATERIAL_ROAS_RMB_PER_USD" in js
+    # Field names and constants live in roas_form.js (RoasFormController) after refactor
+    assert "packet_cost_actual" in controller_js
+    assert "standalone_shipping_fee" in controller_js
+    assert "MATERIAL_ROAS_RMB_PER_USD" in controller_js
     assert "roas_calculation" in js
 
 

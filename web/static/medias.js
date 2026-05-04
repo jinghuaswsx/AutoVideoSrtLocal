@@ -460,37 +460,6 @@
     return text ? escapeHtml(text) : '<span class="muted">—</span>';
   }
 
-  const ROAS_FIELDS = [
-    'purchase_1688_url',
-    'purchase_price',
-    'packet_cost_estimated',
-    'packet_cost_actual',
-    'package_length_cm',
-    'package_width_cm',
-    'package_height_cm',
-    'tk_sea_cost',
-    'tk_air_cost',
-    'tk_sale_price',
-    'standalone_price',
-    'standalone_shipping_fee',
-  ];
-
-  function numberOrNull(value) {
-    const raw = String(value ?? '').trim();
-    if (!raw) return null;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  function formatRoas(value) {
-    return Number.isFinite(value) ? value.toFixed(2) : '无法保本';
-  }
-
-  function currentRoasRmbPerUsd() {
-    const parsed = Number(window.MATERIAL_ROAS_RMB_PER_USD || 6.83);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 6.83;
-  }
-
   function parseAverageShippingValues(text) {
     return String(text || '')
       .split(/\r?\n/)
@@ -5194,6 +5163,8 @@
     $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
       if (e.target.id === 'roasModalMask') closeRoasModal();
     });
+    // Note: RoasFormController.bind() also wires this same listener for the standalone page.
+    // Both fire in modal context; updateRoasAverageShipping is idempotent so this is harmless.
     const roasAverageShippingInput = $('roasAverageShippingInput');
     if (roasAverageShippingInput) {
       roasAverageShippingInput.addEventListener('input', updateRoasAverageShipping);
