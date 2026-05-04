@@ -47,6 +47,16 @@
   display: flex; flex-wrap: wrap; gap: 12px;
   padding: 8px 0;
 }
+
+/* 媒体卡底部「AI 视频分析」按钮——撑满整张卡片宽度，文字居中。
+   medias.js 给的容器是 .vactions-vr，里面唯一一个 .oc-btn[data-act="vr-run"]。 */
+.vactions-vr { display: flex; width: 100%; }
+.vactions-vr > .oc-btn[data-act="vr-run"] {
+  flex: 1 1 auto;
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
 .vr-dim {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--bg-subtle); border: 1px solid var(--border);
