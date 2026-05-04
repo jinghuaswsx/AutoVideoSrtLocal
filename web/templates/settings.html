@@ -120,6 +120,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
      class="settings-tab {{ 'active' if active_tab == 'asr_routing' }}">ASR 路由</a>
   <a href="{{ url_for('settings.index', tab='infrastructure') }}"
      class="settings-tab {{ 'active' if active_tab == 'infrastructure' }}">基础设施凭据</a>
+  <a href="{{ url_for('settings.index', tab='audio_separation') }}"
+     class="settings-tab {{ 'active' if active_tab == 'audio_separation' }}">人声分离</a>
   {% endif %}
 </div>
 
@@ -667,6 +669,116 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       豆包 SeedASR 不支持 force_language（中文/英文以外的音频靠模型自识别，可能产出混合结果）；
       ElevenLabs Scribe 支持按目标语言强制解码，但需要在服务商接入 tab 里配好 <code>elevenlabs_tts</code> 凭据。
     </p>
+  </div>
+</form>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab · 人声分离（多语种翻译用，调内网开发电脑 GPU 分离 API）
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'audio_separation' %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="audio_separation">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:var(--settings-fg);margin:0">人声分离 + 响度匹配</h1>
+    <button class="btn btn-primary" type="submit">保存配置</button>
+  </div>
+
+  <div class="settings-card">
+    <h2>总开关</h2>
+    <p class="step-desc">
+      关闭时多语种 / 全能视频翻译走旧逻辑：TTS 直接替换原音轨、不做响度匹配、不混背景音。
+      打开后会在 ASR 步骤之后调用内网 GPU API 做人声分离（同步阻塞 ~10-60s 视频长度），
+      并在 TTS 完成后做 EBU R128 二阶段响度归一化到原视频人声基准 L₀（±3% 收敛）。
+    </p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--settings-fg);margin-top:12px;">
+      <input type="checkbox" name="enabled" value="1"
+             {{ 'checked' if audio_separation.enabled }}>
+      启用人声分离 + 响度匹配
+    </label>
+  </div>
+
+  <div class="settings-card" style="margin-top:16px;">
+    <h2>API 接入</h2>
+    <p class="step-desc">
+      上游服务跑在内网 GPU 机（RTX 3060+），接口协议参考 nomadkaraoke/python-audio-separator。
+      留空时等同于关闭总开关。
+    </p>
+
+    <div style="margin-top:12px;">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--settings-fg);margin-bottom:6px;">
+        API Base URL
+      </label>
+      <input type="text" name="api_url"
+             value="{{ audio_separation.api_url }}"
+             placeholder="http://172.30.254.12/"
+             style="width:100%;max-width:520px;">
+      <p class="hint" style="margin-top:6px;">
+        生产服务器从这里发 multipart 上传到 <code>{api_url}/separate/download</code>。
+      </p>
+    </div>
+
+    <div style="margin-top:16px;">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--settings-fg);margin-bottom:6px;">
+        默认 Ensemble Preset
+      </label>
+      <select name="preset" style="width:100%;max-width:320px;">
+        {% for code in [
+          'vocal_balanced','vocal_clean','vocal_full','vocal_rvc',
+        ] %}
+        <option value="{{ code }}" {{ 'selected' if audio_separation.preset == code }}>
+          {{ code }}
+        </option>
+        {% endfor %}
+      </select>
+      <p class="hint" style="margin-top:6px;">
+        <code>vocal_balanced</code> 是上游服务的默认推荐，整体最均衡。其它选项见
+        <a href="{{ audio_separation.api_url }}/presets" target="_blank">/presets</a> 接口。
+      </p>
+    </div>
+
+    <div style="margin-top:16px;">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--settings-fg);margin-bottom:6px;">
+        任务总超时 (秒)
+      </label>
+      <input type="number" name="task_timeout"
+             value="{{ audio_separation.task_timeout|round(0)|int }}"
+             min="60" max="1800" step="10"
+             style="width:100%;max-width:200px;">
+      <p class="hint" style="margin-top:6px;">
+        覆盖 GPU 排队 + 推理 + ZIP 下载的全过程。上游 API 文档建议至少 300s。
+        超过此阈值客户端按"已超时"降级，主任务继续走旧逻辑。
+      </p>
+    </div>
+
+    <div style="margin-top:16px;">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--settings-fg);margin-bottom:6px;">
+        硬字幕视频背景音音量（0.0–2.0，1.0 = 原音量）
+      </label>
+      <input type="number" name="background_volume"
+             value="{{ '%.2f' % audio_separation.background_volume }}"
+             min="0" max="2" step="0.05"
+             style="width:100%;max-width:200px;">
+      <p class="hint" style="margin-top:6px;">
+        合成最终硬字幕 mp4 时，分离出来的 background 轨与 TTS 主轨 amix 的音量乘数。
+        默认 0.6（约 -4.4 dB），让 BGM/环境音不抢戏但仍可闻。CapCut 工程包导出走另一条路径，
+        保留独立 ambience 音轨让用户在剪映里单独调音，**不**受这里影响。
+      </p>
+    </div>
+  </div>
+
+  <div class="settings-card" style="margin-top:16px;">
+    <h2>当前生效配置</h2>
+    <ul style="list-style:disc inside;color:var(--settings-fg-muted);font-size:13px;line-height:1.8;">
+      <li>总开关：<code>{{ '已启用' if audio_separation.enabled else '未启用' }}</code></li>
+      <li>API URL：<code>{{ audio_separation.api_url or '(空)' }}</code></li>
+      <li>Preset：<code>{{ audio_separation.preset }}</code></li>
+      <li>总超时：<code>{{ audio_separation.task_timeout|round(0)|int }}s</code></li>
+      <li>背景音量：<code>{{ '%.2f' % audio_separation.background_volume }}</code></li>
+      <li>可运行：<code>{{ '是' if audio_separation.is_runnable else '否' }}</code></li>
+    </ul>
   </div>
 </form>
 {% endif %}

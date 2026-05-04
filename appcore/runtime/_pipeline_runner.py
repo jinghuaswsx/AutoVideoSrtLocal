@@ -1474,6 +1474,177 @@ class PipelineRunner:
         task_state.set_artifact(task_id, "extract", build_extract_artifact())
         self._set_step(task_id, "extract", "done", "音频提取完成")
 
+    def _step_separate(self, task_id: str, task_dir: str) -> None:
+        """人声分离 + 基准响度测量。
+
+        - 总开关关掉 / API URL 为空 → 立刻 done，``task["separation"].status="disabled"``，
+          后续 step 走旧逻辑（不做响度匹配、不混背景音）。
+        - 调用同步阻塞，可能持续 10s ~ 5min（API 端 GPU 排队 + 推理）。
+          调用前先写 placeholder ``status="running"`` + ``started_at_epoch`` 到
+          task_state，让前端轮询能立刻拿到时间戳，UI 据此 setInterval 刷新 elapsed。
+        - 任何失败（API 不可达 / 超时 / ZIP 损坏 / vocals 几乎静音）都标记降级
+          状态但不让本 step 失败，后续主任务继续走旧逻辑。
+        """
+        import time as _time
+
+        from pipeline import audio_separation as sep
+
+        task = task_state.get(task_id) or {}
+        audio_path = task.get("audio_path")
+        if not audio_path:
+            self._set_step(task_id, "separate", "done", "未检测到 audio_path，跳过")
+            return
+
+        settings = sep.load_settings()
+        if not settings.is_runnable:
+            placeholder = sep.disabled_result("总开关未启用 / API URL 为空")
+            task_state.update(task_id, separation=placeholder)
+            self._set_step(task_id, "separate", "done", "人声分离未启用（保持旧逻辑）")
+            return
+
+        # 写 placeholder running 状态，让前端立即看到 started_at_epoch / timeout_seconds
+        # 并据此 setInterval(10s) 刷新 "已等待 X s"。
+        started = _time.time()
+        placeholder = {
+            "status": "running",
+            "model": settings.preset,
+            "api_url": settings.api_url,
+            "started_at_epoch": started,
+            "finished_at_epoch": None,
+            "elapsed_seconds": None,
+            "timeout_seconds": settings.task_timeout,
+            "vocals_path": None,
+            "accompaniment_path": None,
+            "vocals_lufs": None,
+            "error": None,
+            "error_kind": None,
+        }
+        task_state.update(task_id, separation=placeholder)
+        self._set_step(
+            task_id, "separate", "running",
+            f"调上游 GPU 分离（preset={settings.preset}，最长 {settings.task_timeout:.0f}s）...",
+            model_tag=f"audio-separator · {settings.preset}",
+        )
+
+        out_dir = os.path.join(task_dir, "separation")
+        result = sep.run_separation(
+            audio_path=audio_path,
+            output_dir=out_dir,
+            api_url=settings.api_url,
+            preset=settings.preset,
+            task_timeout=settings.task_timeout,
+        )
+        task_state.update(task_id, separation=result)
+
+        status = result["status"]
+        if status == "done":
+            msg = (
+                f"分离完成（耗时 {result['elapsed_seconds']:.1f}s，"
+                f"L₀={result['vocals_lufs']:.1f} LUFS）"
+            )
+        elif status == "timeout":
+            msg = (
+                f"已超时（>{result['timeout_seconds']:.0f}s 未完成），"
+                "自动降级走旧逻辑"
+            )
+        elif status == "unavailable":
+            msg = "分离 API 不可达，已降级走旧逻辑"
+        elif status == "silence":
+            msg = "分离结果几乎静音（可能纯人声/纯音乐），已降级走旧逻辑"
+        else:  # failed
+            err = (result.get("error") or "")[:80]
+            msg = f"分离失败已降级：{err}"
+
+        # status 始终用 "done"——分离失败不阻塞主任务，message 标降级原因。
+        self._set_step(task_id, "separate", "done", msg)
+
+    def _step_loudness_match(self, task_id: str, task_dir: str) -> None:
+        """把每个 variant 的 TTS 音频用 EBU R128 二阶段归一化到 vocals_lufs L₀。
+
+        完整链路：``vocals_lufs (L₀)`` 来自 :meth:`_step_separate` 测得的原视频
+        人声基准，目标偏差 ≤ ±3% LUFS（约 ±0.7 LU）。直接 in-place 替换原 mp3
+        文件，下游 :meth:`_step_compose` / :meth:`_step_subtitle` 不感知这层。
+
+        分离未启用 / 失败时直接 skipped；归一化失败不阻塞主任务。
+        """
+        from pipeline import audio_separation as sep
+
+        task = task_state.get(task_id) or {}
+        separation = task.get("separation") or {}
+
+        if not sep.is_usable(separation):
+            status_word = separation.get("status") or "disabled"
+            msg = {
+                "disabled":    "人声分离未启用，跳过响度匹配",
+                "unavailable": "分离 API 不可达，跳过响度匹配",
+                "timeout":     "分离超时，跳过响度匹配",
+                "failed":      "分离失败，跳过响度匹配",
+                "silence":     "分离结果几乎静音，跳过响度匹配",
+            }.get(status_word, "无可用分离结果，跳过响度匹配")
+            self._set_step(task_id, "loudness_match", "done", msg)
+            return
+
+        target = float(separation["vocals_lufs"])
+        self._set_step(
+            task_id, "loudness_match", "running",
+            f"匹配 TTS 响度到 L₀={target:.1f} LUFS（EBU R128 二阶段）...",
+        )
+
+        import shutil
+
+        from appcore.audio_loudness import normalize_to_lufs
+
+        variants = dict(task.get("variants") or {})
+        summaries: list[dict] = []
+        for variant_name, variant_state in list(variants.items()):
+            if not isinstance(variant_state, dict):
+                continue
+            audio_path = variant_state.get("tts_audio_path")
+            if not audio_path or not os.path.isfile(audio_path):
+                continue
+            tmp_path = audio_path + ".loudnorm.mp3"
+            try:
+                result = normalize_to_lufs(
+                    audio_path, tmp_path, target_lufs=target,
+                )
+            except Exception as exc:  # noqa: BLE001 — 不阻塞主流程
+                log.warning(
+                    "[loudness_match] task=%s variant=%s failed: %s",
+                    task_id, variant_name, exc,
+                )
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                continue
+            shutil.move(tmp_path, audio_path)
+            summaries.append({
+                "variant": variant_name,
+                "input_lufs": result.input_lufs,
+                "output_lufs": result.output_lufs,
+                "deviation_lu": result.deviation_lu,
+                "deviation_pct": result.deviation_pct,
+                "converged": result.converged,
+            })
+
+        separation = dict(separation)
+        separation["tts_loudness"] = {
+            "target_lufs": target,
+            "variants": summaries,
+        }
+        task_state.update(task_id, separation=separation)
+
+        if summaries:
+            primary = summaries[0]
+            msg = (
+                f"响度匹配完成：{primary['output_lufs']:.1f} LUFS，"
+                f"偏差 {primary['deviation_pct']:.2f}%（"
+                f"{'✓ 在 ±3% 内' if primary['converged'] else '⚠ 超出 ±3%'}）"
+            )
+        else:
+            msg = "无 TTS 音频，跳过响度匹配"
+        self._set_step(task_id, "loudness_match", "done", msg)
+
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
@@ -2256,6 +2427,59 @@ class PipelineRunner:
             log.warning("[%s] failed to trigger quality assessment for task %s",
                         self.project_type, task_id, exc_info=True)
 
+    def _maybe_mix_background_for_compose(
+        self,
+        task_id: str,
+        tts_audio_path: str,
+        task_dir: str,
+        variant: str,
+    ) -> str:
+        """硬字幕视频合成前的混音：TTS 主轨 + 分离出来的 accompaniment。
+
+        如果 ``task["separation"]`` 可用，用 :func:`audio_loudness.mix_with_background`
+        amix 两轨成单音轨 wav 给硬字幕 mp4 用；否则原 TTS 路径返回（旧行为）。
+
+        CapCut 工程包导出走 :meth:`_step_export`，那里**不**走这里——工程包要保留
+        独立 accompaniment 音轨让用户能在编辑器里单独调音量。
+        """
+        from pipeline import audio_separation as sep
+        from appcore.audio_loudness import mix_with_background
+
+        task = task_state.get(task_id) or {}
+        separation = task.get("separation") or {}
+        if not sep.is_usable(separation):
+            return tts_audio_path
+
+        settings = sep.load_settings()
+        mixed_path = os.path.join(
+            task_dir, f"final_audio_mixed.{variant}.wav",
+        )
+        try:
+            mix_with_background(
+                main_path=tts_audio_path,
+                background_path=separation["accompaniment_path"],
+                output_path=mixed_path,
+                background_volume=settings.background_volume,
+                duration="longest",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "[compose] background mix failed, fall back to TTS-only audio: %s",
+                exc,
+            )
+            return tts_audio_path
+
+        log.info(
+            "[compose] mixed TTS + accompaniment (bg_volume=%.2f) -> %s",
+            settings.background_volume, mixed_path,
+        )
+        # 回写元数据供 UI 显示 / debug
+        separation = dict(separation)
+        separation["composite_audio_path"] = mixed_path
+        separation["background_volume"] = settings.background_volume
+        task_state.update(task_id, separation=separation)
+        return mixed_path
+
     def _step_compose(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         if _is_original_video_passthrough(task):
@@ -2267,9 +2491,12 @@ class PipelineRunner:
         variant = "av" if _is_av_pipeline_task(task) else "normal"
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
+        audio_for_compose = self._maybe_mix_background_for_compose(
+            task_id, variant_state["tts_audio_path"], task_dir, variant,
+        )
         result = compose_video(
             video_path=video_path,
-            tts_audio_path=variant_state["tts_audio_path"],
+            tts_audio_path=audio_for_compose,
             srt_path=variant_state["srt_path"],
             output_dir=task_dir,
             subtitle_position=task.get("subtitle_position", "bottom"),
@@ -2367,6 +2594,7 @@ class PipelineRunner:
             return
         self._set_step(task_id, "export", "running", "正在导出 CapCut 项目...")
         from pipeline.capcut import export_capcut_project
+        from pipeline import audio_separation as sep
 
         variant = "av" if _is_av_pipeline_task(task) else "normal"
         variants = dict(task.get("variants", {}))
@@ -2376,6 +2604,14 @@ class PipelineRunner:
             task.get("display_name")
             or task.get("original_filename")
             or os.path.basename(video_path)
+        )
+        # 给工程包带一条独立的环境音音轨（如果分离结果可用）。CapCut 工程包**不**走
+        # _maybe_mix_background_for_compose（那是给硬字幕 mp4 单音轨用的），这里
+        # 保留 TTS + accompaniment 两条独立轨道，让用户在剪映里能分别调音。
+        separation = task.get("separation") or {}
+        accompaniment_for_capcut = (
+            separation.get("accompaniment_path")
+            if sep.is_usable(separation) else None
         )
         export_result = export_capcut_project(
             video_path=video_path,
@@ -2390,6 +2626,7 @@ class PipelineRunner:
             subtitle_font=task.get("subtitle_font", "Impact"),
             subtitle_size=task.get("subtitle_size", 14),
             subtitle_position_y=float(task.get("subtitle_position_y", 0.68)),
+            accompaniment_audio_path=accompaniment_for_capcut,
         )
         exports = {
             "capcut_project": export_result["project_dir"],

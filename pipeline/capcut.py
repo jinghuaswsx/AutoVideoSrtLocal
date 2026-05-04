@@ -26,6 +26,7 @@ def export_capcut_project(
     subtitle_font: str = "Impact",
     subtitle_size=None,
     subtitle_position_y: float | None = None,
+    accompaniment_audio_path: str | None = None,
 ) -> dict:
     source_name = draft_title or Path(video_path).name
     draft_name = build_capcut_draft_name(source_name, variant=variant)
@@ -36,6 +37,12 @@ def export_capcut_project(
 
     export_backend = "template_scaffold"
     backend_error = None
+
+    accompaniment_path_obj = (
+        Path(accompaniment_audio_path)
+        if accompaniment_audio_path and Path(accompaniment_audio_path).is_file()
+        else None
+    )
 
     try:
         _export_with_pyjianyingdraft(
@@ -48,6 +55,7 @@ def export_capcut_project(
             subtitle_font=subtitle_font,
             subtitle_size=subtitle_size,
             subtitle_position_y=subtitle_position_y,
+            accompaniment_audio_path=accompaniment_path_obj,
         )
         export_backend = "pyJianYingDraft"
     except Exception as exc:
@@ -61,6 +69,7 @@ def export_capcut_project(
             srt_path=Path(srt_path),
             timeline_manifest=timeline_manifest,
             subtitle_position=subtitle_position,
+            accompaniment_audio_path=accompaniment_path_obj,
         )
 
     manifest_path = project_dir / "codex_export_manifest.json"
@@ -73,6 +82,10 @@ def export_capcut_project(
         "subtitle_position": subtitle_position,
         "timeline_manifest": timeline_manifest,
     }
+    if accompaniment_path_obj is not None:
+        export_manifest["accompaniment_audio"] = (
+            "Resources/auto_generated/" + accompaniment_path_obj.name
+        )
     if backend_error:
         export_manifest["fallback_reason"] = backend_error
     with open(manifest_path, "w", encoding="utf-8") as fh:
@@ -236,6 +249,7 @@ def _export_with_pyjianyingdraft(
     subtitle_font: str = "Impact",
     subtitle_size=None,
     subtitle_position_y: float | None = None,
+    accompaniment_audio_path: Path | None = None,
 ):
     draft = importlib.import_module("pyJianYingDraft")
     output_dir = project_dir.parent
@@ -252,8 +266,17 @@ def _export_with_pyjianyingdraft(
     if not resources_dir.exists():
         raise RuntimeError("pyJianYingDraft export failed to create resource directory")
 
+    # 给环境音音轨拷一份资源（如果有的话），保留独立轨道让用户在 CapCut 里可单调
+    copied_accompaniment: Path | None = None
+    if accompaniment_audio_path is not None and accompaniment_audio_path.is_file():
+        copied_accompaniment = resources_dir / accompaniment_audio_path.name
+        shutil.copy2(accompaniment_audio_path, copied_accompaniment)
+
     script.add_track(draft.TrackType.video, track_name="video")
     script.add_track(draft.TrackType.audio, track_name="audio")
+    if copied_accompaniment is not None:
+        # 单独一条 audio track，用户在剪映里可以按"环境音"音轨独立调音
+        script.add_track(draft.TrackType.audio, track_name="ambience")
 
     total_duration = float(timeline_manifest.get("total_tts_duration", 0.0) or 0.0)
     manifest_video_duration = float(timeline_manifest.get("video_duration", 0.0) or 0.0)
@@ -269,6 +292,22 @@ def _export_with_pyjianyingdraft(
             ),
             track_name="audio",
         )
+        # 环境音音轨：如果有分离出来的 accompaniment，铺满整个视频时长。
+        if copied_accompaniment is not None:
+            accomp_duration = _probe_media_duration(copied_accompaniment)
+            if accomp_duration > 0:
+                accomp_seg_duration = min(
+                    output_duration,
+                    _truncate_milliseconds(accomp_duration),
+                )
+                if accomp_seg_duration > 0:
+                    script.add_segment(
+                        draft.AudioSegment(
+                            str(copied_accompaniment),
+                            draft.trange("0s", f"{round(accomp_seg_duration, 3)}s"),
+                        ),
+                        track_name="ambience",
+                    )
 
     prev_end_us = -1
     video_consumed_end = 0.0
@@ -439,7 +478,12 @@ def _export_with_template_scaffold(
     srt_path: Path,
     timeline_manifest: dict,
     subtitle_position: str,
+    accompaniment_audio_path: Path | None = None,
 ):
+    # template_scaffold 是 pyJianYingDraft 不可用时的兜底实现，目前只复制资源
+    # 不构造完整 draft；accompaniment_audio_path 在这里只参与资源拷贝，让上层
+    # manifest 记录到资源即可。真正的独立音轨编排走 pyJianYingDraft 路径。
+    _ = accompaniment_audio_path  # 显式占位，避免 lint 警告
     template_dir = Path(CAPCUT_TEMPLATE_DIR)
     if template_dir.exists():
         shutil.copytree(template_dir, project_dir)

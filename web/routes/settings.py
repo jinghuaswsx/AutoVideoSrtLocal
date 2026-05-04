@@ -201,6 +201,8 @@ def index():
             _handle_asr_routing_post()
         elif tab == "infrastructure":
             _handle_infrastructure_post()
+        elif tab == "audio_separation":
+            _handle_audio_separation_post()
         else:
             _handle_providers_post()  # tab=providers 或兼容老表单
         flash("配置已保存")
@@ -247,8 +249,12 @@ def index():
         allowed_tabs.add("push")
         allowed_tabs.add("asr_routing")
         allowed_tabs.add("infrastructure")
+        allowed_tabs.add("audio_separation")
     if active_tab not in allowed_tabs:
         active_tab = "providers"
+
+    from pipeline.audio_separation import load_settings as load_audio_separation_settings
+    audio_separation_view = load_audio_separation_settings()
 
     from appcore import pushes as _pushes_mod
     localized_texts_authorization = _pushes_mod.get_localized_texts_authorization()
@@ -303,6 +309,7 @@ def index():
         asr_stages=asr_routing_config.STAGES,
         asr_stage_labels=asr_routing_config.STAGE_LABELS,
         asr_routing_provider_options=asr_routing_config.list_available_providers(),
+        audio_separation=audio_separation_view,
     )
 
 
@@ -458,6 +465,42 @@ def _handle_infrastructure_post() -> None:
             infra_credentials.save_config(code, fields, updated_by=user_id)
         except ValueError as exc:
             flash(str(exc), "error")
+
+
+def _handle_audio_separation_post() -> None:
+    """人声分离 tab：保存总开关 / API URL / 默认 preset / 背景音量 / 总超时。"""
+    if not getattr(current_user, "is_admin", False):
+        return
+    from appcore import settings as _settings
+    from pipeline.audio_separation import (
+        SETTING_BACKGROUND_VOLUME,
+        SETTING_ENABLED,
+        SETTING_API_URL,
+        SETTING_PRESET,
+        SETTING_TASK_TIMEOUT,
+    )
+
+    enabled = "1" if request.form.get("enabled") in ("on", "1", "true") else "0"
+    api_url = (request.form.get("api_url") or "").strip()
+    preset = (request.form.get("preset") or "vocal_balanced").strip() or "vocal_balanced"
+
+    try:
+        timeout = float(request.form.get("task_timeout") or 300)
+    except (TypeError, ValueError):
+        timeout = 300.0
+    timeout = max(60.0, min(1800.0, timeout))
+
+    try:
+        bg = float(request.form.get("background_volume") or 0.6)
+    except (TypeError, ValueError):
+        bg = 0.6
+    bg = max(0.0, min(2.0, bg))
+
+    _settings.set_setting(SETTING_ENABLED, enabled)
+    _settings.set_setting(SETTING_API_URL, api_url)
+    _settings.set_setting(SETTING_PRESET, preset)
+    _settings.set_setting(SETTING_TASK_TIMEOUT, str(int(timeout)))
+    _settings.set_setting(SETTING_BACKGROUND_VOLUME, f"{bg:.2f}")
 
 
 def _handle_push_post() -> None:
