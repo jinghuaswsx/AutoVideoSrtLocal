@@ -1,8 +1,12 @@
 import logging
 import os
+import ssl
 import subprocess
 import threading
+import time
 from typing import Callable, List, Dict, Optional
+
+import httpx
 
 log = logging.getLogger(__name__)
 
@@ -16,6 +20,46 @@ from appcore.llm_provider_configs import (
     require_provider_api_key,
 )
 from pipeline.voice_library import get_voice_library
+
+
+_NETWORK_RETRY_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    httpx.RemoteProtocolError,
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.WriteError,
+    httpx.PoolTimeout,
+    ssl.SSLError,
+)
+
+
+def _call_with_network_retry(
+    fn,
+    *,
+    attempts: int = 3,
+    base_delay: float = 2.0,
+    label: str = "elevenlabs",
+):
+    """Wrap a single ElevenLabs SDK call so transient SSL / connection errors
+    get exponential-backoff retries (long videos do 100+ TTS requests; if any
+    one hits an SSL EOF on TCP handshake the whole pipeline blows up otherwise).
+    Same shape as the OpenRouter adapter helper."""
+    total = max(1, attempts)
+    for attempt in range(total):
+        try:
+            return fn()
+        except _NETWORK_RETRY_EXCEPTIONS as exc:
+            if attempt >= total - 1:
+                log.exception(
+                    "%s network retry exhausted (%d/%d): %s",
+                    label, attempt + 1, total, exc,
+                )
+                raise
+            delay = base_delay * (2 ** attempt)
+            log.warning(
+                "%s network error (%d/%d), retrying in %.1fs: %s",
+                label, attempt + 1, total, delay, exc,
+            )
+            time.sleep(delay)
 
 _client: ElevenLabs | None = None
 _client_lock = threading.Lock()
@@ -82,7 +126,10 @@ def generate_segment_audio(
                 kwargs["voice_settings"] = {"speed": float(speed)}
         else:
             kwargs["voice_settings"] = {"speed": float(speed)}
-    audio = client.text_to_speech.convert(**kwargs)
+    audio = _call_with_network_retry(
+        lambda: client.text_to_speech.convert(**kwargs),
+        label="elevenlabs.text_to_speech",
+    )
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:
         for chunk in audio:
