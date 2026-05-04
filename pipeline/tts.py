@@ -226,8 +226,13 @@ def generate_segment_audio(
         chunks = client.text_to_speech.convert(**kwargs)
         return b"".join(chunks)
 
-    audio_bytes = _call_with_network_retry(
-        _do_tts_call,
+    # 外层：429（多任务抢并发）退避；内层：网络瞬时抖动退避。
+    # 顺序很重要——429 是 HTTP 层错误，网络 retry 不识别它。
+    audio_bytes = _call_with_throttle_retry(
+        lambda: _call_with_network_retry(
+            _do_tts_call,
+            label="elevenlabs.text_to_speech",
+        ),
         label="elevenlabs.text_to_speech",
     )
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)

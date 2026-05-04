@@ -117,3 +117,30 @@ def test_call_with_throttle_retry_passes_non_429_through(monkeypatch):
         tts._call_with_throttle_retry(boom)
     assert calls["n"] == 1
     assert sleeps == []
+
+
+# ===== Task 3: throttle retry 接入 generate_segment_audio =====
+
+
+def test_generate_segment_audio_retries_on_429(monkeypatch, tmp_path):
+    """generate_segment_audio 收到 429 应该走 throttle retry。"""
+    monkeypatch.setattr(tts.time, "sleep", lambda s: None)
+
+    call_count = {"n": 0}
+    def fake_convert(**kwargs):
+        call_count["n"] += 1
+        if call_count["n"] < 2:
+            raise _Fake429Error()
+        return iter([b"audio-bytes"])
+
+    class FakeClient:
+        class text_to_speech:
+            convert = staticmethod(fake_convert)
+
+    monkeypatch.setattr(tts, "_get_client", lambda api_key=None: FakeClient())
+    out = tmp_path / "seg.mp3"
+    tts.generate_segment_audio(text="hi", voice_id="v1", output_path=str(out),
+                                elevenlabs_api_key="fake")
+    assert out.exists()
+    assert out.read_bytes() == b"audio-bytes"
+    assert call_count["n"] == 2  # 第 1 次 429 + 第 2 次成功
