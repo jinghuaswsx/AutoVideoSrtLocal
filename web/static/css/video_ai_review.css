@@ -1,5 +1,48 @@
 /* AI 视频分析卡片 + Modal — 海洋蓝风格 */
 
+/* CLAUDE.md 描述的 Ocean Blue token 在 medias / task 页 :root 上实际**没定义**
+   （这些页面用的是 --primary-color / --bg-body / --bg-card 一套老变量），所以本组件
+   的 var(--accent) / var(--radius-full) / var(--bg-muted) 等会全部 fallback 到空，
+   导致胶囊 tab 渲染成透明矩形。这里在 :root 上自带一份组件作用域用得到的 token，
+   有则不覆盖（@supports + custom-property fallback 不可控，所以直接 :root 写入；
+   命中已有定义时 cascade 顺序由 video_ai_review.css 后加载决定，但没冲突）。 */
+:root {
+  --accent:        oklch(56% 0.16  230);
+  --accent-hover:  oklch(50% 0.17  230);
+  --accent-fg:     #ffffff;
+  --accent-subtle: oklch(94% 0.04  225);
+  --accent-ring:   oklch(56% 0.16  230 / 0.22);
+  --bg-muted:      oklch(94% 0.010 230);
+  --bg-subtle:     oklch(97% 0.006 230);
+  --border:        oklch(91% 0.012 230);
+  --border-strong: oklch(84% 0.015 230);
+  --fg:            oklch(22% 0.020 235);
+  --fg-muted:      oklch(48% 0.018 230);
+  --fg-subtle:     oklch(62% 0.015 230);
+  --radius:        6px;
+  --radius-md:     8px;
+  --radius-lg:     12px;
+  --radius-full:   9999px;
+  --text-xs:       12px;
+  --text-sm:       13px;
+  --text-base:     14px;
+  --text-lg:       18px;
+  --duration-fast: 120ms;
+  --info:          oklch(62% 0.12 230);
+  --info-bg:       oklch(95% 0.04 230);
+  --success:       oklch(62% 0.13 165);
+  --success-bg:    oklch(95% 0.04 165);
+  --success-fg:    oklch(38% 0.09 165);
+  --warning:       oklch(72% 0.14 80);
+  --warning-bg:    oklch(96% 0.05 85);
+  --warning-fg:    oklch(42% 0.10 60);
+  --danger:        oklch(58% 0.18 25);
+  --danger-bg:     oklch(96% 0.04 25);
+  --danger-fg:     oklch(42% 0.14 25);
+  --font-mono:     "JetBrains Mono", "Geist Mono", ui-monospace,
+                   "SF Mono", Consolas, monospace;
+}
+
 .vr-inline {
   display: flex; flex-wrap: wrap; gap: 12px;
   padding: 8px 0;
