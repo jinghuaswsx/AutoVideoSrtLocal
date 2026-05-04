@@ -199,10 +199,10 @@ def test_list_by_module_groups_correctly():
 
 
 def test_tts_speedup_quality_review_use_case_registered():
-    assert "tts.speedup_quality_review" in USE_CASES, (
-        "tts.speedup_quality_review use_case 未注册"
+    assert "video_translate.tts_speedup_quality_review" in USE_CASES, (
+        "video_translate.tts_speedup_quality_review use_case 未注册"
     )
-    uc = get_use_case("tts.speedup_quality_review")
+    uc = get_use_case("video_translate.tts_speedup_quality_review")
     assert uc["module"] == "video_translate"
     assert uc["default_provider"] == "openrouter"
     assert uc["default_model"] == "google/gemini-3-flash-preview"
