@@ -4890,8 +4890,8 @@
           <button class="oc-btn primary sm" data-act="vr-run" title="多模态 AI 视频分析（Vertex Gemini）">
             ${icon('film', 12)}<span>AI 视频分析</span>
           </button>
-          <button class="oc-btn ghost sm" data-act="vr-result" title="查看分析提交资料、Prompt、各维度评分">
-            <span>分析结果</span>
+          <button class="oc-btn primary sm" data-act="vr-result" title="查看分析提交资料、Prompt、各维度评分">
+            ${icon('check', 12)}<span>分析结果</span>
           </button>
         </div>
       </div>`;
