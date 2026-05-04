@@ -1888,12 +1888,34 @@
         ? ` [${targetLo.toFixed(1)}, ${targetHi.toFixed(1)}]`
         : '';
       const lines = [];
+      // 单看绝对距离看不出方向，把"原视频 / 生成音频 / 带正负号的差值"都列清楚，
+      // 让用户能一眼判断音频是偏长还是偏短、要不要重做。
+      const audioDur = Number(winner.audio_duration);
+      const videoDur = Number(winner.video_duration);
+      const haveBoth = Number.isFinite(audioDur) && Number.isFinite(videoDur);
+      const signedDelta = haveBoth ? (audioDur - videoDur) : null;
+      let deltaLabel = '';
+      if (signedDelta != null) {
+        if (Math.abs(signedDelta) < 0.05) {
+          deltaLabel = '差距 0.0s（与原视频对齐）';
+        } else if (signedDelta > 0) {
+          deltaLabel = `差距 <b>+${signedDelta.toFixed(2)}s</b>（音频比原视频长 ${signedDelta.toFixed(2)}s）`;
+        } else {
+          deltaLabel = `差距 <b>${signedDelta.toFixed(2)}s</b>（音频比原视频短 ${Math.abs(signedDelta).toFixed(2)}s）`;
+        }
+      }
+      const compareLine = haveBoth
+        ? `<div class="duration-compare-line" style="margin-top:4px;font-size:var(--text-xs);color:var(--fg-muted);">原视频 <b>${videoDur.toFixed(2)}s</b> · 生成音频 <b>${audioDur.toFixed(2)}s</b> · ${deltaLabel}</div>`
+        : '';
       if (finalReason === 'converged') {
         lines.push(`<strong>✓ 收敛成功</strong>：第 ${finalRound} 轮音频 ${finalDuration.toFixed(1)}s 首次落入目标区间${rangeStr}，直接采用。`);
+        if (compareLine) lines.push(compareLine);
       } else if (finalReason === 'best_pick') {
-        lines.push(`<strong>⚠ 5 轮未精确收敛</strong>：挑选距目标区间最近的第 ${finalRound} 轮（距目标 ${finalDistance != null ? finalDistance.toFixed(2) : '?'}s）采用。`);
+        lines.push(`<strong>⚠ 5 轮未精确收敛</strong>：挑选距目标区间最近的第 ${finalRound} 轮采用。`);
+        if (compareLine) lines.push(compareLine);
       } else {
         lines.push(`<strong>采用第 ${finalRound} 轮</strong>（最终音频 ${finalDuration.toFixed(1)}s${rangeStr}）。`);
+        if (compareLine) lines.push(compareLine);
       }
       if (trimmed) {
         const trimBits = [];
