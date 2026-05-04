@@ -325,7 +325,7 @@ def _in_speedup_window(*, audio_duration: float, video_duration: float) -> bool:
     满足条件时，duration loop 应跳过下一轮 rewrite，改用 ElevenLabs voice_settings.speed
     重生成一遍音频试图直接收敛到 [v-1, v+2]。
     """
-    if not audio_duration or not video_duration or audio_duration <= 0 or video_duration <= 0:
+    if not (audio_duration > 0 and video_duration > 0):
         return False
     final_lo, final_hi = _tts_final_target_range(video_duration)
     stage1_lo = video_duration * 0.9

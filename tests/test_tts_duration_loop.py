@@ -83,8 +83,19 @@ class TestSpeedupWindow:
 
     def test_in_window_false_when_durations_invalid(self):
         from appcore.runtime import _in_speedup_window
+        # 零值
         assert _in_speedup_window(audio_duration=0.0, video_duration=60.0) is False
         assert _in_speedup_window(audio_duration=60.0, video_duration=0.0) is False
+        # 负数（即使 abs 落在 stage1 区间也不应触发）
+        assert _in_speedup_window(audio_duration=-1.0, video_duration=60.0) is False
+        assert _in_speedup_window(audio_duration=60.0, video_duration=-60.0) is False
+
+    def test_in_window_true_at_stage1_boundaries(self):
+        from appcore.runtime import _in_speedup_window
+        # audio=54.0 == 0.9*60 == stage1_lo（含边界）→ True
+        assert _in_speedup_window(audio_duration=54.0, video_duration=60.0) is True
+        # audio=66.0 == 1.1*60 == stage1_hi（含边界）→ True
+        assert _in_speedup_window(audio_duration=66.0, video_duration=60.0) is True
 
     def test_speedup_ratio_basic(self):
         from appcore.runtime import _speedup_ratio
