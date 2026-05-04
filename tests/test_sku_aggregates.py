@@ -90,7 +90,10 @@ def test_extract_logistic_fees_by_sku():
 
 
 def test_update_xmyc_sku_parcel_costs_end_to_end(monkeypatch):
-    monkeypatch.setattr(mod, "_xmyc_skus_with_shop", lambda: {"sku-A": "shopA", "sku-B": "shopA"})
+    monkeypatch.setattr(mod, "_xmyc_skus_with_shop", lambda: (
+        {"sku-A": "shopA", "sku-B": "shopA"},
+        {"shopA": {"sku-A", "sku-B"}},
+    ))
 
     fake_orders = [
         {"productList": [{"productSku": "sku-A"}], "logisticFee": 60},

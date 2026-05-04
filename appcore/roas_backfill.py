@@ -101,13 +101,13 @@ def _dianxiaomi_shop_groups(force: bool) -> tuple[dict[int, str], dict[str, set[
         tuple(pids),
     )
     pid_to_shop: dict[int, str] = {}
+    shop_to_pids: dict[str, set[int]] = defaultdict(set)
     for r in pairs:
         pid = int(r["product_id"])
-        if pid not in pid_to_shop:
-            pid_to_shop[pid] = str(r["dxm_shop_id"])
-    shop_to_pids: dict[str, set[int]] = defaultdict(set)
-    for pid, shop in pid_to_shop.items():
+        shop = str(r["dxm_shop_id"])
         shop_to_pids[shop].add(pid)
+        if pid not in pid_to_shop:
+            pid_to_shop[pid] = shop
     return pid_to_shop, shop_to_pids
 
 

@@ -344,6 +344,21 @@ def api_set_product_xmyc_skus(pid: int):
     return jsonify({"ok": True, **result})
 
 
+@bp.route("/api/xmyc-skus/<int:sku_id>", methods=["PATCH"])
+@login_required
+def api_update_xmyc_sku(sku_id: int):
+    body = request.get_json(silent=True) or {}
+    try:
+        row = xmyc_storage.update_sku(sku_id, body)
+    except ValueError as exc:
+        return jsonify({"error": "invalid_fields", "message": str(exc)}), 400
+    except LookupError:
+        abort(404)
+    rate = product_roas.get_configured_rmb_per_usd()
+    enriched = sku_aggregates.enrich_skus_with_roas([row], rate)
+    return jsonify({"ok": True, "item": enriched[0]})
+
+
 @bp.route("/api/products/<int:pid>", methods=["PUT"])
 @login_required
 def api_update_product(pid: int):

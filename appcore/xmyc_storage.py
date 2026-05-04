@@ -345,6 +345,42 @@ def _refresh_product_purchase_price(product_id: int) -> Decimal | None:
     return primary_price
 
 
+_SKU_EDITABLE_FIELDS = frozenset({
+    "standalone_price_sku",
+    "standalone_shipping_fee_sku",
+    "packet_cost_actual_sku",
+})
+
+
+def update_sku(sku_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+    """Update editable aggregate fields on a single xmyc_storage_skus row.
+
+    Returns the updated row dict (without roas enrichment).
+    """
+    sid = int(sku_id)
+    updates: dict[str, Any] = {}
+    for key in _SKU_EDITABLE_FIELDS:
+        if key not in fields:
+            continue
+        val = fields[key]
+        if val is None or (isinstance(val, str) and val.strip() == ""):
+            updates[key] = None
+            continue
+        try:
+            updates[key] = Decimal(str(val))
+        except (ValueError, ArithmeticError):
+            raise ValueError(f"invalid decimal for {key}: {val!r}")
+    if not updates:
+        raise ValueError("no editable fields provided")
+    set_clauses = [f"{col} = %s" for col in updates]
+    params = list(updates.values()) + [sid]
+    execute(f"UPDATE xmyc_storage_skus SET {', '.join(set_clauses)} WHERE id = %s", tuple(params))
+    row = query_one("SELECT * FROM xmyc_storage_skus WHERE id = %s", (sid,))
+    if row is None:
+        raise LookupError(f"sku id {sid} not found")
+    return row
+
+
 def refresh_purchase_prices_for_matched() -> dict[str, int]:
     rows = query(
         "SELECT DISTINCT product_id FROM xmyc_storage_skus WHERE product_id IS NOT NULL"

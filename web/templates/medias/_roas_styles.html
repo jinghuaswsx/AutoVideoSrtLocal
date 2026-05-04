@@ -496,6 +496,37 @@
 .oc-xmyc-match-table .matched-other { color: var(--oc-danger); font-size: 12px; }
 .oc-xmyc-match-table .matched-self { color: var(--oc-accent); font-size: 12px; font-weight: 600; }
 .oc-xmyc-match-empty { text-align: center; color: var(--oc-fg-muted); padding: 40px 0 !important; }
+.oc-xmyc-match-table .editable-cell {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 120ms var(--ease-out);
+}
+.oc-xmyc-match-table .editable-cell:hover { background: var(--oc-accent-subtle); }
+.oc-xmyc-match-table .editable-cell.editing { padding: 2px 4px; background: var(--oc-bg); }
+.oc-xmyc-match-table .editable-cell.saving { opacity: 0.6; }
+.oc-xmyc-match-table .editable-cell.saved { animation: xmyc-flash-green 800ms var(--ease-out); }
+@keyframes xmyc-flash-green {
+  0% { background: var(--oc-success-bg); }
+  100% { background: transparent; }
+}
+.oc-xmyc-edit-input {
+  width: 100px;
+  height: 28px;
+  border: 1px solid var(--oc-accent);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  background: var(--oc-bg);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+}
+.oc-xmyc-saving { color: var(--oc-fg-muted); }
+.oc-xmyc-match-table .row-roas-missing > td { background: oklch(97% 0.006 90 / 0.35); }
+.oc-xmyc-match-table .row-roas-danger > td { background: oklch(95% 0.04 25 / 0.18); }
+.oc-xmyc-match-table .row-roas-danger:hover > td { background: oklch(94% 0.05 25 / 0.24); }
+.roas-negative { color: var(--oc-danger); font-weight: 600; }
 .oc-xmyc-match-foot {
   border-top: 1px solid var(--oc-border);
   padding: 12px 20px;

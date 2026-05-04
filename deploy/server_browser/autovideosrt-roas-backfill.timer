@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt ROAS fields backfill every day
+
+[Timer]
+OnCalendar=*-*-* 13:07:00
+Persistent=true
+Unit=autovideosrt-roas-backfill.service
+
+[Install]
+WantedBy=timers.target

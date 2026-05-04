@@ -1,0 +1,16 @@
+[Unit]
+Description=AutoVideoSrt SKU-level aggregates daily backfill (shopify pricing + order counts + dianxiaomi parcel costs)
+Wants=autovideosrt-browser.service
+After=network-online.target autovideosrt-browser.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=BROWSER_AUTOMATION_LOCK_TIMEOUT_SECONDS=600
+Environment=BROWSER_AUTOMATION_LOCK_RETRY_SECONDS=10
+Environment=BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=sku_aggregates_backfill
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/sku_aggregates_backfill.py --kind all --days 30
+TimeoutStartSec=3600

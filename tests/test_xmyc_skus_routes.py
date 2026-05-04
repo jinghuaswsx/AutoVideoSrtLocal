@@ -90,3 +90,56 @@ def test_get_product_xmyc_skus_returns_attached(authed_client_no_db, monkeypatch
     assert body["ok"] is True
     assert len(body["items"]) == 1
     assert body["items"][0]["match_type"] == "manual"
+
+
+def test_update_xmyc_sku_writes_field(authed_client_no_db, monkeypatch):
+    from appcore import xmyc_storage as mod
+
+    def fake_update(sku_id, fields):
+        return {
+            "id": sku_id, "sku": "115-18103480", "sku_code": "83527156514",
+            "goods_name": "求生多功能锤", "unit_price": "16.57",
+            "standalone_price_sku": "25.00",
+            "standalone_shipping_fee_sku": None,
+            "packet_cost_actual_sku": None,
+        }
+
+    monkeypatch.setattr(mod, "update_sku", fake_update)
+    resp = authed_client_no_db.patch(
+        "/medias/api/xmyc-skus/42",
+        json={"standalone_price_sku": "25.00"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["item"]["standalone_price_sku"] == "25.00"
+
+
+def test_update_xmyc_sku_rejects_invalid_field(authed_client_no_db, monkeypatch):
+    from appcore import xmyc_storage as mod
+
+    def fake_update(sku_id, fields):
+        raise ValueError("invalid decimal for standalone_price_sku: 'abc'")
+
+    monkeypatch.setattr(mod, "update_sku", fake_update)
+    resp = authed_client_no_db.patch(
+        "/medias/api/xmyc-skus/42",
+        json={"standalone_price_sku": "abc"},
+    )
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert "invalid_fields" in body.get("error", "")
+
+
+def test_update_xmyc_sku_404_on_missing(authed_client_no_db, monkeypatch):
+    from appcore import xmyc_storage as mod
+
+    def fake_update(sku_id, fields):
+        raise LookupError("not found")
+
+    monkeypatch.setattr(mod, "update_sku", fake_update)
+    resp = authed_client_no_db.patch(
+        "/medias/api/xmyc-skus/99999",
+        json={"standalone_shipping_fee_sku": "5.00"},
+    )
+    assert resp.status_code == 404
