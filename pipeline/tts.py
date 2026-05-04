@@ -1,9 +1,11 @@
+import atexit
 import logging
 import os
 import ssl
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from typing import Callable, List, Dict, Optional
 
 import httpx
@@ -30,6 +32,43 @@ _NETWORK_RETRY_EXCEPTIONS: tuple[type[BaseException], ...] = (
     httpx.PoolTimeout,
     ssl.SSLError,
 )
+
+
+# ===== 进程级单例 TTS 线程池：跨任务共享 ElevenLabs 并发上限 =====
+#
+# ElevenLabs Business 套餐并发硬上限 15。默认 12 留 3 路 buffer 给声音库同步等
+# 其他子系统。所有翻译任务都向同一个 pool submit segment，自然 FIFO 排队，
+# 物理上不可能超过 max_workers，避免集体 429。
+
+_TTS_POOL: ThreadPoolExecutor | None = None
+_TTS_POOL_LOCK = threading.Lock()
+_DEFAULT_TTS_MAX_CONCURRENCY = 12
+_HARD_CAP_TTS_MAX_CONCURRENCY = 15  # ElevenLabs Business tier hard limit
+
+
+def _resolve_tts_max_concurrency() -> int:
+    """从 system settings 读 tts_max_concurrency，默认 12，硬上限 15。"""
+    from appcore.settings import get_setting
+    raw = get_setting("tts_max_concurrency")
+    try:
+        n = int(raw) if raw is not None else _DEFAULT_TTS_MAX_CONCURRENCY
+    except (TypeError, ValueError):
+        n = _DEFAULT_TTS_MAX_CONCURRENCY
+    return max(1, min(n, _HARD_CAP_TTS_MAX_CONCURRENCY))
+
+
+def _get_tts_pool() -> ThreadPoolExecutor:
+    global _TTS_POOL
+    if _TTS_POOL is None:
+        with _TTS_POOL_LOCK:
+            if _TTS_POOL is None:
+                max_workers = _resolve_tts_max_concurrency()
+                _TTS_POOL = ThreadPoolExecutor(
+                    max_workers=max_workers,
+                    thread_name_prefix="tts-elevenlabs",
+                )
+                atexit.register(_TTS_POOL.shutdown, wait=True)
+    return _TTS_POOL
 
 
 def _call_with_network_retry(
