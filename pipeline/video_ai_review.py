@@ -70,6 +70,9 @@ def _system_prompt(*, has_source_video: bool, has_target_video: bool,
 
 
 def _response_schema() -> dict:
+    # Vertex Gemini schema 的 type 字段是 enum 单值，不支持 OpenAI 风格的
+    # ["integer", "null"] union；缺数据用 nullable=True 表达。dimensions
+    # 里的子项也从 required 中拿掉，让 LLM 没数据时直接省略。
     return {
         "type": "json_schema",
         "json_schema": {
@@ -80,18 +83,12 @@ def _response_schema() -> dict:
                     "dimensions": {
                         "type": "object",
                         "properties": {
-                            "translation_fidelity":   {"type": ["integer", "null"]},
-                            "naturalness":            {"type": ["integer", "null"]},
-                            "tts_consistency":        {"type": ["integer", "null"]},
-                            "visual_text_alignment":  {"type": ["integer", "null"]},
-                            "product_alignment":      {"type": ["integer", "null"]},
+                            "translation_fidelity":   {"type": "integer", "nullable": True, "minimum": 0, "maximum": 100},
+                            "naturalness":            {"type": "integer", "nullable": True, "minimum": 0, "maximum": 100},
+                            "tts_consistency":        {"type": "integer", "nullable": True, "minimum": 0, "maximum": 100},
+                            "visual_text_alignment":  {"type": "integer", "nullable": True, "minimum": 0, "maximum": 100},
+                            "product_alignment":      {"type": "integer", "nullable": True, "minimum": 0, "maximum": 100},
                         },
-                        "required": [
-                            "translation_fidelity", "naturalness",
-                            "tts_consistency", "visual_text_alignment",
-                            "product_alignment",
-                        ],
-                        "additionalProperties": False,
                     },
                     "overall_score":   {"type": "integer", "minimum": 0, "maximum": 100},
                     "verdict":         {"type": "string"},
@@ -103,7 +100,6 @@ def _response_schema() -> dict:
                     "dimensions", "overall_score", "verdict",
                     "verdict_reason", "issues", "highlights",
                 ],
-                "additionalProperties": False,
             },
         },
     }
