@@ -318,6 +318,36 @@ def _tts_final_target_range(video_duration: float) -> tuple[float, float]:
     return max(0.0, video_duration - 1.0), video_duration + 2.0
 
 
+def _in_speedup_window(*, audio_duration: float, video_duration: float) -> bool:
+    """判断音频时长是否落入"变速短路"触发窗口：
+    在 stage-1 区间 [0.9v, 1.1v] 内，但不在最终收敛区间 [v-1, v+2] 内。
+
+    满足条件时，duration loop 应跳过下一轮 rewrite，改用 ElevenLabs voice_settings.speed
+    重生成一遍音频试图直接收敛到 [v-1, v+2]。
+    """
+    if not audio_duration or not video_duration or audio_duration <= 0 or video_duration <= 0:
+        return False
+    final_lo, final_hi = _tts_final_target_range(video_duration)
+    stage1_lo = video_duration * 0.9
+    stage1_hi = video_duration * 1.1
+    in_stage1 = stage1_lo <= audio_duration <= stage1_hi
+    in_final = final_lo <= audio_duration <= final_hi
+    return in_stage1 and not in_final
+
+
+def _speedup_ratio(audio_duration: float, video_duration: float) -> float:
+    """计算 ElevenLabs voice_settings.speed 取值。
+
+    ratio = audio_duration / video_duration：
+    - >1 时音频过长，需要变快、变短 → speed > 1
+    - <1 时音频过短，需要变慢、变长 → speed < 1
+    Clamp 到 ElevenLabs 合法范围 [0.7, 1.2]，超出窗口的极端值由调用方在
+    _in_speedup_window 阶段已经过滤掉，这里 clamp 只是兜底。
+    """
+    raw = audio_duration / video_duration
+    return max(0.7, min(1.2, raw))
+
+
 def _compute_next_target(
     round_index: int,
     last_audio_duration: float,

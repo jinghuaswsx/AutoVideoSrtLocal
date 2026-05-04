@@ -60,6 +60,46 @@ class TestComputeNextTarget:
         assert tw >= 3
 
 
+class TestSpeedupWindow:
+    """变速短路触发条件 + speed ratio 计算的纯函数测试。"""
+
+    def test_in_window_true_for_audio_outside_final_but_within_10pct(self):
+        from appcore.runtime import _in_speedup_window
+        # video=60, final=[59,62], stage1=[54,66]
+        # 64s: 在 stage1 但不在 final → True
+        assert _in_speedup_window(audio_duration=64.0, video_duration=60.0) is True
+
+    def test_in_window_false_when_audio_already_in_final(self):
+        from appcore.runtime import _in_speedup_window
+        # 60.5s 在 final [59,62] → False（已收敛，不应触发变速）
+        assert _in_speedup_window(audio_duration=60.5, video_duration=60.0) is False
+
+    def test_in_window_false_when_audio_outside_10pct(self):
+        from appcore.runtime import _in_speedup_window
+        # 70s > 1.1*60=66 → False
+        assert _in_speedup_window(audio_duration=70.0, video_duration=60.0) is False
+        # 50s < 0.9*60=54 → False
+        assert _in_speedup_window(audio_duration=50.0, video_duration=60.0) is False
+
+    def test_in_window_false_when_durations_invalid(self):
+        from appcore.runtime import _in_speedup_window
+        assert _in_speedup_window(audio_duration=0.0, video_duration=60.0) is False
+        assert _in_speedup_window(audio_duration=60.0, video_duration=0.0) is False
+
+    def test_speedup_ratio_basic(self):
+        from appcore.runtime import _speedup_ratio
+        # audio=64, video=60 → speed=64/60=1.0667（音频要变快、变短）
+        assert _speedup_ratio(64.0, 60.0) == pytest.approx(1.0667, abs=1e-4)
+
+    def test_speedup_ratio_clamps_to_elevenlabs_legal_range(self):
+        from appcore.runtime import _speedup_ratio
+        # ElevenLabs 合法 speed ∈ [0.7, 1.2]
+        # 极端情况 audio=120, video=60 → ratio=2.0，应被 clamp 到 1.2
+        assert _speedup_ratio(120.0, 60.0) == 1.2
+        # audio=30, video=60 → ratio=0.5，应被 clamp 到 0.7
+        assert _speedup_ratio(30.0, 60.0) == 0.7
+
+
 import os
 import json
 from unittest.mock import MagicMock, patch
