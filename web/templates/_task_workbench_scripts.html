@@ -1907,15 +1907,34 @@
       const compareLine = haveBoth
         ? `<div class="duration-compare-line" style="margin-top:4px;font-size:var(--text-xs);color:var(--fg-muted);">原视频 <b>${videoDur.toFixed(2)}s</b> · 生成音频 <b>${audioDur.toFixed(2)}s</b> · ${deltaLabel}</div>`
         : '';
+      // ±5% 内 ffmpeg atempo 兜底过：把变速 ratio / 兜底前 → 兜底后 / 新差距列出来
+      let tempoLine = '';
+      if (winner.tempo_applied) {
+        const r = Number(winner.tempo_ratio);
+        const pre = Number(winner.tempo_pre_duration);
+        const post = Number(winner.tempo_post_duration);
+        const newDelta = Number(winner.tempo_new_delta);
+        const newDeltaLabel = Number.isFinite(newDelta)
+          ? (Math.abs(newDelta) < 0.05
+              ? '与原视频对齐'
+              : (newDelta > 0
+                  ? `仍偏长 +${newDelta.toFixed(2)}s`
+                  : `仍偏短 ${newDelta.toFixed(2)}s`))
+          : '—';
+        tempoLine = `<div class="duration-tempo-line" style="margin-top:4px;font-size:var(--text-xs);color:var(--accent);">⚡ 音频变速兜底：atempo=<b>${r.toFixed(4)}</b> · 兜底前 ${pre.toFixed(2)}s → 兜底后 <b>${post.toFixed(2)}s</b> · ${newDeltaLabel}</div>`;
+      }
       if (finalReason === 'converged') {
         lines.push(`<strong>✓ 收敛成功</strong>：第 ${finalRound} 轮音频 ${finalDuration.toFixed(1)}s 首次落入目标区间${rangeStr}，直接采用。`);
         if (compareLine) lines.push(compareLine);
+        if (tempoLine) lines.push(tempoLine);
       } else if (finalReason === 'best_pick') {
         lines.push(`<strong>⚠ 5 轮未精确收敛</strong>：挑选距目标区间最近的第 ${finalRound} 轮采用。`);
         if (compareLine) lines.push(compareLine);
+        if (tempoLine) lines.push(tempoLine);
       } else {
         lines.push(`<strong>采用第 ${finalRound} 轮</strong>（最终音频 ${finalDuration.toFixed(1)}s${rangeStr}）。`);
         if (compareLine) lines.push(compareLine);
+        if (tempoLine) lines.push(tempoLine);
       }
       if (trimmed) {
         const trimBits = [];
