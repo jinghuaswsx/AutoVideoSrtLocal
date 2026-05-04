@@ -131,10 +131,14 @@ def test_manual_match_meta_ad_campaign_updates_both_tables(monkeypatch):
     assert queried[0][1] == (42,)
     assert "FROM media_products" in queried[0][0]
     assert "deleted_at IS NULL" in queried[0][0]
-    update_sqls = [u[0] for u in updates]
+    # 整合后 source of truth 是 campaign_product_overrides 表：
+    # 一次 INSERT override + 两次 UPDATE 事实表
+    assert any("INSERT INTO campaign_product_overrides" in u[0] for u in updates)
+    update_steps = [(s, a) for s, a in updates if s.lstrip().startswith("UPDATE")]
+    update_sqls = [s for s, _ in update_steps]
     assert any("UPDATE meta_ad_campaign_metrics" in s for s in update_sqls)
     assert any("UPDATE meta_ad_daily_campaign_metrics" in s for s in update_sqls)
-    for sql, args in updates:
+    for sql, args in update_steps:
         assert "product_id IS NULL" in sql
         assert args == (42, "glow-go-insect-set-rjc", "glow-go-insect-set-rjc")
 

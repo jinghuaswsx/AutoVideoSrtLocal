@@ -89,21 +89,32 @@ def apply_override_to_history(
     normalized_campaign_code: str,
     product_id: int,
     product_code: str | None,
-) -> int:
-    """把 override 应用到历史 meta_ad_daily_campaign_metrics
-       （UPDATE product_id + matched_product_code）。
+) -> dict[str, int]:
+    """把 override 同时应用到两张广告事实表：
+       meta_ad_campaign_metrics（月度/期间快照）+ meta_ad_daily_campaign_metrics（日度）。
 
     Returns:
-        受影响行数（无法可靠拿到，返回 0 表示已执行）
+        {"matched_periodic": N, "matched_daily": M}
+        （execute 返回值取决于 driver；为兼容 mock 测试，None 视为 0）
     """
-    execute(
+    # 安全策略：UPDATE 仅覆盖 product_id IS NULL 的行，不动已匹配的（避免误改）。
+    # 改产品需要先 remove_override 再重新 create_override。
+    matched_periodic = execute(
+        "UPDATE meta_ad_campaign_metrics "
+        "SET product_id = %s, matched_product_code = %s "
+        "WHERE normalized_campaign_code = %s AND product_id IS NULL",
+        (product_id, product_code, normalized_campaign_code),
+    )
+    matched_daily = execute(
         "UPDATE meta_ad_daily_campaign_metrics "
         "SET product_id = %s, matched_product_code = %s "
-        "WHERE normalized_campaign_code = %s "
-        "  AND (product_id IS NULL OR product_id = %s)",
-        (product_id, product_code, normalized_campaign_code, product_id),
+        "WHERE normalized_campaign_code = %s AND product_id IS NULL",
+        (product_id, product_code, normalized_campaign_code),
     )
-    return 0
+    return {
+        "matched_periodic": int(matched_periodic or 0),
+        "matched_daily": int(matched_daily or 0),
+    }
 
 
 def create_override(
@@ -113,17 +124,35 @@ def create_override(
     reason: str = "",
     created_by: str = "admin",
 ) -> dict[str, Any]:
-    """创建/更新人工配对，并立即应用到历史数据。"""
-    if not normalized_campaign_code or not isinstance(normalized_campaign_code, str):
+    """创建/更新人工配对，并立即应用到历史数据。
+
+    Source of truth：campaign_product_overrides 表。
+    副作用：UPDATE meta_ad_campaign_metrics + meta_ad_daily_campaign_metrics
+    两张事实表，让历史 dashboard / 利润核算立即看到匹配；同时
+    meta_ads.resolve_ad_product_match 在自动同步时也查 override 表，
+    未来同名 campaign 进来不用再手工配对。
+
+    Returns:
+        {normalized_campaign_code, product_id, product_code, product_name,
+         matched_periodic, matched_daily}
+    """
+    code = (normalized_campaign_code or "").strip().lower()
+    if not code:
         raise ValueError("normalized_campaign_code is required")
+    try:
+        pid = int(product_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("product_id must be an integer") from exc
+    if pid <= 0:
+        raise ValueError("product_id must be positive")
 
     product = query_one(
-        "SELECT id, product_code FROM media_products "
+        "SELECT id, product_code, name FROM media_products "
         "WHERE id = %s AND deleted_at IS NULL",
-        (int(product_id),),
+        (pid,),
     )
     if not product:
-        raise ValueError(f"product_id={product_id} 不存在或已删除")
+        raise LookupError(f"product {pid} not found or deleted")
     product_code = product["product_code"]
 
     execute(
@@ -135,25 +164,28 @@ def create_override(
         "  product_code = VALUES(product_code), "
         "  reason = VALUES(reason), "
         "  created_by = VALUES(created_by)",
-        (normalized_campaign_code, int(product_id), product_code, reason, created_by),
+        (code, pid, product_code, reason, created_by),
     )
-    apply_override_to_history(
-        normalized_campaign_code=normalized_campaign_code,
-        product_id=int(product_id),
+    applied = apply_override_to_history(
+        normalized_campaign_code=code,
+        product_id=pid,
         product_code=product_code,
     )
     return {
-        "normalized_campaign_code": normalized_campaign_code,
-        "product_id": int(product_id),
+        "normalized_campaign_code": code,
+        "product_id": pid,
         "product_code": product_code,
+        "product_name": product.get("name"),
+        "matched_periodic": applied["matched_periodic"],
+        "matched_daily": applied["matched_daily"],
     }
 
 
 def remove_override(*, override_id: int) -> dict[str, Any]:
-    """删除一条人工配对，并把 meta_ad_daily_campaign_metrics 里对应的 product_id 清空。
+    """删除一条人工配对，并把两张事实表里对应的 product_id 清空。
 
-    清空之后，如果 normalized_campaign_code 还能自动匹配（meta_ads.resolve_ad_product_match）
-    会在下次跑 match_meta_ads_to_products 时被重填。
+    清空之后，如果 normalized_campaign_code 还能自动匹配
+    （meta_ads.resolve_ad_product_match）会在下次同步时重填。
     """
     row = query_one(
         "SELECT normalized_campaign_code FROM campaign_product_overrides WHERE id = %s",
@@ -166,6 +198,12 @@ def remove_override(*, override_id: int) -> dict[str, Any]:
     execute(
         "DELETE FROM campaign_product_overrides WHERE id = %s",
         (int(override_id),),
+    )
+    execute(
+        "UPDATE meta_ad_campaign_metrics "
+        "SET product_id = NULL, matched_product_code = NULL "
+        "WHERE normalized_campaign_code = %s",
+        (code,),
     )
     execute(
         "UPDATE meta_ad_daily_campaign_metrics "

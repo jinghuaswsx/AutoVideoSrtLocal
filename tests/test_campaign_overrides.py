@@ -63,7 +63,9 @@ def test_create_override_validates_product_exists(monkeypatch):
     monkeypatch.setattr(oa, "query_one", lambda sql, args=(): None)
     monkeypatch.setattr(oa, "execute", lambda sql, args=(): None)
 
-    with pytest.raises(ValueError, match="product_id"):
+    # 整合后跟 manual_match_meta_ad_campaign 对齐：产品不存在抛 LookupError
+    # （endpoint 据此返回 404 + 写 audit failure）
+    with pytest.raises(LookupError, match="not found"):
         create_override(
             normalized_campaign_code="abc", product_id=99999,
             reason="", created_by="admin",
