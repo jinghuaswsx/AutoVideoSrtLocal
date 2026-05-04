@@ -1285,6 +1285,35 @@
     }
   });
 
+  // 变速短路 AI 评估重新评估按钮（事件委托，Task 9）
+  if (!window.__ttsSpeedupRetryBound) {
+    window.__ttsSpeedupRetryBound = true;
+    document.addEventListener('click', async function(e) {
+      const btn = e.target && e.target.closest && e.target.closest('.tts-speedup-retry-btn');
+      if (!btn) return;
+      const evalId = btn.dataset.evalId;
+      if (!evalId) return;
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '评估中…';
+      try {
+        const resp = await fetch(`/admin/tts-speedup-evaluations/${evalId}/retry`, {
+          method: 'POST', headers: { 'Accept': 'application/json' },
+        });
+        if (resp.ok) {
+          btn.textContent = '已发起';
+          setTimeout(() => { if (btn.textContent === '已发起') btn.textContent = orig; }, 3000);
+        } else {
+          btn.textContent = '失败，请重试';
+          btn.disabled = false;
+        }
+      } catch (err) {
+        btn.textContent = '网络错误';
+        btn.disabled = false;
+      }
+    });
+  }
+
   const runAnalysisBtn = document.getElementById("runAnalysisBtn");
   if (runAnalysisBtn) {
     runAnalysisBtn.addEventListener("click", async () => {
@@ -1849,6 +1878,7 @@
           ${truncationInfo ? `<div class="duration-round-meta">${truncationInfo}</div>` : ''}
           ${audioHtml}
           ${actions.length ? `<div class="duration-round-files">${actions.join('')}</div>` : ''}
+          ${renderSpeedupCard(round, taskId)}
         </div>
       `);
     });
@@ -2655,6 +2685,74 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
+  }
+
+  // ============================================================
+  // TTS 变速短路子卡片渲染 (Task 9)
+  // ============================================================
+  function renderSpeedupCard(r, tid) {
+    if (!r || !r.speedup_applied) return '';
+    const speedFmt = (r.speedup_speed != null) ? Number(r.speedup_speed).toFixed(4) : '?';
+    const preDur   = (r.speedup_pre_duration  != null) ? Number(r.speedup_pre_duration).toFixed(2)  : '?';
+    const postDur  = (r.speedup_post_duration != null) ? Number(r.speedup_post_duration).toFixed(2) : '?';
+
+    // 失败分支：只显示 speed + 失败原因，不显示 hit badge / 播放器
+    if (r.speedup_failed_reason) {
+      return `
+      <div class="tts-speedup-card">
+        <div class="tts-speedup-header">
+          <strong>变速短路</strong>
+          <span class="tag">speed=${speedFmt}</span>
+          <span class="tts-speedup-status-failed">变速调用失败</span>
+        </div>
+        <div class="tts-speedup-summary tts-speedup-status-failed">
+          ${escapeHtml(r.speedup_failed_reason)}（已回退原始音频走 atempo 兜底）
+        </div>
+      </div>`;
+    }
+
+    const hitBadge = r.speedup_hit_final
+      ? '<span style="color:var(--success-fg)">✓ 命中 [v-1, v+2]</span>'
+      : '<span style="color:var(--warning-fg)">⚠ 未命中 final，已 atempo 兜底</span>';
+
+    // 双轨播放器：变速前用原始 tts_full round 音频，变速后用 speedup_audio_path（相对路径）
+    const preRel  = `tts_full.round_${r.round}.mp3`;
+    const postRel = r.speedup_audio_path || '';
+    const preUrl  = `/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(preRel)}`;
+    const postUrl = `/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(postRel)}`;
+
+    let evalSection = '';
+    if (r.speedup_eval_id) {
+      evalSection = `
+        <div class="tts-speedup-summary">
+          AI 评估已生成（eval_id=${r.speedup_eval_id}），完整评分见
+          <a href="/admin/tts-speedup-evaluations/?task_id=${encodeURIComponent(tid)}" target="_blank">跨任务评估页</a>。
+          <button class="tts-speedup-retry-btn" data-eval-id="${r.speedup_eval_id}">重新评估</button>
+        </div>`;
+    } else {
+      evalSection = `<div class="tts-speedup-summary tts-speedup-status-pending">AI 评估未发起</div>`;
+    }
+
+    return `
+      <div class="tts-speedup-card">
+        <div class="tts-speedup-header">
+          <strong>变速短路</strong>
+          <span class="tag">speed=${speedFmt}</span>
+          <span>${preDur}s → ${postDur}s</span>
+          <span>${hitBadge}</span>
+        </div>
+        <div class="tts-speedup-players">
+          <div>
+            <div class="col-label">变速前 ${preDur}s</div>
+            <audio controls preload="none" src="${preUrl}"></audio>
+          </div>
+          <div>
+            <div class="col-label">变速后 ${postDur}s</div>
+            <audio controls preload="none" src="${postUrl}"></audio>
+          </div>
+        </div>
+        ${evalSection}
+      </div>`;
   }
 
   function escapeTextarea(value) {

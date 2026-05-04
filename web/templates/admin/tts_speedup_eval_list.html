@@ -1,0 +1,125 @@
+{% extends "layout.html" %}
+{% block title %}TTS 变速短路评估{% endblock %}
+{% block content %}
+<div style="margin-bottom: var(--space-6)">
+  <h1 style="font-size: var(--text-2xl); margin: 0; font-weight: 700; color: var(--fg); line-height: var(--leading-tight);">TTS 变速短路 AI 评估</h1>
+  <p style="color: var(--fg-muted); margin: var(--space-2) 0 0 0; font-size: var(--text-sm);">
+    长视频 TTS 时长收敛短路样本汇总 — 用于评估变速短路是否应在生产保留。
+  </p>
+</div>
+
+<!-- 概览卡片 -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--space-4); margin-bottom: var(--space-6);">
+  <div style="padding: var(--space-5); background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);">
+    <div style="color: var(--fg-muted); font-size: var(--text-xs); margin-bottom: var(--space-2);">总样本</div>
+    <div style="font-size: var(--text-2xl); font-family: var(--font-mono); font-weight: 600; color: var(--fg);">{{ summary.total }}</div>
+  </div>
+  <div style="padding: var(--space-5); background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);">
+    <div style="color: var(--fg-muted); font-size: var(--text-xs); margin-bottom: var(--space-2);">命中 final 比例</div>
+    <div style="font-size: var(--text-2xl); font-family: var(--font-mono); font-weight: 600; color: var(--fg);">{{ summary.hit_final_pct }}%</div>
+  </div>
+  <div style="padding: var(--space-5); background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);">
+    <div style="color: var(--fg-muted); font-size: var(--text-xs); margin-bottom: var(--space-2);">整体分均值</div>
+    <div style="font-size: var(--text-2xl); font-family: var(--font-mono); font-weight: 600; color: var(--fg);">{{ summary.avg_overall }}</div>
+  </div>
+  <div style="padding: var(--space-5); background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);">
+    <div style="color: var(--fg-muted); font-size: var(--text-xs); margin-bottom: var(--space-2);">高频问题点 top 5</div>
+    <div style="margin-top: var(--space-2);">
+      {% for f in summary.top_flags %}
+        <span style="display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px; background: var(--bg-muted); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg);">{{ f.flag }} ({{ f.count }})</span>
+      {% else %}
+        <span style="color: var(--fg-subtle); font-size: var(--text-sm);">无</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- 筛选条 -->
+<form method="GET" style="display: flex; gap: var(--space-3); margin-bottom: var(--space-4); flex-wrap: wrap; align-items: center;">
+  <select name="language" style="height: 32px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: white; color: var(--fg); font-size: var(--text-sm);">
+    <option value="">全部语言</option>
+    {% for code in ['en','es','de','fr','pt','it','nl','sv','fi','ja','ko'] %}
+      <option value="{{ code }}" {% if args.get('language') == code %}selected{% endif %}>{{ code }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" style="height: 32px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: white; color: var(--fg); font-size: var(--text-sm);">
+    <option value="">所有状态</option>
+    <option value="ok" {% if args.get('status') == 'ok' %}selected{% endif %}>ok</option>
+    <option value="failed" {% if args.get('status') == 'failed' %}selected{% endif %}>failed</option>
+    <option value="pending" {% if args.get('status') == 'pending' %}selected{% endif %}>pending</option>
+  </select>
+  <select name="hit_final" style="height: 32px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: white; color: var(--fg); font-size: var(--text-sm);">
+    <option value="">命中?</option>
+    <option value="1" {% if args.get('hit_final') == '1' %}selected{% endif %}>命中 final</option>
+    <option value="0" {% if args.get('hit_final') == '0' %}selected{% endif %}>未命中</option>
+  </select>
+  <input name="min_overall" placeholder="整体分 &ge;" value="{{ args.get('min_overall') or '' }}"
+         style="height: 32px; width: 120px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: white; color: var(--fg); font-size: var(--text-sm);">
+  <button type="submit" style="height: 32px; padding: 0 var(--space-4); background: var(--accent); color: white; border: 0; border-radius: var(--radius); font-size: var(--text-sm); cursor: pointer;">筛选</button>
+  <a href="/admin/tts-speedup-evaluations.csv?{{ request.query_string.decode() }}"
+     style="height: 32px; line-height: 32px; padding: 0 var(--space-4); background: white; border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--fg); text-decoration: none; font-size: var(--text-sm);">导出 CSV</a>
+</form>
+
+<!-- 列表 -->
+<div style="background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;">
+  <div style="overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse;">
+      <thead style="background: var(--bg-subtle);">
+        <tr>
+          {% for h in ['创建时间', '任务', '语种', 'speed', '变速前/后', '命中?', '整体分', '5维', 'flags', '状态', '成本', '操作'] %}
+            <th style="padding: 10px 12px; text-align: left; font-size: var(--text-xs); color: var(--fg-muted); font-weight: 500; border-bottom: 1px solid var(--border); white-space: nowrap;">{{ h }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; color: var(--fg-muted);">{{ r.created_at }}</td>
+          <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs);">
+            <a href="/multi-translate/{{ r.task_id }}" target="_blank" style="color: var(--accent);">{{ r.task_id[:12] if r.task_id else '-' }}...</a>
+          </td>
+          <td style="padding: 8px 12px; font-size: var(--text-sm); color: var(--fg);">{{ r.language }}</td>
+          <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs);">{{ "%.4f"|format(r.speed_ratio|float) }}</td>
+          <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap;">{{ "%.2f"|format(r.audio_pre_duration|float) }}s &rarr; {{ "%.2f"|format(r.audio_post_duration|float) }}s</td>
+          <td style="padding: 8px 12px; font-size: var(--text-sm);">
+            {% if r.hit_final_range %}
+              <span style="color: var(--success-fg); font-weight: 600;">Y</span>
+            {% else %}
+              <span style="color: var(--warning-fg); font-weight: 600;">N</span>
+            {% endif %}
+          </td>
+          <td style="padding: 8px 12px; font-family: var(--font-mono); font-weight: 600; font-size: var(--text-sm); color: var(--fg);">{{ r.score_overall or '-' }}</td>
+          <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; color: var(--fg-muted);">
+            N{{ r.score_naturalness or '-' }} / P{{ r.score_pacing or '-' }} / T{{ r.score_timbre or '-' }} / I{{ r.score_intelligibility or '-' }}
+          </td>
+          <td style="padding: 8px 12px; font-size: var(--text-xs); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted);" title="{{ r.flags_json or '[]' }}">{{ r.flags_json or '[]' }}</td>
+          <td style="padding: 8px 12px; font-size: var(--text-sm);">
+            {% if r.status == 'ok' %}
+              <span style="color: var(--success-fg);">ok</span>
+            {% elif r.status == 'failed' %}
+              <span style="color: var(--danger-fg);" title="{{ r.error_text or '' }}">failed</span>
+            {% else %}
+              <span style="color: var(--fg-muted);">pending</span>
+            {% endif %}
+          </td>
+          <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);">${{ r.llm_cost_usd or '0' }}</td>
+          <td style="padding: 8px 12px;">
+            <form method="POST" action="/admin/tts-speedup-evaluations/{{ r.id }}/retry" style="display: inline;">
+              <button type="submit" style="height: 28px; padding: 0 var(--space-2); background: white; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: var(--text-xs); color: var(--fg); cursor: pointer;">重跑</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="12" style="padding: var(--space-9) var(--space-6); text-align: center; color: var(--fg-subtle);">
+            <div style="font-size: var(--text-lg); margin-bottom: var(--space-2);">暂无样本</div>
+            <div style="font-size: var(--text-sm);">尚未记录任何 TTS 变速短路评估数据</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

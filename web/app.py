@@ -88,6 +88,7 @@ from web.routes.new_product_review import new_product_review_bp
 from web.routes.productivity_stats import bp as productivity_stats_bp
 from web.routes.tools import bp as tools_bp
 from web.routes.admin_runtime import bp as admin_runtime_bp
+from web.routes.tts_speedup_eval import bp as tts_speedup_eval_bp
 
 log = logging.getLogger(__name__)
 
@@ -318,6 +319,7 @@ def create_app() -> Flask:
     app.register_blueprint(productivity_stats_bp)
     app.register_blueprint(tools_bp)
     app.register_blueprint(admin_runtime_bp)
+    app.register_blueprint(tts_speedup_eval_bp)
 
     # admin 蓝图的 JSON PUT API 豁免 CSRF（前端用 X-CSRFToken header）
     # 这里不需要额外豁免，因为 admin 蓝图的 API 用 JS fetch + CSRFToken

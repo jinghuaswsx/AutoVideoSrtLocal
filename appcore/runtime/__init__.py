@@ -76,6 +76,8 @@ from ._helpers import (
     _is_av_pipeline_task,
     _av_target_lang,
     _tts_final_target_range,
+    _in_speedup_window,
+    _speedup_ratio,
     _DEFAULT_WPS,
     _compute_next_target,
     _distance_to_duration_range,

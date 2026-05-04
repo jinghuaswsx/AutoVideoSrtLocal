@@ -97,7 +97,7 @@ speedup_eval_id: int | null  → tts_speedup_evaluations.id
 在 [appcore/llm_use_cases.py](../../appcore/llm_use_cases.py) 的 `USE_CASES` 加一条：
 
 ```python
-"tts.speedup_quality_review": _uc(
+"video_translate.tts_speedup_quality_review": _uc(
     title="TTS 变速短路质量评估",
     default_provider="openrouter",
     default_model="google/gemini-3-flash-preview",
@@ -110,7 +110,7 @@ speedup_eval_id: int | null  → tts_speedup_evaluations.id
 
 ```python
 result = llm_client.invoke_generate(
-    use_case="tts.speedup_quality_review",
+    use_case="video_translate.tts_speedup_quality_review",
     prompt=build_speedup_review_prompt(ctx),  # 含 speed/语言/时长/任务 ID
     media=[原始音频文件路径, 变速后音频文件路径],
     user_id=self.user_id,
@@ -220,7 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_tts_speedup_evals_lang_overall ON tts_speedup_eva
 | [pipeline/tts.py](../../pipeline/tts.py) | 新增函数 | `regenerate_full_audio_with_speed` |
 | [appcore/runtime/_pipeline_runner.py](../../appcore/runtime/_pipeline_runner.py) | 修改 | duration loop 注入变速短路分支 |
 | [appcore/runtime/_helpers.py](../../appcore/runtime/_helpers.py) | 可选新增 | speed 计算 / 区间判定的纯函数 |
-| [appcore/llm_use_cases.py](../../appcore/llm_use_cases.py) | 新增条目 | `tts.speedup_quality_review` |
+| [appcore/llm_use_cases.py](../../appcore/llm_use_cases.py) | 新增条目 | `video_translate.tts_speedup_quality_review` |
 | `appcore/tts_speedup_eval.py` | 新建 | 评估 orchestrator：构造 prompt、调 llm_client、写库 |
 | `db/migrations/2026_05_04_tts_speedup_evaluations.sql` | 新建 | DDL |
 | `db/schema.sql` | 同步追加 | 表声明（保持文件一致） |
