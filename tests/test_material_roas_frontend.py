@@ -44,7 +44,7 @@ def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     assert "预估小包成本 (RMB)" in site_section
     assert "实际小包成本 (RMB)" in site_section
     assert "独立站售价 (USD)" in site_section
-    assert "运费 (USD)" in site_section
+    assert "用户支付运费 (USD)" in site_section
     assert site_section.index('data-roas-field="purchase_1688_url"') < site_section.index(
         'data-roas-field="standalone_price"'
     )
