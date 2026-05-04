@@ -178,3 +178,37 @@ def test_roas_button_is_after_ai_evaluate_button():
     row_actions = js.split('<div class="oc-row-actions">', 1)[1].split("</div>", 1)[0]
 
     assert row_actions.index("data-ai-evaluate") < row_actions.index("data-roas")
+
+
+def test_modal_head_contains_open_in_page_pill_button():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert 'id="roasOpenInPage"' in html
+    assert 'class="oc-btn pill ghost"' in html or 'class="oc-btn ghost pill"' in html
+    assert 'target="_blank"' in html
+    assert 'rel="noopener"' in html
+    assert "在新页面打开" in html
+
+
+def test_modal_has_status_bar():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert 'class="oc-roas-status-bar"' in html
+    assert 'data-roas-status' in html
+
+
+def test_modal_footer_no_longer_has_save_button():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert 'id="roasSaveBtn"' not in html
+    assert 'id="roasSaveMsg"' not in html
+
+
+def test_medias_list_loads_roas_form_script():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert "roas_form.js" in html
+
+
+def test_medias_js_uses_controller_class():
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    assert "RoasFormController" in js
+    assert "new RoasFormController" in js
+    # 旧函数应已被替换或移除
+    assert "async function saveRoas" not in js

@@ -1911,6 +1911,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
       <symbol id="ic-alert"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
       <symbol id="ic-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
       <symbol id="ic-users"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+      <symbol id="ic-external-link" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5A1.5 1.5 0 0 0 2 5v7.5A1.5 1.5 0 0 0 3.5 14H11a1.5 1.5 0 0 0 1.5-1.5V10"/><path d="M9 2h5v5"/><path d="M14 2L7 9"/></symbol>
     </defs>
   </svg>
 
@@ -2133,17 +2134,22 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   <div class="oc-modal oc-roas-modal" role="dialog" aria-modal="true" aria-labelledby="roasModalTitle">
     <div class="oc-modal-head">
       <h3 id="roasModalTitle">独立站保本 ROAS</h3>
-      <button type="button" id="roasCloseBtn" class="oc-icon-btn" aria-label="关闭">
-        <svg width="16" height="16"><use href="#ic-close"/></svg>
-      </button>
+      <div class="oc-roas-head-actions">
+        <a id="roasOpenInPage" class="oc-btn pill ghost" target="_blank" rel="noopener" href="#" hidden>
+          <svg width="14" height="14"><use href="#ic-external-link"/></svg>
+          在新页面打开
+        </a>
+        <button type="button" id="roasCloseBtn" class="oc-icon-btn" aria-label="关闭">
+          <svg width="16" height="16"><use href="#ic-close"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="oc-roas-status-bar" data-roas-status data-state="idle">
+      <span class="oc-roas-status-text">尚未编辑</span>
+      <button type="button" class="oc-roas-status-retry" hidden>重试</button>
     </div>
     <div class="oc-modal-body">
       {% include "medias/_roas_form.html" %}
-    </div>
-    <div class="oc-modal-foot">
-      <span id="roasSaveMsg" class="muted"></span>
-      <button type="button" id="roasCancelBtn" class="oc-btn ghost">取消</button>
-      <button type="button" id="roasSaveBtn" class="oc-btn primary">保存</button>
     </div>
   </div>
 </div>
@@ -2402,6 +2408,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   window.MEDIAS_UPLOAD_READY = true;
 </script>
 <script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
+<script src="{{ url_for('static', filename='roas_form.js') }}"></script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translate_modal.js') }}"></script>

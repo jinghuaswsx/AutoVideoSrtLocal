@@ -1,6 +1,6 @@
 (function() {
   window.MEDIAS_UPLOAD_READY = window.MEDIAS_UPLOAD_READY !== false;
-  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0, roasProduct: null };
+  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0, roasProduct: null, roasController: null };
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
   const $ = (id) => document.getElementById(id);
@@ -561,16 +561,7 @@
     updateView: updateRoasAverageShipping,
   };
 
-  function setRoasFieldValues(product) {
-    ROAS_FIELDS.forEach((field) => {
-      const input = document.querySelector(`[data-roas-field="${field}"]`);
-      if (!input) return;
-      const value = product && product[field] !== null && product[field] !== undefined ? product[field] : '';
-      input.value = value;
-    });
-  }
-
-  function collectRoasPayload() {
+  function renderRoasResult() {
     const payload = {};
     ROAS_FIELDS.forEach((field) => {
       const input = document.querySelector(`[data-roas-field="${field}"]`);
@@ -578,11 +569,6 @@
       const raw = String(input.value || '').trim();
       payload[field] = raw || null;
     });
-    return payload;
-  }
-
-  function renderRoasResult() {
-    const payload = collectRoasPayload();
     const result = calculateRoasBreakEven(payload);
     if ($('roasEstimatedValue')) $('roasEstimatedValue').textContent = formatRoas(result.estimated_roas);
     if ($('roasActualValue')) $('roasActualValue').textContent = numberOrNull(payload.packet_cost_actual) === null ? '待回填' : formatRoas(result.actual_roas);
@@ -606,17 +592,27 @@
     state.roasProduct = product;
     const mask = $('roasModalMask');
     if (!mask) return;
-    $('roasProductId').textContent = product.id || '—';
-    $('roasProductName').textContent = product.name || '—';
-    $('roasProductEnglish').textContent = product.product_code || '—';
-    const cover = $('roasProductCover');
-    if (cover) {
-      cover.innerHTML = product.cover_thumbnail_url
-        ? `<img src="${escapeHtml(product.cover_thumbnail_url)}" alt="">`
-        : `<div class="roas-cover-ph">${icon('package', 24)}</div>`;
+    const root = mask.querySelector('.oc-modal');
+    const statusBar = root && root.querySelector('[data-roas-status]');
+    const openLink = $('roasOpenInPage');
+    if (openLink) {
+      openLink.href = '/medias/' + product.id + '/roas';
+      openLink.hidden = false;
     }
-    setRoasFieldValues(product);
-    if ($('roasSaveMsg')) $('roasSaveMsg').textContent = '';
+    if (!state.roasController || state.roasController.root !== root) {
+      state.roasController = new RoasFormController(root, {
+        productId: product.id,
+        statusBarEl: statusBar,
+        onAfterSave: (payload) => {
+          Object.assign(product, payload);
+          product.roas_calculation = state.roasController.computeRoas();
+          loadList();
+        },
+      });
+    } else {
+      state.roasController.productId = product.id;
+    }
+    state.roasController.fillFromProduct(product);
     markRoasResultDirty();
     mask.hidden = false;
   }
@@ -625,33 +621,6 @@
     const mask = $('roasModalMask');
     if (mask) mask.hidden = true;
     state.roasProduct = null;
-  }
-
-  async function saveRoas() {
-    const product = state.roasProduct;
-    const form = $('roasForm');
-    if (!product || !form) return;
-    const btn = $('roasSaveBtn');
-    const msg = $('roasSaveMsg');
-    if (btn) btn.disabled = true;
-    if (msg) msg.textContent = '保存中...';
-    try {
-      const payload = collectRoasPayload();
-      await fetchJSON('/medias/api/products/' + product.id, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      Object.assign(product, payload);
-      product.roas_calculation = calculateRoasBreakEven(payload);
-      closeRoasModal();
-      loadList();
-    } catch (e) {
-      if (msg) msg.textContent = e.message || '保存失败';
-      alert(e.message || '保存失败');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
   }
 
   function showAiEvaluationDetail(product) {
@@ -5275,8 +5244,6 @@
     $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') hideModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('editMask').hidden) hideModal(); });
     $('roasCloseBtn') && $('roasCloseBtn').addEventListener('click', closeRoasModal);
-    $('roasCancelBtn') && $('roasCancelBtn').addEventListener('click', closeRoasModal);
-    $('roasSaveBtn') && $('roasSaveBtn').addEventListener('click', saveRoas);
     $('roasCalculateBtn') && $('roasCalculateBtn').addEventListener('click', renderRoasResult);
     $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
       if (e.target.id === 'roasModalMask') closeRoasModal();
