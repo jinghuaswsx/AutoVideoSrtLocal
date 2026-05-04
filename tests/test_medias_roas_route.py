@@ -17,6 +17,7 @@ def test_roas_page_returns_html_for_owner(authed_client_no_db, monkeypatch):
         },
     )
     monkeypatch.setattr(r, "_can_access_product", lambda product: product is not None)
+    monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 6.83)
 
     resp = authed_client_no_db.get("/medias/6/roas")
 
@@ -32,6 +33,7 @@ def test_roas_page_404_when_product_missing(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
     monkeypatch.setattr(r.medias, "get_product", lambda pid: None)
+    monkeypatch.setattr(r, "_can_access_product", lambda product: False)
 
     resp = authed_client_no_db.get("/medias/9999/roas")
 
