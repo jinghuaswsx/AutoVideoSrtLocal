@@ -111,6 +111,10 @@ def _build_reset_fields() -> dict[str, Any]:
         "voice_match_candidates": [],
         "voice_match_fallback_voice_id": None,
         "voice_match_query_embedding": None,
+        # 分离 / 响度匹配的旧产物——restart 必须清掉，避免上次分离写的
+        # disabled / failed 状态被新跑的 separate step 误解（_step_loudness_match
+        # / _step_compose 都会读 task["separation"] 决定走兜底还是新逻辑）。
+        "separation": None,
         "_segments_confirmed": False,
         "_translate_pre_select": False,
         "error": "",
