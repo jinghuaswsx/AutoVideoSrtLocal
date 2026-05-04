@@ -608,6 +608,15 @@ class PipelineRunner:
                 # 标记本轮为最终采用：UI 画 ✨ 徽章 + 底部摘要说明
                 round_record["is_final"] = True
                 round_record["final_reason"] = "converged"
+                # 已落入 range，但常常仍差 1-2s；用 ffmpeg atempo 兜底精确对齐
+                final_audio_path = self._maybe_tempo_align(
+                    audio_path=result["full_audio_path"],
+                    audio_duration=audio_duration,
+                    video_duration=video_duration,
+                    task_dir=task_dir, variant=variant,
+                    round_record=round_record, task_id=task_id,
+                )
+                round_products[-1]["tts_audio_path"] = final_audio_path
                 rounds[-1] = round_record
                 task_state.update(
                     task_id,
@@ -626,7 +635,7 @@ class PipelineRunner:
                 return {
                     "localized_translation": localized_translation,
                     "tts_script": tts_script,
-                    "tts_audio_path": result["full_audio_path"],
+                    "tts_audio_path": final_audio_path,
                     "tts_segments": result["segments"],
                     "rounds": rounds,
                     "round_products": round_products,
@@ -666,6 +675,15 @@ class PipelineRunner:
         best_record["is_final"] = True
         best_record["final_reason"] = "best_pick"
         best_record["final_distance"] = round(best_distance, 3)
+        # ffmpeg atempo 兜底：误差 ≤5% 时拉伸/压缩到精确等于视频长度
+        final_best_audio = self._maybe_tempo_align(
+            audio_path=best_product["tts_audio_path"],
+            audio_duration=best_record["audio_duration"],
+            video_duration=video_duration,
+            task_dir=task_dir, variant=variant,
+            round_record=best_record, task_id=task_id,
+        )
+        best_product["tts_audio_path"] = final_best_audio
         rounds[best_i] = best_record
         self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
         task_state.update(
@@ -690,6 +708,39 @@ class PipelineRunner:
             "round_products": round_products,
             "final_round": best_i + 1,
         }
+
+    def _maybe_tempo_align(
+        self, *, audio_path: str, audio_duration: float, video_duration: float,
+        task_dir: str, variant: str, round_record: dict, task_id: str,
+    ) -> str:
+        """误差在 ±5% 内时跑一次 ffmpeg atempo 兜底，把音频精确对齐 video_duration。
+        把变速过程的 ratio / pre / post / new_delta 写进 round_record，前端 TTS 卡片
+        读这些字段渲染日志行。失败 / 不需要时返回原 audio_path。"""
+        from appcore.runtime._helpers import _apply_audio_tempo_fallback as _do_tempo
+        import os
+        out_path = os.path.join(task_dir, f"tts_full.tempo.{variant}.mp3")
+        info = _do_tempo(
+            audio_path=audio_path, audio_duration=audio_duration,
+            video_duration=video_duration, output_path=out_path,
+        )
+        if info is None:
+            log.info(
+                "[task %s] tempo fallback skipped (audio=%.3fs video=%.3fs delta=%.3fs)",
+                task_id, audio_duration, video_duration, audio_duration - video_duration,
+            )
+            round_record["tempo_applied"] = False
+            return audio_path
+        round_record["tempo_applied"] = True
+        round_record["tempo_ratio"] = info["ratio"]
+        round_record["tempo_pre_duration"] = info["pre_duration"]
+        round_record["tempo_post_duration"] = info["post_duration"]
+        round_record["tempo_new_delta"] = info["new_delta"]
+        log.info(
+            "[task %s] tempo fallback applied: ratio=%.4f, %.3fs → %.3fs (target %.3fs, new_delta=%+.3fs)",
+            task_id, info["ratio"], info["pre_duration"], info["post_duration"],
+            video_duration, info["new_delta"],
+        )
+        return info["new_audio_path"]
 
     def _promote_final_artifacts(self, task_dir: str, final_round: int, variant: str) -> None:
         """Copy tts_full.round_{N}.mp3 to tts_full.{variant}.mp3 for downstream compatibility."""
