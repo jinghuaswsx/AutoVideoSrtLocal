@@ -274,7 +274,63 @@ window.VideoAiReview = (function () {
     `;
   }
 
-  return { init };
+  // ---- 素材管理编辑页：每个视频卡片底部两个按钮的入口 ----
+  // 不走 step-analysis 自动 init，由 medias.js 显式调用。每次调用都用 mediaItemId
+  // 临时切换 _state，请求 /medias/api/items/<id>/video-ai-review[/run]，渲染共享
+  // 同一个 _renderModal 视图。
+  function _setMediaState(mediaItemId) {
+    _state.taskId = String(mediaItemId);
+    _state.projectType = "media_item";
+    _state.isAdmin = false;
+  }
+
+  async function triggerForMediaItem(mediaItemId) {
+    _setMediaState(mediaItemId);
+    _ensureModalShell();
+    try {
+      const resp = await fetch(
+        `/medias/api/items/${mediaItemId}/video-ai-review/run`,
+        { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": _csrf() } },
+      );
+      const data = await resp.json().catch(() => ({}));
+      if (resp.status === 409) {
+        alert("AI 视频分析已在运行中（run #" + (data.in_flight_run_id || "?") + "）");
+      } else if (!resp.ok) {
+        alert("启动失败：" + (data.error || resp.status));
+      } else {
+        alert("AI 视频分析已启动 (run #" + data.run_id + ") · " + (data.channel || "") + " · " + (data.model || "") + "\n稍后点「分析结果」查看进度");
+      }
+    } catch (err) {
+      alert("启动失败：" + err.message);
+    }
+    await _refreshMediaItem(mediaItemId);
+  }
+
+  async function openModalForMediaItem(mediaItemId) {
+    _setMediaState(mediaItemId);
+    _ensureModalShell();
+    _openModal();
+    await _refreshMediaItem(mediaItemId);
+  }
+
+  async function _refreshMediaItem(mediaItemId) {
+    try {
+      const resp = await fetch(`/medias/api/items/${mediaItemId}/video-ai-review`);
+      if (!resp.ok) {
+        _state.latest = null;
+        _renderModal();
+        return;
+      }
+      const data = await resp.json();
+      _state.latest = data.review || null;
+      _renderModal();
+    } catch (e) {
+      _state.latest = null;
+      _renderModal();
+    }
+  }
+
+  return { init, triggerForMediaItem, openModalForMediaItem };
 })();
 
 document.addEventListener("DOMContentLoaded", function () {

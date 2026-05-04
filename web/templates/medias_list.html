@@ -2409,6 +2409,9 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 </script>
 <script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script src="{{ url_for('static', filename='roas_form.js') }}"></script>
+<!-- AI 视频分析（每个视频卡片底部两按钮调用，依赖 window.VideoAiReview） -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/video_ai_review.css') }}">
+<script src="{{ url_for('static', filename='js/video_ai_review.js') }}"></script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translate_modal.js') }}"></script>

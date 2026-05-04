@@ -4886,6 +4886,14 @@
           <button class="oc-btn text sm" data-act="cover">${icon('edit', 12)}<span>换封面</span></button>
           <button class="oc-btn text sm danger-txt" data-act="del">${icon('trash', 12)}<span>删除</span></button>
         </div>
+        <div class="vactions vactions-vr">
+          <button class="oc-btn primary sm" data-act="vr-run" title="多模态 AI 视频分析（Vertex Gemini）">
+            ${icon('film', 12)}<span>AI 视频分析</span>
+          </button>
+          <button class="oc-btn ghost sm" data-act="vr-result" title="查看分析提交资料、Prompt、各维度评分">
+            <span>分析结果</span>
+          </button>
+        </div>
       </div>`;
     }).join('');
     g.querySelectorAll('[data-item]').forEach(card => {
@@ -4899,6 +4907,14 @@
       }));
       card.querySelector('[data-act="del"]').addEventListener('click', () => edRemoveItem(id, card));
       card.querySelector('[data-act="cover"]').addEventListener('click', () => edPickItemCover(id));
+      const vrRunBtn = card.querySelector('[data-act="vr-run"]');
+      const vrResultBtn = card.querySelector('[data-act="vr-result"]');
+      if (vrRunBtn && window.VideoAiReview) {
+        vrRunBtn.addEventListener('click', () => window.VideoAiReview.triggerForMediaItem(id));
+      }
+      if (vrResultBtn && window.VideoAiReview) {
+        vrResultBtn.addEventListener('click', () => window.VideoAiReview.openModalForMediaItem(id));
+      }
       card.querySelector('[data-act="name-edit"]').addEventListener('click', () => edStartItemNameEdit(card));
       card.querySelector('[data-act="name-save"]').addEventListener('click', () => edSaveItemNameEdit(id, card));
       card.querySelector('[data-act="name-cancel"]').addEventListener('click', () => edCancelItemNameEdit(card));

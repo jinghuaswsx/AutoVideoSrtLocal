@@ -224,3 +224,53 @@ def api_delete_item(item_id: int):
     except Exception:
         pass
     return jsonify({"ok": True})
+
+
+# ---- AI 视频分析（手动触发，多模态 ADC 通道）----
+@bp.route("/api/items/<int:item_id>/video-ai-review/run", methods=["POST"])
+@login_required
+def api_run_video_ai_review(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    from appcore import video_ai_review
+    try:
+        run_id = video_ai_review.trigger_review(
+            source_type="media_item",
+            source_id=str(item_id),
+            user_id=current_user.id,
+            triggered_by="manual",
+        )
+    except video_ai_review.ReviewInProgressError as exc:
+        return jsonify({
+            "error": "AI 视频分析正在运行中",
+            "in_flight_run_id": exc.run_id,
+        }), 409
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception(
+            "[video-ai-review] media_item trigger failed item=%s", item_id,
+        )
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({
+        "status": "started", "run_id": run_id,
+        "channel": video_ai_review.CHANNEL,
+        "model": video_ai_review.MODEL,
+    })
+
+
+@bp.route("/api/items/<int:item_id>/video-ai-review", methods=["GET"])
+@login_required
+def api_get_video_ai_review(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    from appcore import video_ai_review
+    payload = video_ai_review.latest_review("media_item", str(item_id))
+    return jsonify({"review": payload})

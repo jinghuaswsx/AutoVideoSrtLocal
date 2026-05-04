@@ -105,9 +105,93 @@ def _build_inputs_for_task(task_id: str) -> dict:
     }
 
 
+def _download_to_tmp(url: str | None, label: str) -> str | None:
+    """把 file_url 拉到 /tmp 临时文件供 Gemini inline 上传用。失败/空 → None。
+    返回的临时文件由调用方清理。"""
+    if not url:
+        return None
+    import os
+    import tempfile
+    import urllib.parse
+    import urllib.request
+    try:
+        path = urllib.parse.urlparse(url).path
+        ext = os.path.splitext(path)[1] or ".mp4"
+        fd, tmp_path = tempfile.mkstemp(prefix=f"video_ai_review_{label}_", suffix=ext)
+        os.close(fd)
+        urllib.request.urlretrieve(url, tmp_path)
+        if os.path.getsize(tmp_path) <= 0:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return None
+        return tmp_path
+    except Exception:
+        log.exception("[video_ai_review] download failed: %s", url)
+        return None
+
+
 def _build_inputs_for_media(media_item_id: int) -> dict:
-    """从 media_items + media_raw_sources 抽取。Phase C 实现。"""
-    raise NotImplementedError("media_item video_ai_review not yet supported")
+    """从 media_items / media_products / media_copywritings 抽取一条目标语言视频
+    的 AI 视频分析输入。视频走 file_url 下载到 /tmp inline 喂给 Gemini。
+
+    简化 MVP：暂只带目标视频 + 目标文案 + 产品 metadata；源视频 / 产品图 / 源 ASR
+    待用户验证 MVP 后再扩。"""
+    item_row = db_query_one(
+        """
+        SELECT mi.id, mi.product_id, mi.lang, mi.display_name, mi.filename,
+               mi.file_url, mi.object_key,
+               mp.name AS product_name, mp.product_code, mp.source AS product_source,
+               mp.shopifyid AS product_shopifyid
+          FROM media_items mi
+          LEFT JOIN media_products mp ON mp.id = mi.product_id
+         WHERE mi.id = %s AND mi.deleted_at IS NULL
+        """,
+        (int(media_item_id),),
+    )
+    if not item_row:
+        raise RuntimeError(f"media_item {media_item_id} not found")
+
+    target_lang = (item_row.get("lang") or "en").strip()
+    cw_row = db_query_one(
+        "SELECT title, body, description FROM media_copywritings "
+        "WHERE product_id=%s AND lang=%s ORDER BY idx ASC LIMIT 1",
+        (item_row["product_id"], target_lang),
+    )
+    target_text_parts = []
+    if cw_row:
+        if cw_row.get("title"):
+            target_text_parts.append(cw_row["title"])
+        if cw_row.get("body"):
+            target_text_parts.append(cw_row["body"])
+        elif cw_row.get("description"):
+            target_text_parts.append(cw_row["description"])
+    target_text = "\n".join(t.strip() for t in target_text_parts if t and t.strip())
+
+    target_video_path = _download_to_tmp(item_row.get("file_url"), f"target_{media_item_id}")
+
+    product_info = {
+        "name": item_row.get("product_name"),
+        "product_code": item_row.get("product_code"),
+        "source": item_row.get("product_source"),
+        "shopifyid": item_row.get("product_shopifyid"),
+        "lang": target_lang,
+        "filename": item_row.get("filename") or item_row.get("display_name"),
+    }
+    product_info = {k: v for k, v in product_info.items() if v not in (None, "", 0)}
+
+    return {
+        "source_language": "zh",  # 假定源视频是中文（带货标准）；后续接源视频再校正
+        "target_language": target_lang,
+        "source_text": "",        # MVP 暂不附源 ASR
+        "target_text": target_text or item_row.get("display_name") or item_row.get("filename") or "",
+        "source_video_path": None,  # MVP 暂不下载源视频
+        "target_video_path": target_video_path,
+        "product_info": product_info,
+        "product_image_paths": [],
+        "_tmp_files": [p for p in (target_video_path,) if p],
+    }
 
 
 _TRANSLATE_TASK_SOURCE_TYPES = (
@@ -298,11 +382,17 @@ def _run_review_job(
         "WHERE source_type=%s AND source_id=%s AND run_id=%s",
         (source_type, source_id, run_id),
     )
+    inputs = None
     try:
         inputs = _build_inputs(source_type, source_id)
         snapshot = _snapshot_for_db(inputs)
-        if not inputs.get("source_text") or not inputs.get("target_text"):
-            raise RuntimeError("missing source_text or target_text")
+        # 翻译型 task 强约束源/目标文案；media_item MVP 阶段没有源 ASR，只校验目标
+        if source_type in _TRANSLATE_TASK_SOURCE_TYPES:
+            if not inputs.get("source_text") or not inputs.get("target_text"):
+                raise RuntimeError("missing source_text or target_text")
+        elif source_type == "media_item":
+            if not inputs.get("target_text") and not inputs.get("target_video_path"):
+                raise RuntimeError("media_item must have at least target text or video")
 
         # 立刻把 submitted_inputs 写进去，让 Modal 在 running 阶段就能看到
         db_execute(
@@ -357,3 +447,12 @@ def _run_review_job(
             "completed_at=NOW() WHERE source_type=%s AND source_id=%s AND run_id=%s",
             (str(exc)[:5000], source_type, source_id, run_id),
         )
+    finally:
+        # 清理 _build_inputs_for_media 下载的临时视频/图片，避免 /tmp 堆积
+        for tmp in (inputs or {}).get("_tmp_files", []) or []:
+            try:
+                import os
+                if tmp and os.path.isfile(tmp):
+                    os.unlink(tmp)
+            except Exception:
+                pass
