@@ -7,6 +7,17 @@
 - When this project gets real source files, update this file with exact run, test, lint, typecheck, and build commands.
 - Prefer installed skills when relevant, especially `superpowers:*`, `claude-api`, `pdf`, `docx`, `pptx`, `xlsx`, `webapp-testing`, `frontend-design`, and `mcp-builder`.
 
+## 发布到生产（172.30.254.14）
+
+**唯一发布入口：** `bash deploy/publish.sh "<commit message>"`（commit message 仅当 working tree 有未提交改动时生效；干净状态下脚本只跑 push + 远端 pull + restart + 健康检查）。
+
+- 脚本在 [deploy/publish.sh](deploy/publish.sh)，依赖 `~/.ssh/CC.pem` 内网 SSH key（已就位）。
+- 服务器固定参数：`root@172.30.254.14:22`、项目目录 `/opt/autovideosrt`、systemd 服务 `autovideosrt.service`（gunicorn）。
+- 脚本自动：本地 commit/push（如有变更）→ 远端 `git pull` → 同步 `deploy/autovideosrt.service` 到 `/etc/systemd/system/` 并 `daemon-reload`（如有 unit 文件变化）→ `systemctl restart autovideosrt` → `systemctl status` → `curl http://127.0.0.1/` 健康检查。
+- **不要手写 `ssh root@172.30.254.14 ...`**：~/.ssh/config 没有 LocalServer alias，IP 直连密码也不通；必须走 publish.sh（它用 `-i ~/.ssh/CC.pem` 显式指定 key）。
+- 发布后 systemd 启动会自动 apply 所有未登记的 SQL migration（参考全局 memory `deploy_migration_workflow`）。**不要手动跑 SQL**——除非同时 `INSERT INTO schema_migrations` 登记，否则启动器会重复执行报错。
+- 用户没说 "发布" / "deploy" / "上线" 等明确字眼前，**不要主动跑 publish.sh**（CLAUDE.md 全局规则：未经许可禁止重启服务）。一旦用户授权（一次说"发布"），就一次性走完 publish.sh，不要中途再问"要不要 restart"。
+
 ## Shopify Image Localizer 发布打包
 
 - 打包发布：`python -m tools.shopify_image_localizer.build_exe --version 1.0`。产物固定使用版本号后缀：目录 `dist/ShopifyImageLocalizer-1.0`，绿色包 `dist/ShopifyImageLocalizer-portable-1.0.zip`；同版本目录或 zip 已存在时脚本会报错退出，不要覆盖旧版本。后续发布 `2.0` 时改用 `--version 2.0`，必须保持 `1.0` 原样不动。
