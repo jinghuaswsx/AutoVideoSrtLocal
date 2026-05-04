@@ -313,3 +313,87 @@
   .oc-roas-avg-input { min-height:160px; }
   #roasModalMask { inset:0; }
 }
+
+/* === 胶囊按钮 === */
+.oc-btn.pill {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  text-decoration: none;
+  border: 1px solid var(--oc-border-strong, oklch(84% 0.015 230));
+  color: var(--oc-fg, oklch(22% 0.020 235));
+  background: var(--oc-bg, oklch(99% 0.004 230));
+  transition: background-color 120ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.oc-btn.pill:hover {
+  background: var(--oc-bg-muted, oklch(94% 0.010 230));
+}
+
+/* === 顶部状态条 === */
+.oc-roas-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--oc-border, oklch(91% 0.012 230));
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--oc-bg, oklch(99% 0.004 230));
+  color: var(--oc-fg-subtle, oklch(62% 0.015 230));
+  transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.oc-roas-status-bar[data-state="saving"] {
+  background: oklch(95% 0.04 230);
+  color: oklch(50% 0.17 230);
+}
+.oc-roas-status-bar[data-state="saved"] {
+  background: oklch(95% 0.04 165);
+  color: oklch(38% 0.09 165);
+}
+.oc-roas-status-bar[data-state="error"] {
+  background: oklch(96% 0.04 25);
+  color: oklch(42% 0.14 25);
+}
+.oc-roas-status-retry {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+/* === 独立路由页面专属布局 === */
+.oc-roas-page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 24px 40px;
+}
+.oc-roas-page-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+}
+.oc-roas-page-head h1 {
+  font-size: 22px;
+  margin: 0;
+}
+
+/* 移动端单列堆叠（CLAUDE.md 移动版铁律：< 1024 才适配，PC 不动） */
+@media (max-width: 1024px) {
+  .oc-roas-page .oc-roas-layout {
+    grid-template-columns: 1fr;
+  }
+  .oc-roas-page {
+    padding: 0 16px 24px;
+  }
+}

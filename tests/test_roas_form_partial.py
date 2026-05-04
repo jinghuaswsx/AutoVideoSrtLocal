@@ -87,3 +87,31 @@ def test_medias_list_includes_styles_partial():
 def test_roas_page_includes_styles_partial():
     html = (ROOT / "web" / "templates" / "medias" / "roas.html").read_text(encoding="utf-8")
     assert "medias/_roas_styles.html" in html
+
+
+def test_styles_define_pill_button():
+    css = STYLES.read_text(encoding="utf-8")
+    assert ".oc-btn.pill" in css
+    assert "border-radius" in css
+
+
+def test_styles_define_status_bar_states():
+    css = STYLES.read_text(encoding="utf-8")
+    assert ".oc-roas-status-bar" in css
+    for state in ("saving", "saved", "error"):
+        assert f'[data-state="{state}"]' in css
+
+
+def test_styles_define_page_head_for_standalone():
+    css = STYLES.read_text(encoding="utf-8")
+    assert ".oc-roas-page" in css
+    assert ".oc-roas-page-head" in css
+
+
+def test_styles_no_purple_hue():
+    """Ocean Blue rule: hue must stay in 200-240. Forbid 245+ hue values."""
+    import re
+
+    css = STYLES.read_text(encoding="utf-8")
+    bad = re.findall(r"oklch\([^)]*?\b(2[5-9]\d|3\d\d)\b[^)]*?\)", css)
+    assert not bad, f"forbidden purple/indigo hue found: {bad}"
