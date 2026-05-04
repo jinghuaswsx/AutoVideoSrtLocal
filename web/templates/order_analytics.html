@@ -3526,7 +3526,15 @@
   })();
 
   window.matchAdProducts = function() {
-    fetch('/order-analytics/ad-match', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    fetch('/order-analytics/ad-match', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfMeta ? csrfMeta.content : '',
+      },
+      body: '{}',
+    })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         alert('广告产品匹配完成\n新匹配: ' + d.matched + ' 条');
