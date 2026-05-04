@@ -1234,6 +1234,14 @@
     const kw = kwInput.value.trim();
     const params = new URLSearchParams({ page: state.page });
     if (kw) params.set('keyword', kw);
+    const xmycMatchEl = $('filterXmycMatch');
+    if (xmycMatchEl && xmycMatchEl.value && xmycMatchEl.value !== 'all') {
+      params.set('xmyc_match', xmycMatchEl.value);
+    }
+    const roasStatusEl = $('filterRoasStatus');
+    if (roasStatusEl && roasStatusEl.value && roasStatusEl.value !== 'all') {
+      params.set('roas_status', roasStatusEl.value);
+    }
     renderSkeleton();
     try {
       await ensureLanguages();
@@ -5153,6 +5161,10 @@
       kwInput.addEventListener('input', scheduleLiveSearch);
       kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow({ syncUrl: true }); } });
     }
+    const filterXmyc = $('filterXmycMatch');
+    if (filterXmyc) filterXmyc.addEventListener('change', () => runSearchNow());
+    const filterRoas = $('filterRoasStatus');
+    if (filterRoas) filterRoas.addEventListener('change', () => runSearchNow());
 
     const syncChip = (chipId, inputId) => {
       const chip = $(chipId), inp = $(inputId);
