@@ -626,6 +626,11 @@
         <span class="nav-icon">SA</span> 系统安全审计
       </a>
       {% endif %}
+      {% if current_user.is_authenticated and current_user.is_admin %}
+      <a href="{{ url_for('tts_speedup_eval.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/tts-speedup-evaluations') %}class="active"{% endif %}>
+        <span class="nav-icon">⚡</span> TTS 变速评估
+      </a>
+      {% endif %}
       {% if has_permission('lab') %}
       <details class="sidebar-group sidebar-lab-group">
         <summary {% if lab_active %}class="active"{% endif %}>
