@@ -259,6 +259,8 @@ def list_skus(*, keyword: str | None = None, matched_filter: str = "all",
     sql = (
         "SELECT s.id, s.xmyc_id, s.sku_code, s.sku, s.goods_name, s.unit_price, s.stock_available, "
         "       s.warehouse, s.shelf_code, s.product_id, s.match_type, s.matched_at, "
+        "       s.standalone_price_sku, s.standalone_shipping_fee_sku, s.packet_cost_actual_sku, "
+        "       s.sku_orders_count, "
         "       p.name AS product_name, p.product_code AS product_code "
         "FROM xmyc_storage_skus s "
         "LEFT JOIN media_products p ON p.id = s.product_id "

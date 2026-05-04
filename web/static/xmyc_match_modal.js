@@ -59,7 +59,7 @@
   async function fetchAndRender() {
     const tbody = $('xmycMatchTbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="oc-xmyc-match-empty">加载中…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="oc-xmyc-match-empty">加载中…</td></tr>';
     const keyword = ($('xmycMatchSearch') || {}).value || '';
     const matched = ($('xmycMatchFilter') || {}).value || 'all';
     const params = new URLSearchParams();
@@ -83,15 +83,21 @@
       renderRows();
       updateSummary();
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="6" class="oc-xmyc-match-empty">加载失败：' + escapeHtml(err.message || '') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="oc-xmyc-match-empty">加载失败：' + escapeHtml(err.message || '') + '</td></tr>';
     }
+  }
+
+  function formatRoas(value) {
+    if (value === null || value === undefined) return '—';
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(2) : '无法保本';
   }
 
   function renderRows() {
     const tbody = $('xmycMatchTbody');
     if (!tbody) return;
     if (!state.items.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="oc-xmyc-match-empty">没有匹配的 SKU</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="oc-xmyc-match-empty">没有匹配的 SKU</td></tr>';
       return;
     }
     const html = state.items.map((it) => {
@@ -106,6 +112,10 @@
         owner = '<span class="matched-other">已属 #' + escapeHtml(String(it.product_id)) +
                 (it.product_name ? ' ' + escapeHtml(it.product_name) : '') + '</span>';
       }
+      const roas = it.roas || {};
+      const roasCell = roas.can_compute
+        ? '<strong>' + formatRoas(roas.effective_roas) + '</strong>'
+        : '<span class="muted" title="缺少售价/采购价/物流费 中的一项">—</span>';
       return (
         '<tr data-sku="' + escapeHtml(it.sku) + '">' +
           '<td class="w-checkbox"><input type="checkbox" data-xmyc-sku="' + escapeHtml(it.sku) + '" ' + checked + '></td>' +
@@ -113,7 +123,10 @@
             '<div class="muted" style="font-size:11px">' + escapeHtml(it.sku_code || '') + '</div></td>' +
           '<td>' + escapeHtml(it.goods_name || '') + '</td>' +
           '<td class="ta-r">' + formatPrice(it.unit_price) + '</td>' +
-          '<td class="ta-r">' + escapeHtml(String(it.stock_available ?? '—')) + '</td>' +
+          '<td class="ta-r">' + formatPrice(it.standalone_price_sku) + '</td>' +
+          '<td class="ta-r">' + formatPrice(it.standalone_shipping_fee_sku) + '</td>' +
+          '<td class="ta-r">' + formatPrice(it.packet_cost_actual_sku) + '</td>' +
+          '<td class="ta-r">' + roasCell + '</td>' +
           '<td>' + owner + '</td>' +
         '</tr>'
       );
