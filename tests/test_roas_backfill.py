@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from datetime import datetime
 from decimal import Decimal
 
@@ -62,19 +61,19 @@ def test_backfill_shopify_dry_run_does_not_write(monkeypatch):
     assert result == {"candidates": 1, "updated": 0}
 
 
-def test_extract_logistic_fees_groups_by_product():
-    sku_to_pid = {"sku-A": 1, "sku-B": 2, "VARIANT-3": 3}
-    orders = [
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": 61.6},
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": "62.1"},
-        {"productList": [{"displaySku": "sku-B"}], "logisticFee": 80},
-        {"productList": [{"sku": "VARIANT-3"}], "logisticFee": 12.5},
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": "--"},
-        {"productList": [{"productSku": "unknown-sku"}], "logisticFee": 99},
-        {"productList": [], "logisticFee": 50},
-        {"logisticFee": 50},
-    ]
-    fees = mod._extract_logistic_fees(orders, sku_to_pid)
+def test_query_logistic_fees_by_pid(monkeypatch):
+    monkeypatch.setattr(mod, "query", lambda sql, params=None: [
+        {"product_id": 1, "logistic_fee": 61.6},
+        {"product_id": 1, "logistic_fee": 62.1},
+        {"product_id": 2, "logistic_fee": 80.0},
+        {"product_id": 3, "logistic_fee": 12.5},
+    ])
+    from datetime import datetime
+    fees = mod._query_logistic_fees_by_pid(
+        {1, 2, 3},
+        datetime(2026, 4, 2),
+        datetime(2026, 5, 2),
+    )
     assert sorted(fees[1]) == [61.6, 62.1]
     assert fees[2] == [80.0]
     assert fees[3] == [12.5]
@@ -142,32 +141,14 @@ def test_backfill_parcel_costs_end_to_end(monkeypatch):
         {1: "shopA", 2: "shopA"},
         {"shopA": {1, 2}},
     ))
-    monkeypatch.setattr(mod, "_sku_to_pid_map", lambda pids: {
-        "sku-1box": 1, "sku-2box": 1, "X-200": 2,
-    })
-
-    fake_orders = [
-        {"productList": [{"productSku": "sku-1box"}], "logisticFee": 61.6},
-        {"productList": [{"productSku": "sku-1box"}], "logisticFee": 62.1},
-        {"productList": [{"productSku": "sku-2box"}], "logisticFee": 80},
-        {"productList": [{"productSku": "X-200"}], "logisticFee": 30},
-        {"productList": [{"productSku": "X-200"}], "logisticFee": 32},
-    ]
-
-    @contextmanager
-    def fake_page_provider():
-        yield object()
-
-    captured_window = {}
-
-    def fake_fetch(page, *, shop_id, start_time, end_time, **kw):
-        captured_window["shop_id"] = shop_id
-        captured_window["start"] = start_time.date()
-        captured_window["end"] = end_time.date()
-        return fake_orders
-
-    import appcore.parcel_cost_suggest as pcs
-    monkeypatch.setattr(pcs, "fetch_orders_in_window", fake_fetch)
+    # _query_logistic_fees_by_pid → SQL 聚合 logistic_fee
+    monkeypatch.setattr(mod, "query", lambda sql, params=None: [
+        {"product_id": 1, "logistic_fee": 61.6},
+        {"product_id": 1, "logistic_fee": 62.1},
+        {"product_id": 1, "logistic_fee": 80.0},
+        {"product_id": 2, "logistic_fee": 30.0},
+        {"product_id": 2, "logistic_fee": 32.0},
+    ])
 
     writes = []
     monkeypatch.setattr(mod, "execute", lambda sql, params: writes.append(params))
@@ -176,15 +157,13 @@ def test_backfill_parcel_costs_end_to_end(monkeypatch):
     result = mod.backfill_parcel_costs_via_dxm(
         days=30,
         now_func=lambda: fixed_now,
-        page_provider=fake_page_provider,
     )
     assert result["candidates"] == 2
     assert result["shops"] == 1
     assert result["with_fees"] == 2
     assert result["updated"] == 2
-    assert captured_window["shop_id"] == "shopA"
-    # 30-day lookback minus 2-day settlement delay
-    assert (captured_window["end"] - captured_window["start"]).days == 30
+    assert result["window_start"] == "2026-04-02"
+    assert result["window_end"] == "2026-05-02"
     pid1 = next(p for p in writes if p[2] == 1)
     pid2 = next(p for p in writes if p[2] == 2)
     # product 1 fees: 61.6, 62.1, 80.0 -> median 62.1
@@ -198,20 +177,14 @@ def test_backfill_parcel_costs_force_uses_overwrite_sql(monkeypatch):
     monkeypatch.setattr(mod, "_dianxiaomi_shop_groups", lambda force: (
         {1: "shopA"}, {"shopA": {1}},
     ))
-    monkeypatch.setattr(mod, "_sku_to_pid_map", lambda pids: {"x": 1})
-    import appcore.parcel_cost_suggest as pcs
-    monkeypatch.setattr(pcs, "fetch_orders_in_window", lambda *a, **kw: [
-        {"productList": [{"productSku": "x"}], "logisticFee": 50},
+    monkeypatch.setattr(mod, "query", lambda sql, params=None: [
+        {"product_id": 1, "logistic_fee": 50.0},
     ])
-
-    @contextmanager
-    def fake_page_provider():
-        yield object()
 
     captured_sqls = []
     monkeypatch.setattr(mod, "execute", lambda sql, params: captured_sqls.append(sql))
     mod.backfill_parcel_costs_via_dxm(
-        force=True, page_provider=fake_page_provider,
+        force=True,
         now_func=lambda: datetime(2026, 5, 4),
     )
     assert any("packet_cost_estimated=%s" in s and "COALESCE" not in s for s in captured_sqls)

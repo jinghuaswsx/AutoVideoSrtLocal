@@ -132,27 +132,26 @@ def _sku_to_pid_map(pids: set[int]) -> dict[str, int]:
     return sku_to_pid
 
 
-def _extract_logistic_fees(orders: list[dict[str, Any]], sku_to_pid: dict[str, int]) -> dict[int, list[float]]:
+def _query_logistic_fees_by_pid(
+    pids: set[int],
+    start_time: datetime,
+    end_time: datetime,
+) -> dict[int, list[float]]:
+    """从本地 dianxiaomi_order_lines 直接聚合 logistic_fee，不再走 CDP。"""
+    if not pids:
+        return {}
+    placeholders = ",".join(["%s"] * len(pids))
+    rows = query(
+        f"SELECT product_id, logistic_fee "
+        f"FROM dianxiaomi_order_lines "
+        f"WHERE product_id IN ({placeholders}) "
+        f"  AND logistic_fee IS NOT NULL AND logistic_fee > 0 "
+        f"  AND paid_at >= %s AND paid_at <= %s",
+        tuple(pids) + (start_time, end_time),
+    )
     fees_by_pid: dict[int, list[float]] = defaultdict(list)
-    for o in orders:
-        raw_fee = o.get("logisticFee")
-        if raw_fee in (None, "", "--", "-"):
-            continue
-        try:
-            fee = float(raw_fee)
-        except (TypeError, ValueError):
-            continue
-        for line in (o.get("productList") or []):
-            if not isinstance(line, dict):
-                continue
-            for key in ("productSku", "displaySku", "sku"):
-                sku = line.get(key)
-                if sku and sku in sku_to_pid:
-                    fees_by_pid[sku_to_pid[sku]].append(fee)
-                    break
-            else:
-                continue
-            break
+    for r in rows:
+        fees_by_pid[int(r["product_id"])].append(float(r["logistic_fee"]))
     return fees_by_pid
 
 
@@ -185,35 +184,18 @@ def backfill_parcel_costs_via_dxm(
     dry_run: bool = False,
     days: int = 30,
     settlement_delay_days: int = 2,
-    cdp_url: str | None = None,
     now_func: Callable[[], datetime] | None = None,
-    page_provider: Callable[[], Any] | None = None,
+    **__kwargs,  # 兼容旧 cdp_url / page_provider 参数（已废弃）
 ) -> dict[str, Any]:
     pid_to_shop, shop_to_pids = _dianxiaomi_shop_groups(force=force)
     if not pid_to_shop:
         return {"candidates": 0, "shops": 0, "with_fees": 0, "updated": 0}
-    sku_to_pid = _sku_to_pid_map(set(pid_to_shop.keys()))
     now = (now_func or datetime.now)()
     end_time = now - timedelta(days=settlement_delay_days)
     start_time = end_time - timedelta(days=int(days))
 
-    from appcore import parcel_cost_suggest as pcs
+    fees_by_pid = _query_logistic_fees_by_pid(set(pid_to_shop.keys()), start_time, end_time)
 
-    page_cm = page_provider() if page_provider else pcs.open_dxm_page(cdp_url or pcs.DEFAULT_DXM_CDP_URL)
-    fees_by_pid: dict[int, list[float]] = defaultdict(list)
-    with page_cm as page:
-        for shop_id in shop_to_pids:
-            log.info("[roas-backfill] shop=%s window=%s~%s",
-                     shop_id, start_time.date(), end_time.date())
-            orders = pcs.fetch_orders_in_window(
-                page,
-                shop_id=str(shop_id),
-                start_time=start_time,
-                end_time=end_time,
-            )
-            shop_fees = _extract_logistic_fees(orders, sku_to_pid)
-            for pid, vals in shop_fees.items():
-                fees_by_pid[pid].extend(vals)
     median_by_pid: dict[int, float] = {}
     for pid, vals in fees_by_pid.items():
         if not vals:

@@ -92,6 +92,21 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "需手工配置 systemd timer 或追加到 ROI 同步流程后",
         "log_table": "order_profit_runs",
     },
+    "auto_update_packet_costs": {
+        "code": "auto_update_packet_costs",
+        "name": "产品小包成本自动更新",
+        "description": (
+            "每天从 dianxiaomi_order_lines.logistic_fee 聚合各产品的实际小包成本："
+            "packet_cost_actual=均值、packet_cost_estimated=中位数。样本≥5 才更新。"
+        ),
+        "schedule": "每天凌晨 3:07",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-auto-update-packet-costs.timer",
+        "runner": "tools/auto_update_packet_costs.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
     "meta_realtime_import": {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",

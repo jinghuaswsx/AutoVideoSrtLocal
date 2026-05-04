@@ -33,10 +33,8 @@ def _complete_line_input(**overrides):
         "sku_daily_units": 10,
         "sku_daily_ad_spend_usd": 50.00,
         "product_purchase_price_cny": 15.50,
-        "product_packet_cost_cny": 20.50,
-        "packet_cost_basis": "actual",  # 用了 actual / estimated
-        "paid_at": None,
-        "business_date": None,
+        "shipping_cost_cny": 20.50,  # 已由调用方预解析的行级总额
+        "shipping_cost_source": "order_logistic_fee",
     }
     base.update(overrides)
     return base
@@ -94,9 +92,9 @@ def test_calculate_line_profit_purchase_converts_cny_to_usd():
 
 
 def test_calculate_line_profit_shipping_cost_converts_cny():
-    """小包 20.50 CNY × 6.83 → ~3.00 USD。"""
+    """小包成本已由调用方预解析为行级总额，直接用 / rmb_per_usd 换算。"""
     result = calculate_line_profit(
-        _complete_line_input(product_packet_cost_cny=20.50, quantity=1),
+        _complete_line_input(shipping_cost_cny=20.50),
         rmb_per_usd=Decimal("6.83"),
     )
     assert result["shipping_cost_usd"] == pytest.approx(20.50 / 6.83, abs=0.01)
@@ -130,29 +128,29 @@ def test_calculate_line_profit_aggregates_full_formula():
 
 
 def test_calculate_line_profit_returns_incomplete_when_purchase_missing():
-    line = _complete_line_input(product_purchase_price_cny=None, packet_cost_basis=None)
+    line = _complete_line_input(product_purchase_price_cny=None, shipping_cost_source=None)
     result = calculate_line_profit(line, rmb_per_usd=Decimal("6.83"))
     assert result["status"] == "incomplete"
     assert "purchase_price" in result["missing_fields"]
     assert result["profit_usd"] is None
 
 
-def test_calculate_line_profit_returns_incomplete_when_packet_missing():
-    line = _complete_line_input(product_packet_cost_cny=None, packet_cost_basis=None)
+def test_calculate_line_profit_returns_incomplete_when_shipping_cost_missing():
+    line = _complete_line_input(shipping_cost_cny=None, shipping_cost_source=None)
     result = calculate_line_profit(line, rmb_per_usd=Decimal("6.83"))
     assert result["status"] == "incomplete"
-    assert "packet_cost" in result["missing_fields"]
+    assert "shipping_cost" in result["missing_fields"]
 
 
 def test_calculate_line_profit_records_cost_basis_snapshot():
-    """cost_basis 快照应包含汇率、采购价、packet_cost basis 等，供后续审计/对账。"""
+    """cost_basis 快照应包含汇率、采购价、shipping_cost_source 等，供后续审计/对账。"""
     result = calculate_line_profit(
-        _complete_line_input(packet_cost_basis="estimated"),
+        _complete_line_input(shipping_cost_source="product_estimated"),
         rmb_per_usd=Decimal("6.83"),
     )
     basis = result["cost_basis"]
     assert basis["rmb_per_usd"] == 6.83
-    assert basis["packet_cost_basis"] == "estimated"
+    assert basis["shipping_cost_source"] == "product_estimated"
     assert basis["return_reserve_rate"] == 0.01
 
 

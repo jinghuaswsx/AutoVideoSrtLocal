@@ -170,27 +170,26 @@ def _xmyc_skus_with_shop() -> tuple[dict[str, str], dict[str, set[str]]]:
     return sku_to_shop, shop_to_skus
 
 
-def _extract_logistic_fees_by_sku(orders: list[dict[str, Any]], skus: set[str]) -> dict[str, list[float]]:
+def _query_logistic_fees_by_sku(
+    skus: set[str],
+    start_time: datetime,
+    end_time: datetime,
+) -> dict[str, list[float]]:
+    """从本地 dianxiaomi_order_lines 直接聚合 logistic_fee，不再走 CDP。"""
+    if not skus:
+        return {}
+    placeholders = ",".join(["%s"] * len(skus))
+    rows = query(
+        f"SELECT product_display_sku, logistic_fee "
+        f"FROM dianxiaomi_order_lines "
+        f"WHERE product_display_sku IN ({placeholders}) "
+        f"  AND logistic_fee IS NOT NULL AND logistic_fee > 0 "
+        f"  AND paid_at >= %s AND paid_at <= %s",
+        tuple(skus) + (start_time, end_time),
+    )
     fees: dict[str, list[float]] = defaultdict(list)
-    for o in orders:
-        raw_fee = o.get("logisticFee")
-        if raw_fee in (None, "", "--", "-"):
-            continue
-        try:
-            fee = float(raw_fee)
-        except (TypeError, ValueError):
-            continue
-        for line in (o.get("productList") or []):
-            if not isinstance(line, dict):
-                continue
-            for key in ("productSku", "displaySku", "sku"):
-                sku = line.get(key)
-                if sku and sku in skus:
-                    fees[str(sku)].append(fee)
-                    break
-            else:
-                continue
-            break
+    for r in rows:
+        fees[str(r["product_display_sku"])].append(float(r["logistic_fee"]))
     return fees
 
 
@@ -200,9 +199,8 @@ def update_xmyc_sku_parcel_costs(
     dry_run: bool = False,
     days: int = 30,
     settlement_delay_days: int = 2,
-    cdp_url: str | None = None,
     now_func: Callable[[], datetime] | None = None,
-    page_provider: Callable[[], Any] | None = None,
+    **__kwargs,  # 兼容旧 cdp_url / page_provider 参数（已废弃）
 ) -> dict[str, Any]:
     sku_to_shop, shop_to_skus = _xmyc_skus_with_shop()
     if not sku_to_shop:
@@ -211,23 +209,8 @@ def update_xmyc_sku_parcel_costs(
     end_time = now - timedelta(days=settlement_delay_days)
     start_time = end_time - timedelta(days=int(days))
 
-    from appcore import parcel_cost_suggest as pcs
-
-    page_cm = page_provider() if page_provider else pcs.open_dxm_page(cdp_url or pcs.DEFAULT_DXM_CDP_URL)
-    fees_by_sku: dict[str, list[float]] = defaultdict(list)
-    with page_cm as page:
-        for shop_id, target_skus in shop_to_skus.items():
-            log.info("[sku-aggregates] shop=%s window=%s~%s skus=%d",
-                     shop_id, start_time.date(), end_time.date(), len(target_skus))
-            orders = pcs.fetch_orders_in_window(
-                page,
-                shop_id=str(shop_id),
-                start_time=start_time,
-                end_time=end_time,
-            )
-            shop_fees = _extract_logistic_fees_by_sku(orders, target_skus)
-            for sku, vals in shop_fees.items():
-                fees_by_sku[sku].extend(vals)
+    all_skus = {sku for skus in shop_to_skus.values() for sku in skus}
+    fees_by_sku = _query_logistic_fees_by_sku(all_skus, start_time, end_time)
 
     median_by_sku: dict[str, float] = {
         sku: round(statistics.median(sorted(vals)), 2)

@@ -133,6 +133,7 @@
         return;
       }
       const median = Number(suggestion.median).toFixed(2);
+      const mean = Number(suggestion.mean).toFixed(2);
       const min = Number(suggestion.min).toFixed(2);
       const max = Number(suggestion.max).toFixed(2);
       const sample = suggestion.sample_size || 0;
@@ -140,26 +141,11 @@
       result.classList.remove('is-error', 'is-loading');
       result.innerHTML = `
         <div>SKU <strong>${esc(suggestion.sku)}</strong> · 店小秘 shop ${esc(String(suggestion.dxm_shop_id || ''))}</div>
-        <div>时间窗 ${esc(window)} · 命中 <span class="stat">${sample}</span> 单（共拉取 ${suggestion.orders_pulled || 0} 单）</div>
-        <div>中位数 <span class="stat">${median} RMB</span> · 范围 ${min} ~ ${max} RMB</div>
-        <div class="oc-roas-suggest-actions">
-          <button type="button" class="oc-roas-suggest-adopt" id="roasParcelSuggestAdopt">采纳到预估 + 实际小包成本</button>
-        </div>
+        <div>时间窗 ${esc(window)} · 命中 <span class="stat">${sample}</span> 单</div>
+        <div>均值 <span class="stat">${mean} RMB</span> · 中位数 <span class="stat">${median} RMB</span> · 范围 ${min} ~ ${max} RMB</div>
+        <div class="oc-roas-suggest-note">实际小包成本和预估小包成本由系统每日自动更新</div>
       `;
       result.hidden = false;
-      const adoptBtn = this.root.querySelector('#roasParcelSuggestAdopt');
-      if (adoptBtn) {
-        adoptBtn.addEventListener('click', () => {
-          const estInput = this.root.querySelector('[data-roas-field="packet_cost_estimated"]');
-          const actInput = this.root.querySelector('[data-roas-field="packet_cost_actual"]');
-          if (estInput) estInput.value = median;
-          if (actInput) actInput.value = median;
-          this.renderResult();
-          this._scheduleAutoSave();
-          adoptBtn.disabled = true;
-          adoptBtn.textContent = '已采纳，请点底部「保存」落库';
-        });
-      }
     }
 
     async _fetchParcelCostSuggestion() {
@@ -171,7 +157,7 @@
         result.hidden = false;
         result.classList.remove('is-error');
         result.classList.add('is-loading');
-        result.textContent = '正在拉取店小秘订单数据，约需 30~60 秒…';
+        result.textContent = '正在查询本地物流费数据…';
       }
       try {
         const resp = await fetch(`/medias/api/products/${this.productId}/parcel-cost-suggest`, {

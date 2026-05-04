@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from datetime import datetime
 from decimal import Decimal
 
@@ -73,17 +72,19 @@ def test_enrich_skus_with_roas_appends_field():
     assert out[0]["roas"]["can_compute"] is True
 
 
-def test_extract_logistic_fees_by_sku():
-    target = {"sku-A", "sku-B"}
-    orders = [
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": 60},
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": 62},
-        {"productList": [{"displaySku": "sku-B"}], "logisticFee": 80},
-        {"productList": [{"productSku": "skip"}], "logisticFee": 99},
-        {"productList": [{"sku": "sku-A"}], "logisticFee": "61.5"},
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": "--"},
-    ]
-    out = mod._extract_logistic_fees_by_sku(orders, target)
+def test_query_logistic_fees_by_sku(monkeypatch):
+    monkeypatch.setattr(mod, "query", lambda sql, params=None: [
+        {"product_display_sku": "sku-A", "logistic_fee": 60.0},
+        {"product_display_sku": "sku-A", "logistic_fee": 62.0},
+        {"product_display_sku": "sku-A", "logistic_fee": 61.5},
+        {"product_display_sku": "sku-B", "logistic_fee": 80.0},
+    ])
+    from datetime import datetime
+    out = mod._query_logistic_fees_by_sku(
+        {"sku-A", "sku-B"},
+        datetime(2026, 4, 2),
+        datetime(2026, 5, 2),
+    )
     assert sorted(out["sku-A"]) == [60.0, 61.5, 62.0]
     assert out["sku-B"] == [80.0]
     assert "skip" not in out
@@ -94,37 +95,20 @@ def test_update_xmyc_sku_parcel_costs_end_to_end(monkeypatch):
         {"sku-A": "shopA", "sku-B": "shopA"},
         {"shopA": {"sku-A", "sku-B"}},
     ))
-
-    fake_orders = [
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": 60},
-        {"productList": [{"productSku": "sku-A"}], "logisticFee": 62},
-        {"productList": [{"productSku": "sku-B"}], "logisticFee": 80},
-    ]
-    captured_window = {}
-
-    def fake_fetch(page, *, shop_id, start_time, end_time, **kw):
-        captured_window["shop"] = shop_id
-        captured_window["days"] = (end_time - start_time).days
-        return fake_orders
-
-    import appcore.parcel_cost_suggest as pcs
-    monkeypatch.setattr(pcs, "fetch_orders_in_window", fake_fetch)
-
-    @contextmanager
-    def fake_page_provider():
-        yield object()
+    monkeypatch.setattr(mod, "query", lambda sql, params=None: [
+        {"product_display_sku": "sku-A", "logistic_fee": 60.0},
+        {"product_display_sku": "sku-A", "logistic_fee": 62.0},
+        {"product_display_sku": "sku-B", "logistic_fee": 80.0},
+    ])
 
     captured_writes = []
     monkeypatch.setattr(mod, "execute", lambda sql, params: captured_writes.append((sql, params)))
 
     result = mod.update_xmyc_sku_parcel_costs(
         days=30, now_func=lambda: datetime(2026, 5, 4),
-        page_provider=fake_page_provider,
     )
     assert result["candidates"] == 2
     assert result["with_fees"] == 2
-    assert captured_window["shop"] == "shopA"
-    assert captured_window["days"] == 30
     write_a = next(p for _, p in captured_writes if p[1] == "sku-A")
     write_b = next(p for _, p in captured_writes if p[1] == "sku-B")
     assert write_a[0] == pytest.approx(61.0)

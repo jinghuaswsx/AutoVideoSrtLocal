@@ -35,7 +35,7 @@ from appcore.order_analytics.cost_allocation import (
     get_sku_daily_units,
     get_unallocated_ad_spend,
 )
-from appcore.order_analytics.cost_completeness import check_sku_cost_completeness
+from appcore.order_analytics.cost_completeness import _safe_positive, check_sku_cost_completeness
 from appcore.order_analytics.profit_calculation import (
     aggregate_order_profit,
     calculate_line_profit,
@@ -54,6 +54,7 @@ _LINE_QUERY = (
     "SELECT d.id AS dxm_order_line_id, d.product_id, d.quantity, "
     "       d.line_amount, d.order_amount, d.ship_amount, d.buyer_country, "
     "       d.order_paid_at, d.paid_at, d.dxm_package_id, "
+    "       d.logistic_fee, "
     "       m.purchase_price, m.packet_cost_actual, m.packet_cost_estimated "
     "FROM dianxiaomi_order_lines d "
     "LEFT JOIN media_products m ON m.id = d.product_id "
@@ -110,19 +111,44 @@ def _process_line(
     """单行核算。返回 calculate_line_profit 结果（含 status, profit_usd 等）。"""
     business_date = line["order_paid_at"].date() if line.get("order_paid_at") else None
     product_id = line.get("product_id")
+    line_amount = float(line.get("line_amount") or 0)
+    quantity = int(line.get("quantity") or 1)
 
-    # 完备性
-    completeness = check_sku_cost_completeness({
-        "purchase_price": line.get("purchase_price"),
-        "packet_cost_actual": line.get("packet_cost_actual"),
-        "packet_cost_estimated": line.get("packet_cost_estimated"),
-    })
+    # 采购价完备性
+    purchase_price = _safe_positive(line.get("purchase_price"))
+    missing: list[str] = []
+    if purchase_price is None:
+        missing.append("purchase_price")
 
-    if not completeness["ok"]:
+    # 小包成本——三级降级链
+    shipping_cost_cny: float | None = None
+    shipping_cost_source: str | None = None
+
+    logistic_fee = line.get("logistic_fee")
+    if logistic_fee is not None:
+        lf = float(logistic_fee)
+        if lf > 0 and order_total_amount > 0:
+            shipping_cost_cny = lf * (line_amount / order_total_amount)
+            shipping_cost_source = "order_logistic_fee"
+
+    if shipping_cost_cny is None:
+        actual = _safe_positive(line.get("packet_cost_actual"))
+        estimated = _safe_positive(line.get("packet_cost_estimated"))
+        if actual is not None:
+            shipping_cost_cny = actual * quantity
+            shipping_cost_source = "product_actual"
+        elif estimated is not None:
+            shipping_cost_cny = estimated * quantity
+            shipping_cost_source = "product_estimated"
+
+    if shipping_cost_cny is None:
+        missing.append("shipping_cost")
+
+    if missing:
         return {
             "status": "incomplete",
             "profit_usd": None,
-            "missing_fields": completeness["missing"],
+            "missing_fields": missing,
             "dxm_order_line_id": line["dxm_order_line_id"],
             "product_id": product_id,
             "buyer_country": line.get("buyer_country"),
@@ -139,9 +165,9 @@ def _process_line(
             product_id=product_id, business_date=business_date,
         )
 
-    # 运费摊到行
+    # 运费收入摊到行
     shipping_alloc = allocate_shipping_to_line(
-        line_amount=float(line.get("line_amount") or 0),
+        line_amount=line_amount,
         order_total_line_amount=order_total_amount,
         order_shipping_usd=order_shipping,
     )
@@ -150,14 +176,14 @@ def _process_line(
         "dxm_order_line_id": line["dxm_order_line_id"],
         "product_id": product_id,
         "buyer_country": line.get("buyer_country"),
-        "line_amount_usd": float(line.get("line_amount") or 0),
-        "quantity": int(line.get("quantity") or 1),
+        "line_amount_usd": line_amount,
+        "quantity": quantity,
         "shipping_allocated_usd": shipping_alloc,
         "sku_daily_units": sku_units_cache[cache_key],
         "sku_daily_ad_spend_usd": sku_spend_cache[cache_key],
-        "product_purchase_price_cny": completeness["purchase_price"],
-        "product_packet_cost_cny": completeness["packet_cost"],
-        "packet_cost_basis": completeness["using_packet_cost"],
+        "product_purchase_price_cny": purchase_price,
+        "shipping_cost_cny": shipping_cost_cny,
+        "shipping_cost_source": shipping_cost_source,
     }
     return calculate_line_profit(
         line_input,

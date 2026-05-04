@@ -5,12 +5,17 @@
     shopify_fee    = calculate_shopify_fee(revenue, presentment, card_country)["fee"]
     ad_cost        = (sku_daily_spend × line_units) / sku_daily_units
     purchase       = purchase_price_cny × quantity / rmb_per_usd
-    shipping_cost  = packet_cost_cny × quantity / rmb_per_usd
+    shipping_cost  = shipping_cost_cny / rmb_per_usd
     return_reserve = revenue × return_reserve_rate (1%)
     profit         = revenue - shopify_fee - ad_cost - purchase
                    - shipping_cost - return_reserve
 
-不完备 SKU（缺采购价或包装成本）→ 返回 status='incomplete'，profit 为 None。
+shipping_cost_cny 由调用方按三级降级链预解析：
+  1. allocated_logistic_fee           (订单级真实值, 按 line_amount 比例分摊)
+  2. packet_cost_actual × quantity    (产品均值)
+  3. packet_cost_estimated × quantity (产品中位数)
+
+不完备 SKU（缺采购价或 shipping_cost_cny）→ 返回 status='incomplete'，profit 为 None。
 """
 from __future__ import annotations
 
@@ -49,13 +54,12 @@ def calculate_line_profit(
         line: 输入字典，含：
             line_amount_usd, quantity, buyer_country,
             shipping_allocated_usd, sku_daily_units, sku_daily_ad_spend_usd,
-            product_purchase_price_cny, product_packet_cost_cny,
-            packet_cost_basis ('actual' | 'estimated' | None)
+            product_purchase_price_cny, shipping_cost_cny, shipping_cost_source
         rmb_per_usd: 当前 USD→CNY 汇率
         return_reserve_rate: 退货成本占用率（默认 1%）
 
     Returns:
-        若完备 (purchase_price + packet_cost 都有值)：
+        若完备 (purchase_price + shipping_cost_cny 都有值)：
             {status: 'ok', profit_usd, revenue_usd, shopify_fee_usd,
              ad_cost_usd, purchase_usd, shipping_cost_usd, return_reserve_usd,
              shopify_tier, cost_basis: {...}}
@@ -66,8 +70,8 @@ def calculate_line_profit(
     missing: list[str] = []
     if line.get("product_purchase_price_cny") is None:
         missing.append("purchase_price")
-    if line.get("product_packet_cost_cny") is None:
-        missing.append("packet_cost")
+    if line.get("shipping_cost_cny") is None:
+        missing.append("shipping_cost")
     if missing:
         return {
             "status": "incomplete",
@@ -101,9 +105,9 @@ def calculate_line_profit(
     purchase_cny = _to_decimal(line.get("product_purchase_price_cny"))
     purchase_usd = (purchase_cny * quantity) / rmb_per_usd
 
-    # 6. 包装/小包物流成本（CNY → USD）
-    packet_cny = _to_decimal(line.get("product_packet_cost_cny"))
-    shipping_cost_usd = (packet_cny * quantity) / rmb_per_usd
+    # 6. 小包物流成本（CNY → USD），已由调用方预解析为行级总额
+    shipping_cost_cny = _to_decimal(line.get("shipping_cost_cny"))
+    shipping_cost_usd = shipping_cost_cny / rmb_per_usd
 
     # 7. 退货占用
     return_reserve = revenue * return_reserve_rate
@@ -116,7 +120,7 @@ def calculate_line_profit(
         "dxm_order_line_id": line.get("dxm_order_line_id"),
         "product_id": line.get("product_id"),
         "buyer_country": line.get("buyer_country"),
-        "presentment_currency": fee_result.get("rate_breakdown", {}) and None,  # 暂存
+        "presentment_currency": fee_result.get("rate_breakdown", {}) and None,
         "shopify_tier": shopify_tier,
         "line_amount_usd": _q4(line_amount),
         "shipping_allocated_usd": _q4(shipping_allocated),
@@ -132,8 +136,8 @@ def calculate_line_profit(
             "rmb_per_usd": float(rmb_per_usd),
             "return_reserve_rate": float(return_reserve_rate),
             "purchase_price_cny": float(purchase_cny),
-            "packet_cost_cny": float(packet_cny),
-            "packet_cost_basis": line.get("packet_cost_basis"),
+            "shipping_cost_cny": float(shipping_cost_cny),
+            "shipping_cost_source": line.get("shipping_cost_source"),
             "sku_daily_units": int(line.get("sku_daily_units") or 0),
             "sku_daily_ad_spend_usd": float(line.get("sku_daily_ad_spend_usd") or 0),
         },
