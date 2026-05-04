@@ -31,16 +31,18 @@
 .vr-modal.hidden { display: none; }
 .vr-modal-backdrop {
   position: absolute; inset: 0;
-  background: oklch(22% 0.02 235 / 0.45);
+  background: oklch(22% 0.02 235 / 0.55);
+  z-index: 1;
 }
 .vr-modal-panel {
-  position: relative; z-index: 1;
-  background: var(--bg);
+  position: relative; z-index: 2;
+  background: #ffffff;             /* 显式白色，避免 var(--bg) 在某些 cascade 下视觉发虚 */
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 20px 50px -10px oklch(22% 0.05 235 / 0.30);
   width: min(880px, 92vw); max-height: 86vh;
   display: flex; flex-direction: column;
+  overflow: hidden;
 }
 .vr-modal-header {
   display: flex; align-items: center; justify-content: space-between;

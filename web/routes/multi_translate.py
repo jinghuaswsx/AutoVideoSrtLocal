@@ -702,11 +702,8 @@ def run_ai_analysis(task_id):
 @login_required
 def run_video_ai_review(task_id):
     """手动触发 AI 视频分析（多模态评估），异步跑，结果落 video_ai_reviews 表。"""
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
-    )
-    if not row:
+    # 用 _get_viewable_task：admin 可访问别人的 task，普通用户只能访问自己的
+    if not _get_viewable_task(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     from appcore import video_ai_review
@@ -733,11 +730,7 @@ def run_video_ai_review(task_id):
 @login_required
 def get_video_ai_review(task_id):
     """读取最新一次 AI 视频分析结果（含 pending/running 进度）。"""
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
-    )
-    if not row:
+    if not _get_viewable_task(task_id):
         return jsonify({"error": "Task not found"}), 404
     from appcore import video_ai_review
     payload = video_ai_review.latest_review("multi_translate_task", task_id)
