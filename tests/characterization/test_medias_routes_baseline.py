@@ -81,6 +81,7 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         ("/medias/api/products/<int:pid>/xmyc-skus", ("POST",), "medias.api_set_product_xmyc_skus"),
         ("/medias/api/raw-sources/<int:rid>", ("DELETE",), "medias.api_delete_raw_source"),
         ("/medias/api/raw-sources/<int:rid>", ("PATCH",), "medias.api_update_raw_source"),
+        ("/medias/api/supply-pairing/search", ("GET",), "medias.api_supply_pairing_search"),
         ("/medias/api/users/active", ("GET",), "medias.api_list_active_users"),
         ("/medias/api/xmyc-skus", ("GET",), "medias.api_list_xmyc_skus"),
         ("/medias/api/xmyc-skus/<int:sku_id>", ("PATCH",), "medias.api_update_xmyc_sku"),

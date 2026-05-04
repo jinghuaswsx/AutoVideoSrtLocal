@@ -88,6 +88,10 @@
       if (xmycBtn) {
         xmycBtn.addEventListener('click', () => this._openXmycMatch());
       }
+      const fetch1688Btn = this.root.querySelector('#roas1688FetchBtn');
+      if (fetch1688Btn) {
+        fetch1688Btn.addEventListener('click', () => this._fetch1688Url());
+      }
     }
 
     _openXmycMatch() {
@@ -108,6 +112,50 @@
           }
         },
       });
+    }
+
+    async _fetch1688Url() {
+      const btn = this.root.querySelector('#roas1688FetchBtn');
+      const skus = this._skus || [];
+      const skuValues = skus
+        .map(function (s) { return (s && s.dianxiaomi_sku) ? String(s.dianxiaomi_sku).trim() : ''; })
+        .filter(Boolean);
+      // Also try shopify_sku as fallback
+      const shopifySkus = skus
+        .map(function (s) { return (s && s.shopify_sku) ? String(s.shopify_sku).trim() : ''; })
+        .filter(Boolean);
+      const allCandidates = skuValues.concat(shopifySkus.filter(function (v) { return skuValues.indexOf(v) < 0; }));
+      if (!allCandidates.length) {
+        if (btn) { btn.textContent = '无SKU'; setTimeout(function () { btn.textContent = '从1688获取'; }, 2000); }
+        return;
+      }
+      if (btn) { btn.disabled = true; btn.textContent = '搜索中…'; }
+      var foundUrl = null;
+      for (var i = 0; i < allCandidates.length && !foundUrl; i++) {
+        try {
+          var resp = await fetch('/medias/api/supply-pairing/search?q=' + encodeURIComponent(allCandidates[i]) + '&status=0', { credentials: 'same-origin' });
+          if (!resp.ok) continue;
+          var data = await resp.json();
+          var items = (data && data.items) || [];
+          if (items.length > 0) {
+            var url = items[0].sourceUrl || '';
+            if (url) {
+              foundUrl = url;
+            }
+          }
+        } catch (e) { /* try next SKU */ }
+      }
+      if (foundUrl) {
+        var input = this.root.querySelector('[data-roas-field="purchase_1688_url"]');
+        if (input) {
+          input.value = foundUrl;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        if (btn) { btn.textContent = '已获取'; setTimeout(function () { btn.textContent = '从1688获取'; }, 2000); }
+      } else {
+        if (btn) { btn.textContent = '未找到'; setTimeout(function () { btn.textContent = '从1688获取'; }, 2000); }
+      }
+      if (btn) btn.disabled = false;
     }
 
     resetParcelSuggestPanel() {
@@ -184,6 +232,7 @@
 
     fillFromProduct(product) {
       if (!product) return;
+      this._skus = product.skus || [];
       this.resetParcelSuggestPanel();
       ROAS_FIELDS.forEach((field) => {
         const input = this.root.querySelector(`[data-roas-field="${field}"]`);

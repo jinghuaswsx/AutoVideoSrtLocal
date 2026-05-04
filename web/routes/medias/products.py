@@ -5,7 +5,7 @@ import pymysql.err
 from flask import abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, parcel_cost_suggest, product_roas, pushes, sku_aggregates, xmyc_storage
+from appcore import medias, parcel_cost_suggest, product_roas, pushes, sku_aggregates, supply_pairing, xmyc_storage
 from . import bp
 from ._serializers import (
     _int_or_none,
@@ -357,6 +357,23 @@ def api_update_xmyc_sku(sku_id: int):
     rate = product_roas.get_configured_rmb_per_usd()
     enriched = sku_aggregates.enrich_skus_with_roas([row], rate)
     return jsonify({"ok": True, "item": enriched[0]})
+
+
+@bp.route("/api/supply-pairing/search", methods=["GET"])
+@login_required
+def api_supply_pairing_search():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "missing_query", "message": "请提供 SKU 或关键词"}), 400
+    try:
+        status = str(request.args.get("status") or "0")
+    except (TypeError, ValueError):
+        status = "0"
+    try:
+        result = supply_pairing.search_supply_pairing(q, status=status)
+    except Exception as exc:
+        return jsonify({"error": "dxm_failed", "message": str(exc)}), 502
+    return jsonify({"ok": True, **result})
 
 
 @bp.route("/api/products/<int:pid>", methods=["PUT"])
