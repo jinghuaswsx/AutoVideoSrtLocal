@@ -536,6 +536,9 @@
       <a href="/order-analytics" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics') %}class="active"{% endif %}>
         <span class="nav-icon">📊</span> 数据分析
       </a>
+      <a href="/order-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-profit') %}class="active"{% endif %}>
+        <span class="nav-icon">💰</span> 订单利润核算
+      </a>
       {% endif %}
       {% if has_permission('multi_translate') %}
       <a href="/multi-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>

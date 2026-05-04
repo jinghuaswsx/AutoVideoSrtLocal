@@ -11,6 +11,7 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from ._constants import (
@@ -231,11 +232,59 @@ def _resolve_dianxiaomi_line_product(
     }
 
 
+def _lazy_get_configured_rmb_per_usd() -> Decimal:
+    """从 product_roas 拿配置汇率；失败兜底 6.83。
+
+    Lazy import 避免 dianxiaomi(基础) ↔ product_roas(应用层) 的循环依赖。
+    """
+    try:
+        from appcore.product_roas import get_configured_rmb_per_usd
+        return get_configured_rmb_per_usd()
+    except Exception:
+        return Decimal("6.83")
+
+
+def _compute_amount_cny(
+    order: dict[str, Any],
+    profit: dict[str, Any],
+    rmb_per_usd: Decimal,
+) -> float | None:
+    """订单 CNY 金额：优先 profit.amountCNY；缺则用 orderAmount(USD) × rmb_per_usd。
+
+    业务现状：店小秘 profit API 100% 返回 {"profit": "--"}，所以实际全靠 fallback。
+    """
+    cny = _safe_decimal_float(profit.get("amountCNY"))
+    if cny is not None:
+        return cny
+    usd = _safe_decimal_float(order.get("orderAmount"))
+    if usd is None:
+        return None
+    return float(round(Decimal(str(usd)) * rmb_per_usd, 2))
+
+
+def _resolve_logistic_fee_cny(
+    order: dict[str, Any],
+    profit: dict[str, Any],
+) -> float | None:
+    """物流费 CNY：优先 profit.logisticFee；缺则用 raw_order_json 顶层 logisticFee。
+
+    业务现状：profit API 失效；raw_order_json 顶层 logisticFee 84% 命中，
+    其余 16% 为 logisticFeeErr（运费模板未配置），返回 None 让上游标"待补"。
+    """
+    fee = _safe_decimal_float(profit.get("logisticFee"))
+    if fee is not None:
+        return fee
+    return _safe_decimal_float(order.get("logisticFee"))
+
+
 def normalize_dianxiaomi_order(
     order: dict[str, Any],
     scope: DianxiaomiProductScope,
     profits_by_package_id: dict[str, dict[str, Any]],
+    rmb_per_usd: Decimal | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
+    if rmb_per_usd is None:
+        rmb_per_usd = _lazy_get_configured_rmb_per_usd()
     normalized: list[dict[str, Any]] = []
     skipped = 0
     package_id = str(order.get("id") or order.get("packageId") or "").strip()
@@ -291,8 +340,8 @@ def normalize_dianxiaomi_order(
             "order_currency": str(order.get("orderUnit") or "").strip() or None,
             "ship_amount": _safe_decimal_float(order.get("shipAmount")),
             "amount_with_shipping": _safe_decimal_float(order.get("orderAmount")),
-            "amount_cny": _safe_decimal_float(profit.get("amountCNY")),
-            "logistic_fee": _safe_decimal_float(profit.get("logisticFee")),
+            "amount_cny": _compute_amount_cny(order, profit, rmb_per_usd),
+            "logistic_fee": _resolve_logistic_fee_cny(order, profit),
             "profit": _safe_decimal_float(profit.get("profit")),
             "refund_amount_usd": _safe_decimal_float(order.get("refundAmountUsd")),
             "refund_amount": _safe_decimal_float(order.get("refundAmount")),
