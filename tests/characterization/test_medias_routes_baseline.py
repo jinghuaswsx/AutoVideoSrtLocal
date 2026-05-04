@@ -10,6 +10,7 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
 
     assert routes == [
         ("/medias/", ("GET",), "medias.index"),
+        ("/medias/<int:pid>/roas", ("GET",), "medias.roas_page"),
         ("/medias/<product_code>", ("GET",), "medias.product_detail_page"),
         ("/medias/api/items/<int:item_id>", ("DELETE",), "medias.api_delete_item"),
         ("/medias/api/items/<int:item_id>", ("PATCH",), "medias.api_update_item"),
