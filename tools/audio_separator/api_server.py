@@ -23,7 +23,7 @@ from typing import Optional
 import uvicorn
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from audio_separator.separator import Separator
 
@@ -155,17 +155,18 @@ def _get_separator(model_filename: str = None, ensemble_preset: str = None) -> S
         return _sep_cache[key]
 
     logger.info(f"Loading separator: {key}")
+    mdxc_override = {"segment_size": 256, "override_model_segment_size": True, "batch_size": 1, "overlap": 8, "pitch_shift": 0}
     if ensemble_preset:
         sep = Separator(log_level=logging.INFO, model_file_dir=MODEL_DIR, output_dir=OUTPUT_DIR,
                         output_format="WAV", normalization_threshold=0.9, use_autocast=True,
-                        ensemble_preset=ensemble_preset)
+                        ensemble_preset=ensemble_preset, mdxc_params=mdxc_override)
         sep.load_model()
     else:
         fn = model_filename or DEFAULT_ENSEMBLE_PRESET
         if fn in ENSEMBLE_PRESETS:
             sep = Separator(log_level=logging.INFO, model_file_dir=MODEL_DIR, output_dir=OUTPUT_DIR,
                             output_format="WAV", normalization_threshold=0.9, use_autocast=True,
-                            ensemble_preset=fn)
+                            ensemble_preset=fn, mdxc_params=mdxc_override)
             sep.load_model()
         else:
             sep = Separator(log_level=logging.INFO, model_file_dir=MODEL_DIR, output_dir=OUTPUT_DIR,
@@ -415,30 +416,19 @@ async def separate_and_download(
     content = await file.read()
     input_size_mb = len(content) / (1024 * 1024)
 
-    result, from_cache = await _process_or_cache(
+    zip_bytes, from_cache = await _process_or_cache(
         content, file.filename, input_size_mb,
         ensemble_preset, model_filename, output_format, single_stem,
         return_zip=True,
     )
 
-    # result is zip bytes
-    buf = io.BytesIO(result if from_cache else result)
-    buf.seek(0)
     base_name = Path(file.filename).stem
-
-    # Get stem names from cache key or use default
-    preset = ensemble_preset or DEFAULT_ENSEMBLE_PRESET
-    ck = _cache_key(hashlib.md5(content).hexdigest(), preset, output_format, single_stem or '')
-    cached_json = await _cache_get(ck + ":meta")
-    stems_str = cached_json.decode() if cached_json else "unknown"
-
-    return FileResponse(
-        buf,
+    return Response(
+        content=zip_bytes,
         media_type="application/zip",
-        filename=f"{base_name}_separated.zip",
         headers={
+            "Content-Disposition": f'attachment; filename="{base_name}_separated.zip"',
             "X-Cached": str(from_cache).lower(),
-            "X-Stems": stems_str,
         },
     )
 
