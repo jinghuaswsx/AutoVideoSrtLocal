@@ -10,7 +10,9 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE media_product_skus ADD COLUMN shopify_price DECIMAL(12,2) NULL AFTER shopify_sku'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 SET @ddl := IF(
   EXISTS(
@@ -22,7 +24,9 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE media_product_skus ADD COLUMN shopify_compare_at_price DECIMAL(12,2) NULL AFTER shopify_price'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 SET @ddl := IF(
   EXISTS(
@@ -34,7 +38,9 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE media_product_skus ADD COLUMN shopify_currency VARCHAR(8) NULL AFTER shopify_compare_at_price'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 SET @ddl := IF(
   EXISTS(
@@ -46,7 +52,9 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE media_product_skus ADD COLUMN shopify_inventory_quantity INT NULL AFTER shopify_currency'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 SET @ddl := IF(
   EXISTS(
@@ -58,4 +66,6 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE media_product_skus ADD COLUMN shopify_weight_grams DECIMAL(10,2) NULL AFTER shopify_inventory_quantity'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
