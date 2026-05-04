@@ -302,12 +302,17 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         current_step = "tts"
         runner._set_step(task_id, "tts", "running", f"正在生成{target_language_name}配音...")
         tts_input_segments = _build_av_tts_segments(av_sentences)
+        from appcore.runtime._helpers import make_tts_progress_emitter
+        on_progress = make_tts_progress_emitter(
+            runner, task_id, lang_label=target_language_name,
+        )
         tts_output = generate_full_audio(
             tts_input_segments,
             tts_voice_id,
             task_dir,
             variant=variant,
             language_code=target_language,
+            on_progress=on_progress,
         )
         av_tts_text = " ".join(
             str(segment.get("tts_text") or segment.get("translated") or "").strip()

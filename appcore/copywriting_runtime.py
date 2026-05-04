@@ -198,12 +198,19 @@ class CopywritingRunner:
 
         elevenlabs_key = resolve_key(self._user_id, "elevenlabs", "ELEVENLABS_API_KEY")
 
+        from appcore.runtime._helpers import make_tts_progress_emitter
+        # 文案配音没有显式语种字段，用 voice 字典里的语言名兜底；前端文案"正在生成{X}配音..."
+        lang_label = (voice.get("language_label") or voice.get("language") or "")
+        on_progress = make_tts_progress_emitter(
+            self, task_id, lang_label=lang_label,
+        )
         result = generate_full_audio(
             segments=tts_segments,
             voice_id=voice["elevenlabs_voice_id"],
             output_dir=task_dir,
             variant="copywriting",
             elevenlabs_api_key=elevenlabs_key,
+            on_progress=on_progress,
         )
 
         task_state.update(task_id, tts_audio_path=result["full_audio_path"])

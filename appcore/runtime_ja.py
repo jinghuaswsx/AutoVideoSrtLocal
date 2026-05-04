@@ -289,14 +289,12 @@ class JapaneseTranslateRunner(PipelineRunner):
             tts_segments = ja_translate.build_ja_tts_segments(tts_script, task.get("script_segments", []))
             round_variant = f"ja_round_{round_index}"
 
-            def _on_seg_done(done, total, info, _round=round_index):
-                self._emit_substep_msg(
-                    task_id, "tts",
-                    f"正在生成日语配音 · 第 {_round} 轮 · 生成 ElevenLabs 音频 {done}/{total}",
-                )
-
-            self._emit_substep_msg(task_id, "tts",
-                f"正在生成日语配音 · 第 {round_index} 轮 · 生成 ElevenLabs 音频 0/{len(tts_segments)}")
+            from appcore.runtime._helpers import make_tts_progress_emitter
+            on_progress = make_tts_progress_emitter(
+                self, task_id,
+                lang_label="日语",
+                round_label=f"第 {round_index} 轮",
+            )
             tts_output = generate_full_audio(
                 tts_segments,
                 voice_id=voice_id,
@@ -305,7 +303,7 @@ class JapaneseTranslateRunner(PipelineRunner):
                 elevenlabs_api_key=elevenlabs_api_key,
                 model_id=self.tts_model_id,
                 language_code=self.tts_language_code,
-                on_segment_done=_on_seg_done,
+                on_progress=on_progress,
             )
             round_audio_path = tts_output["full_audio_path"]
             round_segments = tts_output["segments"]

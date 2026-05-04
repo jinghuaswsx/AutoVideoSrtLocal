@@ -264,12 +264,19 @@ class SentenceTranslateRunner(MultiTranslateRunner):
 
             self._set_step(task_id, "tts", "running", f"正在生成{target_language_name}首轮配音...")
             tts_input_segments = _build_av_tts_segments(av_sentences)
+            from appcore.runtime._helpers import make_tts_progress_emitter
+            on_progress = make_tts_progress_emitter(
+                self, task_id,
+                lang_label=target_language_name,
+                round_label="首轮",
+            )
             tts_output = generate_full_audio(
                 tts_input_segments,
                 tts_voice_id,
                 task_dir,
                 variant="av",
                 language_code=target_language,
+                on_progress=on_progress,
             )
 
             av_tts_text = " ".join(
