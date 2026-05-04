@@ -28,7 +28,6 @@
     voiceLanguage: {{ (voice_language|default('en'))|tojson }},
     defaultSourceLanguage: {{ (default_source_language|default('zh'))|tojson }},
     detailMode: {{ (detail_mode|default('task'))|tojson }},
-    userDefaultVoiceApi: {{ (user_default_voice_api|default('/api/multi-translate/user-default-voice'))|tojson }},
     avTargetLanguages: {{ (av_target_languages|default([]))|tojson }},
     avTargetMarkets: {{ (av_target_markets|default([]))|tojson }},
     avTranslateDefaults: {{ (av_translate_defaults|default({}))|tojson }},
@@ -122,11 +121,6 @@
       }
       const data = await res.json();
       _voicesCache = data.voices || [];
-      // Auto-select user's default voice (or first voice) if nothing selected yet
-      if (!_selectedVoiceId && _voicesCache.length) {
-        const defaultV = _voicesCache.find(v => v.is_default);
-        _selectedVoiceId = defaultV ? defaultV.id : _voicesCache[0].id;
-      }
       renderVoiceList();
       applyTaskConfigToForm();
     } catch (err) {
@@ -149,7 +143,6 @@
           <div class="voice-item-desc">${escapeHtml(voice.description || '')}</div>
         </div>
         <span class="voice-item-gender ${voice.gender}">${voice.gender === 'female' ? '女声' : '男声'}</span>
-        <button class="voice-default-btn ${voice.is_default ? 'active' : ''}" onclick="setDefaultVoice(event, ${voice.id})">默认</button>
         <button class="voice-play-btn ${voice.preview_url ? '' : 'disabled'}" ${voice.preview_url ? `onclick="playVoicePreview(event, '${escapeJs(voice.preview_url)}', this)"` : 'disabled'} title="试听">&#9654;</button>
       </div>
     `).join("");
@@ -158,16 +151,6 @@
   function selectVoice(voiceId) {
     _selectedVoiceId = voiceId;
     renderVoiceList();
-  }
-
-  async function setDefaultVoice(e, voiceId) {
-    e.stopPropagation();
-    try {
-      const res = await fetch(`/api/voices/${voiceId}/set-default`, { method: "POST" });
-      if (!res.ok) return;
-      _voicesCache.forEach(v => v.is_default = (v.id === voiceId));
-      renderVoiceList();
-    } catch {}
   }
 
   function playVoicePreview(e, url, btn) {

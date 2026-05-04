@@ -22,7 +22,6 @@ from web.services import multi_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
-    lookup_default_voice_row,
     normalize_confirm_voice_payload,
     resolve_round_file_entry,
 )
@@ -196,6 +195,13 @@ def index():
             "ORDER BY p.created_at DESC",
             (*scope_args, lang),
         )
+        for row in rows:
+            try:
+                state = json.loads(row.get("state_json") or "{}")
+            except Exception:
+                state = {}
+            row["source_lang"] = state.get("source_language") or "zh"
+            row["target_lang"] = state.get("target_lang") or ""
     else:
         scope_sql, scope_args = _multi_translate_list_scope()
         rows = db_query(
@@ -208,6 +214,14 @@ def index():
             "ORDER BY p.created_at DESC",
             scope_args,
         )
+
+    for row in rows:
+        try:
+            state = json.loads(row.get("state_json") or "{}")
+        except Exception:
+            state = {}
+        row["source_lang"] = state.get("source_language") or "zh"
+        row["target_lang"] = state.get("target_lang") or ""
 
     from appcore.settings import get_retention_hours
     return render_template(
@@ -803,13 +817,11 @@ def voice_library_for_task(task_id: str):
         return jsonify({"error": str(exc)}), 400
 
     owner_user_id = row.get("user_id") or current_user.id
-    default_voice = lookup_default_voice_row(lang, owner_user_id)
     payload = build_voice_library_payload(
         state=state,
         owner_user_id=owner_user_id,
         items=data.get("items", []),
         total=data.get("total", 0),
-        default_voice=default_voice,
     )
     return jsonify(payload)
 
@@ -904,13 +916,10 @@ def confirm_voice(task_id: str):
     state = json.loads(row["state_json"] or "{}")
     lang = state.get("target_lang")
 
-    from appcore.video_translate_defaults import resolve_default_voice
-
     try:
         normalized = normalize_confirm_voice_payload(
             body=body,
             lang=lang or "",
-            default_voice_id=resolve_default_voice(lang, user_id=current_user.id) if lang else None,
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

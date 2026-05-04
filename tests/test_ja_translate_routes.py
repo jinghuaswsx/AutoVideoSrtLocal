@@ -149,12 +149,11 @@ def test_ja_confirm_voice_route_persists_selection_and_resumes_alignment(authed_
         "web.routes.ja_translate.ja_pipeline_runner.resume",
         lambda task_id, start_step, user_id=None: resumed.update({"resume_step": start_step, "user_id": user_id}),
     )
-    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: "ja-default")
 
-    resp = authed_client_no_db.post("/api/ja-translate/task-ja/confirm-voice", json={})
+    resp = authed_client_no_db.post("/api/ja-translate/task-ja/confirm-voice", json={"voice_id": "voice-chosen"})
 
     assert resp.status_code == 200
-    assert resumed["kwargs"]["selected_voice_id"] == "ja-default"
+    assert resumed["kwargs"]["selected_voice_id"] == "voice-chosen"
     assert resumed["resume_step"] == "alignment"
 
 

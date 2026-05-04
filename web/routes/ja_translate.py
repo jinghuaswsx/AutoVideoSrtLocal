@@ -22,7 +22,6 @@ from web.services import ja_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
-    lookup_default_voice_row,
     normalize_confirm_voice_payload,
     resolve_round_file_entry,
 )
@@ -297,13 +296,11 @@ def voice_library_for_task(task_id: str):
         return jsonify({"error": str(exc)}), 400
 
     owner_user_id = row.get("user_id") or current_user.id
-    default_voice = lookup_default_voice_row("ja", owner_user_id)
     payload = build_voice_library_payload(
         state=state,
         owner_user_id=owner_user_id,
         items=data.get("items", []),
         total=data.get("total", 0),
-        default_voice=default_voice,
     )
     return jsonify(payload)
 
@@ -390,13 +387,10 @@ def confirm_voice(task_id: str):
 
     state = json.loads(row["state_json"] or "{}")
 
-    from appcore.video_translate_defaults import resolve_default_voice
-
     try:
         normalized = normalize_confirm_voice_payload(
             body=request.get_json() or {},
             lang="ja",
-            default_voice_id=resolve_default_voice("ja", user_id=current_user.id),
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

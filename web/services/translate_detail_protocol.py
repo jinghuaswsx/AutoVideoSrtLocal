@@ -5,7 +5,7 @@ from appcore.db import query_one as db_query_one
 _VALID_ROUND_INDEXES = {1, 2, 3, 4, 5}
 
 
-def build_voice_library_payload(*, state: dict, owner_user_id: int | None, items: list, total: int, default_voice: dict | None) -> dict:
+def build_voice_library_payload(*, state: dict, owner_user_id: int | None, items: list, total: int) -> dict:
     del owner_user_id
     steps = state.get("steps", {}) or {}
     pipeline = {
@@ -14,9 +14,6 @@ def build_voice_library_payload(*, state: dict, owner_user_id: int | None, items
         "voice_match": steps.get("voice_match", "pending"),
     }
     candidates = state.get("voice_match_candidates", []) or []
-    # list_voices 受 page_size <= 200 限制，候选 voice_id 可能不在 items 里，
-    # 前端用 voice_id 反查 candidatesMap 时会丢推荐。这里把缺失的 candidate
-    # 行从同一张表补齐进 items，确保 10 条推荐都能渲染。
     items = _ensure_candidates_in_items(items, candidates, state.get("target_lang"))
     return {
         "items": items,
@@ -26,7 +23,6 @@ def build_voice_library_payload(*, state: dict, owner_user_id: int | None, items
         "selected_voice_id": state.get("selected_voice_id"),
         "pipeline": pipeline,
         "voice_match_ready": pipeline["voice_match"] in ("waiting", "done"),
-        "default_voice": default_voice,
     }
 
 
@@ -56,15 +52,12 @@ def normalize_confirm_voice_payload(
     *,
     body: dict,
     lang: str,
-    default_voice_id: str | None,
-    default_voice_name: str = "默认音色",
 ) -> dict:
     requested_voice_id = (body.get("voice_id") or "").strip()
     requested_voice_name = (body.get("voice_name") or "").strip() or None
-    use_default_voice = requested_voice_id in ("", "default")
-    voice_id = default_voice_id if use_default_voice else requested_voice_id
+    voice_id = requested_voice_id
     if not voice_id:
-        raise ValueError(f"no default voice available for {lang}")
+        raise ValueError(f"no voice_id provided for {lang}")
 
     try:
         subtitle_size = int(body.get("subtitle_size") or 14)
@@ -77,12 +70,11 @@ def normalize_confirm_voice_payload(
 
     return {
         "voice_id": voice_id,
-        "voice_name": requested_voice_name or (default_voice_name if use_default_voice else None),
+        "voice_name": requested_voice_name,
         "subtitle_font": (body.get("subtitle_font") or "Impact").strip(),
         "subtitle_size": subtitle_size,
         "subtitle_position_y": subtitle_position_y,
         "subtitle_position": (body.get("subtitle_position") or "bottom").strip(),
-        "used_default_voice": use_default_voice,
     }
 
 

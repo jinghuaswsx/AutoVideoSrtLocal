@@ -57,7 +57,6 @@ def test_task_workbench_config_exposes_detail_mode_and_selector_endpoints():
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
 
     assert "detailMode:" in script
-    assert "userDefaultVoiceApi:" in script
 
 
 def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():

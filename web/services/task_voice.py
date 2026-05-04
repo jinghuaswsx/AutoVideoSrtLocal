@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from appcore.video_translate_defaults import resolve_default_voice as resolve_default_voice_id
 from web import store
 from web.services import pipeline_runner
 from web.services.task_access import refresh_task as refresh_task_state
@@ -32,14 +31,12 @@ def confirm_task_voice(
     refresh_task: Callable[..., dict] = refresh_task_state,
     ensure_local_source_video: Callable[..., object] = ensure_source_video,
     runner=pipeline_runner,
-    resolve_default_voice: Callable[..., str | None] = resolve_default_voice_id,
 ) -> TaskVoiceConfirmOutcome:
     lang = av_task_target_lang(task)
     try:
         normalized = normalize_confirm_voice_payload(
             body=body,
             lang=lang or "",
-            default_voice_id=resolve_default_voice(lang, user_id=user_id) if lang else None,
         )
     except ValueError as exc:
         return TaskVoiceConfirmOutcome({"error": str(exc)}, 400)

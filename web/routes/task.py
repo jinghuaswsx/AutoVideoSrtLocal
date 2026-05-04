@@ -55,7 +55,6 @@ from web.services.task_voice import confirm_task_voice
 from web.services.task_voice_rematch import rematch_task_voice
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
-    lookup_default_voice_row,
 )
 from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
 
@@ -188,13 +187,11 @@ def voice_library_for_task(task_id: str):
 
     state = dict(task)
     state["target_lang"] = lang
-    default_voice = lookup_default_voice_row(lang, current_user.id)
     payload = build_voice_library_payload(
         state=state,
         owner_user_id=current_user.id,
         items=data.get("items", []),
         total=data.get("total", 0),
-        default_voice=default_voice,
     )
     return jsonify(payload)
 

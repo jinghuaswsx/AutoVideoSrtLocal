@@ -36,7 +36,6 @@ def test_confirm_task_voice_persists_selection_and_resumes_alignment():
         refresh_task=lambda task_id, fallback: {"id": task_id, "video_path": "video.mp4"},
         ensure_local_source_video=lambda task_id, task: ensured.append((task_id, task)),
         runner=runner,
-        resolve_default_voice=lambda lang, user_id=None: "default-de",
     )
 
     assert outcome.status_code == 200
@@ -82,7 +81,6 @@ def test_confirm_task_voice_returns_409_without_resuming_when_source_video_missi
         refresh_task=lambda task_id, fallback: {"id": task_id},
         ensure_local_source_video=missing_source,
         runner=runner,
-        resolve_default_voice=lambda lang, user_id=None: "default-de",
     )
 
     assert outcome.status_code == 409
@@ -90,13 +88,13 @@ def test_confirm_task_voice_returns_409_without_resuming_when_source_video_missi
     assert runner.resumed == []
 
 
-def test_confirm_task_voice_returns_400_before_mutating_invalid_default_voice():
+def test_confirm_task_voice_returns_400_on_missing_voice_id():
     calls = []
 
     outcome = confirm_task_voice(
         "task-1",
         {"target_lang": "de"},
-        {"voice_id": "default"},
+        {},
         user_id=7,
         update_task=lambda *args, **kwargs: calls.append(("update", args, kwargs)),
         set_step=lambda *args: calls.append(("step", args)),
@@ -104,9 +102,8 @@ def test_confirm_task_voice_returns_400_before_mutating_invalid_default_voice():
         refresh_task=lambda task_id, fallback: fallback,
         ensure_local_source_video=lambda task_id, task: calls.append(("ensure", task_id, task)),
         runner=_Runner(),
-        resolve_default_voice=lambda lang, user_id=None: None,
     )
 
     assert outcome.status_code == 400
-    assert outcome.payload == {"error": "no default voice available for de"}
+    assert outcome.payload == {"error": "no voice_id provided for de"}
     assert calls == []
