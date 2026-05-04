@@ -226,28 +226,58 @@
   border-color: var(--border);
 }
 
-/* ---- Tabs ---- */
+/* ---- Tabs（胶囊样式 + 右侧操作区） ---- */
 .vr-tabs {
-  display: flex; gap: 4px;
-  padding: 0 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--border);
   background: #ffffff;
 }
+.vr-tabs-left  { display: inline-flex; gap: 6px; align-items: center; }
+.vr-tabs-right { display: inline-flex; gap: 8px; align-items: center; }
+
 .vr-tab {
-  background: transparent; border: 0;
-  padding: 10px 14px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 6px 16px;
   font-size: var(--text-sm);
   color: var(--fg-muted);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color var(--duration-fast), border-color var(--duration-fast);
+  transition: background var(--duration-fast), color var(--duration-fast),
+              border-color var(--duration-fast);
 }
-.vr-tab:hover { color: var(--fg); }
-.vr-tab.active {
+.vr-tab:hover {
+  background: var(--accent-subtle);
   color: var(--accent);
-  border-bottom-color: var(--accent);
+  border-color: oklch(85% 0.06 225);
+}
+.vr-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
   font-weight: 600;
 }
+
+.vr-rerun-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 5px 12px;
+  font-size: var(--text-xs);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast),
+              color var(--duration-fast);
+}
+.vr-rerun-btn:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.vr-rerun-btn[hidden] { display: none; }
 
 .vr-tab-pane { display: none; }
 .vr-tab-pane.active { display: block; }
@@ -256,5 +286,5 @@
   .vr-inputs, .vr-cols { grid-template-columns: 1fr; }
   .vr-modal-panel { width: 96vw; max-height: 92vh; }
   .vr-status-bar { padding: 10px 16px; }
-  .vr-tabs { padding: 0 16px; }
+  .vr-tabs { padding: 10px 16px; }
 }

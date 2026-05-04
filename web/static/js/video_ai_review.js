@@ -33,6 +33,8 @@ window.VideoAiReview = (function () {
     ticker: null,         // Modal "已耗时" 1s 跳秒
     activeTab: "request",
     refreshFn: null,      // 当前应该被 modalPoll 调用的 refresh 函数
+    triggerUrl: null,     // 「重新评估」按钮要 POST 的 endpoint
+    triggerLabel: null,   // 仅用于日志/错误信息
   };
 
   // 三个翻译型详情页（multi / omni / av_sync）共用同一套 service / DB 表，
@@ -80,7 +82,6 @@ window.VideoAiReview = (function () {
     _state.isAdmin = !!isAdmin;
     _state.projectType = projectType || "multi_translate";
     _patchRunButton();
-    _ensureDetailButton();
     _ensureModalShell();
     _refresh();
     if (_state.polling) clearInterval(_state.polling);
@@ -94,49 +95,73 @@ window.VideoAiReview = (function () {
     // 抢先克隆移除旧事件（_task_workbench_scripts.html 里挂的旧 placeholder API）
     const fresh = btn.cloneNode(true);
     btn.parentNode.replaceChild(fresh, btn);
-    fresh.addEventListener("click", _triggerRun);
+    fresh.addEventListener("click", _smartOpenForTask);
   }
 
-  function _ensureDetailButton() {
-    const row = document.querySelector("#step-analysis .step-name-row");
-    if (!row) return;
-    if (document.getElementById("vrDetailBtn")) return;
-    const a = document.createElement("button");
-    a.id = "vrDetailBtn";
-    a.type = "button";
-    a.className = "btn btn-secondary btn-sm";
-    a.style.marginLeft = "8px";
-    a.textContent = "AI 视频分析结果";
-    a.addEventListener("click", _openModal);
-    row.appendChild(a);
-  }
-
-  async function _triggerRun() {
-    const btn = document.getElementById("runAnalysisBtn");
-    if (btn) { btn.disabled = true; btn.textContent = "启动中…"; }
-    // 先把 Modal 弹出来，让用户立刻看到状态栏。
+  // 任务页入口：根据 latest 智能分流——没结果首跑、有结果只看。
+  // 「重新评估」按钮在 Modal 内部，由 _doForceTrigger 处理。
+  async function _smartOpenForTask() {
+    _state.triggerUrl = _api("/video-ai-review/run");
     _state.refreshFn = _refresh;
+    _state.triggerLabel = "task";
+    await _smartOpen();
+  }
+
+  // 通用智能开 Modal——_state.triggerUrl / refreshFn 必须在调用前设好。
+  async function _smartOpen() {
+    _ensureModalShell();
     _openModal();
+    await (_state.refreshFn || _refresh)();
+    const r = _state.latest;
+    if (!r) {
+      // 第一次：自动触发首跑
+      await _doForceTrigger();
+      return;
+    }
+    if (r.status === "pending" || r.status === "running") {
+      // 已在跑：仅起 polling 跟踪，不重发
+      _startModalPolling(_state.refreshFn || _refresh);
+      return;
+    }
+    // done / failed / cancelled：默认切到「结果」让用户直接看分数
+    _switchTab("result");
+  }
+
+  // 真发请求那一段。Modal 已经打开；按钮失能见 _renderModal 里 rerun 按钮的状态。
+  async function _doForceTrigger() {
+    if (!_state.triggerUrl) return;
+    // 立刻把 latest 标成"启动中"，让状态栏 + 重新评估按钮即时反映
+    const placeholder = {
+      status: "pending",
+      run_id: (_state.latest && _state.latest.run_id || 0) + 1,
+      channel: "—", model: "—",
+      started_at: new Date().toISOString(),
+    };
+    _state.latest = placeholder;
+    _renderModal();
     try {
-      const resp = await fetch(_api("/video-ai-review/run"), {
+      const resp = await fetch(_state.triggerUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": _csrf() },
       });
       const data = await resp.json().catch(() => ({}));
       if (resp.status === 409) {
-        // 已经在跑——不弹 alert，刷新一次让 Modal 反映 in-flight run。
-        await _refresh();
+        // 已经在跑——不弹错，等 polling 拿真结果
       } else if (!resp.ok) {
         alert("启动失败：" + (data.error || resp.status));
+        // 回退掉 placeholder，让用户再点一次
+        _state.latest = null;
+        _renderModal();
+        return;
       }
     } catch (err) {
       alert("启动失败：" + err.message);
-    } finally {
-      await _refresh();
-      _startModalPolling(_refresh);
-      const btn2 = document.getElementById("runAnalysisBtn");
-      if (btn2) { btn2.disabled = false; }
+      _state.latest = null;
+      _renderModal();
+      return;
     }
+    await (_state.refreshFn || _refresh)();
+    _startModalPolling(_state.refreshFn || _refresh);
   }
 
   async function _refresh() {
@@ -206,9 +231,14 @@ window.VideoAiReview = (function () {
         <div class="vr-status-bar" id="vrStatusBar">
           <div class="vr-empty">尚未运行</div>
         </div>
-        <div class="vr-tabs" role="tablist">
-          <button type="button" class="vr-tab active" data-tab="request">请求</button>
-          <button type="button" class="vr-tab" data-tab="result">结果</button>
+        <div class="vr-tabs">
+          <div class="vr-tabs-left" role="tablist">
+            <button type="button" class="vr-tab active" data-tab="request">请求</button>
+            <button type="button" class="vr-tab" data-tab="result">结果</button>
+          </div>
+          <div class="vr-tabs-right">
+            <button type="button" class="vr-rerun-btn" data-act="rerun" hidden>重新评估</button>
+          </div>
         </div>
         <div class="vr-modal-body" id="vrModalBody">
           <div class="vr-tab-pane active" data-pane="request"></div>
@@ -218,7 +248,8 @@ window.VideoAiReview = (function () {
     `;
     document.body.appendChild(el);
     el.addEventListener("click", (ev) => {
-      if (ev.target.dataset.close === "1") _closeModal();
+      if (ev.target.dataset.close === "1") return _closeModal();
+      if (ev.target.closest('[data-act="rerun"]')) return _onRerunClick();
       const tabBtn = ev.target.closest(".vr-tab");
       if (tabBtn && tabBtn.dataset.tab) _switchTab(tabBtn.dataset.tab);
     });
@@ -227,6 +258,28 @@ window.VideoAiReview = (function () {
         _closeModal();
       }
     });
+  }
+
+  async function _onRerunClick() {
+    const r = _state.latest;
+    if (r && (r.status === "pending" || r.status === "running")) {
+      // 已经在跑，点了不该重发
+      return;
+    }
+    if (!confirm("确定要重新评估吗？这会消耗一次 LLM 调用。")) return;
+    await _doForceTrigger();
+  }
+
+  // 「重新评估」按钮显示规则：
+  //   - 没有 latest（首次进来还在拉数据/还没跑）：隐藏，主流程会自动首跑
+  //   - pending / running：隐藏（避免误触 + 后端 409 已经挡了）
+  //   - done / failed / cancelled：显示
+  function _updateRerunBtn() {
+    const btn = document.querySelector('#vrModal [data-act="rerun"]');
+    if (!btn) return;
+    const r = _state.latest;
+    const visible = !!r && (r.status === "done" || r.status === "failed" || r.status === "cancelled");
+    btn.hidden = !visible;
   }
 
   function _switchTab(tab) {
@@ -239,18 +292,13 @@ window.VideoAiReview = (function () {
     });
   }
 
+  // 仅"打开"——polling / 是否触发首跑都由 _smartOpen 决定，避免双重起 polling。
   function _openModal() {
     const m = document.getElementById("vrModal");
     if (m) m.classList.remove("hidden");
     _switchTab(_state.activeTab || "request");
     _renderModal();
     _startTicker();
-    // 进入 Modal 时，如果当前还没结果或者正在跑，就立刻起 polling。
-    const r = _state.latest;
-    const fn = _state.refreshFn || _refresh;
-    if (!r || r.status === "pending" || r.status === "running") {
-      _startModalPolling(fn);
-    }
   }
 
   function _closeModal() {
@@ -341,6 +389,7 @@ window.VideoAiReview = (function () {
     _renderStatusBar();
     _renderRequestPane();
     _renderResultPane();
+    _updateRerunBtn();
   }
 
   function _renderRequestPane() {
@@ -431,42 +480,20 @@ window.VideoAiReview = (function () {
     _state.isAdmin = false;
   }
 
+  // 媒体卡唯一入口：智能流——首次自动跑、有结果只看、想重跑点 Modal 内的「重新评估」。
   async function triggerForMediaItem(mediaItemId) {
     _setMediaState(mediaItemId);
-    _ensureModalShell();
-    // 重置上次的结果，避免拿到别的视频的旧数据。
-    _state.latest = null;
+    _state.latest = null;  // 切到新视频先清空，避免显示旧的
+    _state.triggerUrl = `/medias/api/items/${mediaItemId}/video-ai-review/run`;
     _state.refreshFn = () => _refreshMediaItem(mediaItemId);
-    _openModal();
-    try {
-      const resp = await fetch(
-        `/medias/api/items/${mediaItemId}/video-ai-review/run`,
-        { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": _csrf() } },
-      );
-      const data = await resp.json().catch(() => ({}));
-      if (resp.status === 409) {
-        // 已在运行中——直接走 polling，让 Modal 自然反映正在跑的那一次。
-      } else if (!resp.ok) {
-        alert("启动失败：" + (data.error || resp.status));
-      }
-    } catch (err) {
-      alert("启动失败：" + err.message);
-    }
-    await _refreshMediaItem(mediaItemId);
-    _startModalPolling(() => _refreshMediaItem(mediaItemId));
+    _state.triggerLabel = `media_item:${mediaItemId}`;
+    await _smartOpen();
   }
 
+  // 兼容老入口（之前 medias.js 有「分析结果」按钮单独走这里），行为同 trigger
+  // 智能版——首次会自动跑、有结果只看。保留以防其他地方还在调。
   async function openModalForMediaItem(mediaItemId) {
-    _setMediaState(mediaItemId);
-    _ensureModalShell();
-    _state.latest = null;
-    _state.refreshFn = () => _refreshMediaItem(mediaItemId);
-    _openModal();
-    await _refreshMediaItem(mediaItemId);
-    const r = _state.latest;
-    if (!r || r.status === "pending" || r.status === "running") {
-      _startModalPolling(() => _refreshMediaItem(mediaItemId));
-    }
+    return triggerForMediaItem(mediaItemId);
   }
 
   async function _refreshMediaItem(mediaItemId) {
