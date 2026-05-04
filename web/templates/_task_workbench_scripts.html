@@ -2979,8 +2979,13 @@
 <script src="{{ url_for('static', filename='js/quality_assessment_card.js') }}"></script>
 {% endif %}
 
-{# AI 视频分析卡片：自带 DOMContentLoaded 自动 init（按 #step-analysis data-* 读取） #}
-{% if _has_project_context and not project.deleted_at and project.id and request.path.startswith('/multi-translate') %}
+{# AI 视频分析卡片：multi-translate / omni-translate / 视频翻译音画通话 三个详情页都加载 #}
+{% if _has_project_context and not project.deleted_at and project.id and (
+       request.path.startswith('/multi-translate')
+       or request.path.startswith('/omni-translate')
+       or request.path.startswith('/video-translate-av-sync')
+       or request.path.startswith('/projects/')
+     ) %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/video_ai_review.css') }}">
 <script src="{{ url_for('static', filename='js/video_ai_review.js') }}"></script>
 {% endif %}

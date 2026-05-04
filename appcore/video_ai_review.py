@@ -110,8 +110,19 @@ def _build_inputs_for_media(media_item_id: int) -> dict:
     raise NotImplementedError("media_item video_ai_review not yet supported")
 
 
+_TRANSLATE_TASK_SOURCE_TYPES = (
+    "multi_translate_task",
+    "omni_translate_task",
+    "av_sync_task",
+)
+
+
 def _build_inputs(source_type: str, source_id: str) -> dict:
-    if source_type == "multi_translate_task":
+    # 三种翻译型 task（multi / omni / av_sync）的 task_state 字段（utterances /
+    # localized_translation / target_lang / detected_source_language / task_dir）
+    # 结构通用，共享同一个 _build_inputs_for_task 实现；source_type 仅用于 DB
+    # 表里区分历史归类，不影响输入抽取。
+    if source_type in _TRANSLATE_TASK_SOURCE_TYPES:
         return _build_inputs_for_task(source_id)
     if source_type == "media_item":
         return _build_inputs_for_media(int(source_id))

@@ -23,10 +23,22 @@ window.VideoAiReview = (function () {
     product_alignment:     "产品契合度",
   };
 
-  let _state = { taskId: null, isAdmin: false, latest: null, polling: null };
+  let _state = { taskId: null, isAdmin: false, projectType: "multi_translate", latest: null, polling: null };
+
+  // 三个翻译型详情页（multi / omni / av_sync）共用同一套 service / DB 表，
+  // 但 API base 不同：multi → /api/multi-translate；omni → /api/omni-translate；
+  // av_sync → /api/tasks（task.py 蓝图）。projectType 由模板按 request.path
+  // 推断后写到 #step-analysis data-project-type。
+  function _apiBase() {
+    switch (_state.projectType) {
+      case "omni_translate": return "/api/omni-translate";
+      case "av_sync":        return "/api/tasks";
+      default:               return "/api/multi-translate";
+    }
+  }
 
   function _api(path) {
-    return `/api/multi-translate/${_state.taskId}${path}`;
+    return `${_apiBase()}/${_state.taskId}${path}`;
   }
 
   function _csrf() {
@@ -53,9 +65,10 @@ window.VideoAiReview = (function () {
     return (ms / 1000).toFixed(1) + " s";
   }
 
-  function init({ taskId, isAdmin }) {
+  function init({ taskId, isAdmin, projectType }) {
     _state.taskId = taskId;
     _state.isAdmin = !!isAdmin;
+    _state.projectType = projectType || "multi_translate";
     _patchRunButton();
     _ensureDetailButton();
     _ensureModalShell();
@@ -272,5 +285,6 @@ document.addEventListener("DOMContentLoaded", function () {
   window.VideoAiReview.init({
     taskId: taskId,
     isAdmin: node.dataset.isAdmin === "1",
+    projectType: node.dataset.projectType || "multi_translate",
   });
 });
