@@ -327,7 +327,7 @@
   border: 1px solid var(--oc-border-strong, oklch(84% 0.015 230));
   color: var(--oc-fg, oklch(22% 0.020 235));
   background: var(--oc-bg, oklch(99% 0.004 230));
-  transition: background-color 120ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: background var(--oc-dur-fast, 120ms) var(--oc-ease, cubic-bezier(0.32, 0.72, 0, 1));
 }
 .oc-btn.pill:hover {
   background: var(--oc-bg-muted, oklch(94% 0.010 230));
@@ -350,7 +350,7 @@
 }
 .oc-roas-status-bar[data-state="saving"] {
   background: oklch(95% 0.04 230);
-  color: oklch(50% 0.17 230);
+  color: var(--oc-accent-hover, oklch(50% 0.17 230));
 }
 .oc-roas-status-bar[data-state="saved"] {
   background: oklch(95% 0.04 165);

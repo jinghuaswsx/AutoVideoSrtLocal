@@ -92,7 +92,7 @@ def test_roas_page_includes_styles_partial():
 def test_styles_define_pill_button():
     css = STYLES.read_text(encoding="utf-8")
     assert ".oc-btn.pill" in css
-    assert "border-radius" in css
+    assert "9999px" in css  # pill radius signature
 
 
 def test_styles_define_status_bar_states():
