@@ -60,11 +60,6 @@ def main():
             print(f"  status={st}: {len(items)} items")
         except Exception as exc:
             print(f"  status={st}: ERROR {exc}")
-        # If there are more pages, we may need to paginate; but search_supply_pairing
-        # with empty query should return all. If not, we rely on the function's pagination.
-    except Exception as exc:
-        print(f"  ERROR pulling records: {exc}")
-        return
 
     if not all_paired:
         print("  No paired records found at all.")
