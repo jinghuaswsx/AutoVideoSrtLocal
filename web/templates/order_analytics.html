@@ -3457,9 +3457,13 @@
     var btn = document.getElementById('adMatchConfirm');
     btn.disabled = true;
     btn.textContent = '配对中…';
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
     fetch('/order-analytics/ad-match-manual', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfMeta ? csrfMeta.content : '',
+      },
       body: JSON.stringify({
         normalized_campaign_code: adMatchState.campaign.normalized_campaign_code,
         product_id: adMatchState.selectedProduct.id,
