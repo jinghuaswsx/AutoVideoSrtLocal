@@ -23,4 +23,7 @@ CREATE TABLE IF NOT EXISTS xmyc_storage_skus (
   KEY idx_xmyc_storage_skus_sku_code (sku_code),
   KEY idx_xmyc_storage_skus_product_id (product_id),
   KEY idx_xmyc_storage_skus_xmyc_id (xmyc_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- No explicit COLLATE: inherit database default (utf8mb4_0900_ai_ci on
+-- MySQL 8) so JOINs against dianxiaomi_order_lines / media_products do
+-- not hit "Illegal mix of collations" at runtime.
