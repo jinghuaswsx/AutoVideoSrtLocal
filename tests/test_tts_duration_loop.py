@@ -300,14 +300,21 @@ class TestDurationLoopRound1Only:
         runner.bus.subscribe(lambda e: captured.append(e))
 
         def fake_gen_full_audio(tts_segments, voice_id, task_dir, *, variant=None,
-                                 on_segment_done=None, **kw):
+                                 on_progress=None, on_segment_done=None, **kw):
             out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             with open(out, "wb") as f:
                 f.write(b"fake")
+
+            def _emit_done(done, total, info):
+                if on_progress:
+                    on_progress({"state": "completed", "total": total, "done": done,
+                                  "active": 0, "queued": total - done, "info": info})
+                if on_segment_done:
+                    on_segment_done(done, total, info)
+
             # 模拟两段 ElevenLabs 调用，触发 2 次 callback
-            if on_segment_done:
-                on_segment_done(1, 2, {"segment_index": 0, "tts_duration": 1.0})
-                on_segment_done(2, 2, {"segment_index": 1, "tts_duration": 1.5})
+            _emit_done(1, 2, {"segment_index": 0, "tts_duration": 1.0})
+            _emit_done(2, 2, {"segment_index": 1, "tts_duration": 1.5})
             return {"full_audio_path": out, "segments": [
                 {"index": 0, "tts_path": out, "tts_duration": 1.0},
                 {"index": 1, "tts_path": out, "tts_duration": 1.5},
@@ -358,14 +365,21 @@ class TestDurationLoopRound1Only:
         runner.bus.subscribe(lambda e: captured.append(e))
 
         def fake_gen_full_audio(tts_segments, voice_id, task_dir, *, variant=None,
-                                 on_segment_done=None, **kw):
+                                 on_progress=None, on_segment_done=None, **kw):
             out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             with open(out, "wb") as f:
                 f.write(b"fake")
-            if on_segment_done:
-                on_segment_done(1, 3, {"segment_index": 0})
-                on_segment_done(2, 3, {"segment_index": 1})
-                on_segment_done(3, 3, {"segment_index": 2})
+
+            def _emit_done(done, total, info):
+                if on_progress:
+                    on_progress({"state": "completed", "total": total, "done": done,
+                                  "active": 0, "queued": total - done, "info": info})
+                if on_segment_done:
+                    on_segment_done(done, total, info)
+
+            _emit_done(1, 3, {"segment_index": 0})
+            _emit_done(2, 3, {"segment_index": 1})
+            _emit_done(3, 3, {"segment_index": 2})
             return {"full_audio_path": out, "segments": [
                 {"index": i, "tts_path": out, "tts_duration": 1.0} for i in range(3)
             ]}
@@ -416,18 +430,25 @@ class TestDurationLoopRound1Only:
         snapshots = []
 
         def fake_gen_full_audio(tts_segments, voice_id, task_dir, *, variant=None,
-                                 on_segment_done=None, **kw):
+                                 on_progress=None, on_segment_done=None, **kw):
             out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             with open(out, "wb") as f:
                 f.write(b"fake")
-            if on_segment_done:
-                on_segment_done(1, 2, {"segment_index": 0})
-                state = task_state.get("polling-progress-task") or {}
-                snapshots.append({
-                    "message": (state.get("step_messages") or {}).get("tts", ""),
-                    "rounds": list(state.get("tts_duration_rounds") or []),
-                })
-                on_segment_done(2, 2, {"segment_index": 1})
+
+            def _emit_done(done, total, info):
+                if on_progress:
+                    on_progress({"state": "completed", "total": total, "done": done,
+                                  "active": 0, "queued": total - done, "info": info})
+                if on_segment_done:
+                    on_segment_done(done, total, info)
+
+            _emit_done(1, 2, {"segment_index": 0})
+            state = task_state.get("polling-progress-task") or {}
+            snapshots.append({
+                "message": (state.get("step_messages") or {}).get("tts", ""),
+                "rounds": list(state.get("tts_duration_rounds") or []),
+            })
+            _emit_done(2, 2, {"segment_index": 1})
             return {"full_audio_path": out, "segments": [
                 {"index": 0, "tts_path": out, "tts_duration": 1.0},
                 {"index": 1, "tts_path": out, "tts_duration": 1.0},
