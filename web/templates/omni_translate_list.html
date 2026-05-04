@@ -49,14 +49,13 @@
 .project-card .meta { font-size: 12px; color: #9ca3af; display: flex; justify-content: space-between; align-items: center; }
 .project-card .expire-row { margin-top: 6px; }
 .project-card .creator-row {
-  margin-top: 8px;
   font-size: 12px;
   color: #9ca3af;
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 4px;
   min-height: 18px;
+  margin-bottom: 6px;
 }
 .project-card .creator-row strong {
   color: var(--text-main);
@@ -65,6 +64,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.project-card .lang-row {
+  margin-top: auto;
+  font-size: 11px;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 20px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.project-card .lang-row .lang-tag {
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--bg-muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.project-card .lang-row .lang-arrow {
+  color: var(--fg-subtle);
+  flex-shrink: 0;
 }
 
 /* ── List view ── */
@@ -93,6 +116,11 @@
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item .list-lang {
+  color: var(--fg-muted);
+  font-weight: 500;
   white-space: nowrap;
 }
 .list-item .list-menu-btn {
@@ -270,6 +298,8 @@
 </div>
 
 {% set lang_label_map = {'de':'🇩🇪 德语','fr':'🇫🇷 法语','es':'🇪🇸 西语','it':'🇮🇹 意语','ja':'🇯🇵 日语','pt':'🇵🇹 葡语','nl':'🇳🇱 荷兰语','sv':'🇸🇪 瑞典语','fi':'🇫🇮 芬兰语','en':'🇺🇸 英语'} %}
+{% set lang_name_map = {'zh':'中文','de':'德语','fr':'法语','es':'西语','it':'意语','ja':'日语','pt':'葡语','nl':'荷兰语','sv':'瑞典语','fi':'芬兰语','en':'英语'} %}
+{% set source_lang_label_map = {'zh':'中文 zh','en':'英语 en','es':'西语 es','pt':'葡语 pt','fr':'法语 fr','it':'意语 it','de':'德语 de','ja':'日语 ja','nl':'荷兰语 nl','sv':'瑞典语 sv','fi':'芬兰语 fi'} %}
 <div class="lang-pills">
   <a class="lang-pill {{ 'active' if not current_lang else '' }}" href="/omni-translate">全部</a>
   {% for lang in filter_langs %}
@@ -298,6 +328,10 @@
       </div>
       <div class="info">
         <div class="filename">{{ p.display_name or (p.original_filename or p.id)[:10] }}</div>
+        <div class="creator-row">
+          <span>创建人：</span>
+          <strong title="{{ p.creator_name or '—' }}">{{ p.creator_name or '—' }}</strong>
+        </div>
         <div class="meta">
           <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
           <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
@@ -314,9 +348,10 @@
           {% endif %}
         </div>
         {% endif %}
-        <div class="creator-row">
-          <span>创建人：</span>
-          <strong title="{{ p.creator_name or '—' }}">{{ p.creator_name or '—' }}</strong>
+        <div class="lang-row">
+          <span class="lang-tag">{{ lang_name_map.get(p.source_lang, p.source_lang.upper()) if p.source_lang else '—' }}</span>
+          <span class="lang-arrow">→</span>
+          <span class="lang-tag">{{ lang_name_map.get(p.target_lang, p.target_lang.upper()) if p.target_lang else '—' }}</span>
         </div>
       </div>
     </a>
@@ -345,6 +380,7 @@
           <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
           <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
           <span class="list-creator" title="创建人：{{ p.creator_name or '—' }}">创建人：{{ p.creator_name or '—' }}</span>
+          <span class="list-lang">{{ lang_name_map.get(p.source_lang, p.source_lang.upper()) if p.source_lang else '—' }} → {{ lang_name_map.get(p.target_lang, p.target_lang.upper()) if p.target_lang else '—' }}</span>
           {% if p.expires_at %}
           {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
           {% if hours_left <= 0 %}
@@ -416,21 +452,14 @@
           <div class="modal-hint" style="margin:6px 0 0;">由文件名 + 语言自动生成，可手动调整</div>
         </div>
         <div class="modal-field" id="sourceLanguageField">
-          <label for="sourceLanguageSelect">源语言</label>
-          <select id="sourceLanguageSelect" name="source_language" required>
-            <option value="" disabled selected hidden>请选择源语言</option>
-            <option value="zh">中文</option>
-            <option value="en">English</option>
-            <option value="es">Español</option>
-            <option value="pt">Português</option>
-            <option value="fr">Français</option>
-            <option value="it">Italiano</option>
-            <option value="de">Deutsch</option>
-            <option value="ja">日本語</option>
-            <option value="nl">Nederlands</option>
-            <option value="sv">Svenska</option>
-            <option value="fi">Suomi</option>
-          </select>
+          <label>源语言</label>
+          <div class="modal-lang-pills" id="modalSourceLangPills" role="radiogroup" aria-label="源语言">
+            {% for lang in ('zh','en','es','pt','fr','it','de','ja','nl','sv','fi') %}
+              {% set label = source_lang_label_map.get(lang, lang) %}
+              <button type="button" class="modal-lang-pill" data-lang="{{ lang }}" role="radio" aria-checked="false">{{ label }}</button>
+            {% endfor %}
+          </div>
+          <input type="hidden" id="sourceLanguageSelect" name="source_language" value="">
           <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
         </div>
       </div>
@@ -543,8 +572,9 @@ function _resetUploadModal() {
   });
   document.getElementById('targetLangSelect').value = '';
   document.getElementById('videoFile').value = '';
-  var srcSel = document.getElementById('sourceLanguageSelect');
-  if (srcSel) srcSel.selectedIndex = 0;
+  var srcPills = document.querySelectorAll('#modalSourceLangPills .modal-lang-pill');
+  srcPills.forEach(function(b) { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
+  document.getElementById('sourceLanguageSelect').value = '';
   _clearVideoPreview();
   var warning = document.getElementById('langWarning');
   if (warning) warning.classList.remove('shake');
@@ -610,6 +640,22 @@ function openUpload() {
       document.getElementById('targetLangSelect').value = btn.dataset.lang;
       document.getElementById('langWarning').classList.remove('shake');
       _refreshProjectName();
+    });
+  });
+})();
+
+(function initSourceLangPills() {
+  var pills = document.querySelectorAll('#modalSourceLangPills .modal-lang-pill');
+  var hidden = document.getElementById('sourceLanguageSelect');
+  pills.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      pills.forEach(function(b) {
+        b.classList.remove('active');
+        b.setAttribute('aria-checked', 'false');
+      });
+      btn.classList.add('active');
+      btn.setAttribute('aria-checked', 'true');
+      hidden.value = btn.dataset.lang;
     });
   });
 })();

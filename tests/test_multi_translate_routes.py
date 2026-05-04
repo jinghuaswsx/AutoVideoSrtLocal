@@ -510,9 +510,22 @@ def test_multi_translate_index_filters_pills_by_enabled_languages(authed_client_
     body = resp.data.decode("utf-8")
     assert 'data-lang="de"' in body
     assert 'data-lang="ja"' in body
-    # fi 被排除（未启用）
-    assert 'data-lang="fi"' not in body
-    assert 'data-lang="fr"' not in body
+    # 目标语言胶囊仅包含启用的语言（de, ja）+ en
+    import re
+    target_pills_block = re.search(r'id="modalLangPills"[^>]*>(.*?)</div>', body, re.DOTALL)
+    assert target_pills_block, "modalLangPills not found"
+    target_pills_html = target_pills_block.group(1)
+    assert 'data-lang="de"' in target_pills_html
+    assert 'data-lang="ja"' in target_pills_html
+    assert 'data-lang="en"' in target_pills_html
+    assert 'data-lang="fi"' not in target_pills_html
+    assert 'data-lang="fr"' not in target_pills_html
+    # 源语言胶囊始终包含所有语言（含 zh）
+    source_pills_block = re.search(r'id="modalSourceLangPills"[^>]*>(.*?)</div>', body, re.DOTALL)
+    assert source_pills_block, "modalSourceLangPills not found"
+    source_pills_html = source_pills_block.group(1)
+    assert 'data-lang="zh"' in source_pills_html
+    assert 'data-lang="fi"' in source_pills_html
 
 
 def test_multi_translate_top_filter_includes_enabled_languages_plus_english(authed_client_no_db, monkeypatch):
