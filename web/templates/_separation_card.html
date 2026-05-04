@@ -59,17 +59,25 @@
     return Number(v).toFixed(digits) + (suffix || "");
   }
 
+  function setHtmlIfChanged(el, html) {
+    // 跟 task_workbench step preview 同款做法：只有 HTML 真变了才写 innerHTML，
+    // 避免把正在播放的 <audio> 元素重建导致从头开始 / 播放停掉。
+    if (!el) return;
+    if (el.dataset.lastHtml === html) return;
+    el.innerHTML = html;
+    el.dataset.lastHtml = html;
+  }
+
   function renderSeparate(sep) {
     var preview = document.getElementById("preview-separate");
     if (!preview) return;
     if (!sep || !sep.status) {
-      preview.innerHTML = "";
+      setHtmlIfChanged(preview, "");
       return;
     }
     var status = sep.status;
     if (status === "disabled") {
-      preview.innerHTML =
-        '<div class="separation-detail muted">人声分离总开关未启用，主任务走旧逻辑（不混背景音、不做响度匹配）</div>';
+      setHtmlIfChanged(preview, '<div class="separation-detail muted">人声分离总开关未启用，主任务走旧逻辑（不混背景音、不做响度匹配）</div>');
       return;
     }
 
@@ -86,23 +94,21 @@
       var warning = isTimedOut
         ? '<div class="loudness-warn">⚠ 已超过总超时上限，可能即将自动降级</div>'
         : "";
-      preview.innerHTML =
-        '<div class="separation-detail">' +
+      setHtmlIfChanged(preview, '<div class="separation-detail">' +
           '<div class="kv-row"><span class="k">preset</span><span class="v">' + (sep.model || "-") + '</span></div>' +
           '<div class="kv-row"><span class="k">已等待 / 上限</span><span class="v">' +
             fmt(elapsed, 0, "s") + ' / ' + fmt(timeoutSec, 0, "s") +
           '</span></div>' +
           '<div class="kv-row"><span class="k">API</span><span class="v">' + (sep.api_url || "-") + '</span></div>' +
           warning +
-        '</div>';
+        '</div>');
       return;
     }
 
     if (status === "done") {
       var vocalsUrl = API_BASE + "/" + TASK_ID + "/artifact/separation_vocals";
       var accompUrl = API_BASE + "/" + TASK_ID + "/artifact/separation_accompaniment";
-      preview.innerHTML =
-        '<div class="separation-detail">' +
+      setHtmlIfChanged(preview, '<div class="separation-detail">' +
           '<div class="kv-row"><span class="k">preset</span><span class="v">' + (sep.model || "-") + '</span></div>' +
           '<div class="kv-row"><span class="k">耗时</span><span class="v">' + fmt(elapsed, 1, "s") + '</span></div>' +
           '<div class="kv-row"><span class="k">原人声 L₀</span><span class="v">' + fmt(sep.vocals_lufs, 1, " LUFS") + '</span></div>' +
@@ -122,20 +128,19 @@
             '<br>↓ 下方「响度匹配」step 用 video_lufs 当目标、accompaniment 跟 TTS amix 成 mp4 主音轨' +
             '<br>↓ CapCut 工程包导出时 accompaniment 作为独立 ambience 音轨保留' +
           '</div>' +
-        '</div>';
+        '</div>');
       return;
     }
 
     // failed / unavailable / timeout / silence
     var label = STATUS_LABEL_ZH[status] || status;
     var errMsg = (sep.error || "").substring(0, 200);
-    preview.innerHTML =
-      '<div class="separation-detail muted">' +
+    setHtmlIfChanged(preview, '<div class="separation-detail muted">' +
         '<div class="kv-row"><span class="k">状态</span><span class="v">' + label + '</span></div>' +
         '<div class="kv-row"><span class="k">耗时</span><span class="v">' + fmt(elapsed, 1, "s") + '</span></div>' +
         (errMsg ? '<div class="kv-row"><span class="k">原因</span><span class="v">' + errMsg + '</span></div>' : "") +
         '<div class="loudness-warn">⚠ 已自动降级走旧逻辑（不混背景音、不做响度匹配，主任务继续）</div>' +
-      '</div>';
+      '</div>');
   }
 
   function renderLoudnessMatch(sep) {
@@ -143,14 +148,14 @@
     if (!preview) return;
 
     if (!sep || sep.status === "disabled") {
-      preview.innerHTML = "";
+      setHtmlIfChanged(preview, "");
       return;
     }
 
     var tl = sep.tts_loudness;
     if (!tl || !tl.variants || !tl.variants.length) {
       // 还没跑到 loudness_match step（separate 还没 done 或 TTS 还没好）
-      preview.innerHTML = "";
+      setHtmlIfChanged(preview, "");
       return;
     }
 
@@ -210,12 +215,11 @@
         '<div class="kv-row"><span class="k">收敛 ±3%</span><span class="v ' + convClass + '">' + convTxt + '</span></div>';
     }
 
-    preview.innerHTML =
-      '<div class="loudness-detail">' +
+    setHtmlIfChanged(preview, '<div class="loudness-detail">' +
         originHint +
         '<div class="loudness-algo-row">' + algoBadge + '</div>' +
         coreRows +
-      '</div>';
+      '</div>');
   }
 
   function refreshAll() {
@@ -289,8 +293,8 @@
     margin-bottom: var(--space-1);
   }
   #preview-separate .separation-audio-pair audio {
-    width: 100%;
-    height: 32px;
+    /* 用浏览器默认 controls 尺寸（跟 task_workbench 其它 step preview 的 audio
+       一致），不要 width:100%/height:32px——controls 被压扁会导致播放异常。 */
   }
   .loudness-warn { color: var(--warning-fg); font-size: var(--text-xs); }
   .loudness-ok { color: var(--success-fg); }
