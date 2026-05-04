@@ -3481,7 +3481,7 @@
       return;
     }
     resultsEl.innerHTML = '<div class="oa-match-hint">搜索中…</div>';
-    fetch('/api/products?keyword=' + encodeURIComponent(keyword))
+    fetch('/medias/api/products?keyword=' + encodeURIComponent(keyword))
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (seq !== adMatchState.searchSeq) return;
