@@ -422,7 +422,7 @@ def update_product(product_id: int, **fields) -> int:
                "localized_links_json", "ad_supported_langs",
                "link_check_tasks_json", "shopify_image_status_json",
                "mk_id",
-               "shopifyid",
+               "shopifyid", "shopify_title",
                "remark", "ai_score", "ai_evaluation_result",
                "ai_evaluation_detail", "listing_status",
                "npr_decision_status", "npr_decided_countries",
@@ -1325,3 +1325,240 @@ def count_raw_sources_by_product(product_ids: list[int]) -> dict[int, int]:
         tuple(product_ids),
     )
     return {int(r["product_id"]): int(r["c"]) for r in rows}
+
+
+# ---------- 店小秘 SKU 配对 (media_product_skus) ----------
+
+_SKU_PAIR_TEXT_FIELDS = (
+    "shopify_product_id",
+    "shopify_variant_id",
+    "shopify_sku",
+    "shopify_currency",
+    "shopify_variant_title",
+    "dianxiaomi_sku",
+    "dianxiaomi_sku_code",
+    "dianxiaomi_name",
+)
+_SKU_PAIR_NUMERIC_FIELDS = (
+    "shopify_price",
+    "shopify_compare_at_price",
+    "shopify_inventory_quantity",
+    "shopify_weight_grams",
+)
+_SKU_PAIR_FIELDS = _SKU_PAIR_TEXT_FIELDS + _SKU_PAIR_NUMERIC_FIELDS
+
+
+def _normalize_sku_pair(pair: dict) -> dict:
+    cleaned: dict[str, Any] = {}
+    for key in _SKU_PAIR_TEXT_FIELDS:
+        value = pair.get(key)
+        if value is None:
+            cleaned[key] = None
+            continue
+        text = str(value).strip()
+        cleaned[key] = text or None
+    for key in _SKU_PAIR_NUMERIC_FIELDS:
+        value = pair.get(key)
+        if value is None or value == "":
+            cleaned[key] = None
+            continue
+        try:
+            cleaned[key] = int(value) if key.endswith("_quantity") else float(value)
+        except (TypeError, ValueError):
+            cleaned[key] = None
+    if not cleaned.get("shopify_variant_id"):
+        raise ValueError("shopify_variant_id is required for SKU pairing")
+    return cleaned
+
+
+_SKU_SELECT_COLUMNS = (
+    "id, product_id, shopify_product_id, shopify_variant_id, shopify_sku, "
+    "shopify_price, shopify_compare_at_price, shopify_currency, "
+    "shopify_inventory_quantity, shopify_weight_grams, shopify_variant_title, "
+    "dianxiaomi_sku, dianxiaomi_sku_code, dianxiaomi_name, source, "
+    "created_at, updated_at"
+)
+
+
+def list_product_skus(product_id: int) -> list[dict]:
+    rows = query(
+        f"SELECT {_SKU_SELECT_COLUMNS} "
+        "FROM media_product_skus WHERE product_id=%s "
+        "ORDER BY shopify_variant_id ASC, id ASC",
+        (int(product_id),),
+    )
+    return list(rows or [])
+
+
+def list_product_skus_batch(product_ids: list[int]) -> dict[int, list[dict]]:
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT {_SKU_SELECT_COLUMNS} "
+        f"FROM media_product_skus WHERE product_id IN ({placeholders}) "
+        "ORDER BY product_id ASC, shopify_variant_id ASC, id ASC",
+        tuple(product_ids),
+    )
+    grouped: dict[int, list[dict]] = {}
+    for row in rows or []:
+        grouped.setdefault(int(row["product_id"]), []).append(row)
+    return grouped
+
+
+def replace_product_skus(
+    product_id: int,
+    pairs: list[dict],
+    *,
+    source: str = "auto",
+) -> dict[str, int]:
+    """以 (product_id, shopify_variant_id) 为唯一键，整体替换该产品的 SKU 配对。
+
+    传入空列表会清掉该产品所有现有 SKU 行；传入 N 行就 upsert 这 N 行，
+    没在新批次里的 variant 一律删除。便于定时任务每次拉到最新 variants
+    后做幂等替换。
+    """
+    pid = int(product_id)
+    cleaned_pairs = [_normalize_sku_pair(item or {}) for item in (pairs or [])]
+    inserted = 0
+    updated = 0
+    deleted = 0
+    conn = get_conn()
+    conn.begin()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, shopify_variant_id FROM media_product_skus "
+                "WHERE product_id=%s",
+                (pid,),
+            )
+            existing_rows = cur.fetchall() or []
+            existing_by_variant: dict[str, int] = {}
+            for row in existing_rows:
+                variant_id = str(row.get("shopify_variant_id") or "").strip()
+                if variant_id:
+                    existing_by_variant[variant_id] = int(row["id"])
+            keep_variant_ids: set[str] = set()
+            for pair in cleaned_pairs:
+                variant_id = str(pair["shopify_variant_id"])
+                keep_variant_ids.add(variant_id)
+                if variant_id in existing_by_variant:
+                    cur.execute(
+                        "UPDATE media_product_skus SET "
+                        "shopify_product_id=%s, shopify_sku=%s, "
+                        "shopify_price=%s, shopify_compare_at_price=%s, "
+                        "shopify_currency=%s, shopify_inventory_quantity=%s, "
+                        "shopify_weight_grams=%s, shopify_variant_title=%s, "
+                        "dianxiaomi_sku=%s, dianxiaomi_sku_code=%s, "
+                        "dianxiaomi_name=%s, source=%s "
+                        "WHERE product_id=%s AND shopify_variant_id=%s",
+                        (
+                            pair.get("shopify_product_id"),
+                            pair.get("shopify_sku"),
+                            pair.get("shopify_price"),
+                            pair.get("shopify_compare_at_price"),
+                            pair.get("shopify_currency"),
+                            pair.get("shopify_inventory_quantity"),
+                            pair.get("shopify_weight_grams"),
+                            pair.get("shopify_variant_title"),
+                            pair.get("dianxiaomi_sku"),
+                            pair.get("dianxiaomi_sku_code"),
+                            pair.get("dianxiaomi_name"),
+                            source,
+                            pid,
+                            variant_id,
+                        ),
+                    )
+                    updated += 1
+                else:
+                    cur.execute(
+                        "INSERT INTO media_product_skus "
+                        "(product_id, shopify_product_id, shopify_variant_id, "
+                        " shopify_sku, shopify_price, shopify_compare_at_price, "
+                        " shopify_currency, shopify_inventory_quantity, "
+                        " shopify_weight_grams, shopify_variant_title, "
+                        " dianxiaomi_sku, dianxiaomi_sku_code, dianxiaomi_name, source) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (
+                            pid,
+                            pair.get("shopify_product_id"),
+                            variant_id,
+                            pair.get("shopify_sku"),
+                            pair.get("shopify_price"),
+                            pair.get("shopify_compare_at_price"),
+                            pair.get("shopify_currency"),
+                            pair.get("shopify_inventory_quantity"),
+                            pair.get("shopify_weight_grams"),
+                            pair.get("shopify_variant_title"),
+                            pair.get("dianxiaomi_sku"),
+                            pair.get("dianxiaomi_sku_code"),
+                            pair.get("dianxiaomi_name"),
+                            source,
+                        ),
+                    )
+                    inserted += 1
+            stale_ids = [
+                rid for variant_id, rid in existing_by_variant.items()
+                if variant_id not in keep_variant_ids
+            ]
+            if stale_ids:
+                placeholders = ",".join(["%s"] * len(stale_ids))
+                cur.execute(
+                    f"DELETE FROM media_product_skus WHERE id IN ({placeholders})",
+                    tuple(stale_ids),
+                )
+                deleted = cur.rowcount or 0
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {"inserted": inserted, "updated": updated, "deleted": deleted}
+
+
+def list_xmyc_unit_prices(skus: list[str]) -> dict[str, dict]:
+    """根据店小秘/平台 SKU 字符串列表，查 xmyc_storage_skus 拿采购价（RMB）。
+
+    返回 {sku: {unit_price, goods_name, stock_available, sku_code, match_type}}。
+    没命中的 SKU 不在结果里。
+
+    xmyc 是小秘云仓数据源（每天 12:33 systemd 同步），unit_price 是 RMB 单价。
+    """
+    cleaned = sorted({str(value).strip() for value in (skus or []) if str(value).strip()})
+    if not cleaned:
+        return {}
+    placeholders = ",".join(["%s"] * len(cleaned))
+    rows = query(
+        "SELECT sku, sku_code, goods_name, unit_price, stock_available, "
+        "match_type, product_id "
+        f"FROM xmyc_storage_skus WHERE sku IN ({placeholders})",
+        tuple(cleaned),
+    )
+    out: dict[str, dict] = {}
+    for row in rows or []:
+        sku = str(row.get("sku") or "").strip()
+        if not sku:
+            continue
+        out[sku] = {
+            "sku": sku,
+            "sku_code": row.get("sku_code") or "",
+            "goods_name": row.get("goods_name") or "",
+            "unit_price": row.get("unit_price"),
+            "stock_available": row.get("stock_available"),
+            "match_type": row.get("match_type") or "",
+            "product_id": row.get("product_id"),
+        }
+    return out
+
+
+def find_product_ids_by_shopifyid(shopify_product_ids: list[str]) -> dict[str, int]:
+    """根据 shopifyid 找回对应的 media_products.id 映射，便于回填 SKU 配对。"""
+    cleaned = sorted({str(value).strip() for value in (shopify_product_ids or []) if str(value).strip()})
+    if not cleaned:
+        return {}
+    placeholders = ",".join(["%s"] * len(cleaned))
+    rows = query(
+        f"SELECT id, shopifyid FROM media_products "
+        f"WHERE deleted_at IS NULL AND shopifyid IN ({placeholders})",
+        tuple(cleaned),
+    )
+    return {str(r["shopifyid"]): int(r["id"]) for r in rows or [] if r.get("shopifyid")}

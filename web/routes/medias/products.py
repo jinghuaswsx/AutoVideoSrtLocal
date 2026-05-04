@@ -7,7 +7,12 @@ from flask_login import current_user, login_required
 
 from appcore import medias, product_roas, pushes
 from . import bp
-from ._serializers import _int_or_none, _serialize_item, _serialize_product
+from ._serializers import (
+    _int_or_none,
+    _serialize_item,
+    _serialize_product,
+    _serialize_product_skus,
+)
 
 
 _ROAS_PRODUCT_FIELDS = (
@@ -163,6 +168,14 @@ def api_list_products():
     filenames = medias.list_item_filenames_by_product(pids, limit_per=5)
     coverage = medias.lang_coverage_by_product(pids)
     covers_map = medias.get_product_covers_batch(pids)
+    skus_map = medias.list_product_skus_batch(pids)
+    all_dxm_skus = sorted({
+        (s.get("dianxiaomi_sku") or "").strip()
+        for sku_rows in skus_map.values()
+        for s in sku_rows
+        if (s.get("dianxiaomi_sku") or "").strip()
+    })
+    xmyc_index = medias.list_xmyc_unit_prices(all_dxm_skus)
     roas_rmb_per_usd = product_roas.get_configured_rmb_per_usd()
     data = [
         _serialize_product(
@@ -172,6 +185,8 @@ def api_list_products():
             covers=covers_map.get(r["id"], {}),
             raw_sources_count=raw_counts.get(r["id"], 0),
             roas_rmb_per_usd=roas_rmb_per_usd,
+            skus=skus_map.get(r["id"], []),
+            xmyc_index=xmyc_index,
         )
         for r in rows
     ]
@@ -221,12 +236,18 @@ def api_get_product(pid: int):
             for row in medias.list_raw_sources(pid)
             if row.get("id") is not None
         }
+    skus = medias.list_product_skus(pid)
+    xmyc_index = medias.list_xmyc_unit_prices(
+        [s.get("dianxiaomi_sku") or "" for s in skus]
+    )
     return jsonify({
         "product": _serialize_product(
             p,
             None,
             covers=covers,
             roas_rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
+            skus=skus,
+            xmyc_index=xmyc_index,
         ),
         "covers": covers,
         "copywritings": medias.list_copywritings(pid),
@@ -366,3 +387,75 @@ def api_delete_product(pid: int):
         abort(404)
     medias.soft_delete_product(pid)
     return jsonify({"ok": True})
+
+
+@bp.route("/api/products/<int:pid>/refresh-shopify-sku", methods=["POST"])
+@login_required
+def api_refresh_product_shopify_sku(pid: int):
+    """单产品手动同步：连接常驻 CDP 浏览器，从店小秘拉一次全量数据，
+    回填该产品的 shopify_title 和 media_product_skus 配对行。
+
+    需要服务器上 9222 端口的常驻 chrome 已经登录店小秘（与
+    tools/shopifyid_dianxiaomi_sync.py 共用）。
+    """
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    shopify_id = (p.get("shopifyid") or "").strip()
+    if not shopify_id:
+        return jsonify({
+            "error": "missing_shopifyid",
+            "message": "该产品尚未关联 Shopify ID，无法刷新 SKU/英文名",
+        }), 400
+
+    from tools import dianxiaomi_sku_sync as sync_mod
+
+    try:
+        shopify_products, dxm_index = sync_mod.fetch_shopify_and_dxm_via_cdp()
+    except Exception as exc:
+        return jsonify({
+            "error": "fetch_failed",
+            "message": f"店小秘数据拉取失败：{exc}",
+        }), 502
+
+    pair_index = sync_mod.build_pair_rows(shopify_products, dxm_index)
+    title_map = {
+        (item.get("shopify_product_id") or ""): (item.get("shopify_title") or "")
+        for item in shopify_products
+    }
+    pairs = pair_index.get(shopify_id)
+    if pairs is None:
+        return jsonify({
+            "error": "shopify_product_not_found",
+            "message": f"店小秘 Shopify 商品库未找到 shopifyid={shopify_id}",
+        }), 404
+
+    new_title = (title_map.get(shopify_id) or "").strip() or None
+    medias.update_product(pid, shopify_title=new_title)
+    medias.replace_product_skus(pid, pairs, source="manual")
+
+    fresh_skus = medias.list_product_skus(pid)
+    xmyc_index = medias.list_xmyc_unit_prices(
+        [s.get("dianxiaomi_sku") or "" for s in fresh_skus]
+    )
+    cost_inputs = {
+        "purchase_price": p.get("purchase_price"),
+        "packet_cost_estimated": p.get("packet_cost_estimated"),
+        "packet_cost_actual": p.get("packet_cost_actual"),
+        "standalone_shipping_fee": p.get("standalone_shipping_fee"),
+    }
+    return jsonify({
+        "ok": True,
+        "shopify_title": new_title or "",
+        "skus": _serialize_product_skus(
+            fresh_skus,
+            cost_inputs=cost_inputs,
+            rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
+            xmyc_index=xmyc_index,
+        ),
+        "summary": {
+            "variant_pairs": len(pairs),
+            "pairs_with_dxm": sum(1 for r in pairs if r.get("dianxiaomi_sku_code")),
+        },
+    })

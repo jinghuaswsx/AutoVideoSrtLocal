@@ -27,6 +27,21 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },
+    "dianxiaomi_sku": {
+        "code": "dianxiaomi_sku",
+        "name": "店小秘 SKU 配对同步",
+        "description": (
+            "每天从店小秘 Shopify 在线商品库与 ERP 商品管理库抓取 variants 与 SKU，"
+            "按 shopifyid 回填 media_products.shopify_title 和 media_product_skus 配对表。"
+        ),
+        "schedule": "每天 12:21（与 shopifyid 12:11 错峰）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-dianxiaomi-sku-sync.timer",
+        "runner": "tools/dianxiaomi_sku_sync.py",
+        "deployment": "线上待部署",
+        "log_table": "scheduled_task_runs",
+    },
     "shopifyid_windows_daily": {
         "code": "shopifyid_windows_daily",
         "name": "Shopify ID 获取（Windows 本机）",

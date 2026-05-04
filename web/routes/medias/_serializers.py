@@ -23,13 +23,83 @@ def _int_or_none(value):
         return None
 
 
+def _serialize_product_skus(
+    rows: list[dict] | None,
+    *,
+    cost_inputs: dict | None = None,
+    rmb_per_usd=None,
+    xmyc_index: dict[str, dict] | None = None,
+) -> list[dict]:
+    """xmyc_index 是 sku → {unit_price, goods_name, stock_available, ...} 字典。
+    若给了 xmyc_index，每行的 dianxiaomi_sku 会去查一次 xmyc 采购价（RMB），
+    并优先用 variant 级 unit_price 替换 product 级 purchase_price 算保本 ROAS。"""
+    out: list[dict] = []
+    for row in rows or []:
+        dxm_sku = (row.get("dianxiaomi_sku") or "").strip()
+        xmyc_info = (xmyc_index or {}).get(dxm_sku) if dxm_sku else None
+        xmyc_unit_price = (xmyc_info or {}).get("unit_price")
+
+        item = {
+            "id": row.get("id"),
+            "shopify_product_id": row.get("shopify_product_id") or "",
+            "shopify_variant_id": row.get("shopify_variant_id") or "",
+            "shopify_sku": row.get("shopify_sku") or "",
+            "shopify_price": _json_number_or_none(row.get("shopify_price")),
+            "shopify_compare_at_price": _json_number_or_none(row.get("shopify_compare_at_price")),
+            "shopify_currency": row.get("shopify_currency") or "",
+            "shopify_inventory_quantity": row.get("shopify_inventory_quantity"),
+            "shopify_weight_grams": _json_number_or_none(row.get("shopify_weight_grams")),
+            "shopify_variant_title": row.get("shopify_variant_title") or "",
+            "dianxiaomi_sku": row.get("dianxiaomi_sku") or "",
+            "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code") or "",
+            "dianxiaomi_name": row.get("dianxiaomi_name") or "",
+            "source": row.get("source") or "",
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "xmyc_unit_price_rmb": _json_number_or_none(xmyc_unit_price),
+            "xmyc_goods_name": (xmyc_info or {}).get("goods_name") or "",
+            "xmyc_stock_available": (xmyc_info or {}).get("stock_available"),
+            "xmyc_match_type": (xmyc_info or {}).get("match_type") or "",
+            "xmyc_sku_code": (xmyc_info or {}).get("sku_code") or "",
+        }
+
+        if cost_inputs is not None and row.get("shopify_price") is not None:
+            try:
+                rate = product_roas.normalize_rmb_per_usd(rmb_per_usd) if rmb_per_usd is not None else product_roas.DEFAULT_RMB_PER_USD
+                # variant 级采购价：优先 xmyc.unit_price，否则用产品级
+                effective_purchase = (
+                    xmyc_unit_price
+                    if xmyc_unit_price is not None
+                    else cost_inputs.get("purchase_price")
+                )
+                calc = product_roas.calculate_break_even_roas(
+                    purchase_price=effective_purchase,
+                    estimated_packet_cost=cost_inputs.get("packet_cost_estimated"),
+                    actual_packet_cost=cost_inputs.get("packet_cost_actual"),
+                    standalone_price=row.get("shopify_price"),
+                    standalone_shipping_fee=cost_inputs.get("standalone_shipping_fee"),
+                    rmb_per_usd=rate,
+                )
+                calc["purchase_basis"] = (
+                    "xmyc_variant" if xmyc_unit_price is not None else "product_level"
+                )
+                item["roas_calculation"] = calc
+            except Exception:
+                item["roas_calculation"] = None
+        else:
+            item["roas_calculation"] = None
+        out.append(item)
+    return out
+
+
 def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None,
                        items_filenames: list[str] | None = None,
                        lang_coverage: dict | None = None,
                        covers: dict[str, str] | None = None,
                        raw_sources_count: int | None = None,
-                       roas_rmb_per_usd=None) -> dict:
+                       roas_rmb_per_usd=None,
+                       skus: list[dict] | None = None,
+                       xmyc_index: dict[str, dict] | None = None) -> dict:
     if covers is None:
         covers = medias.get_product_covers(p["id"])
     if roas_rmb_per_usd is None:
@@ -58,6 +128,18 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "product_code": p.get("product_code"),
         "mk_id": p.get("mk_id"),
         "shopifyid": p.get("shopifyid"),
+        "shopify_title": p.get("shopify_title") or "",
+        "skus": _serialize_product_skus(
+            skus,
+            cost_inputs={
+                "purchase_price": p.get("purchase_price"),
+                "packet_cost_estimated": p.get("packet_cost_estimated"),
+                "packet_cost_actual": p.get("packet_cost_actual"),
+                "standalone_shipping_fee": p.get("standalone_shipping_fee"),
+            },
+            rmb_per_usd=roas_rmb_per_usd,
+            xmyc_index=xmyc_index,
+        ),
         "user_id": int(p["user_id"]) if p.get("user_id") is not None else None,
         "owner_name": (p.get("owner_name") or "").strip(),
         "has_en_cover": has_en_cover,

@@ -1632,6 +1632,28 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-roas-meta dt { font-size:12px; color:var(--oc-fg-subtle); margin:0; }
 .oc-roas-meta dd { font-size:13px; color:var(--oc-fg); margin:2px 0 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.oc-sku-detail-modal .oc-modal-body { padding:var(--oc-sp-5); display:flex; flex-direction:column; gap:var(--oc-sp-4); min-height:0; }
+.oc-sku-detail-meta { display:flex; flex-direction:column; gap:var(--oc-sp-3); }
+.oc-sku-meta-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:var(--oc-sp-2) var(--oc-sp-4); margin:0; }
+.oc-sku-meta-grid div { min-width:0; }
+.oc-sku-meta-grid dt { font-size:12px; color:var(--oc-fg-subtle); margin:0; }
+.oc-sku-meta-grid dd { font-size:13px; color:var(--oc-fg); margin:2px 0 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.oc-sku-detail-cost-note { font-size:12px; color:var(--oc-fg-muted); padding:var(--oc-sp-2) var(--oc-sp-3); background:var(--oc-bg-subtle); border-radius:var(--oc-radius); border-left:3px solid var(--oc-info); }
+.oc-sku-detail-table-wrap { overflow:auto; max-height:60vh; border:1px solid var(--oc-border); border-radius:var(--oc-radius); }
+.oc-sku-detail-table { width:100%; min-width:1200px; }
+.oc-sku-detail-table th { background:var(--oc-bg-subtle); position:sticky; top:0; z-index:1; }
+.oc-sku-detail-table td { font-size:13px; }
+.oc-sku-detail-table .mono { font-family:var(--oc-font-mono, ui-monospace, monospace); }
+.oc-sku-detail-table .roas-good { color:var(--oc-success); font-weight:600; }
+.oc-sku-detail-table .roas-bad { color:var(--oc-danger); }
+.oc-sku-detail-empty { padding:var(--oc-sp-5); text-align:center; color:var(--oc-fg-subtle); }
+.oc-sku-detail-empty .title { font-size:14px; color:var(--oc-fg); margin:0 0 var(--oc-sp-1); }
+.oc-sku-detail-empty .desc { font-size:13px; margin:0; }
+td.sku-summary-cell { cursor:pointer; }
+td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
+.sku-summary-head { font-size:12px; color:var(--oc-fg); }
+.sku-summary-codes { font-size:11px; color:var(--oc-fg-muted); margin-top:2px; }
+.sku-summary-codes.muted { color:var(--oc-fg-subtle); }
 #roasForm {
   display:flex;
   flex:1 1 auto;
@@ -2214,6 +2236,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
       <symbol id="ic-alert"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
       <symbol id="ic-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
       <symbol id="ic-users"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+      <symbol id="ic-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-15.5-6.4L3 8"/><path d="M3 4v4h4"/><path d="M3 12a9 9 0 0 0 15.5 6.4L21 16"/><path d="M21 20v-4h-4"/></symbol>
     </defs>
   </svg>
 
@@ -2532,6 +2555,54 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     </div>
     <div class="oc-rs-modal-body">
       <div id="rsList" class="oc-rs-list"></div>
+    </div>
+  </div>
+</div>
+<div id="skuDetailMask" class="oc-modal-mask oc" hidden>
+  <div class="oc-modal oc-sku-detail-modal" role="dialog" aria-modal="true" aria-labelledby="skuDetailTitle" style="max-width:1280px; width:96vw;">
+    <div class="oc-modal-head">
+      <h3 id="skuDetailTitle">SKU 配对详情</h3>
+      <button type="button" id="skuDetailClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body">
+      <div class="oc-sku-detail-meta">
+        <dl class="oc-sku-meta-grid">
+          <div><dt>产品 ID</dt><dd id="skuDetailProductCode">—</dd></div>
+          <div><dt>产品中文名</dt><dd id="skuDetailProductName">—</dd></div>
+          <div><dt>Shopify 英文名</dt><dd id="skuDetailShopifyTitle">—</dd></div>
+          <div><dt>Shopify ID</dt><dd id="skuDetailShopifyId" class="mono">—</dd></div>
+        </dl>
+        <div id="skuDetailCostNote" class="oc-sku-detail-cost-note"></div>
+      </div>
+      <div class="oc-sku-detail-table-wrap">
+        <table class="oc-table oc-sku-detail-table">
+          <thead>
+            <tr>
+              <th style="width:180px;">变体</th>
+              <th style="width:130px;">Shopify SKU</th>
+              <th style="width:84px;">售价 (USD)</th>
+              <th style="width:74px;">库存</th>
+              <th style="width:130px;">店小秘 SKU</th>
+              <th style="width:96px;">ERP 编码</th>
+              <th style="width:96px;">采购价 (RMB)</th>
+              <th>ERP / xmyc 商品名</th>
+              <th style="width:104px;">保本 ROAS</th>
+            </tr>
+          </thead>
+          <tbody id="skuDetailRows"></tbody>
+        </table>
+      </div>
+      <div id="skuDetailEmpty" class="oc-state oc-sku-detail-empty" hidden>
+        <p class="title">该产品尚未同步 SKU 配对</p>
+        <p class="desc">请先点击行内"刷 SKU"按钮，从店小秘拉取 variant 与 ERP 配对。</p>
+      </div>
+    </div>
+    <div class="oc-modal-foot">
+      <span id="skuDetailSummary" class="muted"></span>
+      <button type="button" id="skuDetailCancel" class="oc-btn ghost">关闭</button>
+      <button type="button" id="skuDetailRefresh" class="oc-btn primary">从店小秘刷新</button>
     </div>
   </div>
 </div>

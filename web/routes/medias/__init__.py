@@ -328,6 +328,7 @@ api_get_product = _products.api_get_product
 api_update_product = _products.api_update_product
 api_update_product_owner = _products.api_update_product_owner
 api_delete_product = _products.api_delete_product
+api_refresh_product_shopify_sku = _products.api_refresh_product_shopify_sku
 
 _product_links_push_error_response = _push_routes._product_links_push_error_response
 _product_localized_texts_push_error_response = _push_routes._product_localized_texts_push_error_response

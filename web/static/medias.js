@@ -1353,6 +1353,7 @@
       await ensureLanguages();
       const data = await fetchJSON('/medias/api/products?' + params);
       if (requestSeq !== state.listRequestSeq) return;
+      window.__lastListItems = data.items || [];
       renderGrid(data.items);
       renderPager(data.total, data.page, data.page_size);
       const pill = $('totalPill');
@@ -1430,6 +1431,8 @@
         <col style="width:88px">
         <col style="width:130px">
         <col style="width:120px">
+        <col style="width:160px">
+        <col style="width:140px">
         <col style="width:80px">
         <col style="width:68px">
         <col style="width:120px">
@@ -1440,7 +1443,7 @@
         <col style="width:92px">
         <col style="width:150px">
         <col style="width:104px">
-        <col style="width:200px">
+        <col style="width:240px">
       </colgroup>
       <thead>
         <tr>
@@ -1448,6 +1451,8 @@
           <th>主图</th>
           <th>产品名称</th>
           <th>产品 ID</th>
+          <th>英文名</th>
+          <th>ERP SKU</th>
           <th>明空 ID</th>
           <th>AI评分</th>
           <th>AI评估结果</th>
@@ -1517,6 +1522,205 @@
       td.addEventListener('click', (e) => { e.stopPropagation(); startListingStatusInlineEdit(td); }));
     grid.querySelectorAll('td.owner-cell').forEach(td =>
       td.addEventListener('click', (e) => { e.stopPropagation(); startOwnerInlineEdit(td); }));
+    grid.querySelectorAll('[data-refresh-sku]').forEach(b =>
+      b.addEventListener('click', (e) => { e.stopPropagation(); refreshProductSkus(+b.dataset.refreshSku, b); }));
+    grid.querySelectorAll('td.sku-summary-cell').forEach(td =>
+      td.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tr = td.closest('tr');
+        const pid = tr ? Number(tr.dataset.pid) : null;
+        const product = pid ? items.find(it => Number(it.id) === pid) : null;
+        if (product) openSkuDetail(product);
+      }));
+  }
+
+  let _skuDetailProductId = null;
+
+  function fmtUsd(value) {
+    if (value === null || value === undefined || value === '') return '<span class="muted">—</span>';
+    const num = Number(value);
+    return isFinite(num) ? `$${num.toFixed(2)}` : '<span class="muted">—</span>';
+  }
+  function fmtNum(value, digits = 1) {
+    if (value === null || value === undefined || value === '') return '<span class="muted">—</span>';
+    const num = Number(value);
+    return isFinite(num) ? num.toFixed(digits) : '<span class="muted">—</span>';
+  }
+  function fmtInt(value) {
+    if (value === null || value === undefined || value === '') return '<span class="muted">—</span>';
+    return String(value);
+  }
+  function fmtRoas(calc) {
+    if (!calc || calc.effective_roas === null || calc.effective_roas === undefined) return '<span class="muted">—</span>';
+    const num = Number(calc.effective_roas);
+    if (!isFinite(num)) return '<span class="muted">—</span>';
+    const cls = num <= 1.5 ? 'roas-good' : (num <= 3 ? '' : 'roas-bad');
+    const basisLabel = calc.effective_basis === 'actual' ? '实际' : '预估';
+    return `<span class="${cls}">${num.toFixed(2)}<span class="muted" style="font-size:11px;"> ${basisLabel}</span></span>`;
+  }
+
+  function openSkuDetail(product) {
+    if (!product) return;
+    _skuDetailProductId = Number(product.id);
+    const mask = document.getElementById('skuDetailMask');
+    if (!mask) return;
+    document.getElementById('skuDetailTitle').textContent = `SKU 配对详情 · ${product.name || ''}`;
+    document.getElementById('skuDetailProductCode').textContent = product.product_code || '—';
+    document.getElementById('skuDetailProductName').textContent = product.name || '—';
+    document.getElementById('skuDetailShopifyTitle').textContent = product.shopify_title || '—';
+    document.getElementById('skuDetailShopifyId').textContent = product.shopifyid || '—';
+    const note = document.getElementById('skuDetailCostNote');
+    note.textContent = '保本 ROAS 算法：variant 级 Shopify 售价 + variant 级 xmyc 采购价（如有）/ 否则产品级采购价 + 产品级小包成本 + 用户支付运费。基线显示为「实际」=actual 小包成本到位；「预估」=只有 estimated。';
+
+    const skus = Array.isArray(product.skus) ? product.skus : [];
+    const tbody = document.getElementById('skuDetailRows');
+    const empty = document.getElementById('skuDetailEmpty');
+    const summary = document.getElementById('skuDetailSummary');
+    if (!skus.length) {
+      tbody.innerHTML = '';
+      empty.hidden = false;
+      summary.textContent = '';
+    } else {
+      empty.hidden = true;
+      const matched = skus.filter(s => (s.dianxiaomi_sku_code || '').trim()).length;
+      const xmycHits = skus.filter(s => s.xmyc_unit_price_rmb !== null && s.xmyc_unit_price_rmb !== undefined).length;
+      summary.textContent = `共 ${skus.length} 个 variant；店小秘 ERP 配对 ${matched}，xmyc 采购价 ${xmycHits}`;
+      tbody.innerHTML = skus.map(s => {
+        const variantTitle = s.shopify_variant_title || '—';
+        const sku = s.shopify_sku || '—';
+        const dxmSku = s.dianxiaomi_sku || '—';
+        const skuCode = s.dianxiaomi_sku_code || '';
+        const skuCodeCell = skuCode
+          ? escapeHtml(skuCode)
+          : '<span class="muted">未匹配</span>';
+        const xmycName = (s.xmyc_goods_name || '').trim();
+        const dxmName = (s.dianxiaomi_name || '').trim();
+        const goodsName = xmycName || dxmName;
+        const goodsNameCell = goodsName
+          ? escapeHtml(goodsName)
+          : '<span class="muted">—</span>';
+        const purchaseCell = (s.xmyc_unit_price_rmb !== null && s.xmyc_unit_price_rmb !== undefined)
+          ? `<span class="mono">¥${Number(s.xmyc_unit_price_rmb).toFixed(2)}</span>`
+          : '<span class="muted">—</span>';
+        return `<tr>
+          <td title="${escapeHtml(variantTitle)}">${escapeHtml(variantTitle)}</td>
+          <td class="mono" title="${escapeHtml(sku)}">${escapeHtml(sku)}</td>
+          <td class="mono">${fmtUsd(s.shopify_price)}</td>
+          <td class="mono">${fmtInt(s.shopify_inventory_quantity)}</td>
+          <td class="mono" title="${escapeHtml(dxmSku)}">${escapeHtml(dxmSku)}</td>
+          <td class="mono">${skuCodeCell}</td>
+          <td>${purchaseCell}</td>
+          <td title="${escapeHtml(goodsName)}">${goodsNameCell}</td>
+          <td class="mono">${fmtRoas(s.roas_calculation)}</td>
+        </tr>`;
+      }).join('');
+    }
+    mask.hidden = false;
+  }
+
+  function closeSkuDetail() {
+    const mask = document.getElementById('skuDetailMask');
+    if (mask) mask.hidden = true;
+    _skuDetailProductId = null;
+  }
+
+  // Bind once on module load (the modal lives in the static template, not
+  // in the dynamically-rendered rowHTML).
+  document.addEventListener('DOMContentLoaded', () => {
+    const close = document.getElementById('skuDetailClose');
+    const cancel = document.getElementById('skuDetailCancel');
+    const refresh = document.getElementById('skuDetailRefresh');
+    const mask = document.getElementById('skuDetailMask');
+    if (close) close.addEventListener('click', closeSkuDetail);
+    if (cancel) cancel.addEventListener('click', closeSkuDetail);
+    if (mask) mask.addEventListener('click', (e) => { if (e.target === mask) closeSkuDetail(); });
+    if (refresh) refresh.addEventListener('click', async () => {
+      if (!_skuDetailProductId) return;
+      refresh.disabled = true;
+      const orig = refresh.textContent;
+      refresh.textContent = '同步中…';
+      try {
+        await fetchJSON(`/medias/api/products/${_skuDetailProductId}/refresh-shopify-sku`, { method: 'POST' });
+        if (typeof loadList === 'function') await loadList();
+        // Reopen with updated data
+        const updated = (window.__lastListItems || []).find(p => Number(p.id) === _skuDetailProductId);
+        if (updated) openSkuDetail(updated);
+      } catch (err) {
+        window.alert(`刷新失败：${(err && err.message) || err}`);
+      } finally {
+        refresh.disabled = false;
+        refresh.textContent = orig;
+      }
+    });
+  });
+
+  async function refreshProductSkus(productId, btn) {
+    if (!productId) return;
+    const original = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `${icon('refresh', 12)}<span>同步中…</span>`;
+    }
+    try {
+      const data = await fetchJSON(`/medias/api/products/${productId}/refresh-shopify-sku`, {
+        method: 'POST',
+      });
+      const summary = (data && data.summary) || {};
+      const variantCount = summary.variant_pairs || 0;
+      const matched = summary.pairs_with_dxm || 0;
+      const titleText = (data && data.shopify_title || '').trim();
+      let msg = `已同步 ${variantCount} 个 variant`;
+      if (matched) msg += `，其中 ${matched} 个匹配到 ERP 编码`;
+      if (titleText) msg += `；英文名：${titleText}`;
+      window.alert(msg);
+      // 重新拉列表刷新当前行
+      if (typeof loadList === 'function') {
+        try { await loadList(); } catch (_) { /* ignore */ }
+      }
+    } catch (err) {
+      const msg = (err && err.message) || String(err);
+      window.alert(`刷新失败：${msg}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original;
+      }
+    }
+  }
+
+  function renderSkuSummary(p) {
+    const skus = Array.isArray(p && p.skus) ? p.skus : [];
+    if (!skus.length) {
+      return '<span class="muted">—</span>';
+    }
+    const matched = skus.filter(s => (s.dianxiaomi_sku_code || '').trim()).length;
+    const codeBits = skus
+      .map(s => (s.dianxiaomi_sku_code || '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const codePreview = codeBits.length
+      ? codeBits.join('，') + (skus.length > codeBits.length ? '…' : '')
+      : '';
+    const head = `<div class="sku-summary-head">${skus.length} 变体（已配 ${matched}）</div>`;
+    const body = codePreview
+      ? `<div class="sku-summary-codes mono">${escapeHtml(codePreview)}</div>`
+      : '<div class="sku-summary-codes muted">未匹配 ERP 编码</div>';
+    return head + body;
+  }
+
+  function skuCellTooltip(p) {
+    const skus = Array.isArray(p && p.skus) ? p.skus : [];
+    if (!skus.length) return '尚未同步 SKU 配对';
+    return skus.map(s => {
+      const variant = (s.shopify_variant_title || '').trim()
+        || (s.shopify_variant_id || '').trim()
+        || '(unknown variant)';
+      const code = (s.dianxiaomi_sku_code || '').trim() || '-';
+      const dxmName = (s.dianxiaomi_name || '').trim();
+      return dxmName
+        ? `${variant} → ${code} ${dxmName}`
+        : `${variant} → ${code}`;
+    }).join('\n');
   }
 
   function rowHTML(p) {
@@ -1548,12 +1752,19 @@
       ? `<div class="oc-product-id-main"><a href="https://newjoyloo.com/products/${encodeURIComponent(productCode)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a></div>`
         + `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID">${icon('copy', 12)}<span>复制</span></button>`
       : '<span class="muted">—</span>';
+    const shopifyTitle = (p.shopify_title || '').trim();
+    const shopifyTitleCell = shopifyTitle
+      ? `<span title="${escapeHtml(shopifyTitle)}">${escapeHtml(shopifyTitle)}</span>`
+      : '<span class="muted">—</span>';
+    const skuCell = renderSkuSummary(p);
     return `
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${coverCell}</div></td>
         <td class="name wrap">${nameCell}</td>
         <td class="mono wrap oc-product-id-cell" title="${escapeHtml(productCode)}">${productCodeCell}</td>
+        <td class="wrap shopify-title-cell">${shopifyTitleCell}</td>
+        <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
         <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">
@@ -1586,6 +1797,7 @@
             <button class="bt-row-btn js-translate" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="${escapeHtml(listingTitle)}" ${listed ? '' : 'disabled aria-disabled="true"'}>🌐 翻译</button>
             <button class="oc-btn sm ghost" data-ai-evaluate="${p.id}" title="手动触发 AI 评估">${icon('zap', 12)}<span>${aiEvalBtnLabel(p)}</span></button>
             <button class="oc-btn sm ghost" data-roas="${p.id}"><span>ROAS</span></button>
+            <button class="oc-btn sm ghost" data-refresh-sku="${p.id}" title="从店小秘拉取最新英文名和 SKU 配对">${icon('refresh', 12)}<span>刷 SKU</span></button>
           </div>
         </td>
       </tr>`;
