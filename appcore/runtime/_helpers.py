@@ -525,3 +525,61 @@ def _trim_tts_metadata_to_segments(
         "sentences": new_sentences,
     }
     return new_tts_script, new_localized_translation
+
+
+# ===== TTS 并发进度回调 helper =====
+#
+# 5 个 TTS 调用方（多语言视频翻译 / 全能翻译 / 视频翻译音画同步 / 日语 / 文案配音）
+# 都把 generate_full_audio(on_progress=make_tts_progress_emitter(...)) 接在一起，
+# 共享同一份"排队中 / 进度 / 完成"中文文案，前端跨模块体验一致。
+
+from typing import Callable as _Callable
+
+_progress_log = logging.getLogger(__name__)
+
+
+def make_tts_progress_emitter(
+    runner,
+    task_id: str,
+    *,
+    lang_label: str,
+    round_label: str = "",
+    extra_state_update: _Callable[[dict], None] | None = None,
+) -> _Callable[[dict], None]:
+    """生成 generate_full_audio(on_progress=...) 用的标准回调，把 snapshot
+    转成统一中文 substep 文案推到前端。
+
+    Args:
+        runner: 任何提供 ``_emit_substep_msg(task_id, step, msg)`` 的 runtime 实例。
+        task_id: 任务 ID，用于 substep 路由。
+        lang_label: 语言显示名（例如 "西班牙语"），拼进文案前缀。
+        round_label: 可选轮次标签（例如 "第 2 轮"），拼进文案前缀。
+        extra_state_update: 可选回调，每次 emit 时同步给一份 snapshot
+            （用于 ``_pipeline_runner`` 同步更新 ``round_record["audio_segments_done"]``）。
+            抛出的异常会被吞掉，不影响主流程。
+    """
+    def _emit(snapshot: dict) -> None:
+        active = snapshot.get("active", 0)
+        done = snapshot.get("done", 0)
+        total = snapshot.get("total", 0)
+        queued = snapshot.get("queued", 0)
+
+        prefix = f"正在生成{lang_label}配音" if lang_label else "正在生成配音"
+        if round_label:
+            prefix = f"{prefix} · {round_label}"
+
+        if active == 0 and done == 0 and total > 0:
+            msg = f"{prefix} · 排队中等待 ElevenLabs 并发槽位（{queued} 段待派发）"
+        else:
+            msg = f"{prefix} · {done}/{total}（活跃 {active} 路）"
+
+        runner._emit_substep_msg(task_id, "tts", msg)
+        if extra_state_update is not None:
+            try:
+                extra_state_update(snapshot)
+            except Exception:
+                _progress_log.exception(
+                    "extra_state_update raised in tts progress emitter; ignoring"
+                )
+
+    return _emit
