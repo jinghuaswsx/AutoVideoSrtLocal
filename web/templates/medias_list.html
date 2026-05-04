@@ -1746,6 +1746,44 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-roas-result.active { background:var(--oc-accent-subtle); border-color:var(--oc-accent); }
 .oc-roas-result.active .value { color:var(--oc-accent); }
 .oc-roas-note { margin-top:var(--oc-sp-3); font-size:12px; line-height:1.55; color:var(--oc-fg-muted); }
+.oc-roas-parcel-suggest { margin-top:var(--oc-sp-3); }
+.oc-roas-suggest-btn {
+  background:var(--oc-bg-subtle);
+  color:var(--oc-fg);
+  border:1px solid var(--oc-border-strong);
+  border-radius:var(--oc-radius);
+  padding:6px 14px;
+  font-size:13px;
+  cursor:pointer;
+  transition:background var(--oc-duration-fast) var(--oc-ease);
+}
+.oc-roas-suggest-btn:hover:not(:disabled) { background:var(--oc-bg-muted); }
+.oc-roas-suggest-btn:disabled { opacity:0.55; cursor:wait; }
+.oc-roas-suggest-result {
+  margin-top:var(--oc-sp-3);
+  padding:12px 14px;
+  background:var(--oc-accent-subtle);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-radius-md);
+  font-size:13px;
+  line-height:1.55;
+  color:var(--oc-fg);
+}
+.oc-roas-suggest-result.is-error { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
+.oc-roas-suggest-result.is-loading { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); }
+.oc-roas-suggest-result .stat { font-weight:600; }
+.oc-roas-suggest-actions { margin-top:8px; display:flex; gap:8px; }
+.oc-roas-suggest-adopt {
+  background:var(--oc-accent);
+  color:var(--oc-accent-fg);
+  border:none;
+  border-radius:var(--oc-radius);
+  padding:6px 14px;
+  font-size:13px;
+  cursor:pointer;
+}
+.oc-roas-suggest-adopt:hover { background:var(--oc-accent-hover); }
+.oc-roas-suggest-adopt:disabled { opacity:0.6; cursor:default; }
 .oc-roas-avg-head {
   display:flex;
   align-items:flex-start;
@@ -2465,6 +2503,10 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
                 <div class="oc-roas-field"><label for="roasHeight">高 (cm)</label><input id="roasHeight" data-roas-field="package_height_cm" type="number" min="0" step="0.01"></div>
                 <div class="oc-roas-field"><label for="roasPacketEstimated">预估小包成本 (RMB)</label><input id="roasPacketEstimated" data-roas-field="packet_cost_estimated" type="number" min="0" step="0.01"></div>
                 <div class="oc-roas-field"><label for="roasPacketActual">实际小包成本 (RMB)</label><input id="roasPacketActual" data-roas-field="packet_cost_actual" type="number" min="0" step="0.01"></div>
+              </div>
+              <div class="oc-roas-parcel-suggest">
+                <button type="button" id="roasParcelSuggestBtn" class="oc-roas-suggest-btn">店小秘自动建议小包成本</button>
+                <div id="roasParcelSuggestResult" class="oc-roas-suggest-result" hidden></div>
               </div>
             </section>
             <section class="oc-roas-section">

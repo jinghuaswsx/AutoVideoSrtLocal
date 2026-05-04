@@ -5,7 +5,7 @@ import pymysql.err
 from flask import abort, jsonify, request
 from flask_login import current_user, login_required
 
-from appcore import medias, product_roas, pushes
+from appcore import medias, parcel_cost_suggest, product_roas, pushes
 from . import bp
 from ._serializers import _int_or_none, _serialize_item, _serialize_product
 
@@ -232,6 +232,33 @@ def api_get_product(pid: int):
         "copywritings": medias.list_copywritings(pid),
         "items": [_serialize_item(i, raw_sources_by_id) for i in items],
     })
+
+
+@bp.route("/api/products/<int:pid>/parcel-cost-suggest", methods=["GET"])
+@login_required
+def api_parcel_cost_suggest(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    try:
+        days = int(request.args.get("days") or parcel_cost_suggest.DEFAULT_LOOKBACK_DAYS)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid_days"}), 400
+    days = max(7, min(90, days))
+    try:
+        suggestion = parcel_cost_suggest.suggest_parcel_cost(pid, days=days)
+    except parcel_cost_suggest.ParcelCostSuggestError as exc:
+        msg = str(exc)
+        if msg == "no_orders":
+            return jsonify({
+                "error": "no_orders",
+                "message": "该产品在店小秘还没有订单数据，无法估算实际小包成本",
+            }), 404
+        return jsonify({"error": "dxm_failed", "message": msg}), 502
+    except Exception as exc:  # pragma: no cover - safety net for browser glue
+        return jsonify({"error": "dxm_failed", "message": str(exc)}), 502
+    return jsonify({"ok": True, "suggestion": suggestion})
 
 
 @bp.route("/api/products/<int:pid>", methods=["PUT"])
