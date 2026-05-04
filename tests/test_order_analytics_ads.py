@@ -513,11 +513,10 @@ def test_data_analysis_tabs_and_type_controls_are_capsule_buttons(authed_client_
     assert 'class="oa-tabs oa-tabs-topbar"' in body
     assert 'data-view-mode="month"' in body
     assert 'data-view-mode="week"' in body
-    assert 'data-ad-frequency="weekly"' in body
-    assert 'data-ad-frequency="monthly"' in body
     assert 'class="oad-row-action"' in body
     assert '<select id="viewMode"' not in body
     assert '<select id="adFrequency"' not in body
+    assert 'data-ad-frequency' not in body
 
 
 def test_analytics_range_controls_match_country_dashboard(authed_client_no_db):

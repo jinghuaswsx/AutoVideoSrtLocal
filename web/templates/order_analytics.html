@@ -1895,33 +1895,8 @@
 <div class="oa-panel" id="panelAds">
   <div class="oa-ad-layout">
     <div class="oa-controls">
-      <label>导入类型：</label>
-      <input type="hidden" id="adFrequency" value="weekly">
-      <div class="oa-pill-group" role="group" aria-label="广告报表导入类型">
-        <button type="button" class="oa-pill is-active" data-ad-frequency="weekly" aria-pressed="true">周报</button>
-        <button type="button" class="oa-pill" data-ad-frequency="monthly" aria-pressed="false">月报</button>
-        <button type="button" class="oa-pill" data-ad-frequency="custom" aria-pressed="false">自定义周期</button>
-      </div>
       <button class="btn btn-default btn-sm" onclick="matchAdProducts()">重新匹配产品</button>
     </div>
-
-    <div class="oa-upload-zone" id="adUploadZone">
-      <div class="oa-upload-icon">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-      </div>
-      <div class="oa-upload-text">拖拽或点击上传 Meta 广告报表</div>
-      <div class="oa-upload-hint">支持 CSV / Excel (.xlsx)，按报表开始日期、结束日期和广告系列名称去重更新</div>
-      <input type="file" id="adFileInput" accept=".csv,.xls,.xlsx">
-    </div>
-
-    <div id="adLoadingBox" style="display:none;">
-      <div class="oa-loading">
-        <div class="oa-spinner"></div>
-        <div>正在解析并导入广告数据…</div>
-      </div>
-    </div>
-
-    <div id="adImportResult" style="display:none;"></div>
 
     <div id="adStats" style="display:none;">
       <div class="oa-stats" id="adStatsCards"></div>
@@ -3180,23 +3155,6 @@
 
   // ── 广告分析 ──────────────────────────────────────
   var adsInited = false;
-  var adZone = document.getElementById('adUploadZone');
-  var adInput = document.getElementById('adFileInput');
-  document.querySelectorAll('[data-ad-frequency]').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      setPillGroupValue('[data-ad-frequency]', btn, 'adFrequency', btn.dataset.adFrequency);
-    });
-  });
-
-  adInput.addEventListener('change', function() {
-    if (adInput.files[0]) doAdUpload(adInput.files[0]);
-  });
-  adZone.addEventListener('dragover', function(e) { e.preventDefault(); adZone.classList.add('dragover'); });
-  adZone.addEventListener('dragleave', function() { adZone.classList.remove('dragover'); });
-  adZone.addEventListener('drop', function(e) {
-    e.preventDefault(); e.stopPropagation(); adZone.classList.remove('dragover');
-    if (e.dataTransfer.files[0]) doAdUpload(e.dataTransfer.files[0]);
-  });
 
   function initAds() {
     if (adsInited) return;
@@ -3264,50 +3222,6 @@
   function showAdError(msg) {
     errorBox.textContent = msg;
     errorBox.style.display = 'block';
-    document.getElementById('adLoadingBox').style.display = 'none';
-    adZone.style.display = '';
-  }
-
-  function doAdUpload(file) {
-    debug('上传广告报表: ' + file.name);
-    errorBox.style.display = 'none';
-    document.getElementById('adLoadingBox').style.display = 'block';
-    adZone.style.display = 'none';
-    document.getElementById('adImportResult').style.display = 'none';
-
-    var fd = new FormData();
-    fd.append('file', file);
-    fd.append('frequency', document.getElementById('adFrequency').value || 'custom');
-
-    fetch('/order-analytics/ad-upload', { method: 'POST', body: fd })
-      .then(function(r) {
-        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || ('服务器返回 ' + r.status)); });
-        return r.json();
-      })
-      .then(function(data) {
-        document.getElementById('adLoadingBox').style.display = 'none';
-        if (data.error) { showAdError(data.error); return; }
-        renderAdImportResult(data);
-        adZone.style.display = '';
-        loadAdStats();
-        loadAdSummary();
-      })
-      .catch(function(err) {
-        showAdError('广告报表上传失败：' + err.message);
-      });
-  }
-
-  function renderAdImportResult(data) {
-    var box = document.getElementById('adImportResult');
-    box.innerHTML = '<div class="oa-import-result">' +
-      '<h4>广告数据导入完成</h4>' +
-      '<div class="oa-import-row">' +
-      '<span>新增 <strong>' + (data.imported || 0) + '</strong> 条</span>' +
-      '<span>更新 <strong>' + (data.updated || 0) + '</strong> 条</span>' +
-      '<span>跳过 <strong>' + (data.skipped || 0) + '</strong> 条</span>' +
-      '<span>匹配产品 <strong>' + (data.matched || 0) + '</strong> 条</span>' +
-      '</div></div>';
-    box.style.display = '';
   }
 
   function loadAdStats() {
