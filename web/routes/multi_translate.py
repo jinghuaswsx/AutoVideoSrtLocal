@@ -486,7 +486,11 @@ def update_segments(task_id):
         )
         variant_state["localized_translation"] = localized_translation
         variants[variant] = variant_state
-        store.update(task_id, variants=variants, localized_translation=localized_translation, _segments_confirmed=True)
+        # 用户改了译文，已有的 QA / AI Review 评估都对应旧译文，标记为过期。
+        from datetime import datetime, timezone
+        store.update(task_id, variants=variants, localized_translation=localized_translation,
+                     _segments_confirmed=True,
+                     evals_invalidated_at=datetime.now(timezone.utc).isoformat())
 
     store.set_current_review_step(task_id, "")
     multi_pipeline_runner.resume(task_id, "tts", user_id=current_user.id)
@@ -732,9 +736,13 @@ def get_video_ai_review(task_id):
     """读取最新一次 AI 视频分析结果（含 pending/running 进度）。"""
     if not _get_viewable_task(task_id):
         return jsonify({"error": "Task not found"}), 404
-    from appcore import video_ai_review
+    from appcore import video_ai_review, task_state
     payload = video_ai_review.latest_review("multi_translate_task", task_id)
-    return jsonify({"review": payload})
+    ts_state = task_state.get(task_id) or {}
+    return jsonify({
+        "review": payload,
+        "task_evals_invalidated_at": ts_state.get("evals_invalidated_at"),
+    })
 
 
 @bp.route("/api/multi-translate/user-default-voice", methods=["PUT"])

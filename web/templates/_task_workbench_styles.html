@@ -698,26 +698,29 @@ video.media-player {
 .duration-generation-summary {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-3);
+  padding: var(--space-5) var(--space-5);
   border: 1px solid oklch(88% 0.06 215);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--cyan-subtle);
   color: oklch(34% 0.09 225);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
+  line-height: var(--leading);
 }
 
 .duration-generation-summary-label {
   color: var(--fg-muted);
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   font-weight: 600;
 }
 
 .duration-generation-summary strong {
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 
 .duration-status-tag {

@@ -11,6 +11,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
+from appcore import task_state
 from appcore.db import query as db_query, query_one as db_query_one
 from web.services import quality_assessment as svc
 
@@ -66,7 +67,13 @@ def _list_route(project_type: str):
             "WHERE task_id=%s ORDER BY run_id DESC",
             (task_id,),
         )
-        return jsonify({"assessments": [_row_to_dict(r) for r in rows]})
+        # 把 task_state.evals_invalidated_at 一并返回——前端用它把比这早的
+        # assessment 视为 stale（评估的是上一轮译文，不该当本轮结果展示）。
+        ts_state = task_state.get(task_id) or {}
+        return jsonify({
+            "assessments": [_row_to_dict(r) for r in rows],
+            "task_evals_invalidated_at": ts_state.get("evals_invalidated_at"),
+        })
     view.__name__ = f"list_assessments_{project_type}"
     return view
 

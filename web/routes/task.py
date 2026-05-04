@@ -612,6 +612,10 @@ def run_video_ai_review(task_id):
 def get_video_ai_review(task_id):
     if not _can_view_av_task(task_id):
         return task_not_found_response()
-    from appcore import video_ai_review
+    from appcore import video_ai_review, task_state
     payload = video_ai_review.latest_review("av_sync_task", task_id)
-    return jsonify({"review": payload})
+    ts_state = task_state.get(task_id) or {}
+    return jsonify({
+        "review": payload,
+        "task_evals_invalidated_at": ts_state.get("evals_invalidated_at"),
+    })

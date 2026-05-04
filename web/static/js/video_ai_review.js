@@ -170,10 +170,25 @@ window.VideoAiReview = (function () {
       const resp = await fetch(_api("/video-ai-review"));
       if (!resp.ok) return;
       const data = await resp.json();
-      _state.latest = data.review || null;
+      // task_evals_invalidated_at：restart / segments-confirm 写入。比这个时间早的
+      // 评估都已过期（评估的是上一轮素材），不该再展示给用户误以为是本次结果。
+      _state.latest = _filterStale(data.review || null, data.task_evals_invalidated_at);
       _renderInline();
       _renderModal();
     } catch (e) { /* swallow */ }
+  }
+
+  function _filterStale(review, invalidatedAt) {
+    if (!review || !invalidatedAt) return review;
+    if (review.status === "pending" || review.status === "running") return review;
+    const created = review.created_at || review.completed_at || review.started_at || null;
+    if (!created) return review;
+    try {
+      if (new Date(created).getTime() <= new Date(invalidatedAt).getTime()) {
+        return null;  // 视为"尚未运行"，让 UI 走 idle 分支
+      }
+    } catch (_) {}
+    return review;
   }
 
   function _renderInline() {
@@ -505,7 +520,9 @@ window.VideoAiReview = (function () {
         return;
       }
       const data = await resp.json();
-      _state.latest = data.review || null;
+      // media_item 没有 task restart 语义，invalidated_at 一般不存在；用同一个
+      // helper 兜底处理（无 invalidated_at 则原样返回）。
+      _state.latest = _filterStale(data.review || null, data.task_evals_invalidated_at);
       _renderModal();
     } catch (e) {
       _state.latest = null;
