@@ -3,9 +3,10 @@
 {% block page_title %}独立站保本 ROAS{% endblock %}
 {% block content %}
 <div class="oc oc-roas-page" data-product-id="{{ product.id }}">
-  <h2>独立站保本 ROAS</h2>
-  <p>{{ product.product_code }}</p>
-  <input type="hidden" data-roas-field="purchase_price" value="{{ product.purchase_price or '' }}">
-  <input type="hidden" data-roas-field="standalone_price" value="{{ product.standalone_price or '' }}">
+  <header class="oc-roas-page-head">
+    <a class="oc-btn ghost" href="/medias">← 返回素材管理</a>
+    <h1>独立站保本 ROAS</h1>
+  </header>
+  {% include "medias/_roas_form.html" %}
 </div>
 {% endblock %}

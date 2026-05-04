@@ -2,15 +2,20 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PARTIAL = ROOT / "web" / "templates" / "medias" / "_roas_form.html"
 
 
 def test_medias_list_has_roas_modal_mount():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
 
+    # Outer shell stays in medias_list.html
     assert 'id="roasModalMask"' in html
-    assert 'id="roasForm"' in html
     assert "独立站保本 ROAS" in html
-    assert "TK 可选项" in html
+
+    # Field-level content lives in the partial
+    assert 'id="roasForm"' in partial
+    assert "TK 可选项" in partial
 
 
 def test_medias_js_wires_roas_button_and_calculation():
@@ -27,7 +32,7 @@ def test_medias_js_wires_roas_button_and_calculation():
 
 
 def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
-    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    html = PARTIAL.read_text(encoding="utf-8")
 
     assert 'class="oc-roas-layout"' in html
     assert 'id="roasSiteSection"' in html
@@ -78,12 +83,17 @@ def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
 
 def test_roas_modal_uses_manual_calculate_button_and_injected_exchange_rate():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert 'id="roasCalculateBtn"' in html
-    assert "计算 ROAS" in html
-    assert "material_roas_rmb_per_usd" in html
+    # These field-level elements live in the partial
+    assert 'id="roasCalculateBtn"' in partial
+    assert "计算 ROAS" in partial
+    assert "material_roas_rmb_per_usd" in partial
+
+    # The JS injection lives in medias_list.html
     assert "window.MATERIAL_ROAS_RMB_PER_USD" in html
+
     assert "roasCalculateBtn" in js
     assert "markRoasResultDirty" in js
     assert "input.addEventListener('input', markRoasResultDirty)" in js
@@ -127,18 +137,21 @@ def test_roas_modal_uses_full_height_scroll_area_and_tighter_field_spacing():
 
 def test_roas_modal_embeds_average_shipping_in_bottom_half_of_tk_column():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert 'class="oc-roas-column oc-roas-tk-column"' in html
-    assert 'id="roasAverageShippingSection"' in html
-    assert ">平均运费计算器</h4>" in html
-    assert 'id="roasAverageShippingInput"' in html
-    assert 'id="roasAverageShippingResult"' in html
-    assert 'id="roasAverageShippingMeta"' in html
+    # HTML elements live in partial
+    assert 'class="oc-roas-column oc-roas-tk-column"' in partial
+    assert 'id="roasAverageShippingSection"' in partial
+    assert ">平均运费计算器</h4>" in partial
+    assert 'id="roasAverageShippingInput"' in partial
+    assert 'id="roasAverageShippingResult"' in partial
+    assert 'id="roasAverageShippingMeta"' in partial
 
-    tk_column = html.split('class="oc-roas-column oc-roas-tk-column"', 1)[1].split("</form>", 1)[0]
+    tk_column = partial.split('class="oc-roas-column oc-roas-tk-column"', 1)[1].split("</form>", 1)[0]
     assert tk_column.index('id="roasTkSection"') < tk_column.index('id="roasAverageShippingSection"')
 
+    # CSS stays in medias_list.html
     tk_column_css = html.split(".oc-roas-tk-column {", 1)[1].split("}", 1)[0]
     half_section_css = html.split(".oc-roas-tk-column .oc-roas-section {", 1)[1].split("}", 1)[0]
     avg_heading_css = html.split(".oc-roas-avg-head h4 {", 1)[1].split("}", 1)[0]
