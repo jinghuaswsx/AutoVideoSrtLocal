@@ -151,6 +151,7 @@
 
   <div class="op-tabs">
     <button class="op-tab active" data-op-tab="summary">总览</button>
+    <button class="op-tab" data-op-tab="orders">订单明细</button>
     <button class="op-tab" data-op-tab="losses">亏损订单</button>
     <button class="op-tab" data-op-tab="completeness">成本完备性</button>
     <button class="op-tab" data-op-tab="matching">Campaign 配对</button>
@@ -169,6 +170,41 @@
       <table class="op-table op-cost-breakdown">
         <thead><tr><th>项目</th><th class="num">USD</th><th class="num">占营收 %</th></tr></thead>
         <tbody id="opCostBreakdownBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div data-op-panel="orders" hidden>
+    <div class="op-section">
+      <h2>订单明细（按 dxm_package_id 聚合）</h2>
+      <p style="color: var(--fg-muted); font-size: 13px; margin: 0 0 var(--space-4);">
+        按订单粒度看每单赚 / 亏多少。点订单 ID 展开 SKU 行。
+      </p>
+      <div style="margin-bottom: var(--space-4);">
+        <label style="font-size: 13px; color: var(--fg-muted);">状态：</label>
+        <select id="opOrderStatusFilter" style="height:30px; padding:0 8px; border:1px solid var(--border-strong); border-radius:4px; font-size:13px;">
+          <option value="">全部</option>
+          <option value="ok">完备</option>
+          <option value="incomplete">不完备</option>
+          <option value="partially_complete">部分完备</option>
+        </select>
+        <span id="opOrderStats" style="margin-left: var(--space-4); font-size: 13px; color: var(--fg-muted);"></span>
+      </div>
+      <table class="op-table">
+        <thead><tr>
+          <th>订单 ID</th>
+          <th>付款时间</th>
+          <th>国家</th>
+          <th class="num">SKU 行</th>
+          <th>状态</th>
+          <th class="num">营收</th>
+          <th class="num">采购</th>
+          <th class="num">物流</th>
+          <th class="num">手续费</th>
+          <th class="num">广告</th>
+          <th class="num profit">利润</th>
+        </tr></thead>
+        <tbody id="opOrdersBody"></tbody>
       </table>
     </div>
   </div>
@@ -371,6 +407,84 @@ async function refreshSummary() {
     : '';
 }
 
+async function refreshOrders() {
+  const f = document.getElementById('opDateFrom').value;
+  const t = document.getElementById('opDateTo').value;
+  const status = document.getElementById('opOrderStatusFilter').value;
+  const url = `/order-profit/api/orders?from=${f}&to=${t}&limit=200` + (status ? `&status=${status}` : '');
+  const data = await fetchJSON(url);
+  const tbody = document.getElementById('opOrdersBody');
+  const statsEl = document.getElementById('opOrderStats');
+
+  const s = data.summary || {};
+  statsEl.textContent = `共 ${fmtInt(s.total_orders)} 单 ｜ 完备 ${fmtInt(s.orders_ok)} ｜ 不完备 ${fmtInt(s.orders_incomplete)} ｜ 部分 ${fmtInt(s.orders_partial)} ｜ 利润 ${fmtUSD(s.profit_total_usd)}`;
+
+  if (!data.orders || data.orders.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" class="op-loading">无订单</td></tr>';
+    return;
+  }
+
+  function statusBadge(st) {
+    if (st === 'ok') return '<span style="color: var(--success-fg)">完备</span>';
+    if (st === 'incomplete') return '<span style="color: var(--danger-fg)">不完备</span>';
+    if (st === 'partially_complete') return '<span style="color: var(--warning-fg)">部分</span>';
+    return '<span style="color: var(--fg-subtle)">-</span>';
+  }
+
+  tbody.innerHTML = data.orders.map(o => {
+    const profitClass = (o.profit_total_usd != null && o.profit_total_usd < 0) ? ' loss' : '';
+    return `
+    <tr class="op-order-row${profitClass}" data-pkg="${o.dxm_package_id}" style="cursor:pointer;">
+      <td><code style="font-size:12px;">${o.dxm_package_id}</code></td>
+      <td style="font-size:12px;">${o.paid_at ? new Date(o.paid_at).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}) : '-'}</td>
+      <td>${o.buyer_country || '-'}</td>
+      <td class="num">${fmtInt(o.line_count)}</td>
+      <td>${statusBadge(o.status)}</td>
+      <td class="num">${fmtUSD(o.revenue_total_usd)}</td>
+      <td class="num">${fmtUSD(o.purchase_total_usd)}</td>
+      <td class="num">${fmtUSD(o.shipping_cost_total_usd)}</td>
+      <td class="num">${fmtUSD(o.shopify_fee_total_usd)}</td>
+      <td class="num">${fmtUSD(o.ad_cost_total_usd)}</td>
+      <td class="num profit">${o.status === 'incomplete' ? '-' : fmtUSD(o.profit_total_usd)}</td>
+    </tr>`;
+  }).join('');
+
+  // 点击行展开/收起 SKU 明细
+  tbody.querySelectorAll('.op-order-row').forEach(row => {
+    row.addEventListener('click', async () => {
+      const pkg = row.dataset.pkg;
+      const next = row.nextElementSibling;
+      if (next && next.classList.contains('op-order-detail')) {
+        next.remove();
+        return;
+      }
+      // 加载并展开
+      try {
+        const detail = await fetchJSON(`/order-profit/api/orders/${encodeURIComponent(pkg)}`);
+        const detailRow = document.createElement('tr');
+        detailRow.className = 'op-order-detail';
+        const detailHTML = (detail.lines || []).map(l => `
+          <div style="padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; gap: var(--space-3); font-size: 13px;">
+            <code style="min-width: 220px; font-size:12px;">${l.product_code || '#'+l.product_id || '-'}</code>
+            <span style="color: var(--fg-muted); min-width: 60px;">SKU ${l.product_sku || ''}</span>
+            <span style="min-width: 40px;">×${fmtInt(l.quantity)}</span>
+            <span style="min-width: 80px;">营收 ${fmtUSD(l.revenue_usd)}</span>
+            <span style="min-width: 80px;">采购 ${fmtUSD(l.purchase_usd)}</span>
+            <span style="min-width: 80px;">物流 ${fmtUSD(l.shipping_cost_usd)}</span>
+            <span style="min-width: 80px;">手续费 ${fmtUSD(l.shopify_fee_usd)}</span>
+            <span style="min-width: 80px;">广告 ${fmtUSD(l.ad_cost_usd)}</span>
+            <span style="min-width: 80px; font-weight: 500; color: ${(parseFloat(l.profit_usd)||0) < 0 ? 'var(--danger)' : 'var(--success-fg)'};">利润 ${fmtUSD(l.profit_usd)}</span>
+            ${l.status === 'incomplete' ? '<span style="color: var(--danger-fg)">缺：'+(l.missing_fields||[]).join('/')+'</span>' : ''}
+          </div>`).join('');
+        detailRow.innerHTML = `<td colspan="11" style="background: var(--bg-subtle); padding: var(--space-3) var(--space-4);">${detailHTML || '<span style="color: var(--fg-subtle);">无明细</span>'}</td>`;
+        row.parentNode.insertBefore(detailRow, row.nextSibling);
+      } catch (e) {
+        alert('加载订单明细失败: ' + e.message);
+      }
+    });
+  });
+}
+
 async function refreshLosses() {
   const f = document.getElementById('opDateFrom').value;
   const t = document.getElementById('opDateTo').value;
@@ -511,6 +625,7 @@ async function refreshOverrides() {
 
 function refreshAll() {
   refreshSummary();
+  refreshOrders();
   refreshLosses();
   refreshCompleteness();
   refreshMatching();
@@ -534,6 +649,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('opDateTo').addEventListener('change', syncBjHint);
 
   document.getElementById('opRefreshBtn').addEventListener('click', refreshAll);
+
+  // 订单状态筛选下拉变化时立刻刷
+  const filter = document.getElementById('opOrderStatusFilter');
+  if (filter) filter.addEventListener('change', refreshOrders);
 
   // tab 切换
   document.querySelectorAll('.op-tab').forEach(btn => {

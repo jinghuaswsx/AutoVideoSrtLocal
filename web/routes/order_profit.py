@@ -25,6 +25,11 @@ from appcore.order_analytics.campaign_overrides import (
     remove_override,
 )
 from appcore.order_analytics.cost_completeness import get_completeness_overview
+from appcore.order_analytics.order_profit_aggregation import (
+    get_order_profit_detail,
+    get_order_profit_list,
+    get_order_profit_summary_for_window,
+)
 from appcore.order_analytics.shopify_payments_import import (
     import_payments_csv,
     reconcile_against_estimates,
@@ -111,6 +116,55 @@ def api_summary():
         "unallocated_ad_spend_usd": unallocated,
         "margin_pct": round(margin, 2) if margin is not None else None,
     })
+
+
+@bp.route("/order-profit/api/orders")
+@login_required
+@admin_required
+def api_orders_list():
+    """订单级利润列表（按 dxm_package_id 聚合 SKU 行）。
+
+    Query params:
+        from / to : business_date 闭区间，默认近 7 天
+        status    : 'ok' | 'incomplete' | 'partially_complete'，默认全部
+        limit     : 默认 100，上限 500
+        offset    : 默认 0
+    """
+    today = date.today()
+    date_from = _parse_date_param("from", today - timedelta(days=7))
+    date_to = _parse_date_param("to", today)
+    status = (request.args.get("status") or "").strip() or None
+    limit = min(int(request.args.get("limit", "100") or 100), 500)
+    offset = int(request.args.get("offset", "0") or 0)
+
+    orders = get_order_profit_list(
+        date_from=date_from, date_to=date_to,
+        status=status, limit=limit, offset=offset,
+    )
+    summary = get_order_profit_summary_for_window(
+        date_from=date_from, date_to=date_to
+    )
+    return jsonify({
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "filter_status": status,
+        "limit": limit,
+        "offset": offset,
+        "orders": orders,
+        "summary": summary,
+    })
+
+
+@bp.route("/order-profit/api/orders/<dxm_package_id>")
+@login_required
+@admin_required
+def api_order_detail(dxm_package_id):
+    """单订单详情：订单级聚合数字 + 该订单的所有 SKU 行明细。"""
+    detail = get_order_profit_detail(dxm_package_id)
+    if not detail:
+        return jsonify({"error": "order_not_found",
+                        "dxm_package_id": dxm_package_id}), 404
+    return jsonify(detail)
 
 
 @bp.route("/order-profit/api/lines")
