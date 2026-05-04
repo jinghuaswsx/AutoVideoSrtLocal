@@ -58,6 +58,14 @@
 - EZ 轮播图替换前必须判断每个 slot 是否已经有目标语言标签：语言名称来自 `run_product_cdp.LANGUAGE_LABELS`，例如 `de -> German`。如果 slot 已有目标语言标签，结果应为 `skipped`，不要点击 `Remove {language}`，不要删除后重新上传，避免浪费时间和引入失败。
 - 修改这条链路后至少运行：`pytest tests/test_shopify_image_localizer_batch_cdp.py tests/test_shopify_image_localizer_gui.py -q`，并执行上面的语法自检。
 
+## 翻译详情页 Jinja 模板继承防呆（multi/omni/ja）
+
+- 已知事故：2026-05-04，多语种 / 全能视频翻译详情页（`/multi-translate/<id>`、`/omni-translate/<id>`）右侧出现一个浮在主内容区外的“原文标准化”卡片。根因是 [multi_translate_detail.html](web/templates/multi_translate_detail.html) / [omni_translate_detail.html](web/templates/omni_translate_detail.html) 当时的写法：先 `{% include "_translate_detail_shell.html" %}`（shell 自身 `extends layout.html`，include 输出整套 `<!DOCTYPE><html>…</html>` 文档），再把 `<section class="card asr-normalize-card">` 直接拼在 include 之后，落到了 `</html>` 外。浏览器把它并入 `<body>`，又因为 [layout.html](web/templates/layout.html) 的 body 是 `display: flex`，这块孤立 section 变成了 `.sidebar` / `.main-wrap` 之外的“第三列”，贴在视口右沿。
+- 硬规则：detail 模板要在 [_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 渲染出的页面上追加内容（asr-normalize-card 等），**必须** `{% extends "_translate_detail_shell.html" %}` + 用 `{% block detail_extra %}…{% endblock %}` 包裹要追加的 HTML/script/style。
+- 反模式（**禁止**）：`{% include "_translate_detail_shell.html" %}` 之后再追加任何 raw HTML / `<script>` / `<style>`。只要 base 模板自身 `extends layout.html`，include 的输出就是完整 HTML 文档，include 之后的内容必然落在 `</html>` 之外。该约束适用于所有“shell extends layout”的场景：`{% include base_with_extends %}` 之后只允许跟 `{% set %}` 等不产生文本输出的指令。
+- `detail_extra` 占位符位置：[_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 的 `{% block content %}` 内、`{% include "_task_workbench.html" %}` 之后、`{% endif %}` 之前。内容由此自然落进 `<main class="main-content">`。新增第四个 detail_mode（比如 av_sync 之外的）时，沿用同一 block。
+- 自检：改动 [multi_translate_detail.html](web/templates/multi_translate_detail.html) / [omni_translate_detail.html](web/templates/omni_translate_detail.html) / [ja_translate_detail.html](web/templates/ja_translate_detail.html) / [_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 后，至少运行 `pytest tests/test_multi_translate_routes.py tests/test_omni_translate_routes.py tests/test_runtime_multi_asr_normalize.py -q`；如有 asr-normalize-card 渲染路径，再用 Playwright 或 devtools 确认 `document.querySelector('section.asr-normalize-card').parentElement` 链路上能找到 `<main class="main-content">`，且其 `getBoundingClientRect()` 横向 bbox 在 main 的 left/right 内（不会贴 viewport 右沿）。
+
 ---
 
 # Frontend Design System — Ocean Blue Admin
