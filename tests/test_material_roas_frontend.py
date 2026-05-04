@@ -20,11 +20,14 @@ def test_medias_list_has_roas_modal_mount():
 
 def test_medias_js_wires_roas_button_and_calculation():
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    partial = PARTIAL.read_text(encoding="utf-8")
 
     assert "data-roas" in js
     assert "openRoasModal" in js
-    assert "calculateRoasBreakEven" in js
-    assert "roasCalculateBtn" in js
+    # calculateRoasBreakEven was removed — the controller's computeRoas() handles it
+    assert "RoasFormController" in js
+    # roasCalculateBtn DOM element lives in the partial; controller wires it via bind()
+    assert 'id="roasCalculateBtn"' in partial
     assert "packet_cost_actual" in js
     assert "standalone_shipping_fee" in js
     assert "MATERIAL_ROAS_RMB_PER_USD" in js
@@ -94,13 +97,16 @@ def test_roas_modal_uses_manual_calculate_button_and_injected_exchange_rate():
     # The JS injection lives in medias_list.html
     assert "window.MATERIAL_ROAS_RMB_PER_USD" in html
 
-    assert "roasCalculateBtn" in js
-    assert "markRoasResultDirty" in js
-    assert "input.addEventListener('input', markRoasResultDirty)" in js
-    assert "input.addEventListener('input', renderRoasResult)" not in js
-    assert "markRoasResultDirty();\n    mask.hidden = false;" in js
-    roas_js = js[js.index("function renderRoasResult"):js.index("function closeRoasModal")]
-    assert "reportValidity" not in roas_js
+    # New controller-based contract: RoasFormController owns calculate + input handling
+    assert "RoasFormController" in js
+    assert "fillFromProduct" in js
+    # roasCalculateBtn DOM element lives in partial; controller wires it via bind()
+    assert 'id="roasCalculateBtn"' in partial
+
+    # Legacy functions must be gone — they caused double-binding and UX breakage
+    assert "markRoasResultDirty" not in js
+    assert "renderRoasResult" not in js
+    assert "function closeRoasModal" in js
 
 
 def test_roas_modal_fills_main_area_outside_sidebar():

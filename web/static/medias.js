@@ -491,32 +491,6 @@
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 6.83;
   }
 
-  function calculateRoasBreakEven(values) {
-    const price = numberOrNull(values.standalone_price);
-    const shippingFee = numberOrNull(values.standalone_shipping_fee) || 0;
-    const revenue = price === null ? null : price + shippingFee;
-    const rmbPerUsd = currentRoasRmbPerUsd();
-    const purchase = numberOrNull(values.purchase_price);
-    const estimatedPacket = numberOrNull(values.packet_cost_estimated);
-    const actualPacket = numberOrNull(values.packet_cost_actual);
-    const calc = (packetCost) => {
-      if (revenue === null || purchase === null || packetCost === null) return null;
-      const available = revenue * 0.9 - (purchase / rmbPerUsd) - (packetCost / rmbPerUsd);
-      if (available <= 0) return null;
-      return revenue / available;
-    };
-    const estimated = calc(estimatedPacket);
-    const actual = calc(actualPacket);
-    const useActual = actualPacket !== null;
-    return {
-      estimated_roas: estimated,
-      actual_roas: actual,
-      effective_basis: useActual ? 'actual' : 'estimated',
-      effective_roas: useActual ? actual : estimated,
-      rmb_per_usd: rmbPerUsd,
-    };
-  }
-
   function parseAverageShippingValues(text) {
     return String(text || '')
       .split(/\r?\n/)
@@ -561,32 +535,6 @@
     updateView: updateRoasAverageShipping,
   };
 
-  function renderRoasResult() {
-    const payload = {};
-    ROAS_FIELDS.forEach((field) => {
-      const input = document.querySelector(`[data-roas-field="${field}"]`);
-      if (!input) return;
-      const raw = String(input.value || '').trim();
-      payload[field] = raw || null;
-    });
-    const result = calculateRoasBreakEven(payload);
-    if ($('roasEstimatedValue')) $('roasEstimatedValue').textContent = formatRoas(result.estimated_roas);
-    if ($('roasActualValue')) $('roasActualValue').textContent = numberOrNull(payload.packet_cost_actual) === null ? '待回填' : formatRoas(result.actual_roas);
-    if ($('roasEffectiveValue')) $('roasEffectiveValue').textContent = formatRoas(result.effective_roas);
-    if ($('roasEffectiveBasis')) $('roasEffectiveBasis').textContent = result.effective_basis === 'actual' ? '实际保本 ROAS' : '预估保本 ROAS';
-    if ($('roasEstimatedBox')) $('roasEstimatedBox').classList.toggle('active', result.effective_basis === 'estimated');
-    if ($('roasActualBox')) $('roasActualBox').classList.toggle('active', result.effective_basis === 'actual');
-  }
-
-  function markRoasResultDirty() {
-    if ($('roasEstimatedValue')) $('roasEstimatedValue').textContent = '待计算';
-    if ($('roasActualValue')) $('roasActualValue').textContent = '待计算';
-    if ($('roasEffectiveValue')) $('roasEffectiveValue').textContent = '待计算';
-    if ($('roasEffectiveBasis')) $('roasEffectiveBasis').textContent = '待计算';
-    if ($('roasEstimatedBox')) $('roasEstimatedBox').classList.remove('active');
-    if ($('roasActualBox')) $('roasActualBox').classList.remove('active');
-  }
-
   function openRoasModal(product) {
     if (!product) return;
     state.roasProduct = product;
@@ -606,14 +554,12 @@
         onAfterSave: (payload) => {
           Object.assign(product, payload);
           product.roas_calculation = state.roasController.computeRoas();
-          loadList();
         },
       });
     } else {
       state.roasController.productId = product.id;
     }
     state.roasController.fillFromProduct(product);
-    markRoasResultDirty();
     mask.hidden = false;
   }
 
@@ -621,6 +567,7 @@
     const mask = $('roasModalMask');
     if (mask) mask.hidden = true;
     state.roasProduct = null;
+    loadList();   // refresh list once, on close, to reflect any saves
   }
 
   function showAiEvaluationDetail(product) {
@@ -5244,12 +5191,8 @@
     $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') hideModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('editMask').hidden) hideModal(); });
     $('roasCloseBtn') && $('roasCloseBtn').addEventListener('click', closeRoasModal);
-    $('roasCalculateBtn') && $('roasCalculateBtn').addEventListener('click', renderRoasResult);
     $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
       if (e.target.id === 'roasModalMask') closeRoasModal();
-    });
-    document.querySelectorAll('[data-roas-field]').forEach((input) => {
-      input.addEventListener('input', markRoasResultDirty);
     });
     const roasAverageShippingInput = $('roasAverageShippingInput');
     if (roasAverageShippingInput) {
