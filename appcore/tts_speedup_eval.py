@@ -9,8 +9,8 @@
 
 设计点：
 - 评估失败永远不向上抛，只写 status=failed，让任务正常返回收敛结果
-- audio_pre_path / audio_post_path 是 task_dir 相对路径（一致与 _maybe_tempo_align 风格），
-  实际传给 invoke_generate(media=...) 时由调用方拼成绝对路径
+- audio_pre_path / audio_post_path 是 ElevenLabs 输出的绝对路径，
+  直接喂给 invoke_generate(media=...) 让 Gemini 多模态读取
 - llm_client.invoke_generate 没有原生 timeout，用 ThreadPoolExecutor.submit().result(timeout=...)
 - timeout/异常路径用 pool.shutdown(wait=False)：worker 线程会泄漏直到 LLM 调用自然
   终止（_call_with_network_retry 上限 ~14s），但调用方等待时间硬 cap 到

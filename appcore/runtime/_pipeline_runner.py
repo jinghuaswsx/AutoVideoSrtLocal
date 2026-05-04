@@ -661,9 +661,22 @@ class PipelineRunner:
 
                 speedup_audio_path = None
                 speedup_duration = None
+                speedup_result = None
                 speedup_failed_reason = None
                 try:
                     from pipeline.tts import regenerate_full_audio_with_speed
+
+                    def _on_speedup_seg_done(done, total, info):
+                        self._emit_substep_msg(
+                            task_id, "tts",
+                            f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 变速重生成 ElevenLabs 音频 {done}/{total}",
+                        )
+                        # 不更新 round_record 的 audio_segments_done（那是原始 round 的字段），
+                        # 用专门的 speedup 字段，避免混淆 UI
+                        round_record["speedup_segments_done"] = done
+                        round_record["speedup_segments_total"] = total
+                        self._emit_duration_round(task_id, round_index, "speedup_progress", round_record)
+
                     speedup_result = regenerate_full_audio_with_speed(
                         result["segments"],
                         voice["elevenlabs_voice_id"],
@@ -673,6 +686,7 @@ class PipelineRunner:
                         elevenlabs_api_key=elevenlabs_api_key,
                         model_id=tts_model_id,
                         language_code=tts_language_code,
+                        on_segment_done=_on_speedup_seg_done,
                     )
                     speedup_audio_path = speedup_result["full_audio_path"]
                     speedup_duration = _get_audio_duration(speedup_audio_path)
@@ -739,13 +753,9 @@ class PipelineRunner:
                             round_index=round_index,
                             language=target_language_label or "",
                             video_duration=video_duration,
-                            audio_pre_path=os.path.relpath(
-                                result["full_audio_path"], task_dir,
-                            ),
+                            audio_pre_path=result["full_audio_path"],
                             audio_pre_duration=audio_duration,
-                            audio_post_path=round_record.get(
-                                "speedup_audio_path", ""
-                            ),
+                            audio_post_path=speedup_audio_path,
                             audio_post_duration=speedup_duration,
                             speed_ratio=speed,
                             hit_final_range=bool(
@@ -762,13 +772,22 @@ class PipelineRunner:
 
                 round_products[-1]["tts_audio_path"] = final_audio_path
                 rounds[-1] = round_record
+                if round_record["final_reason"] == "speedup_converged":
+                    final_distance = 0.0
+                else:
+                    # speedup_failed_fallback or speedup_then_atempo
+                    measured_duration = speedup_duration if speedup_duration is not None else audio_duration
+                    final_distance = round(_distance_to_duration_range(
+                        measured_duration, final_target_lo, final_target_hi,
+                    ), 3)
+                round_record["final_distance"] = final_distance
                 task_state.update(
                     task_id,
                     tts_duration_rounds=rounds,
                     tts_duration_status="converged",
                     tts_final_round=round_index,
                     tts_final_reason=round_record["final_reason"],
-                    tts_final_distance=0.0,
+                    tts_final_distance=final_distance,
                 )
                 self._emit_duration_round(
                     task_id, round_index, "speedup_done", round_record,
@@ -782,7 +801,10 @@ class PipelineRunner:
                     "localized_translation": localized_translation,
                     "tts_script": tts_script,
                     "tts_audio_path": final_audio_path,
-                    "tts_segments": result["segments"],
+                    "tts_segments": (
+                        speedup_result["segments"] if speedup_audio_path is not None
+                        else result["segments"]
+                    ),
                     "rounds": rounds,
                     "round_products": round_products,
                     "final_round": round_index,
