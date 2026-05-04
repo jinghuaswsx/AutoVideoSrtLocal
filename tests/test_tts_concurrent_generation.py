@@ -1,6 +1,7 @@
 """TTS 并发生成相关单测：线程池单例、配置解析、429 退避、并发提交、回调状态机。"""
 from __future__ import annotations
 
+import os
 import threading
 from unittest.mock import patch
 
@@ -144,3 +145,182 @@ def test_generate_segment_audio_retries_on_429(monkeypatch, tmp_path):
     assert out.exists()
     assert out.read_bytes() == b"audio-bytes"
     assert call_count["n"] == 2  # 第 1 次 429 + 第 2 次成功
+
+
+# ===== Task 4: generate_full_audio 并发改造 =====
+
+
+@pytest.fixture
+def fake_segment_audio(monkeypatch):
+    """让 generate_segment_audio 不真打 ElevenLabs，只 sleep 一小段写一个 mp3 文件。"""
+    import time as _time
+
+    def _fake(text, voice_id, output_path, **kwargs):
+        # 模拟单段耗时（让并发性可观察）
+        _time.sleep(0.05)
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(b"fake-mp3")
+        return output_path
+
+    monkeypatch.setattr(tts, "generate_segment_audio", _fake)
+    return _fake
+
+
+@pytest.fixture
+def fake_audio_duration(monkeypatch):
+    monkeypatch.setattr(tts, "_get_audio_duration", lambda path: 1.5)
+
+
+@pytest.fixture
+def fake_ffmpeg(monkeypatch):
+    """跳过真 ffmpeg concat。"""
+    class _R:
+        returncode = 0
+        stderr = ""
+    monkeypatch.setattr(tts.subprocess, "run", lambda *a, **kw: _R())
+
+
+def test_generate_full_audio_emits_submitted_started_completed(
+    monkeypatch, tmp_path, fake_segment_audio, fake_audio_duration, fake_ffmpeg,
+):
+    """on_progress 应按 submitted → started* → completed* 顺序触发。"""
+    monkeypatch.setattr("appcore.settings.get_setting", lambda key: "4")
+    tts._TTS_POOL = None  # 用新 max_workers=4 重建 pool
+
+    snapshots = []
+    def collect(snap):
+        snapshots.append(dict(snap))
+
+    segments = [{"tts_text": f"line {i}"} for i in range(6)]
+    out = tts.generate_full_audio(
+        segments, voice_id="v1", output_dir=str(tmp_path),
+        on_progress=collect,
+    )
+
+    states = [s["state"] for s in snapshots]
+    # 第 1 个事件必须是 submitted
+    assert states[0] == "submitted"
+    # 至少有 6 个 started 和 6 个 completed
+    assert states.count("started") == 6
+    assert states.count("completed") == 6
+    # 完结后状态：done=6, active=0, queued=0
+    last = snapshots[-1]
+    assert last["done"] == 6
+    assert last["active"] == 0
+    assert last["queued"] == 0
+    assert last["total"] == 6
+    # 输出 segments 顺序按 i（concat 顺序）
+    assert [s["tts_path"] for s in out["segments"]] == [
+        os.path.join(str(tmp_path), "tts_segments", f"seg_{i:04d}.mp3")
+        for i in range(6)
+    ]
+
+
+def test_generate_full_audio_active_never_exceeds_max_workers(
+    monkeypatch, tmp_path, fake_segment_audio, fake_audio_duration, fake_ffmpeg,
+):
+    """同时活跃的段数不可能超过 pool max_workers。"""
+    monkeypatch.setattr("appcore.settings.get_setting", lambda key: "3")
+    tts._TTS_POOL = None
+
+    peak_active = {"v": 0}
+    def watch(snap):
+        if snap["active"] > peak_active["v"]:
+            peak_active["v"] = snap["active"]
+
+    segments = [{"tts_text": f"line {i}"} for i in range(10)]
+    tts.generate_full_audio(segments, voice_id="v1", output_dir=str(tmp_path),
+                             on_progress=watch)
+    assert peak_active["v"] <= 3
+
+
+def test_generate_full_audio_concat_order_by_index(
+    monkeypatch, tmp_path, fake_audio_duration, fake_ffmpeg,
+):
+    """乱序完成，但 concat.txt 必须按 i 升序写入（音轨时序）。"""
+    import time as _time
+
+    def slow_for_index_zero(text, voice_id, output_path, **kwargs):
+        # 让 i=0 比其他段慢一倍，确保完成顺序乱
+        if "0000" in output_path:
+            _time.sleep(0.15)
+        else:
+            _time.sleep(0.02)
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(b"fake")
+        return output_path
+
+    monkeypatch.setattr(tts, "generate_segment_audio", slow_for_index_zero)
+    monkeypatch.setattr("appcore.settings.get_setting", lambda key: "4")
+    tts._TTS_POOL = None
+
+    segments = [{"tts_text": f"line {i}"} for i in range(5)]
+    tts.generate_full_audio(segments, voice_id="v1", output_dir=str(tmp_path),
+                             on_progress=None)
+
+    concat_path = tmp_path / "tts_segments" / "concat.txt"
+    lines = concat_path.read_text().splitlines()
+    expected_basenames = [f"seg_{i:04d}.mp3" for i in range(5)]
+    actual_basenames = [os.path.basename(line.split("'")[1]) for line in lines]
+    assert actual_basenames == expected_basenames
+
+
+def test_generate_full_audio_first_failure_propagates(
+    monkeypatch, tmp_path, fake_audio_duration, fake_ffmpeg,
+):
+    """任一段抛错 → cancel 其余 + 抛 RuntimeError。"""
+    def fail_index_2(text, voice_id, output_path, **kwargs):
+        if "0002" in output_path:
+            raise ValueError("synthetic failure")
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(b"fake")
+        return output_path
+
+    monkeypatch.setattr(tts, "generate_segment_audio", fail_index_2)
+    monkeypatch.setattr("appcore.settings.get_setting", lambda key: "4")
+    tts._TTS_POOL = None
+
+    segments = [{"tts_text": f"line {i}"} for i in range(5)]
+    with pytest.raises(RuntimeError, match="TTS segment generation failed at index 2"):
+        tts.generate_full_audio(segments, voice_id="v1", output_dir=str(tmp_path))
+
+
+def test_generate_full_audio_legacy_on_segment_done_still_called(
+    monkeypatch, tmp_path, fake_segment_audio, fake_audio_duration, fake_ffmpeg,
+):
+    """旧 on_segment_done 接口要继续兼容（向下不破）。"""
+    monkeypatch.setattr("appcore.settings.get_setting", lambda key: "4")
+    tts._TTS_POOL = None
+
+    legacy_calls = []
+    def legacy_cb(done, total, info):
+        legacy_calls.append((done, total, info.get("segment_index")))
+
+    segments = [{"tts_text": f"line {i}"} for i in range(4)]
+    tts.generate_full_audio(segments, voice_id="v1", output_dir=str(tmp_path),
+                             on_segment_done=legacy_cb)
+    assert len(legacy_calls) == 4
+    # done 单调递增，最后一次 done == total
+    dones = [c[0] for c in legacy_calls]
+    assert dones == sorted(dones)
+    assert dones[-1] == 4
+    assert all(c[1] == 4 for c in legacy_calls)
+
+
+def test_generate_full_audio_progress_callback_exception_does_not_break(
+    monkeypatch, tmp_path, fake_segment_audio, fake_audio_duration, fake_ffmpeg,
+):
+    """on_progress 回调抛错应被吞掉，不影响主流程。"""
+    monkeypatch.setattr("appcore.settings.get_setting", lambda key: "2")
+    tts._TTS_POOL = None
+
+    def angry(snap):
+        raise RuntimeError("callback explodes")
+
+    segments = [{"tts_text": f"line {i}"} for i in range(3)]
+    out = tts.generate_full_audio(segments, voice_id="v1", output_dir=str(tmp_path),
+                                    on_progress=angry)
+    assert len(out["segments"]) == 3
