@@ -9,8 +9,19 @@ import json
 import logging
 import math
 import os
+import time
 import uuid
 from datetime import datetime
+
+# Task-level auto-retry budget：失败时不直接阻塞流水线，先指数退避自愈几次。
+# 配合 LLM 网络重试 + ElevenLabs 网络重试 + TTS segment 段缓存复用，瞬时
+# 抖动最多让任务"慢一点"，不会让整条流水线一次失败就报死。
+_TASK_AUTO_RETRY_MAX = 3
+_TASK_AUTO_RETRY_DELAYS = [5, 30, 120]  # seconds before retry 1, 2, 3
+_ALL_STEP_NAMES = (
+    "extract", "asr", "asr_normalize", "voice_match", "alignment",
+    "translate", "tts", "subtitle", "compose", "export",
+)
 
 import config
 
@@ -1028,6 +1039,10 @@ class PipelineRunner:
                 throw_if_cancel_requested(f"pipeline step={step_name}")
                 step_fn()
                 current = task_state.get(task_id) or {}
+                # 每个 step 成功完成都把 retry 计数清零，让下一个 step 的失败有
+                # 完整的 retry budget，避免不同 step 各失败 1 次就累加触顶。
+                if int(current.get("_failure_count") or 0) > 0:
+                    task_state.update(task_id, _failure_count=0)
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
                 if current.get("status") in {"failed", "error", "done"}:
@@ -1043,11 +1058,44 @@ class PipelineRunner:
             # cleans up _active_tasks; it will not show a traceback.
             raise
         except Exception as exc:
-            current_step = (task_state.get(task_id) or {}).get("current_step") or "?"
+            current_step = (task_state.get(task_id) or {}).get("current_step") or start_step or "?"
             logger.exception(
                 "[task %s] pipeline failed at step=%s: %s", task_id, current_step, exc,
             )
-            task_state.update(task_id, status="error", error=str(exc))
+            # Auto-retry budget：单点失败不直接阻塞整条流水线，先指数退避自愈几次。
+            # 已失败次数累加到 task_state，超过 _TASK_AUTO_RETRY_MAX 才标 error。
+            current_task = task_state.get(task_id) or {}
+            failure_count = int(current_task.get("_failure_count") or 0) + 1
+            task_state.update(task_id, _failure_count=failure_count)
+            if failure_count < _TASK_AUTO_RETRY_MAX:
+                delay_idx = min(failure_count - 1, len(_TASK_AUTO_RETRY_DELAYS) - 1)
+                delay = _TASK_AUTO_RETRY_DELAYS[delay_idx]
+                resume_from = current_step if current_step in _ALL_STEP_NAMES else start_step
+                log.warning(
+                    "[task %s] auto-retry %d/%d after %ds (resume_from=%s): %s",
+                    task_id, failure_count, _TASK_AUTO_RETRY_MAX,
+                    delay, resume_from, exc,
+                )
+                try:
+                    time.sleep(delay)
+                except Exception:
+                    pass
+                # 重置 step 状态让 _run 主循环知道要从 resume_from 重新跑
+                try:
+                    started_marker = False
+                    for step_name, _fn in steps:
+                        if step_name == resume_from:
+                            started_marker = True
+                        if started_marker:
+                            self._set_step(task_id, step_name, "pending")
+                except Exception:
+                    pass
+                return self._run(task_id, start_step=resume_from)
+            log.error(
+                "[task %s] auto-retry exhausted (%d/%d), marking task failed",
+                task_id, failure_count, _TASK_AUTO_RETRY_MAX,
+            )
+            task_state.update(task_id, _failure_count=0, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
 
