@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import requests
 import pymysql.err
-from flask import abort, jsonify, request
+from flask import abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import medias, product_roas, pushes
@@ -366,3 +366,17 @@ def api_delete_product(pid: int):
         abort(404)
     medias.soft_delete_product(pid)
     return jsonify({"ok": True})
+
+
+@bp.route("/<int:pid>/roas")
+@login_required
+def roas_page(pid: int):
+    product = medias.get_product(pid)
+    routes = _routes_module()
+    if not product or not routes._can_access_product(product):
+        abort(404)
+    return render_template(
+        "medias/roas.html",
+        product=_serialize_product(product, covers={}),
+        roas_rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
+    )

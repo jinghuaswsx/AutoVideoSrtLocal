@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{% block title %}独立站保本 ROAS - {{ product.product_code }}{% endblock %}
+{% block page_title %}独立站保本 ROAS{% endblock %}
+{% block content %}
+<div class="oc oc-roas-page" data-product-id="{{ product.id }}">
+  <h2>独立站保本 ROAS</h2>
+  <p>{{ product.product_code }}</p>
+  <input type="hidden" data-roas-field="purchase_price" value="{{ product.purchase_price or '' }}">
+  <input type="hidden" data-roas-field="standalone_price" value="{{ product.standalone_price or '' }}">
+</div>
+{% endblock %}
