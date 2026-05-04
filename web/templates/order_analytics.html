@@ -1384,6 +1384,65 @@
     }
   };
 
+  // ===== 北京时间范围标注（业务日按 16:00 切日 → 北京时间 [start 16:00, end+1 16:00)）=====
+  // 自动扫描所有 input[type="date"]，按 id 后缀 StartDate/EndDate（或 Start/End）配对，
+  // 在外层容器之后插入 hint，并通过轮询同步（兼容快捷按钮直接 .value= 不触发 change）。
+  function describeBjWindow(startStr, endStr) {
+    if (!startStr || !endStr) return '';
+    var start = new Date(startStr + 'T00:00:00');
+    var end = new Date(endStr + 'T00:00:00');
+    if (isNaN(start) || isNaN(end)) return '';
+    function pad(n) { return String(n).padStart(2,'0'); }
+    function fmt(d) { return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+    var bjStart = fmt(start) + ' 16:00';
+    var nextDay = new Date(end); nextDay.setDate(nextDay.getDate()+1);
+    var bjEnd = fmt(nextDay) + ' 16:00';
+    var days = Math.round((end - start) / 86400000) + 1;
+    return '📅 北京时间 ' + bjStart + ' → ' + bjEnd + '（' + days + ' 个 Meta 业务日，按 16:00 切日）';
+  }
+  function findDateInputPairs() {
+    var pairs = {};
+    document.querySelectorAll('input[type="date"]').forEach(function(inp) {
+      var m = inp.id.match(/^(.+?)(StartDate|EndDate|Start|End)$/);
+      if (!m) return;
+      var key = m[1], side = (m[2] === 'StartDate' || m[2] === 'Start') ? 'start' : 'end';
+      pairs[key] = pairs[key] || {};
+      pairs[key][side] = inp;
+    });
+    return pairs;
+  }
+  function attachBjHints() {
+    var pairs = findDateInputPairs();
+    Object.keys(pairs).forEach(function(key) {
+      var pair = pairs[key];
+      if (!pair.start || !pair.end) return;
+      var anchor = pair.end.closest('.oad-date-range-field, .oad-toolbar-row, label, span') || pair.end.parentElement;
+      var hint = document.getElementById(key + 'BjHint');
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.id = key + 'BjHint';
+        hint.style.cssText = 'color: var(--fg-muted); font-size: 12px; margin: 4px 0 0; flex-basis: 100%;';
+        anchor.parentElement.insertBefore(hint, anchor.nextSibling);
+      }
+      hint.textContent = describeBjWindow(pair.start.value, pair.end.value);
+    });
+  }
+  function syncAllBjHints() {
+    var pairs = findDateInputPairs();
+    Object.keys(pairs).forEach(function(key) {
+      var hint = document.getElementById(key + 'BjHint');
+      var pair = pairs[key];
+      if (hint && pair.start && pair.end) {
+        var txt = describeBjWindow(pair.start.value, pair.end.value);
+        if (hint.textContent !== txt) hint.textContent = txt;
+      }
+    });
+  }
+  // 初次挂载稍延后（等其他 tab 渲染完）+ 200ms 轮询同步快捷按钮
+  setTimeout(attachBjHints, 100);
+  setTimeout(attachBjHints, 500);
+  setInterval(syncAllBjHints, 250);
+
   document.addEventListener('DOMContentLoaded', function() {
     setDashboardRange('today', true);
     document.querySelectorAll('[data-dashboard-range]').forEach(function(b) {

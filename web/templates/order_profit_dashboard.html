@@ -88,19 +88,56 @@
 .op-completeness-row td.gmv { color: var(--fg-muted); }
 
 .op-loading { padding: var(--space-7); text-align: center; color: var(--fg-subtle); }
+
+/* 日期快捷按钮（对齐 order_analytics 的 oad-seg 风格） */
+.op-segmented {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1); border: 1px solid var(--border-strong);
+  border-radius: 9999px; background: var(--bg-subtle);
+}
+.op-seg {
+  height: 30px; padding: 0 var(--space-3); background: transparent;
+  border: 1px solid transparent; border-radius: 9999px;
+  color: var(--fg-muted); cursor: pointer; font-size: 13px;
+  font-weight: 600; white-space: nowrap;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
+}
+.op-seg:hover { background: white; border-color: var(--border); color: var(--fg); }
+.op-seg.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.op-date-range-field {
+  min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 0 var(--space-2); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: white;
+}
+.op-date-range-field input {
+  width: 130px; height: 30px; padding: 0; border: 0; background: transparent; font-size: 14px;
+}
+.op-date-range-field input:focus-visible { outline: none; }
+.op-date-range-sep { color: var(--fg-subtle); font-size: 13px; }
 {% endblock %}
 
 {% block content %}
 <div class="op-page">
   <div class="op-toolbar">
-    <label>From <input type="date" id="opDateFrom"></label>
-    <label>To <input type="date" id="opDateTo"></label>
-    <button id="opRefreshBtn">刷新</button>
-    <span style="color: var(--fg-subtle); font-size: 13px; margin-left: auto;">
-      汇率取 system_settings.material_roas_rmb_per_usd；退货占用 1%；
-      Shopify 手续费策略 C 估算（buyerCountry 代理 card_country）
+    <span class="op-segmented" role="group" aria-label="日期快捷">
+      <button type="button" class="op-seg is-active" data-op-range="today">今天</button>
+      <button type="button" class="op-seg" data-op-range="yesterday">昨天</button>
+      <button type="button" class="op-seg" data-op-range="thisWeek">本周</button>
+      <button type="button" class="op-seg" data-op-range="lastWeek">上周</button>
+      <button type="button" class="op-seg" data-op-range="thisMonth">本月</button>
+      <button type="button" class="op-seg" data-op-range="lastMonth">上月</button>
+    </span>
+    <span class="op-date-range-field">
+      <input type="date" id="opDateFrom" aria-label="开始日期">
+      <span class="op-date-range-sep">至</span>
+      <input type="date" id="opDateTo" aria-label="结束日期">
+    </span>
+    <button id="opRefreshBtn" style="height:32px; padding:0 16px; background:var(--accent); color:#fff; border:0; border-radius:6px; cursor:pointer; font-size:14px;">刷新</button>
+    <span style="color: var(--fg-subtle); font-size: 12px; margin-left: auto;">
+      汇率：system_settings.material_roas_rmb_per_usd ｜ 退货占用 1% ｜ 手续费策略 C
     </span>
   </div>
+  <div id="opTimeWindowHint" style="margin: -8px 0 var(--space-5); color: var(--fg-muted); font-size: 12px;"></div>
 
   <div id="opAlertsBanner"></div>
 
@@ -196,16 +233,83 @@
 </div>
 {% endblock %}
 
-{% block extra_script %}
+{% block scripts %}
 <script>
 const fmtUSD = v => v == null ? '-' : '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const fmtInt = v => v == null ? '-' : Number(v).toLocaleString('en-US');
 
-function setDefaultDates() {
-  const today = new Date();
-  const past = new Date(today.getTime() - 30 * 86400000);
-  document.getElementById('opDateFrom').value = past.toISOString().slice(0, 10);
-  document.getElementById('opDateTo').value = today.toISOString().slice(0, 10);
+// ===================================================================
+// Meta 业务日历（对齐 order_analytics 的 orderAnalyticsMetaCalendar）
+// 北京时间 16:00 切日：业务日 X = 北京时间 [X 16:00, X+1 16:00)
+// ===================================================================
+const META_TZ = 'Asia/Shanghai';
+const META_CUTOVER_HOUR = 16;
+
+function fmtIsoDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function startOfWeek(d) { const x = new Date(d); const day = x.getDay() || 7; x.setDate(x.getDate()-day+1); return x; }
+function endOfWeek(d) { return addDays(startOfWeek(d), 6); }
+
+// 当前 Meta 业务日（北京时间 16:00 切日）
+function metaBusinessToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: META_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', hourCycle:'h23'
+  }).formatToParts(new Date()).reduce((a,p)=>{ if(p.type!=='literal') a[p.type]=p.value; return a; }, {});
+  const d = new Date(Number(parts.year), Number(parts.month)-1, Number(parts.day));
+  if (Number(parts.hour) < META_CUTOVER_HOUR) d.setDate(d.getDate()-1);
+  return d;
+}
+
+function resolveOpRange(range) {
+  const today = metaBusinessToday();
+  if (range === 'today') return {start: today, end: today};
+  if (range === 'yesterday') { const y = addDays(today,-1); return {start:y, end:y}; }
+  if (range === 'thisWeek') return {start: startOfWeek(today), end: endOfWeek(today)};
+  if (range === 'lastWeek') return {start: addDays(startOfWeek(today),-7), end: addDays(endOfWeek(today),-7)};
+  if (range === 'thisMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth(), 1),
+            end: new Date(today.getFullYear(), today.getMonth()+1, 0)};
+  }
+  if (range === 'lastMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth()-1, 1),
+            end: new Date(today.getFullYear(), today.getMonth(), 0)};
+  }
+  return {start: today, end: today};
+}
+
+// 业务日范围 → 对应北京时间范围说明
+function describeBjWindow(startStr, endStr) {
+  if (!startStr || !endStr) return '';
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  const bjStart = fmtIsoDate(start) + ' 16:00';
+  const bjEnd = fmtIsoDate(addDays(end, 1)) + ' 16:00';
+  const dayCount = Math.round((end - start) / 86400000) + 1;
+  return `📅 北京时间 ${bjStart} → ${bjEnd}（${dayCount} 个 Meta 业务日，按 16:00 切日）`;
+}
+
+function syncBjHint() {
+  const f = document.getElementById('opDateFrom').value;
+  const t = document.getElementById('opDateTo').value;
+  document.getElementById('opTimeWindowHint').textContent = describeBjWindow(f, t);
+  // 同步快捷按钮 active 状态
+  let matched = '';
+  ['today','yesterday','thisWeek','lastWeek','thisMonth','lastMonth'].forEach(r => {
+    const b = resolveOpRange(r);
+    if (fmtIsoDate(b.start) === f && fmtIsoDate(b.end) === t) matched = r;
+  });
+  document.querySelectorAll('[data-op-range]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.opRange === matched);
+  });
+}
+
+function setOpRange(range) {
+  const b = resolveOpRange(range);
+  document.getElementById('opDateFrom').value = fmtIsoDate(b.start);
+  document.getElementById('opDateTo').value = fmtIsoDate(b.end);
+  syncBjHint();
 }
 
 async function fetchJSON(url) {
@@ -397,15 +501,31 @@ async function refreshOverrides() {
   });
 }
 
+function refreshAll() {
+  refreshSummary();
+  refreshLosses();
+  refreshCompleteness();
+  refreshMatching();
+  refreshOverrides();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  setDefaultDates();
-  document.getElementById('opRefreshBtn').addEventListener('click', () => {
-    refreshSummary();
-    refreshLosses();
-    refreshCompleteness();
-    refreshMatching();
-    refreshOverrides();
+  // 默认选"今天"（=Meta 业务日今天，北京时间 16:00 后是当日，之前是昨天）
+  setOpRange('today');
+
+  // 快捷按钮
+  document.querySelectorAll('[data-op-range]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setOpRange(btn.dataset.opRange);
+      refreshAll();
+    });
   });
+
+  // 手动改日期 → 同步 hint + active 状态
+  document.getElementById('opDateFrom').addEventListener('change', syncBjHint);
+  document.getElementById('opDateTo').addEventListener('change', syncBjHint);
+
+  document.getElementById('opRefreshBtn').addEventListener('click', refreshAll);
 
   // tab 切换
   document.querySelectorAll('.op-tab').forEach(btn => {
@@ -419,11 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  refreshSummary();
-  refreshLosses();
-  refreshCompleteness();
-  refreshMatching();
-  refreshOverrides();
+  refreshAll();
 });
 </script>
 {% endblock %}
