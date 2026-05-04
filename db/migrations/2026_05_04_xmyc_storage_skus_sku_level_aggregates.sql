@@ -8,7 +8,9 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE xmyc_storage_skus ADD COLUMN standalone_price_sku DECIMAL(10,2) NULL AFTER unit_price'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 SET @ddl := IF(
   EXISTS(SELECT 1 FROM information_schema.COLUMNS
@@ -16,7 +18,9 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE xmyc_storage_skus ADD COLUMN standalone_shipping_fee_sku DECIMAL(10,2) NULL AFTER standalone_price_sku'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 SET @ddl := IF(
   EXISTS(SELECT 1 FROM information_schema.COLUMNS
@@ -24,7 +28,9 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE xmyc_storage_skus ADD COLUMN packet_cost_actual_sku DECIMAL(12,2) NULL AFTER standalone_shipping_fee_sku'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 SET @ddl := IF(
   EXISTS(SELECT 1 FROM information_schema.COLUMNS
@@ -32,4 +38,6 @@ SET @ddl := IF(
   'SELECT 1',
   'ALTER TABLE xmyc_storage_skus ADD COLUMN sku_orders_count INT NULL AFTER packet_cost_actual_sku'
 );
-PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
