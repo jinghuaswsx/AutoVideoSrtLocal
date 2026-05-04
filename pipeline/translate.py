@@ -249,20 +249,33 @@ def _generate_localized_translation_batched(
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    checkpoint_key: str | None = None,
 ) -> dict:
     """Long-video translation: split source segments into ~batch_size batches,
     call _single per batch, normalize per-batch indices to global, then merge.
     Each batch sees a small prompt so Claude/Gemini reliably return all the
-    nested schema fields (source_segment_indices etc.)."""
+    nested schema fields (source_segment_indices etc.).
+
+    断点续传：每完成一批立刻把 accumulated 状态写到
+    task_state._batch_checkpoints[checkpoint_key]，task 失败重跑时从已完成的
+    那批之后接着跑（节省最贵的 LLM 调用）。"""
     batches = _split_segments_into_batches(script_segments, target_size=batch_size)
     log.info("localized_translation batched: %d segments → %d batches (size~%d)",
              len(script_segments), len(batches), batch_size)
 
-    all_sentences: list[dict] = []
-    all_messages: list = []
-    total_input = 0
-    total_output = 0
+    cp = _read_batch_checkpoint(project_id, checkpoint_key) or {}
+    start_batch = int(cp.get("completed_batches") or 0)
+    all_sentences: list[dict] = list(cp.get("all_sentences") or [])
+    all_messages: list = list(cp.get("all_messages") or [])
+    total_input = int(cp.get("total_input") or 0)
+    total_output = int(cp.get("total_output") or 0)
+    if start_batch > 0:
+        log.info("localized_translation resume from checkpoint: batch %d/%d, cached %d sentences",
+                 start_batch + 1, len(batches), len(all_sentences))
+
     for batch_idx, batch in enumerate(batches):
+        if batch_idx < start_batch:
+            continue
         log.info("localized_translation batch %d/%d (n=%d)",
                  batch_idx + 1, len(batches), len(batch))
         batch_source_text = "\n".join(
@@ -284,6 +297,13 @@ def _generate_localized_translation_batched(
         usage = batch_result.get("_usage") or {}
         total_input += int(usage.get("input_tokens") or 0)
         total_output += int(usage.get("output_tokens") or 0)
+        _write_batch_checkpoint(project_id, checkpoint_key, {
+            "completed_batches": batch_idx + 1,
+            "all_sentences": all_sentences,
+            "all_messages": all_messages,
+            "total_input": total_input,
+            "total_output": total_output,
+        })
 
     for i, s in enumerate(all_sentences):
         s["index"] = i
@@ -295,6 +315,7 @@ def _generate_localized_translation_batched(
         final["_messages"] = all_messages
     if total_input or total_output:
         final["_usage"] = {"input_tokens": total_input, "output_tokens": total_output}
+    _clear_batch_checkpoint(project_id, checkpoint_key)
     return final
 
 
@@ -309,6 +330,7 @@ def generate_localized_translation(
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    checkpoint_key: str | None = None,
     # 已废弃；仅保留以避免老调用方 TypeError，值被忽略。
     provider: str | None = None,
     openrouter_api_key: str | None = None,
@@ -337,6 +359,7 @@ def generate_localized_translation(
             project_id=project_id,
             provider_override=provider_override,
             model_override=model_override,
+            checkpoint_key=checkpoint_key,
         )
     return _generate_localized_translation_single(
         source_full_text_zh, script_segments,
@@ -401,22 +424,33 @@ def _generate_tts_script_batched(
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    checkpoint_key: str | None = None,
 ) -> dict:
     """Long-translation tts_script: split sentences into ~batch_size batches,
     generate per-batch blocks/subtitle_chunks, merge, then run a single
     validate_tts_script(sentences=...) so derive recomputes all nested
-    indices coherently against the full sentence list."""
+    indices coherently against the full sentence list.
+
+    断点续传：每完成一批立刻写 task_state._batch_checkpoints[checkpoint_key]。"""
     sentences = localized_translation.get("sentences") or []
     sentence_batches = _split_segments_into_batches(sentences, target_size=batch_size)
     log.info("tts_script batched: %d sentences → %d batches",
              len(sentences), len(sentence_batches))
 
-    all_blocks: list[dict] = []
-    all_chunks: list[dict] = []
-    all_messages: list = []
-    total_input = 0
-    total_output = 0
+    cp = _read_batch_checkpoint(project_id, checkpoint_key) or {}
+    start_batch = int(cp.get("completed_batches") or 0)
+    all_blocks: list[dict] = list(cp.get("all_blocks") or [])
+    all_chunks: list[dict] = list(cp.get("all_chunks") or [])
+    all_messages: list = list(cp.get("all_messages") or [])
+    total_input = int(cp.get("total_input") or 0)
+    total_output = int(cp.get("total_output") or 0)
+    if start_batch > 0:
+        log.info("tts_script resume from checkpoint: batch %d/%d, cached %d blocks / %d chunks",
+                 start_batch + 1, len(sentence_batches), len(all_blocks), len(all_chunks))
+
     for batch_idx, batch in enumerate(sentence_batches):
+        if batch_idx < start_batch:
+            continue
         log.info("tts_script batch %d/%d (n=%d)",
                  batch_idx + 1, len(sentence_batches), len(batch))
         sub_localized = {
@@ -440,6 +474,14 @@ def _generate_tts_script_batched(
         usage = batch_result.get("_usage") or {}
         total_input += int(usage.get("input_tokens") or 0)
         total_output += int(usage.get("output_tokens") or 0)
+        _write_batch_checkpoint(project_id, checkpoint_key, {
+            "completed_batches": batch_idx + 1,
+            "all_blocks": all_blocks,
+            "all_chunks": all_chunks,
+            "all_messages": all_messages,
+            "total_input": total_input,
+            "total_output": total_output,
+        })
 
     for i, b in enumerate(all_blocks):
         b["index"] = i
@@ -459,6 +501,7 @@ def _generate_tts_script_batched(
         final["_messages"] = all_messages
     if total_input or total_output:
         final["_usage"] = {"input_tokens": total_input, "output_tokens": total_output}
+    _clear_batch_checkpoint(project_id, checkpoint_key)
     return final
 
 
@@ -473,6 +516,7 @@ def generate_tts_script(
     validator=None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    checkpoint_key: str | None = None,
     # 已废弃；保留以避免老调用方 TypeError。
     provider: str | None = None,
     openrouter_api_key: str | None = None,
@@ -501,6 +545,7 @@ def generate_tts_script(
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
             provider_override=provider_override,
             model_override=model_override,
+            checkpoint_key=checkpoint_key,
         )
     return _generate_tts_script_single(
         localized_translation,
@@ -545,6 +590,51 @@ def _patch_missing_source_indices_from_prev(
                 continue
         if fallback:
             s["source_segment_indices"] = list(fallback)
+
+
+def _read_batch_checkpoint(task_id: str | None, key: str | None) -> dict | None:
+    """Read previously-saved per-batch progress for a long-running batched
+    LLM call. Returns None if not found, or the saved dict."""
+    if not task_id or not key:
+        return None
+    try:
+        from appcore import task_state
+        task = task_state.get(task_id) or {}
+        all_cp = task.get("_batch_checkpoints") or {}
+        return all_cp.get(key)
+    except Exception:
+        log.exception("batch checkpoint read failed key=%s", key)
+        return None
+
+
+def _write_batch_checkpoint(task_id: str | None, key: str | None, payload: dict) -> None:
+    """Persist per-batch progress so a retry can skip already-completed batches.
+    Called after every batch completion inside the batched LLM functions."""
+    if not task_id or not key:
+        return
+    try:
+        from appcore import task_state
+        task = task_state.get(task_id) or {}
+        all_cp = dict(task.get("_batch_checkpoints") or {})
+        all_cp[key] = payload
+        task_state.update(task_id, _batch_checkpoints=all_cp)
+    except Exception:
+        log.exception("batch checkpoint write failed key=%s", key)
+
+
+def _clear_batch_checkpoint(task_id: str | None, key: str | None) -> None:
+    """Drop a checkpoint after the batched call finishes successfully."""
+    if not task_id or not key:
+        return
+    try:
+        from appcore import task_state
+        task = task_state.get(task_id) or {}
+        all_cp = dict(task.get("_batch_checkpoints") or {})
+        if key in all_cp:
+            del all_cp[key]
+            task_state.update(task_id, _batch_checkpoints=all_cp)
+    except Exception:
+        log.exception("batch checkpoint clear failed key=%s", key)
 
 
 def _allocate_sub_target_words(sentence_batches: list[list[dict]], total_target: int) -> list[int]:
@@ -642,10 +732,14 @@ def _generate_localized_rewrite_batched(
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    checkpoint_key: str | None = None,
 ) -> dict:
     """Long-translation rewrite: split prev sentences into ~batch_size batches,
     allocate sub-target words proportionally by char count, rewrite each batch
-    independently, then merge. Same long-prompt root-cause fix as translate."""
+    independently, then merge. Same long-prompt root-cause fix as translate.
+
+    断点续传：每完成一批立刻写 task_state._batch_checkpoints[checkpoint_key]，
+    重跑跳过已完成批次。"""
     sentences = prev_localized_translation.get("sentences") or []
     sentence_batches = _split_segments_into_batches(sentences, target_size=batch_size)
     sub_targets = _allocate_sub_target_words(sentence_batches, target_words)
@@ -654,11 +748,19 @@ def _generate_localized_rewrite_batched(
         len(sentences), len(sentence_batches), target_words, sub_targets,
     )
 
-    all_sentences: list[dict] = []
-    all_messages: list = []
-    total_input = 0
-    total_output = 0
+    cp = _read_batch_checkpoint(project_id, checkpoint_key) or {}
+    start_batch = int(cp.get("completed_batches") or 0)
+    all_sentences: list[dict] = list(cp.get("all_sentences") or [])
+    all_messages: list = list(cp.get("all_messages") or [])
+    total_input = int(cp.get("total_input") or 0)
+    total_output = int(cp.get("total_output") or 0)
+    if start_batch > 0:
+        log.info("localized_rewrite resume from checkpoint: batch %d/%d, cached %d sentences",
+                 start_batch + 1, len(sentence_batches), len(all_sentences))
+
     for batch_idx, (batch, sub_target) in enumerate(zip(sentence_batches, sub_targets)):
+        if batch_idx < start_batch:
+            continue
         log.info(
             "localized_rewrite batch %d/%d (n=%d, sub_target=%d)",
             batch_idx + 1, len(sentence_batches), len(batch), sub_target,
@@ -691,6 +793,13 @@ def _generate_localized_rewrite_batched(
         usage = batch_result.get("_usage") or {}
         total_input += int(usage.get("input_tokens") or 0)
         total_output += int(usage.get("output_tokens") or 0)
+        _write_batch_checkpoint(project_id, checkpoint_key, {
+            "completed_batches": batch_idx + 1,
+            "all_sentences": all_sentences,
+            "all_messages": all_messages,
+            "total_input": total_input,
+            "total_output": total_output,
+        })
 
     for i, s in enumerate(all_sentences):
         s["index"] = i
@@ -703,6 +812,7 @@ def _generate_localized_rewrite_batched(
         final["_messages"] = all_messages
     if total_input or total_output:
         final["_usage"] = {"input_tokens": total_input, "output_tokens": total_output}
+    _clear_batch_checkpoint(project_id, checkpoint_key)
     return final
 
 
@@ -721,6 +831,7 @@ def generate_localized_rewrite(
     feedback_notes: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    checkpoint_key: str | None = None,
     # 已废弃；保留以避免老调用方 TypeError。
     provider: str | None = None,
     openrouter_api_key: str | None = None,
@@ -752,6 +863,7 @@ def generate_localized_rewrite(
             batch_size=getattr(_cfg, "MULTI_TRANSLATE_BATCH_SIZE", 12),
             provider_override=provider_override,
             model_override=model_override,
+            checkpoint_key=checkpoint_key,
         )
     return _generate_localized_rewrite_single(
         source_full_text, prev_localized_translation, target_words,

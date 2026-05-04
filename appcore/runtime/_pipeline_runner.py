@@ -376,6 +376,7 @@ class PipelineRunner:
                         feedback_notes=feedback_notes,
                         use_case="video_translate.rewrite",
                         project_id=task_id,
+                        checkpoint_key=f"rewrite.{variant}.r{round_index}.a{attempt}",
                     )
                     cand_words = _count_words(candidate.get("full_text", ""))
                     diff = abs(cand_words - target_words)
@@ -507,6 +508,7 @@ class PipelineRunner:
                 validator=validator,
                 use_case="video_translate.tts_script",
                 project_id=task_id,
+                checkpoint_key=f"tts_script.{variant}.r{round_index}",
             )
             _save_json(task_dir, f"tts_script.round_{round_index}.json", tts_script)
             round_record["artifact_paths"]["tts_script"] = f"tts_script.round_{round_index}.json"
@@ -1422,6 +1424,7 @@ class PipelineRunner:
             provider=provider, user_id=self.user_id,
             use_case="video_translate.localize",
             project_id=task_id,
+            checkpoint_key="translate.initial",
         )
 
         # 先把初始翻译的 Prompt 单独落盘，后续时长迭代 round 1 可以复用
