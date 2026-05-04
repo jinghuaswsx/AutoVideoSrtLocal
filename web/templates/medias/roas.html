@@ -19,12 +19,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
-  window.MATERIAL_ROAS_RMB_PER_USD = {{ roas_rmb_per_usd or 6.83 }};
+  window.MATERIAL_ROAS_RMB_PER_USD = {{ (roas_rmb_per_usd or 6.83) | tojson }};
 </script>
 <script src="{{ url_for('static', filename='roas_form.js') }}"></script>
 <script>
   (function () {
-    const root = document.querySelector('.oc-roas-page');
+    const root = document.querySelector('.oc-roas-page[data-product-id="{{ product.id }}"]');
     const statusBar = document.querySelector('[data-roas-status]');
     const product = {{ product | tojson }};
     new RoasFormController(root, {

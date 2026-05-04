@@ -91,6 +91,7 @@ def test_roas_page_includes_status_bar_and_back_link(authed_client_no_db, monkey
     body = authed_client_no_db.get("/medias/6/roas").get_data(as_text=True)
 
     assert 'class="oc-roas-status-bar"' in body
+    assert 'data-state="idle"' in body
     assert 'data-roas-status' in body
     assert 'href="/medias"' in body
     assert "返回素材管理" in body
@@ -118,4 +119,5 @@ def test_roas_page_loads_controller_script_and_bootstraps(authed_client_no_db, m
 
     assert "roas_form.js" in body
     assert "new RoasFormController" in body
-    assert '"id": 6' in body or "'id': 6" in body or '"id":6' in body
+    assert '"id": 6' in body or '"id":6' in body
+    assert "fillFromProduct" in body
