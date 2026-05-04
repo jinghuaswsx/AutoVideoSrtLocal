@@ -105,23 +105,26 @@ def test_roas_modal_uses_manual_calculate_button_and_injected_exchange_rate():
 
 def test_roas_modal_fills_main_area_outside_sidebar():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
 
-    assert "#roasModalMask" in html
-    assert "inset:0 0 0 220px" in html
-    assert "align-items:stretch" in html
-    roas_modal_css = html.split(".oc-roas-modal {", 1)[1].split("}", 1)[0]
+    # Outer shell element remains in medias_list.html
+    assert 'id="roasModalMask"' in html
+    # CSS moved to shared partial
+    assert "inset:0 0 0 220px" in styles
+    assert "align-items:stretch" in styles
+    roas_modal_css = styles.split(".oc-roas-modal {", 1)[1].split("}", 1)[0]
     assert "width:100%" in roas_modal_css
     assert "height:100%" in roas_modal_css
 
 
 def test_roas_modal_uses_full_height_scroll_area_and_tighter_field_spacing():
-    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
 
-    form_css = html.split("#roasForm {", 1)[1].split("}", 1)[0]
-    layout_css = html.split(".oc-roas-layout {", 1)[1].split("}", 1)[0]
-    column_css = html.split(".oc-roas-column {", 1)[1].split("}", 1)[0]
-    field_list_css = html.split(".oc-roas-field-list {", 1)[1].split("}", 1)[0]
-    field_label_css = html.split(".oc-roas-field label {", 1)[1].split("}", 1)[0]
+    form_css = styles.split("#roasForm {", 1)[1].split("}", 1)[0]
+    layout_css = styles.split(".oc-roas-layout {", 1)[1].split("}", 1)[0]
+    column_css = styles.split(".oc-roas-column {", 1)[1].split("}", 1)[0]
+    field_list_css = styles.split(".oc-roas-field-list {", 1)[1].split("}", 1)[0]
+    field_label_css = styles.split(".oc-roas-field label {", 1)[1].split("}", 1)[0]
 
     assert "display:flex" in form_css
     assert "flex:1 1 auto" in form_css
@@ -136,7 +139,7 @@ def test_roas_modal_uses_full_height_scroll_area_and_tighter_field_spacing():
 
 
 def test_roas_modal_embeds_average_shipping_in_bottom_half_of_tk_column():
-    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
     partial = PARTIAL.read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
@@ -151,11 +154,11 @@ def test_roas_modal_embeds_average_shipping_in_bottom_half_of_tk_column():
     tk_column = partial.split('class="oc-roas-column oc-roas-tk-column"', 1)[1].split("</form>", 1)[0]
     assert tk_column.index('id="roasTkSection"') < tk_column.index('id="roasAverageShippingSection"')
 
-    # CSS stays in medias_list.html
-    tk_column_css = html.split(".oc-roas-tk-column {", 1)[1].split("}", 1)[0]
-    half_section_css = html.split(".oc-roas-tk-column .oc-roas-section {", 1)[1].split("}", 1)[0]
-    avg_heading_css = html.split(".oc-roas-avg-head h4 {", 1)[1].split("}", 1)[0]
-    avg_input_css = html.split(".oc-roas-avg-input {", 1)[1].split("}", 1)[0]
+    # CSS lives in the shared styles partial
+    tk_column_css = styles.split(".oc-roas-tk-column {", 1)[1].split("}", 1)[0]
+    half_section_css = styles.split(".oc-roas-tk-column .oc-roas-section {", 1)[1].split("}", 1)[0]
+    avg_heading_css = styles.split(".oc-roas-avg-head h4 {", 1)[1].split("}", 1)[0]
+    avg_input_css = styles.split(".oc-roas-avg-input {", 1)[1].split("}", 1)[0]
     assert "overflow:hidden" in tk_column_css
     assert "flex:1 1 0" in half_section_css
     assert "min-height:0" in half_section_css

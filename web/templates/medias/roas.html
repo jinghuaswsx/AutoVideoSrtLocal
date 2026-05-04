@@ -1,6 +1,9 @@
 {% extends "layout.html" %}
 {% block title %}独立站保本 ROAS - {{ product.product_code }}{% endblock %}
 {% block page_title %}独立站保本 ROAS{% endblock %}
+{% block extra_style %}
+{% include "medias/_roas_styles.html" %}
+{% endblock %}
 {% block content %}
 <div class="oc oc-roas-page" data-product-id="{{ product.id }}">
   <header class="oc-roas-page-head">

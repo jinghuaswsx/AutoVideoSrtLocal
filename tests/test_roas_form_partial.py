@@ -57,3 +57,33 @@ def test_medias_list_includes_partial():
 def test_roas_page_includes_partial():
     html = (ROOT / "web" / "templates" / "medias" / "roas.html").read_text(encoding="utf-8")
     assert "medias/_roas_form.html" in html
+
+
+STYLES = ROOT / "web" / "templates" / "medias" / "_roas_styles.html"
+
+
+def test_styles_partial_exists():
+    assert STYLES.exists()
+
+
+def test_styles_partial_defines_oc_tokens():
+    css = STYLES.read_text(encoding="utf-8")
+    assert "--oc-accent" in css
+    assert "--oc-bg-subtle" in css
+
+
+def test_styles_partial_defines_roas_layout_rules():
+    css = STYLES.read_text(encoding="utf-8")
+    assert ".oc-roas-layout" in css
+    assert ".oc-roas-section" in css
+    assert ".oc-roas-results" in css
+
+
+def test_medias_list_includes_styles_partial():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    assert "medias/_roas_styles.html" in html
+
+
+def test_roas_page_includes_styles_partial():
+    html = (ROOT / "web" / "templates" / "medias" / "roas.html").read_text(encoding="utf-8")
+    assert "medias/_roas_styles.html" in html
