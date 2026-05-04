@@ -536,14 +536,19 @@ class PipelineRunner:
             _substep(f"生成 ElevenLabs 音频 0/{len(tts_segments)}")
             self._emit_duration_round(task_id, round_index, "audio_gen", round_record)
 
-            def _on_seg_done(done, total, info):
-                round_record["audio_segments_done"] = done
-                round_record["audio_segments_total"] = total
-                self._emit_substep_msg(
-                    task_id, "tts",
-                    f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 生成 ElevenLabs 音频 {done}/{total}",
-                )
+            from appcore.runtime._helpers import make_tts_progress_emitter
+
+            def _sync_round_record(snap):
+                round_record["audio_segments_done"] = snap["done"]
+                round_record["audio_segments_total"] = snap["total"]
                 self._emit_duration_round(task_id, round_index, "audio_gen", round_record)
+
+            on_progress = make_tts_progress_emitter(
+                self, task_id,
+                lang_label=_lang_display(target_language_label),
+                round_label=f"第 {round_index} 轮",
+                extra_state_update=_sync_round_record,
+            )
 
             result = generate_full_audio(
                 tts_segments, voice["elevenlabs_voice_id"], task_dir,
@@ -551,7 +556,7 @@ class PipelineRunner:
                 elevenlabs_api_key=elevenlabs_api_key,
                 model_id=tts_model_id,
                 language_code=tts_language_code,
-                on_segment_done=_on_seg_done,
+                on_progress=on_progress,
             )
             round_record["artifact_paths"]["tts_full_audio"] = f"tts_full.round_{round_index}.mp3"
 
