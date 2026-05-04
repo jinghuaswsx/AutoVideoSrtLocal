@@ -1,3 +1,4 @@
+{% extends "_translate_detail_shell.html" %}
 {% if not project.deleted_at %}
 {% set allow_upload = false %}
 {% set show_back_link = false %}
@@ -9,7 +10,8 @@
 {% set default_source_language = state.source_language or 'en' %}
 {% endif %}
 {% set detail_mode = 'multi' %}
-{% include "_translate_detail_shell.html" %}
+
+{% block detail_extra %}
 {% if state.asr_normalize_artifact %}
 {% set norm = state.asr_normalize_artifact %}
 {% set is_user_specified = norm.detection_source == 'user_specified' %}
@@ -251,3 +253,4 @@
 {% endif %}
 
 {# 翻译质量评估卡片已迁移至 _task_workbench.html，渲染在「字幕生成」与「视频合成」之间 #}
+{% endblock %}
