@@ -351,8 +351,9 @@ class TestDurationLoopRound1Only:
 
         msgs = [e.payload["message"] for e in captured if e.type == EVT_STEP_UPDATE]
         assert any("切分朗读文案" in m for m in msgs), f"got: {msgs}"
-        assert any("ElevenLabs 音频 1/2" in m for m in msgs), f"got: {msgs}"
-        assert any("ElevenLabs 音频 2/2" in m for m in msgs), f"got: {msgs}"
+        # 并发改造后文案变成 "1/2（活跃 N 路）"——保留 1/2 / 2/2 进度数字断言即可
+        assert any("1/2" in m and "活跃" in m for m in msgs), f"got: {msgs}"
+        assert any("2/2" in m and "活跃" in m for m in msgs), f"got: {msgs}"
         assert any("测量" in m or "校验" in m for m in msgs), f"got: {msgs}"
 
     def test_round1_record_has_audio_segments_total_after_audio_gen(self, tmp_path, monkeypatch):
