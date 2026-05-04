@@ -7,6 +7,18 @@
 - When this project gets real source files, update this file with exact run, test, lint, typecheck, and build commands.
 - Prefer installed skills when relevant, especially `superpowers:*`, `claude-api`, `pdf`, `docx`, `pptx`, `xlsx`, `webapp-testing`, `frontend-design`, and `mcp-builder`.
 
+## GitHub 凭据 / push 流程（本机）
+
+本机已配 GitHub Personal Access Token，直接跑 `git push` / `git pull` 即可，**不要再问凭据、不要 `gh auth login`、不要让用户重新发 token**。
+
+- 凭据存储位置：`~/.git-credentials`（`chmod 600`），通过 `git config --global credential.helper store` 持久化。
+- 账号：`jinghuaswsx`；token 不过期；scope 为 `jinghuaswsx/AutoVideoSrtLocal` 的 Contents Read/Write。
+- 直接用法：在主仓库或任何 worktree 跑 `git push origin <branch>`，git 自动从 `~/.git-credentials` 读 token，无交互。
+- 安全约束：
+  - 不要 `cat ~/.git-credentials`、不要把 token 出现在命令行参数里、不要把它写进任何 commit 或日志。
+  - 不要把 token 拷到对话里（即便用户原始提供的那条消息已经在 transcript 里，也不要在新消息里复述）。
+- 失效兜底：如果 push 报 403/401，先确认 `~/.git-credentials` 还在、文件权限是 600；只有当确认 token 被 revoke 时，才请用户重新签发并直接 `printf 'https://jinghuaswsx:NEW_TOKEN@github.com\n' > ~/.git-credentials && chmod 600 ~/.git-credentials` 覆盖更新。
+
 ## 发布到生产（172.30.254.14）
 
 **唯一发布入口：** `bash deploy/publish.sh "<commit message>"`（commit message 仅当 working tree 有未提交改动时生效；干净状态下脚本只跑 push + 远端 pull + restart + 健康检查）。
