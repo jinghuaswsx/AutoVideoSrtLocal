@@ -35,6 +35,14 @@ def test_resolve_tts_max_concurrency_invalid_string(monkeypatch):
     assert tts._resolve_tts_max_concurrency() == 12  # 兜底默认
 
 
+def test_resolve_tts_max_concurrency_falls_back_when_settings_unavailable(monkeypatch):
+    def fail_get_setting(key):
+        raise RuntimeError("settings db unavailable")
+
+    monkeypatch.setattr("appcore.settings.get_setting", fail_get_setting)
+    assert tts._resolve_tts_max_concurrency() == 12
+
+
 def test_get_tts_pool_is_singleton(monkeypatch):
     monkeypatch.setattr("appcore.settings.get_setting", lambda key: None)
     # 重置模块级单例

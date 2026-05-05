@@ -49,7 +49,15 @@ _HARD_CAP_TTS_MAX_CONCURRENCY = 15  # ElevenLabs Business tier hard limit
 def _resolve_tts_max_concurrency() -> int:
     """从 system settings 读 tts_max_concurrency，默认 12，硬上限 15。"""
     from appcore.settings import get_setting
-    raw = get_setting("tts_max_concurrency")
+    try:
+        raw = get_setting("tts_max_concurrency")
+    except Exception:
+        log.warning(
+            "failed to read tts_max_concurrency setting; using default %s",
+            _DEFAULT_TTS_MAX_CONCURRENCY,
+            exc_info=True,
+        )
+        raw = None
     try:
         n = int(raw) if raw is not None else _DEFAULT_TTS_MAX_CONCURRENCY
     except (TypeError, ValueError):

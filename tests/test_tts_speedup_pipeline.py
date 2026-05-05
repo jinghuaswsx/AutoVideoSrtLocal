@@ -10,6 +10,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def no_db_tts_settings(monkeypatch):
+    monkeypatch.setattr("appcore.settings.get_setting", lambda key: None)
+    from pipeline import tts
+
+    tts._TTS_POOL = None
+    yield
+    tts._TTS_POOL = None
+
+
 def test_regenerate_full_audio_with_speed_calls_each_segment_with_speed(tmp_path):
     from pipeline import tts
 
