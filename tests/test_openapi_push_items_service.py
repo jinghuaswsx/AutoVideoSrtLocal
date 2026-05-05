@@ -203,3 +203,74 @@ def test_filter_and_paginate_push_items_by_status():
         {"item_id": 4, "status": "pushed"},
     ]
     assert openapi_push_items.filter_push_items_by_status(items, []) == items
+
+
+def test_build_push_item_payload_response_combines_payload_and_localized_text(monkeypatch):
+    from web.services import openapi_push_items
+
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "compute_readiness",
+        lambda item, product: {"has_object": True},
+    )
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "compute_status",
+        lambda item, product: "pending",
+    )
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "build_item_payload",
+        lambda item, product: {
+            "mode": "create",
+            "texts": [{"title": "x", "message": "y", "description": "z"}],
+        },
+    )
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "resolve_localized_text_payload",
+        lambda item: {"title": "fr1", "message": "fr2", "description": "fr3", "lang": "法语"},
+    )
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "build_localized_texts_request",
+        lambda item: {"texts": [{"title": "fr1", "message": "fr2"}]},
+    )
+
+    item = {
+        "id": 238,
+        "product_id": 10,
+        "lang": "fr",
+        "filename": "demo.mp4",
+        "display_name": "demo.mp4",
+        "object_key": "k.mp4",
+        "cover_object_key": "k.jpg",
+        "latest_push_id": None,
+    }
+    product = {
+        "id": 10,
+        "name": "P",
+        "product_code": "p",
+        "mk_id": 3725,
+        "ad_supported_langs": "fr",
+    }
+
+    payload = openapi_push_items.build_push_item_payload_response(
+        item,
+        product,
+        query_one_fn=lambda sql, args: None,
+        media_download_url_fn=lambda key: f"https://local/{key}",
+    )
+
+    assert payload["item_id"] == 238
+    assert payload["mk_id"] == 3725
+    assert payload["payload"]["mode"] == "create"
+    assert payload["localized_text"] == {
+        "title": "fr1",
+        "message": "fr2",
+        "description": "fr3",
+        "lang": "法语",
+    }
+    assert payload["localized_texts_request"] == {"texts": [{"title": "fr1", "message": "fr2"}]}
+    assert payload["item"]["item_id"] == 238
+    assert payload["item"]["cover_url"] == "https://local/k.jpg"

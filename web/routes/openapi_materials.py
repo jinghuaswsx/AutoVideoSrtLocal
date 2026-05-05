@@ -32,6 +32,7 @@ from web.services.openapi_materials_serializers import (
     serialize_shopify_image_task as _serialize_shopify_image_task,
 )
 from web.services.openapi_push_items import (
+    build_push_item_payload_response as _build_push_item_payload_response,
     filter_push_items_by_status as _filter_push_items_by_status,
     paginate_push_items as _paginate_push_items,
     serialize_push_item as _serialize_push_item,
@@ -519,7 +520,7 @@ def get_push_item_payload_by_keys():
         return jsonify({"error": "product not found"}), 404
 
     try:
-        payload = pushes.build_item_payload(item, product)
+        response_payload = _build_push_item_payload_response(item, product, query_one_fn=query_one)
     except pushes.ProductNotListedError as exc:
         return jsonify({
             "error": str(exc),
@@ -530,16 +531,7 @@ def get_push_item_payload_by_keys():
             "error": str(exc),
             "code": "copywriting_not_ready",
         }), 409
-    localized_text = pushes.resolve_localized_text_payload(item)
-    localized_texts_request = pushes.build_localized_texts_request(item)
-    return jsonify({
-        "item_id": item["id"],
-        "mk_id": product.get("mk_id"),
-        "item": _serialize_push_item(item, product, query_one_fn=query_one),
-        "payload": payload,
-        "localized_text": localized_text,
-        "localized_texts_request": localized_texts_request,
-    })
+    return jsonify(response_payload)
 
 
 @push_bp.route("/<int:item_id>/mark-pushed", methods=["POST"])

@@ -100,3 +100,28 @@ def paginate_push_items(items: list[dict], *, page: int, page_size: int) -> list
     start = (page - 1) * page_size
     end = start + page_size
     return items[start:end]
+
+
+def build_push_item_payload_response(
+    item: dict,
+    product: dict,
+    *,
+    query_one_fn: QueryOneFn = db_query_one,
+    media_download_url_fn: MediaUrlFn = media_download_url,
+) -> dict:
+    payload = pushes.build_item_payload(item, product)
+    localized_text = pushes.resolve_localized_text_payload(item)
+    localized_texts_request = pushes.build_localized_texts_request(item)
+    return {
+        "item_id": item["id"],
+        "mk_id": product.get("mk_id"),
+        "item": serialize_push_item(
+            item,
+            product,
+            query_one_fn=query_one_fn,
+            media_download_url_fn=media_download_url_fn,
+        ),
+        "payload": payload,
+        "localized_text": localized_text,
+        "localized_texts_request": localized_texts_request,
+    }
