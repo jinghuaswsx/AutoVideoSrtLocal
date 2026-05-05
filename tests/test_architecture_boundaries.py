@@ -821,6 +821,31 @@ def test_media_item_upload_responses_live_outside_route_module():
     assert Path("web/services/media_items.py").exists()
 
 
+def test_media_item_video_ai_review_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/items.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("api_run_video_ai_review", "api_get_video_ai_review"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "from appcore import video_ai_review" not in route_source
+    assert "video_ai_review." not in route_source
+    assert "trigger_review" not in route_source
+    assert "latest_review" not in route_source
+    assert "ReviewInProgressError" not in route_source
+    assert "AI 视频分析正在运行中" not in route_source
+    assert '"status": "started"' not in route_source
+    assert "start_media_item_video_ai_review" in route_source
+    assert "get_media_item_video_ai_review" in route_source
+    assert Path("web/services/media_item_video_ai_review.py").exists()
+
+
 def test_media_object_access_validation_lives_outside_route_module():
     module_source = Path("web/routes/medias/media_upload.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
