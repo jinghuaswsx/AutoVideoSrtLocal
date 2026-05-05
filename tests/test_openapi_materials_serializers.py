@@ -169,3 +169,70 @@ def test_openapi_materials_builds_material_detail_response():
     assert payload["items"][0]["display_name"] == "demo.mp4"
     assert payload["items"][0]["video_download_url"] == "https://local/video/demo.mp4"
     assert payload["storage_backend"] == "local"
+
+
+def test_openapi_link_check_builds_bootstrap_response():
+    from web.services.openapi_link_check import build_link_check_bootstrap_response
+
+    captured: dict = {}
+
+    def fake_list_languages():
+        return [
+            {"code": "de", "enabled": 1},
+            {"code": "fr", "enabled": 0},
+            {"code": "en", "enabled": 1},
+        ]
+
+    def fake_detect(target_url, enabled_languages):
+        captured["detect"] = (target_url, enabled_languages)
+        return "de"
+
+    def fake_find_product(target_url, target_language):
+        captured["find"] = (target_url, target_language)
+        return {
+            "id": 7,
+            "product_code": "demo",
+            "name": "Demo",
+            "_matched_by": "localized_links_exact",
+        }
+
+    def fake_list_references(product_id, lang):
+        captured["references"] = (product_id, lang)
+        return [
+            {"id": "skip", "kind": "detail", "filename": "empty.jpg", "object_key": ""},
+            {"id": "cover", "kind": "cover", "filename": "cover.jpg", "object_key": "covers/de.jpg"},
+        ]
+
+    payload = build_link_check_bootstrap_response(
+        "https://example.com/de/products/demo?b=&a=1#frag",
+        list_languages_fn=fake_list_languages,
+        detect_target_language_fn=fake_detect,
+        find_product_fn=fake_find_product,
+        list_reference_images_fn=fake_list_references,
+        get_language_name_fn=lambda lang: "DE",
+        media_download_url_fn=lambda key: f"https://local/{key}",
+    )
+
+    assert captured["detect"] == (
+        "https://example.com/de/products/demo?b=&a=1#frag",
+        {"de", "en"},
+    )
+    assert captured["find"] == (
+        "https://example.com/de/products/demo?b=&a=1#frag",
+        "de",
+    )
+    assert captured["references"] == (7, "de")
+    assert payload["product"] == {"id": 7, "product_code": "demo", "name": "Demo"}
+    assert payload["target_language"] == "de"
+    assert payload["target_language_name"] == "DE"
+    assert payload["matched_by"] == "localized_links_exact"
+    assert payload["normalized_url"] == "https://example.com/de/products/demo?b=&a=1"
+    assert payload["reference_images"] == [
+        {
+            "id": "cover",
+            "kind": "cover",
+            "filename": "cover.jpg",
+            "download_url": "https://local/covers/de.jpg",
+            "storage_backend": "local",
+        }
+    ]

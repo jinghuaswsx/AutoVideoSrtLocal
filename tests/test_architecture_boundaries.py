@@ -844,6 +844,29 @@ def test_openapi_material_push_payload_lives_outside_route_module():
     assert Path("web/services/openapi_push_items.py").exists()
 
 
+def test_openapi_link_check_bootstrap_lives_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "bootstrap_link_check"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias.list_languages" not in route_source
+    assert "medias.find_product_for_link_check_url" not in route_source
+    assert "medias.list_reference_images_for_lang" not in route_source
+    assert "medias.get_language_name" not in route_source
+    assert "reference_images.append" not in route_source
+    assert "_normalize_target_url" not in route_source
+    assert "_media_download_url" not in route_source
+    assert "language not detected" not in route_source
+    assert "references not ready" not in route_source
+    assert "_build_link_check_bootstrap_response" in route_source
+    assert Path("web/services/openapi_link_check.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

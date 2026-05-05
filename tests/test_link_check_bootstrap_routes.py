@@ -59,6 +59,38 @@ def test_bootstrap_rejects_invalid_target_url(client):
     assert response.get_json() == {"error": "invalid target_url"}
 
 
+def test_bootstrap_route_delegates_response_building(client, monkeypatch):
+    captured: dict = {}
+
+    def fake_build_link_check_bootstrap_response(target_url, **kwargs):
+        captured["target_url"] = target_url
+        captured["kwargs"] = kwargs
+        return {
+            "product": {"id": 7, "product_code": "demo", "name": "Demo"},
+            "target_language": "de",
+            "target_language_name": "DE",
+            "matched_by": "localized_links_exact",
+            "normalized_url": target_url,
+            "reference_images": [],
+        }
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_link_check_bootstrap_response",
+        fake_build_link_check_bootstrap_response,
+    )
+
+    response = client.post(
+        "/openapi/link-check/bootstrap",
+        headers={"X-API-Key": "demo-key"},
+        json={"target_url": "https://example.com/de/products/demo"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["product"]["product_code"] == "demo"
+    assert captured["target_url"] == "https://example.com/de/products/demo"
+    assert "detect_target_language_fn" in captured["kwargs"]
+
+
 def test_bootstrap_returns_409_when_language_not_detected(client, monkeypatch):
     _stub_enabled_languages(monkeypatch)
     monkeypatch.setattr("web.routes.openapi_materials.detect_target_language_from_url", lambda url, enabled: "")

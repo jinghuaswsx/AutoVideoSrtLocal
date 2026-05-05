@@ -20,8 +20,11 @@ from web.services.openapi_materials_listing import (
 from web.services.openapi_materials_serializers import (
     build_material_detail_response as _build_material_detail_response,
     media_download_url as _media_download_url,
-    normalize_target_url as _normalize_target_url,
     serialize_shopify_image_task as _serialize_shopify_image_task,
+)
+from web.services.openapi_link_check import (
+    LinkCheckBootstrapError as _LinkCheckBootstrapError,
+    build_link_check_bootstrap_response as _build_link_check_bootstrap_response,
 )
 from web.services.openapi_push_items import (
     build_mark_failed_response as _build_mark_failed_response,
@@ -230,55 +233,14 @@ def bootstrap_link_check():
         return jsonify({"error": "invalid api key"}), 401
 
     body = request.get_json(silent=True) or {}
-    target_url = (body.get("target_url") or "").strip()
-    if not target_url or not target_url.lower().startswith(("http://", "https://")):
-        return jsonify({"error": "invalid target_url"}), 400
-
-    normalized_url = _normalize_target_url(target_url)
-    enabled_languages = {
-        (row.get("code") or "").strip().lower()
-        for row in (medias.list_languages() or [])
-        if row and row.get("enabled", 1)
-    }
-    target_language = detect_target_language_from_url(target_url, enabled_languages)
-    if not target_language:
-        return jsonify({"error": "language not detected"}), 409
-
-    product = medias.find_product_for_link_check_url(target_url, target_language)
-    if not product:
-        return jsonify({"error": "product not found"}), 404
-
-    raw_reference_images = medias.list_reference_images_for_lang(int(product["id"]), target_language)
-    if not raw_reference_images:
-        return jsonify({"error": "references not ready"}), 409
-
-    reference_images = []
-    for item in raw_reference_images:
-        object_key = (item.get("object_key") or "").strip()
-        if not object_key:
-            continue
-        reference_images.append({
-            "id": item.get("id"),
-            "kind": item.get("kind"),
-            "filename": item.get("filename"),
-            "download_url": _media_download_url(object_key),
-            "storage_backend": "local",
-        })
-    if not reference_images:
-        return jsonify({"error": "references not ready"}), 409
-
-    return jsonify({
-        "product": {
-            "id": product.get("id"),
-            "product_code": product.get("product_code"),
-            "name": product.get("name"),
-        },
-        "target_language": target_language,
-        "target_language_name": medias.get_language_name(target_language),
-        "matched_by": product.get("_matched_by"),
-        "normalized_url": normalized_url,
-        "reference_images": reference_images,
-    })
+    try:
+        payload = _build_link_check_bootstrap_response(
+            body.get("target_url"),
+            detect_target_language_fn=detect_target_language_from_url,
+        )
+    except _LinkCheckBootstrapError as exc:
+        return jsonify({"error": exc.error}), exc.status_code
+    return jsonify(payload)
 
 
 @bp.route("", methods=["GET"], strict_slashes=False)
