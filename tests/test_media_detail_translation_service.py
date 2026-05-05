@@ -52,6 +52,36 @@ def test_build_detail_translate_from_en_response_creates_task_with_static_source
     assert start_calls == [(task_id, 7)]
 
 
+def test_build_detail_translate_from_en_response_rejects_unlisted_product_before_parsing():
+    from web.services.media_detail_translation import build_detail_translate_from_en_response
+
+    outcome = build_detail_translate_from_en_response(
+        123,
+        7,
+        {"name": "Lamp", "listing_status": "下架"},
+        {"lang": "de"},
+        is_product_listed_fn=lambda product: False,
+        parse_lang_fn=lambda body, default="": (_ for _ in ()).throw(AssertionError("parse not reached")),
+        default_concurrency_mode="parallel",
+        output_dir="C:/tmp/output",
+        list_detail_images_fn=lambda pid, lang: (_ for _ in ()).throw(AssertionError("list not reached")),
+        detail_images_is_gif_fn=lambda row: False,
+        get_prompts_for_lang_fn=lambda lang: {"detail": "Translate"},
+        get_language_name_fn=lambda lang: lang,
+        default_model_id_fn=lambda: "default-model",
+        compose_project_name_fn=lambda *args: "project",
+        create_image_translate_fn=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("create not reached")),
+        start_image_translate_runner_fn=lambda *args, **kwargs: None,
+    )
+
+    assert outcome.status_code == 409
+    assert outcome.error is None
+    assert outcome.payload == {
+        "error": "product_not_listed",
+        "message": "产品已下架，不能执行该操作",
+    }
+
+
 def test_build_detail_translate_from_en_response_rejects_invalid_mode_before_listing():
     from web.services.media_detail_translation import build_detail_translate_from_en_response
 

@@ -257,6 +257,9 @@ def test_detail_image_translate_from_en_response_lives_outside_route_module():
     assert "get_prompts_for_lang" not in route_source
     assert "_default_image_translate_model_id" not in route_source
     assert "_start_image_translate_runner" not in route_source
+    assert "_ensure_product_listed" not in route_source
+    assert "product_not_listed" not in route_source
+    assert "is_product_listed" not in route_source
     assert "_build_detail_translate_from_en_response" in route_source
     assert Path("web/services/media_detail_translation.py").exists()
 

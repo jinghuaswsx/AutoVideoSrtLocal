@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence
 
 DETAIL_TRANSLATE_CONTEXT_ENTRY = "medias_edit_detail"
+PRODUCT_NOT_LISTED_PAYLOAD = {
+    "error": "product_not_listed",
+    "message": "产品已下架，不能执行该操作",
+}
 DETAIL_TRANSLATE_TASKS_SQL = (
     "SELECT id, created_at, state_json "
     "FROM projects "
@@ -113,6 +117,7 @@ def build_detail_translate_from_en_response(
     product: Mapping[str, object],
     body: Mapping[str, object] | None,
     *,
+    is_product_listed_fn: Callable[[Mapping[str, object]], bool] | None = None,
     parse_lang_fn: Callable[..., tuple[str | None, str | None]],
     default_concurrency_mode: str,
     output_dir: str,
@@ -125,6 +130,12 @@ def build_detail_translate_from_en_response(
     create_image_translate_fn: Callable[..., object],
     start_image_translate_runner_fn: Callable[[str, int], object],
 ) -> DetailTranslateFromEnOutcome:
+    if is_product_listed_fn is not None and not is_product_listed_fn(product):
+        return DetailTranslateFromEnOutcome(
+            payload=dict(PRODUCT_NOT_LISTED_PAYLOAD),
+            status_code=409,
+        )
+
     body_dict = dict(body or {})
     lang, err = parse_lang_fn(body_dict, default="")
     if err:

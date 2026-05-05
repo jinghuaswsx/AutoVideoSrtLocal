@@ -59,7 +59,6 @@ from ._helpers import (
     _detail_images_archive_part,
     _detail_images_archive_product_code,
     _detail_images_is_gif,
-    _ensure_product_listed,
     _parse_lang,
 )
 from ._serializers import _serialize_detail_image
@@ -256,6 +255,7 @@ def _build_detail_translate_from_en_response(
         int(user_id),
         product,
         body,
+        is_product_listed_fn=medias.is_product_listed,
         parse_lang_fn=_parse_lang,
         default_concurrency_mode=task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
         output_dir=OUTPUT_DIR,
@@ -485,9 +485,6 @@ def api_detail_images_translate_from_en(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    blocked = _ensure_product_listed(p)
-    if blocked:
-        return blocked
 
     body = request.get_json(silent=True) or {}
     outcome = _routes()._build_detail_translate_from_en_response(
