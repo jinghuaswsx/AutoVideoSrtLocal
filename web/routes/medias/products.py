@@ -14,6 +14,9 @@ from web.services.media_products_listing import (
 from web.services.media_product_detail import (
     build_product_detail_response as _build_product_detail_response_impl,
 )
+from web.services.media_product_owner import (
+    build_product_owner_update_response as _build_product_owner_update_response_impl,
+)
 
 
 _ROAS_PRODUCT_FIELDS = (
@@ -51,6 +54,14 @@ def _build_product_detail_response(pid: int, product: dict):
         product=product,
         serialize_product_fn=_serialize_product,
         serialize_item_fn=_serialize_item,
+    )
+
+
+def _build_product_owner_update_response(pid: int, body: dict, *, is_admin: bool):
+    return _build_product_owner_update_response_impl(
+        pid,
+        body,
+        is_admin=is_admin,
     )
 
 
@@ -429,29 +440,15 @@ def api_update_product(pid: int):
 @login_required
 def api_update_product_owner(pid: int):
     routes = _routes_module()
-    if not routes._is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
     body = request.get_json(silent=True) or {}
-    raw_uid = body.get("user_id")
-    try:
-        new_uid = int(raw_uid)
-    except (TypeError, ValueError):
-        return jsonify({"error": "user_id required"}), 400
-
-    product = medias.get_product(pid)
-    if not product or product.get("deleted_at") is not None:
+    result = routes._build_product_owner_update_response(
+        pid,
+        body,
+        is_admin=routes._is_admin(),
+    )
+    if result.not_found:
         abort(404)
-
-    try:
-        medias.update_product_owner(pid, new_uid)
-    except ValueError as exc:
-        msg = str(exc)
-        if msg == "product not found":
-            abort(404)
-        return jsonify({"error": msg}), 400
-
-    owner_name = medias.get_user_display_name(new_uid)
-    return jsonify({"user_id": new_uid, "owner_name": owner_name})
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>", methods=["DELETE"])

@@ -2192,6 +2192,34 @@ def test_update_product_owner_admin_ok(authed_client_no_db, monkeypatch):
     assert captured == {"pid": 42, "uid": 7}
 
 
+def test_update_product_owner_delegates_to_response_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+
+    class Result:
+        not_found = False
+        payload = {"user_id": 7, "owner_name": "李四"}
+        status_code = 200
+
+    def fake_build(pid, body, *, is_admin):
+        captured["pid"] = pid
+        captured["body"] = body
+        captured["is_admin"] = is_admin
+        return Result()
+
+    monkeypatch.setattr(r, "_build_product_owner_update_response", fake_build)
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/products/42/owner",
+        json={"user_id": 7},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"user_id": 7, "owner_name": "李四"}
+    assert captured == {"pid": 42, "body": {"user_id": 7}, "is_admin": True}
+
+
 def test_update_product_owner_rejects_non_admin(authed_user_client_no_db, monkeypatch):
     from web.routes import medias as r
 
