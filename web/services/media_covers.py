@@ -170,6 +170,106 @@ def build_product_cover_delete_response(
     return MediaCoverResponse({"ok": True})
 
 
+def build_product_cover_from_url_response(
+    product_id: int,
+    user_id: int,
+    body: dict | None,
+    *,
+    parse_lang_fn: Callable[[dict], tuple[str, str | None]],
+    download_image_to_local_media_fn: Callable[..., tuple[str | None, bytes | None, str]],
+    get_product_covers_fn: Callable[[int], dict],
+    delete_media_object_fn: Callable[[str], None],
+    cache_product_cover_bytes_fn: Callable[[int, str, str, bytes], None],
+    schedule_material_evaluation_fn: Callable[..., object],
+    set_product_cover_fn: Callable[[int, str, str], int] = medias.set_product_cover,
+) -> MediaCoverResponse:
+    body = body or {}
+    lang, err = parse_lang_fn(body)
+    if err:
+        return MediaCoverResponse({"error": err}, 400)
+
+    url = (body.get("url") or "").strip()
+    object_key, data, ext_or_error = download_image_to_local_media_fn(
+        url,
+        product_id,
+        f"cover_{lang}",
+        user_id=user_id,
+    )
+    if object_key is None:
+        return MediaCoverResponse({"error": ext_or_error}, 400)
+
+    old = get_product_covers_fn(product_id).get(lang)
+    if old and old != object_key:
+        _call_best_effort(delete_media_object_fn, old)
+
+    set_product_cover_fn(product_id, lang, object_key)
+    _call_best_effort(cache_product_cover_bytes_fn, product_id, lang, ext_or_error, data or b"")
+
+    if lang == "en":
+        schedule_material_evaluation_fn(product_id, force=True)
+
+    return MediaCoverResponse({
+        "ok": True,
+        "cover_url": f"/medias/cover/{product_id}?lang={lang}",
+        "object_key": object_key,
+    })
+
+
+def build_item_cover_from_url_response(
+    product_id: int,
+    user_id: int,
+    body: dict | None,
+    *,
+    download_image_to_local_media_fn: Callable[..., tuple[str | None, bytes | None, str]],
+) -> MediaCoverResponse:
+    body = body or {}
+    object_key, _data, err_or_ext = download_image_to_local_media_fn(
+        (body.get("url") or "").strip(),
+        product_id,
+        "item_cover",
+        user_id=user_id,
+    )
+    if object_key is None:
+        return MediaCoverResponse({"error": err_or_ext}, 400)
+    return MediaCoverResponse({"ok": True, "object_key": object_key})
+
+
+def build_item_cover_set_from_url_response(
+    item_id: int,
+    user_id: int,
+    item: dict,
+    body: dict | None,
+    *,
+    download_image_to_local_media_fn: Callable[..., tuple[str | None, bytes | None, str]],
+    delete_media_object_fn: Callable[[str], None],
+    cache_item_cover_bytes_fn: Callable[[int, dict, str, bytes], None],
+    update_item_cover_fn: Callable[[int, str], int] = medias.update_item_cover,
+) -> MediaCoverResponse:
+    body = body or {}
+    product_id = int(item["product_id"])
+    object_key, data, ext_or_error = download_image_to_local_media_fn(
+        (body.get("url") or "").strip(),
+        product_id,
+        "item_cover",
+        user_id=user_id,
+    )
+    if object_key is None:
+        return MediaCoverResponse({"error": ext_or_error}, 400)
+
+    old = item.get("cover_object_key")
+    if old and old != object_key:
+        _call_best_effort(delete_media_object_fn, old)
+
+    update_item_cover_fn(item_id, object_key)
+    _call_best_effort(cache_item_cover_bytes_fn, item_id, item, ext_or_error, data or b"")
+
+    return MediaCoverResponse({
+        "ok": True,
+        "cover_url": f"/medias/item-cover/{item_id}",
+        "object_key": object_key,
+    })
+
+
 def _upload_payload(object_key: str, reservation: dict) -> dict:
     return {
         "object_key": object_key,

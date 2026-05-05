@@ -12,11 +12,14 @@ from flask_login import current_user, login_required
 from appcore import medias, object_keys
 from config import OUTPUT_DIR
 from web.services.media_covers import (
+    build_item_cover_from_url_response as _build_item_cover_from_url_response_impl,
     build_item_cover_bootstrap_response as _build_item_cover_bootstrap_response_impl,
     build_item_cover_set_response as _build_item_cover_set_response_impl,
+    build_item_cover_set_from_url_response as _build_item_cover_set_from_url_response_impl,
     build_item_cover_update_response as _build_item_cover_update_response_impl,
     build_product_cover_complete_response as _build_product_cover_complete_response_impl,
     build_product_cover_delete_response as _build_product_cover_delete_response_impl,
+    build_product_cover_from_url_response as _build_product_cover_from_url_response_impl,
     build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
 )
 
@@ -116,6 +119,13 @@ def _cache_product_cover_object(pid, lang, object_key):
     _download_media_object(object_key, str(local))
 
 
+def _cache_product_cover_bytes(pid, lang, ext, data):
+    product_dir = THUMB_DIR / str(pid)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    local = _safe_thumb_cache_path(product_dir / f"cover_{lang}{ext or '.jpg'}")
+    local.write_bytes(data)
+
+
 def _build_product_cover_complete_response(pid, body):
     return _build_product_cover_complete_response_impl(
         pid,
@@ -141,6 +151,50 @@ def _build_product_cover_delete_response(pid, lang):
     )
 
 
+def _build_product_cover_from_url_response(pid, body):
+    return _build_product_cover_from_url_response_impl(
+        pid,
+        current_user.id,
+        body,
+        parse_lang_fn=_parse_lang,
+        download_image_to_local_media_fn=_download_image_to_local_media,
+        get_product_covers_fn=medias.get_product_covers,
+        delete_media_object_fn=_delete_media_object,
+        set_product_cover_fn=medias.set_product_cover,
+        cache_product_cover_bytes_fn=_cache_product_cover_bytes,
+        schedule_material_evaluation_fn=_schedule_material_evaluation,
+    )
+
+
+def _build_item_cover_from_url_response(pid, body):
+    return _build_item_cover_from_url_response_impl(
+        pid,
+        current_user.id,
+        body,
+        download_image_to_local_media_fn=_download_image_to_local_media,
+    )
+
+
+def _cache_item_cover_bytes(item_id, item, ext, data):
+    product_dir = THUMB_DIR / str(item["product_id"])
+    product_dir.mkdir(parents=True, exist_ok=True)
+    local = _safe_thumb_cache_path(product_dir / f"item_cover_{item_id}{ext or '.jpg'}")
+    local.write_bytes(data)
+
+
+def _build_item_cover_set_from_url_response(item_id, item, body):
+    return _build_item_cover_set_from_url_response_impl(
+        item_id,
+        current_user.id,
+        item,
+        body,
+        download_image_to_local_media_fn=_download_image_to_local_media,
+        delete_media_object_fn=_delete_media_object,
+        update_item_cover_fn=medias.update_item_cover,
+        cache_item_cover_bytes_fn=_cache_item_cover_bytes,
+    )
+
+
 def _schedule_material_evaluation(pid, **kwargs):
     return _routes()._schedule_material_evaluation(pid, **kwargs)
 
@@ -156,30 +210,8 @@ def api_cover_from_url(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-    object_key, data, err_or_ext = _download_image_to_local_media(
-        (body.get("url") or "").strip(), pid, f"cover_{lang}", user_id=current_user.id,
-    )
-    if object_key is None:
-        return jsonify({"error": err_or_ext}), 400
-    old = medias.get_product_covers(pid).get(lang)
-    if old and old != object_key:
-        try:
-            _delete_media_object(old)
-        except Exception:
-            pass
-    medias.set_product_cover(pid, lang, object_key)
-    try:
-        product_dir = THUMB_DIR / str(pid)
-        product_dir.mkdir(parents=True, exist_ok=True)
-        (product_dir / f"cover_{lang}{err_or_ext}").write_bytes(data)
-    except Exception:
-        pass
-    if lang == "en":
-        _schedule_material_evaluation(pid, force=True)
-    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}?lang={lang}", "object_key": object_key})
+    result = _routes()._build_product_cover_from_url_response(pid, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/item-cover/from-url", methods=["POST"])
@@ -190,12 +222,8 @@ def api_item_cover_from_url(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    object_key, _data, err_or_ext = _download_image_to_local_media(
-        (body.get("url") or "").strip(), pid, "item_cover", user_id=current_user.id,
-    )
-    if object_key is None:
-        return jsonify({"error": err_or_ext}), 400
-    return jsonify({"ok": True, "object_key": object_key})
+    result = _routes()._build_item_cover_from_url_response(pid, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/items/<int:item_id>/cover/from-url", methods=["POST"])
@@ -208,25 +236,8 @@ def api_item_cover_set_from_url(item_id: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    object_key, data, err_or_ext = _download_image_to_local_media(
-        (body.get("url") or "").strip(), it["product_id"], "item_cover", user_id=current_user.id,
-    )
-    if object_key is None:
-        return jsonify({"error": err_or_ext}), 400
-    old = it.get("cover_object_key")
-    if old and old != object_key:
-        try:
-            _delete_media_object(old)
-        except Exception:
-            pass
-    medias.update_item_cover(item_id, object_key)
-    try:
-        product_dir = THUMB_DIR / str(it["product_id"])
-        product_dir.mkdir(parents=True, exist_ok=True)
-        (product_dir / f"item_cover_{item_id}{err_or_ext}").write_bytes(data)
-    except Exception:
-        pass
-    return jsonify({"ok": True, "cover_url": f"/medias/item-cover/{item_id}", "object_key": object_key})
+    result = _routes()._build_item_cover_set_from_url_response(item_id, it, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/items/<int:item_id>/cover", methods=["PATCH"])

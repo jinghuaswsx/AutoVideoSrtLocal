@@ -263,3 +263,128 @@ def test_build_product_cover_delete_response_rejects_english_and_deletes_other_l
     assert german.status_code == 200
     assert german.payload == {"ok": True}
     assert calls == [("delete", "de/cover.jpg"), ("delete-row", 123, "de")]
+
+
+def test_build_product_cover_from_url_response_updates_cache_and_schedules_english():
+    from web.services.media_covers import build_product_cover_from_url_response
+
+    calls = []
+
+    result = build_product_cover_from_url_response(
+        123,
+        7,
+        {"lang": "en", "url": "https://example.test/cover.png"},
+        parse_lang_fn=lambda body: (body["lang"], None),
+        download_image_to_local_media_fn=lambda url, pid, prefix, *, user_id=None: (
+            calls.append(("download", url, pid, prefix, user_id))
+            or ("new/cover.png", b"image-bytes", ".png")
+        ),
+        get_product_covers_fn=lambda pid: {"en": "old/cover.jpg"},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        set_product_cover_fn=lambda pid, lang, object_key: calls.append(("set", pid, lang, object_key)),
+        cache_product_cover_bytes_fn=lambda pid, lang, ext, data: calls.append(("cache", pid, lang, ext, data)),
+        schedule_material_evaluation_fn=lambda pid, **kwargs: calls.append(("schedule", pid, kwargs)),
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {
+        "ok": True,
+        "cover_url": "/medias/cover/123?lang=en",
+        "object_key": "new/cover.png",
+    }
+    assert calls == [
+        ("download", "https://example.test/cover.png", 123, "cover_en", 7),
+        ("delete", "old/cover.jpg"),
+        ("set", 123, "en", "new/cover.png"),
+        ("cache", 123, "en", ".png", b"image-bytes"),
+        ("schedule", 123, {"force": True}),
+    ]
+
+
+def test_build_product_cover_from_url_response_rejects_parse_and_download_errors():
+    from web.services.media_covers import build_product_cover_from_url_response
+
+    calls = []
+    lang_error = build_product_cover_from_url_response(
+        123,
+        7,
+        {"lang": "xx", "url": "https://example.test/cover.png"},
+        parse_lang_fn=lambda body: ("", "unsupported language"),
+        download_image_to_local_media_fn=lambda *args, **kwargs: calls.append(("download", args, kwargs)),
+        get_product_covers_fn=lambda pid: {},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        set_product_cover_fn=lambda pid, lang, object_key: calls.append(("set", pid, lang, object_key)),
+        cache_product_cover_bytes_fn=lambda pid, lang, ext, data: calls.append(("cache", pid, lang, ext, data)),
+        schedule_material_evaluation_fn=lambda pid, **kwargs: calls.append(("schedule", pid, kwargs)),
+    )
+    download_error = build_product_cover_from_url_response(
+        123,
+        7,
+        {"lang": "de", "url": "https://example.test/cover.png"},
+        parse_lang_fn=lambda body: (body["lang"], None),
+        download_image_to_local_media_fn=lambda *args, **kwargs: (None, None, "download failed"),
+        get_product_covers_fn=lambda pid: {},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        set_product_cover_fn=lambda pid, lang, object_key: calls.append(("set", pid, lang, object_key)),
+        cache_product_cover_bytes_fn=lambda pid, lang, ext, data: calls.append(("cache", pid, lang, ext, data)),
+        schedule_material_evaluation_fn=lambda pid, **kwargs: calls.append(("schedule", pid, kwargs)),
+    )
+
+    assert lang_error.status_code == 400
+    assert lang_error.payload == {"error": "unsupported language"}
+    assert download_error.status_code == 400
+    assert download_error.payload == {"error": "download failed"}
+    assert calls == []
+
+
+def test_build_item_cover_from_url_response_downloads_without_item_update():
+    from web.services.media_covers import build_item_cover_from_url_response
+
+    calls = []
+
+    result = build_item_cover_from_url_response(
+        123,
+        7,
+        {"url": "https://example.test/item.png"},
+        download_image_to_local_media_fn=lambda url, pid, prefix, *, user_id=None: (
+            calls.append(("download", url, pid, prefix, user_id))
+            or ("new/item.png", b"image-bytes", ".png")
+        ),
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {"ok": True, "object_key": "new/item.png"}
+    assert calls == [("download", "https://example.test/item.png", 123, "item_cover", 7)]
+
+
+def test_build_item_cover_set_from_url_response_updates_and_caches():
+    from web.services.media_covers import build_item_cover_set_from_url_response
+
+    calls = []
+
+    result = build_item_cover_set_from_url_response(
+        701,
+        7,
+        {"id": 701, "product_id": 123, "cover_object_key": "old/item.jpg"},
+        {"url": "https://example.test/item.png"},
+        download_image_to_local_media_fn=lambda url, pid, prefix, *, user_id=None: (
+            calls.append(("download", url, pid, prefix, user_id))
+            or ("new/item.png", b"image-bytes", ".png")
+        ),
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        update_item_cover_fn=lambda item_id, object_key: calls.append(("update", item_id, object_key)),
+        cache_item_cover_bytes_fn=lambda item_id, item, ext, data: calls.append(("cache", item_id, item["product_id"], ext, data)),
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {
+        "ok": True,
+        "cover_url": "/medias/item-cover/701",
+        "object_key": "new/item.png",
+    }
+    assert calls == [
+        ("download", "https://example.test/item.png", 123, "item_cover", 7),
+        ("delete", "old/item.jpg"),
+        ("update", 701, "new/item.png"),
+        ("cache", 701, 123, ".png", b"image-bytes"),
+    ]
