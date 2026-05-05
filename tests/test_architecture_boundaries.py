@@ -282,6 +282,61 @@ def test_media_product_owner_update_response_lives_outside_route_module():
     assert Path("web/services/media_product_owner.py").exists()
 
 
+def test_media_product_create_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_create_product"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias.get_product_by_code" not in route_source
+    assert "medias.create_product" not in route_source
+    assert "_validate_product_code" not in route_source
+    assert "name required" not in route_source
+    assert "product_code already exists" not in route_source
+    assert "_build_product_create_response" in route_source
+    assert Path("web/services/media_product_mutations.py").exists()
+
+
+def test_media_product_update_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_update_product"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias.get_product_by_code" not in route_source
+    assert "medias.update_product" not in route_source
+    assert "medias.replace_copywritings" not in route_source
+    assert "_ROAS_PRODUCT_FIELDS" not in route_source
+    assert "localized_links_json" not in route_source
+    assert "ad_supported_langs" not in route_source
+    assert "uk_media_products_mk_id" not in route_source
+    assert "_build_product_update_response" in route_source
+    assert Path("web/services/media_product_mutations.py").exists()
+
+
+def test_media_product_delete_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_delete_product"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias.soft_delete_product" not in route_source
+    assert "_build_product_delete_response" in route_source
+    assert Path("web/services/media_product_mutations.py").exists()
+
+
 def test_task_delete_storage_cleanup_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

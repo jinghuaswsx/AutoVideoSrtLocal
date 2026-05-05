@@ -2127,6 +2127,94 @@ def test_update_product_rejects_non_numeric_shopifyid(authed_client_no_db, monke
     assert "shopifyid" in body.get("message", "")
 
 
+def test_create_product_delegates_to_response_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+
+    class Result:
+        payload = {"id": 123}
+        status_code = 201
+
+    def fake_build(body, *, user_id):
+        captured["body"] = body
+        captured["user_id"] = user_id
+        return Result()
+
+    monkeypatch.setattr(r, "_build_product_create_response", fake_build)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products",
+        json={"name": "Demo", "product_code": "demo-rjc"},
+    )
+
+    assert resp.status_code == 201
+    assert resp.get_json() == {"id": 123}
+    assert captured == {
+        "body": {"name": "Demo", "product_code": "demo-rjc"},
+        "user_id": 1,
+    }
+
+
+def test_update_product_delegates_to_response_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    product = {"id": 42, "user_id": 1, "name": "Demo", "product_code": "demo-rjc"}
+    captured = {}
+
+    class Result:
+        payload = {"ok": True}
+        status_code = 200
+
+    def fake_build(pid, product_arg, body):
+        captured["pid"] = pid
+        captured["product"] = product_arg
+        captured["body"] = body
+        return Result()
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(r, "_can_access_product", lambda p: True)
+    monkeypatch.setattr(r, "_build_product_update_response", fake_build)
+
+    resp = authed_client_no_db.put(
+        "/medias/api/products/42",
+        json={"name": "Updated"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert captured == {
+        "pid": 42,
+        "product": product,
+        "body": {"name": "Updated"},
+    }
+
+
+def test_delete_product_delegates_to_response_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    product = {"id": 42, "user_id": 1, "name": "Demo", "product_code": "demo-rjc"}
+    captured = {}
+
+    class Result:
+        payload = {"ok": True}
+        status_code = 200
+
+    def fake_build(pid):
+        captured["pid"] = pid
+        return Result()
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(r, "_can_access_product", lambda p: True)
+    monkeypatch.setattr(r, "_build_product_delete_response", fake_build)
+
+    resp = authed_client_no_db.delete("/medias/api/products/42")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert captured == {"pid": 42}
+
+
 # ==================== 负责人指派路由 ====================
 
 

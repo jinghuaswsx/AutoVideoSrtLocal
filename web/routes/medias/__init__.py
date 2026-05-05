@@ -316,7 +316,6 @@ api_list_active_users = _pages.api_list_active_users
 api_list_languages = _pages.api_list_languages
 mk_selection_page = _pages.mk_selection_page
 
-_ROAS_PRODUCT_FIELDS = _products._ROAS_PRODUCT_FIELDS
 _normalize_mk_copywriting_query = _products._normalize_mk_copywriting_query
 _mk_product_link_tail = _products._mk_product_link_tail
 _format_mk_copywriting_text = _products._format_mk_copywriting_text
@@ -324,6 +323,9 @@ _extract_mk_copywriting = _products._extract_mk_copywriting
 _build_products_list_response = _products._build_products_list_response
 _build_product_detail_response = _products._build_product_detail_response
 _build_product_owner_update_response = _products._build_product_owner_update_response
+_build_product_create_response = _products._build_product_create_response
+_build_product_update_response = _products._build_product_update_response
+_build_product_delete_response = _products._build_product_delete_response
 api_mk_copywriting = _products.api_mk_copywriting
 api_list_products = _products.api_list_products
 api_create_product = _products.api_create_product
