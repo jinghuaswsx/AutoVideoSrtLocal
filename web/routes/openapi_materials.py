@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from appcore import medias, pushes, shopify_image_tasks
+from appcore import medias, pushes
 from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 from appcore.llm_provider_configs import get_provider_config
@@ -20,7 +20,6 @@ from web.services.openapi_materials_listing import (
 from web.services.openapi_materials_serializers import (
     build_material_detail_response as _build_material_detail_response,
     media_download_url as _media_download_url,
-    serialize_shopify_image_task as _serialize_shopify_image_task,
 )
 from web.services.openapi_link_check import (
     LinkCheckBootstrapError as _LinkCheckBootstrapError,
@@ -29,6 +28,10 @@ from web.services.openapi_link_check import (
 from web.services.openapi_shopify_localizer import (
     ShopifyLocalizerBootstrapError as _ShopifyLocalizerBootstrapError,
     build_shopify_localizer_bootstrap_response as _build_shopify_localizer_bootstrap_response,
+    build_shopify_localizer_task_claim_response as _build_shopify_localizer_task_claim_response,
+    build_shopify_localizer_task_complete_response as _build_shopify_localizer_task_complete_response,
+    build_shopify_localizer_task_fail_response as _build_shopify_localizer_task_fail_response,
+    build_shopify_localizer_task_heartbeat_response as _build_shopify_localizer_task_heartbeat_response,
 )
 from web.services.openapi_push_items import (
     build_mark_failed_response as _build_mark_failed_response,
@@ -100,13 +103,7 @@ def shopify_localizer_task_claim():
     if not _api_key_valid():
         return jsonify({"error": "invalid api key"}), 401
     body = request.get_json(silent=True) or {}
-    worker_id = str(body.get("worker_id") or "").strip() or "unknown-worker"
-    try:
-        lock_seconds = int(body.get("lock_seconds") or 900)
-    except (TypeError, ValueError):
-        lock_seconds = 900
-    task = shopify_image_tasks.claim_next_task(worker_id, lock_seconds=lock_seconds)
-    return jsonify({"task": _serialize_shopify_image_task(task)})
+    return jsonify(_build_shopify_localizer_task_claim_response(body))
 
 
 @shopify_localizer_bp.route("/tasks/<int:task_id>/heartbeat", methods=["POST"])
@@ -114,13 +111,7 @@ def shopify_localizer_task_heartbeat(task_id: int):
     if not _api_key_valid():
         return jsonify({"error": "invalid api key"}), 401
     body = request.get_json(silent=True) or {}
-    worker_id = str(body.get("worker_id") or "").strip()
-    try:
-        lock_seconds = int(body.get("lock_seconds") or 900)
-    except (TypeError, ValueError):
-        lock_seconds = 900
-    updated = shopify_image_tasks.heartbeat_task(task_id, worker_id, lock_seconds)
-    return jsonify({"ok": bool(updated)})
+    return jsonify(_build_shopify_localizer_task_heartbeat_response(task_id, body))
 
 
 @shopify_localizer_bp.route("/tasks/<int:task_id>/complete", methods=["POST"])
@@ -128,8 +119,7 @@ def shopify_localizer_task_complete(task_id: int):
     if not _api_key_valid():
         return jsonify({"error": "invalid api key"}), 401
     body = request.get_json(silent=True) or {}
-    status = shopify_image_tasks.complete_task(task_id, body.get("result") or {})
-    return jsonify({"ok": True, "status": status})
+    return jsonify(_build_shopify_localizer_task_complete_response(task_id, body))
 
 
 @shopify_localizer_bp.route("/tasks/<int:task_id>/fail", methods=["POST"])
@@ -137,13 +127,7 @@ def shopify_localizer_task_fail(task_id: int):
     if not _api_key_valid():
         return jsonify({"error": "invalid api key"}), 401
     body = request.get_json(silent=True) or {}
-    status = shopify_image_tasks.fail_task(
-        task_id,
-        str(body.get("error_code") or "worker_failed"),
-        str(body.get("error_message") or ""),
-        body.get("result") or {},
-    )
-    return jsonify({"ok": True, "status": status})
+    return jsonify(_build_shopify_localizer_task_fail_response(task_id, body))
 
 
 @bp.route("/<product_code>", methods=["GET"])

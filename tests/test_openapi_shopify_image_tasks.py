@@ -36,15 +36,19 @@ def test_claim_requires_api_key(client):
 
 
 def test_claim_returns_task(client, monkeypatch):
+    captured = {}
+
     monkeypatch.setattr(
-        "web.routes.openapi_materials.shopify_image_tasks.claim_next_task",
-        lambda worker_id, lock_seconds=900: {
-            "id": 9,
-            "product_id": 7,
-            "product_code": "demo-rjc",
-            "lang": "it",
-            "shopify_product_id": "855",
-            "link_url": "url",
+        "web.routes.openapi_materials._build_shopify_localizer_task_claim_response",
+        lambda body: captured.update({"body": body}) or {
+            "task": {
+                "id": 9,
+                "product_id": 7,
+                "product_code": "demo-rjc",
+                "lang": "it",
+                "shopify_product_id": "855",
+                "link_url": "url",
+            }
         },
     )
 
@@ -56,14 +60,33 @@ def test_claim_returns_task(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["task"]["id"] == 9
+    assert captured["body"]["worker_id"] == "w1"
+
+
+def test_heartbeat_delegates_to_response_builder(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_shopify_localizer_task_heartbeat_response",
+        lambda task_id, body: captured.update({"task_id": task_id, "body": body}) or {"ok": True},
+    )
+
+    response = client.post(
+        "/openapi/medias/shopify-image-localizer/tasks/9/heartbeat",
+        headers={"X-API-Key": "demo-key"},
+        json={"worker_id": "w1", "lock_seconds": 300},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+    assert captured == {"task_id": 9, "body": {"worker_id": "w1", "lock_seconds": 300}}
 
 
 def test_complete_marks_task_done(client, monkeypatch):
     captured = {}
     monkeypatch.setattr(
-        "web.routes.openapi_materials.shopify_image_tasks.complete_task",
-        lambda task_id, result: captured.update({"task_id": task_id, "result": result})
-        or {"replace_status": "auto_done"},
+        "web.routes.openapi_materials._build_shopify_localizer_task_complete_response",
+        lambda task_id, body: captured.update({"task_id": task_id, "body": body})
+        or {"ok": True, "status": {"replace_status": "auto_done"}},
     )
 
     response = client.post(
@@ -75,21 +98,15 @@ def test_complete_marks_task_done(client, monkeypatch):
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
     assert captured["task_id"] == 9
+    assert captured["body"] == {"result": {"carousel": {"ok": 11}}}
 
 
 def test_fail_marks_task_failed(client, monkeypatch):
     captured = {}
     monkeypatch.setattr(
-        "web.routes.openapi_materials.shopify_image_tasks.fail_task",
-        lambda task_id, error_code, error_message, result=None: captured.update(
-            {
-                "task_id": task_id,
-                "error_code": error_code,
-                "error_message": error_message,
-                "result": result,
-            }
-        )
-        or {"replace_status": "failed"},
+        "web.routes.openapi_materials._build_shopify_localizer_task_fail_response",
+        lambda task_id, body: captured.update({"task_id": task_id, "body": body})
+        or {"ok": True, "status": {"replace_status": "failed"}},
     )
 
     response = client.post(
@@ -100,5 +117,6 @@ def test_fail_marks_task_failed(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
-    assert captured["error_code"] == "boom"
-    assert captured["result"] == {"x": 1}
+    assert captured["task_id"] == 9
+    assert captured["body"]["error_code"] == "boom"
+    assert captured["body"]["result"] == {"x": 1}

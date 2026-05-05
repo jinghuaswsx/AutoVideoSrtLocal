@@ -888,6 +888,36 @@ def test_openapi_shopify_localizer_bootstrap_lives_outside_route_module():
     assert Path("web/services/openapi_shopify_localizer.py").exists()
 
 
+def test_openapi_shopify_localizer_task_routes_live_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "shopify_localizer_task_claim",
+        "shopify_localizer_task_heartbeat",
+        "shopify_localizer_task_complete",
+        "shopify_localizer_task_fail",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "shopify_image_tasks." not in route_source
+    assert "lock_seconds" not in route_source
+    assert "worker_id" not in route_source
+    assert "error_code" not in route_source
+    assert "_serialize_shopify_image_task" not in route_source
+    assert "_build_shopify_localizer_task_claim_response" in route_source
+    assert "_build_shopify_localizer_task_heartbeat_response" in route_source
+    assert "_build_shopify_localizer_task_complete_response" in route_source
+    assert "_build_shopify_localizer_task_fail_response" in route_source
+    assert Path("web/services/openapi_shopify_localizer.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

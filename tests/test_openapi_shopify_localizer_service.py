@@ -83,3 +83,69 @@ def test_shopify_localizer_rejects_english_target_language():
 
     assert exc.value.error == "invalid_target_lang"
     assert exc.value.status_code == 400
+
+
+def test_shopify_localizer_task_claim_builds_response():
+    from web.services.openapi_shopify_localizer import build_shopify_localizer_task_claim_response
+
+    captured: dict = {}
+
+    def fake_claim(worker_id, lock_seconds=900):
+        captured["claim"] = (worker_id, lock_seconds)
+        return {"id": 9, "product_code": "demo-rjc"}
+
+    payload = build_shopify_localizer_task_claim_response(
+        {"worker_id": " worker-1 ", "lock_seconds": "300"},
+        claim_next_task_fn=fake_claim,
+        serialize_shopify_image_task_fn=lambda task: {"id": task["id"], "code": task["product_code"]},
+    )
+
+    assert captured["claim"] == ("worker-1", 300)
+    assert payload == {"task": {"id": 9, "code": "demo-rjc"}}
+
+
+def test_shopify_localizer_task_heartbeat_uses_safe_defaults():
+    from web.services.openapi_shopify_localizer import build_shopify_localizer_task_heartbeat_response
+
+    captured: dict = {}
+
+    def fake_heartbeat(task_id, worker_id, lock_seconds):
+        captured["heartbeat"] = (task_id, worker_id, lock_seconds)
+        return 1
+
+    payload = build_shopify_localizer_task_heartbeat_response(
+        9,
+        {"worker_id": "worker-1", "lock_seconds": "bad"},
+        heartbeat_task_fn=fake_heartbeat,
+    )
+
+    assert captured["heartbeat"] == (9, "worker-1", 900)
+    assert payload == {"ok": True}
+
+
+def test_shopify_localizer_task_complete_and_fail_build_responses():
+    from web.services.openapi_shopify_localizer import (
+        build_shopify_localizer_task_complete_response,
+        build_shopify_localizer_task_fail_response,
+    )
+
+    captured: dict = {}
+
+    complete_payload = build_shopify_localizer_task_complete_response(
+        9,
+        {"result": {"carousel": {"ok": 11}}},
+        complete_task_fn=lambda task_id, result: captured.update({"complete": (task_id, result)})
+        or {"replace_status": "auto_done"},
+    )
+    fail_payload = build_shopify_localizer_task_fail_response(
+        9,
+        {"error_code": "boom", "error_message": "failed", "result": {"x": 1}},
+        fail_task_fn=lambda task_id, error_code, error_message, result: captured.update({
+            "fail": (task_id, error_code, error_message, result),
+        }) or {"replace_status": "failed"},
+    )
+
+    assert captured["complete"] == (9, {"carousel": {"ok": 11}})
+    assert complete_payload == {"ok": True, "status": {"replace_status": "auto_done"}}
+    assert captured["fail"] == (9, "boom", "failed", {"x": 1})
+    assert fail_payload == {"ok": True, "status": {"replace_status": "failed"}}
