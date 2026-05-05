@@ -1009,6 +1009,29 @@ def test_media_item_cover_set_responses_live_outside_route_module():
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_media_cover_object_send_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("item_cover", "raw_source_video_url", "raw_source_cover_url"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "_send_media_object" not in route_source
+    assert "cover_object_key" not in route_source
+    assert "video_object_key" not in route_source
+    assert "_build_item_cover_object_response" in route_source
+    assert "_build_raw_source_video_object_response" in route_source
+    assert "_build_raw_source_cover_object_response" in route_source
+    assert "_media_cover_object_flask_response" in route_source
+    assert Path("web/services/media_covers.py").exists()
+
+
 def test_media_product_cover_complete_delete_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -13,6 +13,49 @@ def test_build_item_play_url_response_uses_media_object_url_builder():
     assert result.payload == {"url": "/medias/object?object_key=1/medias/123/en/video.mp4"}
 
 
+def test_build_item_cover_object_response_returns_object_key():
+    from web.services.media_covers import build_item_cover_object_response
+
+    result = build_item_cover_object_response(
+        {"id": 701, "cover_object_key": "1/medias/123/item-cover.jpg"}
+    )
+
+    assert result.status_code == 200
+    assert result.not_found is False
+    assert result.object_key == "1/medias/123/item-cover.jpg"
+
+
+def test_build_item_cover_object_response_returns_not_found_without_cover():
+    from web.services.media_covers import build_item_cover_object_response
+
+    result = build_item_cover_object_response({"id": 701, "cover_object_key": ""})
+
+    assert result.status_code == 404
+    assert result.not_found is True
+    assert result.object_key is None
+
+
+def test_build_raw_source_video_and_cover_object_responses_return_object_keys():
+    from web.services.media_covers import (
+        build_raw_source_cover_object_response,
+        build_raw_source_video_object_response,
+    )
+
+    row = {
+        "id": 9,
+        "video_object_key": "1/medias/123/raw-video.mp4",
+        "cover_object_key": "1/medias/123/raw-cover.jpg",
+    }
+
+    video = build_raw_source_video_object_response(row)
+    cover = build_raw_source_cover_object_response(row)
+
+    assert video.status_code == 200
+    assert video.object_key == "1/medias/123/raw-video.mp4"
+    assert cover.status_code == 200
+    assert cover.object_key == "1/medias/123/raw-cover.jpg"
+
+
 def test_build_product_cover_file_response_uses_cached_safe_file(tmp_path):
     from pathlib import Path
 

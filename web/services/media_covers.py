@@ -35,12 +35,48 @@ class ItemThumbnailFileResponse:
     not_found: bool = False
 
 
+@dataclass(frozen=True)
+class MediaCoverObjectResponse:
+    object_key: str | None = None
+    status_code: int = 200
+    not_found: bool = False
+
+
 def build_item_play_url_response(
     item: dict,
     *,
     media_object_url_fn: Callable[[str], str],
 ) -> MediaCoverResponse:
     return MediaCoverResponse({"url": media_object_url_fn(item["object_key"])})
+
+
+def build_item_cover_object_response(item: dict) -> MediaCoverObjectResponse:
+    object_key = (item.get("cover_object_key") or "").strip()
+    if not object_key:
+        return _media_cover_object_not_found()
+    return MediaCoverObjectResponse(object_key=object_key)
+
+
+def build_raw_source_video_object_response(row: dict) -> MediaCoverObjectResponse:
+    object_key = (row.get("video_object_key") or "").strip()
+    if not object_key:
+        return _media_cover_object_not_found()
+    return MediaCoverObjectResponse(object_key=object_key)
+
+
+def build_raw_source_cover_object_response(row: dict) -> MediaCoverObjectResponse:
+    object_key = (row.get("cover_object_key") or "").strip()
+    if not object_key:
+        return _media_cover_object_not_found()
+    return MediaCoverObjectResponse(object_key=object_key)
+
+
+def media_cover_object_flask_response(
+    result: MediaCoverObjectResponse,
+    *,
+    send_media_object_fn: Callable[[str], object],
+):
+    return send_media_object_fn(result.object_key or "")
 
 
 def build_item_thumbnail_file_response(
@@ -403,6 +439,10 @@ def _product_cover_not_found() -> ProductCoverFileResponse:
 
 def _item_thumbnail_not_found() -> ItemThumbnailFileResponse:
     return ItemThumbnailFileResponse(status_code=404, not_found=True)
+
+
+def _media_cover_object_not_found() -> MediaCoverObjectResponse:
+    return MediaCoverObjectResponse(status_code=404, not_found=True)
 
 
 def _call_best_effort(fn: Callable, *args) -> None:

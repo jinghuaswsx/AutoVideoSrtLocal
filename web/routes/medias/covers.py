@@ -18,13 +18,17 @@ from web.services.media_covers import (
     build_item_cover_set_response as _build_item_cover_set_response_impl,
     build_item_cover_set_from_url_response as _build_item_cover_set_from_url_response_impl,
     build_item_cover_update_response as _build_item_cover_update_response_impl,
+    build_item_cover_object_response as _build_item_cover_object_response_impl,
     build_item_thumbnail_file_response as _build_item_thumbnail_file_response_impl,
     build_product_cover_complete_response as _build_product_cover_complete_response_impl,
     build_product_cover_delete_response as _build_product_cover_delete_response_impl,
     build_product_cover_file_response as _build_product_cover_file_response_impl,
     build_product_cover_from_url_response as _build_product_cover_from_url_response_impl,
     build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
+    build_raw_source_cover_object_response as _build_raw_source_cover_object_response_impl,
+    build_raw_source_video_object_response as _build_raw_source_video_object_response_impl,
     item_thumbnail_file_flask_response as _item_thumbnail_file_flask_response,
+    media_cover_object_flask_response as _media_cover_object_flask_response_impl,
     product_cover_file_flask_response as _product_cover_file_flask_response,
 )
 
@@ -79,6 +83,25 @@ def _build_item_play_url_response(item):
             "medias.media_object_proxy",
             object_key=object_key,
         ),
+    )
+
+
+def _build_item_cover_object_response(item):
+    return _build_item_cover_object_response_impl(item)
+
+
+def _build_raw_source_video_object_response(row):
+    return _build_raw_source_video_object_response_impl(row)
+
+
+def _build_raw_source_cover_object_response(row):
+    return _build_raw_source_cover_object_response_impl(row)
+
+
+def _media_cover_object_flask_response(result):
+    return _media_cover_object_flask_response_impl(
+        result,
+        send_media_object_fn=_send_media_object,
     )
 
 
@@ -319,12 +342,15 @@ def api_item_cover_set(item_id: int):
 @login_required
 def item_cover(item_id: int):
     it = medias.get_item(item_id)
-    if not it or not it.get("cover_object_key"):
+    if not it:
         abort(404)
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
-    return _send_media_object(it["cover_object_key"])
+    result = _routes()._build_item_cover_object_response(it)
+    if result.not_found:
+        abort(404)
+    return _media_cover_object_flask_response(result)
 
 
 @bp.route("/raw-sources/<int:rid>/video", methods=["GET"])
@@ -337,7 +363,10 @@ def raw_source_video_url(rid: int):
     if not _can_access_product(p):
         abort(404)
     _routes()._audit_raw_source_video_access(row)
-    return _send_media_object(row["video_object_key"])
+    result = _routes()._build_raw_source_video_object_response(row)
+    if result.not_found:
+        abort(404)
+    return _media_cover_object_flask_response(result)
 
 
 @bp.route("/raw-sources/<int:rid>/cover", methods=["GET"])
@@ -349,7 +378,10 @@ def raw_source_cover_url(rid: int):
     p = medias.get_product(int(row["product_id"]))
     if not _can_access_product(p):
         abort(404)
-    return _send_media_object(row["cover_object_key"])
+    result = _routes()._build_raw_source_cover_object_response(row)
+    if result.not_found:
+        abort(404)
+    return _media_cover_object_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/cover/bootstrap", methods=["POST"])
