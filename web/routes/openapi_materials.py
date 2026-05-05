@@ -31,7 +31,12 @@ from web.services.openapi_materials_serializers import (
     serialize_product as _serialize_product,
     serialize_shopify_image_task as _serialize_shopify_image_task,
 )
-from web.services.openapi_push_items import serialize_push_item as _serialize_push_item
+from web.services.openapi_push_items import (
+    filter_push_items_by_status as _filter_push_items_by_status,
+    paginate_push_items as _paginate_push_items,
+    serialize_push_item as _serialize_push_item,
+    serialize_push_item_rows as _serialize_push_item_rows,
+)
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
@@ -457,28 +462,10 @@ def list_push_items():
         limit=10000,
     )
 
-    all_items: list[dict] = []
-    for row in rows:
-        item_shape = dict(row)
-        product_shape = {
-            "id": row.get("product_id"),
-            "name": row.get("product_name"),
-            "product_code": row.get("product_code"),
-            "ad_supported_langs": row.get("ad_supported_langs"),
-            "shopify_image_status_json": row.get("shopify_image_status_json"),
-            "selling_points": row.get("selling_points"),
-            "importance": row.get("importance"),
-            "listing_status": row.get("listing_status"),
-        }
-        all_items.append(_serialize_push_item(item_shape, product_shape, query_one_fn=query_one))
-
-    if status_filter:
-        all_items = [it for it in all_items if it["status"] in status_filter]
-
+    all_items = _serialize_push_item_rows(rows, query_one_fn=query_one)
+    all_items = _filter_push_items_by_status(all_items, status_filter)
     total = len(all_items)
-    start = (page - 1) * page_size
-    end = start + page_size
-    items = all_items[start:end]
+    items = _paginate_push_items(all_items, page=page, page_size=page_size)
 
     return jsonify({
         "items": items,

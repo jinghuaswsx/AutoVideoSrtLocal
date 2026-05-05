@@ -112,3 +112,94 @@ def test_serialize_push_item_defaults_without_latest_push(monkeypatch):
     assert payload["display_name"] == "fallback.mp4"
     assert payload["cover_url"] is None
     assert payload["latest_push"] is None
+
+
+def test_product_shape_from_push_row_projects_product_fields():
+    from web.services import openapi_push_items
+
+    shape = openapi_push_items.product_shape_from_push_row({
+        "product_id": 10,
+        "product_name": "Alpha",
+        "product_code": "alpha",
+        "ad_supported_langs": "en,de",
+        "shopify_image_status_json": "{}",
+        "selling_points": "point",
+        "importance": 3,
+        "listing_status": None,
+        "ignored": "value",
+    })
+
+    assert shape == {
+        "id": 10,
+        "name": "Alpha",
+        "product_code": "alpha",
+        "ad_supported_langs": "en,de",
+        "shopify_image_status_json": "{}",
+        "selling_points": "point",
+        "importance": 3,
+        "listing_status": None,
+    }
+
+
+def test_serialize_push_item_rows_uses_project_shape_and_query_one(monkeypatch):
+    from web.services import openapi_push_items
+
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "compute_readiness",
+        lambda item, product: {"product_code": product.get("product_code")},
+    )
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "compute_status",
+        lambda item, product: "pending",
+    )
+
+    def fail_query_one(sql: str, args: tuple) -> dict | None:
+        raise AssertionError("latest push lookup should not run for this row")
+
+    rows = [
+        {
+            "id": 1,
+            "product_id": 10,
+            "lang": "de",
+            "filename": "demo.mp4",
+            "display_name": "Demo",
+            "cover_object_key": None,
+            "latest_push_id": None,
+            "product_name": "Alpha",
+            "product_code": "alpha",
+            "ad_supported_langs": "de",
+            "selling_points": "",
+            "importance": 3,
+        },
+    ]
+
+    payloads = openapi_push_items.serialize_push_item_rows(
+        rows,
+        query_one_fn=fail_query_one,
+    )
+
+    assert len(payloads) == 1
+    assert payloads[0]["item_id"] == 1
+    assert payloads[0]["product_code"] == "alpha"
+    assert payloads[0]["product_name"] == "Alpha"
+    assert payloads[0]["readiness"] == {"product_code": "alpha"}
+
+
+def test_filter_and_paginate_push_items_by_status():
+    from web.services import openapi_push_items
+
+    items = [
+        {"item_id": 1, "status": "pending"},
+        {"item_id": 2, "status": "pushed"},
+        {"item_id": 3, "status": "failed"},
+        {"item_id": 4, "status": "pushed"},
+    ]
+
+    filtered = openapi_push_items.filter_push_items_by_status(items, ["pushed"])
+    assert [item["item_id"] for item in filtered] == [2, 4]
+    assert openapi_push_items.paginate_push_items(filtered, page=2, page_size=1) == [
+        {"item_id": 4, "status": "pushed"},
+    ]
+    assert openapi_push_items.filter_push_items_by_status(items, []) == items

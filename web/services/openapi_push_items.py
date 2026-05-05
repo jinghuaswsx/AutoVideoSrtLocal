@@ -56,3 +56,47 @@ def serialize_push_item(
         "latest_push": latest_push,
         "created_at": iso_or_none(item.get("created_at")),
     }
+
+
+def product_shape_from_push_row(row: dict) -> dict:
+    return {
+        "id": row.get("product_id"),
+        "name": row.get("product_name"),
+        "product_code": row.get("product_code"),
+        "ad_supported_langs": row.get("ad_supported_langs"),
+        "shopify_image_status_json": row.get("shopify_image_status_json"),
+        "selling_points": row.get("selling_points"),
+        "importance": row.get("importance"),
+        "listing_status": row.get("listing_status"),
+    }
+
+
+def serialize_push_item_rows(
+    rows: list[dict],
+    *,
+    query_one_fn: QueryOneFn = db_query_one,
+    media_download_url_fn: MediaUrlFn = media_download_url,
+) -> list[dict]:
+    items: list[dict] = []
+    for row in rows or []:
+        items.append(
+            serialize_push_item(
+                dict(row),
+                product_shape_from_push_row(row),
+                query_one_fn=query_one_fn,
+                media_download_url_fn=media_download_url_fn,
+            )
+        )
+    return items
+
+
+def filter_push_items_by_status(items: list[dict], status_filter: list[str]) -> list[dict]:
+    if not status_filter:
+        return items
+    return [item for item in items if item["status"] in status_filter]
+
+
+def paginate_push_items(items: list[dict], *, page: int, page_size: int) -> list[dict]:
+    start = (page - 1) * page_size
+    end = start + page_size
+    return items[start:end]
