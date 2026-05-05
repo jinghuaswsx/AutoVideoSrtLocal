@@ -14,6 +14,7 @@ from config import OUTPUT_DIR
 from web.services.media_covers import (
     build_item_cover_from_url_response as _build_item_cover_from_url_response_impl,
     build_item_cover_bootstrap_response as _build_item_cover_bootstrap_response_impl,
+    build_item_play_url_response as _build_item_play_url_response_impl,
     build_item_cover_set_response as _build_item_cover_set_response_impl,
     build_item_cover_set_from_url_response as _build_item_cover_set_from_url_response_impl,
     build_item_cover_update_response as _build_item_cover_update_response_impl,
@@ -66,6 +67,16 @@ def _build_item_cover_bootstrap_response(pid, body):
         body,
         build_media_object_key_fn=object_keys.build_media_object_key,
         reserve_local_media_upload_fn=_reserve_local_media_upload,
+    )
+
+
+def _build_item_play_url_response(item):
+    return _build_item_play_url_response_impl(
+        item,
+        media_object_url_fn=lambda object_key: url_for(
+            "medias.media_object_proxy",
+            object_key=object_key,
+        ),
     )
 
 
@@ -420,4 +431,5 @@ def api_play_url(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
-    return jsonify({"url": url_for("medias.media_object_proxy", object_key=it["object_key"])})
+    result = _routes()._build_item_play_url_response(it)
+    return jsonify(result.payload), result.status_code

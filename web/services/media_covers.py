@@ -15,6 +15,14 @@ class MediaCoverResponse:
     status_code: int = 200
 
 
+def build_item_play_url_response(
+    item: dict,
+    *,
+    media_object_url_fn: Callable[[str], str],
+) -> MediaCoverResponse:
+    return MediaCoverResponse({"url": media_object_url_fn(item["object_key"])})
+
+
 def build_product_cover_bootstrap_response(
     user_id: int,
     product_id: int,

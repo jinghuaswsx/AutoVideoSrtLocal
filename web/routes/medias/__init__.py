@@ -302,6 +302,7 @@ api_item_cover_update = _covers.api_item_cover_update
 api_item_cover_bootstrap = _covers.api_item_cover_bootstrap
 api_item_cover_set = _covers.api_item_cover_set
 _build_item_cover_bootstrap_response = _covers._build_item_cover_bootstrap_response
+_build_item_play_url_response = _covers._build_item_play_url_response
 _build_product_cover_bootstrap_response = _covers._build_product_cover_bootstrap_response
 _build_item_cover_update_response = _covers._build_item_cover_update_response
 _build_item_cover_set_response = _covers._build_item_cover_set_response

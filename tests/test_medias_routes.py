@@ -467,6 +467,28 @@ def test_media_object_proxy_rejects_invalid_object_key_without_500(authed_client
     assert response.status_code == 404
 
 
+def test_media_item_play_url_delegates_response_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    item = {"id": 44, "product_id": 123, "object_key": "1/medias/123/en/video.mp4"}
+    calls = []
+    monkeypatch.setattr(r.medias, "get_item", lambda item_id: item if item_id == 44 else None)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r,
+        "_build_item_play_url_response",
+        lambda row: calls.append(row)
+        or SimpleNamespace(payload={"url": "/medias/object?object_key=stub"}, status_code=200),
+    )
+
+    response = authed_client_no_db.get("/medias/api/items/44/play_url")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"url": "/medias/object?object_key=stub"}
+    assert calls == [item]
+
+
 def test_media_object_proxy_rejects_local_media_path_escape(
     authed_client_no_db, monkeypatch, tmp_path
 ):

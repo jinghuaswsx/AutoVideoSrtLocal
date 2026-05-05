@@ -1,6 +1,18 @@
 from __future__ import annotations
 
 
+def test_build_item_play_url_response_uses_media_object_url_builder():
+    from web.services.media_covers import build_item_play_url_response
+
+    result = build_item_play_url_response(
+        {"id": 44, "object_key": "1/medias/123/en/video.mp4"},
+        media_object_url_fn=lambda object_key: f"/medias/object?object_key={object_key}",
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {"url": "/medias/object?object_key=1/medias/123/en/video.mp4"}
+
+
 def test_build_product_cover_bootstrap_response_uses_lang_and_safe_filename():
     from web.services.media_covers import build_product_cover_bootstrap_response
 

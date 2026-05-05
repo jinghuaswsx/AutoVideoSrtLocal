@@ -1074,6 +1074,22 @@ def test_media_cover_from_url_responses_live_outside_route_module():
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_media_item_play_url_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_play_url"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "url_for" not in route_source
+    assert '"url"' not in route_source
+    assert "_build_item_play_url_response" in route_source
+    assert Path("web/services/media_covers.py").exists()
+
+
 def test_media_push_error_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/pushes.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
