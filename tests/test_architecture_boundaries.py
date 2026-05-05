@@ -379,6 +379,50 @@ def test_raw_source_list_update_delete_responses_live_outside_route_module():
     assert Path("web/services/media_raw_sources.py").exists()
 
 
+def test_raw_source_create_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/raw_sources.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_create_raw_source"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    direct_calls = [
+        f"{call.func.value.id}.{call.func.attr}"
+        for call in ast.walk(route_function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id
+        in {
+            "local_media_storage",
+            "object_keys",
+            "medias",
+        }
+        and call.func.attr
+        in {
+            "write_bytes",
+            "build_media_raw_source_key",
+            "create_raw_source",
+            "get_raw_source",
+        }
+    ]
+
+    assert direct_calls == []
+    assert "video and cover both required" not in route_source
+    assert "video too large (>2GB)" not in route_source
+    assert "upload video failed:" not in route_source
+    assert "upload cover failed:" not in route_source
+    assert "db insert failed:" not in route_source
+    assert "english_video_required" not in route_source
+    assert "raw_source_filename_mismatch" not in route_source
+    assert "_serialize_raw_source(" not in route_source
+    assert "_build_raw_source_create_response" in route_source
+    assert Path("web/services/media_raw_sources.py").exists()
+
+
 def test_media_evaluation_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/evaluation.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
