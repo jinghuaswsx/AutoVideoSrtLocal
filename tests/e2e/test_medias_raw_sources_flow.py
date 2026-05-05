@@ -396,6 +396,13 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             page.get_by_role("button", name="原始视频 (1)").click()
             failing_card = page.locator("#rsList [data-rs-id='1001']")
             expect(failing_card).to_be_visible()
+            failing_card.evaluate("""
+                card => {
+                  card.dataset.videoUrl = `${card.dataset.videoUrl}?missing=1`;
+                  const videoPane = card.querySelector('[data-pane="video"]');
+                  if (videoPane) videoPane.dataset.loaded = '';
+                }
+            """)
             failing_card.get_by_role("button", name="视频").click()
             expect(failing_card.locator(".vvideo-ph.err")).to_contain_text("视频加载失败")
             page.locator("#rsModalClose").click()
