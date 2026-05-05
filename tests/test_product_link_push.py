@@ -345,6 +345,30 @@ def test_medias_product_links_push_endpoint_posts_to_downstream(
     assert resp.get_json() == result
 
 
+def test_medias_product_links_push_endpoint_delegates_response_builder(
+    authed_client_no_db, monkeypatch,
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    captured = {}
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+
+    def fake_builder(row):
+        captured["product"] = row
+        return type("Result", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr(
+        "web.routes.medias._build_product_links_push_response",
+        fake_builder,
+    )
+
+    resp = authed_client_no_db.post("/medias/api/products/10/product-links-push")
+
+    assert resp.status_code == 202
+    assert resp.get_json() == {"ok": True}
+    assert captured["product"] is product
+
+
 def test_medias_unsuitable_product_push_payload_endpoint_returns_preview(
     authed_client_no_db, monkeypatch,
 ):
@@ -430,6 +454,34 @@ def test_medias_unsuitable_product_push_endpoint_accepts_single_type(
     assert resp.get_json() == result
 
 
+def test_medias_unsuitable_product_push_endpoint_delegates_response_builder(
+    authed_client_no_db, monkeypatch,
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    captured = {}
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+
+    def fake_builder(row, body):
+        captured["product"] = row
+        captured["body"] = body
+        return type("Result", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr(
+        "web.routes.medias._build_product_unsuitable_push_response",
+        fake_builder,
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/10/product-unsuitable-push",
+        json={"type": "copy"},
+    )
+
+    assert resp.status_code == 202
+    assert resp.get_json() == {"ok": True}
+    assert captured == {"product": product, "body": {"type": "copy"}}
+
+
 def test_build_product_localized_texts_push_preview_reuses_product_texts(monkeypatch):
     from appcore import pushes
 
@@ -513,6 +565,30 @@ def test_medias_product_localized_texts_push_endpoint_posts_to_downstream(
 
     assert resp.status_code == 200
     assert resp.get_json() == result
+
+
+def test_medias_product_localized_texts_push_endpoint_delegates_response_builder(
+    authed_client_no_db, monkeypatch,
+):
+    product = {"id": 10, "mk_id": 3836}
+    captured = {}
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+
+    def fake_builder(row):
+        captured["product"] = row
+        return type("Result", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr(
+        "web.routes.medias._build_product_localized_texts_push_response",
+        fake_builder,
+    )
+
+    resp = authed_client_no_db.post("/medias/api/products/10/product-localized-texts-push")
+
+    assert resp.status_code == 202
+    assert resp.get_json() == {"ok": True}
+    assert captured["product"] is product
 
 
 def test_medias_assets_include_product_link_push_entry():

@@ -1087,6 +1087,38 @@ def test_media_push_error_responses_live_outside_route_module():
     assert Path("web/services/media_pushes.py").exists()
 
 
+def test_media_product_push_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/pushes.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "api_product_links_push_payload",
+        "api_product_links_push",
+        "api_product_unsuitable_push_payload",
+        "api_product_unsuitable_push",
+        "api_product_localized_texts_push_payload",
+        "api_product_localized_texts_push",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "routes.pushes." not in route_source
+    assert "try:" not in route_source
+    assert "except Exception" not in route_source
+    assert "_build_product_links_push_preview_response" in route_source
+    assert "_build_product_links_push_response" in route_source
+    assert "_build_product_unsuitable_push_preview_response" in route_source
+    assert "_build_product_unsuitable_push_response" in route_source
+    assert "_build_product_localized_texts_push_preview_response" in route_source
+    assert "_build_product_localized_texts_push_response" in route_source
+    assert Path("web/services/media_pushes.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

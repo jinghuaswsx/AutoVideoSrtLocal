@@ -5,9 +5,15 @@ from flask_login import login_required
 
 from appcore import medias
 from web.services.media_pushes import (
+    build_product_links_push_preview_response,
     build_product_links_push_error_response,
+    build_product_links_push_response,
+    build_product_localized_texts_push_preview_response,
     build_product_localized_texts_push_error_response,
+    build_product_localized_texts_push_response,
+    build_product_unsuitable_push_preview_response,
     build_product_unsuitable_push_error_response,
+    build_product_unsuitable_push_response,
 )
 
 from . import bp
@@ -34,6 +40,49 @@ def _product_unsuitable_push_error_response(exc: Exception):
     return jsonify(result.payload), result.status_code
 
 
+def _build_product_links_push_preview_response(product: dict):
+    return build_product_links_push_preview_response(
+        product,
+        build_preview_fn=_routes_module().pushes.build_product_links_push_preview,
+    )
+
+
+def _build_product_links_push_response(product: dict):
+    return build_product_links_push_response(
+        product,
+        push_product_links_fn=_routes_module().pushes.push_product_links,
+    )
+
+
+def _build_product_unsuitable_push_preview_response(product: dict):
+    return build_product_unsuitable_push_preview_response(
+        product,
+        build_preview_fn=_routes_module().pushes.build_unsuitable_product_push_preview,
+    )
+
+
+def _build_product_unsuitable_push_response(product: dict, body: dict | None):
+    return build_product_unsuitable_push_response(
+        product,
+        body,
+        push_unsuitable_product_fn=_routes_module().pushes.push_unsuitable_product,
+    )
+
+
+def _build_product_localized_texts_push_preview_response(product: dict):
+    return build_product_localized_texts_push_preview_response(
+        product,
+        build_preview_fn=_routes_module().pushes.build_product_localized_texts_push_preview,
+    )
+
+
+def _build_product_localized_texts_push_response(product: dict):
+    return build_product_localized_texts_push_response(
+        product,
+        push_localized_texts_fn=_routes_module().pushes.push_product_localized_texts,
+    )
+
+
 @bp.route("/api/products/<int:pid>/product-links-push/payload", methods=["GET"])
 @login_required
 def api_product_links_push_payload(pid: int):
@@ -43,10 +92,8 @@ def api_product_links_push_payload(pid: int):
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
-    try:
-        return jsonify(routes.pushes.build_product_links_push_preview(product))
-    except Exception as exc:
-        return _product_links_push_error_response(exc)
+    result = routes._build_product_links_push_preview_response(product)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/product-links-push", methods=["POST"])
@@ -58,12 +105,8 @@ def api_product_links_push(pid: int):
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
-    try:
-        result = routes.pushes.push_product_links(product)
-    except Exception as exc:
-        return _product_links_push_error_response(exc)
-    status = 200 if result.get("ok") else 502
-    return jsonify(result), status
+    result = routes._build_product_links_push_response(product)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/product-unsuitable-push/payload", methods=["GET"])
@@ -75,10 +118,8 @@ def api_product_unsuitable_push_payload(pid: int):
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
-    try:
-        return jsonify(routes.pushes.build_unsuitable_product_push_preview(product))
-    except Exception as exc:
-        return _product_unsuitable_push_error_response(exc)
+    result = routes._build_product_unsuitable_push_preview_response(product)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/product-unsuitable-push", methods=["POST"])
@@ -91,17 +132,8 @@ def api_product_unsuitable_push(pid: int):
     if not routes._can_access_product(product):
         abort(404)
     body = request.get_json(silent=True) or {}
-    raw_type = (body.get("type") or "").strip().lower() if isinstance(body, dict) else ""
-    only_type = raw_type if raw_type in {"copy", "links"} else None
-    try:
-        if only_type:
-            result = routes.pushes.push_unsuitable_product(product, only_type=only_type)
-        else:
-            result = routes.pushes.push_unsuitable_product(product)
-    except Exception as exc:
-        return _product_unsuitable_push_error_response(exc)
-    status = 200 if result.get("ok") else 502
-    return jsonify(result), status
+    result = routes._build_product_unsuitable_push_response(product, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/product-localized-texts-push/payload", methods=["GET"])
@@ -113,10 +145,8 @@ def api_product_localized_texts_push_payload(pid: int):
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
-    try:
-        return jsonify(routes.pushes.build_product_localized_texts_push_preview(product))
-    except Exception as exc:
-        return _product_localized_texts_push_error_response(exc)
+    result = routes._build_product_localized_texts_push_preview_response(product)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/product-localized-texts-push", methods=["POST"])
@@ -128,9 +158,5 @@ def api_product_localized_texts_push(pid: int):
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
-    try:
-        result = routes.pushes.push_product_localized_texts(product)
-    except Exception as exc:
-        return _product_localized_texts_push_error_response(exc)
-    status = 200 if result.get("ok") else 502
-    return jsonify(result), status
+    result = routes._build_product_localized_texts_push_response(product)
+    return jsonify(result.payload), result.status_code
