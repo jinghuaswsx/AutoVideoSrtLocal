@@ -264,6 +264,31 @@ def test_medias_product_links_push_payload_endpoint_returns_preview(
     assert resp.get_json() == preview
 
 
+def test_medias_product_links_push_payload_non_admin_delegates_forbidden_response(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as r
+
+    calls = []
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: (_ for _ in ()).throw(AssertionError("product lookup should not run")),
+    )
+    monkeypatch.setattr(
+        r,
+        "_product_push_admin_required_response",
+        lambda: calls.append("forbidden") or ({"error": "forbidden-from-builder"}, 403),
+    )
+
+    resp = authed_user_client_no_db.get("/medias/api/products/10/product-links-push/payload")
+
+    assert resp.status_code == 403
+    assert resp.get_json() == {"error": "forbidden-from-builder"}
+    assert calls == ["forbidden"]
+
+
 def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatch):
     from appcore import pushes
 

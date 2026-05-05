@@ -5,6 +5,7 @@ from flask_login import login_required
 
 from appcore import medias
 from web.services.media_pushes import (
+    build_product_push_admin_required_response,
     build_product_links_push_preview_response,
     build_product_links_push_error_response,
     build_product_links_push_response,
@@ -37,6 +38,11 @@ def _product_localized_texts_push_error_response(exc: Exception):
 
 def _product_unsuitable_push_error_response(exc: Exception):
     result = build_product_unsuitable_push_error_response(exc)
+    return jsonify(result.payload), result.status_code
+
+
+def _product_push_admin_required_response():
+    result = build_product_push_admin_required_response()
     return jsonify(result.payload), result.status_code
 
 
@@ -88,7 +94,7 @@ def _build_product_localized_texts_push_response(product: dict):
 def api_product_links_push_payload(pid: int):
     routes = _routes_module()
     if not routes._is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
+        return routes._product_push_admin_required_response()
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
@@ -101,7 +107,7 @@ def api_product_links_push_payload(pid: int):
 def api_product_links_push(pid: int):
     routes = _routes_module()
     if not routes._is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
+        return routes._product_push_admin_required_response()
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
@@ -114,7 +120,7 @@ def api_product_links_push(pid: int):
 def api_product_unsuitable_push_payload(pid: int):
     routes = _routes_module()
     if not routes._is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
+        return routes._product_push_admin_required_response()
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
@@ -127,7 +133,7 @@ def api_product_unsuitable_push_payload(pid: int):
 def api_product_unsuitable_push(pid: int):
     routes = _routes_module()
     if not routes._is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
+        return routes._product_push_admin_required_response()
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
@@ -141,7 +147,7 @@ def api_product_unsuitable_push(pid: int):
 def api_product_localized_texts_push_payload(pid: int):
     routes = _routes_module()
     if not routes._is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
+        return routes._product_push_admin_required_response()
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)
@@ -154,7 +160,7 @@ def api_product_localized_texts_push_payload(pid: int):
 def api_product_localized_texts_push(pid: int):
     routes = _routes_module()
     if not routes._is_admin():
-        return jsonify({"error": "仅管理员可操作"}), 403
+        return routes._product_push_admin_required_response()
     product = medias.get_product(pid)
     if not routes._can_access_product(product):
         abort(404)

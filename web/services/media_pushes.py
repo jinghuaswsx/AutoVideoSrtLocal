@@ -18,6 +18,10 @@ def _status_for_push_result(result: dict) -> int:
     return 200 if result.get("ok") else 502
 
 
+def build_product_push_admin_required_response() -> MediaPushErrorResponse:
+    return MediaPushErrorResponse({"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u64cd\u4f5c"}, 403)
+
+
 def build_product_links_push_error_response(exc: Exception) -> MediaPushErrorResponse:
     message = str(exc)
     if isinstance(exc, pushes.ProductNotListedError):

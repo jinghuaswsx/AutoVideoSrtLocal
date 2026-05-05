@@ -1147,6 +1147,8 @@ def test_media_product_push_responses_live_outside_route_module():
     assert "routes.pushes." not in route_source
     assert "try:" not in route_source
     assert "except Exception" not in route_source
+    assert "\u4ec5\u7ba1\u7406\u5458\u53ef\u64cd\u4f5c" not in route_source
+    assert "_product_push_admin_required_response" in route_source
     assert "_build_product_links_push_preview_response" in route_source
     assert "_build_product_links_push_response" in route_source
     assert "_build_product_unsuitable_push_preview_response" in route_source

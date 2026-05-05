@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 
+def test_product_push_admin_required_response_is_standardized():
+    from web.services.media_pushes import build_product_push_admin_required_response
+
+    result = build_product_push_admin_required_response()
+
+    assert result.status_code == 403
+    assert result.payload == {"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u64cd\u4f5c"}
+
+
 def test_product_links_push_preview_and_execute_responses_wrap_downstream():
     from web.services.media_pushes import (
         build_product_links_push_preview_response,
