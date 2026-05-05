@@ -23,6 +23,7 @@ from web.services.media_detail_archives import (
     build_localized_detail_images_zip_response as _build_localized_detail_images_zip_response_impl,
 )
 from web.services.media_detail_listing import (
+    build_detail_image_proxy_response as _build_detail_image_proxy_response_impl,
     build_detail_images_list_response as _build_detail_images_list_response_impl,
 )
 from web.services.media_detail_from_url import (
@@ -269,6 +270,15 @@ def _build_detail_images_list_response(pid: int, lang: str):
         is_valid_language_fn=medias.is_valid_language,
         list_detail_images_fn=medias.list_detail_images,
         serialize_detail_image_fn=_serialize_detail_image,
+    )
+
+
+def _build_detail_image_proxy_response(image_id: int):
+    return _build_detail_image_proxy_response_impl(
+        image_id,
+        get_detail_image_fn=medias.get_detail_image,
+        get_product_fn=medias.get_product,
+        can_access_product_fn=_can_access_product,
     )
 
 
@@ -529,10 +539,7 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
 @login_required
 def detail_image_proxy(image_id: int):
     """Serve or redirect to the stored detail image asset."""
-    row = medias.get_detail_image(image_id)
-    if not row or row.get("deleted_at") is not None:
+    outcome = _routes()._build_detail_image_proxy_response(image_id)
+    if outcome.not_found:
         abort(404)
-    p = medias.get_product(int(row["product_id"]))
-    if not _can_access_product(p):
-        abort(404)
-    return _send_media_object(row["object_key"])
+    return _send_media_object(outcome.object_key)

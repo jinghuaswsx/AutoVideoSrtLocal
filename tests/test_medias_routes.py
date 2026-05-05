@@ -1730,6 +1730,26 @@ def test_detail_image_proxy_serves_local_media_store_file(
     assert resp.data == b"detail-bytes"
 
 
+def test_detail_image_proxy_route_delegates_access_decision(authed_client_no_db, monkeypatch):
+    from flask import Response
+    from web.routes import medias as r
+
+    captured = {}
+
+    def fake_build(image_id):
+        captured["image_id"] = image_id
+        return SimpleNamespace(not_found=False, object_key="1/medias/123/detail.jpg")
+
+    monkeypatch.setattr(r, "_build_detail_image_proxy_response", fake_build)
+    monkeypatch.setattr(r, "_send_media_object", lambda object_key: Response(object_key, mimetype="text/plain"))
+
+    resp = authed_client_no_db.get("/medias/detail-image/77")
+
+    assert resp.status_code == 200
+    assert resp.data == b"1/medias/123/detail.jpg"
+    assert captured == {"image_id": 77}
+
+
 def test_get_product_api_includes_shopifyid(
     authed_client_no_db, monkeypatch
 ):

@@ -192,6 +192,33 @@ def test_detail_image_list_response_lives_outside_route_module():
     assert Path("web/services/media_detail_listing.py").exists()
 
 
+def test_detail_image_proxy_access_lives_outside_route_module():
+    module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "detail_image_proxy"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    direct_calls = [
+        f"{call.func.value.id}.{call.func.attr}"
+        for call in ast.walk(route_function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "medias"
+        and call.func.attr in {"get_detail_image", "get_product"}
+    ]
+
+    assert direct_calls == []
+    assert "_can_access_product" not in route_source
+    assert "deleted_at" not in route_source
+    assert "_build_detail_image_proxy_response" in route_source
+    assert Path("web/services/media_detail_listing.py").exists()
+
+
 def test_detail_image_translate_payload_construction_lives_outside_route_module():
     route_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
 

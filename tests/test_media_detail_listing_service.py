@@ -40,3 +40,57 @@ def test_build_detail_images_list_response_rejects_invalid_language_before_listi
 
     assert result.status_code == 400
     assert result.payload == {"error": "涓嶆敮鎸佺殑璇: xx"}
+
+
+def test_build_detail_image_proxy_response_returns_accessible_object_key():
+    from web.services.media_detail_listing import build_detail_image_proxy_response
+
+    calls = []
+    image = {"id": 77, "product_id": 123, "object_key": "1/medias/123/detail.jpg", "deleted_at": None}
+    product = {"id": 123, "user_id": 1}
+
+    result = build_detail_image_proxy_response(
+        77,
+        get_detail_image_fn=lambda image_id: calls.append(("image", image_id)) or image,
+        get_product_fn=lambda product_id: calls.append(("product", product_id)) or product,
+        can_access_product_fn=lambda value: calls.append(("access", value)) or True,
+    )
+
+    assert result.not_found is False
+    assert result.object_key == "1/medias/123/detail.jpg"
+    assert calls == [("image", 77), ("product", 123), ("access", product)]
+
+
+def test_build_detail_image_proxy_response_hides_missing_deleted_or_inaccessible_images():
+    from web.services.media_detail_listing import build_detail_image_proxy_response
+
+    missing = build_detail_image_proxy_response(
+        77,
+        get_detail_image_fn=lambda image_id: None,
+        get_product_fn=lambda product_id: (_ for _ in ()).throw(AssertionError("product not reached")),
+        can_access_product_fn=lambda product: True,
+    )
+    deleted = build_detail_image_proxy_response(
+        78,
+        get_detail_image_fn=lambda image_id: {"id": image_id, "product_id": 123, "deleted_at": "now"},
+        get_product_fn=lambda product_id: (_ for _ in ()).throw(AssertionError("product not reached")),
+        can_access_product_fn=lambda product: True,
+    )
+    inaccessible = build_detail_image_proxy_response(
+        79,
+        get_detail_image_fn=lambda image_id: {
+            "id": image_id,
+            "product_id": 123,
+            "object_key": "1/medias/123/detail.jpg",
+            "deleted_at": None,
+        },
+        get_product_fn=lambda product_id: {"id": product_id, "user_id": 999},
+        can_access_product_fn=lambda product: False,
+    )
+
+    assert missing.not_found is True
+    assert missing.object_key is None
+    assert deleted.not_found is True
+    assert deleted.object_key is None
+    assert inaccessible.not_found is True
+    assert inaccessible.object_key is None
