@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import requests
 from flask import abort, jsonify, request, send_file
 from flask_login import current_user, login_required
 
@@ -23,7 +22,9 @@ from web.services.media_detail_archives import (
     DetailImagesZipGroup,
     build_detail_images_archive,
 )
-from web.services.media_detail_from_url import build_detail_images_from_url_plan
+from web.services.media_detail_from_url import (
+    build_detail_images_from_url_response as _build_detail_images_from_url_response_impl,
+)
 from web.services.media_detail_mutations import (
     clear_detail_images,
     delete_detail_image,
@@ -100,6 +101,42 @@ def _start_image_translate_runner(task_id, user_id):
 
 def db_query(*args, **kwargs):
     return _routes().db_query(*args, **kwargs)
+
+
+def _fetch_detail_images_page(url: str, lang: str):
+    from appcore.link_check_fetcher import LinkCheckFetcher
+
+    return LinkCheckFetcher().fetch_page(url, lang)
+
+
+def _build_detail_images_from_url_response(
+    pid: int,
+    product: dict,
+    body: dict,
+    user_id: int,
+):
+    from appcore import medias_detail_fetch_tasks as mdf
+
+    return _build_detail_images_from_url_response_impl(
+        pid,
+        int(user_id),
+        product,
+        body,
+        is_valid_language_fn=medias.is_valid_language,
+        create_fetch_task_fn=mdf.create,
+        fetch_page_fn=_fetch_detail_images_page,
+        download_image_to_local_media_fn=_download_image_to_local_media,
+        soft_delete_detail_images_by_lang_fn=medias.soft_delete_detail_images_by_lang,
+        detail_image_empty_counts_fn=_detail_image_empty_counts,
+        detail_image_existing_counts_fn=_detail_image_existing_counts,
+        detail_image_kind_from_download_ext_fn=_detail_image_kind_from_download_ext,
+        detail_image_limits=_DETAIL_IMAGE_LIMITS,
+        detail_image_kind_labels=_DETAIL_IMAGE_KIND_LABELS,
+        add_detail_image_fn=medias.add_detail_image,
+        get_detail_image_fn=medias.get_detail_image,
+        serialize_detail_image_fn=_serialize_detail_image,
+        max_download_candidates=_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES,
+    )
 
 
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
@@ -235,119 +272,13 @@ def api_detail_images_from_url(pid: int):
         abort(404)
 
     body = request.get_json(silent=True) or {}
-    plan_outcome = build_detail_images_from_url_plan(
+    result = _routes()._build_detail_images_from_url_response(
+        pid,
         p or {},
         body,
-        is_valid_language=medias.is_valid_language,
+        current_user.id,
     )
-    if plan_outcome.error:
-        return jsonify({"error": plan_outcome.error}), plan_outcome.status_code
-    plan = plan_outcome.plan
-    lang = plan.lang
-    url = plan.url
-    clear_existing = plan.clear_existing
-
-    uid = current_user.id
-
-    def _worker(task_id: str, update):
-        """Fetch the page, download images, and update task progress."""
-        from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
-        update(status="fetching", message=f"fetching page {url}")
-        try:
-            fetcher = LinkCheckFetcher()
-            page = fetcher.fetch_page(url, lang)
-        except LocaleLockError as e:
-            update(status="failed", error=str(e),
-                   message=f"locale lock failed: {e}")
-            return
-        except requests.HTTPError as e:
-            status = getattr(getattr(e, "response", None), "status_code", None)
-            if status == 404:
-                update(status="failed",
-                       error=f"link returned 404: {url}",
-                       message=(
-                           f"link returned 404: {url}\n"
-                           f"product_code={p.get('product_code')} may not match the storefront handle.\n"
-                           "Please fill a real product link and retry."
-                       ))
-            else:
-                update(status="failed",
-                       error=f"HTTP {status}",
-                       message=f"fetch failed: HTTP {status}")
-            return
-        except requests.RequestException as e:
-            update(status="failed", error=str(e),
-                   message=f"fetch failed: {e}")
-            return
-
-        images = page.images or []
-        if not images:
-            update(status="failed",
-                   error="no images found",
-                   message="no carousel/detail images detected on the page")
-            return
-        if len(images) > _DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES:
-            images = images[:_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES]
-
-        if clear_existing:
-            try:
-                cleared = medias.soft_delete_detail_images_by_lang(pid, lang)
-            except Exception as exc:
-                update(status="failed", error=str(exc),
-                       message=f"failed to clear existing detail images: {exc}")
-                return
-            limit_counts = _detail_image_empty_counts()
-            update(status="downloading", total=len(images),
-                   message=f"cleared {cleared} existing detail images; found {len(images)} images, starting download")
-        else:
-            limit_counts = _detail_image_existing_counts(pid, lang)
-            update(status="downloading", total=len(images),
-                   message=f"found {len(images)} images, starting download")
-
-        created: list[dict] = []
-        errors: list[str] = []
-        for idx, img in enumerate(images):
-            src = img.get("source_url") or ""
-            update(progress=idx, current_url=src,
-                   message=f"downloading image {idx + 1}/{len(images)}")
-            filename = f"from_url_{lang}_{idx:02d}"
-            try:
-                obj_key, data, ext = _download_image_to_local_media(
-                    src, pid, filename, user_id=uid,
-                )
-                if ext and not obj_key:
-                    errors.append(f"{src}: {ext}")
-                    continue
-                kind = _detail_image_kind_from_download_ext(ext)
-                if limit_counts[kind] >= _DETAIL_IMAGE_LIMITS[kind]:
-                    errors.append(
-                        f"{src}: skipped, {_DETAIL_IMAGE_KIND_LABELS[kind]} limit reached "
-                        f"(max {_DETAIL_IMAGE_LIMITS[kind]})"
-                    )
-                    continue
-                new_id = medias.add_detail_image(
-                    pid, lang, obj_key,
-                    content_type=None, file_size=len(data) if data else None,
-                    origin_type="from_url",
-                )
-                limit_counts[kind] += 1
-                row = medias.get_detail_image(new_id)
-                if row:
-                    created.append(_serialize_detail_image(row))
-            except Exception as exc:
-                errors.append(f"{src}: {exc}")
-
-        update(status="done",
-               progress=len(images),
-               inserted=created,
-               errors=errors,
-               current_url="",
-               message=f"done: detected {len(images)} images, inserted {len(created)}"
-                       + (f", failed {len(errors)}" if errors else ""))
-
-    from appcore import medias_detail_fetch_tasks as mdf
-    task_id = mdf.create(user_id=uid, product_id=pid, url=url, lang=lang, worker=_worker)
-    return jsonify({"task_id": task_id, "url": url}), 202
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/detail-images/from-url/status/<task_id>", methods=["GET"])
