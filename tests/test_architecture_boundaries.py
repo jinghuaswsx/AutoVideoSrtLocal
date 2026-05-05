@@ -1054,6 +1054,38 @@ def test_media_link_check_responses_live_outside_route_module():
     assert Path("web/services/media_link_check.py").exists()
 
 
+def test_media_shopify_image_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/shopify_image.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "_shopify_image_lang_or_404",
+        "api_product_shopify_image_confirm",
+        "api_product_shopify_image_unavailable",
+        "api_product_shopify_image_clear",
+        "api_product_shopify_image_requeue",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "medias.is_valid_language" not in route_source
+    assert "shopify_image_tasks." not in route_source
+    assert "TASK_BLOCKED" not in route_source
+    assert "mark_link_unavailable" not in route_source
+    assert "create_or_reuse_task" not in route_source
+    assert "normalize_shopify_image_lang" in route_source
+    assert "build_shopify_image_confirm_response" in route_source
+    assert "build_shopify_image_unavailable_response" in route_source
+    assert "build_shopify_image_clear_response" in route_source
+    assert "build_shopify_image_requeue_response" in route_source
+    assert Path("web/services/media_shopify_image.py").exists()
+
+
 def test_mk_copywriting_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
