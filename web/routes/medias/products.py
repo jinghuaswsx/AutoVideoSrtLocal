@@ -27,6 +27,9 @@ from web.services.media_mk_copywriting import (
     mk_product_link_tail as _mk_product_link_tail,
     normalize_mk_copywriting_query as _normalize_mk_copywriting_query,
 )
+from web.services.media_parcel_cost import (
+    build_parcel_cost_suggest_response as _build_parcel_cost_suggest_response_impl,
+)
 from web.services.media_supply_pairing import (
     build_supply_pairing_search_response as _build_supply_pairing_search_response_impl,
 )
@@ -143,6 +146,16 @@ def _build_xmyc_sku_update_response(sku_id: int, body: dict):
     )
 
 
+def _build_parcel_cost_suggest_response(pid: int, args):
+    return _build_parcel_cost_suggest_response_impl(
+        pid,
+        args,
+        default_lookback_days=parcel_cost_suggest.DEFAULT_LOOKBACK_DAYS,
+        error_type=parcel_cost_suggest.ParcelCostSuggestError,
+        suggest_parcel_cost_fn=parcel_cost_suggest.suggest_parcel_cost,
+    )
+
+
 @bp.route("/api/mk-copywriting", methods=["GET"])
 @login_required
 def api_mk_copywriting():
@@ -187,24 +200,8 @@ def api_parcel_cost_suggest(pid: int):
     p = medias.get_product(pid)
     if not routes._can_access_product(p):
         abort(404)
-    try:
-        days = int(request.args.get("days") or parcel_cost_suggest.DEFAULT_LOOKBACK_DAYS)
-    except (TypeError, ValueError):
-        return jsonify({"error": "invalid_days"}), 400
-    days = max(7, min(90, days))
-    try:
-        suggestion = parcel_cost_suggest.suggest_parcel_cost(pid, days=days)
-    except parcel_cost_suggest.ParcelCostSuggestError as exc:
-        msg = str(exc)
-        if msg == "no_orders":
-            return jsonify({
-                "error": "no_orders",
-                "message": "该产品在店小秘还没有订单数据，无法估算实际小包成本",
-            }), 404
-        return jsonify({"error": "dxm_failed", "message": msg}), 502
-    except Exception as exc:  # pragma: no cover - safety net for browser glue
-        return jsonify({"error": "dxm_failed", "message": str(exc)}), 502
-    return jsonify({"ok": True, "suggestion": suggestion})
+    result = routes._build_parcel_cost_suggest_response(pid, request.args)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/xmyc-skus", methods=["GET"])

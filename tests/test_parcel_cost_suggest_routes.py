@@ -103,3 +103,31 @@ def test_parcel_cost_suggest_clamps_days(authed_client_no_db, monkeypatch):
     authed_client_no_db.get("/medias/api/products/1/parcel-cost-suggest?days=abc")
     # invalid_days returns 400 without invoking suggest; seen stays at 90
     assert seen["days"] == 90
+
+
+def test_parcel_cost_suggest_route_delegates_response_building(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "suggestion": {"product_id": 317}}
+        status_code = 202
+
+    def fake_build(pid, args):
+        captured["pid"] = pid
+        captured["days"] = args.get("days")
+        return Result()
+
+    monkeypatch.setattr(r, "_build_parcel_cost_suggest_response", fake_build)
+
+    resp = authed_client_no_db.get("/medias/api/products/317/parcel-cost-suggest?days=30")
+
+    assert resp.status_code == 202
+    assert resp.get_json() == {"ok": True, "suggestion": {"product_id": 317}}
+    assert captured == {"pid": 317, "days": "30"}
