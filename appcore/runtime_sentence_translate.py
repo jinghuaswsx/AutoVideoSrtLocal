@@ -42,6 +42,7 @@ class SentenceTranslateRunner(MultiTranslateRunner):
     """AV-sync V2 runner built on the multi-language translation workflow."""
 
     project_type = "sentence_translate"
+    profile_code: str = "av_sync"
 
     def _resolve_target_lang(self, task: dict) -> str:
         av_inputs = task.get("av_translate_inputs") if isinstance(task.get("av_translate_inputs"), dict) else {}
