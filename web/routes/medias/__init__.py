@@ -328,6 +328,7 @@ _build_item_complete_response = _items._build_item_complete_response
 _build_item_update_response = _items._build_item_update_response
 _build_item_delete_response = _items._build_item_delete_response
 api_product_translate = _translate.api_product_translate
+_build_product_translation_tasks_response = _translate._build_product_translation_tasks_response
 api_product_translation_tasks = _translate.api_product_translation_tasks
 api_list_raw_sources = _raw_sources.api_list_raw_sources
 api_create_raw_source = _raw_sources.api_create_raw_source

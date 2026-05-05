@@ -1,6 +1,38 @@
 from __future__ import annotations
 
 
+def test_build_product_translation_tasks_response_syncs_and_projects_tasks():
+    from web.services import media_product_translate as svc
+
+    calls = []
+
+    result = svc.build_product_translation_tasks_response(
+        product_id=123,
+        scope_user_id=7,
+        list_product_task_ids_fn=lambda user_id, product_id: calls.append(
+            ("task_ids", user_id, product_id)
+        )
+        or ["bt-1", "bt-2"],
+        sync_task_with_children_once_fn=lambda task_id, user_id=None: calls.append(
+            ("sync", task_id, user_id)
+        )
+        or {"actions": []},
+        list_product_tasks_fn=lambda user_id, product_id: calls.append(
+            ("project", user_id, product_id)
+        )
+        or [{"id": "bt-1"}],
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {"items": [{"id": "bt-1"}]}
+    assert calls == [
+        ("task_ids", 7, 123),
+        ("sync", "bt-1", 7),
+        ("sync", "bt-2", 7),
+        ("project", 7, 123),
+    ]
+
+
 def test_start_product_translation_requires_raw_sources_for_video_content(monkeypatch):
     from web.services import media_product_translate as svc
 

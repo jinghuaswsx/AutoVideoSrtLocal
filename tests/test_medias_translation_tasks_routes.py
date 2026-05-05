@@ -1,5 +1,6 @@
 import pytest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 @pytest.fixture(autouse=True)
@@ -84,6 +85,27 @@ def test_product_translation_tasks_api_returns_projection(authed_client_no_db, m
     assert payload["items"][0]["id"] == "bt-1"
     assert payload["items"][0]["items"][0]["status"] == "awaiting_voice"
     assert payload["items"][0]["items"][0]["detail_url"] == "/multi-translate/child-1"
+
+
+def test_product_translation_tasks_api_delegates_response_builder(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    routes = _stub_product(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(
+        routes,
+        "_build_product_translation_tasks_response",
+        lambda product_id, *, scope_user_id: calls.append((product_id, scope_user_id))
+        or SimpleNamespace(payload={"items": [{"id": "bt-user"}]}, status_code=200),
+    )
+
+    resp = authed_user_client_no_db.get("/medias/api/products/123/translation-tasks")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"items": [{"id": "bt-user"}]}
+    assert calls == [(123, 2)]
 
 
 def test_product_translation_tasks_api_admin_scope_crosses_users(authed_client_no_db, monkeypatch):

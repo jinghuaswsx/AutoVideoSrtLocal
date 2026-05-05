@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from typing import Any, Callable
 
-from appcore import bulk_translate_runtime, medias
+from appcore import bulk_translate_projection, bulk_translate_runtime, medias
 from web.routes.bulk_translate import start_bulk_scheduler_background
 
+
+log = logging.getLogger(__name__)
 
 DEFAULT_CONTENT_TYPES = ["copywriting", "detail_images", "video_covers", "videos"]
 ALLOWED_CONTENT_TYPES = {"copywriting", "detail_images", "video_covers", "videos"}
@@ -25,6 +29,12 @@ class ProductTranslateResult:
     payload: dict | None = None
 
 
+@dataclass(frozen=True)
+class ProductTranslationTasksResponse:
+    payload: dict
+    status_code: int = 200
+
+
 def _validation_error(message: str) -> ProductTranslateResult:
     return ProductTranslateResult(ok=False, status_code=400, error=message)
 
@@ -34,6 +44,30 @@ def _coerce_raw_ids(raw_ids) -> tuple[list[int], ProductTranslateResult | None]:
         return [int(x) for x in raw_ids], None
     except (TypeError, ValueError):
         return [], _validation_error("raw_ids must be integers")
+
+
+def build_product_translation_tasks_response(
+    *,
+    product_id: int,
+    scope_user_id: int | None,
+    list_product_task_ids_fn: Callable[[int | None, int], list[str]] | None = None,
+    sync_task_with_children_once_fn: Callable[..., Any] | None = None,
+    list_product_tasks_fn: Callable[[int | None, int], list[dict[str, Any]]] | None = None,
+) -> ProductTranslationTasksResponse:
+    list_task_ids = list_product_task_ids_fn or bulk_translate_projection.list_product_task_ids
+    sync_task = sync_task_with_children_once_fn or bulk_translate_runtime.sync_task_with_children_once
+    list_tasks = list_product_tasks_fn or bulk_translate_projection.list_product_tasks
+
+    for task_id in list_task_ids(scope_user_id, product_id):
+        try:
+            sync_task(task_id, user_id=scope_user_id)
+        except Exception:
+            log.warning("bulk translation child sync failed task_id=%s", task_id, exc_info=True)
+
+    return ProductTranslationTasksResponse(
+        payload={"items": list_tasks(scope_user_id, product_id)},
+        status_code=200,
+    )
 
 
 def start_product_translation(
