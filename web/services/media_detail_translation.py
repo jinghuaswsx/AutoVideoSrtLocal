@@ -27,6 +27,13 @@ class DetailTranslateApplyOutcome:
     not_found: bool = False
 
 
+@dataclass(frozen=True)
+class DetailTranslateFromEnOutcome:
+    payload: dict | None = None
+    error: str | None = None
+    status_code: int = 200
+
+
 def build_detail_translate_task_payload(
     *,
     output_dir: str,
@@ -84,6 +91,92 @@ def build_detail_translate_task_payload(
             "medias_context": medias_context,
             "concurrency_mode": concurrency_mode,
         },
+    )
+
+
+def build_detail_translate_from_en_response(
+    product_id: int,
+    user_id: int,
+    product: Mapping[str, object],
+    body: Mapping[str, object] | None,
+    *,
+    parse_lang_fn: Callable[..., tuple[str | None, str | None]],
+    default_concurrency_mode: str,
+    output_dir: str,
+    list_detail_images_fn: Callable[[int, str], Sequence[Mapping[str, object]]],
+    detail_images_is_gif_fn: Callable[[Mapping[str, object]], bool],
+    get_prompts_for_lang_fn: Callable[[str], Mapping[str, object]],
+    get_language_name_fn: Callable[[str], str],
+    default_model_id_fn: Callable[[], str],
+    compose_project_name_fn: Callable[[str, str, str], str],
+    create_image_translate_fn: Callable[..., object],
+    start_image_translate_runner_fn: Callable[[str, int], object],
+) -> DetailTranslateFromEnOutcome:
+    body_dict = dict(body or {})
+    lang, err = parse_lang_fn(body_dict, default="")
+    if err:
+        return DetailTranslateFromEnOutcome(error=err, status_code=400)
+    target_lang = str(lang or "").strip().lower()
+    if target_lang == "en":
+        return DetailTranslateFromEnOutcome(
+            error="english detail images do not need translate-from-en",
+            status_code=400,
+        )
+
+    mode = str(body_dict.get("concurrency_mode") or default_concurrency_mode).strip().lower()
+    if mode not in {"sequential", "parallel"}:
+        return DetailTranslateFromEnOutcome(
+            error="concurrency_mode must be sequential or parallel",
+            status_code=400,
+        )
+
+    source_rows = list(list_detail_images_fn(product_id, "en"))
+    if not source_rows:
+        return DetailTranslateFromEnOutcome(
+            error="english detail images are required first",
+            status_code=409,
+        )
+
+    translatable_rows = [row for row in source_rows if not detail_images_is_gif_fn(row)]
+    if not translatable_rows:
+        return DetailTranslateFromEnOutcome(
+            error="鑻辫鐗堣鎯呭浘鍏ㄩ儴涓?GIF 鍔ㄥ浘锛屾棤鍙炕璇戠殑闈欐€佸浘",
+            status_code=409,
+        )
+
+    prompt_template = str((get_prompts_for_lang_fn(target_lang).get("detail") or "")).strip()
+    if not prompt_template:
+        return DetailTranslateFromEnOutcome(
+            error="褰撳墠璇鏈厤缃鎯呭浘缈昏瘧 prompt",
+            status_code=409,
+        )
+
+    language_name = get_language_name_fn(target_lang)
+    task_payload = build_detail_translate_task_payload(
+        output_dir=output_dir,
+        user_id=user_id,
+        product_id=product_id,
+        product=product or {},
+        target_lang=target_lang,
+        target_language_name=language_name,
+        prompt_template=prompt_template,
+        source_rows=translatable_rows,
+        model_id=str(body_dict.get("model_id") or "").strip() or default_model_id_fn(),
+        concurrency_mode=mode,
+        compose_project_name=compose_project_name_fn,
+    )
+    create_image_translate_fn(
+        task_payload.task_id,
+        task_payload.task_dir,
+        **task_payload.create_kwargs,
+    )
+    start_image_translate_runner_fn(task_payload.task_id, user_id)
+    return DetailTranslateFromEnOutcome(
+        payload={
+            "task_id": task_payload.task_id,
+            "detail_url": f"/image-translate/{task_payload.task_id}",
+        },
+        status_code=201,
     )
 
 

@@ -174,6 +174,39 @@ def test_detail_image_translate_payload_construction_lives_outside_route_module(
     assert Path("web/services/media_detail_translation.py").exists()
 
 
+def test_detail_image_translate_from_en_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_detail_images_translate_from_en"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    direct_calls = [
+        f"{call.func.value.id}.{call.func.attr}"
+        for call in ast.walk(route_function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and (
+            (call.func.value.id == "medias" and call.func.attr in {"list_detail_images", "get_language_name"})
+            or (call.func.value.id == "task_state" and call.func.attr == "create_image_translate")
+        )
+    ]
+
+    assert direct_calls == []
+    assert "IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE" not in route_source
+    assert "build_detail_translate_task_payload" not in route_source
+    assert "_detail_images_is_gif" not in route_source
+    assert "get_prompts_for_lang" not in route_source
+    assert "_default_image_translate_model_id" not in route_source
+    assert "_start_image_translate_runner" not in route_source
+    assert "_build_detail_translate_from_en_response" in route_source
+    assert Path("web/services/media_detail_translation.py").exists()
+
+
 def test_detail_image_translate_task_projection_lives_outside_route_module():
     module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

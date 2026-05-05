@@ -36,7 +36,7 @@ from web.services.media_detail_uploads import (
 )
 from web.services.media_detail_translation import (
     apply_detail_translate_task,
-    build_detail_translate_task_payload,
+    build_detail_translate_from_en_response as _build_detail_translate_from_en_response_impl,
     project_detail_translate_task_rows,
 )
 
@@ -196,6 +196,31 @@ def _build_localized_detail_images_zip_response(pid: int, product: dict):
         archive_product_code_fn=_detail_images_archive_product_code,
         archive_part_fn=_detail_images_archive_part,
         download_media_object_fn=_download_media_object,
+    )
+
+
+def _build_detail_translate_from_en_response(
+    pid: int,
+    product: dict,
+    body: dict,
+    user_id: int,
+):
+    return _build_detail_translate_from_en_response_impl(
+        pid,
+        int(user_id),
+        product,
+        body,
+        parse_lang_fn=_parse_lang,
+        default_concurrency_mode=task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
+        output_dir=OUTPUT_DIR,
+        list_detail_images_fn=medias.list_detail_images,
+        detail_images_is_gif_fn=_detail_images_is_gif,
+        get_prompts_for_lang_fn=its.get_prompts_for_lang,
+        get_language_name_fn=medias.get_language_name,
+        default_model_id_fn=_default_image_translate_model_id,
+        compose_project_name_fn=image_translate_routes._compose_project_name,
+        create_image_translate_fn=task_state.create_image_translate,
+        start_image_translate_runner_fn=_start_image_translate_runner,
     )
 
 
@@ -402,50 +427,15 @@ def api_detail_images_translate_from_en(pid: int):
         return blocked
 
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body, default="")
-    if err:
-        return jsonify({"error": err}), 400
-    if lang == "en":
-        return jsonify({"error": "english detail images do not need translate-from-en"}), 400
-    mode_raw = (
-        body.get("concurrency_mode")
-        or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
-    ).strip().lower()
-    if mode_raw not in {"sequential", "parallel"}:
-        return jsonify({"error": "concurrency_mode must be sequential or parallel"}), 400
-
-    source_rows = medias.list_detail_images(pid, "en")
-    if not source_rows:
-        return jsonify({"error": "english detail images are required first"}), 409
-
-    translatable_rows = [row for row in source_rows if not _detail_images_is_gif(row)]
-    if not translatable_rows:
-        return jsonify({"error": "鑻辫鐗堣鎯呭浘鍏ㄩ儴涓?GIF 鍔ㄥ浘锛屾棤鍙炕璇戠殑闈欐€佸浘"}), 409
-
-    prompt_tpl = (its.get_prompts_for_lang(lang).get("detail") or "").strip()
-    if not prompt_tpl:
-        return jsonify({"error": "褰撳墠璇鏈厤缃鎯呭浘缈昏瘧 prompt"}), 409
-    lang_name = medias.get_language_name(lang)
-    task_payload = build_detail_translate_task_payload(
-        output_dir=OUTPUT_DIR,
-        user_id=current_user.id,
-        product_id=pid,
-        product=p or {},
-        target_lang=lang,
-        target_language_name=lang_name,
-        prompt_template=prompt_tpl,
-        source_rows=translatable_rows,
-        model_id=(body.get("model_id") or "").strip() or _default_image_translate_model_id(),
-        concurrency_mode=mode_raw,
-        compose_project_name=image_translate_routes._compose_project_name,
+    outcome = _routes()._build_detail_translate_from_en_response(
+        pid,
+        p or {},
+        body,
+        current_user.id,
     )
-    task_state.create_image_translate(
-        task_payload.task_id,
-        task_payload.task_dir,
-        **task_payload.create_kwargs,
-    )
-    _start_image_translate_runner(task_payload.task_id, current_user.id)
-    return jsonify({"task_id": task_payload.task_id, "detail_url": f"/image-translate/{task_payload.task_id}"}), 201
+    if outcome.error:
+        return jsonify({"error": outcome.error}), outcome.status_code
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route("/api/products/<int:pid>/detail-image-translate-tasks", methods=["GET"])
