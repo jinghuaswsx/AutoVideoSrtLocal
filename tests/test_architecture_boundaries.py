@@ -1018,6 +1018,42 @@ def test_media_push_error_responses_live_outside_route_module():
     assert Path("web/services/media_pushes.py").exists()
 
 
+def test_media_link_check_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "api_product_link_check_create",
+        "api_product_link_check_get",
+        "api_product_link_check_detail",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "medias.is_valid_language" not in route_source
+    assert "medias.get_language" not in route_source
+    assert "medias.get_product_covers" not in route_source
+    assert "medias.list_detail_images" not in route_source
+    assert "medias.parse_link_check_tasks_json" not in route_source
+    assert "medias.set_product_link_check_task" not in route_source
+    assert "store.create_link_check" not in route_source
+    assert "link_check_runner.start" not in route_source
+    assert "uuid.uuid4" not in route_source
+    assert "datetime.now" not in route_source
+    assert "_collect_link_check_reference_images" not in route_source
+    assert "unsupported language" not in route_source
+    assert "task not found" not in route_source
+    assert "build_product_link_check_create_response" in route_source
+    assert "build_product_link_check_summary_response" in route_source
+    assert "build_product_link_check_detail_response" in route_source
+    assert Path("web/services/media_link_check.py").exists()
+
+
 def test_mk_copywriting_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

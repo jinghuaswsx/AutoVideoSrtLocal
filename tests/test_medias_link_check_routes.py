@@ -131,6 +131,13 @@ def test_get_product_detail_includes_link_check_tasks(authed_user_client_no_db, 
     monkeypatch.setattr("web.routes.medias.medias.get_product_covers", lambda pid: {})
     monkeypatch.setattr("web.routes.medias.medias.list_copywritings", lambda pid: [])
     monkeypatch.setattr("web.routes.medias.medias.list_items", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_raw_sources", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_product_skus", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_xmyc_unit_prices", lambda skus: {})
+    monkeypatch.setattr(
+        "web.services.media_product_detail.product_roas.get_configured_rmb_per_usd",
+        lambda: None,
+    )
 
     response = authed_user_client_no_db.get("/medias/api/products/7")
     payload = response.get_json()
