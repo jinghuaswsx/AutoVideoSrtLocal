@@ -114,10 +114,6 @@ def test_pushes_api_items_includes_language_specific_product_page_url(
         "web.routes.pushes.pushes.compute_status",
         lambda item, product: "pending",
     )
-    monkeypatch.setattr(
-        "web.routes.pushes.tos_clients.generate_signed_media_download_url",
-        lambda key: f"https://signed/{key}",
-    )
 
     resp = authed_client_no_db.get("/pushes/api/items?page=1")
 
