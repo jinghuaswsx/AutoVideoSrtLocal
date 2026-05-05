@@ -1472,8 +1472,8 @@ class TestSpeedupShortcut:
         assert round_rec["final_reason"] == "speedup_converged"
         assert len(called["eval"]) == 1
 
-    def test_speedup_miss_final_uses_atempo(self, tmp_path, monkeypatch):
-        """变速后 63s 仍 > final_hi=62 → 走 speedup_then_atempo。"""
+    def test_speedup_miss_final_keeps_unaligned(self, tmp_path, monkeypatch):
+        """变速后 63s 仍 > final_hi=62 → 直接采用变速产物（不再 atempo）。"""
         called = self._common_patches(monkeypatch, audio_dur=64.0,
                                        speedup_dur=63.0)
         runner = self._make_runner()
@@ -1481,11 +1481,11 @@ class TestSpeedupShortcut:
         round_rec = result["rounds"][0]
         assert round_rec.get("speedup_applied") is True
         assert round_rec["speedup_hit_final"] is False
-        assert round_rec["final_reason"] == "speedup_then_atempo"
+        assert round_rec["final_reason"] == "speedup_kept_unaligned"
         assert len(called["eval"]) == 1  # 仍然评估
 
     def test_speedup_failure_falls_back_to_original(self, tmp_path, monkeypatch):
-        """ElevenLabs 变速调用抛错 → 用原始音频 atempo 收敛 + 不评估。"""
+        """ElevenLabs 变速调用抛错 → 直接采用变速前的原始音频（不再 atempo）+ 不评估。"""
         called = self._common_patches(
             monkeypatch, audio_dur=64.0,
             speedup_raises=RuntimeError("simulated SSL EOF"),
@@ -1495,7 +1495,7 @@ class TestSpeedupShortcut:
         round_rec = result["rounds"][0]
         assert round_rec.get("speedup_applied") is True
         assert "speedup_failed_reason" in round_rec
-        assert round_rec["final_reason"] == "speedup_failed_fallback"
+        assert round_rec["final_reason"] == "speedup_failed_kept_original"
         assert called["eval"] == []  # 变速失败不发起评估
 
     def test_speedup_skipped_when_audio_already_in_final(self, tmp_path, monkeypatch):
