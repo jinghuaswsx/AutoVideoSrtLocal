@@ -1,0 +1,70 @@
+# GPU services gateway (Caddy reverse proxy on port 80)
+# Routes by URL prefix to internal FastAPI services co-located on this host.
+#
+# Layout:
+#   /separate/* -> :8081  (audio_separator, python-audio-separator)
+#   /subtitle/* -> :8082  (subtitle remover, video-subtitle-remover / VSR)
+#   /vace/*     -> :8083  (VACE subtitle remover, reserved — not yet deployed)
+#
+# Reload (no downtime) after editing this file:
+#   G:\gateway\caddy.exe reload --config G:\gateway\Caddyfile
+
+{
+	admin off
+	servers {
+		# 30 min request body read so big-video uploads on /subtitle/remove finish
+		max_header_size 64KB
+	}
+}
+
+:80 {
+	log {
+		output file G:/gateway/logs/access.log {
+			roll_size 50MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format json
+	}
+
+	# 1) Audio source separation
+	@separate path /separate/*
+	reverse_proxy @separate localhost:8081 {
+		# upload + GPU queue + zip pack + download → up to 5 min
+		transport http {
+			read_timeout 600s
+			write_timeout 600s
+			dial_timeout 5s
+		}
+	}
+
+	# 2) Subtitle removal (long-running)
+	@subtitle path /subtitle/*
+	reverse_proxy @subtitle localhost:8082 {
+		# big videos can run 20-30 min with ProPainter
+		transport http {
+			read_timeout 1800s
+			write_timeout 1800s
+			dial_timeout 5s
+		}
+	}
+
+	# 3) VACE (reserved, uncomment when service is up)
+	# @vace path /vace/*
+	# reverse_proxy @vace localhost:8083 {
+	#	transport http {
+	#		read_timeout 1800s
+	#		write_timeout 1800s
+	#		dial_timeout 5s
+	#	}
+	# }
+
+	# Root: short directory page
+	handle / {
+		respond "GPU services gateway. Endpoints: /separate/health, /subtitle/health" 200
+	}
+
+	handle /favicon.ico {
+		respond 204
+	}
+}

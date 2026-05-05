@@ -5,15 +5,18 @@
 ## 部署位置
 
 - **运行目录**: `G:\subtitle\`
-- **服务地址**: `http://172.30.254.12:82`
-- **服务端口**: 82
-- **GPU**: NVIDIA RTX 3060 (12GB, 限制 90%)
+- **服务地址**: `http://172.30.254.12/subtitle/*`（走 [Caddy 网关](../gateway/README.md) 80 端口）
+- **内部端口**: 8082（仅本机；外部访问统一走网关 80）
+- **URL 前缀**: `/subtitle`（用 `APIRouter(prefix="/subtitle")` 实现）
+- **GPU**: NVIDIA RTX 3060 (12GB)；显存软限 50%（≈ 6GB），与 audio_separator/vace 共租 12GB 卡
 - **CPU**: 50% 逻辑核心 + HIGH 优先级
+- **ProPainter `max_load=25`**（多租户共享 GPU 时下调，单跑可调回 40-70）
 
 ## 架构
 
 ```
-客户端 POST /remove (timeout=1800s)
+客户端 POST http://172.30.254.12/subtitle/remove  (timeout=1800s)
+  → Caddy:80 反向代理到 localhost:8082
   → 服务端计算 MD5 → 检查 1h 内存缓存
   → 命中则 0ms 返回缓存
   → 未命中则 asyncio.Lock 排队等 GPU
@@ -30,45 +33,45 @@
 | ffmpeg | `G:\subtitle\resources\backend\ffmpeg\win_x64\ffmpeg.exe` |
 | 第三方库 | `G:\subtitle\Python\Lib\site-packages\`（首次部署时从 `opt/packages` 装入） |
 
-## API 端点
+## API 端点（外部 URL = 网关 + 前缀）
 
-| 方法 | 路径 | 说明 |
+| 方法 | 网关 URL | 说明 |
 |------|------|------|
-| `GET`  | `/health` | 健康检查 + 队列/缓存状态 |
-| `GET`  | `/queue` | 队列深度速查 |
-| `GET`  | `/algorithms` | 3 种算法（sttn / lama / propainter） |
-| `GET`  | `/docs` | Swagger 交互式文档 |
-| `POST` | `/remove` | 提交去字幕任务，返回 JSON 元信息 |
-| `POST` | `/remove/download` | 提交并下载处理后的 MP4 |
+| `GET`  | `/subtitle/health` | 健康检查 + 队列/缓存状态 |
+| `GET`  | `/subtitle/queue` | 队列深度速查 |
+| `GET`  | `/subtitle/algorithms` | 3 种算法（sttn / lama / propainter） |
+| `GET`  | `/subtitle/docs` | Swagger 交互式文档 |
+| `POST` | `/subtitle/remove` | 提交去字幕任务，返回 JSON 元信息 |
+| `POST` | `/subtitle/remove/download` | 提交并下载处理后的 MP4 |
 
 ### 算法选择
 
-| 算法 | 适用场景 | 速度 | 显存 |
+| 算法 | 适用场景 | 速度 | 显存（共租 6GB 上限） |
 |------|---------|------|------|
-| `sttn` (默认) | 真人/带货短视频 | 快 | 低 |
-| `lama` | 动画/PPT/静态背景 | 中 | 低 |
-| `propainter` | 高速运动/剧烈晃动 | 慢 | 高（12GB 卡 1080p 已经压到 max_load=40） |
+| `sttn` (默认) | 真人/带货短视频 | 快 | ~3-5 GB（OK） |
+| `lama` | 动画/PPT/静态背景 | 中 | ~1-2 GB（OK） |
+| `propainter` | 高速运动/剧烈晃动 | 慢 | `max_load=25` 下 ~6-8 GB（边缘） |
 
 ### 客户端调用
 
 ```python
 import requests
 
-API = "http://172.30.254.12:82"
+API = "http://172.30.254.12"
 
 # 健康检查
-print(requests.get(f"{API}/health").json())
+print(requests.get(f"{API}/subtitle/health").json())
 
 # 去字幕（默认 STTN，自动检测字幕区域）
 with open("video.mp4", "rb") as f:
-    r = requests.post(f"{API}/remove", files={"file": f}, timeout=1800)
+    r = requests.post(f"{API}/subtitle/remove", files={"file": f}, timeout=1800)
 print(r.json())
 # {"status":"ok","duration_seconds":47.2,"algorithm":"sttn","output_filename":"...","cached":false,...}
 
 # 去字幕 + 直接下载结果
 with open("video.mp4", "rb") as f:
     r = requests.post(
-        f"{API}/remove/download",
+        f"{API}/subtitle/remove/download",
         files={"file": f},
         data={"algorithm": "sttn", "sub_area": "850,1000,200,1720"},
         timeout=1800,
@@ -96,20 +99,17 @@ curl -fL --retry 10 -C - -o vsr.7z.003 'https://github.com/YaoFANGUK/video-subti
 
 CUDA 版本对照（按 `nvidia-smi` 显示的 CUDA Driver 版本选）：
 
-- ≥ 12.8 → 用 `vsr-v1.1.1-windows-nvidia-cuda-12.8.7z.{001,002,003}`
+- ≥ 12.8 → 用 12.8 整合包
 - 12.6 ~ 12.7 → 用 12.6 整合包（本机驱动 566.36 / CUDA 12.7 即用此版）
 - < 12.6 → 用 11.8 整合包
 
 ### 2. 解压到 `G:\subtitle\`
 
 ```bash
-# 用 7zr.exe（轻量 CLI）解压（一条命令链 .001/.002/.003）
 curl -fL -o /g/subtitle/downloads/7zr.exe https://www.7-zip.org/a/7zr.exe
 cd /g/subtitle/downloads
 ./7zr.exe x vsr.7z.001 -o/g/subtitle -y
 ```
-
-解压后 `G:\subtitle\` 会出现 `Python\` `resources\` `opt\` `configs\` `启动程序.exe` 等目录。
 
 ### 3. 安装依赖
 
@@ -118,19 +118,17 @@ cd /g/subtitle/downloads
 ```bash
 cd /g/subtitle
 
-# 3.1 装 VSR 业务依赖（PaddleOCR + onnxruntime-gpu 等）
+# 3.1 装 VSR 业务依赖
 Python/python.exe -m pip install --no-index --find-links opt/packages -r resources/requirements.txt
 
 # 3.2 装 torch GPU 版（CUDA 12.6）
-Python/python.exe -m pip install --no-index --find-links "opt/NoneName_torch==2.7.0 torchvision==0.22.0" torch torchvision
+Python/python.exe -m pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu126
 
-# 3.3 装本服务的额外依赖（fastapi/uvicorn/multipart/psutil）
+# 3.3 装本服务的额外依赖
 Python/python.exe -m pip install fastapi "uvicorn[standard]" python-multipart psutil
 ```
 
 ### 4. 部署本服务的代码
-
-把仓库 `tools/subtitle/` 下的 `api_server.py`、`start.bat`、`.gitignore` 拷到 `G:\subtitle\`：
 
 ```bash
 WORKTREE=$(git rev-parse --show-toplevel)
@@ -138,43 +136,33 @@ cp "$WORKTREE/tools/subtitle/api_server.py" /g/subtitle/
 cp "$WORKTREE/tools/subtitle/start.bat" /g/subtitle/
 ```
 
-### 5. 防火墙开放 82 端口（管理员 PowerShell）
-
-```powershell
-New-NetFirewallRule -DisplayName 'VSR-Subtitle-Remover-API' `
-  -Direction Inbound -Action Allow -Protocol TCP -LocalPort 82
-```
-
-### 6. 启动服务
-
-双击 `G:\subtitle\start.bat`，或：
+### 5. 启动服务
 
 ```bash
 cd /g/subtitle && ./start.bat
+# 或后台跑
+nohup /g/subtitle/Python/python.exe /g/subtitle/api_server.py &
 ```
 
-首次启动会预热 VSR backend（解压模型分卷、加载 onnxruntime-gpu provider），耗时 30-60 秒。看到下面这行说明就绪：
+首次启动会预热 VSR backend（解压模型分卷、加载 onnxruntime-gpu provider），耗时 30-60 秒。
 
-```
-Uvicorn running on http://0.0.0.0:82 (Press CTRL+C to quit)
-```
-
-### 7. 健康检查
+### 6. 健康检查（外部 URL，需先起 Caddy 网关）
 
 ```bash
-curl http://172.30.254.12:82/health
+curl http://172.30.254.12/subtitle/health
 ```
 
-期望 JSON 含 `"cuda_available": true`、`"cuda_device": "NVIDIA GeForce RTX 3060"`。
+或直接打内部端口：
+
+```bash
+curl http://127.0.0.1:8082/subtitle/health
+```
 
 ## 重启 / 杀进程
 
 ```bash
-# 找占用 82 端口的 PID
-netstat -ano | grep ':82 ' | grep LISTEN | awk '{print $NF}'
-# 杀
+netstat -ano | grep ':8082 ' | grep LISTEN | awk '{print $NF}'
 taskkill //F //PID <PID>
-# 重启
 cd /g/subtitle && ./start.bat
 ```
 
@@ -183,7 +171,7 @@ cd /g/subtitle && ./start.bat
 | 文件 | 说明 |
 |------|------|
 | `api_server.py` | FastAPI 服务主程序（GPU lock + MD5 缓存 + 队列计数） |
-| `start.bat` | Windows 启动脚本 |
+| `start.bat` | Windows 启动脚本（端口 8082） |
 | `.gitignore` | 排除部署期生成目录 |
 | `README.md` | **本文档** |
 
@@ -196,7 +184,6 @@ cd /g/subtitle && ./start.bat
 | 1080p / 600s（10 分钟） | ~12 min | 1.2x |
 
 > 缓存命中（同 MD5 + 同算法 + 同 sub_area + 1h 内）：0ms 返回。
-> 长视频客户端务必 `timeout >= 1800`，否则连接断开但 GPU 任务仍在跑。
 
 ## 故障排查
 
@@ -204,10 +191,10 @@ cd /g/subtitle && ./start.bat
 |------|-----------|
 | `from backend import config` 报 `ModuleNotFoundError` | `cd /d G:\subtitle` 没生效，或 `resources/` 内文件缺失，重新解压整合包 |
 | `health` 返回 `cuda_available: false` | torch 未装 GPU 版，或驱动 < CUDA 12.6 → 重装 torch 或换 11.8 整合包 |
-| ProPainter 算法 OOM | 12 GB 卡 1080p 默认已限到 `PROPAINTER_MAX_LOAD_NUM=40`，再 OOM 改 `api_server.py` 的 `min(..., 30)` |
-| 整合包首次启动卡住 | QPT 在装依赖；改用本 README 第 3 步手工 pip 安装规避 |
-| 客户端 timeout | 长视频处理慢，提高 client timeout 到 1800-3600s；GPU 队列每次只处理 1 个，多任务自动排队 |
+| ProPainter 算法 OOM | `PROPAINTER_MAX_LOAD_NUM_SHARED=25`，再 OOM 改 `api_server.py` 调到 15-20，或暂停 audio 单跑 |
+| 客户端 timeout | 长视频处理慢，提高 client timeout 到 1800-3600s |
+| `/subtitle/*` 502 | subtitle 服务挂了；用 `netstat -ano \| grep :8082` 确认 + 重启 |
 
-## 与本仓库的集成
+## 与 audio / VACE 协同
 
-服务端已集成到 [AutoVideoSrtLocal](https://github.com/jinghuaswsx/AutoVideoSrtLocal) 项目结构（`tools/subtitle/`）。后续若做客户端封装（如自动从字幕识别坐标喂 `sub_area`），客户端代码也写在本目录下。
+3060 12GB 同时跑多服务，详见 [tools/gateway/README.md](../gateway/README.md)。

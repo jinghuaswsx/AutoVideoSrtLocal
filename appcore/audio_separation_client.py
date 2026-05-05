@@ -7,7 +7,10 @@
 - ``POST /separate/download``  multipart {file=mp3, ensemble_preset=...}
   → ``application/zip``，包含两个 wav：``..._(Vocals)_..._.wav``、
   ``..._(Instrumental)_..._.wav``
-- ``GET  /health`` → ``200`` 表示服务健康
+- ``GET  /separate/health`` → ``200`` 表示服务健康
+
+服务端 2026-05-05 起统一挂在 Caddy 网关的 ``/separate/`` 前缀下；
+``base_url`` 仍是 ``http://172.30.254.12``（无端口），网关在 80 端口。
 
 注意点：
 - 服务端**只接受 MP3 上传**（WAV 会 500），客户端内部把任意格式转成
@@ -156,8 +159,8 @@ class SeparationClient:
         )
 
     def health(self) -> bool:
-        """探活：访问 /health 端点。失败返回 False，不抛。"""
-        url = f"{self.base_url}/health"
+        """探活：访问 /separate/health 端点。失败返回 False，不抛。"""
+        url = f"{self.base_url}/separate/health"
         try:
             resp = requests.get(
                 url,

@@ -1,11 +1,16 @@
 """
 FastAPI wrapper for video-subtitle-remover (VSR)
-GPU-accelerated hardcoded subtitle / watermark removal service (port 82)
+GPU-accelerated hardcoded subtitle / watermark removal service.
 
 Architecture:
   - asyncio.Lock: serialized GPU access, concurrent requests queue automatically
   - MD5 cache: same file + same algorithm + same sub_area within 1h returns cached result
   - Client sets timeout=1800s for long videos, no polling needed
+
+Routing layout (since 2026-05-05 multi-service consolidation):
+  - This service runs on internal port 8082.
+  - All routes are mounted under the `/subtitle` URL prefix so the upstream
+    Caddy (port 80) can reverse-proxy `/subtitle/*` here without rewriting.
 """
 
 import asyncio
@@ -22,7 +27,7 @@ from typing import Optional
 
 import uvicorn
 import torch
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 # ── Config ─────────────────────────────────────────────────────────────────
@@ -35,6 +40,14 @@ LOG_DIR = os.path.join(_BASE, "logs")
 CACHE_DIR = os.path.join(_BASE, "cache")
 DEFAULT_ALGORITHM = "sttn"
 CACHE_TTL_SEC = 3600  # 1 hour
+URL_PREFIX = "/subtitle"
+SERVICE_PORT = 8082
+
+# Reserve ~50% GPU memory for ourselves so a co-tenant service (audio_separator,
+# vace) can fit too. 12GB card → 6GB ceiling for VSR alone.
+GPU_MEMORY_FRACTION = 0.5
+# 12GB cap for ProPainter when sharing GPU with audio_separator (was 40 standalone).
+PROPAINTER_MAX_LOAD_NUM_SHARED = 25
 
 for d in (INPUT_DIR, OUTPUT_DIR, LOG_DIR, CACHE_DIR):
     os.makedirs(d, exist_ok=True)
@@ -51,9 +64,11 @@ os.chdir(_RESOURCES)
 def _apply_resource_limits():
     if torch.cuda.is_available():
         total_gpu = torch.cuda.get_device_properties(0).total_memory
-        torch.cuda.set_per_process_memory_fraction(0.9)
+        torch.cuda.set_per_process_memory_fraction(GPU_MEMORY_FRACTION)
         logger.info(
-            f"GPU mem limit: 90% ({total_gpu * 0.9 / 1024**3:.1f} GB / {total_gpu / 1024**3:.1f} GB)"
+            f"GPU mem limit: {GPU_MEMORY_FRACTION*100:.0f}% "
+            f"({total_gpu * GPU_MEMORY_FRACTION / 1024**3:.1f} GB / "
+            f"{total_gpu / 1024**3:.1f} GB)"
         )
 
     try:
@@ -82,17 +97,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger("subtitle_api")
 
-app = FastAPI(title="Subtitle Remover API", version="1.0.0", docs_url="/docs")
+app = FastAPI(title="Subtitle Remover API", version="1.1.0", docs_url=f"{URL_PREFIX}/docs")
+router = APIRouter(prefix=URL_PREFIX)
 
 # ── GPU Lock ───────────────────────────────────────────────────────────────
 _gpu_lock = asyncio.Lock()
 _queue_count: int = 0
+_QUEUE_PATHS = (f"{URL_PREFIX}/remove", f"{URL_PREFIX}/remove/download")
 
 
 @app.middleware("http")
 async def _track_queue_middleware(request, call_next):
     global _queue_count
-    if request.url.path in ("/remove", "/remove/download"):
+    if request.url.path in _QUEUE_PATHS:
         _queue_count += 1
         try:
             return await call_next(request)
@@ -185,9 +202,10 @@ def _run_subtitle_remove(input_path: str, algorithm: str, sub_area: Optional[tup
     }
     config.MODE = algo_map[algorithm]
     if algorithm == "propainter":
-        # 12GB 显存兜底：1080p ProPainter 默认 70 会爆显存
+        # 12GB 显存兜底，且本进程已让出一半给 audio_separator/vace 同租户
         config.PROPAINTER_MAX_LOAD_NUM = min(
-            getattr(config, "PROPAINTER_MAX_LOAD_NUM", 70), 40
+            getattr(config, "PROPAINTER_MAX_LOAD_NUM", 70),
+            PROPAINTER_MAX_LOAD_NUM_SHARED,
         )
 
     from backend.main import SubtitleRemover
@@ -311,17 +329,22 @@ def _validate_algorithm(a: str) -> str:
     return a
 
 
+# Note: routes are defined above as @router.* and registered here.
+# Keep this include AFTER all @router definitions.
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────
 
 
-@app.get("/health")
+@router.get("/health")
 async def health():
     info = {
         "status": "ok",
         "cuda_available": torch.cuda.is_available(),
         "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-        "gpu_memory_90pct": (
-            f"{torch.cuda.get_device_properties(0).total_memory * 0.9 / 1024**3:.1f} GB"
+        "gpu_memory_limit": (
+            f"{torch.cuda.get_device_properties(0).total_memory * GPU_MEMORY_FRACTION / 1024**3:.1f} GB "
+            f"({GPU_MEMORY_FRACTION*100:.0f}%)"
             if torch.cuda.is_available() else "N/A"
         ),
         "default_algorithm": DEFAULT_ALGORITHM,
@@ -336,7 +359,7 @@ async def health():
     return info
 
 
-@app.get("/queue")
+@router.get("/queue")
 async def queue_status():
     return {
         "waiting_or_active": max(0, _queue_count),
@@ -345,12 +368,12 @@ async def queue_status():
     }
 
 
-@app.get("/algorithms")
+@router.get("/algorithms")
 async def list_algorithms():
     return {"count": len(ALGORITHMS), "default": DEFAULT_ALGORITHM, "algorithms": ALGORITHMS}
 
 
-@app.post("/remove")
+@router.post("/remove")
 async def remove_subtitles(
     file: UploadFile = File(...),
     algorithm: str = Form(default=DEFAULT_ALGORITHM),
@@ -378,7 +401,7 @@ async def remove_subtitles(
     return safe_resp
 
 
-@app.post("/remove/download")
+@router.post("/remove/download")
 async def remove_and_download(
     file: UploadFile = File(...),
     algorithm: str = Form(default=DEFAULT_ALGORITHM),
@@ -411,10 +434,15 @@ async def remove_and_download(
     )
 
 
+app.include_router(router)
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logger.info("Starting Subtitle Remover API on port 82 (cache + queue)...")
+    logger.info(
+        f"Starting Subtitle Remover API on port {SERVICE_PORT} prefix={URL_PREFIX} ..."
+    )
     # Pass `app` object (not "api_server:app" string) because we chdir into resources/
     # at import time, so uvicorn's reloader can no longer find the module by name.
-    uvicorn.run(app, host="0.0.0.0", port=82, log_level="info", workers=1)
+    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT, log_level="info", workers=1)

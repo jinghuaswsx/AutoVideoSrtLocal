@@ -1,11 +1,18 @@
 """
 FastAPI wrapper for python-audio-separator
-GPU-accelerated audio stem separation service (port 80)
+GPU-accelerated audio stem separation service.
 
 Architecture:
   - asyncio.Lock: serialized GPU access, concurrent requests queue automatically
   - MD5 cache: same file + same params within 1h returns cached result instantly
   - Client sets timeout=300s, no polling needed
+
+Routing layout (since 2026-05-05 multi-service consolidation):
+  - This service runs on internal port 8081.
+  - All routes are mounted under the `/separate` URL prefix so the upstream
+    Caddy (port 80) can reverse-proxy `/separate/*` here without rewriting.
+  - Original `POST /separate` endpoint was renamed to `POST /separate/run`
+    to avoid clashing with the prefix itself.
 """
 
 import asyncio
@@ -22,8 +29,8 @@ from typing import Optional
 
 import uvicorn
 import torch
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 
 from audio_separator.separator import Separator
 
@@ -35,6 +42,12 @@ LOG_DIR = os.path.join(_BASE, "logs")
 CACHE_DIR = os.path.join(_BASE, "cache")
 DEFAULT_ENSEMBLE_PRESET = "vocal_balanced"
 CACHE_TTL_SEC = 3600  # 1 hour
+URL_PREFIX = "/separate"
+SERVICE_PORT = 8081
+
+# Reserve ~50% GPU memory for ourselves so a co-tenant service (subtitle, vace)
+# can fit too. 12GB card → 6GB ceiling for audio_separator alone.
+GPU_MEMORY_FRACTION = 0.5
 
 for d in (MODEL_DIR, OUTPUT_DIR, LOG_DIR, CACHE_DIR):
     os.makedirs(d, exist_ok=True)
@@ -45,8 +58,12 @@ for d in (MODEL_DIR, OUTPUT_DIR, LOG_DIR, CACHE_DIR):
 def _apply_resource_limits():
     if torch.cuda.is_available():
         total_gpu = torch.cuda.get_device_properties(0).total_memory
-        torch.cuda.set_per_process_memory_fraction(0.9)
-        logger.info(f"GPU mem limit: 90% ({total_gpu * 0.9 / 1024**3:.1f} GB / {total_gpu / 1024**3:.1f} GB)")
+        torch.cuda.set_per_process_memory_fraction(GPU_MEMORY_FRACTION)
+        logger.info(
+            f"GPU mem limit: {GPU_MEMORY_FRACTION*100:.0f}% "
+            f"({total_gpu * GPU_MEMORY_FRACTION / 1024**3:.1f} GB / "
+            f"{total_gpu / 1024**3:.1f} GB)"
+        )
 
     try:
         import psutil
@@ -74,17 +91,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger("audio_api")
 
-app = FastAPI(title="Audio Separator API", version="2.1.0", docs_url="/docs")
+app = FastAPI(title="Audio Separator API", version="2.2.0", docs_url=f"{URL_PREFIX}/docs")
+router = APIRouter(prefix=URL_PREFIX)
 
 # ── GPU Lock ───────────────────────────────────────────────────────────────
 _gpu_lock = asyncio.Lock()
 _queue_count: int = 0
+_QUEUE_PATHS = (f"{URL_PREFIX}/run", f"{URL_PREFIX}/download")
 
 
 @app.middleware("http")
 async def _track_queue_middleware(request, call_next):
     global _queue_count
-    if request.url.path in ("/separate", "/separate/download"):
+    if request.url.path in _QUEUE_PATHS:
         _queue_count += 1
         try:
             return await call_next(request)
@@ -324,13 +343,17 @@ async def startup():
 # ── Routes ─────────────────────────────────────────────────────────────────
 
 
-@app.get("/health")
+@router.get("/health")
 async def health():
     info = {
         "status": "ok",
         "cuda_available": torch.cuda.is_available(),
         "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-        "gpu_memory_90pct": f"{torch.cuda.get_device_properties(0).total_memory * 0.9 / 1024**3:.1f} GB" if torch.cuda.is_available() else "N/A",
+        "gpu_memory_limit": (
+            f"{torch.cuda.get_device_properties(0).total_memory * GPU_MEMORY_FRACTION / 1024**3:.1f} GB "
+            f"({GPU_MEMORY_FRACTION*100:.0f}%)"
+            if torch.cuda.is_available() else "N/A"
+        ),
         "default_preset": DEFAULT_ENSEMBLE_PRESET,
         "queue": {"waiting_or_active": max(0, _queue_count), "gpu_busy": _gpu_lock.locked()},
         "cache": {"entries": len(_cache), "ttl_sec": CACHE_TTL_SEC},
@@ -343,7 +366,7 @@ async def health():
     return info
 
 
-@app.get("/queue")
+@router.get("/queue")
 async def queue_status():
     return {
         "waiting_or_active": max(0, _queue_count),
@@ -352,17 +375,17 @@ async def queue_status():
     }
 
 
-@app.get("/models")
+@router.get("/models")
 async def list_models():
     return {"count": 0, "models": _list_models()}
 
 
-@app.get("/presets")
+@router.get("/presets")
 async def list_presets():
     return {"count": len(ENSEMBLE_PRESETS), "default": DEFAULT_ENSEMBLE_PRESET, "presets": ENSEMBLE_PRESETS}
 
 
-@app.post("/separate")
+@router.post("/run")
 async def separate_audio(
     file: UploadFile = File(...),
     ensemble_preset: Optional[str] = Form(default=None),
@@ -375,6 +398,8 @@ async def separate_audio(
 
     Same file + same params within 1h returns instant cached result.
     Client MUST set timeout >= 300s for uncached requests.
+
+    Routed at POST /separate/run (was POST /separate before 2026-05-05).
     """
     output_format = output_format.upper()
     if output_format not in ("WAV", "FLAC", "MP3", "OGG", "M4A"):
@@ -396,7 +421,7 @@ async def separate_audio(
     return result
 
 
-@app.post("/separate/download")
+@router.post("/download")
 async def separate_and_download(
     file: UploadFile = File(...),
     ensemble_preset: Optional[str] = Form(default=None),
@@ -408,6 +433,8 @@ async def separate_and_download(
     Upload audio → MD5 cache check → GPU queue → separate → download ZIP.
 
     Same file + same params within 1h returns cached ZIP instantly.
+
+    Routed at POST /separate/download.
     """
     output_format = output_format.upper()
     if output_format not in ("WAV", "FLAC", "MP3", "OGG", "M4A"):
@@ -433,8 +460,11 @@ async def separate_and_download(
     )
 
 
+app.include_router(router)
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logger.info("Starting Audio Separator API on port 80 (cache + queue)...")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=80, log_level="info", workers=1)
+    logger.info(f"Starting Audio Separator API on port {SERVICE_PORT} prefix={URL_PREFIX} ...")
+    uvicorn.run("api_server:app", host="0.0.0.0", port=SERVICE_PORT, log_level="info", workers=1)
