@@ -15,6 +15,8 @@ from web.services.media_covers import (
     build_item_cover_bootstrap_response as _build_item_cover_bootstrap_response_impl,
     build_item_cover_set_response as _build_item_cover_set_response_impl,
     build_item_cover_update_response as _build_item_cover_update_response_impl,
+    build_product_cover_complete_response as _build_product_cover_complete_response_impl,
+    build_product_cover_delete_response as _build_product_cover_delete_response_impl,
     build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
 )
 
@@ -103,6 +105,39 @@ def _build_item_cover_set_response(item_id, item, body):
         delete_media_object_fn=_delete_media_object,
         update_item_cover_fn=medias.update_item_cover,
         cache_item_cover_fn=_cache_item_cover_object,
+    )
+
+
+def _cache_product_cover_object(pid, lang, object_key):
+    product_dir = THUMB_DIR / str(pid)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(object_key).suffix or ".jpg"
+    local = product_dir / f"cover_{lang}{ext}"
+    _download_media_object(object_key, str(local))
+
+
+def _build_product_cover_complete_response(pid, body):
+    return _build_product_cover_complete_response_impl(
+        pid,
+        body,
+        parse_lang_fn=_parse_lang,
+        is_media_available_fn=_is_media_available,
+        get_product_covers_fn=medias.get_product_covers,
+        delete_media_object_fn=_delete_media_object,
+        set_product_cover_fn=medias.set_product_cover,
+        cache_product_cover_fn=_cache_product_cover_object,
+        schedule_material_evaluation_fn=_schedule_material_evaluation,
+    )
+
+
+def _build_product_cover_delete_response(pid, lang):
+    return _build_product_cover_delete_response_impl(
+        pid,
+        lang,
+        is_valid_language_fn=medias.is_valid_language,
+        get_product_covers_fn=medias.get_product_covers,
+        delete_media_object_fn=_delete_media_object,
+        delete_product_cover_fn=medias.delete_product_cover,
     )
 
 
@@ -292,37 +327,8 @@ def api_cover_complete(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-    object_key = (body.get("object_key") or "").strip()
-    if not object_key:
-        return jsonify({"error": "object_key required"}), 400
-    if not _is_media_available(object_key):
-        return jsonify({"error": "object not found"}), 400
-
-    old = medias.get_product_covers(pid).get(lang)
-    if old and old != object_key:
-        try:
-            _delete_media_object(old)
-        except Exception:
-            pass
-
-    medias.set_product_cover(pid, lang, object_key)
-
-    try:
-        product_dir = THUMB_DIR / str(pid)
-        product_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(object_key).suffix or ".jpg"
-        local = product_dir / f"cover_{lang}{ext}"
-        _download_media_object(object_key, str(local))
-    except Exception:
-        pass
-
-    if lang == "en":
-        _schedule_material_evaluation(pid, force=True)
-
-    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}?lang={lang}"})
+    result = _routes()._build_product_cover_complete_response(pid, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/cover", methods=["DELETE"])
@@ -332,18 +338,8 @@ def api_cover_delete(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "").strip().lower()
-    if not medias.is_valid_language(lang):
-        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
-    if lang == "en":
-        return jsonify({"error": "鑻辨枃涓诲浘涓嶈兘鍒犻櫎"}), 400
-    old = medias.get_product_covers(pid).get(lang)
-    if old:
-        try:
-            _delete_media_object(old)
-        except Exception:
-            pass
-    medias.delete_product_cover(pid, lang)
-    return jsonify({"ok": True})
+    result = _routes()._build_product_cover_delete_response(pid, lang)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/thumb/<int:item_id>")

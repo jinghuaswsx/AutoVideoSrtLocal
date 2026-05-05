@@ -542,6 +542,43 @@ def test_media_item_cover_set_responses_live_outside_route_module():
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_media_product_cover_complete_delete_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("api_cover_complete", "api_cover_delete"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+        direct_product_cover_calls = [
+            call.func.attr
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "medias"
+            and call.func.attr
+            in {
+                "get_product_covers",
+                "set_product_cover",
+                "delete_product_cover",
+            }
+        ]
+        assert direct_product_cover_calls == []
+    route_source = "\n".join(route_sources)
+
+    assert "object_key required" not in route_source
+    assert "object not found" not in route_source
+    assert "涓嶆敮鎸佺殑璇" not in route_source
+    assert "鑻辨枃涓诲浘涓嶈兘鍒犻櫎" not in route_source
+    assert "_build_product_cover_complete_response" in route_source
+    assert "_build_product_cover_delete_response" in route_source
+    assert Path("web/services/media_covers.py").exists()
+
+
 def test_mk_copywriting_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

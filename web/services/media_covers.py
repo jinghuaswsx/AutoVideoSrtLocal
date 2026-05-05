@@ -112,6 +112,64 @@ def build_item_cover_set_response(
     return MediaCoverResponse({"ok": True, "cover_url": f"/medias/item-cover/{item_id}"})
 
 
+def build_product_cover_complete_response(
+    product_id: int,
+    body: dict | None,
+    *,
+    parse_lang_fn: Callable[[dict], tuple[str, str | None]],
+    is_media_available_fn: Callable[[str], bool],
+    get_product_covers_fn: Callable[[int], dict],
+    delete_media_object_fn: Callable[[str], None],
+    cache_product_cover_fn: Callable[[int, str, str], None],
+    schedule_material_evaluation_fn: Callable[..., object],
+    set_product_cover_fn: Callable[[int, str, str], int] = medias.set_product_cover,
+) -> MediaCoverResponse:
+    body = body or {}
+    lang, err = parse_lang_fn(body)
+    if err:
+        return MediaCoverResponse({"error": err}, 400)
+
+    object_key = (body.get("object_key") or "").strip()
+    if not object_key:
+        return MediaCoverResponse({"error": "object_key required"}, 400)
+    if not is_media_available_fn(object_key):
+        return MediaCoverResponse({"error": "object not found"}, 400)
+
+    old = get_product_covers_fn(product_id).get(lang)
+    if old and old != object_key:
+        _call_best_effort(delete_media_object_fn, old)
+
+    set_product_cover_fn(product_id, lang, object_key)
+    _call_best_effort(cache_product_cover_fn, product_id, lang, object_key)
+
+    if lang == "en":
+        schedule_material_evaluation_fn(product_id, force=True)
+
+    return MediaCoverResponse({"ok": True, "cover_url": f"/medias/cover/{product_id}?lang={lang}"})
+
+
+def build_product_cover_delete_response(
+    product_id: int,
+    lang: str,
+    *,
+    is_valid_language_fn: Callable[[str], bool],
+    get_product_covers_fn: Callable[[int], dict],
+    delete_media_object_fn: Callable[[str], None],
+    delete_product_cover_fn: Callable[[int, str], int] = medias.delete_product_cover,
+) -> MediaCoverResponse:
+    lang = (lang or "").strip().lower()
+    if not is_valid_language_fn(lang):
+        return MediaCoverResponse({"error": f"涓嶆敮鎸佺殑璇: {lang}"}, 400)
+    if lang == "en":
+        return MediaCoverResponse({"error": "鑻辨枃涓诲浘涓嶈兘鍒犻櫎"}, 400)
+
+    old = get_product_covers_fn(product_id).get(lang)
+    if old:
+        _call_best_effort(delete_media_object_fn, old)
+    delete_product_cover_fn(product_id, lang)
+    return MediaCoverResponse({"ok": True})
+
+
 def _upload_payload(object_key: str, reservation: dict) -> dict:
     return {
         "object_key": object_key,

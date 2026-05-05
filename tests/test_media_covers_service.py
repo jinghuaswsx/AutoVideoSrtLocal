@@ -160,3 +160,106 @@ def test_build_item_cover_set_response_deletes_old_then_updates_and_caches():
         ("update", 701, "new/cover.png"),
         ("cache", 701, 123, "new/cover.png"),
     ]
+
+
+def test_build_product_cover_complete_response_updates_cache_and_schedules_english():
+    from web.services.media_covers import build_product_cover_complete_response
+
+    calls = []
+
+    result = build_product_cover_complete_response(
+        123,
+        {"lang": "en", "object_key": "new/cover.png"},
+        parse_lang_fn=lambda body: (body["lang"], None),
+        is_media_available_fn=lambda object_key: object_key == "new/cover.png",
+        get_product_covers_fn=lambda pid: {"en": "old/cover.jpg"},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        set_product_cover_fn=lambda pid, lang, object_key: calls.append(("set", pid, lang, object_key)),
+        cache_product_cover_fn=lambda pid, lang, object_key: calls.append(("cache", pid, lang, object_key)),
+        schedule_material_evaluation_fn=lambda pid, **kwargs: calls.append(("schedule", pid, kwargs)),
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {"ok": True, "cover_url": "/medias/cover/123?lang=en"}
+    assert calls == [
+        ("delete", "old/cover.jpg"),
+        ("set", 123, "en", "new/cover.png"),
+        ("cache", 123, "en", "new/cover.png"),
+        ("schedule", 123, {"force": True}),
+    ]
+
+
+def test_build_product_cover_complete_response_rejects_invalid_inputs():
+    from web.services.media_covers import build_product_cover_complete_response
+
+    calls = []
+
+    lang_error = build_product_cover_complete_response(
+        123,
+        {"lang": "xx", "object_key": "new/cover.png"},
+        parse_lang_fn=lambda body: ("", "unsupported language"),
+        is_media_available_fn=lambda object_key: calls.append(("exists", object_key)) or True,
+        get_product_covers_fn=lambda pid: {},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        set_product_cover_fn=lambda pid, lang, object_key: calls.append(("set", pid, lang, object_key)),
+        cache_product_cover_fn=lambda pid, lang, object_key: calls.append(("cache", pid, lang, object_key)),
+        schedule_material_evaluation_fn=lambda pid, **kwargs: calls.append(("schedule", pid, kwargs)),
+    )
+    missing_object = build_product_cover_complete_response(
+        123,
+        {"lang": "en"},
+        parse_lang_fn=lambda body: (body["lang"], None),
+        is_media_available_fn=lambda object_key: calls.append(("exists", object_key)) or True,
+        get_product_covers_fn=lambda pid: {},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        set_product_cover_fn=lambda pid, lang, object_key: calls.append(("set", pid, lang, object_key)),
+        cache_product_cover_fn=lambda pid, lang, object_key: calls.append(("cache", pid, lang, object_key)),
+        schedule_material_evaluation_fn=lambda pid, **kwargs: calls.append(("schedule", pid, kwargs)),
+    )
+    missing_file = build_product_cover_complete_response(
+        123,
+        {"lang": "en", "object_key": "missing.png"},
+        parse_lang_fn=lambda body: (body["lang"], None),
+        is_media_available_fn=lambda object_key: False,
+        get_product_covers_fn=lambda pid: {},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        set_product_cover_fn=lambda pid, lang, object_key: calls.append(("set", pid, lang, object_key)),
+        cache_product_cover_fn=lambda pid, lang, object_key: calls.append(("cache", pid, lang, object_key)),
+        schedule_material_evaluation_fn=lambda pid, **kwargs: calls.append(("schedule", pid, kwargs)),
+    )
+
+    assert lang_error.status_code == 400
+    assert lang_error.payload == {"error": "unsupported language"}
+    assert missing_object.status_code == 400
+    assert missing_object.payload == {"error": "object_key required"}
+    assert missing_file.status_code == 400
+    assert missing_file.payload == {"error": "object not found"}
+    assert calls == []
+
+
+def test_build_product_cover_delete_response_rejects_english_and_deletes_other_lang():
+    from web.services.media_covers import build_product_cover_delete_response
+
+    calls = []
+    english = build_product_cover_delete_response(
+        123,
+        "en",
+        is_valid_language_fn=lambda lang: True,
+        get_product_covers_fn=lambda pid: {"en": "en/cover.jpg", "de": "de/cover.jpg"},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        delete_product_cover_fn=lambda pid, lang: calls.append(("delete-row", pid, lang)),
+    )
+    german = build_product_cover_delete_response(
+        123,
+        "de",
+        is_valid_language_fn=lambda lang: True,
+        get_product_covers_fn=lambda pid: {"en": "en/cover.jpg", "de": "de/cover.jpg"},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        delete_product_cover_fn=lambda pid, lang: calls.append(("delete-row", pid, lang)),
+    )
+
+    assert english.status_code == 400
+    assert english.payload == {"error": "鑻辨枃涓诲浘涓嶈兘鍒犻櫎"}
+    assert german.status_code == 200
+    assert german.payload == {"ok": True}
+    assert calls == [("delete", "de/cover.jpg"), ("delete-row", 123, "de")]
