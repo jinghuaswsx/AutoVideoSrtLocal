@@ -241,6 +241,14 @@ def test_build_product_cover_delete_response_rejects_english_and_deletes_other_l
     from web.services.media_covers import build_product_cover_delete_response
 
     calls = []
+    invalid = build_product_cover_delete_response(
+        123,
+        "xx",
+        is_valid_language_fn=lambda lang: False,
+        get_product_covers_fn=lambda pid: {"en": "en/cover.jpg", "de": "de/cover.jpg"},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+        delete_product_cover_fn=lambda pid, lang: calls.append(("delete-row", pid, lang)),
+    )
     english = build_product_cover_delete_response(
         123,
         "en",
@@ -258,8 +266,10 @@ def test_build_product_cover_delete_response_rejects_english_and_deletes_other_l
         delete_product_cover_fn=lambda pid, lang: calls.append(("delete-row", pid, lang)),
     )
 
+    assert invalid.status_code == 400
+    assert invalid.payload == {"error": "unsupported language: xx"}
     assert english.status_code == 400
-    assert english.payload == {"error": "鑻辨枃涓诲浘涓嶈兘鍒犻櫎"}
+    assert english.payload == {"error": "默认语种 en 不能删除"}
     assert german.status_code == 200
     assert german.payload == {"ok": True}
     assert calls == [("delete", "de/cover.jpg"), ("delete-row", 123, "de")]

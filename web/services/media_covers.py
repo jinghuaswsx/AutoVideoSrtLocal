@@ -159,9 +159,9 @@ def build_product_cover_delete_response(
 ) -> MediaCoverResponse:
     lang = (lang or "").strip().lower()
     if not is_valid_language_fn(lang):
-        return MediaCoverResponse({"error": f"涓嶆敮鎸佺殑璇: {lang}"}, 400)
+        return MediaCoverResponse({"error": f"unsupported language: {lang}"}, 400)
     if lang == "en":
-        return MediaCoverResponse({"error": "鑻辨枃涓诲浘涓嶈兘鍒犻櫎"}, 400)
+        return MediaCoverResponse({"error": "默认语种 en 不能删除"}, 400)
 
     old = get_product_covers_fn(product_id).get(lang)
     if old:
