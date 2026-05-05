@@ -28,12 +28,12 @@ def test_step_subtitle_uses_lang_rules_for_weak_starters_and_post_process():
                return_value=(SimpleNamespace(display_name="Scribe", model_id="scribe_v2"), {})), \
          patch("appcore.asr_router.transcribe",
                return_value={"utterances": [{"text": "Bonjour les amis", "start_time": 0, "end_time": 1}]}), \
-         patch("appcore.runtime_multi._get_audio_duration", return_value=1.0), \
-         patch("appcore.runtime_multi.align_subtitle_chunks_to_asr") as m_align, \
-         patch("appcore.runtime_multi.build_srt_from_chunks") as m_build, \
-         patch("appcore.runtime_multi.save_srt", return_value="/tmp/x/subtitle.srt"), \
-         patch("appcore.runtime_multi._save_json"), \
-         patch("appcore.runtime_multi.resolve_key", return_value="volc"):
+         patch("appcore.translate_profiles.default_profile._get_audio_duration", return_value=1.0), \
+         patch("appcore.translate_profiles.default_profile.align_subtitle_chunks_to_asr") as m_align, \
+         patch("appcore.translate_profiles.default_profile.build_srt_from_chunks") as m_build, \
+         patch("appcore.translate_profiles.default_profile.save_srt", return_value="/tmp/x/subtitle.srt"), \
+         patch("appcore.translate_profiles.default_profile._save_json"), \
+         patch("appcore.api_keys.resolve_key", return_value="volc"):
         m_align.return_value = [{"text": "Bonjour les amis",
                                    "start_time": 0.0, "end_time": 1.0}]
         m_build.return_value = "1\n00:00:00,000 --> 00:00:01,000\nBonjour les amis ?\n"

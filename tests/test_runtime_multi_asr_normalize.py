@@ -9,10 +9,14 @@ import pytest
 def _make_runner():
     """复用 test_runtime_multi_translate.py 同款 runner 构造方式。"""
     from appcore.runtime_multi import MultiTranslateRunner
+    from appcore.translate_profiles import get_profile
     runner = MultiTranslateRunner.__new__(MultiTranslateRunner)
     runner.user_id = 1
     runner._emit = MagicMock()
     runner._set_step = MagicMock()  # stub so tests can assert on it
+    # PR4 thin shim: _step_asr_normalize 现在 dispatch 到 self.profile.post_asr。
+    # 走 __new__ 绕过了 __init__，要手动挂上 default profile。
+    runner.profile = get_profile("default")
     return runner
 
 
@@ -23,8 +27,8 @@ def _utterances():
     ]
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_preserves_manual_source_language_for_es_route(
     mock_asr_norm, mock_state,
 ):
@@ -66,8 +70,8 @@ def test_step_asr_normalize_preserves_manual_source_language_for_es_route(
     assert "_utterances_en" not in artifact_arg
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_routes_zh_keeps_source_language_zh(
     mock_asr_norm, mock_state,
 ):
@@ -100,8 +104,8 @@ def test_step_asr_normalize_routes_zh_keeps_source_language_zh(
     assert "utterances_en" not in update_kwargs
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_short_circuits_on_empty_utterances(
     mock_asr_norm, mock_state,
 ):
@@ -116,8 +120,8 @@ def test_step_asr_normalize_short_circuits_on_empty_utterances(
     assert "无音频文本" in set_step_call.args[3]
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_marks_failed_on_unsupported_language(
     mock_asr_norm, mock_state,
 ):
@@ -134,8 +138,8 @@ def test_step_asr_normalize_marks_failed_on_unsupported_language(
     assert "error" in update_kwargs
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_marks_failed_on_detect_exhaustion(
     mock_asr_norm, mock_state,
 ):
@@ -154,8 +158,8 @@ def test_step_asr_normalize_marks_failed_on_detect_exhaustion(
     assert "按手动选择源语言标准化失败" in update_kwargs["error"]
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_resume_idempotent_when_utterances_en_present(
     mock_asr_norm, mock_state,
 ):
@@ -264,8 +268,8 @@ def test_step_alignment_falls_back_to_utterances_when_en_missing(mock_compile, m
 # CRITICAL #2: _step_asr_normalize failure sets status="error" to stop pipeline
 # ---------------------------------------------------------------------------
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_failure_sets_status_error_to_stop_pipeline(
     mock_asr_norm, mock_state,
 ):
@@ -284,8 +288,8 @@ def test_step_asr_normalize_failure_sets_status_error_to_stop_pipeline(
 # user_specified_source_language 路径：跳过 detect_language，直接路由
 # ---------------------------------------------------------------------------
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_user_specified_es_calls_run_user_specified(
     mock_asr_norm, mock_state,
 ):
@@ -329,8 +333,8 @@ def test_step_asr_normalize_user_specified_es_calls_run_user_specified(
     assert artifact_arg["items"][0]["type"] == "side_by_side"
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_user_specified_pt_uses_generic_fallback(
     mock_asr_norm, mock_state,
 ):
@@ -361,8 +365,8 @@ def test_step_asr_normalize_user_specified_pt_uses_generic_fallback(
     mock_asr_norm.run_asr_normalize.assert_not_called()
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_user_specified_zh_writes_artifact(
     mock_asr_norm, mock_state,
 ):
@@ -399,8 +403,8 @@ def test_step_asr_normalize_user_specified_zh_writes_artifact(
     mock_state.set_artifact.assert_called_once()
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_user_specified_fr_uses_generic_fallback(
     mock_asr_norm, mock_state,
 ):
@@ -431,8 +435,8 @@ def test_step_asr_normalize_user_specified_fr_uses_generic_fallback(
     assert update_kwargs["source_language"] == "fr"
 
 
-@patch("appcore.runtime_multi.task_state")
-@patch("appcore.runtime_multi.pipeline_asr_normalize")
+@patch("appcore.translate_profiles.default_profile.task_state")
+@patch("appcore.translate_profiles.default_profile.pipeline_asr_normalize")
 def test_step_asr_normalize_uses_source_language_even_when_legacy_flag_is_false(
     mock_asr_norm, mock_state,
 ):

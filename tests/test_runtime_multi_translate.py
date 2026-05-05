@@ -26,16 +26,16 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
          patch("appcore.task_state.set_artifact"), \
          patch("appcore.task_state.set_current_review_step"), \
          patch("appcore.runtime_multi.resolve_prompt_config") as m_resolve, \
-         patch("appcore.runtime_multi.generate_localized_translation") as m_gen, \
-         patch("appcore.runtime_multi._save_json"), \
+         patch("appcore.translate_profiles.default_profile.generate_localized_translation") as m_gen, \
+         patch("appcore.translate_profiles.default_profile._save_json"), \
          patch("appcore.runtime.ai_billing.log_request") as m_log_request, \
-         patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
+         patch("appcore.translate_profiles.default_profile._build_review_segments", return_value=[]), \
          patch("appcore.runtime._helpers._translate_billing_model", return_value="gpt"), \
-         patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
-         patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
+         patch("appcore.translate_profiles.default_profile._resolve_translate_provider", return_value="openrouter"), \
+         patch("appcore.translate_profiles.default_profile.get_model_display_name", return_value="gpt"), \
          patch("pipeline.extract.get_video_duration", return_value=1.0), \
-         patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
-         patch("appcore.runtime_multi.build_translate_artifact", return_value={}):
+         patch("appcore.translate_profiles.default_profile.build_asr_artifact", return_value={}), \
+         patch("appcore.translate_profiles.default_profile.build_translate_artifact", return_value={}):
         m_resolve.side_effect = [
             {"provider": "openrouter", "model": "gpt", "content": "BASE_DE"},
             {"provider": "openrouter", "model": "gpt", "content": "ECOM_PLUGIN"},
@@ -264,7 +264,7 @@ def test_step_translate_completes_original_video_passthrough_for_sparse_multi_ta
 
     runner = _make_runner()
     monkeypatch.setattr(
-        "appcore.runtime_multi.generate_localized_translation",
+        "appcore.translate_profiles.default_profile.generate_localized_translation",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("multi translate should not call LLM for passthrough tasks")
         ),
@@ -309,11 +309,11 @@ def test_step_translate_rejects_sparse_source_for_long_video():
     }
     with patch("appcore.task_state.get", return_value=task), \
          patch.object(runner, "_set_step"), \
-         patch("appcore.runtime_multi._save_json"), \
-         patch("appcore.runtime_multi._resolve_translate_provider", return_value="claude_sonnet"), \
-         patch("appcore.runtime_multi.get_model_display_name", return_value="anthropic/claude-sonnet-4.6"), \
+         patch("appcore.translate_profiles.default_profile._save_json"), \
+         patch("appcore.translate_profiles.default_profile._resolve_translate_provider", return_value="claude_sonnet"), \
+         patch("appcore.translate_profiles.default_profile.get_model_display_name", return_value="anthropic/claude-sonnet-4.6"), \
          patch("pipeline.extract.get_video_duration", return_value=18.947), \
-         patch("appcore.runtime_multi.generate_localized_translation") as m_gen:
+         patch("appcore.translate_profiles.default_profile.generate_localized_translation") as m_gen:
         with pytest.raises(RuntimeError, match="源视频语音过短"):
             runner._step_translate("t1")
 
@@ -346,18 +346,18 @@ def test_step_translate_accepts_dense_chinese_source_without_spaces():
          patch("appcore.task_state.set_current_review_step"), \
          patch.object(runner, "_set_step"), \
          patch.object(runner, "_emit"), \
-         patch("appcore.runtime_multi._save_json"), \
+         patch("appcore.translate_profiles.default_profile._save_json"), \
          patch("appcore.runtime_multi.resolve_prompt_config", return_value={"content": "PROMPT"}), \
-         patch("appcore.runtime_multi._resolve_translate_provider", return_value="claude_sonnet"), \
-         patch("appcore.runtime_multi.get_model_display_name", return_value="anthropic/claude-sonnet-4.6"), \
+         patch("appcore.translate_profiles.default_profile._resolve_translate_provider", return_value="claude_sonnet"), \
+         patch("appcore.translate_profiles.default_profile.get_model_display_name", return_value="anthropic/claude-sonnet-4.6"), \
          patch("pipeline.extract.get_video_duration", return_value=37.384), \
-         patch("appcore.runtime_multi.generate_localized_translation", return_value={"sentences": []}) as m_gen, \
-         patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
-         patch("appcore.runtime_multi._log_translate_billing"), \
-         patch("appcore.runtime_multi._llm_request_payload", return_value={}), \
-         patch("appcore.runtime_multi._llm_response_payload", return_value={}), \
-         patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
-         patch("appcore.runtime_multi.build_translate_artifact", return_value={}):
+         patch("appcore.translate_profiles.default_profile.generate_localized_translation", return_value={"sentences": []}) as m_gen, \
+         patch("appcore.translate_profiles.default_profile._build_review_segments", return_value=[]), \
+         patch("appcore.translate_profiles.default_profile._log_translate_billing"), \
+         patch("appcore.translate_profiles.default_profile._llm_request_payload", return_value={}), \
+         patch("appcore.translate_profiles.default_profile._llm_response_payload", return_value={}), \
+         patch("appcore.translate_profiles.default_profile.build_asr_artifact", return_value={}), \
+         patch("appcore.translate_profiles.default_profile.build_translate_artifact", return_value={}):
         runner._step_translate("t1")
 
     m_gen.assert_called_once()
@@ -379,16 +379,16 @@ def test_step_translate_resolves_en_prompt_and_uses_eleven_multilingual():
          patch("appcore.task_state.set_artifact"), \
          patch("appcore.task_state.set_current_review_step"), \
          patch("appcore.runtime_multi.resolve_prompt_config") as m_resolve, \
-         patch("appcore.runtime_multi.generate_localized_translation") as m_gen, \
-         patch("appcore.runtime_multi._save_json"), \
+         patch("appcore.translate_profiles.default_profile.generate_localized_translation") as m_gen, \
+         patch("appcore.translate_profiles.default_profile._save_json"), \
          patch("appcore.runtime.ai_billing.log_request"), \
-         patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
+         patch("appcore.translate_profiles.default_profile._build_review_segments", return_value=[]), \
          patch("appcore.runtime._helpers._translate_billing_model", return_value="gpt"), \
-         patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
-         patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
+         patch("appcore.translate_profiles.default_profile._resolve_translate_provider", return_value="openrouter"), \
+         patch("appcore.translate_profiles.default_profile.get_model_display_name", return_value="gpt"), \
          patch("pipeline.extract.get_video_duration", return_value=1.0), \
-         patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
-         patch("appcore.runtime_multi.build_translate_artifact", return_value={}):
+         patch("appcore.translate_profiles.default_profile.build_asr_artifact", return_value={}), \
+         patch("appcore.translate_profiles.default_profile.build_translate_artifact", return_value={}):
         m_resolve.side_effect = [
             {"provider": "openrouter", "model": "gpt", "content": "BASE_EN"},
             {"provider": "openrouter", "model": "gpt", "content": "ECOM_PLUGIN"},
