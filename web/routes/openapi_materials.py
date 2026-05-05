@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -16,6 +15,12 @@ from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 from appcore.llm_provider_configs import get_provider_config
 from appcore.openapi_auth import validate_openapi_key
+from web.services.openapi_materials_listing import (
+    batch_copywriting_langs as _batch_copywriting_langs,
+    batch_cover_langs as _batch_cover_langs,
+    batch_item_lang_counts as _batch_item_lang_counts,
+    parse_archived_filter as _parse_archived_filter,
+)
 from web.services.openapi_materials_serializers import (
     group_copywritings as _group_copywritings,
     iso_or_none as _iso_or_none,
@@ -327,69 +332,6 @@ def bootstrap_link_check():
     })
 
 
-def _parse_archived_filter(raw: str) -> int | None:
-    """Return 0/1 to filter, None for 'all'."""
-    value = (raw or "").strip().lower()
-    if value == "all":
-        return None
-    if value == "1":
-        return 1
-    # 默认只看未归档
-    return 0
-
-
-def _batch_cover_langs(product_ids: list[int]) -> dict[int, list[str]]:
-    if not product_ids:
-        return {}
-    placeholders = ",".join(["%s"] * len(product_ids))
-    rows = query(
-        f"SELECT product_id, lang, object_key FROM media_product_covers "
-        f"WHERE product_id IN ({placeholders})",
-        tuple(product_ids),
-    )
-    out: dict[int, list[str]] = defaultdict(list)
-    for row in rows or []:
-        if row.get("object_key"):
-            out[int(row["product_id"])].append(row.get("lang") or "en")
-    return out
-
-
-def _batch_copywriting_langs(product_ids: list[int]) -> dict[int, list[str]]:
-    if not product_ids:
-        return {}
-    placeholders = ",".join(["%s"] * len(product_ids))
-    rows = query(
-        f"SELECT DISTINCT product_id, lang FROM media_copywritings "
-        f"WHERE product_id IN ({placeholders})",
-        tuple(product_ids),
-    )
-    out: dict[int, list[str]] = defaultdict(list)
-    for row in rows or []:
-        out[int(row["product_id"])].append(row.get("lang") or "en")
-    return out
-
-
-def _batch_item_lang_counts(product_ids: list[int]) -> tuple[dict[int, dict[str, int]], dict[int, int]]:
-    if not product_ids:
-        return {}, {}
-    placeholders = ",".join(["%s"] * len(product_ids))
-    rows = query(
-        f"SELECT product_id, lang, COUNT(*) AS c FROM media_items "
-        f"WHERE deleted_at IS NULL AND product_id IN ({placeholders}) "
-        f"GROUP BY product_id, lang",
-        tuple(product_ids),
-    )
-    per_lang: dict[int, dict[str, int]] = defaultdict(dict)
-    totals: dict[int, int] = defaultdict(int)
-    for row in rows or []:
-        pid = int(row["product_id"])
-        lang = row.get("lang") or "en"
-        cnt = int(row.get("c") or 0)
-        per_lang[pid][lang] = cnt
-        totals[pid] += cnt
-    return per_lang, totals
-
-
 @bp.route("", methods=["GET"], strict_slashes=False)
 def list_materials():
     """产品列表，供 AutoPush 子项目拉清单。"""
@@ -435,9 +377,9 @@ def list_materials():
     )
 
     product_ids = [int(r["id"]) for r in rows or []]
-    cover_map = _batch_cover_langs(product_ids)
-    copy_map = _batch_copywriting_langs(product_ids)
-    item_lang_map, item_total_map = _batch_item_lang_counts(product_ids)
+    cover_map = _batch_cover_langs(product_ids, query_fn=query)
+    copy_map = _batch_copywriting_langs(product_ids, query_fn=query)
+    item_lang_map, item_total_map = _batch_item_lang_counts(product_ids, query_fn=query)
 
     items = []
     for row in rows or []:

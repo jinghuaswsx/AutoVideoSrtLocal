@@ -711,6 +711,16 @@ def test_openapi_materials_serializers_live_outside_route_module():
     assert Path("web/services/openapi_materials_serializers.py").exists()
 
 
+def test_openapi_materials_listing_helpers_live_outside_route_module():
+    source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+
+    assert "def _parse_archived_filter" not in source
+    assert "def _batch_cover_langs" not in source
+    assert "def _batch_copywriting_langs" not in source
+    assert "def _batch_item_lang_counts" not in source
+    assert Path("web/services/openapi_materials_listing.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
