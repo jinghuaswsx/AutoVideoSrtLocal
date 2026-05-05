@@ -697,6 +697,20 @@ def test_task_video_ai_review_workflow_lives_outside_route_module():
     assert Path("web/services/task_video_ai_review.py").exists()
 
 
+def test_openapi_materials_serializers_live_outside_route_module():
+    source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+
+    assert "def _iso_or_none" not in source
+    assert "def _number_or_none" not in source
+    assert "def _serialize_product" not in source
+    assert "def _serialize_cover_map" not in source
+    assert "def _group_copywritings" not in source
+    assert "def _serialize_shopify_image_task" not in source
+    assert "def _serialize_items" not in source
+    assert "def _normalize_target_url" not in source
+    assert Path("web/services/openapi_materials_serializers.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

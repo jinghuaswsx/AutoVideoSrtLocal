@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from flask import Blueprint, jsonify, request
 
@@ -17,6 +16,16 @@ from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 from appcore.llm_provider_configs import get_provider_config
 from appcore.openapi_auth import validate_openapi_key
+from web.services.openapi_materials_serializers import (
+    group_copywritings as _group_copywritings,
+    iso_or_none as _iso_or_none,
+    media_download_url as _media_download_url,
+    normalize_target_url as _normalize_target_url,
+    serialize_cover_map as _serialize_cover_map,
+    serialize_items as _serialize_items,
+    serialize_product as _serialize_product,
+    serialize_shopify_image_task as _serialize_shopify_image_task,
+)
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
@@ -27,12 +36,6 @@ shopify_localizer_bp = Blueprint(
     url_prefix="/openapi/medias/shopify-image-localizer",
 )
 
-
-def _media_download_url(object_key: str | None) -> str | None:
-    # 所有 openapi 返回的媒体 URL 统一走内网本地 serve（/medias/obj/<key>），不再用 TOS 预签链接
-    if not object_key:
-        return None
-    return pushes.build_media_public_url(object_key)
 
 _LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
@@ -46,108 +49,6 @@ def _api_key_valid(required_scope: str = "materials:read") -> bool:
             required_scope=required_scope,
         )
     )
-
-
-def _iso_or_none(value: Any) -> Any:
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return value
-
-
-def _number_or_none(value: Any) -> Any:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return value
-
-
-def _serialize_product(product: dict) -> dict:
-    return {
-        "id": product.get("id"),
-        "product_code": product.get("product_code"),
-        "name": product.get("name"),
-        "remark": product.get("remark") or "",
-        "ai_score": _number_or_none(product.get("ai_score")),
-        "ai_evaluation_result": product.get("ai_evaluation_result") or "",
-        "ai_evaluation_detail": product.get("ai_evaluation_detail") or "",
-        "listing_status": medias.normalize_listing_status(product.get("listing_status")),
-        "archived": bool(product.get("archived")),
-        "created_at": _iso_or_none(product.get("created_at")),
-        "updated_at": _iso_or_none(product.get("updated_at")),
-    }
-
-
-def _serialize_cover_map(covers: dict) -> dict:
-    payload: dict = {}
-    for lang, object_key in (covers or {}).items():
-        if not object_key:
-            continue
-        payload[lang] = {
-            "object_key": object_key,
-            "download_url": _media_download_url(object_key),
-            "storage_backend": "local",
-        }
-    return payload
-
-
-def _group_copywritings(rows: list[dict]) -> dict:
-    grouped: dict[str, list[dict]] = defaultdict(list)
-    for row in rows or []:
-        lang = row.get("lang") or "en"
-        grouped[lang].append({
-            "title": row.get("title"),
-            "body": row.get("body"),
-            "description": row.get("description"),
-            "ad_carrier": row.get("ad_carrier"),
-            "ad_copy": row.get("ad_copy"),
-            "ad_keywords": row.get("ad_keywords"),
-        })
-    return dict(grouped)
-
-
-def _serialize_shopify_image_task(task: dict | None) -> dict | None:
-    if not task:
-        return None
-    return {
-        "id": task.get("id"),
-        "product_id": task.get("product_id"),
-        "product_code": task.get("product_code"),
-        "lang": task.get("lang"),
-        "shopify_product_id": task.get("shopify_product_id"),
-        "link_url": task.get("link_url"),
-    }
-
-
-def _serialize_items(rows: list[dict]) -> list[dict]:
-    items: list[dict] = []
-    for row in rows or []:
-        object_key = row.get("object_key")
-        cover_object_key = row.get("cover_object_key")
-        items.append({
-            "id": row.get("id"),
-            "lang": row.get("lang") or "en",
-            "filename": row.get("filename"),
-            "display_name": row.get("display_name") or row.get("filename"),
-            "object_key": object_key,
-            "video_download_url": _media_download_url(object_key),
-            "cover_object_key": cover_object_key,
-            "video_cover_download_url": _media_download_url(cover_object_key),
-            "duration_seconds": row.get("duration_seconds"),
-            "file_size": row.get("file_size"),
-            "created_at": _iso_or_none(row.get("created_at")),
-        })
-    return items
-
-
-def _normalize_target_url(target_url: str) -> str:
-    parsed = urlparse((target_url or "").strip())
-    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    normalized_query = urlencode(query_pairs, doseq=True)
-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, normalized_query, ""))
 
 
 @shopify_localizer_bp.route("/languages", methods=["GET"])
