@@ -1,0 +1,7 @@
+# 部署期生成的目录（不入库）
+inputs/
+output/
+cache/
+logs/
+__pycache__/
+*.pyc
