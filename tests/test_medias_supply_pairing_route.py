@@ -137,3 +137,27 @@ def test_supply_pairing_search_502_when_dxm_fails(authed_client_no_db, monkeypat
     assert resp.status_code == 502
     body = resp.get_json()
     assert body["error"] == "dxm_failed"
+
+
+def test_supply_pairing_search_route_delegates_response_building(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "items": [{"id": "1"}]}
+        status_code = 203
+
+    def fake_build(args):
+        captured["q"] = args.get("q")
+        captured["status"] = args.get("status")
+        return Result()
+
+    monkeypatch.setattr("web.routes.medias._build_supply_pairing_search_response", fake_build)
+
+    resp = authed_client_no_db.get("/medias/api/supply-pairing/search?q=sku&status=2")
+
+    assert resp.status_code == 203
+    assert resp.get_json() == {"ok": True, "items": [{"id": "1"}]}
+    assert captured == {"q": "sku", "status": "2"}

@@ -357,6 +357,25 @@ def test_mk_copywriting_response_lives_outside_route_module():
     assert Path("web/services/media_mk_copywriting.py").exists()
 
 
+def test_supply_pairing_search_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_supply_pairing_search"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "supply_pairing.search_supply_pairing" not in route_source
+    assert "supply_pairing.extract_1688_url" not in route_source
+    assert "missing_query" not in route_source
+    assert "dxm_failed" not in route_source
+    assert "extracted_1688_url" not in route_source
+    assert "_build_supply_pairing_search_response" in route_source
+    assert Path("web/services/media_supply_pairing.py").exists()
+
+
 def test_task_delete_storage_cleanup_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

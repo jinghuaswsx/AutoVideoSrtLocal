@@ -27,6 +27,9 @@ from web.services.media_mk_copywriting import (
     mk_product_link_tail as _mk_product_link_tail,
     normalize_mk_copywriting_query as _normalize_mk_copywriting_query,
 )
+from web.services.media_supply_pairing import (
+    build_supply_pairing_search_response as _build_supply_pairing_search_response_impl,
+)
 
 
 def _routes_module():
@@ -86,6 +89,14 @@ def _build_mk_copywriting_response(args):
         get_base_url_fn=routes._get_mk_api_base_url,
         is_login_expired_fn=routes._is_mk_login_expired,
         http_get_fn=routes.requests.get,
+    )
+
+
+def _build_supply_pairing_search_response(args):
+    return _build_supply_pairing_search_response_impl(
+        args,
+        search_supply_pairing_fn=supply_pairing.search_supply_pairing,
+        extract_1688_url_fn=supply_pairing.extract_1688_url,
     )
 
 
@@ -224,31 +235,9 @@ def api_update_xmyc_sku(sku_id: int):
 @bp.route("/api/supply-pairing/search", methods=["GET"])
 @login_required
 def api_supply_pairing_search():
-    q = (request.args.get("q") or "").strip()
-    if not q:
-        return jsonify({"error": "missing_query", "message": "请提供 SKU 或关键词"}), 400
-    # Default status="" hits both waiting (status=1) and paired (status=2)
-    # records, ~378 total on MKTT — the waiting list rows carry an
-    # alibabaProductId we can turn into a real 1688 link via
-    # supply_pairing.extract_1688_url. Callers can still pin status=2 to
-    # only see user-confirmed pairings.
-    raw_status = request.args.get("status")
-    status = "" if raw_status is None else str(raw_status)
-    try:
-        result = supply_pairing.search_supply_pairing(q, status=status)
-    except Exception as exc:
-        return jsonify({"error": "dxm_failed", "message": str(exc)}), 502
-    items = result.get("items") or []
-    enriched = []
-    for it in items:
-        url_1688 = supply_pairing.extract_1688_url(it)
-        copy = dict(it)
-        copy["extracted_1688_url"] = (
-            url_1688 if url_1688 and "1688.com" in url_1688 else None
-        )
-        enriched.append(copy)
-    result["items"] = enriched
-    return jsonify({"ok": True, **result})
+    routes = _routes_module()
+    result = routes._build_supply_pairing_search_response(request.args)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>", methods=["PUT"])
