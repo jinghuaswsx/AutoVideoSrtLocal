@@ -5,7 +5,9 @@ Independent, opt-in module that adds:
 - Source language is fully manual; ASR and downstream steps preserve the user's
   selected language and never auto-correct it.
 - Per-target dynamic word_tolerance / max_rewrite_attempts for the duration
-  convergence loop (loosen for de/ja/fi to avoid 5×5=25 burnouts)
+  convergence loop (loosen for de/ja/fi to avoid 5×5=25 burnouts) — these
+  values live on ``OmniProfile`` (see appcore.translate_profiles.omni_profile)
+  and are read by ``_run_tts_duration_loop`` via ``self.profile``.
 
 This module **does not modify** the existing multi_translate / de_translate /
 fr_translate / ja_translate code paths. It is the "treatment" version
@@ -22,38 +24,6 @@ from appcore.llm_debug_runtime import save_llm_debug_calls
 from appcore.runtime_multi import MultiTranslateRunner, _MANUAL_SOURCE_LANGUAGES
 
 log = logging.getLogger(__name__)
-
-
-# Per-target rewrite tolerance for the duration convergence inner loop.
-# de/ja/fi are slower / longer-word target languages where the LLM struggles
-# to compress to ±10%; widening the window keeps the outer 5-round loop from
-# burning all attempts on edge cases.
-_WORD_TOLERANCE_BY_TARGET = {
-    "en": 0.10,
-    "de": 0.15,
-    "fr": 0.12,
-    "es": 0.12,
-    "it": 0.12,
-    "pt": 0.12,
-    "ja": 0.18,
-    "nl": 0.12,
-    "sv": 0.12,
-    "fi": 0.15,
-}
-
-# Per-target max rewrite attempts inside one outer round.
-_MAX_REWRITE_ATTEMPTS_BY_TARGET = {
-    "en": 5,
-    "de": 7,
-    "fr": 5,
-    "es": 5,
-    "it": 5,
-    "pt": 5,
-    "ja": 7,
-    "nl": 5,
-    "sv": 5,
-    "fi": 7,
-}
 
 
 import json as _json_anchor

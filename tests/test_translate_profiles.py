@@ -144,3 +144,58 @@ def test_analysis_step_inserted_when_flag_enabled():
     # analysis 必须在 compose 后、export 前
     assert names.index("analysis") == names.index("compose") + 1
     assert names.index("analysis") + 1 == names.index("export")
+
+
+# === Per-target duration-loop tunables（PR3：profile 真正能影响 TTS 行为） ===
+
+
+def test_default_profile_returns_baseline_word_tolerance_for_any_lang():
+    p = get_profile("default")
+    for lang in ("en", "de", "fr", "ja", "fi", "xx"):
+        assert p.word_tolerance_for(lang) == 0.20
+
+
+def test_default_profile_returns_baseline_max_rewrite_attempts_for_any_lang():
+    p = get_profile("default")
+    for lang in ("en", "de", "fr", "ja", "fi", "xx"):
+        assert p.max_rewrite_attempts_for(lang) == 5
+
+
+def test_av_sync_profile_uses_baseline_tunables():
+    p = get_profile("av_sync")
+    assert p.word_tolerance_for("ja") == 0.20
+    assert p.max_rewrite_attempts_for("ja") == 5
+
+
+def test_omni_profile_widens_word_tolerance_for_slow_targets():
+    p = get_profile("omni")
+    # 慢收敛目标语言放宽
+    assert p.word_tolerance_for("ja") == 0.18
+    assert p.word_tolerance_for("de") == 0.15
+    assert p.word_tolerance_for("fi") == 0.15
+    # 快收敛目标语言收紧
+    assert p.word_tolerance_for("en") == 0.10
+    # 拉丁语系默认 0.12
+    assert p.word_tolerance_for("fr") == 0.12
+    assert p.word_tolerance_for("es") == 0.12
+    # 字典里没有的目标语言走基线
+    assert p.word_tolerance_for("zz") == 0.20
+
+
+def test_omni_profile_raises_max_rewrite_attempts_for_slow_targets():
+    p = get_profile("omni")
+    assert p.max_rewrite_attempts_for("ja") == 7
+    assert p.max_rewrite_attempts_for("de") == 7
+    assert p.max_rewrite_attempts_for("fi") == 7
+    # 其余目标语言保持 5
+    assert p.max_rewrite_attempts_for("en") == 5
+    assert p.max_rewrite_attempts_for("fr") == 5
+    # 字典里没有的目标语言走基线
+    assert p.max_rewrite_attempts_for("zz") == 5
+
+
+def test_runtime_omni_no_longer_exposes_dead_constants():
+    """OmniProfile 接管后，runtime_omni 模块里不再保留 dead 常量。"""
+    import appcore.runtime_omni as omni_mod
+    assert not hasattr(omni_mod, "_WORD_TOLERANCE_BY_TARGET")
+    assert not hasattr(omni_mod, "_MAX_REWRITE_ATTEMPTS_BY_TARGET")

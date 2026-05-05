@@ -380,8 +380,12 @@ class PipelineRunner:
                 # 2+ 把"上次给了多少词、目标多少"塞进 prompt，迫使 LLM 跳出固定模板。
                 # 这两条同时上才有意义——单独打温度，LLM 仍可能落到同一 basin（85
                 # 词长版本 / 54 词短版本）；单独加反馈但保持低温也不会真的换文案。
-                MAX_REWRITE_ATTEMPTS = 5
-                WORD_TOLERANCE = 0.20
+                # 从 profile 取 per-target 容差 + 上限。default profile 走基线
+                # 0.20 / 5；omni 在 de/ja/fi 等慢收敛目标语言上放宽。
+                MAX_REWRITE_ATTEMPTS = self.profile.max_rewrite_attempts_for(
+                    target_language_label
+                )
+                WORD_TOLERANCE = self.profile.word_tolerance_for(target_language_label)
                 candidates: list[tuple[int, dict]] = []  # (abs_diff, translation)
                 localized_translation = None
                 chosen_attempt_idx = None
@@ -935,7 +939,7 @@ class PipelineRunner:
                 if round_record["final_reason"] == "speedup_converged":
                     final_distance = 0.0
                 else:
-                    # speedup_failed_fallback or speedup_then_atempo
+                    # speedup_kept_unaligned 或 speedup_failed_kept_original
                     measured_duration = speedup_duration if speedup_duration is not None else audio_duration
                     final_distance = round(_distance_to_duration_range(
                         measured_duration, final_target_lo, final_target_hi,
