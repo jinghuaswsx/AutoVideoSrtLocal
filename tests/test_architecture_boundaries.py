@@ -418,6 +418,41 @@ def test_media_evaluation_responses_live_outside_route_module():
     assert Path("web/services/media_evaluation.py").exists()
 
 
+def test_media_item_update_delete_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/items.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("api_update_item", "api_delete_item"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+        direct_item_write_calls = [
+            call.func.attr
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "medias"
+            and call.func.attr
+            in {
+                "update_item_display_name",
+                "soft_delete_item",
+            }
+        ]
+        assert direct_item_write_calls == []
+    route_source = "\n".join(route_sources)
+
+    assert "display_name required" not in route_source
+    assert "display_name too long" not in route_source
+    assert "_serialize_item(" not in route_source
+    assert "_build_item_update_response" in route_source
+    assert "_build_item_delete_response" in route_source
+    assert Path("web/services/media_items.py").exists()
+
+
 def test_mk_copywriting_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

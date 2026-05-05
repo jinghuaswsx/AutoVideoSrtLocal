@@ -23,6 +23,11 @@ from ._helpers import (
     _parse_lang,
 )
 from ._serializers import _serialize_item
+from web.services.media_items import (
+    ItemFilenameValidation,
+    build_item_delete_response as _build_item_delete_response_impl,
+    build_item_update_response as _build_item_update_response_impl,
+)
 
 
 def _routes():
@@ -57,6 +62,40 @@ def _schedule_material_evaluation(pid, **kwargs):
 
 def _validate_material_filename_for_product(*args, **kwargs):
     return _routes()._validate_material_filename_for_product(*args, **kwargs)
+
+
+def _validate_item_display_name(filename: str, product: dict, lang: str) -> ItemFilenameValidation:
+    _validation, error_response = _validate_material_filename_for_product(
+        filename,
+        product,
+        lang,
+    )
+    if not error_response:
+        return ItemFilenameValidation(ok=True)
+    response, status_code = error_response
+    payload = response.get_json(silent=True) if hasattr(response, "get_json") else None
+    return ItemFilenameValidation(ok=False, payload=payload or {}, status_code=status_code)
+
+
+def _build_item_update_response(item_id: int, item: dict, product: dict, body: dict):
+    return _build_item_update_response_impl(
+        item_id,
+        item,
+        product,
+        body,
+        validate_display_name_fn=_validate_item_display_name,
+        update_item_display_name_fn=medias.update_item_display_name,
+        get_item_fn=medias.get_item,
+        serialize_item_fn=_serialize_item,
+    )
+
+
+def _build_item_delete_response(item_id: int, item: dict):
+    return _build_item_delete_response_impl(
+        item_id,
+        item,
+        soft_delete_item_fn=medias.soft_delete_item,
+    )
 
 
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])
@@ -186,26 +225,9 @@ def api_update_item(item_id: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    display_name = _client_filename_basename(body.get("display_name"))
-    if not display_name.strip():
-        return jsonify({"error": "display_name required"}), 400
-    if len(display_name) > 255:
-        return jsonify({"error": "display_name too long"}), 400
-
-    validation, error_response = _validate_material_filename_for_product(
-        display_name,
-        p,
-        (it.get("lang") or "en"),
-    )
-    if error_response:
-        return error_response
-    display_name = os.path.basename(display_name)
-
-    medias.update_item_display_name(item_id, display_name)
-    updated = dict(it)
-    updated["display_name"] = display_name
-    fresh = medias.get_item(item_id) or updated
-    return jsonify({"item": _serialize_item(fresh)})
+    routes = _routes()
+    result = routes._build_item_update_response(item_id, it, p, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/items/<int:item_id>", methods=["DELETE"])
@@ -217,13 +239,15 @@ def api_delete_item(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
-    medias.soft_delete_item(item_id)
-    _routes()._audit_media_item_deleted(it)
+    routes = _routes()
+    result = routes._build_item_delete_response(item_id, it)
+    routes._audit_media_item_deleted(it)
     try:
-        _delete_media_object(it["object_key"])
+        if result.object_key:
+            _delete_media_object(result.object_key)
     except Exception:
         pass
-    return jsonify({"ok": True})
+    return jsonify(result.payload), result.status_code
 
 
 # ---- AI 视频分析（手动触发，多模态 ADC 通道）----
