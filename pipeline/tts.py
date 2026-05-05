@@ -397,38 +397,43 @@ def regenerate_full_audio_with_speed(
     language_code: str | None = None,
     on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
 ) -> Dict:
-    """以指定 speed 重新合成 segments 并 concat。
+    """以指定 speed 重新合成 segments 并 concat（**并发**调用 ElevenLabs）。
 
     用于 TTS Duration Loop 的"变速短路"分支：当某轮原始音频落入 ±10% 但不在
     final range，通过 voice_settings.speed 一击直接收敛到 [v-1, v+2]。
+
+    跟 :func:`generate_full_audio` 共用 :data:`_TTS_POOL`，并发模式一致：
+    `pool.submit` + `as_completed` 收回，按 i 顺序拼 concat 列表。
 
     Args:
         segments: 与 generate_full_audio 相同的输入（含 tts_text）
         variant: 用于命名 segment 子目录和 concat 产物，例如 "round_2"
         speed: ElevenLabs voice_settings.speed，合法范围 [0.7, 1.2]，调用方须先 clamp
-        on_segment_done: 同 generate_full_audio
+        on_segment_done: 每段完成后回调 (done, total, info)
 
     Returns:
         {"full_audio_path": str, "segments": [...]}  # 每段含 tts_path / tts_duration
 
     Raises:
-        透出 ElevenLabs SDK 的网络异常（已通过 _call_with_network_retry 重试），
-        让 _run_tts_duration_loop 走原始音频 atempo fallback。
+        段失败时 cancel 全部 + raise RuntimeError。caller 自行决定怎么处理
+        （主流程当前的策略：变速失败时直接采用变速前的 result["full_audio_path"]
+        原样输出，不再 atempo 兜底）。
     """
     if not (0.7 <= speed <= 1.2):
         raise ValueError(f"speed must be in [0.7, 1.2], got {speed}")
     seg_dir = os.path.join(output_dir, "tts_segments", f"{variant}_speedup")
     os.makedirs(seg_dir, exist_ok=True)
 
-    updated_segments = []
-    concat_list_path = os.path.join(seg_dir, "concat.txt")
     total = len(segments)
+    pool = _get_tts_pool()
+    state = {"total": total, "active": 0, "queued": total, "done": 0}
+    state_lock = threading.Lock()
 
-    with open(concat_list_path, "w", encoding="utf-8") as concat_f:
-        for i, seg in enumerate(segments):
-            text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
-            seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
-
+    def _segment_wrapper(text: str, seg_path: str) -> tuple[str, float]:
+        with state_lock:
+            state["active"] += 1
+            state["queued"] -= 1
+        try:
             generate_segment_audio(
                 text, voice_id, seg_path,
                 elevenlabs_api_key=elevenlabs_api_key,
@@ -436,23 +441,65 @@ def regenerate_full_audio_with_speed(
                 speed=speed,
             )
             duration = _get_audio_duration(seg_path)
+            return seg_path, duration
+        finally:
+            with state_lock:
+                state["active"] -= 1
 
-            seg_copy = dict(seg)
-            seg_copy["tts_path"] = seg_path
-            seg_copy["tts_duration"] = duration
-            updated_segments.append(seg_copy)
-            concat_f.write(f"file '{os.path.abspath(seg_path)}'\n")
+    # submit 全部
+    tasks: list[tuple[int, dict, str, str, Future]] = []
+    for i, seg in enumerate(segments):
+        text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
+        seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
+        future = pool.submit(_segment_wrapper, text, seg_path)
+        tasks.append((i, seg, text, seg_path, future))
 
-            if on_segment_done is not None:
-                try:
-                    on_segment_done(i + 1, total, {
-                        "segment_index": i,
-                        "tts_duration": duration,
-                        "tts_text_preview": (text or "")[:60],
-                        "speed": speed,
-                    })
-                except Exception:
-                    log.exception("on_segment_done callback raised; ignoring")
+    # as_completed 收回（按完成时间）
+    seg_results: dict[int, dict] = {}
+    failures: list[tuple[int, BaseException]] = []
+    future_to_meta = {t[4]: t for t in tasks}
+    for fut in as_completed([t[4] for t in tasks]):
+        i, seg, text, seg_path, _ = future_to_meta[fut]
+        try:
+            _, duration = fut.result()
+        except BaseException as exc:
+            failures.append((i, exc))
+            continue
+        seg_copy = dict(seg)
+        seg_copy["tts_path"] = seg_path
+        seg_copy["tts_duration"] = duration
+        seg_results[i] = seg_copy
+
+        with state_lock:
+            state["done"] += 1
+            done_now = state["done"]
+        info = {
+            "segment_index": i,
+            "tts_duration": duration,
+            "tts_text_preview": (text or "")[:60],
+            "speed": speed,
+        }
+        if on_segment_done is not None:
+            try:
+                on_segment_done(done_now, total, info)
+            except Exception:
+                log.exception("on_segment_done callback raised; ignoring")
+
+    if failures:
+        for _, _, _, _, f in tasks:
+            f.cancel()
+        first_idx, first_exc = failures[0]
+        raise RuntimeError(
+            f"TTS speedup segment generation failed at index {first_idx} "
+            f"({len(failures)}/{total} failed): {first_exc}"
+        ) from first_exc
+
+    # 按 i 顺序拼 concat 列表
+    updated_segments = [seg_results[i] for i in range(total)]
+    concat_list_path = os.path.join(seg_dir, "concat.txt")
+    with open(concat_list_path, "w", encoding="utf-8") as concat_f:
+        for seg_copy in updated_segments:
+            concat_f.write(f"file '{os.path.abspath(seg_copy['tts_path'])}'\n")
 
     full_audio_path = os.path.join(output_dir, f"tts_full.{variant}.speedup.mp3")
     result = subprocess.run(

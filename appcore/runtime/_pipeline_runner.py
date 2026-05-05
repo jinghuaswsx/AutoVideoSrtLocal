@@ -613,14 +613,11 @@ class PipelineRunner:
                 # 标记本轮为最终采用：UI 画 ✨ 徽章 + 底部摘要说明
                 round_record["is_final"] = True
                 round_record["final_reason"] = "converged"
-                # 已落入 range，但常常仍差 1-2s；用 ffmpeg atempo 兜底精确对齐
-                final_audio_path = self._maybe_tempo_align(
-                    audio_path=result["full_audio_path"],
-                    audio_duration=audio_duration,
-                    video_duration=video_duration,
-                    task_dir=task_dir, variant=variant,
-                    round_record=round_record, task_id=task_id,
-                )
+                # 已落入 final range，直接采用，不做 ffmpeg atempo 变速兜底——
+                # 变速会引入听感失真（音色奇怪）；残余 -1s~+2s 偏差由 compose
+                # 阶段的 timeline_manifest 自然处理。仅最后"5 轮全跑完仍未收敛"
+                # 的 best_pick 路径保留 atempo 强制对齐。
+                final_audio_path = result["full_audio_path"]
                 round_products[-1]["tts_audio_path"] = final_audio_path
                 rounds[-1] = round_record
                 task_state.update(
@@ -711,42 +708,23 @@ class PipelineRunner:
                     round_record["speedup_failed_reason"] = speedup_failed_reason
 
                 # Decide which audio is the final adopted one.
+                # ↑ 不再做 ffmpeg atempo 兜底（听感失真）；变速产物（或变速
+                # 失败时的原始产物）原样输出，残余时长偏差由 compose 阶段的
+                # timeline_manifest 自然处理。
                 if speedup_audio_path is None:
-                    # Fallback：原始音频 + atempo
-                    final_audio_path = self._maybe_tempo_align(
-                        audio_path=result["full_audio_path"],
-                        audio_duration=audio_duration,
-                        video_duration=video_duration,
-                        task_dir=task_dir, variant=variant,
-                        round_record=round_record, task_id=task_id,
-                    )
-                    round_record["final_reason"] = "speedup_failed_fallback"
+                    # 变速调用失败 → 直接采用变速前的原始音频
+                    final_audio_path = result["full_audio_path"]
+                    round_record["final_reason"] = "speedup_failed_kept_original"
                     round_record["speedup_hit_final"] = False
                 else:
                     hit_final = (
                         final_target_lo <= speedup_duration <= final_target_hi
                     )
                     round_record["speedup_hit_final"] = hit_final
-                    if hit_final:
-                        # 命中：再走一次 atempo 兜底精确对齐（误差 ≤ 5% 时拉伸到精确等长）
-                        final_audio_path = self._maybe_tempo_align(
-                            audio_path=speedup_audio_path,
-                            audio_duration=speedup_duration,
-                            video_duration=video_duration,
-                            task_dir=task_dir, variant=f"{variant}_speedup",
-                            round_record=round_record, task_id=task_id,
-                        )
-                        round_record["final_reason"] = "speedup_converged"
-                    else:
-                        # 未命中 final：仍然终结，对变速产物跑 atempo
-                        final_audio_path = self._maybe_tempo_align(
-                            audio_path=speedup_audio_path,
-                            audio_duration=speedup_duration,
-                            video_duration=video_duration,
-                            task_dir=task_dir, variant=f"{variant}_speedup",
-                            round_record=round_record, task_id=task_id,
-                        )
-                        round_record["final_reason"] = "speedup_then_atempo"
+                    final_audio_path = speedup_audio_path
+                    round_record["final_reason"] = (
+                        "speedup_converged" if hit_final else "speedup_kept_unaligned"
+                    )
 
                 # 同步 AI 评估（仅当变速成功有 audio_post 才跑）
                 eval_id = None
@@ -888,6 +866,12 @@ class PipelineRunner:
         task_dir: str, variant: str, round_record: dict, task_id: str,
     ) -> str:
         """误差在 ±5% 内时跑一次 ffmpeg atempo 兜底，把音频精确对齐 video_duration。
+
+        **2026-05-05 起只用于一个场景**：5 轮 rewrite 全跑完仍未收敛的
+        best_pick 终极兜底（line ~853）。其他场景（常规收敛 / 变速短路命中或
+        失败）已经全部去掉 atempo——变速失真听感怪，宁愿接受 ±1~3s 时长偏差
+        让 compose 阶段的 timeline_manifest 自然处理。
+
         把变速过程的 ratio / pre / post / new_delta 写进 round_record，前端 TTS 卡片
         读这些字段渲染日志行。失败 / 不需要时返回原 audio_path。"""
         from appcore.runtime._helpers import _apply_audio_tempo_fallback as _do_tempo
