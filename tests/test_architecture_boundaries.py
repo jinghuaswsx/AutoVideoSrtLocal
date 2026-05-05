@@ -430,6 +430,29 @@ def test_parcel_cost_suggest_response_lives_outside_route_module():
     assert Path("web/services/media_parcel_cost.py").exists()
 
 
+def test_refresh_shopify_sku_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_refresh_product_shopify_sku"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "missing_shopifyid" not in route_source
+    assert "fetch_shopify_and_dxm_via_cdp" not in route_source
+    assert "build_pair_rows" not in route_source
+    assert "shopify_product_not_found" not in route_source
+    assert "medias.update_product" not in route_source
+    assert "medias.replace_product_skus" not in route_source
+    assert "medias.list_product_skus" not in route_source
+    assert "medias.list_xmyc_unit_prices" not in route_source
+    assert "_serialize_product_skus" not in route_source
+    assert "_build_refresh_product_shopify_sku_response" in route_source
+    assert Path("web/services/media_shopify_sku_refresh.py").exists()
+
+
 def test_task_delete_storage_cleanup_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

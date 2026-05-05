@@ -80,6 +80,35 @@ def test_products_list_delegates_to_response_builder(authed_client_no_db, monkey
     assert captured == {"keyword": "box", "page": "2"}
 
 
+def test_refresh_product_shopify_sku_route_delegates_response_building(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as r
+
+    product = {"id": 317, "user_id": 1, "shopifyid": "SP1"}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(r, "_can_access_product", lambda value: True)
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "summary": {"variant_pairs": 1}}
+        status_code = 202
+
+    def fake_build(pid, value):
+        captured["pid"] = pid
+        captured["product"] = value
+        return Result()
+
+    monkeypatch.setattr(r, "_build_refresh_product_shopify_sku_response", fake_build)
+
+    resp = authed_client_no_db.post("/medias/api/products/317/refresh-shopify-sku")
+
+    assert resp.status_code == 202
+    assert resp.get_json() == {"ok": True, "summary": {"variant_pairs": 1}}
+    assert captured == {"pid": 317, "product": product}
+
+
 def test_create_raw_source_rejects_when_english_video_missing_before_storage(
     authed_client_no_db, monkeypatch
 ):

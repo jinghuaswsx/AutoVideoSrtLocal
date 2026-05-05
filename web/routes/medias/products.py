@@ -20,6 +20,9 @@ from web.services.media_product_mutations import (
     build_product_delete_response as _build_product_delete_response_impl,
     build_product_update_response as _build_product_update_response_impl,
 )
+from web.services.media_shopify_sku_refresh import (
+    build_refresh_product_shopify_sku_response as _build_refresh_product_shopify_sku_response_impl,
+)
 from web.services.media_mk_copywriting import (
     build_mk_copywriting_response as _build_mk_copywriting_response_impl,
     extract_mk_copywriting as _extract_mk_copywriting,
@@ -153,6 +156,23 @@ def _build_parcel_cost_suggest_response(pid: int, args):
         default_lookback_days=parcel_cost_suggest.DEFAULT_LOOKBACK_DAYS,
         error_type=parcel_cost_suggest.ParcelCostSuggestError,
         suggest_parcel_cost_fn=parcel_cost_suggest.suggest_parcel_cost,
+    )
+
+
+def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
+    from tools import dianxiaomi_sku_sync as sync_mod
+
+    return _build_refresh_product_shopify_sku_response_impl(
+        pid,
+        product,
+        fetch_shopify_and_dxm_fn=sync_mod.fetch_shopify_and_dxm_via_cdp,
+        build_pair_rows_fn=sync_mod.build_pair_rows,
+        update_product_fn=medias.update_product,
+        replace_product_skus_fn=medias.replace_product_skus,
+        list_product_skus_fn=medias.list_product_skus,
+        list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
+        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
+        serialize_product_skus_fn=_serialize_product_skus,
     )
 
 
@@ -310,63 +330,8 @@ def api_refresh_product_shopify_sku(pid: int):
     p = medias.get_product(pid)
     if not routes._can_access_product(p):
         abort(404)
-    shopify_id = (p.get("shopifyid") or "").strip()
-    if not shopify_id:
-        return jsonify({
-            "error": "missing_shopifyid",
-            "message": "该产品尚未关联 Shopify ID，无法刷新 SKU/英文名",
-        }), 400
-
-    from tools import dianxiaomi_sku_sync as sync_mod
-
-    try:
-        shopify_products, dxm_index = sync_mod.fetch_shopify_and_dxm_via_cdp()
-    except Exception as exc:
-        return jsonify({
-            "error": "fetch_failed",
-            "message": f"店小秘数据拉取失败：{exc}",
-        }), 502
-
-    pair_index = sync_mod.build_pair_rows(shopify_products, dxm_index)
-    title_map = {
-        (item.get("shopify_product_id") or ""): (item.get("shopify_title") or "")
-        for item in shopify_products
-    }
-    pairs = pair_index.get(shopify_id)
-    if pairs is None:
-        return jsonify({
-            "error": "shopify_product_not_found",
-            "message": f"店小秘 Shopify 商品库未找到 shopifyid={shopify_id}",
-        }), 404
-
-    new_title = (title_map.get(shopify_id) or "").strip() or None
-    medias.update_product(pid, shopify_title=new_title)
-    medias.replace_product_skus(pid, pairs, source="manual")
-
-    fresh_skus = medias.list_product_skus(pid)
-    xmyc_index = medias.list_xmyc_unit_prices(
-        [s.get("dianxiaomi_sku") or "" for s in fresh_skus]
-    )
-    cost_inputs = {
-        "purchase_price": p.get("purchase_price"),
-        "packet_cost_estimated": p.get("packet_cost_estimated"),
-        "packet_cost_actual": p.get("packet_cost_actual"),
-        "standalone_shipping_fee": p.get("standalone_shipping_fee"),
-    }
-    return jsonify({
-        "ok": True,
-        "shopify_title": new_title or "",
-        "skus": _serialize_product_skus(
-            fresh_skus,
-            cost_inputs=cost_inputs,
-            rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
-            xmyc_index=xmyc_index,
-        ),
-        "summary": {
-            "variant_pairs": len(pairs),
-            "pairs_with_dxm": sum(1 for r in pairs if r.get("dianxiaomi_sku_code")),
-        },
-    })
+    result = routes._build_refresh_product_shopify_sku_response(pid, p)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/<int:pid>/roas")
