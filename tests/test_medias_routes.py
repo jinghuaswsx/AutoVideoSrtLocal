@@ -61,6 +61,25 @@ def _raw_source_upload_files(video_name="bad.mp4"):
     }
 
 
+def test_products_list_delegates_to_response_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+
+    def fake_build(args):
+        captured["keyword"] = args.get("keyword")
+        captured["page"] = args.get("page")
+        return {"items": [{"id": 123}], "total": 1, "page": 2, "page_size": 20}
+
+    monkeypatch.setattr(r, "_build_products_list_response", fake_build)
+
+    resp = authed_client_no_db.get("/medias/api/products?keyword=box&page=2")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"id": 123}]
+    assert captured == {"keyword": "box", "page": "2"}
+
+
 def test_create_raw_source_rejects_when_english_video_missing_before_storage(
     authed_client_no_db, monkeypatch
 ):
@@ -1663,6 +1682,8 @@ def test_get_product_api_includes_shopifyid(
     monkeypatch.setattr(r.medias, "get_product_covers", lambda pid: {"en": "covers/demo.jpg"})
     monkeypatch.setattr(r.medias, "list_items", lambda pid: [])
     monkeypatch.setattr(r.medias, "list_copywritings", lambda pid: [])
+    monkeypatch.setattr(r.medias, "list_product_skus", lambda pid: [])
+    monkeypatch.setattr(r.medias, "list_xmyc_unit_prices", lambda skus: {})
     monkeypatch.setattr(r.medias, "normalize_listing_status", lambda status: status or "上架")
 
     resp = authed_client_no_db.get("/medias/api/products/123")

@@ -222,6 +222,25 @@ def test_detail_image_from_url_request_planning_lives_outside_route_module():
     assert Path("web/services/media_detail_from_url.py").exists()
 
 
+def test_media_products_list_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_list_products"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias.list_products" not in route_source
+    assert "count_items_by_product" not in route_source
+    assert "list_product_skus_batch" not in route_source
+    assert "list_xmyc_unit_prices" not in route_source
+    assert "_serialize_product(" not in route_source
+    assert "_build_products_list_response" in route_source
+    assert Path("web/services/media_products_listing.py").exists()
+
+
 def test_task_delete_storage_cleanup_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

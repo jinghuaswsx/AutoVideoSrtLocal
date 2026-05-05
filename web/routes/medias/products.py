@@ -13,6 +13,9 @@ from ._serializers import (
     _serialize_product,
     _serialize_product_skus,
 )
+from web.services.media_products_listing import (
+    build_products_list_response as _build_products_list_response_impl,
+)
 
 
 _ROAS_PRODUCT_FIELDS = (
@@ -35,6 +38,13 @@ def _routes_module():
     from web.routes import medias as routes
 
     return routes
+
+
+def _build_products_list_response(args):
+    return _build_products_list_response_impl(
+        args,
+        serialize_product_fn=_serialize_product,
+    )
 
 
 def _normalize_mk_copywriting_query(product_code: str) -> str:
@@ -153,53 +163,8 @@ def api_mk_copywriting():
 @bp.route("/api/products", methods=["GET"])
 @login_required
 def api_list_products():
-    keyword = (request.args.get("keyword") or "").strip()
-    archived = request.args.get("archived") in ("1", "true", "yes")
-    page = max(1, int(request.args.get("page") or 1))
-    limit = 20
-    offset = (page - 1) * limit
-
-    xmyc_match = (request.args.get("xmyc_match") or "all").strip().lower()
-    if xmyc_match not in medias.XMYC_MATCH_FILTERS:
-        xmyc_match = "all"
-    roas_status = (request.args.get("roas_status") or "all").strip().lower()
-    if roas_status not in medias.ROAS_STATUS_FILTERS:
-        roas_status = "all"
-
-    rows, total = medias.list_products(None, keyword=keyword, archived=archived,
-                                       offset=offset, limit=limit,
-                                       xmyc_match=xmyc_match,
-                                       roas_status=roas_status)
-    pids = [r["id"] for r in rows]
-    counts = medias.count_items_by_product(pids)
-    raw_counts = medias.count_raw_sources_by_product(pids)
-    thumb_covers = medias.first_thumb_item_by_product(pids)
-    filenames = medias.list_item_filenames_by_product(pids, limit_per=5)
-    coverage = medias.lang_coverage_by_product(pids)
-    covers_map = medias.get_product_covers_batch(pids)
-    skus_map = medias.list_product_skus_batch(pids)
-    all_dxm_skus = sorted({
-        (s.get("dianxiaomi_sku") or "").strip()
-        for sku_rows in skus_map.values()
-        for s in sku_rows
-        if (s.get("dianxiaomi_sku") or "").strip()
-    })
-    xmyc_index = medias.list_xmyc_unit_prices(all_dxm_skus)
-    roas_rmb_per_usd = product_roas.get_configured_rmb_per_usd()
-    data = [
-        _serialize_product(
-            r, counts.get(r["id"], 0), thumb_covers.get(r["id"]),
-            items_filenames=filenames.get(r["id"], []),
-            lang_coverage=coverage.get(r["id"], {}),
-            covers=covers_map.get(r["id"], {}),
-            raw_sources_count=raw_counts.get(r["id"], 0),
-            roas_rmb_per_usd=roas_rmb_per_usd,
-            skus=skus_map.get(r["id"], []),
-            xmyc_index=xmyc_index,
-        )
-        for r in rows
-    ]
-    return jsonify({"items": data, "total": total, "page": page, "page_size": limit})
+    routes = _routes_module()
+    return jsonify(routes._build_products_list_response(request.args))
 
 
 @bp.route("/api/products", methods=["POST"])
