@@ -1924,6 +1924,21 @@
       const compareLine = haveBoth
         ? `<div class="duration-compare-line" style="margin-top:4px;font-size:var(--text-xs);color:var(--fg-muted);">原视频 <b>${videoDur.toFixed(2)}s</b> · 生成音频 <b>${audioDur.toFixed(2)}s</b> · ${deltaLabel}</div>`
         : '';
+      // 视频合成处理逻辑说明：让用户明白最终 mp4 时长怎么决定的、TTS / 视频
+      // 谁长谁短时具体怎么处理（compose 阶段以原视频时长为准，超出 TTS 末尾
+      // 被截，视频比 TTS 长则末尾按最后一帧 pad）
+      let composeLine = '';
+      if (haveBoth) {
+        let composeNote;
+        if (Math.abs(signedDelta) < 0.05) {
+          composeNote = 'TTS 与视频严格对齐，画面+音频直接合成 mp4';
+        } else if (signedDelta > 0) {
+          composeNote = `TTS 比视频长 ${signedDelta.toFixed(2)}s，超出末尾会被截`;
+        } else {
+          composeNote = `TTS 比视频短 ${Math.abs(signedDelta).toFixed(2)}s，视频末尾按最后一帧 pad（这段 TTS 静音）`;
+        }
+        composeLine = `<div class="duration-compose-line" style="margin-top:4px;font-size:var(--text-xs);color:var(--fg-muted);">视频合成处理逻辑：以<b>原视频时长</b>为准 → 最终 mp4 <b>${videoDur.toFixed(2)}s</b>（${composeNote}；视频画面按 timeline_manifest 切分对齐 TTS 各段）</div>`;
+      }
       // ±5% 内 ffmpeg atempo 兜底过：把变速 ratio / 兜底前 → 兜底后 / 新差距列出来
       let tempoLine = '';
       if (winner.tempo_applied) {
@@ -1944,14 +1959,17 @@
         lines.push(`<strong>✓ 收敛成功</strong>：第 ${finalRound} 轮音频 ${finalDuration.toFixed(1)}s 首次落入目标区间${rangeStr}，直接采用。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
+        if (composeLine) lines.push(composeLine);
       } else if (finalReason === 'best_pick') {
         lines.push(`<strong>⚠ 5 轮未精确收敛</strong>：挑选距目标区间最近的第 ${finalRound} 轮采用。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
+        if (composeLine) lines.push(composeLine);
       } else {
         lines.push(`<strong>采用第 ${finalRound} 轮</strong>（最终音频 ${finalDuration.toFixed(1)}s${rangeStr}）。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
+        if (composeLine) lines.push(composeLine);
       }
       if (trimmed) {
         const trimBits = [];
