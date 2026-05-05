@@ -31,9 +31,8 @@ from web.services.media_detail_mutations import (
     reorder_detail_images as reorder_detail_images_command,
 )
 from web.services.media_detail_uploads import (
-    optional_int,
-    validate_completed_images,
-    validate_upload_files,
+    build_detail_images_bootstrap_response as _build_detail_images_bootstrap_response_impl,
+    build_detail_images_complete_response as _build_detail_images_complete_response_impl,
 )
 from web.services.media_detail_translation import (
     apply_detail_translate_task,
@@ -136,6 +135,35 @@ def _build_detail_images_from_url_response(
         get_detail_image_fn=medias.get_detail_image,
         serialize_detail_image_fn=_serialize_detail_image,
         max_download_candidates=_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES,
+    )
+
+
+def _build_detail_images_bootstrap_response(
+    pid: int,
+    body: dict,
+    user_id: int,
+):
+    return _build_detail_images_bootstrap_response_impl(
+        pid,
+        int(user_id),
+        body,
+        parse_lang_fn=_parse_lang,
+        detail_image_limit_error_fn=_detail_image_limit_error,
+        reserve_local_media_upload_fn=_reserve_local_media_upload,
+        build_media_object_key_fn=object_keys.build_media_object_key,
+    )
+
+
+def _build_detail_images_complete_response(pid: int, body: dict):
+    return _build_detail_images_complete_response_impl(
+        pid,
+        body,
+        parse_lang_fn=_parse_lang,
+        is_media_available_fn=_is_media_available,
+        detail_image_limit_error_fn=_detail_image_limit_error,
+        add_detail_image_fn=medias.add_detail_image,
+        get_detail_image_fn=medias.get_detail_image,
+        serialize_detail_image_fn=_serialize_detail_image,
     )
 
 
@@ -300,34 +328,12 @@ def api_detail_images_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-
-    validation = validate_upload_files(body.get("files") or [])
-    if validation.error:
-        return jsonify({"error": validation.error}), 400
-    validated_files = validation.items
-
-    limit_error = _detail_image_limit_error(pid, lang, validated_files)
-    if limit_error:
-        return jsonify({"error": limit_error}), 400
-
-    uploads = []
-    for idx, f in enumerate(validated_files):
-        object_key = object_keys.build_media_object_key(
-            current_user.id, pid, f"detail_{lang}_{idx:02d}_{f['filename']}",
-        )
-        uploads.append({
-            "idx": idx,
-            "object_key": object_key,
-            "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
-        })
-
-    return jsonify({
-        "uploads": uploads,
-        "storage_backend": "local",
-    })
+    result = _routes()._build_detail_images_bootstrap_response(
+        pid,
+        body,
+        current_user.id,
+    )
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/detail-images/complete", methods=["POST"])
@@ -338,37 +344,8 @@ def api_detail_images_complete(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-
-    validation = validate_completed_images(
-        body.get("images") or [],
-        is_media_available=_is_media_available,
-    )
-    if validation.error:
-        return jsonify({"error": validation.error}), 400
-    validated_images = validation.items
-
-    limit_error = _detail_image_limit_error(pid, lang, validated_images)
-    if limit_error:
-        return jsonify({"error": limit_error}), 400
-
-    created: list[dict] = []
-    for img in validated_images:
-        new_id = medias.add_detail_image(
-            pid, lang, img["object_key"],
-            content_type=img.get("content_type") or None,
-            file_size=optional_int(img.get("file_size") or img.get("size")),
-            width=optional_int(img.get("width")),
-            height=optional_int(img.get("height")),
-            origin_type="manual",
-        )
-        row = medias.get_detail_image(new_id)
-        if row:
-            created.append(_serialize_detail_image(row))
-
-    return jsonify({"items": created}), 201
+    result = _routes()._build_detail_images_complete_response(pid, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/detail-images/<int:image_id>", methods=["DELETE"])
