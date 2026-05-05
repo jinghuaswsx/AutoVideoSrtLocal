@@ -4,6 +4,12 @@ from flask import abort, jsonify, request
 from flask_login import login_required
 
 from appcore import medias
+from web.services.media_pushes import (
+    build_product_links_push_error_response,
+    build_product_localized_texts_push_error_response,
+    build_product_unsuitable_push_error_response,
+)
+
 from . import bp
 
 
@@ -14,47 +20,18 @@ def _routes_module():
 
 
 def _product_links_push_error_response(exc: Exception):
-    routes = _routes_module()
-    app_pushes = routes.pushes
-    message = str(exc)
-    if isinstance(exc, app_pushes.ProductNotListedError):
-        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送投放链接"}), 409
-    if isinstance(exc, app_pushes.ProductLinksPushConfigError):
-        return jsonify({"error": message or "push_product_links_config_missing"}), 500
-    if isinstance(exc, app_pushes.ProductLinksPayloadError):
-        status = 400
-        return jsonify({"error": message or "product_links_payload_invalid"}), status
-    return jsonify({"error": "product_links_push_failed", "message": message}), 500
+    result = build_product_links_push_error_response(exc)
+    return jsonify(result.payload), result.status_code
 
 
 def _product_localized_texts_push_error_response(exc: Exception):
-    routes = _routes_module()
-    app_pushes = routes.pushes
-    message = str(exc)
-    if isinstance(exc, app_pushes.ProductNotListedError):
-        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送小语种文案"}), 409
-    if isinstance(exc, app_pushes.ProductLocalizedTextsPushConfigError):
-        return jsonify({"error": message or "push_localized_texts_config_missing"}), 500
-    if isinstance(exc, app_pushes.ProductLocalizedTextsPayloadError):
-        return jsonify({"error": message or "localized_texts_payload_invalid"}), 400
-    return jsonify({"error": "product_localized_texts_push_failed", "message": message}), 500
+    result = build_product_localized_texts_push_error_response(exc)
+    return jsonify(result.payload), result.status_code
 
 
 def _product_unsuitable_push_error_response(exc: Exception):
-    routes = _routes_module()
-    app_pushes = routes.pushes
-    message = str(exc)
-    if isinstance(exc, app_pushes.ProductNotListedError):
-        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送不合适标注"}), 409
-    if isinstance(exc, app_pushes.ProductLocalizedTextsPushConfigError):
-        return jsonify({"error": message or "push_localized_texts_config_missing"}), 500
-    if isinstance(exc, app_pushes.ProductLinksPushConfigError):
-        return jsonify({"error": message or "push_product_links_config_missing"}), 500
-    if isinstance(exc, app_pushes.ProductLocalizedTextsPayloadError):
-        return jsonify({"error": message or "localized_texts_payload_invalid"}), 400
-    if isinstance(exc, app_pushes.ProductLinksPayloadError):
-        return jsonify({"error": message or "product_links_payload_invalid"}), 400
-    return jsonify({"error": "product_unsuitable_push_failed", "message": message}), 500
+    result = build_product_unsuitable_push_error_response(exc)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/product-links-push/payload", methods=["GET"])

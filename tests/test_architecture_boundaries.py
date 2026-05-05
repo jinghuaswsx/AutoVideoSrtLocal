@@ -988,6 +988,36 @@ def test_media_cover_from_url_responses_live_outside_route_module():
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_media_push_error_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/pushes.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "_product_links_push_error_response",
+        "_product_localized_texts_push_error_response",
+        "_product_unsuitable_push_error_response",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "ProductNotListedError" not in route_source
+    assert "ProductLinksPushConfigError" not in route_source
+    assert "ProductLocalizedTextsPushConfigError" not in route_source
+    assert "ProductLinksPayloadError" not in route_source
+    assert "ProductLocalizedTextsPayloadError" not in route_source
+    assert "product_not_listed" not in route_source
+    assert "product_unsuitable_push_failed" not in route_source
+    assert "build_product_links_push_error_response" in route_source
+    assert "build_product_localized_texts_push_error_response" in route_source
+    assert "build_product_unsuitable_push_error_response" in route_source
+    assert Path("web/services/media_pushes.py").exists()
+
+
 def test_mk_copywriting_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
