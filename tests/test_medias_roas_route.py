@@ -1,6 +1,27 @@
 from __future__ import annotations
 
 
+def test_roas_page_delegates_template_context_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    product = {"id": 6, "user_id": 1, "name": "x", "product_code": "x-rjc"}
+    captured = {}
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(r, "_can_access_product", lambda row: row is product)
+
+    def fake_context(row):
+        captured["product"] = row
+        return {"product": {"id": 6, "product_code": "x-rjc"}, "roas_rmb_per_usd": 6.83}
+
+    monkeypatch.setattr(r, "_build_roas_page_context", fake_context)
+
+    resp = authed_client_no_db.get("/medias/6/roas")
+
+    assert resp.status_code == 200
+    assert captured["product"] is product
+
+
 def test_roas_page_returns_html_for_owner(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

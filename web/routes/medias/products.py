@@ -42,6 +42,9 @@ from web.services.media_xmyc_skus import (
     build_xmyc_sku_update_response as _build_xmyc_sku_update_response_impl,
     build_xmyc_skus_list_response as _build_xmyc_skus_list_response_impl,
 )
+from web.services.media_roas_page import (
+    build_roas_page_context as _build_roas_page_context_impl,
+)
 
 
 def _routes_module():
@@ -173,6 +176,13 @@ def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
         list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
         get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
         serialize_product_skus_fn=_serialize_product_skus,
+    )
+
+
+def _build_roas_page_context(product: dict):
+    return _build_roas_page_context_impl(
+        product,
+        serialize_product_fn=_serialize_product,
     )
 
 
@@ -343,6 +353,5 @@ def roas_page(pid: int):
         abort(404)
     return render_template(
         "medias/roas.html",
-        product=_serialize_product(product),
-        roas_rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
+        **routes._build_roas_page_context(product),
     )

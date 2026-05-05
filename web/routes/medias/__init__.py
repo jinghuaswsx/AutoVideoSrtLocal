@@ -370,6 +370,7 @@ _build_product_owner_update_response = _products._build_product_owner_update_res
 _build_product_create_response = _products._build_product_create_response
 _build_product_update_response = _products._build_product_update_response
 _build_product_delete_response = _products._build_product_delete_response
+_build_roas_page_context = _products._build_roas_page_context
 api_mk_copywriting = _products.api_mk_copywriting
 api_list_products = _products.api_list_products
 api_create_product = _products.api_create_product
@@ -378,6 +379,7 @@ api_update_product = _products.api_update_product
 api_update_product_owner = _products.api_update_product_owner
 api_delete_product = _products.api_delete_product
 api_refresh_product_shopify_sku = _products.api_refresh_product_shopify_sku
+roas_page = _products.roas_page
 
 _product_links_push_error_response = _push_routes._product_links_push_error_response
 _product_localized_texts_push_error_response = _push_routes._product_localized_texts_push_error_response

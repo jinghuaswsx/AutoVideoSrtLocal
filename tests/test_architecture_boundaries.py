@@ -1271,6 +1271,22 @@ def test_refresh_shopify_sku_response_lives_outside_route_module():
     assert Path("web/services/media_shopify_sku_refresh.py").exists()
 
 
+def test_roas_page_context_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "roas_page"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "_serialize_product(" not in route_source
+    assert "product_roas.get_configured_rmb_per_usd" not in route_source
+    assert "_build_roas_page_context" in route_source
+    assert Path("web/services/media_roas_page.py").exists()
+
+
 def test_task_delete_storage_cleanup_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
