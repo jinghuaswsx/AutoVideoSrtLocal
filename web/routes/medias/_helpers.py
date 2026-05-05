@@ -137,7 +137,7 @@ def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None
     """Return (lang, error). When validation fails, return (None, error)."""
     lang = (body.get("lang") or default).strip().lower()
     if not medias.is_valid_language(lang):
-        return None, f"涓嶆敮鎸佺殑璇: {lang}"
+        return None, f"unsupported language: {lang}"
     return lang, None
 
 
@@ -169,14 +169,14 @@ def _download_image_to_local_media(
         resp.raise_for_status()
         ct = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
         if not ct.startswith("image/"):
-            return None, None, f"闈炲浘鐗囩被鍨? {ct}"
+            return None, None, f"下载内容不是图片: {ct}"
         data = b""
         for chunk in resp.iter_content(chunk_size=64 * 1024):
             data += chunk
             if len(data) > _MAX_IMAGE_BYTES:
                 return None, None, "image too large (>15MB)"
     except requests.RequestException as e:
-        return None, None, f"涓嬭浇澶辫触: {e}"
+        return None, None, f"下载失败: {e}"
 
     ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(ct, ".jpg")
     name_from_url = os.path.basename(parsed.path or "") or "from_url"
@@ -190,11 +190,11 @@ def _download_image_to_local_media(
 
 def _validate_product_code(code: str) -> tuple[bool, str | None]:
     if not code:
-        return False, "浜у搧 ID 蹇呭～"
+        return False, "产品 ID 不能为空"
     if not code.endswith(_PRODUCT_CODE_SUFFIX):
         return False, _PRODUCT_CODE_SUFFIX_ERROR
     if not _SLUG_RE.match(code):
-        return False, "浜у搧 ID 鍙兘浣跨敤灏忓啓瀛楁瘝銆佹暟瀛楀拰杩炲瓧绗︼紝闀垮害 3-128锛屼笖棣栧熬涓嶈兘鏄繛瀛楃"
+        return False, "产品 ID 只能使用小写字母、数字和连字符，长度 3-128，且首尾不能是连字符"
     return True, None
 
 

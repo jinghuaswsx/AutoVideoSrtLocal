@@ -70,11 +70,11 @@ def build_detail_images_zip_response(
 ) -> DetailImagesArchiveResponse:
     lang = (lang or "en").strip().lower()
     if not is_valid_language_fn(lang):
-        return DetailImagesArchiveResponse(error=f"涓嶆敮鎸佺殑璇: {lang}", status_code=400)
+        return DetailImagesArchiveResponse(error=f"unsupported language: {lang}", status_code=400)
 
     kind = (kind or "image").strip().lower()
     if kind not in {"image", "gif", "all"}:
-        return DetailImagesArchiveResponse(error=f"涓嶆敮鎸佺殑 kind: {kind}", status_code=400)
+        return DetailImagesArchiveResponse(error=f"unsupported kind: {kind}", status_code=400)
 
     rows = list(list_detail_images_fn(product_id, lang))
     if not rows:

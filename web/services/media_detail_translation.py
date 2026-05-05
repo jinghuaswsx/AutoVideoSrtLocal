@@ -164,14 +164,14 @@ def build_detail_translate_from_en_response(
     translatable_rows = [row for row in source_rows if not detail_images_is_gif_fn(row)]
     if not translatable_rows:
         return DetailTranslateFromEnOutcome(
-            error="鑻辫鐗堣鎯呭浘鍏ㄩ儴涓?GIF 鍔ㄥ浘锛屾棤鍙炕璇戠殑闈欐€佸浘",
+            error="英文版详情图全部为 GIF 动图，无可翻译的静态图",
             status_code=409,
         )
 
     prompt_template = str((get_prompts_for_lang_fn(target_lang).get("detail") or "")).strip()
     if not prompt_template:
         return DetailTranslateFromEnOutcome(
-            error="褰撳墠璇鏈厤缃鎯呭浘缈昏瘧 prompt",
+            error="当前语种未配置详情图翻译 prompt",
             status_code=409,
         )
 
@@ -256,7 +256,7 @@ def build_detail_translate_tasks_response(
     normalized_target_lang = (target_lang or "").strip().lower()
     if not is_valid_language_fn(normalized_target_lang):
         return DetailTranslateTasksOutcome(
-            error=f"涓嶆敮鎸佺殑璇: {normalized_target_lang}",
+            error=f"unsupported language: {normalized_target_lang}",
             status_code=400,
         )
 

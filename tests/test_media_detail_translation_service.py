@@ -131,7 +131,7 @@ def test_build_detail_translate_from_en_response_rejects_only_gif_sources():
     )
 
     assert outcome.status_code == 409
-    assert "GIF" in outcome.error
+    assert outcome.error == "英文版详情图全部为 GIF 动图，无可翻译的静态图"
     assert create_calls == []
 
 
@@ -158,7 +158,7 @@ def test_build_detail_translate_from_en_response_rejects_missing_prompt():
     )
 
     assert outcome.status_code == 409
-    assert "prompt" in outcome.error
+    assert outcome.error == "当前语种未配置详情图翻译 prompt"
     assert create_calls == []
 
 
@@ -216,7 +216,7 @@ def test_build_detail_translate_tasks_response_rejects_invalid_language_before_q
 
     assert outcome.status_code == 400
     assert outcome.payload is None
-    assert outcome.error == "涓嶆敮鎸佺殑璇: xx"
+    assert outcome.error == "unsupported language: xx"
 
 
 def test_apply_detail_translate_task_rejects_foreign_product_without_applying():

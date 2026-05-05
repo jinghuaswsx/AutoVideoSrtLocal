@@ -29,7 +29,7 @@ def build_detail_images_list_response(
     normalized_lang = (lang or "en").strip().lower()
     if not is_valid_language_fn(normalized_lang):
         return DetailImagesListResponse(
-            {"error": f"涓嶆敮鎸佺殑璇: {normalized_lang}"},
+            {"error": f"unsupported language: {normalized_lang}"},
             400,
         )
 

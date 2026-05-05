@@ -59,12 +59,12 @@ def start_product_translation(
     content_types = body.get("content_types") or list(DEFAULT_CONTENT_TYPES)
 
     if ("videos" in content_types or "video_covers" in content_types) and not raw_ids:
-        return _validation_error("raw_ids 涓嶈兘涓虹┖")
+        return _validation_error("raw_ids 不能为空")
     if not target_langs:
-        return _validation_error("target_langs 涓嶈兘涓虹┖")
+        return _validation_error("target_langs 不能为空")
 
     if not isinstance(content_types, list) or not content_types:
-        return _validation_error("content_types 娑撳秷鍏樻稉铏光敄")
+        return _validation_error("content_types 不能为空")
 
     raw_ids_int, error = _coerce_raw_ids(raw_ids)
     if error:
@@ -74,15 +74,15 @@ def start_product_translation(
     valid_ids = {int(r["id"]) for r in rows}
     bad = [rid for rid in raw_ids_int if rid not in valid_ids]
     if bad:
-        return _validation_error(f"raw_ids 涓嶅睘浜庤浜у搧鎴栧凡鍒犻櫎: {bad}")
+        return _validation_error(f"raw_ids 不属于该产品或已删除: {bad}")
 
     for lang in target_langs:
         if lang == "en" or not medias.is_valid_language(lang):
-            return _validation_error(f"target_langs 闈炴硶: {lang}")
+            return _validation_error(f"target_langs 不支持: {lang}")
 
     for content_type in content_types:
         if content_type not in ALLOWED_CONTENT_TYPES:
-            return _validation_error(f"content_types 闂堢偞纭? {content_type}")
+            return _validation_error(f"content_types 不支持: {content_type}")
 
     initiator = {
         "user_id": user_id,

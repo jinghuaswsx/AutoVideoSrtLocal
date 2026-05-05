@@ -17,7 +17,66 @@ def test_start_product_translation_requires_raw_sources_for_video_content(monkey
 
     assert result.ok is False
     assert result.status_code == 400
-    assert "raw_ids" in result.error
+    assert result.error == "raw_ids 不能为空"
+
+
+def test_start_product_translation_returns_readable_validation_errors(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    monkeypatch.setattr(svc.medias, "list_raw_sources", lambda product_id: [{"id": 88}])
+    monkeypatch.setattr(svc.medias, "is_valid_language", lambda lang: lang == "de")
+    monkeypatch.setattr(
+        svc.bulk_translate_runtime,
+        "create_bulk_translate_task",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("create not reached")),
+    )
+
+    no_lang = svc.start_product_translation(
+        user_id=1,
+        user_name="admin",
+        product_id=123,
+        body={"raw_ids": [88], "target_langs": [], "content_types": ["copywriting"]},
+        ip="",
+        user_agent="",
+    )
+    bad_content_shape = svc.start_product_translation(
+        user_id=1,
+        user_name="admin",
+        product_id=123,
+        body={"raw_ids": [88], "target_langs": ["de"], "content_types": "copywriting"},
+        ip="",
+        user_agent="",
+    )
+    bad_raw = svc.start_product_translation(
+        user_id=1,
+        user_name="admin",
+        product_id=123,
+        body={"raw_ids": [99], "target_langs": ["de"], "content_types": ["videos"]},
+        ip="",
+        user_agent="",
+    )
+    bad_lang = svc.start_product_translation(
+        user_id=1,
+        user_name="admin",
+        product_id=123,
+        body={"raw_ids": [88], "target_langs": ["xx"], "content_types": ["copywriting"]},
+        ip="",
+        user_agent="",
+    )
+    bad_content = svc.start_product_translation(
+        user_id=1,
+        user_name="admin",
+        product_id=123,
+        body={"raw_ids": [88], "target_langs": ["de"], "content_types": ["bad"]},
+        ip="",
+        user_agent="",
+    )
+
+    assert no_lang.error == "target_langs 不能为空"
+    assert bad_content_shape.error == "content_types 不能为空"
+    assert bad_raw.error == "raw_ids 不属于该产品或已删除: [99]"
+    assert bad_lang.error == "target_langs 不支持: xx"
+    assert bad_content.error == "content_types 不支持: bad"
 
 
 def test_start_product_translation_rejects_unlisted_product_before_listing(monkeypatch):

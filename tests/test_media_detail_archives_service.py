@@ -54,6 +54,17 @@ def test_build_detail_images_zip_response_filters_gif_and_builds_audit_detail(tm
 def test_build_detail_images_zip_response_rejects_invalid_kind_before_listing():
     from web.services.media_detail_archives import build_detail_images_zip_response
 
+    invalid_lang = build_detail_images_zip_response(
+        123,
+        {"product_code": "demo"},
+        "xx",
+        "image",
+        is_valid_language_fn=lambda lang: False,
+        list_detail_images_fn=lambda pid, lang: (_ for _ in ()).throw(AssertionError("list not reached")),
+        detail_images_is_gif_fn=lambda row: False,
+        archive_basename_fn=lambda product, pid, lang: "demo",
+        download_media_object_fn=lambda object_key, local_path: None,
+    )
     result = build_detail_images_zip_response(
         123,
         {"product_code": "demo"},
@@ -66,8 +77,10 @@ def test_build_detail_images_zip_response_rejects_invalid_kind_before_listing():
         download_media_object_fn=lambda object_key, local_path: None,
     )
 
+    assert invalid_lang.status_code == 400
+    assert invalid_lang.error == "unsupported language: xx"
     assert result.status_code == 400
-    assert result.error == "涓嶆敮鎸佺殑 kind: video"
+    assert result.error == "unsupported kind: video"
     assert result.archive is None
 
 

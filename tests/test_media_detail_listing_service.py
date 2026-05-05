@@ -39,7 +39,7 @@ def test_build_detail_images_list_response_rejects_invalid_language_before_listi
     )
 
     assert result.status_code == 400
-    assert result.payload == {"error": "涓嶆敮鎸佺殑璇: xx"}
+    assert result.payload == {"error": "unsupported language: xx"}
 
 
 def test_build_detail_image_proxy_response_returns_accessible_object_key():
