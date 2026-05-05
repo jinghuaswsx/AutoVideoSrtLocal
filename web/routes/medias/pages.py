@@ -3,7 +3,12 @@ from __future__ import annotations
 from flask import abort, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
-from appcore import medias, product_roas, shopify_image_localizer_release
+from appcore import medias
+from web.services.media_pages import (
+    build_active_users_response,
+    build_languages_response,
+    build_medias_page_context,
+)
 from . import bp
 
 
@@ -14,19 +19,7 @@ def _routes_module():
 
 
 def _medias_page_context(**extra):
-    roas_rmb_per_usd = product_roas.get_configured_rmb_per_usd()
-    initial_query = (
-        request.args.get("q")
-        or request.args.get("keyword")
-        or extra.get("initial_query")
-        or ""
-    )
-    return {
-        "shopify_image_localizer_release": shopify_image_localizer_release.get_release_info(),
-        "material_roas_rmb_per_usd": float(roas_rmb_per_usd),
-        "medias_initial_query": str(initial_query).strip(),
-        **extra,
-    }
+    return build_medias_page_context(request.args, extra)
 
 
 @bp.route("/")
@@ -76,13 +69,13 @@ def translation_tasks_page(pid: int):
 def api_list_active_users():
     if not _routes_module()._is_admin():
         return jsonify({"error": "仅管理员可访问"}), 403
-    return jsonify({"users": medias.list_active_users()})
+    return jsonify(build_active_users_response())
 
 
 @bp.route("/api/languages", methods=["GET"])
 @login_required
 def api_list_languages():
-    return jsonify({"items": medias.list_languages()})
+    return jsonify(build_languages_response())
 
 
 @bp.route("/mk-selection")

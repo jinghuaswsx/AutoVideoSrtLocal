@@ -892,6 +892,33 @@ def test_local_media_upload_response_lives_outside_route_module():
     assert Path("web/services/media_local_upload.py").exists()
 
 
+def test_media_page_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/pages.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "_medias_page_context",
+        "api_list_active_users",
+        "api_list_languages",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "product_roas.get_configured_rmb_per_usd" not in route_source
+    assert "shopify_image_localizer_release.get_release_info" not in route_source
+    assert "medias.list_active_users" not in route_source
+    assert "medias.list_languages" not in route_source
+    assert "build_medias_page_context" in route_source
+    assert "build_active_users_response" in route_source
+    assert "build_languages_response" in route_source
+    assert Path("web/services/media_pages.py").exists()
+
+
 def test_media_cover_bootstrap_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
