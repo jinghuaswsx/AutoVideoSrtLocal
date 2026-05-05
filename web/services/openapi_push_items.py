@@ -11,6 +11,8 @@ from web.services.openapi_materials_serializers import iso_or_none, media_downlo
 
 QueryOneFn = Callable[[str, tuple], dict | None]
 MediaUrlFn = Callable[[str | None], str | None]
+ListItemsFn = Callable[[int, str], list[dict]]
+ResolvePushTextsFn = Callable[[int], list[dict[str, str]]]
 RecordSuccessFn = Callable[..., int]
 RecordFailureFn = Callable[..., int]
 
@@ -126,6 +128,57 @@ def build_push_item_payload_response(
         "payload": payload,
         "localized_text": localized_text,
         "localized_texts_request": localized_texts_request,
+    }
+
+
+def build_material_push_payload(
+    product: dict,
+    *,
+    lang: str,
+    product_code: str | None = None,
+    list_items_fn: ListItemsFn = medias.list_items,
+    resolve_push_texts_fn: ResolvePushTextsFn = pushes.resolve_push_texts,
+    media_download_url_fn: MediaUrlFn = media_download_url,
+) -> dict:
+    if not medias.is_product_listed(product):
+        raise pushes.ProductNotListedError("product_not_listed")
+
+    product_id = int(product["id"])
+    items = list_items_fn(product_id, lang)
+    code = (product_code or product.get("product_code") or "").strip().lower()
+    product_links = (
+        [f"https://newjoyloo.com/{lang}/products/{code}"]
+        if lang != "en" else []
+    )
+    texts = resolve_push_texts_fn(product_id)
+
+    videos = []
+    for item in items or []:
+        object_key = item.get("object_key")
+        cover_object_key = item.get("cover_object_key")
+        videos.append({
+            "name": item.get("display_name") or item.get("filename") or "",
+            "size": int(item.get("file_size") or 0),
+            "width": 1080,
+            "height": 1920,
+            "url": media_download_url_fn(object_key),
+            "image_url": media_download_url_fn(cover_object_key),
+        })
+
+    return {
+        "mode": "create",
+        "product_name": product.get("name") or "",
+        "texts": texts,
+        "product_links": product_links,
+        "videos": videos,
+        "source": 0,
+        "level": int(product.get("importance") or 3),
+        "author": "\u8521\u9756\u534e",
+        "push_admin": "\u8521\u9756\u534e",
+        "roas": 1.6,
+        "platforms": ["tiktok"],
+        "selling_point": product.get("selling_points") or "",
+        "tags": [],
     }
 
 

@@ -246,6 +246,39 @@ def test_returns_product_assets(client, monkeypatch):
     assert payload["storage_backend"] == "local"
 
 
+def test_push_payload_route_delegates_payload_building(client, monkeypatch):
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_product_by_code",
+        lambda code: {"id": 123, "product_code": code, "name": "Alpha"},
+    )
+
+    def fake_build_material_push_payload(product, *, lang, product_code):
+        captured.update({
+            "product": product,
+            "lang": lang,
+            "product_code": product_code,
+        })
+        return {"mode": "create", "product_name": product["name"], "videos": []}
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_material_push_payload",
+        fake_build_material_push_payload,
+    )
+
+    response = client.get(
+        "/openapi/materials/Alpha-RJC/push-payload?lang=DE",
+        headers={"X-API-Key": "demo-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"mode": "create", "product_name": "Alpha", "videos": []}
+    assert captured["product"]["id"] == 123
+    assert captured["lang"] == "de"
+    assert captured["product_code"] == "alpha-rjc"
+
+
 def test_shopify_localizer_bootstrap_accepts_shopify_id_override(client, monkeypatch):
     monkeypatch.setattr(
         "web.routes.openapi_materials.medias.is_valid_language",

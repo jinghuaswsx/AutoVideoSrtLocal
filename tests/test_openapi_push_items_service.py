@@ -276,6 +276,84 @@ def test_build_push_item_payload_response_combines_payload_and_localized_text(mo
     assert payload["item"]["cover_url"] == "https://local/k.jpg"
 
 
+def test_build_material_push_payload_lists_items_and_serializes_video_urls(monkeypatch):
+    from web.services import openapi_push_items
+
+    monkeypatch.setattr(
+        openapi_push_items.medias,
+        "is_product_listed",
+        lambda product: True,
+    )
+
+    captured: dict = {}
+
+    def fake_list_items(product_id, lang):
+        captured["list_items"] = (product_id, lang)
+        return [
+            {
+                "display_name": "Demo",
+                "filename": "demo.mp4",
+                "file_size": 1234,
+                "object_key": "video/demo.mp4",
+                "cover_object_key": "cover/demo.jpg",
+            },
+            {
+                "display_name": "",
+                "filename": "fallback.mp4",
+                "file_size": None,
+                "object_key": None,
+                "cover_object_key": None,
+            },
+        ]
+
+    def fake_resolve_push_texts(product_id):
+        captured["resolve_push_texts"] = product_id
+        return [{"title": "T", "message": "M", "description": "D"}]
+
+    product = {
+        "id": 123,
+        "name": "Alpha",
+        "product_code": "alpha-rjc",
+        "importance": 5,
+        "selling_points": "point",
+    }
+
+    payload = openapi_push_items.build_material_push_payload(
+        product,
+        lang="de",
+        product_code="alpha-rjc",
+        list_items_fn=fake_list_items,
+        resolve_push_texts_fn=fake_resolve_push_texts,
+        media_download_url_fn=lambda key: f"https://local/{key}" if key else None,
+    )
+
+    assert captured == {"list_items": (123, "de"), "resolve_push_texts": 123}
+    assert payload["mode"] == "create"
+    assert payload["product_name"] == "Alpha"
+    assert payload["texts"] == [{"title": "T", "message": "M", "description": "D"}]
+    assert payload["product_links"] == ["https://newjoyloo.com/de/products/alpha-rjc"]
+    assert payload["level"] == 5
+    assert payload["selling_point"] == "point"
+    assert payload["videos"] == [
+        {
+            "name": "Demo",
+            "size": 1234,
+            "width": 1080,
+            "height": 1920,
+            "url": "https://local/video/demo.mp4",
+            "image_url": "https://local/cover/demo.jpg",
+        },
+        {
+            "name": "fallback.mp4",
+            "size": 0,
+            "width": 1080,
+            "height": 1920,
+            "url": None,
+            "image_url": None,
+        },
+    ]
+
+
 def test_build_mark_pushed_response_records_payload():
     from web.services import openapi_push_items
 

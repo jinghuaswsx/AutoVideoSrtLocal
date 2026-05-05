@@ -784,6 +784,25 @@ def test_openapi_push_item_writeback_lives_outside_route_module():
     assert Path("web/services/openapi_push_items.py").exists()
 
 
+def test_openapi_material_push_payload_lives_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "build_push_payload"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias.is_product_listed" not in route_source
+    assert "medias.list_items" not in route_source
+    assert "pushes.resolve_push_texts" not in route_source
+    assert "product_links =" not in route_source
+    assert "videos = []" not in route_source
+    assert '"platforms": ["tiktok"]' not in route_source
+    assert Path("web/services/openapi_push_items.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

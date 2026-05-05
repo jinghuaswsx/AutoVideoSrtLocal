@@ -34,6 +34,7 @@ from web.services.openapi_materials_serializers import (
 from web.services.openapi_push_items import (
     build_mark_failed_response as _build_mark_failed_response,
     build_mark_pushed_response as _build_mark_pushed_response,
+    build_material_push_payload as _build_material_push_payload,
     build_push_item_payload_response as _build_push_item_payload_response,
     filter_push_items_by_status as _filter_push_items_by_status,
     paginate_push_items as _paginate_push_items,
@@ -230,57 +231,16 @@ def build_push_payload(product_code: str):
     product = medias.get_product_by_code(code)
     if not product:
         return jsonify({"error": "product not found"}), 404
-    if not medias.is_product_listed(product):
-        return jsonify({"error": "product_not_listed"}), 409
-
-    product_id = product["id"]
-    items = medias.list_items(product_id, lang)
-
-    product_links = (
-        [f"https://newjoyloo.com/{lang}/products/{code}"]
-        if lang != "en" else []
-    )
 
     try:
-        texts = pushes.resolve_push_texts(product_id)
+        payload = _build_material_push_payload(product, lang=lang, product_code=code)
+    except pushes.ProductNotListedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
         return jsonify({
             "error": str(exc),
             "code": "copywriting_not_ready",
         }), 409
-
-    videos = []
-    for it in items:
-        object_key = it.get("object_key")
-        cover_object_key = it.get("cover_object_key")
-        videos.append({
-            "name": it.get("display_name") or it.get("filename") or "",
-            "size": int(it.get("file_size") or 0),
-            "width": 1080,
-            "height": 1920,
-            "url": (
-                _media_download_url(object_key)
-            ),
-            "image_url": (
-                _media_download_url(cover_object_key)
-            ),
-        })
-
-    payload = {
-        "mode": "create",
-        "product_name": product.get("name") or "",
-        "texts": texts,
-        "product_links": product_links,
-        "videos": videos,
-        "source": 0,
-        "level": int(product.get("importance") or 3),
-        "author": "蔡靖华",
-        "push_admin": "蔡靖华",
-        "roas": 1.6,
-        "platforms": ["tiktok"],
-        "selling_point": product.get("selling_points") or "",
-        "tags": [],
-    }
     return jsonify(payload)
 
 
