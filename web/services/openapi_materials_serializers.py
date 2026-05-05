@@ -9,6 +9,12 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from appcore import medias, pushes
 
 
+GetProductCoversFn = Callable[[int], dict]
+ListCopywritingsFn = Callable[[int], list[dict]]
+ListItemsFn = Callable[[int], list[dict]]
+MediaDownloadUrlFn = Callable[[str | None], str | None]
+
+
 def media_download_url(object_key: str | None) -> str | None:
     # 所有 openapi 返回的媒体 URL 统一走内网本地 serve（/medias/obj/<key>），不再用 TOS 预签链接
     if not object_key:
@@ -97,7 +103,7 @@ def serialize_shopify_image_task(task: dict | None) -> dict | None:
 def serialize_items(
     rows: list[dict],
     *,
-    media_download_url: Callable[[str | None], str | None] = media_download_url,
+    media_download_url: MediaDownloadUrlFn = media_download_url,
 ) -> list[dict]:
     items: list[dict] = []
     for row in rows or []:
@@ -117,6 +123,32 @@ def serialize_items(
             "created_at": iso_or_none(row.get("created_at")),
         })
     return items
+
+
+def build_material_detail_response(
+    product: dict,
+    *,
+    get_product_covers_fn: GetProductCoversFn | None = None,
+    list_copywritings_fn: ListCopywritingsFn | None = None,
+    list_items_fn: ListItemsFn | None = None,
+    media_download_url_fn: MediaDownloadUrlFn = media_download_url,
+) -> dict:
+    get_product_covers_fn = get_product_covers_fn or medias.get_product_covers
+    list_copywritings_fn = list_copywritings_fn or medias.list_copywritings
+    list_items_fn = list_items_fn or medias.list_items
+
+    product_id = int(product["id"])
+    covers = get_product_covers_fn(product_id)
+    copywritings = list_copywritings_fn(product_id)
+    items = list_items_fn(product_id)
+
+    return {
+        "product": serialize_product(product),
+        "covers": serialize_cover_map(covers, media_download_url=media_download_url_fn),
+        "copywritings": group_copywritings(copywritings),
+        "items": serialize_items(items, media_download_url=media_download_url_fn),
+        "storage_backend": "local",
+    }
 
 
 def normalize_target_url(target_url: str) -> str:

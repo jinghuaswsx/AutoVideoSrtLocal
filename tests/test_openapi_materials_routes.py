@@ -154,6 +154,33 @@ def test_returns_404_for_missing_product(client, monkeypatch):
     assert response.get_json() == {"error": "product not found"}
 
 
+def test_get_material_route_delegates_response_building(client, monkeypatch):
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_product_by_code",
+        lambda code: {"id": 123, "product_code": code, "name": "Demo"},
+    )
+
+    def fake_build_material_detail_response(product):
+        captured["product"] = product
+        return {"product": {"product_code": product["product_code"]}, "items": []}
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_material_detail_response",
+        fake_build_material_detail_response,
+    )
+
+    response = client.get(
+        "/openapi/materials/Demo-RJC",
+        headers={"X-API-Key": "demo-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"product": {"product_code": "demo-rjc"}, "items": []}
+    assert captured["product"]["id"] == 123
+
+
 def test_returns_product_assets(client, monkeypatch):
     monkeypatch.setattr(
         "web.routes.openapi_materials.medias.get_product_by_code",

@@ -22,13 +22,10 @@ from web.services.openapi_materials_listing import (
     parse_archived_filter as _parse_archived_filter,
 )
 from web.services.openapi_materials_serializers import (
-    group_copywritings as _group_copywritings,
+    build_material_detail_response as _build_material_detail_response,
     iso_or_none as _iso_or_none,
     media_download_url as _media_download_url,
     normalize_target_url as _normalize_target_url,
-    serialize_cover_map as _serialize_cover_map,
-    serialize_items as _serialize_items,
-    serialize_product as _serialize_product,
     serialize_shopify_image_task as _serialize_shopify_image_task,
 )
 from web.services.openapi_push_items import (
@@ -204,18 +201,7 @@ def get_material(product_code: str):
     if not product:
         return jsonify({"error": "product not found"}), 404
 
-    product_id = product["id"]
-    covers = medias.get_product_covers(product_id)
-    copywritings = medias.list_copywritings(product_id)
-    items = medias.list_items(product_id)
-
-    return jsonify({
-        "product": _serialize_product(product),
-        "covers": _serialize_cover_map(covers),
-        "copywritings": _group_copywritings(copywritings),
-        "items": _serialize_items(items),
-        "storage_backend": "local",
-    })
+    return jsonify(_build_material_detail_response(product))
 
 
 @bp.route("/<product_code>/push-payload", methods=["GET"])

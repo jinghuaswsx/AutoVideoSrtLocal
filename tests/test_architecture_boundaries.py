@@ -721,6 +721,27 @@ def test_openapi_materials_listing_helpers_live_outside_route_module():
     assert Path("web/services/openapi_materials_listing.py").exists()
 
 
+def test_openapi_material_detail_response_lives_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "get_material"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias.get_product_covers" not in route_source
+    assert "medias.list_copywritings" not in route_source
+    assert "medias.list_items" not in route_source
+    assert "_serialize_product" not in route_source
+    assert "_serialize_cover_map" not in route_source
+    assert "_group_copywritings" not in route_source
+    assert "_serialize_items" not in route_source
+    assert '"storage_backend": "local"' not in route_source
+    assert Path("web/services/openapi_materials_serializers.py").exists()
+
+
 def test_openapi_push_item_serialization_lives_outside_route_module():
     source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
 

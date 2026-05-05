@@ -120,3 +120,52 @@ def test_openapi_materials_serializes_shopify_image_task():
         "shopify_product_id": "8559391932589",
         "link_url": "https://example.com/products/demo",
     }
+
+
+def test_openapi_materials_builds_material_detail_response():
+    from web.services import openapi_materials_serializers
+
+    captured: dict = {}
+
+    def fake_get_covers(product_id):
+        captured["covers"] = product_id
+        return {"en": "cover/en.jpg"}
+
+    def fake_list_copywritings(product_id):
+        captured["copywritings"] = product_id
+        return [{"lang": "en", "title": "Title", "body": "Body"}]
+
+    def fake_list_items(product_id):
+        captured["items"] = product_id
+        return [
+            {
+                "id": 5,
+                "filename": "demo.mp4",
+                "display_name": "",
+                "object_key": "video/demo.mp4",
+                "cover_object_key": "cover/demo.jpg",
+            }
+        ]
+
+    product = {
+        "id": 123,
+        "product_code": "demo",
+        "name": "Demo",
+        "archived": 0,
+    }
+
+    payload = openapi_materials_serializers.build_material_detail_response(
+        product,
+        get_product_covers_fn=fake_get_covers,
+        list_copywritings_fn=fake_list_copywritings,
+        list_items_fn=fake_list_items,
+        media_download_url_fn=lambda key: f"https://local/{key}",
+    )
+
+    assert captured == {"covers": 123, "copywritings": 123, "items": 123}
+    assert payload["product"]["product_code"] == "demo"
+    assert payload["covers"]["en"]["download_url"] == "https://local/cover/en.jpg"
+    assert payload["copywritings"]["en"][0]["title"] == "Title"
+    assert payload["items"][0]["display_name"] == "demo.mp4"
+    assert payload["items"][0]["video_download_url"] == "https://local/video/demo.mp4"
+    assert payload["storage_backend"] == "local"
