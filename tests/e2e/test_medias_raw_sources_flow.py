@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -16,8 +17,26 @@ def _now() -> datetime:
 
 
 def _write_sample_video(path: Path) -> None:
-    # Upload route only needs bytes plus a browser-supplied video/mp4 mimetype.
-    path.write_bytes(b"\x00\x00\x00\x18ftypmp42e2e-sample-video")
+    # Keep this a real MP4 so Chromium does not replace the preview with an error
+    # before the e2e test can assert the rendered video element.
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=16x16:d=0.2",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "faststart",
+            str(path),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def _write_sample_cover(path: Path) -> None:
