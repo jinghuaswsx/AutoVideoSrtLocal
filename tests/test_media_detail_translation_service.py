@@ -250,3 +250,83 @@ def test_apply_detail_translate_task_applies_done_task_and_builds_payload():
         "apply_status": "partial_applied",
         "applied_detail_image_ids": [11, 12],
     }
+
+
+def test_build_detail_translate_apply_response_rejects_invalid_language_before_fetching_task():
+    from web.services.media_detail_translation import build_detail_translate_apply_response
+
+    outcome = build_detail_translate_apply_response(
+        product_id=123,
+        target_lang="xx",
+        task_id="img-apply",
+        user_id=1,
+        is_valid_language_fn=lambda lang: False,
+        get_task_fn=lambda task_id: (_ for _ in ()).throw(AssertionError("task fetch not reached")),
+        is_running_fn=lambda task_id: False,
+        apply_translated_detail_images_fn=lambda *args, **kwargs: None,
+    )
+
+    assert outcome.status_code == 400
+    assert outcome.error == "unsupported language: xx"
+    assert outcome.payload is None
+
+
+def test_build_detail_translate_apply_response_rejects_english_before_fetching_task():
+    from web.services.media_detail_translation import build_detail_translate_apply_response
+
+    outcome = build_detail_translate_apply_response(
+        product_id=123,
+        target_lang=" EN ",
+        task_id="img-apply",
+        user_id=1,
+        is_valid_language_fn=lambda lang: True,
+        get_task_fn=lambda task_id: (_ for _ in ()).throw(AssertionError("task fetch not reached")),
+        is_running_fn=lambda task_id: False,
+        apply_translated_detail_images_fn=lambda *args, **kwargs: None,
+    )
+
+    assert outcome.status_code == 400
+    assert outcome.error == "english detail images do not need manual apply"
+    assert outcome.payload is None
+
+
+def test_build_detail_translate_apply_response_fetches_task_and_applies_with_normalized_lang():
+    from web.services.media_detail_translation import build_detail_translate_apply_response
+
+    calls = []
+    task = {
+        "type": "image_translate",
+        "_user_id": 7,
+        "status": "done",
+        "medias_context": {"product_id": 123, "target_lang": "de"},
+    }
+
+    def fake_apply(task_arg, *, allow_partial, user_id):
+        calls.append((task_arg, allow_partial, user_id))
+        return {
+            "applied_ids": [31],
+            "skipped_failed_indices": [],
+            "apply_status": "applied",
+        }
+
+    outcome = build_detail_translate_apply_response(
+        product_id=123,
+        target_lang=" DE ",
+        task_id="img-apply",
+        user_id=7,
+        is_valid_language_fn=lambda lang: lang == "de",
+        get_task_fn=lambda task_id: task,
+        is_running_fn=lambda task_id: False,
+        apply_translated_detail_images_fn=fake_apply,
+    )
+
+    assert calls == [(task, True, 7)]
+    assert outcome.error is None
+    assert outcome.status_code == 200
+    assert outcome.payload == {
+        "ok": True,
+        "applied": 1,
+        "skipped_failed": 0,
+        "apply_status": "applied",
+        "applied_detail_image_ids": [31],
+    }

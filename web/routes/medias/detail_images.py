@@ -38,7 +38,7 @@ from web.services.media_detail_uploads import (
     build_detail_images_complete_response as _build_detail_images_complete_response_impl,
 )
 from web.services.media_detail_translation import (
-    apply_detail_translate_task,
+    build_detail_translate_apply_response as _build_detail_translate_apply_response_impl,
     build_detail_translate_from_en_response as _build_detail_translate_from_en_response_impl,
     build_detail_translate_tasks_response as _build_detail_translate_tasks_response_impl,
 )
@@ -234,6 +234,19 @@ def _build_detail_translate_tasks_response(pid: int, lang: str, user_id: int):
         lang,
         is_valid_language_fn=medias.is_valid_language,
         query_tasks_fn=db_query,
+    )
+
+
+def _build_detail_translate_apply_response(pid: int, lang: str, task_id: str, user_id: int):
+    return _build_detail_translate_apply_response_impl(
+        product_id=pid,
+        target_lang=lang,
+        task_id=task_id,
+        user_id=int(user_id),
+        is_valid_language_fn=medias.is_valid_language,
+        get_task_fn=store.get,
+        is_running_fn=image_translate_runner.is_running,
+        apply_translated_detail_images_fn=image_translate_runtime.apply_translated_detail_images_from_task,
     )
 
 
@@ -486,21 +499,11 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    lang = (lang or "").strip().lower()
-    if not medias.is_valid_language(lang):
-        return jsonify({"error": f"unsupported language: {lang}"}), 400
-    if lang == "en":
-        return jsonify({"error": "english detail images do not need manual apply"}), 400
-
-    task = store.get(task_id)
-    outcome = apply_detail_translate_task(
-        task,
-        task_id=task_id,
-        product_id=pid,
-        target_lang=lang,
-        user_id=int(current_user.id),
-        is_running=image_translate_runner.is_running,
-        apply_translated_detail_images=image_translate_runtime.apply_translated_detail_images_from_task,
+    outcome = _routes()._build_detail_translate_apply_response(
+        pid,
+        lang,
+        task_id,
+        current_user.id,
     )
     if outcome.not_found:
         abort(404)

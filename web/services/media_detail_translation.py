@@ -310,6 +310,34 @@ def apply_detail_translate_task(
     )
 
 
+def build_detail_translate_apply_response(
+    *,
+    product_id: int,
+    target_lang: str,
+    task_id: str,
+    user_id: int,
+    is_valid_language_fn: Callable[[str], bool],
+    get_task_fn: Callable[[str], Mapping[str, object] | None],
+    is_running_fn: Callable[[str], bool],
+    apply_translated_detail_images_fn: Callable[..., Mapping[str, object]],
+) -> DetailTranslateApplyOutcome:
+    normalized_target_lang = (target_lang or "").strip().lower()
+    if not is_valid_language_fn(normalized_target_lang):
+        return _apply_error(f"unsupported language: {normalized_target_lang}", 400)
+    if normalized_target_lang == "en":
+        return _apply_error("english detail images do not need manual apply", 400)
+
+    return apply_detail_translate_task(
+        get_task_fn(task_id),
+        task_id=task_id,
+        product_id=int(product_id),
+        target_lang=normalized_target_lang,
+        user_id=int(user_id),
+        is_running=is_running_fn,
+        apply_translated_detail_images=apply_translated_detail_images_fn,
+    )
+
+
 def _apply_error(message: str, status_code: int) -> DetailTranslateApplyOutcome:
     return DetailTranslateApplyOutcome(error=message, status_code=status_code)
 

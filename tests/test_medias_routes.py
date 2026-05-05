@@ -860,6 +860,37 @@ def test_detail_image_translate_tasks_filters_current_product_and_lang(authed_cl
     assert data["items"][0]["detail_url"] == "/image-translate/img-1"
 
 
+def test_detail_image_translate_apply_route_delegates_response_building(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as r
+
+    product = {"id": 123, "user_id": 1}
+    captured = {}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(r, "_can_access_product", lambda value: True)
+
+    def fake_build(pid, lang, task_id, user_id):
+        captured.update({"pid": pid, "lang": lang, "task_id": task_id, "user_id": user_id})
+        return SimpleNamespace(
+            not_found=False,
+            error=None,
+            payload={"ok": True, "applied": 1},
+            status_code=200,
+        )
+
+    monkeypatch.setattr(r, "_build_detail_translate_apply_response", fake_build)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/DE/apply-translate-task/img-apply"
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "applied": 1}
+    assert captured == {"pid": 123, "lang": "DE", "task_id": "img-apply", "user_id": 1}
+
+
 def test_detail_images_from_url_background_worker_uses_captured_user_id(
     authed_client_no_db, monkeypatch
 ):

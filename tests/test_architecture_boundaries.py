@@ -276,9 +276,29 @@ def test_detail_image_translate_apply_workflow_lives_outside_route_module():
     )
     route_source = ast.get_source_segment(module_source, route_function) or ""
 
+    direct_calls = [
+        f"{call.func.value.id}.{call.func.attr}"
+        for call in ast.walk(route_function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and (
+            (call.func.value.id == "medias" and call.func.attr == "is_valid_language")
+            or (call.func.value.id == "store" and call.func.attr == "get")
+            or (call.func.value.id == "image_translate_runner" and call.func.attr == "is_running")
+            or (
+                call.func.value.id == "image_translate_runtime"
+                and call.func.attr == "apply_translated_detail_images_from_task"
+            )
+        )
+    ]
+
+    assert direct_calls == []
     assert "ctx.get(\"product_id\")" not in route_source
     assert "ctx.get(\"target_lang\")" not in route_source
     assert "skipped_failed_indices" not in route_source
+    assert "english detail images do not need manual apply" not in route_source
+    assert "_build_detail_translate_apply_response" in route_source
     assert Path("web/services/media_detail_translation.py").exists()
 
 
