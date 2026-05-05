@@ -40,7 +40,7 @@ from web.services.media_detail_uploads import (
 from web.services.media_detail_translation import (
     apply_detail_translate_task,
     build_detail_translate_from_en_response as _build_detail_translate_from_en_response_impl,
-    project_detail_translate_task_rows,
+    build_detail_translate_tasks_response as _build_detail_translate_tasks_response_impl,
 )
 
 from . import bp
@@ -224,6 +224,16 @@ def _build_detail_translate_from_en_response(
         compose_project_name_fn=image_translate_routes._compose_project_name,
         create_image_translate_fn=task_state.create_image_translate,
         start_image_translate_runner_fn=_start_image_translate_runner,
+    )
+
+
+def _build_detail_translate_tasks_response(pid: int, lang: str, user_id: int):
+    return _build_detail_translate_tasks_response_impl(
+        pid,
+        int(user_id),
+        lang,
+        is_valid_language_fn=medias.is_valid_language,
+        query_tasks_fn=db_query,
     )
 
 
@@ -456,18 +466,10 @@ def api_detail_image_translate_tasks(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "").strip().lower()
-    if not medias.is_valid_language(lang):
-        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
-
-    rows = db_query(
-        "SELECT id, created_at, state_json "
-        "FROM projects "
-        "WHERE user_id=%s AND type='image_translate' AND deleted_at IS NULL "
-        "ORDER BY created_at DESC LIMIT 50",
-        (current_user.id,),
-    )
-    items = project_detail_translate_task_rows(rows, product_id=pid, target_lang=lang)
-    return jsonify({"items": items})
+    outcome = _routes()._build_detail_translate_tasks_response(pid, lang, current_user.id)
+    if outcome.error:
+        return jsonify({"error": outcome.error}), outcome.status_code
+    return jsonify(outcome.payload), outcome.status_code
 
 
 @bp.route(

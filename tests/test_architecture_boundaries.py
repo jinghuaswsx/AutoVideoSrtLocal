@@ -244,9 +244,25 @@ def test_detail_image_translate_task_projection_lives_outside_route_module():
     )
     route_source = ast.get_source_segment(module_source, route_function) or ""
 
+    direct_calls = [
+        f"{call.func.value.id}.{call.func.attr}"
+        for call in ast.walk(route_function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and (
+            (call.func.value.id == "medias" and call.func.attr == "is_valid_language")
+            or (call.func.value.id == "routes" and call.func.attr == "db_query")
+        )
+    ]
+
+    assert direct_calls == []
+    assert "db_query(" not in route_source
+    assert "project_detail_translate_task_rows" not in route_source
     assert "ctx.get(\"entry\")" not in route_source
     assert "ctx.get(\"target_lang\")" not in route_source
     assert "applied_detail_image_ids" not in route_source
+    assert "_build_detail_translate_tasks_response" in route_source
     assert Path("web/services/media_detail_translation.py").exists()
 
 

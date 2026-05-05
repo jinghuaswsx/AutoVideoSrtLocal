@@ -132,6 +132,63 @@ def test_build_detail_translate_from_en_response_rejects_missing_prompt():
     assert create_calls == []
 
 
+def test_build_detail_translate_tasks_response_validates_queries_and_projects_rows():
+    from web.services.media_detail_translation import build_detail_translate_tasks_response
+
+    calls = []
+    rows = [
+        {
+            "id": "img-1",
+            "created_at": None,
+            "state_json": '{"preset":"detail","status":"done","medias_context":{"entry":"medias_edit_detail","product_id":123,"target_lang":"de","apply_status":"applied"}}',
+        },
+        {
+            "id": "img-2",
+            "created_at": None,
+            "state_json": '{"preset":"cover","medias_context":{"entry":"medias_edit_detail","product_id":123,"target_lang":"de"}}',
+        },
+    ]
+
+    outcome = build_detail_translate_tasks_response(
+        123,
+        7,
+        " DE ",
+        is_valid_language_fn=lambda lang: lang == "de",
+        query_tasks_fn=lambda sql, args: calls.append((sql, args)) or rows,
+    )
+
+    assert outcome.status_code == 200
+    assert outcome.error is None
+    assert outcome.payload is not None
+    assert [item["task_id"] for item in outcome.payload["items"]] == ["img-1"]
+    assert outcome.payload["items"][0]["detail_url"] == "/image-translate/img-1"
+    assert calls == [
+        (
+            "SELECT id, created_at, state_json "
+            "FROM projects "
+            "WHERE user_id=%s AND type='image_translate' AND deleted_at IS NULL "
+            "ORDER BY created_at DESC LIMIT 50",
+            (7,),
+        )
+    ]
+
+
+def test_build_detail_translate_tasks_response_rejects_invalid_language_before_query():
+    from web.services.media_detail_translation import build_detail_translate_tasks_response
+
+    outcome = build_detail_translate_tasks_response(
+        123,
+        7,
+        "xx",
+        is_valid_language_fn=lambda lang: False,
+        query_tasks_fn=lambda sql, args: (_ for _ in ()).throw(AssertionError("query not reached")),
+    )
+
+    assert outcome.status_code == 400
+    assert outcome.payload is None
+    assert outcome.error == "涓嶆敮鎸佺殑璇: xx"
+
+
 def test_apply_detail_translate_task_rejects_foreign_product_without_applying():
     calls = []
     outcome = apply_detail_translate_task(

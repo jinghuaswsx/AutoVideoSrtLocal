@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence
 
 DETAIL_TRANSLATE_CONTEXT_ENTRY = "medias_edit_detail"
+DETAIL_TRANSLATE_TASKS_SQL = (
+    "SELECT id, created_at, state_json "
+    "FROM projects "
+    "WHERE user_id=%s AND type='image_translate' AND deleted_at IS NULL "
+    "ORDER BY created_at DESC LIMIT 50"
+)
 
 
 @dataclass(frozen=True)
@@ -29,6 +35,13 @@ class DetailTranslateApplyOutcome:
 
 @dataclass(frozen=True)
 class DetailTranslateFromEnOutcome:
+    payload: dict | None = None
+    error: str | None = None
+    status_code: int = 200
+
+
+@dataclass(frozen=True)
+class DetailTranslateTasksOutcome:
     payload: dict | None = None
     error: str | None = None
     status_code: int = 200
@@ -219,6 +232,33 @@ def project_detail_translate_task_rows(
             "created_at": _isoformat_or_none(row.get("created_at")),
         })
     return items
+
+
+def build_detail_translate_tasks_response(
+    product_id: int,
+    user_id: int,
+    target_lang: str,
+    *,
+    is_valid_language_fn: Callable[[str], bool],
+    query_tasks_fn: Callable[[str, tuple[int]], Sequence[Mapping[str, object]]],
+) -> DetailTranslateTasksOutcome:
+    normalized_target_lang = (target_lang or "").strip().lower()
+    if not is_valid_language_fn(normalized_target_lang):
+        return DetailTranslateTasksOutcome(
+            error=f"涓嶆敮鎸佺殑璇: {normalized_target_lang}",
+            status_code=400,
+        )
+
+    rows = query_tasks_fn(DETAIL_TRANSLATE_TASKS_SQL, (int(user_id),))
+    return DetailTranslateTasksOutcome(
+        payload={
+            "items": project_detail_translate_task_rows(
+                rows,
+                product_id=int(product_id),
+                target_lang=normalized_target_lang,
+            )
+        }
+    )
 
 
 def apply_detail_translate_task(
