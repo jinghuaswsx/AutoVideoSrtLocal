@@ -32,8 +32,8 @@ from web.services.media_detail_from_url import (
 )
 from web.services.media_detail_mutations import (
     build_clear_detail_images_response as _build_detail_images_clear_response_impl,
+    build_delete_detail_image_response as _build_detail_images_delete_response_impl,
     build_reorder_detail_images_response as _build_detail_images_reorder_response_impl,
-    delete_detail_image,
 )
 from web.services.media_detail_uploads import (
     build_detail_images_bootstrap_response as _build_detail_images_bootstrap_response_impl,
@@ -180,6 +180,16 @@ def _build_detail_images_complete_response(pid: int, body: dict):
         add_detail_image_fn=medias.add_detail_image,
         get_detail_image_fn=medias.get_detail_image,
         serialize_detail_image_fn=_serialize_detail_image,
+    )
+
+
+def _build_detail_images_delete_response(pid: int, image_id: int):
+    return _build_detail_images_delete_response_impl(
+        pid,
+        image_id,
+        get_detail_image_fn=medias.get_detail_image,
+        soft_delete_detail_image_fn=medias.soft_delete_detail_image,
+        delete_media_object_fn=_delete_media_object,
     )
 
 
@@ -436,13 +446,7 @@ def api_detail_images_delete(pid: int, image_id: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    outcome = delete_detail_image(
-        image_id,
-        product_id=pid,
-        get_detail_image=medias.get_detail_image,
-        soft_delete_detail_image=medias.soft_delete_detail_image,
-        delete_media_object=_delete_media_object,
-    )
+    outcome = _routes()._build_detail_images_delete_response(pid, image_id)
     if outcome.not_found:
         abort(404)
     return jsonify(outcome.payload)

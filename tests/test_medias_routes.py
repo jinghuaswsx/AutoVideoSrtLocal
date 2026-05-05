@@ -1023,6 +1023,26 @@ def test_detail_images_from_url_status_route_delegates_response_building(
     assert captured == {"pid": 123, "task_id": "mdf-1", "user_id": 1}
 
 
+def test_detail_images_delete_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_build(pid, image_id):
+        captured.update({"pid": pid, "image_id": image_id})
+        return SimpleNamespace(not_found=False, error=None, payload={"ok": True}, status_code=200)
+
+    monkeypatch.setattr(r, "_build_detail_images_delete_response", fake_build)
+
+    resp = authed_client_no_db.delete("/medias/api/products/123/detail-images/9")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert captured == {"pid": 123, "image_id": 9}
+
+
 def test_detail_images_clear_route_delegates_response_building(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from web.services.media_detail_mutations import (
     build_clear_detail_images_response,
+    build_delete_detail_image_response,
     build_reorder_detail_images_response,
     clear_detail_images,
     delete_detail_image,
@@ -37,6 +38,21 @@ def test_delete_detail_image_soft_deletes_and_best_effort_deletes_object():
         get_detail_image=lambda image_id: {"id": image_id, "product_id": 123, "object_key": "media/a.jpg"},
         soft_delete_detail_image=lambda image_id: calls.append(("soft", image_id)),
         delete_media_object=fail_delete_object,
+    )
+
+    assert calls == [("soft", 9), ("object", "media/a.jpg")]
+    assert outcome.not_found is False
+    assert outcome.payload == {"ok": True}
+
+
+def test_build_delete_detail_image_response_delegates_delete():
+    calls = []
+    outcome = build_delete_detail_image_response(
+        123,
+        9,
+        get_detail_image_fn=lambda image_id: {"id": image_id, "product_id": 123, "object_key": "media/a.jpg"},
+        soft_delete_detail_image_fn=lambda image_id: calls.append(("soft", image_id)),
+        delete_media_object_fn=lambda object_key: calls.append(("object", object_key)),
     )
 
     assert calls == [("soft", 9), ("object", "media/a.jpg")]

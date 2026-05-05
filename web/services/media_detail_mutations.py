@@ -35,6 +35,23 @@ def delete_detail_image(
     return DetailImageMutationOutcome(payload={"ok": True})
 
 
+def build_delete_detail_image_response(
+    product_id: int,
+    image_id: int,
+    *,
+    get_detail_image_fn: Callable[[int], Mapping[str, object] | None],
+    soft_delete_detail_image_fn: Callable[[int], object],
+    delete_media_object_fn: Callable[[str], object],
+) -> DetailImageMutationOutcome:
+    return delete_detail_image(
+        image_id,
+        product_id=product_id,
+        get_detail_image=get_detail_image_fn,
+        soft_delete_detail_image=soft_delete_detail_image_fn,
+        delete_media_object=delete_media_object_fn,
+    )
+
+
 def clear_detail_images(
     product_id: int,
     lang: str,
