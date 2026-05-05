@@ -51,11 +51,16 @@ def test_active_users_route_keeps_admin_gate_before_service(
         "web.routes.medias.pages.build_active_users_response",
         lambda: calls.append("called") or {"users": []},
     )
+    monkeypatch.setattr(
+        "web.routes.medias.pages.build_admin_required_response",
+        lambda: calls.append("forbidden") or {"error": "forbidden-from-builder"},
+    )
 
     response = authed_user_client_no_db.get("/medias/api/users/active")
 
     assert response.status_code == 403
-    assert calls == []
+    assert response.get_json() == {"error": "forbidden-from-builder"}
+    assert calls == ["forbidden"]
 
 
 def test_languages_route_delegates_response_builder(

@@ -41,6 +41,10 @@ def build_active_users_response(
     return {"users": list_fn()}
 
 
+def build_admin_required_response() -> dict[str, str]:
+    return {"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee"}
+
+
 def build_languages_response(
     *,
     list_languages_fn: Callable[[], list[dict[str, Any]]] | None = None,

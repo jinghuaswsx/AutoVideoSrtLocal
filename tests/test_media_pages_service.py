@@ -49,6 +49,14 @@ def test_build_active_users_response_wraps_user_rows():
     }
 
 
+def test_build_admin_required_response_is_standardized():
+    from web.services.media_pages import build_admin_required_response
+
+    result = build_admin_required_response()
+
+    assert result == {"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee"}
+
+
 def test_build_languages_response_wraps_language_rows():
     from web.services.media_pages import build_languages_response
 

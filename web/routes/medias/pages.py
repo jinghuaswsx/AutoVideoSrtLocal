@@ -5,6 +5,7 @@ from flask_login import login_required
 
 from appcore import medias
 from web.services.media_pages import (
+    build_admin_required_response,
     build_active_users_response,
     build_languages_response,
     build_medias_page_context,
@@ -68,7 +69,7 @@ def translation_tasks_page(pid: int):
 @login_required
 def api_list_active_users():
     if not _routes_module()._is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return jsonify(build_admin_required_response()), 403
     return jsonify(build_active_users_response())
 
 
