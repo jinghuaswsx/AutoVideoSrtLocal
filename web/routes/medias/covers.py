@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from flask import abort, jsonify, request, send_file, url_for
@@ -12,6 +11,10 @@ from flask_login import current_user, login_required
 
 from appcore import medias, object_keys
 from config import OUTPUT_DIR
+from web.services.media_covers import (
+    build_item_cover_bootstrap_response as _build_item_cover_bootstrap_response_impl,
+    build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
+)
 
 import re
 
@@ -47,6 +50,27 @@ def _delete_media_object(object_key):
 
 def _reserve_local_media_upload(object_key):
     return _routes()._reserve_local_media_upload(object_key)
+
+
+def _build_item_cover_bootstrap_response(pid, body):
+    return _build_item_cover_bootstrap_response_impl(
+        current_user.id,
+        pid,
+        body,
+        build_media_object_key_fn=object_keys.build_media_object_key,
+        reserve_local_media_upload_fn=_reserve_local_media_upload,
+    )
+
+
+def _build_product_cover_bootstrap_response(pid, body):
+    return _build_product_cover_bootstrap_response_impl(
+        current_user.id,
+        pid,
+        body,
+        parse_lang_fn=_parse_lang,
+        build_media_object_key_fn=object_keys.build_media_object_key,
+        reserve_local_media_upload_fn=_reserve_local_media_upload,
+    )
 
 
 def _schedule_material_evaluation(pid, **kwargs):
@@ -183,17 +207,8 @@ def api_item_cover_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    filename = os.path.basename((body.get("filename") or "item_cover.jpg").strip())
-    if not filename:
-        return jsonify({"error": "filename required"}), 400
-    object_key = object_keys.build_media_object_key(
-        current_user.id, pid, f"item_cover_{filename}",
-    )
-    return jsonify({
-        "object_key": object_key,
-        "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
-        "storage_backend": "local",
-    })
+    result = _routes()._build_item_cover_bootstrap_response(pid, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/items/<int:item_id>/cover/set", methods=["POST"])
@@ -278,20 +293,8 @@ def api_cover_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-    filename = os.path.basename((body.get("filename") or "cover.jpg").strip())
-    if not filename:
-        return jsonify({"error": "filename required"}), 400
-    object_key = object_keys.build_media_object_key(
-        current_user.id, pid, f"cover_{lang}_{filename}",
-    )
-    return jsonify({
-        "object_key": object_key,
-        "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
-        "storage_backend": "local",
-    })
+    result = _routes()._build_product_cover_bootstrap_response(pid, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/cover/complete", methods=["POST"])

@@ -482,6 +482,35 @@ def test_media_object_access_validation_lives_outside_route_module():
     assert Path("web/services/media_object_access.py").exists()
 
 
+def test_media_cover_bootstrap_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("api_item_cover_bootstrap", "api_cover_bootstrap"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+        direct_object_key_calls = [
+            call.func.attr
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "object_keys"
+        ]
+        assert direct_object_key_calls == []
+    route_source = "\n".join(route_sources)
+
+    assert "filename required" not in route_source
+    assert "storage_backend" not in route_source
+    assert "_build_item_cover_bootstrap_response" in route_source
+    assert "_build_product_cover_bootstrap_response" in route_source
+    assert Path("web/services/media_covers.py").exists()
+
+
 def test_mk_copywriting_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
