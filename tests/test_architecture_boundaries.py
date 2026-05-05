@@ -241,6 +241,28 @@ def test_media_products_list_response_lives_outside_route_module():
     assert Path("web/services/media_products_listing.py").exists()
 
 
+def test_media_product_detail_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_get_product"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "get_product_covers" not in route_source
+    assert "list_items" not in route_source
+    assert "list_raw_sources" not in route_source
+    assert "list_product_skus" not in route_source
+    assert "list_xmyc_unit_prices" not in route_source
+    assert "list_copywritings" not in route_source
+    assert "_serialize_product(" not in route_source
+    assert "_serialize_item(" not in route_source
+    assert "_build_product_detail_response" in route_source
+    assert Path("web/services/media_product_detail.py").exists()
+
+
 def test_task_delete_storage_cleanup_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -322,6 +322,7 @@ _mk_product_link_tail = _products._mk_product_link_tail
 _format_mk_copywriting_text = _products._format_mk_copywriting_text
 _extract_mk_copywriting = _products._extract_mk_copywriting
 _build_products_list_response = _products._build_products_list_response
+_build_product_detail_response = _products._build_product_detail_response
 api_mk_copywriting = _products.api_mk_copywriting
 api_list_products = _products.api_list_products
 api_create_product = _products.api_create_product

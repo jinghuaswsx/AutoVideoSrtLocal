@@ -7,14 +7,12 @@ from flask_login import current_user, login_required
 
 from appcore import medias, parcel_cost_suggest, product_roas, pushes, sku_aggregates, supply_pairing, xmyc_storage
 from . import bp
-from ._serializers import (
-    _int_or_none,
-    _serialize_item,
-    _serialize_product,
-    _serialize_product_skus,
-)
+from ._serializers import _serialize_item, _serialize_product, _serialize_product_skus
 from web.services.media_products_listing import (
     build_products_list_response as _build_products_list_response_impl,
+)
+from web.services.media_product_detail import (
+    build_product_detail_response as _build_product_detail_response_impl,
 )
 
 
@@ -44,6 +42,15 @@ def _build_products_list_response(args):
     return _build_products_list_response_impl(
         args,
         serialize_product_fn=_serialize_product,
+    )
+
+
+def _build_product_detail_response(pid: int, product: dict):
+    return _build_product_detail_response_impl(
+        pid,
+        product=product,
+        serialize_product_fn=_serialize_product,
+        serialize_item_fn=_serialize_item,
     )
 
 
@@ -196,37 +203,7 @@ def api_get_product(pid: int):
     p = medias.get_product(pid)
     if not routes._can_access_product(p):
         abort(404)
-    covers = medias.get_product_covers(pid)
-    items = medias.list_items(pid)
-    needs_raw_sources = any(
-        _int_or_none(item.get("source_raw_id"))
-        or (item.get("auto_translated") and _int_or_none(item.get("source_ref_id")))
-        for item in items
-    )
-    raw_sources_by_id = {}
-    if needs_raw_sources:
-        raw_sources_by_id = {
-            int(row["id"]): row
-            for row in medias.list_raw_sources(pid)
-            if row.get("id") is not None
-        }
-    skus = medias.list_product_skus(pid)
-    xmyc_index = medias.list_xmyc_unit_prices(
-        [s.get("dianxiaomi_sku") or "" for s in skus]
-    )
-    return jsonify({
-        "product": _serialize_product(
-            p,
-            None,
-            covers=covers,
-            roas_rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
-            skus=skus,
-            xmyc_index=xmyc_index,
-        ),
-        "covers": covers,
-        "copywritings": medias.list_copywritings(pid),
-        "items": [_serialize_item(i, raw_sources_by_id) for i in items],
-    })
+    return jsonify(routes._build_product_detail_response(pid, p))
 
 
 @bp.route("/api/products/<int:pid>/parcel-cost-suggest", methods=["GET"])

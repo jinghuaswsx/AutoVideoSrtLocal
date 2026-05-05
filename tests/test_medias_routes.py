@@ -1693,6 +1693,29 @@ def test_get_product_api_includes_shopifyid(
     assert data["product"]["shopifyid"] == "8560559554733"
 
 
+def test_product_detail_delegates_to_response_builder(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    product = {"id": 123, "user_id": 1}
+    captured = {}
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(r, "_can_access_product", lambda item: item is product)
+
+    def fake_build(pid, product):
+        captured["pid"] = pid
+        captured["product"] = product
+        return {"product": {"id": pid}, "covers": {}, "copywritings": [], "items": []}
+
+    monkeypatch.setattr(r, "_build_product_detail_response", fake_build)
+
+    resp = authed_client_no_db.get("/medias/api/products/123")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["product"] == {"id": 123}
+    assert captured == {"pid": 123, "product": product}
+
+
 def test_medias_index_q_sets_initial_search_query(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
