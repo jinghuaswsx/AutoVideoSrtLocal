@@ -601,20 +601,10 @@ class MultiTranslateRunner(PipelineRunner):
         return super()._resolve_voice(task, loc_mod)
 
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
-        """覆盖基类：在 asr 后插入 separate → asr_normalize → voice_match。
+        """走统一 profile 驱动的 step 构造器。
 
-        separate 在 asr 之后是为了让 ASR 的 passthrough（音乐视频直通）短路
-        提前过滤掉，省 API 调用；同时分离结果在后续 TTS / compose 阶段都可用。
+        历史上这里手工插 separate / asr_normalize / voice_match / loudness_match；
+        现在由 ``self.profile`` 决定哪些步骤要插，以及 post_asr 的步骤名（默认
+        ``asr_normalize``）。multi 走 ``DefaultProfile``，最终步骤序列与历史完全一致。
         """
-        base_steps = super()._get_pipeline_steps(task_id, video_path, task_dir)
-        out = []
-        for name, fn in base_steps:
-            out.append((name, fn))
-            if name == "asr":
-                out.append(("separate", lambda: self._step_separate(task_id, task_dir)))
-                out.append(("asr_normalize", lambda: self._step_asr_normalize(task_id)))
-                out.append(("voice_match", lambda: self._step_voice_match(task_id)))
-            elif name == "tts":
-                out.append(("loudness_match",
-                            lambda: self._step_loudness_match(task_id, task_dir)))
-        return out
+        return self._build_steps_from_profile(task_id, video_path, task_dir)

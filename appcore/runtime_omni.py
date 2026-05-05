@@ -320,23 +320,12 @@ class OmniTranslateRunner(MultiTranslateRunner):
             )
 
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
-        """Replace parent's asr_normalize step with asr_clean (omni-specific).
+        """走统一 profile 驱动的 step 构造器。
 
-        Also insert ``separate`` after asr (shared with multi pipeline).
+        omni 走 ``OmniProfile``：``post_asr_step_name=asr_clean``，其余位置
+        与 multi 一致。
         """
-        from appcore.runtime import PipelineRunner
-        base_steps = PipelineRunner._get_pipeline_steps(self, task_id, video_path, task_dir)
-        out = []
-        for name, fn in base_steps:
-            out.append((name, fn))
-            if name == "asr":
-                out.append(("separate", lambda: self._step_separate(task_id, task_dir)))
-                out.append(("asr_clean", lambda: self._step_asr_clean(task_id)))
-                out.append(("voice_match", lambda: self._step_voice_match(task_id)))
-            elif name == "tts":
-                out.append(("loudness_match",
-                            lambda: self._step_loudness_match(task_id, task_dir)))
-        return out
+        return self._build_steps_from_profile(task_id, video_path, task_dir)
 
     def _step_translate(self, task_id: str) -> None:
         """omni: translate directly from source-language transcript to target language.

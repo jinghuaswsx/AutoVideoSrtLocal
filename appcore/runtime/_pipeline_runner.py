@@ -1320,6 +1320,52 @@ class PipelineRunner:
             return out
         return steps
 
+    def _build_steps_from_profile(
+        self, task_id: str, video_path: str, task_dir: str
+    ) -> list:
+        """Profile-driven step builder shared by multi / omni / av_sync runners.
+
+        Step order is fixed; what differs between profiles:
+        - whether ``separate`` is inserted after ASR (``profile.needs_separate``)
+        - the post-ASR step name (``profile.post_asr_step_name``: ``asr_normalize``
+          for default + av_sync, ``asr_clean`` for omni)
+        - whether ``loudness_match`` is inserted after TTS
+          (``profile.needs_loudness_match``)
+
+        Step bodies for ``post_asr`` / ``translate`` / ``tts`` / ``subtitle`` are
+        dispatched through the profile so that future profiles can swap algorithms
+        without subclassing the runner. Each profile method currently delegates
+        back to ``self._step_xxx`` so behavior is unchanged.
+        """
+        profile = self.profile
+        out: list[tuple[str, callable]] = [
+            ("extract", lambda: self._step_extract(task_id, video_path, task_dir)),
+            ("asr", lambda: self._step_asr(task_id, task_dir)),
+        ]
+        if profile.needs_separate:
+            out.append(("separate", lambda: self._step_separate(task_id, task_dir)))
+        out.append(
+            (profile.post_asr_step_name, lambda: profile.post_asr(self, task_id))
+        )
+        out.append(("voice_match", lambda: self._step_voice_match(task_id)))
+        out.append(
+            ("alignment", lambda: self._step_alignment(task_id, video_path, task_dir))
+        )
+        out.append(("translate", lambda: profile.translate(self, task_id)))
+        out.append(("tts", lambda: profile.tts(self, task_id, task_dir)))
+        if profile.needs_loudness_match:
+            out.append(
+                ("loudness_match", lambda: self._step_loudness_match(task_id, task_dir))
+            )
+        out.append(
+            ("subtitle", lambda: profile.subtitle(self, task_id, task_dir))
+        )
+        out.append(("compose", lambda: self._step_compose(task_id, video_path, task_dir)))
+        if self.include_analysis_in_main_flow:
+            out.append(("analysis", lambda: self._step_analysis(task_id)))
+        out.append(("export", lambda: self._step_export(task_id, video_path, task_dir)))
+        return out
+
     def _step_av_asr_normalize(self, task_id: str) -> None:
         task = task_state.get(task_id) or {}
         if self._skip_original_video_passthrough_step(task_id, "asr_normalize", task=task):

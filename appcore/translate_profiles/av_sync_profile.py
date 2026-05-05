@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 class AvSyncProfile(TranslateProfile):
     code = "av_sync"
     name = "音画同步（句级）"
+    post_asr_step_name = "asr_normalize"
 
     needs_separate = False
-    needs_alignment = True
     needs_loudness_match = False
 
     def post_asr(self, runner: "PipelineRunner", task_id: str) -> None:
