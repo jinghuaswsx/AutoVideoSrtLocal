@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 import pytest
 
@@ -134,6 +135,32 @@ def test_translate_ok(authed_client_no_db, pid, monkeypatch, patch_bt):
         action="start",
         details={"source": "medias_raw_translate"},
     )
+
+
+def test_translate_api_delegates_http_response_builder(authed_client_no_db, pid, monkeypatch):
+    r = _stub_product(monkeypatch, pid, raw_sources=[{"id": 88}], valid_langs={"de"})
+    service_result = SimpleNamespace(ok=True, status_code=202, task_id="task-xyz", error=None, payload=None)
+    calls = []
+
+    monkeypatch.setattr(
+        "web.routes.medias.translate.media_product_translate.start_product_translation",
+        lambda **kwargs: service_result,
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_product_translate_response",
+        lambda result: calls.append(result)
+        or SimpleNamespace(payload={"task_id": "from-builder"}, status_code=202),
+    )
+
+    resp = authed_client_no_db.post(
+        f"/medias/api/products/{pid}/translate",
+        json={"raw_ids": [88], "target_langs": ["de"]},
+    )
+
+    assert resp.status_code == 202
+    assert resp.get_json() == {"task_id": "from-builder"}
+    assert calls == [service_result]
 
 
 def test_product_detail_items_include_raw_source_provenance(authed_client_no_db, monkeypatch):

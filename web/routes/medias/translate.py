@@ -28,6 +28,10 @@ def _build_product_translation_tasks_response(pid: int, *, scope_user_id: int | 
     )
 
 
+def _build_product_translate_response(result):
+    return media_product_translate.build_product_translate_response(result)
+
+
 @bp.route("/api/products/<int:pid>/translate", methods=["POST"])
 @login_required
 def api_product_translate(pid: int):
@@ -45,9 +49,8 @@ def api_product_translate(pid: int):
         ip=request.remote_addr or "",
         user_agent=request.headers.get("User-Agent", "") or "",
     )
-    if not result.ok:
-        return jsonify(result.payload or {"error": result.error}), result.status_code
-    return jsonify({"task_id": result.task_id}), result.status_code
+    response = _routes_module()._build_product_translate_response(result)
+    return jsonify(response.payload), response.status_code
 
 
 @bp.route("/api/products/<int:pid>/translation-tasks", methods=["GET"])

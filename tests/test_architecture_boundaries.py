@@ -575,7 +575,11 @@ def test_media_product_translate_listing_gate_lives_outside_route_module():
     assert "_ensure_product_listed" not in route_source
     assert "product_not_listed" not in route_source
     assert "is_product_listed" not in route_source
+    assert '{"task_id":' not in route_source
+    assert "result.payload or" not in route_source
+    assert "result.error" not in route_source
     assert "start_product_translation" in route_source
+    assert "_build_product_translate_response" in route_source
     assert Path("web/services/media_product_translate.py").exists()
 
 

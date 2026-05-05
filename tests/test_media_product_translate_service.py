@@ -33,6 +33,32 @@ def test_build_product_translation_tasks_response_syncs_and_projects_tasks():
     ]
 
 
+def test_build_product_translate_response_maps_success_and_errors():
+    from web.services import media_product_translate as svc
+
+    success = svc.build_product_translate_response(
+        svc.ProductTranslateResult(ok=True, status_code=202, task_id="task-xyz")
+    )
+    validation_error = svc.build_product_translate_response(
+        svc.ProductTranslateResult(ok=False, status_code=400, error="target_langs required")
+    )
+    payload_error = svc.build_product_translate_response(
+        svc.ProductTranslateResult(
+            ok=False,
+            status_code=409,
+            error="product_not_listed",
+            payload={"error": "product_not_listed", "message": "unlisted"},
+        )
+    )
+
+    assert success.status_code == 202
+    assert success.payload == {"task_id": "task-xyz"}
+    assert validation_error.status_code == 400
+    assert validation_error.payload == {"error": "target_langs required"}
+    assert payload_error.status_code == 409
+    assert payload_error.payload == {"error": "product_not_listed", "message": "unlisted"}
+
+
 def test_start_product_translation_requires_raw_sources_for_video_content(monkeypatch):
     from web.services import media_product_translate as svc
 

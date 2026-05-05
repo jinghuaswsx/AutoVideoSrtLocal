@@ -35,6 +35,12 @@ class ProductTranslationTasksResponse:
     status_code: int = 200
 
 
+@dataclass(frozen=True)
+class ProductTranslateResponse:
+    payload: dict
+    status_code: int
+
+
 def _validation_error(message: str) -> ProductTranslateResult:
     return ProductTranslateResult(ok=False, status_code=400, error=message)
 
@@ -44,6 +50,18 @@ def _coerce_raw_ids(raw_ids) -> tuple[list[int], ProductTranslateResult | None]:
         return [int(x) for x in raw_ids], None
     except (TypeError, ValueError):
         return [], _validation_error("raw_ids must be integers")
+
+
+def build_product_translate_response(result: ProductTranslateResult) -> ProductTranslateResponse:
+    if not result.ok:
+        return ProductTranslateResponse(
+            payload=result.payload or {"error": result.error},
+            status_code=result.status_code,
+        )
+    return ProductTranslateResponse(
+        payload={"task_id": result.task_id},
+        status_code=result.status_code,
+    )
 
 
 def build_product_translation_tasks_response(
