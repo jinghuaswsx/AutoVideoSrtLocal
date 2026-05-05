@@ -721,6 +721,26 @@ def test_openapi_materials_listing_helpers_live_outside_route_module():
     assert Path("web/services/openapi_materials_listing.py").exists()
 
 
+def test_openapi_materials_list_response_lives_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "list_materials"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "SELECT COUNT(*) AS c FROM media_products" not in route_source
+    assert "FROM media_products WHERE" not in route_source
+    assert "_batch_cover_langs" not in route_source
+    assert "_batch_copywriting_langs" not in route_source
+    assert "_batch_item_lang_counts" not in route_source
+    assert "items.append" not in route_source
+    assert "_build_materials_list_response" in route_source
+    assert Path("web/services/openapi_materials_listing.py").exists()
+
+
 def test_openapi_material_detail_response_lives_outside_route_module():
     module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

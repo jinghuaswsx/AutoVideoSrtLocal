@@ -132,6 +132,36 @@ def test_list_clamps_page_size(client, monkeypatch):
     assert called["offset"] == 100  # page=2 * page_size=100
 
 
+def test_list_materials_route_delegates_response_building(client, monkeypatch):
+    captured: dict = {}
+
+    def fake_build_materials_list_response(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{"id": 1, "product_code": "alpha"}],
+            "total": 1,
+            "page": 3,
+            "page_size": 50,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_materials_list_response",
+        fake_build_materials_list_response,
+    )
+
+    response = client.get(
+        "/openapi/materials?page=3&page_size=50&q=Alpha&archived=all",
+        headers={"X-API-Key": "demo-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["items"] == [{"id": 1, "product_code": "alpha"}]
+    assert captured["page_raw"] == "3"
+    assert captured["page_size_raw"] == "50"
+    assert captured["q"] == "Alpha"
+    assert captured["archived_raw"] == "all"
+
+
 def test_rejects_wrong_api_key(client):
     response = client.get(
         "/openapi/materials/sonic-lens-refresher",

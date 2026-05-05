@@ -75,3 +75,70 @@ def test_batch_helpers_skip_query_for_empty_product_ids():
     assert batch_cover_langs([], query_fn=fail_query) == {}
     assert batch_copywriting_langs([], query_fn=fail_query) == {}
     assert batch_item_lang_counts([], query_fn=fail_query) == ({}, {})
+
+
+def test_build_materials_list_response_queries_and_projects_items():
+    from web.services.openapi_materials_listing import build_materials_list_response
+
+    calls: list[tuple[str, tuple]] = []
+
+    def fake_query(sql, args=()):
+        normalized = " ".join(sql.split())
+        calls.append((normalized, args))
+        if normalized.startswith("SELECT COUNT(*) AS c FROM media_products"):
+            return [{"c": 3}]
+        if normalized.startswith("SELECT id, product_code, name, archived"):
+            return [
+                {
+                    "id": 1,
+                    "product_code": "alpha",
+                    "name": "Alpha",
+                    "archived": 0,
+                    "ad_supported_langs": "en,de",
+                    "created_at": None,
+                    "updated_at": None,
+                },
+                {
+                    "id": 2,
+                    "product_code": "beta",
+                    "name": "Beta",
+                    "archived": 1,
+                    "ad_supported_langs": "",
+                    "created_at": None,
+                    "updated_at": None,
+                },
+            ]
+        if normalized.startswith("SELECT product_id, lang, object_key FROM media_product_covers"):
+            return [{"product_id": 1, "lang": "de", "object_key": "cover-de"}]
+        if normalized.startswith("SELECT DISTINCT product_id, lang FROM media_copywritings"):
+            return [
+                {"product_id": 1, "lang": "en"},
+                {"product_id": 2, "lang": "fr"},
+            ]
+        if normalized.startswith("SELECT product_id, lang, COUNT(*) AS c FROM media_items"):
+            return [
+                {"product_id": 1, "lang": "en", "c": 2},
+                {"product_id": 2, "lang": "fr", "c": 1},
+            ]
+        raise AssertionError(f"unexpected query: {normalized}")
+
+    payload = build_materials_list_response(
+        page_raw="2",
+        page_size_raw="999",
+        q="Alpha",
+        archived_raw="all",
+        query_fn=fake_query,
+    )
+
+    assert payload["total"] == 3
+    assert payload["page"] == 2
+    assert payload["page_size"] == 100
+    assert payload["items"][0]["product_code"] == "alpha"
+    assert payload["items"][0]["archived"] is False
+    assert payload["items"][0]["cover_langs"] == ["de"]
+    assert payload["items"][0]["copywriting_langs"] == ["en"]
+    assert payload["items"][0]["item_langs"] == {"en": 2}
+    assert payload["items"][0]["total_items"] == 2
+    assert payload["items"][1]["archived"] is True
+    assert calls[0][1] == ("%Alpha%", "%Alpha%")
+    assert calls[1][1][-2:] == (100, 100)

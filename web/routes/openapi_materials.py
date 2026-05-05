@@ -6,8 +6,6 @@
 """
 from __future__ import annotations
 
-from typing import Any
-
 from flask import Blueprint, jsonify, request
 
 from appcore import medias, pushes, shopify_image_tasks
@@ -16,14 +14,11 @@ from appcore.db import query, query_one
 from appcore.llm_provider_configs import get_provider_config
 from appcore.openapi_auth import validate_openapi_key
 from web.services.openapi_materials_listing import (
-    batch_copywriting_langs as _batch_copywriting_langs,
-    batch_cover_langs as _batch_cover_langs,
-    batch_item_lang_counts as _batch_item_lang_counts,
-    parse_archived_filter as _parse_archived_filter,
+    LIST_PAGE_SIZE_MAX as _LIST_PAGE_SIZE_MAX,
+    build_materials_list_response as _build_materials_list_response,
 )
 from web.services.openapi_materials_serializers import (
     build_material_detail_response as _build_material_detail_response,
-    iso_or_none as _iso_or_none,
     media_download_url as _media_download_url,
     normalize_target_url as _normalize_target_url,
     serialize_shopify_image_task as _serialize_shopify_image_task,
@@ -49,7 +44,6 @@ shopify_localizer_bp = Blueprint(
 )
 
 
-_LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
 def _api_key_valid(required_scope: str = "materials:read") -> bool:
     cfg = get_provider_config("openapi_materials")
@@ -293,72 +287,13 @@ def list_materials():
     if not _api_key_valid():
         return jsonify({"error": "invalid api key"}), 401
 
-    try:
-        page = max(1, int(request.args.get("page") or 1))
-    except (TypeError, ValueError):
-        page = 1
-    try:
-        page_size = max(1, min(_LIST_PAGE_SIZE_MAX, int(request.args.get("page_size") or 20)))
-    except (TypeError, ValueError):
-        page_size = 20
-
-    q = (request.args.get("q") or "").strip()
-    archived = _parse_archived_filter(request.args.get("archived") or "0")
-
-    where = ["deleted_at IS NULL"]
-    args: list[Any] = []
-    if archived is not None:
-        where.append("archived=%s")
-        args.append(archived)
-    if q:
-        where.append("(name LIKE %s OR product_code LIKE %s)")
-        like = f"%{q}%"
-        args.extend([like, like])
-    where_sql = " AND ".join(where)
-
-    total_row = query(
-        f"SELECT COUNT(*) AS c FROM media_products WHERE {where_sql}",
-        tuple(args),
-    )
-    total = int((total_row[0] if total_row else {}).get("c") or 0)
-
-    offset = (page - 1) * page_size
-    rows = query(
-        f"SELECT id, product_code, name, archived, ad_supported_langs, "
-        f"       created_at, updated_at "
-        f"FROM media_products WHERE {where_sql} "
-        f"ORDER BY updated_at DESC, id DESC LIMIT %s OFFSET %s",
-        tuple(args + [page_size, offset]),
-    )
-
-    product_ids = [int(r["id"]) for r in rows or []]
-    cover_map = _batch_cover_langs(product_ids, query_fn=query)
-    copy_map = _batch_copywriting_langs(product_ids, query_fn=query)
-    item_lang_map, item_total_map = _batch_item_lang_counts(product_ids, query_fn=query)
-
-    items = []
-    for row in rows or []:
-        pid = int(row["id"])
-        items.append({
-            "id": pid,
-            "product_code": row.get("product_code"),
-            "name": row.get("name"),
-            "archived": bool(row.get("archived")),
-            "ad_supported_langs": row.get("ad_supported_langs") or "",
-            "created_at": _iso_or_none(row.get("created_at")),
-            "updated_at": _iso_or_none(row.get("updated_at")),
-            "cover_langs": sorted(cover_map.get(pid, [])),
-            "copywriting_langs": sorted(copy_map.get(pid, [])),
-            "item_langs": item_lang_map.get(pid, {}),
-            "total_items": item_total_map.get(pid, 0),
-        })
-
-    return jsonify({
-        "items": items,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    })
+    return jsonify(_build_materials_list_response(
+        page_raw=request.args.get("page") or "1",
+        page_size_raw=request.args.get("page_size") or "20",
+        q=request.args.get("q") or "",
+        archived_raw=request.args.get("archived") or "0",
+        query_fn=query,
+    ))
 
 
 # ================================================================
