@@ -813,6 +813,9 @@ def test_media_item_upload_responses_live_outside_route_module():
     assert "extract_thumbnail" not in route_source
     assert "get_media_duration" not in route_source
     assert "db_execute" not in route_source
+    assert "_ensure_product_listed" not in route_source
+    assert "product_not_listed" not in route_source
+    assert "is_product_listed" not in route_source
     assert "_build_item_bootstrap_response" in route_source
     assert "_build_item_complete_response" in route_source
     assert Path("web/services/media_items.py").exists()

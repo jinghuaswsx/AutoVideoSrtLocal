@@ -187,6 +187,32 @@ def test_build_item_bootstrap_response_validates_and_reserves_upload():
     ]
 
 
+def test_build_item_bootstrap_response_rejects_unlisted_product_before_parsing():
+    from web.services.media_items import build_item_bootstrap_response
+
+    result = build_item_bootstrap_response(
+        7,
+        123,
+        {"id": 123, "listing_status": "下架"},
+        {"filename": "demo.mp4", "lang": "en"},
+        is_product_listed_fn=lambda product: False,
+        parse_lang_fn=lambda body: (_ for _ in ()).throw(AssertionError("parse not reached")),
+        validate_upload_filename_fn=lambda *args, **kwargs: (
+            _ for _ in ()
+        ).throw(AssertionError("validate not reached")),
+        build_media_object_key_fn=lambda *args: (_ for _ in ()).throw(AssertionError("key not reached")),
+        reserve_local_media_upload_fn=lambda object_key: (
+            _ for _ in ()
+        ).throw(AssertionError("reserve not reached")),
+    )
+
+    assert result.status_code == 409
+    assert result.payload == {
+        "error": "product_not_listed",
+        "message": "产品已下架，不能执行该操作",
+    }
+
+
 def test_build_item_bootstrap_response_rejects_before_reserve():
     from web.services.media_items import (
         ItemUploadValidation,
@@ -285,6 +311,37 @@ def test_build_item_complete_response_creates_item_and_runs_best_effort_side_eff
         ("thumbnail", 44, 123, "video.mp4", "1/medias/123/video.mp4"),
         ("schedule", 123),
     ]
+
+
+def test_build_item_complete_response_rejects_unlisted_product_before_parsing():
+    from web.services.media_items import build_item_complete_response
+
+    result = build_item_complete_response(
+        7,
+        123,
+        {"id": 123, "listing_status": "下架"},
+        {"object_key": "1/medias/123/video.mp4", "filename": "video.mp4", "lang": "en"},
+        is_product_listed_fn=lambda product: False,
+        parse_lang_fn=lambda body: (_ for _ in ()).throw(AssertionError("parse not reached")),
+        validate_upload_filename_fn=lambda *args, **kwargs: (
+            _ for _ in ()
+        ).throw(AssertionError("validate not reached")),
+        is_media_available_fn=lambda object_key: (
+            _ for _ in ()
+        ).throw(AssertionError("exists not reached")),
+        create_item_fn=lambda *args, **kwargs: (
+            _ for _ in ()
+        ).throw(AssertionError("create not reached")),
+        cache_item_cover_fn=lambda *args: None,
+        build_item_thumbnail_fn=lambda *args: None,
+        schedule_material_evaluation_fn=lambda pid: None,
+    )
+
+    assert result.status_code == 409
+    assert result.payload == {
+        "error": "product_not_listed",
+        "message": "产品已下架，不能执行该操作",
+    }
 
 
 def test_build_item_complete_response_rejects_before_create():

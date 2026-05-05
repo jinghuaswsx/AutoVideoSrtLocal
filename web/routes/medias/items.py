@@ -18,7 +18,6 @@ from pipeline.ffutil import extract_thumbnail, get_media_duration
 from . import bp
 from ._helpers import (
     THUMB_DIR,
-    _ensure_product_listed,
     _parse_lang,
 )
 from ._serializers import _serialize_item
@@ -108,6 +107,7 @@ def _build_item_bootstrap_response(pid: int, product: dict, body: dict):
         pid,
         product,
         body,
+        is_product_listed_fn=medias.is_product_listed,
         parse_lang_fn=_parse_lang,
         validate_upload_filename_fn=_validate_item_upload_filename,
         build_media_object_key_fn=object_keys.build_media_object_key,
@@ -153,6 +153,7 @@ def _build_item_complete_response(pid: int, product: dict, body: dict):
         pid,
         product,
         body,
+        is_product_listed_fn=medias.is_product_listed,
         parse_lang_fn=_parse_lang,
         validate_upload_filename_fn=_validate_item_upload_filename,
         is_media_available_fn=_is_media_available,
@@ -190,9 +191,6 @@ def api_item_bootstrap(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    blocked = _ensure_product_listed(p)
-    if blocked:
-        return blocked
     body = request.get_json(silent=True) or {}
     result = _routes()._build_item_bootstrap_response(pid, p, body)
     return jsonify(result.payload), result.status_code
@@ -204,9 +202,6 @@ def api_item_complete(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    blocked = _ensure_product_listed(p)
-    if blocked:
-        return blocked
     body = request.get_json(silent=True) or {}
     result = _routes()._build_item_complete_response(pid, p, body)
     return jsonify(result.payload), result.status_code

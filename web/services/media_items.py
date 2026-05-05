@@ -8,6 +8,11 @@ import os
 
 from appcore import medias, object_keys
 
+PRODUCT_NOT_LISTED_PAYLOAD = {
+    "error": "product_not_listed",
+    "message": "产品已下架，不能执行该操作",
+}
+
 
 @dataclass(frozen=True)
 class ItemFilenameValidation:
@@ -37,11 +42,15 @@ def build_item_bootstrap_response(
     product: dict,
     body: dict | None,
     *,
+    is_product_listed_fn: Callable[[dict], bool] | None = None,
     parse_lang_fn: Callable[[dict], tuple[str, str | None]],
     validate_upload_filename_fn: Callable[..., ItemUploadValidation],
     reserve_local_media_upload_fn: Callable[[str], dict],
     build_media_object_key_fn: Callable[[int, int, str], str] = object_keys.build_media_object_key,
 ) -> MediaItemResponse:
+    if is_product_listed_fn is not None and not is_product_listed_fn(product):
+        return MediaItemResponse(dict(PRODUCT_NOT_LISTED_PAYLOAD), 409)
+
     body = body or {}
     lang, err = parse_lang_fn(body)
     if err:
@@ -77,6 +86,7 @@ def build_item_complete_response(
     product: dict,
     body: dict | None,
     *,
+    is_product_listed_fn: Callable[[dict], bool] | None = None,
     parse_lang_fn: Callable[[dict], tuple[str, str | None]],
     validate_upload_filename_fn: Callable[..., ItemUploadValidation],
     is_media_available_fn: Callable[[str], bool],
@@ -85,6 +95,9 @@ def build_item_complete_response(
     schedule_material_evaluation_fn: Callable[[int], object],
     create_item_fn: Callable[..., int] = medias.create_item,
 ) -> MediaItemResponse:
+    if is_product_listed_fn is not None and not is_product_listed_fn(product):
+        return MediaItemResponse(dict(PRODUCT_NOT_LISTED_PAYLOAD), 409)
+
     body = body or {}
     lang, err = parse_lang_fn(body)
     if err:
