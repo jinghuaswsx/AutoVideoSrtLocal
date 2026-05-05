@@ -453,6 +453,49 @@ def test_media_item_update_delete_responses_live_outside_route_module():
     assert Path("web/services/media_items.py").exists()
 
 
+def test_media_item_upload_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/items.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("api_item_bootstrap", "api_item_complete"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+        direct_item_calls = [
+            call.func.attr
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "medias"
+            and call.func.attr == "create_item"
+        ]
+        direct_object_key_calls = [
+            call.func.attr
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "object_keys"
+        ]
+        assert direct_item_calls == []
+        assert direct_object_key_calls == []
+    route_source = "\n".join(route_sources)
+
+    assert "object_key and filename required" not in route_source
+    assert "object not found" not in route_source
+    assert "filename required" not in route_source
+    assert "extract_thumbnail" not in route_source
+    assert "get_media_duration" not in route_source
+    assert "db_execute" not in route_source
+    assert "_build_item_bootstrap_response" in route_source
+    assert "_build_item_complete_response" in route_source
+    assert Path("web/services/media_items.py").exists()
+
+
 def test_media_object_access_validation_lives_outside_route_module():
     module_source = Path("web/routes/medias/media_upload.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

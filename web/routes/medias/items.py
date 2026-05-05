@@ -18,13 +18,15 @@ from pipeline.ffutil import extract_thumbnail, get_media_duration
 from . import bp
 from ._helpers import (
     THUMB_DIR,
-    _client_filename_basename,
     _ensure_product_listed,
     _parse_lang,
 )
 from ._serializers import _serialize_item
 from web.services.media_items import (
     ItemFilenameValidation,
+    ItemUploadValidation,
+    build_item_bootstrap_response as _build_item_bootstrap_response_impl,
+    build_item_complete_response as _build_item_complete_response_impl,
     build_item_delete_response as _build_item_delete_response_impl,
     build_item_update_response as _build_item_update_response_impl,
 )
@@ -77,6 +79,90 @@ def _validate_item_display_name(filename: str, product: dict, lang: str) -> Item
     return ItemFilenameValidation(ok=False, payload=payload or {}, status_code=status_code)
 
 
+def _validate_item_upload_filename(
+    filename: str,
+    product: dict,
+    lang: str,
+    *,
+    initial_upload: bool = False,
+) -> ItemUploadValidation:
+    validation, error_response = _validate_material_filename_for_product(
+        filename,
+        product,
+        lang,
+        initial_upload=initial_upload,
+    )
+    if error_response:
+        response, status_code = error_response
+        payload = response.get_json(silent=True) if hasattr(response, "get_json") else None
+        return ItemUploadValidation(ok=False, payload=payload or {}, status_code=status_code)
+    return ItemUploadValidation(
+        ok=True,
+        effective_lang=getattr(validation, "effective_lang", lang),
+    )
+
+
+def _build_item_bootstrap_response(pid: int, product: dict, body: dict):
+    return _build_item_bootstrap_response_impl(
+        current_user.id,
+        pid,
+        product,
+        body,
+        parse_lang_fn=_parse_lang,
+        validate_upload_filename_fn=_validate_item_upload_filename,
+        build_media_object_key_fn=object_keys.build_media_object_key,
+        reserve_local_media_upload_fn=_reserve_local_media_upload,
+    )
+
+
+def _cache_item_cover_object(item_id: int, product_id: int, cover_object_key: str) -> None:
+    product_dir = THUMB_DIR / str(product_id)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(cover_object_key).suffix or ".jpg"
+    _download_media_object(
+        cover_object_key,
+        str(product_dir / f"item_cover_{item_id}{ext}"),
+    )
+
+
+def _build_item_thumbnail(item_id: int, pid: int, filename: str, object_key: str) -> None:
+    THUMB_DIR.mkdir(parents=True, exist_ok=True)
+    product_dir = THUMB_DIR / str(pid)
+    product_dir.mkdir(exist_ok=True)
+    tmp_video = product_dir / f"tmp_{item_id}_{Path(filename).name}"
+    _download_media_object(object_key, str(tmp_video))
+    duration = get_media_duration(str(tmp_video))
+    thumb = extract_thumbnail(str(tmp_video), str(product_dir), scale="360:-1")
+    if thumb:
+        final = product_dir / f"{item_id}.jpg"
+        os.replace(thumb, final)
+        db_execute(
+            "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
+            (str(final.relative_to(OUTPUT_DIR)).replace("\\", "/"),
+             duration or None, item_id),
+        )
+    try:
+        tmp_video.unlink()
+    except Exception:
+        pass
+
+
+def _build_item_complete_response(pid: int, product: dict, body: dict):
+    return _build_item_complete_response_impl(
+        current_user.id,
+        pid,
+        product,
+        body,
+        parse_lang_fn=_parse_lang,
+        validate_upload_filename_fn=_validate_item_upload_filename,
+        is_media_available_fn=_is_media_available,
+        create_item_fn=medias.create_item,
+        cache_item_cover_fn=_cache_item_cover_object,
+        build_item_thumbnail_fn=_build_item_thumbnail,
+        schedule_material_evaluation_fn=_schedule_material_evaluation,
+    )
+
+
 def _build_item_update_response(item_id: int, item: dict, product: dict, body: dict):
     return _build_item_update_response_impl(
         item_id,
@@ -108,28 +194,8 @@ def api_item_bootstrap(pid: int):
     if blocked:
         return blocked
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-    filename = _client_filename_basename(body.get("filename"))
-    if not filename.strip():
-        return jsonify({"error": "filename required"}), 400
-    validation, error_response = _validate_material_filename_for_product(
-        filename,
-        p,
-        lang,
-        initial_upload=bool(body.get("skip_validation")),
-    )
-    if error_response:
-        return error_response
-    effective_lang = validation.effective_lang
-    object_key = object_keys.build_media_object_key(current_user.id, pid, filename)
-    return jsonify({
-        "object_key": object_key,
-        "effective_lang": effective_lang,
-        "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
-        "storage_backend": "local",
-    })
+    result = _routes()._build_item_bootstrap_response(pid, p, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/items/complete", methods=["POST"])
@@ -142,77 +208,8 @@ def api_item_complete(pid: int):
     if blocked:
         return blocked
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-    object_key = (body.get("object_key") or "").strip()
-    filename = _client_filename_basename(body.get("filename"))
-    file_size = int(body.get("file_size") or 0)
-    if not object_key or not filename.strip():
-        return jsonify({"error": "object_key and filename required"}), 400
-    validation, error_response = _validate_material_filename_for_product(
-        filename,
-        p,
-        lang,
-        initial_upload=bool(body.get("skip_validation")),
-    )
-    if error_response:
-        return error_response
-    lang = validation.effective_lang
-    if not _is_media_available(object_key):
-        return jsonify({"error": "object not found"}), 400
-
-    cover_object_key = (body.get("cover_object_key") or "").strip() or None
-    if cover_object_key and not _is_media_available(cover_object_key):
-        cover_object_key = None
-
-    item_id = medias.create_item(
-        pid, current_user.id, filename, object_key,
-        file_size=file_size or None,
-        cover_object_key=cover_object_key,
-        lang=lang,
-    )
-
-    # 涓嬭浇鐢ㄦ埛灏侀潰鍒版湰鍦扮紦瀛樹緵浠ｇ悊
-    if cover_object_key:
-        try:
-            product_dir = THUMB_DIR / str(pid)
-            product_dir.mkdir(parents=True, exist_ok=True)
-            ext = Path(cover_object_key).suffix or ".jpg"
-            _download_media_object(
-                cover_object_key, str(product_dir / f"item_cover_{item_id}{ext}"),
-            )
-        except Exception:
-            pass
-
-    # 鎶界缉鐣ュ浘锛堝け璐ヤ笉闃绘柇鍏ュ簱锛?
-    try:
-        THUMB_DIR.mkdir(parents=True, exist_ok=True)
-        product_dir = THUMB_DIR / str(pid)
-        product_dir.mkdir(exist_ok=True)
-        tmp_video = product_dir / f"tmp_{item_id}_{Path(filename).name}"
-        _download_media_object(object_key, str(tmp_video))
-        duration = get_media_duration(str(tmp_video))
-        thumb = extract_thumbnail(str(tmp_video), str(product_dir), scale="360:-1")
-        if thumb:
-            final = product_dir / f"{item_id}.jpg"
-            os.replace(thumb, final)
-            db_execute(
-                "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
-                (str(final.relative_to(OUTPUT_DIR)).replace("\\", "/"),
-                 duration or None, item_id),
-            )
-        try:
-            tmp_video.unlink()
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-    if lang == "en":
-        _schedule_material_evaluation(pid)
-
-    return jsonify({"id": item_id}), 201
+    result = _routes()._build_item_complete_response(pid, p, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/items/<int:item_id>", methods=["PATCH"])

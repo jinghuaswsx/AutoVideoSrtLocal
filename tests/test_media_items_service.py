@@ -145,3 +145,188 @@ def test_build_item_delete_response_soft_deletes_and_exposes_object_key():
     assert result.status_code == 200
     assert result.payload == {"ok": True}
     assert result.object_key == "1/medias/123/demo.mp4"
+
+
+def test_build_item_bootstrap_response_validates_and_reserves_upload():
+    from web.services.media_items import (
+        ItemUploadValidation,
+        build_item_bootstrap_response,
+    )
+
+    calls = []
+
+    result = build_item_bootstrap_response(
+        7,
+        123,
+        {"id": 123, "name": "Demo"},
+        {"filename": r"C:\tmp\demo.mp4", "lang": "en"},
+        parse_lang_fn=lambda body: (body["lang"], None),
+        validate_upload_filename_fn=lambda filename, product, lang, **kwargs: calls.append(
+            ("validate", filename, product["id"], lang, kwargs)
+        )
+        or ItemUploadValidation(ok=True, effective_lang="en"),
+        build_media_object_key_fn=lambda user_id, pid, filename: calls.append(
+            ("key", user_id, pid, filename)
+        )
+        or f"{user_id}/medias/{pid}/{filename}",
+        reserve_local_media_upload_fn=lambda object_key: calls.append(("reserve", object_key))
+        or {"upload_url": f"/upload/{object_key}"},
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {
+        "object_key": "7/medias/123/demo.mp4",
+        "effective_lang": "en",
+        "upload_url": "/upload/7/medias/123/demo.mp4",
+        "storage_backend": "local",
+    }
+    assert calls == [
+        ("validate", "demo.mp4", 123, "en", {"initial_upload": False}),
+        ("key", 7, 123, "demo.mp4"),
+        ("reserve", "7/medias/123/demo.mp4"),
+    ]
+
+
+def test_build_item_bootstrap_response_rejects_before_reserve():
+    from web.services.media_items import (
+        ItemUploadValidation,
+        build_item_bootstrap_response,
+    )
+
+    calls = []
+
+    missing_filename = build_item_bootstrap_response(
+        7,
+        123,
+        {"id": 123},
+        {"filename": " ", "lang": "en"},
+        parse_lang_fn=lambda body: ("en", None),
+        validate_upload_filename_fn=lambda *args, **kwargs: calls.append(("validate", args, kwargs)),
+        build_media_object_key_fn=lambda *args: calls.append(("key", args)),
+        reserve_local_media_upload_fn=lambda object_key: calls.append(("reserve", object_key)),
+    )
+    validation_error = build_item_bootstrap_response(
+        7,
+        123,
+        {"id": 123},
+        {"filename": "bad.mp4", "lang": "en", "skip_validation": True},
+        parse_lang_fn=lambda body: ("en", None),
+        validate_upload_filename_fn=lambda filename, product, lang, **kwargs: ItemUploadValidation(
+            ok=False,
+            effective_lang="fr",
+            payload={"error": "filename_invalid", "effective_lang": "fr"},
+            status_code=400,
+        ),
+        build_media_object_key_fn=lambda *args: calls.append(("key", args)),
+        reserve_local_media_upload_fn=lambda object_key: calls.append(("reserve", object_key)),
+    )
+
+    assert missing_filename.status_code == 400
+    assert missing_filename.payload == {"error": "filename required"}
+    assert validation_error.status_code == 400
+    assert validation_error.payload == {"error": "filename_invalid", "effective_lang": "fr"}
+    assert calls == []
+
+
+def test_build_item_complete_response_creates_item_and_runs_best_effort_side_effects():
+    from web.services.media_items import (
+        ItemUploadValidation,
+        build_item_complete_response,
+    )
+
+    calls = []
+
+    result = build_item_complete_response(
+        7,
+        123,
+        {"id": 123, "name": "Demo"},
+        {
+            "object_key": "1/medias/123/video.mp4",
+            "filename": "video.mp4",
+            "file_size": 321,
+            "cover_object_key": "1/medias/123/cover.jpg",
+            "lang": "en",
+        },
+        parse_lang_fn=lambda body: (body["lang"], None),
+        validate_upload_filename_fn=lambda filename, product, lang, **kwargs: calls.append(
+            ("validate", filename, product["id"], lang, kwargs)
+        )
+        or ItemUploadValidation(ok=True, effective_lang="en"),
+        is_media_available_fn=lambda object_key: object_key in {
+            "1/medias/123/video.mp4",
+            "1/medias/123/cover.jpg",
+        },
+        create_item_fn=lambda pid, user_id, filename, object_key, **kwargs: calls.append(
+            ("create", pid, user_id, filename, object_key, kwargs)
+        )
+        or 44,
+        cache_item_cover_fn=lambda item_id, pid, object_key: calls.append(
+            ("cover-cache", item_id, pid, object_key)
+        ),
+        build_item_thumbnail_fn=lambda item_id, pid, filename, object_key: calls.append(
+            ("thumbnail", item_id, pid, filename, object_key)
+        ),
+        schedule_material_evaluation_fn=lambda pid: calls.append(("schedule", pid)),
+    )
+
+    assert result.status_code == 201
+    assert result.payload == {"id": 44}
+    assert calls == [
+        ("validate", "video.mp4", 123, "en", {"initial_upload": False}),
+        (
+            "create",
+            123,
+            7,
+            "video.mp4",
+            "1/medias/123/video.mp4",
+            {"file_size": 321, "cover_object_key": "1/medias/123/cover.jpg", "lang": "en"},
+        ),
+        ("cover-cache", 44, 123, "1/medias/123/cover.jpg"),
+        ("thumbnail", 44, 123, "video.mp4", "1/medias/123/video.mp4"),
+        ("schedule", 123),
+    ]
+
+
+def test_build_item_complete_response_rejects_before_create():
+    from web.services.media_items import (
+        ItemUploadValidation,
+        build_item_complete_response,
+    )
+
+    calls = []
+
+    missing = build_item_complete_response(
+        7,
+        123,
+        {"id": 123},
+        {"object_key": "", "filename": "video.mp4", "lang": "en"},
+        parse_lang_fn=lambda body: ("en", None),
+        validate_upload_filename_fn=lambda *args, **kwargs: calls.append(("validate", args, kwargs)),
+        is_media_available_fn=lambda object_key: calls.append(("exists", object_key)) or True,
+        create_item_fn=lambda *args, **kwargs: calls.append(("create", args, kwargs)),
+        cache_item_cover_fn=lambda *args: calls.append(("cover-cache", args)),
+        build_item_thumbnail_fn=lambda *args: calls.append(("thumbnail", args)),
+        schedule_material_evaluation_fn=lambda pid: calls.append(("schedule", pid)),
+    )
+    unavailable = build_item_complete_response(
+        7,
+        123,
+        {"id": 123},
+        {"object_key": "missing.mp4", "filename": "video.mp4", "lang": "en"},
+        parse_lang_fn=lambda body: ("en", None),
+        validate_upload_filename_fn=lambda filename, product, lang, **kwargs: ItemUploadValidation(
+            ok=True,
+            effective_lang="en",
+        ),
+        is_media_available_fn=lambda object_key: False,
+        create_item_fn=lambda *args, **kwargs: calls.append(("create", args, kwargs)),
+        cache_item_cover_fn=lambda *args: calls.append(("cover-cache", args)),
+        build_item_thumbnail_fn=lambda *args: calls.append(("thumbnail", args)),
+        schedule_material_evaluation_fn=lambda pid: calls.append(("schedule", pid)),
+    )
+
+    assert missing.status_code == 400
+    assert missing.payload == {"error": "object_key and filename required"}
+    assert unavailable.status_code == 400
+    assert unavailable.payload == {"error": "object not found"}
+    assert calls == []
