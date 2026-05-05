@@ -867,6 +867,27 @@ def test_openapi_link_check_bootstrap_lives_outside_route_module():
     assert Path("web/services/openapi_link_check.py").exists()
 
 
+def test_openapi_shopify_localizer_bootstrap_lives_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "shopify_localizer_bootstrap"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "reference_images = [" not in route_source
+    assert "localized_images = [" not in route_source
+    assert "def _serialize" not in route_source
+    assert "invalid_target_lang" not in route_source
+    assert "shopify_product_id_missing" not in route_source
+    assert "english references not ready" not in route_source
+    assert "localized images not ready" not in route_source
+    assert "_build_shopify_localizer_bootstrap_response" in route_source
+    assert Path("web/services/openapi_shopify_localizer.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

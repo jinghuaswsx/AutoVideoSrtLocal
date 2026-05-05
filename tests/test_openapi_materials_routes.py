@@ -381,6 +381,46 @@ def test_shopify_localizer_bootstrap_accepts_shopify_id_override(client, monkeyp
     assert payload["localized_images"][0]["url"] == "http://local.test/it.jpg"
 
 
+def test_shopify_localizer_bootstrap_delegates_response_building(client, monkeypatch):
+    captured: dict = {}
+
+    def fake_build_shopify_localizer_bootstrap_response(body, **kwargs):
+        captured["body"] = body
+        captured["kwargs"] = kwargs
+        return {
+            "product": {
+                "id": 123,
+                "product_code": "sonic-lens-refresher-rjc",
+                "shopify_product_id": body["shopify_product_id"],
+                "name": "Demo Product",
+            },
+            "language": {"code": "it"},
+            "reference_images": [{"url": "http://local.test/en.jpg"}],
+            "localized_images": [{"url": "http://local.test/it.jpg"}],
+        }
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_shopify_localizer_bootstrap_response",
+        fake_build_shopify_localizer_bootstrap_response,
+    )
+
+    response = client.post(
+        "/openapi/medias/shopify-image-localizer/bootstrap",
+        headers={"X-API-Key": "demo-key"},
+        json={
+            "product_code": "sonic-lens-refresher-rjc",
+            "lang": "it",
+            "shopify_product_id": "8559391932589",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["product"]["shopify_product_id"] == "8559391932589"
+    assert captured["body"]["lang"] == "it"
+    assert "list_reference_images_for_lang_fn" in captured["kwargs"]
+
+
 def test_shopify_localizer_languages_include_shopify_language_name(client, monkeypatch):
     monkeypatch.setattr("web.routes.openapi_materials._api_key_valid", lambda: True)
     monkeypatch.setattr(

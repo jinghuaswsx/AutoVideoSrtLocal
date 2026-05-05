@@ -26,6 +26,10 @@ from web.services.openapi_link_check import (
     LinkCheckBootstrapError as _LinkCheckBootstrapError,
     build_link_check_bootstrap_response as _build_link_check_bootstrap_response,
 )
+from web.services.openapi_shopify_localizer import (
+    ShopifyLocalizerBootstrapError as _ShopifyLocalizerBootstrapError,
+    build_shopify_localizer_bootstrap_response as _build_shopify_localizer_bootstrap_response,
+)
 from web.services.openapi_push_items import (
     build_mark_failed_response as _build_mark_failed_response,
     build_mark_pushed_response as _build_mark_pushed_response,
@@ -73,69 +77,22 @@ def shopify_localizer_bootstrap():
         return jsonify({"error": "invalid api key"}), 401
 
     body = request.get_json(silent=True) or {}
-    product_code = str(body.get("product_code") or "").strip().lower()
-    lang = str(body.get("lang") or "").strip().lower()
-    if not product_code or not lang:
-        return jsonify({"error": "missing product_code or lang"}), 400
-    if not medias.is_valid_language(lang):
-        return jsonify({"error": "invalid lang"}), 400
-    if lang == "en":
-        # en 是源语言；作为本地化目标无语义，避免下游把英文图覆盖回英文自身
-        return jsonify({
-            "error": "invalid_target_lang",
-            "message": "英文为源语言，不能作为图片本地化目标语言。",
-        }), 400
-
-    product = medias.get_product_by_code(product_code)
-    if not product:
-        return jsonify({"error": "product not found"}), 404
-
-    shopify_product_id_override = str(body.get("shopify_product_id") or "").strip()
-    shopify_product_id = shopify_product_id_override or medias.resolve_shopify_product_id(int(product["id"]))
-    if not shopify_product_id:
-        return jsonify({
-            "error": "shopify_product_id_missing",
-            "message": "未找到 Shopify ID。请先到产品编辑页最底部填写 Shopify ID 后，再执行图片本地化工具。",
-        }), 409
-
-    # 本接口只服务详情图本地化流程，cover 归 EZ Product Image 另走流程，统一过滤掉
-    reference_images = [
-        item for item in medias.list_reference_images_for_lang(int(product["id"]), "en")
-        if item.get("kind") == "detail" and item.get("object_key")
-    ]
-    localized_images = [
-        item for item in medias.list_reference_images_for_lang(int(product["id"]), lang)
-        if item.get("kind") == "detail" and item.get("object_key")
-    ]
-    if not reference_images:
-        return jsonify({"error": "english references not ready"}), 409
-    if not localized_images:
-        return jsonify({"error": "localized images not ready"}), 409
-
-    def _serialize(item: dict) -> dict:
-        return {
-            "id": item.get("id"),
-            "kind": item.get("kind"),
-            "filename": item.get("filename"),
-            "url": _media_download_url(item.get("object_key")),
-        }
-
-    return jsonify({
-        "product": {
-            "id": product.get("id"),
-            "product_code": product.get("product_code"),
-            "shopify_product_id": shopify_product_id,
-            "name": product.get("name"),
-        },
-        "language": {
-            "code": lang,
-            "name_zh": medias.get_language_name(lang),
-            "shop_locale": lang,
-            "folder_code": lang,
-        },
-        "reference_images": [_serialize(item) for item in reference_images],
-        "localized_images": [_serialize(item) for item in localized_images],
-    })
+    try:
+        payload = _build_shopify_localizer_bootstrap_response(
+            body,
+            is_valid_language_fn=medias.is_valid_language,
+            get_product_by_code_fn=medias.get_product_by_code,
+            resolve_shopify_product_id_fn=medias.resolve_shopify_product_id,
+            list_reference_images_for_lang_fn=medias.list_reference_images_for_lang,
+            get_language_name_fn=medias.get_language_name,
+            media_download_url_fn=_media_download_url,
+        )
+    except _ShopifyLocalizerBootstrapError as exc:
+        error_payload = {"error": exc.error}
+        if exc.message:
+            error_payload["message"] = exc.message
+        return jsonify(error_payload), exc.status_code
+    return jsonify(payload)
 
 
 @shopify_localizer_bp.route("/tasks/claim", methods=["POST"])
