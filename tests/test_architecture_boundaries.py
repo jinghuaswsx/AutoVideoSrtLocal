@@ -379,6 +379,45 @@ def test_raw_source_list_update_delete_responses_live_outside_route_module():
     assert Path("web/services/media_raw_sources.py").exists()
 
 
+def test_media_evaluation_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/evaluation.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "api_product_evaluate",
+        "api_product_evaluate_request_preview",
+        "api_product_evaluate_request_payload",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+        direct_evaluation_calls = [
+            call.func.attr
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "material_evaluation"
+            and call.func.attr
+            in {
+                "evaluate_product_if_ready",
+                "build_request_debug_payload",
+            }
+        ]
+        assert direct_evaluation_calls == []
+    route_source = "\n".join(route_sources)
+
+    assert "_material_evaluation_message(result)" not in route_source
+    assert "full_payload_url" not in route_source
+    assert "_build_product_evaluation_response" in route_source
+    assert "_build_product_evaluation_preview_response" in route_source
+    assert "_build_product_evaluation_payload_response" in route_source
+    assert Path("web/services/media_evaluation.py").exists()
+
+
 def test_mk_copywriting_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
