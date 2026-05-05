@@ -217,7 +217,9 @@ def test_detail_image_proxy_access_lives_outside_route_module():
     assert direct_calls == []
     assert "_can_access_product" not in route_source
     assert "deleted_at" not in route_source
+    assert "_send_media_object" not in route_source
     assert "_build_detail_image_proxy_response" in route_source
+    assert "_detail_image_proxy_flask_response" in route_source
     assert Path("web/services/media_detail_listing.py").exists()
 
 

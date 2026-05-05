@@ -26,6 +26,7 @@ from web.services.media_detail_archives import (
 from web.services.media_detail_listing import (
     build_detail_image_proxy_response as _build_detail_image_proxy_response_impl,
     build_detail_images_list_response as _build_detail_images_list_response_impl,
+    detail_image_proxy_flask_response as _detail_image_proxy_flask_response_impl,
 )
 from web.services.media_detail_from_url import (
     build_detail_images_from_url_response as _build_detail_images_from_url_response_impl,
@@ -313,6 +314,13 @@ def _build_detail_image_proxy_response(image_id: int):
     )
 
 
+def _detail_image_proxy_flask_response(outcome):
+    return _detail_image_proxy_flask_response_impl(
+        outcome,
+        send_media_object_fn=_send_media_object,
+    )
+
+
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
 @login_required
 def api_detail_images_list(pid: int):
@@ -534,4 +542,4 @@ def detail_image_proxy(image_id: int):
     outcome = _routes()._build_detail_image_proxy_response(image_id)
     if outcome.not_found:
         abort(404)
-    return _send_media_object(outcome.object_key)
+    return _detail_image_proxy_flask_response(outcome)

@@ -18,6 +18,14 @@ class DetailImageProxyResponse:
     not_found: bool = False
 
 
+def detail_image_proxy_flask_response(
+    result: DetailImageProxyResponse,
+    *,
+    send_media_object_fn: Callable[[str], object],
+):
+    return send_media_object_fn(result.object_key or "")
+
+
 def build_detail_images_list_response(
     product_id: int,
     lang: str,

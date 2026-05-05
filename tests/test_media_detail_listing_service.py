@@ -61,6 +61,23 @@ def test_build_detail_image_proxy_response_returns_accessible_object_key():
     assert calls == [("image", 77), ("product", 123), ("access", product)]
 
 
+def test_detail_image_proxy_flask_response_sends_object_key():
+    from web.services.media_detail_listing import (
+        DetailImageProxyResponse,
+        detail_image_proxy_flask_response,
+    )
+
+    sent = []
+
+    result = detail_image_proxy_flask_response(
+        DetailImageProxyResponse(object_key="1/medias/123/detail.jpg"),
+        send_media_object_fn=lambda object_key: sent.append(object_key) or f"sent:{object_key}",
+    )
+
+    assert result == "sent:1/medias/123/detail.jpg"
+    assert sent == ["1/medias/123/detail.jpg"]
+
+
 def test_build_detail_image_proxy_response_hides_missing_deleted_or_inaccessible_images():
     from web.services.media_detail_listing import build_detail_image_proxy_response
 
