@@ -27,12 +27,51 @@ class ProductCoverFileResponse:
     not_found: bool = False
 
 
+@dataclass(frozen=True)
+class ItemThumbnailFileResponse:
+    local_path: Path | None = None
+    mimetype: str | None = None
+    status_code: int = 200
+    not_found: bool = False
+
+
 def build_item_play_url_response(
     item: dict,
     *,
     media_object_url_fn: Callable[[str], str],
 ) -> MediaCoverResponse:
     return MediaCoverResponse({"url": media_object_url_fn(item["object_key"])})
+
+
+def build_item_thumbnail_file_response(
+    item: dict,
+    *,
+    output_dir: str | os.PathLike,
+    path_exists_fn: Callable[[Path], bool] = Path.exists,
+) -> ItemThumbnailFileResponse:
+    thumbnail_path = (item.get("thumbnail_path") or "").strip()
+    if not thumbnail_path:
+        return _item_thumbnail_not_found()
+
+    local_path = Path(output_dir) / thumbnail_path
+    if not path_exists_fn(local_path):
+        return _item_thumbnail_not_found()
+
+    return ItemThumbnailFileResponse(
+        local_path=local_path,
+        mimetype="image/jpeg",
+    )
+
+
+def item_thumbnail_file_flask_response(result: ItemThumbnailFileResponse):
+    from web.services.artifact_download import safe_task_file_response
+
+    return safe_task_file_response(
+        {},
+        str(result.local_path),
+        not_found_message="thumbnail not found",
+        mimetype=result.mimetype,
+    )
 
 
 def build_product_cover_file_response(
@@ -360,6 +399,10 @@ def _cover_mimetype(ext: str) -> str:
 
 def _product_cover_not_found() -> ProductCoverFileResponse:
     return ProductCoverFileResponse(status_code=404, not_found=True)
+
+
+def _item_thumbnail_not_found() -> ItemThumbnailFileResponse:
+    return ItemThumbnailFileResponse(status_code=404, not_found=True)
 
 
 def _call_best_effort(fn: Callable, *args) -> None:

@@ -18,11 +18,13 @@ from web.services.media_covers import (
     build_item_cover_set_response as _build_item_cover_set_response_impl,
     build_item_cover_set_from_url_response as _build_item_cover_set_from_url_response_impl,
     build_item_cover_update_response as _build_item_cover_update_response_impl,
+    build_item_thumbnail_file_response as _build_item_thumbnail_file_response_impl,
     build_product_cover_complete_response as _build_product_cover_complete_response_impl,
     build_product_cover_delete_response as _build_product_cover_delete_response_impl,
     build_product_cover_file_response as _build_product_cover_file_response_impl,
     build_product_cover_from_url_response as _build_product_cover_from_url_response_impl,
     build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
+    item_thumbnail_file_flask_response as _item_thumbnail_file_flask_response,
     product_cover_file_flask_response as _product_cover_file_flask_response,
 )
 
@@ -77,6 +79,13 @@ def _build_item_play_url_response(item):
             "medias.media_object_proxy",
             object_key=object_key,
         ),
+    )
+
+
+def _build_item_thumbnail_file_response(item):
+    return _build_item_thumbnail_file_response_impl(
+        item,
+        output_dir=OUTPUT_DIR,
     )
 
 
@@ -385,18 +394,10 @@ def thumb(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
-    if not it.get("thumbnail_path"):
+    result = _routes()._build_item_thumbnail_file_response(it)
+    if result.not_found:
         abort(404)
-    full = Path(OUTPUT_DIR) / it["thumbnail_path"]
-    if not full.exists():
-        abort(404)
-    from web.services.artifact_download import safe_task_file_response
-    return safe_task_file_response(
-        {},
-        str(full),
-        not_found_message="thumbnail not found",
-        mimetype="image/jpeg",
-    )
+    return _item_thumbnail_file_flask_response(result)
 
 
 @bp.route("/cover/<int:pid>")

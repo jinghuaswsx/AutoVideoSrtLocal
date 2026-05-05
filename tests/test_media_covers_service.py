@@ -109,6 +109,42 @@ def test_build_product_cover_file_response_rejects_unsafe_language_without_downl
     assert downloads == []
 
 
+def test_build_item_thumbnail_file_response_uses_output_dir_for_existing_thumbnail(tmp_path):
+    from web.services.media_covers import build_item_thumbnail_file_response
+
+    output_dir = tmp_path / "output"
+    thumbnail = output_dir / "media_thumbs" / "item.jpg"
+    thumbnail.parent.mkdir(parents=True)
+    thumbnail.write_bytes(b"jpeg-thumbnail")
+
+    result = build_item_thumbnail_file_response(
+        {"id": 701, "thumbnail_path": "media_thumbs/item.jpg"},
+        output_dir=output_dir,
+        path_exists_fn=lambda path: path.exists(),
+    )
+
+    assert result.status_code == 200
+    assert result.local_path == thumbnail
+    assert result.mimetype == "image/jpeg"
+
+
+def test_build_item_thumbnail_file_response_returns_not_found_without_thumbnail(tmp_path):
+    from web.services.media_covers import build_item_thumbnail_file_response
+
+    calls = []
+
+    result = build_item_thumbnail_file_response(
+        {"id": 701, "thumbnail_path": ""},
+        output_dir=tmp_path / "output",
+        path_exists_fn=lambda path: calls.append(path) or True,
+    )
+
+    assert result.status_code == 404
+    assert result.not_found is True
+    assert result.local_path is None
+    assert calls == []
+
+
 def test_build_product_cover_bootstrap_response_uses_lang_and_safe_filename():
     from web.services.media_covers import build_product_cover_bootstrap_response
 

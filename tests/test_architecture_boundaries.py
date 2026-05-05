@@ -1060,6 +1060,24 @@ def test_media_product_cover_file_response_lives_outside_route_module():
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_media_item_thumbnail_file_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "thumb"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "thumbnail_path" not in route_source
+    assert "OUTPUT_DIR" not in route_source
+    assert "safe_task_file_response" not in route_source
+    assert "Path(" not in route_source
+    assert "_build_item_thumbnail_file_response" in route_source
+    assert Path("web/services/media_covers.py").exists()
+
+
 def test_media_cover_from_url_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
