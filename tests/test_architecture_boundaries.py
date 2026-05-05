@@ -151,8 +151,10 @@ def test_detail_image_archive_responses_live_outside_route_module():
     assert "_detail_images_is_gif" not in route_source
     assert 'temp_prefix="localized_detail_images_zip_"' not in route_source
     assert "object_keys" not in route_source
+    assert "send_file(" not in route_source
     assert "_build_detail_images_zip_response" in route_source
     assert "_build_localized_detail_images_zip_response" in route_source
+    assert "_detail_images_zip_flask_response" in route_source
     assert Path("web/services/media_detail_archives.py").exists()
 
 

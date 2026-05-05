@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from flask import abort, jsonify, request, send_file
+from flask import abort, jsonify, request
 from flask_login import current_user, login_required
 
 from appcore import (
@@ -21,6 +21,7 @@ from web.services import image_translate_runner
 from web.services.media_detail_archives import (
     build_detail_images_zip_response as _build_detail_images_zip_response_impl,
     build_localized_detail_images_zip_response as _build_localized_detail_images_zip_response_impl,
+    detail_images_zip_flask_response as _detail_images_zip_flask_response,
 )
 from web.services.media_detail_listing import (
     build_detail_image_proxy_response as _build_detail_image_proxy_response_impl,
@@ -344,13 +345,7 @@ def api_detail_images_download_zip(pid: int):
         detail=result.audit_detail,
     )
 
-    archive = result.archive
-    return send_file(
-        archive.buffer,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"{archive.archive_base}.zip",
-    )
+    return _detail_images_zip_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/download-localized-zip", methods=["GET"])
@@ -373,13 +368,7 @@ def api_detail_images_download_localized_zip(pid: int):
         detail=result.audit_detail,
     )
 
-    archive = result.archive
-    return send_file(
-        archive.buffer,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"{archive.archive_base}.zip",
-    )
+    return _detail_images_zip_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/from-url", methods=["POST"])

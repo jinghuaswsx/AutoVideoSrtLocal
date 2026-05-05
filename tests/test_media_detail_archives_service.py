@@ -173,3 +173,27 @@ def test_build_localized_detail_images_zip_response_marks_no_static_images_not_f
 
     assert result.not_found is True
     assert result.archive is None
+
+
+def test_build_detail_images_archive_flask_response_sends_zip_attachment():
+    from flask import Flask
+    from web.services.media_detail_archives import (
+        DetailImagesArchive,
+        DetailImagesArchiveResponse,
+        detail_images_zip_flask_response,
+    )
+
+    app = Flask(__name__)
+    archive_buffer = io.BytesIO(b"zip-bytes")
+    result = DetailImagesArchiveResponse(
+        archive=DetailImagesArchive(archive_base="demo_en_detail-images", buffer=archive_buffer)
+    )
+
+    with app.test_request_context("/"):
+        response = detail_images_zip_flask_response(result)
+
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "application/zip"
+    assert "demo_en_detail-images.zip" in response.headers["Content-Disposition"]
+    response.direct_passthrough = False
+    assert response.get_data() == b"zip-bytes"

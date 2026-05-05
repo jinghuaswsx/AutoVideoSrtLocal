@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
+from flask import send_file
+
 
 @dataclass(frozen=True)
 class DetailImagesZipGroup:
@@ -158,6 +160,18 @@ def build_localized_detail_images_zip_response(
                 for row in rows
             ],
         },
+    )
+
+
+def detail_images_zip_flask_response(result: DetailImagesArchiveResponse):
+    archive = result.archive
+    if archive is None:
+        return ("", result.status_code)
+    return send_file(
+        archive.buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{archive.archive_base}.zip",
     )
 
 
