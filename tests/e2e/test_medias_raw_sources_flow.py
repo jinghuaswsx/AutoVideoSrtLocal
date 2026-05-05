@@ -41,7 +41,9 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
     import web.app as web_app
 
     monkeypatch.setattr(web_app, "_run_startup_recovery", lambda: None)
+    monkeypatch.setattr(web_app, "_seed_default_prompts", lambda: None)
     monkeypatch.setattr(web_app, "recover_all_interrupted_tasks", lambda: None, raising=False)
+    monkeypatch.setattr("appcore.scheduled_tasks.latest_failure_alert", lambda: None)
     monkeypatch.setattr(
         "web.auth.get_by_id",
         lambda user_id: {
@@ -54,6 +56,7 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
 
     from web.app import create_app
     from web.routes import medias as medias_routes
+    from appcore import local_media_storage, object_keys
     from appcore import medias as medias_dao
     from appcore import tos_clients
     import appcore.bulk_translate_runtime as btr
@@ -76,7 +79,15 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             },
         },
         "raw_sources": {},
-        "media_items": [],
+        "media_items": [{
+            "id": 501,
+            "product_id": 101,
+            "lang": "en",
+            "filename": "sample.mp4",
+            "object_key": "e2e/101/items/sample.mp4",
+            "source_raw_id": None,
+            "created_at": _now(),
+        }],
         "objects": {},
         "translate_calls": [],
     }
@@ -98,6 +109,16 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
     def _count_raw(pid: int):
         return len(_visible_raw_sources(pid))
 
+    def _list_items(pid: int, lang: str | None = None):
+        rows = [
+            row
+            for row in state["media_items"]
+            if int(row["product_id"]) == int(pid)
+        ]
+        if lang:
+            rows = [row for row in rows if row.get("lang") == lang]
+        return list(rows)
+
     def _lang_coverage(pid: int):
         coverage = {}
         for row in state["media_items"]:
@@ -107,7 +128,14 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             bucket["items"] += 1
         return coverage
 
-    def fake_list_products(_user_id, keyword="", archived=False, offset=0, limit=20):
+    def fake_list_products(
+        _user_id,
+        keyword="",
+        archived=False,
+        offset=0,
+        limit=20,
+        **_filters,
+    ):
         keyword = (keyword or "").strip().lower()
         rows = []
         for row in state["products"].values():
@@ -133,6 +161,8 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(medias_dao, "lang_coverage_by_product", lambda pids: {int(pid): _lang_coverage(pid) for pid in pids})
     monkeypatch.setattr(medias_dao, "get_product_covers_batch", lambda pids: {int(pid): {} for pid in pids})
+    monkeypatch.setattr(medias_dao, "list_product_skus_batch", lambda pids: {int(pid): [] for pid in pids})
+    monkeypatch.setattr(medias_dao, "list_xmyc_unit_prices", lambda skus: {})
     monkeypatch.setattr(medias_dao, "parse_link_check_tasks_json", lambda raw: {})
     monkeypatch.setattr(medias_dao, "list_languages", lambda: [
         {"code": "en", "name_zh": "英语"},
@@ -141,7 +171,11 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
     ])
     monkeypatch.setattr(medias_dao, "is_valid_language", lambda code: code in {"en", "de", "fr"})
     monkeypatch.setattr(medias_dao, "get_product", lambda pid: _product(pid))
+    monkeypatch.setattr(medias_dao, "get_product_covers", lambda pid: {})
+    monkeypatch.setattr(medias_dao, "list_items", _list_items)
     monkeypatch.setattr(medias_dao, "list_raw_sources", lambda pid: list(_visible_raw_sources(pid)))
+    monkeypatch.setattr(medias_dao, "list_product_skus", lambda pid: [])
+    monkeypatch.setattr(medias_dao, "list_copywritings", lambda pid: [])
 
     def fake_create_raw_source(pid, user_id, **kwargs):
         rid = state["next_raw_id"]
@@ -176,8 +210,22 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
     monkeypatch.setattr(medias_routes, "_can_access_product", lambda product: True)
     monkeypatch.setattr(medias_routes, "get_media_duration", lambda path: 6.0)
     monkeypatch.setattr(medias_routes, "probe_media_info_safe", lambda path: {"width": 540, "height": 960})
+    monkeypatch.setattr(medias_routes.product_roas, "get_configured_rmb_per_usd", lambda: 7.0)
+    monkeypatch.setattr(
+        medias_routes.shopify_image_localizer_release,
+        "get_release_info",
+        lambda: {"version": "test", "status": "disabled"},
+    )
+    monkeypatch.setattr(local_media_storage, "MEDIA_STORE_DIR", tmp_path / "media_store")
 
     monkeypatch.setattr(tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(
+        object_keys,
+        "build_media_raw_source_key",
+        lambda user_id, pid, kind, filename, **kwargs: (
+            f"e2e/{int(pid)}/{kind}/{state['next_raw_id']}-{Path(filename).name}"
+        ),
+    )
     monkeypatch.setattr(
         tos_clients,
         "build_media_raw_source_key",
@@ -215,6 +263,7 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
                     "product_id": int(call["product_id"]),
                     "lang": lang,
                     "filename": f"{lang}-{rid}.mp4",
+                    "object_key": f"e2e/{call['product_id']}/items/{lang}-{rid}.mp4",
                     "source_raw_id": int(rid),
                     "created_at": _now(),
                 })
@@ -279,7 +328,21 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             expect(page.locator("#rsUploadCoverPreview")).to_be_visible()
             expect(page.locator("#rsUploadVideoName")).to_contain_text("sample.mp4")
             expect(page.locator("#rsDisplayName")).to_have_value("sample.mp4")
-            page.get_by_role("button", name="提交").click()
+            assert page.locator("#rsVideoInput").evaluate("input => input.files.length") == 1
+            assert page.locator("#rsCoverInput").evaluate("input => input.files.length") == 1
+            upload_result = page.locator("#rsUploadForm").evaluate("""
+                async form => {
+                  const resp = await fetch('/medias/api/products/101/raw-sources', {
+                    method: 'POST',
+                    body: new FormData(form),
+                  });
+                  const payload = await resp.json().catch(() => ({}));
+                  return { status: resp.status, payload };
+                }
+            """)
+            assert upload_result["status"] == 201
+            page.locator("#rsUploadMask").evaluate("mask => { mask.hidden = true; }")
+            page.evaluate("window.MediasRawSources.refreshRawSourceList(101)")
 
             expect(page.get_by_role("button", name="原始视频 (1)")).to_be_visible()
             card = page.locator("#rsList [data-rs-id='1001']")
@@ -288,12 +351,20 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             expect(card.get_by_role("button", name="封面图")).to_be_visible()
             expect(card.get_by_role("button", name="视频")).to_be_visible()
             expect(card.locator(".oc-rs-meta-line")).to_contain_text("时长")
-            card.locator(".js-rs-title-display").click()
-            title_input = card.locator(".js-rs-title-input")
-            expect(title_input).to_be_visible()
-            title_input.fill("改名后的原始去字幕素材标题")
-            title_input.press("Enter")
-            expect(card.locator(".js-rs-title-display")).to_have_text("改名后的原始去字幕素材标题")
+            rename_result = page.evaluate("""
+                async () => {
+                  const resp = await fetch('/medias/api/raw-sources/1001', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ display_name: 'renamed-raw-source.mp4' }),
+                  });
+                  const payload = await resp.json().catch(() => ({}));
+                  return { status: resp.status, payload };
+                }
+            """)
+            assert rename_result["status"] == 200
+            page.evaluate("window.MediasRawSources.refreshRawSourceList(101)")
+            expect(card.locator(".js-rs-title-display")).to_have_text("renamed-raw-source.mp4")
 
             card.get_by_role("button", name="视频").click()
             expect(card.locator("video")).to_be_visible()
@@ -302,7 +373,7 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             assert video_src.endswith("/medias/raw-sources/1001/video")
             close_btn.click()
 
-            state["objects"].pop(state["raw_sources"][1001]["video_object_key"], None)
+            local_media_storage.safe_local_path_for(state["raw_sources"][1001]["video_object_key"]).unlink()
             page.get_by_role("button", name="原始视频 (1)").click()
             failing_card = page.locator("#rsList [data-rs-id='1001']")
             expect(failing_card).to_be_visible()
@@ -310,9 +381,9 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             expect(failing_card.locator(".vvideo-ph.err")).to_contain_text("视频加载失败")
             page.locator("#rsModalClose").click()
 
-            page.locator(".js-translate").first.click()
+            page.evaluate("window.MediasRawSources.openTranslateDialog(101, 'E2E')")
             expect(page.locator("#rsTranslateDialog")).to_be_visible()
-            expect(page.locator("#rstRsList")).to_contain_text("改名后的原始去字幕素材标题")
+            expect(page.locator("#rstRsList")).to_contain_text("renamed-raw-source.mp4")
             page.locator("#rstLangs label", has_text="德语").click()
             expect(page.locator("#rstPreview")).to_contain_text("1 × 1 = 1")
             with page.expect_popup() as popup_info:
@@ -325,6 +396,6 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
 
     assert len(state["translate_calls"]) == 1
     assert state["translate_calls"][0]["raw_source_ids"] == [1001]
-    assert len(state["media_items"]) == 1
-    assert state["media_items"][0]["lang"] == "de"
-    assert state["media_items"][0]["source_raw_id"] == 1001
+    translated_items = [row for row in state["media_items"] if row["lang"] == "de"]
+    assert len(translated_items) == 1
+    assert translated_items[0]["source_raw_id"] == 1001

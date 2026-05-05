@@ -29,6 +29,42 @@ from ._helpers import (
     probe_media_info_safe,
 )
 from ._serializers import _serialize_raw_source
+from web.services.media_raw_sources import (
+    build_raw_source_delete_response as _build_raw_source_delete_response_impl,
+    build_raw_source_update_response as _build_raw_source_update_response_impl,
+    build_raw_sources_list_response as _build_raw_sources_list_response_impl,
+)
+
+
+def _routes_module():
+    from web.routes import medias as routes
+
+    return routes
+
+
+def _build_raw_sources_list_response(pid: int):
+    return _build_raw_sources_list_response_impl(
+        pid,
+        list_raw_sources_fn=medias.list_raw_sources,
+        serialize_raw_source_fn=_serialize_raw_source,
+    )
+
+
+def _build_raw_source_update_response(rid: int, body: dict):
+    return _build_raw_source_update_response_impl(
+        rid,
+        body,
+        update_raw_source_fn=medias.update_raw_source,
+        get_raw_source_fn=medias.get_raw_source,
+        serialize_raw_source_fn=_serialize_raw_source,
+    )
+
+
+def _build_raw_source_delete_response(rid: int):
+    return _build_raw_source_delete_response_impl(
+        rid,
+        soft_delete_raw_source_fn=medias.soft_delete_raw_source,
+    )
 
 
 @bp.route("/api/products/<int:pid>/raw-sources", methods=["GET"])
@@ -37,8 +73,9 @@ def api_list_raw_sources(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    rows = medias.list_raw_sources(pid)
-    return jsonify({"items": [_serialize_raw_source(r) for r in rows]})
+    routes = _routes_module()
+    result = routes._build_raw_sources_list_response(pid)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/raw-sources", methods=["POST"])
@@ -167,22 +204,12 @@ def api_update_raw_source(rid: int):
     p = medias.get_product(int(row["product_id"]))
     if not _can_access_product(p):
         abort(404)
+    routes = _routes_module()
     body = request.get_json(silent=True) or {}
-    fields: dict = {}
-    if "display_name" in body:
-        display_name = _client_filename_basename(body.get("display_name"))
-        if display_name.strip() and validate_video_filename_no_spaces(display_name):
-            return _raw_source_filename_error_response(display_name)
-        fields["display_name"] = display_name if display_name.strip() else None
-    if "sort_order" in body:
-        try:
-            fields["sort_order"] = int(body["sort_order"])
-        except (TypeError, ValueError):
-            return jsonify({"error": "sort_order must be int"}), 400
-    if not fields:
-        return jsonify({"error": "no valid fields"}), 400
-    medias.update_raw_source(rid, **fields)
-    return jsonify({"item": _serialize_raw_source(medias.get_raw_source(rid))})
+    result = routes._build_raw_source_update_response(rid, body)
+    if result.not_found:
+        abort(404)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/raw-sources/<int:rid>", methods=["DELETE"])
@@ -194,5 +221,6 @@ def api_delete_raw_source(rid: int):
     p = medias.get_product(int(row["product_id"]))
     if not _can_access_product(p):
         abort(404)
-    medias.soft_delete_raw_source(rid)
-    return jsonify({"ok": True})
+    routes = _routes_module()
+    result = routes._build_raw_source_delete_response(rid)
+    return jsonify(result.payload), result.status_code
