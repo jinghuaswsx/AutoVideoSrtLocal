@@ -391,6 +391,24 @@ def test_detail_image_from_url_response_lives_outside_route_module():
     assert Path("web/services/media_detail_from_url.py").exists()
 
 
+def test_detail_image_from_url_status_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_detail_images_from_url_status"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "medias_detail_fetch_tasks" not in route_source
+    assert ".get(task_id" not in route_source
+    assert "task not found" not in route_source
+    assert "product_id" not in route_source
+    assert "_build_detail_images_from_url_status_response" in route_source
+    assert Path("web/services/media_detail_from_url.py").exists()
+
+
 def test_detail_image_upload_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

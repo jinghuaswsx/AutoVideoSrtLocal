@@ -27,6 +27,7 @@ from web.services.media_detail_listing import (
 )
 from web.services.media_detail_from_url import (
     build_detail_images_from_url_response as _build_detail_images_from_url_response_impl,
+    build_detail_images_from_url_status_response as _build_detail_images_from_url_status_response_impl,
 )
 from web.services.media_detail_mutations import (
     clear_detail_images,
@@ -138,6 +139,17 @@ def _build_detail_images_from_url_response(
         get_detail_image_fn=medias.get_detail_image,
         serialize_detail_image_fn=_serialize_detail_image,
         max_download_candidates=_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES,
+    )
+
+
+def _build_detail_images_from_url_status_response(pid: int, task_id: str, user_id: int):
+    from appcore import medias_detail_fetch_tasks as mdf
+
+    return _build_detail_images_from_url_status_response_impl(
+        pid,
+        task_id,
+        int(user_id),
+        get_fetch_task_fn=mdf.get,
     )
 
 
@@ -352,11 +364,12 @@ def api_detail_images_from_url(pid: int):
 @login_required
 def api_detail_images_from_url_status(pid: int, task_id: str):
     """Return the current status for a detail-image fetch task."""
-    from appcore import medias_detail_fetch_tasks as mdf
-    t = mdf.get(task_id, user_id=current_user.id)
-    if not t or t.get("product_id") != pid:
-        return jsonify({"error": "task not found"}), 404
-    return jsonify(t)
+    result = _routes()._build_detail_images_from_url_status_response(
+        pid,
+        task_id,
+        current_user.id,
+    )
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/detail-images/bootstrap", methods=["POST"])

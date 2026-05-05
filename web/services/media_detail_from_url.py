@@ -28,6 +28,12 @@ class DetailImagesFromUrlResponse:
     status_code: int = 200
 
 
+@dataclass(frozen=True)
+class DetailImagesFromUrlStatusResponse:
+    payload: dict
+    status_code: int = 200
+
+
 def build_detail_images_from_url_plan(
     product: Mapping[str, object],
     body: Mapping[str, object],
@@ -137,6 +143,19 @@ def build_detail_images_from_url_response(
         worker=worker,
     )
     return DetailImagesFromUrlResponse({"task_id": task_id, "url": plan.url}, 202)
+
+
+def build_detail_images_from_url_status_response(
+    product_id: int,
+    task_id: str,
+    user_id: int,
+    *,
+    get_fetch_task_fn: Callable[..., Mapping[str, object] | None],
+) -> DetailImagesFromUrlStatusResponse:
+    task = get_fetch_task_fn(task_id, user_id=int(user_id))
+    if not task or task.get("product_id") != int(product_id):
+        return DetailImagesFromUrlStatusResponse({"error": "task not found"}, 404)
+    return DetailImagesFromUrlStatusResponse(dict(task))
 
 
 def build_detail_images_from_url_worker(

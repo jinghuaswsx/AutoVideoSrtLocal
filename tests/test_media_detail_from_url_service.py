@@ -188,3 +188,47 @@ def test_from_url_response_rejects_plan_errors_without_starting_task():
 
     assert result.status_code == 400
     assert result.payload == {"error": "product_code required before inferring a default link"}
+
+
+def test_from_url_status_response_returns_matching_task_for_user_and_product():
+    from web.services.media_detail_from_url import build_detail_images_from_url_status_response
+
+    calls = []
+    task = {"task_id": "mdf-1", "product_id": 123, "status": "done"}
+
+    result = build_detail_images_from_url_status_response(
+        123,
+        "mdf-1",
+        7,
+        get_fetch_task_fn=lambda task_id, *, user_id: calls.append((task_id, user_id)) or task,
+    )
+
+    assert result.status_code == 200
+    assert result.payload == task
+    assert calls == [("mdf-1", 7)]
+
+
+def test_from_url_status_response_hides_missing_or_foreign_task():
+    from web.services.media_detail_from_url import build_detail_images_from_url_status_response
+
+    missing = build_detail_images_from_url_status_response(
+        123,
+        "missing",
+        7,
+        get_fetch_task_fn=lambda task_id, *, user_id: None,
+    )
+    foreign = build_detail_images_from_url_status_response(
+        123,
+        "foreign",
+        7,
+        get_fetch_task_fn=lambda task_id, *, user_id: {
+            "task_id": task_id,
+            "product_id": 999,
+            "status": "done",
+        },
+    )
+
+    assert missing.status_code == 404
+    assert missing.payload == {"error": "task not found"}
+    assert foreign.status_code == 404
+    assert foreign.payload == {"error": "task not found"}

@@ -1002,6 +1002,27 @@ def test_detail_images_from_url_background_worker_uses_captured_user_id(
     assert len(task_state["inserted"]) == 1
 
 
+def test_detail_images_from_url_status_route_delegates_response_building(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as r
+
+    captured = {}
+
+    def fake_build(pid, task_id, user_id):
+        captured.update({"pid": pid, "task_id": task_id, "user_id": user_id})
+        return SimpleNamespace(payload={"task_id": task_id, "status": "done"}, status_code=200)
+
+    monkeypatch.setattr(r, "_build_detail_images_from_url_status_response", fake_build)
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/from-url/status/mdf-1")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"task_id": "mdf-1", "status": "done"}
+    assert captured == {"pid": 123, "task_id": "mdf-1", "user_id": 1}
+
+
 def test_detail_images_cleanup_loop_exits_without_tick_when_shutdown_requested(monkeypatch):
     from appcore import medias_detail_fetch_tasks as mdf
     from appcore import shutdown_coordinator
