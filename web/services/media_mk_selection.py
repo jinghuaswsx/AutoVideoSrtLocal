@@ -3,9 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping, Sequence
 
+import requests
+
 
 @dataclass(frozen=True)
 class MkSelectionResponse:
+    payload: dict
+    status_code: int
+
+
+@dataclass(frozen=True)
+class MkDetailResponse:
     payload: dict
     status_code: int
 
@@ -127,3 +135,36 @@ def build_mk_selection_response(
         {"items": items, "total": total, "page": page_num, "page_size": page_size},
         200,
     )
+
+
+def build_mk_detail_response(
+    mk_id: int,
+    *,
+    build_headers_fn: Callable[[], dict],
+    get_base_url_fn: Callable[[], str],
+    is_login_expired_fn: Callable[[dict], bool],
+    http_get_fn=requests.get,
+) -> MkDetailResponse:
+    headers = build_headers_fn()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        return MkDetailResponse(
+            {"error": "明空凭据未配置，请先在设置页同步 wedev 凭据"},
+            500,
+        )
+    base_url = get_base_url_fn()
+    try:
+        resp = http_get_fn(
+            f"{base_url}/api/marketing/medias/{mk_id}",
+            headers=headers,
+            timeout=15,
+        )
+        data = resp.json()
+    except Exception as exc:
+        return MkDetailResponse({"error": str(exc)}, 502)
+
+    if is_login_expired_fn(data):
+        return MkDetailResponse(
+            {"error": "明空登录已失效，请重新同步 wedev 凭据"},
+            401,
+        )
+    return MkDetailResponse(data, resp.status_code)

@@ -72,3 +72,78 @@ def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query
 
     assert result.status_code == 400
     assert result.payload["error"] == "invalid_pagination"
+
+
+def test_build_mk_detail_response_uses_server_side_credentials():
+    from web.services.media_mk_selection import build_mk_detail_response
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"data": {"item": {"id": 3719}}}
+
+    def fake_get(url, *, headers=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    result = build_mk_detail_response(
+        3719,
+        build_headers_fn=lambda: {
+            "Authorization": "Bearer synced-token",
+            "Cookie": "token=synced-token",
+            "Accept": "application/json",
+        },
+        get_base_url_fn=lambda: "https://wedev.example",
+        is_login_expired_fn=lambda data: False,
+        http_get_fn=fake_get,
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {"data": {"item": {"id": 3719}}}
+    assert captured["url"] == "https://wedev.example/api/marketing/medias/3719"
+    assert captured["headers"]["Authorization"] == "Bearer synced-token"
+    assert captured["timeout"] == 15
+
+
+def test_build_mk_detail_response_rejects_missing_credentials_without_request():
+    from web.services.media_mk_selection import build_mk_detail_response
+
+    def fail_get(*_args, **_kwargs):
+        raise AssertionError("missing credentials should stop before request")
+
+    result = build_mk_detail_response(
+        3719,
+        build_headers_fn=lambda: {"Accept": "application/json"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        is_login_expired_fn=lambda data: False,
+        http_get_fn=fail_get,
+    )
+
+    assert result.status_code == 500
+    assert "error" in result.payload
+
+
+def test_build_mk_detail_response_maps_expired_login_to_401():
+    from web.services.media_mk_selection import build_mk_detail_response
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"is_guest": True}
+
+    result = build_mk_detail_response(
+        3719,
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        is_login_expired_fn=lambda data: True,
+        http_get_fn=lambda *_args, **_kwargs: FakeResponse(),
+    )
+
+    assert result.status_code == 401
+    assert "error" in result.payload

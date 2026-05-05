@@ -419,3 +419,32 @@ def test_mk_detail_proxy_uses_server_side_wedev_credentials(
     assert captured["headers"]["Cookie"] == "token=synced-token; x-hng=lang=zh-CN&domain=os.wedev.vip"
     assert captured["headers"]["Accept"] == "application/json"
     assert captured["timeout"] == 15
+
+
+def test_mk_detail_proxy_delegates_response_building_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+    from web.services.media_mk_selection import MkDetailResponse
+
+    captured = {}
+
+    def fake_build(mk_id):
+        captured["mk_id"] = mk_id
+        return MkDetailResponse({"data": {"item": {"id": mk_id}}}, 200)
+
+    monkeypatch.setattr(route_mod, "_build_mk_detail_response", fake_build)
+    monkeypatch.setattr(
+        route_mod.requests,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("route should delegate mk detail request handling")
+        ),
+    )
+
+    response = authed_client_no_db.get("/medias/api/mk-detail/3719")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"data": {"item": {"id": 3719}}}
+    assert captured["mk_id"] == 3719
