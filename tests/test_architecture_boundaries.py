@@ -893,8 +893,13 @@ def test_media_object_access_validation_lives_outside_route_module():
 
     assert "\"..\" in key.split(\"/\")" not in route_source
     assert "parts = key.split(\"/\")" not in route_source
-    assert "_validate_private_media_object_access" in route_source
-    assert "_validate_public_media_object_access" in route_source
+    assert "_validate_private_media_object_access" not in route_source
+    assert "_validate_public_media_object_access" not in route_source
+    assert "_send_media_object" not in route_source
+    assert "find_item_by_object_key" not in route_source
+    assert "_build_private_media_object_proxy_response" in route_source
+    assert "_build_public_media_object_proxy_response" in route_source
+    assert "_media_object_proxy_flask_response" in route_source
     assert Path("web/services/media_object_access.py").exists()
 
 

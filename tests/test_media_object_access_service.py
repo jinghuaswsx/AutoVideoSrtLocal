@@ -44,6 +44,53 @@ def test_validate_private_media_object_access_rejects_path_escape():
     assert result.not_found is True
 
 
+def test_build_private_media_object_proxy_response_returns_object_and_audit_item():
+    from web.services.media_object_access import (
+        MediaObjectAccess,
+        build_private_media_object_proxy_response,
+    )
+
+    calls = []
+
+    result = build_private_media_object_proxy_response(
+        " 1/medias/123/demo.mp4 ",
+        validate_access_fn=lambda key: calls.append(("validate", key))
+        or MediaObjectAccess(True, object_key="1/medias/123/demo.mp4"),
+        find_item_by_object_key_fn=lambda key: calls.append(("find", key))
+        or {"id": 44, "object_key": key},
+    )
+
+    assert result.status_code == 200
+    assert result.not_found is False
+    assert result.object_key == "1/medias/123/demo.mp4"
+    assert result.audit_item == {"id": 44, "object_key": "1/medias/123/demo.mp4"}
+    assert calls == [
+        ("validate", " 1/medias/123/demo.mp4 "),
+        ("find", "1/medias/123/demo.mp4"),
+    ]
+
+
+def test_build_private_media_object_proxy_response_skips_audit_lookup_when_not_found():
+    from web.services.media_object_access import (
+        MediaObjectAccess,
+        build_private_media_object_proxy_response,
+    )
+
+    calls = []
+
+    result = build_private_media_object_proxy_response(
+        "../outside.mp4",
+        validate_access_fn=lambda key: MediaObjectAccess(False, not_found=True),
+        find_item_by_object_key_fn=lambda key: calls.append(key),
+    )
+
+    assert result.status_code == 404
+    assert result.not_found is True
+    assert result.object_key is None
+    assert result.audit_item is None
+    assert calls == []
+
+
 def test_validate_public_media_object_access_accepts_allowed_namespaces():
     from web.services.media_object_access import validate_public_media_object_access
 
@@ -71,3 +118,20 @@ def test_validate_public_media_object_access_rejects_traversal_and_unknown_scope
         result = validate_public_media_object_access(key)
         assert result.ok is False
         assert result.not_found is True
+
+
+def test_build_public_media_object_proxy_response_returns_validated_object_key():
+    from web.services.media_object_access import (
+        MediaObjectAccess,
+        build_public_media_object_proxy_response,
+    )
+
+    result = build_public_media_object_proxy_response(
+        "uploads/task/1/source.mp4",
+        validate_access_fn=lambda key: MediaObjectAccess(True, object_key=key),
+    )
+
+    assert result.status_code == 200
+    assert result.not_found is False
+    assert result.object_key == "uploads/task/1/source.mp4"
+    assert result.audit_item is None

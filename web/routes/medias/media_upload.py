@@ -9,6 +9,9 @@ from flask_login import current_user, login_required
 
 from appcore import local_media_storage
 from web.services.media_object_access import (
+    build_private_media_object_proxy_response as _build_private_media_object_proxy_response_impl,
+    build_public_media_object_proxy_response as _build_public_media_object_proxy_response_impl,
+    media_object_proxy_flask_response as _media_object_proxy_flask_response_impl,
     validate_private_media_object_access as _validate_private_media_object_access_impl,
     validate_public_media_object_access as _validate_public_media_object_access_impl,
 )
@@ -45,6 +48,29 @@ def _validate_public_media_object_access(object_key):
     return _validate_public_media_object_access_impl(object_key)
 
 
+def _build_private_media_object_proxy_response(object_key):
+    routes = _routes()
+    return _build_private_media_object_proxy_response_impl(
+        object_key,
+        validate_access_fn=routes._validate_private_media_object_access,
+        find_item_by_object_key_fn=routes.medias.find_item_by_object_key,
+    )
+
+
+def _build_public_media_object_proxy_response(object_key):
+    return _build_public_media_object_proxy_response_impl(
+        object_key,
+        validate_access_fn=_routes()._validate_public_media_object_access,
+    )
+
+
+def _media_object_proxy_flask_response(result):
+    return _media_object_proxy_flask_response_impl(
+        result,
+        send_media_object_fn=_send_media_object,
+    )
+
+
 @bp.route("/api/local-media-upload/<upload_id>", methods=["PUT"])
 @login_required
 def api_local_media_upload(upload_id: str):
@@ -65,17 +91,16 @@ def api_local_media_upload(upload_id: str):
 @login_required
 def media_object_proxy():
     routes = _routes()
-    access = routes._validate_private_media_object_access(request.args.get("object_key"))
-    if access.not_found:
+    result = routes._build_private_media_object_proxy_response(request.args.get("object_key"))
+    if result.not_found:
         abort(404)
-    object_key = access.object_key
-    routes._audit_media_item_access(routes.medias.find_item_by_object_key(object_key))
-    return _send_media_object(object_key)
+    routes._audit_media_item_access(result.audit_item)
+    return _media_object_proxy_flask_response(result)
 
 
 @bp.route("/obj/<path:object_key>")
 def public_media_object(object_key: str):
-    access = _routes()._validate_public_media_object_access(object_key)
-    if access.not_found:
+    result = _routes()._build_public_media_object_proxy_response(object_key)
+    if result.not_found:
         abort(404)
-    return _send_media_object(access.object_key)
+    return _media_object_proxy_flask_response(result)
