@@ -1023,6 +1023,49 @@ def test_detail_images_from_url_status_route_delegates_response_building(
     assert captured == {"pid": 123, "task_id": "mdf-1", "user_id": 1}
 
 
+def test_detail_images_clear_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_build(pid, body):
+        captured.update({"pid": pid, "body": body})
+        return SimpleNamespace(error=None, payload={"ok": True, "cleared": 2}, status_code=200)
+
+    monkeypatch.setattr(r, "_build_detail_images_clear_response", fake_build)
+
+    resp = authed_client_no_db.post("/medias/api/products/123/detail-images/clear", json={"lang": "de"})
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "cleared": 2}
+    assert captured == {"pid": 123, "body": {"lang": "de"}}
+
+
+def test_detail_images_reorder_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_build(pid, body):
+        captured.update({"pid": pid, "body": body})
+        return SimpleNamespace(error=None, payload={"ok": True, "updated": 2}, status_code=200)
+
+    monkeypatch.setattr(r, "_build_detail_images_reorder_response", fake_build)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/reorder",
+        json={"lang": "de", "ids": [2, 1]},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "updated": 2}
+    assert captured == {"pid": 123, "body": {"lang": "de", "ids": [2, 1]}}
+
+
 def test_detail_images_cleanup_loop_exits_without_tick_when_shutdown_requested(monkeypatch):
     from appcore import medias_detail_fetch_tasks as mdf
     from appcore import shutdown_coordinator

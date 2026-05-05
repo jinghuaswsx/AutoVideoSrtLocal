@@ -57,6 +57,27 @@ def clear_detail_images(
     return DetailImageMutationOutcome(payload={"ok": True, "cleared": cleared})
 
 
+def build_clear_detail_images_response(
+    product_id: int,
+    body: Mapping[str, object] | None,
+    *,
+    parse_lang_fn: Callable[..., tuple[str | None, str | None]],
+    list_detail_images_fn: Callable[[int, str], Sequence[Mapping[str, object]]],
+    soft_delete_detail_images_by_lang_fn: Callable[[int, str], int],
+    delete_media_object_fn: Callable[[str], object],
+) -> DetailImageMutationOutcome:
+    lang, err = parse_lang_fn(dict(body or {}), default="")
+    if err:
+        return DetailImageMutationOutcome(error=err, status_code=400)
+    return clear_detail_images(
+        product_id,
+        lang or "",
+        list_detail_images=list_detail_images_fn,
+        soft_delete_detail_images_by_lang=soft_delete_detail_images_by_lang_fn,
+        delete_media_object=delete_media_object_fn,
+    )
+
+
 def reorder_detail_images(
     product_id: int,
     lang: str,
@@ -73,6 +94,25 @@ def reorder_detail_images(
 
     updated = reorder_detail_images(product_id, lang, ids_int)
     return DetailImageMutationOutcome(payload={"ok": True, "updated": updated})
+
+
+def build_reorder_detail_images_response(
+    product_id: int,
+    body: Mapping[str, object] | None,
+    *,
+    parse_lang_fn: Callable[[dict], tuple[str | None, str | None]],
+    reorder_detail_images_fn: Callable[[int, str, list[int]], int],
+) -> DetailImageMutationOutcome:
+    body_dict = dict(body or {})
+    lang, err = parse_lang_fn(body_dict)
+    if err:
+        return DetailImageMutationOutcome(error=err, status_code=400)
+    return reorder_detail_images(
+        product_id,
+        lang or "",
+        body_dict.get("ids") or [],
+        reorder_detail_images=reorder_detail_images_fn,
+    )
 
 
 def _best_effort_delete(object_key: object, delete_media_object: Callable[[str], object]) -> None:

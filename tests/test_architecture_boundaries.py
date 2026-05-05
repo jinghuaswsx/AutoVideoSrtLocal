@@ -361,7 +361,12 @@ def test_detail_image_mutation_workflows_live_outside_route_module():
         assert direct_dao_calls == []
     route_source = "\n".join(route_sources)
 
+    assert "_parse_lang(" not in route_source
+    assert "clear_detail_images(" not in route_source
+    assert "reorder_detail_images_command(" not in route_source
     assert "english detail images cannot be cleared via this endpoint" not in route_source
+    assert "_build_detail_images_clear_response" in route_source
+    assert "_build_detail_images_reorder_response" in route_source
     assert Path("web/services/media_detail_mutations.py").exists()
 
 

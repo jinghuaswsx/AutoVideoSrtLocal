@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from web.services.media_detail_mutations import (
+    build_clear_detail_images_response,
+    build_reorder_detail_images_response,
     clear_detail_images,
     delete_detail_image,
     reorder_detail_images,
@@ -99,3 +101,55 @@ def test_reorder_detail_images_returns_updated_count():
 
     assert calls == [(123, "de", [1, 2])]
     assert outcome.payload == {"ok": True, "updated": 2}
+
+
+def test_build_clear_detail_images_response_parses_lang_and_delegates_clear():
+    calls = []
+    outcome = build_clear_detail_images_response(
+        123,
+        {"lang": " DE "},
+        parse_lang_fn=lambda body, default="": (body["lang"].strip().lower(), None),
+        list_detail_images_fn=lambda product_id, lang: calls.append(("list", product_id, lang)) or [
+            {"object_key": "media/a.jpg"},
+        ],
+        soft_delete_detail_images_by_lang_fn=lambda product_id, lang: calls.append(("clear", product_id, lang)) or 1,
+        delete_media_object_fn=lambda object_key: calls.append(("object", object_key)),
+    )
+
+    assert outcome.error is None
+    assert outcome.payload == {"ok": True, "cleared": 1}
+    assert calls == [
+        ("list", 123, "de"),
+        ("clear", 123, "de"),
+        ("object", "media/a.jpg"),
+    ]
+
+
+def test_build_clear_detail_images_response_returns_parse_error_before_side_effects():
+    calls = []
+    outcome = build_clear_detail_images_response(
+        123,
+        {},
+        parse_lang_fn=lambda body, default="": (None, "lang required"),
+        list_detail_images_fn=lambda product_id, lang: calls.append(("list", product_id, lang)),
+        soft_delete_detail_images_by_lang_fn=lambda product_id, lang: calls.append(("clear", product_id, lang)),
+        delete_media_object_fn=lambda object_key: calls.append(("object", object_key)),
+    )
+
+    assert outcome.status_code == 400
+    assert outcome.error == "lang required"
+    assert calls == []
+
+
+def test_build_reorder_detail_images_response_parses_lang_and_delegates_reorder():
+    calls = []
+    outcome = build_reorder_detail_images_response(
+        123,
+        {"lang": " DE ", "ids": ["1", 2]},
+        parse_lang_fn=lambda body: (body["lang"].strip().lower(), None),
+        reorder_detail_images_fn=lambda product_id, lang, ids: calls.append((product_id, lang, ids)) or 2,
+    )
+
+    assert outcome.error is None
+    assert outcome.payload == {"ok": True, "updated": 2}
+    assert calls == [(123, "de", [1, 2])]

@@ -31,9 +31,9 @@ from web.services.media_detail_from_url import (
     build_detail_images_from_url_status_response as _build_detail_images_from_url_status_response_impl,
 )
 from web.services.media_detail_mutations import (
-    clear_detail_images,
+    build_clear_detail_images_response as _build_detail_images_clear_response_impl,
+    build_reorder_detail_images_response as _build_detail_images_reorder_response_impl,
     delete_detail_image,
-    reorder_detail_images as reorder_detail_images_command,
 )
 from web.services.media_detail_uploads import (
     build_detail_images_bootstrap_response as _build_detail_images_bootstrap_response_impl,
@@ -180,6 +180,26 @@ def _build_detail_images_complete_response(pid: int, body: dict):
         add_detail_image_fn=medias.add_detail_image,
         get_detail_image_fn=medias.get_detail_image,
         serialize_detail_image_fn=_serialize_detail_image,
+    )
+
+
+def _build_detail_images_clear_response(pid: int, body: dict):
+    return _build_detail_images_clear_response_impl(
+        pid,
+        body,
+        parse_lang_fn=_parse_lang,
+        list_detail_images_fn=medias.list_detail_images,
+        soft_delete_detail_images_by_lang_fn=medias.soft_delete_detail_images_by_lang,
+        delete_media_object_fn=_delete_media_object,
+    )
+
+
+def _build_detail_images_reorder_response(pid: int, body: dict):
+    return _build_detail_images_reorder_response_impl(
+        pid,
+        body,
+        parse_lang_fn=_parse_lang,
+        reorder_detail_images_fn=medias.reorder_detail_images,
     )
 
 
@@ -436,17 +456,7 @@ def api_detail_images_clear_all(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body, default="")
-    if err:
-        return jsonify({"error": err}), 400
-
-    outcome = clear_detail_images(
-        pid,
-        lang,
-        list_detail_images=medias.list_detail_images,
-        soft_delete_detail_images_by_lang=medias.soft_delete_detail_images_by_lang,
-        delete_media_object=_delete_media_object,
-    )
+    outcome = _routes()._build_detail_images_clear_response(pid, body)
     if outcome.error:
         return jsonify({"error": outcome.error}), outcome.status_code
     return jsonify(outcome.payload)
@@ -459,15 +469,7 @@ def api_detail_images_reorder(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    lang, err = _parse_lang(body)
-    if err:
-        return jsonify({"error": err}), 400
-    outcome = reorder_detail_images_command(
-        pid,
-        lang,
-        body.get("ids") or [],
-        reorder_detail_images=medias.reorder_detail_images,
-    )
+    outcome = _routes()._build_detail_images_reorder_response(pid, body)
     if outcome.error:
         return jsonify({"error": outcome.error}), outcome.status_code
     return jsonify(outcome.payload)
