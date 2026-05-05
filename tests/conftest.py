@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+os.environ.setdefault("AUTOVIDEOSRT_DISABLE_BACKGROUND_THREADS", "1")
+
 
 @pytest.fixture(autouse=True)
 def _base_env(monkeypatch, tmp_path):

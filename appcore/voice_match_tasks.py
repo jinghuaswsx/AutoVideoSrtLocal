@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -161,5 +163,14 @@ def _cleanup_loop() -> None:
             log.warning("voice match TTL cleanup failed", exc_info=True)
 
 
-_cleanup_thread = threading.Thread(target=_cleanup_loop, daemon=True, name="vmt-cleanup")
-_cleanup_thread.start()
+def _should_start_cleanup_thread() -> bool:
+    disabled = os.getenv("AUTOVIDEOSRT_DISABLE_BACKGROUND_THREADS", "").strip().lower()
+    if disabled in {"1", "true", "yes", "on"}:
+        return False
+    return "pytest" not in sys.modules
+
+
+_cleanup_thread: threading.Thread | None = None
+if _should_start_cleanup_thread():
+    _cleanup_thread = threading.Thread(target=_cleanup_loop, daemon=True, name="vmt-cleanup")
+    _cleanup_thread.start()

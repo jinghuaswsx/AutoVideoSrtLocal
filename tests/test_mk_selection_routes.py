@@ -155,6 +155,38 @@ def test_mk_selection_api_handles_legacy_rankings_schema_without_mk_columns(
     route_mod._dianxiaomi_rankings_columns.cache_clear()
 
 
+def test_mk_selection_api_delegates_response_building_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+    from web.services.media_mk_selection import MkSelectionResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured["keyword"] = args.get("keyword")
+        return MkSelectionResponse(
+            {"items": [{"rank": 1}], "total": 1, "page": 1, "page_size": 50},
+            200,
+        )
+
+    monkeypatch.setattr(route_mod, "_build_mk_selection_response", fake_build)
+    monkeypatch.setattr(
+        route_mod,
+        "db_query",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("route should delegate query/response building")
+        ),
+    )
+
+    response = authed_client_no_db.get("/medias/api/mk-selection?keyword=tooth")
+
+    assert response.status_code == 200
+    assert response.get_json()["items"] == [{"rank": 1}]
+    assert captured["keyword"] == "tooth"
+
+
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(
     authed_client_no_db,
     monkeypatch,

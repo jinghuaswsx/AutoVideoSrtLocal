@@ -100,6 +100,12 @@ def test_ttl_cleanup_removes_old_tasks(monkeypatch):
     assert vmt.get_task(tid, user_id=1) is None
 
 
+def test_cleanup_thread_guard_disables_background_thread_under_pytest(monkeypatch):
+    monkeypatch.delenv("AUTOVIDEOSRT_DISABLE_BACKGROUND_THREADS", raising=False)
+
+    assert vmt._should_start_cleanup_thread() is False
+
+
 def test_cleanup_loop_exits_without_tick_when_shutdown_requested(monkeypatch):
     from appcore import shutdown_coordinator
 

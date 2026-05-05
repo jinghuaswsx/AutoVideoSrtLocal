@@ -19,6 +19,9 @@ from appcore import local_media_storage, pushes
 
 from . import bp
 from ._helpers import _MAX_MK_VIDEO_BYTES, _MK_VIDEO_CACHE_PREFIX, _dianxiaomi_rankings_columns
+from web.services.media_mk_selection import (
+    build_mk_selection_response as _build_mk_selection_response_impl,
+)
 
 
 _MK_TOKEN_FILE = Path("C:/店小秘/mk_token.txt")
@@ -42,91 +45,22 @@ def db_query(*args, **kwargs):
     return _routes().db_query(*args, **kwargs)
 
 
+def _build_mk_selection_response(args):
+    return _build_mk_selection_response_impl(
+        args,
+        ranking_columns_fn=_dianxiaomi_rankings_columns,
+        db_query_fn=db_query,
+    )
+
+
 @bp.route("/api/mk-selection", methods=["GET"])
 @login_required
 def api_mk_selection():
     if not _is_admin():
         return jsonify({"error": "仅管理员可访问"}), 403
     """返回店小秘 Top300 + 明空消耗数据，按 90 天消耗降序。"""
-    snapshot = (request.args.get("snapshot") or "2026-04-23").strip()
-    keyword = (request.args.get("keyword") or "").strip()
-    page_num = max(1, int(request.args.get("page", 1)))
-    page_size = min(100, max(10, int(request.args.get("page_size", 50))))
-    offset = (page_num - 1) * page_size
-    ranking_columns = _dianxiaomi_rankings_columns()
-    has_mk_product_id = "mk_product_id" in ranking_columns
-    has_mk_product_name = "mk_product_name" in ranking_columns
-    has_mk_total_spends = "mk_total_spends" in ranking_columns
-    has_mk_video_count = "mk_video_count" in ranking_columns
-    has_mk_total_ads = "mk_total_ads" in ranking_columns
-
-    where = "dr.snapshot_date = %s"
-    params: list = [snapshot]
-
-    if keyword:
-        keyword_clauses = ["dr.product_name LIKE %s"]
-        params.append(f"%{keyword}%")
-        if has_mk_product_name:
-            keyword_clauses.append("dr.mk_product_name LIKE %s")
-            params.append(f"%{keyword}%")
-        where += " AND (" + " OR ".join(keyword_clauses) + ")"
-
-    mk_product_id_select = "dr.mk_product_id" if has_mk_product_id else "NULL AS mk_product_id"
-    mk_product_name_select = "dr.mk_product_name" if has_mk_product_name else "NULL AS mk_product_name"
-    mk_total_spends_select = "dr.mk_total_spends" if has_mk_total_spends else "0 AS mk_total_spends"
-    mk_video_count_select = "dr.mk_video_count" if has_mk_video_count else "0 AS mk_video_count"
-    mk_total_ads_select = "dr.mk_total_ads" if has_mk_total_ads else "0 AS mk_total_ads"
-    order_by = "dr.mk_total_spends DESC, dr.rank_position ASC" if has_mk_total_spends else "dr.rank_position ASC"
-
-    count_row = db_query(
-        f"SELECT COUNT(*) AS cnt FROM dianxiaomi_rankings dr WHERE {where}",
-        params,
-    )
-    total = count_row[0]["cnt"] if count_row else 0
-
-    rows = db_query(
-        f"""
-        SELECT
-            dr.rank_position, dr.product_id AS shopify_id,
-            dr.product_name, dr.product_url,
-            dr.store, dr.sales_count, dr.order_count,
-            dr.revenue_main, dr.revenue_split,
-            {mk_product_id_select}, {mk_product_name_select},
-            {mk_total_spends_select}, {mk_video_count_select}, {mk_total_ads_select},
-            dr.media_product_id,
-            mp.name AS mp_name, mp.product_code AS mp_code
-        FROM dianxiaomi_rankings dr
-        LEFT JOIN media_products mp ON dr.media_product_id = mp.id
-        WHERE {where}
-        ORDER BY {order_by}
-        LIMIT %s OFFSET %s
-        """,
-        params + [page_size, offset],
-    )
-
-    items = []
-    for r in rows:
-        items.append({
-            "rank": r["rank_position"],
-            "shopify_id": r["shopify_id"],
-            "product_name": r["product_name"],
-            "product_url": r["product_url"],
-            "store": r["store"],
-            "sales_count": r["sales_count"],
-            "order_count": r["order_count"],
-            "revenue_main": r["revenue_main"],
-            "revenue_split": r["revenue_split"],
-            "mk_product_id": r["mk_product_id"],
-            "mk_product_name": r["mk_product_name"],
-            "mk_total_spends": float(r["mk_total_spends"] or 0),
-            "mk_video_count": r["mk_video_count"] or 0,
-            "mk_total_ads": r["mk_total_ads"] or 0,
-            "media_product_id": r["media_product_id"],
-            "mp_name": r["mp_name"],
-            "mp_code": r["mp_code"],
-        })
-
-    return jsonify({"items": items, "total": total, "page": page_num, "page_size": page_size})
+    result = _routes()._build_mk_selection_response(request.args)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/mk-selection/refresh", methods=["POST"])

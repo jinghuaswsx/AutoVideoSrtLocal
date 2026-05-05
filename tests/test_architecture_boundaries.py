@@ -1248,6 +1248,23 @@ def test_mk_copywriting_response_lives_outside_route_module():
     assert Path("web/services/media_mk_copywriting.py").exists()
 
 
+def test_mk_selection_list_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_mk_selection"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "db_query(" not in route_source
+    assert "dianxiaomi_rankings" not in route_source
+    assert "mk_total_spends" not in route_source
+    assert "_build_mk_selection_response" in route_source
+    assert Path("web/services/media_mk_selection.py").exists()
+
+
 def test_supply_pairing_search_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
