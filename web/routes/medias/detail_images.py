@@ -22,6 +22,9 @@ from web.services.media_detail_archives import (
     build_detail_images_zip_response as _build_detail_images_zip_response_impl,
     build_localized_detail_images_zip_response as _build_localized_detail_images_zip_response_impl,
 )
+from web.services.media_detail_listing import (
+    build_detail_images_list_response as _build_detail_images_list_response_impl,
+)
 from web.services.media_detail_from_url import (
     build_detail_images_from_url_response as _build_detail_images_from_url_response_impl,
 )
@@ -224,6 +227,16 @@ def _build_detail_translate_from_en_response(
     )
 
 
+def _build_detail_images_list_response(pid: int, lang: str):
+    return _build_detail_images_list_response_impl(
+        pid,
+        lang,
+        is_valid_language_fn=medias.is_valid_language,
+        list_detail_images_fn=medias.list_detail_images,
+        serialize_detail_image_fn=_serialize_detail_image,
+    )
+
+
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
 @login_required
 def api_detail_images_list(pid: int):
@@ -231,10 +244,8 @@ def api_detail_images_list(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "en").strip().lower()
-    if not medias.is_valid_language(lang):
-        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
-    rows = medias.list_detail_images(pid, lang)
-    return jsonify({"items": [_serialize_detail_image(r) for r in rows]})
+    result = _routes()._build_detail_images_list_response(pid, lang)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/detail-images/download-zip", methods=["GET"])
