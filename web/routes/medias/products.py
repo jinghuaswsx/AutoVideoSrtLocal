@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import requests
 from flask import abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
@@ -20,6 +19,13 @@ from web.services.media_product_mutations import (
     build_product_create_response as _build_product_create_response_impl,
     build_product_delete_response as _build_product_delete_response_impl,
     build_product_update_response as _build_product_update_response_impl,
+)
+from web.services.media_mk_copywriting import (
+    build_mk_copywriting_response as _build_mk_copywriting_response_impl,
+    extract_mk_copywriting as _extract_mk_copywriting,
+    format_mk_copywriting_text as _format_mk_copywriting_text,
+    mk_product_link_tail as _mk_product_link_tail,
+    normalize_mk_copywriting_query as _normalize_mk_copywriting_query,
 )
 
 
@@ -72,118 +78,23 @@ def _build_product_update_response(pid: int, product: dict, body: dict):
 def _build_product_delete_response(pid: int):
     return _build_product_delete_response_impl(pid)
 
-
-def _normalize_mk_copywriting_query(product_code: str) -> str:
-    code = (product_code or "").strip().lower()
-    if code.endswith("-rjc"):
-        code = code[:-4]
-    return code
-
-
-def _mk_product_link_tail(item: dict) -> str:
-    links = item.get("product_links") or []
-    if not isinstance(links, list) or not links:
-        return ""
-    first_link = links[0]
-    if not isinstance(first_link, str):
-        return ""
-    return first_link.rstrip("/").rsplit("/", 1)[-1].strip().lower()
-
-
-def _format_mk_copywriting_text(text: dict) -> str:
-    title = str(text.get("title") or "").strip()
-    message = str(text.get("message") or "").strip()
-    description = str(text.get("description") or "").strip()
-    if not any((title, message, description)):
-        return ""
-    return "\n".join((
-        f"标题: {title}",
-        f"文案: {message}",
-        f"描述: {description}",
-    ))
-
-
-def _extract_mk_copywriting(data: dict, product_code: str) -> tuple[int | None, str]:
-    items = ((data.get("data") or {}).get("items") or [])
-    if not isinstance(items, list):
-        return None, ""
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        if _mk_product_link_tail(item) != product_code:
-            continue
-        texts = item.get("texts") or []
-        if not isinstance(texts, list):
-            return item.get("id"), ""
-        for text in texts:
-            if not isinstance(text, dict):
-                continue
-            copywriting = _format_mk_copywriting_text(text)
-            if copywriting:
-                return item.get("id"), copywriting
-        return item.get("id"), ""
-    return None, ""
+def _build_mk_copywriting_response(args):
+    routes = _routes_module()
+    return _build_mk_copywriting_response_impl(
+        args,
+        build_headers_fn=routes._build_mk_request_headers,
+        get_base_url_fn=routes._get_mk_api_base_url,
+        is_login_expired_fn=routes._is_mk_login_expired,
+        http_get_fn=routes.requests.get,
+    )
 
 
 @bp.route("/api/mk-copywriting", methods=["GET"])
 @login_required
 def api_mk_copywriting():
     routes = _routes_module()
-    query = _normalize_mk_copywriting_query(
-        request.args.get("product_code") or request.args.get("q") or ""
-    )
-    if not query:
-        return jsonify({"error": "product_code_required", "message": "请先填写产品 ID"}), 400
-
-    headers = routes._build_mk_request_headers()
-    if "Authorization" not in headers and "Cookie" not in headers:
-        return jsonify({
-            "error": "mk_credentials_missing",
-            "message": "明空凭据未配置，请先在设置页同步 wedev 凭据",
-        }), 500
-
-    url = f"{routes._get_mk_api_base_url()}/api/marketing/medias"
-    params = {"page": 1, "q": query, "source": "", "level": "", "show_attention": 0}
-    try:
-        resp = requests.get(url, params=params, headers=headers, timeout=15)
-    except requests.RequestException as exc:
-        return jsonify({"error": "mk_request_failed", "message": str(exc)}), 502
-
-    if not resp.ok:
-        return jsonify({
-            "error": "mk_request_failed",
-            "message": f"明空接口返回 HTTP {resp.status_code}",
-        }), 502
-
-    try:
-        data = resp.json() or {}
-    except ValueError:
-        return jsonify({"error": "mk_response_invalid", "message": "明空返回数据格式异常"}), 502
-
-    if routes._is_mk_login_expired(data):
-        return jsonify({"error": "mk_credentials_expired", "message": "明空登录已失效，请重新同步 wedev 凭据"}), 401
-
-    source_item_id, copywriting = _extract_mk_copywriting(data, query)
-    if source_item_id is None:
-        return jsonify({
-            "error": "mk_copywriting_not_found",
-            "message": f"明空系统未找到产品 ID 为 {query} 的文案",
-            "query": query,
-        }), 404
-    if not copywriting:
-        return jsonify({
-            "error": "mk_copywriting_empty",
-            "message": f"明空产品 {query} 没有可用文案",
-            "query": query,
-            "source_item_id": source_item_id,
-        }), 404
-
-    return jsonify({
-        "ok": True,
-        "query": query,
-        "source_item_id": source_item_id,
-        "copywriting": copywriting,
-    })
+    result = routes._build_mk_copywriting_response(request.args)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products", methods=["GET"])

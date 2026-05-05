@@ -131,6 +131,26 @@ def test_mk_copywriting_fetch_reports_expired_wedev_credentials(
     assert response.get_json()["error"] == "mk_credentials_expired"
 
 
+def test_mk_copywriting_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "query": "demo", "copywriting": "Ready"}
+        status_code = 202
+
+    def fake_build(args):
+        captured["product_code"] = args.get("product_code")
+        return Result()
+
+    monkeypatch.setattr("web.routes.medias._build_mk_copywriting_response", fake_build)
+
+    response = authed_client_no_db.get("/medias/api/mk-copywriting?product_code=demo-rjc")
+
+    assert response.status_code == 202
+    assert response.get_json() == {"ok": True, "query": "demo", "copywriting": "Ready"}
+    assert captured == {"product_code": "demo-rjc"}
+
+
 def test_add_material_modal_has_mk_copywriting_fetch_button():
     html = (ROOT / "web" / "templates" / "_medias_edit_modal.html").read_text(
         encoding="utf-8"
