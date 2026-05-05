@@ -2,11 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import mimetypes
+import os
+import tempfile
 from urllib.parse import quote
 from typing import Callable, Mapping, Sequence
 
 import requests
-from flask import Response, jsonify
+from flask import Response, jsonify, send_file
+
+
+_MK_CREDENTIALS_MISSING_ERROR = "明空凭据未配置，请先在设置页同步 wedev 凭据"
+_DEFAULT_MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
+
+
+class MkCredentialsMissingError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -28,6 +38,14 @@ class MkMediaProxyResponse:
     content: bytes = b""
     content_type: str | None = None
     cache_control: str | None = None
+
+
+@dataclass(frozen=True)
+class MkVideoProxyResponse:
+    status_code: int
+    payload: dict | None = None
+    local_path: object | None = None
+    mimetype: str | None = None
 
 
 def _parse_bounded_int(
@@ -229,3 +247,104 @@ def build_mk_media_proxy_flask_response(result: MkMediaProxyResponse):
     if result.cache_control:
         proxied.headers["Cache-Control"] = result.cache_control
     return proxied
+
+
+def cache_mk_video(
+    media_path: str,
+    *,
+    cache_object_key_fn: Callable[[str], str],
+    storage_exists_fn: Callable[[str], bool],
+    build_headers_fn: Callable[[], dict],
+    get_base_url_fn: Callable[[], str],
+    safe_local_path_for_fn: Callable[[str], object],
+    max_bytes: int = _DEFAULT_MAX_MK_VIDEO_BYTES,
+    http_get_fn=requests.get,
+) -> str:
+    object_key = cache_object_key_fn(media_path)
+    if storage_exists_fn(object_key):
+        return object_key
+
+    headers = build_headers_fn()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        raise MkCredentialsMissingError()
+    headers.pop("Content-Type", None)
+    headers["Accept"] = "video/*,*/*;q=0.8"
+    url = f"{get_base_url_fn()}/medias/{quote(media_path, safe='/')}"
+    resp = http_get_fn(url, headers=headers, timeout=60, stream=True)
+    try:
+        if resp.status_code >= 400:
+            http_error = requests.HTTPError(f"mk video HTTP {resp.status_code}")
+            http_error.response = resp
+            raise http_error
+        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if content_type and not content_type.startswith("video/"):
+            raise ValueError(f"明空返回的不是视频文件: {content_type}")
+        declared_size = int(resp.headers.get("content-length") or 0)
+        if declared_size > max_bytes:
+            raise ValueError("明空视频过大，超过 2GB")
+
+        destination = safe_local_path_for_fn(object_key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix="mk_video_", dir=str(destination.parent))
+        total = 0
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ValueError("明空视频过大，超过 2GB")
+                    handle.write(chunk)
+            os.replace(temp_name, destination)
+        finally:
+            if os.path.exists(temp_name):
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+    finally:
+        close = getattr(resp, "close", None)
+        if callable(close):
+            close()
+    return object_key
+
+
+def build_mk_video_proxy_response(
+    media_path: str,
+    guessed_type: str,
+    *,
+    cache_video_fn: Callable[[str], str],
+    safe_local_path_for_fn: Callable[[str], object],
+    guess_type_fn: Callable[[str], tuple[str | None, str | None]] = mimetypes.guess_type,
+) -> MkVideoProxyResponse:
+    try:
+        object_key = cache_video_fn(media_path)
+    except MkCredentialsMissingError:
+        return MkVideoProxyResponse(status_code=500, payload={"error": _MK_CREDENTIALS_MISSING_ERROR})
+    except ValueError as exc:
+        return MkVideoProxyResponse(status_code=400, payload={"error": str(exc)})
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, "status_code", None) or 502
+        return MkVideoProxyResponse(status_code=status)
+    except requests.RequestException as exc:
+        return MkVideoProxyResponse(status_code=502, payload={"error": str(exc)})
+
+    mimetype = guess_type_fn(object_key)[0] or guessed_type or "video/mp4"
+    try:
+        local_path = safe_local_path_for_fn(object_key)
+    except ValueError:
+        return MkVideoProxyResponse(status_code=404)
+    return MkVideoProxyResponse(status_code=200, local_path=local_path, mimetype=mimetype)
+
+
+def build_mk_video_proxy_flask_response(result: MkVideoProxyResponse):
+    if result.payload is not None:
+        return jsonify(result.payload), result.status_code
+    if result.local_path is None:
+        return ("", result.status_code)
+    return send_file(
+        str(result.local_path),
+        mimetype=result.mimetype,
+        conditional=True,
+    )

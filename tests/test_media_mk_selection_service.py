@@ -203,3 +203,76 @@ def test_build_mk_media_proxy_response_rejects_missing_credentials_without_reque
     assert result.status_code == 500
     assert result.payload
     assert "error" in result.payload
+
+
+def test_cache_mk_video_fetches_and_writes_wedev_video_with_server_credentials(tmp_path):
+    from web.services.media_mk_selection import cache_mk_video
+
+    captured = {}
+    destination = tmp_path / "cache" / "demo.mp4"
+    payload = b"\x00\x00\x00\x20ftypisom-video-bytes"
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "video/mp4; charset=utf-8", "content-length": str(len(payload))}
+
+        @staticmethod
+        def iter_content(chunk_size=1024 * 1024):
+            captured["chunk_size"] = chunk_size
+            yield payload[:8]
+            yield payload[8:]
+
+        @staticmethod
+        def close():
+            captured["closed"] = True
+
+    def fake_get(url, *, headers=None, timeout=None, stream=False):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        captured["stream"] = stream
+        return FakeResponse()
+
+    object_key = cache_mk_video(
+        "uploads2/202505/1747910543.mp4",
+        cache_object_key_fn=lambda _path: "cache/demo.mp4",
+        storage_exists_fn=lambda _key: destination.exists(),
+        build_headers_fn=lambda: {
+            "Authorization": "Bearer synced-token",
+            "Cookie": "token=synced-token",
+            "Content-Type": "application/json",
+        },
+        get_base_url_fn=lambda: "https://wedev.example",
+        safe_local_path_for_fn=lambda _key: destination,
+        http_get_fn=fake_get,
+        max_bytes=1024 * 1024,
+    )
+
+    assert object_key == "cache/demo.mp4"
+    assert destination.read_bytes() == payload
+    assert captured["url"] == "https://wedev.example/medias/uploads2/202505/1747910543.mp4"
+    assert captured["headers"]["Authorization"] == "Bearer synced-token"
+    assert captured["headers"]["Accept"] == "video/*,*/*;q=0.8"
+    assert "Content-Type" not in captured["headers"]
+    assert captured["timeout"] == 60
+    assert captured["stream"] is True
+    assert captured["closed"] is True
+
+
+def test_cache_mk_video_rejects_missing_credentials_without_request(tmp_path):
+    import pytest
+    from web.services.media_mk_selection import MkCredentialsMissingError, cache_mk_video
+
+    def fail_get(*_args, **_kwargs):
+        raise AssertionError("missing credentials should stop before request")
+
+    with pytest.raises(MkCredentialsMissingError):
+        cache_mk_video(
+            "uploads2/202505/1747910543.mp4",
+            cache_object_key_fn=lambda _path: "cache/demo.mp4",
+            storage_exists_fn=lambda _key: False,
+            build_headers_fn=lambda: {},
+            get_base_url_fn=lambda: "https://wedev.example",
+            safe_local_path_for_fn=lambda _key: tmp_path / "cache" / "demo.mp4",
+            http_get_fn=fail_get,
+        )

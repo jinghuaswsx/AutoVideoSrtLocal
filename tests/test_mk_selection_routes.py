@@ -415,6 +415,46 @@ def test_mk_video_proxy_rejects_local_media_path_escape(
     assert response.status_code == 404
 
 
+def test_mk_video_proxy_delegates_response_building_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import medias as route_mod
+    from web.services.media_mk_selection import MkVideoProxyResponse
+
+    payload = b"\x00\x00\x00\x20ftypisom-video-bytes"
+    local_path = tmp_path / "cached.mp4"
+    local_path.write_bytes(payload)
+    captured = {}
+
+    def fake_build(media_path, guessed_type):
+        captured["media_path"] = media_path
+        captured["guessed_type"] = guessed_type
+        return MkVideoProxyResponse(status_code=200, local_path=local_path, mimetype="video/mp4")
+
+    monkeypatch.setattr(route_mod, "_build_mk_video_proxy_response", fake_build)
+    monkeypatch.setattr(
+        route_mod.requests,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("route should delegate mk video request/cache handling")
+        ),
+    )
+
+    response = authed_client_no_db.get(
+        "/medias/api/mk-video?path=./medias/uploads2/202505/1747910543.mp4"
+    )
+
+    assert response.status_code == 200
+    assert response.data == payload
+    assert response.mimetype == "video/mp4"
+    assert captured == {
+        "media_path": "uploads2/202505/1747910543.mp4",
+        "guessed_type": "video/mp4",
+    }
+
+
 def test_mk_detail_proxy_uses_server_side_wedev_credentials(
     authed_client_no_db,
     monkeypatch,

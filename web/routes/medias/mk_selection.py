@@ -7,12 +7,10 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
-import tempfile
 from pathlib import Path
-from urllib.parse import quote
 
 import requests
-from flask import abort, jsonify, request, send_file
+from flask import abort, jsonify, request
 from flask_login import login_required
 
 from appcore import local_media_storage, pushes
@@ -20,6 +18,9 @@ from appcore import local_media_storage, pushes
 from . import bp
 from ._helpers import _MAX_MK_VIDEO_BYTES, _MK_VIDEO_CACHE_PREFIX, _dianxiaomi_rankings_columns
 from web.services.media_mk_selection import (
+    build_mk_video_proxy_flask_response as _build_mk_video_proxy_flask_response,
+    build_mk_video_proxy_response as _build_mk_video_proxy_response_impl,
+    cache_mk_video as _cache_mk_video_impl,
     build_mk_detail_response as _build_mk_detail_response_impl,
     build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
     build_mk_media_proxy_response as _build_mk_media_proxy_response_impl,
@@ -28,13 +29,6 @@ from web.services.media_mk_selection import (
 
 
 _MK_TOKEN_FILE = Path("C:/店小秘/mk_token.txt")
-_MK_CREDENTIALS_MISSING_ERROR = "明空凭据未配置，请先在设置页同步 wedev 凭据"
-
-
-class MkCredentialsMissingError(RuntimeError):
-    pass
-
-
 def _routes():
     from web.routes import medias as routes
     return routes
@@ -72,6 +66,15 @@ def _build_mk_media_proxy_response(media_path: str):
         build_headers_fn=_build_mk_request_headers,
         get_base_url_fn=_get_mk_api_base_url,
         http_get_fn=requests.get,
+    )
+
+
+def _build_mk_video_proxy_response(media_path: str, guessed_type: str):
+    return _build_mk_video_proxy_response_impl(
+        media_path,
+        guessed_type,
+        cache_video_fn=_cache_mk_video,
+        safe_local_path_for_fn=local_media_storage.safe_local_path_for,
     )
 
 
@@ -120,28 +123,8 @@ def api_mk_video_proxy():
     if guessed_type and not guessed_type.startswith("video/"):
         abort(404)
 
-    try:
-        object_key = _cache_mk_video(media_path)
-    except MkCredentialsMissingError:
-        return _mk_credentials_missing_response()
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except requests.HTTPError as exc:
-        status = getattr(exc.response, "status_code", None) or 502
-        return ("", status)
-    except requests.RequestException as exc:
-        return jsonify({"error": str(exc)}), 502
-
-    mimetype = mimetypes.guess_type(object_key)[0] or guessed_type or "video/mp4"
-    try:
-        local_path = local_media_storage.safe_local_path_for(object_key)
-    except ValueError:
-        abort(404)
-    return send_file(
-        str(local_path),
-        mimetype=mimetype,
-        conditional=True,
-    )
+    result = _routes()._build_mk_video_proxy_response(media_path, guessed_type)
+    return _build_mk_video_proxy_flask_response(result)
 
 
 @bp.route("/api/mk-detail/<int:mk_id>")
@@ -181,54 +164,16 @@ def _mk_video_cache_object_key(media_path: str) -> str:
 
 
 def _cache_mk_video(media_path: str) -> str:
-    object_key = _mk_video_cache_object_key(media_path)
-    if local_media_storage.exists(object_key):
-        return object_key
-
-    headers = _build_mk_request_headers()
-    if not _has_mk_credentials(headers):
-        raise MkCredentialsMissingError()
-    headers.pop("Content-Type", None)
-    headers["Accept"] = "video/*,*/*;q=0.8"
-    url = f"{_get_mk_api_base_url()}/medias/{quote(media_path, safe='/')}"
-    resp = requests.get(url, headers=headers, timeout=60, stream=True)
-    try:
-        if resp.status_code >= 400:
-            http_error = requests.HTTPError(f"mk video HTTP {resp.status_code}")
-            http_error.response = resp
-            raise http_error
-        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-        if content_type and not content_type.startswith("video/"):
-            raise ValueError(f"明空返回的不是视频文件: {content_type}")
-        declared_size = int(resp.headers.get("content-length") or 0)
-        if declared_size > _MAX_MK_VIDEO_BYTES:
-            raise ValueError("明空视频过大，超过 2GB")
-
-        destination = local_media_storage.safe_local_path_for(object_key)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix="mk_video_", dir=str(destination.parent))
-        total = 0
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                    if not chunk:
-                        continue
-                    total += len(chunk)
-                    if total > _MAX_MK_VIDEO_BYTES:
-                        raise ValueError("明空视频过大，超过 2GB")
-                    handle.write(chunk)
-            os.replace(temp_name, destination)
-        finally:
-            if os.path.exists(temp_name):
-                try:
-                    os.unlink(temp_name)
-                except OSError:
-                    pass
-    finally:
-        close = getattr(resp, "close", None)
-        if callable(close):
-            close()
-    return object_key
+    return _cache_mk_video_impl(
+        media_path,
+        cache_object_key_fn=_mk_video_cache_object_key,
+        storage_exists_fn=local_media_storage.exists,
+        build_headers_fn=_build_mk_request_headers,
+        get_base_url_fn=_get_mk_api_base_url,
+        safe_local_path_for_fn=local_media_storage.safe_local_path_for,
+        max_bytes=_MAX_MK_VIDEO_BYTES,
+        http_get_fn=requests.get,
+    )
 
 
 def _build_mk_request_headers() -> dict[str, str]:
@@ -243,14 +188,6 @@ def _build_mk_request_headers() -> dict[str, str]:
                 mk_token if mk_token.lower().startswith("bearer ") else f"Bearer {mk_token}"
             )
     return headers
-
-
-def _has_mk_credentials(headers: dict[str, str]) -> bool:
-    return bool((headers.get("Authorization") or "").strip() or (headers.get("Cookie") or "").strip())
-
-
-def _mk_credentials_missing_response():
-    return jsonify({"error": _MK_CREDENTIALS_MISSING_ERROR}), 500
 
 
 def _is_mk_login_expired(data: dict) -> bool:
