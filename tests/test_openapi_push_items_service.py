@@ -274,3 +274,58 @@ def test_build_push_item_payload_response_combines_payload_and_localized_text(mo
     assert payload["localized_texts_request"] == {"texts": [{"title": "fr1", "message": "fr2"}]}
     assert payload["item"]["item_id"] == 238
     assert payload["item"]["cover_url"] == "https://local/k.jpg"
+
+
+def test_build_mark_pushed_response_records_payload():
+    from web.services import openapi_push_items
+
+    captured: dict = {}
+
+    def fake_record_success(**kwargs):
+        captured.update(kwargs)
+        return 42
+
+    payload = openapi_push_items.build_mark_pushed_response(
+        456,
+        {"request_payload": {"mode": "create"}, "response_body": "ok"},
+        operator_user_id=7,
+        record_success_fn=fake_record_success,
+    )
+
+    assert payload == {"ok": True, "log_id": 42}
+    assert captured == {
+        "item_id": 456,
+        "operator_user_id": 7,
+        "payload": {"mode": "create"},
+        "response_body": "ok",
+    }
+
+
+def test_build_mark_failed_response_records_error_payload():
+    from web.services import openapi_push_items
+
+    captured: dict = {}
+
+    def fake_record_failure(**kwargs):
+        captured.update(kwargs)
+        return 99
+
+    payload = openapi_push_items.build_mark_failed_response(
+        456,
+        {
+            "request_payload": {"mode": "create"},
+            "response_body": "oops",
+            "error_message": "HTTP 500",
+        },
+        operator_user_id=8,
+        record_failure_fn=fake_record_failure,
+    )
+
+    assert payload == {"ok": True, "log_id": 99}
+    assert captured == {
+        "item_id": 456,
+        "operator_user_id": 8,
+        "payload": {"mode": "create"},
+        "error_message": "HTTP 500",
+        "response_body": "oops",
+    }

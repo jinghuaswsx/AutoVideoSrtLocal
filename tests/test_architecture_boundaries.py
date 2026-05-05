@@ -763,6 +763,27 @@ def test_openapi_push_item_payload_response_lives_outside_route_module():
     assert Path("web/services/openapi_push_items.py").exists()
 
 
+def test_openapi_push_item_writeback_lives_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("mark_pushed", "mark_failed"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "pushes.record_push_success" not in route_source
+    assert "pushes.record_push_failure" not in route_source
+    assert "request_payload" not in route_source
+    assert "response_body" not in route_source
+    assert "error_message" not in route_source
+    assert Path("web/services/openapi_push_items.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

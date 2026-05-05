@@ -32,6 +32,8 @@ from web.services.openapi_materials_serializers import (
     serialize_shopify_image_task as _serialize_shopify_image_task,
 )
 from web.services.openapi_push_items import (
+    build_mark_failed_response as _build_mark_failed_response,
+    build_mark_pushed_response as _build_mark_pushed_response,
     build_push_item_payload_response as _build_push_item_payload_response,
     filter_push_items_by_status as _filter_push_items_by_status,
     paginate_push_items as _paginate_push_items,
@@ -543,15 +545,12 @@ def mark_pushed(item_id: int):
     if not item:
         return jsonify({"error": "item not found"}), 404
     body = request.get_json(silent=True) or {}
-    payload = body.get("request_payload") or {}
-    response_body = body.get("response_body")
-    log_id = pushes.record_push_success(
-        item_id=item_id,
+    response_payload = _build_mark_pushed_response(
+        item_id,
+        body,
         operator_user_id=_OPENAPI_OPERATOR_USER_ID,
-        payload=payload,
-        response_body=response_body,
     )
-    return jsonify({"ok": True, "log_id": log_id})
+    return jsonify(response_payload)
 
 
 @push_bp.route("/<int:item_id>/mark-failed", methods=["POST"])
@@ -563,14 +562,9 @@ def mark_failed(item_id: int):
     if not item:
         return jsonify({"error": "item not found"}), 404
     body = request.get_json(silent=True) or {}
-    payload = body.get("request_payload") or {}
-    response_body = body.get("response_body")
-    error_message = body.get("error_message")
-    log_id = pushes.record_push_failure(
-        item_id=item_id,
+    response_payload = _build_mark_failed_response(
+        item_id,
+        body,
         operator_user_id=_OPENAPI_OPERATOR_USER_ID,
-        payload=payload,
-        error_message=error_message,
-        response_body=response_body,
     )
-    return jsonify({"ok": True, "log_id": log_id})
+    return jsonify(response_payload)

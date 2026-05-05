@@ -438,13 +438,17 @@ def test_mark_pushed_returns_ok(client, monkeypatch):
         lambda iid: {"id": iid},
     )
 
-    def fake_record_success(**kwargs):
-        captured.update(kwargs)
-        return 42
+    def fake_build_mark_pushed_response(item_id, body, *, operator_user_id):
+        captured.update({
+            "item_id": item_id,
+            "body": body,
+            "operator_user_id": operator_user_id,
+        })
+        return {"ok": True, "log_id": 42}
 
     monkeypatch.setattr(
-        "web.routes.openapi_materials.pushes.record_push_success",
-        fake_record_success,
+        "web.routes.openapi_materials._build_mark_pushed_response",
+        fake_build_mark_pushed_response,
     )
 
     response = client.post(
@@ -454,10 +458,11 @@ def test_mark_pushed_returns_ok(client, monkeypatch):
     )
     assert response.status_code == 200
     assert response.get_json() == {"ok": True, "log_id": 42}
-    assert captured["item_id"] == 456
-    assert captured["operator_user_id"] == 0
-    assert captured["payload"] == {"mode": "create"}
-    assert captured["response_body"] == "ok"
+    assert captured == {
+        "item_id": 456,
+        "body": {"request_payload": {"mode": "create"}, "response_body": "ok"},
+        "operator_user_id": 0,
+    }
 
 
 def test_mark_failed_returns_ok(client, monkeypatch):
@@ -468,13 +473,17 @@ def test_mark_failed_returns_ok(client, monkeypatch):
         lambda iid: {"id": iid},
     )
 
-    def fake_record_failure(**kwargs):
-        captured.update(kwargs)
-        return 99
+    def fake_build_mark_failed_response(item_id, body, *, operator_user_id):
+        captured.update({
+            "item_id": item_id,
+            "body": body,
+            "operator_user_id": operator_user_id,
+        })
+        return {"ok": True, "log_id": 99}
 
     monkeypatch.setattr(
-        "web.routes.openapi_materials.pushes.record_push_failure",
-        fake_record_failure,
+        "web.routes.openapi_materials._build_mark_failed_response",
+        fake_build_mark_failed_response,
     )
 
     response = client.post(
@@ -488,8 +497,15 @@ def test_mark_failed_returns_ok(client, monkeypatch):
     )
     assert response.status_code == 200
     assert response.get_json() == {"ok": True, "log_id": 99}
-    assert captured["item_id"] == 456
-    assert captured["error_message"] == "HTTP 500"
+    assert captured == {
+        "item_id": 456,
+        "body": {
+            "request_payload": {"mode": "create"},
+            "response_body": "oops",
+            "error_message": "HTTP 500",
+        },
+        "operator_user_id": 0,
+    }
 
 
 def test_mark_pushed_item_not_found(client, monkeypatch):

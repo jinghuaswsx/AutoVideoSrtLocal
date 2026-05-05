@@ -11,6 +11,8 @@ from web.services.openapi_materials_serializers import iso_or_none, media_downlo
 
 QueryOneFn = Callable[[str, tuple], dict | None]
 MediaUrlFn = Callable[[str | None], str | None]
+RecordSuccessFn = Callable[..., int]
+RecordFailureFn = Callable[..., int]
 
 
 def serialize_push_item(
@@ -125,3 +127,38 @@ def build_push_item_payload_response(
         "localized_text": localized_text,
         "localized_texts_request": localized_texts_request,
     }
+
+
+def build_mark_pushed_response(
+    item_id: int,
+    body: dict | None,
+    *,
+    operator_user_id: int,
+    record_success_fn: RecordSuccessFn = pushes.record_push_success,
+) -> dict:
+    body = body or {}
+    log_id = record_success_fn(
+        item_id=item_id,
+        operator_user_id=operator_user_id,
+        payload=body.get("request_payload") or {},
+        response_body=body.get("response_body"),
+    )
+    return {"ok": True, "log_id": log_id}
+
+
+def build_mark_failed_response(
+    item_id: int,
+    body: dict | None,
+    *,
+    operator_user_id: int,
+    record_failure_fn: RecordFailureFn = pushes.record_push_failure,
+) -> dict:
+    body = body or {}
+    log_id = record_failure_fn(
+        item_id=item_id,
+        operator_user_id=operator_user_id,
+        payload=body.get("request_payload") or {},
+        error_message=body.get("error_message"),
+        response_body=body.get("response_body"),
+    )
+    return {"ok": True, "log_id": log_id}
