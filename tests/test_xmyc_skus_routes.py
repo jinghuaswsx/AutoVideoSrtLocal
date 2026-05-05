@@ -143,3 +143,109 @@ def test_update_xmyc_sku_404_on_missing(authed_client_no_db, monkeypatch):
         json={"standalone_shipping_fee_sku": "5.00"},
     )
     assert resp.status_code == 404
+
+
+def test_xmyc_skus_list_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "items": [{"sku": "S1"}], "limit": 10, "offset": 0}
+        status_code = 206
+
+    def fake_build(args):
+        captured["keyword"] = args.get("keyword")
+        return Result()
+
+    monkeypatch.setattr("web.routes.medias._build_xmyc_skus_list_response", fake_build)
+
+    resp = authed_client_no_db.get("/medias/api/xmyc-skus?keyword=fan")
+
+    assert resp.status_code == 206
+    assert resp.get_json()["items"] == [{"sku": "S1"}]
+    assert captured == {"keyword": "fan"}
+
+
+def test_product_xmyc_skus_get_route_delegates_response_building(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "items": [{"sku": "S1"}]}
+        status_code = 207
+
+    def fake_build(pid):
+        captured["pid"] = pid
+        return Result()
+
+    monkeypatch.setattr(r, "_build_product_xmyc_skus_response", fake_build)
+
+    resp = authed_client_no_db.get("/medias/api/products/317/xmyc-skus")
+
+    assert resp.status_code == 207
+    assert resp.get_json()["items"] == [{"sku": "S1"}]
+    assert captured == {"pid": 317}
+
+
+def test_product_xmyc_skus_set_route_delegates_response_building(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "attached": 1}
+        status_code = 208
+
+    def fake_build(pid, body, *, matched_by):
+        captured["pid"] = pid
+        captured["body"] = body
+        captured["matched_by"] = matched_by
+        return Result()
+
+    monkeypatch.setattr(r, "_build_product_xmyc_skus_set_response", fake_build)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/317/xmyc-skus",
+        json={"skus": ["S1"]},
+    )
+
+    assert resp.status_code == 208
+    assert resp.get_json() == {"ok": True, "attached": 1}
+    assert captured["pid"] == 317
+    assert captured["body"] == {"skus": ["S1"]}
+    assert isinstance(captured["matched_by"], int)
+
+
+def test_xmyc_sku_update_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    class Result:
+        payload = {"ok": True, "item": {"id": 42}}
+        status_code = 209
+        not_found = False
+
+    def fake_build(sku_id, body):
+        captured["sku_id"] = sku_id
+        captured["body"] = body
+        return Result()
+
+    monkeypatch.setattr("web.routes.medias._build_xmyc_sku_update_response", fake_build)
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/xmyc-skus/42",
+        json={"standalone_price_sku": "25.00"},
+    )
+
+    assert resp.status_code == 209
+    assert resp.get_json() == {"ok": True, "item": {"id": 42}}
+    assert captured == {"sku_id": 42, "body": {"standalone_price_sku": "25.00"}}

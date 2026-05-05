@@ -376,6 +376,40 @@ def test_supply_pairing_search_response_lives_outside_route_module():
     assert Path("web/services/media_supply_pairing.py").exists()
 
 
+def test_xmyc_sku_response_building_lives_outside_route_module():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "api_list_xmyc_skus",
+        "api_get_product_xmyc_skus",
+        "api_set_product_xmyc_skus",
+        "api_update_xmyc_sku",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "xmyc_storage.list_skus" not in route_source
+    assert "xmyc_storage.get_skus_for_product" not in route_source
+    assert "xmyc_storage.set_product_skus" not in route_source
+    assert "xmyc_storage.update_sku" not in route_source
+    assert "sku_aggregates.enrich_skus_with_roas" not in route_source
+    assert "product_roas.get_configured_rmb_per_usd" not in route_source
+    assert "invalid_pagination" not in route_source
+    assert "skus_must_be_list" not in route_source
+    assert "invalid_fields" not in route_source
+    assert "_build_xmyc_skus_list_response" in route_source
+    assert "_build_product_xmyc_skus_response" in route_source
+    assert "_build_product_xmyc_skus_set_response" in route_source
+    assert "_build_xmyc_sku_update_response" in route_source
+    assert Path("web/services/media_xmyc_skus.py").exists()
+
+
 def test_task_delete_storage_cleanup_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

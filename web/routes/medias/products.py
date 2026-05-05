@@ -30,6 +30,12 @@ from web.services.media_mk_copywriting import (
 from web.services.media_supply_pairing import (
     build_supply_pairing_search_response as _build_supply_pairing_search_response_impl,
 )
+from web.services.media_xmyc_skus import (
+    build_product_xmyc_skus_response as _build_product_xmyc_skus_response_impl,
+    build_product_xmyc_skus_set_response as _build_product_xmyc_skus_set_response_impl,
+    build_xmyc_sku_update_response as _build_xmyc_sku_update_response_impl,
+    build_xmyc_skus_list_response as _build_xmyc_skus_list_response_impl,
+)
 
 
 def _routes_module():
@@ -100,6 +106,43 @@ def _build_supply_pairing_search_response(args):
     )
 
 
+def _build_xmyc_skus_list_response(args):
+    return _build_xmyc_skus_list_response_impl(
+        args,
+        list_skus_fn=xmyc_storage.list_skus,
+        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
+        enrich_skus_with_roas_fn=sku_aggregates.enrich_skus_with_roas,
+    )
+
+
+def _build_product_xmyc_skus_response(pid: int):
+    return _build_product_xmyc_skus_response_impl(
+        pid,
+        get_skus_for_product_fn=xmyc_storage.get_skus_for_product,
+        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
+        enrich_skus_with_roas_fn=sku_aggregates.enrich_skus_with_roas,
+    )
+
+
+def _build_product_xmyc_skus_set_response(pid: int, body: dict, *, matched_by: int | None):
+    return _build_product_xmyc_skus_set_response_impl(
+        pid,
+        body,
+        matched_by=matched_by,
+        set_product_skus_fn=xmyc_storage.set_product_skus,
+    )
+
+
+def _build_xmyc_sku_update_response(sku_id: int, body: dict):
+    return _build_xmyc_sku_update_response_impl(
+        sku_id,
+        body,
+        update_sku_fn=xmyc_storage.update_sku,
+        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
+        enrich_skus_with_roas_fn=sku_aggregates.enrich_skus_with_roas,
+    )
+
+
 @bp.route("/api/mk-copywriting", methods=["GET"])
 @login_required
 def api_mk_copywriting():
@@ -167,24 +210,9 @@ def api_parcel_cost_suggest(pid: int):
 @bp.route("/api/xmyc-skus", methods=["GET"])
 @login_required
 def api_list_xmyc_skus():
-    keyword = (request.args.get("keyword") or "").strip() or None
-    matched_filter = (request.args.get("matched") or "all").strip().lower()
-    if matched_filter not in ("all", "matched", "unmatched"):
-        matched_filter = "all"
-    try:
-        limit = max(1, min(500, int(request.args.get("limit") or 200)))
-        offset = max(0, int(request.args.get("offset") or 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "invalid_pagination"}), 400
-    rows = xmyc_storage.list_skus(
-        keyword=keyword,
-        matched_filter=matched_filter,
-        limit=limit,
-        offset=offset,
-    )
-    rate = product_roas.get_configured_rmb_per_usd()
-    rows = sku_aggregates.enrich_skus_with_roas(rows, rate)
-    return jsonify({"ok": True, "items": rows, "limit": limit, "offset": offset})
+    routes = _routes_module()
+    result = routes._build_xmyc_skus_list_response(request.args)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/xmyc-skus", methods=["GET"])
@@ -194,10 +222,8 @@ def api_get_product_xmyc_skus(pid: int):
     p = medias.get_product(pid)
     if not routes._can_access_product(p):
         abort(404)
-    rows = xmyc_storage.get_skus_for_product(pid)
-    rate = product_roas.get_configured_rmb_per_usd()
-    rows = sku_aggregates.enrich_skus_with_roas(rows, rate)
-    return jsonify({"ok": True, "items": rows})
+    result = routes._build_product_xmyc_skus_response(pid)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/xmyc-skus", methods=["POST"])
@@ -208,28 +234,24 @@ def api_set_product_xmyc_skus(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    raw_skus = body.get("skus") or []
-    if not isinstance(raw_skus, list):
-        return jsonify({"error": "skus_must_be_list"}), 400
-    skus = [str(s).strip() for s in raw_skus if str(s).strip()]
     matched_by = int(current_user.id) if getattr(current_user, "id", None) else None
-    result = xmyc_storage.set_product_skus(pid, skus, matched_by=matched_by)
-    return jsonify({"ok": True, **result})
+    result = routes._build_product_xmyc_skus_set_response(
+        pid,
+        body,
+        matched_by=matched_by,
+    )
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/xmyc-skus/<int:sku_id>", methods=["PATCH"])
 @login_required
 def api_update_xmyc_sku(sku_id: int):
+    routes = _routes_module()
     body = request.get_json(silent=True) or {}
-    try:
-        row = xmyc_storage.update_sku(sku_id, body)
-    except ValueError as exc:
-        return jsonify({"error": "invalid_fields", "message": str(exc)}), 400
-    except LookupError:
+    result = routes._build_xmyc_sku_update_response(sku_id, body)
+    if result.not_found:
         abort(404)
-    rate = product_roas.get_configured_rmb_per_usd()
-    enriched = sku_aggregates.enrich_skus_with_roas([row], rate)
-    return jsonify({"ok": True, "item": enriched[0]})
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/supply-pairing/search", methods=["GET"])
