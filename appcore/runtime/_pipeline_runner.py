@@ -164,9 +164,15 @@ class PipelineRunner:
     # 是否把 AI 视频分析放在主流程 _run() 的 steps 列表里（v2 override 为 True）
     include_analysis_in_main_flow: bool = False
 
+    # 当前 runner 默认走哪个 TranslateProfile（子类可覆盖）。
+    # PR1 阶段：profile 仅作为元数据挂载，不参与流程调度，行为不变。
+    profile_code: str = "default"
+
     def __init__(self, bus: EventBus, user_id: int | None = None) -> None:
         self.bus = bus
         self.user_id = user_id
+        from appcore.translate_profiles import get_profile
+        self.profile = get_profile(self.profile_code)
 
     def _emit(self, task_id: str, event_type: str, payload: dict) -> None:
         self.bus.publish(Event(type=event_type, task_id=task_id, payload=payload))

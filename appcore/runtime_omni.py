@@ -115,6 +115,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
     """Multi-source-language video translation runner."""
 
     project_type: str = "omni_translate"
+    profile_code: str = "omni"
 
     # Override the base ASR step to dispatch by source_language.
     def _step_asr(self, task_id: str, task_dir: str) -> None:

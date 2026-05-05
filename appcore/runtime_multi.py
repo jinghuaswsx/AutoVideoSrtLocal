@@ -157,6 +157,7 @@ class _PromptLocalizationAdapter:
 
 class MultiTranslateRunner(PipelineRunner):
     project_type: str = "multi_translate"
+    profile_code: str = "default"
     tts_model_id = "eleven_multilingual_v2"
 
     def _resolve_target_lang(self, task: dict) -> str:
