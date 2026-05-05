@@ -172,6 +172,9 @@ def _process_line(
         order_shipping_usd=order_shipping,
     )
 
+    # H1 修复用：订单总营收（line_amount 之和 + 订单运费）→ profit_calculation 按订单算 fee 一次再摊回
+    order_total_revenue_usd = float(order_total_amount or 0) + float(order_shipping or 0)
+
     line_input = {
         "dxm_order_line_id": line["dxm_order_line_id"],
         "product_id": product_id,
@@ -179,6 +182,7 @@ def _process_line(
         "line_amount_usd": line_amount,
         "quantity": quantity,
         "shipping_allocated_usd": shipping_alloc,
+        "order_total_revenue_usd": order_total_revenue_usd,  # H1 修复用
         "sku_daily_units": sku_units_cache[cache_key],
         "sku_daily_ad_spend_usd": sku_spend_cache[cache_key],
         "product_purchase_price_cny": purchase_price,
@@ -198,10 +202,13 @@ def backfill(
     *,
     dry_run: bool = False,
     rmb_per_usd: Decimal | None = None,
-    return_reserve_rate: Decimal = Decimal("0.01"),
+    return_reserve_rate: Decimal | None = None,
 ) -> dict[str, Any]:
     """主回填函数。返回汇总统计。"""
+    from appcore.order_analytics.profit_calculation import get_configured_return_reserve_rate
     rmb = rmb_per_usd or get_configured_rmb_per_usd()
+    if return_reserve_rate is None:
+        return_reserve_rate = get_configured_return_reserve_rate()
     log.info("backfill window: %s ~ %s, rmb_per_usd=%s, dry_run=%s",
              date_from, date_to, rmb, dry_run)
 

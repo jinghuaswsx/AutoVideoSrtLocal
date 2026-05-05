@@ -445,7 +445,12 @@ async function refreshOrders() {
       <td class="num">${fmtUSD(o.shipping_cost_total_usd)}</td>
       <td class="num">${fmtUSD(o.shopify_fee_total_usd)}</td>
       <td class="num">${fmtUSD(o.ad_cost_total_usd)}</td>
-      <td class="num profit">${o.status === 'incomplete' ? '-' : fmtUSD(o.profit_total_usd)}</td>
+      <td class="num profit">${
+        o.status === 'incomplete' ? '-' :
+        o.status === 'partially_complete'
+          ? `${fmtUSD(o.profit_total_usd)}<br><small style="color:var(--warning-fg);font-size:11px;font-weight:400;">仅含 ${o.ok_count}/${o.line_count} 行</small>`
+          : fmtUSD(o.profit_total_usd)
+      }</td>
     </tr>`;
   }).join('');
 
@@ -522,8 +527,12 @@ async function refreshCompleteness() {
     const missing = p.completeness.missing.length
       ? p.completeness.missing.join(' / ')
       : '-';
+    const editLink = `/medias?edit_product_id=${p.product_id}`;
+    const productCell = p.completeness.ok
+      ? `${p.product_code || '#'+p.product_id}`
+      : `<a href="${editLink}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">${p.product_code || '#'+p.product_id} ↗</a>`;
     return `<tr class="op-completeness-row">
-      <td>${p.product_code || '#'+p.product_id}</td>
+      <td>${productCell}</td>
       <td>${status}</td>
       <td class="missing">${missing}</td>
       <td class="num">${fmtInt(p.order_lines)}</td>

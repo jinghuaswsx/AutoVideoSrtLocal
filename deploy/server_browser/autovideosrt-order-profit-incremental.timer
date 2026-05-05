@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AutoVideoSrt order-profit incremental sync every 20 minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=20min
+Persistent=true
+Unit=autovideosrt-order-profit-incremental.service
+
+[Install]
+WantedBy=timers.target

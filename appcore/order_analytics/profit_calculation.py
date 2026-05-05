@@ -27,6 +27,25 @@ from .shopify_fee import estimate_fee_for_buyer_country
 
 
 _DEFAULT_RETURN_RESERVE_RATE = Decimal("0.01")
+_RETURN_RESERVE_RATE_SETTING_KEY = "order_profit_return_reserve_rate"
+
+
+def get_configured_return_reserve_rate() -> Decimal:
+    """读 system_settings.order_profit_return_reserve_rate（默认 0.01 = 1%）。
+
+    业务方可在 admin/settings 调整，调整后下一次 backfill / incremental 自动生效。
+    """
+    try:
+        from appcore.settings import get_setting
+        raw = get_setting(_RETURN_RESERVE_RATE_SETTING_KEY)
+        if raw is None or str(raw).strip() == "":
+            return _DEFAULT_RETURN_RESERVE_RATE
+        rate = Decimal(str(raw).strip())
+        if rate < 0 or rate > Decimal("1"):
+            return _DEFAULT_RETURN_RESERVE_RATE
+        return rate
+    except Exception:
+        return _DEFAULT_RETURN_RESERVE_RATE
 
 
 def _q4(value: Decimal) -> float:
@@ -85,12 +104,27 @@ def calculate_line_profit(
     shipping_allocated = _to_decimal(line.get("shipping_allocated_usd"))
     revenue = line_amount + shipping_allocated
 
-    # 3. Shopify 手续费
-    fee_result = estimate_fee_for_buyer_country(
-        amount=float(revenue),
-        buyer_country=line.get("buyer_country"),
-    )
-    shopify_fee = _to_decimal(fee_result["fee"])
+    # 3. Shopify 手续费（H1 修复：按订单 amount 一次算 fee + 摊回行）
+    # Shopify 实际按"整笔交易 amount"收一次 fee（含 0.30 固定费），不是按 SKU 行多次。
+    # 调用方传入 order_total_revenue_usd → 算出整单 fee → 按 line revenue 比例摊回本行。
+    # 缺省（单 SKU 订单）→ 退化为按本行 revenue 算 fee（结果一致）。
+    order_total_revenue_usd = line.get("order_total_revenue_usd")
+    if order_total_revenue_usd is not None and float(order_total_revenue_usd) > 0:
+        order_revenue = _to_decimal(order_total_revenue_usd)
+        fee_result = estimate_fee_for_buyer_country(
+            amount=float(order_revenue),
+            buyer_country=line.get("buyer_country"),
+        )
+        order_fee = _to_decimal(fee_result["fee"])
+        # 按本行 revenue / 订单 revenue 比例摊
+        shopify_fee = order_fee * (revenue / order_revenue) if order_revenue > 0 else _to_decimal(0)
+    else:
+        # 单 SKU 订单：等价于按本行 revenue 算 fee
+        fee_result = estimate_fee_for_buyer_country(
+            amount=float(revenue),
+            buyer_country=line.get("buyer_country"),
+        )
+        shopify_fee = _to_decimal(fee_result["fee"])
     shopify_tier = fee_result["tier"]
 
     # 4. 广告费摊到行

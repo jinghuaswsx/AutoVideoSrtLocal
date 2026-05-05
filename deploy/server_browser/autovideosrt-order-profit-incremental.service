@@ -1,0 +1,12 @@
+[Unit]
+Description=AutoVideoSrt order profit incremental sync (recompute last 2 days)
+After=network-online.target mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/order_profit_incremental.py --days 2
+TimeoutStartSec=900

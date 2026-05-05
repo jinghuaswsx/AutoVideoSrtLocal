@@ -142,6 +142,66 @@ def test_calculate_line_profit_returns_incomplete_when_shipping_cost_missing():
     assert "shipping_cost" in result["missing_fields"]
 
 
+def test_calculate_line_profit_single_sku_fallback_uses_line_revenue():
+    """单 SKU 订单（无 order_total_revenue_usd）→ fallback 到旧行为（按本行 revenue 算 fee）。"""
+    line = _complete_line_input(
+        line_amount_usd=22.13, shipping_allocated_usd=0.0,
+        buyer_country="DE",
+    )
+    line.pop("order_total_revenue_usd", None)  # 不传，触发 fallback
+    result = calculate_line_profit(line, rmb_per_usd=Decimal("6.83"))
+    # Tier D fee = 22.13 × 0.05 + 0.30 = 1.41
+    assert abs(result["shopify_fee_usd"] - 1.41) <= 0.02
+
+
+def test_calculate_line_profit_multi_sku_fee_split_by_order_amount():
+    """H1 修复：订单内多 SKU 时，fee 按订单 amount 一次算 + 按 line revenue 摊回。
+
+    订单含 2 行：line1 = $20，line2 = $10，订单运费 $0
+    - 旧行为（错）：行 1 fee = $20 × 0.025 + 0.30 = 0.80, 行 2 fee = $10 × 0.025 + 0.30 = 0.55, 合计 1.35
+    - 新行为（对）：订单 fee = $30 × 0.025 + 0.30 = 1.05; 行 1 摊 1.05 × 20/30 = 0.70, 行 2 摊 0.35
+    - 合计 1.05（少 0.30 = 多算的固定费）
+    """
+    line1 = _complete_line_input(
+        line_amount_usd=20.0, shipping_allocated_usd=0.0,
+        buyer_country="US",  # Tier A: 2.5% + 0.30
+        order_total_revenue_usd=30.0,
+    )
+    line2 = _complete_line_input(
+        line_amount_usd=10.0, shipping_allocated_usd=0.0,
+        buyer_country="US",
+        order_total_revenue_usd=30.0,
+    )
+    r1 = calculate_line_profit(line1, rmb_per_usd=Decimal("6.83"))
+    r2 = calculate_line_profit(line2, rmb_per_usd=Decimal("6.83"))
+    total_fee = r1["shopify_fee_usd"] + r2["shopify_fee_usd"]
+    # 整单 fee = 30 × 0.025 + 0.30 = 1.05
+    assert abs(total_fee - 1.05) <= 0.02
+    # 大行摊得多
+    assert r1["shopify_fee_usd"] > r2["shopify_fee_usd"]
+
+
+def test_get_configured_return_reserve_rate_default(monkeypatch):
+    """B 修复：admin 没设置 → 默认 0.01。"""
+    from appcore.order_analytics.profit_calculation import get_configured_return_reserve_rate
+    monkeypatch.setattr("appcore.settings.get_setting", lambda k: None)
+    assert get_configured_return_reserve_rate() == Decimal("0.01")
+
+
+def test_get_configured_return_reserve_rate_admin_override(monkeypatch):
+    """admin 在 system_settings 设置了非默认值 → 用 admin 值。"""
+    from appcore.order_analytics.profit_calculation import get_configured_return_reserve_rate
+    monkeypatch.setattr("appcore.settings.get_setting", lambda k: "0.025")
+    assert get_configured_return_reserve_rate() == Decimal("0.025")
+
+
+def test_get_configured_return_reserve_rate_invalid_falls_back(monkeypatch):
+    """admin 设了无效值（>1 或负数）→ fallback 到 0.01。"""
+    from appcore.order_analytics.profit_calculation import get_configured_return_reserve_rate
+    monkeypatch.setattr("appcore.settings.get_setting", lambda k: "1.5")
+    assert get_configured_return_reserve_rate() == Decimal("0.01")
+
+
 def test_calculate_line_profit_records_cost_basis_snapshot():
     """cost_basis 快照应包含汇率、采购价、shipping_cost_source 等，供后续审计/对账。"""
     result = calculate_line_profit(
