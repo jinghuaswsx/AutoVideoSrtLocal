@@ -671,6 +671,32 @@ def test_task_analysis_run_workflow_lives_outside_route_module():
     assert Path("web/services/task_analysis.py").exists()
 
 
+def test_task_video_ai_review_workflow_lives_outside_route_module():
+    module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    run_route = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_video_ai_review"
+    )
+    get_route = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "get_video_ai_review"
+    )
+    route_source = "\n".join(
+        ast.get_source_segment(module_source, node) or ""
+        for node in (run_route, get_route)
+    )
+
+    assert "def _can_view_av_task" not in module_source
+    assert "video_ai_review.trigger_review" not in route_source
+    assert "video_ai_review.latest_review" not in route_source
+    assert "ReviewInProgressError" not in route_source
+    assert "task_state.get" not in route_source
+    assert Path("web/services/task_video_ai_review.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

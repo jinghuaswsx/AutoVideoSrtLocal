@@ -1,6 +1,70 @@
 from decimal import Decimal
+from types import SimpleNamespace
 
 from web import store
+
+
+class _RouteReviewInProgressError(RuntimeError):
+    def __init__(self, run_id: str):
+        super().__init__(run_id)
+        self.run_id = run_id
+
+
+class _RouteFakeReviewModule:
+    CHANNEL = "route-channel"
+    MODEL = "route-model"
+    ReviewInProgressError = _RouteReviewInProgressError
+
+    def __init__(self, *, latest=None):
+        self.latest = latest
+        self.trigger_calls = []
+
+    def trigger_review(self, **kwargs):
+        self.trigger_calls.append(kwargs)
+        return "route-run-1"
+
+    def latest_review(self, source_type, source_id):
+        return self.latest
+
+
+def test_video_ai_review_run_route_uses_service_payload(authed_client_no_db, monkeypatch, tmp_path):
+    review = _RouteFakeReviewModule()
+    store.create("task-video-review-run", "video.mp4", str(tmp_path), user_id=1)
+    monkeypatch.setattr("web.services.task_video_ai_review._review_module", lambda: review)
+
+    resp = authed_client_no_db.post("/api/tasks/task-video-review-run/video-ai-review/run")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {
+        "status": "started",
+        "run_id": "route-run-1",
+        "channel": "route-channel",
+        "model": "route-model",
+    }
+    assert review.trigger_calls == [
+        {
+            "source_type": "av_sync_task",
+            "source_id": "task-video-review-run",
+            "user_id": 1,
+            "triggered_by": "manual",
+        }
+    ]
+
+
+def test_video_ai_review_get_route_returns_review_payload(authed_client_no_db, monkeypatch, tmp_path):
+    review = _RouteFakeReviewModule(latest={"score": 88})
+    task_state = SimpleNamespace(get=lambda task_id: {"evals_invalidated_at": "2026-05-05T11:00:00"})
+    store.create("task-video-review-get", "video.mp4", str(tmp_path), user_id=1)
+    monkeypatch.setattr("web.services.task_video_ai_review._review_module", lambda: review)
+    monkeypatch.setattr("web.services.task_video_ai_review._task_state_module", lambda: task_state)
+
+    resp = authed_client_no_db.get("/api/tasks/task-video-review-get/video-ai-review")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {
+        "review": {"score": 88},
+        "task_evals_invalidated_at": "2026-05-05T11:00:00",
+    }
 
 
 def test_start_translate_accepts_openrouter_gpt_5_mini(authed_client_no_db, monkeypatch, tmp_path):
