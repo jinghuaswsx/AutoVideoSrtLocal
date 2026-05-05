@@ -31,6 +31,7 @@ from web.services.openapi_materials_serializers import (
     serialize_product as _serialize_product,
     serialize_shopify_image_task as _serialize_shopify_image_task,
 )
+from web.services.openapi_push_items import serialize_push_item as _serialize_push_item
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
@@ -416,47 +417,6 @@ def _push_api_key_valid() -> bool:
     return _api_key_valid("push:write")
 
 
-def _serialize_push_item(item: dict, product: dict) -> dict:
-    """把 media_items × media_products 行序列化为 AutoPush 列表的一行。"""
-    readiness = pushes.compute_readiness(item, product)
-    status = pushes.compute_status(item, product)
-    latest_push = None
-    latest_id = item.get("latest_push_id")
-    if latest_id:
-        row = query_one(
-            "SELECT status, error_message, created_at "
-            "FROM media_push_logs WHERE id=%s",
-            (latest_id,),
-        )
-        if row:
-            latest_push = {
-                "status": row.get("status"),
-                "error_message": row.get("error_message"),
-                "created_at": _iso_or_none(row.get("created_at")),
-            }
-    cover_key = item.get("cover_object_key")
-    return {
-        "item_id": item["id"],
-        "product_id": item.get("product_id"),
-        "product_code": product.get("product_code"),
-        "product_name": product.get("name"),
-        "listing_status": medias.normalize_listing_status(product.get("listing_status")),
-        "lang": item.get("lang") or "en",
-        "filename": item.get("filename"),
-        "display_name": item.get("display_name") or item.get("filename"),
-        "file_size": item.get("file_size"),
-        "duration_seconds": item.get("duration_seconds"),
-        "cover_url": (
-            _media_download_url(cover_key)
-        ),
-        "status": status,
-        "readiness": readiness,
-        "pushed_at": _iso_or_none(item.get("pushed_at")),
-        "latest_push": latest_push,
-        "created_at": _iso_or_none(item.get("created_at")),
-    }
-
-
 @push_bp.route("", methods=["GET"], strict_slashes=False)
 def list_push_items():
     """素材 × 语种级的扁平列表。
@@ -510,7 +470,7 @@ def list_push_items():
             "importance": row.get("importance"),
             "listing_status": row.get("listing_status"),
         }
-        all_items.append(_serialize_push_item(item_shape, product_shape))
+        all_items.append(_serialize_push_item(item_shape, product_shape, query_one_fn=query_one))
 
     if status_filter:
         all_items = [it for it in all_items if it["status"] in status_filter]
@@ -539,7 +499,7 @@ def get_push_item(item_id: int):
     product = medias.get_product(item["product_id"])
     if not product:
         return jsonify({"error": "product not found"}), 404
-    return jsonify(_serialize_push_item(item, product))
+    return jsonify(_serialize_push_item(item, product, query_one_fn=query_one))
 
 
 @push_bp.route("/by-keys", methods=["GET"], strict_slashes=False)
@@ -588,7 +548,7 @@ def get_push_item_payload_by_keys():
     return jsonify({
         "item_id": item["id"],
         "mk_id": product.get("mk_id"),
-        "item": _serialize_push_item(item, product),
+        "item": _serialize_push_item(item, product, query_one_fn=query_one),
         "payload": payload,
         "localized_text": localized_text,
         "localized_texts_request": localized_texts_request,

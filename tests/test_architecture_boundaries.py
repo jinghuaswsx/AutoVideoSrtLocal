@@ -721,6 +721,14 @@ def test_openapi_materials_listing_helpers_live_outside_route_module():
     assert Path("web/services/openapi_materials_listing.py").exists()
 
 
+def test_openapi_push_item_serialization_lives_outside_route_module():
+    source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+
+    assert "def _serialize_push_item" not in source
+    assert "FROM media_push_logs WHERE id=%s" not in source
+    assert Path("web/services/openapi_push_items.py").exists()
+
+
 def test_task_resume_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
