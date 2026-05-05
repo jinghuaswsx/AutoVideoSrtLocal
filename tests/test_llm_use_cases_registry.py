@@ -204,9 +204,9 @@ def test_tts_speedup_quality_review_use_case_registered():
     )
     uc = get_use_case("video_translate.tts_speedup_quality_review")
     assert uc["module"] == "video_translate"
-    assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3-flash-preview"
-    assert uc["usage_log_service"] == "openrouter"
+    assert uc["default_provider"] == "gemini_vertex"
+    assert uc["default_model"] == "gemini-3-flash-preview"
+    assert uc["usage_log_service"] == "gemini_vertex"
     assert uc["units_type"] == "tokens"
     assert uc["label"]
     assert uc["description"]

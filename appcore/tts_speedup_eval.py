@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from pathlib import Path
 from typing import Any
 
 from appcore import llm_client
@@ -29,6 +31,9 @@ from appcore.db import execute as db_execute, query_one as db_query_one
 log = logging.getLogger(__name__)
 
 USE_CASE_CODE = "video_translate.tts_speedup_quality_review"
+EVAL_PROVIDER = "gemini_vertex"
+EVAL_MODEL = "gemini-3-flash-preview"
+COMPARISON_GAP_SECONDS = 1.0
 EVAL_TIMEOUT_SECONDS = 120  # 双音频多模态评估，留充足余量
 
 RESPONSE_SCHEMA: dict[str, Any] = {
@@ -56,6 +61,9 @@ def _build_prompt(
     hit_final_range: bool,
 ) -> str:
     return (
+        "Attached media is one MP3 comparison file: segment A is the original "
+        "pre-speedup TTS audio, then about 1 second of silence, then segment B "
+        "is the regenerated post-speedup TTS audio.\n\n"
         f"你是带货视频配音质量评审。系统在 TTS 时长收敛流程中尝试用 ElevenLabs "
         f"voice_settings.speed={speed_ratio:.4f} 把目标语言（{language}）配音从 "
         f"{audio_pre_duration:.2f}s 调整到 {audio_post_duration:.2f}s，"
@@ -71,6 +79,82 @@ def _build_prompt(
         "summary 用中文写一段总结（≤120 字）。"
         "flags 是问题点的英文短标签数组（如 chipmunk_effect / tail_wobble / "
         "pace_jitter / muffled_consonant），无问题给空数组。"
+    )
+
+
+def _comparison_audio_path(audio_pre_path: str | Path, round_index: int) -> Path:
+    pre_path = Path(audio_pre_path)
+    return pre_path.with_name(f"tts_speedup_eval.round_{round_index}.comparison.mp3")
+
+
+def _prepare_comparison_audio(
+    audio_pre_path: str | Path,
+    audio_post_path: str | Path,
+    *,
+    round_index: int,
+) -> str:
+    pre_path = Path(audio_pre_path)
+    post_path = Path(audio_post_path)
+    if not pre_path.is_file():
+        raise FileNotFoundError(f"audio_pre_path not found: {pre_path}")
+    if not post_path.is_file():
+        raise FileNotFoundError(f"audio_post_path not found: {post_path}")
+
+    out_path = _comparison_audio_path(pre_path, int(round_index))
+    if (
+        out_path.is_file()
+        and out_path.stat().st_size > 0
+        and out_path.stat().st_mtime >= max(pre_path.stat().st_mtime, post_path.stat().st_mtime)
+    ):
+        return str(out_path)
+
+    filter_complex = (
+        "[0:a]aresample=44100,"
+        "aformat=sample_fmts=fltp:channel_layouts=stereo[a0];"
+        "[1:a]aresample=44100,"
+        "aformat=sample_fmts=fltp:channel_layouts=stereo[a1];"
+        f"anullsrc=r=44100:cl=stereo:d={COMPARISON_GAP_SECONDS:.3f}[sil];"
+        "[a0][sil][a1]concat=n=3:v=0:a=1[out]"
+    )
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats", "-y",
+        "-i", str(pre_path),
+        "-i", str(post_path),
+        "-filter_complex", filter_complex,
+        "-map", "[out]",
+        "-ar", "44100",
+        "-ac", "2",
+        "-c:a", "libmp3lame",
+        "-b:a", "128k",
+        str(out_path),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg comparison audio failed (rc={proc.returncode}): {proc.stderr[-500:]}"
+        )
+    if not out_path.is_file() or out_path.stat().st_size <= 0:
+        raise RuntimeError(f"ffmpeg comparison audio missing output: {out_path}")
+    return str(out_path)
+
+
+def _invoke_quality_review(
+    *,
+    prompt: str,
+    user_id: int | None,
+    task_id: str,
+    comparison_audio_path: str,
+) -> dict:
+    return llm_client.invoke_generate(
+        USE_CASE_CODE,
+        prompt=prompt,
+        user_id=user_id,
+        project_id=task_id,
+        media=[comparison_audio_path],
+        response_schema=RESPONSE_SCHEMA,
+        temperature=0.2,
+        provider_override=EVAL_PROVIDER,
+        model_override=EVAL_MODEL,
     )
 
 
@@ -137,14 +221,16 @@ def run_evaluation(
     )
 
     def _do_call():
-        return llm_client.invoke_generate(
-            USE_CASE_CODE,
+        comparison_audio_path = _prepare_comparison_audio(
+            audio_pre_path,
+            audio_post_path,
+            round_index=round_index,
+        )
+        return _invoke_quality_review(
             prompt=prompt,
             user_id=user_id,
-            project_id=task_id,
-            media=[audio_pre_path, audio_post_path],
-            response_schema=RESPONSE_SCHEMA,
-            temperature=0.2,
+            task_id=task_id,
+            comparison_audio_path=comparison_audio_path,
         )
 
     pool = ThreadPoolExecutor(max_workers=1)
@@ -201,14 +287,16 @@ def retry_evaluation(*, eval_id: int, user_id: int | None) -> bool:
     )
 
     def _do_call():
-        return llm_client.invoke_generate(
-            USE_CASE_CODE,
+        comparison_audio_path = _prepare_comparison_audio(
+            row["audio_pre_path"],
+            row["audio_post_path"],
+            round_index=int(row["round_index"]),
+        )
+        return _invoke_quality_review(
             prompt=prompt,
             user_id=user_id,
-            project_id=row["task_id"],
-            media=[row["audio_pre_path"], row["audio_post_path"]],
-            response_schema=RESPONSE_SCHEMA,
-            temperature=0.2,
+            task_id=row["task_id"],
+            comparison_audio_path=comparison_audio_path,
         )
 
     pool = ThreadPoolExecutor(max_workers=1)
@@ -278,8 +366,4 @@ def _write_failed(eval_id: int, error_text: str) -> None:
 
 def _resolve_binding_for_log() -> dict:
     """提前 resolve binding 以便记录实际使用的 provider/model（即便后续 LLM 调用失败）。"""
-    try:
-        from appcore import llm_bindings
-        return llm_bindings.resolve(USE_CASE_CODE)
-    except Exception:
-        return {"provider": "unknown", "model": "unknown"}
+    return {"provider": EVAL_PROVIDER, "model": EVAL_MODEL}

@@ -5,6 +5,9 @@
 - LLM 超过 timeout 时写 failed 行
 - retry_evaluation 重跑只更新 score / model / status，不动 audio 路径
 """
+from pathlib import Path
+import shutil
+import subprocess
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -49,6 +52,50 @@ def _llm_ok():
     }
 
 
+def _fake_ffmpeg_concat(cmd, *args, **kwargs):
+    out_path = Path(cmd[-1])
+    out_path.write_bytes(b"combined-mp3")
+    return subprocess.CompletedProcess(cmd, 0, "", "")
+
+
+def _gen_tone(path: Path, *, freq: int) -> None:
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-nostats", "-y",
+            "-f", "lavfi",
+            "-i", f"sine=frequency={freq}:duration=0.2",
+            "-c:a", "libmp3lame",
+            "-b:a", "64k",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_prepare_comparison_audio_builds_single_mp3_with_real_ffmpeg(tmp_path):
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg required")
+
+    from appcore import tts_speedup_eval
+
+    pre = tmp_path / "pre.mp3"
+    post = tmp_path / "post.mp3"
+    _gen_tone(pre, freq=440)
+    _gen_tone(post, freq=660)
+
+    out = Path(tts_speedup_eval._prepare_comparison_audio(
+        pre,
+        post,
+        round_index=3,
+    ))
+
+    assert out == tmp_path / "tts_speedup_eval.round_3.comparison.mp3"
+    assert out.is_file()
+    assert out.stat().st_size > 0
+
+
 def test_run_evaluation_happy_path_writes_ok_row(tmp_path, _stub_db):
     from appcore import tts_speedup_eval
 
@@ -56,7 +103,9 @@ def test_run_evaluation_happy_path_writes_ok_row(tmp_path, _stub_db):
     pre = tmp_path / "pre.mp3"; pre.write_bytes(b"\xff\xfb\x10\x00")
     post = tmp_path / "post.mp3"; post.write_bytes(b"\xff\xfb\x10\x00")
 
-    with patch("appcore.tts_speedup_eval.llm_client.invoke_generate", return_value=_llm_ok()):
+    with patch("subprocess.run", side_effect=_fake_ffmpeg_concat), \
+         patch("appcore.tts_speedup_eval.llm_client.invoke_generate",
+               return_value=_llm_ok()) as m_invoke:
         eval_id = tts_speedup_eval.run_evaluation(
             task_id="task-xyz", round_index=2, language="es",
             video_duration=60.0,
@@ -66,6 +115,12 @@ def test_run_evaluation_happy_path_writes_ok_row(tmp_path, _stub_db):
             user_id=1,
         )
     assert eval_id == 42
+    expected_media = str(pre.with_name("tts_speedup_eval.round_2.comparison.mp3"))
+    invoke_kwargs = m_invoke.call_args.kwargs
+    assert invoke_kwargs["provider_override"] == tts_speedup_eval.EVAL_PROVIDER
+    assert invoke_kwargs["model_override"] == tts_speedup_eval.EVAL_MODEL
+    assert invoke_kwargs["media"] == [expected_media]
+    assert Path(expected_media).is_file()
     sqls = [r["sql"] for r in _stub_db["rows"]]
     assert any("INSERT INTO tts_speedup_evaluations" in s for s in sqls)
     assert any("UPDATE tts_speedup_evaluations" in s and "status" in s for s in sqls)
@@ -80,7 +135,8 @@ def test_run_evaluation_llm_failure_writes_failed_row(tmp_path, _stub_db):
     def boom(*args, **kwargs):
         raise RuntimeError("openrouter 502")
 
-    with patch("appcore.tts_speedup_eval.llm_client.invoke_generate", side_effect=boom):
+    with patch("subprocess.run", side_effect=_fake_ffmpeg_concat), \
+         patch("appcore.tts_speedup_eval.llm_client.invoke_generate", side_effect=boom):
         eval_id = tts_speedup_eval.run_evaluation(
             task_id="task-xyz", round_index=2, language="es",
             video_duration=60.0,
@@ -110,7 +166,8 @@ def test_run_evaluation_timeout_writes_failed_row(tmp_path, _stub_db):
         time.sleep(0.8)  # 超过测试用的小 timeout（0.5s），但调用方应在 ~0.5s 后立即返回
         return _llm_ok()
 
-    with patch("appcore.tts_speedup_eval.llm_client.invoke_generate", side_effect=slow), \
+    with patch("subprocess.run", side_effect=_fake_ffmpeg_concat), \
+         patch("appcore.tts_speedup_eval.llm_client.invoke_generate", side_effect=slow), \
          patch("appcore.tts_speedup_eval.EVAL_TIMEOUT_SECONDS", 0.5):
         eval_id = tts_speedup_eval.run_evaluation(
             task_id="task-xyz", round_index=2, language="es",
@@ -124,13 +181,38 @@ def test_run_evaluation_timeout_writes_failed_row(tmp_path, _stub_db):
     assert any("failed" in str(r["params"]) for r in failed_rows)
 
 
-def test_retry_evaluation_only_updates_scores_and_status(tmp_path, _stub_db):
+def test_retry_evaluation_only_updates_scores_and_status(tmp_path, _stub_db, monkeypatch):
     """retry 不重新写 audio 路径，只更新 score / model / status。"""
     from appcore import tts_speedup_eval
 
-    with patch("appcore.tts_speedup_eval.llm_client.invoke_generate", return_value=_llm_ok()):
+    pre = tmp_path / "tts_full.round_2.mp3"
+    post = tmp_path / "tts_full.round_2.speedup.mp3"
+    pre.write_bytes(b"\xff\xfb\x10\x00")
+    post.write_bytes(b"\xff\xfb\x10\x00")
+
+    def fake_query_one(sql, params=None):
+        return {
+            "id": 42, "task_id": "t1", "round_index": 2, "language": "es",
+            "audio_pre_path": str(pre),
+            "audio_post_path": str(post),
+            "video_duration": 60.0, "audio_pre_duration": 64.0,
+            "audio_post_duration": 60.5, "speed_ratio": 1.0667,
+            "hit_final_range": 1, "status": "failed",
+        }
+
+    monkeypatch.setattr("appcore.tts_speedup_eval.db_query_one", fake_query_one, raising=False)
+
+    with patch("subprocess.run", side_effect=_fake_ffmpeg_concat), \
+         patch("appcore.tts_speedup_eval.llm_client.invoke_generate",
+               return_value=_llm_ok()) as m_invoke:
         ok = tts_speedup_eval.retry_evaluation(eval_id=42, user_id=1)
     assert ok is True
+    invoke_kwargs = m_invoke.call_args.kwargs
+    assert invoke_kwargs["provider_override"] == tts_speedup_eval.EVAL_PROVIDER
+    assert invoke_kwargs["model_override"] == tts_speedup_eval.EVAL_MODEL
+    assert invoke_kwargs["media"] == [
+        str(pre.with_name("tts_speedup_eval.round_2.comparison.mp3"))
+    ]
     update_rows = [r for r in _stub_db["rows"]
                    if r["sql"].strip().startswith("UPDATE")]
     assert update_rows

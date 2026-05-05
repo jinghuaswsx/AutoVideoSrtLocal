@@ -164,9 +164,9 @@ USE_CASES: dict[str, UseCase] = {
         "video_translate",
         "TTS 变速短路质量评估",
         "对 ElevenLabs 变速短路产物（变速前+变速后双轨）做多模态对比，输出 5 维质量分",
-        "openrouter",
-        "google/gemini-3-flash-preview",
-        "openrouter",
+        "gemini_vertex",
+        "gemini-3-flash-preview",
+        "gemini_vertex",
         "tokens",
     ),
     "video_translate.asr": _uc(
