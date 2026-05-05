@@ -13,6 +13,8 @@ from appcore import medias, object_keys
 from config import OUTPUT_DIR
 from web.services.media_covers import (
     build_item_cover_bootstrap_response as _build_item_cover_bootstrap_response_impl,
+    build_item_cover_set_response as _build_item_cover_set_response_impl,
+    build_item_cover_update_response as _build_item_cover_update_response_impl,
     build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
 )
 
@@ -70,6 +72,37 @@ def _build_product_cover_bootstrap_response(pid, body):
         parse_lang_fn=_parse_lang,
         build_media_object_key_fn=object_keys.build_media_object_key,
         reserve_local_media_upload_fn=_reserve_local_media_upload,
+    )
+
+
+def _cache_item_cover_object(item_id, item, object_key):
+    product_dir = THUMB_DIR / str(item["product_id"])
+    product_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(object_key).suffix or ".jpg"
+    local = product_dir / f"item_cover_{item_id}{ext}"
+    _download_media_object(object_key, str(local))
+
+
+def _build_item_cover_update_response(item_id, item, body):
+    return _build_item_cover_update_response_impl(
+        item_id,
+        item,
+        body,
+        is_media_available_fn=_is_media_available,
+        update_item_cover_fn=medias.update_item_cover,
+        cache_item_cover_fn=_cache_item_cover_object,
+    )
+
+
+def _build_item_cover_set_response(item_id, item, body):
+    return _build_item_cover_set_response_impl(
+        item_id,
+        item,
+        body,
+        is_media_available_fn=_is_media_available,
+        delete_media_object_fn=_delete_media_object,
+        update_item_cover_fn=medias.update_item_cover,
+        cache_item_cover_fn=_cache_item_cover_object,
     )
 
 
@@ -173,30 +206,8 @@ def api_item_cover_update(item_id: int):
         abort(404)
 
     body = request.get_json(silent=True) or {}
-    if "object_key" not in body:
-        return jsonify({"error": "object_key required"}), 400
-    object_key = (body.get("object_key") or "").strip()
-    next_key = object_key or None
-    if next_key and not _is_media_available(next_key):
-        return jsonify({"error": "object not found"}), 400
-
-    medias.update_item_cover(item_id, next_key)
-
-    if next_key:
-        try:
-            product_dir = THUMB_DIR / str(it["product_id"])
-            product_dir.mkdir(parents=True, exist_ok=True)
-            ext = Path(next_key).suffix or ".jpg"
-            local = product_dir / f"item_cover_{item_id}{ext}"
-            _download_media_object(next_key, str(local))
-        except Exception:
-            pass
-
-    return jsonify({
-        "ok": True,
-        "object_key": next_key,
-        "cover_url": f"/medias/item-cover/{item_id}" if next_key else None,
-    })
+    result = _routes()._build_item_cover_update_response(item_id, it, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/products/<int:pid>/item-cover/bootstrap", methods=["POST"])
@@ -222,31 +233,8 @@ def api_item_cover_set(item_id: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    object_key = (body.get("object_key") or "").strip()
-    if not object_key:
-        return jsonify({"error": "object_key required"}), 400
-    if not _is_media_available(object_key):
-        return jsonify({"error": "object not found"}), 400
-
-    old = it.get("cover_object_key")
-    if old and old != object_key:
-        try:
-            _delete_media_object(old)
-        except Exception:
-            pass
-
-    medias.update_item_cover(item_id, object_key)
-
-    try:
-        product_dir = THUMB_DIR / str(it["product_id"])
-        product_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(object_key).suffix or ".jpg"
-        local = product_dir / f"item_cover_{item_id}{ext}"
-        _download_media_object(object_key, str(local))
-    except Exception:
-        pass
-
-    return jsonify({"ok": True, "cover_url": f"/medias/item-cover/{item_id}"})
+    result = _routes()._build_item_cover_set_response(item_id, it, body)
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/item-cover/<int:item_id>")
