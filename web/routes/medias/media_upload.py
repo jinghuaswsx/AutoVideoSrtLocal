@@ -12,6 +12,7 @@ from web.services.media_object_access import (
     validate_private_media_object_access as _validate_private_media_object_access_impl,
     validate_public_media_object_access as _validate_public_media_object_access_impl,
 )
+from web.services.media_local_upload import complete_local_media_upload
 
 from . import bp
 from ._helpers import (
@@ -29,6 +30,10 @@ def _send_media_object(object_key):
     return _routes()._send_media_object(object_key)
 
 
+def _write_local_media_stream(object_key, stream):
+    return local_media_storage.write_stream(object_key, stream)
+
+
 def _validate_private_media_object_access(object_key):
     return _validate_private_media_object_access_impl(
         object_key,
@@ -43,12 +48,17 @@ def _validate_public_media_object_access(object_key):
 @bp.route("/api/local-media-upload/<upload_id>", methods=["PUT"])
 @login_required
 def api_local_media_upload(upload_id: str):
-    with _local_upload_guard:
-        reservation = _local_upload_reservations.get(upload_id)
-    if not reservation or int(reservation.get("user_id") or 0) != int(current_user.id):
+    outcome = complete_local_media_upload(
+        upload_id,
+        user_id=current_user.id,
+        stream=request.stream,
+        reservations=_local_upload_reservations,
+        reservation_guard=_local_upload_guard,
+        write_stream_fn=_write_local_media_stream,
+    )
+    if outcome.not_found:
         abort(404)
-    local_media_storage.write_stream(reservation["object_key"], request.stream)
-    return ("", 204)
+    return ("", outcome.status_code)
 
 
 @bp.route("/object", methods=["GET"])

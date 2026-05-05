@@ -875,6 +875,23 @@ def test_media_object_access_validation_lives_outside_route_module():
     assert Path("web/services/media_object_access.py").exists()
 
 
+def test_local_media_upload_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/media_upload.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_local_media_upload"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "_local_upload_reservations.get" not in route_source
+    assert "reservation.get" not in route_source
+    assert "local_media_storage.write_stream" not in route_source
+    assert "complete_local_media_upload" in route_source
+    assert Path("web/services/media_local_upload.py").exists()
+
+
 def test_media_cover_bootstrap_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
