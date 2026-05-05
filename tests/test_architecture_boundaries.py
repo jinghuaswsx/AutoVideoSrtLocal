@@ -1041,6 +1041,25 @@ def test_media_product_cover_complete_delete_responses_live_outside_route_module
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_media_product_cover_file_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "cover"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "send_file(" not in route_source
+    assert "resolve_cover" not in route_source
+    assert "get_product_covers" not in route_source
+    assert "_safe_thumb_cache_path" not in route_source
+    assert "_download_media_object" not in route_source
+    assert "_build_product_cover_file_response" in route_source
+    assert Path("web/services/media_covers.py").exists()
+
+
 def test_media_cover_from_url_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

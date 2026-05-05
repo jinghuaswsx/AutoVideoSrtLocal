@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import abort, jsonify, request, send_file, url_for
+from flask import abort, jsonify, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import medias, object_keys
@@ -20,11 +20,11 @@ from web.services.media_covers import (
     build_item_cover_update_response as _build_item_cover_update_response_impl,
     build_product_cover_complete_response as _build_product_cover_complete_response_impl,
     build_product_cover_delete_response as _build_product_cover_delete_response_impl,
+    build_product_cover_file_response as _build_product_cover_file_response_impl,
     build_product_cover_from_url_response as _build_product_cover_from_url_response_impl,
     build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
+    product_cover_file_flask_response as _product_cover_file_flask_response,
 )
-
-import re
 
 from . import bp
 from ._helpers import THUMB_DIR, _parse_lang, _safe_thumb_cache_path
@@ -159,6 +159,18 @@ def _build_product_cover_delete_response(pid, lang):
         get_product_covers_fn=medias.get_product_covers,
         delete_media_object_fn=_delete_media_object,
         delete_product_cover_fn=medias.delete_product_cover,
+    )
+
+
+def _build_product_cover_file_response(pid, lang):
+    return _build_product_cover_file_response_impl(
+        pid,
+        lang,
+        resolve_cover_fn=medias.resolve_cover,
+        get_product_covers_fn=medias.get_product_covers,
+        thumb_dir=THUMB_DIR,
+        safe_thumb_cache_path_fn=_safe_thumb_cache_path,
+        download_media_object_fn=_download_media_object,
     )
 
 
@@ -394,32 +406,10 @@ def cover(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "en").strip().lower()
-    object_key = medias.resolve_cover(pid, lang)
-    if not object_key:
+    result = _routes()._build_product_cover_file_response(pid, lang)
+    if result.not_found:
         abort(404)
-    covers = medias.get_product_covers(pid)
-    actual_lang = lang if lang in covers else "en"
-    if not re.fullmatch(r"[a-z0-9_-]{1,32}", actual_lang):
-        abort(404)
-    product_dir = THUMB_DIR / str(pid)
-    for ext in (".jpg", ".jpeg", ".png", ".webp"):
-        f = product_dir / f"cover_{actual_lang}{ext}"
-        if f.exists():
-            try:
-                safe_file = _safe_thumb_cache_path(f)
-            except ValueError:
-                abort(404)
-            mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
-            return send_file(str(safe_file), mimetype=mime)
-    try:
-        product_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(object_key).suffix or ".jpg"
-        local = _safe_thumb_cache_path(product_dir / f"cover_{actual_lang}{ext}")
-        _download_media_object(object_key, str(local))
-        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
-        return send_file(str(local), mimetype=mime)
-    except Exception:
-        abort(404)
+    return _product_cover_file_flask_response(result)
 
 
 @bp.route("/api/items/<int:item_id>/play_url")

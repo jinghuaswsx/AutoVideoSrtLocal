@@ -13,6 +13,102 @@ def test_build_item_play_url_response_uses_media_object_url_builder():
     assert result.payload == {"url": "/medias/object?object_key=1/medias/123/en/video.mp4"}
 
 
+def test_build_product_cover_file_response_uses_cached_safe_file(tmp_path):
+    from pathlib import Path
+
+    from web.services.media_covers import build_product_cover_file_response
+
+    thumb_dir = tmp_path / "thumbs"
+    cached = thumb_dir / "123" / "cover_en.webp"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"cached-cover")
+    downloads = []
+
+    def safe_thumb_cache_path(path):
+        resolved = Path(path).resolve()
+        resolved.relative_to(thumb_dir.resolve())
+        return resolved
+
+    result = build_product_cover_file_response(
+        123,
+        "de",
+        resolve_cover_fn=lambda pid, lang: "1/medias/123/cover.webp",
+        get_product_covers_fn=lambda pid: {"en": "1/medias/123/cover.webp"},
+        thumb_dir=thumb_dir,
+        safe_thumb_cache_path_fn=safe_thumb_cache_path,
+        download_media_object_fn=lambda object_key, destination: downloads.append((object_key, destination)),
+    )
+
+    assert result.status_code == 200
+    assert result.local_path == cached.resolve()
+    assert result.mimetype == "image/webp"
+    assert downloads == []
+
+
+def test_build_product_cover_file_response_downloads_missing_cache_to_safe_file(tmp_path):
+    from pathlib import Path
+
+    from web.services.media_covers import build_product_cover_file_response
+
+    thumb_dir = tmp_path / "thumbs"
+    downloads = []
+
+    def safe_thumb_cache_path(path):
+        resolved = Path(path).resolve()
+        resolved.relative_to(thumb_dir.resolve())
+        return resolved
+
+    def download_media_object(object_key, destination):
+        downloads.append((object_key, destination))
+        Path(destination).write_bytes(b"downloaded-cover")
+
+    result = build_product_cover_file_response(
+        123,
+        "en",
+        resolve_cover_fn=lambda pid, lang: "1/medias/123/cover.png",
+        get_product_covers_fn=lambda pid: {"en": "1/medias/123/cover.png"},
+        thumb_dir=thumb_dir,
+        safe_thumb_cache_path_fn=safe_thumb_cache_path,
+        download_media_object_fn=download_media_object,
+    )
+
+    expected = (thumb_dir / "123" / "cover_en.png").resolve()
+    assert result.status_code == 200
+    assert result.local_path == expected
+    assert result.mimetype == "image/png"
+    assert expected.read_bytes() == b"downloaded-cover"
+    assert downloads == [("1/medias/123/cover.png", str(expected))]
+
+
+def test_build_product_cover_file_response_rejects_unsafe_language_without_download(tmp_path):
+    from pathlib import Path
+
+    from web.services.media_covers import build_product_cover_file_response
+
+    thumb_dir = tmp_path / "thumbs"
+    downloads = []
+
+    def safe_thumb_cache_path(path):
+        resolved = Path(path).resolve()
+        resolved.relative_to(thumb_dir.resolve())
+        return resolved
+
+    result = build_product_cover_file_response(
+        123,
+        "../../outside",
+        resolve_cover_fn=lambda pid, lang: "1/medias/123/cover.jpg",
+        get_product_covers_fn=lambda pid: {"../../outside": "x"},
+        thumb_dir=thumb_dir,
+        safe_thumb_cache_path_fn=safe_thumb_cache_path,
+        download_media_object_fn=lambda object_key, destination: downloads.append((object_key, destination)),
+    )
+
+    assert result.status_code == 404
+    assert result.not_found is True
+    assert result.local_path is None
+    assert downloads == []
+
+
 def test_build_product_cover_bootstrap_response_uses_lang_and_safe_filename():
     from web.services.media_covers import build_product_cover_bootstrap_response
 

@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import os
+from pathlib import Path
+import re
+
+from flask import send_file
 
 from appcore import medias, object_keys
 
@@ -15,12 +19,71 @@ class MediaCoverResponse:
     status_code: int = 200
 
 
+@dataclass(frozen=True)
+class ProductCoverFileResponse:
+    local_path: Path | None = None
+    mimetype: str | None = None
+    status_code: int = 200
+    not_found: bool = False
+
+
 def build_item_play_url_response(
     item: dict,
     *,
     media_object_url_fn: Callable[[str], str],
 ) -> MediaCoverResponse:
     return MediaCoverResponse({"url": media_object_url_fn(item["object_key"])})
+
+
+def build_product_cover_file_response(
+    product_id: int,
+    lang: str,
+    *,
+    resolve_cover_fn: Callable[[int, str], str | None],
+    get_product_covers_fn: Callable[[int], dict],
+    thumb_dir: str | os.PathLike,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
+    download_media_object_fn: Callable[[str, str], object],
+) -> ProductCoverFileResponse:
+    lang = (lang or "en").strip().lower()
+    object_key = resolve_cover_fn(product_id, lang)
+    if not object_key:
+        return _product_cover_not_found()
+
+    covers = get_product_covers_fn(product_id) or {}
+    actual_lang = lang if lang in covers else "en"
+    if not re.fullmatch(r"[a-z0-9_-]{1,32}", actual_lang):
+        return _product_cover_not_found()
+
+    product_dir = Path(thumb_dir) / str(product_id)
+    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        candidate = product_dir / f"cover_{actual_lang}{ext}"
+        if candidate.exists():
+            try:
+                safe_file = safe_thumb_cache_path_fn(candidate)
+            except ValueError:
+                return _product_cover_not_found()
+            return ProductCoverFileResponse(
+                local_path=Path(safe_file),
+                mimetype=_cover_mimetype(ext),
+            )
+
+    try:
+        product_dir.mkdir(parents=True, exist_ok=True)
+        ext = Path(object_key).suffix or ".jpg"
+        local = safe_thumb_cache_path_fn(product_dir / f"cover_{actual_lang}{ext}")
+        download_media_object_fn(object_key, str(local))
+    except Exception:
+        return _product_cover_not_found()
+
+    return ProductCoverFileResponse(
+        local_path=Path(local),
+        mimetype=_cover_mimetype(ext),
+    )
+
+
+def product_cover_file_flask_response(result: ProductCoverFileResponse):
+    return send_file(str(result.local_path), mimetype=result.mimetype)
 
 
 def build_product_cover_bootstrap_response(
@@ -288,6 +351,15 @@ def _upload_payload(object_key: str, reservation: dict) -> dict:
 
 def _client_filename_basename(value) -> str:
     return os.path.basename(str(value or "").replace("\\", "/").strip())
+
+
+def _cover_mimetype(ext: str) -> str:
+    ext = (ext or ".jpg").lower()
+    return "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
+
+
+def _product_cover_not_found() -> ProductCoverFileResponse:
+    return ProductCoverFileResponse(status_code=404, not_found=True)
 
 
 def _call_best_effort(fn: Callable, *args) -> None:
