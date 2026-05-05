@@ -18,9 +18,9 @@ if TYPE_CHECKING:
 class OmniProfile(TranslateProfile):
     code = "omni"
     name = "全能（源语言锚定）"
+    post_asr_step_name = "asr_clean"
 
     needs_separate = True
-    needs_alignment = False
     needs_loudness_match = True
 
     def post_asr(self, runner: "PipelineRunner", task_id: str) -> None:

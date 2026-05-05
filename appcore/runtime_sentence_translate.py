@@ -69,23 +69,14 @@ class SentenceTranslateRunner(MultiTranslateRunner):
         ).strip()
 
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
-        """Build the multi-translate step order without the legacy AV injection."""
-        steps = [
-            ("extract", lambda: self._step_extract(task_id, video_path, task_dir)),
-            ("asr", lambda: self._step_asr(task_id, task_dir)),
-            ("asr_normalize", lambda: self._step_asr_normalize(task_id)),
-            ("voice_match", lambda: self._step_voice_match(task_id)),
-            ("alignment", lambda: self._step_alignment(task_id, video_path, task_dir)),
-            ("translate", lambda: self._step_translate(task_id)),
-            ("tts", lambda: self._step_tts(task_id, task_dir)),
-            ("subtitle", lambda: self._step_subtitle(task_id, task_dir)),
-            ("compose", lambda: self._step_compose(task_id, video_path, task_dir)),
-            ("analysis", lambda: self._step_analysis(task_id)),
-            ("export", lambda: self._step_export(task_id, video_path, task_dir)),
-        ]
-        if not self.include_analysis_in_main_flow:
-            steps = [step for step in steps if step[0] != "analysis"]
-        return steps
+        """走统一 profile 驱动的 step 构造器。
+
+        av_sync 走 ``AvSyncProfile``：``needs_separate=False`` +
+        ``needs_loudness_match=False``，所以构造出来正好是历史的
+        [extract, asr, asr_normalize, voice_match, alignment, translate, tts,
+        subtitle, compose, (analysis), export]。
+        """
+        return self._build_steps_from_profile(task_id, video_path, task_dir)
 
     def _resolve_av_voice(self, task: dict) -> tuple[dict, str, str]:
         voice = self._resolve_voice(task, self._get_localization_module(task))

@@ -181,12 +181,15 @@ def test_step_asr_normalize_resume_idempotent_when_utterances_en_present(
 
 
 def test_get_pipeline_steps_inserts_asr_normalize_after_asr_before_voice_match():
+    """multi 现在走 profile 驱动的统一 step 构造器。
+
+    历史保证：asr → asr_normalize → voice_match 的相对顺序必须保留。
+    """
+    from appcore.translate_profiles import get_profile
     runner = _make_runner()
-    base = [("extract", lambda: None), ("asr", lambda: None),
-            ("alignment", lambda: None)]
-    with patch.object(type(runner).__bases__[0], "_get_pipeline_steps",
-                       return_value=base):
-        steps = runner._get_pipeline_steps("t1", "/tmp/v.mp4", "/tmp")
+    runner.profile = get_profile("default")
+    runner.include_analysis_in_main_flow = False
+    steps = runner._get_pipeline_steps("t1", "/tmp/v.mp4", "/tmp")
     names = [name for name, _ in steps]
     asr_idx = names.index("asr")
     norm_idx = names.index("asr_normalize")

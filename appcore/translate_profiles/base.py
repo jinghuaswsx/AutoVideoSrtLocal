@@ -14,8 +14,11 @@ class TranslateProfile(ABC):
     code: str
     name: str
 
+    # ASR 后处理步骤的对外名称（写入 task.steps、socket 事件、详情页用）。
+    # default + av_sync 都叫 "asr_normalize"；omni 叫 "asr_clean"。
+    post_asr_step_name: str = "asr_normalize"
+
     needs_separate: bool = True
-    needs_alignment: bool = False
     needs_loudness_match: bool = True
 
     @abstractmethod

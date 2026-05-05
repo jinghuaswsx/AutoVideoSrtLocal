@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 class DefaultProfile(TranslateProfile):
     code = "default"
     name = "多语言（标准）"
+    post_asr_step_name = "asr_normalize"
 
     needs_separate = True
-    needs_alignment = False
     needs_loudness_match = True
 
     def post_asr(self, runner: "PipelineRunner", task_id: str) -> None:
