@@ -120,6 +120,42 @@ def test_detail_image_zip_archive_construction_lives_outside_route_module():
     assert Path("web/services/media_detail_archives.py").exists()
 
 
+def test_detail_image_archive_responses_live_outside_route_module():
+    module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "api_detail_images_download_zip",
+        "api_detail_images_download_localized_zip",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+        direct_archive_calls = [
+            f"{call.func.value.id}.{call.func.attr}"
+            for call in ast.walk(route_function)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "medias"
+            and call.func.attr in {"list_detail_images", "list_languages"}
+        ]
+        assert direct_archive_calls == []
+
+    route_source = "\n".join(route_sources)
+    assert "build_detail_images_archive" not in route_source
+    assert "DetailImagesZipGroup" not in route_source
+    assert "_detail_images_is_gif" not in route_source
+    assert 'temp_prefix="localized_detail_images_zip_"' not in route_source
+    assert "object_keys" not in route_source
+    assert "_build_detail_images_zip_response" in route_source
+    assert "_build_localized_detail_images_zip_response" in route_source
+    assert Path("web/services/media_detail_archives.py").exists()
+
+
 def test_detail_image_upload_validation_lives_outside_route_module():
     route_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
 

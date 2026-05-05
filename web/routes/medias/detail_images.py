@@ -19,8 +19,8 @@ from web import store
 from web.routes import image_translate as image_translate_routes
 from web.services import image_translate_runner
 from web.services.media_detail_archives import (
-    DetailImagesZipGroup,
-    build_detail_images_archive,
+    build_detail_images_zip_response as _build_detail_images_zip_response_impl,
+    build_localized_detail_images_zip_response as _build_localized_detail_images_zip_response_impl,
 )
 from web.services.media_detail_from_url import (
     build_detail_images_from_url_response as _build_detail_images_from_url_response_impl,
@@ -167,6 +167,38 @@ def _build_detail_images_complete_response(pid: int, body: dict):
     )
 
 
+def _build_detail_images_zip_response(
+    pid: int,
+    product: dict,
+    lang: str,
+    kind: str,
+):
+    return _build_detail_images_zip_response_impl(
+        pid,
+        product,
+        lang,
+        kind,
+        is_valid_language_fn=medias.is_valid_language,
+        list_detail_images_fn=medias.list_detail_images,
+        detail_images_is_gif_fn=_detail_images_is_gif,
+        archive_basename_fn=_detail_images_archive_basename,
+        download_media_object_fn=_download_media_object,
+    )
+
+
+def _build_localized_detail_images_zip_response(pid: int, product: dict):
+    return _build_localized_detail_images_zip_response_impl(
+        pid,
+        product,
+        list_languages_fn=medias.list_languages,
+        list_detail_images_fn=medias.list_detail_images,
+        detail_images_is_gif_fn=_detail_images_is_gif,
+        archive_product_code_fn=_detail_images_archive_product_code,
+        archive_part_fn=_detail_images_archive_part,
+        download_media_object_fn=_download_media_object,
+    )
+
+
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
 @login_required
 def api_detail_images_list(pid: int):
@@ -187,43 +219,21 @@ def api_detail_images_download_zip(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "en").strip().lower()
-    if not medias.is_valid_language(lang):
-        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
-
     kind = (request.args.get("kind") or "image").strip().lower()
-    if kind not in {"image", "gif", "all"}:
-        return jsonify({"error": f"涓嶆敮鎸佺殑 kind: {kind}"}), 400
-
-    rows = medias.list_detail_images(pid, lang)
-    if not rows:
+    result = _routes()._build_detail_images_zip_response(pid, p or {}, lang, kind)
+    if result.not_found:
         abort(404)
-
-    if kind == "gif":
-        rows = [r for r in rows if _detail_images_is_gif(r)]
-    elif kind == "image":
-        rows = [r for r in rows if not _detail_images_is_gif(r)]
-    if not rows:
-        abort(404)
+    if result.error:
+        return jsonify({"error": result.error}), result.status_code
 
     _routes()._audit_detail_images_zip_download(
         p,
         pid,
-        action="detail_images_zip_download",
-        detail={
-            "lang": lang,
-            "kind": kind,
-            "file_count": len(rows),
-            "object_keys": [str(row.get("object_key") or "").strip() for row in rows],
-        },
+        action=result.audit_action,
+        detail=result.audit_detail,
     )
 
-    base = _detail_images_archive_basename(p or {}, pid, lang)
-    archive_base = f"{base}_gif" if kind == "gif" else base
-    archive = build_detail_images_archive(
-        archive_base=archive_base,
-        groups=[DetailImagesZipGroup(folder=archive_base, rows=rows)],
-        download_media_object=_download_media_object,
-    )
+    archive = result.archive
     return send_file(
         archive.buffer,
         mimetype="application/zip",
@@ -239,50 +249,20 @@ def api_detail_images_download_localized_zip(pid: int):
     if not _can_access_product(p):
         abort(404)
 
-    product_code = _detail_images_archive_product_code(p or {}, pid)
-    archive_base = f"小语种-{product_code}"
-    groups: list[tuple[str, str, list[dict]]] = []
-    for lang_row in medias.list_languages():
-        lang = str(lang_row.get("code") or "").strip().lower()
-        if not lang or lang == "en":
-            continue
-        rows = [
-            row for row in medias.list_detail_images(pid, lang)
-            if str(row.get("object_key") or "").strip() and not _detail_images_is_gif(row)
-        ]
-        if not rows:
-            continue
-        lang_name = _detail_images_archive_part(lang_row.get("name_zh"), lang)
-        folder = f"{lang_name}-{product_code}"
-        groups.append((lang, folder, rows))
-
-    if not groups:
+    result = _routes()._build_localized_detail_images_zip_response(pid, p or {})
+    if result.not_found:
         abort(404)
+    if result.error:
+        return jsonify({"error": result.error}), result.status_code
 
     _routes()._audit_detail_images_zip_download(
         p,
         pid,
-        action="localized_detail_images_zip_download",
-        detail={
-            "languages": [lang for lang, _folder, _rows in groups],
-            "file_count": sum(len(rows) for _lang, _folder, rows in groups),
-            "object_keys": [
-                str(row.get("object_key") or "").strip()
-                for _lang, _folder, rows in groups
-                for row in rows
-            ],
-        },
+        action=result.audit_action,
+        detail=result.audit_detail,
     )
 
-    archive = build_detail_images_archive(
-        archive_base=archive_base,
-        groups=[
-            DetailImagesZipGroup(folder=folder, rows=rows)
-            for _lang, folder, rows in groups
-        ],
-        download_media_object=_download_media_object,
-        temp_prefix="localized_detail_images_zip_",
-    )
+    archive = result.archive
     return send_file(
         archive.buffer,
         mimetype="application/zip",
