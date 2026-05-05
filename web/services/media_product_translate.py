@@ -10,6 +10,10 @@ from web.routes.bulk_translate import start_bulk_scheduler_background
 
 DEFAULT_CONTENT_TYPES = ["copywriting", "detail_images", "video_covers", "videos"]
 ALLOWED_CONTENT_TYPES = {"copywriting", "detail_images", "video_covers", "videos"}
+PRODUCT_NOT_LISTED_PAYLOAD = {
+    "error": "product_not_listed",
+    "message": "产品已下架，不能执行该操作",
+}
 
 
 @dataclass(frozen=True)
@@ -18,6 +22,7 @@ class ProductTranslateResult:
     status_code: int
     task_id: str | None = None
     error: str | None = None
+    payload: dict | None = None
 
 
 def _validation_error(message: str) -> ProductTranslateResult:
@@ -36,10 +41,19 @@ def start_product_translation(
     user_id: int,
     user_name: str,
     product_id: int,
+    product: dict | None = None,
     body: dict,
     ip: str,
     user_agent: str,
 ) -> ProductTranslateResult:
+    if product is not None and not medias.is_product_listed(product):
+        return ProductTranslateResult(
+            ok=False,
+            status_code=409,
+            error="product_not_listed",
+            payload=dict(PRODUCT_NOT_LISTED_PAYLOAD),
+        )
+
     raw_ids = body.get("raw_ids") or []
     target_langs = body.get("target_langs") or []
     content_types = body.get("content_types") or list(DEFAULT_CONTENT_TYPES)

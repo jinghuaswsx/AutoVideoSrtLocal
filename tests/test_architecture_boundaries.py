@@ -559,6 +559,23 @@ def test_media_product_create_response_lives_outside_route_module():
     assert Path("web/services/media_product_mutations.py").exists()
 
 
+def test_media_product_translate_listing_gate_lives_outside_route_module():
+    module_source = Path("web/routes/medias/translate.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_product_translate"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "_ensure_product_listed" not in route_source
+    assert "product_not_listed" not in route_source
+    assert "is_product_listed" not in route_source
+    assert "start_product_translation" in route_source
+    assert Path("web/services/media_product_translate.py").exists()
+
+
 def test_media_product_update_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

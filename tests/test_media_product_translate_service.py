@@ -20,6 +20,42 @@ def test_start_product_translation_requires_raw_sources_for_video_content(monkey
     assert "raw_ids" in result.error
 
 
+def test_start_product_translation_rejects_unlisted_product_before_listing(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    list_calls = []
+    monkeypatch.setattr(svc.medias, "is_product_listed", lambda product: False)
+    monkeypatch.setattr(
+        svc.medias,
+        "list_raw_sources",
+        lambda product_id: list_calls.append(product_id) or [],
+    )
+    monkeypatch.setattr(
+        svc.bulk_translate_runtime,
+        "create_bulk_translate_task",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("create not reached")),
+    )
+
+    result = svc.start_product_translation(
+        user_id=1,
+        user_name="admin",
+        product_id=123,
+        product={"id": 123, "listing_status": "下架"},
+        body={"raw_ids": [88], "target_langs": ["de"], "content_types": ["videos"]},
+        ip="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert result.ok is False
+    assert result.status_code == 409
+    assert result.error == "product_not_listed"
+    assert result.payload == {
+        "error": "product_not_listed",
+        "message": "产品已下架，不能执行该操作",
+    }
+    assert list_calls == []
+
+
 def test_start_product_translation_creates_starts_and_schedules_task(monkeypatch):
     from web.services import media_product_translate as svc
 

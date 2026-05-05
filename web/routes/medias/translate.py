@@ -14,7 +14,7 @@ from appcore import medias
 from web.services import media_product_translate
 
 from . import bp
-from ._helpers import _can_access_product, _ensure_product_listed
+from ._helpers import _can_access_product
 
 log = logging.getLogger(__name__)
 
@@ -25,21 +25,19 @@ def api_product_translate(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    blocked = _ensure_product_listed(p)
-    if blocked:
-        return blocked
 
     body = request.get_json(silent=True) or {}
     result = media_product_translate.start_product_translation(
         user_id=current_user.id,
         product_id=pid,
+        product=p or {},
         user_name=getattr(current_user, "username", "") or "",
         body=body,
         ip=request.remote_addr or "",
         user_agent=request.headers.get("User-Agent", "") or "",
     )
     if not result.ok:
-        return jsonify({"error": result.error}), result.status_code
+        return jsonify(result.payload or {"error": result.error}), result.status_code
     return jsonify({"task_id": result.task_id}), result.status_code
 
 
