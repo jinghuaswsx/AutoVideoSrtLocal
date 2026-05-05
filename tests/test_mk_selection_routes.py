@@ -258,6 +258,44 @@ def test_mk_media_proxy_rejects_missing_wedev_credentials_without_request(
     assert response.get_json()["error"] == "明空凭据未配置，请先在设置页同步 wedev 凭据"
 
 
+def test_mk_media_proxy_delegates_response_building_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+    from web.services.media_mk_selection import MkMediaProxyResponse
+
+    captured = {}
+
+    def fake_build(media_path):
+        captured["media_path"] = media_path
+        return MkMediaProxyResponse(
+            status_code=200,
+            content=b"image-bytes",
+            content_type="image/jpeg",
+            cache_control="private, max-age=3600",
+        )
+
+    monkeypatch.setattr(route_mod, "_build_mk_media_proxy_response", fake_build)
+    monkeypatch.setattr(
+        route_mod.requests,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("route should delegate mk media request handling")
+        ),
+    )
+
+    response = authed_client_no_db.get(
+        "/medias/api/mk-media?path=./medias/uploads2/202505/1747910543.jpg"
+    )
+
+    assert response.status_code == 200
+    assert response.data == b"image-bytes"
+    assert response.content_type == "image/jpeg"
+    assert response.headers["Cache-Control"] == "private, max-age=3600"
+    assert captured["media_path"] == "uploads2/202505/1747910543.jpg"
+
+
 def test_mk_video_proxy_caches_wedev_video_for_local_preview(
     authed_client_no_db,
     monkeypatch,

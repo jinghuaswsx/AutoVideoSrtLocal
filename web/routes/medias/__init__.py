@@ -259,6 +259,7 @@ _mk_video_cache_object_key = _mk_selection._mk_video_cache_object_key
 _cache_mk_video = _mk_selection._cache_mk_video
 _build_mk_selection_response = _mk_selection._build_mk_selection_response
 _build_mk_detail_response = _mk_selection._build_mk_detail_response
+_build_mk_media_proxy_response = _mk_selection._build_mk_media_proxy_response
 api_local_media_upload = _media_upload.api_local_media_upload
 media_object_proxy = _media_upload.media_object_proxy
 public_media_object = _media_upload.public_media_object

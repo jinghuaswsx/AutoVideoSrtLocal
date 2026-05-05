@@ -147,3 +147,59 @@ def test_build_mk_detail_response_maps_expired_login_to_401():
 
     assert result.status_code == 401
     assert "error" in result.payload
+
+
+def test_build_mk_media_proxy_response_fetches_wedev_media_with_server_credentials():
+    from web.services.media_mk_selection import build_mk_media_proxy_response
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b"image-bytes"
+        headers = {"content-type": "image/jpeg; charset=utf-8"}
+
+    def fake_get(url, *, headers=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    result = build_mk_media_proxy_response(
+        "uploads2/202505/1747910543.jpg",
+        build_headers_fn=lambda: {
+            "Authorization": "Bearer synced-token",
+            "Cookie": "token=synced-token",
+            "Content-Type": "application/json",
+        },
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fake_get,
+    )
+
+    assert result.status_code == 200
+    assert result.content == b"image-bytes"
+    assert result.content_type == "image/jpeg"
+    assert result.cache_control == "private, max-age=3600"
+    assert captured["url"] == "https://wedev.example/medias/uploads2/202505/1747910543.jpg"
+    assert captured["headers"]["Authorization"] == "Bearer synced-token"
+    assert captured["headers"]["Accept"] == "image/*,*/*;q=0.8"
+    assert "Content-Type" not in captured["headers"]
+    assert captured["timeout"] == 20
+
+
+def test_build_mk_media_proxy_response_rejects_missing_credentials_without_request():
+    from web.services.media_mk_selection import build_mk_media_proxy_response
+
+    def fail_get(*_args, **_kwargs):
+        raise AssertionError("missing credentials should stop before request")
+
+    result = build_mk_media_proxy_response(
+        "uploads2/202505/1747910543.jpg",
+        build_headers_fn=lambda: {},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fail_get,
+    )
+
+    assert result.status_code == 500
+    assert result.payload
+    assert "error" in result.payload

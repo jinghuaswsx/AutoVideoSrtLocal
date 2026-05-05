@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import mimetypes
+from urllib.parse import quote
 from typing import Callable, Mapping, Sequence
 
 import requests
+from flask import Response, jsonify
 
 
 @dataclass(frozen=True)
@@ -16,6 +19,15 @@ class MkSelectionResponse:
 class MkDetailResponse:
     payload: dict
     status_code: int
+
+
+@dataclass(frozen=True)
+class MkMediaProxyResponse:
+    status_code: int
+    payload: dict | None = None
+    content: bytes = b""
+    content_type: str | None = None
+    cache_control: str | None = None
 
 
 def _parse_bounded_int(
@@ -168,3 +180,52 @@ def build_mk_detail_response(
             401,
         )
     return MkDetailResponse(data, resp.status_code)
+
+
+def build_mk_media_proxy_response(
+    media_path: str,
+    *,
+    build_headers_fn: Callable[[], dict],
+    get_base_url_fn: Callable[[], str],
+    http_get_fn=requests.get,
+) -> MkMediaProxyResponse:
+    headers = build_headers_fn()
+    headers.pop("Content-Type", None)
+    headers["Accept"] = "image/*,*/*;q=0.8"
+    if "Authorization" not in headers and "Cookie" not in headers:
+        return MkMediaProxyResponse(
+            status_code=500,
+            payload={"error": "明空凭据未配置，请先在设置页同步 wedev 凭据"},
+        )
+    url = f"{get_base_url_fn()}/medias/{quote(media_path, safe='/')}"
+    try:
+        resp = http_get_fn(url, headers=headers, timeout=20)
+    except Exception as exc:
+        return MkMediaProxyResponse(status_code=502, payload={"error": str(exc)})
+
+    if resp.status_code >= 400:
+        return MkMediaProxyResponse(status_code=resp.status_code)
+
+    content_type = (
+        (resp.headers.get("content-type") or "").split(";")[0].strip()
+        or mimetypes.guess_type(media_path)[0]
+        or "application/octet-stream"
+    )
+    return MkMediaProxyResponse(
+        status_code=resp.status_code,
+        content=resp.content,
+        content_type=content_type,
+        cache_control="private, max-age=3600",
+    )
+
+
+def build_mk_media_proxy_flask_response(result: MkMediaProxyResponse):
+    if result.payload is not None:
+        return jsonify(result.payload), result.status_code
+    if result.status_code >= 400 and not result.content:
+        return ("", result.status_code)
+
+    proxied = Response(result.content, status=result.status_code, content_type=result.content_type)
+    if result.cache_control:
+        proxied.headers["Cache-Control"] = result.cache_control
+    return proxied

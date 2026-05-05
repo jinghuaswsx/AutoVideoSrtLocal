@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import requests
-from flask import Response, abort, jsonify, request, send_file
+from flask import abort, jsonify, request, send_file
 from flask_login import login_required
 
 from appcore import local_media_storage, pushes
@@ -21,6 +21,8 @@ from . import bp
 from ._helpers import _MAX_MK_VIDEO_BYTES, _MK_VIDEO_CACHE_PREFIX, _dianxiaomi_rankings_columns
 from web.services.media_mk_selection import (
     build_mk_detail_response as _build_mk_detail_response_impl,
+    build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
+    build_mk_media_proxy_response as _build_mk_media_proxy_response_impl,
     build_mk_selection_response as _build_mk_selection_response_impl,
 )
 
@@ -64,6 +66,15 @@ def _build_mk_detail_response(mk_id: int):
     )
 
 
+def _build_mk_media_proxy_response(media_path: str):
+    return _build_mk_media_proxy_response_impl(
+        media_path,
+        build_headers_fn=_build_mk_request_headers,
+        get_base_url_fn=_get_mk_api_base_url,
+        http_get_fn=requests.get,
+    )
+
+
 @bp.route("/api/mk-selection", methods=["GET"])
 @login_required
 def api_mk_selection():
@@ -92,26 +103,8 @@ def api_mk_media_proxy():
     if not media_path:
         abort(404)
 
-    headers = _build_mk_request_headers()
-    headers.pop("Content-Type", None)
-    headers["Accept"] = "image/*,*/*;q=0.8"
-    if not _has_mk_credentials(headers):
-        return _mk_credentials_missing_response()
-    url = f"{_get_mk_api_base_url()}/medias/{quote(media_path, safe='/')}"
-    try:
-        resp = requests.get(url, headers=headers, timeout=20)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-    if resp.status_code >= 400:
-        return ("", resp.status_code)
-    content_type = (
-        (resp.headers.get("content-type") or "").split(";")[0].strip()
-        or mimetypes.guess_type(media_path)[0]
-        or "application/octet-stream"
-    )
-    proxied = Response(resp.content, status=resp.status_code, content_type=content_type)
-    proxied.headers["Cache-Control"] = "private, max-age=3600"
-    return proxied
+    result = _routes()._build_mk_media_proxy_response(media_path)
+    return _build_mk_media_proxy_flask_response(result)
 
 
 @bp.route("/api/mk-video", methods=["GET"])
