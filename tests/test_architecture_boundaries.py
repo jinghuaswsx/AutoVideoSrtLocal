@@ -1512,6 +1512,37 @@ def test_text_translate_api_responses_live_outside_route_module():
     assert Path("web/services/text_translate.py").exists()
 
 
+def test_admin_prompts_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/admin_prompts.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "_require_admin",
+        "list_prompts",
+        "upsert_prompt",
+        "delete_prompt",
+        "resolve_one",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "jsonify(" not in route_source
+    assert "build_admin_prompts_admin_only_response" in route_source
+    assert "build_admin_prompts_list_response" in route_source
+    assert "build_admin_prompts_bad_upsert_response" in route_source
+    assert "build_admin_prompts_success_response" in route_source
+    assert "build_admin_prompts_slot_required_response" in route_source
+    assert "build_admin_prompts_resolve_response" in route_source
+    assert "build_admin_prompts_bad_resolve_response" in route_source
+    assert "admin_prompts_flask_response" in route_source
+    assert Path("web/services/admin_prompts.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -1,18 +1,28 @@
 """管理员后台 — LLM prompt 配置可视化编辑。"""
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
 from appcore import llm_prompt_configs as dao
 from pipeline.languages.registry import SUPPORTED_LANGS
+from web.services.admin_prompts import (
+    admin_prompts_flask_response,
+    build_admin_prompts_admin_only_response,
+    build_admin_prompts_bad_resolve_response,
+    build_admin_prompts_bad_upsert_response,
+    build_admin_prompts_list_response,
+    build_admin_prompts_resolve_response,
+    build_admin_prompts_slot_required_response,
+    build_admin_prompts_success_response,
+)
 
 bp = Blueprint("admin_prompts", __name__)
 
 
 def _require_admin():
     if not getattr(current_user, "is_admin", False):
-        return jsonify({"error": "admin only"}), 403
+        return admin_prompts_flask_response(build_admin_prompts_admin_only_response())
     return None
 
 
@@ -35,7 +45,7 @@ def list_prompts():
     err = _require_admin()
     if err:
         return err
-    return jsonify({"items": dao.list_all()})
+    return admin_prompts_flask_response(build_admin_prompts_list_response(dao.list_all()))
 
 
 @bp.route("/admin/api/prompts", methods=["PUT"])
@@ -51,13 +61,13 @@ def upsert_prompt():
     model = body.get("model")
     content = body.get("content")
     if not all([slot, provider, model, content]):
-        return jsonify({"error": "slot/provider/model/content required"}), 400
+        return admin_prompts_flask_response(build_admin_prompts_bad_upsert_response())
     dao.upsert(
         slot, lang,
         provider=provider, model=model, content=content,
         updated_by=current_user.id,
     )
-    return jsonify({"ok": True})
+    return admin_prompts_flask_response(build_admin_prompts_success_response())
 
 
 @bp.route("/admin/api/prompts", methods=["DELETE"])
@@ -69,9 +79,9 @@ def delete_prompt():
     slot = request.args.get("slot")
     lang = request.args.get("lang") or None
     if not slot:
-        return jsonify({"error": "slot required"}), 400
+        return admin_prompts_flask_response(build_admin_prompts_slot_required_response())
     dao.delete(slot, lang)
-    return jsonify({"ok": True})
+    return admin_prompts_flask_response(build_admin_prompts_success_response())
 
 
 @bp.route("/admin/api/prompts/resolve", methods=["GET"])
@@ -84,8 +94,10 @@ def resolve_one():
     slot = request.args.get("slot")
     lang = request.args.get("lang") or None
     if not slot:
-        return jsonify({"error": "slot required"}), 400
+        return admin_prompts_flask_response(build_admin_prompts_slot_required_response())
     try:
-        return jsonify(dao.resolve_prompt_config(slot, lang))
+        return admin_prompts_flask_response(
+            build_admin_prompts_resolve_response(dao.resolve_prompt_config(slot, lang))
+        )
     except (ValueError, LookupError) as e:
-        return jsonify({"error": str(e)}), 400
+        return admin_prompts_flask_response(build_admin_prompts_bad_resolve_response(e))
