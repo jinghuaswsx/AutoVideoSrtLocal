@@ -1,20 +1,17 @@
-"""开发电脑上 GPU 人声分离服务的 HTTP 客户端。
+"""本机 GPU 人声分离服务的 HTTP 客户端。
 
-服务端基于 nomadkaraoke/python-audio-separator + 自包 FastAPI，部署在
-内网开发电脑（RTX 3060），生产服务器通过本模块调用。
+服务端基于 nomadkaraoke/python-audio-separator + 自包 FastAPI，本机生产
+部署地址为 ``http://127.0.0.1:83``。
 
 协议（同步阻塞模式，单次 POST 拿 ZIP）：
 - ``POST /separate/download``  multipart {file=mp3, ensemble_preset=...}
   → ``application/zip``，包含两个 wav：``..._(Vocals)_..._.wav``、
   ``..._(Instrumental)_..._.wav``
-- ``GET  /separate/health`` → ``200`` 表示服务健康
-
-服务端 2026-05-05 起统一挂在 Caddy 网关的 ``/separate/`` 前缀下；
-``base_url`` 仍是 ``http://172.30.254.12``（无端口），网关在 80 端口。
+- ``GET  /health`` → ``200`` 表示服务健康
 
 注意点：
-- 服务端**只接受 MP3 上传**（WAV 会 500），客户端内部把任意格式转成
-  192kbps MP3 临时文件再上传。
+- 客户端内部把任意格式转成 192kbps MP3 临时文件再上传，降低传输体积并
+  保持历史调用行为稳定。
 - 服务端有 1h MD5 缓存：相同 MP3 + 相同 preset 几乎秒返。
 - 单次 POST 可能阻塞 GPU 排队 + 推理 + ZIP 打包，需要较长 read timeout。
 
@@ -40,6 +37,7 @@ log = logging.getLogger(__name__)
 
 
 DEFAULT_PRESET = "vocal_balanced"
+DEFAULT_BASE_URL = "http://127.0.0.1:83"
 
 # 任务总超时（含 API 端内部排队 + GPU 推理 + ZIP 打包 + 流式下载）。
 # 单个 POST /separate/download 同步阻塞，给 5 分钟兜底。
@@ -97,7 +95,7 @@ class SeparationClient:
         network_retry_backoff: float = DEFAULT_NETWORK_RETRY_BACKOFF,
     ):
         if not base_url:
-            raise ValueError("base_url is required (e.g. http://172.30.254.12)")
+            raise ValueError(f"base_url is required (e.g. {DEFAULT_BASE_URL})")
         self.base_url = base_url.rstrip("/")
         # POST /separate/download 的 read timeout，覆盖 GPU 排队 + 推理 + ZIP 下载。
         self.task_timeout = float(task_timeout)
@@ -159,8 +157,8 @@ class SeparationClient:
         )
 
     def health(self) -> bool:
-        """探活：访问 /separate/health 端点。失败返回 False，不抛。"""
-        url = f"{self.base_url}/separate/health"
+        """探活：访问 /health 端点。失败返回 False，不抛。"""
+        url = f"{self.base_url}/health"
         try:
             resp = requests.get(
                 url,

@@ -12,7 +12,7 @@ mock 覆盖：
 - read timeout 抛 SeparationTimeout（仍是 SeparationApiUnavailable 子类）
 - ZIP 缺 Vocals / 缺 Instrumental → SeparationFailed
 - ZIP 完全损坏 → SeparationFailed
-- health() 探活
+- health() 探活请求根路径 /health
 """
 from __future__ import annotations
 
@@ -166,6 +166,17 @@ def test_health_returns_true_on_200():
         assert client.health() is True
 
 
+def test_health_uses_root_health_endpoint():
+    client = SeparationClient("http://127.0.0.1:83/")
+    with patch("appcore.audio_separation_client.requests") as r:
+        r.get.return_value = _fake_get_resp(200, {"ok": True})
+        r.RequestException = Exception
+        assert client.health() is True
+
+    url, = r.get.call_args.args
+    assert url == "http://127.0.0.1:83/health"
+
+
 def test_separate_missing_audio_file_raises(tmp_path):
     client = SeparationClient("http://x.test")
     with pytest.raises(FileNotFoundError):
@@ -212,6 +223,7 @@ def test_separate_happy_path_with_mp3_input(tmp_path, mp3_file):
     _, kwargs = r.post.call_args
     assert "file" in kwargs["files"]
     assert kwargs["data"]["ensemble_preset"] == "vocal_balanced"
+    assert r.post.call_args.args[0] == "http://x.test/separate/download"
 
 
 def test_separate_wav_input_transcodes_to_mp3(tmp_path, wav_file):
