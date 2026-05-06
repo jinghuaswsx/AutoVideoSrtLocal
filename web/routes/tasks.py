@@ -401,24 +401,13 @@ def api_translators():
 @bp.route("/api/languages", methods=["GET"])
 @login_required
 def api_languages():
-    from appcore.db import query_all
-    rows = query_all(
-        "SELECT code FROM media_languages "
-        "WHERE enabled=1 AND code <> 'en' ORDER BY code"
-    )
-    return _json_response({"languages": [{"code": r["code"].upper()} for r in rows]})
+    return _json_response({"languages": tasks_svc.list_enabled_target_languages()})
 
 
 @bp.route("/api/product/<int:pid>/en_items", methods=["GET"])
 @login_required
 def api_product_en_items(pid: int):
-    from appcore.db import query_all
-    rows = query_all(
-        "SELECT id, filename, object_key FROM media_items "
-        "WHERE product_id=%s AND lang='en' AND deleted_at IS NULL ORDER BY id DESC",
-        (pid,),
-    )
-    return _json_response({"items": [{"id": r["id"], "filename": r["filename"]} for r in rows]})
+    return _json_response({"items": tasks_svc.list_product_english_items(pid)})
 
 
 @bp.route("/api/child/<int:tid>/readiness", methods=["GET"])

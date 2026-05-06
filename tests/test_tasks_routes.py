@@ -155,6 +155,44 @@ def test_api_translators_delegates_to_users_dao(authed_client_no_db, monkeypatch
     assert captured == [True]
 
 
+def test_api_languages_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = []
+
+    def fake_list_enabled_target_languages():
+        captured.append(True)
+        return [{"code": "DE"}, {"code": "JA"}]
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_enabled_target_languages",
+        fake_list_enabled_target_languages,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/languages")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"languages": [{"code": "DE"}, {"code": "JA"}]}
+    assert captured == [True]
+
+
+def test_api_product_en_items_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = []
+
+    def fake_list_product_english_items(product_id):
+        captured.append(product_id)
+        return [{"id": 11, "filename": "source.mp4"}]
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_product_english_items",
+        fake_list_product_english_items,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/product/417/en_items")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"items": [{"id": 11, "filename": "source.mp4"}]}
+    assert captured == [417]
+
+
 def test_child_readiness_endpoint_smoke(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/api/child/9999/readiness")
     assert rsp.status_code in (200, 404, 500)

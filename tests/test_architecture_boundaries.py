@@ -2686,6 +2686,28 @@ def test_tasks_translator_listing_lives_in_appcore_users():
     assert "role <> %s" in users_source
 
 
+def test_tasks_create_modal_supporting_queries_live_in_appcore_tasks():
+    module_source = Path("web/routes/tasks.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {"api_languages", "api_product_en_items"}
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+    appcore_source = Path("appcore/tasks.py").read_text(encoding="utf-8")
+
+    assert set(route_sources) == route_names
+    assert "from appcore.db import query_all" not in route_source
+    assert "FROM media_languages" not in route_source
+    assert "FROM media_items" not in route_source
+    assert "tasks_svc.list_enabled_target_languages" in route_source
+    assert "tasks_svc.list_product_english_items" in route_source
+    assert "def list_enabled_target_languages" in appcore_source
+    assert "def list_product_english_items" in appcore_source
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

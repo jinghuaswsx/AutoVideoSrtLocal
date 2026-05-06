@@ -44,6 +44,23 @@ def high_level_status(status: str) -> str:
     return "in_progress"
 
 
+def list_enabled_target_languages() -> list[dict]:
+    rows = query_all(
+        "SELECT code FROM media_languages "
+        "WHERE enabled=1 AND code <> 'en' ORDER BY code"
+    )
+    return [{"code": str(row["code"]).upper()} for row in rows]
+
+
+def list_product_english_items(product_id: int) -> list[dict]:
+    rows = query_all(
+        "SELECT id, filename, object_key FROM media_items "
+        "WHERE product_id=%s AND lang='en' AND deleted_at IS NULL ORDER BY id DESC",
+        (int(product_id),),
+    )
+    return [{"id": row["id"], "filename": row["filename"]} for row in rows]
+
+
 # ---- 共用 helpers (后续 task 用) ----
 def _row(task_id: int) -> dict | None:
     return query_one("SELECT * FROM tasks WHERE id=%s", (int(task_id),))
