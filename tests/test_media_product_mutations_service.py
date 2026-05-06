@@ -165,3 +165,20 @@ def test_build_product_delete_response_soft_deletes_product():
     assert result.status_code == 200
     assert result.payload == {"ok": True}
     assert deleted == [42]
+
+
+def test_product_mutation_flask_response_returns_payload_and_status(
+    authed_client_no_db,
+):
+    from web.services.media_product_mutations import (
+        ProductMutationResponse,
+        product_mutation_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = product_mutation_flask_response(
+            ProductMutationResponse({"ok": True}, 202)
+        )
+
+    assert status_code == 202
+    assert response.get_json() == {"ok": True}

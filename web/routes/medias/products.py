@@ -19,6 +19,7 @@ from web.services.media_product_mutations import (
     build_product_create_response as _build_product_create_response_impl,
     build_product_delete_response as _build_product_delete_response_impl,
     build_product_update_response as _build_product_update_response_impl,
+    product_mutation_flask_response as _product_mutation_flask_response_impl,
 )
 from web.services.media_shopify_sku_refresh import (
     build_refresh_product_shopify_sku_response as _build_refresh_product_shopify_sku_response_impl,
@@ -99,6 +100,10 @@ def _build_product_update_response(pid: int, product: dict, body: dict):
 
 def _build_product_delete_response(pid: int):
     return _build_product_delete_response_impl(pid)
+
+
+def _product_mutation_flask_response(result):
+    return _product_mutation_flask_response_impl(result)
 
 def _build_mk_copywriting_response(args):
     routes = _routes_module()
@@ -230,7 +235,7 @@ def api_create_product():
         body,
         user_id=current_user.id,
     )
-    return jsonify(result.payload), result.status_code
+    return routes._product_mutation_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>", methods=["GET"])
@@ -318,7 +323,7 @@ def api_update_product(pid: int):
         abort(404)
     body = request.get_json(silent=True) or {}
     result = routes._build_product_update_response(pid, p, body)
-    return jsonify(result.payload), result.status_code
+    return routes._product_mutation_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/owner", methods=["PATCH"])
@@ -344,7 +349,7 @@ def api_delete_product(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     result = routes._build_product_delete_response(pid)
-    return jsonify(result.payload), result.status_code
+    return routes._product_mutation_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/refresh-shopify-sku", methods=["POST"])

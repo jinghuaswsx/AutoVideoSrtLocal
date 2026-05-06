@@ -2317,6 +2317,7 @@ def test_create_product_delegates_to_response_builder(authed_client_no_db, monke
     from web.routes import medias as r
 
     captured = {}
+    converted = {}
 
     class Result:
         payload = {"id": 123}
@@ -2327,7 +2328,12 @@ def test_create_product_delegates_to_response_builder(authed_client_no_db, monke
         captured["user_id"] = user_id
         return Result()
 
+    def fake_flask_response(result):
+        converted["payload"] = result.payload
+        return {"converted": True, **result.payload}, result.status_code
+
     monkeypatch.setattr(r, "_build_product_create_response", fake_build)
+    monkeypatch.setattr(r, "_product_mutation_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.post(
         "/medias/api/products",
@@ -2335,11 +2341,12 @@ def test_create_product_delegates_to_response_builder(authed_client_no_db, monke
     )
 
     assert resp.status_code == 201
-    assert resp.get_json() == {"id": 123}
+    assert resp.get_json() == {"converted": True, "id": 123}
     assert captured == {
         "body": {"name": "Demo", "product_code": "demo-rjc"},
         "user_id": 1,
     }
+    assert converted == {"payload": {"id": 123}}
 
 
 def test_update_product_delegates_to_response_builder(authed_client_no_db, monkeypatch):
@@ -2347,6 +2354,7 @@ def test_update_product_delegates_to_response_builder(authed_client_no_db, monke
 
     product = {"id": 42, "user_id": 1, "name": "Demo", "product_code": "demo-rjc"}
     captured = {}
+    converted = {}
 
     class Result:
         payload = {"ok": True}
@@ -2358,9 +2366,14 @@ def test_update_product_delegates_to_response_builder(authed_client_no_db, monke
         captured["body"] = body
         return Result()
 
+    def fake_flask_response(result):
+        converted["payload"] = result.payload
+        return {"converted": True, **result.payload}, result.status_code
+
     monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
     monkeypatch.setattr(r, "_can_access_product", lambda p: True)
     monkeypatch.setattr(r, "_build_product_update_response", fake_build)
+    monkeypatch.setattr(r, "_product_mutation_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.put(
         "/medias/api/products/42",
@@ -2368,12 +2381,13 @@ def test_update_product_delegates_to_response_builder(authed_client_no_db, monke
     )
 
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True}
+    assert resp.get_json() == {"converted": True, "ok": True}
     assert captured == {
         "pid": 42,
         "product": product,
         "body": {"name": "Updated"},
     }
+    assert converted == {"payload": {"ok": True}}
 
 
 def test_delete_product_delegates_to_response_builder(authed_client_no_db, monkeypatch):
@@ -2381,6 +2395,7 @@ def test_delete_product_delegates_to_response_builder(authed_client_no_db, monke
 
     product = {"id": 42, "user_id": 1, "name": "Demo", "product_code": "demo-rjc"}
     captured = {}
+    converted = {}
 
     class Result:
         payload = {"ok": True}
@@ -2390,15 +2405,21 @@ def test_delete_product_delegates_to_response_builder(authed_client_no_db, monke
         captured["pid"] = pid
         return Result()
 
+    def fake_flask_response(result):
+        converted["payload"] = result.payload
+        return {"converted": True, **result.payload}, result.status_code
+
     monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
     monkeypatch.setattr(r, "_can_access_product", lambda p: True)
     monkeypatch.setattr(r, "_build_product_delete_response", fake_build)
+    monkeypatch.setattr(r, "_product_mutation_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.delete("/medias/api/products/42")
 
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True}
+    assert resp.get_json() == {"converted": True, "ok": True}
     assert captured == {"pid": 42}
+    assert converted == {"payload": {"ok": True}}
 
 
 # ==================== 负责人指派路由 ====================

@@ -390,6 +390,7 @@ _build_product_owner_update_response = _products._build_product_owner_update_res
 _build_product_create_response = _products._build_product_create_response
 _build_product_update_response = _products._build_product_update_response
 _build_product_delete_response = _products._build_product_delete_response
+_product_mutation_flask_response = _products._product_mutation_flask_response
 _build_roas_page_context = _products._build_roas_page_context
 api_mk_copywriting = _products.api_mk_copywriting
 api_list_products = _products.api_list_products

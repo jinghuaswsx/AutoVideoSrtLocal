@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from flask import jsonify
 import pymysql.err
 
 from appcore import medias
@@ -192,6 +193,10 @@ def build_product_delete_response(
     soft_delete_product_fn = soft_delete_product_fn or medias.soft_delete_product
     soft_delete_product_fn(product_id)
     return ProductMutationResponse({"ok": True}, 200)
+
+
+def product_mutation_flask_response(result: ProductMutationResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def _clean_ad_supported_langs(raw, *, is_valid_language_fn) -> str | None:

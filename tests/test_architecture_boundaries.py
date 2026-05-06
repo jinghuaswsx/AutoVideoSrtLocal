@@ -562,7 +562,9 @@ def test_media_product_create_response_lives_outside_route_module():
     assert "_validate_product_code" not in route_source
     assert "name required" not in route_source
     assert "product_code already exists" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_create_response" in route_source
+    assert "_product_mutation_flask_response" in route_source
     assert Path("web/services/media_product_mutations.py").exists()
 
 
@@ -621,7 +623,9 @@ def test_media_product_update_response_lives_outside_route_module():
     assert "localized_links_json" not in route_source
     assert "ad_supported_langs" not in route_source
     assert "uk_media_products_mk_id" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_update_response" in route_source
+    assert "_product_mutation_flask_response" in route_source
     assert Path("web/services/media_product_mutations.py").exists()
 
 
@@ -636,7 +640,9 @@ def test_media_product_delete_response_lives_outside_route_module():
     route_source = ast.get_source_segment(module_source, route_function) or ""
 
     assert "medias.soft_delete_product" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_delete_response" in route_source
+    assert "_product_mutation_flask_response" in route_source
     assert Path("web/services/media_product_mutations.py").exists()
 
 
