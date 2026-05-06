@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -8,14 +10,89 @@ def _read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
+def _run_browser_runner_with_fake_chromium(
+    tmp_path: Path,
+    *,
+    display: str = ":77",
+    headless_fallback: str = "1",
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    args_file = tmp_path / "chromium-args.txt"
+    fake_chromium_source = """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$@" >"$FAKE_CHROMIUM_ARGS"
+"""
+    for command_name in (
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium",
+        "chromium-browser",
+    ):
+        fake_chromium = bin_dir / command_name
+        fake_chromium.write_text(fake_chromium_source, encoding="utf-8")
+        fake_chromium.chmod(0o755)
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}",
+            "APP_DIR": str(tmp_path / "app"),
+            "VENV_DIR": str(tmp_path / "venv"),
+            "BROWSER_PROFILE_DIR": str(tmp_path / "profile"),
+            "BROWSER_RUNTIME_DIR": str(tmp_path / "runtime"),
+            "BROWSER_LOG_DIR": str(tmp_path / "logs"),
+            "BROWSER_START_URL": "about:blank",
+            "BROWSER_CDP_PORT": "19222",
+            "BROWSER_HEADLESS_FALLBACK": headless_fallback,
+            "DISPLAY": display,
+            "FAKE_CHROMIUM_ARGS": str(args_file),
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "deploy/server_browser/run_server_browser.sh")],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, args_file
+
+
 def test_browser_runner_uses_real_desktop_chromium_cdp():
     source = _read("deploy/server_browser/run_server_browser.sh")
 
-    assert 'if [[ -z "${DISPLAY:-}" ]]; then' in source
+    assert "has_x11_display" in source
     assert "--remote-debugging-address=\"$CDP_HOST\"" in source
     assert "--remote-debugging-port=\"$CDP_PORT\"" in source
     assert "--start-maximized" in source
+    assert "--headless=new" in source
     assert "Xvfb" not in source
+
+
+def test_browser_runner_falls_back_to_headless_cdp_when_x11_socket_is_missing(tmp_path):
+    result, args_file = _run_browser_runner_with_fake_chromium(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    args = args_file.read_text(encoding="utf-8").splitlines()
+    assert "--remote-debugging-address=127.0.0.1" in args
+    assert "--remote-debugging-port=19222" in args
+    assert "--headless=new" in args
+    assert "--keep-alive-for-test" in args
+    assert "--start-maximized" not in args
+    assert "X11 display :77 is unavailable" in result.stderr
+
+
+def test_browser_runner_can_disable_headless_fallback_when_real_desktop_is_required(tmp_path):
+    result, args_file = _run_browser_runner_with_fake_chromium(
+        tmp_path,
+        headless_fallback="0",
+    )
+
+    assert result.returncode == 1
+    assert not args_file.exists()
+    assert "X11 socket is unavailable" in result.stderr
 
 
 def test_mk_browser_service_uses_isolated_environment_file():

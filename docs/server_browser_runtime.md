@@ -13,7 +13,7 @@
 ## 组成
 
 - KDE Plasma X11 真桌面（GDM3 自动登录 cjh，由 Codex 维护）
-- `Chromium`（Playwright Chromium）：跑在真桌面 `:0` 上，由 systemd 管理
+- `Chromium`（Playwright Chromium）：优先跑在真桌面 `:0` 上，由 systemd 管理；X11 失效时默认切到 headless CDP 兜底
 - `CDP`：给自动化模块连接浏览器
 - 向日葵远程桌面：用户介入入口（看页面、关弹窗、补登录）
 
@@ -86,7 +86,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_mk_server_browser
 - `autovideosrt-xmyc-browser.service`：小秘云仓独立浏览器（CDP 9224）
 - `autovideosrt-novnc.service`：noVNC web 代理（websockify 0.0.0.0:6082 → [::1]:5900）
 
-前三个 `User=cjh`，`After=graphical.target`，依赖 cjh 真桌面登录后才启动。noVNC 是 `User=root`，`After=graphical.target`（5900 上的 x11vnc 是 cjh 桌面里跑的，所以也要等桌面起来）。
+前三个 `User=cjh`，`After=graphical.target`，优先依赖 cjh 真桌面登录后启动。noVNC 是 `User=root`，`After=graphical.target`（5900 上的 x11vnc 是 cjh 桌面里跑的，所以也要等桌面起来）。
+
+## X11 失效时的 CDP 兜底
+
+`deploy/server_browser/run_server_browser.sh` 启动 Chromium 前必须检查 `DISPLAY` 对应的 `/tmp/.X11-unix/X*` socket 是否存在。
+
+- socket 存在：按真桌面模式启动，保留 `--start-maximized`，noVNC / 向日葵能看到浏览器窗口。
+- socket 缺失：默认用 `--headless=new` 启动 Chromium，只保证 CDP 端口可用，让订单同步、广告同步、Shopify ID 回填、小秘云仓抓取等浏览器自动化定时任务继续跑。
+- headless 兜底不提供可视桌面窗口；需要人工补登录、关闭弹窗或通过 noVNC 检查页面时，仍必须修复 GDM / X11 真桌面。
+- 如需严格要求真桌面，可在对应 env file 里设置 `BROWSER_HEADLESS_FALLBACK=0`，此时 socket 缺失会直接失败并交给 systemd 记录错误。
 
 ## 复用方式
 

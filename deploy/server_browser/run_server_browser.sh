@@ -11,6 +11,7 @@ START_URL="${BROWSER_START_URL:-https://www.dianxiaomi.com/web/shopifyProduct/on
 CDP_HOST="${BROWSER_CDP_HOST:-127.0.0.1}"
 CDP_PORT="${BROWSER_CDP_PORT:-9222}"
 WINDOW_SIZE="${BROWSER_WINDOW_SIZE:-1440,900}"
+HEADLESS_FALLBACK="${BROWSER_HEADLESS_FALLBACK:-1}"
 
 mkdir -p "$PROFILE_DIR" "$RUNTIME_DIR" "$LOG_DIR"
 
@@ -50,20 +51,66 @@ if [[ -z "$CHROMIUM_BIN" || ! -x "$CHROMIUM_BIN" ]]; then
   exit 1
 fi
 
-if [[ -z "${DISPLAY:-}" ]]; then
-  echo "DISPLAY is not set; cannot launch Chromium on real desktop." >&2
+is_truthy() {
+  local value
+  value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+display_socket_path() {
+  local display_value="${DISPLAY:-}"
+  [[ -n "$display_value" ]] || return 1
+
+  display_value="${display_value#localhost:}"
+  display_value="${display_value#127.0.0.1:}"
+  display_value="${display_value#*:}"
+  display_value="${display_value%%.*}"
+  [[ "$display_value" =~ ^[0-9]+$ ]] || return 1
+
+  printf '/tmp/.X11-unix/X%s\n' "$display_value"
+}
+
+has_x11_display() {
+  local socket_path
+  socket_path="$(display_socket_path)" || return 1
+  [[ -S "$socket_path" ]]
+}
+
+CHROME_ARGS=(
+  --user-data-dir="$PROFILE_DIR"
+  --remote-debugging-address="$CDP_HOST"
+  --remote-debugging-port="$CDP_PORT"
+  --no-first-run
+  --no-default-browser-check
+  --disable-dev-shm-usage
+  --password-store=basic
+)
+
+if has_x11_display; then
+  CHROME_ARGS+=(
+    --window-size="$WINDOW_SIZE"
+    --start-maximized
+  )
+elif is_truthy "$HEADLESS_FALLBACK"; then
+  echo "X11 display ${DISPLAY:-<unset>} is unavailable; launching Chromium headless fallback for CDP ${CDP_HOST}:${CDP_PORT}." >&2
+  CHROME_ARGS+=(
+    --headless=new
+    --disable-gpu
+    --keep-alive-for-test
+    --window-size="$WINDOW_SIZE"
+  )
+else
+  echo "DISPLAY is not set or X11 socket is unavailable; cannot launch Chromium on real desktop. Set BROWSER_HEADLESS_FALLBACK=1 to allow CDP-only headless fallback." >&2
   exit 1
 fi
 
-exec "$CHROMIUM_BIN" \
-  --user-data-dir="$PROFILE_DIR" \
-  --remote-debugging-address="$CDP_HOST" \
-  --remote-debugging-port="$CDP_PORT" \
-  --no-first-run \
-  --no-default-browser-check \
-  --disable-dev-shm-usage \
-  --password-store=basic \
-  --window-size="$WINDOW_SIZE" \
-  --start-maximized \
-  "$START_URL" \
-  >"$CHROME_LOG" 2>&1
+CHROME_ARGS+=("$START_URL")
+
+exec "$CHROMIUM_BIN" "${CHROME_ARGS[@]}" >"$CHROME_LOG" 2>&1
