@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import asr_routing_config, infra_credentials, llm_bindings, llm_provider_configs, pricing
@@ -37,6 +37,13 @@ from appcore.image_translate_settings import (
 )
 from appcore.gemini_image import coerce_image_model, list_image_models
 from appcore.llm_use_cases import MODULE_LABELS, USE_CASES
+from web.services.settings_ai_pricing import (
+    build_ai_pricing_error_response,
+    build_ai_pricing_list_response,
+    build_ai_pricing_not_found_response,
+    build_ai_pricing_success_response,
+    settings_ai_pricing_flask_response,
+)
 
 bp = Blueprint("settings", __name__)
 
@@ -622,7 +629,9 @@ def ai_pricing_page():
 @login_required
 @superadmin_required
 def ai_pricing_list():
-    return jsonify({"items": _list_ai_pricing_rows()})
+    return settings_ai_pricing_flask_response(
+        build_ai_pricing_list_response(_list_ai_pricing_rows())
+    )
 
 
 @bp.route("/admin/settings/ai-pricing", methods=["POST"])
@@ -650,11 +659,16 @@ def ai_pricing_create():
             ),
         )
         pricing.invalidate_cache()
-        return jsonify({"ok": True, "item": _get_ai_pricing_row(int(price_id))}), 201
+        return settings_ai_pricing_flask_response(
+            build_ai_pricing_success_response(
+                _get_ai_pricing_row(int(price_id)),
+                status_code=201,
+            )
+        )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return settings_ai_pricing_flask_response(build_ai_pricing_error_response(exc))
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return settings_ai_pricing_flask_response(build_ai_pricing_error_response(exc))
 
 
 @bp.route("/admin/settings/ai-pricing/<int:price_id>", methods=["PUT"])
@@ -662,7 +676,7 @@ def ai_pricing_create():
 @superadmin_required
 def ai_pricing_update(price_id: int):
     if _get_ai_pricing_row(price_id) is None:
-        return jsonify({"error": "not found"}), 404
+        return settings_ai_pricing_flask_response(build_ai_pricing_not_found_response())
 
     try:
         payload = _parse_ai_pricing_payload()
@@ -686,13 +700,15 @@ def ai_pricing_update(price_id: int):
             ),
         )
         if not updated:
-            return jsonify({"error": "not found"}), 404
+            return settings_ai_pricing_flask_response(build_ai_pricing_not_found_response())
         pricing.invalidate_cache()
-        return jsonify({"ok": True, "item": _get_ai_pricing_row(price_id)})
+        return settings_ai_pricing_flask_response(
+            build_ai_pricing_success_response(_get_ai_pricing_row(price_id))
+        )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return settings_ai_pricing_flask_response(build_ai_pricing_error_response(exc))
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return settings_ai_pricing_flask_response(build_ai_pricing_error_response(exc))
 
 
 @bp.route("/admin/settings/ai-pricing/<int:price_id>", methods=["DELETE"])
@@ -701,6 +717,6 @@ def ai_pricing_update(price_id: int):
 def ai_pricing_delete(price_id: int):
     deleted = execute("DELETE FROM ai_model_prices WHERE id = %s", (price_id,))
     if not deleted:
-        return jsonify({"error": "not found"}), 404
+        return settings_ai_pricing_flask_response(build_ai_pricing_not_found_response())
     pricing.invalidate_cache()
-    return jsonify({"ok": True})
+    return settings_ai_pricing_flask_response(build_ai_pricing_success_response())

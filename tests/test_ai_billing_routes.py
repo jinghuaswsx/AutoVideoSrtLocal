@@ -2,8 +2,42 @@ import csv
 import io
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def superadmin_client_no_db(monkeypatch):
+    """Flask client authenticated as the real superadmin shape, without DB IO."""
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"],
+    )
+    from web.app import create_app
+
+    fake_user = {
+        "id": 1,
+        "username": "admin",
+        "role": "superadmin",
+        "is_active": 1,
+    }
+
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 1 else None)
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "1"
+        session["_fresh"] = True
+
+    return client
 
 
 def test_ai_billing_template_uses_single_date_range_picker_and_quick_ranges():
@@ -490,10 +524,40 @@ def test_ai_pricing_write_routes_forbidden_for_non_admin(authed_user_client_no_d
     assert authed_user_client_no_db.delete("/admin/settings/ai-pricing/1").status_code == 403
 
 
-def test_ai_pricing_post_creates_row_and_invalidates_cache(authed_client_no_db, monkeypatch):
+def test_ai_pricing_response_service_shapes_payloads():
+    from web.services.settings_ai_pricing import (
+        build_ai_pricing_error_response,
+        build_ai_pricing_list_response,
+        build_ai_pricing_not_found_response,
+        build_ai_pricing_success_response,
+    )
+
+    row = {
+        "id": 1,
+        "provider": "elevenlabs",
+        "model": "*",
+        "units_type": "chars",
+        "unit_input_cny": None,
+        "unit_output_cny": None,
+        "unit_flat_cny": 0.000165,
+        "note": "ok",
+        "updated_at": "2026-04-21 10:00:00",
+    }
+
+    assert build_ai_pricing_list_response([row]).payload == {"items": [row]}
+    created = build_ai_pricing_success_response(row, status_code=201)
+    assert created.payload == {"ok": True, "item": row}
+    assert created.status_code == 201
+    assert build_ai_pricing_success_response(None).payload == {"ok": True, "item": None}
+    assert build_ai_pricing_success_response().payload == {"ok": True}
+    assert build_ai_pricing_error_response(ValueError("bad")).payload == {"error": "bad"}
+    assert build_ai_pricing_not_found_response().payload == {"error": "not found"}
+
+
+def test_ai_pricing_post_creates_row_and_invalidates_cache(superadmin_client_no_db, monkeypatch):
     _, rows, state = _install_pricing_store(monkeypatch)
 
-    resp = authed_client_no_db.post(
+    resp = superadmin_client_no_db.post(
         "/admin/settings/ai-pricing",
         json={
             "provider": "elevenlabs",
@@ -509,10 +573,10 @@ def test_ai_pricing_post_creates_row_and_invalidates_cache(authed_client_no_db, 
     assert state["invalidations"] == 1
 
 
-def test_ai_pricing_put_updates_flat_price(authed_client_no_db, monkeypatch):
+def test_ai_pricing_put_updates_flat_price(superadmin_client_no_db, monkeypatch):
     _, rows, state = _install_pricing_store(monkeypatch)
 
-    resp = authed_client_no_db.put(
+    resp = superadmin_client_no_db.put(
         "/admin/settings/ai-pricing/1",
         json={
             "provider": "elevenlabs",
@@ -529,20 +593,20 @@ def test_ai_pricing_put_updates_flat_price(authed_client_no_db, monkeypatch):
     assert state["invalidations"] == 1
 
 
-def test_ai_pricing_delete_removes_row(authed_client_no_db, monkeypatch):
+def test_ai_pricing_delete_removes_row(superadmin_client_no_db, monkeypatch):
     _, rows, state = _install_pricing_store(monkeypatch)
 
-    resp = authed_client_no_db.delete("/admin/settings/ai-pricing/1")
+    resp = superadmin_client_no_db.delete("/admin/settings/ai-pricing/1")
 
     assert resp.status_code == 200
     assert rows == []
     assert state["invalidations"] == 1
 
 
-def test_ai_pricing_post_missing_price_fields_returns_400(authed_client_no_db, monkeypatch):
+def test_ai_pricing_post_missing_price_fields_returns_400(superadmin_client_no_db, monkeypatch):
     _install_pricing_store(monkeypatch)
 
-    resp = authed_client_no_db.post(
+    resp = superadmin_client_no_db.post(
         "/admin/settings/ai-pricing",
         json={
             "provider": "gemini_vertex",
@@ -555,10 +619,10 @@ def test_ai_pricing_post_missing_price_fields_returns_400(authed_client_no_db, m
     assert resp.status_code == 400
 
 
-def test_ai_pricing_list_returns_rows(authed_client_no_db, monkeypatch):
+def test_ai_pricing_list_returns_rows(superadmin_client_no_db, monkeypatch):
     _, rows, _ = _install_pricing_store(monkeypatch)
 
-    resp = authed_client_no_db.get("/admin/settings/ai-pricing/list")
+    resp = superadmin_client_no_db.get("/admin/settings/ai-pricing/list")
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == rows

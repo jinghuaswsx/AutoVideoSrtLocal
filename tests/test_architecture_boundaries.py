@@ -1601,6 +1601,32 @@ def test_mk_import_api_responses_live_outside_route_module():
     assert Path("web/services/mk_import.py").exists()
 
 
+def test_settings_ai_pricing_responses_live_outside_route_module():
+    module_source = Path("web/routes/settings.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "ai_pricing_list",
+        "ai_pricing_create",
+        "ai_pricing_update",
+        "ai_pricing_delete",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+
+    assert set(route_sources) == route_names
+    assert "jsonify(" not in route_source
+    assert "settings_ai_pricing_flask_response" in route_source
+    assert "build_ai_pricing_list_response" in route_source
+    assert "build_ai_pricing_success_response" in route_source
+    assert "build_ai_pricing_error_response" in route_source
+    assert "build_ai_pricing_not_found_response" in route_source
+    assert Path("web/services/settings_ai_pricing.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
