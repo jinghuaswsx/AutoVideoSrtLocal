@@ -1,4 +1,20 @@
 <section class="sr-upload-card">
+  <div class="sr-backend-group" role="radiogroup" aria-label="字幕移除后端">
+    <div class="sr-erase-type-label">处理方式</div>
+    <div class="sr-backend-tabs">
+      <label class="sr-backend-tab is-active" data-role="subtitle-backend-tab">
+        <input type="radio" name="subtitle_backend" value="volc" checked>
+        <span class="sr-backend-title">火山</span>
+        <span class="sr-backend-hint">沿用原字幕移除版本</span>
+      </label>
+      <label class="sr-backend-tab" data-role="subtitle-backend-tab">
+        <input type="radio" name="subtitle_backend" value="local_vsr">
+        <span class="sr-backend-title">本地 VSR</span>
+        <span class="sr-backend-hint">走本机 SubtitleRemover 服务</span>
+      </label>
+    </div>
+  </div>
+
   <div class="sr-erase-type-group" role="radiogroup" aria-label="擦除类型">
     <div class="sr-erase-type-label">擦除类型</div>
     <div class="sr-erase-type-options">

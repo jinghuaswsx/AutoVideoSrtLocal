@@ -160,6 +160,29 @@
       return "subtitle";
     }
 
+    function readUploadSubtitleBackend() {
+      var inputs = document.querySelectorAll("input[name='subtitle_backend']");
+      for (var i = 0; i < inputs.length; i++) {
+        if (inputs[i].checked) return inputs[i].value;
+      }
+      return "volc";
+    }
+
+    function bindUploadSubtitleBackendRadios() {
+      var tabs = Array.prototype.slice.call(document.querySelectorAll("[data-role='subtitle-backend-tab']"));
+      var inputs = Array.prototype.slice.call(document.querySelectorAll("input[name='subtitle_backend']"));
+      function sync() {
+        tabs.forEach(function (tab) {
+          var input = tab.querySelector("input[name='subtitle_backend']");
+          tab.classList.toggle("is-active", !!input && input.checked);
+        });
+      }
+      inputs.forEach(function (input) {
+        input.addEventListener("change", sync);
+      });
+      sync();
+    }
+
     function bindUploadEraseTypeRadios() {
       var options = Array.prototype.slice.call(document.querySelectorAll("[data-role='erase-type-option']"));
       var inputs = Array.prototype.slice.call(document.querySelectorAll("input[name='erase_text_type']"));
@@ -185,6 +208,7 @@
           original_filename: file.name,
           file_size: file.size,
           content_type: file.type || "application/octet-stream",
+          subtitle_backend: readUploadSubtitleBackend(),
           erase_text_type: readUploadEraseType(),
         }),
       }).then(function (response) {
@@ -225,6 +249,7 @@
       if (!uploadInput || !uploadButton || !uploadDropzone) {
         return;
       }
+      bindUploadSubtitleBackendRadios();
       bindUploadEraseTypeRadios();
       uploadButton.addEventListener("click", function (event) {
         event.preventDefault();
@@ -285,6 +310,7 @@
     var stateResolution = document.getElementById("srStateResolution");
     var stateSelection = document.getElementById("srStateSelection");
     var stateHint = document.getElementById("srStateHint");
+    var stateBackend = document.getElementById("srStateBackend");
     var resultPanel = document.getElementById("srResultPanel");
     var compareCard = document.getElementById("srCompareCard");
     var compareOriginalPanel = document.getElementById("srCompareOriginalPanel");
@@ -582,6 +608,9 @@
       if (stateStatus && state.status) {
         stateStatus.textContent = state.status;
       }
+      if (stateBackend) {
+        stateBackend.textContent = backendLabel((state && state.subtitle_backend) || "volc");
+      }
       var mode = state.remove_mode || selectionState.mode || "full";
       selectionState.mode = mode;
       if (stateMode) {
@@ -660,6 +689,11 @@
       if (value === "text") return "所有渲染文本";
       if (value === "subtitle") return "仅字幕";
       return "—";
+    }
+
+    function backendLabel(value) {
+      if (value === "local_vsr") return "本地 VSR";
+      return "火山";
     }
 
     function currentEraseType() {

@@ -37,6 +37,32 @@ _INFLIGHT_STEP_STATUSES = {
     "download_result": {"running"},
     "upload_result": {"running"},
 }
+_SUBTITLE_BACKENDS = {"volc", "local_vsr"}
+
+
+def _normalize_subtitle_backend(value: str | None) -> str:
+    backend = str(value or "volc").strip().lower().replace("-", "_")
+    if backend not in _SUBTITLE_BACKENDS:
+        raise ValueError("subtitle_backend must be volc or local_vsr")
+    return backend
+
+
+def _local_vsr_options_for_submission(mode: str, selection_box: dict) -> dict:
+    options = {
+        "detection": "ocr",
+        "ocr_engine": "easyocr",
+        "inpaint": "lama",
+        "vsr": "real-esrgan",
+        "roi": "bottom_20%",
+    }
+    if mode == "box":
+        options["roi"] = "{x},{y},{w},{h}".format(
+            x=selection_box["x1"],
+            y=selection_box["y1"],
+            w=selection_box["x2"] - selection_box["x1"],
+            h=selection_box["y2"] - selection_box["y1"],
+        )
+    return options
 
 
 def _default_display_name(original_filename: str, *, now: datetime | None = None) -> str:
@@ -386,10 +412,20 @@ def _submit_locked(task_id: str, task: dict, body: dict):
         return jsonify({"error": "remove_mode must be full or box"}), 400
 
     try:
+        subtitle_backend = _normalize_subtitle_backend(task.get("subtitle_backend"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
         duration = float(media_info.get("duration") or 0.0)
     except (TypeError, ValueError):
         return jsonify({"error": "invalid media duration"}), 400
-    if duration > config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS:
+    duration_limit = (
+        config.SUBTITLE_REMOVAL_LOCAL_VSR_MAX_DURATION_SECONDS
+        if subtitle_backend == "local_vsr"
+        else config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS
+    )
+    if duration > duration_limit:
         return jsonify({"error": "video duration exceeds provider limit"}), 400
 
     try:
@@ -400,11 +436,12 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
     if erase_text_type not in {"subtitle", "text"}:
         return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
-    try:
-        _ensure_public_source_url(task_id, task)
-    except Exception as exc:
-        log.exception("[subtitle_removal] failed to stage public source task_id=%s", task_id)
-        return jsonify({"error": f"unable to stage public source: {exc}"}), 502
+    if subtitle_backend != "local_vsr":
+        try:
+            _ensure_public_source_url(task_id, task)
+        except Exception as exc:
+            log.exception("[subtitle_removal] failed to stage public source task_id=%s", task_id)
+            return jsonify({"error": f"unable to stage public source: {exc}"}), 502
 
     next_steps = dict(task.get("steps") or {})
     next_steps.update(
@@ -426,10 +463,16 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     store.update(
         task_id,
         status="queued",
+        subtitle_backend=subtitle_backend,
         remove_mode=mode,
         selection_box=normalized,
         position_payload=_to_position_payload(normalized),
         erase_text_type=erase_text_type,
+        local_vsr_options=(
+            _local_vsr_options_for_submission(mode, normalized)
+            if subtitle_backend == "local_vsr"
+            else {}
+        ),
         provider_task_id="",
         provider_status="queued",
         provider_emsg="",
@@ -461,8 +504,10 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "status": task.get("status") or "uploaded",
         "original_filename": task.get("original_filename") or "",
         "display_name": task.get("display_name") or "",
+        "subtitle_backend": task.get("subtitle_backend") or "volc",
         "remove_mode": task.get("remove_mode") or "",
         "erase_text_type": task.get("erase_text_type") or "subtitle",
+        "local_vsr_options": dict(task.get("local_vsr_options") or {}),
         "selection_box": task.get("selection_box"),
         "position_payload": task.get("position_payload"),
         "media_info": dict(task.get("media_info") or {}),
@@ -615,6 +660,7 @@ def list_tasks():
                 "duration": media_info.get("duration") or 0,
                 "provider_status": state.get("provider_status") or "",
                 "provider_result_url": state.get("provider_result_url") or "",
+                "subtitle_backend": state.get("subtitle_backend") or "volc",
                 "erase_text_type": state.get("erase_text_type") or "",
                 "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=row.get("id")) if state.get("thumbnail_path") else "",
                 "detail_url": url_for("subtitle_removal.detail_page", task_id=row.get("id")),
@@ -691,6 +737,10 @@ def complete_upload():
     erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
     if erase_text_type not in {"subtitle", "text"}:
         return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
+    try:
+        subtitle_backend = _normalize_subtitle_backend(body.get("subtitle_backend"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not task_id or not original_filename or not object_key:
         return jsonify({"error": "task_id, original_filename and object_key required"}), 400
@@ -738,6 +788,7 @@ def complete_upload():
         task_id,
         source_tos_key="",
         source_object_info=source_object_info,
+        subtitle_backend=subtitle_backend,
         erase_text_type=erase_text_type,
     )
 

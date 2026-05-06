@@ -37,6 +37,8 @@ def _iter_pending_vod_tasks():
                 state = json.loads(row["state_json"])
             except Exception:
                 continue
+        if str(state.get("subtitle_backend") or "volc").strip().lower() == "local_vsr":
+            continue
         steps = state.get("steps") or {}
         # 只处理跑到 poll 阶段或更后的任务；submit 阶段由 runner 负责
         if (steps.get("submit") or "") != "done":
