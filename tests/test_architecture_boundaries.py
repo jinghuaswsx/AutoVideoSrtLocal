@@ -2669,6 +2669,23 @@ def test_tasks_json_responses_live_outside_route_module():
     assert Path("web/services/tasks_responses.py").exists()
 
 
+def test_tasks_translator_listing_lives_in_appcore_users():
+    module_source = Path("web/routes/tasks.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_translators"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+    users_source = Path("appcore/users.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import query_all" not in route_source
+    assert "SELECT id, username FROM users" not in route_source
+    assert "list_translators" in route_source
+    assert "role <> %s" in users_source
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

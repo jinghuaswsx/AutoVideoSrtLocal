@@ -9,6 +9,7 @@ from flask_login import current_user, login_required
 
 from appcore import system_audit
 from appcore import tasks as tasks_svc
+from appcore.users import list_translators
 from web.services.tasks_responses import (
     build_tasks_payload_response,
     tasks_flask_response,
@@ -394,14 +395,7 @@ def api_events(tid: int):
 @bp.route("/api/translators", methods=["GET"])
 @login_required
 def api_translators():
-    from appcore.db import query_all
-    rows = query_all(
-        "SELECT id, username FROM users "
-        "WHERE is_active=1 AND role <> 'superadmin' "
-        "AND JSON_EXTRACT(COALESCE(permissions, '{}'), '$.can_translate') = TRUE "
-        "ORDER BY username"
-    )
-    return _json_response({"translators": [{"id": r["id"], "username": r["username"]} for r in rows]})
+    return _json_response({"translators": list_translators()})
 
 
 @bp.route("/api/languages", methods=["GET"])

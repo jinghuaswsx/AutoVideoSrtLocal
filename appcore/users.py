@@ -52,11 +52,13 @@ def list_users() -> list[dict]:
 
 def list_translators() -> list[dict]:
     rows = query(
-        "SELECT id, username, permissions FROM users WHERE is_active=1 ORDER BY username ASC",
-        (),
+        "SELECT id, username, role, permissions FROM users WHERE is_active=1 AND role <> %s ORDER BY username ASC",
+        (ROLE_SUPERADMIN,),
     )
     translators = []
     for row in rows:
+        if row.get("role") == ROLE_SUPERADMIN:
+            continue
         permissions = row.get("permissions") or {}
         if isinstance(permissions, str):
             try:

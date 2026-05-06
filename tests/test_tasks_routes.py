@@ -139,6 +139,22 @@ def test_create_modal_supporting_endpoints_registered(authed_client_no_db):
     assert rsp.status_code in (200, 500)
 
 
+def test_api_translators_delegates_to_users_dao(authed_client_no_db, monkeypatch):
+    captured = []
+
+    def fake_list_translators():
+        captured.append(True)
+        return [{"id": 7, "username": "translator"}]
+
+    monkeypatch.setattr("web.routes.tasks.list_translators", fake_list_translators)
+
+    rsp = authed_client_no_db.get("/tasks/api/translators")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"translators": [{"id": 7, "username": "translator"}]}
+    assert captured == [True]
+
+
 def test_child_readiness_endpoint_smoke(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/api/child/9999/readiness")
     assert rsp.status_code in (200, 404, 500)
