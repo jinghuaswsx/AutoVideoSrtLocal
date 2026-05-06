@@ -212,6 +212,23 @@ def test_log_translate_billing_forwards_payloads(monkeypatch):
     assert captured["response_payload"] == {"full_text": "ok"}
 
 
+def test_translate_billing_helpers_resolve_use_case_binding(monkeypatch):
+    from appcore import llm_bindings, runtime
+
+    monkeypatch.setattr(
+        llm_bindings,
+        "resolve",
+        lambda use_case: {
+            "provider": "gemini_vertex",
+            "model": "gemini-actual",
+            "source": "db",
+        },
+    )
+
+    assert runtime._translate_billing_provider("video_translate.localize") == "gemini_vertex"
+    assert runtime._translate_billing_model("video_translate.localize", user_id=1) == "gemini-actual"
+
+
 def test_de_runner_overrides_tts_class_attributes():
     from appcore.runtime_de import DeTranslateRunner
     assert DeTranslateRunner.tts_language_code == "de"

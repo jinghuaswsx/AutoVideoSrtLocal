@@ -17,6 +17,11 @@ from appcore.db import query as db_query, query_one as db_query_one, execute as 
 from appcore.project_state import save_project_state
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from pipeline.alignment import build_script_segments
+from pipeline.languages.registry import (
+    SOURCE_LANGS as ALLOWED_SOURCE_LANGUAGES,
+    SUPPORTED_LANGS,
+    normalize_enabled_target_langs,
+)
 from web import store
 from web.services import multi_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
@@ -30,10 +35,6 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("multi_translate", __name__)
 
-SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")
-ALLOWED_SOURCE_LANGUAGES = ("zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi")
-
-
 def _list_enabled_target_langs() -> tuple[str, ...]:
     """创建模态用：SUPPORTED_LANGS ∩ media_languages.enabled=1，并把英语 en 强制追加到末尾。
 
@@ -41,35 +42,28 @@ def _list_enabled_target_langs() -> tuple[str, ...]:
     保证用户始终能新建英语本土化项目。查询失败或交集为空时，退回 SUPPORTED_LANGS（已含 en）。
     """
     try:
-        enabled = set(medias.list_enabled_language_codes())
+        enabled = medias.list_enabled_language_codes()
     except Exception:
         log.warning("[multi_translate] failed to load enabled languages, falling back", exc_info=True)
         return SUPPORTED_LANGS
-    filtered = [c for c in SUPPORTED_LANGS if c in enabled]
-    if not filtered:
-        return SUPPORTED_LANGS
-    # 强制 en 出现且置于末尾
-    filtered = [c for c in filtered if c != "en"]
-    filtered.append("en")
-    return tuple(filtered)
+    return normalize_enabled_target_langs(enabled)
 
 
 def _list_filter_langs() -> tuple[str, ...]:
     """顶部筛选胶囊用：media_languages.enabled 集合，并强制加上英语 en。失败时退回 SUPPORTED_LANGS + en。"""
     try:
-        enabled = list(medias.list_enabled_language_codes())
+        enabled = medias.list_enabled_language_codes()
     except Exception:
         log.warning("[multi_translate] failed to load enabled languages for filter, falling back", exc_info=True)
-        enabled = list(SUPPORTED_LANGS)
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for code in enabled:
-        if code and code not in seen:
-            seen.add(code)
-            ordered.append(code)
-    if "en" not in seen:
-        ordered.append("en")
-    return tuple(ordered)
+        return SUPPORTED_LANGS
+    return normalize_enabled_target_langs(enabled)
+
+
+def _drop_artifacts(task: dict, *steps: str) -> dict:
+    artifacts = dict(task.get("artifacts") or {})
+    for step in steps:
+        artifacts.pop(step, None)
+    return artifacts
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -545,9 +539,20 @@ def resume(task_id):
         store.update(
             task_id,
             utterances_en=None,
+            asr_normalize_artifact=None,
             source_language=source_language,
             user_specified_source_language=True,
             detected_source_language=None,
+            artifacts=_drop_artifacts(
+                task,
+                "asr_normalize",
+                "alignment",
+                "translate",
+                "tts",
+                "subtitle",
+                "compose",
+                "export",
+            ),
         )
 
     started = False

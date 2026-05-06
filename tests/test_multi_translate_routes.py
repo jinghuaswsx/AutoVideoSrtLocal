@@ -571,6 +571,17 @@ def test_list_enabled_target_langs_forces_en_at_tail(monkeypatch):
     assert r._list_enabled_target_langs()[-1] == "en"
 
 
+def test_list_filter_langs_excludes_unsupported_media_codes(monkeypatch):
+    from web.routes import multi_translate as r
+
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["de", "ru", "ja"],
+    )
+
+    assert r._list_filter_langs() == ("de", "ja", "en")
+
+
 def test_multi_translate_index_accepts_english_lang_filter(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("appcore.task_recovery.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("appcore.settings.get_retention_hours", lambda *_args, **_kw: 72)
@@ -968,6 +979,11 @@ def test_resume_from_asr_normalize_clears_stale_state(
     store.update(
         task_id, _user_id=1, type="multi_translate", target_lang="de",
         utterances_en=[{"index": 0, "text": "old"}],
+        asr_normalize_artifact={"route": "es_to_en", "old": True},
+        artifacts={
+            "asr_normalize": {"title": "old normalize"},
+            "translate": {"title": "old translate"},
+        },
         source_language="en",
         detected_source_language="es",
     )
@@ -979,6 +995,9 @@ def test_resume_from_asr_normalize_clears_stale_state(
     assert resp.status_code == 200
     task = store.get(task_id)
     assert not task.get("utterances_en")
+    assert not task.get("asr_normalize_artifact")
+    assert "asr_normalize" not in (task.get("artifacts") or {})
+    assert "translate" not in (task.get("artifacts") or {})
     assert task.get("source_language") == "en"
     assert task.get("user_specified_source_language") is True
     assert not task.get("detected_source_language")

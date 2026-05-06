@@ -343,10 +343,10 @@ class OmniTranslateRunner(MultiTranslateRunner):
             _llm_response_payload,
             _log_translate_billing,
             _save_json,
-            _resolve_translate_provider,
         )
+        from appcore.runtime_multi import _TRANSLATE_USE_CASE, _resolve_translate_use_case_binding
         from pipeline.localization import build_source_full_text_zh
-        from pipeline.translate import generate_localized_translation, get_model_display_name
+        from pipeline.translate import generate_localized_translation
         from appcore.preview_artifacts import build_asr_artifact, build_translate_artifact
 
         task = task_state.get(task_id)
@@ -366,8 +366,8 @@ class OmniTranslateRunner(MultiTranslateRunner):
             self._set_step(task_id, "translate", "failed", message)
             return
 
-        provider = _resolve_translate_provider(self.user_id)
-        _model_tag = f"{provider} · {get_model_display_name(provider, self.user_id)}"
+        provider_code, model_id = _resolve_translate_use_case_binding(_TRANSLATE_USE_CASE)
+        _model_tag = f"{provider_code} · {model_id}"
         self._set_step(task_id, "translate", "running",
                        f"正在从 {source_language.upper()} 直译为 {lang.upper()}...",
                        model_tag=_model_tag)
@@ -394,8 +394,8 @@ class OmniTranslateRunner(MultiTranslateRunner):
         localized_translation = generate_localized_translation(
             source_full_text, script_segments, variant="normal",
             custom_system_prompt=system_prompt,
-            provider=provider, user_id=self.user_id,
-            use_case="video_translate.localize",
+            user_id=self.user_id,
+            use_case=_TRANSLATE_USE_CASE,
             project_id=task_id,
         )
         initial_messages = localized_translation.pop("_messages", None)
@@ -437,13 +437,13 @@ class OmniTranslateRunner(MultiTranslateRunner):
         usage = localized_translation.get("_usage") or {}
         _log_translate_billing(
             user_id=self.user_id, project_id=task_id,
-            use_case_code="video_translate.localize",
-            provider=provider,
+            use_case_code=_TRANSLATE_USE_CASE,
+            provider=_TRANSLATE_USE_CASE,
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             success=True,
             request_payload=_llm_request_payload(
-                localized_translation, provider, "video_translate.localize",
+                localized_translation, _TRANSLATE_USE_CASE, _TRANSLATE_USE_CASE,
                 messages=initial_messages,
             ),
             response_payload=_llm_response_payload(localized_translation),

@@ -102,6 +102,18 @@ def test_supported_langs_full_set_after_en():
     assert set(registry.SUPPORTED_LANGS) == {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"}
 
 
+def test_source_langs_add_zh_to_supported_targets_in_manual_order():
+    assert registry.SOURCE_LANGS == (
+        "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
+    )
+
+
+def test_normalize_enabled_target_langs_filters_unknown_and_forces_en_tail():
+    assert registry.normalize_enabled_target_langs(["de", "ru", "ja"]) == ("de", "ja", "en")
+    assert registry.normalize_enabled_target_langs(["en", "fr"]) == ("fr", "en")
+    assert registry.normalize_enabled_target_langs([]) == registry.SUPPORTED_LANGS
+
+
 def test_get_rules_en_returns_module_with_required_attrs():
     rules = registry.get_rules("en")
     assert rules.TTS_MODEL_ID == "eleven_multilingual_v2"

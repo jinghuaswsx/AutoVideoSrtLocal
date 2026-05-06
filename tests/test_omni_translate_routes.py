@@ -12,7 +12,12 @@ import pytest
 
 def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db):
     """body.source_language='es' → 改写 task + resume from asr_clean。"""
-    fake_task = {"_user_id": 1, "source_language": "zh"}
+    fake_task = {
+        "_user_id": 1,
+        "source_language": "zh",
+        "utterances_raw": [{"text": "old raw"}],
+        "artifacts": {"asr_clean": {"title": "old clean"}, "translate": {"title": "old translate"}},
+    }
     with patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
         mock_store.get.return_value = fake_task
@@ -30,8 +35,11 @@ def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db)
     assert update_kwargs["source_language"] == "es"
     assert update_kwargs["user_specified_source_language"] is True
     assert update_kwargs["utterances_en"] is None
+    assert update_kwargs["utterances_raw"] is None
     assert update_kwargs["asr_normalize_artifact"] is None
     assert update_kwargs["detected_source_language"] is None
+    assert "asr_clean" not in update_kwargs["artifacts"]
+    assert "translate" not in update_kwargs["artifacts"]
     assert update_kwargs["status"] == "running"
 
     mock_runner.resume.assert_called_once_with("t-1", "asr_clean", user_id=1)
@@ -113,8 +121,8 @@ def test_update_source_language_404_when_task_missing(authed_client_no_db):
     mock_runner.resume.assert_not_called()
 
 
-def test_update_source_language_pendings_all_steps_from_asr_normalize(authed_client_no_db):
-    """改语言后，asr_normalize 及之后所有步骤都 reset 为 pending。"""
+def test_update_source_language_pendings_all_steps_from_asr_clean(authed_client_no_db):
+    """改语言后，asr_clean 及之后所有步骤都 reset 为 pending。"""
     fake_task = {"_user_id": 1, "source_language": "es"}
     with patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner"):
@@ -127,8 +135,9 @@ def test_update_source_language_pendings_all_steps_from_asr_normalize(authed_cli
         call.args[1] for call in mock_store.set_step.call_args_list
         if call.args[2] == "pending"
     ]
-    # asr_normalize 之后的步骤都该 pending（按 RESUMABLE_STEPS 顺序）
-    assert "asr_normalize" in pending_steps
+    # asr_clean 之后的步骤都该 pending（按 RESUMABLE_STEPS 顺序）
+    assert "asr_clean" in pending_steps
+    assert "asr_normalize" not in pending_steps
     assert "voice_match" in pending_steps
     assert "alignment" in pending_steps
     assert "translate" in pending_steps
@@ -138,6 +147,27 @@ def test_update_source_language_pendings_all_steps_from_asr_normalize(authed_cli
     # ASR 之前的步骤不应该 pending
     assert "extract" not in pending_steps
     assert "asr" not in pending_steps
+
+
+def test_resume_maps_legacy_asr_normalize_to_asr_clean(authed_client_no_db):
+    fake_task = {"_user_id": 1, "source_language": "es"}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/resume",
+            json={"start_step": "asr_normalize"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["start_step"] == "asr_clean"
+    pending_steps = [
+        call.args[1] for call in mock_store.set_step.call_args_list
+        if call.args[2] == "pending"
+    ]
+    assert "asr_clean" in pending_steps
+    assert "asr_normalize" not in pending_steps
+    mock_runner.resume.assert_called_once_with("t-1", "asr_clean", user_id=1)
 
 
 # ---------------------------------------------------------------------------

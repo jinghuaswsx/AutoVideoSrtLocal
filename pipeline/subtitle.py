@@ -59,17 +59,29 @@ def _choose_balanced_split(words: List[str], weak_boundary_words: set | None = N
     return best_index
 
 
-def format_subtitle_chunk_text(text: str, weak_boundary_words: set | None = None) -> str:
+def format_subtitle_chunk_text(
+    text: str,
+    weak_boundary_words: set | None = None,
+    *,
+    max_chars_per_line: int = 42,
+    max_lines: int = 2,
+) -> str:
     cleaned = capitalize_sentence(_strip_terminal_punctuation(text))
     words = cleaned.split()
-    if len(words) <= 5:
+    if len(cleaned) <= max_chars_per_line:
         return cleaned
+    if max_lines <= 1:
+        return wrap_text(cleaned, max_chars=max_chars_per_line, max_lines=max_lines)
+    if len(words) <= 5:
+        return wrap_text(cleaned, max_chars=max_chars_per_line, max_lines=max_lines)
 
     split_index = _choose_balanced_split(words, weak_boundary_words=weak_boundary_words)
     line1 = " ".join(words[:split_index]).strip()
     line2 = " ".join(words[split_index:]).strip()
     if not line1 or not line2:
         return cleaned
+    if len(line1) > max_chars_per_line or len(line2) > max_chars_per_line:
+        return wrap_text(cleaned, max_chars=max_chars_per_line, max_lines=max_lines)
     return f"{line1}\n{line2}"
 
 
@@ -84,10 +96,24 @@ def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
     words = text.split()
     if not words:
         return text
+    max_lines = max(1, int(max_lines or 1))
 
     # 如果单行放得下，直接返回
     if len(text) <= max_chars:
         return text
+    if len(words) == 1 and len(words[0]) > max_chars:
+        return "\n".join(
+            words[0][i:i + max_chars]
+            for i in range(0, min(len(words[0]), max_chars * max_lines), max_chars)
+        )
+    if max_lines == 1:
+        line = ""
+        for word in words:
+            candidate = word if not line else line + " " + word
+            if len(candidate) > max_chars and line:
+                break
+            line = candidate
+        return line or text[:max_chars]
 
     # 尝试找最佳断点使两行尽量均衡
     best_split = None
@@ -115,13 +141,13 @@ def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
             line1, line2 = line2, line1
         return f"{line1}\n{line2}"
 
-    # 文案超出两行容量：顺序填词，第一行满了填第二行，超出丢弃
-    lines = ["", ""]
+    # 文案超出容量：顺序填词，超出丢弃
+    lines = [""] * max_lines
     current_line = 0
     truncated = False
 
     for word in words:
-        if current_line >= 2:
+        if current_line >= max_lines:
             truncated = True
             break
         line = lines[current_line]
@@ -130,16 +156,13 @@ def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
             lines[current_line] = candidate
         else:
             current_line += 1
-            if current_line < 2:
+            if current_line < max_lines:
                 lines[current_line] = word
 
     if truncated:
-        log.warning("字幕文本被截断（超出 %d 字符 × 2 行）: %s...", max_chars, text[:80])
+        log.warning("字幕文本被截断（超出 %d 字符 × %d 行）: %s...", max_chars, max_lines, text[:80])
 
-    line1, line2 = lines[0], lines[1]
-    if line2:
-        return f"{line1}\n{line2}"
-    return line1
+    return "\n".join(line for line in lines if line)
 
 
 def build_srt_from_tts(segments: List[Dict]) -> str:
@@ -186,14 +209,27 @@ def build_srt_from_manifest(manifest: Dict) -> str:
     return "\n".join(srt_lines)
 
 
-def build_srt_from_chunks(chunks: List[Dict], weak_boundary_words: set | None = None) -> str:
+def build_srt_from_chunks(
+    chunks: List[Dict],
+    weak_boundary_words: set | None = None,
+    *,
+    max_chars_per_line: int = 42,
+    max_lines: int = 2,
+) -> str:
     srt_lines = []
     for i, chunk in enumerate(chunks, 1):
         srt_lines.append(str(i))
         srt_lines.append(
             f"{format_timestamp(float(chunk['start_time']))} --> {format_timestamp(float(chunk['end_time']))}"
         )
-        srt_lines.append(format_subtitle_chunk_text(chunk["text"], weak_boundary_words=weak_boundary_words))
+        srt_lines.append(
+            format_subtitle_chunk_text(
+                chunk["text"],
+                weak_boundary_words=weak_boundary_words,
+                max_chars_per_line=max_chars_per_line,
+                max_lines=max_lines,
+            )
+        )
         srt_lines.append("")
 
     return "\n".join(srt_lines)
