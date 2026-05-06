@@ -1399,6 +1399,25 @@ def test_admin_ai_billing_payload_responses_live_outside_route_module():
     assert Path("web/services/admin_ai_billing.py").exists()
 
 
+def test_copywriting_translate_start_responses_live_outside_route_module():
+    module_source = Path("web/routes/copywriting_translate.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "start"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "jsonify(" not in route_source
+    assert "build_copywriting_translate_missing_source_copy_response" in route_source
+    assert "build_copywriting_translate_missing_target_lang_response" in route_source
+    assert "build_copywriting_translate_already_running_response" in route_source
+    assert "build_copywriting_translate_started_response" in route_source
+    assert "copywriting_translate_flask_response" in route_source
+    assert Path("web/services/copywriting_translate.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

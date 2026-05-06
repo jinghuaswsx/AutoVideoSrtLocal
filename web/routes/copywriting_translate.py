@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
 from flask_login import current_user, login_required
 
 from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
@@ -19,6 +19,13 @@ from appcore.db import execute as db_execute
 from appcore.events import Event, EventBus, EVT_CT_PROGRESS
 from appcore.task_recovery import try_register_active_task, unregister_active_task
 from web.background import start_background_task
+from web.services.copywriting_translate import (
+    build_copywriting_translate_already_running_response,
+    build_copywriting_translate_missing_source_copy_response,
+    build_copywriting_translate_missing_target_lang_response,
+    build_copywriting_translate_started_response,
+    copywriting_translate_flask_response,
+)
 
 bp = Blueprint("copywriting_translate", __name__,
                 url_prefix="/api/copywriting-translate")
@@ -106,9 +113,13 @@ def start():
     parent_task_id = payload.get("parent_task_id")
 
     if not source_copy_id or not isinstance(source_copy_id, int):
-        return jsonify({"error": "source_copy_id 必填且为 int"}), 400
+        return copywriting_translate_flask_response(
+            build_copywriting_translate_missing_source_copy_response()
+        )
     if not target_lang:
-        return jsonify({"error": "target_lang 必填"}), 400
+        return copywriting_translate_flask_response(
+            build_copywriting_translate_missing_target_lang_response()
+        )
 
     task_id = str(uuid.uuid4())
     state = {
@@ -135,5 +146,9 @@ def start():
             "parent_task_id": parent_task_id,
         },
     ):
-        return jsonify({"status": "already_running"}), 409
-    return jsonify({"task_id": task_id}), 202
+        return copywriting_translate_flask_response(
+            build_copywriting_translate_already_running_response()
+        )
+    return copywriting_translate_flask_response(
+        build_copywriting_translate_started_response(task_id=task_id)
+    )
