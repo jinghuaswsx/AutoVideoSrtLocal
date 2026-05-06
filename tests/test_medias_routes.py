@@ -100,13 +100,22 @@ def test_refresh_product_shopify_sku_route_delegates_response_building(
         captured["product"] = value
         return Result()
 
+    def fake_flask_response(result):
+        captured["response_payload"] = result.payload
+        return {"wrapped": result.payload}, result.status_code
+
     monkeypatch.setattr(r, "_build_refresh_product_shopify_sku_response", fake_build)
+    monkeypatch.setattr(r, "_refresh_shopify_sku_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.post("/medias/api/products/317/refresh-shopify-sku")
 
     assert resp.status_code == 202
-    assert resp.get_json() == {"ok": True, "summary": {"variant_pairs": 1}}
-    assert captured == {"pid": 317, "product": product}
+    assert resp.get_json() == {"wrapped": {"ok": True, "summary": {"variant_pairs": 1}}}
+    assert captured == {
+        "pid": 317,
+        "product": product,
+        "response_payload": {"ok": True, "summary": {"variant_pairs": 1}},
+    }
 
 
 def test_create_raw_source_rejects_when_english_video_missing_before_storage(

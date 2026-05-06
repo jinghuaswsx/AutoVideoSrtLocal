@@ -24,6 +24,7 @@ from web.services.media_product_mutations import (
 )
 from web.services.media_shopify_sku_refresh import (
     build_refresh_product_shopify_sku_response as _build_refresh_product_shopify_sku_response_impl,
+    refresh_shopify_sku_flask_response as _refresh_shopify_sku_flask_response_impl,
 )
 from web.services.media_mk_copywriting import (
     build_mk_copywriting_response as _build_mk_copywriting_response_impl,
@@ -209,6 +210,10 @@ def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
     )
 
 
+def _refresh_shopify_sku_flask_response(result):
+    return _refresh_shopify_sku_flask_response_impl(result)
+
+
 def _build_roas_page_context(product: dict):
     return _build_roas_page_context_impl(
         product,
@@ -371,7 +376,7 @@ def api_refresh_product_shopify_sku(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     result = routes._build_refresh_product_shopify_sku_response(pid, p)
-    return jsonify(result.payload), result.status_code
+    return routes._refresh_shopify_sku_flask_response(result)
 
 
 @bp.route("/<int:pid>/roas")

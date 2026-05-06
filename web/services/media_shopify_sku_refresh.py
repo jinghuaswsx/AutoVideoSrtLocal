@@ -5,11 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from flask import jsonify
+
 
 @dataclass(frozen=True)
 class RefreshShopifySkuResponse:
     payload: dict
     status_code: int
+
+
+def refresh_shopify_sku_flask_response(result: RefreshShopifySkuResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def build_refresh_product_shopify_sku_response(

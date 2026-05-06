@@ -1544,7 +1544,9 @@ def test_refresh_shopify_sku_response_lives_outside_route_module():
     assert "medias.list_product_skus" not in route_source
     assert "medias.list_xmyc_unit_prices" not in route_source
     assert "_serialize_product_skus" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_refresh_product_shopify_sku_response" in route_source
+    assert "_refresh_shopify_sku_flask_response" in route_source
     assert Path("web/services/media_shopify_sku_refresh.py").exists()
 
 

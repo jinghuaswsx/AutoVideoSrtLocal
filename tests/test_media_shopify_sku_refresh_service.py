@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 
+def test_refresh_shopify_sku_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_shopify_sku_refresh import (
+        RefreshShopifySkuResponse,
+        refresh_shopify_sku_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        payload, status = refresh_shopify_sku_flask_response(
+            RefreshShopifySkuResponse({"ok": True, "summary": {"variant_pairs": 2}}, 202)
+        )
+
+    assert status == 202
+    assert payload.get_json() == {"ok": True, "summary": {"variant_pairs": 2}}
+
+
 def test_build_refresh_product_shopify_sku_response_rejects_missing_shopifyid_before_fetch():
     from web.services.media_shopify_sku_refresh import build_refresh_product_shopify_sku_response
 
