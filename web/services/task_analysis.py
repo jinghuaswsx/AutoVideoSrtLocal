@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from appcore.db import query_one as db_query_one
+from appcore.project_state import get_project_for_user
 from web.services import pipeline_runner
 from web.services.task_access import load_task
 
@@ -24,14 +24,15 @@ def start_task_analysis(
     task_id: str,
     *,
     user_id: int,
-    query_one=db_query_one,
+    query_one=None,
+    load_project_for_user: Callable[..., dict | None] = get_project_for_user,
     load_task: Callable[[str], dict | None] = load_task,
     run_analysis: Callable[..., bool] | None = None,
 ) -> TaskAnalysisOutcome:
-    row = query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, user_id),
-    )
+    if query_one is not None and load_project_for_user is get_project_for_user:
+        row = load_project_for_user(task_id, user_id, query_one_func=query_one)
+    else:
+        row = load_project_for_user(task_id, user_id)
     if not row:
         return TaskAnalysisOutcome({}, 404, not_found=True)
 

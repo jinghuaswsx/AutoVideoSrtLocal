@@ -4,6 +4,7 @@ import pytest
 
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
+    lookup_default_voice_row,
     normalize_confirm_voice_payload,
     resolve_round_file_entry,
 )
@@ -97,3 +98,22 @@ def test_build_voice_library_payload_skips_merge_when_no_candidates():
 
     m_fetch.assert_not_called()
     assert payload["items"] == items
+
+
+def test_lookup_default_voice_row_uses_appcore_voice_lookup():
+    with patch(
+        "web.services.translate_detail_protocol.resolve_default_voice",
+        return_value="voice-default",
+    ) as m_default, patch(
+        "web.services.translate_detail_protocol.fetch_voice_by_id",
+        return_value={"voice_id": "voice-default", "descriptive": "Warm"},
+    ) as m_fetch:
+        row = lookup_default_voice_row("de", 7)
+
+    assert row == {
+        "voice_id": "voice-default",
+        "descriptive": "Warm",
+        "description": "Warm",
+    }
+    m_default.assert_called_once_with("de", user_id=7)
+    m_fetch.assert_called_once_with(language="de", voice_id="voice-default")

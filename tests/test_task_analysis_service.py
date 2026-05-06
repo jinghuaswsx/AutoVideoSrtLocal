@@ -61,7 +61,7 @@ def test_start_task_analysis_starts_runner_for_owned_task():
     assert calls == [
         (
             "query",
-            "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+            "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
             ("task-1", 7),
         ),
         ("run", "task-1", 7),

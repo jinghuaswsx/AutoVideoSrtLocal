@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from appcore.db import query_one as db_query_one
+from appcore.video_translate_defaults import resolve_default_voice
+from appcore.voice_library_browse import fetch_voice_by_id
 
 _VALID_ROUND_INDEXES = {1, 2, 3, 4, 5}
 
@@ -86,18 +87,12 @@ def resolve_round_file_entry(allowed_round_kinds: dict[str, tuple[str, str]], ro
 
 
 def lookup_default_voice_row(language: str, owner_user_id: int | None) -> dict | None:
-    from appcore.video_translate_defaults import resolve_default_voice
-
     default_voice_id = resolve_default_voice(language, user_id=owner_user_id) if language else None
     if not default_voice_id:
         return None
-    row = db_query_one(
-        "SELECT voice_id, name, gender, accent, age, descriptive, preview_url "
-        "FROM elevenlabs_voices WHERE voice_id = %s LIMIT 1",
-        (default_voice_id,),
-    )
+    row = fetch_voice_by_id(language=language, voice_id=default_voice_id)
     if not row:
         return None
     payload = dict(row)
-    payload["description"] = row.get("descriptive") or ""
+    payload["description"] = row.get("description") or row.get("descriptive") or ""
     return payload

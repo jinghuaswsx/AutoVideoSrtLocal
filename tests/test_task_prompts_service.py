@@ -48,3 +48,23 @@ def test_resolve_task_prompt_text_keeps_empty_when_saved_prompt_is_missing():
     )
 
     assert result == ""
+
+
+def test_get_user_prompt_text_queries_owned_prompt():
+    from appcore.prompt_library import get_user_prompt_text
+
+    calls = []
+
+    def query_one(sql, args):
+        calls.append((sql, args))
+        return {"prompt_text": "saved prompt"}
+
+    result = get_user_prompt_text(123, 7, query_one_func=query_one)
+
+    assert result == "saved prompt"
+    assert calls == [
+        (
+            "SELECT prompt_text FROM user_prompts WHERE id = %s AND user_id = %s",
+            (123, 7),
+        )
+    ]

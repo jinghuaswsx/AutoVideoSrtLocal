@@ -92,6 +92,24 @@ def get_project_for_user(
     )
 
 
+def get_project_thumbnail_row(
+    task_id: str,
+    *,
+    user_id: int,
+    is_admin: bool,
+    query_one_func: QueryOneFunc = query_one,
+) -> dict | None:
+    if is_admin:
+        return query_one_func(
+            "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND deleted_at IS NULL",
+            (task_id,),
+        )
+    return query_one_func(
+        "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
+        (task_id, user_id),
+    )
+
+
 def update_project_display_name(
     task_id: str,
     display_name: str,

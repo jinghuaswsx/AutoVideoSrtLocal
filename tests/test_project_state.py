@@ -89,6 +89,56 @@ def test_get_project_for_user_queries_active_project():
     ]
 
 
+def test_get_project_thumbnail_row_queries_admin_scope():
+    from appcore.project_state import get_project_thumbnail_row
+
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"thumbnail_path": "/tmp/thumb.jpg", "task_dir": "/tmp"}
+
+    row = get_project_thumbnail_row(
+        "task-1",
+        user_id=7,
+        is_admin=True,
+        query_one_func=fake_query_one,
+    )
+
+    assert row == {"thumbnail_path": "/tmp/thumb.jpg", "task_dir": "/tmp"}
+    assert calls == [
+        (
+            "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND deleted_at IS NULL",
+            ("task-1",),
+        )
+    ]
+
+
+def test_get_project_thumbnail_row_queries_user_scope():
+    from appcore.project_state import get_project_thumbnail_row
+
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"thumbnail_path": "/tmp/thumb.jpg", "task_dir": "/tmp"}
+
+    row = get_project_thumbnail_row(
+        "task-1",
+        user_id=7,
+        is_admin=False,
+        query_one_func=fake_query_one,
+    )
+
+    assert row == {"thumbnail_path": "/tmp/thumb.jpg", "task_dir": "/tmp"}
+    assert calls == [
+        (
+            "SELECT thumbnail_path, task_dir FROM projects WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
+            ("task-1", 7),
+        )
+    ]
+
+
 def test_update_project_display_name_writes_display_name_only():
     from appcore.project_state import update_project_display_name
 

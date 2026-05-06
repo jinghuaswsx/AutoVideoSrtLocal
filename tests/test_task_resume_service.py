@@ -77,7 +77,7 @@ def test_resume_task_from_step_resets_selected_steps_and_starts_runner():
     assert calls == [
         (
             "query",
-            "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+            "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
             ("task-1", 7),
         ),
         ("recover", "task-1"),

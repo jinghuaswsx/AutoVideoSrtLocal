@@ -3112,6 +3112,30 @@ def test_task_video_ai_review_workflow_lives_outside_route_module():
     assert Path("web/services/task_video_ai_review.py").exists()
 
 
+def test_task_lightweight_db_access_lives_in_appcore_daos():
+    service_paths = [
+        Path("web/services/task_analysis.py"),
+        Path("web/services/task_prompts.py"),
+        Path("web/services/task_resume.py"),
+        Path("web/services/task_thumbnail.py"),
+        Path("web/services/translate_detail_protocol.py"),
+    ]
+
+    for service_path in service_paths:
+        source = service_path.read_text(encoding="utf-8")
+        assert "from appcore.db import" not in source
+        assert "import appcore.db" not in source
+
+    project_state_source = Path("appcore/project_state.py").read_text(encoding="utf-8")
+    prompt_library_source = Path("appcore/prompt_library.py").read_text(encoding="utf-8")
+    voice_library_source = Path("appcore/voice_library_browse.py").read_text(encoding="utf-8")
+
+    assert "get_project_for_user" in project_state_source
+    assert "get_project_thumbnail_row" in project_state_source
+    assert "get_user_prompt_text" in prompt_library_source
+    assert "fetch_voice_by_id" in voice_library_source
+
+
 def test_openapi_materials_serializers_live_outside_route_module():
     source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
 

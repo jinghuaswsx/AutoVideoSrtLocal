@@ -161,6 +161,21 @@ def fetch_voices_by_ids(*, language: str, voice_ids: list[str]) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+def fetch_voice_by_id(*, language: str, voice_id: str) -> dict | None:
+    """Return one voice row for a language, falling back to the base table."""
+    if not language or not voice_id:
+        return None
+    rows = fetch_voices_by_ids(language=language, voice_ids=[voice_id])
+    if rows:
+        return rows[0]
+    row = query_one(
+        f"SELECT {_SELECT_FIELDS} FROM {_BASE_TABLE} "
+        "WHERE language = %s AND voice_id = %s LIMIT 1",
+        (language, voice_id),
+    )
+    return _row_to_dict(row) if row else None
+
+
 def list_filter_options(*, language: str) -> dict:
     """返回某语种下所有声音的 label 枚举（去重 + 升序）。"""
     if not language:

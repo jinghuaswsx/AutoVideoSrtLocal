@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from appcore.db import query_one as db_query_one
+from appcore.project_state import get_project_for_user
 from appcore.task_recovery import recover_task_if_needed
 from web import store
 from web.services import pipeline_runner
@@ -28,7 +28,8 @@ def resume_task_from_step(
     user_id: int,
     start_step: str,
     resumable_steps: Sequence[str],
-    query_one=db_query_one,
+    query_one=None,
+    load_project_for_user: Callable[..., dict | None] = get_project_for_user,
     recover_task: Callable[[str], object] | None = None,
     load_task: Callable[[str], dict | None] | None = None,
     refresh_task: Callable[[str, dict], dict] | None = None,
@@ -38,10 +39,10 @@ def resume_task_from_step(
     set_step_message: Callable[[str, str, str], object] = store.set_step_message,
     update_task: Callable[..., object] = store.update,
 ) -> TaskResumeOutcome:
-    row = query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, user_id),
-    )
+    if query_one is not None and load_project_for_user is get_project_for_user:
+        row = load_project_for_user(task_id, user_id, query_one_func=query_one)
+    else:
+        row = load_project_for_user(task_id, user_id)
     if not row:
         return TaskResumeOutcome({}, 404, not_found=True)
 

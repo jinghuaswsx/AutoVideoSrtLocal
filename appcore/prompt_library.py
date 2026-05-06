@@ -44,6 +44,14 @@ def get_item(item_id: int) -> dict | None:
     )
 
 
+def get_user_prompt_text(prompt_id: int, user_id: int, *, query_one_func=query_one) -> str | None:
+    row = query_one_func(
+        "SELECT prompt_text FROM user_prompts WHERE id = %s AND user_id = %s",
+        (prompt_id, user_id),
+    )
+    return row.get("prompt_text") if row else None
+
+
 def create_item(user_id: int, name: str, *,
                 content_zh: str | None = None,
                 content_en: str | None = None,
