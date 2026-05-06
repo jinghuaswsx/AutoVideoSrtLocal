@@ -3163,6 +3163,15 @@ def test_pushes_json_responses_live_outside_route_module():
     assert Path("web/services/pushes_responses.py").exists()
 
 
+def test_order_analytics_json_responses_live_outside_route_module():
+    source = Path("web/routes/order_analytics.py").read_text(encoding="utf-8")
+
+    assert "jsonify(" not in source
+    assert "order_analytics_flask_response" in source
+    assert "build_order_analytics_payload_response" in source
+    assert Path("web/services/order_analytics_responses.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

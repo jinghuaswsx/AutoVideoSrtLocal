@@ -6,9 +6,13 @@ import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from flask import Blueprint, render_template, request, jsonify, make_response
+from flask import Blueprint, render_template, request, make_response
 from flask_login import current_user, login_required
 from web.auth import admin_required, permission_required
+from web.services.order_analytics_responses import (
+    build_order_analytics_payload_response,
+    order_analytics_flask_response,
+)
 
 from appcore import order_analytics as oa
 from appcore import system_audit
@@ -17,6 +21,23 @@ from appcore import weekly_roas_report as wrr
 log = logging.getLogger(__name__)
 
 bp = Blueprint("order_analytics", __name__)
+
+
+def _json_response(*args, **kwargs):
+    if kwargs:
+        if args:
+            raise TypeError("_json_response accepts positional payload or keyword payload, not both")
+        payload = kwargs
+    elif len(args) == 1:
+        payload = args[0]
+    elif not args:
+        payload = {}
+    else:
+        payload = list(args)
+    response, _status_code = order_analytics_flask_response(
+        build_order_analytics_payload_response(payload)
+    )
+    return response
 
 
 def _json_safe(value):
@@ -79,7 +100,7 @@ def upload():
             status="failure",
             detail={"error": "missing_file"},
         )
-        return jsonify(error="请选择文件"), 400
+        return _json_response(error="请选择文件"), 400
 
     try:
         rows = oa.parse_shopify_file(f.stream, f.filename)
@@ -92,7 +113,7 @@ def upload():
             status="failure",
             detail={"filename": f.filename, "error": str(exc)},
         )
-        return jsonify(error=f"文件解析失败：{exc}"), 400
+        return _json_response(error=f"文件解析失败：{exc}"), 400
 
     if not rows:
         _audit_order_analytics_action(
@@ -102,7 +123,7 @@ def upload():
             status="failure",
             detail={"filename": f.filename, "error": "empty_or_invalid_file"},
         )
-        return jsonify(error="文件为空或格式不正确"), 400
+        return _json_response(error="文件为空或格式不正确"), 400
 
     result = oa.import_orders(rows)
 
@@ -125,7 +146,7 @@ def upload():
             "matched_rows": stats.get("matched_rows", 0),
         },
     )
-    return jsonify({
+    return _json_response({
         "imported": result["imported"],
         "skipped": result["skipped"],
         "matched": matched,
@@ -151,7 +172,7 @@ def ad_upload():
             status="failure",
             detail={"error": "missing_file"},
         )
-        return jsonify(error="请选择广告报表文件"), 400
+        return _json_response(error="请选择广告报表文件"), 400
 
     frequency = (request.form.get("frequency") or "custom").strip().lower()
     file_bytes = f.stream.read()
@@ -167,7 +188,7 @@ def ad_upload():
             status="failure",
             detail={"filename": f.filename, "frequency": frequency, "error": str(exc)},
         )
-        return jsonify(error=f"广告报表解析失败：{exc}"), 400
+        return _json_response(error=f"广告报表解析失败：{exc}"), 400
 
     if not rows:
         _audit_order_analytics_action(
@@ -177,7 +198,7 @@ def ad_upload():
             status="failure",
             detail={"filename": f.filename, "frequency": frequency, "error": "empty_or_invalid_file"},
         )
-        return jsonify(error="广告报表为空或格式不正确"), 400
+        return _json_response(error="广告报表为空或格式不正确"), 400
 
     result = oa.import_meta_ad_rows(
         rows,
@@ -203,7 +224,7 @@ def ad_upload():
             "matched_rows": stats.get("matched_rows", 0),
         },
     )
-    return jsonify(_json_safe({
+    return _json_response(_json_safe({
         **result,
         "total_rows": stats.get("total_rows", 0),
         "matched_rows": stats.get("matched_rows", 0),
@@ -218,7 +239,7 @@ def ad_upload():
 @admin_required
 def stats():
     """返回数据库统计概览。"""
-    return jsonify(oa.get_import_stats())
+    return _json_response(oa.get_import_stats())
 
 
 @bp.route("/order-analytics/ad-stats")
@@ -226,7 +247,7 @@ def stats():
 @admin_required
 def ad_stats():
     """返回 Meta 广告长期数据统计概览。"""
-    return jsonify(_json_safe(oa.get_meta_ad_stats()))
+    return _json_response(_json_safe(oa.get_meta_ad_stats()))
 
 
 @bp.route("/order-analytics/ad-periods")
@@ -234,7 +255,7 @@ def ad_stats():
 @admin_required
 def ad_periods():
     """返回已导入的广告报表周期。"""
-    return jsonify(_json_safe(oa.get_meta_ad_periods()))
+    return _json_response(_json_safe(oa.get_meta_ad_periods()))
 
 
 @bp.route("/order-analytics/ad-summary")
@@ -245,7 +266,7 @@ def ad_summary():
     batch_id = request.args.get("batch_id", type=int)
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
-    return jsonify(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
+    return _json_response(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
 
 
 @bp.route("/order-analytics/realtime-overview")
@@ -256,16 +277,16 @@ def realtime_overview():
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
     try:
-        return jsonify(_json_safe(oa.get_realtime_roas_overview(
+        return _json_response(_json_safe(oa.get_realtime_roas_overview(
             date_text,
             start_date=start_date,
             end_date=end_date,
         )))
     except ValueError as exc:
-        return jsonify(error="invalid_date", detail=str(exc)), 400
+        return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("realtime roas overview query failed: %s", exc)
-        return jsonify(error="internal_error", detail=str(exc)), 500
+        return _json_response(error="internal_error", detail=str(exc)), 500
 
 
 @bp.route("/order-analytics/true-roas")
@@ -275,14 +296,14 @@ def true_roas():
     start_date = (request.args.get("start_date") or "").strip()
     end_date = (request.args.get("end_date") or "").strip()
     if not start_date or not end_date:
-        return jsonify(error="missing_date", detail="start_date and end_date are required"), 400
+        return _json_response(error="missing_date", detail="start_date and end_date are required"), 400
     try:
-        return jsonify(_json_safe(oa.get_true_roas_summary(start_date, end_date)))
+        return _json_response(_json_safe(oa.get_true_roas_summary(start_date, end_date)))
     except ValueError as exc:
-        return jsonify(error="invalid_date", detail=str(exc)), 400
+        return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("true roas query failed: %s", exc)
-        return jsonify(error="internal_error", detail=str(exc)), 500
+        return _json_response(error="internal_error", detail=str(exc)), 500
 
 
 @bp.route("/order-analytics/weekly-roas-report")
@@ -300,12 +321,12 @@ def weekly_roas_report():
             week_start, week_end = wrr.previous_complete_week()
         report = wrr.get_or_compute_report(week_start, week_end)
         report["recent_weeks"] = wrr.list_recent_snapshot_weeks(limit=12)
-        return jsonify(_json_safe(report))
+        return _json_response(_json_safe(report))
     except ValueError as exc:
-        return jsonify(error="invalid_date", detail=str(exc)), 400
+        return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("weekly roas report query failed: %s", exc)
-        return jsonify(error="internal_error", detail=str(exc)), 500
+        return _json_response(error="internal_error", detail=str(exc)), 500
 
 
 @bp.route("/order-analytics/dianxiaomi-orders")
@@ -316,26 +337,26 @@ def dianxiaomi_orders():
     end_date = (request.args.get("end_date") or "").strip()
     store = (request.args.get("store") or "").strip() or None
     if not start_date or not end_date:
-        return jsonify(error="missing_date", detail="start_date and end_date are required"), 400
+        return _json_response(error="missing_date", detail="start_date and end_date are required"), 400
     try:
         page = int(request.args["page"]) if "page" in request.args else 1
         page_size = int(request.args["page_size"]) if "page_size" in request.args else 50
     except (TypeError, ValueError):
-        return jsonify(error="invalid_param", detail="page and page_size must be integers"), 400
+        return _json_response(error="invalid_param", detail="page and page_size must be integers"), 400
     try:
         query_kwargs = {"page": page, "page_size": page_size}
         if store:
             query_kwargs["store"] = store
-        return jsonify(_json_safe(oa.get_dianxiaomi_order_analysis(
+        return _json_response(_json_safe(oa.get_dianxiaomi_order_analysis(
             start_date,
             end_date,
             **query_kwargs,
         )))
     except ValueError as exc:
-        return jsonify(error="invalid_param", detail=str(exc)), 400
+        return _json_response(error="invalid_param", detail=str(exc)), 400
     except Exception as exc:
         log.exception("dianxiaomi order analysis query failed: %s", exc)
-        return jsonify(error="internal_error", detail="dianxiaomi order analysis query failed"), 500
+        return _json_response(error="internal_error", detail="dianxiaomi order analysis query failed"), 500
 
 
 @bp.route("/order-analytics/country-dashboard")
@@ -347,20 +368,20 @@ def country_dashboard():
     end_date = (request.args.get("end_date") or "").strip() or None
     if start_date or end_date:
         try:
-            return jsonify(_json_safe(oa.get_country_dashboard(
+            return _json_response(_json_safe(oa.get_country_dashboard(
                 period="range",
                 start_date=start_date,
                 end_date=end_date,
             )))
         except ValueError as exc:
-            return jsonify(error="invalid_param", detail=str(exc)), 400
+            return _json_response(error="invalid_param", detail=str(exc)), 400
         except Exception as exc:
             log.exception("country dashboard query failed: %s", exc)
-            return jsonify(error="internal_error", detail="country dashboard query failed"), 500
+            return _json_response(error="internal_error", detail="country dashboard query failed"), 500
     if period not in ("day", "week", "month"):
-        return jsonify(error="invalid_period", detail="period must be one of day/week/month"), 400
+        return _json_response(error="invalid_period", detail="period must be one of day/week/month"), 400
     try:
-        return jsonify(_json_safe(oa.get_country_dashboard(
+        return _json_response(_json_safe(oa.get_country_dashboard(
             period=period,
             year=request.args.get("year", type=int),
             month=request.args.get("month", type=int),
@@ -368,10 +389,10 @@ def country_dashboard():
             date_str=request.args.get("date") or None,
         )))
     except ValueError as exc:
-        return jsonify(error="invalid_param", detail=str(exc)), 400
+        return _json_response(error="invalid_param", detail=str(exc)), 400
     except Exception as exc:
         log.exception("country dashboard query failed: %s", exc)
-        return jsonify(error="internal_error", detail="country dashboard query failed"), 500
+        return _json_response(error="internal_error", detail="country dashboard query failed"), 500
 
 
 @bp.route("/order-analytics/dianxiaomi-import-batches")
@@ -382,7 +403,7 @@ def dianxiaomi_import_batches():
     rows = oa.get_dianxiaomi_order_import_batches(
         limit=request.args.get("limit", 20, type=int),
     )
-    return jsonify(_json_safe({"rows": rows}))
+    return _json_response(_json_safe({"rows": rows}))
 
 
 @bp.route("/order-analytics/dianxiaomi-import", methods=["POST"])
@@ -423,7 +444,7 @@ def dianxiaomi_import():
                 "error": str(exc),
             },
         )
-        return jsonify(error=f"店小秘订单导入失败：{exc}"), 500
+        return _json_response(error=f"店小秘订单导入失败：{exc}"), 500
     _audit_order_analytics_action(
         "order_analytics_dianxiaomi_import_run",
         target_type="dianxiaomi_import",
@@ -440,7 +461,7 @@ def dianxiaomi_import():
             "skipped_lines": result.get("skipped_lines") if isinstance(result, dict) else None,
         },
     )
-    return jsonify(_json_safe(result))
+    return _json_response(_json_safe(result))
 
 
 @bp.route("/order-analytics/available-months")
@@ -448,7 +469,7 @@ def dianxiaomi_import():
 @admin_required
 def available_months():
     """返回有数据的年月列表。"""
-    return jsonify(oa.get_available_months())
+    return _json_response(oa.get_available_months())
 
 
 @bp.route("/order-analytics/monthly")
@@ -461,7 +482,7 @@ def monthly():
     product_id = request.args.get("product_id", type=int)
 
     if not year or not month:
-        return jsonify(error="请提供 year 和 month 参数"), 400
+        return _json_response(error="请提供 year 和 month 参数"), 400
 
     data = oa.get_monthly_summary(year, month, product_id)
 
@@ -470,7 +491,7 @@ def monthly():
         if p.get("total_revenue") is not None:
             p["total_revenue"] = float(p["total_revenue"])
 
-    return jsonify(data)
+    return _json_response(data)
 
 
 @bp.route("/order-analytics/product-country-detail")
@@ -482,10 +503,10 @@ def product_country_detail():
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
     if not product_id or not year or not month:
-        return jsonify(error="请提供 product_id、year、month"), 400
+        return _json_response(error="请提供 product_id、year、month"), 400
 
     rows = oa.get_product_country_detail(product_id, year, month)
-    return jsonify(_json_safe({"rows": rows, "product_id": product_id,
+    return _json_response(_json_safe({"rows": rows, "product_id": product_id,
                                "year": year, "month": month}))
 
 
@@ -499,13 +520,13 @@ def daily():
     product_id = request.args.get("product_id", type=int)
 
     if not year or not month:
-        return jsonify(error="请提供 year 和 month 参数"), 400
+        return _json_response(error="请提供 year 和 month 参数"), 400
 
     rows = oa.get_daily_detail(year, month, product_id)
     for r in rows:
         if r.get("sale_date"):
             r["sale_date"] = str(r["sale_date"])
-    return jsonify(rows)
+    return _json_response(rows)
 
 
 @bp.route("/order-analytics/weekly")
@@ -517,9 +538,9 @@ def weekly():
     week = request.args.get("week", type=int)
 
     if not year or not week:
-        return jsonify(error="请提供 year 和 week 参数"), 400
+        return _json_response(error="请提供 year 和 week 参数"), 400
 
-    return jsonify(oa.get_weekly_summary(year, week))
+    return _json_response(oa.get_weekly_summary(year, week))
 
 
 @bp.route("/order-analytics/search")
@@ -529,8 +550,8 @@ def search():
     """按产品 ID 或标题搜索。"""
     q = (request.args.get("q") or "").strip()
     if not q:
-        return jsonify([])
-    return jsonify(oa.search_products(q))
+        return _json_response([])
+    return _json_response(oa.search_products(q))
 
 
 @bp.route("/order-analytics/refresh-titles", methods=["POST"])
@@ -549,7 +570,7 @@ def refresh_titles():
             "result": result,
         },
     )
-    return jsonify(result)
+    return _json_response(result)
 
 
 @bp.route("/order-analytics/match", methods=["POST"])
@@ -563,7 +584,7 @@ def match():
         target_type="order_import",
         detail={"matched": affected},
     )
-    return jsonify({"matched": affected})
+    return _json_response({"matched": affected})
 
 
 @bp.route("/order-analytics/ad-match", methods=["POST"])
@@ -577,7 +598,7 @@ def ad_match():
         target_type="meta_ad_import",
         detail={"matched": affected},
     )
-    return jsonify({"matched": affected})
+    return _json_response({"matched": affected})
 
 
 @bp.route("/order-analytics/ad-match-manual", methods=["POST"])
@@ -590,15 +611,15 @@ def ad_match_manual():
     raw_product_id = body.get("product_id")
 
     if not normalized_campaign_code:
-        return jsonify(error="missing_param",
+        return _json_response(error="missing_param",
                        detail="normalized_campaign_code is required"), 400
     try:
         product_id = int(raw_product_id) if raw_product_id is not None else 0
     except (TypeError, ValueError):
-        return jsonify(error="invalid_param",
+        return _json_response(error="invalid_param",
                        detail="product_id must be an integer"), 400
     if product_id <= 0:
-        return jsonify(error="missing_param", detail="product_id is required"), 400
+        return _json_response(error="missing_param", detail="product_id is required"), 400
 
     try:
         result = oa.manual_match_meta_ad_campaign(normalized_campaign_code, product_id)
@@ -614,9 +635,9 @@ def ad_match_manual():
                 "error": str(exc),
             },
         )
-        return jsonify(error="product_not_found", detail=str(exc)), 404
+        return _json_response(error="product_not_found", detail=str(exc)), 404
     except ValueError as exc:
-        return jsonify(error="invalid_param", detail=str(exc)), 400
+        return _json_response(error="invalid_param", detail=str(exc)), 400
 
     _audit_order_analytics_action(
         "order_analytics_meta_ad_manual_matched",
@@ -630,7 +651,7 @@ def ad_match_manual():
             "matched_daily": result["matched_daily"],
         },
     )
-    return jsonify({"ok": True, **result})
+    return _json_response({"ok": True, **result})
 
 
 @bp.route("/order-analytics/dashboard")
@@ -643,11 +664,11 @@ def dashboard():
     period = (request.args.get("period") or "month").strip().lower()
     if start_date or end_date:
         if not start_date or not end_date:
-            return jsonify(error="invalid_param",
+            return _json_response(error="invalid_param",
                            detail="start_date and end_date are both required"), 400
         period = "range"
     elif period not in ("day", "week", "month"):
-        return jsonify(error="invalid_period",
+        return _json_response(error="invalid_period",
                        detail="period must be one of day/week/month"), 400
 
     try:
@@ -666,12 +687,12 @@ def dashboard():
             search=(request.args.get("search") or "").strip() or None,
         )
     except ValueError as exc:
-        return jsonify(error="invalid_param", detail=str(exc)), 400
+        return _json_response(error="invalid_param", detail=str(exc)), 400
     except Exception as exc:
         log.exception("dashboard query failed: %s", exc)
-        return jsonify(error="internal_error", detail=str(exc)), 500
+        return _json_response(error="internal_error", detail=str(exc)), 500
 
-    return jsonify(_json_safe(data))
+    return _json_response(_json_safe(data))
 
 
 @bp.route("/order-analytics/orphan-orders")
@@ -689,6 +710,6 @@ def orphan_orders_data():
         limit = max(1, min(1000, int(request.args.get("limit") or 200)))
         offset = max(0, int(request.args.get("offset") or 0))
     except (TypeError, ValueError):
-        return jsonify(error="invalid_pagination"), 400
+        return _json_response(error="invalid_pagination"), 400
     rows, total = oa.get_orphan_orders(limit=limit, offset=offset)
-    return jsonify(_json_safe({"rows": rows, "total": total, "limit": limit, "offset": offset}))
+    return _json_response(_json_safe({"rows": rows, "total": total, "limit": limit, "offset": offset}))
