@@ -1184,7 +1184,7 @@ class PipelineRunner:
         out.append(
             (profile.post_asr_step_name, lambda: profile.post_asr(self, task_id))
         )
-        out.append(("voice_match", lambda: self._step_voice_match(task_id)))
+        out.append(("voice_match", lambda: profile.voice_match(self, task_id)))
         out.append(
             ("alignment", lambda: self._step_alignment(task_id, video_path, task_dir))
         )

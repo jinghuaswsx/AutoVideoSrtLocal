@@ -33,12 +33,15 @@ from appcore.runtime import (
     _resolve_translate_provider,
     _save_json,
 )
+from appcore.video_translate_defaults import resolve_default_voice
 from pipeline import asr_normalize as pipeline_asr_normalize
 from pipeline.localization import build_source_full_text_zh
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
 from pipeline.translate import generate_localized_translation, get_model_display_name
 from pipeline.tts import _get_audio_duration
+from pipeline.voice_embedding import embed_audio_file
+from pipeline.voice_match import extract_sample_from_utterances, match_candidates
 
 from .base import TranslateProfile
 
@@ -264,6 +267,84 @@ class DefaultProfile(TranslateProfile):
         # PR6：dispatch 到 ``self.tts_strategy_code`` 解析出来的策略，
         # 默认 ``FiveRoundRewriteLoopStrategy``（5 轮 rewrite + 变速短路）。
         self.get_tts_strategy().run(runner, self, task_id, task_dir)
+
+    def voice_match(self, runner: "PipelineRunner", task_id: str) -> None:
+        """跑向量匹配写候选到 state，然后暂停 pipeline 等待用户选择音色。
+
+        PR7: 算法 body 从 ``MultiTranslateRunner._step_voice_match`` 搬到这里，
+        让"换 voice match 算法"成为单纯的 profile 子类化操作。
+        """
+        from appcore.events import EVT_VOICE_MATCH_READY
+
+        task = task_state.get(task_id)
+        if runner._skip_original_video_passthrough_step(task_id, "voice_match", task=task):
+            return
+        lang = runner._resolve_target_lang(task)
+        utterances = task.get("utterances") or []
+        video_path = task.get("video_path")
+        default_voice_id = resolve_default_voice(lang, user_id=runner.user_id)
+
+        runner._set_step(task_id, "voice_match", "running", f"{lang.upper()} 音色库加载中...")
+
+        # 优先用上一步「人声分离」产出的纯 vocals.wav 做 embedding——比从原视频
+        # 混合音轨（vocals + BGM + 环境音）截取的样本更干净，匹配候选更准。
+        # 分离失败 / 未启用时退回旧逻辑：从原视频按 utterances 时间戳截 8s+ 样本。
+        from pipeline import audio_separation as _sep_pkg
+        separation = task.get("separation") or {}
+
+        candidates: list = []
+        if utterances and video_path:
+            try:
+                if _sep_pkg.is_usable(separation):
+                    clip = separation["vocals_path"]
+                    log.info(
+                        "[voice_match] task=%s using separated vocals for embedding: %s",
+                        task_id, clip,
+                    )
+                else:
+                    clip = extract_sample_from_utterances(
+                        video_path, utterances, out_dir=task["task_dir"],
+                        min_duration=8.0,
+                    )
+                vec = embed_audio_file(clip)
+                candidates = match_candidates(
+                    vec,
+                    language=lang,
+                    top_k=10,
+                    exclude_voice_ids={default_voice_id} if default_voice_id else None,
+                ) or []
+                for c in candidates:
+                    c["similarity"] = float(c.get("similarity", 0.0))
+                # 持久化 query embedding 到 state，以便前端切 gender 时
+                # 后端可以不重新 embed、直接对 gender 子集重排 top-10。
+                import base64 as _b64
+                from pipeline.voice_embedding import serialize_embedding
+                query_embedding_b64 = _b64.b64encode(serialize_embedding(vec)).decode("ascii")
+            except Exception as exc:
+                log.exception("voice match failed for %s: %s", task_id, exc)
+                candidates = []
+                query_embedding_b64 = None
+        else:
+            query_embedding_b64 = None
+
+        fallback = None if candidates else default_voice_id
+
+        task_state.update(
+            task_id,
+            voice_match_candidates=candidates,
+            voice_match_fallback_voice_id=fallback,
+            voice_match_query_embedding=query_embedding_b64,
+        )
+
+        # 暂停 pipeline，等待 /api/multi-translate/<task_id>/confirm-voice
+        task_state.set_current_review_step(task_id, "voice_match")
+        msg = f"{lang.upper()} 音色库已就绪，请选择 TTS 音色"
+        runner._set_step(task_id, "voice_match", "waiting", msg)
+        runner._emit(task_id, EVT_VOICE_MATCH_READY, {
+            "candidates": candidates,
+            "fallback_voice_id": fallback,
+            "target_lang": lang,
+        })
 
     def subtitle(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
         from appcore import asr_router

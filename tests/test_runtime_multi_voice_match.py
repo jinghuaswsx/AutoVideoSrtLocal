@@ -15,13 +15,13 @@ def test_step_voice_match_writes_candidates_to_state():
     }
     with patch("appcore.task_state.get", return_value=task), \
          patch("appcore.task_state.update") as m_update, \
-         patch("appcore.runtime_multi.extract_sample_from_utterances",
+         patch("appcore.translate_profiles.default_profile.extract_sample_from_utterances",
                return_value="/tmp/x/clip.wav"), \
-         patch("appcore.runtime_multi.embed_audio_file",
+         patch("appcore.translate_profiles.default_profile.embed_audio_file",
                return_value=np.zeros(256, dtype=np.float32)), \
-         patch("appcore.runtime_multi.resolve_default_voice",
+         patch("appcore.translate_profiles.default_profile.resolve_default_voice",
                return_value="default-voice-id"), \
-         patch("appcore.runtime_multi.match_candidates") as m_match:
+         patch("appcore.translate_profiles.default_profile.match_candidates") as m_match:
         m_match.return_value = [
             {"voice_id": "v1", "name": "A", "similarity": 0.85,
              "gender": "male", "preview_url": "u1"},
@@ -48,12 +48,12 @@ def test_step_voice_match_fallback_when_empty():
     }
     with patch("appcore.task_state.get", return_value=task), \
          patch("appcore.task_state.update") as m_update, \
-         patch("appcore.runtime_multi.extract_sample_from_utterances",
+         patch("appcore.translate_profiles.default_profile.extract_sample_from_utterances",
                return_value="/tmp/x/clip.wav"), \
-         patch("appcore.runtime_multi.embed_audio_file",
+         patch("appcore.translate_profiles.default_profile.embed_audio_file",
                return_value=np.zeros(256, dtype=np.float32)), \
-         patch("appcore.runtime_multi.match_candidates", return_value=[]), \
-         patch("appcore.runtime_multi.resolve_default_voice",
+         patch("appcore.translate_profiles.default_profile.match_candidates", return_value=[]), \
+         patch("appcore.translate_profiles.default_profile.resolve_default_voice",
                return_value="default-voice-id"):
         runner._step_voice_match("t1")
 
@@ -76,7 +76,7 @@ def test_step_voice_match_skips_when_original_video_passthrough_enabled():
     with patch("appcore.task_state.get", return_value=task), \
          patch("appcore.task_state.update") as m_update, \
          patch("appcore.task_state.set_current_review_step") as m_set_review, \
-         patch("appcore.runtime_multi.extract_sample_from_utterances",
+         patch("appcore.translate_profiles.default_profile.extract_sample_from_utterances",
                side_effect=AssertionError("voice match should be skipped for passthrough tasks")):
         runner._step_voice_match("t1")
 

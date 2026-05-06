@@ -54,6 +54,15 @@ class TranslateProfile(ABC):
     def subtitle(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
         """字幕生成。"""
 
+    def voice_match(self, runner: "PipelineRunner", task_id: str) -> None:
+        """声纹匹配 + 候选列表 + 等待用户确认音色。
+
+        默认实现 dispatch 到 ``runner._step_voice_match``（base 提供）。子
+        profile 想换 voice_match 算法（如多人声、跨语言音色复用）只需 override
+        本方法。
+        """
+        runner._step_voice_match(task_id)
+
     def word_tolerance_for(self, target_lang: str) -> float:
         """rewrite 字数收敛容差比例（相对于 target_words）。
 

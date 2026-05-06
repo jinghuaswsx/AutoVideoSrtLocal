@@ -16,8 +16,6 @@ import appcore.task_state as task_state
 from appcore.llm_prompt_configs import resolve_prompt_config
 from appcore.runtime import PipelineRunner
 from appcore.video_translate_defaults import resolve_default_voice
-from pipeline.voice_embedding import embed_audio_file
-from pipeline.voice_match import extract_sample_from_utterances, match_candidates
 from pipeline.localization import (
     build_tts_segments,
     count_words,
@@ -158,78 +156,8 @@ class MultiTranslateRunner(PipelineRunner):
         self.profile.post_asr(self, task_id)
 
     def _step_voice_match(self, task_id: str) -> None:
-        """跑向量匹配写候选到 state，然后暂停 pipeline 等待用户在 UI 上选择音色。"""
-        from appcore.events import EVT_VOICE_MATCH_READY
-
-        task = task_state.get(task_id)
-        if self._skip_original_video_passthrough_step(task_id, "voice_match", task=task):
-            return
-        lang = self._resolve_target_lang(task)
-        utterances = task.get("utterances") or []
-        video_path = task.get("video_path")
-        default_voice_id = resolve_default_voice(lang, user_id=self.user_id)
-
-        self._set_step(task_id, "voice_match", "running", f"{lang.upper()} 音色库加载中...")
-
-        # 优先用上一步「人声分离」产出的纯 vocals.wav 做 embedding——比从原视频
-        # 混合音轨（vocals + BGM + 环境音）截取的样本更干净，匹配候选更准。
-        # 分离失败 / 未启用时退回旧逻辑：从原视频按 utterances 时间戳截 8s+ 样本。
-        from pipeline import audio_separation as _sep_pkg
-        separation = task.get("separation") or {}
-
-        candidates: list = []
-        if utterances and video_path:
-            try:
-                if _sep_pkg.is_usable(separation):
-                    clip = separation["vocals_path"]
-                    log.info(
-                        "[voice_match] task=%s using separated vocals for embedding: %s",
-                        task_id, clip,
-                    )
-                else:
-                    clip = extract_sample_from_utterances(
-                        video_path, utterances, out_dir=task["task_dir"],
-                        min_duration=8.0,
-                    )
-                vec = embed_audio_file(clip)
-                candidates = match_candidates(
-                    vec,
-                    language=lang,
-                    top_k=10,
-                    exclude_voice_ids={default_voice_id} if default_voice_id else None,
-                ) or []
-                for c in candidates:
-                    c["similarity"] = float(c.get("similarity", 0.0))
-                # 持久化 query embedding 到 state，以便前端切 gender 时
-                # 后端可以不重新 embed、直接对 gender 子集重排 top-10。
-                import base64 as _b64
-                from pipeline.voice_embedding import serialize_embedding
-                query_embedding_b64 = _b64.b64encode(serialize_embedding(vec)).decode("ascii")
-            except Exception as exc:
-                log.exception("voice match failed for %s: %s", task_id, exc)
-                candidates = []
-                query_embedding_b64 = None
-        else:
-            query_embedding_b64 = None
-
-        fallback = None if candidates else default_voice_id
-
-        task_state.update(
-            task_id,
-            voice_match_candidates=candidates,
-            voice_match_fallback_voice_id=fallback,
-            voice_match_query_embedding=query_embedding_b64,
-        )
-
-        # 暂停 pipeline，等待 /api/multi-translate/<task_id>/confirm-voice
-        task_state.set_current_review_step(task_id, "voice_match")
-        msg = f"{lang.upper()} 音色库已就绪，请选择 TTS 音色"
-        self._set_step(task_id, "voice_match", "waiting", msg)
-        self._emit(task_id, EVT_VOICE_MATCH_READY, {
-            "candidates": candidates,
-            "fallback_voice_id": fallback,
-            "target_lang": lang,
-        })
+        """PR7 thin shim — body 已搬到 ``DefaultProfile.voice_match``。"""
+        self.profile.voice_match(self, task_id)
 
     def _resolve_voice(self, task, loc_mod):
         """多语种：优先用户确认的 selected_voice_id → fallback。"""
