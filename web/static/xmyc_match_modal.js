@@ -59,7 +59,7 @@
   async function fetchAndRender() {
     const tbody = $('xmycMatchTbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" class="oc-xmyc-match-empty">加载中…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="oc-xmyc-match-empty">加载中…</td></tr>';
     const keyword = ($('xmycMatchSearch') || {}).value || '';
     const matched = ($('xmycMatchFilter') || {}).value || 'all';
     const params = new URLSearchParams();
@@ -83,7 +83,7 @@
       renderRows();
       updateSummary();
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="9" class="oc-xmyc-match-empty">加载失败：' + escapeHtml(err.message || '') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="oc-xmyc-match-empty">加载失败：' + escapeHtml(err.message || '') + '</td></tr>';
     }
   }
 
@@ -99,6 +99,21 @@
       '<td class="ta-r editable-cell" data-field="' + escapeHtml(field) +
       '" data-sku-id="' + escapeHtml(String(skuId)) + '" title="点击编辑">' +
       display + '</td>'
+    );
+  }
+
+  function renderImageCell(item) {
+    const url = (item && item.image_url) ? String(item.image_url).trim() : '';
+    const label = (item && (item.goods_name || item.sku)) || 'SKU图片';
+    if (!url) {
+      return '<td class="image-cell"><span class="oc-xmyc-sku-image-ph">—</span></td>';
+    }
+    return (
+      '<td class="image-cell">' +
+        '<img class="oc-xmyc-sku-image" src="' + escapeHtml(url) + '" alt="' + escapeHtml(label) +
+        '" loading="lazy" referrerpolicy="no-referrer">' +
+        '<span class="oc-xmyc-sku-image-ph" hidden>—</span>' +
+      '</td>'
     );
   }
 
@@ -179,11 +194,21 @@
     });
   }
 
+  function bindImageFallbacks(root) {
+    root.querySelectorAll('img.oc-xmyc-sku-image').forEach((img) => {
+      img.addEventListener('error', () => {
+        img.hidden = true;
+        const ph = img.nextElementSibling;
+        if (ph) ph.hidden = false;
+      }, { once: true });
+    });
+  }
+
   function renderRows() {
     const tbody = $('xmycMatchTbody');
     if (!tbody) return;
     if (!state.items.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="oc-xmyc-match-empty">没有匹配的 SKU</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="oc-xmyc-match-empty">没有匹配的 SKU</td></tr>';
       return;
     }
     const html = state.items.map((it) => {
@@ -213,6 +238,7 @@
       return (
         '<tr data-sku="' + escapeHtml(it.sku) + '" class="' + roasClass + '">' +
           '<td class="w-checkbox"><input type="checkbox" data-xmyc-sku="' + escapeHtml(it.sku) + '" ' + checked + '></td>' +
+          renderImageCell(it) +
           '<td><div><strong>' + escapeHtml(it.sku || '') + '</strong></div>' +
             '<div class="muted" style="font-size:11px">' + escapeHtml(it.sku_code || '') + '</div></td>' +
           '<td>' + escapeHtml(it.goods_name || '') + '</td>' +
@@ -226,6 +252,7 @@
       );
     }).join('');
     tbody.innerHTML = html;
+    bindImageFallbacks(tbody);
     tbody.querySelectorAll('tr[data-sku]').forEach(bindRowEditing);
     tbody.querySelectorAll('input[type="checkbox"][data-xmyc-sku]').forEach((cb) => {
       cb.addEventListener('change', () => {

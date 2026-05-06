@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Iterator
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -22,6 +23,7 @@ PAGE_LIST_URL = "https://www.xmyc.com/storage/pageList.htm"
 DEFAULT_CDP_URL = "http://127.0.0.1:9224"
 DEFAULT_PAGE_SIZE = 200
 MAX_PAGES = 50
+XMYC_BASE_URL = "https://www.xmyc.com/"
 
 
 class XmycStorageError(RuntimeError):
@@ -58,6 +60,16 @@ def _to_decimal(text: str | None) -> Decimal | None:
         return None
 
 
+def _image_url_from_img(img) -> str:
+    if img is None:
+        return ""
+    for attr in ("data-original", "data-src", "data-lazy-src", "src"):
+        raw = _norm(img.get(attr))
+        if raw and raw not in ("#", "javascript:void(0);") and not raw.startswith("data:"):
+            return urljoin(XMYC_BASE_URL, raw)
+    return ""
+
+
 def parse_page_list_html(html: str) -> tuple[int | None, list[dict[str, Any]]]:
     soup = BeautifulSoup(html or "", "html.parser")
     total_input = soup.select_one("#totalSize")
@@ -71,6 +83,7 @@ def parse_page_list_html(html: str) -> tuple[int | None, list[dict[str, Any]]]:
         sku_code_el = tr.select_one(".skuCode")
         sku_el = tr.select_one(".sku")
         goods_name_el = tr.select_one(".goodsName")
+        image_el = tr.select_one(".imgOut img, .img_out img, img")
         sku = _norm(sku_el.get_text() if sku_el else "")
         sku_code = _norm(sku_code_el.get_text() if sku_code_el else "")
         if not sku or not sku_code:
@@ -85,6 +98,7 @@ def parse_page_list_html(html: str) -> tuple[int | None, list[dict[str, Any]]]:
             "sku_code": sku_code,
             "sku": sku,
             "goods_name": _norm(goods_name_el.get_text() if goods_name_el else ""),
+            "image_url": _image_url_from_img(image_el),
             "warehouse": td_text(2),
             "stock_available": _to_int(td_text(7)),
             "unit_price": _to_decimal(td_text(9)),
@@ -173,10 +187,11 @@ def upsert_skus(rows: list[dict[str, Any]]) -> dict[str, int]:
     now = datetime.now()
     sql = (
         "INSERT INTO xmyc_storage_skus "
-        "(xmyc_id, sku_code, sku, goods_name, unit_price, stock_available, warehouse, shelf_code, raw_json, synced_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "(xmyc_id, sku_code, sku, goods_name, image_url, unit_price, stock_available, warehouse, shelf_code, raw_json, synced_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON DUPLICATE KEY UPDATE "
         "  xmyc_id=VALUES(xmyc_id), sku_code=VALUES(sku_code), goods_name=VALUES(goods_name), "
+        "  image_url=VALUES(image_url), "
         "  unit_price=VALUES(unit_price), stock_available=VALUES(stock_available), "
         "  warehouse=VALUES(warehouse), shelf_code=VALUES(shelf_code), "
         "  raw_json=VALUES(raw_json), synced_at=VALUES(synced_at)"
@@ -190,6 +205,7 @@ def upsert_skus(rows: list[dict[str, Any]]) -> dict[str, int]:
                     row["sku_code"],
                     row["sku"],
                     row.get("goods_name") or None,
+                    row.get("image_url") or None,
                     row.get("unit_price"),
                     row.get("stock_available"),
                     row.get("warehouse") or None,
@@ -257,7 +273,7 @@ def list_skus(*, keyword: str | None = None, matched_filter: str = "all",
         where.append("s.product_id = %s")
         params.append(int(product_id))
     sql = (
-        "SELECT s.id, s.xmyc_id, s.sku_code, s.sku, s.goods_name, s.unit_price, s.stock_available, "
+        "SELECT s.id, s.xmyc_id, s.sku_code, s.sku, s.goods_name, s.image_url, s.unit_price, s.stock_available, "
         "       s.warehouse, s.shelf_code, s.product_id, s.match_type, s.matched_at, "
         "       s.standalone_price_sku, s.standalone_shipping_fee_sku, s.packet_cost_actual_sku, "
         "       s.sku_orders_count, "

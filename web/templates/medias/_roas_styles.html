@@ -429,7 +429,7 @@
 .oc-roas-inline-btn:disabled { opacity: 0.55; cursor: wait; }
 
 .oc-xmyc-match-modal {
-  width: min(960px, 90vw);
+  width: min(1080px, 92vw);
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -493,6 +493,26 @@
 .oc-xmyc-match-table tr:hover td { background: var(--oc-bg-subtle); }
 .oc-xmyc-match-table .ta-r { text-align: right; font-variant-numeric: tabular-nums; }
 .oc-xmyc-match-table .w-checkbox { width: 28px; }
+.oc-xmyc-match-table .image-cell { width: 56px; }
+.oc-xmyc-sku-image,
+.oc-xmyc-sku-image-ph {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--oc-radius-md);
+  border: 1px solid var(--oc-border);
+  background: var(--oc-bg-subtle);
+}
+.oc-xmyc-sku-image {
+  display: block;
+  object-fit: cover;
+}
+.oc-xmyc-sku-image-ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--oc-fg-subtle);
+  font-size: 12px;
+}
 .oc-xmyc-match-table .matched-other { color: var(--oc-danger); font-size: 12px; }
 .oc-xmyc-match-table .matched-self { color: var(--oc-accent); font-size: 12px; font-weight: 600; }
 .oc-xmyc-match-empty { text-align: center; color: var(--oc-fg-muted); padding: 40px 0 !important; }
