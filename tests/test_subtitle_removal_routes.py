@@ -93,6 +93,56 @@ def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_
     assert task["media_info"]["resolution"] == "720x1280"
     assert task["source_tos_key"] == ""
     assert task["source_object_info"]["storage_backend"] == "local"
+    assert task["subtitle_backend"] == "volc"
+
+
+def test_subtitle_removal_complete_upload_persists_local_vsr_backend(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+
+    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+            "subtitle_backend": "local_vsr",
+        },
+    )
+
+    assert response.status_code == 201
+    task = store.get(payload["task_id"])
+    assert task["subtitle_backend"] == "local_vsr"
+
+
+def test_subtitle_removal_complete_upload_rejects_invalid_backend(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+
+    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+            "subtitle_backend": "unknown",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "subtitle_backend must be volc or local_vsr"
 
 
 def test_subtitle_removal_complete_upload_rejects_unreserved_task_id(tmp_path, authed_client_no_db, monkeypatch):
@@ -530,6 +580,52 @@ def test_subtitle_removal_submit_supports_full_mode(authed_client_no_db, monkeyp
     saved = store.get("sr-submit-full")
     assert saved["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
     assert saved["position_payload"] == {"l": 0, "t": 0, "w": 720, "h": 1280}
+
+
+def test_subtitle_removal_submit_local_vsr_skips_public_source_stage_and_persists_options(
+    authed_client_no_db, monkeypatch
+):
+    store.create_subtitle_removal(
+        "sr-submit-local-vsr",
+        "uploads/source-local-vsr.mp4",
+        "output/sr-submit-local-vsr",
+        original_filename="source-local-vsr.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-local-vsr",
+        status="ready",
+        subtitle_backend="local_vsr",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal._ensure_public_source_url",
+        lambda task_id, task: (_ for _ in ()).throw(AssertionError("local VSR should read local source directly")),
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-local-vsr/submit",
+        json={"remove_mode": "full"},
+    )
+
+    assert response.status_code == 202
+    saved = store.get("sr-submit-local-vsr")
+    assert saved["subtitle_backend"] == "local_vsr"
+    assert saved["local_vsr_options"] == {
+        "detection": "ocr",
+        "ocr_engine": "easyocr",
+        "inpaint": "lama",
+        "vsr": "real-esrgan",
+        "roi": "bottom_20%",
+    }
 
 
 def test_subtitle_removal_submit_stages_public_source_on_demand(tmp_path, authed_client_no_db, monkeypatch):

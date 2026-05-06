@@ -103,6 +103,103 @@ def test_download_result_file_streams_content_to_disk(monkeypatch, tmp_path):
     assert (tmp_path / "result.cleaned.mp4").read_bytes() == b"hello world"
 
 
+def test_local_vsr_runtime_uploads_polls_downloads_and_finishes(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime_local_vsr import SubtitleRemovalLocalVsrRuntime
+
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"video")
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    task_state.create_subtitle_removal(
+        "sr-local-vsr",
+        str(source_video),
+        str(task_dir),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-local-vsr",
+        status="queued",
+        subtitle_backend="local_vsr",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+
+    captured = {}
+
+    class FakeResponse:
+        def __init__(self, payload=None, chunks=None):
+            self._payload = payload or {}
+            self._chunks = chunks or []
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+        def iter_content(self, chunk_size=8192):
+            captured["download_chunk_size"] = chunk_size
+            yield from self._chunks
+
+    def fake_post(url, files=None, data=None, timeout=None):
+        captured["post_url"] = url
+        captured["post_file_name"] = files["file"][0]
+        captured["post_data"] = data
+        captured["post_timeout"] = timeout
+        return FakeResponse({"task_id": "local-task-1", "state": "queued"})
+
+    def fake_get(url, timeout=None, stream=False):
+        if url.endswith("/status/local-task-1"):
+            captured["status_url"] = url
+            captured["status_timeout"] = timeout
+            return FakeResponse(
+                {
+                    "task_id": "local-task-1",
+                    "state": "done",
+                    "progress": 1.0,
+                    "error": None,
+                }
+            )
+        if url.endswith("/download/local-task-1"):
+            captured["download_url"] = url
+            captured["download_timeout"] = timeout
+            captured["download_stream"] = stream
+            return FakeResponse(chunks=[b"clean", b"-video"])
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr("config.SUBTITLE_REMOVAL_LOCAL_VSR_BASE_URL", "http://127.0.0.1:84", raising=False)
+    monkeypatch.setattr("appcore.subtitle_removal_runtime_local_vsr.requests.post", fake_post)
+    monkeypatch.setattr("appcore.subtitle_removal_runtime_local_vsr.requests.get", fake_get)
+
+    runner = SubtitleRemovalLocalVsrRuntime(bus=EventBus(), user_id=1)
+    runner.start("sr-local-vsr")
+
+    saved = task_state.get("sr-local-vsr")
+    result_path = task_dir / "result.cleaned.mp4"
+    assert saved["status"] == "done"
+    assert saved["provider_task_id"] == "local-task-1"
+    assert saved["provider_status"] == "done"
+    assert saved["provider_result_url"] == "http://127.0.0.1:84/download/local-task-1"
+    assert saved["result_video_path"] == str(result_path)
+    assert result_path.read_bytes() == b"clean-video"
+    assert captured["post_url"] == "http://127.0.0.1:84/remove-subtitle"
+    assert captured["post_file_name"] == "source.mp4"
+    assert captured["post_data"] == {
+        "detection": "ocr",
+        "ocr_engine": "easyocr",
+        "inpaint": "lama",
+        "vsr": "real-esrgan",
+        "roi": "bottom_20%",
+    }
+    assert captured["download_stream"] is True
+
+
 def test_runtime_stops_without_rewriting_deleted_task(monkeypatch, tmp_path):
     from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
 
@@ -163,6 +260,66 @@ def test_runner_start_is_per_task_idempotent(monkeypatch):
     assert runner.start("sr-gate", user_id=1) is True
     assert runner.start("sr-gate", user_id=1) is False
     assert started == ["thread"]
+
+
+def test_runner_start_uses_local_vsr_runtime_for_local_vsr_task(monkeypatch, tmp_path):
+    from appcore import runner_lifecycle, task_recovery
+    import web.services.subtitle_removal_runner as runner
+
+    task_id = "sr-local-vsr-runner"
+    task_recovery.unregister_active_task("subtitle_removal", task_id)
+    with runner._running_tasks_lock:
+        runner._running_tasks.discard(task_id)
+    task_state.create_subtitle_removal(
+        task_id,
+        str(tmp_path / "source.mp4"),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(task_id, subtitle_backend="local_vsr")
+    threads = []
+    called = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+            self.target()
+
+    class FakeLocalVsrRuntime:
+        def __init__(self, bus, user_id=None):
+            self.user_id = user_id
+
+        def start(self, task_id):
+            called.append((task_id, self.user_id))
+
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+    monkeypatch.setattr(runner, "SubtitleRemovalLocalVsrRuntime", FakeLocalVsrRuntime, raising=False)
+    monkeypatch.setattr(
+        runner.SubtitleRemovalRuntime,
+        "start",
+        lambda self, task_id: (_ for _ in ()).throw(AssertionError("volc runtime should not start")),
+    )
+    monkeypatch.setattr(
+        runner.SubtitleRemovalVodRuntime,
+        "start",
+        lambda self, task_id: (_ for _ in ()).throw(AssertionError("vod runtime should not start")),
+    )
+
+    try:
+        assert runner.start(task_id, user_id=1) is True
+    finally:
+        task_recovery.unregister_active_task("subtitle_removal", task_id)
+        with runner._running_tasks_lock:
+            runner._running_tasks.discard(task_id)
+
+    assert len(threads) == 1
+    assert called == [(task_id, 1)]
 
 
 def test_resume_inflight_tasks_requeues_polling_rows(monkeypatch):
@@ -683,3 +840,38 @@ def test_vod_scheduler_tick_persists_play_url_for_cold_db_task(monkeypatch):
     assert saved["status"] == "done"
     assert saved["provider_result_url"] == "https://vod.example/result.mp4"
     assert saved["steps"]["download_result"] == "done"
+
+
+def test_vod_scheduler_skips_local_vsr_tasks(monkeypatch):
+    from appcore import subtitle_removal_vod_scheduler as scheduler
+
+    state = {
+        "id": "sr-local-vsr-scheduler",
+        "type": "subtitle_removal",
+        "status": "running",
+        "subtitle_backend": "local_vsr",
+        "provider_task_id": "local-task-1",
+        "steps": {
+            "prepare": "done",
+            "submit": "done",
+            "poll": "running",
+            "download_result": "pending",
+            "upload_result": "pending",
+        },
+    }
+
+    monkeypatch.setattr("config.SUBTITLE_REMOVAL_PROVIDER", "vod")
+    monkeypatch.setattr(
+        scheduler,
+        "db_query",
+        lambda sql, args=(): [{"id": "sr-local-vsr-scheduler", "user_id": 1, "state_json": json.dumps(state)}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "get_execution",
+        lambda run_id: (_ for _ in ()).throw(AssertionError("local VSR tasks must not use VOD GetExecution")),
+    )
+
+    scheduler.tick_once()
+
+    assert "sr-local-vsr-scheduler" not in task_state._tasks

@@ -3,9 +3,11 @@ from __future__ import annotations
 import threading
 
 import config
+from appcore import task_state
 from appcore.events import EventBus
 from appcore.runner_lifecycle import start_tracked_thread
 from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+from appcore.subtitle_removal_runtime_local_vsr import SubtitleRemovalLocalVsrRuntime
 from appcore.subtitle_removal_runtime_vod import SubtitleRemovalVodRuntime
 from web.extensions import socketio
 
@@ -33,8 +35,12 @@ def start(task_id: str, user_id: int | None = None) -> bool:
 
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
+    task = task_state.get(task_id) or {}
+    subtitle_backend = str(task.get("subtitle_backend") or "volc").strip().lower()
     provider = (getattr(config, "SUBTITLE_REMOVAL_PROVIDER", "goodline") or "goodline").strip().lower()
-    if provider == "vod":
+    if subtitle_backend == "local_vsr":
+        runtime = SubtitleRemovalLocalVsrRuntime(bus=bus, user_id=user_id)
+    elif provider == "vod":
         runtime = SubtitleRemovalVodRuntime(bus=bus, user_id=user_id)
     else:
         runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)

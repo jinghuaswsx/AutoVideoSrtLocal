@@ -61,6 +61,7 @@ def test_provider_defaults_are_non_secret_constants_only(monkeypatch):
 
 def test_subtitle_removal_runtime_settings_defaults(monkeypatch):
     monkeypatch.delenv("SUBTITLE_REMOVAL_PROVIDER", raising=False)
+    monkeypatch.delenv("SUBTITLE_REMOVAL_LOCAL_VSR_BASE_URL", raising=False)
     monkeypatch.delenv("SUBTITLE_REMOVAL_POLL_FAST_SECONDS", raising=False)
     monkeypatch.delenv("SUBTITLE_REMOVAL_POLL_SLOW_SECONDS", raising=False)
     monkeypatch.delenv("SUBTITLE_REMOVAL_MAX_DURATION_SECONDS", raising=False)
@@ -69,6 +70,7 @@ def test_subtitle_removal_runtime_settings_defaults(monkeypatch):
     config = importlib.reload(config)
 
     assert config.SUBTITLE_REMOVAL_PROVIDER == "goodline"
+    assert config.SUBTITLE_REMOVAL_LOCAL_VSR_BASE_URL == "http://127.0.0.1:84"
     assert config.SUBTITLE_REMOVAL_POLL_FAST_SECONDS == 8
     assert config.SUBTITLE_REMOVAL_POLL_SLOW_SECONDS == 15
     assert config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS == 600
