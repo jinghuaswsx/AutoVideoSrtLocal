@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 
+def test_products_list_flask_response_returns_payload(authed_client_no_db):
+    from web.services.media_products_listing import products_list_flask_response
+
+    payload = {"items": [{"id": 1}], "total": 1, "page": 1, "page_size": 20}
+    with authed_client_no_db.application.app_context():
+        response = products_list_flask_response(payload)
+
+    assert response.get_json() == payload
+
+
 def test_build_products_list_response_enriches_rows_and_preserves_filters():
     from web.services.media_products_listing import build_products_list_response
 

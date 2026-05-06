@@ -71,13 +71,24 @@ def test_products_list_delegates_to_response_builder(authed_client_no_db, monkey
         captured["page"] = args.get("page")
         return {"items": [{"id": 123}], "total": 1, "page": 2, "page_size": 20}
 
+    def fake_flask_response(payload):
+        captured["response_payload"] = payload
+        return {"wrapped": payload}
+
     monkeypatch.setattr(r, "_build_products_list_response", fake_build)
+    monkeypatch.setattr(r, "_products_list_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.get("/medias/api/products?keyword=box&page=2")
 
     assert resp.status_code == 200
-    assert resp.get_json()["items"] == [{"id": 123}]
-    assert captured == {"keyword": "box", "page": "2"}
+    assert resp.get_json() == {
+        "wrapped": {"items": [{"id": 123}], "total": 1, "page": 2, "page_size": 20}
+    }
+    assert captured == {
+        "keyword": "box",
+        "page": "2",
+        "response_payload": {"items": [{"id": 123}], "total": 1, "page": 2, "page_size": 20},
+    }
 
 
 def test_refresh_product_shopify_sku_route_delegates_response_building(
@@ -1902,13 +1913,24 @@ def test_product_detail_delegates_to_response_builder(authed_client_no_db, monke
         captured["product"] = product
         return {"product": {"id": pid}, "covers": {}, "copywritings": [], "items": []}
 
+    def fake_flask_response(payload):
+        captured["response_payload"] = payload
+        return {"wrapped": payload}
+
     monkeypatch.setattr(r, "_build_product_detail_response", fake_build)
+    monkeypatch.setattr(r, "_product_detail_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.get("/medias/api/products/123")
 
     assert resp.status_code == 200
-    assert resp.get_json()["product"] == {"id": 123}
-    assert captured == {"pid": 123, "product": product}
+    assert resp.get_json() == {
+        "wrapped": {"product": {"id": 123}, "covers": {}, "copywritings": [], "items": []}
+    }
+    assert captured == {
+        "pid": 123,
+        "product": product,
+        "response_payload": {"product": {"id": 123}, "covers": {}, "copywritings": [], "items": []},
+    }
 
 
 def test_medias_index_q_sets_initial_search_query(authed_client_no_db, monkeypatch):

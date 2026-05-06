@@ -8,9 +8,11 @@ from . import bp
 from ._serializers import _serialize_item, _serialize_product, _serialize_product_skus
 from web.services.media_products_listing import (
     build_products_list_response as _build_products_list_response_impl,
+    products_list_flask_response as _products_list_flask_response_impl,
 )
 from web.services.media_product_detail import (
     build_product_detail_response as _build_product_detail_response_impl,
+    product_detail_flask_response as _product_detail_flask_response_impl,
 )
 from web.services.media_product_owner import (
     build_product_owner_update_response as _build_product_owner_update_response_impl,
@@ -67,6 +69,10 @@ def _build_products_list_response(args):
     )
 
 
+def _products_list_flask_response(payload: dict):
+    return _products_list_flask_response_impl(payload)
+
+
 def _build_product_detail_response(pid: int, product: dict):
     return _build_product_detail_response_impl(
         pid,
@@ -74,6 +80,10 @@ def _build_product_detail_response(pid: int, product: dict):
         serialize_product_fn=_serialize_product,
         serialize_item_fn=_serialize_item,
     )
+
+
+def _product_detail_flask_response(payload: dict):
+    return _product_detail_flask_response_impl(payload)
 
 
 def _build_product_owner_update_response(pid: int, body: dict, *, is_admin: bool):
@@ -233,7 +243,9 @@ def api_mk_copywriting():
 @login_required
 def api_list_products():
     routes = _routes_module()
-    return jsonify(routes._build_products_list_response(request.args))
+    return routes._products_list_flask_response(
+        routes._build_products_list_response(request.args)
+    )
 
 
 @bp.route("/api/products", methods=["POST"])
@@ -255,7 +267,9 @@ def api_get_product(pid: int):
     p = medias.get_product(pid)
     if not routes._can_access_product(p):
         abort(404)
-    return jsonify(routes._build_product_detail_response(pid, p))
+    return routes._product_detail_flask_response(
+        routes._build_product_detail_response(pid, p)
+    )
 
 
 @bp.route("/api/products/<int:pid>/parcel-cost-suggest", methods=["GET"])

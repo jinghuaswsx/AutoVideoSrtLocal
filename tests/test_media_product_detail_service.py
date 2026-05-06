@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 
+def test_product_detail_flask_response_returns_payload(authed_client_no_db):
+    from web.services.media_product_detail import product_detail_flask_response
+
+    payload = {"product": {"id": 1}, "covers": {}, "copywritings": [], "items": []}
+    with authed_client_no_db.application.app_context():
+        response = product_detail_flask_response(payload)
+
+    assert response.get_json() == payload
+
+
 def test_build_product_detail_response_enriches_product_items_and_raw_sources():
     from web.services.media_product_detail import build_product_detail_response
 

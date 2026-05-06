@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from flask import jsonify
+
 from appcore import medias, product_roas
 
 
@@ -12,6 +14,10 @@ DEFAULT_PAGE_SIZE = 20
 
 
 SerializeProductFn = Callable[..., dict]
+
+
+def products_list_flask_response(payload: dict):
+    return jsonify(payload)
 
 
 def _request_arg(args: Mapping[str, Any], name: str, default: str = "") -> Any:

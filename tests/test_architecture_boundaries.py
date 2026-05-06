@@ -502,7 +502,9 @@ def test_media_products_list_response_lives_outside_route_module():
     assert "list_product_skus_batch" not in route_source
     assert "list_xmyc_unit_prices" not in route_source
     assert "_serialize_product(" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_products_list_response" in route_source
+    assert "_products_list_flask_response" in route_source
     assert Path("web/services/media_products_listing.py").exists()
 
 
@@ -524,7 +526,9 @@ def test_media_product_detail_response_lives_outside_route_module():
     assert "list_copywritings" not in route_source
     assert "_serialize_product(" not in route_source
     assert "_serialize_item(" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_detail_response" in route_source
+    assert "_product_detail_flask_response" in route_source
     assert Path("web/services/media_product_detail.py").exists()
 
 

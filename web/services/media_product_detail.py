@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from flask import jsonify
+
 from appcore import medias, product_roas
 
 
 SerializeProductFn = Callable[..., dict]
 SerializeItemFn = Callable[[dict, dict[int, dict]], dict]
+
+
+def product_detail_flask_response(payload: dict):
+    return jsonify(payload)
 
 
 def _default_serialize_product(*args, **kwargs) -> dict:
