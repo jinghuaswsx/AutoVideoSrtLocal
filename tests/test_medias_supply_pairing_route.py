@@ -144,6 +144,7 @@ def test_supply_pairing_search_route_delegates_response_building(
     monkeypatch,
 ):
     captured = {}
+    converted = {}
 
     class Result:
         payload = {"ok": True, "items": [{"id": "1"}]}
@@ -154,10 +155,23 @@ def test_supply_pairing_search_route_delegates_response_building(
         captured["status"] = args.get("status")
         return Result()
 
+    def fake_flask_response(result):
+        converted["payload"] = result.payload
+        return {"converted": True, **result.payload}, result.status_code
+
     monkeypatch.setattr("web.routes.medias._build_supply_pairing_search_response", fake_build)
+    monkeypatch.setattr(
+        "web.routes.medias._supply_pairing_search_flask_response",
+        fake_flask_response,
+    )
 
     resp = authed_client_no_db.get("/medias/api/supply-pairing/search?q=sku&status=2")
 
     assert resp.status_code == 203
-    assert resp.get_json() == {"ok": True, "items": [{"id": "1"}]}
+    assert resp.get_json() == {
+        "converted": True,
+        "ok": True,
+        "items": [{"id": "1"}],
+    }
     assert captured == {"q": "sku", "status": "2"}
+    assert converted == {"payload": {"ok": True, "items": [{"id": "1"}]}}

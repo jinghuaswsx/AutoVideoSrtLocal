@@ -1453,7 +1453,9 @@ def test_supply_pairing_search_response_lives_outside_route_module():
     assert "missing_query" not in route_source
     assert "dxm_failed" not in route_source
     assert "extracted_1688_url" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_supply_pairing_search_response" in route_source
+    assert "_supply_pairing_search_flask_response" in route_source
     assert Path("web/services/media_supply_pairing.py").exists()
 
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
+from flask import jsonify
+
 from appcore import supply_pairing
 
 
@@ -48,3 +50,7 @@ def build_supply_pairing_search_response(
         enriched.append(copy)
     result["items"] = enriched
     return SupplyPairingSearchResponse({"ok": True, **result}, 200)
+
+
+def supply_pairing_search_flask_response(result: SupplyPairingSearchResponse):
+    return jsonify(result.payload), result.status_code

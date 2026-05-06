@@ -86,3 +86,20 @@ def test_build_supply_pairing_search_response_maps_dxm_errors():
 
     assert result.status_code == 502
     assert result.payload == {"error": "dxm_failed", "message": "dxm unreachable"}
+
+
+def test_supply_pairing_search_flask_response_returns_payload_and_status(
+    authed_client_no_db,
+):
+    from web.services.media_supply_pairing import (
+        SupplyPairingSearchResponse,
+        supply_pairing_search_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = supply_pairing_search_flask_response(
+            SupplyPairingSearchResponse({"ok": True, "items": []}, 203)
+        )
+
+    assert status_code == 203
+    assert response.get_json() == {"ok": True, "items": []}

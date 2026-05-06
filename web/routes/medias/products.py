@@ -36,6 +36,7 @@ from web.services.media_parcel_cost import (
 )
 from web.services.media_supply_pairing import (
     build_supply_pairing_search_response as _build_supply_pairing_search_response_impl,
+    supply_pairing_search_flask_response as _supply_pairing_search_flask_response_impl,
 )
 from web.services.media_xmyc_skus import (
     build_product_xmyc_skus_response as _build_product_xmyc_skus_response_impl,
@@ -118,6 +119,10 @@ def _build_supply_pairing_search_response(args):
         search_supply_pairing_fn=supply_pairing.search_supply_pairing,
         extract_1688_url_fn=supply_pairing.extract_1688_url,
     )
+
+
+def _supply_pairing_search_flask_response(result):
+    return _supply_pairing_search_flask_response_impl(result)
 
 
 def _build_xmyc_skus_list_response(args):
@@ -291,7 +296,7 @@ def api_update_xmyc_sku(sku_id: int):
 def api_supply_pairing_search():
     routes = _routes_module()
     result = routes._build_supply_pairing_search_response(request.args)
-    return jsonify(result.payload), result.status_code
+    return routes._supply_pairing_search_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>", methods=["PUT"])
