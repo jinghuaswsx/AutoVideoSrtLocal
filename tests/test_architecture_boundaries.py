@@ -1772,6 +1772,33 @@ def test_video_review_api_responses_live_outside_route_module():
     assert Path("web/services/video_review.py").exists()
 
 
+def test_voice_library_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/voice_library.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "api_filters",
+        "api_list",
+        "api_match_upload_url",
+        "api_match_start",
+        "api_match_status",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+
+    assert set(route_sources) == route_names
+    assert "jsonify(" not in route_source
+    assert "voice_library_flask_response" in route_source
+    assert "build_voice_library_language_required_response" in route_source
+    assert "build_voice_library_upload_url_response" in route_source
+    assert "build_voice_library_match_started_response" in route_source
+    assert "build_voice_library_match_status_response" in route_source
+    assert Path("web/services/voice_library.py").exists()
+
+
 def test_media_shopify_image_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/shopify_image.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -6,7 +6,7 @@ import os
 import threading
 import uuid as _uuid
 
-from flask import Blueprint, abort, jsonify, render_template, request, url_for
+from flask import Blueprint, abort, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import medias
@@ -14,6 +14,23 @@ from appcore import voice_match_tasks as vmt
 from appcore.voice_library_browse import list_filter_options, list_voices
 from config import UPLOAD_DIR
 from web.services.artifact_download import safe_task_file_response
+from web.services.voice_library import (
+    build_voice_library_filters_response,
+    build_voice_library_forbidden_upload_token_response,
+    build_voice_library_invalid_gender_response,
+    build_voice_library_language_not_enabled_response,
+    build_voice_library_language_required_response,
+    build_voice_library_list_response,
+    build_voice_library_match_started_response,
+    build_voice_library_match_status_response,
+    build_voice_library_not_found_response,
+    build_voice_library_service_error_response,
+    build_voice_library_upload_token_not_found_response,
+    build_voice_library_upload_url_response,
+    build_voice_library_uploaded_video_missing_response,
+    build_voice_library_unsupported_content_type_response,
+    voice_library_flask_response,
+)
 from web.upload_util import write_stream_to_path
 
 log = logging.getLogger(__name__)
@@ -52,7 +69,7 @@ def api_filters():
     }
     if language:
         payload.update(list_filter_options(language=language))
-    return jsonify(payload)
+    return voice_library_flask_response(build_voice_library_filters_response(payload))
 
 
 def _split_csv(raw):
@@ -66,7 +83,7 @@ def _split_csv(raw):
 def api_list():
     language = (request.args.get("language") or "").strip().lower()
     if not language:
-        return jsonify({"error": "language is required"}), 400
+        return voice_library_flask_response(build_voice_library_language_required_response())
     try:
         result = list_voices(
             language=language,
@@ -80,8 +97,8 @@ def api_list():
             page_size=int(request.args.get("page_size") or 48),
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify(result)
+        return voice_library_flask_response(build_voice_library_service_error_response(str(exc)))
+    return voice_library_flask_response(build_voice_library_list_response(result))
 
 
 _ALLOWED_VIDEO_CT = {"video/mp4", "video/quicktime", "video/x-matroska", "video/webm"}
@@ -132,18 +149,20 @@ def api_match_upload_url():
     filename = (body.get("filename") or "").strip()
     content_type = (body.get("content_type") or "").strip().lower()
     if content_type not in _ALLOWED_VIDEO_CT:
-        return jsonify({"error": "unsupported content_type"}), 400
+        return voice_library_flask_response(build_voice_library_unsupported_content_type_response())
     upload_token, reservation = _reserve_upload(
         user_id=current_user.id,
         filename=filename,
         content_type=content_type,
     )
-    return jsonify({
-        "upload_url": url_for("voice_library.api_match_local_upload", upload_token=upload_token),
-        "upload_token": upload_token,
-        "filename": reservation["filename"],
-        "expires_in": 600,
-    })
+    upload_url = url_for("voice_library.api_match_local_upload", upload_token=upload_token)
+    return voice_library_flask_response(
+        build_voice_library_upload_url_response(
+            upload_url=upload_url,
+            upload_token=upload_token,
+            filename=reservation["filename"],
+        )
+    )
 
 
 @bp.route("/api/match/upload/<upload_token>", methods=["PUT"])
@@ -171,22 +190,22 @@ def api_match_start():
 
     reservation = _consume_upload_token(upload_token)
     if not reservation:
-        return jsonify({"error": "upload token not found"}), 404
+        return voice_library_flask_response(build_voice_library_upload_token_not_found_response())
     if int(reservation.get("user_id") or 0) != int(current_user.id):
-        return jsonify({"error": "forbidden upload token"}), 403
+        return voice_library_flask_response(build_voice_library_forbidden_upload_token_response())
     if language not in medias.list_enabled_language_codes():
-        return jsonify({"error": "language not enabled"}), 400
+        return voice_library_flask_response(build_voice_library_language_not_enabled_response())
     if gender not in ("male", "female"):
-        return jsonify({"error": "gender must be male or female"}), 400
+        return voice_library_flask_response(build_voice_library_invalid_gender_response())
     if not reservation.get("uploaded") or not os.path.exists(reservation["video_path"]):
-        return jsonify({"error": "uploaded video file missing"}), 400
+        return voice_library_flask_response(build_voice_library_uploaded_video_missing_response())
 
     task_id = vmt.create_task(
         user_id=current_user.id,
         source_video_path=reservation["video_path"],
         language=language, gender=gender,
     )
-    return jsonify({"task_id": task_id}), 202
+    return voice_library_flask_response(build_voice_library_match_started_response(task_id))
 
 
 @bp.route("/api/match/status/<task_id>", methods=["GET"])
@@ -194,14 +213,14 @@ def api_match_start():
 def api_match_status(task_id: str):
     t = vmt.get_task(task_id, user_id=current_user.id)
     if not t:
-        return jsonify({"error": "not found"}), 404
+        return voice_library_flask_response(build_voice_library_not_found_response())
     payload = dict(t)
     result = dict(payload.get("result") or {})
     sample_audio_path = (result.pop("sample_audio_path", "") or "").strip()
     if sample_audio_path:
         result["sample_audio_url"] = url_for("voice_library.api_match_sample_audio", task_id=task_id)
     payload["result"] = result
-    return jsonify(payload)
+    return voice_library_flask_response(build_voice_library_match_status_response(payload))
 
 
 @bp.route("/api/match/artifact/<task_id>/sample-audio", methods=["GET"])
