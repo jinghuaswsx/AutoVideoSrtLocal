@@ -2725,6 +2725,23 @@ def test_tasks_events_query_lives_in_appcore_tasks():
     assert "def list_task_events" in appcore_source
 
 
+def test_tasks_dispatch_pool_query_lives_in_appcore_tasks():
+    module_source = Path("web/routes/tasks.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_dispatch_pool"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+    appcore_source = Path("appcore/tasks.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import query_all" not in route_source
+    assert "FROM media_products p" not in route_source
+    assert "tasks_svc.list_dispatch_pool_products" in route_source
+    assert "def list_dispatch_pool_products" in appcore_source
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

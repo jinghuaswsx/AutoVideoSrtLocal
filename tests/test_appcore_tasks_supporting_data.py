@@ -87,3 +87,38 @@ def test_list_task_events_serializes_actor_and_created_at(monkeypatch):
     assert "FROM task_events" in captured["sql"]
     assert "LEFT JOIN users" in captured["sql"]
     assert captured["args"] == (44,)
+
+
+def test_list_dispatch_pool_products_filters_active_parent_tasks(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "product_id": 9,
+                "product_name": "Product A",
+                "owner_id": 3,
+                "en_item_count": 2,
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_dispatch_pool_products() == [
+        {
+            "product_id": 9,
+            "product_name": "Product A",
+            "owner_id": 3,
+            "en_item_count": 2,
+        }
+    ]
+    assert "FROM media_products p" in captured["sql"]
+    assert "NOT EXISTS" in captured["sql"]
+    assert "parent_task_id IS NULL" in captured["sql"]
+    assert "status NOT IN (%s, %s)" in captured["sql"]
+    assert "LIMIT 100" in captured["sql"]
+    assert captured["args"] == (tasks.PARENT_ALL_DONE, tasks.PARENT_CANCELLED)

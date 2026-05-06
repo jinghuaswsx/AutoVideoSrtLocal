@@ -164,22 +164,7 @@ def api_list():
 @login_required
 @admin_required
 def api_dispatch_pool():
-    from appcore.db import query_all
-    sql = (
-        "SELECT p.id AS product_id, p.name AS product_name, p.user_id AS owner_id, "
-        "       (SELECT COUNT(*) FROM media_items mi WHERE mi.product_id=p.id "
-        "        AND mi.lang='en' AND mi.deleted_at IS NULL) AS en_item_count "
-        "FROM media_products p "
-        "WHERE p.deleted_at IS NULL AND p.archived=0 "
-        "AND NOT EXISTS ("
-        "  SELECT 1 FROM tasks t WHERE t.media_product_id=p.id "
-        "  AND t.parent_task_id IS NULL "
-        "  AND t.status NOT IN ('all_done', 'cancelled')"
-        ") "
-        "ORDER BY p.id DESC LIMIT 100"
-    )
-    rows = query_all(sql)
-    return _json_response({"items": [dict(r) for r in rows]})
+    return _json_response({"items": tasks_svc.list_dispatch_pool_products()})
 
 
 @bp.route("/api/parent", methods=["POST"])

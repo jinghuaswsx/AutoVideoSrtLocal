@@ -30,6 +30,33 @@ def test_api_dispatch_pool_admin_only(authed_client_no_db):
     assert rsp.status_code in (200, 500)
 
 
+def test_api_dispatch_pool_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = []
+    expected_items = [
+        {
+            "product_id": 9,
+            "product_name": "Product A",
+            "owner_id": 3,
+            "en_item_count": 2,
+        }
+    ]
+
+    def fake_list_dispatch_pool_products():
+        captured.append(True)
+        return expected_items
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_dispatch_pool_products",
+        fake_list_dispatch_pool_products,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/dispatch_pool")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"items": expected_items}
+    assert captured == [True]
+
+
 def test_api_dispatch_pool_forbidden_for_non_admin(authed_user_client_no_db):
     rsp = authed_user_client_no_db.get("/tasks/api/dispatch_pool")
     assert rsp.status_code == 403
