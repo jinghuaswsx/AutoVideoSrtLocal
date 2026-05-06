@@ -72,6 +72,33 @@ def test_video_creation_route_uses_project_state_helper_for_state_json_writes():
     assert "UPDATE projects SET state_json" not in source
 
 
+def test_video_creation_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "upload",
+        "delete_asset",
+        "add_asset",
+        "regenerate",
+        "delete",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+
+    route_source = "\n".join(route_sources)
+    assert "jsonify(" not in module_source
+    assert "video_creation_flask_response" in route_source
+    assert "build_video_creation_payload_response" in route_source
+    assert "build_video_creation_error_response" in route_source
+    assert "build_video_creation_ok_status_response" in route_source
+    assert Path("web/services/video_creation.py").exists()
+
+
 def test_translate_voice_routes_use_project_state_helper_for_state_json_writes():
     route_files = [
         Path("web/routes/multi_translate.py"),

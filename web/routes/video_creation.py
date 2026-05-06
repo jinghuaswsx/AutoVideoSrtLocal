@@ -6,7 +6,7 @@ import logging
 import os
 import uuid
 
-from flask import Blueprint, render_template, request, jsonify, send_file
+from flask import Blueprint, render_template, request, send_file
 from flask_login import login_required, current_user
 
 from appcore import ai_billing
@@ -26,6 +26,12 @@ from config import DOUBAO_LLM_BASE_URL_DEFAULT, UPLOAD_DIR, OUTPUT_DIR
 from pipeline.storage import upload_file as public_exchange_upload
 from web.background import start_background_task
 from web.extensions import socketio
+from web.services.video_creation import (
+    build_video_creation_error_response,
+    build_video_creation_ok_status_response,
+    build_video_creation_payload_response,
+    video_creation_flask_response,
+)
 from web.upload_util import save_uploaded_file_to_path
 
 log = logging.getLogger(__name__)
@@ -203,15 +209,15 @@ def upload():
     """接收 prompt + 可选视频/图片/音频，创建 Seedance 2.0 项目。"""
     prompt = (request.form.get("prompt") or "").strip()
     if not prompt:
-        return jsonify(error="请输入文案"), 400
+        return video_creation_flask_response(build_video_creation_error_response("请输入文案", 400))
     if len(prompt) > 2000:
-        return jsonify(error="文案不能超过 2000 字"), 400
+        return video_creation_flask_response(build_video_creation_error_response("文案不能超过 2000 字", 400))
 
     # 图片（0-9）
     images = request.files.getlist("images")
     images = [f for f in images if f and f.filename]
     if len(images) > 9:
-        return jsonify(error="图片最多 9 张"), 400
+        return video_creation_flask_response(build_video_creation_error_response("图片最多 9 张", 400))
 
     # 视频（0-1）
     video_file = request.files.get("video")
@@ -240,7 +246,7 @@ def upload():
     video_filename = None
     if video_file:
         if not validate_video_extension(video_file.filename):
-            return jsonify(error="不支持的视频格式"), 400
+            return video_creation_flask_response(build_video_creation_error_response("不支持的视频格式", 400))
         video_filename = video_file.filename
         video_path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{secure_filename_component(video_filename)}")
         save_uploaded_file_to_path(video_file, video_path)
@@ -249,7 +255,9 @@ def upload():
     image_paths = []
     for idx, img in enumerate(images):
         if not validate_image_extension(img.filename):
-            return jsonify(error=f"图片 {img.filename} 格式不支持"), 400
+            return video_creation_flask_response(
+                build_video_creation_error_response(f"图片 {img.filename} 格式不支持", 400)
+            )
         safe_name = secure_filename_component(img.filename)
         img_path = os.path.join(UPLOAD_DIR, f"{task_id}_img{idx}_{safe_name}")
         img.save(img_path)
@@ -313,7 +321,12 @@ def upload():
     try:
         seedance_cfg = _resolve_seedance_config()
     except RuntimeError as exc:
-        return jsonify(error=str(exc) or "请先在 API 配置中设置 Seedance API Key"), 400
+        return video_creation_flask_response(
+            build_video_creation_error_response(
+                str(exc) or "请先在 API 配置中设置 Seedance API Key",
+                400,
+            )
+        )
 
     if not _register_generation_task(
         task_id,
@@ -322,14 +335,16 @@ def upload():
         model_id=seedance_cfg["model_id"],
         entrypoint="video_creation.upload",
     ):
-        return jsonify({"status": "already_running"}), 409
+        return video_creation_flask_response(
+            build_video_creation_payload_response({"status": "already_running"}, 409)
+        )
     try:
         _start_generation_background(task_id, seedance_cfg, state)
     except BaseException:
         unregister_active_task("video_creation", task_id)
         raise
 
-    return jsonify({"id": task_id}), 201
+    return video_creation_flask_response(build_video_creation_payload_response({"id": task_id}, 201))
 
 
 def _register_generation_task(
@@ -589,40 +604,42 @@ def delete_asset(task_id: str, kind: str, idx: int):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify(error="not found"), 404
+        return video_creation_flask_response(build_video_creation_error_response("not found", 404))
     state = json.loads(row.get("state_json") or "{}")
     if state.get("steps", {}).get("generate") == "running":
-        return jsonify(error="生成进行中，无法删除素材"), 400
+        return video_creation_flask_response(
+            build_video_creation_error_response("生成进行中，无法删除素材", 400)
+        )
 
     if kind == "video":
         if idx != 0:
-            return jsonify(error="not found"), 404
+            return video_creation_flask_response(build_video_creation_error_response("not found", 404))
         path = state.get("video_path")
         if not path:
-            return jsonify(error="not found"), 404
+            return video_creation_flask_response(build_video_creation_error_response("not found", 404))
         _remove_video_creation_asset_file(path, state)
         state["video_path"] = None
     elif kind == "image":
         paths = state.get("image_paths", [])
         if idx >= len(paths):
-            return jsonify(error="not found"), 404
+            return video_creation_flask_response(build_video_creation_error_response("not found", 404))
         path = paths[idx]
         _remove_video_creation_asset_file(path, state)
         paths.pop(idx)
         state["image_paths"] = paths
     elif kind == "audio":
         if idx != 0:
-            return jsonify(error="not found"), 404
+            return video_creation_flask_response(build_video_creation_error_response("not found", 404))
         path = state.get("audio_path")
         if not path:
-            return jsonify(error="not found"), 404
+            return video_creation_flask_response(build_video_creation_error_response("not found", 404))
         _remove_video_creation_asset_file(path, state)
         state["audio_path"] = None
     else:
-        return jsonify(error="unknown kind"), 400
+        return video_creation_flask_response(build_video_creation_error_response("unknown kind", 400))
 
     save_project_state(task_id, state, execute_func=db_execute)
-    return jsonify({"status": "ok"})
+    return video_creation_flask_response(build_video_creation_ok_status_response())
 
 
 @bp.route("/api/video-creation/<task_id>/asset/<kind>", methods=["POST"])
@@ -635,22 +652,24 @@ def add_asset(task_id: str, kind: str):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify(error="not found"), 404
+        return video_creation_flask_response(build_video_creation_error_response("not found", 404))
     state = json.loads(row.get("state_json") or "{}")
     if state.get("steps", {}).get("generate") == "running":
-        return jsonify(error="生成进行中，无法添加素材"), 400
+        return video_creation_flask_response(
+            build_video_creation_error_response("生成进行中，无法添加素材", 400)
+        )
 
     upload_file = request.files.get("file")
     if not upload_file or not upload_file.filename:
-        return jsonify(error="请上传文件"), 400
+        return video_creation_flask_response(build_video_creation_error_response("请上传文件", 400))
 
     from web.upload_util import secure_filename_component, validate_video_extension, validate_image_extension
 
     if kind == "video":
         if state.get("video_path"):
-            return jsonify(error="已存在视频，请先删除"), 400
+            return video_creation_flask_response(build_video_creation_error_response("已存在视频，请先删除", 400))
         if not validate_video_extension(upload_file.filename):
-            return jsonify(error="不支持的视频格式"), 400
+            return video_creation_flask_response(build_video_creation_error_response("不支持的视频格式", 400))
         safe_name = secure_filename_component(upload_file.filename)
         path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{safe_name}")
         save_uploaded_file_to_path(upload_file, path)
@@ -658,9 +677,9 @@ def add_asset(task_id: str, kind: str):
     elif kind == "image":
         image_paths = state.get("image_paths", [])
         if len(image_paths) >= 9:
-            return jsonify(error="图片最多 9 张"), 400
+            return video_creation_flask_response(build_video_creation_error_response("图片最多 9 张", 400))
         if not validate_image_extension(upload_file.filename):
-            return jsonify(error="不支持的图片格式"), 400
+            return video_creation_flask_response(build_video_creation_error_response("不支持的图片格式", 400))
         safe_name = secure_filename_component(upload_file.filename)
         idx = len(image_paths)
         path = os.path.join(UPLOAD_DIR, f"{task_id}_img{idx}_{safe_name}")
@@ -670,16 +689,16 @@ def add_asset(task_id: str, kind: str):
         state["image_paths"] = image_paths
     elif kind == "audio":
         if state.get("audio_path"):
-            return jsonify(error="已存在音频，请先删除"), 400
+            return video_creation_flask_response(build_video_creation_error_response("已存在音频，请先删除", 400))
         safe_name = secure_filename_component(upload_file.filename)
         path = os.path.join(UPLOAD_DIR, f"{task_id}_audio_{safe_name}")
         upload_file.save(path)
         state["audio_path"] = path
     else:
-        return jsonify(error="unknown kind"), 400
+        return video_creation_flask_response(build_video_creation_error_response("unknown kind", 400))
 
     save_project_state(task_id, state, execute_func=db_execute)
-    return jsonify({"status": "ok"})
+    return video_creation_flask_response(build_video_creation_ok_status_response())
 
 
 @bp.route("/api/video-creation/<task_id>/regenerate", methods=["POST"])
@@ -692,15 +711,20 @@ def regenerate(task_id: str):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify(error="not found"), 404
+        return video_creation_flask_response(build_video_creation_error_response("not found", 404))
     state = json.loads(row.get("state_json") or "{}")
     if state.get("steps", {}).get("generate") == "running":
-        return jsonify(error="生成进行中"), 400
+        return video_creation_flask_response(build_video_creation_error_response("生成进行中", 400))
 
     try:
         seedance_cfg = _resolve_seedance_config()
     except RuntimeError as exc:
-        return jsonify(error=str(exc) or "请先在 API 配置中设置 Seedance API Key"), 400
+        return video_creation_flask_response(
+            build_video_creation_error_response(
+                str(exc) or "请先在 API 配置中设置 Seedance API Key",
+                400,
+            )
+        )
 
     if not _register_generation_task(
         task_id,
@@ -709,7 +733,9 @@ def regenerate(task_id: str):
         model_id=seedance_cfg["model_id"],
         entrypoint="video_creation.regenerate",
     ):
-        return jsonify({"status": "already_running"})
+        return video_creation_flask_response(
+            build_video_creation_payload_response({"status": "already_running"})
+        )
 
     # 重置状态
     state.setdefault("steps", {})["generate"] = "pending"
@@ -727,7 +753,7 @@ def regenerate(task_id: str):
     except BaseException:
         unregister_active_task("video_creation", task_id)
         raise
-    return jsonify({"status": "ok"})
+    return video_creation_flask_response(build_video_creation_ok_status_response())
 
 
 @bp.route("/api/video-creation/<task_id>", methods=["DELETE"])
@@ -739,14 +765,14 @@ def delete(task_id: str):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify(error="not found"), 404
+        return video_creation_flask_response(build_video_creation_error_response("not found", 404))
     from appcore import cleanup
     cleanup.delete_task_storage(row)
     db_execute(
         "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
     )
-    return jsonify({"status": "ok"})
+    return video_creation_flask_response(build_video_creation_ok_status_response())
 
 
 # ── 工具函数 ──
