@@ -2121,6 +2121,16 @@ def test_new_product_review_api_responses_live_outside_route_module():
     assert Path("web/services/new_product_review.py").exists()
 
 
+def test_new_product_review_translator_listing_lives_in_appcore_users():
+    source = Path("web/routes/new_product_review.py").read_text(encoding="utf-8")
+    users_source = Path("appcore/users.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in source
+    assert "SELECT id, username FROM users WHERE is_active=1" not in source
+    assert "def list_translators" in users_source
+    assert "permissions" in users_source
+
+
 def test_translate_lab_api_responses_live_outside_route_module():
     module_source = Path("web/routes/translate_lab.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

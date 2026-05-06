@@ -50,6 +50,24 @@ def list_users() -> list[dict]:
     )
 
 
+def list_translators() -> list[dict]:
+    rows = query(
+        "SELECT id, username, permissions FROM users WHERE is_active=1 ORDER BY username ASC",
+        (),
+    )
+    translators = []
+    for row in rows:
+        permissions = row.get("permissions") or {}
+        if isinstance(permissions, str):
+            try:
+                permissions = json.loads(permissions)
+            except (TypeError, ValueError):
+                permissions = {}
+        if permissions.get("can_translate"):
+            translators.append({"id": row["id"], "username": row["username"]})
+    return translators
+
+
 def set_active(user_id: int, active: bool) -> None:
     execute("UPDATE users SET is_active = %s WHERE id = %s", (int(active), user_id))
 

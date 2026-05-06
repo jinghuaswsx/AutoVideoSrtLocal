@@ -9,8 +9,7 @@ import logging
 from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, new_product_review
-from appcore.db import query as db_query
+from appcore import medias, new_product_review, users
 from web.services.new_product_review import (
     build_new_product_review_admin_required_response,
     build_new_product_review_error_response,
@@ -34,23 +33,8 @@ def _is_admin() -> bool:
 
 
 def _list_translators() -> list[dict]:
-    """列出所有有 can_translate 权限的活跃用户。"""
-    rows = db_query(
-        "SELECT id, username FROM users WHERE is_active=1 ORDER BY username ASC",
-        (),
-    )
-    result = []
-    import json as _json
-    for row in rows:
-        perms = row.get("permissions") or "{}"
-        if isinstance(perms, str):
-            try:
-                perms = _json.loads(perms)
-            except (TypeError, ValueError):
-                perms = {}
-        if perms.get("can_translate"):
-            result.append({"id": row["id"], "username": row["username"]})
-    return result
+    """List active users that can receive translation work."""
+    return users.list_translators()
 
 
 # ---- Task 18: GET / 渲染页面 ----
