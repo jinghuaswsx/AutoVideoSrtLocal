@@ -6,6 +6,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from flask import jsonify
+
 from appcore import bulk_translate_projection, bulk_translate_runtime, medias
 from web.routes.bulk_translate import start_bulk_scheduler_background
 
@@ -39,6 +41,12 @@ class ProductTranslationTasksResponse:
 class ProductTranslateResponse:
     payload: dict
     status_code: int
+
+
+def product_translate_flask_response(
+    response: ProductTranslateResponse | ProductTranslationTasksResponse,
+):
+    return jsonify(response.payload), response.status_code
 
 
 def _validation_error(message: str) -> ProductTranslateResult:

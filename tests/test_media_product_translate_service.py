@@ -1,6 +1,18 @@
 from __future__ import annotations
 
 
+def test_product_translate_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services import media_product_translate as svc
+
+    result = svc.ProductTranslateResponse({"task_id": "task-1"}, 202)
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = svc.product_translate_flask_response(result)
+
+    assert status_code == 202
+    assert response.get_json() == {"task_id": "task-1"}
+
+
 def test_build_product_translation_tasks_response_syncs_and_projects_tasks():
     from web.services import media_product_translate as svc
 

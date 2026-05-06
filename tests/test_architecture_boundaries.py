@@ -609,8 +609,10 @@ def test_media_product_translate_listing_gate_lives_outside_route_module():
     assert '{"task_id":' not in route_source
     assert "result.payload or" not in route_source
     assert "result.error" not in route_source
+    assert "jsonify(" not in route_source
     assert "start_product_translation" in route_source
     assert "_build_product_translate_response" in route_source
+    assert "_product_translate_flask_response" in route_source
     assert Path("web/services/media_product_translate.py").exists()
 
 
@@ -627,7 +629,9 @@ def test_media_product_translation_tasks_response_lives_outside_route_module():
     assert "list_product_task_ids" not in route_source
     assert "sync_task_with_children_once" not in route_source
     assert "list_product_tasks" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_translation_tasks_response" in route_source
+    assert "_product_translate_flask_response" in route_source
     assert Path("web/services/media_product_translate.py").exists()
 
 

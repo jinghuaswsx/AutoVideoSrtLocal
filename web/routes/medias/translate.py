@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from flask import abort, jsonify, request
+from flask import abort, request
 from flask_login import current_user, login_required
 
 from appcore import medias
@@ -32,6 +32,10 @@ def _build_product_translate_response(result):
     return media_product_translate.build_product_translate_response(result)
 
 
+def _product_translate_flask_response(response):
+    return media_product_translate.product_translate_flask_response(response)
+
+
 @bp.route("/api/products/<int:pid>/translate", methods=["POST"])
 @login_required
 def api_product_translate(pid: int):
@@ -49,8 +53,9 @@ def api_product_translate(pid: int):
         ip=request.remote_addr or "",
         user_agent=request.headers.get("User-Agent", "") or "",
     )
-    response = _routes_module()._build_product_translate_response(result)
-    return jsonify(response.payload), response.status_code
+    routes = _routes_module()
+    response = routes._build_product_translate_response(result)
+    return routes._product_translate_flask_response(response)
 
 
 @bp.route("/api/products/<int:pid>/translation-tasks", methods=["GET"])
@@ -61,9 +66,10 @@ def api_product_translation_tasks(pid: int):
         abort(404)
 
     scope_user_id = None if _routes_module()._is_admin() else current_user.id
-    result = _routes_module()._build_product_translation_tasks_response(
+    routes = _routes_module()
+    result = routes._build_product_translation_tasks_response(
         pid,
         scope_user_id=scope_user_id,
     )
 
-    return jsonify(result.payload), result.status_code
+    return routes._product_translate_flask_response(result)
