@@ -854,7 +854,7 @@ def _stub_probe_ok(monkeypatch):
 
 
 def _mk_id_for_test(product_id: int, offset: int = 0) -> int:
-    return 10_000_000 + (product_id % 1_000_000) + offset
+    return 10_000_000 + ((product_id % 890_000) * 100) + offset
 
 
 def _seed_en_push_texts(product_id: int):
