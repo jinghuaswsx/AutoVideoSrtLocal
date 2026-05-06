@@ -401,7 +401,7 @@ def user_id_int():
 
 @pytest.fixture
 def seeded_item(user_id_int):
-    from appcore import medias
+    from appcore import medias, shopify_image_tasks
     import uuid
     pid = medias.create_product(user_id_int, "路由测试产品")
     code = f"route-test-{uuid.uuid4().hex[:8]}"
@@ -412,6 +412,8 @@ def seeded_item(user_id_int):
         file_size=100, duration_seconds=5.0, lang="de",
     )
     medias.replace_copywritings(pid, [{"title": "T", "body": "B"}], lang="de")
+    _seed_en_push_texts(pid)
+    shopify_image_tasks.confirm_lang(pid, "de", user_id_int)
     yield pid, item_id
     medias.soft_delete_product(pid)
 
@@ -517,7 +519,7 @@ def test_payload_success(logged_in_client, seeded_item, monkeypatch):
     pid, item_id = seeded_item
     monkeypatch.setattr("appcore.pushes.probe_ad_url", lambda url: (True, None))
     monkeypatch.setattr(
-        "appcore.pushes.tos_clients.generate_signed_media_download_url",
+        "appcore.pushes.build_media_public_url",
         lambda key: f"https://signed/{key}",
     )
     resp = logged_in_client.get(f"/pushes/api/items/{item_id}/payload")
@@ -846,9 +848,13 @@ class _FakeResponse:
 def _stub_probe_ok(monkeypatch):
     monkeypatch.setattr("appcore.pushes.probe_ad_url", lambda url: (True, None))
     monkeypatch.setattr(
-        "appcore.pushes.tos_clients.generate_signed_media_download_url",
+        "appcore.pushes.build_media_public_url",
         lambda key: f"https://signed/{key}",
     )
+
+
+def _mk_id_for_test(product_id: int, offset: int = 0) -> int:
+    return 10_000_000 + (product_id % 1_000_000) + offset
 
 
 def _seed_en_push_texts(product_id: int):
@@ -1016,7 +1022,7 @@ def test_payload_endpoint_includes_mk_id_and_localized_texts(
     pid, item_id = seeded_item
     _stub_probe_ok(monkeypatch)
     _seed_en_push_texts(pid)
-    mk_id = pid + 900000
+    mk_id = _mk_id_for_test(pid, 90)
     from appcore import medias
     medias.update_product(pid, mk_id=mk_id)
     medias.replace_copywritings(
@@ -1038,7 +1044,7 @@ def test_push_localized_texts_rejects_missing_credentials(
     logged_in_client, seeded_item, monkeypatch,
 ):
     pid, item_id = seeded_item
-    mk_id = pid + 800000
+    mk_id = _mk_id_for_test(pid, 80)
     from appcore import medias
     medias.update_product(pid, mk_id=mk_id)
     monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
@@ -1052,7 +1058,7 @@ def test_push_localized_texts_rejects_missing_credentials(
 
 def test_push_localized_texts_success(logged_in_client, seeded_item, monkeypatch):
     pid, item_id = seeded_item
-    mk_id = pid + 700000
+    mk_id = _mk_id_for_test(pid, 70)
     from appcore import medias
     medias.update_product(pid, mk_id=mk_id)
     medias.replace_copywritings(
