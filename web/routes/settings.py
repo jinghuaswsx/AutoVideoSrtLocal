@@ -257,6 +257,7 @@ def index():
         allowed_tabs.add("asr_routing")
         allowed_tabs.add("infrastructure")
         allowed_tabs.add("audio_separation")
+        allowed_tabs.add("omni_preset")
     if active_tab not in allowed_tabs:
         active_tab = "providers"
 

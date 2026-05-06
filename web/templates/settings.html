@@ -122,6 +122,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
      class="settings-tab {{ 'active' if active_tab == 'infrastructure' }}">基础设施凭据</a>
   <a href="{{ url_for('settings.index', tab='audio_separation') }}"
      class="settings-tab {{ 'active' if active_tab == 'audio_separation' }}">人声分离</a>
+  <a href="{{ url_for('settings.index', tab='omni_preset') }}"
+     class="settings-tab {{ 'active' if active_tab == 'omni_preset' }}">Omni 实验预设</a>
   {% endif %}
 </div>
 
@@ -915,6 +917,469 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   </div>
   {% endif %}
 </form>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab · Omni 实验预设管理（Phase 5）
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'omni_preset' %}
+<style>
+  /* 局部 token，沿用 Ocean Blue Admin（hue 200-240） */
+  .omni-preset-section { margin: 18px 0 24px; }
+  .omni-preset-section h3 {
+    font-size: 14px; font-weight: 600;
+    color: oklch(22% 0.020 235); margin: 0 0 10px;
+  }
+  .omni-preset-row { display: flex; gap: 10px; align-items: center; }
+  .omni-preset-select {
+    min-width: 280px; padding: 6px 12px; height: 32px;
+    border: 1px solid oklch(84% 0.015 230);
+    border-radius: 6px; background: #fff; font-size: 13px; cursor: pointer;
+  }
+  .omni-preset-select:focus {
+    outline: none; border-color: oklch(56% 0.16 230);
+    box-shadow: 0 0 0 2px oklch(56% 0.16 230 / 0.22);
+  }
+  .omni-preset-table {
+    width: 100%; border-collapse: collapse; margin-top: 6px;
+    border: 1px solid oklch(91% 0.012 230); border-radius: 8px; overflow: hidden;
+  }
+  .omni-preset-table th, .omni-preset-table td {
+    padding: 8px 12px; text-align: left; font-size: 13px;
+    border-bottom: 1px solid oklch(91% 0.012 230);
+  }
+  .omni-preset-table th {
+    background: oklch(97% 0.006 230);
+    color: oklch(48% 0.018 230); font-weight: 600;
+  }
+  .omni-preset-table tbody tr:last-child td { border-bottom: 0; }
+  .omni-preset-table .preset-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .omni-preset-table .badge-default {
+    display: inline-block; padding: 2px 6px; margin-left: 6px;
+    background: oklch(94% 0.04 225); color: oklch(45% 0.16 230);
+    font-size: 11px; border-radius: 4px;
+  }
+  .omni-preset-empty {
+    color: oklch(62% 0.015 230); font-size: 13px;
+    text-align: center; padding: 24px;
+  }
+  /* 编辑弹窗 */
+  .omni-preset-modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
+    z-index: 1000; align-items: center; justify-content: center;
+  }
+  .omni-preset-modal-overlay.open { display: flex; }
+  .omni-preset-modal {
+    background: #fff; border-radius: 12px; padding: 20px 24px;
+    width: 560px; max-width: 92vw; max-height: 90vh; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .omni-preset-modal h3 {
+    margin: 0 0 12px; font-size: 16px; font-weight: 700;
+    color: oklch(22% 0.020 235);
+  }
+  .omni-preset-modal .modal-body { overflow-y: auto; flex: 1; padding-right: 4px; }
+  .omni-preset-modal .modal-actions {
+    display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
+    padding-top: 12px; border-top: 1px solid oklch(91% 0.012 230);
+  }
+  .omni-preset-modal label.field {
+    display: block; margin: 8px 0 4px;
+    font-size: 12px; color: oklch(48% 0.018 230); font-weight: 600;
+  }
+  .omni-preset-modal input.field-input {
+    width: 100%; padding: 6px 10px; height: 32px; box-sizing: border-box;
+    border: 1px solid oklch(84% 0.015 230);
+    border-radius: 6px; font-size: 13px;
+  }
+  .omni-preset-modal .cap-group { padding: 10px 0; border-top: 1px solid oklch(91% 0.012 230); }
+  .omni-preset-modal .cap-group:first-child { border-top: 0; padding-top: 4px; }
+  .omni-preset-modal .cap-group-label { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+  .omni-preset-modal .cap-option { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; cursor: pointer; }
+  .omni-preset-modal .cap-option input { margin-top: 3px; accent-color: oklch(56% 0.16 230); cursor: pointer; }
+  .omni-preset-modal .cap-option-name { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: oklch(45% 0.16 230); }
+  .omni-preset-modal .cap-option-desc { font-size: 12px; color: oklch(48% 0.018 230); line-height: 1.4; margin-top: 1px; }
+  .omni-preset-modal .cap-option.is-disabled { opacity: 0.5; cursor: not-allowed; }
+  .omni-preset-modal .cap-option.is-disabled input { cursor: not-allowed; }
+</style>
+
+<div class="settings-card" id="omniPresetTabRoot">
+  <p style="color:var(--settings-fg-muted);font-size:13px;margin:0 0 16px;">
+    Omni 实验版（<a href="/omni-translate" style="color:oklch(56% 0.16 230);">/omni-translate</a>）的能力点 preset 管理。
+    系统级 preset 全员只读可用，普通用户在新建任务时可基于系统级 preset 微调并另存为自己的用户级 preset。
+  </p>
+
+  <section class="omni-preset-section">
+    <h3>全站默认 preset</h3>
+    <div class="omni-preset-row">
+      <select id="omniGlobalDefault" class="omni-preset-select" aria-label="全站默认">
+        <option value="">加载中...</option>
+      </select>
+      <span style="color:oklch(62% 0.015 230);font-size:12px;">
+        修改后立即生效；所有用户新建任务时初始勾选都跟随该 preset。
+      </span>
+    </div>
+  </section>
+
+  <section class="omni-preset-section">
+    <h3>系统级 preset
+      <button type="button" id="omniCreateSystemBtn" class="btn btn-primary btn-sm"
+              style="float:right;font-size:12px;padding:4px 10px;">+ 新建系统级 preset</button>
+    </h3>
+    <table class="omni-preset-table" id="omniSystemPresetTable">
+      <thead><tr><th style="width:25%;">名称</th><th>说明</th><th style="width:240px;">操作</th></tr></thead>
+      <tbody><tr><td colspan="3" class="omni-preset-empty">加载中...</td></tr></tbody>
+    </table>
+  </section>
+
+  <section class="omni-preset-section">
+    <h3>我的用户级 preset
+      <button type="button" id="omniCreateUserBtn" class="btn btn-ghost btn-sm"
+              style="float:right;font-size:12px;padding:4px 10px;">+ 新建用户级 preset</button>
+    </h3>
+    <table class="omni-preset-table" id="omniUserPresetTable">
+      <thead><tr><th style="width:25%;">名称</th><th>说明</th><th style="width:160px;">操作</th></tr></thead>
+      <tbody><tr><td colspan="3" class="omni-preset-empty">加载中...</td></tr></tbody>
+    </table>
+  </section>
+</div>
+
+<!-- 编辑/新建弹窗 -->
+<div class="omni-preset-modal-overlay" id="omniPresetEditOverlay">
+  <div class="omni-preset-modal">
+    <h3 id="omniPresetEditTitle">编辑 preset</h3>
+    <div class="modal-body">
+      <label class="field">名称（必填，最多 64 字符）</label>
+      <input type="text" class="field-input" id="omniPresetEditName" maxlength="64" autocomplete="off">
+
+      <label class="field" style="margin-top:12px;">说明（可空，最多 255 字符）</label>
+      <input type="text" class="field-input" id="omniPresetEditDesc" maxlength="255" autocomplete="off">
+
+      <label class="field" style="margin-top:16px;">能力点配置</label>
+      <div id="omniPresetEditCapForm">加载中...</div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="omniPresetEditCancelBtn">取消</button>
+      <button type="button" class="btn btn-primary btn-sm" id="omniPresetEditSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function initOmniPresetTab() {
+  // ───────────── 状态 ─────────────
+  var state = {
+    capGroups: null,
+    presets: [],
+    defaultId: null,
+    editing: { id: null, scope: 'system', cfg: null },
+  };
+
+  function csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    return m ? m.content : '';
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+
+  // ───────────── 载入 + 渲染 ─────────────
+  async function reload() {
+    try {
+      var [listRes, defRes] = await Promise.all([
+        fetch('/api/omni-presets'),
+        fetch('/api/omni-presets/default'),
+      ]);
+      if (!listRes.ok || !defRes.ok) throw new Error('加载失败');
+      var listData = await listRes.json();
+      state.capGroups = listData.capability_groups;
+      state.presets = listData.presets;
+      state.defaultId = listData.default_preset_id;
+      renderGlobalDefault();
+      renderSystemTable();
+      renderUserTable();
+    } catch (err) {
+      alert('preset 列表加载失败：' + (err.message || err));
+    }
+  }
+
+  function renderGlobalDefault() {
+    var sel = document.getElementById('omniGlobalDefault');
+    var systemPresets = state.presets.filter(function(p) { return p.scope === 'system'; });
+    if (!systemPresets.length) {
+      sel.innerHTML = '<option value="">（暂无系统级 preset）</option>';
+      return;
+    }
+    sel.innerHTML = systemPresets.map(function(p) {
+      var marker = p.id === state.defaultId ? '（当前默认）' : '';
+      return '<option value="' + p.id + '"' + (p.id === state.defaultId ? ' selected' : '')
+           + '>' + escapeHtml(p.name) + marker + '</option>';
+    }).join('');
+  }
+
+  function renderSystemTable() {
+    var tbody = document.querySelector('#omniSystemPresetTable tbody');
+    var rows = state.presets.filter(function(p) { return p.scope === 'system'; });
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="omni-preset-empty">暂无系统级 preset</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function(p) {
+      var defBadge = p.id === state.defaultId ? '<span class="badge-default">⭐ 默认</span>' : '';
+      return '<tr data-preset-id="' + p.id + '">'
+           + '<td><strong>' + escapeHtml(p.name) + '</strong>' + defBadge + '</td>'
+           + '<td>' + escapeHtml(p.description || '') + '</td>'
+           + '<td><div class="preset-actions">'
+           + '<button class="btn btn-ghost btn-sm preset-edit-btn" type="button">编辑</button>'
+           + (p.id === state.defaultId
+               ? '<button class="btn btn-ghost btn-sm" type="button" disabled>删除（默认）</button>'
+               : '<button class="btn btn-ghost btn-sm preset-delete-btn" type="button" style="color:oklch(58% 0.18 25);">删除</button>')
+           + '</div></td>'
+           + '</tr>';
+    }).join('');
+  }
+
+  function renderUserTable() {
+    var tbody = document.querySelector('#omniUserPresetTable tbody');
+    var rows = state.presets.filter(function(p) { return p.scope === 'user'; });
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="omni-preset-empty">暂无用户级 preset（admin 在新建任务时也可另存）</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function(p) {
+      return '<tr data-preset-id="' + p.id + '">'
+           + '<td><strong>' + escapeHtml(p.name) + '</strong></td>'
+           + '<td>' + escapeHtml(p.description || '') + '</td>'
+           + '<td><div class="preset-actions">'
+           + '<button class="btn btn-ghost btn-sm preset-edit-btn" type="button">编辑</button>'
+           + '<button class="btn btn-ghost btn-sm preset-delete-btn" type="button" style="color:oklch(58% 0.18 25);">删除</button>'
+           + '</div></td>'
+           + '</tr>';
+    }).join('');
+  }
+
+  // ───────────── 编辑 / 新建 弹窗 ─────────────
+  function openEditModal(preset, scopeForCreate) {
+    var ov = document.getElementById('omniPresetEditOverlay');
+    var titleEl = document.getElementById('omniPresetEditTitle');
+    var nameInp = document.getElementById('omniPresetEditName');
+    var descInp = document.getElementById('omniPresetEditDesc');
+    var capBox = document.getElementById('omniPresetEditCapForm');
+    if (preset) {
+      state.editing = { id: preset.id, scope: preset.scope, cfg: JSON.parse(JSON.stringify(preset.plugin_config || {})) };
+      titleEl.textContent = (preset.scope === 'system' ? '编辑系统级 preset：' : '编辑我的 preset：') + preset.name;
+      nameInp.value = preset.name;
+      descInp.value = preset.description || '';
+    } else {
+      // new
+      var defaultCfg = (state.presets.find(function(p) { return p.id === state.defaultId; }) || {}).plugin_config
+                    || (state.presets.find(function(p) { return p.scope === 'system'; }) || {}).plugin_config
+                    || {};
+      state.editing = { id: null, scope: scopeForCreate, cfg: JSON.parse(JSON.stringify(defaultCfg)) };
+      titleEl.textContent = scopeForCreate === 'system' ? '新建系统级 preset' : '新建用户级 preset';
+      nameInp.value = '';
+      descInp.value = '';
+    }
+    renderEditCapForm(capBox);
+    ov.classList.add('open');
+    nameInp.focus();
+  }
+
+  function closeEditModal() {
+    document.getElementById('omniPresetEditOverlay').classList.remove('open');
+    state.editing = { id: null, scope: 'system', cfg: null };
+  }
+
+  function renderEditCapForm(box) {
+    if (!state.capGroups) { box.innerHTML = '能力点元数据未加载'; return; }
+    var cfg = state.editing.cfg;
+    var html = '';
+    state.capGroups.forEach(function(grp) {
+      html += '<div class="cap-group">';
+      html += '<div class="cap-group-label">' + escapeHtml(grp.label) + '</div>';
+      grp.options.forEach(function(opt, optIdx) {
+        var inputId = 'edit-cap-' + grp.id + '-' + optIdx;
+        var checked;
+        if (grp.kind === 'radio') checked = cfg[grp.id] === opt.value;
+        else checked = !!cfg[grp.id];
+        var nameAttr = grp.kind === 'radio' ? ('edit_cap_radio_' + grp.id) : ('edit_cap_check_' + grp.id);
+        html += '<label class="cap-option" for="' + inputId + '">';
+        html += '<input type="' + grp.kind + '" id="' + inputId + '" name="' + nameAttr + '"'
+              + ' data-group-id="' + grp.id + '" data-option-value="'
+              + escapeHtml(JSON.stringify(opt.value)) + '"'
+              + (checked ? ' checked' : '') + '>';
+        html += '<div><span class="cap-option-name">' + escapeHtml(opt.label) + '</span>';
+        html += '<div class="cap-option-desc">' + escapeHtml(opt.desc || '') + '</div></div>';
+        html += '</label>';
+      });
+      html += '</div>';
+    });
+    box.innerHTML = html;
+    box.querySelectorAll('input[data-group-id]').forEach(function(el) {
+      el.addEventListener('change', onEditCapChange);
+    });
+    applyEditDependencyLocks();
+  }
+
+  function onEditCapChange(ev) {
+    var inp = ev.target;
+    var groupId = inp.dataset.groupId;
+    var v;
+    try { v = JSON.parse(inp.dataset.optionValue); } catch { v = inp.dataset.optionValue; }
+    var cfg = state.editing.cfg;
+    if (inp.type === 'radio') { if (inp.checked) cfg[groupId] = v; }
+    else { cfg[groupId] = !!inp.checked; }
+    applyEditDependencyLocks();
+  }
+
+  function applyEditDependencyLocks() {
+    var cfg = state.editing.cfg;
+    var box = document.getElementById('omniPresetEditCapForm');
+    if (!cfg || !box) return;
+    function find(groupId, val) {
+      var inps = box.querySelectorAll('input[data-group-id="' + groupId + '"]');
+      for (var i = 0; i < inps.length; i++) {
+        var x; try { x = JSON.parse(inps[i].dataset.optionValue); } catch { x = inps[i].dataset.optionValue; }
+        if (x === val) return inps[i];
+      }
+      return null;
+    }
+    function lock(groupId, val, on) {
+      var i = find(groupId, val); if (!i) return;
+      i.disabled = on;
+      var lbl = i.closest('.cap-option'); if (lbl) lbl.classList.toggle('is-disabled', on);
+    }
+    box.querySelectorAll('input[data-group-id]').forEach(function(el) {
+      el.disabled = false;
+      var lbl = el.closest('.cap-option'); if (lbl) lbl.classList.remove('is-disabled');
+    });
+    if (cfg.translate_algo === 'shot_char_limit') {
+      cfg.shot_decompose = true;
+      var sd = find('shot_decompose', true); if (sd) sd.checked = true;
+      lock('shot_decompose', true, true);
+    }
+    if (cfg.translate_algo === 'av_sentence') {
+      cfg.source_anchored = false;
+      var sa = find('source_anchored', true); if (sa) sa.checked = false;
+      lock('source_anchored', true, true);
+    }
+    if (cfg.subtitle === 'sentence_units') {
+      cfg.tts_strategy = 'sentence_reconcile';
+      var sr = find('tts_strategy', 'sentence_reconcile'); if (sr) sr.checked = true;
+      var fr = find('tts_strategy', 'five_round_rewrite'); if (fr) fr.checked = false;
+      lock('tts_strategy', 'five_round_rewrite', true);
+      lock('tts_strategy', 'sentence_reconcile', true);
+    }
+    if (cfg.loudness_match) {
+      cfg.voice_separation = true;
+      var vs = find('voice_separation', true); if (vs) vs.checked = true;
+      lock('voice_separation', true, true);
+    }
+    if (!cfg.voice_separation) {
+      cfg.loudness_match = false;
+      var lm = find('loudness_match', true); if (lm) lm.checked = false;
+      lock('loudness_match', true, true);
+    }
+  }
+
+  async function saveEdit() {
+    var name = document.getElementById('omniPresetEditName').value.trim();
+    if (!name) { alert('请填写名称'); return; }
+    var desc = document.getElementById('omniPresetEditDesc').value.trim();
+    var body = { name: name, description: desc, plugin_config: state.editing.cfg };
+    var url, method;
+    if (state.editing.id) {
+      url = '/api/omni-presets/' + state.editing.id;
+      method = 'PUT';
+    } else {
+      body.scope = state.editing.scope;
+      url = '/api/omni-presets';
+      method = 'POST';
+    }
+    try {
+      var res = await fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+        body: JSON.stringify(body),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || '保存失败');
+      closeEditModal();
+      await reload();
+    } catch (err) {
+      alert(err.message || err);
+    }
+  }
+
+  async function deletePreset(presetId) {
+    var preset = state.presets.find(function(p) { return p.id === presetId; });
+    if (!preset) return;
+    if (!confirm('确认删除 preset「' + preset.name + '」？')) return;
+    try {
+      var res = await fetch('/api/omni-presets/' + presetId, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': csrf() },
+      });
+      if (!res.ok) {
+        var d = await res.json(); throw new Error(d.error || '删除失败');
+      }
+      await reload();
+    } catch (err) {
+      alert(err.message || err);
+    }
+  }
+
+  // ───────────── 事件绑定 ─────────────
+  document.getElementById('omniGlobalDefault').addEventListener('change', async function(ev) {
+    var pid = parseInt(ev.target.value, 10);
+    if (!pid) return;
+    try {
+      var res = await fetch('/api/omni-presets/' + pid + '/set-as-default', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrf() },
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || '设置失败');
+      state.defaultId = pid;
+      renderGlobalDefault();
+      renderSystemTable();
+    } catch (err) {
+      alert(err.message || err);
+      reload();
+    }
+  });
+
+  document.getElementById('omniCreateSystemBtn').addEventListener('click', function() {
+    openEditModal(null, 'system');
+  });
+  document.getElementById('omniCreateUserBtn').addEventListener('click', function() {
+    openEditModal(null, 'user');
+  });
+  document.getElementById('omniPresetEditCancelBtn').addEventListener('click', closeEditModal);
+  document.getElementById('omniPresetEditSaveBtn').addEventListener('click', saveEdit);
+  document.getElementById('omniPresetEditOverlay').addEventListener('click', function(ev) {
+    if (ev.target.id === 'omniPresetEditOverlay') closeEditModal();
+  });
+
+  document.getElementById('omniPresetTabRoot').addEventListener('click', function(ev) {
+    var btn = ev.target;
+    var tr = btn.closest && btn.closest('tr[data-preset-id]');
+    if (!tr) return;
+    var pid = parseInt(tr.dataset.presetId, 10);
+    if (btn.classList.contains('preset-edit-btn')) {
+      var preset = state.presets.find(function(p) { return p.id === pid; });
+      if (preset) openEditModal(preset, preset.scope);
+    } else if (btn.classList.contains('preset-delete-btn')) {
+      deletePreset(pid);
+    }
+  });
+
+  reload();
+})();
+</script>
 {% endif %}
 
 {% endblock %}
