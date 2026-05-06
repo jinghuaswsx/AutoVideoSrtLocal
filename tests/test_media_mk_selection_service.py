@@ -63,6 +63,18 @@ def test_build_mk_video_cache_object_key_hashes_path_and_keeps_safe_video_extens
     assert build_mk_video_cache_object_key("uploads2/demo.exe", cache_prefix="mk/videos").endswith(".mp4")
 
 
+def test_guess_mk_video_type_accepts_only_video_mimetypes():
+    from web.services.media_mk_selection import guess_mk_video_type
+
+    assert guess_mk_video_type("uploads2/demo.mp4") == "video/mp4"
+    assert guess_mk_video_type("uploads2/demo.unknown") == ""
+    assert guess_mk_video_type("uploads2/demo.jpg") is None
+    assert guess_mk_video_type(
+        "uploads2/demo.custom",
+        guess_type_fn=lambda path: ("video/webm; charset=utf-8", None),
+    ) == "video/webm"
+
+
 def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_columns():
     from web.services.media_mk_selection import build_mk_selection_response
 

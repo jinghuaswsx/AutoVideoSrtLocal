@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import mimetypes
 import os
 from pathlib import Path
 
@@ -28,6 +27,7 @@ from web.services.media_mk_selection import (
     build_mk_media_proxy_response as _build_mk_media_proxy_response_impl,
     build_mk_selection_response as _build_mk_selection_response_impl,
     build_mk_video_cache_object_key as _build_mk_video_cache_object_key_impl,
+    guess_mk_video_type as _guess_mk_video_type_impl,
     normalize_mk_media_path as _normalize_mk_media_path_impl,
 )
 
@@ -138,8 +138,8 @@ def api_mk_video_proxy():
     media_path = _normalize_mk_media_path(request.args.get("path") or "")
     if not media_path:
         abort(404)
-    guessed_type = (mimetypes.guess_type(media_path)[0] or "").split(";")[0].strip()
-    if guessed_type and not guessed_type.startswith("video/"):
+    guessed_type = _guess_mk_video_type_impl(media_path)
+    if guessed_type is None:
         abort(404)
 
     result = _routes()._build_mk_video_proxy_response(media_path, guessed_type)

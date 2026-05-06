@@ -91,6 +91,17 @@ def build_mk_video_cache_object_key(media_path: str, *, cache_prefix: str) -> st
     return f"{cache_prefix}/{digest}{ext}"
 
 
+def guess_mk_video_type(
+    media_path: str,
+    *,
+    guess_type_fn: Callable[[str], tuple[str | None, str | None]] = mimetypes.guess_type,
+) -> str | None:
+    guessed_type = (guess_type_fn(media_path)[0] or "").split(";")[0].strip()
+    if guessed_type and not guessed_type.startswith("video/"):
+        return None
+    return guessed_type
+
+
 def _parse_bounded_int(
     args: Mapping[str, str],
     name: str,

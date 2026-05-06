@@ -2313,6 +2313,18 @@ def test_mk_video_cache_object_key_lives_outside_route_module():
     ).read_text(encoding="utf-8")
 
 
+def test_mk_video_type_guess_lives_outside_route_module():
+    module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+
+    assert "import mimetypes" not in module_source
+    assert "mimetypes.guess_type" not in module_source
+    assert "not guessed_type.startswith(\"video/\")" not in module_source
+    assert "_guess_mk_video_type_impl" in module_source
+    assert "guess_mk_video_type" in Path("web/services/media_mk_selection.py").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_mk_video_proxy_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
