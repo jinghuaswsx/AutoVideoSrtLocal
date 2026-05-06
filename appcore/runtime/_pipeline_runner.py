@@ -2375,6 +2375,12 @@ class PipelineRunner:
         })
 
     def _step_tts(self, task_id: str, task_dir: str) -> None:
+        """TTS 步骤 dispatcher（PR6）。
+
+        老 ``pipeline_version="av"`` 任务可能被实例化成 base ``PipelineRunner``
+        而不是 ``SentenceTranslateRunner`` —— 这里短路到旧 ``run_av_localize``
+        路径以保兼容。其余走 ``profile.tts``，profile 内部走 strategy。
+        """
         import appcore.task_state as task_state
 
         task = task_state.get(task_id)
@@ -2383,6 +2389,20 @@ class PipelineRunner:
                 return
             run_av_localize(task_id, runner=self, variant="av")
             return
+        self.profile.tts(self, task_id, task_dir)
+
+    def _run_default_tts_loop(self, task_id: str, task_dir: str) -> None:
+        """5 轮 rewrite + 变速短路 + bestpick 兜底——多语种/全能 TTS 主体。
+
+        ``FiveRoundRewriteLoopStrategy.run`` dispatch 到这里。包括：
+        - passthrough 短路（音乐视频直通）
+        - localization adapter / voice 解析
+        - per-variant 调用 ``_run_tts_duration_loop``（5 轮内循环）
+        - 截断 / timeline_manifest / artifact / billing 后处理
+        """
+        import appcore.task_state as task_state
+
+        task = task_state.get(task_id)
         if self._skip_original_video_passthrough_step(
             task_id,
             "tts",
@@ -2656,181 +2676,6 @@ class PipelineRunner:
                         "chars": tts_char_count,
                     },
                 )
-        return
-
-        loop_result = self._run_tts_duration_loop(
-            task_id=task_id,
-            task_dir=task_dir,
-            loc_mod=loc_mod,
-            provider=provider,
-            video_duration=video_duration,
-            voice=voice,
-            initial_localized_translation=initial_localized,
-            source_full_text=source_full_text,
-            source_language=source_language,
-            elevenlabs_api_key=elevenlabs_api_key,
-            script_segments=task.get("script_segments", []),
-            variant=variant,
-        )
-
-        # Final selection:
-        # - if audio > video, truncate the final audio to video duration;
-        # - if audio <= video, keep it as-is.
-        _engine_final = self.profile.get_tts_engine()
-        final_round = loop_result["final_round"]
-        pre_trim_duration = _engine_final.get_audio_duration(loop_result["tts_audio_path"])
-        import shutil
-        final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
-        if pre_trim_duration > video_duration:
-            trim_record = {
-                "pre_trim_duration": pre_trim_duration,
-                "video_duration": video_duration,
-                "message": (
-                    f"音频 {pre_trim_duration:.1f}s 超过视频 {video_duration:.1f}s，"
-                    "正在直接截断到视频时长..."
-                ),
-            }
-            self._emit_duration_round(task_id, final_round, "truncate_audio", trim_record)
-            trim_result = self._truncate_audio_to_duration(
-                input_audio_path=loop_result["tts_audio_path"],
-                output_audio_path=final_audio_path,
-                duration=video_duration,
-                tts_segments=loop_result["tts_segments"],
-                tts_script=loop_result["tts_script"],
-                localized_translation=loop_result["localized_translation"],
-            )
-            if not trim_result.get("skipped"):
-                loop_result["tts_audio_path"] = trim_result["audio_path"]
-                loop_result["tts_script"] = trim_result["tts_script"]
-                loop_result["localized_translation"] = trim_result["localized_translation"]
-                loop_result["tts_segments"] = trim_result["tts_segments"]
-                trimmed_record = {
-                    "pre_trim_duration": pre_trim_duration,
-                    "removed_count": trim_result["removed_count"],
-                    "removed_duration": trim_result["removed_duration"],
-                    "final_duration": trim_result["final_duration"],
-                    "video_duration": video_duration,
-                    "message": (
-                        f"截断完成：最终音频 {trim_result['final_duration']:.1f}s，"
-                        f"对齐视频 {video_duration:.1f}s"
-                    ),
-                }
-                self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
-
-        # Copy the final audio to the standard variant filename when needed.
-        import shutil
-        final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
-        if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
-            shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
-
-        from pipeline.timeline import build_timeline_manifest
-        timeline_manifest = build_timeline_manifest(
-            loop_result["tts_segments"], video_duration=video_duration,
-        )
-
-        variant_state.update({
-            "segments": loop_result["tts_segments"],
-            "tts_script": loop_result["tts_script"],
-            "tts_audio_path": final_audio_path,
-            "timeline_manifest": timeline_manifest,
-            "voice_id": voice.get("id"),
-            "localized_translation": loop_result["localized_translation"],
-        })
-        variants[variant] = variant_state
-
-        task_state.set_preview_file(task_id, "tts_full_audio", final_audio_path)
-        _save_json(task_dir, "tts_script.normal.json", loop_result["tts_script"])
-        _save_json(task_dir, "tts_result.normal.json", loop_result["tts_segments"])
-        _save_json(task_dir, "timeline_manifest.normal.json", timeline_manifest)
-        _save_json(task_dir, "localized_translation.normal.json", loop_result["localized_translation"])
-        _save_json(task_dir, "tts_duration_rounds.json", loop_result["rounds"])
-
-        task_state.update(
-            task_id,
-            variants=variants,
-            segments=loop_result["tts_segments"],
-            tts_script=loop_result["tts_script"],
-            tts_audio_path=final_audio_path,
-            voice_id=voice.get("id"),
-            timeline_manifest=timeline_manifest,
-            localized_translation=loop_result["localized_translation"],
-        )
-
-        task_state.set_artifact(task_id, "tts",
-            build_tts_artifact(loop_result["tts_script"], loop_result["tts_segments"],
-                               duration_rounds=loop_result["rounds"]))
-
-        from appcore.events import EVT_TTS_SCRIPT_READY
-        self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": loop_result["tts_script"]})
-        self._set_step(
-            task_id, "tts", "done",
-            f"{lang_display}配音生成完成（{loop_result['final_round']} 轮收敛）",
-        )
-
-        # Usage log for LLM + ElevenLabs (rewrite rounds 2/3 also recorded)
-        for round_record in loop_result["rounds"]:
-            round_idx = round_record["round"]
-            round_products = loop_result.get("round_products") or []
-            round_product = (
-                round_products[round_idx - 1]
-                if 0 <= round_idx - 1 < len(round_products)
-                else {}
-            )
-            round_translation = round_product.get("localized_translation") or {}
-            round_tts_script = round_product.get("tts_script") or {}
-            if round_idx >= 2:
-                _log_translate_billing(
-                    user_id=self.user_id,
-                    project_id=task_id,
-                    use_case_code="video_translate.rewrite",
-                    provider=provider,
-                    input_tokens=round_record.get("translate_tokens_in"),
-                    output_tokens=round_record.get("translate_tokens_out"),
-                    success=True,
-                    request_payload=_llm_request_payload(
-                        round_translation, provider, "video_translate.rewrite"
-                    ),
-                    response_payload=_llm_response_payload(round_translation),
-                )
-            _log_translate_billing(
-                user_id=self.user_id,
-                project_id=task_id,
-                use_case_code="video_translate.tts_script",
-                provider=provider,
-                input_tokens=round_record.get("tts_script_tokens_in"),
-                output_tokens=round_record.get("tts_script_tokens_out"),
-                success=True,
-                request_payload=_llm_request_payload(
-                    round_tts_script, provider, "video_translate.tts_script"
-                ),
-                response_payload=_llm_response_payload(round_tts_script),
-            )
-            tts_char_count = round_record.get("tts_char_count")
-            if tts_char_count is None and round_idx == loop_result["final_round"]:
-                final_text = (loop_result.get("tts_script") or {}).get("full_text") or ""
-                tts_char_count = len(final_text) if final_text else None
-            ai_billing.log_request(
-                use_case_code="video_translate.tts",
-                user_id=self.user_id,
-                project_id=task_id,
-                provider="elevenlabs",
-                model=self.tts_model_id,
-                request_units=tts_char_count,
-                units_type="chars",
-                success=True,
-                request_payload={
-                    "type": "tts",
-                    "provider": "elevenlabs",
-                    "model": self.tts_model_id,
-                    "voice_id": voice.get("elevenlabs_voice_id"),
-                    "text": (round_tts_script.get("full_text") or ""),
-                    "segments": round_product.get("tts_segments") or [],
-                },
-                response_payload={
-                    "audio_path": round_product.get("tts_audio_path"),
-                    "chars": tts_char_count,
-                },
-            )
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)

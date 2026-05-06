@@ -58,7 +58,10 @@ class OmniProfile(TranslateProfile):
         runner._step_translate(task_id)
 
     def tts(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
-        runner._step_tts(task_id, task_dir)
+        # PR6：跟 default 共用 ``FiveRoundRewriteLoopStrategy``，per-target
+        # tunables 通过 ``word_tolerance_for`` / ``max_rewrite_attempts_for``
+        # 在 strategy 内部解析。
+        self.get_tts_strategy().run(runner, self, task_id, task_dir)
 
     def subtitle(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
         runner._step_subtitle(task_id, task_dir)

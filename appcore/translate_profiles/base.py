@@ -26,6 +26,12 @@ class TranslateProfile(ABC):
     # 已注册的 engine code（见 ``appcore.tts_engines``）。
     tts_engine_code: str = "elevenlabs"
 
+    # ===== TTS 收敛策略（PR6：插件化 duration-loop 工作流） =====
+    # ``"five_round_rewrite"`` = multi/omni 默认 5 轮 rewrite + 变速短路。
+    # ``"sentence_reconcile"`` = av_sync 句级 reconcile_duration。
+    # 子 profile 可注册新策略并在这里指定。
+    tts_strategy_code: str = "five_round_rewrite"
+
     # ===== Duration-loop tunables（profile 可逐目标语言覆盖） =====
     # rewrite 内循环里"字数落进 ±tolerance × target_words 即接受"的容差比例。
     DEFAULT_WORD_TOLERANCE: float = 0.20
@@ -69,6 +75,15 @@ class TranslateProfile(ABC):
         """
         from appcore.tts_engines import get_engine
         return get_engine(self.tts_engine_code)
+
+    def get_tts_strategy(self):
+        """返回 profile 关联的 ``TtsConvergenceStrategy`` 实例。
+
+        ``profile.tts(...)`` 默认实现 dispatch 到 strategy.run，新增收敛
+        策略只需写新 strategy + 指定 ``tts_strategy_code``。
+        """
+        from appcore.tts_strategies import get_strategy
+        return get_strategy(self.tts_strategy_code)
 
     def __repr__(self) -> str:
         return f"<TranslateProfile {self.code} ({self.name})>"

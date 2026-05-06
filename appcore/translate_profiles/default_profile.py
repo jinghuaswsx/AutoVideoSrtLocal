@@ -29,7 +29,9 @@ class DefaultProfile(TranslateProfile):
         runner._step_translate(task_id)
 
     def tts(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
-        runner._step_tts(task_id, task_dir)
+        # PR6：dispatch 到 ``self.tts_strategy_code`` 解析出来的策略，
+        # 默认 ``FiveRoundRewriteLoopStrategy``（5 轮 rewrite + 变速短路）。
+        self.get_tts_strategy().run(runner, self, task_id, task_dir)
 
     def subtitle(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
         runner._step_subtitle(task_id, task_dir)

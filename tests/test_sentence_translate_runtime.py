@@ -112,7 +112,7 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
         },
     )
     monkeypatch.setattr(
-        "appcore.translate_profiles.av_sync_profile.validate_tts_script_language_or_raise",
+        "appcore.tts_strategies.sentence_reconcile.validate_tts_script_language_or_raise",
         lambda **kwargs: {"is_target_language": True},
     )
 
@@ -135,7 +135,7 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
 
     monkeypatch.setattr("pipeline.duration_reconcile.reconcile_duration", fake_reconcile_duration)
     monkeypatch.setattr(
-        "appcore.translate_profiles.av_sync_profile._rebuild_tts_full_audio_from_segments",
+        "appcore.tts_strategies.sentence_reconcile._rebuild_tts_full_audio_from_segments",
         lambda task_dir, segments, variant="av": str(final_audio),
     )
 
