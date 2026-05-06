@@ -1,6 +1,18 @@
 from __future__ import annotations
 
 
+def test_media_cover_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_covers import MediaCoverResponse, media_cover_flask_response
+
+    result = MediaCoverResponse({"ok": True}, 202)
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = media_cover_flask_response(result)
+
+    assert status_code == 202
+    assert response.get_json() == {"ok": True}
+
+
 def test_build_item_play_url_response_uses_media_object_url_builder():
     from web.services.media_covers import build_item_play_url_response
 

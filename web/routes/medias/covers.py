@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import abort, jsonify, request, url_for
+from flask import abort, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import medias, object_keys
@@ -28,6 +28,7 @@ from web.services.media_covers import (
     build_raw_source_cover_object_response as _build_raw_source_cover_object_response_impl,
     build_raw_source_video_object_response as _build_raw_source_video_object_response_impl,
     item_thumbnail_file_flask_response as _item_thumbnail_file_flask_response,
+    media_cover_flask_response as _media_cover_flask_response_impl,
     media_cover_object_flask_response as _media_cover_object_flask_response_impl,
     product_cover_file_flask_response as _product_cover_file_flask_response,
 )
@@ -103,6 +104,10 @@ def _media_cover_object_flask_response(result):
         result,
         send_media_object_fn=_send_media_object,
     )
+
+
+def _media_cover_flask_response(result):
+    return _media_cover_flask_response_impl(result)
 
 
 def _build_item_thumbnail_file_response(item):
@@ -265,8 +270,9 @@ def api_cover_from_url(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_product_cover_from_url_response(pid, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_product_cover_from_url_response(pid, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/item-cover/from-url", methods=["POST"])
@@ -277,8 +283,9 @@ def api_item_cover_from_url(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_item_cover_from_url_response(pid, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_cover_from_url_response(pid, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/api/items/<int:item_id>/cover/from-url", methods=["POST"])
@@ -291,8 +298,9 @@ def api_item_cover_set_from_url(item_id: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_item_cover_set_from_url_response(item_id, it, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_cover_set_from_url_response(item_id, it, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/api/items/<int:item_id>/cover", methods=["PATCH"])
@@ -307,8 +315,9 @@ def api_item_cover_update(item_id: int):
         abort(404)
 
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_item_cover_update_response(item_id, it, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_cover_update_response(item_id, it, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/item-cover/bootstrap", methods=["POST"])
@@ -319,8 +328,9 @@ def api_item_cover_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_item_cover_bootstrap_response(pid, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_cover_bootstrap_response(pid, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/api/items/<int:item_id>/cover/set", methods=["POST"])
@@ -334,8 +344,9 @@ def api_item_cover_set(item_id: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_item_cover_set_response(item_id, it, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_cover_set_response(item_id, it, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/item-cover/<int:item_id>")
@@ -391,8 +402,9 @@ def api_cover_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_product_cover_bootstrap_response(pid, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_product_cover_bootstrap_response(pid, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/cover/complete", methods=["POST"])
@@ -402,8 +414,9 @@ def api_cover_complete(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_product_cover_complete_response(pid, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_product_cover_complete_response(pid, body)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/cover", methods=["DELETE"])
@@ -413,8 +426,9 @@ def api_cover_delete(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "").strip().lower()
-    result = _routes()._build_product_cover_delete_response(pid, lang)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_product_cover_delete_response(pid, lang)
+    return routes._media_cover_flask_response(result)
 
 
 @bp.route("/thumb/<int:item_id>")
@@ -454,5 +468,6 @@ def api_play_url(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
-    result = _routes()._build_item_play_url_response(it)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_play_url_response(it)
+    return routes._media_cover_flask_response(result)

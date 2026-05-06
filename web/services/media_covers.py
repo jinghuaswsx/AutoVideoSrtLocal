@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import re
 
-from flask import send_file
+from flask import jsonify, send_file
 
 from appcore import medias, object_keys
 
@@ -17,6 +17,10 @@ from appcore import medias, object_keys
 class MediaCoverResponse:
     payload: dict
     status_code: int = 200
+
+
+def media_cover_flask_response(result: MediaCoverResponse):
+    return jsonify(result.payload), result.status_code
 
 
 @dataclass(frozen=True)

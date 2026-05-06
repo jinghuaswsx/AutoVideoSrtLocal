@@ -999,8 +999,10 @@ def test_media_cover_bootstrap_responses_live_outside_route_module():
 
     assert "filename required" not in route_source
     assert "storage_backend" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_item_cover_bootstrap_response" in route_source
     assert "_build_product_cover_bootstrap_response" in route_source
+    assert "_media_cover_flask_response" in route_source
     assert Path("web/services/media_covers.py").exists()
 
 
@@ -1030,8 +1032,10 @@ def test_media_item_cover_set_responses_live_outside_route_module():
     assert "object_key required" not in route_source
     assert "object not found" not in route_source
     assert "_download_media_object" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_item_cover_update_response" in route_source
     assert "_build_item_cover_set_response" in route_source
+    assert "_media_cover_flask_response" in route_source
     assert Path("web/services/media_covers.py").exists()
 
 
@@ -1090,8 +1094,10 @@ def test_media_product_cover_complete_delete_responses_live_outside_route_module
     assert "object not found" not in route_source
     assert "涓嶆敮鎸佺殑璇" not in route_source
     assert "鑻辨枃涓诲浘涓嶈兘鍒犻櫎" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_cover_complete_response" in route_source
     assert "_build_product_cover_delete_response" in route_source
+    assert "_media_cover_flask_response" in route_source
     assert Path("web/services/media_covers.py").exists()
 
 
@@ -1167,9 +1173,11 @@ def test_media_cover_from_url_responses_live_outside_route_module():
     assert "_download_image_to_local_media" not in route_source
     assert "_delete_media_object" not in route_source
     assert "write_bytes" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_cover_from_url_response" in route_source
     assert "_build_item_cover_from_url_response" in route_source
     assert "_build_item_cover_set_from_url_response" in route_source
+    assert "_media_cover_flask_response" in route_source
     assert Path("web/services/media_covers.py").exists()
 
 
@@ -1185,7 +1193,9 @@ def test_media_item_play_url_response_lives_outside_route_module():
 
     assert "url_for" not in route_source
     assert '"url"' not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_item_play_url_response" in route_source
+    assert "_media_cover_flask_response" in route_source
     assert Path("web/services/media_covers.py").exists()
 
 

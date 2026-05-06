@@ -324,6 +324,7 @@ _build_product_cover_file_response = _covers._build_product_cover_file_response
 _build_product_cover_from_url_response = _covers._build_product_cover_from_url_response
 _build_item_cover_from_url_response = _covers._build_item_cover_from_url_response
 _build_item_cover_set_from_url_response = _covers._build_item_cover_set_from_url_response
+_media_cover_flask_response = _covers._media_cover_flask_response
 item_cover = _covers.item_cover
 raw_source_video_url = _covers.raw_source_video_url
 raw_source_cover_url = _covers.raw_source_cover_url
