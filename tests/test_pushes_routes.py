@@ -1243,8 +1243,8 @@ def test_push_mk_id_match_writes_back(logged_in_client, seeded_item, monkeypatch
     product = medias.get_product(pid)
     product_code = product["product_code"]
     # 动态两个 id（避免被其他 test 占用了 mk_id 唯一键）
-    id_small = pid + 1_000_000
-    id_large = pid + 2_000_000
+    id_small = _mk_id_for_test(pid, 1)
+    id_large = _mk_id_for_test(pid, 2)
     def fake_get(url, params=None, **kw):
         assert url.endswith("/api/marketing/medias")
         assert params["q"] == product_code
