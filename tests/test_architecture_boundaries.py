@@ -1545,6 +1545,11 @@ def test_tts_speedup_eval_json_responses_live_outside_route_module():
     assert "build_tts_speedup_list_fallback_response" in route_source
     assert "build_tts_speedup_retry_response" in route_source
     assert "tts_speedup_eval_flask_response" in route_source
+    assert "from appcore.db import" not in module_source
+    assert "db_query(" not in module_source
+    assert "db_query_one(" not in module_source
+    assert "tts_speedup_eval.list_evaluations" in module_source
+    assert "tts_speedup_eval.summarize_evaluations" in module_source
     assert Path("web/services/tts_speedup_eval.py").exists()
 
 

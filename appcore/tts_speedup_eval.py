@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from appcore import llm_client
-from appcore.db import execute as db_execute, query_one as db_query_one
+from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +35,23 @@ EVAL_PROVIDER = "gemini_vertex"
 EVAL_MODEL = "gemini-3-flash-preview"
 COMPARISON_GAP_SECONDS = 1.0
 EVAL_TIMEOUT_SECONDS = 120  # 双音频多模态评估，留充足余量
+
+_LIST_EVALUATIONS_SQL = """
+  SELECT id, task_id, round_index, language,
+         video_duration, audio_pre_duration, audio_post_duration,
+         speed_ratio, hit_final_range,
+         score_naturalness, score_pacing, score_timbre,
+         score_intelligibility, score_overall,
+         summary_text, flags_json,
+         model_provider, model_id, llm_input_tokens, llm_output_tokens,
+         llm_cost_usd, status, error_text,
+         audio_pre_path, audio_post_path,
+         created_at, evaluated_at
+    FROM tts_speedup_evaluations
+   {where}
+   ORDER BY created_at DESC
+   LIMIT %s OFFSET %s
+"""
 
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -52,6 +69,72 @@ RESPONSE_SCHEMA: dict[str, Any] = {
         "score_intelligibility", "score_overall", "summary", "flags",
     ],
 }
+
+
+def _build_eval_where(args) -> tuple[str, list]:
+    clauses = []
+    params: list = []
+    lang = (args.get("language") or "").strip()
+    if lang:
+        clauses.append("language = %s")
+        params.append(lang)
+    status = (args.get("status") or "").strip()
+    if status in ("ok", "failed", "pending"):
+        clauses.append("status = %s")
+        params.append(status)
+    hit = args.get("hit_final")
+    if hit in ("0", "1"):
+        clauses.append("hit_final_range = %s")
+        params.append(int(hit))
+    min_overall = args.get("min_overall")
+    if min_overall and str(min_overall).isdigit():
+        clauses.append("score_overall >= %s")
+        params.append(int(min_overall))
+    return ("WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+
+def list_evaluations(args, *, limit: int = 200, offset: int = 0) -> list[dict]:
+    where, params = _build_eval_where(args)
+    sql = _LIST_EVALUATIONS_SQL.format(where=where)
+    return db_query(sql, (*params, limit, offset))
+
+
+def summarize_evaluations(args) -> dict:
+    where, params = _build_eval_where(args)
+    total_row = db_query_one(
+        f"SELECT COUNT(*) AS n, AVG(score_overall) AS avg_overall, "
+        f"  SUM(hit_final_range) AS hits "
+        f"FROM tts_speedup_evaluations {where}",
+        tuple(params),
+    ) or {"n": 0, "avg_overall": None, "hits": 0}
+    n = int(total_row.get("n") or 0)
+    hits = int(total_row.get("hits") or 0)
+    avg_overall = (
+        float(total_row["avg_overall"]) if total_row.get("avg_overall") else 0.0
+    )
+    flag_rows = db_query(
+        f"SELECT flags_json FROM tts_speedup_evaluations {where} "
+        f"ORDER BY created_at DESC LIMIT 500",
+        tuple(params),
+    )
+    counts: dict[str, int] = {}
+    for row in flag_rows:
+        raw = row.get("flags_json")
+        if not raw:
+            continue
+        try:
+            tags = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        except Exception:
+            tags = []
+        for tag in tags:
+            counts[tag] = counts.get(tag, 0) + 1
+    top = sorted(counts.items(), key=lambda item: item[1], reverse=True)[:5]
+    return {
+        "total": n,
+        "hit_final_pct": round(hits / n * 100, 1) if n else 0.0,
+        "avg_overall": round(avg_overall, 2),
+        "top_flags": [{"flag": key, "count": value} for key, value in top],
+    }
 
 
 def _build_prompt(

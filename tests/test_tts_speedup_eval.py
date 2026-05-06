@@ -220,3 +220,75 @@ def test_retry_evaluation_only_updates_scores_and_status(tmp_path, _stub_db, mon
     for r in update_rows:
         assert "audio_pre_path" not in r["sql"]
         assert "audio_post_path" not in r["sql"]
+
+
+def test_list_evaluations_applies_filters_and_pagination(monkeypatch):
+    from appcore import tts_speedup_eval
+
+    captured = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"id": 7, "language": "es", "status": "ok"}]
+
+    monkeypatch.setattr(tts_speedup_eval, "db_query", fake_query, raising=False)
+
+    rows = tts_speedup_eval.list_evaluations(
+        {
+            "language": "es",
+            "status": "ok",
+            "hit_final": "1",
+            "min_overall": "4",
+        },
+        limit=50,
+        offset=100,
+    )
+
+    assert rows == [{"id": 7, "language": "es", "status": "ok"}]
+    assert "FROM tts_speedup_evaluations" in captured["sql"]
+    assert "language = %s" in captured["sql"]
+    assert "status = %s" in captured["sql"]
+    assert "hit_final_range = %s" in captured["sql"]
+    assert "score_overall >= %s" in captured["sql"]
+    assert "ORDER BY created_at DESC" in captured["sql"]
+    assert captured["params"] == ("es", "ok", 1, 4, 50, 100)
+
+
+def test_summarize_evaluations_counts_top_flags(monkeypatch):
+    from appcore import tts_speedup_eval
+
+    captured = {}
+
+    def fake_query_one(sql, params=None):
+        captured["summary_sql"] = sql
+        captured["summary_params"] = params
+        return {"n": 3, "avg_overall": 4.333, "hits": 2}
+
+    def fake_query(sql, params=None):
+        captured["flags_sql"] = sql
+        captured["flags_params"] = params
+        return [
+            {"flags_json": '["pace_jitter", "chipmunk_effect"]'},
+            {"flags_json": '["pace_jitter"]'},
+            {"flags_json": "not-json"},
+        ]
+
+    monkeypatch.setattr(tts_speedup_eval, "db_query_one", fake_query_one, raising=False)
+    monkeypatch.setattr(tts_speedup_eval, "db_query", fake_query, raising=False)
+
+    summary = tts_speedup_eval.summarize_evaluations({"language": "es"})
+
+    assert summary == {
+        "total": 3,
+        "hit_final_pct": 66.7,
+        "avg_overall": 4.33,
+        "top_flags": [
+            {"flag": "pace_jitter", "count": 2},
+            {"flag": "chipmunk_effect", "count": 1},
+        ],
+    }
+    assert "FROM tts_speedup_evaluations" in captured["summary_sql"]
+    assert "FROM tts_speedup_evaluations" in captured["flags_sql"]
+    assert captured["summary_params"] == ("es",)
+    assert captured["flags_params"] == ("es",)

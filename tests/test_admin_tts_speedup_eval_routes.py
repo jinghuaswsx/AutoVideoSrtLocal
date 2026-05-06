@@ -81,8 +81,8 @@ def _reset_shutdown(monkeypatch):
 
 def test_list_page_renders(monkeypatch):
     client, _app = _build_client(monkeypatch)
-    with patch("web.routes.tts_speedup_eval._fetch_rows", return_value=[_FAKE_ROW]), \
-         patch("web.routes.tts_speedup_eval._fetch_summary", return_value=_FAKE_SUMMARY):
+    with patch("web.routes.tts_speedup_eval.tts_speedup_eval.list_evaluations", return_value=[_FAKE_ROW]), \
+         patch("web.routes.tts_speedup_eval.tts_speedup_eval.summarize_evaluations", return_value=_FAKE_SUMMARY):
         resp = client.get("/admin/tts-speedup-evaluations/")
     assert resp.status_code == 200
     body = resp.data.decode("utf-8", errors="ignore")
@@ -105,7 +105,7 @@ def test_retry_endpoint_calls_orchestrator(monkeypatch):
 
 def test_export_csv_returns_csv_content(monkeypatch):
     client, _app = _build_client(monkeypatch)
-    with patch("web.routes.tts_speedup_eval._fetch_rows", return_value=[_FAKE_ROW]):
+    with patch("web.routes.tts_speedup_eval.tts_speedup_eval.list_evaluations", return_value=[_FAKE_ROW]):
         resp = client.get("/admin/tts-speedup-evaluations.csv")
     assert resp.status_code == 200
     assert "text/csv" in resp.headers.get("Content-Type", "")
