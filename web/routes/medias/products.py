@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import abort, jsonify, render_template, request
+from flask import abort, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import medias, parcel_cost_suggest, product_roas, pushes, sku_aggregates, supply_pairing, xmyc_storage

@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 import uuid
 import requests
-from flask import Blueprint, Response, request, jsonify, abort, send_file, url_for
+from flask import Blueprint, Response, request, abort, send_file, url_for
 from flask_login import login_required, current_user
 
 from appcore import (

@@ -66,6 +66,19 @@ def test_appcore_modules_do_not_import_web_package():
     assert offenders == []
 
 
+def test_route_modules_do_not_import_flask_jsonify_directly():
+    offenders: list[str] = []
+
+    for path in Path("web/routes").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "flask":
+                if any(alias.name == "jsonify" for alias in node.names):
+                    offenders.append(f"{path}:{node.lineno}")
+
+    assert offenders == []
+
+
 def test_video_creation_route_uses_project_state_helper_for_state_json_writes():
     source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
 
