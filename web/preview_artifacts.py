@@ -1,3 +1,4 @@
 from __future__ import annotations
 
 from appcore.preview_artifacts import *  # noqa: F401,F403
+from appcore.preview_artifacts import _lang  # noqa: F401
