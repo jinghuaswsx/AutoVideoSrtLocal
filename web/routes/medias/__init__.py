@@ -360,6 +360,7 @@ api_product_evaluate_request_payload = _evaluation.api_product_evaluate_request_
 _build_product_evaluation_response = _evaluation._build_product_evaluation_response
 _build_product_evaluation_preview_response = _evaluation._build_product_evaluation_preview_response
 _build_product_evaluation_payload_response = _evaluation._build_product_evaluation_payload_response
+_media_evaluation_flask_response = _evaluation._media_evaluation_flask_response
 
 _medias_page_context = _pages._medias_page_context
 index = _pages.index

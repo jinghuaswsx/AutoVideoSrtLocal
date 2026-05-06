@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 
+def test_media_evaluation_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_evaluation import (
+        MediaEvaluationResponse,
+        media_evaluation_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        payload, status = media_evaluation_flask_response(
+            MediaEvaluationResponse({"ok": True, "payload": {"id": 123}}, 206)
+        )
+
+    assert status == 206
+    assert payload.get_json() == {"ok": True, "payload": {"id": 123}}
+
+
 def test_build_product_evaluation_response_returns_success_payload():
     from web.services.media_evaluation import build_product_evaluation_response
 

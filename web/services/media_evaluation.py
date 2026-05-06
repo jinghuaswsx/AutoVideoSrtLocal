@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from flask import jsonify
+
 from appcore import material_evaluation
 
 
@@ -12,6 +14,10 @@ from appcore import material_evaluation
 class MediaEvaluationResponse:
     payload: dict
     status_code: int
+
+
+def media_evaluation_flask_response(result: MediaEvaluationResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def build_product_evaluation_response(

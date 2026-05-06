@@ -309,6 +309,55 @@ def test_manual_ai_evaluate_runs_synchronously_on_click(authed_client_no_db, mon
     assert resp.get_json()["message"] == "AI 评估完成"
 
 
+def test_product_evaluation_routes_delegate_flask_response(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    captured = []
+
+    class Result:
+        def __init__(self, payload, status_code):
+            self.payload = payload
+            self.status_code = status_code
+
+    monkeypatch.setattr(
+        r,
+        "_media_evaluation_flask_response",
+        lambda result: captured.append(result.payload) or ({"wrapped": result.payload}, result.status_code),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_product_evaluation_response",
+        lambda pid: Result({"route": "evaluate", "pid": pid}, 207),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_product_evaluation_preview_response",
+        lambda pid: Result({"route": "preview", "pid": pid}, 208),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_product_evaluation_payload_response",
+        lambda pid: Result({"route": "payload", "pid": pid}, 209),
+    )
+
+    evaluate_resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+    preview_resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-preview")
+    payload_resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-payload")
+
+    assert [evaluate_resp.status_code, preview_resp.status_code, payload_resp.status_code] == [
+        207,
+        208,
+        209,
+    ]
+    assert captured == [
+        {"route": "evaluate", "pid": 123},
+        {"route": "preview", "pid": 123},
+        {"route": "payload", "pid": 123},
+    ]
+
+
 def _stub_ai_evaluation_debug_payload(monkeypatch, tmp_path):
     from web.routes import medias as r
 

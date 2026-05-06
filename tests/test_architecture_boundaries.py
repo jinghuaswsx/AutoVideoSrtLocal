@@ -775,9 +775,11 @@ def test_media_evaluation_responses_live_outside_route_module():
 
     assert "_material_evaluation_message(result)" not in route_source
     assert "full_payload_url" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_evaluation_response" in route_source
     assert "_build_product_evaluation_preview_response" in route_source
     assert "_build_product_evaluation_payload_response" in route_source
+    assert "_media_evaluation_flask_response" in route_source
     assert Path("web/services/media_evaluation.py").exists()
 
 
