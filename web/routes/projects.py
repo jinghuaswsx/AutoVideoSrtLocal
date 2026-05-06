@@ -7,7 +7,7 @@ from appcore.av_translate_inputs import (
     build_available_av_translate_inputs,
     list_available_av_target_language_options,
 )
-from appcore.db import query, query_one
+from appcore import project_state as project_store
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
 from appcore.settings import get_retention_hours
 
@@ -37,11 +37,7 @@ def root():
 @login_required
 def index():
     recover_all_interrupted_tasks()
-    rows = query(
-        """SELECT id, original_filename, display_name, thumbnail_path, status, created_at, expires_at, deleted_at
-           FROM projects WHERE user_id = %s AND type = 'translation' AND deleted_at IS NULL ORDER BY created_at DESC""",
-        (current_user.id,),
-    )
+    rows = project_store.list_translation_projects(current_user.id)
     from datetime import datetime
     return render_template("projects.html", projects=rows, now=datetime.now(),
                            retention_hours=get_retention_hours("translation"))
@@ -69,29 +65,7 @@ def sentence_translate_page():
 
     rows = []
     try:
-        base_sql = (
-            "p.user_id = %s AND p.type = 'translation' AND p.deleted_at IS NULL "
-            "AND (JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.pipeline_version')) = 'av' "
-            "     OR JSON_EXTRACT(p.state_json, '$.av_translate_inputs') IS NOT NULL)"
-        )
-        args: tuple = (current_user.id,)
-        lang_sql = ""
-        if current_lang:
-            lang_sql = (
-                " AND (JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.av_translate_inputs.target_language')) = %s "
-                "      OR JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.target_lang')) = %s)"
-            )
-            args = (current_user.id, current_lang, current_lang)
-        rows = query(
-            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
-            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
-            "       u.username AS creator_name "
-            "FROM projects p "
-            "LEFT JOIN users u ON u.id = p.user_id "
-            f"WHERE {base_sql}{lang_sql} "
-            "ORDER BY p.created_at DESC",
-            args,
-        )
+        rows = project_store.list_av_sync_projects(current_user.id, current_lang)
     except Exception:
         rows = []
     try:
@@ -124,10 +98,7 @@ def sentence_translate_page():
 
 
 def _load_project_row(task_id: str) -> tuple[dict, dict]:
-    row = query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = project_store.get_project_detail_row(task_id, current_user.id)
     if not row:
         abort(404)
     state = {}
@@ -203,10 +174,7 @@ def detail(task_id: str):
 @login_required
 def download_tos(task_id: str, tos_key: str):
     del tos_key
-    row = query_one(
-        "SELECT id, deleted_at FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = project_store.get_project_download_status_row(task_id, current_user.id)
     if not row:
         abort(404)
     if row.get("deleted_at"):

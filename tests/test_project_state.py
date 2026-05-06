@@ -89,6 +89,81 @@ def test_get_project_for_user_queries_active_project():
     ]
 
 
+def test_list_translation_projects_queries_user_translation_projects():
+    from appcore.project_state import list_translation_projects
+
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "task-1"}]
+
+    rows = list_translation_projects(7, query_func=fake_query)
+
+    assert rows == [{"id": "task-1"}]
+    assert "FROM projects" in calls[0][0]
+    assert "user_id = %s" in calls[0][0]
+    assert "type = 'translation'" in calls[0][0]
+    assert "deleted_at IS NULL" in calls[0][0]
+    assert calls[0][1] == (7,)
+
+
+def test_list_av_sync_projects_applies_optional_language_filter():
+    from appcore.project_state import list_av_sync_projects
+
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "task-av", "state_json": "{}"}]
+
+    rows = list_av_sync_projects(7, "de", query_func=fake_query)
+
+    assert rows == [{"id": "task-av", "state_json": "{}"}]
+    assert "FROM projects p" in calls[0][0]
+    assert "LEFT JOIN users u" in calls[0][0]
+    assert "JSON_EXTRACT(p.state_json, '$.av_translate_inputs')" in calls[0][0]
+    assert "target_language" in calls[0][0]
+    assert calls[0][1] == (7, "de", "de")
+
+
+def test_get_project_detail_row_queries_user_scope():
+    from appcore.project_state import get_project_detail_row
+
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"id": "task-1", "user_id": 7}
+
+    row = get_project_detail_row("task-1", 7, query_one_func=fake_query_one)
+
+    assert row == {"id": "task-1", "user_id": 7}
+    assert calls == [
+        ("SELECT * FROM projects WHERE id = %s AND user_id = %s", ("task-1", 7))
+    ]
+
+
+def test_get_project_download_status_row_queries_deleted_at():
+    from appcore.project_state import get_project_download_status_row
+
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"id": "task-1", "deleted_at": None}
+
+    row = get_project_download_status_row("task-1", 7, query_one_func=fake_query_one)
+
+    assert row == {"id": "task-1", "deleted_at": None}
+    assert calls == [
+        (
+            "SELECT id, deleted_at FROM projects WHERE id = %s AND user_id = %s",
+            ("task-1", 7),
+        )
+    ]
+
+
 def test_get_project_thumbnail_row_queries_admin_scope():
     from appcore.project_state import get_project_thumbnail_row
 

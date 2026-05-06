@@ -231,7 +231,10 @@ def test_sentence_translate_list_page_uses_sentence_translate_detail_links(authe
         "deleted_at": None,
         "creator_name": "tester",
     }
-    monkeypatch.setattr("web.routes.projects.query", lambda sql, args: [row])
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.list_av_sync_projects",
+        lambda user_id, current_lang: [row],
+    )
     monkeypatch.setattr("web.routes.projects.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("web.routes.projects.get_retention_hours", lambda project_type: 24)
 
@@ -244,7 +247,10 @@ def test_sentence_translate_list_page_uses_sentence_translate_detail_links(authe
 
 
 def test_sentence_translate_create_modal_filters_disabled_media_languages(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr("web.routes.projects.query", lambda sql, args: [])
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.list_av_sync_projects",
+        lambda user_id, current_lang: [],
+    )
     monkeypatch.setattr("web.routes.projects.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("web.routes.projects.get_retention_hours", lambda project_type: 24)
     monkeypatch.setattr(
@@ -256,8 +262,9 @@ def test_sentence_translate_create_modal_filters_disabled_media_languages(authed
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'data-lang="sv"' in body
-    assert 'data-lang="fi"' not in body
+    target_lang_html = body.split('id="modalSourceLangPills"', 1)[0]
+    assert 'data-lang="sv"' in target_lang_html
+    assert 'data-lang="fi"' not in target_lang_html
 
 
 def test_legacy_av_list_route_redirects_to_sentence_translate(authed_client_no_db):
@@ -390,6 +397,7 @@ def test_index_page_contains_av_sync_controls(authed_client_no_db):
 
 def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db, monkeypatch):
     task = store.create("task-project-workbench", "video.mp4", "output/task-project-workbench")
+    task.pop("av_translate_inputs", None)
     row = {
         "id": task["id"],
         "user_id": 1,
@@ -400,7 +408,11 @@ def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db
         "deleted_at": None,
         "state_json": json.dumps(task, ensure_ascii=False),
     }
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
 
     response = authed_client_no_db.get("/projects/task-project-workbench")
 
@@ -476,7 +488,10 @@ def test_project_detail_page_contains_av_insight_cards_and_rewrite_modal(authed_
     }
     monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
 
     response = authed_client_no_db.get("/sentence_translate/task-project-av-insights")
 
@@ -575,7 +590,10 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     }
     monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
 
     response = authed_client_no_db.get("/sentence_translate/task-project-av-convergence")
 
@@ -640,7 +658,10 @@ def test_av_project_detail_uses_multilingual_detail_shell(authed_client_no_db, m
     }
     monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
 
     response = authed_client_no_db.get("/sentence_translate/task-project-av-shell")
 
@@ -684,7 +705,10 @@ def test_legacy_projects_av_detail_redirects_to_sentence_translate(authed_client
         "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
     }
     monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
 
     response = authed_client_no_db.get("/projects/task-project-av-redirect", follow_redirects=False)
 
@@ -856,6 +880,7 @@ def test_av_rewrite_warning_filter_includes_warning_long():
 
 def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db, monkeypatch):
     task = store.create("task-project-state", "video.mp4", "output/task-project-state")
+    task.pop("av_translate_inputs", None)
     store.update(
         "task-project-state",
         interactive_review=True,
@@ -881,7 +906,10 @@ def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db
         "deleted_at": None,
         "state_json": json.dumps(store.get("task-project-state"), ensure_ascii=False),
     }
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
 
     response = authed_client_no_db.get("/projects/task-project-state")
 
@@ -894,6 +922,7 @@ def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db
 
 def test_project_detail_page_defaults_source_language_to_zh(authed_client_no_db, monkeypatch):
     task = store.create("task-project-default-lang", "video.mp4", "output/task-project-default-lang")
+    task.pop("av_translate_inputs", None)
     row = {
         "id": task["id"],
         "user_id": 1,
@@ -906,7 +935,10 @@ def test_project_detail_page_defaults_source_language_to_zh(authed_client_no_db,
         "state_json": json.dumps(task, ensure_ascii=False),
     }
     monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
 
     response = authed_client_no_db.get("/projects/task-project-default-lang")
@@ -919,6 +951,7 @@ def test_project_detail_page_defaults_source_language_to_zh(authed_client_no_db,
 
 def test_project_detail_page_renders_gpt_5_mini_translate_option(authed_client_no_db, monkeypatch):
     task = store.create("task-project-gpt-option", "video.mp4", "output/task-project-gpt-option")
+    task.pop("av_translate_inputs", None)
     row = {
         "id": task["id"],
         "user_id": 1,
@@ -931,7 +964,10 @@ def test_project_detail_page_renders_gpt_5_mini_translate_option(authed_client_n
         "state_json": json.dumps(task, ensure_ascii=False),
     }
     monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "gpt_5_mini")
 
     response = authed_client_no_db.get("/projects/task-project-gpt-option")
@@ -944,6 +980,7 @@ def test_project_detail_page_renders_gpt_5_mini_translate_option(authed_client_n
 
 def test_project_detail_page_renders_gpt_5_5_translate_option(authed_client_no_db, monkeypatch):
     task = store.create("task-project-gpt55-option", "video.mp4", "output/task-project-gpt55-option")
+    task.pop("av_translate_inputs", None)
     row = {
         "id": task["id"],
         "user_id": 1,
@@ -956,7 +993,10 @@ def test_project_detail_page_renders_gpt_5_5_translate_option(authed_client_no_d
         "state_json": json.dumps(task, ensure_ascii=False),
     }
     monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
-    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.project_store.get_project_detail_row",
+        lambda task_id, user_id: row,
+    )
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "gpt_5_5")
 
     response = authed_client_no_db.get("/projects/task-project-gpt55-option")

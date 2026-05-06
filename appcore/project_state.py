@@ -4,9 +4,10 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from appcore.db import execute, query_one
+from appcore.db import execute, query, query_one
 
 QueryOneFunc = Callable[[str, tuple], dict | None]
+QueryFunc = Callable[[str, tuple], list[dict]]
 ExecuteFunc = Callable[[str, tuple], int]
 
 
@@ -88,6 +89,73 @@ def get_project_for_user(
 ) -> dict | None:
     return query_one_func(
         "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, user_id),
+    )
+
+
+def list_translation_projects(
+    user_id: int,
+    *,
+    query_func: QueryFunc = query,
+) -> list[dict]:
+    return query_func(
+        """SELECT id, original_filename, display_name, thumbnail_path, status, created_at, expires_at, deleted_at
+           FROM projects WHERE user_id = %s AND type = 'translation' AND deleted_at IS NULL ORDER BY created_at DESC""",
+        (user_id,),
+    )
+
+
+def list_av_sync_projects(
+    user_id: int,
+    current_lang: str = "",
+    *,
+    query_func: QueryFunc = query,
+) -> list[dict]:
+    base_sql = (
+        "p.user_id = %s AND p.type = 'translation' AND p.deleted_at IS NULL "
+        "AND (JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.pipeline_version')) = 'av' "
+        "     OR JSON_EXTRACT(p.state_json, '$.av_translate_inputs') IS NOT NULL)"
+    )
+    args: tuple = (user_id,)
+    lang_sql = ""
+    if current_lang:
+        lang_sql = (
+            " AND (JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.av_translate_inputs.target_language')) = %s "
+            "      OR JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.target_lang')) = %s)"
+        )
+        args = (user_id, current_lang, current_lang)
+    return query_func(
+        "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+        "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+        "       u.username AS creator_name "
+        "FROM projects p "
+        "LEFT JOIN users u ON u.id = p.user_id "
+        f"WHERE {base_sql}{lang_sql} "
+        "ORDER BY p.created_at DESC",
+        args,
+    )
+
+
+def get_project_detail_row(
+    task_id: str,
+    user_id: int,
+    *,
+    query_one_func: QueryOneFunc = query_one,
+) -> dict | None:
+    return query_one_func(
+        "SELECT * FROM projects WHERE id = %s AND user_id = %s",
+        (task_id, user_id),
+    )
+
+
+def get_project_download_status_row(
+    task_id: str,
+    user_id: int,
+    *,
+    query_one_func: QueryOneFunc = query_one,
+) -> dict | None:
+    return query_one_func(
+        "SELECT id, deleted_at FROM projects WHERE id = %s AND user_id = %s",
         (task_id, user_id),
     )
 

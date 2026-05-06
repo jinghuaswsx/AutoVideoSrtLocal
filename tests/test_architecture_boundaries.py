@@ -3312,6 +3312,23 @@ def test_task_lightweight_db_access_lives_in_appcore_daos():
     assert "fetch_voice_by_id" in voice_library_source
 
 
+def test_projects_route_db_access_lives_in_appcore_project_state():
+    source = Path("web/routes/projects.py").read_text(encoding="utf-8")
+    project_state_source = Path("appcore/project_state.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in source
+    assert "query(" not in source
+    assert "query_one(" not in source
+    assert "project_store.list_translation_projects" in source
+    assert "project_store.list_av_sync_projects" in source
+    assert "project_store.get_project_detail_row" in source
+    assert "project_store.get_project_download_status_row" in source
+    assert "def list_translation_projects" in project_state_source
+    assert "def list_av_sync_projects" in project_state_source
+    assert "def get_project_detail_row" in project_state_source
+    assert "def get_project_download_status_row" in project_state_source
+
+
 def test_openapi_materials_serializers_live_outside_route_module():
     source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
 
