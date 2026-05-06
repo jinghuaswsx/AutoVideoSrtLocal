@@ -1,8 +1,14 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from web.auth import admin_required, superadmin_required
 from appcore import medias, product_roas, system_audit
 from appcore import voice_library_sync_task as vlst
+from web.services.admin import (
+    admin_flask_response,
+    build_admin_error_response,
+    build_admin_ok_response,
+    build_admin_payload_response,
+)
 from appcore.users import (
     list_users, create_user, set_active, get_by_username,
     update_role, update_permissions, reset_permissions_to_role_default,
@@ -143,21 +149,25 @@ def get_user_permissions(user_id: int):
     from appcore.permissions import merge_with_defaults
     user = get_by_id(user_id)
     if not user:
-        return jsonify({"error": "用户不存在"}), 404
+        return admin_flask_response(build_admin_error_response("用户不存在", 404))
     effective = merge_with_defaults(user["role"], _coerce_json(user.get("permissions")))
     is_superadmin = user["role"] == ROLE_SUPERADMIN
-    return jsonify({
-        "user_id": user["id"],
-        "username": user["username"],
-        "role": user["role"],
-        "role_label": ROLE_LABELS.get(user["role"], user["role"]),
-        "is_superadmin": is_superadmin,
-        "permissions": effective,
-        "groups": [
-            {"code": g, "label": l, "items": items}
-            for g, l, items in grouped_permissions()
-        ],
-    })
+    return admin_flask_response(
+        build_admin_payload_response(
+            {
+                "user_id": user["id"],
+                "username": user["username"],
+                "role": user["role"],
+                "role_label": ROLE_LABELS.get(user["role"], user["role"]),
+                "is_superadmin": is_superadmin,
+                "permissions": effective,
+                "groups": [
+                    {"code": g, "label": l, "items": items}
+                    for g, l, items in grouped_permissions()
+                ],
+            }
+        )
+    )
 
 
 @bp.route("/api/users/<int:user_id>/role", methods=["PUT"])
@@ -167,17 +177,17 @@ def api_update_user_role(user_id: int):
     from appcore.users import get_by_id
     user = get_by_id(user_id)
     if not user:
-        return jsonify({"error": "用户不存在"}), 404
+        return admin_flask_response(build_admin_error_response("用户不存在", 404))
     if user["role"] == ROLE_SUPERADMIN:
-        return jsonify({"error": "不能修改超级管理员角色"}), 403
+        return admin_flask_response(build_admin_error_response("不能修改超级管理员角色", 403))
     body = request.get_json(silent=True) or {}
     new_role = (body.get("role") or "").strip()
     if new_role not in (ROLE_ADMIN, ROLE_USER):
-        return jsonify({"error": f"无效的角色: {new_role}"}), 400
+        return admin_flask_response(build_admin_error_response(f"无效的角色: {new_role}", 400))
     try:
         update_role(user_id, new_role)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return admin_flask_response(build_admin_error_response(str(exc), 400))
     _audit_admin_action(
         "admin_user_role_updated",
         target_type="user",
@@ -185,8 +195,12 @@ def api_update_user_role(user_id: int):
         target_label=user.get("username"),
         detail={"old_role": user.get("role"), "new_role": new_role},
     )
-    return jsonify({"ok": True, "role": new_role,
-                     "role_label": ROLE_LABELS.get(new_role, new_role)})
+    return admin_flask_response(
+        build_admin_ok_response(
+            role=new_role,
+            role_label=ROLE_LABELS.get(new_role, new_role),
+        )
+    )
 
 
 @bp.route("/api/users/<int:user_id>/permissions", methods=["PUT"])
@@ -196,9 +210,9 @@ def set_user_permissions(user_id: int):
     from appcore.users import get_by_id
     user = get_by_id(user_id)
     if not user:
-        return jsonify({"error": "用户不存在"}), 404
+        return admin_flask_response(build_admin_error_response("用户不存在", 404))
     if user["role"] == ROLE_SUPERADMIN:
-        return jsonify({"error": "超级管理员权限不可修改"}), 403
+        return admin_flask_response(build_admin_error_response("超级管理员权限不可修改", 403))
     body = request.get_json(silent=True) or {}
     action = body.get("action")
     if action == "reset":
@@ -212,7 +226,7 @@ def set_user_permissions(user_id: int):
         target_label=user.get("username"),
         detail={"permission_keys": sorted(cleaned.keys())},
     )
-    return jsonify({"ok": True, "permissions": cleaned})
+    return admin_flask_response(build_admin_ok_response(permissions=cleaned))
 
 
 def _coerce_json(raw):
@@ -328,7 +342,9 @@ def settings():
 @login_required
 @admin_required
 def api_media_languages():
-    return jsonify({"items": medias.list_languages_for_admin()})
+    return admin_flask_response(
+        build_admin_payload_response({"items": medias.list_languages_for_admin()})
+    )
 
 
 @bp.route("/api/media-languages", methods=["POST"])
@@ -345,7 +361,7 @@ def api_create_media_language():
             body.get("shopify_language_name", ""),
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return admin_flask_response(build_admin_error_response(str(exc), 400))
     _audit_admin_action(
         "admin_media_language_created",
         target_type="media_language",
@@ -357,7 +373,7 @@ def api_create_media_language():
             "sort_order": body.get("sort_order", 0),
         },
     )
-    return jsonify({"ok": True}), 201
+    return admin_flask_response(build_admin_ok_response(status_code=201))
 
 
 @bp.route("/api/media-languages/<code>", methods=["PUT"])
@@ -374,7 +390,7 @@ def api_update_media_language(code: str):
             body.get("shopify_language_name", ""),
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return admin_flask_response(build_admin_error_response(str(exc), 400))
     _audit_admin_action(
         "admin_media_language_updated",
         target_type="media_language",
@@ -385,7 +401,7 @@ def api_update_media_language(code: str):
             "sort_order": body.get("sort_order", 0),
         },
     )
-    return jsonify({"ok": True})
+    return admin_flask_response(build_admin_ok_response())
 
 
 @bp.route("/api/media-languages/<code>", methods=["DELETE"])
@@ -395,13 +411,13 @@ def api_delete_media_language(code: str):
     try:
         medias.delete_language(code)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return admin_flask_response(build_admin_error_response(str(exc), 400))
     _audit_admin_action(
         "admin_media_language_deleted",
         target_type="media_language",
         target_id=code,
     )
-    return jsonify({"ok": True})
+    return admin_flask_response(build_admin_ok_response())
 
 
 @bp.route("/api/image-translate/prompts", methods=["GET"])
@@ -418,13 +434,19 @@ def get_image_translate_prompts():
     lang = (request.args.get("lang") or "").strip().lower()
     if lang:
         if not is_image_translate_language_supported(lang):
-            return jsonify({"error": f"unsupported lang: {lang}"}), 400
-        return jsonify(get_prompts_for_lang(lang))
-    return jsonify({
-        "languages": list_image_translate_languages(),
-        "presets": list(PRESETS),
-        "prompts": list_all_prompts(),
-    })
+            return admin_flask_response(
+                build_admin_error_response(f"unsupported lang: {lang}", 400)
+            )
+        return admin_flask_response(build_admin_payload_response(get_prompts_for_lang(lang)))
+    return admin_flask_response(
+        build_admin_payload_response(
+            {
+                "languages": list_image_translate_languages(),
+                "presets": list(PRESETS),
+                "prompts": list_all_prompts(),
+            }
+        )
+    )
 
 
 @bp.route("/api/image-translate/prompts", methods=["POST"])
@@ -441,11 +463,15 @@ def set_image_translate_prompt():
     lang = (body.get("lang") or "").strip().lower()
     value = (body.get("value") or "").strip()
     if preset not in PRESETS:
-        return jsonify({"error": "preset must be cover or detail"}), 400
+        return admin_flask_response(
+            build_admin_error_response("preset must be cover or detail", 400)
+        )
     if not is_image_translate_language_supported(lang):
-        return jsonify({"error": f"unsupported lang: {lang}"}), 400
+        return admin_flask_response(
+            build_admin_error_response(f"unsupported lang: {lang}", 400)
+        )
     if not value:
-        return jsonify({"error": "value required"}), 400
+        return admin_flask_response(build_admin_error_response("value required", 400))
     update_prompt(preset, lang, value)
     _audit_admin_action(
         "admin_image_translate_prompt_updated",
@@ -453,7 +479,7 @@ def set_image_translate_prompt():
         target_id=f"{preset}:{lang}",
         detail={"preset": preset, "lang": lang},
     )
-    return jsonify({"ok": True})
+    return admin_flask_response(build_admin_ok_response())
 
 
 @bp.route("/voice-library/sync/<language>", methods=["POST"])
@@ -461,28 +487,34 @@ def set_image_translate_prompt():
 @admin_required
 def voice_library_sync(language: str):
     if language not in medias.list_enabled_language_codes():
-        return jsonify({"error": "language not enabled"}), 400
+        return admin_flask_response(build_admin_error_response("language not enabled", 400))
     try:
         sync_id = vlst.start_sync(language=language)
     except RuntimeError as exc:
         msg = str(exc)
         if "another sync" in msg:
-            return jsonify({"error": msg}), 409
-        return jsonify({"error": msg}), 500
+            return admin_flask_response(build_admin_error_response(msg, 409))
+        return admin_flask_response(build_admin_error_response(msg, 500))
     _audit_admin_action(
         "admin_voice_library_sync_started",
         target_type="voice_library",
         target_id=language,
         detail={"sync_id": sync_id},
     )
-    return jsonify({"sync_id": sync_id}), 202
+    return admin_flask_response(
+        build_admin_payload_response({"sync_id": sync_id}, status_code=202)
+    )
 
 
 @bp.route("/voice-library/sync-status", methods=["GET"])
 @login_required
 @admin_required
 def voice_library_sync_status():
-    return jsonify({
-        "current": vlst.get_current(),
-        "summary": vlst.summarize(),
-    })
+    return admin_flask_response(
+        build_admin_payload_response(
+            {
+                "current": vlst.get_current(),
+                "summary": vlst.summarize(),
+            }
+        )
+    )

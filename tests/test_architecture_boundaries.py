@@ -1543,6 +1543,39 @@ def test_admin_prompts_api_responses_live_outside_route_module():
     assert Path("web/services/admin_prompts.py").exists()
 
 
+def test_admin_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/admin.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "get_user_permissions",
+        "api_update_user_role",
+        "set_user_permissions",
+        "api_media_languages",
+        "api_create_media_language",
+        "api_update_media_language",
+        "api_delete_media_language",
+        "get_image_translate_prompts",
+        "set_image_translate_prompt",
+        "voice_library_sync",
+        "voice_library_sync_status",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "jsonify(" not in module_source
+    assert "admin_flask_response" in route_source
+    assert "build_admin_payload_response" in route_source
+    assert "build_admin_error_response" in route_source
+    assert "build_admin_ok_response" in route_source
+    assert Path("web/services/admin.py").exists()
+
+
 def test_prompt_api_responses_live_outside_route_module():
     module_source = Path("web/routes/prompt.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

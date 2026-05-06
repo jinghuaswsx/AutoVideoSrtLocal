@@ -60,6 +60,8 @@ def test_admin_settings_empty_state_container(authed_client_no_db, monkeypatch):
     from web.routes import admin as r
 
     monkeypatch.setattr(r, "get_all_retention_settings", lambda: {})
+    monkeypatch.setattr(r, "get_setting", lambda key: None)
+    monkeypatch.setattr(r.product_roas, "get_configured_rmb_per_usd", lambda: "6.83")
     monkeypatch.setattr(r.medias, "list_languages_for_admin", lambda: [])
     resp = authed_client_no_db.get("/admin/settings")
     assert resp.status_code == 200
@@ -189,6 +191,7 @@ def test_admin_settings_shows_and_saves_material_roas_exchange_rate(
     monkeypatch.setattr(r, "get_all_retention_settings", lambda: {"default": 168})
     monkeypatch.setattr(r, "get_retention_hours", lambda project_type: 168)
     monkeypatch.setattr(r, "has_retention_override", lambda project_type: False)
+    monkeypatch.setattr(r, "get_setting", lambda key: None)
     monkeypatch.setattr(r.medias, "list_languages_for_admin", lambda: [])
     monkeypatch.setattr(
         r.product_roas,
