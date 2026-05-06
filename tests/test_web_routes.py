@@ -295,7 +295,10 @@ def test_fr_translate_list_page_uses_local_multipart_upload():
 
 def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     root = Path(__file__).resolve().parents[1]
-    template = (root / "web" / "templates" / "subtitle_removal_upload.html").read_text(encoding="utf-8")
+    template = (
+        (root / "web" / "templates" / "subtitle_removal_upload.html").read_text(encoding="utf-8")
+        + (root / "web" / "templates" / "_subtitle_removal_upload_panel.html").read_text(encoding="utf-8")
+    )
     scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
 
     assert 'id="srUploadInput"' in template
@@ -1040,6 +1043,8 @@ def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     assert 'id="srUploadInput"' in upload_body
     assert 'id="srPickVideoButton"' in upload_body
     assert 'id="srUploadDropzone"' in upload_body
+    assert "/api/subtitle-removal/upload/bootstrap" in upload_body
+    assert "/api/subtitle-removal/upload/complete" in upload_body
     assert "暂不支持文件选择" not in upload_body
     assert detail_response.status_code == 200
     detail_body = detail_response.get_data(as_text=True)
