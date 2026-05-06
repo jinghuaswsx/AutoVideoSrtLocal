@@ -21,6 +21,7 @@ from web.services.media_mk_selection import (
     build_mk_video_proxy_flask_response as _build_mk_video_proxy_flask_response,
     build_mk_video_proxy_response as _build_mk_video_proxy_response_impl,
     build_mk_admin_required_response as _build_mk_admin_required_response_impl,
+    build_mk_selection_refresh_response as _build_mk_selection_refresh_response_impl,
     cache_mk_video as _cache_mk_video_impl,
     build_mk_detail_response as _build_mk_detail_response_impl,
     build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
@@ -54,6 +55,10 @@ def _build_mk_selection_response(args):
         ranking_columns_fn=_dianxiaomi_rankings_columns,
         db_query_fn=db_query,
     )
+
+
+def _build_mk_selection_refresh_response():
+    return _build_mk_selection_refresh_response_impl()
 
 
 def _build_mk_detail_response(mk_id: int):
@@ -98,8 +103,10 @@ def api_mk_selection():
 @login_required
 def api_mk_selection_refresh():
     """触发重新抓取明空消耗数据（后台任务）。"""
-    # TODO: 后台任务重新抓取
-    return jsonify({"ok": True, "message": "刷新任务已提交（暂未实现）"})
+    if not _is_admin():
+        return _routes()._mk_admin_required_response()
+    result = _routes()._build_mk_selection_refresh_response()
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/mk-media", methods=["GET"])

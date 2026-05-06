@@ -52,6 +52,17 @@ def build_mk_admin_required_response() -> MkSelectionResponse:
     return MkSelectionResponse({"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee"}, 403)
 
 
+def build_mk_selection_refresh_response() -> MkSelectionResponse:
+    return MkSelectionResponse(
+        {
+            "ok": False,
+            "error": "not_implemented",
+            "message": "\u660e\u7a7a\u9009\u54c1\u5237\u65b0\u540e\u53f0\u4efb\u52a1\u5c1a\u672a\u5b9e\u73b0",
+        },
+        501,
+    )
+
+
 def _parse_bounded_int(
     args: Mapping[str, str],
     name: str,

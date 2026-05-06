@@ -1339,6 +1339,7 @@ def test_mk_selection_admin_required_response_lives_outside_route_module():
     module = ast.parse(module_source)
     route_names = {
         "api_mk_selection",
+        "api_mk_selection_refresh",
         "api_mk_media_proxy",
         "api_mk_video_proxy",
         "api_mk_detail_proxy",
@@ -1354,6 +1355,25 @@ def test_mk_selection_admin_required_response_lives_outside_route_module():
         assert "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee" not in route_source
         assert "_mk_admin_required_response" in route_source
     assert "build_mk_admin_required_response" in Path(
+        "web/services/media_mk_selection.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_mk_selection_refresh_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_mk_selection_refresh"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "TODO" not in route_source
+    assert "\u6682\u672a\u5b9e\u73b0" not in route_source
+    assert "return jsonify({\"ok\"" not in route_source
+    assert "_build_mk_selection_refresh_response" in route_source
+    assert "build_mk_selection_refresh_response" in Path(
         "web/services/media_mk_selection.py"
     ).read_text(encoding="utf-8")
 

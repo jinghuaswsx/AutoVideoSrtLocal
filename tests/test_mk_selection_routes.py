@@ -187,6 +187,30 @@ def test_mk_selection_api_delegates_response_building_after_admin_gate(
     assert captured["keyword"] == "tooth"
 
 
+def test_mk_selection_refresh_delegates_response_building_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+    from web.services.media_mk_selection import MkSelectionResponse
+
+    calls = []
+    monkeypatch.setattr(
+        route_mod,
+        "_build_mk_selection_refresh_response",
+        lambda: calls.append("refresh") or MkSelectionResponse(
+            {"ok": False, "error": "not_implemented"},
+            501,
+        ),
+    )
+
+    response = authed_client_no_db.post("/medias/api/mk-selection/refresh")
+
+    assert response.status_code == 501
+    assert response.get_json() == {"ok": False, "error": "not_implemented"}
+    assert calls == ["refresh"]
+
+
 def test_mk_selection_admin_only_routes_delegate_forbidden_response(
     authed_user_client_no_db,
     monkeypatch,
@@ -204,6 +228,13 @@ def test_mk_selection_admin_only_routes_delegate_forbidden_response(
         "_build_mk_selection_response",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("selection builder should not run for non-admin")
+        ),
+    )
+    monkeypatch.setattr(
+        route_mod,
+        "_build_mk_selection_refresh_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("refresh builder should not run for non-admin")
         ),
     )
     monkeypatch.setattr(
@@ -230,19 +261,21 @@ def test_mk_selection_admin_only_routes_delegate_forbidden_response(
 
     responses = [
         authed_user_client_no_db.get("/medias/api/mk-selection"),
+        authed_user_client_no_db.post("/medias/api/mk-selection/refresh"),
         authed_user_client_no_db.get("/medias/api/mk-detail/3719"),
         authed_user_client_no_db.get("/medias/api/mk-media?path=uploads2/demo.jpg"),
         authed_user_client_no_db.get("/medias/api/mk-video?path=uploads2/demo.mp4"),
     ]
 
-    assert [response.status_code for response in responses] == [403, 403, 403, 403]
+    assert [response.status_code for response in responses] == [403, 403, 403, 403, 403]
     assert [response.get_json() for response in responses] == [
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
+        {"error": "forbidden-from-builder"},
     ]
-    assert calls == ["forbidden", "forbidden", "forbidden", "forbidden"]
+    assert calls == ["forbidden", "forbidden", "forbidden", "forbidden", "forbidden"]
 
 
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(
