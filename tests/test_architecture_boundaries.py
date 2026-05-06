@@ -1744,6 +1744,34 @@ def test_link_check_project_api_responses_live_outside_route_module():
     assert Path("web/services/link_check.py").exists()
 
 
+def test_video_review_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/video_review.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "upload",
+        "start_review",
+        "get_prompts",
+        "update_prompts",
+        "delete",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+
+    assert set(route_sources) == route_names
+    assert "jsonify(" not in route_source
+    assert "video_review_flask_response" in route_source
+    assert "build_video_review_missing_upload_response" in route_source
+    assert "build_video_review_upload_success_response" in route_source
+    assert "build_video_review_started_response" in route_source
+    assert "build_video_review_prompts_saved_response" in route_source
+    assert "build_video_review_delete_success_response" in route_source
+    assert Path("web/services/video_review.py").exists()
+
+
 def test_media_shopify_image_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/shopify_image.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

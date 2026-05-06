@@ -7,7 +7,7 @@ import os
 import time
 import uuid
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
@@ -24,6 +24,22 @@ from pipeline.video_review import get_review_prompts, save_review_prompts
 from web.background import start_background_task
 from web.extensions import socketio
 from web.services.artifact_download import safe_task_file_response
+from web.services.video_review import (
+    build_video_review_already_running_response,
+    build_video_review_delete_success_response,
+    build_video_review_empty_prompts_response,
+    build_video_review_file_missing_response,
+    build_video_review_file_too_large_response,
+    build_video_review_forbidden_prompts_response,
+    build_video_review_missing_upload_response,
+    build_video_review_not_found_response,
+    build_video_review_prompts_response,
+    build_video_review_prompts_saved_response,
+    build_video_review_started_response,
+    build_video_review_unsupported_upload_response,
+    build_video_review_upload_success_response,
+    video_review_flask_response,
+)
 from web.upload_util import save_uploaded_file_to_path
 
 log = logging.getLogger(__name__)
@@ -103,11 +119,11 @@ def upload():
     """上传视频创建评估项目。"""
     file = request.files.get("video")
     if not file or not file.filename:
-        return jsonify(error="请上传视频"), 400
+        return video_review_flask_response(build_video_review_missing_upload_response())
 
     from web.upload_util import validate_video_extension
     if not validate_video_extension(file.filename):
-        return jsonify(error="不支持的视频格式"), 400
+        return video_review_flask_response(build_video_review_unsupported_upload_response())
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -141,7 +157,7 @@ def upload():
          get_retention_hours("video_review")),
     )
 
-    return jsonify({"id": task_id}), 201
+    return video_review_flask_response(build_video_review_upload_success_response(task_id))
 
 
 @bp.route("/api/video-review/<task_id>/review", methods=["POST"])
@@ -153,7 +169,7 @@ def start_review(task_id: str):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify(error="not found"), 404
+        return video_review_flask_response(build_video_review_not_found_response())
 
     state = json.loads(row.get("state_json") or "{}")
 
@@ -164,12 +180,14 @@ def start_review(task_id: str):
 
     video_path = state.get("video_path", "")
     if not video_path or not os.path.exists(video_path):
-        return jsonify(error="视频文件不存在"), 400
+        return video_review_flask_response(build_video_review_file_missing_response())
 
     # 检查文件大小（OpenRouter 有限制，一般 20MB 以内）
     file_size = os.path.getsize(video_path)
     if file_size > 100 * 1024 * 1024:
-        return jsonify(error=f"视频文件过大（{file_size / 1024 / 1024:.1f}MB），请压缩到 100MB 以内"), 400
+        return video_review_flask_response(
+            build_video_review_file_too_large_response(file_size / 1024 / 1024)
+        )
 
     active_metadata = {
         "user_id": current_user.id,
@@ -182,7 +200,7 @@ def start_review(task_id: str):
         },
     }
     if not try_register_active_task("video_review", task_id, **active_metadata):
-        return jsonify({"status": "already_running"})
+        return video_review_flask_response(build_video_review_already_running_response())
 
     _update_state(task_id, {
         "model": model,
@@ -208,7 +226,7 @@ def start_review(task_id: str):
         unregister_active_task("video_review", task_id)
         raise
 
-    return jsonify({"status": "started"})
+    return video_review_flask_response(build_video_review_started_response())
 
 
 def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
@@ -297,7 +315,7 @@ def get_video(task_id: str):
 def get_prompts():
     """获取全局评分提示词（中英）。"""
     prompts = get_review_prompts()
-    return jsonify(prompts)
+    return video_review_flask_response(build_video_review_prompts_response(prompts))
 
 
 @bp.route("/api/video-review/prompts", methods=["PUT"])
@@ -305,18 +323,18 @@ def get_prompts():
 def update_prompts():
     """保存全局评分提示词（仅管理员）。"""
     if not current_user.is_admin:
-        return jsonify(error="仅管理员可修改提示词"), 403
+        return video_review_flask_response(build_video_review_forbidden_prompts_response())
     body = request.get_json(silent=True) or {}
     en = (body.get("en") or "").strip()
     zh = (body.get("zh") or "").strip()
     if not en and not zh:
-        return jsonify(error="提示词不能为空"), 400
+        return video_review_flask_response(build_video_review_empty_prompts_response())
     # 如果只传了一个，另一个保持原值
     current = get_review_prompts()
     en = en or current["en"]
     zh = zh or current["zh"]
     save_review_prompts(en, zh)
-    return jsonify({"status": "ok", "en": en, "zh": zh})
+    return video_review_flask_response(build_video_review_prompts_saved_response(en, zh))
 
 
 @bp.route("/api/video-review/<task_id>", methods=["DELETE"])
@@ -326,7 +344,7 @@ def delete(task_id: str):
         "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s AND type = 'video_review'",
         (task_id, current_user.id),
     )
-    return jsonify({"status": "ok"})
+    return video_review_flask_response(build_video_review_delete_success_response())
 
 
 # ── 工具函数 ──
