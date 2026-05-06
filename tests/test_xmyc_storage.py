@@ -75,6 +75,7 @@ def test_parse_page_list_html_extracts_total_and_rows():
     assert first["stock_available"] == 50
     assert first["unit_price"] == Decimal("16.57")
     assert first["shelf_code"] == "E特大盒"
+    assert first["image_url"] == "https://www.xmyc.com/x"
 
 
 def test_parse_page_list_html_handles_empty_price():
@@ -179,6 +180,33 @@ def test_set_product_skus_with_empty_list_only_clears(monkeypatch):
     assert out["attached"] == 0
 
 
+def test_upsert_skus_writes_image_url(monkeypatch):
+    store: dict = {"calls": [], "force_rowcount": 1}
+
+    @contextmanager
+    def fake_get_conn():
+        yield _FakeConn(store)
+
+    monkeypatch.setattr(mod, "get_conn", fake_get_conn)
+
+    mod.upsert_skus([{
+        "xmyc_id": "11917939",
+        "sku_code": "83527156514",
+        "sku": "115-18103480",
+        "goods_name": "Hammer",
+        "image_url": "https://img.example.com/hammer.jpg",
+        "unit_price": Decimal("16.57"),
+        "stock_available": 50,
+        "warehouse": "WH",
+        "shelf_code": "A1",
+    }])
+
+    insert_call = store["calls"][0]
+    assert "image_url" in insert_call["sql"]
+    assert "image_url=VALUES(image_url)" in insert_call["sql"]
+    assert "https://img.example.com/hammer.jpg" in insert_call["params"]
+
+
 def test_refresh_picks_primary_sku_by_order_count(monkeypatch):
     captured = {}
 
@@ -251,6 +279,7 @@ def test_list_skus_builds_filter_sql(monkeypatch):
     params = list(captured["params"])
     assert params[-2:] == [50, 10]
     assert params[0] == "%昆虫%"
+    assert "s.image_url" in captured["sql"]
 
 
 def test_update_sku_writes_decimal_and_returns_row(monkeypatch):

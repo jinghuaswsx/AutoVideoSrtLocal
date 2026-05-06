@@ -67,6 +67,7 @@ def test_xmyc_match_modal_assets_present():
     assert 'id="xmycMatchSearch"' in list_html
     assert 'id="xmycMatchSaveBtn"' in list_html
     assert 'id="xmycMatchTbody"' in list_html
+    assert "<th>图片</th>" in list_html
     assert "xmyc_match_modal.js" in list_html
 
     assert 'id="xmycMatchOpenBtn"' in partial_html
@@ -75,6 +76,8 @@ def test_xmyc_match_modal_assets_present():
     assert "window.XmycMatchModal" in modal_js
     assert "/medias/api/xmyc-skus" in modal_js
     assert "/xmyc-skus" in modal_js
+    assert "image_url" in modal_js
+    assert "oc-xmyc-sku-image" in modal_js
 
     assert "_openXmycMatch" in roas_js
     assert "XmycMatchModal" in roas_js
