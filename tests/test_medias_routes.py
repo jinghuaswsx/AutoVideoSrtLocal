@@ -2491,6 +2491,7 @@ def test_update_product_owner_delegates_to_response_builder(authed_client_no_db,
     from web.routes import medias as r
 
     captured = {}
+    converted = {}
 
     class Result:
         not_found = False
@@ -2503,7 +2504,12 @@ def test_update_product_owner_delegates_to_response_builder(authed_client_no_db,
         captured["is_admin"] = is_admin
         return Result()
 
+    def fake_flask_response(result):
+        converted["payload"] = result.payload
+        return {"converted": True, **result.payload}, result.status_code
+
     monkeypatch.setattr(r, "_build_product_owner_update_response", fake_build)
+    monkeypatch.setattr(r, "_product_owner_update_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.patch(
         "/medias/api/products/42/owner",
@@ -2511,8 +2517,9 @@ def test_update_product_owner_delegates_to_response_builder(authed_client_no_db,
     )
 
     assert resp.status_code == 200
-    assert resp.get_json() == {"user_id": 7, "owner_name": "李四"}
+    assert resp.get_json() == {"converted": True, "user_id": 7, "owner_name": "李四"}
     assert captured == {"pid": 42, "body": {"user_id": 7}, "is_admin": True}
+    assert converted == {"payload": {"user_id": 7, "owner_name": "李四"}}
 
 
 def test_update_product_owner_rejects_non_admin(authed_user_client_no_db, monkeypatch):

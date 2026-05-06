@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from flask import jsonify
+
 from appcore import medias
 
 
@@ -51,3 +53,7 @@ def build_product_owner_update_response(
 
     owner_name = get_user_display_name_fn(new_uid)
     return ProductOwnerUpdateResponse({"user_id": new_uid, "owner_name": owner_name}, 200)
+
+
+def product_owner_update_flask_response(result: ProductOwnerUpdateResponse):
+    return jsonify(result.payload), result.status_code

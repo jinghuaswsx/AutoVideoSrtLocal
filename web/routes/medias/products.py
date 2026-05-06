@@ -14,6 +14,7 @@ from web.services.media_product_detail import (
 )
 from web.services.media_product_owner import (
     build_product_owner_update_response as _build_product_owner_update_response_impl,
+    product_owner_update_flask_response as _product_owner_update_flask_response_impl,
 )
 from web.services.media_product_mutations import (
     build_product_create_response as _build_product_create_response_impl,
@@ -80,6 +81,10 @@ def _build_product_owner_update_response(pid: int, body: dict, *, is_admin: bool
         body,
         is_admin=is_admin,
     )
+
+
+def _product_owner_update_flask_response(result):
+    return _product_owner_update_flask_response_impl(result)
 
 
 def _build_product_create_response(body: dict, *, user_id: int):
@@ -338,7 +343,7 @@ def api_update_product_owner(pid: int):
     )
     if result.not_found:
         abort(404)
-    return jsonify(result.payload), result.status_code
+    return routes._product_owner_update_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>", methods=["DELETE"])

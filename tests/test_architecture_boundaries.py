@@ -543,7 +543,9 @@ def test_media_product_owner_update_response_lives_outside_route_module():
     assert "medias.get_user_display_name" not in route_source
     assert "user_id required" not in route_source
     assert "仅管理员可操作" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_product_owner_update_response" in route_source
+    assert "_product_owner_update_flask_response" in route_source
     assert Path("web/services/media_product_owner.py").exists()
 
 

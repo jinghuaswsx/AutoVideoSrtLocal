@@ -94,3 +94,20 @@ def test_build_product_owner_update_response_maps_user_error_to_bad_request():
     assert result.not_found is False
     assert result.status_code == 400
     assert result.payload == {"error": "user not found or inactive"}
+
+
+def test_product_owner_update_flask_response_returns_payload_and_status(
+    authed_client_no_db,
+):
+    from web.services.media_product_owner import (
+        ProductOwnerUpdateResponse,
+        product_owner_update_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = product_owner_update_flask_response(
+            ProductOwnerUpdateResponse({"user_id": 7, "owner_name": "Owner"}, 202)
+        )
+
+    assert status_code == 202
+    assert response.get_json() == {"user_id": 7, "owner_name": "Owner"}
