@@ -6,6 +6,8 @@ DB / compose_video）全部 mock，验证 7 步全跑通 + 关键事件正确发
 from __future__ import annotations
 
 import os
+from contextlib import ExitStack
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -131,50 +133,70 @@ def test_full_pipeline_integration(tmp_path):
             "over_tolerance": False,
         }
 
-    with patch("appcore.runtime_v2.task_state.get",
-               side_effect=ts["get"]), \
-         patch("appcore.runtime_v2.task_state.update",
-               side_effect=ts["update"]), \
-         patch("appcore.runtime_v2.task_state.set_step",
-               side_effect=ts["set_step"]), \
-         patch("appcore.runtime_v2.task_state.set_step_message",
-               side_effect=ts["set_step_message"]), \
-         patch("appcore.runtime_v2.task_state.set_preview_file",
-               side_effect=ts["set_preview_file"]), \
-         patch("appcore.runtime_v2.task_state.set_expires_at",
-               side_effect=ts["set_expires_at"]), \
-         patch("pipeline.extract.extract_audio",
-               return_value=str(task_dir / "audio.wav")), \
-         patch("pipeline.ffutil.probe_media_info",
-               return_value={"duration": 30.0,
-                             "width": 1920, "height": 1080}), \
-         patch("pipeline.shot_decompose.decompose_shots",
-               side_effect=fake_decompose), \
-         patch("pipeline.shot_decompose.align_asr_to_shots",
-               side_effect=fake_align), \
-         patch("pipeline.storage.upload_file",
-               return_value="http://example.com/a.wav"), \
-         patch("pipeline.storage.delete_file"), \
-         patch("pipeline.asr.transcribe",
-               return_value=[{"start_time": 0.0, "end_time": 30.0,
-                              "text": "原文"}]), \
-         patch("pipeline.voice_match.match_for_video",
-               side_effect=fake_match), \
-         patch("pipeline.speech_rate_model.get_rate", return_value=15.0), \
-         patch("pipeline.speech_rate_model.initialize_baseline",
-               return_value=15.0), \
-         patch("pipeline.translate_v2.translate_shot",
-               side_effect=fake_translate_shot), \
-         patch("pipeline.tts_v2.generate_and_verify_shot",
-               side_effect=fake_generate_and_verify), \
-         patch("pipeline.audio_stitch.subprocess.run"), \
-         patch("pipeline.compose.compose_video",
-               return_value={
-                   "soft_video": str(task_dir / "soft.mp4"),
-                   "hard_video": str(task_dir / "hard.mp4"),
-                   "srt": str(task_dir / "subtitles.srt"),
-               }), \
-         patch("appcore.runtime_v2.resolve_key", return_value="k"):
+    patchers = [
+        patch("appcore.runtime_v2.task_state.get", side_effect=ts["get"]),
+        patch("appcore.runtime_v2.task_state.update", side_effect=ts["update"]),
+        patch("appcore.runtime_v2.task_state.set_step", side_effect=ts["set_step"]),
+        patch(
+            "appcore.runtime_v2.task_state.set_step_message",
+            side_effect=ts["set_step_message"],
+        ),
+        patch(
+            "appcore.runtime_v2.task_state.set_preview_file",
+            side_effect=ts["set_preview_file"],
+        ),
+        patch(
+            "appcore.runtime_v2.task_state.set_expires_at",
+            side_effect=ts["set_expires_at"],
+        ),
+        patch("pipeline.extract.extract_audio", return_value=str(task_dir / "audio.wav")),
+        patch(
+            "pipeline.ffutil.probe_media_info",
+            return_value={"duration": 30.0, "width": 1920, "height": 1080},
+        ),
+        patch("pipeline.shot_decompose.decompose_shots", side_effect=fake_decompose),
+        patch("pipeline.shot_decompose.align_asr_to_shots", side_effect=fake_align),
+        patch("pipeline.storage.upload_file", return_value="http://example.com/a.wav"),
+        patch("pipeline.storage.delete_file"),
+        patch(
+            "appcore.asr_router.resolve_adapter",
+            return_value=(SimpleNamespace(display_name="Mock ASR", model_id="mock"), {}),
+        ),
+        patch(
+            "appcore.asr_router.transcribe",
+            return_value={
+                "utterances": [
+                    {"start_time": 0.0, "end_time": 30.0, "text": "source text"}
+                ],
+                "provider_code": "mock_asr",
+                "model_id": "mock",
+            },
+        ),
+        patch("pipeline.extract.get_video_duration", return_value=30.0),
+        patch("appcore.runtime._pipeline_runner.ai_billing.log_request"),
+        patch("pipeline.voice_match.match_for_video", side_effect=fake_match),
+        patch("pipeline.speech_rate_model.get_rate", return_value=15.0),
+        patch("pipeline.speech_rate_model.initialize_baseline", return_value=15.0),
+        patch("pipeline.translate_v2.translate_shot", side_effect=fake_translate_shot),
+        patch(
+            "pipeline.tts_v2.generate_and_verify_shot",
+            side_effect=fake_generate_and_verify,
+        ),
+        patch("pipeline.audio_stitch.subprocess.run"),
+        patch(
+            "pipeline.compose.compose_video",
+            return_value={
+                "soft_video": str(task_dir / "soft.mp4"),
+                "hard_video": str(task_dir / "hard.mp4"),
+                "srt": str(task_dir / "subtitles.srt"),
+            },
+        ),
+        patch("appcore.llm_bindings.resolve", return_value={"model": "mock-model"}),
+        patch("appcore.runtime_v2.resolve_key", return_value="k"),
+    ]
+    with ExitStack() as stack:
+        for patcher in patchers:
+            stack.enter_context(patcher)
         runner = PipelineRunnerV2(bus=bus, user_id=1)
         runner.start("t1")
 
@@ -192,9 +214,10 @@ def test_full_pipeline_integration(tmp_path):
                  "translate", "tts", "subtitle", "compose", "export"]:
         assert state["steps"].get(name) == "done", (name, state["steps"])
 
-    # 最终视频路径被回写
-    assert state.get("final_video")
-    assert state.get("compose_result", {}).get("hard_video")
+    # 最终产物路径被回写到当前 variants 契约中
+    normal_variant = state.get("variants", {}).get("normal", {})
+    assert normal_variant.get("result", {}).get("hard_video")
+    assert state.get("status") == "done"
 
 
 def test_pipeline_emits_error_event_on_failure(tmp_path):
