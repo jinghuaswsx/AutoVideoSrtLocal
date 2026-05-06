@@ -4,14 +4,24 @@ from __future__ import annotations
 import logging
 from functools import wraps
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import system_audit
 from appcore import tasks as tasks_svc
+from web.services.tasks_responses import (
+    build_tasks_payload_response,
+    tasks_flask_response,
+)
 
 log = logging.getLogger(__name__)
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
+
+
+def _json_response(payload, status_code: int = 200):
+    return tasks_flask_response(
+        build_tasks_payload_response(payload, status_code)
+    )
 
 
 def _is_admin() -> bool:
@@ -40,7 +50,7 @@ def admin_required(fn):
     @wraps(fn)
     def _wrap(*a, **kw):
         if not _is_admin():
-            return jsonify({"error": "仅管理员可操作"}), 403
+            return _json_response({"error": "仅管理员可操作"}, 403)
         return fn(*a, **kw)
     return _wrap
 
@@ -50,7 +60,7 @@ def capability_required(code: str):
         @wraps(fn)
         def _wrap(*a, **kw):
             if not _has_capability(code):
-                return jsonify({"error": f"缺少能力 {code}"}), 403
+                return _json_response({"error": f"缺少能力 {code}"}, 403)
             return fn(*a, **kw)
         return _wrap
     return _dec
@@ -97,7 +107,7 @@ def api_list():
 
     if tab == "all":
         if not _is_admin():
-            return jsonify({"error": "需要管理员权限"}), 403
+            return _json_response({"error": "需要管理员权限"}, 403)
     elif tab == "mine":
         where.append(
             "(t.assignee_id=%s OR (t.parent_task_id IS NULL AND t.status='pending' AND %s))"
@@ -146,7 +156,7 @@ def api_list():
         }
         for r in rows
     ]
-    return jsonify({"items": items, "page": page, "page_size": page_size})
+    return _json_response({"items": items, "page": page, "page_size": page_size})
 
 
 @bp.route("/api/dispatch_pool", methods=["GET"])
@@ -168,7 +178,7 @@ def api_dispatch_pool():
         "ORDER BY p.id DESC LIMIT 100"
     )
     rows = query_all(sql)
-    return jsonify({"items": [dict(r) for r in rows]})
+    return _json_response({"items": [dict(r) for r in rows]})
 
 
 @bp.route("/api/parent", methods=["POST"])
@@ -183,7 +193,7 @@ def api_create_parent():
         countries = payload.get("countries") or []
         translator_id = int(payload["translator_id"])
     except (KeyError, TypeError, ValueError) as e:
-        return jsonify({"error": f"参数错误: {e}"}), 400
+        return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
         parent_id = tasks_svc.create_parent_task(
             media_product_id=product_id,
@@ -193,7 +203,7 @@ def api_create_parent():
             created_by=int(current_user.id),
         )
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(
         parent_id,
         "task_parent_created",
@@ -204,7 +214,7 @@ def api_create_parent():
             "translator_id": translator_id,
         },
     )
-    return jsonify({"parent_task_id": parent_id})
+    return _json_response({"parent_task_id": parent_id})
 
 
 @bp.route("/api/parent/<int:tid>/claim", methods=["POST"])
@@ -214,9 +224,9 @@ def api_parent_claim(tid: int):
     try:
         tasks_svc.claim_parent(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.ConflictError as e:
-        return jsonify({"error": str(e)}), 409
+        return _json_response({"error": str(e)}, 409)
     _audit_task_action(tid, "task_parent_claimed")
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/parent/<int:tid>/upload_done", methods=["POST"])
@@ -225,9 +235,9 @@ def api_parent_upload_done(tid: int):
     try:
         tasks_svc.mark_uploaded(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.StateError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_parent_upload_done")
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/parent/<int:tid>/approve", methods=["POST"])
@@ -237,9 +247,9 @@ def api_parent_approve(tid: int):
     try:
         tasks_svc.approve_raw(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.StateError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_parent_approved")
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/parent/<int:tid>/reject", methods=["POST"])
@@ -252,9 +262,9 @@ def api_parent_reject(tid: int):
         tasks_svc.reject_raw(task_id=tid, actor_user_id=int(current_user.id),
                              reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_parent_rejected", {"reason": reason})
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/parent/<int:tid>/cancel", methods=["POST"])
@@ -267,9 +277,9 @@ def api_parent_cancel(tid: int):
         tasks_svc.cancel_parent(task_id=tid, actor_user_id=int(current_user.id),
                                 reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_parent_cancelled", {"reason": reason})
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/parent/<int:tid>/bind_item", methods=["PATCH"])
@@ -280,25 +290,25 @@ def api_parent_bind_item(tid: int):
     payload = request.get_json(silent=True) or {}
     item_id = payload.get("media_item_id")
     if item_id is None:
-        return jsonify({"error": "media_item_id required"}), 400
+        return _json_response({"error": "media_item_id required"}, 400)
     row = query_one(
         "SELECT assignee_id, media_product_id FROM tasks "
         "WHERE id=%s AND parent_task_id IS NULL", (tid,)
     )
     if not row:
-        return jsonify({"error": "task not found"}), 404
+        return _json_response({"error": "task not found"}, 404)
     if row["assignee_id"] != int(current_user.id) and not _is_admin():
-        return jsonify({"error": "forbidden"}), 403
+        return _json_response({"error": "forbidden"}, 403)
     item = query_one(
         "SELECT id FROM media_items WHERE id=%s AND product_id=%s",
         (int(item_id), row["media_product_id"])
     )
     if not item:
-        return jsonify({"error": "media_item not found or not under this product"}), 400
+        return _json_response({"error": "media_item not found or not under this product"}, 400)
     execute("UPDATE tasks SET media_item_id=%s, updated_at=NOW() WHERE id=%s",
             (int(item_id), tid))
     _audit_task_action(tid, "task_parent_bound_item", {"media_item_id": int(item_id)})
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/child/<int:tid>/submit", methods=["POST"])
@@ -307,11 +317,11 @@ def api_child_submit(tid: int):
     try:
         tasks_svc.submit_child(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.NotReadyError as e:
-        return jsonify({"error": "readiness_failed", "missing": e.missing}), 422
+        return _json_response({"error": "readiness_failed", "missing": e.missing}, 422)
     except tasks_svc.StateError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_child_submitted")
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/child/<int:tid>/approve", methods=["POST"])
@@ -321,9 +331,9 @@ def api_child_approve(tid: int):
     try:
         tasks_svc.approve_child(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.StateError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_child_approved")
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/child/<int:tid>/reject", methods=["POST"])
@@ -336,9 +346,9 @@ def api_child_reject(tid: int):
         tasks_svc.reject_child(task_id=tid, actor_user_id=int(current_user.id),
                                reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_child_rejected", {"reason": reason})
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/child/<int:tid>/cancel", methods=["POST"])
@@ -351,9 +361,9 @@ def api_child_cancel(tid: int):
         tasks_svc.cancel_child(task_id=tid, actor_user_id=int(current_user.id),
                                reason=reason)
     except (ValueError, tasks_svc.StateError) as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_child_cancelled", {"reason": reason})
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/<int:tid>/events", methods=["GET"])
@@ -378,7 +388,7 @@ def api_events(tid: int):
         }
         for r in rows
     ]
-    return jsonify({"events": events})
+    return _json_response({"events": events})
 
 
 @bp.route("/api/translators", methods=["GET"])
@@ -391,7 +401,7 @@ def api_translators():
         "AND JSON_EXTRACT(COALESCE(permissions, '{}'), '$.can_translate') = TRUE "
         "ORDER BY username"
     )
-    return jsonify({"translators": [{"id": r["id"], "username": r["username"]} for r in rows]})
+    return _json_response({"translators": [{"id": r["id"], "username": r["username"]} for r in rows]})
 
 
 @bp.route("/api/languages", methods=["GET"])
@@ -402,7 +412,7 @@ def api_languages():
         "SELECT code FROM media_languages "
         "WHERE enabled=1 AND code <> 'en' ORDER BY code"
     )
-    return jsonify({"languages": [{"code": r["code"].upper()} for r in rows]})
+    return _json_response({"languages": [{"code": r["code"].upper()} for r in rows]})
 
 
 @bp.route("/api/product/<int:pid>/en_items", methods=["GET"])
@@ -414,7 +424,7 @@ def api_product_en_items(pid: int):
         "WHERE product_id=%s AND lang='en' AND deleted_at IS NULL ORDER BY id DESC",
         (pid,),
     )
-    return jsonify({"items": [{"id": r["id"], "filename": r["filename"]} for r in rows]})
+    return _json_response({"items": [{"id": r["id"], "filename": r["filename"]} for r in rows]})
 
 
 @bp.route("/api/child/<int:tid>/readiness", methods=["GET"])
@@ -429,10 +439,10 @@ def api_child_readiness(tid: int):
         (tid,),
     )
     if not row:
-        return jsonify({"error": "child task not found"}), 404
+        return _json_response({"error": "child task not found"}, 404)
     item = tasks_svc._find_target_lang_item(row["media_product_id"], row["country_code"])
     if not item:
-        return jsonify({
+        return _json_response({
             "ready": False,
             "missing": ["lang_item_missing"],
             "country_code": row["country_code"],
@@ -443,7 +453,7 @@ def api_child_readiness(tid: int):
     is_ready = pushes.is_ready(readiness)
     missing = [k for k, v in readiness.items()
                if not str(k).endswith("_reason") and not v]
-    return jsonify({
+    return _json_response({
         "ready": is_ready,
         "missing": missing,
         "readiness": {k: bool(v) for k, v in readiness.items()
