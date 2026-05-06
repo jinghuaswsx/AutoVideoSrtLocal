@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import os
+import tempfile
 
 from flask import jsonify
 
@@ -40,6 +41,35 @@ def build_raw_sources_list_response(
 ) -> RawSourceResponse:
     rows = list_raw_sources_fn(product_id)
     return RawSourceResponse({"items": [serialize_raw_source_fn(row) for row in rows]}, 200)
+
+
+def inspect_raw_source_video(
+    video_bytes: bytes,
+    *,
+    get_media_duration_fn: Callable[[str], float | int | None],
+    probe_media_info_fn: Callable[[str], dict],
+    named_temporary_file_fn: Callable[..., object] = tempfile.NamedTemporaryFile,
+    unlink_fn: Callable[[str], object] = os.unlink,
+) -> tuple[float | None, int | None, int | None]:
+    duration_seconds = None
+    width = None
+    height = None
+    tmp_path = None
+    try:
+        with named_temporary_file_fn(suffix=".mp4", delete=False) as tmp:
+            tmp.write(video_bytes)
+            tmp_path = tmp.name
+        duration_seconds = float(get_media_duration_fn(tmp_path) or 0.0) or None
+        info = probe_media_info_fn(tmp_path) or {}
+        width = info.get("width")
+        height = info.get("height")
+    finally:
+        if tmp_path:
+            try:
+                unlink_fn(tmp_path)
+            except Exception:
+                pass
+    return duration_seconds, width, height
 
 
 def build_raw_source_create_response(

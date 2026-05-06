@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 
 class _Upload:
     def __init__(self, data: bytes, filename: str, mimetype: str):
@@ -53,6 +55,44 @@ def test_raw_source_flask_response_returns_payload_and_status(authed_client_no_d
 
     assert status == 206
     assert payload.get_json() == {"items": [{"id": 7}]}
+
+
+def test_inspect_raw_source_video_writes_temp_file_and_cleans_up(tmp_path):
+    from web.services.media_raw_sources import inspect_raw_source_video
+
+    temp_path = tmp_path / "raw.mp4"
+    calls = []
+
+    class DummyTempFile:
+        name = str(temp_path)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def write(self, data):
+            calls.append(("write", data))
+            temp_path.write_bytes(data)
+
+    result = inspect_raw_source_video(
+        b"video-bytes",
+        get_media_duration_fn=lambda path: calls.append(("duration", path)) or 12.3,
+        probe_media_info_fn=lambda path: calls.append(("probe", path)) or {"width": 1280, "height": 720},
+        named_temporary_file_fn=lambda **kwargs: calls.append(("temp", kwargs)) or DummyTempFile(),
+        unlink_fn=lambda path: calls.append(("unlink", path)) or Path(path).unlink(),
+    )
+
+    assert result == (12.3, 1280, 720)
+    assert not temp_path.exists()
+    assert calls == [
+        ("temp", {"suffix": ".mp4", "delete": False}),
+        ("write", b"video-bytes"),
+        ("duration", str(temp_path)),
+        ("probe", str(temp_path)),
+        ("unlink", str(temp_path)),
+    ]
 
 
 def test_build_raw_source_filename_error_response_uses_filename_rules():

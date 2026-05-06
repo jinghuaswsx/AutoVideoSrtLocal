@@ -813,6 +813,26 @@ def test_raw_source_create_response_lives_outside_route_module():
     assert Path("web/services/media_raw_sources.py").exists()
 
 
+def test_raw_source_video_inspection_lives_outside_route_module():
+    module_source = Path("web/routes/medias/raw_sources.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    helper_imports = [
+        alias.name
+        for node in module.body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "_helpers"
+        for alias in node.names
+    ]
+
+    assert "import tempfile" not in module_source
+    assert "import os" not in module_source
+    assert "NamedTemporaryFile" not in module_source
+    assert "os.unlink" not in module_source
+    assert "probe_media_info_safe" not in helper_imports
+    assert "_inspect_raw_source_video_impl" in module_source
+    assert Path("web/services/media_raw_sources.py").exists()
+
+
 def test_media_evaluation_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/evaluation.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

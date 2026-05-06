@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 from flask import abort, request
 from flask_login import login_required
 
@@ -20,7 +17,6 @@ from ._helpers import (
     _delete_media_object,
     _list_raw_source_allowed_english_filenames,
     _resolve_upload_user_id,
-    probe_media_info_safe,
 )
 from ._serializers import _serialize_raw_source
 from web.services.media_raw_sources import (
@@ -28,6 +24,7 @@ from web.services.media_raw_sources import (
     build_raw_source_delete_response as _build_raw_source_delete_response_impl,
     build_raw_source_update_response as _build_raw_source_update_response_impl,
     build_raw_sources_list_response as _build_raw_sources_list_response_impl,
+    inspect_raw_source_video as _inspect_raw_source_video_impl,
     raw_source_flask_response as _raw_source_flask_response_impl,
 )
 
@@ -47,26 +44,12 @@ def _build_raw_sources_list_response(pid: int):
 
 
 def _inspect_raw_source_video(video_bytes: bytes):
-    duration_seconds = None
-    width = None
-    height = None
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-            tmp.write(video_bytes)
-            tmp_path = tmp.name
-        routes = _routes_module()
-        duration_seconds = float(routes.get_media_duration(tmp_path) or 0.0) or None
-        info = routes.probe_media_info_safe(tmp_path)
-        width = info.get("width")
-        height = info.get("height")
-    finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-    return duration_seconds, width, height
+    routes = _routes_module()
+    return _inspect_raw_source_video_impl(
+        video_bytes,
+        get_media_duration_fn=routes.get_media_duration,
+        probe_media_info_fn=routes.probe_media_info_safe,
+    )
 
 
 def _build_raw_source_create_response(pid: int, video, cover, form):
