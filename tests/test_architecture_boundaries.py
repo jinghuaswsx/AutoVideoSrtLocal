@@ -2286,6 +2286,21 @@ def test_mk_media_proxy_response_lives_outside_route_module():
     assert Path("web/services/media_mk_selection.py").exists()
 
 
+def test_mk_media_path_normalization_lives_outside_route_module():
+    module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+
+    assert "replace(\"\\\\\", \"/\")" not in module_source
+    assert "path.startswith((\"http://\", \"https://\"))" not in module_source
+    assert "while path.startswith(\"./\")" not in module_source
+    assert "path.lstrip(\"/\")" not in module_source
+    assert "path.startswith(\"medias/\")" not in module_source
+    assert "\"..\" in path.split(\"/\")" not in module_source
+    assert "_normalize_mk_media_path_impl" in module_source
+    assert "normalize_mk_media_path" in Path("web/services/media_mk_selection.py").read_text(
+        encoding="utf-8"
+    )
+
+
 def test_mk_video_proxy_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

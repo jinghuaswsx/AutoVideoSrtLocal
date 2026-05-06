@@ -28,6 +28,7 @@ from web.services.media_mk_selection import (
     build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
     build_mk_media_proxy_response as _build_mk_media_proxy_response_impl,
     build_mk_selection_response as _build_mk_selection_response_impl,
+    normalize_mk_media_path as _normalize_mk_media_path_impl,
 )
 
 
@@ -160,17 +161,7 @@ def _get_mk_api_base_url() -> str:
 
 
 def _normalize_mk_media_path(raw_path: str) -> str:
-    path = (raw_path or "").strip().replace("\\", "/")
-    if path.startswith(("http://", "https://")):
-        return ""
-    while path.startswith("./"):
-        path = path[2:]
-    path = path.lstrip("/")
-    if path.startswith("medias/"):
-        path = path[len("medias/"):]
-    if not path or ".." in path.split("/"):
-        return ""
-    return path
+    return _normalize_mk_media_path_impl(raw_path)
 
 
 def _mk_video_cache_object_key(media_path: str) -> str:

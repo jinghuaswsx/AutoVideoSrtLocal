@@ -67,6 +67,20 @@ def build_mk_selection_refresh_response() -> MkSelectionResponse:
     )
 
 
+def normalize_mk_media_path(raw_path: str) -> str:
+    path = (raw_path or "").strip().replace("\\", "/")
+    if path.startswith(("http://", "https://")):
+        return ""
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.lstrip("/")
+    if path.startswith("medias/"):
+        path = path[len("medias/"):]
+    if not path or ".." in path.split("/"):
+        return ""
+    return path
+
+
 def _parse_bounded_int(
     args: Mapping[str, str],
     name: str,

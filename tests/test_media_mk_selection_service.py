@@ -38,6 +38,18 @@ def test_build_mk_selection_refresh_response_is_explicitly_not_implemented():
     }
 
 
+def test_normalize_mk_media_path_accepts_relative_media_paths_only():
+    from web.services.media_mk_selection import normalize_mk_media_path
+
+    assert normalize_mk_media_path(r".\medias\uploads2\202505\demo.jpg") == "uploads2/202505/demo.jpg"
+    assert normalize_mk_media_path("/medias/uploads2/demo.mp4") == "uploads2/demo.mp4"
+    assert normalize_mk_media_path("uploads2/demo.mp4") == "uploads2/demo.mp4"
+    assert normalize_mk_media_path("https://wedev.example/medias/uploads2/demo.mp4") == ""
+    assert normalize_mk_media_path("../secret.mp4") == ""
+    assert normalize_mk_media_path("uploads2/../secret.mp4") == ""
+    assert normalize_mk_media_path("   ") == ""
+
+
 def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_columns():
     from web.services.media_mk_selection import build_mk_selection_response
 
