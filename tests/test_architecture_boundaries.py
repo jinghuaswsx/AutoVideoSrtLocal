@@ -2779,6 +2779,25 @@ def test_tasks_child_readiness_query_lives_in_appcore_tasks():
     assert "def get_child_readiness" in appcore_source
 
 
+def test_tasks_parent_bind_item_write_lives_in_appcore_tasks():
+    module_source = Path("web/routes/tasks.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "api_parent_bind_item"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+    appcore_source = Path("appcore/tasks.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import query_one" not in route_source
+    assert "from appcore.db import query_one, execute" not in route_source
+    assert "SELECT assignee_id, media_product_id FROM tasks" not in route_source
+    assert "UPDATE tasks SET media_item_id" not in route_source
+    assert "tasks_svc.bind_parent_media_item" in route_source
+    assert "def bind_parent_media_item" in appcore_source
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

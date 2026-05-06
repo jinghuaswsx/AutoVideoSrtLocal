@@ -233,27 +233,23 @@ def api_parent_cancel(tid: int):
 @login_required
 def api_parent_bind_item(tid: int):
     """父任务回填 media_item_id；上传后跳转回时调用。"""
-    from appcore.db import query_one, execute
     payload = request.get_json(silent=True) or {}
     item_id = payload.get("media_item_id")
     if item_id is None:
         return _json_response({"error": "media_item_id required"}, 400)
-    row = query_one(
-        "SELECT assignee_id, media_product_id FROM tasks "
-        "WHERE id=%s AND parent_task_id IS NULL", (tid,)
-    )
-    if not row:
-        return _json_response({"error": "task not found"}, 404)
-    if row["assignee_id"] != int(current_user.id) and not _is_admin():
-        return _json_response({"error": "forbidden"}, 403)
-    item = query_one(
-        "SELECT id FROM media_items WHERE id=%s AND product_id=%s",
-        (int(item_id), row["media_product_id"])
-    )
-    if not item:
-        return _json_response({"error": "media_item not found or not under this product"}, 400)
-    execute("UPDATE tasks SET media_item_id=%s, updated_at=NOW() WHERE id=%s",
-            (int(item_id), tid))
+    try:
+        tasks_svc.bind_parent_media_item(
+            task_id=tid,
+            media_item_id=int(item_id),
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": str(exc)}, 404)
+    except PermissionError as exc:
+        return _json_response({"error": str(exc)}, 403)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
     _audit_task_action(tid, "task_parent_bound_item", {"media_item_id": int(item_id)})
     return _json_response({"ok": True})
 

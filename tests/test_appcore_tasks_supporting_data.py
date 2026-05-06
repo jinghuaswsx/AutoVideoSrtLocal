@@ -257,3 +257,68 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "country_code": "DE",
         "media_item_id": 5,
     }
+
+
+def test_bind_parent_media_item_validates_product_and_updates(monkeypatch):
+    from appcore import tasks
+
+    query_calls = []
+    execute_calls = []
+
+    def fake_query_one(sql, args=()):
+        query_calls.append((sql, args))
+        if "FROM tasks" in sql:
+            return {"assignee_id": 2, "media_product_id": 9}
+        if "FROM media_items" in sql:
+            return {"id": 5}
+        raise AssertionError(sql)
+
+    def fake_execute(sql, args=()):
+        execute_calls.append((sql, args))
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "execute", fake_execute)
+
+    tasks.bind_parent_media_item(
+        task_id=44,
+        media_item_id=5,
+        actor_user_id=2,
+        is_admin=False,
+    )
+
+    assert query_calls[0][1] == (44,)
+    assert "parent_task_id IS NULL" in query_calls[0][0]
+    assert query_calls[1][1] == (5, 9)
+    assert execute_calls == [
+        (
+            "UPDATE tasks SET media_item_id=%s, updated_at=NOW() WHERE id=%s",
+            (5, 44),
+        )
+    ]
+
+
+def test_bind_parent_media_item_rejects_non_assignee_non_admin(monkeypatch):
+    from appcore import tasks
+
+    execute_calls = []
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {"assignee_id": 2, "media_product_id": 9},
+    )
+    monkeypatch.setattr(tasks, "execute", lambda *args, **kwargs: execute_calls.append(args))
+
+    try:
+        tasks.bind_parent_media_item(
+            task_id=44,
+            media_item_id=5,
+            actor_user_id=3,
+            is_admin=False,
+        )
+    except PermissionError as exc:
+        assert str(exc) == "forbidden"
+    else:
+        raise AssertionError("expected PermissionError")
+
+    assert execute_calls == []

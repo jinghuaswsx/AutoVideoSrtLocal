@@ -196,6 +196,37 @@ def list_task_center_items(
     }
 
 
+def bind_parent_media_item(
+    *,
+    task_id: int,
+    media_item_id: int,
+    actor_user_id: int,
+    is_admin: bool,
+) -> None:
+    item_id = int(media_item_id)
+    row = query_one(
+        "SELECT assignee_id, media_product_id FROM tasks "
+        "WHERE id=%s AND parent_task_id IS NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("task not found")
+    if row["assignee_id"] != int(actor_user_id) and not is_admin:
+        raise PermissionError("forbidden")
+
+    item = query_one(
+        "SELECT id FROM media_items WHERE id=%s AND product_id=%s",
+        (item_id, row["media_product_id"]),
+    )
+    if not item:
+        raise ValueError("media_item not found or not under this product")
+
+    execute(
+        "UPDATE tasks SET media_item_id=%s, updated_at=NOW() WHERE id=%s",
+        (item_id, int(task_id)),
+    )
+
+
 def _row(task_id: int) -> dict | None:
     return query_one("SELECT * FROM tasks WHERE id=%s", (int(task_id),))
 

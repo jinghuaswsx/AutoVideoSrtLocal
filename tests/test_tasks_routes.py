@@ -178,6 +178,99 @@ def test_parent_admin_endpoints_forbid_non_admin(authed_user_client_no_db):
     assert rsp.status_code == 403
 
 
+def test_parent_bind_item_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+
+    def fail_query_one(*args, **kwargs):
+        raise AssertionError("route should delegate bind_item database work")
+
+    def fail_execute(*args, **kwargs):
+        raise AssertionError("route should delegate bind_item database work")
+
+    def fake_bind_parent_media_item(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("appcore.db.query_one", fail_query_one)
+    monkeypatch.setattr("appcore.db.execute", fail_execute)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.bind_parent_media_item",
+        fake_bind_parent_media_item,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    rsp = authed_client_no_db.patch(
+        "/tasks/api/parent/44/bind_item",
+        json={"media_item_id": 5},
+    )
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True}
+    assert captured == {
+        "task_id": 44,
+        "media_item_id": 5,
+        "actor_user_id": 1,
+        "is_admin": True,
+    }
+    assert audit_calls == [
+        (44, "task_parent_bound_item", {"media_item_id": 5})
+    ]
+
+
+def test_parent_bind_item_maps_service_errors(authed_client_no_db, monkeypatch):
+    def fail_query_one(*args, **kwargs):
+        raise AssertionError("route should delegate bind_item database work")
+
+    monkeypatch.setattr("appcore.db.query_one", fail_query_one)
+
+    def fake_bind_parent_media_item(**kwargs):
+        from appcore import tasks
+
+        raise tasks.StateError("task not found")
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.bind_parent_media_item",
+        fake_bind_parent_media_item,
+        raising=False,
+    )
+    rsp = authed_client_no_db.patch(
+        "/tasks/api/parent/44/bind_item",
+        json={"media_item_id": 5},
+    )
+    assert rsp.status_code == 404
+    assert rsp.get_json() == {"error": "task not found"}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.bind_parent_media_item",
+        lambda **kwargs: (_ for _ in ()).throw(PermissionError("forbidden")),
+        raising=False,
+    )
+    rsp = authed_client_no_db.patch(
+        "/tasks/api/parent/44/bind_item",
+        json={"media_item_id": 5},
+    )
+    assert rsp.status_code == 403
+    assert rsp.get_json() == {"error": "forbidden"}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.bind_parent_media_item",
+        lambda **kwargs: (_ for _ in ()).throw(
+            ValueError("media_item not found or not under this product")
+        ),
+        raising=False,
+    )
+    rsp = authed_client_no_db.patch(
+        "/tasks/api/parent/44/bind_item",
+        json={"media_item_id": 5},
+    )
+    assert rsp.status_code == 400
+    assert rsp.get_json() == {"error": "media_item not found or not under this product"}
+
+
 def test_parent_claim_requires_capability(authed_user_client_no_db):
     """Non-admin user without can_process_raw_video gets 403."""
     rsp = authed_user_client_no_db.post("/tasks/api/parent/9999/claim")
