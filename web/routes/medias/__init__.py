@@ -4,7 +4,6 @@ import io
 import json
 import hashlib
 import logging
-import mimetypes
 import os
 import tempfile
 import threading
@@ -33,7 +32,6 @@ from appcore import (
 )
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
-from appcore.db import execute as db_execute
 from appcore.db import query as db_query
 from appcore.material_filename_rules import (
     validate_initial_material_filename,
@@ -41,7 +39,7 @@ from appcore.material_filename_rules import (
     validate_video_filename_no_spaces,
 )
 from config import OUTPUT_DIR
-from pipeline.ffutil import extract_thumbnail, get_media_duration
+from pipeline.ffutil import get_media_duration
 from web import store
 from web.background import start_background_task
 from web.routes import image_translate as image_translate_routes

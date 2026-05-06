@@ -1310,6 +1310,15 @@ def test_media_thumb_cache_root_lives_outside_route_helpers():
     assert "DEFAULT_THUMB_DIR" in service_source
 
 
+def test_media_route_facade_drops_unused_db_mime_and_thumbnail_bindings():
+    facade_source = Path("web/routes/medias/__init__.py").read_text(encoding="utf-8")
+
+    assert "import mimetypes" not in facade_source
+    assert "from appcore.db import execute as db_execute" not in facade_source
+    assert "extract_thumbnail" not in facade_source
+    assert "get_media_duration" in facade_source
+
+
 def test_media_cover_from_url_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
