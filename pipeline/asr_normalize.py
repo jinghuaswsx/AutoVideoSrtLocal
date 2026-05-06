@@ -19,6 +19,7 @@ from typing import Any
 
 from appcore import llm_client
 from appcore.cancellation import cancellable_sleep
+from appcore.llm_debug_payloads import build_chat_request_payload, prompt_file_payload
 from appcore.llm_prompt_configs import resolve_prompt_config
 from pipeline.languages.registry import SOURCE_LANGS
 
@@ -61,6 +62,16 @@ def _resolve_model_id(use_case_code: str) -> str | None:
         return llm_bindings.resolve(use_case_code).get("model")
     except Exception:
         return None
+
+
+def _resolve_provider_model(use_case_code: str) -> tuple[str | None, str | None]:
+    try:
+        from appcore import llm_bindings
+
+        binding = llm_bindings.resolve(use_case_code)
+        return binding.get("provider"), binding.get("model")
+    except Exception:
+        return None, None
 
 _PROMPT_SLOT_BY_ROUTE: dict[str, str] = {
     "es_specialized": "asr_normalize.translate_es_en",
@@ -105,6 +116,7 @@ def _parse_detect_result(raw_text: str) -> dict:
 
 def detect_language(
     full_text: str, *, task_id: str, user_id: int | None,
+    include_debug: bool = False,
 ) -> tuple[dict, dict]:
     """检测原文语言。返回 (parsed_dict, usage_tokens)。
 
@@ -132,26 +144,52 @@ def detect_language(
         },
     }
     last_exc: Exception | None = None
+    last_debug: dict | None = None
     for attempt in range(2):
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": full_text[:4000]},
+        ]
+        provider, model = _resolve_provider_model("asr_normalize.detect_language")
+        debug_call = prompt_file_payload(
+            phase="asr_normalize.detect_language",
+            label="语言检测",
+            use_case_code="asr_normalize.detect_language",
+            provider=provider,
+            model=model,
+            messages=messages,
+            request_payload=build_chat_request_payload(
+                use_case_code="asr_normalize.detect_language",
+                provider=provider,
+                model=model,
+                messages=messages,
+                response_format=response_format,
+                temperature=0.0,
+            ),
+            meta={"attempt": attempt + 1},
+        )
+        last_debug = debug_call
         try:
             result = llm_client.invoke_chat(
                 "asr_normalize.detect_language",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": full_text[:4000]},
-                ],
+                messages=messages,
                 user_id=user_id, project_id=task_id,
                 temperature=0.0,
                 response_format=response_format,
             )
+            debug_call["response_preview"] = (result.get("text") or "")[:4000]
             parsed = _parse_detect_result(result["text"])
             usage = result.get("usage") or {"input_tokens": None, "output_tokens": None}
+            if include_debug:
+                return parsed, usage, debug_call
             return parsed, usage
         except Exception as exc:
             last_exc = exc
             if attempt == 0:
                 cancellable_sleep(2)
                 continue
+    if include_debug and last_debug:
+        last_debug["error"] = str(last_exc)
     raise DetectLanguageFailedError(
         f"detect_language failed after 2 attempts: {last_exc}"
     )
@@ -164,6 +202,7 @@ def translate_to_en(
     route: str,
     task_id: str,
     user_id: int | None,
+    include_debug: bool = False,
 ) -> tuple[list[dict], dict]:
     """把 utterances 整体翻译为 en-US 句级。返回 (utterances_en, usage_tokens)。
 
@@ -211,16 +250,39 @@ def translate_to_en(
         },
     }
 
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+    ]
+    provider, model = _resolve_provider_model(use_case_code)
+    debug_call = prompt_file_payload(
+        phase=use_case_code,
+        label="标准化翻译",
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=build_chat_request_payload(
+            use_case_code=use_case_code,
+            provider=provider,
+            model=model,
+            messages=messages,
+            response_format=response_format,
+            temperature=0.2,
+        ),
+        meta={
+            "source_language": detected_language,
+            "route": route,
+        },
+    )
     result = llm_client.invoke_chat(
         use_case_code,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-        ],
+        messages=messages,
         user_id=user_id, project_id=task_id,
         temperature=0.2,
         response_format=response_format,
     )
+    debug_call["response_preview"] = (result.get("text") or "")[:4000]
 
     payload = json.loads(result["text"])
     items = payload["utterances_en"]
@@ -246,6 +308,8 @@ def translate_to_en(
         for i in range(len(utterances))
     ]
     usage = result.get("usage") or {"input_tokens": None, "output_tokens": None}
+    if include_debug:
+        return utterances_en, usage, debug_call
     return utterances_en, usage
 
 
@@ -265,9 +329,15 @@ def run_asr_normalize(
     t0 = time.monotonic()
     full_text = " ".join(u["text"] for u in utterances)
 
-    detect_result, detect_tokens = detect_language(
-        full_text, task_id=task_id, user_id=user_id,
+    debug_calls: list[dict] = []
+    detect_out = detect_language(
+        full_text, task_id=task_id, user_id=user_id, include_debug=True,
     )
+    if len(detect_out) == 3:
+        detect_result, detect_tokens, detect_debug = detect_out
+        debug_calls.append(detect_debug)
+    else:
+        detect_result, detect_tokens = detect_out
     lang = detect_result["language"]
     conf = detect_result["confidence"]
     is_mixed = detect_result["is_mixed"]
@@ -279,6 +349,7 @@ def run_asr_normalize(
         purify_result = _asr_clean.purify_utterances(
             utterances, language=lang, task_id=task_id, user_id=user_id,
         )
+        debug_calls.extend(purify_result.get("_llm_debug_calls") or [])
         purify_artifact = {
             "performed": True,
             "language": lang,
@@ -314,10 +385,15 @@ def run_asr_normalize(
     utterances_en: list[dict] | None = None
     translate_tokens: dict = {}
     if route not in ("en_skip", "zh_skip"):
-        utterances_en, translate_tokens = translate_to_en(
+        translate_out = translate_to_en(
             utterances, detected_language=lang, route=route,
-            task_id=task_id, user_id=user_id,
+            task_id=task_id, user_id=user_id, include_debug=True,
         )
+        if len(translate_out) == 3:
+            utterances_en, translate_tokens, translate_debug = translate_out
+            debug_calls.append(translate_debug)
+        else:
+            utterances_en, translate_tokens = translate_out
 
     artifact: dict[str, Any] = {
         "detected_source_language": lang,
@@ -347,6 +423,7 @@ def run_asr_normalize(
             ),
         },
         "asr_clean": purify_artifact,
+        "_llm_debug_calls": debug_calls,
     }
     if utterances_en:
         artifact["_utterances_en"] = utterances_en
@@ -389,12 +466,14 @@ def run_user_specified(
     route = _USER_SPECIFIED_ROUTES[source_language]
 
     # === Same-language ASR purification ===
+    debug_calls: list[dict] = []
     purify_artifact: dict[str, Any] = {"performed": False}
     if source_language in {"zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi"}:
         from pipeline import asr_clean as _asr_clean
         purify_result = _asr_clean.purify_utterances(
             utterances, language=source_language, task_id=task_id, user_id=user_id,
         )
+        debug_calls.extend(purify_result.get("_llm_debug_calls") or [])
         purify_artifact = {
             "performed": True,
             "language": source_language,
@@ -410,10 +489,15 @@ def run_user_specified(
     utterances_en: list[dict] | None = None
     translate_tokens: dict = {}
     if route not in ("en_skip", "zh_skip"):
-        utterances_en, translate_tokens = translate_to_en(
+        translate_out = translate_to_en(
             utterances, detected_language=source_language, route=route,
-            task_id=task_id, user_id=user_id,
+            task_id=task_id, user_id=user_id, include_debug=True,
         )
+        if len(translate_out) == 3:
+            utterances_en, translate_tokens, translate_debug = translate_out
+            debug_calls.append(translate_debug)
+        else:
+            utterances_en, translate_tokens = translate_out
 
     artifact: dict[str, Any] = {
         "detected_source_language": source_language,
@@ -443,6 +527,7 @@ def run_user_specified(
             ),
         },
         "asr_clean": purify_artifact,
+        "_llm_debug_calls": debug_calls,
     }
     if utterances_en:
         artifact["_utterances_en"] = utterances_en

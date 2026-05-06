@@ -135,6 +135,89 @@ def test_admin_can_get_other_users_multi_translate_task(authed_client_no_db, mon
     assert resp.get_json()["id"] == "foreign-multi-task"
 
 
+def test_multi_translate_llm_debug_route_serves_registered_prompt_payload(
+    authed_client_no_db, tmp_path, monkeypatch,
+):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_id = "multi-llm-debug"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    prompt_file = task_dir / "localized_translate_messages.json"
+    prompt_file.write_text(json.dumps({
+        "phase": "initial_translate",
+        "messages": [
+            {"role": "system", "content": "Translate faithfully."},
+            {"role": "user", "content": "Hello world"},
+        ],
+        "request_payload": {
+            "type": "chat",
+            "use_case_code": "video_translate.localize",
+            "provider": "gemini_vertex",
+            "model": "gemini-actual",
+        },
+    }, ensure_ascii=False), encoding="utf-8")
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=237)
+    task_state.update(
+        task_id,
+        type="multi_translate",
+        llm_debug_refs={
+            "translate": [{
+                "id": "translate-initial",
+                "label": "初始翻译",
+                "path": "localized_translate_messages.json",
+                "use_case": "video_translate.localize",
+                "provider": "gemini_vertex",
+                "model": "gemini-actual",
+            }],
+        },
+    )
+
+    resp = authed_client_no_db.get(f"/api/multi-translate/{task_id}/llm-debug/translate")
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["step"] == "translate"
+    assert body["summary"]["call_count"] == 1
+    item = body["items"][0]
+    assert item["label"] == "初始翻译"
+    assert item["messages"][0]["content"] == "Translate faithfully."
+    assert item["request_payload"]["model"] == "gemini-actual"
+
+
+def test_multi_translate_llm_debug_route_rejects_path_traversal(
+    authed_client_no_db, tmp_path, monkeypatch,
+):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_id = "multi-llm-debug-traversal"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    secret = tmp_path / "secret.json"
+    secret.write_text('{"messages":[{"role":"user","content":"secret"}]}', encoding="utf-8")
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=237)
+    task_state.update(
+        task_id,
+        type="multi_translate",
+        llm_debug_refs={
+            "translate": [{
+                "id": "bad-ref",
+                "label": "越权文件",
+                "path": "../secret.json",
+            }],
+        },
+    )
+
+    resp = authed_client_no_db.get(f"/api/multi-translate/{task_id}/llm-debug/translate")
+
+    assert resp.status_code == 404
+    assert b"secret" not in resp.data
+
+
 def test_normal_user_cannot_get_other_users_multi_translate_task(authed_user_client_no_db, monkeypatch):
     from web.routes import multi_translate as r
 

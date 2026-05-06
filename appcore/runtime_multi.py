@@ -16,6 +16,8 @@ import re
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_key
 from appcore.events import EVT_ENGLISH_ASR_RESULT, EVT_SUBTITLE_READY, EVT_TRANSLATE_RESULT
+from appcore.llm_debug_payloads import prompt_file_payload
+from appcore.llm_debug_runtime import save_llm_debug_calls
 from pipeline.asr import transcribe_local_audio
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
@@ -235,12 +237,36 @@ class MultiTranslateRunner(PipelineRunner):
         )
 
         initial_messages = localized_translation.pop("_messages", None)
+        request_payload = _llm_request_payload(
+            localized_translation,
+            provider_code,
+            _TRANSLATE_USE_CASE,
+            messages=initial_messages,
+        )
+        if request_payload:
+            request_payload["model"] = model_id
         if initial_messages:
-            _save_json(task_dir, "localized_translate_messages.json", {
-                "phase": "initial_translate",
+            _save_json(task_dir, "localized_translate_messages.json", prompt_file_payload(
+                phase="initial_translate",
+                label="初始翻译",
+                use_case_code=_TRANSLATE_USE_CASE,
+                provider=provider_code,
+                model=model_id,
+                messages=initial_messages,
+                request_payload=request_payload,
+                meta={
+                    "target_language": lang,
+                    "custom_system_prompt_used": True,
+                },
+            ))
+            task_state.add_llm_debug_ref(task_id, "translate", {
+                "id": "translate.initial",
+                "label": "初始翻译",
+                "path": "localized_translate_messages.json",
+                "use_case": _TRANSLATE_USE_CASE,
+                "provider": provider_code,
+                "model": model_id,
                 "target_language": lang,
-                "custom_system_prompt_used": True,
-                "messages": initial_messages,
             })
 
         variants = dict(task.get("variants", {}))
@@ -279,12 +305,7 @@ class MultiTranslateRunner(PipelineRunner):
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             success=True,
-            request_payload=_llm_request_payload(
-                localized_translation,
-                _TRANSLATE_USE_CASE,
-                _TRANSLATE_USE_CASE,
-                messages=initial_messages,
-            ),
+            request_payload=request_payload,
             response_payload=_llm_response_payload(localized_translation),
         )
 
@@ -448,6 +469,14 @@ class MultiTranslateRunner(PipelineRunner):
             self._set_step(task_id, "asr_normalize", "failed", err)
             task_state.update(task_id, error=err, status="error")
             return
+
+        save_llm_debug_calls(
+            task_id=task_id,
+            task_dir=task.get("task_dir") or "",
+            step="asr_normalize",
+            calls=artifact.pop("_llm_debug_calls", []),
+            save_json=_save_json,
+        )
 
         # 拆 artifact：_utterances_en 单独写到 task["utterances_en"]，不进 artifact 落盘
         utterances_en = artifact.pop("_utterances_en", None)

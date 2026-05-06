@@ -25,6 +25,7 @@ from pipeline.languages.registry import (
 from web import store
 from web.services import omni_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
+from web.services.llm_debug import build_llm_debug_payload
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     normalize_confirm_voice_payload,
@@ -366,6 +367,19 @@ def get_task(task_id):
     if not task:
         return _json_response({"error": "Task not found"}, 404)
     return _json_response(task)
+
+
+@bp.route("/api/omni-translate/<task_id>/llm-debug/<step>", methods=["GET"])
+@login_required
+def get_llm_debug(task_id: str, step: str):
+    recover_task_if_needed(task_id)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    payload = build_llm_debug_payload(task, step)
+    if not payload:
+        return _json_response({"error": "LLM debug data not found"}, 404)
+    return _json_response(payload)
 
 
 @bp.route("/api/omni-translate/<task_id>/restart", methods=["POST"])

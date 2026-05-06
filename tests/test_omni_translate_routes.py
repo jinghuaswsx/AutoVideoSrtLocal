@@ -5,9 +5,61 @@
 """
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
+
+
+def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
+    authed_client_no_db, tmp_path, monkeypatch,
+):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_id = "omni-llm-debug"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    prompt_file = task_dir / "localized_translate_messages.json"
+    prompt_file.write_text(json.dumps({
+        "phase": "initial_translate",
+        "source_language": "es",
+        "target_language": "de",
+        "messages": [
+            {"role": "system", "content": "Translate from ASR."},
+            {"role": "user", "content": "Hola mundo"},
+        ],
+        "request_payload": {
+            "type": "chat",
+            "use_case_code": "video_translate.localize",
+            "provider": "openrouter",
+            "model": "claude-sonnet",
+        },
+    }, ensure_ascii=False), encoding="utf-8")
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        type="omni_translate",
+        llm_debug_refs={
+            "translate": [{
+                "id": "translate-initial",
+                "label": "初始翻译",
+                "path": "localized_translate_messages.json",
+                "source_language": "es",
+                "target_language": "de",
+            }],
+        },
+    )
+
+    resp = authed_client_no_db.get(f"/api/omni-translate/{task_id}/llm-debug/translate")
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["step"] == "translate"
+    assert body["summary"]["call_count"] == 1
+    assert body["items"][0]["messages"][1]["content"] == "Hola mundo"
+    assert body["items"][0]["request_payload"]["provider"] == "openrouter"
 
 
 def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db):

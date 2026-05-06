@@ -312,7 +312,7 @@ def test_run_asr_normalize_routes_es_to_specialized(mock_detect, mock_translate)
     assert artifact["confidence"] == 0.97
     mock_translate.assert_called_once_with(
         _make_utterances(), detected_language="es",
-        route="es_specialized", task_id="t", user_id=1,
+        route="es_specialized", task_id="t", user_id=1, include_debug=True,
     )
 
 

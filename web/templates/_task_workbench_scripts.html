@@ -1,6 +1,9 @@
 ﻿<script>
   const socket = io();
-  {% if pipeline_kind == 'multi_translate' %}
+  {% if api_base == '/api/omni-translate' %}
+  const STEP_ORDER = ["extract", "asr", "asr_clean", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
+  const MAIN_STEPS = ["extract", "asr", "asr_clean", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
+  {% elif pipeline_kind == 'multi_translate' %}
   const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
   // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
   // 进入 MAIN_STEPS 让顶部状态卡能反映「等待用户确认音色」并计入 12/12 进度。
@@ -452,6 +455,7 @@
     return {
       extract: "音频提取",
       asr: "语音识别",
+      asr_clean: "原文纯净化",
       asr_normalize: "原文标准化",
       separate: "人声分离",
       voice_match: "音色选择",
@@ -460,6 +464,7 @@
       tts: "语音生成",
       loudness_match: "响度匹配",
       subtitle: "字幕生成",
+      quality_assessment: "翻译质量评估",
       compose: "视频合成",
       analysis: "AI 视频分析",
       export: "CapCut 导出",
@@ -840,7 +845,42 @@
         msgEl.appendChild(span);
       }
     });
+    renderLlmDebugButtons();
     updateAnalysisButton();
+  }
+
+  function renderLlmDebugButtons() {
+    function renderButton(step, row, label) {
+      if (!row) return;
+      const refs = currentTask?.llm_debug_refs?.[step] || [];
+      let btn = document.getElementById(`llm-prompt-${step}`);
+      if (!Array.isArray(refs) || refs.length === 0) {
+        if (btn) btn.remove();
+        return;
+      }
+      const displayLabel = label || stepLabel(step);
+      if (!btn) {
+        btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "llm-prompt-pill";
+        btn.id = `llm-prompt-${step}`;
+        btn.addEventListener("click", () => openPromptInspector(step));
+        const resumeBtn = row.querySelector(".resume-btn");
+        if (resumeBtn) row.insertBefore(btn, resumeBtn);
+        else row.appendChild(btn);
+      }
+      btn.textContent = `${displayLabel}提示词`;
+      btn.title = `查看${displayLabel}实际提示词和请求报文`;
+    }
+
+    STEP_ORDER.forEach(step => {
+      renderButton(step, document.querySelector(`#step-${step} .step-name-row`));
+    });
+    renderButton(
+      "quality_assessment",
+      document.querySelector("#quality-assessment-card .step-name-row"),
+      "翻译质量评估"
+    );
   }
 
   function updateAnalysisButton() {
@@ -1399,6 +1439,174 @@
     catch (err) { return String(content); }
   }
 
+  let _promptInspectorPayload = null;
+  let _promptInspectorActiveIndex = 0;
+
+  function closePromptInspector() {
+    const overlay = document.getElementById('promptInspectorModal');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function openPromptInspector(step) {
+    const overlay = document.getElementById('promptInspectorModal');
+    const titleEl = document.getElementById('promptInspectorTitle');
+    const bodyEl = document.getElementById('promptInspectorBody');
+    if (!overlay || !bodyEl || !titleEl) return;
+    titleEl.textContent = `${stepLabel(step)}提示词检查器`;
+    bodyEl.innerHTML = '<div class="prompt-inspector-empty">加载中...</div>';
+    overlay.classList.remove('hidden');
+    try {
+      const res = await fetch(_apiUrl(`/llm-debug/${encodeURIComponent(step)}`), { cache: 'no-store' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+      _promptInspectorPayload = payload;
+      _promptInspectorActiveIndex = Math.max(0, (payload.items || []).length - 1);
+      bodyEl.innerHTML = renderPromptInspectorPayload(payload, _promptInspectorActiveIndex);
+    } catch (err) {
+      bodyEl.innerHTML = `<div class="prompt-inspector-error">加载失败：${escapeHtml(err && err.message || String(err))}</div>`;
+    }
+  }
+
+  function switchPromptInspectorItem(index) {
+    if (!_promptInspectorPayload) return;
+    _promptInspectorActiveIndex = index;
+    const bodyEl = document.getElementById('promptInspectorBody');
+    if (bodyEl) {
+      bodyEl.innerHTML = renderPromptInspectorPayload(_promptInspectorPayload, index);
+    }
+  }
+
+  function _promptText(content) {
+    return _durationPromptToText(content);
+  }
+
+  function _requestValue(value) {
+    if (value == null || value === '') return '未记录';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    try { return JSON.stringify(value, null, 2); }
+    catch (_) { return String(value); }
+  }
+
+  function _copyArg(text) {
+    return `decodeURIComponent('${escapeJs(encodeURIComponent(text || ''))}')`;
+  }
+
+  function renderPromptInspectorPayload(payload, activeIndex = 0) {
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    if (!items.length) return '<div class="prompt-inspector-empty">没有可展示的提示词记录</div>';
+    const active = items[Math.min(Math.max(0, activeIndex), items.length - 1)] || items[0];
+    const summary = payload.summary || {};
+    const stats = active.message_stats || {};
+    const tabs = items.map((item, idx) => `
+      <button type="button" class="prompt-inspector-tab ${idx === activeIndex ? 'active' : ''}"
+              onclick="switchPromptInspectorItem(${idx})">
+        ${escapeHtml(item.label || `调用 ${idx + 1}`)}
+      </button>
+    `).join('');
+    const messages = Array.isArray(active.messages) ? active.messages : [];
+    const msgHtml = messages.length ? messages.map((msg, idx) => {
+      const content = _promptText(msg && msg.content);
+      return `
+        <div class="prompt-message-card">
+          <div class="prompt-message-head">
+            <div>
+              <span class="prompt-role">${escapeHtml((msg && msg.role) || 'unknown')}</span>
+              <span class="prompt-message-meta">Message ${idx + 1} · ${content.length} 字符</span>
+            </div>
+            <button type="button" class="prompt-inspector-copy"
+                    onclick="copyPromptInspectorText(${_copyArg(content)})">复制</button>
+          </div>
+          <pre class="prompt-message-pre">${escapeHtml(content)}</pre>
+        </div>
+      `;
+    }).join('') : '<div class="prompt-inspector-empty">没有 messages 数据</div>';
+
+    const requestPayload = active.request_payload || {};
+    const kvRows = [
+      ['use_case', active.use_case || requestPayload.use_case_code],
+      ['provider', active.provider || requestPayload.provider],
+      ['model', active.model || requestPayload.model],
+      ['temperature', requestPayload.temperature],
+      ['max_tokens', requestPayload.max_tokens ?? requestPayload.max_output_tokens],
+      ['round', active.round],
+      ['attempt', active.attempt],
+    ].map(([k, v]) => `<div>${escapeHtml(k)}</div><div>${escapeHtml(_requestValue(v))}</div>`).join('');
+
+    const inputSnapshot = Array.isArray(active.input_snapshot) ? active.input_snapshot : [];
+    const inputHtml = inputSnapshot.length ? `
+      <div class="prompt-inspector-panel" style="margin-top: var(--space-4);">
+        <div class="prompt-inspector-panel-head">
+          <div class="prompt-inspector-panel-title">输入快照</div>
+        </div>
+        <div class="prompt-message-list">
+          ${inputSnapshot.map(item => `
+            <div class="prompt-message-card">
+              <div class="prompt-message-head">
+                <span class="prompt-message-meta">${escapeHtml(item.title || item.label || item.key || 'Input')}</span>
+                <button type="button" class="prompt-inspector-copy"
+                        onclick="copyPromptInspectorText(${_copyArg(_promptText(item.content))})">复制</button>
+              </div>
+              <pre class="prompt-message-pre">${escapeHtml(_promptText(item.content))}</pre>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <div class="prompt-inspector-summary">
+        <div class="prompt-inspector-stat">
+          <div class="prompt-inspector-stat-label">调用次数</div>
+          <div class="prompt-inspector-stat-value">${escapeHtml(summary.call_count || items.length)}</div>
+        </div>
+        <div class="prompt-inspector-stat">
+          <div class="prompt-inspector-stat-label">当前调用</div>
+          <div class="prompt-inspector-stat-value">${escapeHtml(active.label || active.phase || 'LLM 调用')}</div>
+        </div>
+        <div class="prompt-inspector-stat">
+          <div class="prompt-inspector-stat-label">消息数</div>
+          <div class="prompt-inspector-stat-value">${escapeHtml(stats.message_count || messages.length)}</div>
+        </div>
+        <div class="prompt-inspector-stat">
+          <div class="prompt-inspector-stat-label">总字符</div>
+          <div class="prompt-inspector-stat-value">${escapeHtml(stats.total_chars || 0)}</div>
+        </div>
+      </div>
+      ${items.length > 1 ? `<div class="prompt-inspector-tabs">${tabs}</div>` : ''}
+      <div class="prompt-inspector-grid">
+        <div>
+          <div class="prompt-inspector-panel">
+            <div class="prompt-inspector-panel-head">
+              <div class="prompt-inspector-panel-title">消息可视化</div>
+            </div>
+            <div class="prompt-message-list">${msgHtml}</div>
+          </div>
+          ${inputHtml}
+        </div>
+        <div class="prompt-inspector-panel">
+          <div class="prompt-inspector-panel-head">
+            <div class="prompt-inspector-panel-title">请求报文</div>
+          </div>
+          <div class="prompt-request-kv">${kvRows}</div>
+          <pre class="prompt-request-pre">${escapeHtml(JSON.stringify(requestPayload, null, 2))}</pre>
+        </div>
+      </div>
+    `;
+  }
+
+  function copyPromptInspectorText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text || '').catch(() => {});
+    }
+  }
+
+  function copyPromptInspectorJson() {
+    if (!_promptInspectorPayload) return;
+    copyPromptInspectorText(JSON.stringify(_promptInspectorPayload, null, 2));
+  }
+
   function closeJsonModal() {
     const overlay = document.getElementById('jsonPreviewModal');
     if (overlay) overlay.classList.add('hidden');
@@ -1411,6 +1619,8 @@
       if (e.key === 'Escape') {
         const overlay = document.getElementById('jsonPreviewModal');
         if (overlay && !overlay.classList.contains('hidden')) closeJsonModal();
+        const promptOverlay = document.getElementById('promptInspectorModal');
+        if (promptOverlay && !promptOverlay.classList.contains('hidden')) closePromptInspector();
       }
     });
   }
@@ -3092,5 +3302,3 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/video_ai_review.css') }}">
 <script src="{{ url_for('static', filename='js/video_ai_review.js') }}"></script>
 {% endif %}
-
-

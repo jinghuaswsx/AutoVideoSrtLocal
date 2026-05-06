@@ -516,6 +516,7 @@
 </div>
 
 <div class="card hidden" id="pipelineCard">
+  {% set extended_pipeline = pipeline_kind == 'multi_translate' or api_base == '/api/omni-translate' %}
   <h2>处理进度</h2>
   <div class="steps">
     <div class="step" id="step-extract">
@@ -558,6 +559,22 @@
       </div>
       <div class="step-preview" id="preview-asr_normalize"></div>
     </div>
+    {% elif api_base == '/api/omni-translate' %}
+    <div class="step" id="step-asr_clean">
+      <div class="step-main">
+        <div class="step-icon" id="icon-asr_clean">3</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">原文纯净化</span>
+            <button class="resume-btn hidden" id="resume-asr_clean" data-step="asr_clean">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-asr_clean">等待中...<span class="step-model-tag hidden" id="model-tag-asr_clean"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-asr_clean"></div>
+    </div>
+    {% endif %}
+    {% if extended_pipeline %}
     <div class="step" id="step-separate">
       <div class="step-main">
         <div class="step-icon" id="icon-separate">4</div>
@@ -574,7 +591,7 @@
     {% endif %}
     <div class="step" id="step-alignment">
       <div class="step-main">
-        <div class="step-icon" id="icon-alignment">{{ 5 if pipeline_kind == 'multi_translate' else 3 }}</div>
+        <div class="step-icon" id="icon-alignment">{{ 5 if extended_pipeline else 3 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">分段确认</span>
@@ -587,7 +604,7 @@
     </div>
     <div class="step" id="step-translate">
       <div class="step-main">
-        <div class="step-icon" id="icon-translate">{{ 6 if pipeline_kind == 'multi_translate' else 4 }}</div>
+        <div class="step-icon" id="icon-translate">{{ 6 if extended_pipeline else 4 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">翻译本土化</span>
@@ -605,7 +622,7 @@
     </div>
     <div class="step" id="step-tts">
       <div class="step-main">
-        <div class="step-icon" id="icon-tts">{{ 7 if pipeline_kind == 'multi_translate' else 5 }}</div>
+        <div class="step-icon" id="icon-tts">{{ 7 if extended_pipeline else 5 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">语音生成</span>
@@ -617,7 +634,7 @@
       <div class="step-preview" id="preview-tts"></div>
       <div id="ttsDurationLog" class="duration-log" hidden></div>
     </div>
-    {% if pipeline_kind == 'multi_translate' %}
+    {% if extended_pipeline %}
     <div class="step" id="step-loudness_match">
       <div class="step-main">
         <div class="step-icon" id="icon-loudness_match">8</div>
@@ -634,7 +651,7 @@
     {% endif %}
     <div class="step" id="step-subtitle">
       <div class="step-main">
-        <div class="step-icon" id="icon-subtitle">{{ 9 if pipeline_kind == 'multi_translate' else 6 }}</div>
+        <div class="step-icon" id="icon-subtitle">{{ 9 if extended_pipeline else 6 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">字幕生成</span>
@@ -672,7 +689,7 @@
     {% endif %}
     <div class="step" id="step-compose">
       <div class="step-main">
-        <div class="step-icon" id="icon-compose">{{ 10 if pipeline_kind == 'multi_translate' else 7 }}</div>
+        <div class="step-icon" id="icon-compose">{{ 10 if extended_pipeline else 7 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">视频合成</span>
@@ -685,7 +702,7 @@
     </div>
     <div class="step" id="step-export">
       <div class="step-main">
-        <div class="step-icon" id="icon-export">{{ 11 if pipeline_kind == 'multi_translate' else 8 }}</div>
+        <div class="step-icon" id="icon-export">{{ 11 if extended_pipeline else 8 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">CapCut 导出</span>
@@ -943,3 +960,21 @@
   </div>
 </div>
 
+<!-- LLM 提示词检查器：步骤卡片胶囊按钮打开，面向调试定位展示 messages + request payload -->
+<div class="prompt-inspector-overlay hidden" id="promptInspectorModal" onclick="if (event.target === this) closePromptInspector()">
+  <div class="prompt-inspector-modal" role="dialog" aria-modal="true" aria-labelledby="promptInspectorTitle">
+    <div class="prompt-inspector-header">
+      <div>
+        <div class="prompt-inspector-eyebrow">LLM 调试</div>
+        <div class="prompt-inspector-title" id="promptInspectorTitle">提示词检查器</div>
+      </div>
+      <div class="prompt-inspector-tools">
+        <button type="button" class="prompt-inspector-raw" id="promptInspectorCopyJsonBtn" onclick="copyPromptInspectorJson()">复制 JSON</button>
+        <button type="button" class="prompt-inspector-close" onclick="closePromptInspector()">关闭</button>
+      </div>
+    </div>
+    <div class="prompt-inspector-body" id="promptInspectorBody">
+      <div class="prompt-inspector-empty">加载中...</div>
+    </div>
+  </div>
+</div>

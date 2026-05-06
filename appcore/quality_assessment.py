@@ -163,6 +163,27 @@ def _run_assessment_job(
             target_language=inputs["target_language"],
             task_id=task_id, user_id=user_id,
         )
+        debug_call = result.get("_llm_debug_call")
+        if isinstance(debug_call, dict) and task.get("task_dir"):
+            debug_call = dict(debug_call)
+            debug_call["label"] = f"翻译质量评估 #{run_id}"
+            debug_call["run_id"] = run_id
+            try:
+                from appcore.llm_debug_runtime import save_llm_debug_calls
+                from appcore.runtime import _save_json
+
+                save_llm_debug_calls(
+                    task_id=task_id,
+                    task_dir=task.get("task_dir") or "",
+                    step="quality_assessment",
+                    calls=[debug_call],
+                    save_json=_save_json,
+                )
+            except Exception:
+                log.warning(
+                    "[quality-assessment] task=%s run=%d failed to persist debug payload",
+                    task_id, run_id, exc_info=True,
+                )
         db_execute(
             "UPDATE translation_quality_assessments SET "
             "  status='done', "

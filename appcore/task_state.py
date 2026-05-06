@@ -149,6 +149,7 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
             "export": "",
         },
         "step_model_tags": {},
+        "llm_debug_refs": {},
         "current_review_step": "",
         "utterances": [],
         "scene_cuts": [],
@@ -266,6 +267,37 @@ def set_step_model_tag(task_id: str, step: str, tag: str):
         task = _tasks.get(task_id)
         if task:
             task.setdefault("step_model_tags", {})[step] = tag
+    if task:
+        _sync_task_to_db(task_id)
+
+
+def add_llm_debug_ref(task_id: str, step: str, ref: dict):
+    """Register one LLM prompt/request debug artifact for a task step.
+
+    Refs are small metadata records. The large prompt/request payload remains
+    in a task-dir JSON file and is loaded on demand by the web route.
+    """
+    if not step or not isinstance(ref, dict):
+        return
+    normalized = dict(ref)
+    ref_id = str(normalized.get("id") or normalized.get("path") or normalized.get("label") or "")
+    if ref_id:
+        normalized["id"] = ref_id
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            all_refs = task.setdefault("llm_debug_refs", {})
+            step_refs = list(all_refs.get(step) or [])
+            replaced = False
+            if ref_id:
+                for idx, existing in enumerate(step_refs):
+                    if str((existing or {}).get("id") or "") == ref_id:
+                        step_refs[idx] = normalized
+                        replaced = True
+                        break
+            if not replaced:
+                step_refs.append(normalized)
+            all_refs[step] = step_refs
     if task:
         _sync_task_to_db(task_id)
 
@@ -405,6 +437,7 @@ def create_copywriting(task_id: str, video_path: str, task_dir: str,
         },
         "step_messages": {},
         "step_model_tags": {},
+        "llm_debug_refs": {},
         "keyframes": [],
         "copy": {},
         "copy_history": [],
@@ -466,6 +499,7 @@ def create_translate_lab(task_id: str, video_path: str, task_dir: str, *,
             "export": "",
         },
         "step_model_tags": {},
+        "llm_debug_refs": {},
         "current_review_step": "",
         # ASR 结果
         "utterances": [],
@@ -525,6 +559,7 @@ def create_subtitle_removal(task_id: str, video_path: str, task_dir: str,
         },
         "step_messages": {},
         "step_model_tags": {},
+        "llm_debug_refs": {},
         "subtitle_backend": "volc",
         "remove_mode": "",
         "selection_box": None,
@@ -600,6 +635,7 @@ def create_image_translate(task_id: str, task_dir: str, *,
         "steps": {"prepare": "done", "process": "pending"},
         "step_messages": {"prepare": "", "process": ""},
         "step_model_tags": {},
+        "llm_debug_refs": {},
         "progress": {
             "total": len(normalized_items),
             "done": 0,

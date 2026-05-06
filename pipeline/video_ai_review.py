@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_debug_payloads import build_generate_request_payload, prompt_file_payload
 
 log = logging.getLogger(__name__)
 
@@ -174,6 +175,53 @@ def assess(
     if tgt_video:
         media.append(tgt_video)
     media.extend(valid_product_imgs)
+    response_schema = _response_schema()["json_schema"]["schema"]
+    try:
+        from appcore import llm_bindings
+
+        binding = llm_bindings.resolve("video_ai_review.assess")
+        provider = binding.get("provider")
+        model = binding.get("model")
+    except Exception:
+        provider = None
+        model = None
+    media_debug = [Path(path).name for path in media]
+    debug_call = prompt_file_payload(
+        phase="video_ai_review.assess",
+        label="AI 视频分析",
+        use_case_code="video_ai_review.assess",
+        provider=provider,
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_text},
+        ],
+        request_payload=build_generate_request_payload(
+            use_case_code="video_ai_review.assess",
+            provider=provider,
+            model=model,
+            prompt=user_text,
+            system=system,
+            media=media_debug,
+            response_schema=response_schema,
+            temperature=0.0,
+        ),
+        input_snapshot=[
+            {"key": "source_text", "title": "源文案", "content": source_text},
+            {"key": "target_text", "title": "目标文案", "content": target_text},
+            {
+                "key": "product_info",
+                "title": "产品信息",
+                "content": json.dumps(product_info or {}, ensure_ascii=False, indent=2),
+            },
+        ],
+        meta={
+            "source_language": source_language,
+            "target_language": target_language,
+            "media_count": len(media),
+            "media": media_debug,
+        },
+    )
 
     log.info(
         "video_ai_review.assess starting (task=%s lang=%s→%s media=%d)",
@@ -185,7 +233,7 @@ def assess(
             prompt=user_text,
             system=system,
             media=media or None,
-            response_schema=_response_schema()["json_schema"]["schema"],
+            response_schema=response_schema,
             temperature=0.0,
             user_id=user_id,
             project_id=task_id,
@@ -196,6 +244,7 @@ def assess(
     payload = result.get("json")
     if payload is None:
         raw_text = (result.get("text") or "").strip()
+        debug_call["response_preview"] = raw_text[:4000]
         try:
             payload = json.loads(raw_text)
         except Exception as exc:
@@ -205,6 +254,8 @@ def assess(
 
     if not isinstance(payload, dict) or "dimensions" not in payload:
         raise VideoReviewResponseInvalidError("response missing dimensions")
+    if "response_preview" not in debug_call:
+        debug_call["response_preview"] = json.dumps(payload, ensure_ascii=False)[:4000]
 
     elapsed_ms = int((time.monotonic() - t0) * 1000)
     return {
@@ -220,4 +271,5 @@ def assess(
         "media_count":     len(media),
         "usage":           result.get("usage") or {},
         "elapsed_ms":      elapsed_ms,
+        "_llm_debug_call":  debug_call,
     }

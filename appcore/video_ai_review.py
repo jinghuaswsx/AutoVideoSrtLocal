@@ -524,6 +524,32 @@ def _run_review_job(
             task_id=source_id,
             user_id=user_id,
         )
+        debug_call = result.get("_llm_debug_call")
+        if (
+            source_type in _TRANSLATE_TASK_SOURCE_TYPES
+            and isinstance(debug_call, dict)
+        ):
+            task = task_state.get(source_id) or {}
+            if task.get("task_dir"):
+                debug_call = dict(debug_call)
+                debug_call["label"] = f"AI 视频分析 #{run_id}"
+                debug_call["run_id"] = run_id
+                try:
+                    from appcore.llm_debug_runtime import save_llm_debug_calls
+                    from appcore.runtime import _save_json
+
+                    save_llm_debug_calls(
+                        task_id=source_id,
+                        task_dir=task.get("task_dir") or "",
+                        step="analysis",
+                        calls=[debug_call],
+                        save_json=_save_json,
+                    )
+                except Exception:
+                    log.warning(
+                        "[video_ai_review] %s/%s run=%d failed to persist debug payload",
+                        source_type, source_id, run_id, exc_info=True,
+                    )
 
         db_execute(
             "UPDATE video_ai_reviews SET "

@@ -87,6 +87,8 @@ def test_assess_returns_full_payload():
     assert result["verdict"] == "recommend"
     assert result["translation_dimensions"]["semantic_fidelity"] == 90
     assert result["raw_response"] is not None
+    assert result["_llm_debug_call"]["use_case_code"] == "translation_quality.assess"
+    assert result["_llm_debug_call"]["request_payload"]["max_tokens"] == 1500
 
 
 def test_assess_raises_on_malformed_response():

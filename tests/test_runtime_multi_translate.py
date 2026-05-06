@@ -24,6 +24,7 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     with patch("appcore.task_state.get", return_value=task), \
          patch("appcore.task_state.update"), \
          patch("appcore.task_state.set_artifact"), \
+         patch("appcore.task_state.add_llm_debug_ref") as m_add_debug, \
          patch("appcore.task_state.set_current_review_step"), \
          patch("appcore.runtime_multi.resolve_prompt_config") as m_resolve, \
          patch("appcore.runtime_multi.generate_localized_translation") as m_gen, \
@@ -41,7 +42,12 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
             {"provider": "openrouter", "model": "gpt", "content": "BASE_DE"},
             {"provider": "openrouter", "model": "gpt", "content": "ECOM_PLUGIN"},
         ]
-        m_gen.return_value = {"full_text": "hi", "sentences": [], "_usage": {}}
+        m_gen.return_value = {
+            "full_text": "hi",
+            "sentences": [],
+            "_usage": {},
+            "_messages": [{"role": "system", "content": "BASE_DE"}],
+        }
         runner._step_translate("t1")
 
     assert m_resolve.call_args_list[0].args == ("base_translation", "de")
@@ -57,6 +63,13 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     assert billing["provider"] == "gemini_vertex"
     assert billing["model"] == "gemini-actual"
     assert billing["units_type"] == "tokens"
+    m_add_debug.assert_called_once()
+    assert m_add_debug.call_args.args[0] == "t1"
+    assert m_add_debug.call_args.args[1] == "translate"
+    debug_ref = m_add_debug.call_args.args[2]
+    assert debug_ref["label"] == "初始翻译"
+    assert debug_ref["path"] == "localized_translate_messages.json"
+    assert debug_ref["use_case"] == "video_translate.localize"
 
 
 def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, monkeypatch):

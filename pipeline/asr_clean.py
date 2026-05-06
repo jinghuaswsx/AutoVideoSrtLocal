@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_debug_payloads import build_chat_request_payload, prompt_file_payload
 
 log = logging.getLogger(__name__)
 
@@ -123,38 +124,70 @@ def _validate_against_input(
     return errors
 
 
+def _binding_meta(use_case_code: str) -> tuple[str | None, str | None]:
+    try:
+        from appcore import llm_bindings
+
+        binding = llm_bindings.resolve(use_case_code)
+        return binding.get("provider"), binding.get("model")
+    except Exception:
+        return None, None
+
+
 def _call(use_case_code: str, *, system: str, user_payload: dict,
-          task_id: str, user_id: int | None) -> tuple[list[dict] | None, dict, str]:
-    """Return (parsed items or None, usage, raw_text).
+          task_id: str, user_id: int | None) -> tuple[list[dict] | None, dict, str, dict]:
+    """Return (parsed items or None, usage, raw_text, debug_call).
 
     None items = LLM error / non-JSON response.
     """
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+    ]
+    provider, model = _binding_meta(use_case_code)
+    debug_call = prompt_file_payload(
+        phase=use_case_code,
+        label="ASR 纯净化",
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=build_chat_request_payload(
+            use_case_code=use_case_code,
+            provider=provider,
+            model=model,
+            messages=messages,
+            response_format=_response_format(),
+            temperature=0.0,
+            max_tokens=4000,
+        ),
+        meta={"language": user_payload.get("language")},
+    )
     try:
         result = llm_client.invoke_chat(
             use_case_code,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-            ],
+            messages=messages,
             response_format=_response_format(),
             temperature=0.0,
             max_tokens=4000,
             user_id=user_id,
             project_id=task_id,
         )
-    except Exception:
+    except Exception as exc:
         log.warning("[asr_clean] %s call raised", use_case_code, exc_info=True)
-        return None, {}, ""
+        debug_call["error"] = str(exc)
+        return None, {}, "", debug_call
     raw = (result.get("text") or "").strip()
+    debug_call["response_preview"] = raw[:4000]
     try:
         payload = json.loads(raw)
         items = payload.get("utterances")
         if not isinstance(items, list):
-            return None, result.get("usage") or {}, raw
-        return items, result.get("usage") or {}, raw
+            return None, result.get("usage") or {}, raw, debug_call
+        return items, result.get("usage") or {}, raw, debug_call
     except Exception:
         log.warning("[asr_clean] %s returned non-JSON: %r", use_case_code, raw[:200])
-        return None, result.get("usage") or {}, raw
+        return None, result.get("usage") or {}, raw, debug_call
 
 
 def purify_utterances(
@@ -186,10 +219,12 @@ def purify_utterances(
     system = _system_prompt(language)
 
     all_errors: list[str] = []
-    primary_items, primary_usage, primary_raw = _call(
+    debug_calls: list[dict] = []
+    primary_items, primary_usage, primary_raw, primary_debug = _call(
         "asr_clean.purify_primary", system=system, user_payload=user_payload,
         task_id=task_id, user_id=user_id,
     )
+    debug_calls.append(primary_debug)
     if primary_items is not None:
         errors = _validate_against_input(primary_items, utterances, language=language)
         if not errors:
@@ -202,15 +237,17 @@ def purify_utterances(
                 "raw_response_fallback": None,
                 "validation_errors": [],
                 "usage": {"primary": primary_usage, "fallback": {}},
+                "_llm_debug_calls": debug_calls,
             }
         all_errors.extend(f"primary: {e}" for e in errors)
     else:
         all_errors.append("primary: model error or non-JSON")
 
-    fallback_items, fallback_usage, fallback_raw = _call(
+    fallback_items, fallback_usage, fallback_raw, fallback_debug = _call(
         "asr_clean.purify_fallback", system=system, user_payload=user_payload,
         task_id=task_id, user_id=user_id,
     )
+    debug_calls.append(fallback_debug)
     if fallback_items is not None:
         errors = _validate_against_input(fallback_items, utterances, language=language)
         if not errors:
@@ -223,6 +260,7 @@ def purify_utterances(
                 "raw_response_fallback": fallback_raw,
                 "validation_errors": all_errors,
                 "usage": {"primary": primary_usage, "fallback": fallback_usage},
+                "_llm_debug_calls": debug_calls,
             }
         all_errors.extend(f"fallback: {e}" for e in errors)
     else:
@@ -237,6 +275,7 @@ def purify_utterances(
         "raw_response_fallback": fallback_raw,
         "validation_errors": all_errors,
         "usage": {"primary": primary_usage, "fallback": fallback_usage},
+        "_llm_debug_calls": debug_calls,
     }
 
 

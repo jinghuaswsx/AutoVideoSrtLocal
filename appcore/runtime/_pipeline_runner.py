@@ -33,6 +33,7 @@ from appcore.api_keys import resolve_jianying_project_root
 from appcore import ai_billing
 from appcore import tts_generation_stats
 from appcore.cancellation import OperationCancelled, throw_if_cancel_requested
+from appcore.llm_debug_payloads import build_chat_request_payload, prompt_file_payload
 from appcore.events import (
     EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
@@ -100,6 +101,51 @@ def run_av_localize(*args, **kwargs):
     from . import run_av_localize as _run_av_localize
 
     return _run_av_localize(*args, **kwargs)
+
+
+def _save_llm_prompt_debug(
+    *,
+    task_id: str,
+    task_dir: str,
+    step: str,
+    filename: str,
+    label: str,
+    phase: str,
+    use_case_code: str,
+    provider: str | None,
+    model: str | None,
+    messages: list[dict] | None,
+    request_payload: dict | None = None,
+    input_snapshot: list[dict] | None = None,
+    meta: dict | None = None,
+    ref_extra: dict | None = None,
+) -> None:
+    if not messages:
+        return
+    payload = prompt_file_payload(
+        phase=phase,
+        label=label,
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=input_snapshot,
+        meta=meta,
+    )
+    _save_json(task_dir, filename, payload)
+    ref = {
+        "id": f"{step}.{phase}.{filename}",
+        "label": label,
+        "path": filename,
+        "phase": phase,
+        "use_case": use_case_code,
+        "provider": provider,
+        "model": model,
+    }
+    if ref_extra:
+        ref.update(ref_extra)
+    task_state.add_llm_debug_ref(task_id, step, ref)
 
 
 class PipelineRunner:
@@ -218,12 +264,17 @@ class PipelineRunner:
         """
         import importlib
         from pipeline.tts import generate_full_audio, _get_audio_duration
-        from pipeline.translate import generate_tts_script, generate_localized_rewrite
+        from pipeline.translate import (
+            generate_tts_script,
+            generate_localized_rewrite,
+            get_model_display_name,
+        )
 
         target_language_label = target_language_label or self.target_language_label
         tts_model_id = tts_model_id or self.tts_model_id
         if tts_language_code is None:
             tts_language_code = self.tts_language_code
+        llm_model_id = get_model_display_name(provider, self.user_id)
 
         MAX_ROUNDS = 5
         # Final target range (shown to the user, used for final success judgement):
@@ -378,6 +429,73 @@ class PipelineRunner:
                         project_id=task_id,
                         checkpoint_key=f"rewrite.{variant}.r{round_index}.a{attempt}",
                     )
+                    candidate_messages = candidate.get("_messages") or []
+                    if candidate_messages:
+                        rewrite_input_snapshot = [
+                            {
+                                "key": "source_full_text",
+                                "title": "原始文本输入",
+                                "content": source_full_text,
+                            },
+                            {
+                                "key": "reference_translation",
+                                "title": "本轮参考译文输入",
+                                "content": json.dumps(
+                                    initial_localized_translation,
+                                    ensure_ascii=False,
+                                    indent=2,
+                                ),
+                            },
+                        ]
+                        if feedback_notes:
+                            rewrite_input_snapshot.append({
+                                "key": "feedback_notes",
+                                "title": "重试反馈输入",
+                                "content": feedback_notes,
+                            })
+                        _save_llm_prompt_debug(
+                            task_id=task_id,
+                            task_dir=task_dir,
+                            step="tts",
+                            filename=(
+                                f"localized_rewrite_messages.round_{round_index}."
+                                f"attempt_{attempt}.json"
+                            ),
+                            label=f"第 {round_index} 轮改写 attempt {attempt}",
+                            phase="localized_rewrite",
+                            use_case_code="video_translate.rewrite",
+                            provider=provider,
+                            model=llm_model_id,
+                            messages=candidate_messages,
+                            request_payload=build_chat_request_payload(
+                                use_case_code="video_translate.rewrite",
+                                provider=provider,
+                                model=llm_model_id,
+                                messages=candidate_messages,
+                                temperature=attempt_temperature,
+                                max_tokens=4096,
+                                extra={
+                                    "checkpoint_key": (
+                                        f"rewrite.{variant}.r{round_index}.a{attempt}"
+                                    ),
+                                },
+                            ),
+                            input_snapshot=rewrite_input_snapshot,
+                            meta={
+                                "round": round_index,
+                                "attempt": attempt,
+                                "target_words": target_words,
+                                "direction": direction,
+                                "source_language": source_language,
+                                "temperature": attempt_temperature,
+                            },
+                            ref_extra={
+                                "round": round_index,
+                                "attempt": attempt,
+                                "target_words": target_words,
+                                "direction": direction,
+                            },
+                        )
                     cand_words = _count_words(candidate.get("full_text", ""))
                     diff = abs(cand_words - target_words)
                     candidates.append((diff, candidate))
@@ -487,12 +605,28 @@ class PipelineRunner:
                     ]
                     _save_json(task_dir,
                                f"localized_rewrite_messages.round_{round_index}.json",
-                               {"round": round_index,
-                                "target_words": target_words,
-                                "direction": direction,
-                                "source_language": source_language,
-                                "input_snapshot": rewrite_input_snapshot,
-                                "messages": localized_translation["_messages"]})
+                               prompt_file_payload(
+                                   phase="localized_rewrite",
+                                   label=f"第 {round_index} 轮改写",
+                                   use_case_code="video_translate.rewrite",
+                                   provider=provider,
+                                   model=llm_model_id,
+                                   messages=localized_translation["_messages"],
+                                   request_payload=build_chat_request_payload(
+                                       use_case_code="video_translate.rewrite",
+                                       provider=provider,
+                                       model=llm_model_id,
+                                       messages=localized_translation["_messages"],
+                                       max_tokens=4096,
+                                   ),
+                                   input_snapshot=rewrite_input_snapshot,
+                                   meta={
+                                       "round": round_index,
+                                       "target_words": target_words,
+                                       "direction": direction,
+                                       "source_language": source_language,
+                                   },
+                               ))
                     round_record["artifact_paths"]["localized_rewrite_messages"] = (
                         f"localized_rewrite_messages.round_{round_index}.json"
                     )
@@ -510,6 +644,43 @@ class PipelineRunner:
                 project_id=task_id,
                 checkpoint_key=f"tts_script.{variant}.r{round_index}",
             )
+            tts_script_messages = tts_script.get("_messages") or []
+            if tts_script_messages:
+                _save_llm_prompt_debug(
+                    task_id=task_id,
+                    task_dir=task_dir,
+                    step="tts",
+                    filename=f"tts_script_messages.round_{round_index}.json",
+                    label=f"第 {round_index} 轮朗读文案",
+                    phase="tts_script",
+                    use_case_code="video_translate.tts_script",
+                    provider=provider,
+                    model=llm_model_id,
+                    messages=tts_script_messages,
+                    request_payload=build_chat_request_payload(
+                        use_case_code="video_translate.tts_script",
+                        provider=provider,
+                        model=llm_model_id,
+                        messages=tts_script_messages,
+                        temperature=0.2,
+                        max_tokens=4096,
+                        extra={"checkpoint_key": f"tts_script.{variant}.r{round_index}"},
+                    ),
+                    input_snapshot=[{
+                        "key": "localized_translation",
+                        "title": "本轮译文输入",
+                        "content": json.dumps(
+                            localized_translation,
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
+                    }],
+                    meta={
+                        "round": round_index,
+                        "target_language": target_language_label,
+                    },
+                    ref_extra={"round": round_index},
+                )
             _save_json(task_dir, f"tts_script.round_{round_index}.json", tts_script)
             round_record["artifact_paths"]["tts_script"] = f"tts_script.round_{round_index}.json"
             # TTS script 摘要 —— 朗读块数、平均/最大单块字数

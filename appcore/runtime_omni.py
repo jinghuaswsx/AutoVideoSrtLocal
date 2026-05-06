@@ -17,6 +17,8 @@ import logging
 import uuid
 
 from appcore import task_state
+from appcore.llm_debug_payloads import prompt_file_payload
+from appcore.llm_debug_runtime import save_llm_debug_calls
 from appcore.runtime_multi import MultiTranslateRunner, _MANUAL_SOURCE_LANGUAGES
 
 log = logging.getLogger(__name__)
@@ -248,6 +250,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
         on source-language utterances directly.
         """
         from pipeline import asr_clean as _asr_clean
+        from appcore.runtime import _save_json
 
         task = task_state.get(task_id)
         utterances = task.get("utterances") or []
@@ -277,6 +280,13 @@ class OmniTranslateRunner(MultiTranslateRunner):
         result = _asr_clean.purify_utterances(
             utterances, language=source_language,
             task_id=task_id, user_id=self.user_id,
+        )
+        save_llm_debug_calls(
+            task_id=task_id,
+            task_dir=task.get("task_dir") or "",
+            step="asr_clean",
+            calls=result.get("_llm_debug_calls") or [],
+            save_json=_save_json,
         )
 
         artifact = {
@@ -399,12 +409,37 @@ class OmniTranslateRunner(MultiTranslateRunner):
             project_id=task_id,
         )
         initial_messages = localized_translation.pop("_messages", None)
+        request_payload = _llm_request_payload(
+            localized_translation,
+            provider_code,
+            _TRANSLATE_USE_CASE,
+            messages=initial_messages,
+        )
+        if request_payload:
+            request_payload["model"] = model_id
         if initial_messages:
-            _save_json(task_dir, "localized_translate_messages.json", {
-                "phase": "initial_translate",
+            _save_json(task_dir, "localized_translate_messages.json", prompt_file_payload(
+                phase="initial_translate",
+                label="初始翻译",
+                use_case_code=_TRANSLATE_USE_CASE,
+                provider=provider_code,
+                model=model_id,
+                messages=initial_messages,
+                request_payload=request_payload,
+                meta={
+                    "source_language": source_language,
+                    "target_language": lang,
+                },
+            ))
+            task_state.add_llm_debug_ref(task_id, "translate", {
+                "id": "translate.initial",
+                "label": "初始翻译",
+                "path": "localized_translate_messages.json",
+                "use_case": _TRANSLATE_USE_CASE,
+                "provider": provider_code,
+                "model": model_id,
                 "source_language": source_language,
                 "target_language": lang,
-                "messages": initial_messages,
             })
 
         variants = dict(task.get("variants", {}))
@@ -442,10 +477,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             success=True,
-            request_payload=_llm_request_payload(
-                localized_translation, _TRANSLATE_USE_CASE, _TRANSLATE_USE_CASE,
-                messages=initial_messages,
-            ),
+            request_payload=request_payload,
             response_payload=_llm_response_payload(localized_translation),
         )
 

@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_debug_payloads import build_chat_request_payload, prompt_file_payload
 
 log = logging.getLogger(__name__)
 
@@ -133,15 +134,49 @@ def assess(
         f"TRANSLATION ({tgt_label}):\n{translation}\n\n"
         f"TTS_RECOGNITION ({tgt_label}, second-pass ASR of generated audio):\n{tts_recognition}\n"
     )
+    messages = [
+        {"role": "system", "content": _system_prompt()},
+        {"role": "user", "content": user_payload},
+    ]
+    response_format = _response_format()
+    try:
+        from appcore import llm_bindings
+
+        binding = llm_bindings.resolve("translation_quality.assess")
+        provider = binding.get("provider")
+        model = binding.get("model")
+    except Exception:
+        provider = None
+        model = None
+    debug_call = prompt_file_payload(
+        phase="translation_quality.assess",
+        label="翻译质量评估",
+        use_case_code="translation_quality.assess",
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=build_chat_request_payload(
+            use_case_code="translation_quality.assess",
+            provider=provider,
+            model=model,
+            messages=messages,
+            response_format=response_format,
+            temperature=0.0,
+            max_tokens=1500,
+        ),
+        input_snapshot=[
+            {"key": "original_asr", "title": "源语言 ASR", "content": original_asr},
+            {"key": "translation", "title": "目标译文", "content": translation},
+            {"key": "tts_recognition", "title": "TTS 二次识别", "content": tts_recognition},
+        ],
+        meta={"source_language": source_language, "target_language": target_language},
+    )
 
     try:
         result = llm_client.invoke_chat(
             "translation_quality.assess",
-            messages=[
-                {"role": "system", "content": _system_prompt()},
-                {"role": "user",   "content": user_payload},
-            ],
-            response_format=_response_format(),
+            messages=messages,
+            response_format=response_format,
             temperature=0.0,
             max_tokens=1500,
             user_id=user_id,
@@ -151,6 +186,7 @@ def assess(
         raise AssessmentResponseInvalidError(f"LLM call failed: {exc}") from exc
 
     raw_text = (result.get("text") or "").strip()
+    debug_call["response_preview"] = raw_text[:4000]
     try:
         payload = json.loads(raw_text)
     except Exception as exc:
@@ -181,4 +217,5 @@ def assess(
         "raw_response": payload,
         "usage": result.get("usage") or {},
         "elapsed_ms": elapsed_ms,
+        "_llm_debug_call": debug_call,
     }
