@@ -5,7 +5,7 @@ from __future__ import annotations
 from flask import abort, request
 from flask_login import login_required
 
-from appcore import local_media_storage, medias, object_keys
+from appcore import medias
 
 from . import bp
 from ._helpers import (
@@ -43,6 +43,14 @@ def _build_raw_sources_list_response(pid: int):
     )
 
 
+def _build_raw_source_object_key(*args, **kwargs):
+    return _routes_module().object_keys.build_media_raw_source_key(*args, **kwargs)
+
+
+def _write_raw_source_media_object(object_key: str, data: bytes):
+    return _routes_module().local_media_storage.write_bytes(object_key, data)
+
+
 def _inspect_raw_source_video(video_bytes: bytes):
     routes = _routes_module()
     return _inspect_raw_source_video_impl(
@@ -64,8 +72,8 @@ def _build_raw_source_create_response(pid: int, video, cover, form):
         max_video_bytes=_MAX_RAW_VIDEO_BYTES,
         max_image_bytes=_MAX_IMAGE_BYTES,
         list_allowed_english_filenames_fn=_list_raw_source_allowed_english_filenames,
-        build_raw_source_key_fn=object_keys.build_media_raw_source_key,
-        write_media_object_fn=local_media_storage.write_bytes,
+        build_raw_source_key_fn=_build_raw_source_object_key,
+        write_media_object_fn=_write_raw_source_media_object,
         delete_media_object_fn=_delete_media_object,
         inspect_video_fn=_inspect_raw_source_video,
         create_raw_source_fn=medias.create_raw_source,

@@ -813,6 +813,18 @@ def test_raw_source_create_response_lives_outside_route_module():
     assert Path("web/services/media_raw_sources.py").exists()
 
 
+def test_raw_source_create_storage_dependencies_use_route_facade():
+    module_source = Path("web/routes/medias/raw_sources.py").read_text(encoding="utf-8")
+
+    assert "from appcore import local_media_storage" not in module_source
+    assert "from appcore import local_media_storage, medias, object_keys" not in module_source
+    assert "write_media_object_fn=local_media_storage.write_bytes" not in module_source
+    assert "build_raw_source_key_fn=object_keys.build_media_raw_source_key" not in module_source
+    assert "_write_raw_source_media_object" in module_source
+    assert "_build_raw_source_object_key" in module_source
+    assert Path("web/services/media_raw_sources.py").exists()
+
+
 def test_raw_source_video_inspection_lives_outside_route_module():
     module_source = Path("web/routes/medias/raw_sources.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
