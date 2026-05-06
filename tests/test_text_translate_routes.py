@@ -1,6 +1,23 @@
 import json
 
 
+def test_text_translate_create_returns_task_id(authed_client_no_db, monkeypatch):
+    from web.routes import text_translate as r
+
+    inserts = []
+    monkeypatch.setattr(r.uuid, "uuid4", lambda: "task-new")
+    monkeypatch.setattr(r, "db_execute", lambda sql, args: inserts.append((sql, args)))
+
+    resp = authed_client_no_db.post(
+        "/api/text-translate",
+        json={"source_text": "一段很短的文本"},
+    )
+
+    assert resp.status_code == 201
+    assert resp.get_json() == {"id": "task-new"}
+    assert inserts
+
+
 def test_text_translate_route_uses_llm_client_and_persists_result(authed_client_no_db, monkeypatch):
     from web.routes import text_translate as r
 
@@ -62,3 +79,92 @@ def test_text_translate_route_uses_llm_client_and_persists_result(authed_client_
     assert updates, "route should persist translated result"
     assert resp.get_json()["result"]["full_text"] == "Hello world"
     assert resp.get_json()["model"] == "doubao-1-5-pro-32k"
+
+
+def test_text_translate_translate_returns_not_found(authed_client_no_db, monkeypatch):
+    from web.routes import text_translate as r
+
+    monkeypatch.setattr(r, "db_query_one", lambda sql, args: None)
+
+    resp = authed_client_no_db.post(
+        "/api/text-translate/missing-task/translate",
+        json={"source_text": "hello"},
+    )
+
+    assert resp.status_code == 404
+    assert resp.get_json() == {"error": "not found"}
+
+
+def test_text_translate_translate_requires_source_or_segments(authed_client_no_db, monkeypatch):
+    from web.routes import text_translate as r
+
+    monkeypatch.setattr(
+        r,
+        "db_query_one",
+        lambda sql, args: {"id": "task-1", "user_id": 1, "type": "text_translate"},
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/text-translate/task-1/translate",
+        json={"source_text": "   ", "segments": None},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "source_text or segments required"}
+
+
+def test_text_translate_translate_rejects_empty_segments(authed_client_no_db, monkeypatch):
+    from web.routes import text_translate as r
+
+    monkeypatch.setattr(
+        r,
+        "db_query_one",
+        lambda sql, args: {"id": "task-1", "user_id": 1, "type": "text_translate"},
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/text-translate/task-1/translate",
+        json={"segments": [" ", ""]},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "no valid segments"}
+
+
+def test_text_translate_translate_returns_json_error_on_model_failure(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import text_translate as r
+
+    monkeypatch.setattr(
+        r,
+        "db_query_one",
+        lambda sql, args: {"id": "task-1", "user_id": 1, "type": "text_translate"},
+    )
+    monkeypatch.setattr(
+        r,
+        "_resolve_provider_and_model",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("provider down")),
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/text-translate/task-1/translate",
+        json={"source_text": "hello"},
+    )
+
+    assert resp.status_code == 500
+    assert resp.get_json() == {"error": "provider down"}
+
+
+def test_text_translate_delete_returns_status_ok(authed_client_no_db, monkeypatch):
+    from web.routes import text_translate as r
+
+    updates = []
+    monkeypatch.setattr(r, "db_execute", lambda sql, args: updates.append((sql, args)))
+
+    resp = authed_client_no_db.delete("/api/text-translate/task-1")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"status": "ok"}
+    assert updates

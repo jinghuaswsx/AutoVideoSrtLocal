@@ -7,7 +7,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import llm_client
@@ -15,6 +15,16 @@ from appcore.db import execute as db_execute, query as db_query, query_one as db
 from appcore.project_state import save_project_state
 from appcore.llm_providers._helpers.vertex_json import parse_json_content
 from pipeline.text_translate import _resolve_provider_and_model
+from web.services.text_translate import (
+    build_text_translate_created_response,
+    build_text_translate_delete_success_response,
+    build_text_translate_empty_segments_response,
+    build_text_translate_exception_response,
+    build_text_translate_missing_source_response,
+    build_text_translate_not_found_response,
+    build_text_translate_success_response,
+    text_translate_flask_response,
+)
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +119,9 @@ def create():
             datetime.now() + timedelta(days=30),
         ),
     )
-    return jsonify({"id": task_id}), 201
+    return text_translate_flask_response(
+        build_text_translate_created_response(task_id=task_id)
+    )
 
 
 @bp.route("/api/text-translate/<task_id>/translate", methods=["POST"])
@@ -120,7 +132,7 @@ def translate(task_id: str):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "not found"}), 404
+        return text_translate_flask_response(build_text_translate_not_found_response())
 
     body = request.get_json(silent=True) or {}
     source_text = (body.get("source_text") or "").strip()
@@ -131,7 +143,9 @@ def translate(task_id: str):
     target_lang = body.get("target_lang", "en")
 
     if not source_text and not segments_input:
-        return jsonify({"error": "source_text or segments required"}), 400
+        return text_translate_flask_response(
+            build_text_translate_missing_source_response()
+        )
 
     if segments_input and isinstance(segments_input, list):
         script_segments = [{"index": i, "text": seg.strip()} for i, seg in enumerate(segments_input) if seg.strip()]
@@ -140,7 +154,9 @@ def translate(task_id: str):
         script_segments = [{"index": i, "text": line} for i, line in enumerate(lines)]
 
     if not script_segments:
-        return jsonify({"error": "no valid segments"}), 400
+        return text_translate_flask_response(
+            build_text_translate_empty_segments_response()
+        )
 
     source_full_text = "\n".join(segment["text"] for segment in script_segments)
 
@@ -190,7 +206,9 @@ def translate(task_id: str):
             full_text = " ".join(sentence.get("text", "") for sentence in sentences if sentence.get("text"))
     except Exception as exc:
         log.exception("text_translate error")
-        return jsonify({"error": str(exc)}), 500
+        return text_translate_flask_response(
+            build_text_translate_exception_response(exc)
+        )
 
     # 经过 _resolve_provider_and_model 后 model 已是 binding 解析好的真实 model_id；
     # 无需再走 pipeline.translate.get_model_display_name 老路径。
@@ -237,7 +255,12 @@ def translate(task_id: str):
         display_name=display_name,
         execute_func=db_execute,
     )
-    return jsonify({"result": state["result"], "model": model_name})
+    return text_translate_flask_response(
+        build_text_translate_success_response(
+            result=state["result"],
+            model=model_name,
+        )
+    )
 
 
 @bp.route("/api/text-translate/<task_id>", methods=["DELETE"])
@@ -247,4 +270,4 @@ def delete(task_id: str):
         "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s AND type = 'text_translate'",
         (task_id, current_user.id),
     )
-    return jsonify({"status": "ok"})
+    return text_translate_flask_response(build_text_translate_delete_success_response())

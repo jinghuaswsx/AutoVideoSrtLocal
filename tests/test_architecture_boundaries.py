@@ -1487,6 +1487,31 @@ def test_translation_quality_api_responses_live_outside_route_module():
     assert Path("web/services/translation_quality.py").exists()
 
 
+def test_text_translate_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/text_translate.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("create", "translate", "delete"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "jsonify(" not in route_source
+    assert "build_text_translate_created_response" in route_source
+    assert "build_text_translate_not_found_response" in route_source
+    assert "build_text_translate_missing_source_response" in route_source
+    assert "build_text_translate_empty_segments_response" in route_source
+    assert "build_text_translate_exception_response" in route_source
+    assert "build_text_translate_success_response" in route_source
+    assert "build_text_translate_delete_success_response" in route_source
+    assert "text_translate_flask_response" in route_source
+    assert Path("web/services/text_translate.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
