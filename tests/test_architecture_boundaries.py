@@ -1497,6 +1497,35 @@ def test_title_translate_api_responses_live_outside_route_module():
     assert Path("web/services/title_translate.py").exists()
 
 
+def test_image_translate_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/image_translate.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "api_models",
+        "api_system_prompts",
+        "api_upload_bootstrap",
+        "api_upload_complete",
+        "api_state",
+        "api_retry_item",
+        "api_retry_failed",
+        "api_retry_unfinished",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "jsonify(" not in module_source
+    assert "image_translate_flask_response" in route_source
+    assert "build_image_translate_payload_response" in route_source
+    assert "build_image_translate_error_response" in route_source
+    assert Path("web/services/image_translate.py").exists()
+
+
 def test_translation_quality_api_responses_live_outside_route_module():
     module_source = Path("web/routes/translation_quality.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -8,7 +8,7 @@ import uuid
 import zipfile
 from datetime import datetime
 
-from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import local_media_storage, medias, runner_dispatch, task_state
@@ -31,6 +31,11 @@ def _backend_badge() -> dict:
     return {"key": key, "label": _BACKEND_LABELS.get(key, key or "unknown")}
 from web import store
 from web.services import image_translate_runner
+from web.services.image_translate import (
+    build_image_translate_error_response,
+    build_image_translate_payload_response,
+    image_translate_flask_response,
+)
 
 bp = Blueprint("image_translate", __name__)
 
@@ -263,10 +268,14 @@ def _state_payload(task: dict) -> dict:
 @login_required
 def api_models():
     channel = _safe_image_translate_channel()
-    return jsonify({
-        "items": [{"id": mid, "name": label} for mid, label in list_image_models(channel)],
-        "default_model_id": _safe_image_translate_default_model(channel),
-    })
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {
+                "items": [{"id": mid, "name": label} for mid, label in list_image_models(channel)],
+                "default_model_id": _safe_image_translate_default_model(channel),
+            }
+        )
+    )
 
 
 @bp.route("/api/image-translate/system-prompts", methods=["GET"])
@@ -274,8 +283,15 @@ def api_models():
 def api_system_prompts():
     lang = (request.args.get("lang") or "").strip().lower()
     if not its.is_image_translate_language_supported(lang):
-        return jsonify({"error": "lang must be a supported image-translate language"}), 400
-    return jsonify(its.get_prompts_for_lang(lang))
+        return image_translate_flask_response(
+            build_image_translate_error_response(
+                "lang must be a supported image-translate language",
+                400,
+            )
+        )
+    return image_translate_flask_response(
+        build_image_translate_payload_response(its.get_prompts_for_lang(lang))
+    )
 
 
 @bp.route("/api/image-translate/upload/bootstrap", methods=["POST"])
@@ -284,9 +300,11 @@ def api_upload_bootstrap():
     body = request.get_json(silent=True) or {}
     files = body.get("files") or []
     if not files:
-        return jsonify({"error": "files required"}), 400
+        return image_translate_flask_response(build_image_translate_error_response("files required", 400))
     if len(files) > _MAX_ITEMS:
-        return jsonify({"error": f"too many files (max {_MAX_ITEMS})"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response(f"too many files (max {_MAX_ITEMS})", 400)
+        )
 
     task_id = str(uuid.uuid4())
     uploads = []
@@ -294,11 +312,15 @@ def api_upload_bootstrap():
     for idx, f in enumerate(files):
         filename = (f.get("filename") or "").strip()
         if not filename:
-            return jsonify({"error": f"missing filename for file #{idx}"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response(f"missing filename for file #{idx}", 400)
+            )
         dot_idx = filename.rfind(".")
         ext = filename[dot_idx:].lower() if dot_idx >= 0 else ""
         if ext not in _ALLOWED_EXT:
-            return jsonify({"error": f"unsupported image extension: {filename}"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response(f"unsupported image extension: {filename}", 400)
+            )
         key = _build_source_object_key(current_user.id, task_id, idx, ext)
         uploads.append(_reserve_local_source_upload(
             user_id=current_user.id,
@@ -313,7 +335,9 @@ def api_upload_bootstrap():
             "user_id": current_user.id,
             "files": reserved,
         }
-    return jsonify({"task_id": task_id, "uploads": uploads})
+    return image_translate_flask_response(
+        build_image_translate_payload_response({"task_id": task_id, "uploads": uploads})
+    )
 
 
 @bp.route("/api/image-translate/upload/local/<upload_id>", methods=["PUT"])
@@ -342,54 +366,83 @@ def api_upload_complete():
     with _upload_guard:
         rv = _upload_reservations.get(task_id)
     if not rv or rv["user_id"] != current_user.id:
-        return jsonify({"error": "invalid or expired task_id"}), 403
+        return image_translate_flask_response(
+            build_image_translate_error_response("invalid or expired task_id", 403)
+        )
     if preset not in {"cover", "detail"}:
-        return jsonify({"error": "preset must be cover or detail"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response("preset must be cover or detail", 400)
+        )
     if not medias.is_valid_language(lang_code) or lang_code == "en":
-        return jsonify({"error": "unsupported target language"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response("unsupported target language", 400)
+        )
     channel = _safe_image_translate_channel()
     if not is_valid_image_model(model_id, channel=channel):
-        return jsonify({"error": "unsupported model"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response("unsupported model", 400)
+        )
     if not prompt_tpl:
-        return jsonify({"error": "prompt required"}), 400
+        return image_translate_flask_response(build_image_translate_error_response("prompt required", 400))
     product_name = _sanitize_product_name(product_name_raw)
     if not product_name:
-        return jsonify({"error": "product_name required"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response("product_name required", 400)
+        )
     if len(product_name) > _PRODUCT_NAME_MAX_LEN:
-        return jsonify({"error": f"product_name too long (max {_PRODUCT_NAME_MAX_LEN})"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response(
+                f"product_name too long (max {_PRODUCT_NAME_MAX_LEN})",
+                400,
+            )
+        )
     mode_raw = (
         body.get("concurrency_mode")
         or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
     ).strip().lower()
     if mode_raw not in {"sequential", "parallel"}:
-        return jsonify({"error": "concurrency_mode must be sequential or parallel"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response("concurrency_mode must be sequential or parallel", 400)
+        )
     if not uploaded:
-        return jsonify({"error": "uploaded required"}), 400
+        return image_translate_flask_response(build_image_translate_error_response("uploaded required", 400))
 
     reserved = {f["idx"]: f for f in rv["files"]}
     items = []
     seen_idxs: set[int] = set()
     for u in uploaded:
         if not isinstance(u, dict):
-            return jsonify({"error": "uploaded item must be an object"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response("uploaded item must be an object", 400)
+            )
         idx_raw = u.get("idx")
         if isinstance(idx_raw, bool):
-            return jsonify({"error": "uploaded item idx must be an integer"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response("uploaded item idx must be an integer", 400)
+            )
         if isinstance(idx_raw, int):
             idx = idx_raw
         elif isinstance(idx_raw, str) and idx_raw.strip().isdigit():
             idx = int(idx_raw.strip())
         else:
-            return jsonify({"error": "uploaded item idx must be an integer"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response("uploaded item idx must be an integer", 400)
+            )
         if idx in seen_idxs:
-            return jsonify({"error": f"duplicated uploaded idx={idx}"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response(f"duplicated uploaded idx={idx}", 400)
+            )
         seen_idxs.add(idx)
         key = (u.get("object_key") or "").strip()
         filename = (u.get("filename") or reserved.get(idx, {}).get("filename") or "").strip()
         if idx not in reserved or reserved[idx]["object_key"] != key:
-            return jsonify({"error": f"uploaded item mismatch idx={idx}"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response(f"uploaded item mismatch idx={idx}", 400)
+            )
         if not local_media_storage.exists(key):
-            return jsonify({"error": f"uploaded object missing idx={idx}"}), 400
+            return image_translate_flask_response(
+                build_image_translate_error_response(f"uploaded object missing idx={idx}", 400)
+            )
         items.append({
             "idx": idx,
             "filename": filename,
@@ -397,7 +450,9 @@ def api_upload_complete():
             "source_bucket": "upload",
         })
     if seen_idxs != set(reserved):
-        return jsonify({"error": "uploaded items must exactly match reserved items"}), 400
+        return image_translate_flask_response(
+            build_image_translate_error_response("uploaded items must exactly match reserved items", 400)
+        )
 
     lang_name = _target_language_name(lang_code)
     final_prompt = prompt_tpl
@@ -428,14 +483,16 @@ def api_upload_complete():
             _local_upload_reservations.pop(upload_id, None)
 
     _start_runner(task_id, current_user.id)
-    return jsonify({"task_id": task_id}), 201
+    return image_translate_flask_response(
+        build_image_translate_payload_response({"task_id": task_id}, status_code=201)
+    )
 
 
 @bp.route("/api/image-translate/<task_id>", methods=["GET"])
 @login_required
 def api_state(task_id: str):
     task = _get_viewable_task(task_id)
-    return jsonify(_state_payload(task))
+    return image_translate_flask_response(build_image_translate_payload_response(_state_payload(task)))
 
 
 def _get_item(task: dict, idx: int) -> dict | None:
@@ -483,7 +540,9 @@ def api_retry_item(task_id: str, idx: int):
     if not item:
         abort(404)
     if image_translate_runner.is_running(task_id):
-        return jsonify({"error": "任务正在跑，等跑完再重试"}), 409
+        return image_translate_flask_response(
+            build_image_translate_error_response("任务正在跑，等跑完再重试", 409)
+        )
     old_dst = (item.get("dst_tos_key") or "").strip()
     if old_dst:
         _delete_artifact_object(old_dst)
@@ -500,7 +559,12 @@ def api_retry_item(task_id: str, idx: int):
         status="queued",
     )
     _start_runner(task_id, _task_runner_user_id(task))
-    return jsonify({"task_id": task_id, "idx": idx, "status": "queued"}), 202
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {"task_id": task_id, "idx": idx, "status": "queued"},
+            status_code=202,
+        )
+    )
 
 
 @bp.route("/api/image-translate/<task_id>/retry-failed", methods=["POST"])
@@ -516,7 +580,9 @@ def api_retry_failed(task_id: str):
             _reset_item_processing_state(item)
             reset_count += 1
     if reset_count == 0:
-        return jsonify({"error": "当前没有失败项可重试"}), 409
+        return image_translate_flask_response(
+            build_image_translate_error_response("当前没有失败项可重试", 409)
+        )
     total = len(items)
     done = sum(1 for it in items if it["status"] == "done")
     failed = sum(1 for it in items if it["status"] == "failed")
@@ -529,7 +595,12 @@ def api_retry_failed(task_id: str):
         status="queued",
     )
     _start_runner(task_id, _task_runner_user_id(task))
-    return jsonify({"task_id": task_id, "reset": reset_count, "status": "queued"}), 202
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {"task_id": task_id, "reset": reset_count, "status": "queued"},
+            status_code=202,
+        )
+    )
 
 
 @bp.route("/api/image-translate/<task_id>/retry-unfinished", methods=["POST"])
@@ -540,7 +611,9 @@ def api_retry_unfinished(task_id: str):
     仅允许在 runner 不活跃时调用，避免与在跑的线程冲突。"""
     task = _get_retryable_task(task_id)
     if image_translate_runner.is_running(task_id):
-        return jsonify({"error": "任务正在跑，等跑完再重试"}), 409
+        return image_translate_flask_response(
+            build_image_translate_error_response("任务正在跑，等跑完再重试", 409)
+        )
     items = task.get("items") or []
     reset_count = 0
     for item in items:
@@ -571,9 +644,19 @@ def api_retry_unfinished(task_id: str):
                 steps=steps,
                 error="",
             )
-            return jsonify({"task_id": task_id, "reset": 0, "status": "done",
-                            "healed": True}), 200
-        return jsonify({"error": "没有需要重试的图片"}), 409
+            return image_translate_flask_response(
+                build_image_translate_payload_response(
+                    {
+                        "task_id": task_id,
+                        "reset": 0,
+                        "status": "done",
+                        "healed": True,
+                    }
+                )
+            )
+        return image_translate_flask_response(
+            build_image_translate_error_response("没有需要重试的图片", 409)
+        )
     task["progress"] = {"total": total, "done": done, "failed": 0, "running": 0}
     task["status"] = "queued"
     store.update(
@@ -583,7 +666,12 @@ def api_retry_unfinished(task_id: str):
         status="queued",
     )
     _start_runner(task_id, _task_runner_user_id(task))
-    return jsonify({"task_id": task_id, "reset": reset_count, "status": "queued"}), 202
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {"task_id": task_id, "reset": reset_count, "status": "queued"},
+            status_code=202,
+        )
+    )
 
 
 @bp.route("/api/image-translate/<task_id>/download/zip", methods=["GET"])
