@@ -23,6 +23,15 @@ def raw_source_flask_response(result: RawSourceResponse):
     return jsonify(result.payload), result.status_code
 
 
+def build_raw_source_filename_error_response(
+    filename: str,
+    *,
+    validate_video_filename_no_spaces_fn: Callable[[str], list[str]] = validate_video_filename_no_spaces,
+) -> RawSourceResponse:
+    details = list(validate_video_filename_no_spaces_fn(filename))
+    return RawSourceResponse(_raw_source_filename_error_payload(filename, details), 400)
+
+
 def build_raw_sources_list_response(
     product_id: int,
     *,

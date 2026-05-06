@@ -1291,6 +1291,15 @@ def test_media_product_push_responses_live_outside_route_module():
     assert Path("web/services/media_pushes.py").exists()
 
 
+def test_media_route_helpers_do_not_serialize_json_responses():
+    helper_source = Path("web/routes/medias/_helpers.py").read_text(encoding="utf-8")
+
+    assert "jsonify(" not in helper_source
+    assert "build_item_filename_invalid_response" in helper_source
+    assert "build_raw_source_filename_error_response" in helper_source
+    assert "PRODUCT_NOT_LISTED_PAYLOAD" in helper_source
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -55,6 +55,23 @@ def test_raw_source_flask_response_returns_payload_and_status(authed_client_no_d
     assert payload.get_json() == {"items": [{"id": 7}]}
 
 
+def test_build_raw_source_filename_error_response_uses_filename_rules():
+    from web.services.media_raw_sources import build_raw_source_filename_error_response
+
+    result = build_raw_source_filename_error_response(
+        "bad name.mp4",
+        validate_video_filename_no_spaces_fn=lambda filename: ["no spaces"],
+    )
+
+    assert result.status_code == 400
+    assert result.payload == {
+        "error": "raw_source_filename_invalid",
+        "message": "文件名不能包含空格",
+        "details": ["no spaces"],
+        "uploaded_filename": "bad name.mp4",
+    }
+
+
 def test_build_raw_source_update_response_normalizes_fields_and_serializes_fresh_row():
     from web.services.media_raw_sources import build_raw_source_update_response
 

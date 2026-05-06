@@ -12,19 +12,28 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
-from flask import abort, jsonify, send_file, url_for
+from flask import abort, send_file, url_for
 from flask_login import current_user
 
 from appcore import local_media_storage, material_evaluation, medias, object_keys, runner_lifecycle, task_state
 from appcore.safe_paths import resolve_under_allowed_roots
 from config import OUTPUT_DIR
 from web.services import media_object_storage
+from web.services.media_items import (
+    MediaItemResponse,
+    PRODUCT_NOT_LISTED_PAYLOAD,
+    build_item_filename_invalid_response,
+    media_item_flask_response,
+)
+from web.services.media_raw_sources import (
+    build_raw_source_filename_error_response,
+    raw_source_flask_response,
+)
 from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
 from appcore.material_filename_rules import (
     validate_initial_material_filename,
     validate_material_filename,
-    validate_video_filename_no_spaces,
 )
 from web.routes import image_translate as image_translate_routes
 from appcore import image_translate_settings as its
@@ -234,16 +243,7 @@ def _validate_material_filename_for_product(
     )
     if result.ok:
         return result, None
-    return result, (
-        jsonify({
-            "error": "filename_invalid",
-            "message": "文件名不符合命名规范",
-            "details": list(result.errors),
-            "effective_lang": result.effective_lang,
-            "suggested_filename": result.suggested_filename,
-        }),
-        400,
-    )
+    return result, media_item_flask_response(build_item_filename_invalid_response(result))
 
 
 def _client_filename_basename(value) -> str:
@@ -251,16 +251,8 @@ def _client_filename_basename(value) -> str:
 
 
 def _raw_source_filename_error_response(filename: str):
-    details = list(validate_video_filename_no_spaces(filename))
-    return (
-        jsonify({
-            "error": "raw_source_filename_invalid",
-            "message": "文件名不能包含空格",
-            "details": details,
-            "uploaded_filename": filename,
-        }),
-        400,
-    )
+    result = build_raw_source_filename_error_response(filename)
+    return raw_source_flask_response(result)
 
 
 def _check_filename_prefix(filename: str, product: dict) -> str | None:
@@ -349,10 +341,7 @@ def _list_raw_source_allowed_english_filenames(product_id: int) -> list[str]:
 
 
 def _product_not_listed_response():
-    return jsonify({
-        "error": "product_not_listed",
-        "message": "产品已下架，不能执行该操作",
-    }), 409
+    return media_item_flask_response(MediaItemResponse(dict(PRODUCT_NOT_LISTED_PAYLOAD), 409))
 
 
 def _ensure_product_listed(product: dict | None):

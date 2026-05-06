@@ -13,6 +13,31 @@ def test_media_item_flask_response_returns_payload_and_status(authed_client_no_d
     assert response.get_json() == {"ok": True}
 
 
+def test_build_item_filename_invalid_response_maps_rule_result():
+    from web.services.media_items import build_item_filename_invalid_response
+
+    validation = type(
+        "Validation",
+        (),
+        {
+            "errors": ["bad prefix", "bad language"],
+            "effective_lang": "fr",
+            "suggested_filename": "2026.05.06-Demo-video.mp4",
+        },
+    )()
+
+    result = build_item_filename_invalid_response(validation)
+
+    assert result.status_code == 400
+    assert result.payload == {
+        "error": "filename_invalid",
+        "message": "文件名不符合命名规范",
+        "details": ["bad prefix", "bad language"],
+        "effective_lang": "fr",
+        "suggested_filename": "2026.05.06-Demo-video.mp4",
+    }
+
+
 def test_build_item_update_response_updates_and_serializes_fresh_row():
     from web.services.media_items import (
         ItemFilenameValidation,

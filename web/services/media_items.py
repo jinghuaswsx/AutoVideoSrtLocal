@@ -42,6 +42,19 @@ def media_item_flask_response(result: MediaItemResponse):
     return jsonify(result.payload), result.status_code
 
 
+def build_item_filename_invalid_response(validation_result) -> MediaItemResponse:
+    return MediaItemResponse(
+        {
+            "error": "filename_invalid",
+            "message": "文件名不符合命名规范",
+            "details": list(validation_result.errors),
+            "effective_lang": validation_result.effective_lang,
+            "suggested_filename": validation_result.suggested_filename,
+        },
+        400,
+    )
+
+
 def build_item_bootstrap_response(
     user_id: int,
     product_id: int,
