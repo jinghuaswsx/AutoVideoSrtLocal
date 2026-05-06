@@ -10,7 +10,6 @@ from pathlib import Path
 from flask import jsonify
 
 from appcore import medias, object_keys
-from appcore.db import execute as db_execute
 from config import OUTPUT_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 
@@ -198,7 +197,7 @@ def build_item_thumbnail(
     output_dir: str | Path = OUTPUT_DIR,
     get_media_duration_fn: Callable[[str], float | int | None] = get_media_duration,
     extract_thumbnail_fn: Callable[..., str | None] = extract_thumbnail,
-    execute_fn: Callable[[str, tuple], object] = db_execute,
+    update_item_thumbnail_metadata_fn: Callable[[int, str, float | int | None], object] | None = None,
 ) -> None:
     thumb_root = Path(thumb_dir)
     thumb_root.mkdir(parents=True, exist_ok=True)
@@ -211,13 +210,11 @@ def build_item_thumbnail(
     if thumb:
         final = product_dir / f"{item_id}.jpg"
         os.replace(str(thumb), str(final))
-        execute_fn(
-            "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
-            (
-                str(final.relative_to(Path(output_dir))).replace("\\", "/"),
-                duration or None,
-                item_id,
-            ),
+        update_metadata = update_item_thumbnail_metadata_fn or medias.update_item_thumbnail_metadata
+        update_metadata(
+            item_id,
+            str(final.relative_to(Path(output_dir))).replace("\\", "/"),
+            duration or None,
         )
     try:
         tmp_video.unlink()

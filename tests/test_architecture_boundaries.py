@@ -983,6 +983,17 @@ def test_media_item_thumbnail_side_effects_live_outside_route_module():
     assert Path("web/services/media_items.py").exists()
 
 
+def test_media_item_thumbnail_db_update_lives_in_appcore_dao():
+    service_source = Path("web/services/media_items.py").read_text(encoding="utf-8")
+    dao_source = Path("appcore/medias.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import execute as db_execute" not in service_source
+    assert "UPDATE media_items SET thumbnail_path" not in service_source
+    assert "update_item_thumbnail_metadata" in service_source
+    assert "def update_item_thumbnail_metadata" in dao_source
+    assert "UPDATE media_items SET thumbnail_path" in dao_source
+
+
 def test_media_item_video_ai_review_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/items.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

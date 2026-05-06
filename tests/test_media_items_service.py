@@ -473,7 +473,10 @@ def test_build_item_thumbnail_updates_metadata_and_removes_tmp_video(tmp_path):
         download_media_object_fn=fake_download,
         get_media_duration_fn=lambda video_path: calls.append(("duration", video_path)) or 12.5,
         extract_thumbnail_fn=fake_extract,
-        execute_fn=lambda sql, args: calls.append(("execute", sql, args)) or 1,
+        update_item_thumbnail_metadata_fn=lambda item_id, thumbnail_path, duration: calls.append(
+            ("update_metadata", item_id, thumbnail_path, duration)
+        )
+        or 1,
     )
 
     tmp_video = thumb_dir / "123" / "tmp_44_demo.mp4"
@@ -484,11 +487,7 @@ def test_build_item_thumbnail_updates_metadata_and_removes_tmp_video(tmp_path):
         ("download", "objects/demo.mp4", str(tmp_video)),
         ("duration", str(tmp_video)),
         ("extract", str(tmp_video), str(thumb_dir / "123"), "360:-1"),
-        (
-            "execute",
-            "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
-            ("media_thumbs/123/44.jpg", 12.5, 44),
-        ),
+        ("update_metadata", 44, "media_thumbs/123/44.jpg", 12.5),
     ]
 
 

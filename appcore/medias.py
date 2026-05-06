@@ -753,6 +753,17 @@ def update_item_display_name(item_id: int, display_name: str) -> int:
     )
 
 
+def update_item_thumbnail_metadata(
+    item_id: int,
+    thumbnail_path: str,
+    duration_seconds: float | int | None,
+) -> int:
+    return execute(
+        "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
+        (thumbnail_path, duration_seconds, item_id),
+    )
+
+
 def list_items(product_id: int, lang: str | None = None) -> list[dict]:
     if lang:
         return query(

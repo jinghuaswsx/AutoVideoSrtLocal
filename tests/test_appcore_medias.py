@@ -303,6 +303,22 @@ def test_update_item_display_name_updates_only_display_name(monkeypatch):
     assert captured["args"] == ("new-video-name.mp4", 77)
 
 
+def test_update_item_thumbnail_metadata_updates_thumbnail_and_duration(monkeypatch):
+    captured = {}
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    medias.update_item_thumbnail_metadata(77, "media_thumbs/123/77.jpg", 12.5)
+
+    assert captured["sql"] == "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s"
+    assert captured["args"] == ("media_thumbs/123/77.jpg", 12.5, 77)
+
+
 def test_create_item_rejects_filename_with_space_before_db(monkeypatch):
     calls = []
     monkeypatch.setattr(medias, "execute", lambda *args, **kwargs: calls.append((args, kwargs)) or 1)
