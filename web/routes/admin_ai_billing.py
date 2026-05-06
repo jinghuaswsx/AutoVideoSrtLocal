@@ -6,12 +6,16 @@ import math
 from datetime import date, datetime
 from decimal import Decimal
 
-from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
+from flask import Blueprint, Response, render_template, request, stream_with_context
 from flask_login import current_user, login_required
 
 from appcore import medias
 from appcore.db import query, query_one
 from web.auth import admin_required
+from web.services.admin_ai_billing import (
+    admin_ai_billing_flask_response,
+    build_ai_usage_payload_response,
+)
 
 
 PAGE_SIZE = 50
@@ -92,12 +96,7 @@ def get_ai_usage_payload(log_id: int):
         "SELECT request_data, response_data FROM usage_log_payloads WHERE log_id = %s",
         (log_id,),
     )
-    if not row:
-        return jsonify({"request_data": None, "response_data": None})
-    return jsonify({
-        "request_data": row["request_data"],
-        "response_data": row["response_data"],
-    })
+    return admin_ai_billing_flask_response(build_ai_usage_payload_response(row))
 
 
 @user_ai_billing_bp.route("/my-ai-usage/payload/<int:log_id>")
@@ -110,12 +109,7 @@ def get_my_ai_usage_payload(log_id: int):
            WHERE p.log_id = %s AND ul.user_id = %s""",
         (log_id, current_user.id),
     )
-    if not row:
-        return jsonify({"request_data": None, "response_data": None})
-    return jsonify({
-        "request_data": row["request_data"],
-        "response_data": row["response_data"],
-    })
+    return admin_ai_billing_flask_response(build_ai_usage_payload_response(row))
 
 
 @user_ai_billing_bp.route("/my-ai-usage")
