@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping, Type
 
+from flask import jsonify
+
 from appcore import parcel_cost_suggest
 
 
@@ -45,3 +47,7 @@ def build_parcel_cost_suggest_response(
         return ParcelCostSuggestResponse({"error": "dxm_failed", "message": str(exc)}, 502)
 
     return ParcelCostSuggestResponse({"ok": True, "suggestion": suggestion}, 200)
+
+
+def parcel_cost_suggest_flask_response(result: ParcelCostSuggestResponse):
+    return jsonify(result.payload), result.status_code

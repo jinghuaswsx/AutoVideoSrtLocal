@@ -1509,7 +1509,9 @@ def test_parcel_cost_suggest_response_lives_outside_route_module():
     assert "invalid_days" not in route_source
     assert "no_orders" not in route_source
     assert "dxm_failed" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_parcel_cost_suggest_response" in route_source
+    assert "_parcel_cost_suggest_flask_response" in route_source
     assert Path("web/services/media_parcel_cost.py").exists()
 
 

@@ -33,6 +33,7 @@ from web.services.media_mk_copywriting import (
 )
 from web.services.media_parcel_cost import (
     build_parcel_cost_suggest_response as _build_parcel_cost_suggest_response_impl,
+    parcel_cost_suggest_flask_response as _parcel_cost_suggest_flask_response_impl,
 )
 from web.services.media_supply_pairing import (
     build_supply_pairing_search_response as _build_supply_pairing_search_response_impl,
@@ -172,6 +173,10 @@ def _build_parcel_cost_suggest_response(pid: int, args):
     )
 
 
+def _parcel_cost_suggest_flask_response(result):
+    return _parcel_cost_suggest_flask_response_impl(result)
+
+
 def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
     from tools import dianxiaomi_sku_sync as sync_mod
 
@@ -241,7 +246,7 @@ def api_parcel_cost_suggest(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     result = routes._build_parcel_cost_suggest_response(pid, request.args)
-    return jsonify(result.payload), result.status_code
+    return routes._parcel_cost_suggest_flask_response(result)
 
 
 @bp.route("/api/xmyc-skus", methods=["GET"])

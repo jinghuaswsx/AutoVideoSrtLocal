@@ -114,6 +114,7 @@ def test_parcel_cost_suggest_route_delegates_response_building(
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     captured = {}
+    converted = {}
 
     class Result:
         payload = {"ok": True, "suggestion": {"product_id": 317}}
@@ -124,10 +125,22 @@ def test_parcel_cost_suggest_route_delegates_response_building(
         captured["days"] = args.get("days")
         return Result()
 
+    def fake_flask_response(result):
+        converted["payload"] = result.payload
+        return {"converted": True, **result.payload}, result.status_code
+
     monkeypatch.setattr(r, "_build_parcel_cost_suggest_response", fake_build)
+    monkeypatch.setattr(r, "_parcel_cost_suggest_flask_response", fake_flask_response)
 
     resp = authed_client_no_db.get("/medias/api/products/317/parcel-cost-suggest?days=30")
 
     assert resp.status_code == 202
-    assert resp.get_json() == {"ok": True, "suggestion": {"product_id": 317}}
+    assert resp.get_json() == {
+        "converted": True,
+        "ok": True,
+        "suggestion": {"product_id": 317},
+    }
     assert captured == {"pid": 317, "days": "30"}
+    assert converted == {
+        "payload": {"ok": True, "suggestion": {"product_id": 317}},
+    }

@@ -91,3 +91,23 @@ def test_build_parcel_cost_suggest_response_maps_unexpected_errors():
 
     assert result.status_code == 502
     assert result.payload == {"error": "dxm_failed", "message": "boom"}
+
+
+def test_parcel_cost_suggest_flask_response_returns_payload_and_status(
+    authed_client_no_db,
+):
+    from web.services.media_parcel_cost import (
+        ParcelCostSuggestResponse,
+        parcel_cost_suggest_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = parcel_cost_suggest_flask_response(
+            ParcelCostSuggestResponse(
+                {"ok": True, "suggestion": {"product_id": 317}},
+                202,
+            )
+        )
+
+    assert status_code == 202
+    assert response.get_json() == {"ok": True, "suggestion": {"product_id": 317}}
