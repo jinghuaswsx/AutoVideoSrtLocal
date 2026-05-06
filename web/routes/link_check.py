@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, abort, jsonify, render_template, request, url_for
+from flask import Blueprint, abort, render_template, request, url_for
 from flask_login import current_user, login_required
 from appcore import cleanup, medias
 from appcore.db import execute, query, query_one
@@ -14,6 +14,19 @@ from appcore.task_recovery import recover_all_interrupted_tasks, recover_project
 from config import OUTPUT_DIR
 from web import store
 from web.services.artifact_download import safe_task_file_response
+from web.services.link_check import (
+    build_link_check_create_success_response,
+    build_link_check_delete_success_response,
+    build_link_check_missing_link_url_response,
+    build_link_check_rename_required_response,
+    build_link_check_rename_success_response,
+    build_link_check_rename_too_long_response,
+    build_link_check_serialized_task_response,
+    build_link_check_target_language_invalid_response,
+    build_link_check_task_not_found_response,
+    build_link_check_unsupported_reference_response,
+    link_check_flask_response,
+)
 from web.services import link_check_runner
 
 bp = Blueprint("link_check", __name__)
@@ -211,7 +224,7 @@ def create_task():
     link_url = (request.form.get("link_url") or "").strip()
     target_language = (request.form.get("target_language") or "").strip().lower()
     if not link_url:
-        return jsonify({"error": "link_url 必填"}), 400
+        return link_check_flask_response(build_link_check_missing_link_url_response())
 
     enabled_languages = _enabled_language_map()
     if not target_language:
@@ -223,7 +236,7 @@ def create_task():
     if not language:
         language = medias.get_language(target_language)
     if not language or not language.get("enabled"):
-        return jsonify({"error": "target_language 非法"}), 400
+        return link_check_flask_response(build_link_check_target_language_invalid_response())
 
     task_id = str(uuid.uuid4())
     task_dir = Path(OUTPUT_DIR) / "link_check" / task_id
@@ -235,7 +248,9 @@ def create_task():
             continue
         suffix = Path(storage.filename).suffix.lower()
         if suffix and suffix not in _ALLOWED_EXT:
-            return jsonify({"error": f"不支持的参考图片格式: {storage.filename}"}), 400
+            return link_check_flask_response(
+                build_link_check_unsupported_reference_response(storage.filename)
+            )
         local_path = task_dir / "reference" / f"ref_{index:03d}{suffix or '.jpg'}"
         local_path.parent.mkdir(parents=True, exist_ok=True)
         storage.save(local_path)
@@ -258,12 +273,12 @@ def create_task():
         display_name=build_link_check_display_name(link_url, target_language),
     )
     link_check_runner.start(task_id)
-    return jsonify(
-        {
-            "task_id": task_id,
-            "detail_url": url_for("link_check.detail_page", task_id=task_id),
-        }
-    ), 202
+    return link_check_flask_response(
+        build_link_check_create_success_response(
+            task_id=task_id,
+            detail_url=url_for("link_check.detail_page", task_id=task_id),
+        )
+    )
 
 
 @bp.route("/api/link-check/tasks/<task_id>")
@@ -271,7 +286,9 @@ def create_task():
 def get_task(task_id: str):
     recover_project_if_needed(task_id, "link_check")
     _row, task = _get_task(task_id)
-    return jsonify(_serialize_task(task_id, task))
+    return link_check_flask_response(
+        build_link_check_serialized_task_response(_serialize_task(task_id, task))
+    )
 
 
 @bp.route("/api/link-check/tasks/<task_id>", methods=["PATCH"])
@@ -282,20 +299,20 @@ def rename_task(task_id: str):
         (task_id,),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return link_check_flask_response(build_link_check_task_not_found_response())
 
     body = request.get_json(silent=True) or {}
     new_name = (body.get("display_name") or "").strip()
     if not new_name:
-        return jsonify({"error": "display_name required"}), 400
+        return link_check_flask_response(build_link_check_rename_required_response())
     if len(new_name) > 50:
-        return jsonify({"error": "名称不能超过50个字符"}), 400
+        return link_check_flask_response(build_link_check_rename_too_long_response())
 
     execute("UPDATE projects SET display_name=%s WHERE id=%s", (new_name, task_id))
     task = store.get(task_id)
     if task and task.get("type") == "link_check":
         store.update(task_id, display_name=new_name)
-    return jsonify({"status": "ok", "display_name": new_name})
+    return link_check_flask_response(build_link_check_rename_success_response(new_name))
 
 
 @bp.route("/api/link-check/tasks/<task_id>", methods=["DELETE"])
@@ -306,7 +323,7 @@ def delete_task(task_id: str):
         (task_id,),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return link_check_flask_response(build_link_check_task_not_found_response())
 
     task = store.get(task_id) or {}
     cleanup_payload = dict(task)
@@ -324,7 +341,7 @@ def delete_task(task_id: str):
     )
     if task and task.get("type") == "link_check":
         store.update(task_id, status="deleted")
-    return jsonify({"status": "ok"})
+    return link_check_flask_response(build_link_check_delete_success_response())
 
 
 @bp.route("/api/link-check/tasks/<task_id>/images/site/<image_id>")
