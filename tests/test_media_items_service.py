@@ -490,3 +490,10 @@ def test_build_item_thumbnail_updates_metadata_and_removes_tmp_video(tmp_path):
             ("media_thumbs/123/44.jpg", 12.5, 44),
         ),
     ]
+
+
+def test_build_item_thumbnail_uses_cross_platform_client_filename_basename():
+    source = Path("web/services/media_items.py").read_text(encoding="utf-8")
+
+    assert "Path(filename).name" not in source
+    assert "_client_filename_basename(filename)" in source

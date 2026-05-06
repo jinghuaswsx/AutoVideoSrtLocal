@@ -204,7 +204,7 @@ def build_item_thumbnail(
     thumb_root.mkdir(parents=True, exist_ok=True)
     product_dir = thumb_root / str(product_id)
     product_dir.mkdir(parents=True, exist_ok=True)
-    tmp_video = product_dir / f"tmp_{item_id}_{Path(filename).name}"
+    tmp_video = product_dir / f"tmp_{item_id}_{_client_filename_basename(filename)}"
     download_media_object_fn(object_key, str(tmp_video))
     duration = get_media_duration_fn(str(tmp_video))
     thumb = extract_thumbnail_fn(str(tmp_video), str(product_dir), scale="360:-1")
