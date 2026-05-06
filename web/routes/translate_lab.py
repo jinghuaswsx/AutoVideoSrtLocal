@@ -17,7 +17,7 @@ import os
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, render_template, abort, request, jsonify
+from flask import Blueprint, render_template, abort, request
 from flask_login import login_required, current_user
 
 from web.auth import admin_required
@@ -34,6 +34,16 @@ from pipeline.voice_library_sync import (
 from web import store
 from web.services.artifact_download import safe_task_file_response
 from web.services import translate_lab_runner
+from web.services.translate_lab import (
+    build_translate_lab_created_response,
+    build_translate_lab_embed_response,
+    build_translate_lab_error_response,
+    build_translate_lab_ok_response,
+    build_translate_lab_payload_response,
+    build_translate_lab_sync_response,
+    build_translate_lab_voice_confirmed_response,
+    translate_lab_flask_response,
+)
 from web.upload_util import save_uploaded_file_to_path, validate_video_extension
 
 log = logging.getLogger(__name__)
@@ -164,22 +174,34 @@ def upload_and_create():
     成功返回 ``{"task_id": "..."}``。
     """
     if "video" not in request.files:
-        return jsonify({"error": "缺少视频文件"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("缺少视频文件", 400)
+        )
     file = request.files["video"]
     if not file.filename:
-        return jsonify({"error": "文件名为空"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("文件名为空", 400)
+        )
     if not validate_video_extension(file.filename):
-        return jsonify({"error": "不支持的视频格式"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("不支持的视频格式", 400)
+        )
 
     source_language = (request.form.get("source_language") or "zh").strip()
     target_language = (request.form.get("target_language") or "en").strip()
     voice_match_mode = (request.form.get("voice_match_mode") or "auto").strip()
     if source_language not in _ALLOWED_SOURCE_LANGUAGES:
-        return jsonify({"error": "source_language 非法"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("source_language 非法", 400)
+        )
     if target_language not in _ALLOWED_TARGET_LANGUAGES:
-        return jsonify({"error": "target_language 非法"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("target_language 非法", 400)
+        )
     if voice_match_mode not in _ALLOWED_VOICE_MODES:
-        return jsonify({"error": "voice_match_mode 非法"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("voice_match_mode 非法", 400)
+        )
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -225,12 +247,14 @@ def upload_and_create():
         log.warning("[translate_lab] 缩略图生成失败 task_id=%s",
                     task_id, exc_info=True)
 
-    return jsonify({
-        "task_id": task_id,
-        "source_language": source_language,
-        "target_language": target_language,
-        "voice_match_mode": voice_match_mode,
-    }), 201
+    return translate_lab_flask_response(
+        build_translate_lab_created_response(
+            task_id=task_id,
+            source_language=source_language,
+            target_language=target_language,
+            voice_match_mode=voice_match_mode,
+        )
+    )
 
 
 @bp.route("/api/translate-lab/<task_id>", methods=["DELETE"])
@@ -244,7 +268,9 @@ def delete_task(task_id: str):
         (task_id, user_id),
     )
     if not row:
-        return jsonify({"error": "任务不存在"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("任务不存在", 404)
+        )
     db_execute(
         "UPDATE projects SET deleted_at=NOW() WHERE id=%s",
         (task_id,),
@@ -253,7 +279,7 @@ def delete_task(task_id: str):
         task_state.update(task_id, status="deleted")
     except Exception:
         pass
-    return jsonify({"ok": True})
+    return translate_lab_flask_response(build_translate_lab_ok_response())
 
 
 @bp.route("/api/translate-lab/<task_id>", methods=["GET"])
@@ -263,10 +289,12 @@ def get_task(task_id: str):
     user_id = current_user.id
     task = _get_lab_task(task_id, user_id)
     if not task:
-        return jsonify({"error": "任务不存在"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("任务不存在", 404)
+        )
     # 不把内部字段 _user_id 等暴露给前端
     payload = {k: v for k, v in task.items() if not k.startswith("_")}
-    return jsonify(payload)
+    return translate_lab_flask_response(build_translate_lab_payload_response(payload))
 
 
 @bp.route("/api/translate-lab/<task_id>/start", methods=["POST"])
@@ -276,7 +304,9 @@ def start_task(task_id: str):
     user_id = current_user.id
     task = _get_lab_task(task_id, user_id)
     if not task:
-        return jsonify({"error": "not found"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("not found", 404)
+        )
     options = request.get_json(silent=True) or {}
     # Whitelist user-controllable fields — never let clients overwrite internal
     # task_state keys (ownership, paths, status, etc.) through a start call.
@@ -290,7 +320,7 @@ def start_task(task_id: str):
     update_fields["status"] = "running"
     task_state.update(task_id, **update_fields)
     translate_lab_runner.start(task_id=task_id, user_id=user_id)
-    return jsonify({"ok": True})
+    return translate_lab_flask_response(build_translate_lab_ok_response())
 
 
 @bp.route("/api/translate-lab/<task_id>/resume", methods=["POST"])
@@ -300,18 +330,27 @@ def resume_task(task_id: str):
     user_id = current_user.id
     task = _get_lab_task(task_id, user_id)
     if not task:
-        return jsonify({"error": "not found"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("not found", 404)
+        )
     payload = request.get_json(silent=True) or {}
     start_step = payload.get("start_step", "extract")
     _VALID_STEPS = {"extract", "asr", "shot_decompose", "voice_match",
                     "translate", "tts", "subtitle", "compose", "export"}
     if start_step not in _VALID_STEPS:
-        return jsonify({"error": f"start_step must be one of {sorted(_VALID_STEPS)}"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response(
+                f"start_step must be one of {sorted(_VALID_STEPS)}",
+                400,
+            )
+        )
     task_state.update(task_id, status="running")
     translate_lab_runner.resume(
         task_id=task_id, start_step=start_step, user_id=user_id,
     )
-    return jsonify({"ok": True, "start_step": start_step})
+    return translate_lab_flask_response(
+        build_translate_lab_ok_response(start_step=start_step)
+    )
 
 
 @bp.route("/api/translate-lab/<task_id>/confirm-voice", methods=["POST"])
@@ -321,11 +360,15 @@ def confirm_voice(task_id: str):
     user_id = current_user.id
     task = _get_lab_task(task_id, user_id)
     if not task:
-        return jsonify({"error": "not found"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("not found", 404)
+        )
     payload = request.get_json(silent=True) or {}
     voice_id = payload.get("voice_id")
     if not voice_id:
-        return jsonify({"error": "voice_id required"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("voice_id required", 400)
+        )
     pending = (task_state.get(task_id) or {}).get("pending_voice_choice") or []
     chosen = next(
         (v for v in pending if v.get("voice_id") == voice_id),
@@ -334,7 +377,7 @@ def confirm_voice(task_id: str):
     if chosen is None:
         chosen = {"voice_id": voice_id}
     task_state.update(task_id, chosen_voice=chosen, status="running")
-    return jsonify({"ok": True, "chosen": chosen})
+    return translate_lab_flask_response(build_translate_lab_voice_confirmed_response(chosen))
 
 
 @bp.route("/api/translate-lab/<task_id>/subtitle", methods=["GET"])
@@ -344,10 +387,14 @@ def download_subtitle(task_id: str):
     user_id = current_user.id
     task = _get_lab_task(task_id, user_id)
     if not task:
-        return jsonify({"error": "not found"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("not found", 404)
+        )
     srt_path = task.get("subtitle_path")
     if not srt_path or not os.path.isfile(srt_path):
-        return jsonify({"error": "subtitle not ready"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("subtitle not ready", 404)
+        )
     return safe_task_file_response(
         task,
         srt_path,
@@ -366,17 +413,23 @@ def stream_shot_audio(task_id: str, shot_index: int):
     user_id = current_user.id
     task = _get_lab_task(task_id, user_id)
     if not task:
-        return jsonify({"error": "not found"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("not found", 404)
+        )
     tts_results = task.get("tts_results") or []
     target = next(
         (r for r in tts_results if r.get("shot_index") == shot_index),
         None,
     )
     if not target or not target.get("audio_path"):
-        return jsonify({"error": "audio not ready"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("audio not ready", 404)
+        )
     audio_path = target["audio_path"]
     if not os.path.isfile(audio_path):
-        return jsonify({"error": "file missing"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("file missing", 404)
+        )
     return safe_task_file_response(
         task,
         audio_path,
@@ -392,7 +445,9 @@ def stream_final_video(task_id: str):
     user_id = current_user.id
     task = _get_lab_task(task_id, user_id)
     if not task:
-        return jsonify({"error": "not found"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("not found", 404)
+        )
     compose_result = task.get("compose_result") or {}
     path = (
         compose_result.get("hard_video")
@@ -400,7 +455,9 @@ def stream_final_video(task_id: str):
         or task.get("final_video")
     )
     if not path or not os.path.isfile(path):
-        return jsonify({"error": "video not ready"}), 404
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("video not ready", 404)
+        )
     return safe_task_file_response(
         task,
         path,
@@ -417,9 +474,11 @@ def sync_voice_library():
     user_id = current_user.id
     api_key = resolve_key(user_id, "elevenlabs", "ELEVENLABS_API_KEY")
     if not api_key:
-        return jsonify({"error": "elevenlabs api key not configured"}), 400
+        return translate_lab_flask_response(
+            build_translate_lab_error_response("elevenlabs api key not configured", 400)
+        )
     total = sync_all_shared_voices(api_key)
-    return jsonify({"ok": True, "total": total})
+    return translate_lab_flask_response(build_translate_lab_sync_response(total))
 
 
 @bp.route("/api/translate-lab/voice-library/embed", methods=["POST"])
@@ -437,4 +496,4 @@ def embed_voice_library():
     )
     limit = payload.get("limit")
     count = embed_missing_voices(cache_dir=cache_dir, limit=limit)
-    return jsonify({"ok": True, "count": count})
+    return translate_lab_flask_response(build_translate_lab_embed_response(count))

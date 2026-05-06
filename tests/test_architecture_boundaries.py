@@ -1858,6 +1858,41 @@ def test_new_product_review_api_responses_live_outside_route_module():
     assert Path("web/services/new_product_review.py").exists()
 
 
+def test_translate_lab_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/translate_lab.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "upload_and_create",
+        "delete_task",
+        "get_task",
+        "start_task",
+        "resume_task",
+        "confirm_voice",
+        "download_subtitle",
+        "stream_shot_audio",
+        "stream_final_video",
+        "sync_voice_library",
+        "embed_voice_library",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+
+    assert set(route_sources) == route_names
+    assert "jsonify(" not in module_source
+    assert "translate_lab_flask_response" in route_source
+    assert "build_translate_lab_error_response" in route_source
+    assert "build_translate_lab_created_response" in route_source
+    assert "build_translate_lab_ok_response" in route_source
+    assert "build_translate_lab_voice_confirmed_response" in route_source
+    assert "build_translate_lab_sync_response" in route_source
+    assert "build_translate_lab_embed_response" in route_source
+    assert Path("web/services/translate_lab.py").exists()
+
+
 def test_media_shopify_image_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/shopify_image.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
