@@ -654,6 +654,10 @@ def test_subtitle_removal_submit_stages_public_source_on_demand(tmp_path, authed
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
     monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
     monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_source_storage.backup_source_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
         "web.routes.subtitle_removal.tos_clients.build_source_object_key",
         lambda user_id, task_id, original_filename: f"uploads/{user_id}/{task_id}/{original_filename}",
     )
