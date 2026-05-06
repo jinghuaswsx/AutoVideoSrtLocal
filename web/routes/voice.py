@@ -5,10 +5,21 @@
 """
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
 from flask_login import login_required, current_user
 
 from pipeline.voice_library import get_voice_library
+from web.services.voice import (
+    build_voice_delete_response,
+    build_voice_error_response,
+    build_voice_import_missing_source_response,
+    build_voice_import_success_response,
+    build_voice_list_error_response,
+    build_voice_list_response,
+    build_voice_not_found_response,
+    build_voice_payload_response,
+    voice_flask_response,
+)
 
 log = logging.getLogger(__name__)
 
@@ -22,10 +33,12 @@ def list_voices():
         language = request.args.get("language", "en")
         lib = get_voice_library()
         lib.ensure_defaults(current_user.id, language=language)
-        return jsonify({"voices": lib.list_voices(current_user.id, language=language)})
+        return voice_flask_response(
+            build_voice_list_response(lib.list_voices(current_user.id, language=language))
+        )
     except Exception:
         log.exception("list_voices failed for user %s", current_user.id)
-        return jsonify({"error": "音色列表加载失败"}), 500
+        return voice_flask_response(build_voice_list_error_response())
 
 
 @bp.route("", methods=["POST"])
@@ -35,8 +48,8 @@ def create_voice():
     try:
         voice = get_voice_library().create_voice(current_user.id, body)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"voice": voice}), 201
+        return voice_flask_response(build_voice_error_response(exc))
+    return voice_flask_response(build_voice_payload_response(voice, status_code=201))
 
 
 @bp.route("/<int:voice_id>", methods=["PUT"])
@@ -45,12 +58,12 @@ def update_voice(voice_id):
     body = request.get_json(silent=True) or {}
     lib = get_voice_library()
     if not lib.get_voice(voice_id, current_user.id):
-        return jsonify({"error": "Voice not found"}), 404
+        return voice_flask_response(build_voice_not_found_response())
     try:
         voice = lib.update_voice(voice_id, current_user.id, body)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"voice": voice})
+        return voice_flask_response(build_voice_error_response(exc))
+    return voice_flask_response(build_voice_payload_response(voice))
 
 
 @bp.route("/<int:voice_id>/set-default", methods=["POST"])
@@ -59,8 +72,8 @@ def set_default_voice(voice_id):
     lib = get_voice_library()
     voice = lib.set_default_voice(voice_id, current_user.id)
     if not voice:
-        return jsonify({"error": "Voice not found"}), 404
-    return jsonify({"voice": voice})
+        return voice_flask_response(build_voice_not_found_response())
+    return voice_flask_response(build_voice_payload_response(voice))
 
 
 @bp.route("/<int:voice_id>", methods=["DELETE"])
@@ -68,9 +81,9 @@ def set_default_voice(voice_id):
 def delete_voice(voice_id):
     lib = get_voice_library()
     if not lib.get_voice(voice_id, current_user.id):
-        return jsonify({"error": "Voice not found"}), 404
+        return voice_flask_response(build_voice_not_found_response())
     lib.delete_voice(voice_id, current_user.id)
-    return jsonify({"status": "ok"})
+    return voice_flask_response(build_voice_delete_response())
 
 
 @bp.route("/import", methods=["POST"])
@@ -82,7 +95,7 @@ def import_voice():
     body = request.get_json(silent=True) or {}
     source = (body.get("source") or "").strip()
     if not source:
-        return jsonify({"error": "source 参数不能为空（voiceId 或 ElevenLabs 链接）"}), 400
+        return voice_flask_response(build_voice_import_missing_source_response())
 
     overrides = {}
     for key in ("name", "gender", "description", "style_tags",
@@ -102,9 +115,9 @@ def import_voice():
             overrides=overrides,
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return voice_flask_response(build_voice_error_response(exc))
     except LookupError as exc:
-        return jsonify({"error": str(exc)}), 404
+        return voice_flask_response(build_voice_error_response(exc, status_code=404))
     except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 502
-    return jsonify({"voice": voice, "imported": True}), 201
+        return voice_flask_response(build_voice_error_response(exc, status_code=502))
+    return voice_flask_response(build_voice_import_success_response(voice))

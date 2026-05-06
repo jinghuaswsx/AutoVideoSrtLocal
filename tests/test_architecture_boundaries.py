@@ -1627,6 +1627,34 @@ def test_settings_ai_pricing_responses_live_outside_route_module():
     assert Path("web/services/settings_ai_pricing.py").exists()
 
 
+def test_voice_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/voice.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "list_voices",
+        "create_voice",
+        "update_voice",
+        "set_default_voice",
+        "delete_voice",
+        "import_voice",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+
+    assert set(route_sources) == route_names
+    assert "jsonify(" not in route_source
+    assert "voice_flask_response" in route_source
+    assert "build_voice_list_response" in route_source
+    assert "build_voice_payload_response" in route_source
+    assert "build_voice_not_found_response" in route_source
+    assert "build_voice_import_success_response" in route_source
+    assert Path("web/services/voice.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

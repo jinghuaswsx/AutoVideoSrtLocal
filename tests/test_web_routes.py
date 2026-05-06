@@ -1590,10 +1590,10 @@ def test_voice_routes_support_crud(authed_client_no_db, monkeypatch):
     _next_id = [1]
 
     class FakeVoiceLibrary:
-        def ensure_defaults(self, user_id):
+        def ensure_defaults(self, user_id, language=None):
             pass
 
-        def list_voices(self, user_id):
+        def list_voices(self, user_id, language=None):
             return [v for v in _voices.values() if v.get("user_id") == user_id]
 
         def create_voice(self, user_id, body):
