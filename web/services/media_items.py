@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import os
 
+from flask import jsonify
+
 from appcore import medias, object_keys
 
 PRODUCT_NOT_LISTED_PAYLOAD = {
@@ -34,6 +36,10 @@ class MediaItemResponse:
     payload: dict
     status_code: int
     object_key: str | None = None
+
+
+def media_item_flask_response(result: MediaItemResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def build_item_bootstrap_response(

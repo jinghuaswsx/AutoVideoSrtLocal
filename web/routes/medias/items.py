@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import abort, jsonify, request
+from flask import abort, request
 from flask_login import current_user, login_required
 
 from appcore import medias, object_keys
@@ -28,9 +28,11 @@ from web.services.media_items import (
     build_item_complete_response as _build_item_complete_response_impl,
     build_item_delete_response as _build_item_delete_response_impl,
     build_item_update_response as _build_item_update_response_impl,
+    media_item_flask_response as _media_item_flask_response_impl,
 )
 from web.services.media_item_video_ai_review import (
     get_media_item_video_ai_review,
+    media_item_video_ai_review_flask_response as _media_item_video_ai_review_flask_response_impl,
     start_media_item_video_ai_review,
 )
 
@@ -189,6 +191,14 @@ def _build_item_delete_response(item_id: int, item: dict):
     )
 
 
+def _media_item_flask_response(result):
+    return _media_item_flask_response_impl(result)
+
+
+def _media_item_video_ai_review_flask_response(outcome):
+    return _media_item_video_ai_review_flask_response_impl(outcome)
+
+
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])
 @login_required
 def api_item_bootstrap(pid: int):
@@ -196,8 +206,9 @@ def api_item_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_item_bootstrap_response(pid, p, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_bootstrap_response(pid, p, body)
+    return routes._media_item_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/items/complete", methods=["POST"])
@@ -207,8 +218,9 @@ def api_item_complete(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_item_complete_response(pid, p, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_item_complete_response(pid, p, body)
+    return routes._media_item_flask_response(result)
 
 
 @bp.route("/api/items/<int:item_id>", methods=["PATCH"])
@@ -223,7 +235,7 @@ def api_update_item(item_id: int):
     body = request.get_json(silent=True) or {}
     routes = _routes()
     result = routes._build_item_update_response(item_id, it, p, body)
-    return jsonify(result.payload), result.status_code
+    return routes._media_item_flask_response(result)
 
 
 @bp.route("/api/items/<int:item_id>", methods=["DELETE"])
@@ -243,7 +255,7 @@ def api_delete_item(item_id: int):
             _delete_media_object(result.object_key)
     except Exception:
         pass
-    return jsonify(result.payload), result.status_code
+    return routes._media_item_flask_response(result)
 
 
 # ---- AI 视频分析（手动触发，多模态 ADC 通道）----
@@ -256,8 +268,9 @@ def api_run_video_ai_review(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
+    routes = _routes()
     outcome = start_media_item_video_ai_review(item_id, user_id=current_user.id)
-    return jsonify(outcome.payload), outcome.status_code
+    return routes._media_item_video_ai_review_flask_response(outcome)
 
 
 @bp.route("/api/items/<int:item_id>/video-ai-review", methods=["GET"])
@@ -269,5 +282,6 @@ def api_get_video_ai_review(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
+    routes = _routes()
     outcome = get_media_item_video_ai_review(item_id)
-    return jsonify(outcome.payload), outcome.status_code
+    return routes._media_item_video_ai_review_flask_response(outcome)

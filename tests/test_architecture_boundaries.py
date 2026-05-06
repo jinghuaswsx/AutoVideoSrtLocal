@@ -813,8 +813,10 @@ def test_media_item_update_delete_responses_live_outside_route_module():
     assert "display_name required" not in route_source
     assert "display_name too long" not in route_source
     assert "_serialize_item(" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_item_update_response" in route_source
     assert "_build_item_delete_response" in route_source
+    assert "_media_item_flask_response" in route_source
     assert Path("web/services/media_items.py").exists()
 
 
@@ -859,8 +861,10 @@ def test_media_item_upload_responses_live_outside_route_module():
     assert "_ensure_product_listed" not in route_source
     assert "product_not_listed" not in route_source
     assert "is_product_listed" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_item_bootstrap_response" in route_source
     assert "_build_item_complete_response" in route_source
+    assert "_media_item_flask_response" in route_source
     assert Path("web/services/media_items.py").exists()
 
 
@@ -884,8 +888,10 @@ def test_media_item_video_ai_review_responses_live_outside_route_module():
     assert "ReviewInProgressError" not in route_source
     assert "AI 视频分析正在运行中" not in route_source
     assert '"status": "started"' not in route_source
+    assert "jsonify(" not in route_source
     assert "start_media_item_video_ai_review" in route_source
     assert "get_media_item_video_ai_review" in route_source
+    assert "_media_item_video_ai_review_flask_response" in route_source
     assert Path("web/services/media_item_video_ai_review.py").exists()
 
 

@@ -1,6 +1,18 @@
 from __future__ import annotations
 
 
+def test_media_item_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_items import MediaItemResponse, media_item_flask_response
+
+    result = MediaItemResponse({"ok": True}, 202)
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = media_item_flask_response(result)
+
+    assert status_code == 202
+    assert response.get_json() == {"ok": True}
+
+
 def test_build_item_update_response_updates_and_serializes_fresh_row():
     from web.services.media_items import (
         ItemFilenameValidation,

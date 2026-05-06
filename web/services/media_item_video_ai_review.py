@@ -6,6 +6,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from flask import jsonify
+
 
 _SOURCE_TYPE = "media_item"
 _BUSY_ERROR = "AI 视频分析正在运行中"
@@ -16,6 +18,10 @@ log = logging.getLogger(__name__)
 class MediaItemVideoAiReviewOutcome:
     payload: dict[str, Any]
     status_code: int
+
+
+def media_item_video_ai_review_flask_response(outcome: MediaItemVideoAiReviewOutcome):
+    return jsonify(outcome.payload), outcome.status_code
 
 
 def _review_module():

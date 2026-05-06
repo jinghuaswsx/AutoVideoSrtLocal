@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 
+def test_media_item_video_ai_review_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_item_video_ai_review import (
+        MediaItemVideoAiReviewOutcome,
+        media_item_video_ai_review_flask_response,
+    )
+
+    outcome = MediaItemVideoAiReviewOutcome({"review": {"score": 88}}, 207)
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = media_item_video_ai_review_flask_response(outcome)
+
+    assert status_code == 207
+    assert response.get_json() == {"review": {"score": 88}}
+
+
 class _ReviewInProgressError(RuntimeError):
     def __init__(self, run_id: str):
         super().__init__(run_id)
