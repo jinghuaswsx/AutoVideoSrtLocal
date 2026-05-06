@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from flask import abort, jsonify, request
+from flask import abort, request
 from flask_login import current_user, login_required
 
 from appcore import (
@@ -27,6 +27,9 @@ from web.services.media_detail_listing import (
     build_detail_image_proxy_response as _build_detail_image_proxy_response_impl,
     build_detail_images_list_response as _build_detail_images_list_response_impl,
     detail_image_proxy_flask_response as _detail_image_proxy_flask_response_impl,
+)
+from web.services.media_detail_responses import (
+    detail_image_json_flask_response as _detail_image_json_flask_response_impl,
 )
 from web.services.media_detail_from_url import (
     build_detail_images_from_url_response as _build_detail_images_from_url_response_impl,
@@ -321,6 +324,10 @@ def _detail_image_proxy_flask_response(outcome):
     )
 
 
+def _detail_image_json_flask_response(outcome):
+    return _detail_image_json_flask_response_impl(outcome)
+
+
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
 @login_required
 def api_detail_images_list(pid: int):
@@ -328,8 +335,9 @@ def api_detail_images_list(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "en").strip().lower()
-    result = _routes()._build_detail_images_list_response(pid, lang)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_detail_images_list_response(pid, lang)
+    return routes._detail_image_json_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/download-zip", methods=["GET"])
@@ -344,7 +352,7 @@ def api_detail_images_download_zip(pid: int):
     if result.not_found:
         abort(404)
     if result.error:
-        return jsonify({"error": result.error}), result.status_code
+        return _routes()._detail_image_json_flask_response(result)
 
     _routes()._audit_detail_images_zip_download(
         p,
@@ -367,7 +375,7 @@ def api_detail_images_download_localized_zip(pid: int):
     if result.not_found:
         abort(404)
     if result.error:
-        return jsonify({"error": result.error}), result.status_code
+        return _routes()._detail_image_json_flask_response(result)
 
     _routes()._audit_detail_images_zip_download(
         p,
@@ -388,25 +396,27 @@ def api_detail_images_from_url(pid: int):
         abort(404)
 
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_detail_images_from_url_response(
+    routes = _routes()
+    result = routes._build_detail_images_from_url_response(
         pid,
         p or {},
         body,
         current_user.id,
     )
-    return jsonify(result.payload), result.status_code
+    return routes._detail_image_json_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/from-url/status/<task_id>", methods=["GET"])
 @login_required
 def api_detail_images_from_url_status(pid: int, task_id: str):
     """Return the current status for a detail-image fetch task."""
-    result = _routes()._build_detail_images_from_url_status_response(
+    routes = _routes()
+    result = routes._build_detail_images_from_url_status_response(
         pid,
         task_id,
         current_user.id,
     )
-    return jsonify(result.payload), result.status_code
+    return routes._detail_image_json_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/bootstrap", methods=["POST"])
@@ -417,12 +427,13 @@ def api_detail_images_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_detail_images_bootstrap_response(
+    routes = _routes()
+    result = routes._build_detail_images_bootstrap_response(
         pid,
         body,
         current_user.id,
     )
-    return jsonify(result.payload), result.status_code
+    return routes._detail_image_json_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/complete", methods=["POST"])
@@ -433,8 +444,9 @@ def api_detail_images_complete(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = _routes()._build_detail_images_complete_response(pid, body)
-    return jsonify(result.payload), result.status_code
+    routes = _routes()
+    result = routes._build_detail_images_complete_response(pid, body)
+    return routes._detail_image_json_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/<int:image_id>", methods=["DELETE"])
@@ -443,10 +455,11 @@ def api_detail_images_delete(pid: int, image_id: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    outcome = _routes()._build_detail_images_delete_response(pid, image_id)
+    routes = _routes()
+    outcome = routes._build_detail_images_delete_response(pid, image_id)
     if outcome.not_found:
         abort(404)
-    return jsonify(outcome.payload)
+    return routes._detail_image_json_flask_response(outcome)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/clear", methods=["POST"])
@@ -457,10 +470,9 @@ def api_detail_images_clear_all(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    outcome = _routes()._build_detail_images_clear_response(pid, body)
-    if outcome.error:
-        return jsonify({"error": outcome.error}), outcome.status_code
-    return jsonify(outcome.payload)
+    routes = _routes()
+    outcome = routes._build_detail_images_clear_response(pid, body)
+    return routes._detail_image_json_flask_response(outcome)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/reorder", methods=["POST"])
@@ -470,10 +482,9 @@ def api_detail_images_reorder(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    outcome = _routes()._build_detail_images_reorder_response(pid, body)
-    if outcome.error:
-        return jsonify({"error": outcome.error}), outcome.status_code
-    return jsonify(outcome.payload)
+    routes = _routes()
+    outcome = routes._build_detail_images_reorder_response(pid, body)
+    return routes._detail_image_json_flask_response(outcome)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/translate-from-en", methods=["POST"])
@@ -484,15 +495,14 @@ def api_detail_images_translate_from_en(pid: int):
         abort(404)
 
     body = request.get_json(silent=True) or {}
-    outcome = _routes()._build_detail_translate_from_en_response(
+    routes = _routes()
+    outcome = routes._build_detail_translate_from_en_response(
         pid,
         p or {},
         body,
         current_user.id,
     )
-    if outcome.error:
-        return jsonify({"error": outcome.error}), outcome.status_code
-    return jsonify(outcome.payload), outcome.status_code
+    return routes._detail_image_json_flask_response(outcome)
 
 
 @bp.route("/api/products/<int:pid>/detail-image-translate-tasks", methods=["GET"])
@@ -502,10 +512,9 @@ def api_detail_image_translate_tasks(pid: int):
     if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "").strip().lower()
-    outcome = _routes()._build_detail_translate_tasks_response(pid, lang, current_user.id)
-    if outcome.error:
-        return jsonify({"error": outcome.error}), outcome.status_code
-    return jsonify(outcome.payload), outcome.status_code
+    routes = _routes()
+    outcome = routes._build_detail_translate_tasks_response(pid, lang, current_user.id)
+    return routes._detail_image_json_flask_response(outcome)
 
 
 @bp.route(
@@ -522,7 +531,8 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    outcome = _routes()._build_detail_translate_apply_response(
+    routes = _routes()
+    outcome = routes._build_detail_translate_apply_response(
         pid,
         lang,
         task_id,
@@ -530,9 +540,7 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
     )
     if outcome.not_found:
         abort(404)
-    if outcome.error:
-        return jsonify({"error": outcome.error}), outcome.status_code
-    return jsonify(outcome.payload)
+    return routes._detail_image_json_flask_response(outcome)
 
 
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])

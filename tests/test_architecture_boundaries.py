@@ -152,10 +152,13 @@ def test_detail_image_archive_responses_live_outside_route_module():
     assert 'temp_prefix="localized_detail_images_zip_"' not in route_source
     assert "object_keys" not in route_source
     assert "send_file(" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_images_zip_response" in route_source
     assert "_build_localized_detail_images_zip_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert "_detail_images_zip_flask_response" in route_source
     assert Path("web/services/media_detail_archives.py").exists()
+    assert Path("web/services/media_detail_responses.py").exists()
 
 
 def test_detail_image_upload_validation_lives_outside_route_module():
@@ -190,7 +193,9 @@ def test_detail_image_list_response_lives_outside_route_module():
     assert direct_calls == []
     assert "涓嶆敮鎸佺殑璇" not in route_source
     assert "_serialize_detail_image(" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_images_list_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_listing.py").exists()
 
 
@@ -264,7 +269,9 @@ def test_detail_image_translate_from_en_response_lives_outside_route_module():
     assert "_ensure_product_listed" not in route_source
     assert "product_not_listed" not in route_source
     assert "is_product_listed" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_translate_from_en_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_translation.py").exists()
 
 
@@ -296,7 +303,9 @@ def test_detail_image_translate_task_projection_lives_outside_route_module():
     assert "ctx.get(\"entry\")" not in route_source
     assert "ctx.get(\"target_lang\")" not in route_source
     assert "applied_detail_image_ids" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_translate_tasks_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_translation.py").exists()
 
 
@@ -332,7 +341,9 @@ def test_detail_image_translate_apply_workflow_lives_outside_route_module():
     assert "ctx.get(\"target_lang\")" not in route_source
     assert "skipped_failed_indices" not in route_source
     assert "english detail images do not need manual apply" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_translate_apply_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_translation.py").exists()
 
 
@@ -373,9 +384,11 @@ def test_detail_image_mutation_workflows_live_outside_route_module():
     assert "clear_detail_images(" not in route_source
     assert "reorder_detail_images_command(" not in route_source
     assert "english detail images cannot be cleared via this endpoint" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_images_delete_response" in route_source
     assert "_build_detail_images_clear_response" in route_source
     assert "_build_detail_images_reorder_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_mutations.py").exists()
 
 
@@ -428,7 +441,9 @@ def test_detail_image_from_url_response_lives_outside_route_module():
     assert "_detail_image_existing_counts" not in route_source
     assert "_serialize_detail_image(" not in route_source
     assert "no carousel/detail images detected on the page" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_images_from_url_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_from_url.py").exists()
 
 
@@ -446,7 +461,9 @@ def test_detail_image_from_url_status_response_lives_outside_route_module():
     assert ".get(task_id" not in route_source
     assert "task not found" not in route_source
     assert "product_id" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_images_from_url_status_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_from_url.py").exists()
 
 
@@ -482,8 +499,10 @@ def test_detail_image_upload_responses_live_outside_route_module():
     assert "images required" not in route_source
     assert "object missing" not in route_source
     assert "storage_backend" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_detail_images_bootstrap_response" in route_source
     assert "_build_detail_images_complete_response" in route_source
+    assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_uploads.py").exists()
 
 
