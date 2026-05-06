@@ -62,6 +62,10 @@ def _routes_module():
     return routes
 
 
+def _mk_copywriting_http_get(*args, **kwargs):
+    return _routes_module().requests.get(*args, **kwargs)
+
+
 def _build_products_list_response(args):
     return _build_products_list_response_impl(
         args,
@@ -128,7 +132,7 @@ def _build_mk_copywriting_response(args):
         build_headers_fn=routes._build_mk_request_headers,
         get_base_url_fn=routes._get_mk_api_base_url,
         is_login_expired_fn=routes._is_mk_login_expired,
-        http_get_fn=routes.requests.get,
+        http_get_fn=_mk_copywriting_http_get,
     )
 
 

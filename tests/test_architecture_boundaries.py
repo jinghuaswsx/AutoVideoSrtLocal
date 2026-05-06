@@ -2181,6 +2181,13 @@ def test_mk_copywriting_response_lives_outside_route_module():
     assert Path("web/services/media_mk_copywriting.py").exists()
 
 
+def test_mk_copywriting_http_get_binding_lives_behind_route_adapter():
+    module_source = Path("web/routes/medias/products.py").read_text(encoding="utf-8")
+
+    assert "http_get_fn=routes.requests.get" not in module_source
+    assert "http_get_fn=_mk_copywriting_http_get" in module_source
+
+
 def test_mk_selection_list_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

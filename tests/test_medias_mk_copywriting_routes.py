@@ -166,6 +166,28 @@ def test_mk_copywriting_route_delegates_response_building(authed_client_no_db, m
     assert converted == {"payload": {"ok": True, "query": "demo", "copywriting": "Ready"}}
 
 
+def test_mk_copywriting_http_get_adapter_uses_medias_package_request_dependency(monkeypatch):
+    from web.routes import medias as route_mod
+    from web.routes.medias import products
+
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return "ok"
+
+    monkeypatch.setattr(route_mod.requests, "get", fake_get)
+
+    result = products._mk_copywriting_http_get("https://wedev.example/api", timeout=15)
+
+    assert result == "ok"
+    assert captured == {
+        "url": "https://wedev.example/api",
+        "kwargs": {"timeout": 15},
+    }
+
+
 def test_add_material_modal_has_mk_copywriting_fetch_button():
     html = (ROOT / "web" / "templates" / "_medias_edit_modal.html").read_text(
         encoding="utf-8"

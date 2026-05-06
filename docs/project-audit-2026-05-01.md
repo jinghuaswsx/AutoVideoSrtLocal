@@ -27,6 +27,7 @@
 
 验收状态：
 
+- 2026-05-06 当前工作区继续收敛 P2-14 大文件拆分：素材产品 MK 文案代理的外部 HTTP 请求依赖不再由 `web/routes/medias/products.py` 直接绑定 `routes.requests.get`，统一通过 `_mk_copywriting_http_get` 适配到 `web.routes.medias.requests.get`，保持现有凭据、超时、异常映射和测试 monkeypatch 行为不变；新增架构守卫防止路由层重新直绑请求库。聚焦回归：`tests/test_media_mk_copywriting_service.py tests/test_medias_mk_copywriting_routes.py tests/test_medias_routes.py tests/test_architecture_boundaries.py` 为 `260 passed, 2 warnings`。
 - 2026-05-06 当前工作区继续收敛 P2-14 大文件拆分：明空选品详情、媒体图片和视频代理的外部 HTTP 请求依赖不再由 `web/routes/medias/mk_selection.py` 直接绑定 `requests.get`，统一通过 `_mk_http_get` 适配到 `web.routes.medias.requests.get`，保持既有 monkeypatch、凭据、超时和缓存行为不变；新增架构守卫防止路由层重新直接绑定请求库。聚焦回归：`tests/test_media_mk_selection_service.py tests/test_mk_selection_routes.py tests/test_medias_routes.py tests/test_architecture_boundaries.py` 为 `283 passed, 2 warnings`。
 - 2026-05-02 当前工作区继续收敛 P1-5 任务状态入口：`copywriting_translate_runtime`、`bulk_translate_recovery`、`text_translate` 的 `projects.state_json` 写回改走 `appcore.project_state.save_project_state`，并为文案翻译 runtime、bulk 启动恢复、文本翻译完成态补充架构防回归测试。P1-5 聚焦回归：`80 passed, 2 warnings`。
 - 2026-05-02 当前工作区继续收敛 P1-5 启动恢复状态写回：`task_recovery._persist_project_recovery` 改走 `appcore.project_state.save_project_state`，启动恢复矩阵和架构边界回归：`48 passed, 2 warnings`；扫描确认直接 `projects.state_json` 更新仅剩 `project_state` / `task_state` 状态基础设施。
