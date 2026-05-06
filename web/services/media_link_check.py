@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Callable
 import uuid
 
+from flask import jsonify
+
 from appcore import medias
 
 
@@ -15,6 +17,10 @@ from appcore import medias
 class MediaLinkCheckResponse:
     payload: dict
     status_code: int
+
+
+def media_link_check_flask_response(result: MediaLinkCheckResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def _collect_link_check_reference_images(

@@ -1318,9 +1318,11 @@ def test_media_link_check_responses_live_outside_route_module():
     assert "_collect_link_check_reference_images" not in route_source
     assert "unsupported language" not in route_source
     assert "task not found" not in route_source
+    assert "jsonify(" not in route_source
     assert "build_product_link_check_create_response" in route_source
     assert "build_product_link_check_summary_response" in route_source
     assert "build_product_link_check_detail_response" in route_source
+    assert "_media_link_check_flask_response" in route_source
     assert Path("web/services/media_link_check.py").exists()
 
 

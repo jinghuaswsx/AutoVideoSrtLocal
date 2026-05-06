@@ -3,6 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def test_media_link_check_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_link_check import (
+        MediaLinkCheckResponse,
+        media_link_check_flask_response,
+    )
+
+    result = MediaLinkCheckResponse({"error": "task not found"}, 404)
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = media_link_check_flask_response(result)
+
+    assert status_code == 404
+    assert response.get_json() == {"error": "task not found"}
+
+
 def test_link_check_create_response_collects_references_and_starts_runner(monkeypatch, tmp_path):
     from web.services import media_link_check
 
