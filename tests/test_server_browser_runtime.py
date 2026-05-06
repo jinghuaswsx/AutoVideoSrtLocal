@@ -1,13 +1,24 @@
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+BASH_EXE = shutil.which("bash") or "bash"
 
 
 def _read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
+
+
+def _bash_path(path: Path) -> str:
+    if os.name != "nt":
+        return str(path)
+    raw = str(path).replace("\\", "/")
+    if len(raw) >= 2 and raw[1] == ":":
+        return f"/{raw[0].lower()}{raw[2:]}"
+    return raw
 
 
 def _run_browser_runner_with_fake_chromium(
@@ -36,24 +47,26 @@ printf '%s\\n' "$@" >"$FAKE_CHROMIUM_ARGS"
     env = os.environ.copy()
     env.update(
         {
-            "PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}",
-            "APP_DIR": str(tmp_path / "app"),
-            "VENV_DIR": str(tmp_path / "venv"),
-            "BROWSER_PROFILE_DIR": str(tmp_path / "profile"),
-            "BROWSER_RUNTIME_DIR": str(tmp_path / "runtime"),
-            "BROWSER_LOG_DIR": str(tmp_path / "logs"),
+            "PATH": f"{_bash_path(bin_dir)}:/usr/bin:/bin",
+            "APP_DIR": _bash_path(tmp_path / "app"),
+            "VENV_DIR": _bash_path(tmp_path / "venv"),
+            "BROWSER_PROFILE_DIR": _bash_path(tmp_path / "profile"),
+            "BROWSER_RUNTIME_DIR": _bash_path(tmp_path / "runtime"),
+            "BROWSER_LOG_DIR": _bash_path(tmp_path / "logs"),
             "BROWSER_START_URL": "about:blank",
             "BROWSER_CDP_PORT": "19222",
             "BROWSER_HEADLESS_FALLBACK": headless_fallback,
             "DISPLAY": display,
-            "FAKE_CHROMIUM_ARGS": str(args_file),
+            "FAKE_CHROMIUM_ARGS": _bash_path(args_file),
         }
     )
     result = subprocess.run(
-        ["bash", str(REPO_ROOT / "deploy/server_browser/run_server_browser.sh")],
+        [BASH_EXE, _bash_path(REPO_ROOT / "deploy/server_browser/run_server_browser.sh")],
         cwd=REPO_ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=False,
     )
