@@ -1849,6 +1849,28 @@ def test_prompt_api_responses_live_outside_route_module():
     assert Path("web/services/prompt.py").exists()
 
 
+def test_prompt_route_db_access_lives_in_appcore_prompt_library():
+    route_source = Path("web/routes/prompt.py").read_text(encoding="utf-8")
+    dao_source = Path("appcore/prompt_library.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in route_source
+    assert "db_query" not in route_source
+    assert "db_query_one" not in route_source
+    assert "db_execute" not in route_source
+    assert "prompt_library.ensure_user_prompt_defaults" in route_source
+    assert "prompt_library.list_user_prompts" in route_source
+    assert "prompt_library.create_user_prompt" in route_source
+    assert "prompt_library.get_owned_user_prompt" in route_source
+    assert "prompt_library.update_user_prompt" in route_source
+    assert "prompt_library.delete_user_prompt" in route_source
+    assert "def ensure_user_prompt_defaults" in dao_source
+    assert "def list_user_prompts" in dao_source
+    assert "def create_user_prompt" in dao_source
+    assert "def get_owned_user_prompt" in dao_source
+    assert "def update_user_prompt" in dao_source
+    assert "def delete_user_prompt" in dao_source
+
+
 def test_mk_import_api_responses_live_outside_route_module():
     module_source = Path("web/routes/mk_import.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

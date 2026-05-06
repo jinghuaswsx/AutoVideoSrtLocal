@@ -1,8 +1,10 @@
 """提示词典 DAO。管理员维护，普通用户只读。支持中/英双语内容。"""
 from __future__ import annotations
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from appcore.db import query, query_one, execute
+from pipeline.localization import DEFAULT_PROMPTS
 
 
 def list_items(keyword: str = "", offset: int = 0, limit: int = 30) -> tuple[list[dict], int]:
@@ -50,6 +52,95 @@ def get_user_prompt_text(prompt_id: int, user_id: int, *, query_one_func=query_o
         (prompt_id, user_id),
     )
     return row.get("prompt_text") if row else None
+
+
+def ensure_user_prompt_defaults(
+    user_id: int,
+    *,
+    default_prompts: Iterable[Mapping[str, Any]] | None = None,
+) -> None:
+    prompts = list(default_prompts if default_prompts is not None else DEFAULT_PROMPTS)
+    existing = query("SELECT id FROM user_prompts WHERE user_id = %s LIMIT 1", (user_id,))
+    if not existing:
+        for prompt in prompts:
+            execute(
+                "INSERT INTO user_prompts (user_id, name, prompt_text, prompt_text_zh, is_default) VALUES (%s, %s, %s, %s, %s)",
+                (
+                    user_id,
+                    prompt["name"],
+                    prompt["prompt_text"],
+                    prompt.get("prompt_text_zh", ""),
+                    prompt["is_default"],
+                ),
+            )
+        return
+
+    for prompt in prompts:
+        if prompt.get("prompt_text_zh"):
+            execute(
+                "UPDATE user_prompts SET prompt_text_zh = %s WHERE user_id = %s AND name = %s AND is_default = TRUE AND (prompt_text_zh IS NULL OR prompt_text_zh = '')",
+                (prompt["prompt_text_zh"], user_id, prompt["name"]),
+            )
+        execute(
+            "UPDATE user_prompts SET prompt_text = %s WHERE user_id = %s AND name = %s AND is_default = TRUE AND prompt_text LIKE '%%TikTok%%'",
+            (prompt["prompt_text"], user_id, prompt["name"]),
+        )
+        if prompt.get("prompt_text_zh"):
+            execute(
+                "UPDATE user_prompts SET prompt_text_zh = %s WHERE user_id = %s AND name = %s AND is_default = TRUE AND prompt_text_zh LIKE '%%TikTok%%'",
+                (prompt["prompt_text_zh"], user_id, prompt["name"]),
+            )
+
+
+def list_user_prompts(user_id: int, prompt_type: str) -> list[dict]:
+    return query(
+        "SELECT * FROM user_prompts WHERE user_id = %s AND type = %s ORDER BY is_default DESC, created_at",
+        (user_id, prompt_type),
+    )
+
+
+def create_user_prompt(
+    user_id: int,
+    name: str,
+    prompt_text: str,
+    prompt_text_zh: str,
+    prompt_type: str,
+) -> dict | None:
+    row_id = execute(
+        "INSERT INTO user_prompts (user_id, name, prompt_text, prompt_text_zh, is_default, type) VALUES (%s, %s, %s, %s, FALSE, %s)",
+        (user_id, name, prompt_text, prompt_text_zh, prompt_type),
+    )
+    return query_one("SELECT * FROM user_prompts WHERE id = %s", (row_id,))
+
+
+def get_owned_user_prompt(prompt_id: int, user_id: int) -> dict | None:
+    return query_one(
+        "SELECT * FROM user_prompts WHERE id = %s AND user_id = %s",
+        (prompt_id, user_id),
+    )
+
+
+def update_user_prompt(prompt_id: int, user_id: int, fields: Mapping[str, str]) -> dict | None:
+    sets: list[str] = []
+    args: list[Any] = []
+    for key in ("name", "prompt_text", "prompt_text_zh"):
+        if key in fields:
+            sets.append(f"{key} = %s")
+            args.append(fields[key])
+
+    if not sets:
+        return get_owned_user_prompt(prompt_id, user_id)
+
+    args.extend([prompt_id, user_id])
+    execute(
+        f"UPDATE user_prompts SET {', '.join(sets)} WHERE id = %s AND user_id = %s",
+        tuple(args),
+    )
+    return query_one("SELECT * FROM user_prompts WHERE id = %s", (prompt_id,))
+
+
+def delete_user_prompt(prompt_id: int, user_id: int) -> int:
+    return execute("DELETE FROM user_prompts WHERE id = %s AND user_id = %s", (prompt_id, user_id))
 
 
 def create_item(user_id: int, name: str, *,
