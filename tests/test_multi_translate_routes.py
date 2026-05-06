@@ -152,6 +152,37 @@ def test_normal_user_cannot_get_other_users_multi_translate_task(authed_user_cli
     assert resp.status_code == 404
 
 
+def test_delete_multi_translate_task_uses_appcore_cleanup(authed_client_no_db, monkeypatch):
+    from web.routes import multi_translate as r
+
+    row = {"id": "task-1", "task_dir": "C:/tmp/task-1", "state_json": "{}"}
+    deleted_payloads = []
+    executed = []
+    updates = []
+
+    monkeypatch.setattr(r, "db_query_one", lambda sql, args: row)
+    monkeypatch.setattr(r, "db_execute", lambda sql, args: executed.append((sql, args)))
+    monkeypatch.setattr(r.store, "get", lambda task_id: {"id": task_id, "task_dir": "stale-dir"})
+    monkeypatch.setattr(r.store, "update", lambda task_id, **kwargs: updates.append((task_id, kwargs)))
+    monkeypatch.setattr(
+        "appcore.cleanup.collect_task_tos_keys",
+        lambda payload: ["tos-key"],
+    )
+    monkeypatch.setattr(
+        "appcore.cleanup.delete_task_storage",
+        lambda payload: deleted_payloads.append(dict(payload)),
+    )
+
+    resp = authed_client_no_db.delete("/api/multi-translate/task-1")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"status": "ok"}
+    assert deleted_payloads[0]["task_dir"] == "C:/tmp/task-1"
+    assert deleted_payloads[0]["tos_keys"] == ["tos-key"]
+    assert executed == [("UPDATE projects SET deleted_at=NOW() WHERE id=%s", ("task-1",))]
+    assert updates == [("task-1", {"status": "deleted"})]
+
+
 def test_admin_can_read_other_users_multi_translate_subtitle_preview(authed_client_no_db, monkeypatch):
     def fake_query_one(sql, args):
         if "user_id = %s" in sql.lower() or "user_id=%s" in sql.lower():

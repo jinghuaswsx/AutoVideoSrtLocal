@@ -359,7 +359,7 @@ def delete(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     task = store.get(task_id) or {}
-    from web.services import cleanup
+    from appcore import cleanup
     cleanup_payload = dict(task)
     cleanup_payload["task_dir"] = row.get("task_dir") or cleanup_payload.get("task_dir", "")
     cleanup_payload["state_json"] = row.get("state_json") or ""

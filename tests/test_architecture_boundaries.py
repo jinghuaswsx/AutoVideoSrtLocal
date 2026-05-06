@@ -1603,6 +1603,18 @@ def test_task_delete_storage_cleanup_lives_outside_route_module():
     assert Path("web/services/task_deletion.py").exists()
 
 
+def test_translation_delete_routes_do_not_import_missing_web_services_cleanup():
+    for path in [
+        Path("web/routes/de_translate.py"),
+        Path("web/routes/fr_translate.py"),
+        Path("web/routes/ja_translate.py"),
+        Path("web/routes/multi_translate.py"),
+        Path("web/routes/omni_translate.py"),
+    ]:
+        source = path.read_text(encoding="utf-8")
+        assert "from web.services import cleanup" not in source
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
