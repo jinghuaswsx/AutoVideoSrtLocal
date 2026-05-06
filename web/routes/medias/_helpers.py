@@ -15,7 +15,6 @@ from flask import abort, send_file, url_for
 from flask_login import current_user
 
 from appcore import material_evaluation, medias, runner_lifecycle, task_state
-from appcore.safe_paths import resolve_under_allowed_roots
 from config import OUTPUT_DIR
 from web.services import media_object_storage
 from web.services.media_image_import import (
@@ -445,7 +444,6 @@ def _delete_media_object(object_key: str | None) -> None:
     media_object_storage.delete_media_object(object_key)
 
 
-THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
 _local_upload_guard = threading.Lock()
 _local_upload_reservations: dict[str, dict] = {}
 
@@ -473,8 +471,3 @@ def _download_media_object(object_key: str, destination: str | os.PathLike[str])
 
 def _send_media_object(object_key: str):
     return media_object_storage.send_media_object(object_key)
-
-
-def _safe_thumb_cache_path(path):
-    from pathlib import Path as _P
-    return resolve_under_allowed_roots(_P(path), [THUMB_DIR])

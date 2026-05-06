@@ -90,7 +90,6 @@ def test_item_cover_route_uses_current_cover_object_not_stale_cache(
     product_dir.mkdir(parents=True)
     (product_dir / "item_cover_701.jpg").write_bytes(b"old cached cover")
 
-    monkeypatch.setattr(r, "THUMB_DIR", tmp_path)
     monkeypatch.setattr(
         r.medias,
         "get_item",

@@ -1298,6 +1298,18 @@ def test_media_cover_cache_root_lives_outside_route_module():
     assert "safe_thumb_cache_path" in service_source
 
 
+def test_media_thumb_cache_root_lives_outside_route_helpers():
+    helper_source = Path("web/routes/medias/_helpers.py").read_text(encoding="utf-8")
+    facade_source = Path("web/routes/medias/__init__.py").read_text(encoding="utf-8")
+    service_source = Path("web/services/media_covers.py").read_text(encoding="utf-8")
+
+    assert "THUMB_DIR" not in helper_source
+    assert "_safe_thumb_cache_path" not in helper_source
+    assert "resolve_under_allowed_roots" not in helper_source
+    assert "THUMB_DIR" not in facade_source
+    assert "DEFAULT_THUMB_DIR" in service_source
+
+
 def test_media_cover_from_url_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

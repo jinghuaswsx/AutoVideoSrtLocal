@@ -19,9 +19,10 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, request
 from flask_login import current_user, login_required
 
 from appcore import omni_preset_dao
@@ -59,8 +60,16 @@ def _serialize(preset: dict) -> dict:
     }
 
 
+def _json_response(payload: dict, status: int = 200):
+    return Response(
+        json.dumps(payload, ensure_ascii=False),
+        status=status,
+        mimetype="application/json",
+    )
+
+
 def _bad(message: str, status: int = 400):
-    return jsonify({"error": message}), status
+    return _json_response({"error": message}, status)
 
 
 def _can_modify(preset: dict) -> tuple[bool, str | None]:
@@ -87,7 +96,7 @@ def list_presets():
     user_id = current_user.id
     presets = omni_preset_dao.list_for_user(user_id)
     default_id = omni_preset_dao.get_default_id()
-    return jsonify(
+    return _json_response(
         {
             "presets": [_serialize(p) for p in presets],
             "default_preset_id": default_id,
@@ -101,10 +110,10 @@ def list_presets():
 def get_default():
     preset = omni_preset_dao.get_default()
     if not preset:
-        return jsonify(
+        return _json_response(
             {"preset": None, "fallback_plugin_config": DEFAULT_PLUGIN_CONFIG}
         )
-    return jsonify({"preset": _serialize(preset)})
+    return _json_response({"preset": _serialize(preset)})
 
 
 @bp.route("", methods=["POST"])
@@ -140,7 +149,7 @@ def create_preset():
         return _bad(f"scope 取值不合法：{scope!r}（仅支持 system/user）")
 
     created = omni_preset_dao.get(new_id)
-    return jsonify({"preset": _serialize(created)}), 201
+    return _json_response({"preset": _serialize(created)}, 201)
 
 
 @bp.route("/<int:preset_id>", methods=["PUT"])
@@ -177,7 +186,7 @@ def update_preset(preset_id: int):
         preset_id, name=name, description=description, plugin_config=fixed_cfg
     )
     updated = omni_preset_dao.get(preset_id)
-    return jsonify({"preset": _serialize(updated)})
+    return _json_response({"preset": _serialize(updated)})
 
 
 @bp.route("/<int:preset_id>", methods=["DELETE"])
@@ -192,7 +201,7 @@ def delete_preset(preset_id: int):
     ok = omni_preset_dao.delete(preset_id)
     if not ok:
         return _bad("该 preset 当前是全站默认，删除前请先把默认切到其他 preset", 409)
-    return jsonify({"ok": True})
+    return _json_response({"ok": True})
 
 
 @bp.route("/<int:preset_id>/set-as-default", methods=["POST"])
@@ -202,4 +211,4 @@ def set_as_default(preset_id: int):
     ok = omni_preset_dao.set_default(preset_id)
     if not ok:
         return _bad("preset 不存在或不是系统级（用户级 preset 不能作为全站默认）", 400)
-    return jsonify({"ok": True, "default_preset_id": preset_id})
+    return _json_response({"ok": True, "default_preset_id": preset_id})

@@ -241,7 +241,6 @@ from . import media_upload as _media_upload
 from ._helpers import _can_access_product, _material_evaluation_message, _schedule_material_evaluation
 from ._helpers import _delete_media_object, _MAX_IMAGE_BYTES, _MAX_RAW_VIDEO_BYTES, _ALLOWED_IMAGE_TYPES, _ALLOWED_RAW_VIDEO_TYPES
 from ._helpers import (
-    THUMB_DIR,
     _download_media_object,
     _is_media_available,
     _reserve_local_media_upload,
