@@ -1799,6 +1799,38 @@ def test_voice_library_api_responses_live_outside_route_module():
     assert Path("web/services/voice_library.py").exists()
 
 
+def test_prompt_library_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/prompt_library.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "admin_required",
+        "api_list",
+        "api_get",
+        "api_create",
+        "api_update",
+        "api_delete",
+        "api_generate",
+        "api_translate",
+        "api_translate_text",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+
+    assert set(route_sources) == route_names
+    assert "jsonify(" not in module_source
+    assert "prompt_library_flask_response" in route_source
+    assert "build_prompt_library_admin_required_response" in route_source
+    assert "build_prompt_library_list_response" in route_source
+    assert "build_prompt_library_created_response" in route_source
+    assert "build_prompt_library_generated_response" in route_source
+    assert "build_prompt_library_translation_response" in route_source
+    assert Path("web/services/prompt_library.py").exists()
+
+
 def test_media_shopify_image_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/shopify_image.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

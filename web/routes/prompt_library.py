@@ -6,10 +6,28 @@ import json
 import logging
 from functools import wraps
 
-from flask import Blueprint, abort, jsonify, render_template, request
+from flask import Blueprint, abort, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import llm_client, prompt_library
+from web.services.prompt_library import (
+    build_prompt_library_admin_required_response,
+    build_prompt_library_content_required_response,
+    build_prompt_library_created_response,
+    build_prompt_library_generate_failed_response,
+    build_prompt_library_generated_response,
+    build_prompt_library_item_response,
+    build_prompt_library_list_response,
+    build_prompt_library_name_required_response,
+    build_prompt_library_name_too_long_response,
+    build_prompt_library_non_json_response,
+    build_prompt_library_ok_response,
+    build_prompt_library_requirement_required_response,
+    build_prompt_library_requirement_too_long_response,
+    build_prompt_library_translation_error_response,
+    build_prompt_library_translation_response,
+    prompt_library_flask_response,
+)
 
 log = logging.getLogger(__name__)
 bp = Blueprint("prompt_library", __name__, url_prefix="/prompt-library")
@@ -23,7 +41,7 @@ def admin_required(fn):
     @wraps(fn)
     def _wrap(*args, **kwargs):
         if not _is_admin():
-            return jsonify({"error": "仅管理员可操作"}), 403
+            return prompt_library_flask_response(build_prompt_library_admin_required_response())
         return fn(*args, **kwargs)
 
     return _wrap
@@ -66,13 +84,13 @@ def api_list():
         offset=(page - 1) * limit,
         limit=limit,
     )
-    return jsonify(
-        {
-            "items": [_serialize(row) for row in rows],
-            "total": total,
-            "page": page,
-            "page_size": limit,
-        }
+    return prompt_library_flask_response(
+        build_prompt_library_list_response(
+            items=[_serialize(row) for row in rows],
+            total=total,
+            page=page,
+            page_size=limit,
+        )
     )
 
 
@@ -82,7 +100,7 @@ def api_get(item_id: int):
     item = prompt_library.get_item(item_id)
     if not item:
         abort(404)
-    return jsonify(_serialize(item))
+    return prompt_library_flask_response(build_prompt_library_item_response(_serialize(item)))
 
 
 @bp.route("/api/items", methods=["POST"])
@@ -95,11 +113,11 @@ def api_create():
     content_en = _norm(body.get("content_en"))
     description = _norm(body.get("description"))
     if not name:
-        return jsonify({"error": "名称必填"}), 400
+        return prompt_library_flask_response(build_prompt_library_name_required_response())
     if not content_zh and not content_en:
-        return jsonify({"error": "中文或英文版本至少填一个"}), 400
+        return prompt_library_flask_response(build_prompt_library_content_required_response())
     if len(name) > 255:
-        return jsonify({"error": "名称过长（≤255）"}), 400
+        return prompt_library_flask_response(build_prompt_library_name_too_long_response())
     item_id = prompt_library.create_item(
         current_user.id,
         name,
@@ -107,7 +125,7 @@ def api_create():
         content_en=content_en,
         description=description,
     )
-    return jsonify({"id": item_id}), 201
+    return prompt_library_flask_response(build_prompt_library_created_response(item_id))
 
 
 @bp.route("/api/items/<int:item_id>", methods=["PUT"])
@@ -123,9 +141,9 @@ def api_update(item_id: int):
     content_en = _norm(body.get("content_en"))
     description = _norm(body.get("description"))
     if not name:
-        return jsonify({"error": "名称必填"}), 400
+        return prompt_library_flask_response(build_prompt_library_name_required_response())
     if not content_zh and not content_en:
-        return jsonify({"error": "中文或英文版本至少填一个"}), 400
+        return prompt_library_flask_response(build_prompt_library_content_required_response())
     prompt_library.update_item(
         item_id,
         current_user.id,
@@ -134,7 +152,7 @@ def api_update(item_id: int):
         content_en=content_en,
         description=description,
     )
-    return jsonify({"ok": True})
+    return prompt_library_flask_response(build_prompt_library_ok_response())
 
 
 @bp.route("/api/items/<int:item_id>", methods=["DELETE"])
@@ -144,7 +162,7 @@ def api_delete(item_id: int):
     if not prompt_library.get_item(item_id):
         abort(404)
     prompt_library.soft_delete(item_id)
-    return jsonify({"ok": True})
+    return prompt_library_flask_response(build_prompt_library_ok_response())
 
 
 _GEN_SYSTEM_PROMPT = """你是一位专业的 Prompt Engineer。根据用户的需求描述，创作一个高质量的中文 system prompt。
@@ -164,9 +182,9 @@ def api_generate():
     body = request.get_json(silent=True) or {}
     requirement = (body.get("requirement") or "").strip()
     if not requirement:
-        return jsonify({"error": "请描述你的需求"}), 400
+        return prompt_library_flask_response(build_prompt_library_requirement_required_response())
     if len(requirement) > 2000:
-        return jsonify({"error": "需求描述过长（≤2000）"}), 400
+        return prompt_library_flask_response(build_prompt_library_requirement_too_long_response())
 
     try:
         response = llm_client.invoke_chat(
@@ -183,7 +201,7 @@ def api_generate():
         raw = (response.get("text") or "").strip()
     except Exception as exc:
         log.exception("prompt library generate failed")
-        return jsonify({"error": f"生成失败：{exc}"}), 502
+        return prompt_library_flask_response(build_prompt_library_generate_failed_response(str(exc)))
 
     if raw.startswith("```"):
         raw = raw.split("```")[1]
@@ -195,14 +213,14 @@ def api_generate():
         data = json.loads(raw)
     except Exception:
         log.warning("prompt library non-json response: %s", raw[:500])
-        return jsonify({"error": "模型返回不是合法 JSON，请重试"}), 502
+        return prompt_library_flask_response(build_prompt_library_non_json_response())
 
-    return jsonify(
-        {
-            "name": (data.get("name") or "").strip()[:120],
-            "description": (data.get("description") or "").strip()[:500],
-            "content": (data.get("content") or "").strip(),
-        }
+    return prompt_library_flask_response(
+        build_prompt_library_generated_response(
+            name=(data.get("name") or "").strip()[:120],
+            description=(data.get("description") or "").strip()[:500],
+            content=(data.get("content") or "").strip(),
+        )
     )
 
 
@@ -267,10 +285,15 @@ def api_translate(item_id: int):
     src = (item.get("content_zh") if direction == "zh2en" else item.get("content_en")) or ""
     translated, err = _do_translate(direction, src)
     if err:
-        return jsonify({"error": err}), 400 if "direction" in err or "源语言" in err else 502
+        status_code = 400 if "direction" in err or "源语言" in err else 502
+        return prompt_library_flask_response(
+            build_prompt_library_translation_error_response(err, status_code)
+        )
     target_lang = "en" if direction == "zh2en" else "zh"
     prompt_library.set_translation(item_id, current_user.id, target_lang, translated)
-    return jsonify({"lang": target_lang, "content": translated})
+    return prompt_library_flask_response(
+        build_prompt_library_translation_response(target_lang, translated)
+    )
 
 
 @bp.route("/api/translate-text", methods=["POST"])
@@ -282,6 +305,11 @@ def api_translate_text():
     text = body.get("text") or ""
     translated, err = _do_translate(direction, text)
     if err:
-        return jsonify({"error": err}), 400 if "direction" in err or "源语言" in err else 502
+        status_code = 400 if "direction" in err or "源语言" in err else 502
+        return prompt_library_flask_response(
+            build_prompt_library_translation_error_response(err, status_code)
+        )
     target_lang = "en" if direction == "zh2en" else "zh"
-    return jsonify({"lang": target_lang, "content": translated})
+    return prompt_library_flask_response(
+        build_prompt_library_translation_response(target_lang, translated)
+    )
