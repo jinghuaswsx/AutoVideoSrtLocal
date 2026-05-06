@@ -369,6 +369,7 @@ _build_product_evaluation_payload_response = _evaluation._build_product_evaluati
 _media_evaluation_flask_response = _evaluation._media_evaluation_flask_response
 
 _medias_page_context = _pages._medias_page_context
+_media_page_flask_response = _pages._media_page_flask_response
 index = _pages.index
 product_detail_page = _pages.product_detail_page
 translation_tasks_page = _pages.translation_tasks_page

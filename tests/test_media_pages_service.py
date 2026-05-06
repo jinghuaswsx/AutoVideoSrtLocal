@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 
+def test_media_page_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_pages import media_page_flask_response
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = media_page_flask_response({"error": "forbidden"}, 403)
+
+    assert status_code == 403
+    assert response.get_json() == {"error": "forbidden"}
+
+
 def test_build_medias_page_context_uses_query_then_extra_fallbacks():
     from web.services.media_pages import build_medias_page_context
 

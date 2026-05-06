@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import abort, jsonify, redirect, render_template, request, url_for
+from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required
 
 from appcore import medias
@@ -9,6 +9,7 @@ from web.services.media_pages import (
     build_active_users_response,
     build_languages_response,
     build_medias_page_context,
+    media_page_flask_response as _media_page_flask_response_impl,
 )
 from . import bp
 
@@ -21,6 +22,10 @@ def _routes_module():
 
 def _medias_page_context(**extra):
     return build_medias_page_context(request.args, extra)
+
+
+def _media_page_flask_response(payload: dict, status_code: int = 200):
+    return _media_page_flask_response_impl(payload, status_code)
 
 
 @bp.route("/")
@@ -68,15 +73,16 @@ def translation_tasks_page(pid: int):
 @bp.route("/api/users/active", methods=["GET"])
 @login_required
 def api_list_active_users():
+    routes = _routes_module()
     if not _routes_module()._is_admin():
-        return jsonify(build_admin_required_response()), 403
-    return jsonify(build_active_users_response())
+        return routes._media_page_flask_response(build_admin_required_response(), 403)
+    return routes._media_page_flask_response(build_active_users_response())
 
 
 @bp.route("/api/languages", methods=["GET"])
 @login_required
 def api_list_languages():
-    return jsonify(build_languages_response())
+    return _routes_module()._media_page_flask_response(build_languages_response())
 
 
 @bp.route("/mk-selection")

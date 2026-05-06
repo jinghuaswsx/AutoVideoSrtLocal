@@ -987,7 +987,9 @@ def test_media_page_responses_live_outside_route_module():
     assert "medias.list_active_users" not in route_source
     assert "medias.list_languages" not in route_source
     assert "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee" not in route_source
+    assert "jsonify(" not in route_source
     assert "build_medias_page_context" in route_source
+    assert "media_page_flask_response" in route_source
     assert "build_admin_required_response" in route_source
     assert "build_active_users_response" in route_source
     assert "build_languages_response" in route_source

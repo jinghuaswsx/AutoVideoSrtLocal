@@ -5,7 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from flask import jsonify
+
 from appcore import medias, product_roas, shopify_image_localizer_release
+
+
+def media_page_flask_response(payload: dict[str, Any], status_code: int = 200):
+    return jsonify(payload), status_code
 
 
 def build_medias_page_context(
