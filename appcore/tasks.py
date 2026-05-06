@@ -429,6 +429,46 @@ def _find_product(product_id: int) -> dict | None:
     )
 
 
+def get_child_readiness(task_id: int) -> dict:
+    from appcore import pushes
+
+    row = query_one(
+        "SELECT t.media_product_id, t.country_code "
+        "FROM tasks t WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+
+    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
+    if not item:
+        return {
+            "ready": False,
+            "missing": ["lang_item_missing"],
+            "country_code": row["country_code"],
+            "readiness": {},
+        }
+
+    product = _find_product(row["media_product_id"])
+    readiness = pushes.compute_readiness(item, product)
+    missing = [
+        key
+        for key, value in readiness.items()
+        if not str(key).endswith("_reason") and not value
+    ]
+    return {
+        "ready": pushes.is_ready(readiness),
+        "missing": missing,
+        "readiness": {
+            key: bool(value)
+            for key, value in readiness.items()
+            if not str(key).endswith("_reason")
+        },
+        "country_code": row["country_code"],
+        "media_item_id": item["id"],
+    }
+
+
 def submit_child(*, task_id: int, actor_user_id: int) -> None:
     """翻译员提交子任务；调 compute_readiness 做产物齐全 gate。"""
     from appcore import pushes

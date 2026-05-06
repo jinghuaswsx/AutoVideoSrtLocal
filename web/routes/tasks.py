@@ -341,33 +341,8 @@ def api_product_en_items(pid: int):
 @login_required
 def api_child_readiness(tid: int):
     """E 子系统：返回子任务对应语种 media_item 的 readiness 状态。"""
-    from appcore.db import query_one
-    from appcore import pushes
-    row = query_one(
-        "SELECT t.media_product_id, t.country_code "
-        "FROM tasks t WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
-        (tid,),
-    )
-    if not row:
-        return _json_response({"error": "child task not found"}, 404)
-    item = tasks_svc._find_target_lang_item(row["media_product_id"], row["country_code"])
-    if not item:
-        return _json_response({
-            "ready": False,
-            "missing": ["lang_item_missing"],
-            "country_code": row["country_code"],
-            "readiness": {},
-        })
-    product = tasks_svc._find_product(row["media_product_id"])
-    readiness = pushes.compute_readiness(item, product)
-    is_ready = pushes.is_ready(readiness)
-    missing = [k for k, v in readiness.items()
-               if not str(k).endswith("_reason") and not v]
-    return _json_response({
-        "ready": is_ready,
-        "missing": missing,
-        "readiness": {k: bool(v) for k, v in readiness.items()
-                      if not str(k).endswith("_reason")},
-        "country_code": row["country_code"],
-        "media_item_id": item["id"],
-    })
+    try:
+        payload = tasks_svc.get_child_readiness(tid)
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": str(exc)}, 404)
+    return _json_response(payload)

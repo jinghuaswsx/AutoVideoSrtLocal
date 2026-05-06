@@ -319,3 +319,56 @@ def test_api_product_en_items_delegates_to_tasks_service(authed_client_no_db, mo
 def test_child_readiness_endpoint_smoke(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/api/child/9999/readiness")
     assert rsp.status_code in (200, 404, 500)
+
+
+def test_child_readiness_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = []
+    expected = {
+        "ready": False,
+        "missing": ["cover"],
+        "readiness": {"cover": False},
+        "country_code": "DE",
+        "media_item_id": 5,
+    }
+
+    def fail_query_one(*args, **kwargs):
+        raise AssertionError("route should delegate child readiness queries")
+
+    def fake_get_child_readiness(task_id):
+        captured.append(task_id)
+        return expected
+
+    monkeypatch.setattr("appcore.db.query_one", fail_query_one)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_child_readiness",
+        fake_get_child_readiness,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/child/44/readiness")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == expected
+    assert captured == [44]
+
+
+def test_child_readiness_maps_missing_child_to_404(authed_client_no_db, monkeypatch):
+    def fail_query_one(*args, **kwargs):
+        raise AssertionError("route should delegate child readiness queries")
+
+    def fake_get_child_readiness(task_id):
+        from appcore import tasks
+
+        raise tasks.StateError("child task not found")
+
+    monkeypatch.setattr("appcore.db.query_one", fail_query_one)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_child_readiness",
+        fake_get_child_readiness,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/child/44/readiness")
+
+    assert rsp.status_code == 404
+    assert rsp.get_json() == {"error": "child task not found"}

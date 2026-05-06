@@ -199,3 +199,61 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
         5,
         5,
     )
+
+
+def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return {"media_product_id": 9, "country_code": "DE"}
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "_find_target_lang_item", lambda product_id, lang: None)
+
+    assert tasks.get_child_readiness(44) == {
+        "ready": False,
+        "missing": ["lang_item_missing"],
+        "country_code": "DE",
+        "readiness": {},
+    }
+    assert "FROM tasks t" in captured["sql"]
+    assert "parent_task_id IS NOT NULL" in captured["sql"]
+    assert captured["args"] == (44,)
+
+
+def test_get_child_readiness_computes_payload(monkeypatch):
+    from appcore import pushes, tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {"media_product_id": 9, "country_code": "DE"},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {"id": 5, "product_id": product_id, "lang": lang},
+    )
+    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product: {
+            "title": True,
+            "cover": False,
+            "cover_reason": "missing",
+        },
+    )
+    monkeypatch.setattr(pushes, "is_ready", lambda readiness: False)
+
+    assert tasks.get_child_readiness(44) == {
+        "ready": False,
+        "missing": ["cover"],
+        "readiness": {"title": True, "cover": False},
+        "country_code": "DE",
+        "media_item_id": 5,
+    }
