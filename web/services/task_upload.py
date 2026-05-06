@@ -6,10 +6,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
-from appcore.db import execute as db_execute, query_one as db_query_one
+from appcore.project_state import (
+    resolve_project_display_name_conflict,
+    update_project_display_name,
+)
 from web import store
 from web.services.task_av_inputs import av_step_maps
-from web.services.task_names import default_display_name, resolve_task_display_name_conflict
+from web.services.task_names import default_display_name
 from web.upload_util import build_source_object_info
 
 
@@ -40,9 +43,10 @@ def initialize_uploaded_av_task(
     clock: Callable[[], datetime] = datetime.now,
     create_task: Callable[..., object] = store.create,
     update_task: Callable[..., object] = store.update,
-    execute: Callable[..., object] = db_execute,
-    query_one: Callable[..., dict | None] = db_query_one,
-    resolve_name_conflict: Callable[..., str] = resolve_task_display_name_conflict,
+    update_display_name: Callable[[str, str], object] = update_project_display_name,
+    resolve_name_conflict: Callable[..., str] = resolve_project_display_name_conflict,
+    query_one: Callable[..., dict | None] | None = None,
+    execute: Callable[..., object] | None = None,
 ) -> UploadedTaskInitResult:
     create_task(
         task_id,
@@ -55,12 +59,17 @@ def initialize_uploaded_av_task(
     desired_name = str(form_payload.get("display_name") or "").strip()[:200]
     display_name = desired_name or default_display_name(original_filename)
     if user_id is not None:
-        display_name = resolve_name_conflict(
-            user_id,
-            display_name,
-            query_one=query_one,
-        )
-        execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
+        if resolve_name_conflict is resolve_project_display_name_conflict:
+            if query_one is not None:
+                display_name = resolve_name_conflict(user_id, display_name, query_one_func=query_one)
+            else:
+                display_name = resolve_name_conflict(user_id, display_name)
+        else:
+            display_name = resolve_name_conflict(user_id, display_name, query_one=query_one)
+        if update_display_name is update_project_display_name and execute is not None:
+            update_display_name(task_id, display_name, execute_func=execute)
+        else:
+            update_display_name(task_id, display_name)
 
     steps, step_messages = av_step_maps()
     update_task(

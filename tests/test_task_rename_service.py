@@ -59,8 +59,8 @@ def test_rename_task_display_name_returns_not_found_without_mutating():
         "missing-task",
         {"display_name": "Example"},
         user_id=7,
-        query_one=lambda sql, args: None,
-        execute=lambda *args, **kwargs: calls.append(("execute", args, kwargs)),
+        load_project_for_user=lambda *args, **kwargs: None,
+        update_display_name=lambda *args, **kwargs: calls.append(("update_display_name", args, kwargs)),
         load_task=lambda *args, **kwargs: calls.append(("load", args, kwargs)),
         update_task=lambda *args, **kwargs: calls.append(("update", args, kwargs)),
         resolve_name_conflict=lambda *args, **kwargs: calls.append(("resolve", args, kwargs)),
@@ -73,14 +73,14 @@ def test_rename_task_display_name_returns_not_found_without_mutating():
 
 
 def test_rename_task_display_name_persists_resolved_name_and_updates_store():
-    queries = []
-    executions = []
+    project_loads = []
+    display_name_updates = []
     loaded = []
     updates = []
     resolves = []
 
-    def query_one(sql, args):
-        queries.append((sql, args))
+    def load_project_for_user(task_id, user_id):
+        project_loads.append((task_id, user_id))
         return {"id": "task-1", "user_id": 7}
 
     def resolve(user_id, desired_name, *, exclude_task_id):
@@ -91,23 +91,16 @@ def test_rename_task_display_name_persists_resolved_name_and_updates_store():
         "task-1",
         {"display_name": "  Example  "},
         user_id=7,
-        query_one=query_one,
-        execute=lambda sql, args: executions.append((sql, args)),
+        load_project_for_user=load_project_for_user,
+        update_display_name=lambda task_id, display_name: display_name_updates.append((task_id, display_name)),
         load_task=lambda task_id: loaded.append(task_id),
         update_task=lambda task_id, **fields: updates.append((task_id, fields)),
         resolve_name_conflict=resolve,
     )
 
-    assert queries == [
-        (
-            "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-            ("task-1", 7),
-        )
-    ]
+    assert project_loads == [("task-1", 7)]
     assert resolves == [(7, "Example", "task-1")]
-    assert executions == [
-        ("UPDATE projects SET display_name=%s WHERE id=%s", ("Example (2)", "task-1"))
-    ]
+    assert display_name_updates == [("task-1", "Example (2)")]
     assert loaded == ["task-1"]
     assert updates == [("task-1", {"display_name": "Example (2)"})]
     assert outcome.not_found is False

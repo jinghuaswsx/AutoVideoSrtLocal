@@ -5,10 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from appcore.db import execute as db_execute, query_one as db_query_one
+from appcore.project_state import (
+    get_project_for_user,
+    resolve_project_display_name_conflict,
+    update_project_display_name,
+)
 from web import store
 from web.services.task_access import load_task as load_task_from_store
-from web.services.task_names import resolve_task_display_name_conflict
 
 
 @dataclass(frozen=True)
@@ -47,26 +50,34 @@ def rename_task_display_name(
     body: Mapping[str, object],
     *,
     user_id: int,
-    query_one: Callable[..., dict | None] = db_query_one,
-    execute: Callable[..., object] = db_execute,
+    load_project_for_user: Callable[[str, int], dict | None] = get_project_for_user,
+    update_display_name: Callable[[str, str], object] = update_project_display_name,
     load_task: Callable[..., dict | None] = load_task_from_store,
     update_task: Callable[..., object] = store.update,
     resolve_name_conflict: Callable[..., str] | None = None,
+    query_one: Callable[..., dict | None] | None = None,
+    execute: Callable[..., object] | None = None,
 ) -> TaskRenameOutcome:
-    row = query_one(
-        "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, user_id),
-    )
+    if load_project_for_user is get_project_for_user and query_one is not None:
+        row = load_project_for_user(task_id, user_id, query_one_func=query_one)
+    else:
+        row = load_project_for_user(task_id, user_id)
     if not row:
         return TaskRenameOutcome(status_code=404, not_found=True)
 
     if resolve_name_conflict is None:
 
         def resolve_name_conflict(user_id, desired_name, *, exclude_task_id=None):
-            return resolve_task_display_name_conflict(
+            if query_one is not None:
+                return resolve_project_display_name_conflict(
+                    user_id,
+                    desired_name,
+                    query_one_func=query_one,
+                    exclude_task_id=exclude_task_id,
+                )
+            return resolve_project_display_name_conflict(
                 user_id,
                 desired_name,
-                query_one=query_one,
                 exclude_task_id=exclude_task_id,
             )
 
@@ -80,7 +91,10 @@ def rename_task_display_name(
         return outcome
 
     resolved = outcome.display_name
-    execute("UPDATE projects SET display_name=%s WHERE id=%s", (resolved, task_id))
+    if update_display_name is update_project_display_name and execute is not None:
+        update_display_name(task_id, resolved, execute_func=execute)
+    else:
+        update_display_name(task_id, resolved)
     load_task(task_id)
     update_task(task_id, display_name=resolved)
     return outcome

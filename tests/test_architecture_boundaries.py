@@ -2698,6 +2698,26 @@ def test_task_upload_initialization_lives_outside_route_module():
     assert Path("web/services/task_upload.py").exists()
 
 
+def test_task_upload_and_rename_db_access_lives_in_appcore_project_state():
+    upload_source = Path("web/services/task_upload.py").read_text(encoding="utf-8")
+    rename_source = Path("web/services/task_rename.py").read_text(encoding="utf-8")
+    dao_source = Path("appcore/project_state.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in upload_source
+    assert "from appcore.db import" not in rename_source
+    assert "UPDATE projects SET display_name=%s WHERE id=%s" not in upload_source
+    assert "UPDATE projects SET display_name=%s WHERE id=%s" not in rename_source
+    assert "SELECT id, user_id FROM projects" not in rename_source
+    assert "update_project_display_name" in upload_source
+    assert "update_project_display_name" in rename_source
+    assert "get_project_for_user" in rename_source
+    assert "resolve_project_display_name_conflict" in upload_source
+    assert "resolve_project_display_name_conflict" in rename_source
+    assert "def update_project_display_name" in dao_source
+    assert "def get_project_for_user" in dao_source
+    assert "def resolve_project_display_name_conflict" in dao_source
+
+
 def test_task_confirm_voice_workflow_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

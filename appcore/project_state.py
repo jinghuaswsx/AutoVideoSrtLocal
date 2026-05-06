@@ -78,3 +78,54 @@ def update_project_state(
     apply_dot_updates(state, updates)
     save_project_state(task_id, state, execute_func=execute_func)
     return True
+
+
+def get_project_for_user(
+    task_id: str,
+    user_id: int,
+    *,
+    query_one_func: QueryOneFunc = query_one,
+) -> dict | None:
+    return query_one_func(
+        "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, user_id),
+    )
+
+
+def update_project_display_name(
+    task_id: str,
+    display_name: str,
+    *,
+    execute_func: ExecuteFunc = execute,
+) -> int:
+    return execute_func(
+        "UPDATE projects SET display_name=%s WHERE id=%s",
+        (display_name, task_id),
+    )
+
+
+def resolve_project_display_name_conflict(
+    user_id: int,
+    desired_name: str,
+    *,
+    query_one_func: QueryOneFunc = query_one,
+    exclude_task_id: str | None = None,
+) -> str:
+    base = desired_name
+    candidate = base
+    counter = 2
+    while True:
+        if exclude_task_id:
+            row = query_one_func(
+                "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND id!=%s AND deleted_at IS NULL",
+                (user_id, candidate, exclude_task_id),
+            )
+        else:
+            row = query_one_func(
+                "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND deleted_at IS NULL",
+                (user_id, candidate),
+            )
+        if not row:
+            return candidate
+        candidate = f"{base} ({counter})"
+        counter += 1

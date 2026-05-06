@@ -37,8 +37,7 @@ def test_initialize_uploaded_av_task_persists_display_name_and_av_state():
         clock=lambda: datetime(2026, 5, 3, 12, 1, 2),
         create_task=lambda *args, **kwargs: created.append((args, kwargs)),
         update_task=lambda *args, **kwargs: updates.append((args, kwargs)),
-        execute=lambda *args, **kwargs: executions.append((args, kwargs)),
-        query_one=lambda *args, **kwargs: {"id": "existing"},
+        update_display_name=lambda *args, **kwargs: executions.append((args, kwargs)),
         resolve_name_conflict=resolve_conflict,
     )
 
@@ -49,9 +48,9 @@ def test_initialize_uploaded_av_task_persists_display_name_and_av_state():
         )
     ]
     assert conflicts[0][0:2] == (7, "Demo")
-    assert callable(conflicts[0][2])
+    assert conflicts[0][2] is None
     assert executions == [
-        (("UPDATE projects SET display_name=%s WHERE id=%s", ("Demo (2)", "task-1")), {})
+        (("task-1", "Demo (2)"), {})
     ]
     assert len(updates) == 1
     assert updates[0][0] == ("task-1",)
@@ -102,8 +101,7 @@ def test_initialize_uploaded_av_task_uses_default_name_without_user_db_write():
         clock=lambda: datetime(2026, 5, 3, 12, 1, 2),
         create_task=lambda *args, **kwargs: None,
         update_task=lambda *args, **kwargs: updates.append((args, kwargs)),
-        execute=lambda *args, **kwargs: executions.append((args, kwargs)),
-        query_one=lambda *args, **kwargs: None,
+        update_display_name=lambda *args, **kwargs: executions.append((args, kwargs)),
         resolve_name_conflict=lambda *args, **kwargs: conflicts.append((args, kwargs)),
     )
 
