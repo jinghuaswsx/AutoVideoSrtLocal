@@ -1334,6 +1334,30 @@ def test_mk_selection_list_response_lives_outside_route_module():
     assert Path("web/services/media_mk_selection.py").exists()
 
 
+def test_mk_selection_admin_required_response_lives_outside_route_module():
+    module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "api_mk_selection",
+        "api_mk_media_proxy",
+        "api_mk_video_proxy",
+        "api_mk_detail_proxy",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+
+    assert set(route_sources) == route_names
+    for route_source in route_sources.values():
+        assert "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee" not in route_source
+        assert "_mk_admin_required_response" in route_source
+    assert "build_mk_admin_required_response" in Path(
+        "web/services/media_mk_selection.py"
+    ).read_text(encoding="utf-8")
+
+
 def test_mk_detail_proxy_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

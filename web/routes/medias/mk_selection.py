@@ -20,6 +20,7 @@ from ._helpers import _MAX_MK_VIDEO_BYTES, _MK_VIDEO_CACHE_PREFIX, _dianxiaomi_r
 from web.services.media_mk_selection import (
     build_mk_video_proxy_flask_response as _build_mk_video_proxy_flask_response,
     build_mk_video_proxy_response as _build_mk_video_proxy_response_impl,
+    build_mk_admin_required_response as _build_mk_admin_required_response_impl,
     cache_mk_video as _cache_mk_video_impl,
     build_mk_detail_response as _build_mk_detail_response_impl,
     build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
@@ -36,6 +37,11 @@ def _routes():
 
 def _is_admin():
     return _routes()._is_admin()
+
+
+def _mk_admin_required_response():
+    result = _build_mk_admin_required_response_impl()
+    return jsonify(result.payload), result.status_code
 
 
 def db_query(*args, **kwargs):
@@ -82,7 +88,7 @@ def _build_mk_video_proxy_response(media_path: str, guessed_type: str):
 @login_required
 def api_mk_selection():
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return _routes()._mk_admin_required_response()
     """返回店小秘 Top300 + 明空消耗数据，按 90 天消耗降序。"""
     result = _routes()._build_mk_selection_response(request.args)
     return jsonify(result.payload), result.status_code
@@ -101,7 +107,7 @@ def api_mk_selection_refresh():
 def api_mk_media_proxy():
     """Proxy wedev media files so the selection detail modal does not hit local object routes."""
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return _routes()._mk_admin_required_response()
     media_path = _normalize_mk_media_path(request.args.get("path") or "")
     if not media_path:
         abort(404)
@@ -115,7 +121,7 @@ def api_mk_media_proxy():
 def api_mk_video_proxy():
     """Cache a wedev video source locally, then serve it for in-page preview."""
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return _routes()._mk_admin_required_response()
     media_path = _normalize_mk_media_path(request.args.get("path") or "")
     if not media_path:
         abort(404)
@@ -132,7 +138,7 @@ def api_mk_video_proxy():
 def api_mk_detail_proxy(mk_id: int):
     """代理请求明空 API 获取产品详情，避免浏览器 CORS 问题。"""
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return _routes()._mk_admin_required_response()
     result = _routes()._build_mk_detail_response(mk_id)
     return jsonify(result.payload), result.status_code
 

@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 
+def test_build_mk_admin_required_response_returns_forbidden_payload():
+    from web.services.media_mk_selection import build_mk_admin_required_response
+
+    result = build_mk_admin_required_response()
+
+    assert result.status_code == 403
+    assert result.payload == {"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee"}
+
+
 def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_columns():
     from web.services.media_mk_selection import build_mk_selection_response
 

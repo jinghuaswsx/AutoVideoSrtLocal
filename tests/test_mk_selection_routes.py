@@ -187,6 +187,64 @@ def test_mk_selection_api_delegates_response_building_after_admin_gate(
     assert captured["keyword"] == "tooth"
 
 
+def test_mk_selection_admin_only_routes_delegate_forbidden_response(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+
+    calls = []
+    monkeypatch.setattr(
+        route_mod,
+        "_mk_admin_required_response",
+        lambda: calls.append("forbidden") or ({"error": "forbidden-from-builder"}, 403),
+    )
+    monkeypatch.setattr(
+        route_mod,
+        "_build_mk_selection_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("selection builder should not run for non-admin")
+        ),
+    )
+    monkeypatch.setattr(
+        route_mod,
+        "_build_mk_detail_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("detail builder should not run for non-admin")
+        ),
+    )
+    monkeypatch.setattr(
+        route_mod,
+        "_build_mk_media_proxy_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("media proxy builder should not run for non-admin")
+        ),
+    )
+    monkeypatch.setattr(
+        route_mod,
+        "_build_mk_video_proxy_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("video proxy builder should not run for non-admin")
+        ),
+    )
+
+    responses = [
+        authed_user_client_no_db.get("/medias/api/mk-selection"),
+        authed_user_client_no_db.get("/medias/api/mk-detail/3719"),
+        authed_user_client_no_db.get("/medias/api/mk-media?path=uploads2/demo.jpg"),
+        authed_user_client_no_db.get("/medias/api/mk-video?path=uploads2/demo.mp4"),
+    ]
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 403]
+    assert [response.get_json() for response in responses] == [
+        {"error": "forbidden-from-builder"},
+        {"error": "forbidden-from-builder"},
+        {"error": "forbidden-from-builder"},
+        {"error": "forbidden-from-builder"},
+    ]
+    assert calls == ["forbidden", "forbidden", "forbidden", "forbidden"]
+
+
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(
     authed_client_no_db,
     monkeypatch,
