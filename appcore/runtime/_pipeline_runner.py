@@ -269,12 +269,15 @@ class PipelineRunner:
         tts_segments, rounds, final_round.
         """
         import importlib
-        from pipeline.tts import generate_full_audio, _get_audio_duration
         from pipeline.translate import (
             generate_tts_script,
             generate_localized_rewrite,
             get_model_display_name,
         )
+
+        # PR5: TTS 插件化——provider 调用走 ``profile.get_tts_engine()`` 而非
+        # 直接 ``pipeline.tts``，让 profile 切换 provider 时不必动 base runner。
+        tts_engine = self.profile.get_tts_engine()
 
         target_language_label = target_language_label or self.target_language_label
         tts_model_id = tts_model_id or self.tts_model_id
@@ -731,10 +734,9 @@ class PipelineRunner:
                 extra_state_update=_sync_round_record,
             )
 
-            result = generate_full_audio(
+            result = tts_engine.synthesize_full(
                 tts_segments, voice["elevenlabs_voice_id"], task_dir,
                 variant=f"round_{round_index}",
-                elevenlabs_api_key=elevenlabs_api_key,
                 model_id=tts_model_id,
                 language_code=tts_language_code,
                 on_progress=on_progress,
@@ -770,7 +772,7 @@ class PipelineRunner:
 
             # Phase 4: measure
             tts_full_text = tts_script.get("full_text", "")
-            audio_duration = _get_audio_duration(result["full_audio_path"])
+            audio_duration = tts_engine.get_audio_duration(result["full_audio_path"])
             word_count = _count_words(tts_full_text)
             round_record["audio_duration"] = audio_duration
             round_record["word_count"] = word_count
@@ -847,7 +849,10 @@ class PipelineRunner:
                 speedup_result = None
                 speedup_failed_reason = None
                 try:
-                    from pipeline.tts import regenerate_full_audio_with_speed
+                    if not tts_engine.supports_speed_param:
+                        raise NotImplementedError(
+                            f"tts engine {tts_engine.code!r} does not support native speed param"
+                        )
 
                     def _on_speedup_seg_done(done, total, info):
                         self._emit_substep_msg(
@@ -860,19 +865,18 @@ class PipelineRunner:
                         round_record["speedup_segments_total"] = total
                         self._emit_duration_round(task_id, round_index, "speedup_progress", round_record)
 
-                    speedup_result = regenerate_full_audio_with_speed(
+                    speedup_result = tts_engine.regenerate_with_speed(
                         result["segments"],
                         voice["elevenlabs_voice_id"],
                         task_dir,
                         variant=f"round_{round_index}",
                         speed=speed,
-                        elevenlabs_api_key=elevenlabs_api_key,
                         model_id=tts_model_id,
                         language_code=tts_language_code,
                         on_segment_done=_on_speedup_seg_done,
                     )
                     speedup_audio_path = speedup_result["full_audio_path"]
-                    speedup_duration = _get_audio_duration(speedup_audio_path)
+                    speedup_duration = tts_engine.get_audio_duration(speedup_audio_path)
                     round_record["speedup_audio_path"] = (
                         os.path.relpath(speedup_audio_path, task_dir)
                     )
@@ -2432,9 +2436,9 @@ class PipelineRunner:
             tts_translate_channel=_channel_label,
         )
 
-        from pipeline.tts import _get_audio_duration
         from pipeline.timeline import build_timeline_manifest
         import shutil
+        _engine_for_duration = self.profile.get_tts_engine()
 
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
         voice = self._resolve_voice(task, loc_mod)
@@ -2467,7 +2471,7 @@ class PipelineRunner:
             )
 
             final_round = loop_result["final_round"]
-            pre_trim_duration = _get_audio_duration(loop_result["tts_audio_path"])
+            pre_trim_duration = _engine_for_duration.get_audio_duration(loop_result["tts_audio_path"])
             final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             if pre_trim_duration > final_target_hi:
                 trim_record = {
@@ -2672,9 +2676,9 @@ class PipelineRunner:
         # Final selection:
         # - if audio > video, truncate the final audio to video duration;
         # - if audio <= video, keep it as-is.
-        from pipeline.tts import _get_audio_duration
+        _engine_final = self.profile.get_tts_engine()
         final_round = loop_result["final_round"]
-        pre_trim_duration = _get_audio_duration(loop_result["tts_audio_path"])
+        pre_trim_duration = _engine_final.get_audio_duration(loop_result["tts_audio_path"])
         import shutil
         final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
         if pre_trim_duration > video_duration:
@@ -2866,8 +2870,8 @@ class PipelineRunner:
             "utterances": english_utterances,
         }
         tts_script = variant_state.get("tts_script", {})
-        from pipeline.tts import _get_audio_duration
-        total_duration = _get_audio_duration(tts_audio_path) if tts_audio_path else 0.0
+        _engine_subtitle = self.profile.get_tts_engine()
+        total_duration = _engine_subtitle.get_audio_duration(tts_audio_path) if tts_audio_path else 0.0
         corrected_chunks = align_subtitle_chunks_to_asr(
             tts_script.get("subtitle_chunks", []),
             english_asr_result,

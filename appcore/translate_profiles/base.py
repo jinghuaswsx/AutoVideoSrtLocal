@@ -21,6 +21,11 @@ class TranslateProfile(ABC):
     needs_separate: bool = True
     needs_loudness_match: bool = True
 
+    # ===== TTS engine（PR5：插件化语音合成 provider） =====
+    # 默认 ElevenLabs。子 profile 可覆盖成 ``"openai"`` / ``"azure"`` / ``"volc"`` 等
+    # 已注册的 engine code（见 ``appcore.tts_engines``）。
+    tts_engine_code: str = "elevenlabs"
+
     # ===== Duration-loop tunables（profile 可逐目标语言覆盖） =====
     # rewrite 内循环里"字数落进 ±tolerance × target_words 即接受"的容差比例。
     DEFAULT_WORD_TOLERANCE: float = 0.20
@@ -54,6 +59,16 @@ class TranslateProfile(ABC):
     def max_rewrite_attempts_for(self, target_lang: str) -> int:
         """单轮外层 round 内 rewrite attempt 的上限。"""
         return self.DEFAULT_MAX_REWRITE_ATTEMPTS
+
+    def get_tts_engine(self):
+        """返回 profile 关联的 ``TtsEngine`` 实例。
+
+        runtime 调 ``profile.get_tts_engine().synthesize_full(...)`` 走插件化
+        provider，不再 hard-import ``pipeline.tts``。子 profile 想换 provider
+        只需覆盖 ``tts_engine_code`` 类属性。
+        """
+        from appcore.tts_engines import get_engine
+        return get_engine(self.tts_engine_code)
 
     def __repr__(self) -> str:
         return f"<TranslateProfile {self.code} ({self.name})>"

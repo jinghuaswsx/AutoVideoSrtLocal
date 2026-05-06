@@ -216,8 +216,8 @@ class AvSyncProfile(TranslateProfile):
         try:
             from appcore.source_video import ensure_local_source_video
             from pipeline.duration_reconcile import reconcile_duration
-            from pipeline.tts import generate_full_audio
 
+            tts_engine = self.get_tts_engine()
             ensure_local_source_video(task_id)
             task = task_state.get(task_id) or {}
             av_inputs = runner._resolve_av_inputs(task)
@@ -243,7 +243,7 @@ class AvSyncProfile(TranslateProfile):
                 lang_label=target_language_name,
                 round_label="首轮",
             )
-            tts_output = generate_full_audio(
+            tts_output = tts_engine.synthesize_full(
                 tts_input_segments,
                 tts_voice_id,
                 task_dir,
