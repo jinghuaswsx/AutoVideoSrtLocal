@@ -533,12 +533,16 @@
       </a>
       {% endif %}
       {% if has_permission('data_analytics') %}
-      <a href="/order-analytics" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics') %}class="active"{% endif %}>
+      <a href="/order-analytics" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics') and not request.path.startswith('/order-analytics/orphan-orders') %}class="active"{% endif %}>
         <span class="nav-icon">📊</span> 数据分析
       </a>
+      {% endif %}
+      {% if has_permission('order_profit') %}
       <a href="/order-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-profit') %}class="active"{% endif %}>
         <span class="nav-icon">💰</span> 订单利润核算
       </a>
+      {% endif %}
+      {% if has_permission('orphan_orders') %}
       <a href="/order-analytics/orphan-orders" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics/orphan-orders') %}class="active"{% endif %}>
         <span class="nav-icon">🕵</span> 未建档订单
       </a>

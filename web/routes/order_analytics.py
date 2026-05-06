@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from flask import Blueprint, render_template, request, jsonify, make_response
 from flask_login import current_user, login_required
-from web.auth import admin_required
+from web.auth import admin_required, permission_required
 
 from appcore import order_analytics as oa
 from appcore import system_audit
@@ -676,14 +676,14 @@ def dashboard():
 
 @bp.route("/order-analytics/orphan-orders")
 @login_required
-@admin_required
+@permission_required("orphan_orders")
 def orphan_orders_page():
     return render_template("orphan_orders.html")
 
 
 @bp.route("/order-analytics/orphan-orders/data")
 @login_required
-@admin_required
+@permission_required("orphan_orders")
 def orphan_orders_data():
     try:
         limit = max(1, min(1000, int(request.args.get("limit") or 200)))

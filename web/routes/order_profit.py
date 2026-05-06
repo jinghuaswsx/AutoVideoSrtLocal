@@ -34,7 +34,7 @@ from appcore.order_analytics.shopify_payments_import import (
     import_payments_csv,
     reconcile_against_estimates,
 )
-from web.auth import admin_required
+from web.auth import permission_required
 
 log = logging.getLogger(__name__)
 
@@ -53,14 +53,14 @@ def _parse_date_param(name: str, default: date) -> date:
 
 @bp.route("/order-profit")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def page():
     return render_template("order_profit_dashboard.html")
 
 
 @bp.route("/order-profit/api/summary")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_summary():
     today = date.today()
     date_from = _parse_date_param("from", today - timedelta(days=30))
@@ -120,7 +120,7 @@ def api_summary():
 
 @bp.route("/order-profit/api/orders")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_orders_list():
     """订单级利润列表（按 dxm_package_id 聚合 SKU 行）。
 
@@ -157,7 +157,7 @@ def api_orders_list():
 
 @bp.route("/order-profit/api/orders/<dxm_package_id>")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_order_detail(dxm_package_id):
     """单订单详情：订单级聚合数字 + 该订单的所有 SKU 行明细。"""
     detail = get_order_profit_detail(dxm_package_id)
@@ -169,7 +169,7 @@ def api_order_detail(dxm_package_id):
 
 @bp.route("/order-profit/api/lines")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_lines():
     today = date.today()
     date_from = _parse_date_param("from", today - timedelta(days=7))
@@ -195,7 +195,7 @@ def api_lines():
 
 @bp.route("/order-profit/api/loss_alerts")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_loss_alerts():
     """亏损订单（profit_usd < 0）列表。"""
     today = date.today()
@@ -225,7 +225,7 @@ def api_loss_alerts():
 
 @bp.route("/order-profit/api/payments_csv/import", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_import_payments_csv():
     """上传 Shopify Payments CSV → 解析 + 反推 + 写入 shopify_payments_transactions。"""
     f = request.files.get("file")
@@ -241,7 +241,7 @@ def api_import_payments_csv():
 
 @bp.route("/order-profit/api/payments_csv/reconcile")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_payments_reconcile():
     """对账：真实 fee（CSV）vs 估算 fee（策略 C）按 tier 分组偏差。"""
     df = (request.args.get("from") or "").strip()
@@ -252,7 +252,7 @@ def api_payments_reconcile():
 
 @bp.route("/order-profit/api/unmatched_campaigns")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_unmatched_campaigns():
     days = min(int(request.args.get("days", "90") or 90), 365)
     limit = min(int(request.args.get("limit", "50") or 50), 200)
@@ -266,14 +266,14 @@ def api_unmatched_campaigns():
 
 @bp.route("/order-profit/api/manual_matches", methods=["GET"])
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_list_manual_matches():
     return jsonify({"overrides": list_overrides()})
 
 
 @bp.route("/order-profit/api/manual_match", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_create_manual_match():
     data = request.get_json(silent=True) or {}
     code = (data.get("normalized_campaign_code") or "").strip()
@@ -295,7 +295,7 @@ def api_create_manual_match():
 
 @bp.route("/order-profit/api/manual_match/<int:override_id>", methods=["DELETE"])
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_delete_manual_match(override_id):
     result = remove_override(override_id=override_id)
     return jsonify({"ok": True, **result})
@@ -303,7 +303,7 @@ def api_delete_manual_match(override_id):
 
 @bp.route("/order-profit/api/products_for_match")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_products_for_match():
     """提供给前端做 product 下拉选择：所有上架产品（轻量字段）。"""
     rows = query(
@@ -316,7 +316,7 @@ def api_products_for_match():
 
 @bp.route("/order-profit/api/cost_completeness")
 @login_required
-@admin_required
+@permission_required("order_profit")
 def api_cost_completeness():
     lookback_days = min(int(request.args.get("days", "30") or 30), 365)
     overview = get_completeness_overview(lookback_days=lookback_days)
