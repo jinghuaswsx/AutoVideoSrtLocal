@@ -163,16 +163,22 @@ def detail(task_id: str):
 @bp.route("/api/translate-lab", methods=["POST"])
 @login_required
 def upload_and_create():
-    """上传视频并创建 translate_lab 任务。
+    """已 deprecated（Phase 6, 2026-05-07）。
 
-    表单字段：
-    - ``video``（必填）视频文件。
-    - ``source_language``（可选，默认 zh）:``zh|en``。
-    - ``target_language``（可选，默认 en）:``en|de|fr|ja|es|pt|nl|sv|fi``。
-    - ``voice_match_mode``（可选，默认 auto）:``auto|manual``。
+    本入口于 omni 合并任务里被替换：新建任务请到 ``/omni-translate/``
+    选 ``lab-current`` preset（或自定义勾选「镜头分镜」+「按镜头字符上限」）。
 
-    成功返回 ``{"task_id": "..."}``。
+    返回 410 Gone。详情页 / 老任务读取仍可访问，runtime 代码 / DB 表
+    全部保留作为防御。
     """
+    return translate_lab_flask_response(
+        build_translate_lab_error_response(
+            "本模块已 deprecated。请到 /omni-translate/ 用 lab-current preset 创建任务。",
+            410,
+        )
+    )
+
+    # ── 以下为旧创建逻辑，保留作为参考；410 已 short-circuit 返回 ──
     if "video" not in request.files:
         return translate_lab_flask_response(
             build_translate_lab_error_response("缺少视频文件", 400)

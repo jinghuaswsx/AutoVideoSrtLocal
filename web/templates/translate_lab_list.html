@@ -12,8 +12,26 @@
       <button class="view-toggle-btn active" id="viewGrid" type="button" title="卡片视图">&#9638;</button>
       <button class="view-toggle-btn" id="viewList" type="button" title="列表视图">&#9776;</button>
     </div>
-    <button class="btn btn-ghost btn-sm" type="button" id="syncVoiceLibraryBtn" title="拉取 ElevenLabs 共享音色库">同步音色库</button>
-    <button class="btn btn-primary" type="button" id="openCreateBtn">+ 新建任务</button>
+    <button class="btn btn-ghost btn-sm" type="button" id="syncVoiceLibraryBtn" title="拉取 ElevenLabs 共享音色库" disabled style="opacity:0.5;cursor:not-allowed;">同步音色库</button>
+    <button class="btn btn-primary" type="button" id="openCreateBtn" disabled
+            title="本模块已 deprecated，请到「全能视频翻译」用 lab-current preset"
+            style="opacity:0.5;cursor:not-allowed;">+ 新建任务</button>
+  </div>
+</div>
+
+<!-- Phase 6: deprecation banner ─ 2026-05-07 omni 合并任务 -->
+<div class="deprecated-banner" id="translateLabDeprecatedBanner"
+     style="display:flex;align-items:center;gap:12px;padding:14px 18px;margin-bottom:20px;
+            background:oklch(96% 0.05 85);border:1px solid oklch(84% 0.08 80);
+            border-radius:10px;color:oklch(38% 0.10 60);font-size:13px;line-height:1.55;">
+  <span style="flex-shrink:0;font-size:18px;">⚠️</span>
+  <div style="flex:1;">
+    <strong>本模块已 deprecated。</strong>
+    新建任务请前往
+    <a href="/omni-translate" style="color:oklch(56% 0.16 230);text-decoration:underline;font-weight:600;">全能视频翻译</a>
+    并选择 <code style="background:oklch(94% 0.04 225);padding:1px 6px;border-radius:4px;font-size:12px;">lab-current</code> preset
+    （或自定义勾选「镜头分镜」+「按镜头字符上限」）。
+    本页面保留只读访问历史任务。
   </div>
 </div>
 
