@@ -289,173 +289,103 @@ class OmniTranslateRunner(MultiTranslateRunner):
                 "ASR 纯净化未通过校验，保留原文本继续",
             )
 
+    # ------------------------------------------------------------------
+    # Phase 2: plugin_config-driven step builder + thin shims
+    # ------------------------------------------------------------------
+
+    def _resolve_plugin_config(self, task_id: str) -> dict:
+        """读 task.plugin_config；缺失时回退全站默认 preset；再缺失回退 DEFAULT。"""
+        from appcore.omni_plugin_config import (
+            DEFAULT_PLUGIN_CONFIG, validate_plugin_config,
+        )
+        from appcore import omni_preset_dao
+
+        task = task_state.get(task_id) or {}
+        cfg = task.get("plugin_config")
+        if cfg:
+            try:
+                return validate_plugin_config(cfg)
+            except ValueError:
+                log.warning(
+                    "[omni] task=%s plugin_config invalid, falling back to default",
+                    task_id, exc_info=True,
+                )
+        # 回退顺序：全站默认 preset → 硬编码 DEFAULT
+        try:
+            preset = omni_preset_dao.get_default()
+            if preset and preset.get("plugin_config"):
+                return validate_plugin_config(preset["plugin_config"])
+        except Exception:  # noqa: BLE001 — DB 异常不阻塞，走硬编码兜底
+            log.warning("[omni] resolve default preset failed", exc_info=True)
+        return dict(DEFAULT_PLUGIN_CONFIG)
+
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
-        """走统一 profile 驱动的 step 构造器。
+        """plugin_config-driven dynamic step builder（Phase 2）。
 
-        omni 走 ``OmniProfile``：``post_asr_step_name=asr_clean``，其余位置
-        与 multi 一致。
+        不再走 PR2 的 ``_build_steps_from_profile``。step 顺序固定，但每步
+        是否插入由 ``plugin_config`` 决定；step body 都通过 ``self.profile.X``
+        / ``self._step_X`` 调用，profile 内部按 cfg 二次 dispatch 到具体算法。
         """
-        return self._build_steps_from_profile(task_id, video_path, task_dir)
-
-    def _step_translate(self, task_id: str) -> None:
-        """omni: translate directly from source-language transcript to target language.
-
-        Differs from MultiTranslateRunner._step_translate in two ways:
-        1. source_full_text is built from the source-language utterances/script_segments
-           (multi reads utterances_en which omni no longer produces).
-        2. The base_translation system prompt is augmented with INPUT NOTICE explaining
-           that input may be ASR-noisy, to suppress fabrication.
-        """
-        from appcore.events import EVT_TRANSLATE_RESULT
-        from appcore.runtime import (
-            _build_review_segments,
-            _llm_request_payload,
-            _llm_response_payload,
-            _log_translate_billing,
-            _save_json,
-        )
-        from appcore.runtime_multi import _TRANSLATE_USE_CASE, _resolve_translate_use_case_binding
-        from pipeline.localization import build_source_full_text_zh
-        from pipeline.translate import generate_localized_translation
-        from appcore.preview_artifacts import build_asr_artifact, build_translate_artifact
-
-        task = task_state.get(task_id)
-        task_dir = task["task_dir"]
-        if self._complete_original_video_passthrough(
-            task_id, task.get("video_path") or "", task_dir,
-        ):
-            return
-        lang = self._resolve_target_lang(task)
-        source_language = (task.get("source_language") or "").strip()
-        if source_language not in _MANUAL_SOURCE_LANGUAGES:
-            message = (
-                f"source_language={source_language!r} 不在支持范围 "
-                f"({', '.join(_MANUAL_SOURCE_LANGUAGES)})；请手动选择源语言"
-            )
-            task_state.update(task_id, status="error", error=message)
-            self._set_step(task_id, "translate", "failed", message)
-            return
-
-        provider_code, model_id = _resolve_translate_use_case_binding(_TRANSLATE_USE_CASE)
-        _model_tag = f"{provider_code} · {model_id}"
-        self._set_step(task_id, "translate", "running",
-                       f"正在从 {source_language.upper()} 直译为 {lang.upper()}...",
-                       model_tag=_model_tag)
-
-        script_segments = task.get("script_segments", []) or []
-        # build_source_full_text_zh just joins script_segments[*].text — language-agnostic
-        source_full_text = build_source_full_text_zh(script_segments)
-        task_state.update(task_id, source_full_text_zh=source_full_text)
-        _save_json(task_dir, "source_full_text.json",
-                   {"full_text": source_full_text, "language": source_language})
-
-        # Source-anchored system prompt: vanilla base_translation + INPUT NOTICE
-        base_prompt = self._build_system_prompt(lang)
-        notice = (
-            f"\n\nINPUT NOTICE: The source script provided below is in "
-            f"{source_language.upper()}. It came from automatic speech recognition "
-            f"of the original video and may contain transcription artifacts. "
-            f"Treat it as the source of truth for content; do NOT invent details "
-            f"that are not implied by it. If a segment is unintelligible, keep "
-            f"your version brief instead of fabricating context."
-        )
-        system_prompt = base_prompt + notice
-
-        localized_translation = generate_localized_translation(
-            source_full_text, script_segments, variant="normal",
-            custom_system_prompt=system_prompt,
-            user_id=self.user_id,
-            use_case=_TRANSLATE_USE_CASE,
-            project_id=task_id,
-        )
-        initial_messages = localized_translation.pop("_messages", None)
-        request_payload = _llm_request_payload(
-            localized_translation,
-            provider_code,
-            _TRANSLATE_USE_CASE,
-            messages=initial_messages,
-        )
-        if request_payload:
-            request_payload["model"] = model_id
-        if initial_messages:
-            _save_json(task_dir, "localized_translate_messages.json", prompt_file_payload(
-                phase="initial_translate",
-                label="初始翻译",
-                use_case_code=_TRANSLATE_USE_CASE,
-                provider=provider_code,
-                model=model_id,
-                messages=initial_messages,
-                request_payload=request_payload,
-                meta={
-                    "source_language": source_language,
-                    "target_language": lang,
-                },
+        cfg = self._resolve_plugin_config(task_id)
+        out: list[tuple[str, callable]] = [
+            ("extract", lambda: self._step_extract(task_id, video_path, task_dir)),
+            ("asr", lambda: self._step_asr(task_id, task_dir)),
+        ]
+        if cfg["voice_separation"]:
+            out.append(("separate", lambda: self._step_separate(task_id, task_dir)))
+        if cfg["shot_decompose"]:
+            out.append((
+                "shot_decompose",
+                lambda: self._step_shot_decompose(task_id, video_path, task_dir),
             ))
-            task_state.add_llm_debug_ref(task_id, "translate", {
-                "id": "translate.initial",
-                "label": "初始翻译",
-                "path": "localized_translate_messages.json",
-                "use_case": _TRANSLATE_USE_CASE,
-                "provider": provider_code,
-                "model": model_id,
-                "source_language": source_language,
-                "target_language": lang,
-            })
+        # post_asr step 名跟着算法走（spec §3 ① ASR 后处理）
+        post_asr_name = "asr_clean" if cfg["asr_post"] == "asr_clean" else "asr_normalize"
+        out.append((post_asr_name, lambda: self.profile.post_asr(self, task_id)))
+        out.append(("voice_match", lambda: self._step_voice_match(task_id)))
+        # av_sentence 翻译走 sentences 直接生成，不需要 alignment
+        if cfg["translate_algo"] != "av_sentence":
+            out.append((
+                "alignment",
+                lambda: self._step_alignment(task_id, video_path, task_dir),
+            ))
+        out.append(("translate", lambda: self.profile.translate(self, task_id)))
+        out.append(("tts", lambda: self.profile.tts(self, task_id, task_dir)))
+        if cfg["loudness_match"]:
+            out.append((
+                "loudness_match",
+                lambda: self._step_loudness_match(task_id, task_dir),
+            ))
+        out.append(("subtitle", lambda: self.profile.subtitle(self, task_id, task_dir)))
+        out.append(("compose", lambda: self._step_compose(task_id, video_path, task_dir)))
+        if self.include_analysis_in_main_flow:
+            out.append(("analysis", lambda: self._step_analysis(task_id)))
+        out.append(("export", lambda: self._step_export(task_id, video_path, task_dir)))
+        return out
 
-        variants = dict(task.get("variants", {}))
-        variant_state = dict(variants.get("normal", {}))
-        variant_state["localized_translation"] = localized_translation
-        variants["normal"] = variant_state
-        _save_json(task_dir, "localized_translation.normal.json", localized_translation)
+    # Thin shims dispatching to runtime_omni_steps (5 个物理复制的算法体).
+    # 这些方法 spec §6.2 要求暴露在 OmniTranslateRunner 上，便于 resume / 测试
+    # 直接 ``runner._step_translate_standard(task_id)``。OmniProfile 也调它们。
+    def _step_asr_normalize(self, task_id: str) -> None:
+        from appcore import runtime_omni_steps
+        runtime_omni_steps.step_asr_normalize(self, task_id)
 
-        review_segments = _build_review_segments(script_segments, localized_translation)
-        requires_confirmation = bool(task.get("interactive_review"))
-        task_state.update(
-            task_id,
-            source_full_text_zh=source_full_text,
-            localized_translation=localized_translation,
-            variants=variants,
-            segments=review_segments,
-            _segments_confirmed=not requires_confirmation,
-        )
-        task_state.set_artifact(task_id, "asr",
-                                 build_asr_artifact(task.get("utterances", []),
-                                                    source_full_text,
-                                                    source_language=source_language))
-        task_state.set_artifact(task_id, "translate",
-                                 build_translate_artifact(source_full_text,
-                                                          localized_translation,
-                                                          source_language=source_language,
-                                                          target_language=lang))
-        _save_json(task_dir, "localized_translation.json", localized_translation)
+    def _step_shot_decompose(self, task_id: str, video_path: str, task_dir: str) -> None:
+        from appcore import runtime_omni_steps
+        runtime_omni_steps.step_shot_decompose(self, task_id, video_path, task_dir)
 
-        usage = localized_translation.get("_usage") or {}
-        _log_translate_billing(
-            user_id=self.user_id, project_id=task_id,
-            use_case_code=_TRANSLATE_USE_CASE,
-            provider=_TRANSLATE_USE_CASE,
-            input_tokens=usage.get("input_tokens"),
-            output_tokens=usage.get("output_tokens"),
-            success=True,
-            request_payload=request_payload,
-            response_payload=_llm_response_payload(localized_translation),
+    def _step_translate_standard(self, task_id: str, *, source_anchored: bool = True) -> None:
+        from appcore import runtime_omni_steps
+        runtime_omni_steps.step_translate_standard(
+            self, task_id, source_anchored=source_anchored,
         )
 
-        if requires_confirmation:
-            task_state.set_current_review_step(task_id, "translate")
-            self._set_step(task_id, "translate", "waiting",
-                           f"{lang.upper()} 翻译已生成，等待人工确认")
-        else:
-            task_state.set_current_review_step(task_id, "")
-            self._set_step(task_id, "translate", "done",
-                           f"{source_language.upper()} → {lang.upper()} 直译完成")
+    def _step_translate_shot_limit(self, task_id: str) -> None:
+        from appcore import runtime_omni_steps
+        runtime_omni_steps.step_translate_shot_limit(self, task_id)
 
-        self._emit(task_id, EVT_TRANSLATE_RESULT, {
-            "source_full_text_zh": source_full_text,
-            "localized_translation": localized_translation,
-            "segments": review_segments,
-            "requires_confirmation": requires_confirmation,
-        })
+    def _step_subtitle_asr_realign(self, task_id: str, task_dir: str) -> None:
+        from appcore import runtime_omni_steps
+        runtime_omni_steps.step_subtitle_asr_realign(self, task_id, task_dir)
 
     def _get_localization_module(self, task: dict):
         lang = self._resolve_target_lang(task)
