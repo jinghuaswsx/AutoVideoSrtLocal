@@ -1717,6 +1717,11 @@ def test_translation_quality_api_responses_live_outside_route_module():
     assert "build_translation_quality_assessment_in_progress_response" in route_source
     assert "build_translation_quality_started_response" in route_source
     assert "translation_quality_flask_response" in route_source
+    assert "from appcore.db import" not in module_source
+    assert "db_query(" not in route_source
+    assert "db_query_one(" not in route_source
+    assert "svc.get_project_for_assessment" in route_source
+    assert "svc.list_assessment_rows" in route_source
     assert Path("web/services/translation_quality.py").exists()
 
 

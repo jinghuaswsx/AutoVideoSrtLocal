@@ -11,7 +11,7 @@ import threading
 from typing import Any
 
 from appcore import runner_lifecycle, task_state
-from appcore.db import execute as db_execute, query_one as db_query_one
+from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 from pipeline import translation_quality
 
 log = logging.getLogger(__name__)
@@ -64,6 +64,22 @@ def _build_inputs(task: dict) -> dict:
         "source_language": source_language,
         "target_language": task.get("target_lang") or "",
     }
+
+
+def get_project_for_assessment(task_id: str, project_type: str) -> dict | None:
+    return db_query_one(
+        "SELECT id, user_id, type FROM projects "
+        "WHERE id=%s AND type=%s AND deleted_at IS NULL",
+        (task_id, project_type),
+    )
+
+
+def list_assessment_rows(task_id: str) -> list[dict]:
+    return db_query(
+        "SELECT * FROM translation_quality_assessments "
+        "WHERE task_id=%s ORDER BY run_id DESC",
+        (task_id,),
+    )
 
 
 def _next_run_id(task_id: str) -> int:

@@ -64,6 +64,46 @@ def test_build_inputs_handles_missing_full_text():
     assert inputs["tts_recognition"] == "hi world"
 
 
+def test_get_project_for_assessment_queries_live_project(monkeypatch):
+    from appcore import quality_assessment as qa
+
+    captured = {}
+
+    def fake_query_one(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return {"id": "task-quality", "user_id": 7, "type": "multi_translate"}
+
+    monkeypatch.setattr(qa, "db_query_one", fake_query_one)
+
+    row = qa.get_project_for_assessment("task-quality", "multi_translate")
+
+    assert row == {"id": "task-quality", "user_id": 7, "type": "multi_translate"}
+    assert "FROM projects" in captured["sql"]
+    assert "deleted_at IS NULL" in captured["sql"]
+    assert captured["args"] == ("task-quality", "multi_translate")
+
+
+def test_list_assessment_rows_orders_newest_first(monkeypatch):
+    from appcore import quality_assessment as qa
+
+    captured = {}
+
+    def fake_query(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"task_id": "task-quality", "run_id": 4}]
+
+    monkeypatch.setattr(qa, "db_query", fake_query)
+
+    rows = qa.list_assessment_rows("task-quality")
+
+    assert rows == [{"task_id": "task-quality", "run_id": 4}]
+    assert "FROM translation_quality_assessments" in captured["sql"]
+    assert "ORDER BY run_id DESC" in captured["sql"]
+    assert captured["args"] == ("task-quality",)
+
+
 def test_trigger_inserts_pending_row(db_clean):
     with patch("web.services.quality_assessment._run_assessment_job"):
         run_id = svc.trigger_assessment(

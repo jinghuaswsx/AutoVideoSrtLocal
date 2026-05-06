@@ -11,7 +11,6 @@ from flask import Blueprint, request
 from flask_login import current_user, login_required
 
 from appcore import task_state
-from appcore.db import query as db_query, query_one as db_query_one
 from web.services import quality_assessment as svc
 from web.services.translation_quality import (
     build_translation_quality_admin_only_response,
@@ -39,25 +38,14 @@ def _can_view(task_row: dict) -> bool:
     return int(task_row.get("user_id") or 0) == int(getattr(current_user, "id", 0))
 
 
-def _load_task(task_id: str, project_type: str) -> dict | None:
-    return db_query_one(
-        "SELECT id, user_id, type FROM projects WHERE id=%s AND type=%s AND deleted_at IS NULL",
-        (task_id, project_type),
-    )
-
-
 def _list_route(project_type: str):
     def view(task_id):
-        task_row = _load_task(task_id, project_type)
+        task_row = svc.get_project_for_assessment(task_id, project_type)
         if not _can_view(task_row):
             return translation_quality_flask_response(
                 build_translation_quality_not_found_response()
             )
-        rows = db_query(
-            "SELECT * FROM translation_quality_assessments "
-            "WHERE task_id=%s ORDER BY run_id DESC",
-            (task_id,),
-        )
+        rows = svc.list_assessment_rows(task_id)
         # 把 task_state.evals_invalidated_at 一并返回——前端用它把比这早的
         # assessment 视为 stale（评估的是上一轮译文，不该当本轮结果展示）。
         ts_state = task_state.get(task_id) or {}
@@ -77,7 +65,7 @@ def _run_route(project_type: str):
             return translation_quality_flask_response(
                 build_translation_quality_admin_only_response()
             )
-        task_row = _load_task(task_id, project_type)
+        task_row = svc.get_project_for_assessment(task_id, project_type)
         if not task_row:
             return translation_quality_flask_response(
                 build_translation_quality_not_found_response()

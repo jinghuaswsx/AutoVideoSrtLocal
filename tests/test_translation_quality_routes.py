@@ -9,19 +9,20 @@ def test_quality_assessment_list_route_returns_serialized_payload(
 ):
     from web.routes import translation_quality as route
 
+    captured = {}
     monkeypatch.setattr(
-        route,
-        "_load_task",
+        route.svc,
+        "get_project_for_assessment",
         lambda task_id, project_type: {
             "id": task_id,
             "user_id": 1,
             "type": project_type,
         },
     )
-    monkeypatch.setattr(
-        route,
-        "db_query",
-        lambda sql, args=None: [
+
+    def fake_list_assessment_rows(task_id):
+        captured["task_id"] = task_id
+        return [
             {
                 "run_id": 4,
                 "translation_dimensions": '{"accuracy": 91}',
@@ -29,7 +30,12 @@ def test_quality_assessment_list_route_returns_serialized_payload(
                 "created_at": datetime(2026, 5, 6, 9, 0, 0),
                 "completed_at": None,
             }
-        ],
+        ]
+
+    monkeypatch.setattr(
+        route.svc,
+        "list_assessment_rows",
+        fake_list_assessment_rows,
     )
     monkeypatch.setattr(
         route.task_state,
@@ -54,6 +60,7 @@ def test_quality_assessment_list_route_returns_serialized_payload(
         ],
         "task_evals_invalidated_at": "2026-05-06T08:59:00",
     }
+    assert captured == {"task_id": "task-quality"}
 
 
 def test_quality_assessment_run_route_rejects_non_admin(authed_user_client_no_db):
@@ -73,8 +80,8 @@ def test_quality_assessment_run_route_starts_manual_assessment(
 
     captured = {}
     monkeypatch.setattr(
-        route,
-        "_load_task",
+        route.svc,
+        "get_project_for_assessment",
         lambda task_id, project_type: {
             "id": task_id,
             "user_id": 1,
@@ -108,8 +115,8 @@ def test_quality_assessment_run_route_returns_conflict_when_assessment_is_active
     from web.routes import translation_quality as route
 
     monkeypatch.setattr(
-        route,
-        "_load_task",
+        route.svc,
+        "get_project_for_assessment",
         lambda task_id, project_type: {
             "id": task_id,
             "user_id": 1,
