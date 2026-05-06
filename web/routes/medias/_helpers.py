@@ -6,7 +6,6 @@ import re
 import sys
 import threading
 import uuid
-import requests
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -15,10 +14,13 @@ from urllib.parse import urlparse
 from flask import abort, send_file, url_for
 from flask_login import current_user
 
-from appcore import local_media_storage, material_evaluation, medias, object_keys, runner_lifecycle, task_state
+from appcore import material_evaluation, medias, runner_lifecycle, task_state
 from appcore.safe_paths import resolve_under_allowed_roots
 from config import OUTPUT_DIR
 from web.services import media_object_storage
+from web.services.media_image_import import (
+    download_image_to_local_media as _download_image_to_local_media_impl,
+)
 from web.services.media_items import (
     MediaItemResponse,
     PRODUCT_NOT_LISTED_PAYLOAD,
@@ -164,37 +166,19 @@ def _download_image_to_local_media(
     url: str, pid: int, prefix: str, *, user_id: int | None = None
 ) -> tuple[str, bytes, str] | tuple[None, None, str]:
     """Download an image from URL and store it in local media storage."""
-    if not url:
-        return None, None, "url required"
-    upload_user_id = _resolve_upload_user_id(user_id)
-    if upload_user_id is None:
-        return None, None, "missing upload user"
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return None, None, "only http/https links are supported"
-    try:
-        resp = requests.get(url, timeout=20, stream=True,
-                            headers={"User-Agent": "Mozilla/5.0 AutoVideoSrt-Importer"})
-        resp.raise_for_status()
-        ct = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
-        if not ct.startswith("image/"):
-            return None, None, f"下载内容不是图片: {ct}"
-        data = b""
-        for chunk in resp.iter_content(chunk_size=64 * 1024):
-            data += chunk
-            if len(data) > _MAX_IMAGE_BYTES:
-                return None, None, "image too large (>15MB)"
-    except requests.RequestException as e:
-        return None, None, f"下载失败: {e}"
+    from web.routes import medias as routes
 
-    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(ct, ".jpg")
-    name_from_url = os.path.basename(parsed.path or "") or "from_url"
-    filename = f"{prefix}_{name_from_url}"
-    if not filename.endswith(ext):
-        filename += ext
-    object_key = object_keys.build_media_object_key(upload_user_id, pid, filename)
-    local_media_storage.write_bytes(object_key, data)
-    return object_key, data, ext
+    return _download_image_to_local_media_impl(
+        url,
+        pid,
+        prefix,
+        user_id=user_id,
+        resolve_upload_user_id_fn=_resolve_upload_user_id,
+        build_media_object_key_fn=getattr(routes, "object_keys").build_media_object_key,
+        write_media_object_fn=getattr(routes, "local_media_storage").write_bytes,
+        http_get_fn=getattr(routes, "requests").get,
+        max_image_bytes=_MAX_IMAGE_BYTES,
+    )
 
 
 def _validate_product_code(code: str) -> tuple[bool, str | None]:

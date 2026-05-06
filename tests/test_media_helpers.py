@@ -12,6 +12,7 @@ def test_parse_lang_returns_readable_error(monkeypatch):
 def test_download_image_to_local_media_returns_readable_download_errors(monkeypatch):
     from requests import RequestException
 
+    from web.routes import medias as route_mod
     from web.routes.medias import _helpers
 
     class FakeResponse:
@@ -24,7 +25,7 @@ def test_download_image_to_local_media_returns_readable_download_errors(monkeypa
             yield b"<html>"
 
     monkeypatch.setattr(_helpers, "_resolve_upload_user_id", lambda user_id=None: 7)
-    monkeypatch.setattr(_helpers.requests, "get", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(route_mod.requests, "get", lambda *args, **kwargs: FakeResponse())
 
     not_image = _helpers._download_image_to_local_media(
         "https://example.test/not-image",
@@ -34,7 +35,7 @@ def test_download_image_to_local_media_returns_readable_download_errors(monkeypa
     assert not_image == (None, None, "下载内容不是图片: text/html")
 
     monkeypatch.setattr(
-        _helpers.requests,
+        route_mod.requests,
         "get",
         lambda *args, **kwargs: (_ for _ in ()).throw(RequestException("timeout")),
     )

@@ -1309,6 +1309,17 @@ def test_media_cover_from_url_responses_live_outside_route_module():
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_download_image_to_local_media_lives_outside_route_helper():
+    helper_source = Path("web/routes/medias/_helpers.py").read_text(encoding="utf-8")
+
+    assert "requests.get" not in helper_source
+    assert "requests.RequestException" not in helper_source
+    assert "local_media_storage.write_bytes" not in helper_source
+    assert "object_keys.build_media_object_key" not in helper_source
+    assert "_download_image_to_local_media_impl" in helper_source
+    assert Path("web/services/media_image_import.py").exists()
+
+
 def test_media_item_play_url_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
