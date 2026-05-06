@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
 
 from appcore import medias, pushes
 from appcore.link_check_locale import detect_target_language_from_url
@@ -43,6 +43,11 @@ from web.services.openapi_push_items import (
     serialize_push_item as _serialize_push_item,
     serialize_push_item_rows as _serialize_push_item_rows,
 )
+from web.services.openapi_responses import (
+    build_openapi_error_response,
+    build_openapi_payload_response,
+    openapi_flask_response,
+)
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
@@ -55,6 +60,16 @@ shopify_localizer_bp = Blueprint(
 
 
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
+
+
+def _openapi_payload_response(payload: dict, status_code: int = 200):
+    return openapi_flask_response(build_openapi_payload_response(payload, status_code))
+
+
+def _openapi_error_response(error: str, status_code: int, **extra):
+    return openapi_flask_response(build_openapi_error_response(error, status_code, **extra))
+
+
 def _api_key_valid(required_scope: str = "materials:read") -> bool:
     cfg = get_provider_config("openapi_materials")
     provided = (request.headers.get("X-API-Key") or "").strip()
@@ -70,14 +85,14 @@ def _api_key_valid(required_scope: str = "materials:read") -> bool:
 @shopify_localizer_bp.route("/languages", methods=["GET"])
 def shopify_localizer_languages():
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
-    return jsonify({"items": medias.list_shopify_localizer_languages()})
+        return _openapi_error_response("invalid api key", 401)
+    return _openapi_payload_response({"items": medias.list_shopify_localizer_languages()})
 
 
 @shopify_localizer_bp.route("/bootstrap", methods=["POST"])
 def shopify_localizer_bootstrap():
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
 
     body = request.get_json(silent=True) or {}
     try:
@@ -94,84 +109,81 @@ def shopify_localizer_bootstrap():
         error_payload = {"error": exc.error}
         if exc.message:
             error_payload["message"] = exc.message
-        return jsonify(error_payload), exc.status_code
-    return jsonify(payload)
+        return _openapi_payload_response(error_payload, exc.status_code)
+    return _openapi_payload_response(payload)
 
 
 @shopify_localizer_bp.route("/tasks/claim", methods=["POST"])
 def shopify_localizer_task_claim():
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
     body = request.get_json(silent=True) or {}
-    return jsonify(_build_shopify_localizer_task_claim_response(body))
+    return _openapi_payload_response(_build_shopify_localizer_task_claim_response(body))
 
 
 @shopify_localizer_bp.route("/tasks/<int:task_id>/heartbeat", methods=["POST"])
 def shopify_localizer_task_heartbeat(task_id: int):
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
     body = request.get_json(silent=True) or {}
-    return jsonify(_build_shopify_localizer_task_heartbeat_response(task_id, body))
+    return _openapi_payload_response(_build_shopify_localizer_task_heartbeat_response(task_id, body))
 
 
 @shopify_localizer_bp.route("/tasks/<int:task_id>/complete", methods=["POST"])
 def shopify_localizer_task_complete(task_id: int):
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
     body = request.get_json(silent=True) or {}
-    return jsonify(_build_shopify_localizer_task_complete_response(task_id, body))
+    return _openapi_payload_response(_build_shopify_localizer_task_complete_response(task_id, body))
 
 
 @shopify_localizer_bp.route("/tasks/<int:task_id>/fail", methods=["POST"])
 def shopify_localizer_task_fail(task_id: int):
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
     body = request.get_json(silent=True) or {}
-    return jsonify(_build_shopify_localizer_task_fail_response(task_id, body))
+    return _openapi_payload_response(_build_shopify_localizer_task_fail_response(task_id, body))
 
 
 @bp.route("/<product_code>", methods=["GET"])
 def get_material(product_code: str):
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
 
     product = medias.get_product_by_code((product_code or "").strip().lower())
     if not product:
-        return jsonify({"error": "product not found"}), 404
+        return _openapi_error_response("product not found", 404)
 
-    return jsonify(_build_material_detail_response(product))
+    return _openapi_payload_response(_build_material_detail_response(product))
 
 
 @bp.route("/<product_code>/push-payload", methods=["GET"])
 def build_push_payload(product_code: str):
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
 
     lang = (request.args.get("lang") or "").strip().lower()
     if not lang:
-        return jsonify({"error": "missing lang"}), 400
+        return _openapi_error_response("missing lang", 400)
 
     code = (product_code or "").strip().lower()
     product = medias.get_product_by_code(code)
     if not product:
-        return jsonify({"error": "product not found"}), 404
+        return _openapi_error_response("product not found", 404)
 
     try:
         payload = _build_material_push_payload(product, lang=lang, product_code=code)
     except pushes.ProductNotListedError as exc:
-        return jsonify({"error": str(exc)}), 409
+        return _openapi_error_response(str(exc), 409)
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
-        return jsonify({
-            "error": str(exc),
-            "code": "copywriting_not_ready",
-        }), 409
-    return jsonify(payload)
+        return _openapi_error_response(str(exc), 409, code="copywriting_not_ready")
+    return _openapi_payload_response(payload)
 
 
 @link_check_bp.route("/bootstrap", methods=["POST"])
 def bootstrap_link_check():
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
 
     body = request.get_json(silent=True) or {}
     try:
@@ -180,23 +192,25 @@ def bootstrap_link_check():
             detect_target_language_fn=detect_target_language_from_url,
         )
     except _LinkCheckBootstrapError as exc:
-        return jsonify({"error": exc.error}), exc.status_code
-    return jsonify(payload)
+        return _openapi_error_response(exc.error, exc.status_code)
+    return _openapi_payload_response(payload)
 
 
 @bp.route("", methods=["GET"], strict_slashes=False)
 def list_materials():
     """产品列表，供 AutoPush 子项目拉清单。"""
     if not _api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
 
-    return jsonify(_build_materials_list_response(
-        page_raw=request.args.get("page") or "1",
-        page_size_raw=request.args.get("page_size") or "20",
-        q=request.args.get("q") or "",
-        archived_raw=request.args.get("archived") or "0",
-        query_fn=query,
-    ))
+    return _openapi_payload_response(
+        _build_materials_list_response(
+            page_raw=request.args.get("page") or "1",
+            page_size_raw=request.args.get("page_size") or "20",
+            q=request.args.get("q") or "",
+            archived_raw=request.args.get("archived") or "0",
+            query_fn=query,
+        )
+    )
 
 
 # ================================================================
@@ -221,7 +235,7 @@ def list_push_items():
       - lang (string, 可选, 语种过滤, 多个用逗号)
     """
     if not _push_api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
 
     try:
         page = max(1, int(request.args.get("page") or 1))
@@ -254,26 +268,28 @@ def list_push_items():
     total = len(all_items)
     items = _paginate_push_items(all_items, page=page, page_size=page_size)
 
-    return jsonify({
-        "items": items,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    })
+    return _openapi_payload_response(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
 
 
 @push_bp.route("/<int:item_id>", methods=["GET"])
 def get_push_item(item_id: int):
     """单条素材详情 + 状态，AutoPush 推送前的确认用。"""
     if not _push_api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
     item = medias.get_item(item_id)
     if not item:
-        return jsonify({"error": "item not found"}), 404
+        return _openapi_error_response("item not found", 404)
     product = medias.get_product(item["product_id"])
     if not product:
-        return jsonify({"error": "product not found"}), 404
-    return jsonify(_serialize_push_item(item, product, query_one_fn=query_one))
+        return _openapi_error_response("product not found", 404)
+    return _openapi_payload_response(_serialize_push_item(item, product, query_one_fn=query_one))
 
 
 @push_bp.route("/by-keys", methods=["GET"], strict_slashes=False)
@@ -284,7 +300,7 @@ def get_push_item_payload_by_keys():
     依赖索引 idx_product_lang_filename。
     """
     if not _push_api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
 
     try:
         product_id = int(request.args.get("product_id") or 0)
@@ -293,62 +309,57 @@ def get_push_item_payload_by_keys():
     lang = (request.args.get("lang") or "").strip()
     filename = (request.args.get("filename") or "").strip()
     if not product_id or not lang or not filename:
-        return jsonify({
-            "error": "missing params",
-            "required": ["product_id", "lang", "filename"],
-        }), 400
+        return _openapi_error_response(
+            "missing params",
+            400,
+            required=["product_id", "lang", "filename"],
+        )
 
     item = medias.find_item_by_keys(product_id, lang, filename)
     if not item:
-        return jsonify({"error": "item not found"}), 404
+        return _openapi_error_response("item not found", 404)
     product = medias.get_product(product_id)
     if not product:
-        return jsonify({"error": "product not found"}), 404
+        return _openapi_error_response("product not found", 404)
 
     try:
         response_payload = _build_push_item_payload_response(item, product, query_one_fn=query_one)
     except pushes.ProductNotListedError as exc:
-        return jsonify({
-            "error": str(exc),
-            "code": "product_not_listed",
-        }), 409
+        return _openapi_error_response(str(exc), 409, code="product_not_listed")
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
-        return jsonify({
-            "error": str(exc),
-            "code": "copywriting_not_ready",
-        }), 409
-    return jsonify(response_payload)
+        return _openapi_error_response(str(exc), 409, code="copywriting_not_ready")
+    return _openapi_payload_response(response_payload)
 
 
 @push_bp.route("/<int:item_id>/mark-pushed", methods=["POST"])
 def mark_pushed(item_id: int):
     """AutoPush 推送成功后写回。"""
     if not _push_api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
     item = medias.get_item(item_id)
     if not item:
-        return jsonify({"error": "item not found"}), 404
+        return _openapi_error_response("item not found", 404)
     body = request.get_json(silent=True) or {}
     response_payload = _build_mark_pushed_response(
         item_id,
         body,
         operator_user_id=_OPENAPI_OPERATOR_USER_ID,
     )
-    return jsonify(response_payload)
+    return _openapi_payload_response(response_payload)
 
 
 @push_bp.route("/<int:item_id>/mark-failed", methods=["POST"])
 def mark_failed(item_id: int):
     """AutoPush 推送失败后写回。"""
     if not _push_api_key_valid():
-        return jsonify({"error": "invalid api key"}), 401
+        return _openapi_error_response("invalid api key", 401)
     item = medias.get_item(item_id)
     if not item:
-        return jsonify({"error": "item not found"}), 404
+        return _openapi_error_response("item not found", 404)
     body = request.get_json(silent=True) or {}
     response_payload = _build_mark_failed_response(
         item_id,
         body,
         operator_user_id=_OPENAPI_OPERATOR_USER_ID,
     )
-    return jsonify(response_payload)
+    return _openapi_payload_response(response_payload)

@@ -2861,6 +2861,16 @@ def test_openapi_materials_listing_helpers_live_outside_route_module():
     assert Path("web/services/openapi_materials_listing.py").exists()
 
 
+def test_openapi_json_responses_live_outside_route_module():
+    module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+
+    assert "jsonify(" not in module_source
+    assert "openapi_flask_response" in module_source
+    assert "build_openapi_error_response" in module_source
+    assert "build_openapi_payload_response" in module_source
+    assert Path("web/services/openapi_responses.py").exists()
+
+
 def test_openapi_materials_list_response_lives_outside_route_module():
     module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
