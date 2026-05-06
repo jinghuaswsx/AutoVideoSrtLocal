@@ -1313,7 +1313,9 @@ def test_mk_copywriting_response_lives_outside_route_module():
     assert "_is_mk_login_expired" not in route_source
     assert "mk_credentials_missing" not in route_source
     assert "mk_request_failed" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_mk_copywriting_response" in route_source
+    assert "_mk_copywriting_flask_response" in route_source
     assert Path("web/services/media_mk_copywriting.py").exists()
 
 

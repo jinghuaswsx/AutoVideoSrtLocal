@@ -27,6 +27,7 @@ from web.services.media_mk_copywriting import (
     build_mk_copywriting_response as _build_mk_copywriting_response_impl,
     extract_mk_copywriting as _extract_mk_copywriting,
     format_mk_copywriting_text as _format_mk_copywriting_text,
+    mk_copywriting_flask_response as _mk_copywriting_flask_response_impl,
     mk_product_link_tail as _mk_product_link_tail,
     normalize_mk_copywriting_query as _normalize_mk_copywriting_query,
 )
@@ -105,6 +106,10 @@ def _build_mk_copywriting_response(args):
         is_login_expired_fn=routes._is_mk_login_expired,
         http_get_fn=routes.requests.get,
     )
+
+
+def _mk_copywriting_flask_response(result):
+    return _mk_copywriting_flask_response_impl(result)
 
 
 def _build_supply_pairing_search_response(args):
@@ -191,7 +196,7 @@ def _build_roas_page_context(product: dict):
 def api_mk_copywriting():
     routes = _routes_module()
     result = routes._build_mk_copywriting_response(request.args)
-    return jsonify(result.payload), result.status_code
+    return routes._mk_copywriting_flask_response(result)
 
 
 @bp.route("/api/products", methods=["GET"])

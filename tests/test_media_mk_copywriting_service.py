@@ -63,6 +63,21 @@ def test_build_mk_copywriting_response_fetches_normalized_query_and_first_matchi
     }
 
 
+def test_mk_copywriting_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_mk_copywriting import (
+        MkCopywritingResponse,
+        mk_copywriting_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = mk_copywriting_flask_response(
+            MkCopywritingResponse({"ok": True, "copywriting": "Ready"}, 202)
+        )
+
+    assert status_code == 202
+    assert response.get_json() == {"ok": True, "copywriting": "Ready"}
+
+
 def test_build_mk_copywriting_response_rejects_missing_query_before_request():
     from web.services.media_mk_copywriting import build_mk_copywriting_response
 

@@ -6,12 +6,17 @@ from dataclasses import dataclass
 from typing import Callable, Mapping
 
 import requests
+from flask import jsonify
 
 
 @dataclass(frozen=True)
 class MkCopywritingResponse:
     payload: dict
     status_code: int
+
+
+def mk_copywriting_flask_response(result: MkCopywritingResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def normalize_mk_copywriting_query(product_code: str) -> str:
