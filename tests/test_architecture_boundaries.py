@@ -1395,7 +1395,9 @@ def test_mk_selection_list_response_lives_outside_route_module():
     assert "db_query(" not in route_source
     assert "dianxiaomi_rankings" not in route_source
     assert "mk_total_spends" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_mk_selection_response" in route_source
+    assert "_build_mk_json_flask_response" in route_source
     assert Path("web/services/media_mk_selection.py").exists()
 
 
@@ -1437,7 +1439,9 @@ def test_mk_selection_refresh_response_lives_outside_route_module():
     assert "TODO" not in route_source
     assert "\u6682\u672a\u5b9e\u73b0" not in route_source
     assert "return jsonify({\"ok\"" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_mk_selection_refresh_response" in route_source
+    assert "_build_mk_json_flask_response" in route_source
     assert "build_mk_selection_refresh_response" in Path(
         "web/services/media_mk_selection.py"
     ).read_text(encoding="utf-8")
@@ -1458,7 +1462,9 @@ def test_mk_detail_proxy_response_lives_outside_route_module():
     assert "_get_mk_api_base_url" not in route_source
     assert "_is_mk_login_expired" not in route_source
     assert "明空凭据未配置" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_mk_detail_response" in route_source
+    assert "_build_mk_json_flask_response" in route_source
     assert Path("web/services/media_mk_selection.py").exists()
 
 

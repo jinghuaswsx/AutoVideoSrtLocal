@@ -48,6 +48,10 @@ class MkVideoProxyResponse:
     mimetype: str | None = None
 
 
+def build_mk_json_flask_response(result: MkSelectionResponse | MkDetailResponse):
+    return jsonify(result.payload), result.status_code
+
+
 def build_mk_admin_required_response() -> MkSelectionResponse:
     return MkSelectionResponse({"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u8bbf\u95ee"}, 403)
 

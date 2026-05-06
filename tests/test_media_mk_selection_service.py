@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 
+def test_build_mk_json_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_mk_selection import (
+        MkSelectionResponse,
+        build_mk_json_flask_response,
+    )
+
+    result = MkSelectionResponse({"error": "forbidden"}, 403)
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = build_mk_json_flask_response(result)
+
+    assert status_code == 403
+    assert response.get_json() == {"error": "forbidden"}
+
+
 def test_build_mk_admin_required_response_returns_forbidden_payload():
     from web.services.media_mk_selection import build_mk_admin_required_response
 

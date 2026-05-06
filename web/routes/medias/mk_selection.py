@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 import requests
-from flask import abort, jsonify, request
+from flask import abort, request
 from flask_login import login_required
 
 from appcore import local_media_storage, pushes
@@ -21,6 +21,7 @@ from web.services.media_mk_selection import (
     build_mk_video_proxy_flask_response as _build_mk_video_proxy_flask_response,
     build_mk_video_proxy_response as _build_mk_video_proxy_response_impl,
     build_mk_admin_required_response as _build_mk_admin_required_response_impl,
+    build_mk_json_flask_response as _build_mk_json_flask_response_impl,
     build_mk_selection_refresh_response as _build_mk_selection_refresh_response_impl,
     cache_mk_video as _cache_mk_video_impl,
     build_mk_detail_response as _build_mk_detail_response_impl,
@@ -42,7 +43,7 @@ def _is_admin():
 
 def _mk_admin_required_response():
     result = _build_mk_admin_required_response_impl()
-    return jsonify(result.payload), result.status_code
+    return _build_mk_json_flask_response(result)
 
 
 def db_query(*args, **kwargs):
@@ -59,6 +60,10 @@ def _build_mk_selection_response(args):
 
 def _build_mk_selection_refresh_response():
     return _build_mk_selection_refresh_response_impl()
+
+
+def _build_mk_json_flask_response(result):
+    return _build_mk_json_flask_response_impl(result)
 
 
 def _build_mk_detail_response(mk_id: int):
@@ -96,7 +101,7 @@ def api_mk_selection():
         return _routes()._mk_admin_required_response()
     """返回店小秘 Top300 + 明空消耗数据，按 90 天消耗降序。"""
     result = _routes()._build_mk_selection_response(request.args)
-    return jsonify(result.payload), result.status_code
+    return _routes()._build_mk_json_flask_response(result)
 
 
 @bp.route("/api/mk-selection/refresh", methods=["POST"])
@@ -106,7 +111,7 @@ def api_mk_selection_refresh():
     if not _is_admin():
         return _routes()._mk_admin_required_response()
     result = _routes()._build_mk_selection_refresh_response()
-    return jsonify(result.payload), result.status_code
+    return _routes()._build_mk_json_flask_response(result)
 
 
 @bp.route("/api/mk-media", methods=["GET"])
@@ -147,7 +152,7 @@ def api_mk_detail_proxy(mk_id: int):
     if not _is_admin():
         return _routes()._mk_admin_required_response()
     result = _routes()._build_mk_detail_response(mk_id)
-    return jsonify(result.payload), result.status_code
+    return _routes()._build_mk_json_flask_response(result)
 
 
 def _get_mk_api_base_url() -> str:
