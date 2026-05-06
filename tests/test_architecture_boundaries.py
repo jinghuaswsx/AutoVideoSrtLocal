@@ -1543,6 +1543,36 @@ def test_admin_prompts_api_responses_live_outside_route_module():
     assert Path("web/services/admin_prompts.py").exists()
 
 
+def test_prompt_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/prompt.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "list_prompts",
+        "create_prompt",
+        "update_prompt",
+        "delete_prompt",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "jsonify(" not in route_source
+    assert "build_prompt_list_response" in route_source
+    assert "build_prompt_bad_create_response" in route_source
+    assert "build_prompt_created_response" in route_source
+    assert "build_prompt_not_found_response" in route_source
+    assert "build_prompt_response" in route_source
+    assert "build_prompt_default_delete_blocked_response" in route_source
+    assert "build_prompt_deleted_response" in route_source
+    assert "prompt_flask_response" in route_source
+    assert Path("web/services/prompt.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
