@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 
 import config
-from flask import Blueprint, render_template, abort, jsonify, request, redirect, url_for
+from flask import Blueprint, render_template, abort, request, redirect, url_for
 from flask_login import login_required, current_user
 
 from appcore import object_keys, subtitle_removal_source_storage, task_state
@@ -22,11 +22,24 @@ from pipeline.ffutil import extract_thumbnail, probe_media_info
 from web import store
 from web.services.artifact_download import safe_task_file_response
 from web.services import subtitle_removal_runner
+from web.services.subtitle_removal_responses import (
+    build_subtitle_removal_payload_response,
+    subtitle_removal_flask_response,
+)
 from web.upload_util import validate_video_extension, write_stream_to_path
 
 log = logging.getLogger(__name__)
 
 bp = Blueprint("subtitle_removal", __name__)
+
+
+def _json_response(payload):
+    response, _status_code = subtitle_removal_flask_response(
+        build_subtitle_removal_payload_response(payload)
+    )
+    return response
+
+
 _submit_locks: dict[str, threading.Lock] = {}
 _submit_locks_guard = threading.Lock()
 _upload_bootstrap_reservations: dict[str, dict] = {}
@@ -409,39 +422,39 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     media_info = task.get("media_info") or {}
 
     if mode not in {"full", "box"}:
-        return jsonify({"error": "remove_mode must be full or box"}), 400
+        return _json_response({"error": "remove_mode must be full or box"}), 400
 
     try:
         subtitle_backend = _normalize_subtitle_backend(task.get("subtitle_backend"))
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}), 400
 
     try:
         duration = float(media_info.get("duration") or 0.0)
     except (TypeError, ValueError):
-        return jsonify({"error": "invalid media duration"}), 400
+        return _json_response({"error": "invalid media duration"}), 400
     duration_limit = (
         config.SUBTITLE_REMOVAL_LOCAL_VSR_MAX_DURATION_SECONDS
         if subtitle_backend == "local_vsr"
         else config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS
     )
     if duration > duration_limit:
-        return jsonify({"error": "video duration exceeds provider limit"}), 400
+        return _json_response({"error": "video duration exceeds provider limit"}), 400
 
     try:
         normalized = _normalize_selection_box(mode, selection_box, media_info)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}), 400
 
     erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
     if erase_text_type not in {"subtitle", "text"}:
-        return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
+        return _json_response({"error": "erase_text_type must be subtitle or text"}), 400
     if subtitle_backend != "local_vsr":
         try:
             _ensure_public_source_url(task_id, task)
         except Exception as exc:
             log.exception("[subtitle_removal] failed to stage public source task_id=%s", task_id)
-            return jsonify({"error": f"unable to stage public source: {exc}"}), 502
+            return _json_response({"error": f"unable to stage public source: {exc}"}), 502
 
     next_steps = dict(task.get("steps") or {})
     next_steps.update(
@@ -490,7 +503,7 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     store.set_step(task_id, "submit", "queued")
     store.set_step_message(task_id, "submit", "等待后台提交去字幕任务")
     subtitle_removal_runner.start(task_id, user_id=current_user.id)
-    return jsonify({"task_id": task_id, "status": "queued"}), 202
+    return _json_response({"task_id": task_id, "status": "queued"}), 202
 
 
 def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> dict:
@@ -578,7 +591,7 @@ def detail_page(task_id: str):
 @login_required
 def get_state(task_id: str):
     task = _get_task(task_id)
-    return jsonify(_subtitle_removal_state_payload(task, task_id))
+    return _json_response(_subtitle_removal_state_payload(task, task_id))
 
 
 @bp.route("/api/subtitle-removal/list", methods=["GET"])
@@ -594,9 +607,9 @@ def list_tasks():
         try:
             user_id_filter = int(user_id_raw)
         except (TypeError, ValueError):
-            return jsonify({"error": "user_id must be an integer"}), 400
+            return _json_response({"error": "user_id must be an integer"}), 400
         if user_id_filter <= 0:
-            return jsonify({"error": "user_id must be positive"}), 400
+            return _json_response({"error": "user_id must be positive"}), 400
 
     query_text = (request.args.get("q") or "").strip().lower()
     where_parts = ["p.type = 'subtitle_removal'", "p.deleted_at IS NULL"]
@@ -670,7 +683,7 @@ def list_tasks():
                 "elapsed_seconds": elapsed_seconds,
             }
         )
-    return jsonify({"items": items, "users": submitter_options})
+    return _json_response({"items": items, "users": submitter_options})
 
 
 @bp.route("/api/subtitle-removal/upload/bootstrap", methods=["POST"])
@@ -679,9 +692,9 @@ def bootstrap_upload():
     body = request.get_json(silent=True) or {}
     original_filename = os.path.basename((body.get("original_filename") or "").strip())
     if not original_filename:
-        return jsonify({"error": "original_filename required"}), 400
+        return _json_response({"error": "original_filename required"}), 400
     if not validate_video_extension(original_filename):
-        return jsonify({"error": "invalid video file type"}), 400
+        return _json_response({"error": "invalid video file type"}), 400
 
     task_id = str(uuid.uuid4())
     object_key = object_keys.build_source_object_key(current_user.id, task_id, original_filename)
@@ -696,7 +709,7 @@ def bootstrap_upload():
         video_path=video_path,
         content_type=content_type,
     )
-    return jsonify(
+    return _json_response(
         {
             "task_id": task_id,
             "object_key": object_key,
@@ -732,32 +745,32 @@ def complete_upload():
     try:
         file_size = int(body.get("file_size") or 0)
     except (TypeError, ValueError):
-        return jsonify({"error": "file_size must be an integer"}), 400
+        return _json_response({"error": "file_size must be an integer"}), 400
 
     erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
     if erase_text_type not in {"subtitle", "text"}:
-        return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
+        return _json_response({"error": "erase_text_type must be subtitle or text"}), 400
     try:
         subtitle_backend = _normalize_subtitle_backend(body.get("subtitle_backend"))
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}), 400
 
     if not task_id or not original_filename or not object_key:
-        return jsonify({"error": "task_id, original_filename and object_key required"}), 400
+        return _json_response({"error": "task_id, original_filename and object_key required"}), 400
     if not validate_video_extension(original_filename):
-        return jsonify({"error": "invalid video file type"}), 400
+        return _json_response({"error": "invalid video file type"}), 400
 
     reservation = _consume_upload_bootstrap(task_id)
     if not reservation:
-        return jsonify({"error": "bootstrap reservation required"}), 403
+        return _json_response({"error": "bootstrap reservation required"}), 403
     if reservation.get("user_id") != current_user.id:
-        return jsonify({"error": "bootstrap reservation owned by another user"}), 403
+        return _json_response({"error": "bootstrap reservation owned by another user"}), 403
     if reservation.get("original_filename") != original_filename or reservation.get("object_key") != object_key:
-        return jsonify({"error": "bootstrap reservation mismatch"}), 403
+        return _json_response({"error": "bootstrap reservation mismatch"}), 403
 
     expected_key = object_keys.build_source_object_key(current_user.id, task_id, original_filename)
     if object_key != expected_key:
-        return jsonify({"error": "object_key mismatch"}), 400
+        return _json_response({"error": "object_key mismatch"}), 400
 
     ext = os.path.splitext(original_filename)[1].lower()
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -766,7 +779,7 @@ def complete_upload():
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     if not os.path.exists(video_path):
-        return jsonify({"error": "uploaded video file missing"}), 400
+        return _json_response({"error": "uploaded video file missing"}), 400
 
     object_size = int(os.path.getsize(video_path) or file_size or 0)
     source_object_info = build_source_object_info(
@@ -798,10 +811,10 @@ def complete_upload():
 
     if not _media_info_is_ready(media_info):
         store.update(task_id, error="media probe failed", media_info=media_info)
-        return jsonify({"error": "Unable to read uploaded media info"}), 422
+        return _json_response({"error": "Unable to read uploaded media info"}), 422
     if not thumbnail_path or not os.path.exists(thumbnail_path):
         store.update(task_id, error="thumbnail extraction failed", media_info=media_info)
-        return jsonify({"error": "Unable to extract first frame thumbnail"}), 422
+        return _json_response({"error": "Unable to extract first frame thumbnail"}), 422
 
     display_name = _default_display_name(original_filename)
 
@@ -816,7 +829,7 @@ def complete_upload():
     store.set_step_message(task_id, "prepare", "首帧提取和媒体信息解析已完成")
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
     _release_upload_bootstrap(task_id)
-    return jsonify({"task_id": task_id}), 201
+    return _json_response({"task_id": task_id}), 201
 
 
 @bp.route("/api/subtitle-removal/<task_id>/submit", methods=["POST"])
@@ -824,12 +837,12 @@ def complete_upload():
 def submit(task_id: str):
     lock = _get_submit_lock(task_id)
     if not lock.acquire(blocking=False):
-        return jsonify({"error": "submit already in progress"}), 409
+        return _json_response({"error": "submit already in progress"}), 409
 
     try:
         task = _get_owned_task(task_id)
         if (task.get("status") or "").strip() != "ready":
-            return jsonify({"error": "task is not ready for submit"}), 409
+            return _json_response({"error": "task is not ready for submit"}), 409
 
         body = request.get_json(silent=True) or {}
         return _submit_locked(task_id, task, body)
@@ -952,13 +965,13 @@ def download_result(task_id: str):
 def resume_poll(task_id: str):
     task = _get_owned_task(task_id)
     if (task.get("status") or "").strip() == "done":
-        return jsonify({"error": "task is already finished"}), 409
+        return _json_response({"error": "task is already finished"}), 409
     if not (task.get("provider_task_id") or "").strip():
-        return jsonify({"error": "provider_task_id required"}), 400
+        return _json_response({"error": "provider_task_id required"}), 400
     if subtitle_removal_runner.is_running(task_id):
-        return jsonify({"error": "task is already running"}), 409
+        return _json_response({"error": "task is already running"}), 409
     subtitle_removal_runner.start(task_id, user_id=current_user.id)
-    return jsonify({"task_id": task_id, "status": "queued"}), 202
+    return _json_response({"task_id": task_id, "status": "queued"}), 202
 
 
 @bp.route("/api/subtitle-removal/<task_id>/resubmit", methods=["POST"])
@@ -966,22 +979,22 @@ def resume_poll(task_id: str):
 def resubmit(task_id: str):
     lock = _get_submit_lock(task_id)
     if not lock.acquire(blocking=False):
-        return jsonify({"error": "submit already in progress"}), 409
+        return _json_response({"error": "submit already in progress"}), 409
 
     try:
         task = _get_owned_task(task_id)
         task_status = (task.get("status") or "").strip()
         if task_status in {"queued", "running"}:
-            return jsonify({"error": "task is already running"}), 409
+            return _json_response({"error": "task is already running"}), 409
         provider_task_id = (task.get("provider_task_id") or "").strip()
         if task_status not in {"done", "ready"} and provider_task_id:
             age_seconds = _submission_age_seconds(task_id, task)
             window_seconds = int(getattr(config, "SUBTITLE_REMOVAL_RESUBMIT_POLL_WINDOW_SECONDS", 1800) or 1800)
             if age_seconds <= window_seconds:
                 if subtitle_removal_runner.is_running(task_id):
-                    return jsonify({"error": "task is already running"}), 409
+                    return _json_response({"error": "task is already running"}), 409
                 _resume_existing_provider_poll(task_id, task, current_user.id)
-                return jsonify({"task_id": task_id, "status": "running"}), 202
+                return _json_response({"task_id": task_id, "status": "running"}), 202
         _cleanup_result_artifacts(task)
         body = request.get_json(silent=True) or {}
         return _submit_locked(task_id, task, body)
