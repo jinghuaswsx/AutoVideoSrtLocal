@@ -36,6 +36,18 @@ GROUPS = (
 
 # 字段顺序：(code, group, label, default_for_admin, default_for_user)
 # superadmin 永远全开，无须在表里配置
+def menu_permission(
+    code: str,
+    group: str,
+    label: str,
+    *,
+    admin: bool = True,
+    user: bool = False,
+) -> tuple[str, str, str, bool, bool]:
+    """Build a menu/page permission. New menu entries default to admin-only."""
+    return (code, group, label, admin, user)
+
+
 PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     # A. 业务功能（普通用户也用）
     ("medias",                GROUP_BUSINESS,   "素材管理",         True,  True),
@@ -52,6 +64,8 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("mk_selection",          GROUP_MANAGEMENT, "选品中心",         True,  False),
     ("bulk_translate_admin",  GROUP_MANAGEMENT, "批量翻译任务管理", True,  False),
     ("data_analytics",        GROUP_MANAGEMENT, "数据分析",         True,  False),
+    menu_permission("order_profit",          GROUP_MANAGEMENT, "订单利润核算"),
+    menu_permission("orphan_orders",         GROUP_MANAGEMENT, "未建档订单"),
     ("lab",                   GROUP_MANAGEMENT, "实验室",           True,  False),
     ("ai_billing",            GROUP_MANAGEMENT, "API 账单",         True,  False),
     ("productivity_stats",    GROUP_MANAGEMENT, "员工产能报表",     True,  False),
