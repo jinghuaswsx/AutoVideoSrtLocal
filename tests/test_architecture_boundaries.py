@@ -1306,6 +1306,7 @@ def test_media_thumb_cache_root_lives_outside_route_helpers():
     assert "THUMB_DIR" not in helper_source
     assert "_safe_thumb_cache_path" not in helper_source
     assert "resolve_under_allowed_roots" not in helper_source
+    assert "import mimetypes" not in helper_source
     assert "THUMB_DIR" not in facade_source
     assert "DEFAULT_THUMB_DIR" in service_source
 
