@@ -96,6 +96,25 @@ def get_usage_report(
     }
 
 
+def get_usage_payload(log_id: int) -> dict | None:
+    rows = query(
+        "SELECT request_data, response_data FROM usage_log_payloads WHERE log_id = %s",
+        (int(log_id),),
+    )
+    return rows[0] if rows else None
+
+
+def get_user_usage_payload(log_id: int, *, user_id: int) -> dict | None:
+    rows = query(
+        """SELECT p.request_data, p.response_data
+           FROM usage_log_payloads p
+           JOIN usage_logs ul ON ul.id = p.log_id
+           WHERE p.log_id = %s AND ul.user_id = %s""",
+        (int(log_id), int(user_id)),
+    )
+    return rows[0] if rows else None
+
+
 def record_payload(log_id: int, request_data: Any, response_data: Any) -> None:
     """Store request/response JSON for an existing usage log row. Never raises."""
     if not log_id:

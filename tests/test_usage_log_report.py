@@ -83,3 +83,43 @@ def test_get_usage_report_does_not_scope_admin_to_current_user(monkeypatch):
         "total_output_tokens": 0,
         "total_audio_seconds": 0,
     }
+
+
+def test_get_usage_payload_reads_payload_by_log_id(monkeypatch):
+    from appcore import usage_log
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"request_data": {"prompt": "hello"}, "response_data": {"text": "world"}}]
+
+    monkeypatch.setattr(usage_log, "query", fake_query, raising=False)
+
+    assert usage_log.get_usage_payload(42) == {
+        "request_data": {"prompt": "hello"},
+        "response_data": {"text": "world"},
+    }
+    assert "FROM usage_log_payloads" in captured["sql"]
+    assert "WHERE log_id = %s" in captured["sql"]
+    assert "JOIN usage_logs" not in captured["sql"]
+    assert captured["args"] == (42,)
+
+
+def test_get_user_usage_payload_scopes_by_user_id(monkeypatch):
+    from appcore import usage_log
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(usage_log, "query", fake_query, raising=False)
+
+    assert usage_log.get_user_usage_payload(42, user_id=7) is None
+    assert "JOIN usage_logs ul ON ul.id = p.log_id" in captured["sql"]
+    assert "p.log_id = %s AND ul.user_id = %s" in captured["sql"]
+    assert captured["args"] == (42, 7)

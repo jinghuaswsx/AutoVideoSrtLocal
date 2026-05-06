@@ -1564,6 +1564,9 @@ def test_admin_ai_billing_payload_responses_live_outside_route_module():
     assert "jsonify(" not in route_source
     assert "build_ai_usage_payload_response" in route_source
     assert "admin_ai_billing_flask_response" in route_source
+    assert "usage_log.get_usage_payload" in route_source
+    assert "usage_log.get_user_usage_payload" in route_source
+    assert "query_one(" not in route_source
     assert Path("web/services/admin_ai_billing.py").exists()
 
 

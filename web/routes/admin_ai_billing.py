@@ -9,8 +9,8 @@ from decimal import Decimal
 from flask import Blueprint, Response, render_template, request, stream_with_context
 from flask_login import current_user, login_required
 
-from appcore import medias
-from appcore.db import query, query_one
+from appcore import medias, usage_log
+from appcore.db import query
 from web.auth import admin_required
 from web.services.admin_ai_billing import (
     admin_ai_billing_flask_response,
@@ -92,23 +92,14 @@ def export_admin_ai_usage_csv():
 @login_required
 @admin_required
 def get_ai_usage_payload(log_id: int):
-    row = query_one(
-        "SELECT request_data, response_data FROM usage_log_payloads WHERE log_id = %s",
-        (log_id,),
-    )
+    row = usage_log.get_usage_payload(log_id)
     return admin_ai_billing_flask_response(build_ai_usage_payload_response(row))
 
 
 @user_ai_billing_bp.route("/my-ai-usage/payload/<int:log_id>")
 @login_required
 def get_my_ai_usage_payload(log_id: int):
-    row = query_one(
-        """SELECT p.request_data, p.response_data
-           FROM usage_log_payloads p
-           JOIN usage_logs ul ON ul.id = p.log_id
-           WHERE p.log_id = %s AND ul.user_id = %s""",
-        (log_id, current_user.id),
-    )
+    row = usage_log.get_user_usage_payload(log_id, user_id=current_user.id)
     return admin_ai_billing_flask_response(build_ai_usage_payload_response(row))
 
 

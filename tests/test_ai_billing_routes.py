@@ -226,6 +226,51 @@ def test_admin_ai_usage_user_id_filter_is_parameterized(authed_client_no_db, mon
     assert all("' OR 1=1 --" not in sql for sql, _ in captured)
 
 
+def test_admin_ai_usage_payload_delegates_lookup(authed_client_no_db, monkeypatch):
+    from web.routes import admin_ai_billing as route_mod
+
+    captured = {}
+
+    def fail_query(*args, **kwargs):
+        raise AssertionError("payload route should delegate lookup to usage_log service")
+
+    def fake_get_usage_payload(log_id):
+        captured["log_id"] = log_id
+        return {"request_data": {"prompt": "hello"}, "response_data": {"text": "world"}}
+
+    monkeypatch.setattr(route_mod, "query", fail_query)
+    monkeypatch.setattr(route_mod.usage_log, "get_usage_payload", fake_get_usage_payload, raising=False)
+
+    resp = authed_client_no_db.get("/admin/ai-usage/payload/42")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"request_data": {"prompt": "hello"}, "response_data": {"text": "world"}}
+    assert captured == {"log_id": 42}
+
+
+def test_my_ai_usage_payload_delegates_scoped_lookup(authed_user_client_no_db, monkeypatch):
+    from web.routes import admin_ai_billing as route_mod
+
+    captured = {}
+
+    def fail_query(*args, **kwargs):
+        raise AssertionError("payload route should delegate lookup to usage_log service")
+
+    def fake_get_user_usage_payload(log_id, *, user_id):
+        captured["log_id"] = log_id
+        captured["user_id"] = user_id
+        return None
+
+    monkeypatch.setattr(route_mod, "query", fail_query)
+    monkeypatch.setattr(route_mod.usage_log, "get_user_usage_payload", fake_get_user_usage_payload, raising=False)
+
+    resp = authed_user_client_no_db.get("/my-ai-usage/payload/42")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"request_data": None, "response_data": None}
+    assert captured == {"log_id": 42, "user_id": 2}
+
+
 def test_admin_ai_usage_csv_export_has_header_and_all_rows(authed_client_no_db, monkeypatch):
     from web.routes import admin_ai_billing as route_mod
     monkeypatch.setattr(
