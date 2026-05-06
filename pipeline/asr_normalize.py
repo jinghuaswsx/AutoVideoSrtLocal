@@ -20,6 +20,7 @@ from typing import Any
 from appcore import llm_client
 from appcore.cancellation import cancellable_sleep
 from appcore.llm_prompt_configs import resolve_prompt_config
+from pipeline.languages.registry import SOURCE_LANGS
 
 
 DETECT_SUPPORTED_LANGS: tuple[str, ...] = (
@@ -352,19 +353,12 @@ def run_asr_normalize(
     return artifact
 
 
-_USER_SPECIFIED_ROUTES: dict[str, str] = {
+_USER_SPECIFIED_ROUTES: dict[str, str] = {lang: "generic_fallback" for lang in SOURCE_LANGS}
+_USER_SPECIFIED_ROUTES.update({
     "zh": "zh_skip",
     "en": "en_skip",
     "es": "es_specialized",
-    "pt": "generic_fallback",
-    "fr": "generic_fallback",
-    "it": "generic_fallback",
-    "ja": "generic_fallback",
-    "de": "generic_fallback",
-    "nl": "generic_fallback",
-    "sv": "generic_fallback",
-    "fi": "generic_fallback",
-}
+})
 
 
 def run_user_specified(
@@ -382,7 +376,7 @@ def run_user_specified(
     - tokens.detect 为空
     - model.detect 为 None
 
-    支持 source_language ∈ {zh, en, es, pt}；其余抛 ValueError。
+    支持 source_language ∈ pipeline.languages.registry.SOURCE_LANGS；其余抛 ValueError。
     """
     if source_language not in _USER_SPECIFIED_ROUTES:
         raise ValueError(

@@ -30,9 +30,10 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
          patch("appcore.runtime_multi._save_json"), \
          patch("appcore.runtime.ai_billing.log_request") as m_log_request, \
          patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
-         patch("appcore.runtime._helpers._translate_billing_model", return_value="gpt"), \
-         patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
-         patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
+         patch("appcore.runtime._helpers._translate_billing_provider", return_value="gemini_vertex"), \
+         patch("appcore.runtime._helpers._translate_billing_model", return_value="gemini-actual"), \
+         patch("appcore.runtime_multi._resolve_translate_use_case_binding",
+               return_value=("gemini_vertex", "gemini-actual")), \
          patch("pipeline.extract.get_video_duration", return_value=1.0), \
          patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
          patch("appcore.runtime_multi.build_translate_artifact", return_value={}):
@@ -49,10 +50,12 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     kwargs = m_gen.call_args.kwargs
     assert "BASE_DE" in kwargs["custom_system_prompt"]
     assert "ECOM_PLUGIN" in kwargs["custom_system_prompt"]
+    assert "provider" not in kwargs
+    assert kwargs["use_case"] == "video_translate.localize"
     billing = m_log_request.call_args.kwargs
     assert billing["use_case_code"] == "video_translate.localize"
-    assert billing["provider"] == "openrouter"
-    assert billing["model"] == "gpt"
+    assert billing["provider"] == "gemini_vertex"
+    assert billing["model"] == "gemini-actual"
     assert billing["units_type"] == "tokens"
 
 

@@ -42,3 +42,5 @@ def test_step_subtitle_uses_lang_rules_for_weak_starters_and_post_process():
     kwargs = m_build.call_args.kwargs
     assert "et" in kwargs["weak_boundary_words"]
     assert "ou" in kwargs["weak_boundary_words"]
+    assert kwargs["max_chars_per_line"] == 42
+    assert kwargs["max_lines"] == 2

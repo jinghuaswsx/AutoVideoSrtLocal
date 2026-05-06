@@ -41,6 +41,7 @@ from pipeline.localization import (
 )
 from pipeline.translate import generate_localized_translation, get_model_display_name
 from pipeline import asr_normalize as pipeline_asr_normalize
+from pipeline.languages.registry import SOURCE_LANGS as _MANUAL_SOURCE_LANGUAGES
 from appcore.preview_artifacts import (
     build_asr_artifact,
     build_asr_normalize_artifact,
@@ -53,7 +54,25 @@ log = logging.getLogger(__name__)
 
 
 _CJK_CHAR_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
-_MANUAL_SOURCE_LANGUAGES = ("zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi")
+_TRANSLATE_USE_CASE = "video_translate.localize"
+
+
+def _resolve_translate_use_case_binding(use_case: str = _TRANSLATE_USE_CASE) -> tuple[str, str]:
+    """Return the actual provider/model binding used by llm_client for display.
+
+    Unit tests often run without a configured DB; in that case fall back to the
+    use-case registry defaults instead of resurrecting the old user preference.
+    """
+    try:
+        from appcore import llm_bindings
+
+        binding = llm_bindings.resolve(use_case)
+        return str(binding.get("provider") or use_case), str(binding.get("model") or use_case)
+    except Exception:
+        from appcore.llm_use_cases import get_use_case
+
+        default = get_use_case(use_case)
+        return default["default_provider"], default["default_model"]
 
 
 def _count_source_speech_units(text: str) -> int:
@@ -187,8 +206,8 @@ class MultiTranslateRunner(PipelineRunner):
             self._set_step(task_id, "translate", "failed", message)
             return
 
-        provider = _resolve_translate_provider(self.user_id)
-        _model_tag = f"{provider} · {get_model_display_name(provider, self.user_id)}"
+        provider_code, model_id = _resolve_translate_use_case_binding(_TRANSLATE_USE_CASE)
+        _model_tag = f"{provider_code} · {model_id}"
         self._set_step(task_id, "translate", "running",
                        f"正在翻译为 {lang.upper()}...", model_tag=_model_tag)
         script_segments = task.get("script_segments", [])
@@ -210,8 +229,8 @@ class MultiTranslateRunner(PipelineRunner):
         localized_translation = generate_localized_translation(
             source_full_text, script_segments, variant="normal",
             custom_system_prompt=system_prompt,
-            provider=provider, user_id=self.user_id,
-            use_case="video_translate.localize",
+            user_id=self.user_id,
+            use_case=_TRANSLATE_USE_CASE,
             project_id=task_id,
         )
 
@@ -255,15 +274,15 @@ class MultiTranslateRunner(PipelineRunner):
         _log_translate_billing(
             user_id=self.user_id,
             project_id=task_id,
-            use_case_code="video_translate.localize",
-            provider=provider,
+            use_case_code=_TRANSLATE_USE_CASE,
+            provider=_TRANSLATE_USE_CASE,
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             success=True,
             request_payload=_llm_request_payload(
                 localized_translation,
-                provider,
-                "video_translate.localize",
+                _TRANSLATE_USE_CASE,
+                _TRANSLATE_USE_CASE,
                 messages=initial_messages,
             ),
             response_payload=_llm_response_payload(localized_translation),
@@ -331,6 +350,8 @@ class MultiTranslateRunner(PipelineRunner):
         srt_content = build_srt_from_chunks(
             corrected_chunks,
             weak_boundary_words=rules.WEAK_STARTERS,
+            max_chars_per_line=getattr(rules, "MAX_CHARS_PER_LINE", 42),
+            max_lines=getattr(rules, "MAX_LINES", 2),
         )
         srt_content = rules.post_process_srt(srt_content)
 

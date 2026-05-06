@@ -152,6 +152,21 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
 
 
 def _translate_billing_provider(provider: str) -> str:
+    if "." in provider:
+        try:
+            from appcore import llm_bindings
+
+            binding = llm_bindings.resolve(provider)
+            return binding.get("provider") or provider
+        except Exception:
+            try:
+                from appcore.llm_use_cases import get_use_case
+
+                return get_use_case(provider)["default_provider"]
+            except Exception:
+                return provider
+    if provider in {"openrouter", "doubao", "gemini_vertex", "gemini_vertex_adc", "gemini_aistudio"}:
+        return provider
     if provider == "doubao":
         return "doubao"
     if provider.startswith("vertex_adc_"):
@@ -162,6 +177,19 @@ def _translate_billing_provider(provider: str) -> str:
 
 
 def _translate_billing_model(provider: str, user_id: int | None) -> str:
+    if "." in provider:
+        try:
+            from appcore import llm_bindings
+
+            binding = llm_bindings.resolve(provider)
+            return binding.get("model") or provider
+        except Exception:
+            try:
+                from appcore.llm_use_cases import get_use_case
+
+                return get_use_case(provider)["default_model"]
+            except Exception:
+                return provider
     from pipeline.translate import get_model_display_name
 
     return get_model_display_name(provider, user_id)

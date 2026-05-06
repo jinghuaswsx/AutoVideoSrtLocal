@@ -19,6 +19,14 @@ def test_wrap_text_with_custom_max_chars_de():
         assert len(line) <= 38
 
 
+def test_wrap_text_splits_no_space_language_by_character_width():
+    text = "これはかなり長い日本語字幕テキストです"
+    out = wrap_text(text, max_chars=8, max_lines=2)
+    lines = out.split("\n")
+    assert len(lines) == 2
+    assert all(len(line) <= 8 for line in lines)
+
+
 def test_format_subtitle_chunk_text_accepts_weak_starters():
     text = "Ein schöner Tag und ein neuer Anfang für alle"
     out = format_subtitle_chunk_text(text, weak_boundary_words={"und", "für"})
