@@ -7,7 +7,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import requests
 from flask import abort, request
 from flask_login import login_required
 
@@ -36,6 +35,10 @@ _MK_TOKEN_FILE = Path("C:/店小秘/mk_token.txt")
 def _routes():
     from web.routes import medias as routes
     return routes
+
+
+def _mk_http_get(*args, **kwargs):
+    return _routes().requests.get(*args, **kwargs)
 
 
 def _is_admin():
@@ -73,7 +76,7 @@ def _build_mk_detail_response(mk_id: int):
         build_headers_fn=_build_mk_request_headers,
         get_base_url_fn=_get_mk_api_base_url,
         is_login_expired_fn=_is_mk_login_expired,
-        http_get_fn=requests.get,
+        http_get_fn=_mk_http_get,
     )
 
 
@@ -82,7 +85,7 @@ def _build_mk_media_proxy_response(media_path: str):
         media_path,
         build_headers_fn=_build_mk_request_headers,
         get_base_url_fn=_get_mk_api_base_url,
-        http_get_fn=requests.get,
+        http_get_fn=_mk_http_get,
     )
 
 
@@ -180,7 +183,7 @@ def _cache_mk_video(media_path: str) -> str:
         get_base_url_fn=_get_mk_api_base_url,
         safe_local_path_for_fn=local_media_storage.safe_local_path_for,
         max_bytes=_MAX_MK_VIDEO_BYTES,
-        http_get_fn=requests.get,
+        http_get_fn=_mk_http_get,
     )
 
 

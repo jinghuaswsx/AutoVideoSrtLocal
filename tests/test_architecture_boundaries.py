@@ -2325,6 +2325,14 @@ def test_mk_video_type_guess_lives_outside_route_module():
     )
 
 
+def test_mk_selection_http_get_binding_lives_behind_route_adapter():
+    module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+
+    assert "import requests" not in module_source
+    assert "http_get_fn=requests.get" not in module_source
+    assert "http_get_fn=_mk_http_get" in module_source
+
+
 def test_mk_video_proxy_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -330,6 +330,7 @@ def test_mk_media_proxy_rejects_missing_wedev_credentials_without_request(
     monkeypatch,
 ):
     import requests
+    from web.routes import medias as route_mod
     from web.routes.medias import mk_selection
 
     monkeypatch.setattr(mk_selection.pushes, "build_localized_texts_headers", lambda: {})
@@ -339,7 +340,7 @@ def test_mk_media_proxy_rejects_missing_wedev_credentials_without_request(
     def fail_get(*_args, **_kwargs):
         raise requests.ConnectionError("should not request wedev without credentials")
 
-    monkeypatch.setattr(mk_selection.requests, "get", fail_get)
+    monkeypatch.setattr(route_mod.requests, "get", fail_get)
 
     response = authed_client_no_db.get(
         "/medias/api/mk-media?path=./medias/uploads2/202505/1747910543.jpg"
@@ -385,6 +386,28 @@ def test_mk_media_proxy_delegates_response_building_after_admin_gate(
     assert response.content_type == "image/jpeg"
     assert response.headers["Cache-Control"] == "private, max-age=3600"
     assert captured["media_path"] == "uploads2/202505/1747910543.jpg"
+
+
+def test_mk_http_get_adapter_uses_medias_package_request_dependency(monkeypatch):
+    from web.routes import medias as route_mod
+    from web.routes.medias import mk_selection
+
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return "ok"
+
+    monkeypatch.setattr(route_mod.requests, "get", fake_get)
+
+    result = mk_selection._mk_http_get("https://wedev.example/media.jpg", timeout=20)
+
+    assert result == "ok"
+    assert captured == {
+        "url": "https://wedev.example/media.jpg",
+        "kwargs": {"timeout": 20},
+    }
 
 
 def test_mk_video_proxy_caches_wedev_video_for_local_preview(
@@ -464,6 +487,7 @@ def test_mk_video_proxy_rejects_missing_wedev_credentials_without_request(
 ):
     import requests
     from appcore import local_media_storage
+    from web.routes import medias as route_mod
     from web.routes.medias import mk_selection
 
     monkeypatch.setattr(local_media_storage, "MEDIA_STORE_DIR", tmp_path / "media_store")
@@ -474,7 +498,7 @@ def test_mk_video_proxy_rejects_missing_wedev_credentials_without_request(
     def fail_get(*_args, **_kwargs):
         raise requests.ConnectionError("should not request wedev without credentials")
 
-    monkeypatch.setattr(mk_selection.requests, "get", fail_get)
+    monkeypatch.setattr(route_mod.requests, "get", fail_get)
 
     response = authed_client_no_db.get(
         "/medias/api/mk-video?path=./medias/uploads2/202505/1747910543.mp4"
