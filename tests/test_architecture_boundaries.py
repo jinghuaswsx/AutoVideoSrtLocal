@@ -2131,6 +2131,17 @@ def test_new_product_review_translator_listing_lives_in_appcore_users():
     assert "permissions" in users_source
 
 
+def test_admin_usage_report_queries_live_in_appcore_usage_log():
+    route_source = Path("web/routes/admin_usage.py").read_text(encoding="utf-8")
+    usage_source = Path("appcore/usage_log.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import query" not in route_source
+    assert "FROM usage_logs ul" not in route_source
+    assert "usage_log.get_usage_report" in route_source
+    assert "def get_usage_report" in usage_source
+    assert "FROM usage_logs ul" in usage_source
+
+
 def test_translate_lab_api_responses_live_outside_route_module():
     module_source = Path("web/routes/translate_lab.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

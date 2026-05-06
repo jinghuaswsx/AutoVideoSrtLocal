@@ -4,7 +4,96 @@ from decimal import Decimal
 import logging
 from typing import Any
 
+from appcore.db import query
+
 log = logging.getLogger(__name__)
+
+
+def _build_usage_report_filter(
+    *,
+    admin: bool,
+    user_id: int | None,
+    service: str,
+    date_from: str,
+    date_to: str,
+) -> tuple[str, tuple]:
+    where = "WHERE 1=1"
+    args = []
+
+    if not admin:
+        where += " AND ul.user_id = %s"
+        args.append(user_id)
+
+    if service:
+        where += " AND ul.service = %s"
+        args.append(service)
+    if date_from:
+        where += " AND DATE(ul.called_at) >= %s"
+        args.append(date_from)
+    if date_to:
+        where += " AND DATE(ul.called_at) <= %s"
+        args.append(date_to)
+
+    return where, tuple(args)
+
+
+def get_usage_report(
+    *,
+    admin: bool,
+    user_id: int | None,
+    service: str,
+    date_from: str,
+    date_to: str,
+) -> dict:
+    where, args = _build_usage_report_filter(
+        admin=admin,
+        user_id=user_id,
+        service=service,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    rows = query(
+        f"""
+        SELECT u.username, ul.service, ul.model_name,
+               DATE(ul.called_at) AS day,
+               COUNT(*) AS calls,
+               SUM(ul.input_tokens) AS input_tokens,
+               SUM(ul.output_tokens) AS output_tokens,
+               SUM(ul.audio_duration_seconds) AS audio_seconds
+        FROM usage_logs ul
+        JOIN users u ON u.id = ul.user_id
+        {where}
+        GROUP BY u.username, ul.service, ul.model_name, day
+        ORDER BY day DESC, u.username
+        """,
+        args,
+    )
+
+    summary_rows = query(
+        f"""
+        SELECT COUNT(*) AS total_calls,
+               COALESCE(SUM(ul.input_tokens), 0) AS total_input_tokens,
+               COALESCE(SUM(ul.output_tokens), 0) AS total_output_tokens,
+               COALESCE(SUM(ul.audio_duration_seconds), 0) AS total_audio_seconds
+        FROM usage_logs ul
+        {where}
+        """,
+        args,
+    )
+    summary = summary_rows[0] if summary_rows else {
+        "total_calls": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_audio_seconds": 0,
+    }
+
+    services = query("SELECT DISTINCT service FROM usage_logs ORDER BY service")
+    return {
+        "rows": rows,
+        "summary": summary,
+        "service_list": [row["service"] for row in services],
+    }
 
 
 def record_payload(log_id: int, request_data: Any, response_data: Any) -> None:
