@@ -103,6 +103,99 @@ def list_dispatch_pool_products() -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def list_task_center_items(
+    *,
+    tab: str,
+    user_id: int,
+    can_process_raw_video: bool,
+    keyword: str,
+    high_status: str,
+    page: int,
+    page_size: int,
+) -> dict:
+    offset = (int(page) - 1) * int(page_size)
+    where = ["1=1"]
+    args: list = []
+
+    if tab == "mine":
+        where.append(
+            "(t.assignee_id=%s OR "
+            "(t.parent_task_id IS NULL AND t.status=%s AND %s))"
+        )
+        args.extend(
+            [
+                int(user_id),
+                PARENT_PENDING,
+                1 if can_process_raw_video else 0,
+            ]
+        )
+    elif tab != "all":
+        raise ValueError("invalid tab")
+
+    if keyword:
+        where.append("p.name LIKE %s")
+        args.append(f"%{keyword}%")
+    if high_status == "in_progress":
+        where.append("t.status NOT IN (%s, %s, %s)")
+        args.extend([PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
+    elif high_status == "completed":
+        where.append("t.status IN (%s, %s)")
+        args.extend([PARENT_ALL_DONE, CHILD_DONE])
+    elif high_status == "terminated":
+        where.append("t.status=%s")
+        args.append(PARENT_CANCELLED)
+
+    sql = (
+        "SELECT t.*, p.name AS product_name, "
+        "       u.username AS assignee_username "
+        "FROM tasks t "
+        "JOIN media_products p ON p.id=t.media_product_id "
+        "LEFT JOIN users u ON u.id=t.assignee_id "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY t.id DESC "
+        "LIMIT %s OFFSET %s"
+    )
+    rows = query_all(sql, (*args, int(page_size), offset))
+    return {
+        "items": [
+            {
+                "id": row["id"],
+                "parent_task_id": row["parent_task_id"],
+                "media_product_id": row["media_product_id"],
+                "product_name": row["product_name"],
+                "country_code": row["country_code"],
+                "assignee_id": row["assignee_id"],
+                "assignee_username": row["assignee_username"],
+                "status": row["status"],
+                "high_level": high_level_status(row["status"]),
+                "created_at": (
+                    row["created_at"].isoformat() if row.get("created_at") else None
+                ),
+                "updated_at": (
+                    row["updated_at"].isoformat() if row.get("updated_at") else None
+                ),
+                "claimed_at": (
+                    row["claimed_at"].isoformat() if row.get("claimed_at") else None
+                ),
+                "completed_at": (
+                    row["completed_at"].isoformat()
+                    if row.get("completed_at")
+                    else None
+                ),
+                "cancelled_at": (
+                    row["cancelled_at"].isoformat()
+                    if row.get("cancelled_at")
+                    else None
+                ),
+                "last_reason": row["last_reason"],
+            }
+            for row in rows
+        ],
+        "page": int(page),
+        "page_size": int(page_size),
+    }
+
+
 def _row(task_id: int) -> dict | None:
     return query_one("SELECT * FROM tasks WHERE id=%s", (int(task_id),))
 

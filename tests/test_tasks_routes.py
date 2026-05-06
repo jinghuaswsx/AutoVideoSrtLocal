@@ -24,6 +24,72 @@ def test_api_list_my_tasks_filters_by_assignee(authed_client_no_db):
     assert rsp.status_code in (200, 500)
 
 
+def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fail_query_all(*args, **kwargs):
+        raise AssertionError("route should delegate task list queries")
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{"id": 11, "status": "pending", "high_level": "in_progress"}],
+            "page": kwargs["page"],
+            "page_size": kwargs["page_size"],
+        }
+
+    monkeypatch.setattr("appcore.db.query_all", fail_query_all)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get(
+        "/tasks/api/list?tab=mine&keyword=abc&status=in_progress&page=3&page_size=150"
+    )
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {
+        "items": [{"id": 11, "status": "pending", "high_level": "in_progress"}],
+        "page": 3,
+        "page_size": 100,
+    }
+    assert captured == {
+        "tab": "mine",
+        "user_id": 2,
+        "can_process_raw_video": False,
+        "keyword": "abc",
+        "high_status": "in_progress",
+        "page": 3,
+        "page_size": 100,
+    }
+
+
+def test_api_list_rejects_unknown_tab_without_querying_db(authed_user_client_no_db, monkeypatch):
+    captured = []
+
+    def fail_query_all(*args, **kwargs):
+        raise AssertionError("invalid tab should not query the database")
+
+    def fake_list_task_center_items(**kwargs):
+        captured.append(kwargs)
+        return {"items": [], "page": 1, "page_size": 20}
+
+    monkeypatch.setattr("appcore.db.query_all", fail_query_all)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=unexpected")
+
+    assert rsp.status_code == 400
+    assert "error" in rsp.get_json()
+    assert captured == []
+
+
 def test_api_dispatch_pool_admin_only(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/api/dispatch_pool")
     # Without DB the SQL query may 500; we accept 200 OR 500 for smoke

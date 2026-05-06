@@ -122,3 +122,80 @@ def test_list_dispatch_pool_products_filters_active_parent_tasks(monkeypatch):
     assert "status NOT IN (%s, %s)" in captured["sql"]
     assert "LIMIT 100" in captured["sql"]
     assert captured["args"] == (tasks.PARENT_ALL_DONE, tasks.PARENT_CANCELLED)
+
+
+def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "id": 21,
+                "parent_task_id": None,
+                "media_product_id": 9,
+                "product_name": "Product A",
+                "country_code": "DE",
+                "assignee_id": 2,
+                "assignee_username": "translator",
+                "status": tasks.CHILD_DONE,
+                "created_at": datetime(2026, 5, 7, 10, 0, 0),
+                "updated_at": datetime(2026, 5, 7, 10, 5, 0),
+                "claimed_at": None,
+                "completed_at": datetime(2026, 5, 7, 10, 10, 0),
+                "cancelled_at": None,
+                "last_reason": None,
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="mine",
+        user_id=2,
+        can_process_raw_video=True,
+        keyword="Product",
+        high_status="completed",
+        page=2,
+        page_size=5,
+    ) == {
+        "items": [
+            {
+                "id": 21,
+                "parent_task_id": None,
+                "media_product_id": 9,
+                "product_name": "Product A",
+                "country_code": "DE",
+                "assignee_id": 2,
+                "assignee_username": "translator",
+                "status": tasks.CHILD_DONE,
+                "high_level": "completed",
+                "created_at": "2026-05-07T10:00:00",
+                "updated_at": "2026-05-07T10:05:00",
+                "claimed_at": None,
+                "completed_at": "2026-05-07T10:10:00",
+                "cancelled_at": None,
+                "last_reason": None,
+            }
+        ],
+        "page": 2,
+        "page_size": 5,
+    }
+    assert "FROM tasks t" in captured["sql"]
+    assert "JOIN media_products p" in captured["sql"]
+    assert "LEFT JOIN users u" in captured["sql"]
+    assert "p.name LIKE %s" in captured["sql"]
+    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert captured["args"] == (
+        2,
+        tasks.PARENT_PENDING,
+        1,
+        "%Product%",
+        tasks.PARENT_ALL_DONE,
+        tasks.CHILD_DONE,
+        5,
+        5,
+    )
