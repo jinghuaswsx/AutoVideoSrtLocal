@@ -19,16 +19,60 @@
   - 不要把 token 拷到对话里（即便用户原始提供的那条消息已经在 transcript 里，也不要在新消息里复述）。
 - 失效兜底：如果 push 报 403/401，先确认 `~/.git-credentials` 还在、文件权限是 600；只有当确认 token 被 revoke 时，才请用户重新签发并直接 `printf 'https://jinghuaswsx:NEW_TOKEN@github.com\n' > ~/.git-credentials && chmod 600 ~/.git-credentials` 覆盖更新。
 
-## 发布到生产（172.30.254.14）
+## 本机发布流程（线上 / 测试）
 
-**唯一发布入口：** `bash deploy/publish.sh "<commit message>"`（commit message 仅当 working tree 有未提交改动时生效；干净状态下脚本只跑 push + 远端 pull + restart + 健康检查）。
+**硬规则：本机就是部署机，不走 SSH，不走 `deploy/publish.sh`。**
 
-- 脚本在 [deploy/publish.sh](deploy/publish.sh)，依赖 `~/.ssh/CC.pem` 内网 SSH key（已就位）。
-- 服务器固定参数：`root@172.30.254.14:22`、项目目录 `/opt/autovideosrt`、systemd 服务 `autovideosrt.service`（gunicorn）。
-- 脚本自动：本地 commit/push（如有变更）→ 远端 `git pull` → 同步 `deploy/autovideosrt.service` 到 `/etc/systemd/system/` 并 `daemon-reload`（如有 unit 文件变化）→ `systemctl restart autovideosrt` → `systemctl status` → `curl http://127.0.0.1/` 健康检查。
-- **不要手写 `ssh root@172.30.254.14 ...`**：~/.ssh/config 没有 LocalServer alias，IP 直连密码也不通；必须走 publish.sh（它用 `-i ~/.ssh/CC.pem` 显式指定 key）。
+- 线上环境：`http://172.30.254.14/`，目录 `/opt/autovideosrt`，服务 `autovideosrt.service`。
+- 测试环境：`http://172.30.254.14:8080/`，目录 `/opt/autovideosrt-test`，服务 `autovideosrt-test.service`。
+- 代码先在 worktree 完成验证并提交，再合并到 `master`，再 `git push origin master`。
+- 发布目录属于 `root`，本机发布必须用 `sudo` 在本机执行 `git pull` + `systemctl restart`。
+- **不要使用 `ssh root@172.30.254.14 ...`，不要要求 `~/.ssh/CC.pem`，不要调用 `bash deploy/publish.sh`。** 这些是旧的外部开发机发布方式。
 - 发布后 systemd 启动会自动 apply 所有未登记的 SQL migration（参考全局 memory `deploy_migration_workflow`）。**不要手动跑 SQL**——除非同时 `INSERT INTO schema_migrations` 登记，否则启动器会重复执行报错。
-- 用户没说 "发布" / "deploy" / "上线" 等明确字眼前，**不要主动跑 publish.sh**（CLAUDE.md 全局规则：未经许可禁止重启服务）。一旦用户授权（一次说"发布"），就一次性走完 publish.sh，不要中途再问"要不要 restart"。
+- 用户没说“测试发布 / 发测试”时，不要主动重启测试服务；用户没说“线上发布 / 发布线上 / 上线”时，不要主动重启线上服务。
+
+### 测试发布
+
+```bash
+git push origin master
+
+sudo -S -k bash -c '
+set -e
+git config --global --add safe.directory /opt/autovideosrt-test || true
+cd /opt/autovideosrt-test
+git pull origin master --ff-only
+systemctl restart autovideosrt-test
+sleep 3
+systemctl is-active autovideosrt-test
+curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/
+'
+```
+
+期望：`systemctl is-active` 输出 `active`，HTTP 返回 `200` 或登录跳转 `302`，不能是 `404/500/000`。
+
+### 线上发布
+
+```bash
+git push origin master
+
+sudo -S -k bash -c '
+set -e
+git config --global --add safe.directory /opt/autovideosrt || true
+cd /opt/autovideosrt
+git pull origin master --ff-only
+if ! cmp -s /opt/autovideosrt/deploy/autovideosrt.service /etc/systemd/system/autovideosrt.service; then
+  cp /opt/autovideosrt/deploy/autovideosrt.service /etc/systemd/system/autovideosrt.service
+  systemctl daemon-reload
+  echo "systemd unit synced + daemon-reload"
+fi
+systemctl restart autovideosrt
+sleep 3
+systemctl is-active autovideosrt
+curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
+'
+```
+
+期望：`systemctl is-active` 输出 `active`，HTTP 返回 `200` 或登录跳转 `302`，不能是 `404/500/000`。
 
 ## Shopify Image Localizer 发布打包
 

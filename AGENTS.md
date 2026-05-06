@@ -26,14 +26,59 @@
 - 服务器环境说明见 `docs/server-environments.md`。
 - 线上环境：`http://172.30.254.14/`，目录 `/opt/autovideosrt`，服务 `autovideosrt.service`。
 - 测试环境：`http://172.30.254.14:8080/`，目录 `/opt/autovideosrt-test`，服务 `autovideosrt-test.service`。
+- 本机就是部署机，所有测试发布和线上发布都在本机执行；不要走 SSH，不要要求 `~/.ssh/CC.pem`，不要调用旧的 `deploy/publish.sh`。
 - 后续本项目所有功能验证、页面验证、接口验证、数据库验证，默认去测试环境 `http://172.30.254.14:8080/` 测。
 - 用户明确要求发布或验证线上时，才去线上环境 `http://172.30.254.14/` 操作。
 - 不要在 Windows 开发机本地安装、初始化、启动或依赖 MySQL；数据库以服务器 MySQL 为准。
 - 所有自动化测试、手工测试、路由测试、数据库相关测试都不要使用本地 MySQL；必须连接测试服务器上的测试 MySQL。
 - 不要在 Windows 开发机本地长期启动项目 Web 服务来替代测试环境。
 - 不要为了测试随意改线上目录或重启线上服务；先在测试环境验证，再按用户要求发布线上。
-- 用户说「线上发布」或「发布线上」时，含义固定为：先提交代码，再合并到主干，最后发布到线上环境。
+- 用户说「测试发布」或「发测试」时，含义固定为：先提交代码并合并到 `master`，推送 GitHub，然后在本机用 `sudo` 更新 `/opt/autovideosrt-test` 并重启 `autovideosrt-test`。
+- 用户说「线上发布」或「发布线上」时，含义固定为：先提交代码并合并到 `master`，推送 GitHub，然后在本机用 `sudo` 更新 `/opt/autovideosrt` 并重启 `autovideosrt`。
 - 如果用户同时明确说「不测试，直接发」，则跳过测试环境验证，直接按主干发布线上；发布后仍需做服务状态和 HTTP 可达性检查。
+
+### 本机测试发布命令
+
+```bash
+git push origin master
+
+sudo -S -k bash -c '
+set -e
+git config --global --add safe.directory /opt/autovideosrt-test || true
+cd /opt/autovideosrt-test
+git pull origin master --ff-only
+systemctl restart autovideosrt-test
+sleep 3
+systemctl is-active autovideosrt-test
+curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/
+'
+```
+
+验收口径：`active`，且 HTTP 为 `200` 或登录跳转 `302`；`404/500/000` 视为发布失败。
+
+### 本机线上发布命令
+
+```bash
+git push origin master
+
+sudo -S -k bash -c '
+set -e
+git config --global --add safe.directory /opt/autovideosrt || true
+cd /opt/autovideosrt
+git pull origin master --ff-only
+if ! cmp -s /opt/autovideosrt/deploy/autovideosrt.service /etc/systemd/system/autovideosrt.service; then
+  cp /opt/autovideosrt/deploy/autovideosrt.service /etc/systemd/system/autovideosrt.service
+  systemctl daemon-reload
+  echo "systemd unit synced + daemon-reload"
+fi
+systemctl restart autovideosrt
+sleep 3
+systemctl is-active autovideosrt
+curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
+'
+```
+
+验收口径：`active`，且 HTTP 为 `200` 或登录跳转 `302`；`404/500/000` 视为发布失败。
 
 ## Link Check Desktop Commands
 
