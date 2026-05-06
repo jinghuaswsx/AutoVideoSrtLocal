@@ -10,6 +10,21 @@ def test_product_push_admin_required_response_is_standardized():
     assert result.payload == {"error": "\u4ec5\u7ba1\u7406\u5458\u53ef\u64cd\u4f5c"}
 
 
+def test_media_push_flask_response_serializes_payload(authed_client_no_db):
+    from web.services.media_pushes import (
+        MediaPushErrorResponse,
+        media_push_flask_response,
+    )
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = media_push_flask_response(
+            MediaPushErrorResponse({"ok": True, "kind": "push"}, 202)
+        )
+
+    assert status_code == 202
+    assert response.get_json() == {"ok": True, "kind": "push"}
+
+
 def test_product_links_push_preview_and_execute_responses_wrap_downstream():
     from web.services.media_pushes import (
         build_product_links_push_preview_response,

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from flask import jsonify
+
 from appcore import pushes
 
 
@@ -12,6 +14,10 @@ from appcore import pushes
 class MediaPushErrorResponse:
     payload: dict
     status_code: int
+
+
+def media_push_flask_response(result: MediaPushErrorResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def _status_for_push_result(result: dict) -> int:

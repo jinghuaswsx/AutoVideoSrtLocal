@@ -1274,6 +1274,7 @@ def test_media_product_push_responses_live_outside_route_module():
         route_sources.append(ast.get_source_segment(module_source, route_function) or "")
     route_source = "\n".join(route_sources)
 
+    assert "jsonify(" not in module_source
     assert "routes.pushes." not in route_source
     assert "try:" not in route_source
     assert "except Exception" not in route_source
@@ -1285,6 +1286,8 @@ def test_media_product_push_responses_live_outside_route_module():
     assert "_build_product_unsuitable_push_response" in route_source
     assert "_build_product_localized_texts_push_preview_response" in route_source
     assert "_build_product_localized_texts_push_response" in route_source
+    assert "jsonify(" not in route_source
+    assert "_media_push_flask_response" in route_source
     assert Path("web/services/media_pushes.py").exists()
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import abort, jsonify, request
+from flask import abort, request
 from flask_login import login_required
 
 from appcore import medias
@@ -15,6 +15,7 @@ from web.services.media_pushes import (
     build_product_unsuitable_push_preview_response,
     build_product_unsuitable_push_error_response,
     build_product_unsuitable_push_response,
+    media_push_flask_response as _media_push_flask_response_impl,
 )
 
 from . import bp
@@ -26,24 +27,28 @@ def _routes_module():
     return routes
 
 
+def _media_push_flask_response(result):
+    return _media_push_flask_response_impl(result)
+
+
 def _product_links_push_error_response(exc: Exception):
     result = build_product_links_push_error_response(exc)
-    return jsonify(result.payload), result.status_code
+    return _media_push_flask_response(result)
 
 
 def _product_localized_texts_push_error_response(exc: Exception):
     result = build_product_localized_texts_push_error_response(exc)
-    return jsonify(result.payload), result.status_code
+    return _media_push_flask_response(result)
 
 
 def _product_unsuitable_push_error_response(exc: Exception):
     result = build_product_unsuitable_push_error_response(exc)
-    return jsonify(result.payload), result.status_code
+    return _media_push_flask_response(result)
 
 
 def _product_push_admin_required_response():
     result = build_product_push_admin_required_response()
-    return jsonify(result.payload), result.status_code
+    return _media_push_flask_response(result)
 
 
 def _build_product_links_push_preview_response(product: dict):
@@ -99,7 +104,7 @@ def api_product_links_push_payload(pid: int):
     if not routes._can_access_product(product):
         abort(404)
     result = routes._build_product_links_push_preview_response(product)
-    return jsonify(result.payload), result.status_code
+    return routes._media_push_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/product-links-push", methods=["POST"])
@@ -112,7 +117,7 @@ def api_product_links_push(pid: int):
     if not routes._can_access_product(product):
         abort(404)
     result = routes._build_product_links_push_response(product)
-    return jsonify(result.payload), result.status_code
+    return routes._media_push_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/product-unsuitable-push/payload", methods=["GET"])
@@ -125,7 +130,7 @@ def api_product_unsuitable_push_payload(pid: int):
     if not routes._can_access_product(product):
         abort(404)
     result = routes._build_product_unsuitable_push_preview_response(product)
-    return jsonify(result.payload), result.status_code
+    return routes._media_push_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/product-unsuitable-push", methods=["POST"])
@@ -139,7 +144,7 @@ def api_product_unsuitable_push(pid: int):
         abort(404)
     body = request.get_json(silent=True) or {}
     result = routes._build_product_unsuitable_push_response(product, body)
-    return jsonify(result.payload), result.status_code
+    return routes._media_push_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/product-localized-texts-push/payload", methods=["GET"])
@@ -152,7 +157,7 @@ def api_product_localized_texts_push_payload(pid: int):
     if not routes._can_access_product(product):
         abort(404)
     result = routes._build_product_localized_texts_push_preview_response(product)
-    return jsonify(result.payload), result.status_code
+    return routes._media_push_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/product-localized-texts-push", methods=["POST"])
@@ -165,4 +170,4 @@ def api_product_localized_texts_push(pid: int):
     if not routes._can_access_product(product):
         abort(404)
     result = routes._build_product_localized_texts_push_response(product)
-    return jsonify(result.payload), result.status_code
+    return routes._media_push_flask_response(result)
