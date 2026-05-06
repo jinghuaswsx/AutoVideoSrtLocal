@@ -2391,6 +2391,18 @@ def test_translation_delete_routes_do_not_import_missing_web_services_cleanup():
         assert "from web.services import cleanup" not in source
 
 
+def test_de_fr_translate_json_responses_live_outside_route_modules():
+    for path in [
+        Path("web/routes/de_translate.py"),
+        Path("web/routes/fr_translate.py"),
+    ]:
+        source = path.read_text(encoding="utf-8")
+        assert "jsonify(" not in source
+        assert "translate_route_flask_response" in source
+        assert "build_translate_route_payload_response" in source
+    assert Path("web/services/translate_route_responses.py").exists()
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

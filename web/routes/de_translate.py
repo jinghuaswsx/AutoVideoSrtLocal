@@ -7,7 +7,7 @@ import os
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, jsonify, send_file, abort
+from flask import Blueprint, render_template, request, send_file, abort
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -17,10 +17,20 @@ from pipeline.alignment import build_script_segments
 from web import store
 from web.services import de_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
+from web.services.translate_route_responses import (
+    build_translate_route_payload_response,
+    translate_route_flask_response,
+)
 
 log = logging.getLogger(__name__)
 
 bp = Blueprint("de_translate", __name__)
+
+
+def _json_response(payload: dict, status_code: int = 200):
+    return translate_route_flask_response(
+        build_translate_route_payload_response(payload, status_code)
+    )
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -93,16 +103,16 @@ def detail(task_id: str):
 def upload_and_start():
     """上传视频，创建德语翻译任务。默认源语言为英文，可在详情页手动切换。"""
     if "video" not in request.files:
-        return jsonify({"error": "No video file"}), 400
+        return _json_response({"error": "No video file"}, 400)
     file = request.files["video"]
     if not file.filename:
-        return jsonify({"error": "Empty filename"}), 400
+        return _json_response({"error": "Empty filename"}, 400)
 
     from web.upload_util import build_source_object_info, save_uploaded_video, validate_video_extension
 
     original_filename = os.path.basename(file.filename)
     if not validate_video_extension(original_filename):
-        return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
+        return _json_response({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}, 400)
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -136,18 +146,18 @@ def upload_and_start():
         ),
         delivery_mode="local_primary",
     )
-    return jsonify({"task_id": task_id}), 201
+    return _json_response({"task_id": task_id}, 201)
 
 
 @bp.route("/api/de-translate/bootstrap", methods=["POST"])
 @login_required
 def bootstrap_upload():
-    return jsonify({"error": "新建德语翻译任务已切换为本地上传，请改用 multipart /api/de-translate/start"}), 410
+    return _json_response({"error": "新建德语翻译任务已切换为本地上传，请改用 multipart /api/de-translate/start"}, 410)
 
 @bp.route("/api/de-translate/complete", methods=["POST"])
 @login_required
 def complete_upload():
-    return jsonify({"error": "新建德语翻译任务已切换为本地上传，TOS complete 创建任务入口已停用"}), 410
+    return _json_response({"error": "新建德语翻译任务已切换为本地上传，TOS complete 创建任务入口已停用"}, 410)
 
 @bp.route("/api/de-translate/<task_id>", methods=["GET"])
 @login_required
@@ -155,8 +165,8 @@ def get_task(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
-    return jsonify(task)
+        return _json_response({"error": "Task not found"}, 404)
+    return _json_response(task)
 
 
 @bp.route("/api/de-translate/<task_id>/restart", methods=["POST"])
@@ -166,7 +176,7 @@ def restart(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     from web.services.task_restart import restart_task
@@ -182,7 +192,7 @@ def restart(task_id):
         user_id=current_user.id,
         runner=de_pipeline_runner,
     )
-    return jsonify({"status": "restarted", "task": updated})
+    return _json_response({"status": "restarted", "task": updated})
 
 
 @bp.route("/api/de-translate/<task_id>/start", methods=["POST"])
@@ -191,7 +201,7 @@ def start(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     store.update(
@@ -207,7 +217,7 @@ def start(task_id):
 
     de_pipeline_runner.start(task_id, user_id=current_user.id)
     updated_task = store.get(task_id) or task
-    return jsonify({"status": "started", "task": updated_task})
+    return _json_response({"status": "started", "task": updated_task})
 
 
 @bp.route("/api/de-translate/<task_id>/source-language", methods=["PUT"])
@@ -215,13 +225,13 @@ def start(task_id):
 def update_source_language(task_id):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     body = request.get_json(silent=True) or {}
     lang = body.get("source_language")
     if lang not in ("zh", "en"):
-        return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
+        return _json_response({"error": "source_language must be 'zh' or 'en'"}, 400)
     store.update(task_id, source_language=lang, user_specified_source_language=True)
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/de-translate/<task_id>/alignment", methods=["PUT"])
@@ -229,12 +239,12 @@ def update_source_language(task_id):
 def update_alignment(task_id):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     break_after = body.get("break_after")
     if not isinstance(break_after, list):
-        return jsonify({"error": "break_after required"}), 400
+        return _json_response({"error": "break_after required"}, 400)
 
     source_language = body.get("source_language")
     if source_language in ("zh", "en"):
@@ -258,7 +268,7 @@ def update_alignment(task_id):
         store.update(task_id, _translate_pre_select=True)
     else:
         de_pipeline_runner.resume(task_id, "translate", user_id=current_user.id)
-    return jsonify({"status": "ok", "script_segments": script_segments})
+    return _json_response({"status": "ok", "script_segments": script_segments})
 
 
 @bp.route("/api/de-translate/<task_id>/segments", methods=["PUT"])
@@ -267,7 +277,7 @@ def update_segments(task_id):
     """用户确认/编辑德语翻译结果。"""
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     segments = body.get("segments")
@@ -294,7 +304,7 @@ def update_segments(task_id):
 
     store.set_current_review_step(task_id, "")
     de_pipeline_runner.resume(task_id, "tts", user_id=current_user.id)
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/de-translate/<task_id>/export", methods=["POST"])
@@ -302,9 +312,9 @@ def update_segments(task_id):
 def export(task_id):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     de_pipeline_runner.resume(task_id, "compose", user_id=current_user.id)
-    return jsonify({"status": "started"})
+    return _json_response({"status": "started"})
 
 
 RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
@@ -316,11 +326,11 @@ def resume(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     body = request.get_json(silent=True) or {}
     start_step = body.get("start_step", "")
     if start_step not in RESUMABLE_STEPS:
-        return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
+        return _json_response({"error": f"start_step must be one of {RESUMABLE_STEPS}"}, 400)
 
     started = False
     for s in RESUMABLE_STEPS:
@@ -332,7 +342,7 @@ def resume(task_id):
 
     store.update(task_id, status="running", current_review_step="")
     de_pipeline_runner.resume(task_id, start_step, user_id=current_user.id)
-    return jsonify({"status": "started", "start_step": start_step})
+    return _json_response({"status": "started", "start_step": start_step})
 
 
 @bp.route("/api/de-translate/<task_id>/download/<file_type>")
@@ -341,7 +351,7 @@ def download(task_id, file_type):
     """下载德语任务产物，TOS 优先 / 本地兜底，与英文模块完全一致。"""
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     variant = request.args.get("variant", "normal")
     return serve_artifact_download(task, task_id, file_type, variant=variant)
@@ -356,7 +366,7 @@ def delete(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     task = store.get(task_id) or {}
     from appcore import cleanup
@@ -374,7 +384,7 @@ def delete(task_id):
         (task_id,),
     )
     store.update(task_id, status="deleted")
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/de-translate/<task_id>/artifact/<name>")
@@ -382,7 +392,7 @@ def delete(task_id):
 def get_artifact(task_id, name):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     variant = request.args.get("variant") or None
 
@@ -401,7 +411,7 @@ def get_artifact(task_id, name):
     path = preview_files.get(name)
     if path:
         return safe_task_file_response(task, path)
-    return jsonify({"error": "Artifact not found"}), 404
+    return _json_response({"error": "Artifact not found"}, 404)
 
 
 _ALLOWED_ROUND_KINDS = {
@@ -424,7 +434,7 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
     filename = filename_pattern.format(r=round_index)
@@ -453,15 +463,15 @@ def run_ai_analysis(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     task = store.get(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     if (task.get("steps") or {}).get("analysis") == "running":
-        return jsonify({"error": "AI 分析正在运行中"}), 409
+        return _json_response({"error": "AI 分析正在运行中"}, 409)
 
     if not de_pipeline_runner.run_analysis(task_id, user_id=current_user.id):
-        return jsonify({"error": "AI 分析正在运行中"}), 409
-    return jsonify({"status": "started"})
+        return _json_response({"error": "AI 分析正在运行中"}, 409)
+    return _json_response({"status": "started"})
