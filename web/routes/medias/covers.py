@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from pathlib import Path
+from functools import partial
 
 from flask import abort, request, url_for
 from flask_login import current_user, login_required
@@ -27,6 +27,10 @@ from web.services.media_covers import (
     build_product_cover_bootstrap_response as _build_product_cover_bootstrap_response_impl,
     build_raw_source_cover_object_response as _build_raw_source_cover_object_response_impl,
     build_raw_source_video_object_response as _build_raw_source_video_object_response_impl,
+    cache_item_cover_bytes as _item_cover_bytes_cache_impl,
+    cache_item_cover_object as _item_cover_object_cache_impl,
+    cache_product_cover_bytes as _product_cover_bytes_cache_impl,
+    cache_product_cover_object as _product_cover_object_cache_impl,
     item_thumbnail_file_flask_response as _item_thumbnail_file_flask_response,
     media_cover_flask_response as _media_cover_flask_response_impl,
     media_cover_object_flask_response as _media_cover_object_flask_response_impl,
@@ -128,14 +132,6 @@ def _build_product_cover_bootstrap_response(pid, body):
     )
 
 
-def _cache_item_cover_object(item_id, item, object_key):
-    product_dir = THUMB_DIR / str(item["product_id"])
-    product_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(object_key).suffix or ".jpg"
-    local = product_dir / f"item_cover_{item_id}{ext}"
-    _download_media_object(object_key, str(local))
-
-
 def _build_item_cover_update_response(item_id, item, body):
     return _build_item_cover_update_response_impl(
         item_id,
@@ -143,7 +139,12 @@ def _build_item_cover_update_response(item_id, item, body):
         body,
         is_media_available_fn=_is_media_available,
         update_item_cover_fn=medias.update_item_cover,
-        cache_item_cover_fn=_cache_item_cover_object,
+        cache_item_cover_fn=partial(
+            _item_cover_object_cache_impl,
+            thumb_dir=THUMB_DIR,
+            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
+            download_media_object_fn=_download_media_object,
+        ),
     )
 
 
@@ -155,23 +156,13 @@ def _build_item_cover_set_response(item_id, item, body):
         is_media_available_fn=_is_media_available,
         delete_media_object_fn=_delete_media_object,
         update_item_cover_fn=medias.update_item_cover,
-        cache_item_cover_fn=_cache_item_cover_object,
+        cache_item_cover_fn=partial(
+            _item_cover_object_cache_impl,
+            thumb_dir=THUMB_DIR,
+            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
+            download_media_object_fn=_download_media_object,
+        ),
     )
-
-
-def _cache_product_cover_object(pid, lang, object_key):
-    product_dir = THUMB_DIR / str(pid)
-    product_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(object_key).suffix or ".jpg"
-    local = product_dir / f"cover_{lang}{ext}"
-    _download_media_object(object_key, str(local))
-
-
-def _cache_product_cover_bytes(pid, lang, ext, data):
-    product_dir = THUMB_DIR / str(pid)
-    product_dir.mkdir(parents=True, exist_ok=True)
-    local = _safe_thumb_cache_path(product_dir / f"cover_{lang}{ext or '.jpg'}")
-    local.write_bytes(data)
 
 
 def _build_product_cover_complete_response(pid, body):
@@ -183,7 +174,12 @@ def _build_product_cover_complete_response(pid, body):
         get_product_covers_fn=medias.get_product_covers,
         delete_media_object_fn=_delete_media_object,
         set_product_cover_fn=medias.set_product_cover,
-        cache_product_cover_fn=_cache_product_cover_object,
+        cache_product_cover_fn=partial(
+            _product_cover_object_cache_impl,
+            thumb_dir=THUMB_DIR,
+            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
+            download_media_object_fn=_download_media_object,
+        ),
         schedule_material_evaluation_fn=_schedule_material_evaluation,
     )
 
@@ -221,7 +217,11 @@ def _build_product_cover_from_url_response(pid, body):
         get_product_covers_fn=medias.get_product_covers,
         delete_media_object_fn=_delete_media_object,
         set_product_cover_fn=medias.set_product_cover,
-        cache_product_cover_bytes_fn=_cache_product_cover_bytes,
+        cache_product_cover_bytes_fn=partial(
+            _product_cover_bytes_cache_impl,
+            thumb_dir=THUMB_DIR,
+            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
+        ),
         schedule_material_evaluation_fn=_schedule_material_evaluation,
     )
 
@@ -235,13 +235,6 @@ def _build_item_cover_from_url_response(pid, body):
     )
 
 
-def _cache_item_cover_bytes(item_id, item, ext, data):
-    product_dir = THUMB_DIR / str(item["product_id"])
-    product_dir.mkdir(parents=True, exist_ok=True)
-    local = _safe_thumb_cache_path(product_dir / f"item_cover_{item_id}{ext or '.jpg'}")
-    local.write_bytes(data)
-
-
 def _build_item_cover_set_from_url_response(item_id, item, body):
     return _build_item_cover_set_from_url_response_impl(
         item_id,
@@ -251,7 +244,11 @@ def _build_item_cover_set_from_url_response(item_id, item, body):
         download_image_to_local_media_fn=_download_image_to_local_media,
         delete_media_object_fn=_delete_media_object,
         update_item_cover_fn=medias.update_item_cover,
-        cache_item_cover_bytes_fn=_cache_item_cover_bytes,
+        cache_item_cover_bytes_fn=partial(
+            _item_cover_bytes_cache_impl,
+            thumb_dir=THUMB_DIR,
+            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
+        ),
     )
 
 

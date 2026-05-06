@@ -1211,6 +1211,17 @@ def test_media_item_thumbnail_file_response_lives_outside_route_module():
     assert Path("web/services/media_covers.py").exists()
 
 
+def test_media_cover_cache_writes_live_outside_route_module():
+    route_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+
+    assert "_cache_item_cover_object" not in route_source
+    assert "_cache_product_cover_object" not in route_source
+    assert "_cache_product_cover_bytes" not in route_source
+    assert "_cache_item_cover_bytes" not in route_source
+    assert "write_bytes(" not in route_source
+    assert Path("web/services/media_covers.py").exists()
+
+
 def test_media_cover_from_url_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

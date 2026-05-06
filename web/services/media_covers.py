@@ -165,6 +165,68 @@ def product_cover_file_flask_response(result: ProductCoverFileResponse):
     return send_file(str(result.local_path), mimetype=result.mimetype)
 
 
+def cache_item_cover_object(
+    item_id: int,
+    item: dict,
+    object_key: str,
+    *,
+    thumb_dir: str | os.PathLike,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
+    download_media_object_fn: Callable[[str, str], object],
+) -> None:
+    product_dir = Path(thumb_dir) / str(item["product_id"])
+    product_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(object_key).suffix or ".jpg"
+    local = safe_thumb_cache_path_fn(product_dir / f"item_cover_{item_id}{ext}")
+    download_media_object_fn(object_key, str(local))
+
+
+def cache_product_cover_object(
+    product_id: int,
+    lang: str,
+    object_key: str,
+    *,
+    thumb_dir: str | os.PathLike,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
+    download_media_object_fn: Callable[[str, str], object],
+) -> None:
+    product_dir = Path(thumb_dir) / str(product_id)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(object_key).suffix or ".jpg"
+    local = safe_thumb_cache_path_fn(product_dir / f"cover_{lang}{ext}")
+    download_media_object_fn(object_key, str(local))
+
+
+def cache_product_cover_bytes(
+    product_id: int,
+    lang: str,
+    ext: str,
+    data: bytes,
+    *,
+    thumb_dir: str | os.PathLike,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
+) -> None:
+    product_dir = Path(thumb_dir) / str(product_id)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    local = safe_thumb_cache_path_fn(product_dir / f"cover_{lang}{ext or '.jpg'}")
+    local.write_bytes(data)
+
+
+def cache_item_cover_bytes(
+    item_id: int,
+    item: dict,
+    ext: str,
+    data: bytes,
+    *,
+    thumb_dir: str | os.PathLike,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
+) -> None:
+    product_dir = Path(thumb_dir) / str(item["product_id"])
+    product_dir.mkdir(parents=True, exist_ok=True)
+    local = safe_thumb_cache_path_fn(product_dir / f"item_cover_{item_id}{ext or '.jpg'}")
+    local.write_bytes(data)
+
+
 def build_product_cover_bootstrap_response(
     user_id: int,
     product_id: int,

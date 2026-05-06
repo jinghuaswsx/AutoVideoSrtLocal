@@ -597,3 +597,82 @@ def test_build_item_cover_set_from_url_response_updates_and_caches():
         ("update", 701, "new/item.png"),
         ("cache", 701, 123, ".png", b"image-bytes"),
     ]
+
+
+def test_cache_product_cover_object_downloads_to_safe_cache_path(tmp_path):
+    from web.services.media_covers import cache_product_cover_object
+
+    calls = []
+
+    def safe_thumb_cache_path(path):
+        calls.append(("safe", path.relative_to(tmp_path).as_posix()))
+        return path
+
+    cache_product_cover_object(
+        123,
+        "en",
+        "objects/cover.webp",
+        thumb_dir=tmp_path,
+        safe_thumb_cache_path_fn=safe_thumb_cache_path,
+        download_media_object_fn=lambda object_key, destination: calls.append(("download", object_key, destination)),
+    )
+
+    assert calls == [
+        ("safe", "123/cover_en.webp"),
+        ("download", "objects/cover.webp", str(tmp_path / "123" / "cover_en.webp")),
+    ]
+
+
+def test_cache_item_cover_object_downloads_to_safe_cache_path(tmp_path):
+    from web.services.media_covers import cache_item_cover_object
+
+    calls = []
+
+    def safe_thumb_cache_path(path):
+        calls.append(("safe", path.relative_to(tmp_path).as_posix()))
+        return path
+
+    cache_item_cover_object(
+        701,
+        {"product_id": 123},
+        "objects/item.png",
+        thumb_dir=tmp_path,
+        safe_thumb_cache_path_fn=safe_thumb_cache_path,
+        download_media_object_fn=lambda object_key, destination: calls.append(("download", object_key, destination)),
+    )
+
+    assert calls == [
+        ("safe", "123/item_cover_701.png"),
+        ("download", "objects/item.png", str(tmp_path / "123" / "item_cover_701.png")),
+    ]
+
+
+def test_cache_cover_bytes_write_to_safe_cache_paths(tmp_path):
+    from web.services.media_covers import cache_item_cover_bytes, cache_product_cover_bytes
+
+    calls = []
+
+    def safe_thumb_cache_path(path):
+        calls.append(path.relative_to(tmp_path).as_posix())
+        return path
+
+    cache_product_cover_bytes(
+        123,
+        "de",
+        ".webp",
+        b"product-cover",
+        thumb_dir=tmp_path,
+        safe_thumb_cache_path_fn=safe_thumb_cache_path,
+    )
+    cache_item_cover_bytes(
+        701,
+        {"product_id": 123},
+        ".png",
+        b"item-cover",
+        thumb_dir=tmp_path,
+        safe_thumb_cache_path_fn=safe_thumb_cache_path,
+    )
+
+    assert calls == ["123/cover_de.webp", "123/item_cover_701.png"]
+    assert (tmp_path / "123" / "cover_de.webp").read_bytes() == b"product-cover"
+    assert (tmp_path / "123" / "item_cover_701.png").read_bytes() == b"item-cover"
