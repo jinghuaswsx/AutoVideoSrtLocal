@@ -1300,6 +1300,25 @@ def test_media_route_helpers_do_not_serialize_json_responses():
     assert "PRODUCT_NOT_LISTED_PAYLOAD" in helper_source
 
 
+def test_admin_runtime_active_tasks_response_lives_outside_route_module():
+    module_source = Path("web/routes/admin_runtime.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_function = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "active_tasks"
+    )
+    route_source = ast.get_source_segment(module_source, route_function) or ""
+
+    assert "jsonify(" not in route_source
+    assert "snapshot_active_tasks" not in route_source
+    assert "shutdown_coordinator" not in route_source
+    assert "current_scheduler" not in route_source
+    assert "build_active_tasks_snapshot_response" in route_source
+    assert "admin_runtime_flask_response" in route_source
+    assert Path("web/services/admin_runtime.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
