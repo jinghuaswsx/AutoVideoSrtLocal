@@ -2403,6 +2403,15 @@ def test_de_fr_translate_json_responses_live_outside_route_modules():
     assert Path("web/services/translate_route_responses.py").exists()
 
 
+def test_ja_translate_json_responses_live_outside_route_module():
+    source = Path("web/routes/ja_translate.py").read_text(encoding="utf-8")
+
+    assert "jsonify(" not in source
+    assert "translate_route_flask_response" in source
+    assert "build_translate_route_payload_response" in source
+    assert Path("web/services/translate_route_responses.py").exists()
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

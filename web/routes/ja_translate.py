@@ -7,7 +7,7 @@ import os
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, abort, jsonify, render_template, request, send_file
+from flask import Blueprint, abort, render_template, request, send_file
 from flask_login import current_user, login_required
 
 from appcore import task_state
@@ -25,10 +25,21 @@ from web.services.translate_detail_protocol import (
     normalize_confirm_voice_payload,
     resolve_round_file_entry,
 )
+from web.services.translate_route_responses import (
+    build_translate_route_payload_response,
+    translate_route_flask_response,
+)
 
 log = logging.getLogger(__name__)
 
 bp = Blueprint("ja_translate", __name__)
+
+
+def _json_response(payload: dict, status_code: int = 200):
+    return translate_route_flask_response(
+        build_translate_route_payload_response(payload, status_code)
+    )
+
 
 _ALLOWED_ROUND_KINDS = {
     "localized_translation": ("localized_translation.round_{r}.json", "application/json"),
@@ -254,12 +265,12 @@ def detail(task_id: str):
 @login_required
 def upload_and_start():
     if "video" not in request.files:
-        return jsonify({"error": "No video file"}), 400
+        return _json_response({"error": "No video file"}, 400)
     try:
         result = create_ja_translate_task_from_upload(request.files["video"], user_id=current_user.id, auto_start=True)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"task_id": result["task_id"], "redirect_url": result["redirect_url"]}), 201
+        return _json_response({"error": str(exc)}, 400)
+    return _json_response({"task_id": result["task_id"], "redirect_url": result["redirect_url"]}, 201)
 
 
 @bp.route("/api/ja-translate/<task_id>/subtitle-preview", methods=["GET"])
@@ -267,8 +278,8 @@ def upload_and_start():
 def subtitle_preview(task_id: str):
     row = _query_viewable_project(task_id, "id, user_id", include_deleted=False)
     if not row:
-        return jsonify({"error": "Task not found"}), 404
-    return jsonify(build_multi_translate_preview_payload(
+        return _json_response({"error": "Task not found"}, 404)
+    return _json_response(build_multi_translate_preview_payload(
         task_id, row.get("user_id") or current_user.id,
         api_base="/api/ja-translate",
     ))
@@ -293,7 +304,7 @@ def voice_library_for_task(task_id: str):
             page_size=500,
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}, 400)
 
     owner_user_id = row.get("user_id") or current_user.id
     payload = build_voice_library_payload(
@@ -302,7 +313,7 @@ def voice_library_for_task(task_id: str):
         items=data.get("items", []),
         total=data.get("total", 0),
     )
-    return jsonify(payload)
+    return _json_response(payload)
 
 
 @bp.route("/api/ja-translate/<task_id>", methods=["GET"])
@@ -311,8 +322,8 @@ def get_task(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
-    return jsonify(task)
+        return _json_response({"error": "Task not found"}, 404)
+    return _json_response(task)
 
 
 @bp.route("/api/ja-translate/<task_id>/rematch", methods=["POST"])
@@ -328,11 +339,11 @@ def rematch_voice(task_id: str):
     body = request.get_json(silent=True) or {}
     gender = (body.get("gender") or "").strip().lower() or None
     if gender and gender not in {"male", "female"}:
-        return jsonify({"error": "gender must be male|female|null"}), 400
+        return _json_response({"error": "gender must be male|female|null"}, 400)
 
     embedding_b64 = state.get("voice_match_query_embedding")
     if not embedding_b64:
-        return jsonify({"error": "voice_match 尚未完成，暂时不能重算候选音色"}), 409
+        return _json_response({"error": "voice_match 尚未完成，暂时不能重算候选音色"}, 409)
 
     import base64
     from appcore.video_translate_defaults import resolve_default_voice
@@ -343,7 +354,7 @@ def rematch_voice(task_id: str):
     try:
         vec = deserialize_embedding(base64.b64decode(embedding_b64))
     except Exception:
-        return jsonify({"error": "query embedding 解码失败"}), 500
+        return _json_response({"error": "query embedding 解码失败"}, 500)
 
     # 用 owner 的默认音色排除规则，保证 admin 浏览时与 owner 看到的一致
     default_voice_id = resolve_default_voice("ja", user_id=owner_user_id)
@@ -369,7 +380,7 @@ def rematch_voice(task_id: str):
         state["voice_match_candidates"] = candidates
         save_project_state(task_id, state, execute_func=db_execute)
         task_state.update(task_id, voice_match_candidates=candidates)
-    return jsonify({
+    return _json_response({
         "ok": True, "gender": gender,
         "candidates": candidates, "extra_items": extra_items,
     })
@@ -393,7 +404,7 @@ def confirm_voice(task_id: str):
             lang="ja",
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}, 400)
 
     state["selected_voice_id"] = normalized["voice_id"]
     if normalized["voice_name"]:
@@ -434,7 +445,7 @@ def confirm_voice(task_id: str):
         except Exception:
             log.exception("failed to resume parent bulk_translate task after voice confirm")
 
-    return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
+    return _json_response({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
 
 
 @bp.route("/api/ja-translate/<task_id>/start", methods=["POST"])
@@ -443,7 +454,7 @@ def start(task_id: str):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     store.update(
@@ -459,7 +470,7 @@ def start(task_id: str):
         source_language=body.get("source_language") if body.get("source_language") in ("zh", "en") else task.get("source_language", "en"),
     )
     ja_pipeline_runner.start(task_id, user_id=current_user.id)
-    return jsonify({"status": "started", "task": store.get(task_id) or task})
+    return _json_response({"status": "started", "task": store.get(task_id) or task})
 
 
 @bp.route("/api/ja-translate/<task_id>/restart", methods=["POST"])
@@ -468,7 +479,7 @@ def restart(task_id: str):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     from web.services.task_restart import restart_task
@@ -491,7 +502,7 @@ def restart(task_id: str):
         source_language=task.get("source_language", "en"),
         user_specified_source_language=True,
     )
-    return jsonify({"status": "restarted", "task": updated})
+    return _json_response({"status": "restarted", "task": updated})
 
 
 @bp.route("/api/ja-translate/<task_id>/source-language", methods=["PUT"])
@@ -499,13 +510,13 @@ def restart(task_id: str):
 def update_source_language(task_id: str):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     body = request.get_json(silent=True) or {}
     lang = body.get("source_language")
     if lang not in ("zh", "en"):
-        return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
+        return _json_response({"error": "source_language must be 'zh' or 'en'"}, 400)
     store.update(task_id, source_language=lang, user_specified_source_language=True)
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/ja-translate/<task_id>/alignment", methods=["PUT"])
@@ -513,12 +524,12 @@ def update_source_language(task_id: str):
 def update_alignment(task_id: str):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     break_after = body.get("break_after")
     if not isinstance(break_after, list):
-        return jsonify({"error": "break_after required"}), 400
+        return _json_response({"error": "break_after required"}, 400)
 
     source_language = body.get("source_language")
     if source_language in ("zh", "en"):
@@ -544,7 +555,7 @@ def update_alignment(task_id: str):
         store.update(task_id, _translate_pre_select=True)
     else:
         ja_pipeline_runner.resume(task_id, "translate", user_id=current_user.id)
-    return jsonify({"status": "ok", "script_segments": script_segments})
+    return _json_response({"status": "ok", "script_segments": script_segments})
 
 
 @bp.route("/api/ja-translate/<task_id>/segments", methods=["PUT"])
@@ -552,7 +563,7 @@ def update_alignment(task_id: str):
 def update_segments(task_id: str):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     segments = body.get("segments")
@@ -583,7 +594,7 @@ def update_segments(task_id: str):
 
     store.set_current_review_step(task_id, "")
     ja_pipeline_runner.resume(task_id, "tts", user_id=current_user.id)
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/ja-translate/<task_id>/export", methods=["POST"])
@@ -591,9 +602,9 @@ def update_segments(task_id: str):
 def export(task_id: str):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     ja_pipeline_runner.resume(task_id, "compose", user_id=current_user.id)
-    return jsonify({"status": "started"})
+    return _json_response({"status": "started"})
 
 
 RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
@@ -605,11 +616,11 @@ def resume(task_id: str):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     body = request.get_json(silent=True) or {}
     start_step = body.get("start_step", "")
     if start_step not in RESUMABLE_STEPS:
-        return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
+        return _json_response({"error": f"start_step must be one of {RESUMABLE_STEPS}"}, 400)
 
     started = False
     for step in RESUMABLE_STEPS:
@@ -621,7 +632,7 @@ def resume(task_id: str):
 
     store.update(task_id, status="running", current_review_step="")
     ja_pipeline_runner.resume(task_id, start_step, user_id=current_user.id)
-    return jsonify({"status": "started", "start_step": start_step})
+    return _json_response({"status": "started", "start_step": start_step})
 
 
 @bp.route("/api/ja-translate/<task_id>/download/<file_type>")
@@ -629,7 +640,7 @@ def resume(task_id: str):
 def download(task_id: str, file_type: str):
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     variant = request.args.get("variant", "normal")
     return serve_artifact_download(task, task_id, file_type, variant=variant)
 
@@ -642,7 +653,7 @@ def delete(task_id: str):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     task = store.get(task_id) or {}
     from appcore import cleanup
@@ -658,7 +669,7 @@ def delete(task_id: str):
 
     db_execute("UPDATE projects SET deleted_at=NOW() WHERE id=%s", (task_id,))
     store.update(task_id, status="deleted")
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/ja-translate/<task_id>/artifact/<name>")
@@ -666,7 +677,7 @@ def delete(task_id: str):
 def get_artifact(task_id: str, name: str):
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     variant = request.args.get("variant") or None
     from web.services.artifact_download import (
@@ -684,7 +695,7 @@ def get_artifact(task_id: str, name: str):
     path = preview_files.get(name)
     if path:
         return safe_task_file_response(task, path)
-    return jsonify({"error": "Artifact not found"}), 404
+    return _json_response({"error": "Artifact not found"}, 404)
 
 
 @bp.route("/api/ja-translate/<task_id>/round-file/<int:round_index>/<kind>")
@@ -697,7 +708,7 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     path = os.path.join(task.get("task_dir", ""), filename)
     from web.services.artifact_download import safe_task_file_response
@@ -716,5 +727,5 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 @login_required
 def run_ai_analysis(task_id: str):
     if not _query_viewable_project(task_id, "id", include_deleted=False):
-        return jsonify({"error": "Task not found"}), 404
-    return jsonify({"error": "analysis not supported for ja_translate"}), 501
+        return _json_response({"error": "Task not found"}, 404)
+    return _json_response({"error": "analysis not supported for ja_translate"}, 501)
