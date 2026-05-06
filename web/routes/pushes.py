@@ -5,13 +5,21 @@ import logging
 from functools import wraps
 
 import requests
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
 import config
+from web.services.pushes_responses import (
+    build_pushes_payload_response,
+    pushes_flask_response,
+)
 
 log = logging.getLogger(__name__)
 bp = Blueprint("pushes", __name__, url_prefix="/pushes")
+
+
+def _json_response(payload, status_code: int = 200):
+    return pushes_flask_response(build_pushes_payload_response(payload, status_code))
 
 
 def _is_admin() -> bool:
@@ -22,7 +30,7 @@ def admin_required(fn):
     @wraps(fn)
     def _wrap(*a, **kw):
         if not _is_admin():
-            return jsonify({"error": "仅管理员可操作"}), 403
+            return _json_response({"error": "仅管理员可操作"}, 403)
         return fn(*a, **kw)
     return _wrap
 
@@ -30,12 +38,12 @@ def admin_required(fn):
 def _product_links_push_error_response(exc: Exception):
     message = str(exc)
     if isinstance(exc, pushes.ProductNotListedError):
-        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送投放链接"}), 409
+        return _json_response({"error": "product_not_listed", "message": "产品已下架，不能推送投放链接"}, 409)
     if isinstance(exc, pushes.ProductLinksPushConfigError):
-        return jsonify({"error": message or "push_product_links_config_missing"}), 500
+        return _json_response({"error": message or "push_product_links_config_missing"}, 500)
     if isinstance(exc, pushes.ProductLinksPayloadError):
-        return jsonify({"error": message or "product_links_payload_invalid"}), 400
-    return jsonify({"error": "product_links_push_failed", "message": message}), 500
+        return _json_response({"error": message or "product_links_payload_invalid"}, 400)
+    return _json_response({"error": "product_links_push_failed", "message": message}, 500)
 
 
 @bp.route("/")
@@ -170,7 +178,7 @@ def api_list():
         try:
             owner_id = int(owner_id_raw)
         except ValueError:
-            return jsonify({"error": "invalid_owner_id"}), 400
+            return _json_response({"error": "invalid_owner_id"}, 400)
 
     page = max(1, int(request.args.get("page") or 1))
     limit = _PAGE_SIZE_DEFAULT
@@ -197,7 +205,7 @@ def api_list():
     start = (page - 1) * limit
     page_items = items[start:start + limit]
 
-    return jsonify({
+    return _json_response({
         "items": page_items,
         "total": total,
         "page": page,
@@ -211,25 +219,25 @@ def api_list():
 def api_build_payload(item_id: int):
     item = medias.get_item(item_id)
     if not item:
-        return jsonify({"error": "item_not_found"}), 404
+        return _json_response({"error": "item_not_found"}, 404)
     product = medias.get_product(item["product_id"])
     if not product:
-        return jsonify({"error": "product_not_found"}), 404
+        return _json_response({"error": "product_not_found"}, 404)
     readiness = pushes.compute_readiness(item, product)
     if not pushes.is_ready(readiness):
         missing = [k for k, v in readiness.items() if not v]
-        return jsonify({"error": "not_ready", "missing": missing}), 400
+        return _json_response({"error": "not_ready", "missing": missing}, 400)
 
     lang = item.get("lang") or "en"
     product_code = (product.get("product_code") or "").strip().lower()
     ad_url = pushes.build_product_link(lang, product_code)
     ok, err = pushes.probe_ad_url(ad_url)
     if not ok:
-        return jsonify({
+        return _json_response({
             "error": "link_not_adapted",
             "url": ad_url,
             "detail": err,
-        }), 400
+        }, 400)
 
     payload = pushes.build_item_payload(item, product)
     mk_id = product.get("mk_id")
@@ -246,7 +254,7 @@ def api_build_payload(item_id: int):
             "payload": None,
             "links": [],
         }
-    return jsonify({
+    return _json_response({
         "payload": payload,
         "push_url": pushes.get_push_target_url(),
         "mk_id": mk_id,
@@ -271,7 +279,7 @@ def api_retry_quality_check(item_id: int):
         status="success" if status == 200 else "failed",
         detail={"result_status": result.get("status")},
     )
-    return jsonify(result), status
+    return _json_response(result, status)
 
 
 @bp.route("/api/items/<int:item_id>/push", methods=["POST"])
@@ -281,35 +289,35 @@ def api_push(item_id: int):
     """推送入口：进程内组装 payload + 写日志/状态，只对下游外部系统发一次 HTTP。"""
     push_url = pushes.get_push_target_url()
     if not push_url:
-        return jsonify({"error": "push_target_not_configured"}), 500
+        return _json_response({"error": "push_target_not_configured"}, 500)
 
     item = medias.get_item(item_id)
     if not item:
-        return jsonify({"error": "item_not_found"}), 404
+        return _json_response({"error": "item_not_found"}, 404)
     product = medias.get_product(item["product_id"])
     if not product:
-        return jsonify({"error": "product_not_found"}), 404
+        return _json_response({"error": "product_not_found"}, 404)
     if item.get("pushed_at"):
-        return jsonify({"error": "already_pushed"}), 409
+        return _json_response({"error": "already_pushed"}, 409)
 
     readiness = pushes.compute_readiness(item, product)
     if not pushes.is_ready(readiness):
         missing = [k for k, v in readiness.items() if not v]
-        return jsonify({"error": "not_ready", "missing": missing}), 400
+        return _json_response({"error": "not_ready", "missing": missing}, 400)
 
     lang = item.get("lang") or "en"
     product_code = (product.get("product_code") or "").strip().lower()
     ad_url = pushes.build_product_link(lang, product_code)
     ok, err = pushes.probe_ad_url(ad_url)
     if not ok:
-        return jsonify({"error": "link_not_adapted", "url": ad_url, "detail": err}), 400
+        return _json_response({"error": "link_not_adapted", "url": ad_url, "detail": err}, 400)
 
     try:
         payload = pushes.build_item_payload(item, product)
     except pushes.ProductNotListedError as exc:
-        return jsonify({"error": "product_not_listed", "detail": str(exc)}), 409
+        return _json_response({"error": "product_not_listed", "detail": str(exc)}, 409)
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
-        return jsonify({"error": "copywriting_invalid", "detail": str(exc)}), 400
+        return _json_response({"error": "copywriting_invalid", "detail": str(exc)}, 400)
 
     try:
         resp = requests.post(
@@ -332,7 +340,7 @@ def api_push(item_id: int):
             status="failed",
             detail={"error": "downstream_unreachable"},
         )
-        return jsonify({"error": "downstream_unreachable", "detail": str(exc)}), 502
+        return _json_response({"error": "downstream_unreachable", "detail": str(exc)}, 502)
 
     body_text = resp.text or ""
     if resp.ok:
@@ -371,7 +379,7 @@ def api_push(item_id: int):
                 int(matched_mk_id)
             )
 
-        return jsonify({
+        return _json_response({
             "ok": True,
             "upstream_status": resp.status_code,
             "response_body": body_text[:4000],
@@ -391,11 +399,11 @@ def api_push(item_id: int):
         status="failed",
         detail={"upstream_status": resp.status_code},
     )
-    return jsonify({
+    return _json_response({
         "error": "downstream_error",
         "upstream_status": resp.status_code,
         "response_body": body_text[:4000],
-    }), 502
+    }, 502)
 
 
 @bp.route("/api/items/<int:item_id>/mark-pushed", methods=["POST"])
@@ -461,7 +469,7 @@ def api_logs(item_id: int):
             "error_message": row["error_message"],
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         })
-    return jsonify({"logs": serialized})
+    return _json_response({"logs": serialized})
 
 
 # ================================================================
@@ -490,8 +498,8 @@ def api_stats():
     try:
         result = pushes.aggregate_stats_by_owner(date_from, date_to)
     except ValueError as exc:
-        return jsonify({"error": "invalid_date_range", "detail": str(exc)}), 400
-    return jsonify(result)
+        return _json_response({"error": "invalid_date_range", "detail": str(exc)}, 400)
+    return _json_response(result)
 
 
 # ================================================================
@@ -505,27 +513,27 @@ def api_stats():
 def api_push_localized_texts(item_id: int):
     item = medias.get_item(item_id)
     if not item:
-        return jsonify({"error": "item_not_found"}), 404
+        return _json_response({"error": "item_not_found"}, 404)
     product = medias.get_product(item["product_id"])
     if not product:
-        return jsonify({"error": "product_not_found"}), 404
+        return _json_response({"error": "product_not_found"}, 404)
     if not medias.is_product_listed(product):
-        return jsonify({"error": "product_not_listed"}), 409
+        return _json_response({"error": "product_not_listed"}, 409)
     mk_id = product.get("mk_id")
     if not mk_id:
-        return jsonify({"error": "mk_id_missing", "detail": "产品缺少 mk_id"}), 400
+        return _json_response({"error": "mk_id_missing", "detail": "产品缺少 mk_id"}, 400)
 
     target_url = pushes.build_localized_texts_target_url(mk_id)
     if not target_url:
-        return jsonify({"error": "push_localized_texts_base_url_missing"}), 500
+        return _json_response({"error": "push_localized_texts_base_url_missing"}, 500)
 
     headers = pushes.build_localized_texts_headers()
     if "Authorization" not in headers and "Cookie" not in headers:
-        return jsonify({"error": "push_localized_texts_credentials_missing"}), 500
+        return _json_response({"error": "push_localized_texts_credentials_missing"}, 500)
 
     body = pushes.build_localized_texts_request(item)
     if not body.get("texts"):
-        return jsonify({"error": "localized_texts_empty"}), 400
+        return _json_response({"error": "localized_texts_empty"}, 400)
 
     try:
         resp = requests.post(target_url, json=body, headers=headers, timeout=30)
@@ -536,11 +544,11 @@ def api_push_localized_texts(item_id: int):
             status="failed",
             detail={"error": "downstream_unreachable"},
         )
-        return jsonify({
+        return _json_response({
             "error": "downstream_unreachable",
             "detail": str(exc),
             "target_url": target_url,
-        }), 502
+        }, 502)
 
     body_text = resp.text or ""
     if resp.ok:
@@ -549,7 +557,7 @@ def api_push_localized_texts(item_id: int):
             "push_localized_texts_succeeded",
             detail={"upstream_status": resp.status_code},
         )
-        return jsonify({
+        return _json_response({
             "ok": True,
             "upstream_status": resp.status_code,
             "response_body": body_text[:4000],
@@ -561,12 +569,12 @@ def api_push_localized_texts(item_id: int):
         status="failed",
         detail={"upstream_status": resp.status_code},
     )
-    return jsonify({
+    return _json_response({
         "error": "downstream_error",
         "upstream_status": resp.status_code,
         "response_body": body_text[:4000],
         "target_url": target_url,
-    }), 502
+    }, 502)
 
 
 @bp.route("/api/items/<int:item_id>/product-links-push", methods=["POST"])
@@ -575,10 +583,10 @@ def api_push_localized_texts(item_id: int):
 def api_push_product_links(item_id: int):
     item = medias.get_item(item_id)
     if not item:
-        return jsonify({"error": "item_not_found"}), 404
+        return _json_response({"error": "item_not_found"}, 404)
     product = medias.get_product(item["product_id"])
     if not product:
-        return jsonify({"error": "product_not_found"}), 404
+        return _json_response({"error": "product_not_found"}, 404)
     try:
         result = pushes.push_product_links(product)
     except Exception as exc:
@@ -590,7 +598,7 @@ def api_push_product_links(item_id: int):
         status="success" if result.get("ok") else "failed",
         detail={"http_status": status},
     )
-    return jsonify(result), status
+    return _json_response(result, status)
 
 
 # ================================================================
@@ -614,7 +622,7 @@ def api_get_push_credentials():
     """返回当前凭据（auth / cookie 脱敏）+ 目标地址。"""
     auth = pushes.get_localized_texts_authorization()
     cookie = pushes.get_localized_texts_cookie()
-    return jsonify({
+    return _json_response({
         "push_target_url": pushes.get_push_target_url(),
         "push_localized_texts_base_url": pushes.get_localized_texts_base_url(),
         "push_localized_texts_authorization_masked": _mask_secret(auth),
@@ -665,4 +673,4 @@ def api_set_push_credentials():
             "cleared_keys": [key for key in updated if clear_flags.get(key)],
         },
     )
-    return jsonify({"ok": True, "updated": updated})
+    return _json_response({"ok": True, "updated": updated})

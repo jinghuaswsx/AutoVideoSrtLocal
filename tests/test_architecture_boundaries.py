@@ -3154,6 +3154,15 @@ def test_task_translate_billing_provider_mapping_lives_outside_route_module():
     assert Path("web/services/task_llm.py").exists()
 
 
+def test_pushes_json_responses_live_outside_route_module():
+    source = Path("web/routes/pushes.py").read_text(encoding="utf-8")
+
+    assert "jsonify(" not in source
+    assert "pushes_flask_response" in source
+    assert "build_pushes_payload_response" in source
+    assert Path("web/services/pushes_responses.py").exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",
