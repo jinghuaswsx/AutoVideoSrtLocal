@@ -1893,6 +1893,40 @@ def test_translate_lab_api_responses_live_outside_route_module():
     assert Path("web/services/translate_lab.py").exists()
 
 
+def test_order_profit_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/order_profit.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_names = {
+        "api_summary",
+        "api_orders_list",
+        "api_order_detail",
+        "api_lines",
+        "api_loss_alerts",
+        "api_import_payments_csv",
+        "api_payments_reconcile",
+        "api_unmatched_campaigns",
+        "api_list_manual_matches",
+        "api_create_manual_match",
+        "api_delete_manual_match",
+        "api_products_for_match",
+        "api_cost_completeness",
+    }
+    route_sources = {
+        node.name: ast.get_source_segment(module_source, node) or ""
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name in route_names
+    }
+    route_source = "\n".join(route_sources.values())
+
+    assert set(route_sources) == route_names
+    assert "jsonify(" not in module_source
+    assert "order_profit_flask_response" in route_source
+    assert "build_order_profit_payload_response" in route_source
+    assert "build_order_profit_error_response" in route_source
+    assert "build_order_profit_ok_response" in route_source
+    assert Path("web/services/order_profit.py").exists()
+
+
 def test_media_shopify_image_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/shopify_image.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

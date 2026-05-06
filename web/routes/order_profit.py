@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 import io
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import login_required
 
 from appcore.db import query
@@ -35,6 +35,12 @@ from appcore.order_analytics.shopify_payments_import import (
     reconcile_against_estimates,
 )
 from web.auth import permission_required
+from web.services.order_profit import (
+    build_order_profit_error_response,
+    build_order_profit_ok_response,
+    build_order_profit_payload_response,
+    order_profit_flask_response,
+)
 
 log = logging.getLogger(__name__)
 
@@ -109,13 +115,15 @@ def api_summary():
         (summary["ok"]["profit"] / summary["ok"]["revenue"]) * 100
         if summary["ok"]["revenue"] > 0 else None
     )
-    return jsonify({
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
-        "summary": summary,
-        "unallocated_ad_spend_usd": unallocated,
-        "margin_pct": round(margin, 2) if margin is not None else None,
-    })
+    return order_profit_flask_response(
+        build_order_profit_payload_response({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "summary": summary,
+            "unallocated_ad_spend_usd": unallocated,
+            "margin_pct": round(margin, 2) if margin is not None else None,
+        })
+    )
 
 
 @bp.route("/order-profit/api/orders")
@@ -144,15 +152,17 @@ def api_orders_list():
     summary = get_order_profit_summary_for_window(
         date_from=date_from, date_to=date_to
     )
-    return jsonify({
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
-        "filter_status": status,
-        "limit": limit,
-        "offset": offset,
-        "orders": orders,
-        "summary": summary,
-    })
+    return order_profit_flask_response(
+        build_order_profit_payload_response({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "filter_status": status,
+            "limit": limit,
+            "offset": offset,
+            "orders": orders,
+            "summary": summary,
+        })
+    )
 
 
 @bp.route("/order-profit/api/orders/<dxm_package_id>")
@@ -162,9 +172,14 @@ def api_order_detail(dxm_package_id):
     """单订单详情：订单级聚合数字 + 该订单的所有 SKU 行明细。"""
     detail = get_order_profit_detail(dxm_package_id)
     if not detail:
-        return jsonify({"error": "order_not_found",
-                        "dxm_package_id": dxm_package_id}), 404
-    return jsonify(detail)
+        return order_profit_flask_response(
+            build_order_profit_error_response(
+                "order_not_found",
+                404,
+                dxm_package_id=dxm_package_id,
+            )
+        )
+    return order_profit_flask_response(build_order_profit_payload_response(detail))
 
 
 @bp.route("/order-profit/api/lines")
@@ -190,7 +205,11 @@ def api_lines():
         "ORDER BY id DESC LIMIT %s OFFSET %s",
         (date_from, date_to, status, limit, offset),
     )
-    return jsonify({"lines": rows, "limit": limit, "offset": offset})
+    return order_profit_flask_response(
+        build_order_profit_payload_response(
+            {"lines": rows, "limit": limit, "offset": offset}
+        )
+    )
 
 
 @bp.route("/order-profit/api/loss_alerts")
@@ -214,13 +233,15 @@ def api_loss_alerts():
         (date_from, date_to, limit),
     )
     total_loss = sum(float(r["profit_usd"] or 0) for r in rows)
-    return jsonify({
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
-        "loss_lines": rows,
-        "loss_count": len(rows),
-        "total_loss_usd": round(total_loss, 2),
-    })
+    return order_profit_flask_response(
+        build_order_profit_payload_response({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "loss_lines": rows,
+            "loss_count": len(rows),
+            "total_loss_usd": round(total_loss, 2),
+        })
+    )
 
 
 @bp.route("/order-profit/api/payments_csv/import", methods=["POST"])
@@ -230,13 +251,17 @@ def api_import_payments_csv():
     """上传 Shopify Payments CSV → 解析 + 反推 + 写入 shopify_payments_transactions。"""
     f = request.files.get("file")
     if not f:
-        return jsonify({"error": "缺少 file 字段"}), 400
+        return order_profit_flask_response(
+            build_order_profit_error_response("缺少 file 字段", 400)
+        )
     try:
         content = f.read().decode("utf-8-sig")  # Shopify CSV 含 BOM
     except UnicodeDecodeError:
-        return jsonify({"error": "文件编码必须是 UTF-8"}), 400
+        return order_profit_flask_response(
+            build_order_profit_error_response("文件编码必须是 UTF-8", 400)
+        )
     stats = import_payments_csv(io.StringIO(content), source_csv=f.filename or "")
-    return jsonify({"ok": True, "stats": stats})
+    return order_profit_flask_response(build_order_profit_ok_response(stats=stats))
 
 
 @bp.route("/order-profit/api/payments_csv/reconcile")
@@ -247,7 +272,7 @@ def api_payments_reconcile():
     df = (request.args.get("from") or "").strip()
     dt = (request.args.get("to") or "").strip()
     report = reconcile_against_estimates(payout_date_from=df, payout_date_to=dt)
-    return jsonify(report)
+    return order_profit_flask_response(build_order_profit_payload_response(report))
 
 
 @bp.route("/order-profit/api/unmatched_campaigns")
@@ -257,18 +282,25 @@ def api_unmatched_campaigns():
     days = min(int(request.args.get("days", "90") or 90), 365)
     limit = min(int(request.args.get("limit", "50") or 50), 200)
     rows = list_unmatched_campaigns(lookback_days=days, limit=limit)
-    return jsonify({
-        "lookback_days": days,
-        "campaigns": rows,
-        "total_unallocated_usd": round(sum(float(r["spend"] or 0) for r in rows), 2),
-    })
+    return order_profit_flask_response(
+        build_order_profit_payload_response({
+            "lookback_days": days,
+            "campaigns": rows,
+            "total_unallocated_usd": round(
+                sum(float(r["spend"] or 0) for r in rows),
+                2,
+            ),
+        })
+    )
 
 
 @bp.route("/order-profit/api/manual_matches", methods=["GET"])
 @login_required
 @permission_required("order_profit")
 def api_list_manual_matches():
-    return jsonify({"overrides": list_overrides()})
+    return order_profit_flask_response(
+        build_order_profit_payload_response({"overrides": list_overrides()})
+    )
 
 
 @bp.route("/order-profit/api/manual_match", methods=["POST"])
@@ -280,7 +312,12 @@ def api_create_manual_match():
     pid = data.get("product_id")
     reason = (data.get("reason") or "").strip()
     if not code or not pid:
-        return jsonify({"error": "缺少 normalized_campaign_code 或 product_id"}), 400
+        return order_profit_flask_response(
+            build_order_profit_error_response(
+                "缺少 normalized_campaign_code 或 product_id",
+                400,
+            )
+        )
     try:
         result = create_override(
             normalized_campaign_code=code,
@@ -288,9 +325,13 @@ def api_create_manual_match():
             reason=reason,
             created_by=getattr(request, "username", None) or "admin",
         )
-        return jsonify({"ok": True, "override": result})
+        return order_profit_flask_response(
+            build_order_profit_ok_response(override=result)
+        )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return order_profit_flask_response(
+            build_order_profit_error_response(str(exc), 400)
+        )
 
 
 @bp.route("/order-profit/api/manual_match/<int:override_id>", methods=["DELETE"])
@@ -298,7 +339,7 @@ def api_create_manual_match():
 @permission_required("order_profit")
 def api_delete_manual_match(override_id):
     result = remove_override(override_id=override_id)
-    return jsonify({"ok": True, **result})
+    return order_profit_flask_response(build_order_profit_ok_response(**result))
 
 
 @bp.route("/order-profit/api/products_for_match")
@@ -311,7 +352,9 @@ def api_products_for_match():
         "WHERE archived = 0 AND deleted_at IS NULL "
         "ORDER BY product_code"
     )
-    return jsonify({"products": rows})
+    return order_profit_flask_response(
+        build_order_profit_payload_response({"products": rows})
+    )
 
 
 @bp.route("/order-profit/api/cost_completeness")
@@ -325,19 +368,21 @@ def api_cost_completeness():
     incomplete_gmv = sum(r["gmv_usd"] for r in incomplete)
     complete_gmv = sum(r["gmv_usd"] for r in complete)
     total_gmv = incomplete_gmv + complete_gmv
-    return jsonify({
-        "lookback_days": lookback_days,
-        "products": overview,
-        "stats": {
-            "total_products": len(overview),
-            "incomplete_count": len(incomplete),
-            "complete_count": len(complete),
-            "incomplete_gmv_usd": round(incomplete_gmv, 2),
-            "complete_gmv_usd": round(complete_gmv, 2),
-            "total_gmv_usd": round(total_gmv, 2),
-            "incomplete_gmv_pct": (
-                round(100 * incomplete_gmv / total_gmv, 2)
-                if total_gmv > 0 else 0.0
-            ),
-        },
-    })
+    return order_profit_flask_response(
+        build_order_profit_payload_response({
+            "lookback_days": lookback_days,
+            "products": overview,
+            "stats": {
+                "total_products": len(overview),
+                "incomplete_count": len(incomplete),
+                "complete_count": len(complete),
+                "incomplete_gmv_usd": round(incomplete_gmv, 2),
+                "complete_gmv_usd": round(complete_gmv, 2),
+                "total_gmv_usd": round(total_gmv, 2),
+                "incomplete_gmv_pct": (
+                    round(100 * incomplete_gmv / total_gmv, 2)
+                    if total_gmv > 0 else 0.0
+                ),
+            },
+        })
+    )
