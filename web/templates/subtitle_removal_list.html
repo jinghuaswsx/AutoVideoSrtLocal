@@ -7,6 +7,7 @@
   .sr-list-shell { padding: 24px; }
   .topbar-title .sr-page-title-hint { margin-left: 12px; color: var(--fg-subtle); font-size: 13px; font-weight: 400; }
   .sr-list-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .sr-list-shell .sr-upload-card { margin-bottom: 20px; }
   .sr-list-filters { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
   .sr-filter-field { display: flex; flex-direction: column; gap: 6px; }
   .sr-filter-field span { color: var(--fg-subtle); font-size: 12px; line-height: 1.3; }
@@ -60,6 +61,8 @@
     </div>
     <a href="{{ url_for('subtitle_removal.upload_page') }}" class="btn btn-primary">新建任务</a>
   </header>
+
+  {% include "_subtitle_removal_upload_panel.html" %}
 
   <div class="sr-list-table" id="srListTable">
     <div class="sr-list-row is-header">
@@ -227,4 +230,7 @@
     setInterval(fetchList, 5000);
   })();
 </script>
+{% endblock %}
+{% block scripts %}
+{% include "_subtitle_removal_scripts.html" %}
 {% endblock %}
