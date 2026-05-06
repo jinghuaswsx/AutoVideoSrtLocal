@@ -6,11 +6,18 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import medias, new_product_review
 from appcore.db import query as db_query
+from web.services.new_product_review import (
+    build_new_product_review_admin_required_response,
+    build_new_product_review_error_response,
+    build_new_product_review_list_response,
+    build_new_product_review_success_response,
+    new_product_review_flask_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +59,9 @@ def _list_translators() -> list[dict]:
 @login_required
 def index():
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return new_product_review_flask_response(
+            build_new_product_review_admin_required_response()
+        )
 
     products = new_product_review.list_pending(limit=200)
     languages = medias.list_enabled_languages_kv()
@@ -78,7 +87,9 @@ def index():
 @login_required
 def api_list():
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return new_product_review_flask_response(
+            build_new_product_review_admin_required_response()
+        )
 
     products = new_product_review.list_pending(limit=200)
     languages = [
@@ -86,11 +97,13 @@ def api_list():
         for code, name in medias.list_enabled_languages_kv()
     ]
     translators = _list_translators()
-    return jsonify({
-        "products": products,
-        "languages": languages,
-        "translators": translators,
-    })
+    return new_product_review_flask_response(
+        build_new_product_review_list_response(
+            products=products,
+            languages=languages,
+            translators=translators,
+        )
+    )
 
 
 # ---- Task 20: POST /api/<id>/evaluate ----
@@ -99,22 +112,34 @@ def api_list():
 @login_required
 def api_evaluate(product_id):
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return new_product_review_flask_response(
+            build_new_product_review_admin_required_response()
+        )
 
     try:
         result = new_product_review.evaluate_product(
             product_id, actor_user_id=int(current_user.id)
         )
-        return jsonify(result), 200
+        return new_product_review_flask_response(
+            build_new_product_review_success_response(result)
+        )
     except new_product_review.ProductNotFoundError as e:
-        return jsonify({"error": "product_not_found", "detail": str(e)}), 404
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("product_not_found", str(e), 404)
+        )
     except new_product_review.NoVideoError as e:
-        return jsonify({"error": "no_video", "detail": str(e)}), 422
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("no_video", str(e), 422)
+        )
     except new_product_review.EvaluationError as e:
-        return jsonify({"error": "evaluation_failed", "detail": str(e)}), 500
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("evaluation_failed", str(e), 500)
+        )
     except Exception as e:
         logger.exception("api_evaluate unexpected error product=%s", product_id)
-        return jsonify({"error": "internal", "detail": str(e)}), 500
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("internal", str(e), 500)
+        )
 
 
 # ---- Task 21: POST /api/<id>/decide + POST /api/<id>/reject ----
@@ -123,7 +148,9 @@ def api_evaluate(product_id):
 @login_required
 def api_decide(product_id):
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return new_product_review_flask_response(
+            build_new_product_review_admin_required_response()
+        )
 
     payload = request.get_json(silent=True) or {}
     countries = payload.get("countries") or []
@@ -136,27 +163,43 @@ def api_decide(product_id):
             translator_id=int(translator_id) if translator_id else 0,
             actor_user_id=int(current_user.id),
         )
-        return jsonify(result), 200
+        return new_product_review_flask_response(
+            build_new_product_review_success_response(result)
+        )
     except new_product_review.ProductNotFoundError as e:
-        return jsonify({"error": "product_not_found", "detail": str(e)}), 404
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("product_not_found", str(e), 404)
+        )
     except new_product_review.InvalidStateError as e:
-        return jsonify({"error": "already_decided", "detail": str(e)}), 422
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("already_decided", str(e), 422)
+        )
     except new_product_review.TranslatorInvalidError as e:
-        return jsonify({"error": "invalid_translator", "detail": str(e)}), 422
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("invalid_translator", str(e), 422)
+        )
     except new_product_review.NoVideoError as e:
-        return jsonify({"error": "no_video", "detail": str(e)}), 422
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("no_video", str(e), 422)
+        )
     except ValueError as e:
-        return jsonify({"error": "no_countries", "detail": str(e)}), 422
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("no_countries", str(e), 422)
+        )
     except Exception as e:
         logger.exception("api_decide unexpected error product=%s", product_id)
-        return jsonify({"error": "task_create_failed", "detail": str(e)}), 500
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("task_create_failed", str(e), 500)
+        )
 
 
 @new_product_review_bp.route("/api/<int:product_id>/reject", methods=["POST"])
 @login_required
 def api_reject(product_id):
     if not _is_admin():
-        return jsonify({"error": "仅管理员可访问"}), 403
+        return new_product_review_flask_response(
+            build_new_product_review_admin_required_response()
+        )
 
     payload = request.get_json(silent=True) or {}
     reason = payload.get("reason") or ""
@@ -167,13 +210,23 @@ def api_reject(product_id):
             reason=reason,
             actor_user_id=int(current_user.id),
         )
-        return jsonify(result), 200
+        return new_product_review_flask_response(
+            build_new_product_review_success_response(result)
+        )
     except new_product_review.ProductNotFoundError as e:
-        return jsonify({"error": "product_not_found", "detail": str(e)}), 404
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("product_not_found", str(e), 404)
+        )
     except new_product_review.InvalidStateError as e:
-        return jsonify({"error": "already_decided", "detail": str(e)}), 422
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("already_decided", str(e), 422)
+        )
     except ValueError as e:
-        return jsonify({"error": "reason_required", "detail": str(e)}), 422
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("reason_required", str(e), 422)
+        )
     except Exception as e:
         logger.exception("api_reject unexpected error product=%s", product_id)
-        return jsonify({"error": "internal", "detail": str(e)}), 500
+        return new_product_review_flask_response(
+            build_new_product_review_error_response("internal", str(e), 500)
+        )
