@@ -135,3 +135,15 @@ def test_build_xmyc_sku_update_response_enriches_updated_row_and_maps_errors():
     assert invalid.payload == {"error": "invalid_fields", "message": "bad decimal"}
     assert missing.status_code == 404
     assert missing.not_found is True
+
+
+def test_xmyc_sku_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_xmyc_skus import XmycSkuResponse, xmyc_sku_flask_response
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = xmyc_sku_flask_response(
+            XmycSkuResponse({"ok": True, "items": [{"sku": "S1"}]}, 206)
+        )
+
+    assert status_code == 206
+    assert response.get_json() == {"ok": True, "items": [{"sku": "S1"}]}

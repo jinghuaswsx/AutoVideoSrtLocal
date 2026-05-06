@@ -44,6 +44,7 @@ from web.services.media_xmyc_skus import (
     build_product_xmyc_skus_set_response as _build_product_xmyc_skus_set_response_impl,
     build_xmyc_sku_update_response as _build_xmyc_sku_update_response_impl,
     build_xmyc_skus_list_response as _build_xmyc_skus_list_response_impl,
+    xmyc_sku_flask_response as _xmyc_sku_flask_response_impl,
 )
 from web.services.media_roas_page import (
     build_roas_page_context as _build_roas_page_context_impl,
@@ -163,6 +164,10 @@ def _build_xmyc_sku_update_response(sku_id: int, body: dict):
     )
 
 
+def _xmyc_sku_flask_response(result):
+    return _xmyc_sku_flask_response_impl(result)
+
+
 def _build_parcel_cost_suggest_response(pid: int, args):
     return _build_parcel_cost_suggest_response_impl(
         pid,
@@ -254,7 +259,7 @@ def api_parcel_cost_suggest(pid: int):
 def api_list_xmyc_skus():
     routes = _routes_module()
     result = routes._build_xmyc_skus_list_response(request.args)
-    return jsonify(result.payload), result.status_code
+    return routes._xmyc_sku_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/xmyc-skus", methods=["GET"])
@@ -265,7 +270,7 @@ def api_get_product_xmyc_skus(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     result = routes._build_product_xmyc_skus_response(pid)
-    return jsonify(result.payload), result.status_code
+    return routes._xmyc_sku_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/xmyc-skus", methods=["POST"])
@@ -282,7 +287,7 @@ def api_set_product_xmyc_skus(pid: int):
         body,
         matched_by=matched_by,
     )
-    return jsonify(result.payload), result.status_code
+    return routes._xmyc_sku_flask_response(result)
 
 
 @bp.route("/api/xmyc-skus/<int:sku_id>", methods=["PATCH"])
@@ -293,7 +298,7 @@ def api_update_xmyc_sku(sku_id: int):
     result = routes._build_xmyc_sku_update_response(sku_id, body)
     if result.not_found:
         abort(404)
-    return jsonify(result.payload), result.status_code
+    return routes._xmyc_sku_flask_response(result)
 
 
 @bp.route("/api/supply-pairing/search", methods=["GET"])

@@ -1486,10 +1486,12 @@ def test_xmyc_sku_response_building_lives_outside_route_module():
     assert "invalid_pagination" not in route_source
     assert "skus_must_be_list" not in route_source
     assert "invalid_fields" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_xmyc_skus_list_response" in route_source
     assert "_build_product_xmyc_skus_response" in route_source
     assert "_build_product_xmyc_skus_set_response" in route_source
     assert "_build_xmyc_sku_update_response" in route_source
+    assert "_xmyc_sku_flask_response" in route_source
     assert Path("web/services/media_xmyc_skus.py").exists()
 
 

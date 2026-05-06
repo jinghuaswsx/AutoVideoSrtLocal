@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
+from flask import jsonify
+
 from appcore import product_roas, sku_aggregates, xmyc_storage
 
 
@@ -91,3 +93,7 @@ def build_xmyc_sku_update_response(
     rate = get_configured_rmb_per_usd_fn()
     enriched = enrich_skus_with_roas_fn([row], rate)
     return XmycSkuResponse({"ok": True, "item": enriched[0]}, 200)
+
+
+def xmyc_sku_flask_response(result: XmycSkuResponse):
+    return jsonify(result.payload), result.status_code
