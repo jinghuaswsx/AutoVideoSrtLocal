@@ -6,10 +6,15 @@ import io
 import json
 from typing import Any
 
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, Response, flash
+from flask import Blueprint, render_template, request, redirect, url_for, Response, flash
 from flask_login import login_required, current_user
 
 from web.auth import admin_required
+from web.services.tts_speedup_eval import (
+    build_tts_speedup_list_fallback_response,
+    build_tts_speedup_retry_response,
+    tts_speedup_eval_flask_response,
+)
 from appcore.db import query as db_query, query_one as db_query_one
 from appcore import tts_speedup_eval
 
@@ -110,11 +115,9 @@ def list_page():
         )
     except Exception:
         # 模板未到位时（Task 10 之前）返回 JSON 兜底，便于 Task 8 自身测试
-        return jsonify({
-            "rows_count": len(rows),
-            "summary": summary,
-            "rows": rows,
-        })
+        return tts_speedup_eval_flask_response(
+            build_tts_speedup_list_fallback_response(rows=rows, summary=summary)
+        )
 
 
 @bp.route("/tts-speedup-evaluations/<int:eval_id>/retry", methods=["POST"])
@@ -125,7 +128,9 @@ def retry_endpoint(eval_id: int):
         eval_id=eval_id, user_id=current_user.id,
     )
     if request.is_json or request.headers.get("Accept", "").startswith("application/json"):
-        return jsonify({"ok": ok, "eval_id": eval_id})
+        return tts_speedup_eval_flask_response(
+            build_tts_speedup_retry_response(ok=ok, eval_id=eval_id)
+        )
     flash("评估已重跑" if ok else "评估重跑失败，请查看 error_text", "info")
     return redirect(url_for("tts_speedup_eval.list_page"))
 
