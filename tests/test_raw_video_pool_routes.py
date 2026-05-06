@@ -4,9 +4,15 @@ def test_index_renders(authed_client_no_db):
     assert "原始素材任务库".encode("utf-8") in rsp.data
 
 
-def test_api_list_smoke(authed_client_no_db):
+def test_api_list_smoke(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.raw_video_pool.rvp_svc.list_visible_tasks",
+        lambda **kwargs: {"items": [{"id": 7}], "total": 1},
+    )
+
     rsp = authed_client_no_db.get("/raw-video-pool/api/list")
-    assert rsp.status_code in (200, 500)
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"items": [{"id": 7}], "total": 1}
 
 
 def test_index_exposes_admin_processing_capability(authed_client_no_db):
@@ -21,9 +27,20 @@ def test_index_exposes_non_processor_capability_false(authed_user_client_no_db):
     assert "const RVP_CAN_PROCESS = false;" in body
 
 
-def test_api_download_smoke(authed_client_no_db):
+def test_api_download_smoke(authed_client_no_db, monkeypatch):
+    from appcore import raw_video_pool as rvp_svc
+
+    def fake_stream_original_video(task_id, user_id):
+        raise rvp_svc.PermissionDenied("denied")
+
+    monkeypatch.setattr(
+        "web.routes.raw_video_pool.rvp_svc.stream_original_video",
+        fake_stream_original_video,
+    )
+
     rsp = authed_client_no_db.get("/raw-video-pool/api/task/9999/download")
-    assert rsp.status_code in (200, 403, 404, 500)
+    assert rsp.status_code == 403
+    assert rsp.get_json() == {"error": "forbidden", "detail": "denied"}
 
 
 def test_api_download_serves_file_inside_upload_root(authed_client_no_db, monkeypatch, tmp_path):
@@ -64,6 +81,7 @@ def test_api_download_rejects_file_outside_storage_roots(authed_client_no_db, mo
 def test_api_upload_no_file(authed_client_no_db):
     rsp = authed_client_no_db.post("/raw-video-pool/api/task/9999/upload")
     assert rsp.status_code == 400
+    assert rsp.get_json() == {"error": "no_file"}
 
 
 def test_api_upload_bad_ext(authed_client_no_db):
@@ -74,3 +92,4 @@ def test_api_upload_bad_ext(authed_client_no_db):
         content_type="multipart/form-data",
     )
     assert rsp.status_code == 415
+    assert rsp.get_json() == {"error": "unsupported_type"}

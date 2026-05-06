@@ -3,11 +3,23 @@ from __future__ import annotations
 
 import os
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import raw_video_pool as rvp_svc
 from web.services.artifact_download import safe_task_file_response
+from web.services.raw_video_pool import (
+    build_raw_video_pool_file_not_found_response,
+    build_raw_video_pool_file_too_large_response,
+    build_raw_video_pool_internal_error_response,
+    build_raw_video_pool_list_response,
+    build_raw_video_pool_no_file_response,
+    build_raw_video_pool_permission_denied_response,
+    build_raw_video_pool_state_error_response,
+    build_raw_video_pool_unsupported_type_response,
+    build_raw_video_pool_upload_success_response,
+    raw_video_pool_flask_response,
+)
 
 bp = Blueprint("raw_video_pool", __name__, url_prefix="/raw-video-pool")
 
@@ -52,7 +64,7 @@ def api_list():
         viewer_user_id=int(current_user.id),
         viewer_role=_viewer_role(),
     )
-    return jsonify(result)
+    return raw_video_pool_flask_response(build_raw_video_pool_list_response(result))
 
 
 @bp.route("/api/task/<int:tid>/download", methods=["GET"])
@@ -61,11 +73,11 @@ def api_download(tid: int):
     try:
         path, fname = rvp_svc.stream_original_video(tid, int(current_user.id))
     except rvp_svc.PermissionDenied as e:
-        return jsonify({"error": "forbidden", "detail": str(e)}), 403
+        return raw_video_pool_flask_response(build_raw_video_pool_permission_denied_response(e))
     except rvp_svc.StateError as e:
-        return jsonify({"error": "state_error", "detail": str(e)}), 422
+        return raw_video_pool_flask_response(build_raw_video_pool_state_error_response(e))
     if not os.path.exists(path):
-        return jsonify({"error": "file_not_found", "detail": path}), 404
+        return raw_video_pool_flask_response(build_raw_video_pool_file_not_found_response(path))
     return safe_task_file_response(
         {},
         path,
@@ -81,14 +93,16 @@ def api_download(tid: int):
 def api_upload(tid: int):
     f = request.files.get("file")
     if not f:
-        return jsonify({"error": "no_file"}), 400
+        return raw_video_pool_flask_response(build_raw_video_pool_no_file_response())
     f.seek(0, 2)
     size = f.tell()
     f.seek(0)
     if size > MAX_UPLOAD_BYTES:
-        return jsonify({"error": "file_too_large", "max_mb": 500}), 413
+        return raw_video_pool_flask_response(
+            build_raw_video_pool_file_too_large_response(max_mb=500)
+        )
     if not (f.filename or "").lower().endswith(ALLOWED_EXT):
-        return jsonify({"error": "unsupported_type"}), 415
+        return raw_video_pool_flask_response(build_raw_video_pool_unsupported_type_response())
     try:
         new_size = rvp_svc.replace_processed_video(
             task_id=tid,
@@ -96,9 +110,9 @@ def api_upload(tid: int):
             uploaded_file=f,
         )
     except rvp_svc.PermissionDenied as e:
-        return jsonify({"error": "forbidden", "detail": str(e)}), 403
+        return raw_video_pool_flask_response(build_raw_video_pool_permission_denied_response(e))
     except rvp_svc.StateError as e:
-        return jsonify({"error": "state_error", "detail": str(e)}), 422
+        return raw_video_pool_flask_response(build_raw_video_pool_state_error_response(e))
     except Exception as e:
-        return jsonify({"error": "internal", "detail": str(e)}), 500
-    return jsonify({"ok": True, "new_size": new_size})
+        return raw_video_pool_flask_response(build_raw_video_pool_internal_error_response(e))
+    return raw_video_pool_flask_response(build_raw_video_pool_upload_success_response(new_size))
