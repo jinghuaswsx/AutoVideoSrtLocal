@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-from flask import abort, jsonify, request
+from flask import abort, request
 from flask_login import login_required
 
 from appcore import local_media_storage, medias, object_keys
@@ -28,6 +28,7 @@ from web.services.media_raw_sources import (
     build_raw_source_delete_response as _build_raw_source_delete_response_impl,
     build_raw_source_update_response as _build_raw_source_update_response_impl,
     build_raw_sources_list_response as _build_raw_sources_list_response_impl,
+    raw_source_flask_response as _raw_source_flask_response_impl,
 )
 
 
@@ -107,6 +108,10 @@ def _build_raw_source_delete_response(rid: int):
     )
 
 
+def _raw_source_flask_response(result):
+    return _raw_source_flask_response_impl(result)
+
+
 @bp.route("/api/products/<int:pid>/raw-sources", methods=["GET"])
 @login_required
 def api_list_raw_sources(pid: int):
@@ -115,7 +120,7 @@ def api_list_raw_sources(pid: int):
         abort(404)
     routes = _routes_module()
     result = routes._build_raw_sources_list_response(pid)
-    return jsonify(result.payload), result.status_code
+    return routes._raw_source_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/raw-sources", methods=["POST"])
@@ -132,7 +137,7 @@ def api_create_raw_source(pid: int):
         request.files.get("cover"),
         request.form,
     )
-    return jsonify(result.payload), result.status_code
+    return routes._raw_source_flask_response(result)
 
 
 @bp.route("/api/raw-sources/<int:rid>", methods=["PATCH"])
@@ -149,7 +154,7 @@ def api_update_raw_source(rid: int):
     result = routes._build_raw_source_update_response(rid, body)
     if result.not_found:
         abort(404)
-    return jsonify(result.payload), result.status_code
+    return routes._raw_source_flask_response(result)
 
 
 @bp.route("/api/raw-sources/<int:rid>", methods=["DELETE"])
@@ -163,4 +168,4 @@ def api_delete_raw_source(rid: int):
         abort(404)
     routes = _routes_module()
     result = routes._build_raw_source_delete_response(rid)
-    return jsonify(result.payload), result.status_code
+    return routes._raw_source_flask_response(result)

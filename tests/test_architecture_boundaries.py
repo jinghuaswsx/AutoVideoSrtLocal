@@ -688,9 +688,11 @@ def test_raw_source_list_update_delete_responses_live_outside_route_module():
     assert "no valid fields" not in route_source
     assert "_raw_source_filename_error_response(display_name)" not in route_source
     assert "_serialize_raw_source(" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_raw_sources_list_response" in route_source
     assert "_build_raw_source_update_response" in route_source
     assert "_build_raw_source_delete_response" in route_source
+    assert "_raw_source_flask_response" in route_source
     assert Path("web/services/media_raw_sources.py").exists()
 
 
@@ -734,7 +736,9 @@ def test_raw_source_create_response_lives_outside_route_module():
     assert "english_video_required" not in route_source
     assert "raw_source_filename_mismatch" not in route_source
     assert "_serialize_raw_source(" not in route_source
+    assert "jsonify(" not in route_source
     assert "_build_raw_source_create_response" in route_source
+    assert "_raw_source_flask_response" in route_source
     assert Path("web/services/media_raw_sources.py").exists()
 
 

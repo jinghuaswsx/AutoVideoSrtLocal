@@ -43,6 +43,18 @@ def test_build_raw_sources_list_response_serializes_rows():
     assert result.payload == {"items": [{"id": 7, "name": "raw.mp4"}]}
 
 
+def test_raw_source_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_raw_sources import RawSourceResponse, raw_source_flask_response
+
+    with authed_client_no_db.application.app_context():
+        payload, status = raw_source_flask_response(
+            RawSourceResponse({"items": [{"id": 7}]}, 206)
+        )
+
+    assert status == 206
+    assert payload.get_json() == {"items": [{"id": 7}]}
+
+
 def test_build_raw_source_update_response_normalizes_fields_and_serializes_fresh_row():
     from web.services.media_raw_sources import build_raw_source_update_response
 

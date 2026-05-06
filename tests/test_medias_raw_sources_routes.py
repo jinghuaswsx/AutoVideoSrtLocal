@@ -280,6 +280,70 @@ def test_list_empty_new_product(authed_client_no_db, monkeypatch):
     assert resp.get_json()["items"] == []
 
 
+def test_raw_source_routes_delegate_flask_response(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "t-rs"})
+    monkeypatch.setattr(r.medias, "get_raw_source", lambda rid: {"id": rid, "product_id": 123})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    captured = []
+
+    class Result:
+        def __init__(self, payload, status_code=207, not_found=False):
+            self.payload = payload
+            self.status_code = status_code
+            self.not_found = not_found
+
+    monkeypatch.setattr(
+        r,
+        "_raw_source_flask_response",
+        lambda result: captured.append(result.payload) or ({"wrapped": result.payload}, result.status_code),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_raw_sources_list_response",
+        lambda pid: Result({"route": "list", "pid": pid}),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_raw_source_create_response",
+        lambda pid, video, cover, form: Result({"route": "create", "pid": pid}, 208),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_raw_source_update_response",
+        lambda rid, body: Result({"route": "update", "rid": rid}, 209),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_raw_source_delete_response",
+        lambda rid: Result({"route": "delete", "rid": rid}, 210),
+    )
+
+    list_resp = authed_client_no_db.get("/medias/api/products/123/raw-sources")
+    create_resp = authed_client_no_db.post(
+        "/medias/api/products/123/raw-sources",
+        data={"video": (io.BytesIO(b"v"), "v.mp4", "video/mp4")},
+        content_type="multipart/form-data",
+    )
+    update_resp = authed_client_no_db.patch("/medias/api/raw-sources/88", json={"sort_order": 1})
+    delete_resp = authed_client_no_db.delete("/medias/api/raw-sources/88")
+
+    assert [list_resp.status_code, create_resp.status_code, update_resp.status_code, delete_resp.status_code] == [
+        207,
+        208,
+        209,
+        210,
+    ]
+    assert captured == [
+        {"route": "list", "pid": 123},
+        {"route": "create", "pid": 123},
+        {"route": "update", "rid": 88},
+        {"route": "delete", "rid": 88},
+    ]
+
+
 def test_list_raw_sources_includes_translated_language_status(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

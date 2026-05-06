@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import os
 
+from flask import jsonify
+
 from appcore import medias
 from appcore.material_filename_rules import validate_video_filename_no_spaces
 
@@ -15,6 +17,10 @@ class RawSourceResponse:
     payload: dict
     status_code: int
     not_found: bool = False
+
+
+def raw_source_flask_response(result: RawSourceResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def build_raw_sources_list_response(
