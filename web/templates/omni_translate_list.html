@@ -284,6 +284,36 @@
   text-align: center; font-size: 12px; color: #6b7280;
   margin: 8px auto 0; max-width: 180px; word-break: break-all;
 }
+
+/* ── Phase 4: 能力点配置 (Ocean Blue Admin tokens, hue 200-240) ── */
+.preset-row { display: flex; gap: 8px; align-items: center; }
+.preset-select {
+  flex: 1; min-width: 0; padding: 6px 12px; height: 32px;
+  border: 1px solid var(--border-strong, oklch(84% 0.015 230));
+  border-radius: var(--radius, 6px); background: var(--bg, #fff);
+  color: var(--fg, oklch(22% 0.020 235)); font-size: 13px; font-family: inherit;
+  cursor: pointer; transition: border-color .12s;
+}
+.preset-select:focus {
+  outline: none; border-color: oklch(56% 0.16 230);
+  box-shadow: 0 0 0 2px oklch(56% 0.16 230 / 0.22);
+}
+.plugin-capability-form {
+  border: 1px solid var(--border, oklch(91% 0.012 230));
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-subtle, oklch(97% 0.006 230));
+  padding: 12px 16px;
+}
+.cap-group { padding: 10px 0; border-top: 1px solid var(--border, oklch(91% 0.012 230)); }
+.cap-group:first-child { border-top: 0; padding-top: 4px; }
+.cap-group-label { font-size: 13px; font-weight: 600; color: var(--fg, oklch(22% 0.020 235)); margin-bottom: 8px; }
+.cap-option { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; cursor: pointer; }
+.cap-option input { margin-top: 3px; flex-shrink: 0; accent-color: oklch(56% 0.16 230); cursor: pointer; }
+.cap-option-body { flex: 1; min-width: 0; }
+.cap-option-name { font-family: var(--font-mono, ui-monospace, Consolas, monospace); font-size: 12px; color: oklch(45% 0.16 230); }
+.cap-option-desc { font-size: 12px; color: var(--fg-muted, oklch(48% 0.018 230)); line-height: 1.5; margin-top: 1px; }
+.cap-option.is-disabled { opacity: 0.5; cursor: not-allowed; }
+.cap-option.is-disabled input { cursor: not-allowed; }
 {% endblock %}
 {% block content %}
 <div class="page-header">
@@ -462,6 +492,30 @@
           <input type="hidden" id="sourceLanguageSelect" name="source_language" value="">
           <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
         </div>
+
+        <!-- Phase 4: 能力点配置 (preset 选择 + 8 分组同屏可改) -->
+        <div class="modal-field" id="pluginConfigField">
+          <label>处理流程预设
+            <span class="preset-modified-flag" id="presetModifiedFlag" style="display:none;color:var(--fg-subtle);font-size:12px;font-weight:normal;margin-left:8px;">（已修改）</span>
+          </label>
+          <div class="preset-row">
+            <select id="presetSelect" class="preset-select" aria-label="选择预设">
+              <option value="">加载中...</option>
+            </select>
+            <button type="button" id="presetSaveAsBtn" class="btn btn-ghost btn-sm" disabled
+                    title="把当前微调后的配置另存为我的 preset"
+                    style="opacity:0.5;cursor:not-allowed;">+ 另存为</button>
+            <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-sm"
+                    title="删除当前选中的用户级 preset"
+                    style="display:none;color:var(--danger);">删除</button>
+          </div>
+          <div class="modal-hint" style="margin:6px 0 12px;">
+            预设决定 omni 实验版每一步用哪种算法。修改任意选项后会变成"已修改"状态，可另存为自己的 preset。
+          </div>
+          <div id="pluginCapabilityForm" class="plugin-capability-form">
+            <div style="text-align:center;color:var(--fg-subtle);padding:24px;">能力点加载中...</div>
+          </div>
+        </div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
@@ -626,6 +680,10 @@ document.getElementById('uploadOverlay').addEventListener('click', function(e) {
 function openUpload() {
   _resetUploadModal();
   document.getElementById('uploadOverlay').classList.add('open');
+  // Phase 4: 首次打开弹窗时加载 preset 列表 + 默认 preset，渲染能力点表单
+  if (!__omniPresetState.loaded) {
+    _loadOmniPresets();
+  }
 }
 
 (function initLangPills() {
@@ -707,6 +765,303 @@ function openUpload() {
   });
 })();
 
+// ────────────────────────────────────────────────────────────────────────
+// Phase 4: Plugin config form (preset selector + 8 分组能力点 + 互斥/依赖联动)
+// ────────────────────────────────────────────────────────────────────────
+var __omniPresetState = {
+  capabilityGroups: null,   // 后端 capability_groups 元数据
+  presets: [],              // [{id,scope,user_id,name,description,plugin_config}, ...]
+  defaultId: null,          // 全站默认 preset id
+  currentPresetId: null,    // dropdown 当前选中（""=自定义/全站默认）
+  currentCfg: null,         // 当前 form state
+  originalCfg: null,        // 当前 preset 加载时的原始 cfg（用于检测"已修改"）
+  loaded: false,
+};
+
+function _csrf() {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+
+async function _loadOmniPresets() {
+  try {
+    var [listRes, defRes] = await Promise.all([
+      fetch('/api/omni-presets'),
+      fetch('/api/omni-presets/default'),
+    ]);
+    if (!listRes.ok || !defRes.ok) throw new Error('preset 加载失败');
+    var listData = await listRes.json();
+    var defData = await defRes.json();
+    __omniPresetState.capabilityGroups = listData.capability_groups;
+    __omniPresetState.presets = listData.presets;
+    __omniPresetState.defaultId = listData.default_preset_id;
+    var initialCfg;
+    var initialId;
+    if (defData.preset) {
+      initialId = defData.preset.id;
+      initialCfg = defData.preset.plugin_config;
+    } else {
+      initialId = '';
+      initialCfg = defData.fallback_plugin_config || {};
+    }
+    _renderPresetDropdown();
+    _setPresetSelection(initialId, initialCfg);
+    __omniPresetState.loaded = true;
+  } catch (err) {
+    console.error('[omni-preset] load failed', err);
+    var box = document.getElementById('pluginCapabilityForm');
+    if (box) box.innerHTML = '<div style="color:var(--danger);padding:16px;">能力点加载失败：' + (err.message || err) + '</div>';
+  }
+}
+
+function _renderPresetDropdown() {
+  var sel = document.getElementById('presetSelect');
+  if (!sel) return;
+  var systemPresets = __omniPresetState.presets.filter(function(p) { return p.scope === 'system'; });
+  var userPresets = __omniPresetState.presets.filter(function(p) { return p.scope === 'user'; });
+  var html = '';
+  if (systemPresets.length) {
+    html += '<optgroup label="系统级">';
+    systemPresets.forEach(function(p) {
+      html += '<option value="' + p.id + '">🌐 ' + _escapeHtml(p.name)
+              + (p.id === __omniPresetState.defaultId ? '（默认）' : '') + '</option>';
+    });
+    html += '</optgroup>';
+  }
+  if (userPresets.length) {
+    html += '<optgroup label="我的">';
+    userPresets.forEach(function(p) {
+      html += '<option value="' + p.id + '">👤 ' + _escapeHtml(p.name) + '</option>';
+    });
+    html += '</optgroup>';
+  }
+  sel.innerHTML = html;
+}
+
+function _escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+  });
+}
+
+function _setPresetSelection(presetId, cfg) {
+  var sel = document.getElementById('presetSelect');
+  if (sel && presetId) sel.value = String(presetId);
+  __omniPresetState.currentPresetId = presetId || '';
+  __omniPresetState.originalCfg = JSON.parse(JSON.stringify(cfg || {}));
+  __omniPresetState.currentCfg = JSON.parse(JSON.stringify(cfg || {}));
+  _renderCapabilityForm();
+  _updateModifiedFlag();
+  _updateUserPresetActions();
+}
+
+function _renderCapabilityForm() {
+  var box = document.getElementById('pluginCapabilityForm');
+  if (!box || !__omniPresetState.capabilityGroups) return;
+  var cfg = __omniPresetState.currentCfg || {};
+  var html = '';
+  __omniPresetState.capabilityGroups.forEach(function(grp) {
+    html += '<div class="cap-group" data-group-id="' + grp.id + '">';
+    html += '<div class="cap-group-label">' + _escapeHtml(grp.label) + '</div>';
+    grp.options.forEach(function(opt, optIdx) {
+      var inputId = 'cap-' + grp.id + '-' + optIdx;
+      var checked;
+      if (grp.kind === 'radio') {
+        checked = cfg[grp.id] === opt.value;
+      } else {
+        // checkbox：option.value 通常是 true，cfg[grp.id] 是 boolean
+        checked = !!cfg[grp.id];
+      }
+      var inputType = grp.kind;
+      var nameAttr = grp.kind === 'radio' ? ('cap_radio_' + grp.id) : ('cap_check_' + grp.id);
+      html += '<label class="cap-option" for="' + inputId + '">';
+      html += '<input type="' + inputType + '" id="' + inputId + '" name="' + nameAttr + '"'
+            + ' data-group-id="' + grp.id + '" data-option-value="' + _escapeHtml(JSON.stringify(opt.value)) + '"'
+            + (checked ? ' checked' : '') + '>';
+      html += '<div class="cap-option-body">';
+      html += '<span class="cap-option-name">' + _escapeHtml(opt.label) + '</span>';
+      html += '<div class="cap-option-desc">' + _escapeHtml(opt.desc || '') + '</div>';
+      html += '</div></label>';
+    });
+    html += '</div>';
+  });
+  box.innerHTML = html;
+  // 绑定 change 监听
+  box.querySelectorAll('input[data-group-id]').forEach(function(el) {
+    el.addEventListener('change', _onCapInputChange);
+  });
+  _applyDependencyLocks();
+}
+
+function _onCapInputChange(ev) {
+  var inp = ev.target;
+  var groupId = inp.dataset.groupId;
+  var rawValue = inp.dataset.optionValue;
+  var optValue;
+  try { optValue = JSON.parse(rawValue); } catch { optValue = rawValue; }
+  var cfg = __omniPresetState.currentCfg;
+  if (inp.type === 'radio') {
+    if (inp.checked) cfg[groupId] = optValue;
+  } else {
+    cfg[groupId] = !!inp.checked;
+  }
+  _applyDependencyLocks();
+  _updateModifiedFlag();
+}
+
+/**
+ * 互斥 / 依赖关系前端联动（spec §3）：
+ *   - shot_char_limit translate 需要 shot_decompose=true → 强制开 + 禁勾
+ *   - av_sentence translate 不允许 source_anchored=true → 强制关 + 禁勾
+ *   - sentence_units subtitle 需要 tts_strategy=sentence_reconcile → 强制 + 禁切
+ *   - loudness_match=true 需要 voice_separation=true → 强制开 + 禁勾
+ */
+function _applyDependencyLocks() {
+  var cfg = __omniPresetState.currentCfg;
+  var box = document.getElementById('pluginCapabilityForm');
+  if (!box || !cfg) return;
+  // helper
+  function _findInput(groupId, optValue) {
+    var inputs = box.querySelectorAll('input[data-group-id="' + groupId + '"]');
+    for (var i = 0; i < inputs.length; i++) {
+      var raw = inputs[i].dataset.optionValue;
+      var v;
+      try { v = JSON.parse(raw); } catch { v = raw; }
+      if (v === optValue) return inputs[i];
+    }
+    return null;
+  }
+  function _setLocked(groupId, lockedValue, on) {
+    var inp = _findInput(groupId, lockedValue);
+    if (!inp) return;
+    inp.disabled = on;
+    var lbl = inp.closest('.cap-option');
+    if (lbl) lbl.classList.toggle('is-disabled', on);
+  }
+  function _resetLocks() {
+    box.querySelectorAll('input[data-group-id]').forEach(function(el) {
+      el.disabled = false;
+      var lbl = el.closest('.cap-option');
+      if (lbl) lbl.classList.remove('is-disabled');
+    });
+  }
+  _resetLocks();
+  // ① shot_char_limit → shot_decompose 强制开 + 锁
+  if (cfg.translate_algo === 'shot_char_limit') {
+    cfg.shot_decompose = true;
+    var sd = _findInput('shot_decompose', true);
+    if (sd) sd.checked = true;
+    _setLocked('shot_decompose', true, true);
+  }
+  // ② av_sentence → source_anchored 强制关 + 锁
+  if (cfg.translate_algo === 'av_sentence') {
+    cfg.source_anchored = false;
+    var sa = _findInput('source_anchored', true);
+    if (sa) sa.checked = false;
+    _setLocked('source_anchored', true, true);
+  }
+  // ③ sentence_units → tts_strategy=sentence_reconcile 强制 + 锁两个 radio
+  if (cfg.subtitle === 'sentence_units') {
+    cfg.tts_strategy = 'sentence_reconcile';
+    var sr = _findInput('tts_strategy', 'sentence_reconcile');
+    if (sr) sr.checked = true;
+    var fr = _findInput('tts_strategy', 'five_round_rewrite');
+    if (fr) fr.checked = false;
+    _setLocked('tts_strategy', 'five_round_rewrite', true);
+    _setLocked('tts_strategy', 'sentence_reconcile', true);
+  }
+  // ④ loudness_match → voice_separation 强制开 + 锁
+  if (cfg.loudness_match) {
+    cfg.voice_separation = true;
+    var vs = _findInput('voice_separation', true);
+    if (vs) vs.checked = true;
+    _setLocked('voice_separation', true, true);
+  }
+  // ⑤ voice_separation 关时 loudness_match 自动关 + 锁
+  if (!cfg.voice_separation) {
+    cfg.loudness_match = false;
+    var lm = _findInput('loudness_match', true);
+    if (lm) lm.checked = false;
+    _setLocked('loudness_match', true, true);
+  }
+}
+
+function _updateModifiedFlag() {
+  var flag = document.getElementById('presetModifiedFlag');
+  var saveBtn = document.getElementById('presetSaveAsBtn');
+  if (!flag || !saveBtn) return;
+  var modified = JSON.stringify(__omniPresetState.currentCfg) !== JSON.stringify(__omniPresetState.originalCfg);
+  flag.style.display = modified ? '' : 'none';
+  saveBtn.disabled = !modified;
+  saveBtn.style.opacity = modified ? '1' : '0.5';
+  saveBtn.style.cursor = modified ? 'pointer' : 'not-allowed';
+}
+
+function _updateUserPresetActions() {
+  var delBtn = document.getElementById('presetDeleteBtn');
+  if (!delBtn) return;
+  var pid = parseInt(__omniPresetState.currentPresetId, 10);
+  var preset = __omniPresetState.presets.find(function(p) { return p.id === pid; });
+  delBtn.style.display = (preset && preset.scope === 'user') ? '' : 'none';
+}
+
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.id === 'presetSelect') {
+    var pid = parseInt(e.target.value, 10);
+    var preset = __omniPresetState.presets.find(function(p) { return p.id === pid; });
+    if (preset) _setPresetSelection(preset.id, preset.plugin_config);
+  }
+});
+
+document.addEventListener('click', async function(e) {
+  if (e.target && e.target.id === 'presetSaveAsBtn' && !e.target.disabled) {
+    var name = prompt('preset 名字（最多 64 字符）：');
+    if (!name || !name.trim()) return;
+    var description = prompt('说明（可空）：') || '';
+    try {
+      var res = await fetch('/api/omni-presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _csrf() },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          plugin_config: __omniPresetState.currentCfg,
+        }),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || '保存失败');
+      __omniPresetState.presets.push(data.preset);
+      _renderPresetDropdown();
+      _setPresetSelection(data.preset.id, data.preset.plugin_config);
+    } catch (err) {
+      alert(err.message || err);
+    }
+  }
+  if (e.target && e.target.id === 'presetDeleteBtn') {
+    var pid = parseInt(__omniPresetState.currentPresetId, 10);
+    var preset = __omniPresetState.presets.find(function(p) { return p.id === pid; });
+    if (!preset || preset.scope !== 'user') return;
+    if (!confirm('确认删除 preset「' + preset.name + '」？')) return;
+    try {
+      var res = await fetch('/api/omni-presets/' + pid, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': _csrf() },
+      });
+      if (!res.ok) {
+        var d = await res.json(); throw new Error(d.error || '删除失败');
+      }
+      __omniPresetState.presets = __omniPresetState.presets.filter(function(p) { return p.id !== pid; });
+      _renderPresetDropdown();
+      // 删除后切到全站默认
+      var def = __omniPresetState.presets.find(function(p) { return p.id === __omniPresetState.defaultId; })
+              || __omniPresetState.presets[0];
+      if (def) _setPresetSelection(def.id, def.plugin_config);
+    } catch (err) {
+      alert(err.message || err);
+    }
+  }
+});
+
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   var uploadForm = document.getElementById('uploadForm');
@@ -751,6 +1106,16 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     var nameInput = document.getElementById('projectName');
     var trimmedName = nameInput ? nameInput.value.trim() : '';
     formData.set('display_name', trimmedName);
+    // Phase 4: 把当前能力点配置作为 plugin_config 提交
+    if (__omniPresetState.loaded && __omniPresetState.currentCfg) {
+      formData.set('plugin_config', JSON.stringify(__omniPresetState.currentCfg));
+    }
+    // 移除 cap_radio_/cap_check_ 这些前端表单字段（后端不认）
+    Array.from(formData.keys()).forEach(function(k) {
+      if (k.indexOf('cap_radio_') === 0 || k.indexOf('cap_check_') === 0 || k === 'preset_id') {
+        formData.delete(k);
+      }
+    });
     var res = await fetch('/api/omni-translate/start', {
       method: 'POST',
       body: formData,
