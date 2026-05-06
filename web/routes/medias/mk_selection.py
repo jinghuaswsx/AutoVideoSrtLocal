@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import hashlib
 import mimetypes
 import os
 from pathlib import Path
@@ -28,6 +27,7 @@ from web.services.media_mk_selection import (
     build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
     build_mk_media_proxy_response as _build_mk_media_proxy_response_impl,
     build_mk_selection_response as _build_mk_selection_response_impl,
+    build_mk_video_cache_object_key as _build_mk_video_cache_object_key_impl,
     normalize_mk_media_path as _normalize_mk_media_path_impl,
 )
 
@@ -165,11 +165,10 @@ def _normalize_mk_media_path(raw_path: str) -> str:
 
 
 def _mk_video_cache_object_key(media_path: str) -> str:
-    digest = hashlib.sha256(media_path.encode("utf-8")).hexdigest()
-    ext = Path(media_path).suffix.lower()
-    if ext not in {".mp4", ".mov", ".m4v", ".webm"}:
-        ext = ".mp4"
-    return f"{_MK_VIDEO_CACHE_PREFIX}/{digest}{ext}"
+    return _build_mk_video_cache_object_key_impl(
+        media_path,
+        cache_prefix=_MK_VIDEO_CACHE_PREFIX,
+    )
 
 
 def _cache_mk_video(media_path: str) -> str:

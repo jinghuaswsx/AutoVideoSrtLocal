@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 
 def test_build_mk_json_flask_response_returns_payload_and_status(authed_client_no_db):
     from web.services.media_mk_selection import (
@@ -48,6 +50,17 @@ def test_normalize_mk_media_path_accepts_relative_media_paths_only():
     assert normalize_mk_media_path("../secret.mp4") == ""
     assert normalize_mk_media_path("uploads2/../secret.mp4") == ""
     assert normalize_mk_media_path("   ") == ""
+
+
+def test_build_mk_video_cache_object_key_hashes_path_and_keeps_safe_video_extension():
+    from web.services.media_mk_selection import build_mk_video_cache_object_key
+
+    digest = hashlib.sha256("uploads2/demo.mov".encode("utf-8")).hexdigest()
+
+    assert build_mk_video_cache_object_key("uploads2/demo.mov", cache_prefix="mk/videos") == (
+        f"mk/videos/{digest}.mov"
+    )
+    assert build_mk_video_cache_object_key("uploads2/demo.exe", cache_prefix="mk/videos").endswith(".mp4")
 
 
 def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_columns():

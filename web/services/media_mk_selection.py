@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import mimetypes
 import os
+from pathlib import Path
 import tempfile
 from urllib.parse import quote
 from typing import Callable, Mapping, Sequence
@@ -79,6 +81,14 @@ def normalize_mk_media_path(raw_path: str) -> str:
     if not path or ".." in path.split("/"):
         return ""
     return path
+
+
+def build_mk_video_cache_object_key(media_path: str, *, cache_prefix: str) -> str:
+    digest = hashlib.sha256(media_path.encode("utf-8")).hexdigest()
+    ext = Path(media_path).suffix.lower()
+    if ext not in {".mp4", ".mov", ".m4v", ".webm"}:
+        ext = ".mp4"
+    return f"{cache_prefix}/{digest}{ext}"
 
 
 def _parse_bounded_int(

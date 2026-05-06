@@ -2301,6 +2301,18 @@ def test_mk_media_path_normalization_lives_outside_route_module():
     )
 
 
+def test_mk_video_cache_object_key_lives_outside_route_module():
+    module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
+
+    assert "import hashlib" not in module_source
+    assert "hashlib.sha256" not in module_source
+    assert "Path(media_path).suffix" not in module_source
+    assert "build_mk_video_cache_object_key" in module_source
+    assert "build_mk_video_cache_object_key" in Path(
+        "web/services/media_mk_selection.py"
+    ).read_text(encoding="utf-8")
+
+
 def test_mk_video_proxy_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
