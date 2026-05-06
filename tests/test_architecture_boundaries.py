@@ -487,6 +487,14 @@ def test_detail_image_from_url_response_lives_outside_route_module():
     assert Path("web/services/media_detail_from_url.py").exists()
 
 
+def test_detail_image_from_url_fetcher_lives_outside_route_module():
+    module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
+
+    assert "LinkCheckFetcher" not in module_source
+    assert "link_check_fetcher" not in module_source
+    assert Path("web/services/media_detail_from_url.py").exists()
+
+
 def test_detail_image_from_url_status_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

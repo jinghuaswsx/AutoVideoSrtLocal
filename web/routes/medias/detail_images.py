@@ -34,6 +34,7 @@ from web.services.media_detail_responses import (
 from web.services.media_detail_from_url import (
     build_detail_images_from_url_response as _build_detail_images_from_url_response_impl,
     build_detail_images_from_url_status_response as _build_detail_images_from_url_status_response_impl,
+    fetch_detail_images_page as _fetch_detail_images_page_impl,
 )
 from web.services.media_detail_mutations import (
     build_clear_detail_images_response as _build_detail_images_clear_response_impl,
@@ -112,9 +113,7 @@ def db_query(*args, **kwargs):
 
 
 def _fetch_detail_images_page(url: str, lang: str):
-    from appcore.link_check_fetcher import LinkCheckFetcher
-
-    return LinkCheckFetcher().fetch_page(url, lang)
+    return _fetch_detail_images_page_impl(url, lang)
 
 
 def _build_detail_images_from_url_response(

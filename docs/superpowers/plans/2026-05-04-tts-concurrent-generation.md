@@ -1445,7 +1445,7 @@ python main.py 2>&1 | tee /tmp/dev_server.log &
 # 或者用项目的 dev 启动方式
 ```
 
-打开浏览器（Ocean Blue 风格的 admin 后台），登录 admin/709709@（[testuser.md](../../../testuser.md)），访问 `/settings`，确认：
+打开浏览器（Ocean Blue 风格的 admin 后台），使用 [testuser.md](../../../testuser.md) 中维护的管理员账号登录，访问 `/settings`，确认：
 - 新表单字段出现
 - 默认值 12
 - 改成 8 + 提交 → 再访问 `/settings` 显示 8
@@ -1502,7 +1502,7 @@ curl -s -o /dev/null -w "GET /: HTTP %{http_code}\n" http://127.0.0.1:5090/
 
 Expected: HTTP 302（未登录跳 login）。
 
-用 testuser admin/709709@ 登录后：
+使用 [testuser.md](../../../testuser.md) 中维护的管理员账号登录后：
 - 跑一个 70 段左右的多语言视频翻译任务
 - 观察任务详情页 substep 显示"正在生成 XX 配音 · 第 1 轮 · X/70（活跃 12 路）"
 - 同时启动第二个翻译任务，观察该任务初期是否显示"排队中等待 ElevenLabs 并发槽位（70 段待派发）"

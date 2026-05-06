@@ -83,6 +83,12 @@ def _localized_link(raw_links: object, lang: str) -> str:
     return str(links.get(lang) or "").strip()
 
 
+def fetch_detail_images_page(url: str, lang: str):
+    from appcore.link_check_fetcher import LinkCheckFetcher
+
+    return LinkCheckFetcher().fetch_page(url, lang)
+
+
 def build_detail_images_from_url_response(
     product_id: int,
     user_id: int,
