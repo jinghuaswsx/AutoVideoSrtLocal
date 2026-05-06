@@ -11,6 +11,11 @@ import re
 from flask import jsonify, send_file
 
 from appcore import medias, object_keys
+from appcore.safe_paths import resolve_under_allowed_roots
+from config import OUTPUT_DIR
+
+
+DEFAULT_THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
 
 
 @dataclass(frozen=True)
@@ -120,9 +125,9 @@ def build_product_cover_file_response(
     *,
     resolve_cover_fn: Callable[[int, str], str | None],
     get_product_covers_fn: Callable[[int], dict],
-    thumb_dir: str | os.PathLike,
-    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
     download_media_object_fn: Callable[[str, str], object],
+    thumb_dir: str | os.PathLike | None = None,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path] | None = None,
 ) -> ProductCoverFileResponse:
     lang = (lang or "en").strip().lower()
     object_key = resolve_cover_fn(product_id, lang)
@@ -134,12 +139,14 @@ def build_product_cover_file_response(
     if not re.fullmatch(r"[a-z0-9_-]{1,32}", actual_lang):
         return _product_cover_not_found()
 
-    product_dir = Path(thumb_dir) / str(product_id)
+    thumb_root = _thumb_root(thumb_dir)
+    safe_cache_path = _safe_thumb_cache_path_fn(safe_thumb_cache_path_fn, thumb_root)
+    product_dir = thumb_root / str(product_id)
     for ext in (".jpg", ".jpeg", ".png", ".webp"):
         candidate = product_dir / f"cover_{actual_lang}{ext}"
         if candidate.exists():
             try:
-                safe_file = safe_thumb_cache_path_fn(candidate)
+                safe_file = safe_cache_path(candidate)
             except ValueError:
                 return _product_cover_not_found()
             return ProductCoverFileResponse(
@@ -150,7 +157,7 @@ def build_product_cover_file_response(
     try:
         product_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(object_key).suffix or ".jpg"
-        local = safe_thumb_cache_path_fn(product_dir / f"cover_{actual_lang}{ext}")
+        local = safe_cache_path(product_dir / f"cover_{actual_lang}{ext}")
         download_media_object_fn(object_key, str(local))
     except Exception:
         return _product_cover_not_found()
@@ -170,14 +177,16 @@ def cache_item_cover_object(
     item: dict,
     object_key: str,
     *,
-    thumb_dir: str | os.PathLike,
-    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
     download_media_object_fn: Callable[[str, str], object],
+    thumb_dir: str | os.PathLike | None = None,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path] | None = None,
 ) -> None:
-    product_dir = Path(thumb_dir) / str(item["product_id"])
+    thumb_root = _thumb_root(thumb_dir)
+    safe_cache_path = _safe_thumb_cache_path_fn(safe_thumb_cache_path_fn, thumb_root)
+    product_dir = thumb_root / str(item["product_id"])
     product_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(object_key).suffix or ".jpg"
-    local = safe_thumb_cache_path_fn(product_dir / f"item_cover_{item_id}{ext}")
+    local = safe_cache_path(product_dir / f"item_cover_{item_id}{ext}")
     download_media_object_fn(object_key, str(local))
 
 
@@ -186,14 +195,16 @@ def cache_product_cover_object(
     lang: str,
     object_key: str,
     *,
-    thumb_dir: str | os.PathLike,
-    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
     download_media_object_fn: Callable[[str, str], object],
+    thumb_dir: str | os.PathLike | None = None,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path] | None = None,
 ) -> None:
-    product_dir = Path(thumb_dir) / str(product_id)
+    thumb_root = _thumb_root(thumb_dir)
+    safe_cache_path = _safe_thumb_cache_path_fn(safe_thumb_cache_path_fn, thumb_root)
+    product_dir = thumb_root / str(product_id)
     product_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(object_key).suffix or ".jpg"
-    local = safe_thumb_cache_path_fn(product_dir / f"cover_{lang}{ext}")
+    local = safe_cache_path(product_dir / f"cover_{lang}{ext}")
     download_media_object_fn(object_key, str(local))
 
 
@@ -203,12 +214,14 @@ def cache_product_cover_bytes(
     ext: str,
     data: bytes,
     *,
-    thumb_dir: str | os.PathLike,
-    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
+    thumb_dir: str | os.PathLike | None = None,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path] | None = None,
 ) -> None:
-    product_dir = Path(thumb_dir) / str(product_id)
+    thumb_root = _thumb_root(thumb_dir)
+    safe_cache_path = _safe_thumb_cache_path_fn(safe_thumb_cache_path_fn, thumb_root)
+    product_dir = thumb_root / str(product_id)
     product_dir.mkdir(parents=True, exist_ok=True)
-    local = safe_thumb_cache_path_fn(product_dir / f"cover_{lang}{ext or '.jpg'}")
+    local = safe_cache_path(product_dir / f"cover_{lang}{ext or '.jpg'}")
     local.write_bytes(data)
 
 
@@ -218,12 +231,14 @@ def cache_item_cover_bytes(
     ext: str,
     data: bytes,
     *,
-    thumb_dir: str | os.PathLike,
-    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path],
+    thumb_dir: str | os.PathLike | None = None,
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path] | None = None,
 ) -> None:
-    product_dir = Path(thumb_dir) / str(item["product_id"])
+    thumb_root = _thumb_root(thumb_dir)
+    safe_cache_path = _safe_thumb_cache_path_fn(safe_thumb_cache_path_fn, thumb_root)
+    product_dir = thumb_root / str(item["product_id"])
     product_dir.mkdir(parents=True, exist_ok=True)
-    local = safe_thumb_cache_path_fn(product_dir / f"item_cover_{item_id}{ext or '.jpg'}")
+    local = safe_cache_path(product_dir / f"item_cover_{item_id}{ext or '.jpg'}")
     local.write_bytes(data)
 
 
@@ -497,6 +512,23 @@ def _client_filename_basename(value) -> str:
 def _cover_mimetype(ext: str) -> str:
     ext = (ext or ".jpg").lower()
     return "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
+
+
+def safe_thumb_cache_path(path: str | os.PathLike, *, thumb_dir: str | os.PathLike | None = None) -> Path:
+    return resolve_under_allowed_roots(Path(path), [_thumb_root(thumb_dir)])
+
+
+def _thumb_root(thumb_dir: str | os.PathLike | None = None) -> Path:
+    return Path(DEFAULT_THUMB_DIR if thumb_dir is None else thumb_dir)
+
+
+def _safe_thumb_cache_path_fn(
+    safe_thumb_cache_path_fn: Callable[[str | os.PathLike], Path] | None,
+    thumb_root: Path,
+) -> Callable[[str | os.PathLike], Path]:
+    if safe_thumb_cache_path_fn is not None:
+        return safe_thumb_cache_path_fn
+    return lambda path: safe_thumb_cache_path(path, thumb_dir=thumb_root)
 
 
 def _product_cover_not_found() -> ProductCoverFileResponse:

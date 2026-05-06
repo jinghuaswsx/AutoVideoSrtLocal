@@ -10,10 +10,7 @@ from flask_login import current_user, login_required
 from appcore import medias, object_keys
 
 from . import bp
-from ._helpers import (
-    THUMB_DIR,
-    _parse_lang,
-)
+from ._helpers import _parse_lang
 from ._serializers import _serialize_item
 from web.services.media_items import (
     ItemFilenameValidation,
@@ -122,7 +119,6 @@ def _cache_item_cover_object(item_id: int, product_id: int, cover_object_key: st
         item_id,
         product_id,
         cover_object_key,
-        thumb_dir=THUMB_DIR,
         download_media_object_fn=_download_media_object,
     )
 
@@ -133,7 +129,6 @@ def _build_item_thumbnail(item_id: int, pid: int, filename: str, object_key: str
         pid,
         filename,
         object_key,
-        thumb_dir=THUMB_DIR,
         download_media_object_fn=_download_media_object,
     )
 

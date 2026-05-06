@@ -38,7 +38,7 @@ from web.services.media_covers import (
 )
 
 from . import bp
-from ._helpers import THUMB_DIR, _parse_lang, _safe_thumb_cache_path
+from ._helpers import _parse_lang
 
 
 def _routes():
@@ -141,8 +141,6 @@ def _build_item_cover_update_response(item_id, item, body):
         update_item_cover_fn=medias.update_item_cover,
         cache_item_cover_fn=partial(
             _item_cover_object_cache_impl,
-            thumb_dir=THUMB_DIR,
-            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
             download_media_object_fn=_download_media_object,
         ),
     )
@@ -158,8 +156,6 @@ def _build_item_cover_set_response(item_id, item, body):
         update_item_cover_fn=medias.update_item_cover,
         cache_item_cover_fn=partial(
             _item_cover_object_cache_impl,
-            thumb_dir=THUMB_DIR,
-            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
             download_media_object_fn=_download_media_object,
         ),
     )
@@ -176,8 +172,6 @@ def _build_product_cover_complete_response(pid, body):
         set_product_cover_fn=medias.set_product_cover,
         cache_product_cover_fn=partial(
             _product_cover_object_cache_impl,
-            thumb_dir=THUMB_DIR,
-            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
             download_media_object_fn=_download_media_object,
         ),
         schedule_material_evaluation_fn=_schedule_material_evaluation,
@@ -201,8 +195,6 @@ def _build_product_cover_file_response(pid, lang):
         lang,
         resolve_cover_fn=medias.resolve_cover,
         get_product_covers_fn=medias.get_product_covers,
-        thumb_dir=THUMB_DIR,
-        safe_thumb_cache_path_fn=_safe_thumb_cache_path,
         download_media_object_fn=_download_media_object,
     )
 
@@ -219,8 +211,6 @@ def _build_product_cover_from_url_response(pid, body):
         set_product_cover_fn=medias.set_product_cover,
         cache_product_cover_bytes_fn=partial(
             _product_cover_bytes_cache_impl,
-            thumb_dir=THUMB_DIR,
-            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
         ),
         schedule_material_evaluation_fn=_schedule_material_evaluation,
     )
@@ -246,8 +236,6 @@ def _build_item_cover_set_from_url_response(item_id, item, body):
         update_item_cover_fn=medias.update_item_cover,
         cache_item_cover_bytes_fn=partial(
             _item_cover_bytes_cache_impl,
-            thumb_dir=THUMB_DIR,
-            safe_thumb_cache_path_fn=_safe_thumb_cache_path,
         ),
     )
 

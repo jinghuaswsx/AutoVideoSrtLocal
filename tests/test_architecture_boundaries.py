@@ -983,6 +983,15 @@ def test_media_item_thumbnail_side_effects_live_outside_route_module():
     assert Path("web/services/media_items.py").exists()
 
 
+def test_media_item_thumbnail_cache_root_lives_outside_route_module():
+    route_source = Path("web/routes/medias/items.py").read_text(encoding="utf-8")
+    service_source = Path("web/services/media_items.py").read_text(encoding="utf-8")
+
+    assert "THUMB_DIR" not in route_source
+    assert "thumb_dir=" not in route_source
+    assert "DEFAULT_THUMB_DIR" in service_source
+
+
 def test_media_item_thumbnail_db_update_lives_in_appcore_dao():
     service_source = Path("web/services/media_items.py").read_text(encoding="utf-8")
     dao_source = Path("appcore/medias.py").read_text(encoding="utf-8")
@@ -1275,6 +1284,18 @@ def test_media_cover_cache_writes_live_outside_route_module():
     assert "_cache_item_cover_bytes" not in route_source
     assert "write_bytes(" not in route_source
     assert Path("web/services/media_covers.py").exists()
+
+
+def test_media_cover_cache_root_lives_outside_route_module():
+    route_source = Path("web/routes/medias/covers.py").read_text(encoding="utf-8")
+    service_source = Path("web/services/media_covers.py").read_text(encoding="utf-8")
+
+    assert "THUMB_DIR" not in route_source
+    assert "_safe_thumb_cache_path" not in route_source
+    assert "thumb_dir=" not in route_source
+    assert "safe_thumb_cache_path_fn=" not in route_source
+    assert "DEFAULT_THUMB_DIR" in service_source
+    assert "safe_thumb_cache_path" in service_source
 
 
 def test_media_cover_from_url_responses_live_outside_route_module():

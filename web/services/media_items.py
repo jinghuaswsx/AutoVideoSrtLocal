@@ -17,6 +17,7 @@ PRODUCT_NOT_LISTED_PAYLOAD = {
     "error": "product_not_listed",
     "message": "产品已下架，不能执行该操作",
 }
+DEFAULT_THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
 
 
 @dataclass(frozen=True)
@@ -174,10 +175,10 @@ def cache_item_cover_object(
     product_id: int,
     cover_object_key: str,
     *,
-    thumb_dir: str | Path,
     download_media_object_fn: Callable[[str, str], object],
+    thumb_dir: str | Path | None = None,
 ) -> None:
-    product_dir = Path(thumb_dir) / str(product_id)
+    product_dir = _thumb_root(thumb_dir) / str(product_id)
     product_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(cover_object_key).suffix or ".jpg"
     download_media_object_fn(
@@ -192,14 +193,14 @@ def build_item_thumbnail(
     filename: str,
     object_key: str,
     *,
-    thumb_dir: str | Path,
     download_media_object_fn: Callable[[str, str], object],
+    thumb_dir: str | Path | None = None,
     output_dir: str | Path = OUTPUT_DIR,
     get_media_duration_fn: Callable[[str], float | int | None] = get_media_duration,
     extract_thumbnail_fn: Callable[..., str | None] = extract_thumbnail,
     update_item_thumbnail_metadata_fn: Callable[[int, str, float | int | None], object] | None = None,
 ) -> None:
-    thumb_root = Path(thumb_dir)
+    thumb_root = _thumb_root(thumb_dir)
     thumb_root.mkdir(parents=True, exist_ok=True)
     product_dir = thumb_root / str(product_id)
     product_dir.mkdir(parents=True, exist_ok=True)
@@ -268,6 +269,10 @@ def build_item_delete_response(
 
 def _client_filename_basename(value) -> str:
     return os.path.basename(str(value or "").replace("\\", "/"))
+
+
+def _thumb_root(thumb_dir: str | Path | None = None) -> Path:
+    return Path(DEFAULT_THUMB_DIR if thumb_dir is None else thumb_dir)
 
 
 def _call_best_effort(fn: Callable, *args) -> None:
