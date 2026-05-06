@@ -7,7 +7,7 @@ import os
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, jsonify, send_file, abort
+from flask import Blueprint, render_template, request, send_file, abort
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -30,10 +30,21 @@ from web.services.translate_detail_protocol import (
     normalize_confirm_voice_payload,
     resolve_round_file_entry,
 )
+from web.services.translate_route_responses import (
+    build_translate_route_payload_response,
+    translate_route_flask_response,
+)
 
 log = logging.getLogger(__name__)
 
 bp = Blueprint("omni_translate", __name__)
+
+
+def _json_response(payload: dict, status_code: int = 200):
+    return translate_route_flask_response(
+        build_translate_route_payload_response(payload, status_code)
+    )
+
 
 def _list_enabled_target_langs() -> tuple[str, ...]:
     """创建模态用：SUPPORTED_LANGS ∩ media_languages.enabled=1，并把英语 en 强制追加到末尾。
@@ -257,12 +268,12 @@ def detail(task_id: str):
 def subtitle_preview(task_id: str):
     row = _query_viewable_project(task_id, "id, user_id", include_deleted=False)
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     payload = build_multi_translate_preview_payload(
         task_id, row.get("user_id") or current_user.id,
         api_base="/api/omni-translate",
     )
-    return jsonify(payload)
+    return _json_response(payload)
 
 
 # ── API 路由 ──────────────────────────────────────────
@@ -272,26 +283,26 @@ def subtitle_preview(task_id: str):
 def upload_and_start():
     """上传视频，创建多语种翻译任务。源语言必须由用户明确选择。"""
     if "video" not in request.files:
-        return jsonify({"error": "No video file"}), 400
+        return _json_response({"error": "No video file"}, 400)
     file = request.files["video"]
     if not file.filename:
-        return jsonify({"error": "Empty filename"}), 400
+        return _json_response({"error": "Empty filename"}, 400)
 
     from web.upload_util import build_source_object_info, save_uploaded_video, validate_video_extension
 
     original_filename = os.path.basename(file.filename)
     if not validate_video_extension(original_filename):
-        return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
+        return _json_response({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}, 400)
 
     raw_source_language = (request.form.get("source_language") or "").strip()
     if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
-        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
+        return _json_response({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}, 400)
     source_language = raw_source_language
 
     target_lang = (request.form.get("target_lang") or "").strip()
     enabled_langs = _list_enabled_target_langs()
     if target_lang not in enabled_langs:
-        return jsonify({"error": f"target_lang must be one of {list(enabled_langs)}"}), 400
+        return _json_response({"error": f"target_lang must be one of {list(enabled_langs)}"}, 400)
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -334,18 +345,18 @@ def upload_and_start():
     _ensure_uploaded_video_thumbnail(task_id, video_path, task_dir)
 
     omni_pipeline_runner.start(task_id, user_id=user_id)
-    return jsonify({"task_id": task_id}), 201
+    return _json_response({"task_id": task_id}, 201)
 
 
 @bp.route("/api/omni-translate/bootstrap", methods=["POST"])
 @login_required
 def bootstrap_upload():
-    return jsonify({"error": "新建多语种翻译任务已切换为本地上传，请改用 multipart /api/omni-translate/start"}), 410
+    return _json_response({"error": "新建多语种翻译任务已切换为本地上传，请改用 multipart /api/omni-translate/start"}, 410)
 
 @bp.route("/api/omni-translate/complete", methods=["POST"])
 @login_required
 def complete_upload():
-    return jsonify({"error": "新建多语种翻译任务已切换为本地上传，TOS complete 创建任务入口已停用"}), 410
+    return _json_response({"error": "新建多语种翻译任务已切换为本地上传，TOS complete 创建任务入口已停用"}, 410)
 
 @bp.route("/api/omni-translate/<task_id>", methods=["GET"])
 @login_required
@@ -353,8 +364,8 @@ def get_task(task_id):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
-    return jsonify(task)
+        return _json_response({"error": "Task not found"}, 404)
+    return _json_response(task)
 
 
 @bp.route("/api/omni-translate/<task_id>/restart", methods=["POST"])
@@ -364,16 +375,16 @@ def restart(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     raw_source_language = body.get("source_language", None)
     if raw_source_language is not None:
         raw_source_language = str(raw_source_language).strip()
         if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
-            return jsonify({
+            return _json_response({
                 "error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
-            }), 400
+            }, 400)
     from web.services.task_restart import restart_task
     updated = restart_task(
         task_id,
@@ -388,7 +399,7 @@ def restart(task_id):
         user_id=current_user.id,
         runner=omni_pipeline_runner,
     )
-    return jsonify({"status": "restarted", "task": updated})
+    return _json_response({"status": "restarted", "task": updated})
 
 
 @bp.route("/api/omni-translate/<task_id>/start", methods=["POST"])
@@ -397,7 +408,7 @@ def start(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     store.update(
@@ -413,7 +424,7 @@ def start(task_id):
 
     omni_pipeline_runner.start(task_id, user_id=current_user.id)
     updated_task = store.get(task_id) or task
-    return jsonify({"status": "started", "task": updated_task})
+    return _json_response({"status": "started", "task": updated_task})
 
 
 @bp.route("/api/omni-translate/<task_id>/source-language", methods=["PUT"])
@@ -422,11 +433,11 @@ def update_source_language(task_id):
     """改写源语言并从 asr_clean 步骤重跑。源语言必须人工明确选择。"""
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     body = request.get_json(silent=True) or {}
     raw_lang = (body.get("source_language") or "").strip()
     if raw_lang not in ALLOWED_SOURCE_LANGUAGES:
-        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
+        return _json_response({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}, 400)
     new_lang = raw_lang
 
     store.update(
@@ -460,7 +471,7 @@ def update_source_language(task_id):
             store.set_step_message(task_id, s, "等待中...")
 
     omni_pipeline_runner.resume(task_id, "asr_clean", user_id=current_user.id)
-    return jsonify({
+    return _json_response({
         "status": "started",
         "source_language": new_lang,
         "user_specified_source_language": True,
@@ -472,12 +483,12 @@ def update_source_language(task_id):
 def update_alignment(task_id):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     break_after = body.get("break_after")
     if not isinstance(break_after, list):
-        return jsonify({"error": "break_after required"}), 400
+        return _json_response({"error": "break_after required"}, 400)
 
     source_language = body.get("source_language")
     if source_language in ALLOWED_SOURCE_LANGUAGES:
@@ -501,7 +512,7 @@ def update_alignment(task_id):
         store.update(task_id, _translate_pre_select=True)
     else:
         omni_pipeline_runner.resume(task_id, "translate", user_id=current_user.id)
-    return jsonify({"status": "ok", "script_segments": script_segments})
+    return _json_response({"status": "ok", "script_segments": script_segments})
 
 
 @bp.route("/api/omni-translate/<task_id>/segments", methods=["PUT"])
@@ -510,7 +521,7 @@ def update_segments(task_id):
     """用户确认/编辑多语种翻译结果。"""
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     body = request.get_json(silent=True) or {}
     segments = body.get("segments")
@@ -537,7 +548,7 @@ def update_segments(task_id):
 
     store.set_current_review_step(task_id, "")
     omni_pipeline_runner.resume(task_id, "tts", user_id=current_user.id)
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/omni-translate/<task_id>/export", methods=["POST"])
@@ -545,9 +556,9 @@ def update_segments(task_id):
 def export(task_id):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     omni_pipeline_runner.resume(task_id, "compose", user_id=current_user.id)
-    return jsonify({"status": "started"})
+    return _json_response({"status": "started"})
 
 
 RESUMABLE_STEPS = ["extract", "asr", "asr_clean", "voice_match",
@@ -561,12 +572,12 @@ def resume(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     body = request.get_json(silent=True) or {}
     raw_start_step = body.get("start_step", "")
     start_step = RESUME_STEP_ALIASES.get(raw_start_step, raw_start_step)
     if start_step not in RESUMABLE_STEPS:
-        return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
+        return _json_response({"error": f"start_step must be one of {RESUMABLE_STEPS}"}, 400)
 
     started = False
     for s in RESUMABLE_STEPS:
@@ -578,7 +589,7 @@ def resume(task_id):
 
     store.update(task_id, status="running", current_review_step="")
     omni_pipeline_runner.resume(task_id, start_step, user_id=current_user.id)
-    return jsonify({"status": "started", "start_step": start_step})
+    return _json_response({"status": "started", "start_step": start_step})
 
 
 @bp.route("/api/omni-translate/<task_id>/download/<file_type>")
@@ -587,7 +598,7 @@ def download(task_id, file_type):
     """下载多语种任务产物，TOS 优先 / 本地兜底。"""
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     variant = request.args.get("variant", "normal")
     return serve_artifact_download(task, task_id, file_type, variant=variant)
@@ -599,7 +610,7 @@ def download(task_id, file_type):
 @login_required
 def run_video_ai_review(task_id):
     if not _get_viewable_task(task_id):
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     from appcore import video_ai_review
     try:
         run_id = video_ai_review.trigger_review(
@@ -609,14 +620,14 @@ def run_video_ai_review(task_id):
             triggered_by="manual",
         )
     except video_ai_review.ReviewInProgressError as exc:
-        return jsonify({
+        return _json_response({
             "error": "AI 视频分析正在运行中",
             "in_flight_run_id": exc.run_id,
-        }), 409
+        }, 409)
     except Exception as exc:
         log.exception("[video-ai-review] omni trigger failed task=%s", task_id)
-        return jsonify({"error": str(exc)}), 500
-    return jsonify({
+        return _json_response({"error": str(exc)}, 500)
+    return _json_response({
         "status": "started", "run_id": run_id,
         "channel": video_ai_review.CHANNEL,
         "model": video_ai_review.MODEL,
@@ -627,11 +638,11 @@ def run_video_ai_review(task_id):
 @login_required
 def get_video_ai_review(task_id):
     if not _get_viewable_task(task_id):
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
     from appcore import video_ai_review, task_state
     payload = video_ai_review.latest_review("omni_translate_task", task_id)
     ts_state = task_state.get(task_id) or {}
-    return jsonify({
+    return _json_response({
         "review": payload,
         "task_evals_invalidated_at": ts_state.get("evals_invalidated_at"),
     })
@@ -646,7 +657,7 @@ def delete(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     task = store.get(task_id) or {}
     from appcore import cleanup
@@ -664,7 +675,7 @@ def delete(task_id):
         (task_id,),
     )
     store.update(task_id, status="deleted")
-    return jsonify({"status": "ok"})
+    return _json_response({"status": "ok"})
 
 
 @bp.route("/api/omni-translate/<task_id>/artifact/<name>")
@@ -672,7 +683,7 @@ def delete(task_id):
 def get_artifact(task_id, name):
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     variant = request.args.get("variant") or None
 
@@ -695,7 +706,7 @@ def get_artifact(task_id, name):
         path = sep.get("vocals_path") if name == "separation_vocals" else sep.get("accompaniment_path")
     if path:
         return safe_task_file_response(task, path)
-    return jsonify({"error": "Artifact not found"}), 404
+    return _json_response({"error": "Artifact not found"}, 404)
 
 
 _ALLOWED_ROUND_KINDS = {
@@ -718,7 +729,7 @@ def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
 
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     filename = f"localized_translation.round_{round_index}.attempt_{attempt}.json"
     path = os.path.join(task.get("task_dir", ""), filename)
@@ -745,7 +756,7 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 
     task = _get_viewable_task(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     path = os.path.join(task.get("task_dir", ""), filename)
     from web.services.artifact_download import safe_task_file_response
@@ -769,17 +780,17 @@ def run_ai_analysis(task_id):
         (task_id, current_user.id),
     )
     if not row:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     task = store.get(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return _json_response({"error": "Task not found"}, 404)
 
     if (task.get("steps") or {}).get("analysis") == "running":
-        return jsonify({"error": "AI 分析正在运行中"}), 409
+        return _json_response({"error": "AI 分析正在运行中"}, 409)
 
     # multi_pipeline_runner does not expose run_analysis yet; placeholder
-    return jsonify({"error": "analysis not supported for multi_translate"}), 501
+    return _json_response({"error": "analysis not supported for multi_translate"}, 501)
 
 
 @bp.route("/api/omni-translate/user-default-voice", methods=["PUT"])
@@ -791,13 +802,13 @@ def set_user_default_voice_route():
     voice_id = (body.get("voice_id") or "").strip()
     voice_name = (body.get("voice_name") or "").strip() or None
     if lang not in SUPPORTED_LANGS:
-        return jsonify({"error": f"lang must be one of {list(SUPPORTED_LANGS)}"}), 400
+        return _json_response({"error": f"lang must be one of {list(SUPPORTED_LANGS)}"}, 400)
     if not voice_id:
-        return jsonify({"error": "voice_id required"}), 400
+        return _json_response({"error": "voice_id required"}, 400)
 
     from appcore.video_translate_defaults import set_user_default_voice
     set_user_default_voice(current_user.id, lang, voice_id, voice_name)
-    return jsonify({"ok": True, "lang": lang, "voice_id": voice_id, "voice_name": voice_name})
+    return _json_response({"ok": True, "lang": lang, "voice_id": voice_id, "voice_name": voice_name})
 
 
 @bp.route("/api/omni-translate/<task_id>/voice", methods=["PUT"])
@@ -813,12 +824,12 @@ def update_voice(task_id: str):
     body = request.get_json() or {}
     voice_id = body.get("voice_id")
     if not voice_id:
-        return jsonify({"error": "voice_id is required"}), 400
+        return _json_response({"error": "voice_id is required"}, 400)
     state["selected_voice_id"] = voice_id
     if body.get("voice_name"):
         state["selected_voice_name"] = body["voice_name"]
     save_project_state(task_id, state, execute_func=db_execute)
-    return jsonify({"ok": True, "voice_id": voice_id})
+    return _json_response({"ok": True, "voice_id": voice_id})
 
 
 @bp.route("/api/omni-translate/<task_id>/voice-library", methods=["GET"])
@@ -831,7 +842,7 @@ def voice_library_for_task(task_id: str):
     state = json.loads(row["state_json"] or "{}")
     lang = state.get("target_lang")
     if not lang:
-        return jsonify({"error": "task has no target_lang"}), 400
+        return _json_response({"error": "task has no target_lang"}, 400)
 
     from appcore.voice_library_browse import list_voices
 
@@ -840,7 +851,7 @@ def voice_library_for_task(task_id: str):
     try:
         data = list_voices(language=lang, gender=gender, q=q, page=1, page_size=500)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}, 400)
 
     owner_user_id = row.get("user_id") or current_user.id
     payload = build_voice_library_payload(
@@ -849,7 +860,7 @@ def voice_library_for_task(task_id: str):
         items=data.get("items", []),
         total=data.get("total", 0),
     )
-    return jsonify(payload)
+    return _json_response(payload)
 
 
 @bp.route("/api/omni-translate/<task_id>/rematch", methods=["POST"])
@@ -869,18 +880,18 @@ def rematch_voice(task_id: str):
     is_owner = str(owner_user_id) == str(current_user.id)
     lang = state.get("target_lang")
     if not lang:
-        return jsonify({"error": "task has no target_lang"}), 400
+        return _json_response({"error": "task has no target_lang"}, 400)
 
     body = request.get_json(silent=True) or {}
     gender = (body.get("gender") or "").strip().lower() or None
     if gender and gender not in {"male", "female"}:
-        return jsonify({"error": "gender must be male|female|null"}), 400
+        return _json_response({"error": "gender must be male|female|null"}, 400)
 
     embedding_b64 = state.get("voice_match_query_embedding")
     if not embedding_b64:
-        return jsonify({
+        return _json_response({
             "error": "voice_match 尚未完成，无法重算；请等待向量匹配就绪"
-        }), 409
+        }, 409)
 
     import base64
     from appcore.video_translate_defaults import resolve_default_voice
@@ -891,7 +902,7 @@ def rematch_voice(task_id: str):
     try:
         vec = deserialize_embedding(base64.b64decode(embedding_b64))
     except Exception:
-        return jsonify({"error": "query embedding 解码失败"}), 500
+        return _json_response({"error": "query embedding 解码失败"}, 500)
 
     # 用 owner 的默认音色排除规则，保证 admin 浏览时算出的候选与 owner 看到的一致
     default_voice_id = resolve_default_voice(lang, user_id=owner_user_id)
@@ -924,7 +935,7 @@ def rematch_voice(task_id: str):
         except Exception:
             pass
 
-    return jsonify({
+    return _json_response({
         "ok": True, "gender": gender,
         "candidates": candidates, "extra_items": extra_items,
     })
@@ -951,7 +962,7 @@ def confirm_voice(task_id: str):
             lang=lang or "",
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}, 400)
 
     state["selected_voice_id"] = normalized["voice_id"]
     if normalized["voice_name"]:
@@ -993,4 +1004,4 @@ def confirm_voice(task_id: str):
         except Exception:
             log.exception("failed to resume parent bulk_translate task after voice confirm")
 
-    return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
+    return _json_response({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
