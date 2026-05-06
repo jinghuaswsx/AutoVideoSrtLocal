@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 
 def test_media_item_flask_response_returns_payload_and_status(authed_client_no_db):
     from web.services.media_items import MediaItemResponse, media_item_flask_response
@@ -424,3 +426,67 @@ def test_build_item_complete_response_rejects_before_create():
     assert unavailable.status_code == 400
     assert unavailable.payload == {"error": "object not found"}
     assert calls == []
+
+
+def test_cache_item_cover_object_downloads_to_product_thumb_dir(tmp_path):
+    from web.services.media_items import cache_item_cover_object
+
+    calls = []
+
+    cache_item_cover_object(
+        44,
+        123,
+        "covers/demo.png",
+        thumb_dir=tmp_path,
+        download_media_object_fn=lambda object_key, destination: calls.append(
+            (object_key, destination)
+        ),
+    )
+
+    assert (tmp_path / "123").is_dir()
+    assert calls == [("covers/demo.png", str(tmp_path / "123" / "item_cover_44.png"))]
+
+
+def test_build_item_thumbnail_updates_metadata_and_removes_tmp_video(tmp_path):
+    from web.services.media_items import build_item_thumbnail
+
+    thumb_dir = tmp_path / "media_thumbs"
+    calls = []
+
+    def fake_download(object_key, destination):
+        calls.append(("download", object_key, destination))
+        Path(destination).write_bytes(b"video")
+
+    def fake_extract(video_path, output_dir, *, scale):
+        calls.append(("extract", video_path, output_dir, scale))
+        thumb = Path(output_dir) / "generated.jpg"
+        thumb.write_bytes(b"thumb")
+        return str(thumb)
+
+    build_item_thumbnail(
+        44,
+        123,
+        r"C:\upload\demo.mp4",
+        "objects/demo.mp4",
+        thumb_dir=thumb_dir,
+        output_dir=tmp_path,
+        download_media_object_fn=fake_download,
+        get_media_duration_fn=lambda video_path: calls.append(("duration", video_path)) or 12.5,
+        extract_thumbnail_fn=fake_extract,
+        execute_fn=lambda sql, args: calls.append(("execute", sql, args)) or 1,
+    )
+
+    tmp_video = thumb_dir / "123" / "tmp_44_demo.mp4"
+    final_thumb = thumb_dir / "123" / "44.jpg"
+    assert not tmp_video.exists()
+    assert final_thumb.read_bytes() == b"thumb"
+    assert calls == [
+        ("download", "objects/demo.mp4", str(tmp_video)),
+        ("duration", str(tmp_video)),
+        ("extract", str(tmp_video), str(thumb_dir / "123"), "360:-1"),
+        (
+            "execute",
+            "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
+            ("media_thumbs/123/44.jpg", 12.5, 44),
+        ),
+    ]

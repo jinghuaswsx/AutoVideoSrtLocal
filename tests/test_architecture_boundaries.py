@@ -939,6 +939,18 @@ def test_media_item_upload_responses_live_outside_route_module():
     assert Path("web/services/media_items.py").exists()
 
 
+def test_media_item_thumbnail_side_effects_live_outside_route_module():
+    module_source = Path("web/routes/medias/items.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import execute as db_execute" not in module_source
+    assert "from pipeline.ffutil import extract_thumbnail, get_media_duration" not in module_source
+    assert "UPDATE media_items SET thumbnail_path" not in module_source
+    assert "os.replace" not in module_source
+    assert "_cache_item_cover_object_impl" in module_source
+    assert "_build_item_thumbnail_impl" in module_source
+    assert Path("web/services/media_items.py").exists()
+
+
 def test_media_item_video_ai_review_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/items.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

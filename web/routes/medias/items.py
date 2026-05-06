@@ -4,16 +4,10 @@
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from flask import abort, request
 from flask_login import current_user, login_required
 
 from appcore import medias, object_keys
-from appcore.db import execute as db_execute
-from config import OUTPUT_DIR
-from pipeline.ffutil import extract_thumbnail, get_media_duration
 
 from . import bp
 from ._helpers import (
@@ -26,8 +20,10 @@ from web.services.media_items import (
     ItemUploadValidation,
     build_item_bootstrap_response as _build_item_bootstrap_response_impl,
     build_item_complete_response as _build_item_complete_response_impl,
+    build_item_thumbnail as _build_item_thumbnail_impl,
     build_item_delete_response as _build_item_delete_response_impl,
     build_item_update_response as _build_item_update_response_impl,
+    cache_item_cover_object as _cache_item_cover_object_impl,
     media_item_flask_response as _media_item_flask_response_impl,
 )
 from web.services.media_item_video_ai_review import (
@@ -122,35 +118,24 @@ def _build_item_bootstrap_response(pid: int, product: dict, body: dict):
 
 
 def _cache_item_cover_object(item_id: int, product_id: int, cover_object_key: str) -> None:
-    product_dir = THUMB_DIR / str(product_id)
-    product_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(cover_object_key).suffix or ".jpg"
-    _download_media_object(
+    _cache_item_cover_object_impl(
+        item_id,
+        product_id,
         cover_object_key,
-        str(product_dir / f"item_cover_{item_id}{ext}"),
+        thumb_dir=THUMB_DIR,
+        download_media_object_fn=_download_media_object,
     )
 
 
 def _build_item_thumbnail(item_id: int, pid: int, filename: str, object_key: str) -> None:
-    THUMB_DIR.mkdir(parents=True, exist_ok=True)
-    product_dir = THUMB_DIR / str(pid)
-    product_dir.mkdir(exist_ok=True)
-    tmp_video = product_dir / f"tmp_{item_id}_{Path(filename).name}"
-    _download_media_object(object_key, str(tmp_video))
-    duration = get_media_duration(str(tmp_video))
-    thumb = extract_thumbnail(str(tmp_video), str(product_dir), scale="360:-1")
-    if thumb:
-        final = product_dir / f"{item_id}.jpg"
-        os.replace(thumb, final)
-        db_execute(
-            "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
-            (str(final.relative_to(OUTPUT_DIR)).replace("\\", "/"),
-             duration or None, item_id),
-        )
-    try:
-        tmp_video.unlink()
-    except Exception:
-        pass
+    _build_item_thumbnail_impl(
+        item_id,
+        pid,
+        filename,
+        object_key,
+        thumb_dir=THUMB_DIR,
+        download_media_object_fn=_download_media_object,
+    )
 
 
 def _build_item_complete_response(pid: int, product: dict, body: dict):

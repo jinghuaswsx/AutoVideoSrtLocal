@@ -5,10 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import os
+from pathlib import Path
 
 from flask import jsonify
 
 from appcore import medias, object_keys
+from appcore.db import execute as db_execute
+from config import OUTPUT_DIR
+from pipeline.ffutil import extract_thumbnail, get_media_duration
 
 PRODUCT_NOT_LISTED_PAYLOAD = {
     "error": "product_not_listed",
@@ -164,6 +168,61 @@ def build_item_complete_response(
         schedule_material_evaluation_fn(product_id)
 
     return MediaItemResponse({"id": item_id}, 201)
+
+
+def cache_item_cover_object(
+    item_id: int,
+    product_id: int,
+    cover_object_key: str,
+    *,
+    thumb_dir: str | Path,
+    download_media_object_fn: Callable[[str, str], object],
+) -> None:
+    product_dir = Path(thumb_dir) / str(product_id)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(cover_object_key).suffix or ".jpg"
+    download_media_object_fn(
+        cover_object_key,
+        str(product_dir / f"item_cover_{item_id}{ext}"),
+    )
+
+
+def build_item_thumbnail(
+    item_id: int,
+    product_id: int,
+    filename: str,
+    object_key: str,
+    *,
+    thumb_dir: str | Path,
+    download_media_object_fn: Callable[[str, str], object],
+    output_dir: str | Path = OUTPUT_DIR,
+    get_media_duration_fn: Callable[[str], float | int | None] = get_media_duration,
+    extract_thumbnail_fn: Callable[..., str | None] = extract_thumbnail,
+    execute_fn: Callable[[str, tuple], object] = db_execute,
+) -> None:
+    thumb_root = Path(thumb_dir)
+    thumb_root.mkdir(parents=True, exist_ok=True)
+    product_dir = thumb_root / str(product_id)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    tmp_video = product_dir / f"tmp_{item_id}_{Path(filename).name}"
+    download_media_object_fn(object_key, str(tmp_video))
+    duration = get_media_duration_fn(str(tmp_video))
+    thumb = extract_thumbnail_fn(str(tmp_video), str(product_dir), scale="360:-1")
+    if thumb:
+        final = product_dir / f"{item_id}.jpg"
+        os.replace(str(thumb), str(final))
+        execute_fn(
+            "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
+            (
+                str(final.relative_to(Path(output_dir))).replace("\\", "/"),
+                duration or None,
+                item_id,
+            ),
+        )
+    try:
+        tmp_video.unlink()
+    except Exception:
+        pass
 
 
 def build_item_update_response(
