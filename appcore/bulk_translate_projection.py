@@ -110,6 +110,28 @@ def list_product_tasks(
     return tasks
 
 
+def list_user_tasks(user_id: int, *, status: str | None = None, limit: int = 200) -> list[dict]:
+    where = "user_id = %s AND type = 'bulk_translate'"
+    args: list = [user_id]
+    if status:
+        where += " AND status = %s"
+        args.append(status)
+    safe_limit = max(1, min(int(limit or 200), 500))
+    args.append(safe_limit)
+
+    rows = query(
+        f"""
+        SELECT id, status, state_json, created_at
+        FROM projects
+        WHERE {where}
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        tuple(args),
+    )
+    return [_serialize_user_task(row, _parse_state(row.get("state_json"))) for row in rows or []]
+
+
 def list_admin_tasks(*, limit: int = 300) -> dict:
     """Return an admin-facing overview for all bulk translation parent tasks."""
     creator_name_expr = _admin_creator_name_expr()
@@ -145,6 +167,23 @@ def _admin_creator_name_expr() -> str:
     except Exception:
         log.warning("bulk_translate admin creator name expr failed; fallback to username", exc_info=True)
         return "u.username"
+
+
+def _serialize_user_task(row: dict, state: dict) -> dict:
+    cost_tracking = dict(state.get("cost_tracking") or {})
+    cost_actual = dict(cost_tracking.get("actual") or {})
+    return {
+        "id": row["id"],
+        "status": row["status"],
+        "product_id": state.get("product_id"),
+        "target_langs": state.get("target_langs"),
+        "content_types": state.get("content_types"),
+        "progress": state.get("progress"),
+        "cost_estimate": None,
+        "cost_actual": cost_actual.get("actual_cost_cny"),
+        "initiator": state.get("initiator"),
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+    }
 
 
 def _serialize_admin_task(row: dict, state: dict) -> dict:

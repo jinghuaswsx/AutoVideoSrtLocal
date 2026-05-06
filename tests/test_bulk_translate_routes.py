@@ -399,29 +399,27 @@ def test_get_endpoint_returns_state(phase5_client, monkeypatch):
 
 def test_list_endpoint_filters_by_user(phase5_client, monkeypatch):
     """list 只返回当前用户的 bulk_translate 任务。"""
-    import json as _j
-
     captured_args = {}
 
-    def fake_query(sql, args=None):
-        captured_args["sql"] = sql
-        captured_args["args"] = args
-        return [{
-            "id": "t1", "status": "running",
-            "state_json": _j.dumps({
-                "product_id": 77, "target_langs": ["de"],
+    def fake_list_user_tasks(user_id, *, status=None):
+        captured_args["user_id"] = user_id
+        captured_args["status"] = status
+        return [
+            {
+                "id": "t1",
+                "status": "running",
+                "product_id": 77,
+                "target_langs": ["de"],
                 "content_types": ["copy"],
                 "progress": {"total": 3, "done": 1},
-                "cost_tracking": {
-                    "estimate": {"estimated_cost_cny": 5.5},
-                    "actual": {"actual_cost_cny": 2.1},
-                },
+                "cost_estimate": None,
+                "cost_actual": 2.1,
                 "initiator": {"user_name": "t"},
-            }),
-            "created_at": None, "updated_at": None,
-        }]
+                "created_at": None,
+            }
+        ]
 
-    monkeypatch.setattr("web.routes.bulk_translate.query", fake_query)
+    monkeypatch.setattr("web.routes.bulk_translate.list_user_tasks", fake_list_user_tasks)
 
     resp = phase5_client.get("/api/bulk-translate/list")
     assert resp.status_code == 200
@@ -430,21 +428,20 @@ def test_list_endpoint_filters_by_user(phase5_client, monkeypatch):
     assert data[0]["id"] == "t1"
     assert data[0]["progress"]["total"] == 3
     assert data[0]["cost_estimate"] is None
-    # SQL 里有 user_id 过滤
-    assert "user_id" in captured_args["sql"]
-    assert captured_args["args"][0] == 1
+    assert captured_args == {"user_id": 1, "status": None}
 
 
 def test_list_endpoint_status_filter(phase5_client, monkeypatch):
     captured_args = {}
 
-    def fake_query(sql, args=None):
-        captured_args["args"] = args
+    def fake_list_user_tasks(user_id, *, status=None):
+        captured_args["user_id"] = user_id
+        captured_args["status"] = status
         return []
 
-    monkeypatch.setattr("web.routes.bulk_translate.query", fake_query)
+    monkeypatch.setattr("web.routes.bulk_translate.list_user_tasks", fake_list_user_tasks)
     phase5_client.get("/api/bulk-translate/list?status=error")
-    assert captured_args["args"] == (1, "error")
+    assert captured_args == {"user_id": 1, "status": "error"}
 
 
 # ----- pause / cancel -----

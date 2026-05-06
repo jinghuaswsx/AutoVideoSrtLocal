@@ -1,6 +1,95 @@
+import json
 from datetime import datetime
 
 import pytest
+
+
+def test_list_user_tasks_filters_by_user_and_status(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    captured = {}
+
+    def fake_query(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "id": "t1",
+                "status": "running",
+                "state_json": json.dumps(
+                    {
+                        "product_id": 77,
+                        "target_langs": ["de"],
+                        "content_types": ["copy"],
+                        "progress": {"total": 3, "done": 1},
+                        "cost_tracking": {"actual": {"actual_cost_cny": 2.1}},
+                        "initiator": {"user_name": "t"},
+                    }
+                ),
+                "created_at": datetime(2026, 5, 7, 10, 0, 0),
+            }
+        ]
+
+    monkeypatch.setattr(mod, "query", fake_query)
+
+    rows = mod.list_user_tasks(1, status="running")
+
+    assert "user_id = %s" in captured["sql"]
+    assert "status = %s" in captured["sql"]
+    assert captured["args"] == (1, "running", 200)
+    assert rows == [
+        {
+            "id": "t1",
+            "status": "running",
+            "product_id": 77,
+            "target_langs": ["de"],
+            "content_types": ["copy"],
+            "progress": {"total": 3, "done": 1},
+            "cost_estimate": None,
+            "cost_actual": 2.1,
+            "initiator": {"user_name": "t"},
+            "created_at": "2026-05-07T10:00:00",
+        }
+    ]
+
+
+def test_list_user_tasks_defaults_missing_state(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    captured = {}
+
+    def fake_query(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "id": "t2",
+                "status": "error",
+                "state_json": "",
+                "created_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mod, "query", fake_query)
+
+    rows = mod.list_user_tasks(7)
+
+    assert "status = %s" not in captured["sql"]
+    assert captured["args"] == (7, 200)
+    assert rows == [
+        {
+            "id": "t2",
+            "status": "error",
+            "product_id": None,
+            "target_langs": None,
+            "content_types": None,
+            "progress": None,
+            "cost_estimate": None,
+            "cost_actual": None,
+            "initiator": None,
+            "created_at": None,
+        }
+    ]
 
 
 def test_list_product_tasks_does_not_require_updated_at(monkeypatch):

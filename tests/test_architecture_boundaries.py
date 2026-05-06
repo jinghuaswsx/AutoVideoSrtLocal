@@ -2649,6 +2649,17 @@ def test_bulk_translate_json_responses_live_outside_route_module():
     assert Path("web/services/bulk_translate_responses.py").exists()
 
 
+def test_bulk_translate_list_projection_lives_outside_route_module():
+    route_source = Path("web/routes/bulk_translate.py").read_text(encoding="utf-8")
+    projection_source = Path("appcore/bulk_translate_projection.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import query" not in route_source
+    assert "SELECT id, status, state_json, created_at" not in route_source
+    assert "FROM projects WHERE {where}" not in route_source
+    assert "list_user_tasks" in route_source
+    assert "def list_user_tasks" in projection_source
+
+
 def test_tasks_json_responses_live_outside_route_module():
     source = Path("web/routes/tasks.py").read_text(encoding="utf-8")
 

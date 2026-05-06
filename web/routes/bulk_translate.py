@@ -33,8 +33,7 @@ from appcore.bulk_translate_runtime import (
     run_scheduler,
     start_task,
 )
-from appcore.bulk_translate_projection import list_admin_tasks
-from appcore.db import query
+from appcore.bulk_translate_projection import list_admin_tasks, list_user_tasks
 from appcore.events import EVT_BT_DONE, EVT_BT_PROGRESS, Event, EventBus
 from appcore.task_recovery import try_register_active_task, unregister_active_task
 from appcore.video_translate_defaults import (
@@ -358,37 +357,8 @@ def get_endpoint(task_id):
 @bp.get("/list")
 @login_required
 def list_endpoint():
-    status = request.args.get("status")
-    where = "user_id = %s AND type = 'bulk_translate'"
-    args: list = [current_user.id]
-    if status:
-        where += " AND status = %s"
-        args.append(status)
-
-    rows = query(
-        f"SELECT id, status, state_json, created_at "
-        f"FROM projects WHERE {where} ORDER BY created_at DESC LIMIT 200",
-        tuple(args),
-    )
-
-    result = []
-    for r in rows:
-        import json as _j
-        raw = r["state_json"]
-        state = raw if isinstance(raw, dict) else _j.loads(raw or "{}")
-        result.append({
-            "id": r["id"],
-            "status": r["status"],
-            "product_id": state.get("product_id"),
-            "target_langs": state.get("target_langs"),
-            "content_types": state.get("content_types"),
-            "progress": state.get("progress"),
-            "cost_estimate": None,
-            "cost_actual": state.get("cost_tracking", {}).get("actual", {}).get("actual_cost_cny"),
-            "initiator": state.get("initiator"),
-            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-        })
-    return _json_response(result, 200)
+    status = request.args.get("status") or None
+    return _json_response(list_user_tasks(current_user.id, status=status), 200)
 
 
 @bp.get("/admin/list")
