@@ -2815,6 +2815,15 @@ def test_task_not_found_response_lives_outside_route_module():
     assert Path("web/services/task_responses.py").exists()
 
 
+def test_task_json_responses_live_outside_route_module():
+    source = Path("web/routes/task.py").read_text(encoding="utf-8")
+
+    assert "jsonify(" not in source
+    assert "task_flask_response" in source
+    assert "build_task_payload_response" in source
+    assert Path("web/services/task_responses.py").exists()
+
+
 def test_task_prompt_lookup_lives_outside_route_module():
     source = Path("web/routes/task.py").read_text(encoding="utf-8")
 

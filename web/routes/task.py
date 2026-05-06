@@ -7,7 +7,7 @@
 import os
 import uuid
 
-from flask import Blueprint, request, jsonify, render_template, abort, redirect, make_response
+from flask import Blueprint, request, render_template, abort
 from flask_login import login_required, current_user
 
 from appcore.av_translate_inputs import (
@@ -40,7 +40,11 @@ from web.services.task_analysis import start_task_analysis
 from web.services.task_capcut import deploy_task_capcut_project
 from web.services.task_deletion import delete_task_workflow
 from web.services.task_rename import rename_task_display_name
-from web.services.task_responses import task_not_found_response
+from web.services.task_responses import (
+    build_task_payload_response,
+    task_flask_response,
+    task_not_found_response,
+)
 from web.services.task_resume import resume_task_from_step
 from web.services.task_retranslate import retranslate_task
 from web.services.task_restart import restart_task_workflow
@@ -60,6 +64,12 @@ from web.services.translate_detail_protocol import (
 from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
+
+
+def _json_response(payload, status_code: int = 200):
+    return task_flask_response(
+        build_task_payload_response(payload, status_code)
+    )
 
 
 from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
@@ -87,24 +97,24 @@ def upload_page():
 def upload():
     """上传视频，创建任务，返回 task_id"""
     if "video" not in request.files:
-        return jsonify({"error": "No video file"}), 400
+        return _json_response({"error": "No video file"}, 400)
     file = request.files["video"]
     if not file.filename:
-        return jsonify({"error": "Empty filename"}), 400
+        return _json_response({"error": "Empty filename"}, 400)
 
     from web.upload_util import save_uploaded_video, validate_video_extension
 
     original_filename = os.path.basename(file.filename)
     if not validate_video_extension(original_filename):
-        return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
+        return _json_response({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}, 400)
     form_payload = request.form.to_dict(flat=True)
     av_inputs = collect_av_translate_inputs(form_payload)
     av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
-        return jsonify({"error": av_error}), 400
+        return _json_response({"error": av_error}, 400)
     source_updates, source_error = collect_av_source_language(form_payload)
     if source_error:
-        return jsonify({"error": source_error}), 400
+        return _json_response({"error": source_error}, 400)
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -127,7 +137,7 @@ def upload():
         query_one=db_query_one,
         execute=db_execute,
     )
-    return jsonify(result.payload), 201
+    return _json_response(result.payload, 201)
 
 
 @bp.route("/<task_id>", methods=["GET"])
@@ -137,7 +147,7 @@ def get_task(task_id):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return task_not_found_response()
-    return jsonify(task)
+    return _json_response(task)
 
 
 @bp.route("/<task_id>/subtitle-preview", methods=["GET"])
@@ -146,7 +156,7 @@ def subtitle_preview(task_id: str):
     task = get_user_task(task_id, user_id=current_user.id)
     if not task:
         return task_not_found_response()
-    return jsonify(build_multi_translate_preview_payload(task_id, current_user.id, api_base="/api/tasks"))
+    return _json_response(build_multi_translate_preview_payload(task_id, current_user.id, api_base="/api/tasks"))
 
 
 @bp.route("/user-default-voice", methods=["PUT"])
@@ -157,14 +167,14 @@ def set_user_default_voice_route():
     voice_id = (body.get("voice_id") or "").strip()
     voice_name = (body.get("voice_name") or "").strip() or None
     if lang not in AV_TARGET_LANGUAGE_CODES:
-        return jsonify({"error": f"lang must be one of {sorted(AV_TARGET_LANGUAGE_CODES)}"}), 400
+        return _json_response({"error": f"lang must be one of {sorted(AV_TARGET_LANGUAGE_CODES)}"}, 400)
     if not voice_id:
-        return jsonify({"error": "voice_id required"}), 400
+        return _json_response({"error": "voice_id required"}, 400)
 
     from appcore.video_translate_defaults import set_user_default_voice
 
     set_user_default_voice(current_user.id, lang, voice_id, voice_name)
-    return jsonify({"ok": True, "lang": lang, "voice_id": voice_id, "voice_name": voice_name})
+    return _json_response({"ok": True, "lang": lang, "voice_id": voice_id, "voice_name": voice_name})
 
 
 @bp.route("/<task_id>/voice-library", methods=["GET"])
@@ -175,7 +185,7 @@ def voice_library_for_task(task_id: str):
         return task_not_found_response()
     lang = av_task_target_lang(task)
     if not lang:
-        return jsonify({"error": "task has no target_lang"}), 400
+        return _json_response({"error": "task has no target_lang"}, 400)
 
     from appcore.voice_library_browse import list_voices
 
@@ -184,7 +194,7 @@ def voice_library_for_task(task_id: str):
     try:
         data = list_voices(language=lang, gender=gender, q=q, page=1, page_size=500)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _json_response({"error": str(exc)}, 400)
 
     state = dict(task)
     state["target_lang"] = lang
@@ -194,7 +204,7 @@ def voice_library_for_task(task_id: str):
         items=data.get("items", []),
         total=data.get("total", 0),
     )
-    return jsonify(payload)
+    return _json_response(payload)
 
 
 @bp.route("/<task_id>/rematch", methods=["POST"])
@@ -209,7 +219,7 @@ def rematch_voice(task_id: str):
         json_payload_from(request),
         user_id=optional_user_id(current_user),
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/confirm-voice", methods=["POST"])
@@ -225,7 +235,7 @@ def confirm_voice(task_id: str):
         user_id=optional_user_id(current_user),
         runner=pipeline_runner,
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/thumbnail")
@@ -263,7 +273,7 @@ def get_artifact(task_id, name):
 
     path = resolve_preview_artifact_path(task_id, name, task, variant=variant)
     if not path:
-        return jsonify({"error": "Artifact not found"}), 404
+        return _json_response({"error": "Artifact not found"}, 404)
 
     return send_file_with_range(path)
 
@@ -320,10 +330,10 @@ def restart(task_id):
     av_inputs = collect_av_translate_inputs(body, current_task=task)
     av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
-        return jsonify({"error": av_error}), 400
+        return _json_response({"error": av_error}, 400)
     source_updates, source_error = collect_av_source_language(body, current_task=task)
     if source_error:
-        return jsonify({"error": source_error}), 400
+        return _json_response({"error": source_error}, 400)
     outcome = restart_task_workflow(
         task_id,
         body,
@@ -333,7 +343,7 @@ def restart(task_id):
         runner=pipeline_runner,
         step_order=AV_SYNC_STEPS,
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/start", methods=["POST"])
@@ -348,10 +358,10 @@ def start(task_id):
     av_inputs = collect_av_translate_inputs(body, current_task=task)
     av_error = validate_av_translate_inputs(av_inputs)
     if av_error:
-        return jsonify({"error": av_error}), 400
+        return _json_response({"error": av_error}, 400)
     source_updates, source_error = collect_av_source_language(body, current_task=task)
     if source_error:
-        return jsonify({"error": source_error}), 400
+        return _json_response({"error": source_error}, 400)
     outcome = start_task_pipeline(
         task_id,
         task,
@@ -361,7 +371,7 @@ def start(task_id):
         user_id=optional_user_id(current_user),
         runner=pipeline_runner,
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/start-translate", methods=["POST"])
@@ -380,7 +390,7 @@ def start_translate(task_id):
         user_id=optional_user_id(current_user),
         runner=pipeline_runner,
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/retranslate", methods=["POST"])
@@ -398,7 +408,7 @@ def retranslate(task_id):
         body,
         user_id=optional_user_id(current_user),
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/select-translation", methods=["PUT"])
@@ -411,7 +421,7 @@ def select_translation(task_id):
 
     body = json_payload_from(request)
     outcome = select_task_translation(task_id, task, body)
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/alignment", methods=["PUT"])
@@ -429,7 +439,7 @@ def update_alignment(task_id):
         user_id=optional_user_id(current_user),
         runner=pipeline_runner,
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/segments", methods=["PUT"])
@@ -448,7 +458,7 @@ def update_segments(task_id):
         user_id=optional_user_id(current_user),
         runner=pipeline_runner,
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/av/rewrite_sentence", methods=["POST"])
@@ -464,7 +474,7 @@ def av_rewrite_sentence(task_id):
         json_payload_from(request),
         user_id=current_user.id,
     )
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/download/<file_type>", methods=["GET"])
@@ -493,8 +503,8 @@ def deploy_capcut(task_id):
     variant = request.args.get("variant") or None
     result = deploy_task_capcut_project(task_id, task, variant=variant)
     if result is None:
-        return jsonify({"error": "CapCut project not ready"}), 404
-    return jsonify({"status": "ok", **result})
+        return _json_response({"error": "CapCut project not ready"}, 404)
+    return _json_response({"status": "ok", **result})
 
 
 @bp.route("/<task_id>", methods=["PATCH"])
@@ -511,8 +521,8 @@ def rename_task(task_id):
     if outcome.not_found:
         return task_not_found_response()
     if outcome.error:
-        return jsonify({"error": outcome.error}), outcome.status_code
-    return jsonify(outcome.payload)
+        return _json_response({"error": outcome.error}, outcome.status_code)
+    return _json_response(outcome.payload)
 
 
 @bp.route("/<task_id>", methods=["DELETE"])
@@ -527,7 +537,7 @@ def delete_task(task_id):
     )
     if outcome.not_found:
         return task_not_found_response()
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 RESUMABLE_STEPS = list(AV_SYNC_STEPS)
@@ -547,7 +557,7 @@ def resume_from_step(task_id):
     )
     if outcome.not_found:
         return task_not_found_response()
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/analysis/run", methods=["POST"])
@@ -562,7 +572,7 @@ def run_ai_analysis(task_id):
     )
     if outcome.not_found:
         return task_not_found_response()
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/video-ai-review/run", methods=["POST"])
@@ -571,7 +581,7 @@ def run_video_ai_review(task_id):
     outcome = start_task_video_ai_review(task_id, user=current_user, load_task=load_task)
     if outcome.not_found:
         return task_not_found_response()
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/<task_id>/video-ai-review", methods=["GET"])
@@ -580,4 +590,4 @@ def get_video_ai_review(task_id):
     outcome = get_task_video_ai_review(task_id, user=current_user, load_task=load_task)
     if outcome.not_found:
         return task_not_found_response()
-    return jsonify(outcome.payload), outcome.status_code
+    return _json_response(outcome.payload, outcome.status_code)
