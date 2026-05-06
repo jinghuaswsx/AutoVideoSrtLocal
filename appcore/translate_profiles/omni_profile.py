@@ -276,9 +276,10 @@ class OmniProfile(TranslateProfile):
         })
 
     def tts(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
-        # omni 的 TTS 走 base PipelineRunner._step_tts。per-target tunables
-        # 已经通过 word_tolerance_for / max_rewrite_attempts_for 接通。
-        runner._step_tts(task_id, task_dir)
+        # PR6：跟 default 共用 ``FiveRoundRewriteLoopStrategy``，per-target
+        # tunables 通过 ``word_tolerance_for`` / ``max_rewrite_attempts_for``
+        # 在 strategy 内部解析。
+        self.get_tts_strategy().run(runner, self, task_id, task_dir)
 
     def subtitle(self, runner: "PipelineRunner", task_id: str, task_dir: str) -> None:
         # omni 沿用 multi 的 subtitle 行为（TTS 后 ASR + 字幕对齐）。
