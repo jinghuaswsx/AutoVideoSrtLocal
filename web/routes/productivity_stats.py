@@ -3,10 +3,17 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import productivity_stats as ps_svc
+from web.services.productivity_stats import (
+    build_productivity_stats_admin_required_response,
+    build_productivity_stats_bad_param_response,
+    build_productivity_stats_internal_error_response,
+    build_productivity_stats_summary_response,
+    productivity_stats_flask_response,
+)
 
 bp = Blueprint("productivity_stats", __name__, url_prefix="/productivity-stats")
 
@@ -18,7 +25,9 @@ def _is_admin() -> bool:
 
 def _admin_required():
     if not _is_admin():
-        return jsonify({"error": "admin_required"}), 403
+        return productivity_stats_flask_response(
+            build_productivity_stats_admin_required_response()
+        )
     return None
 
 
@@ -54,27 +63,20 @@ def api_summary():
     if deny: return deny
     try:
         from_dt, to_dt = _parse_window()
-        return jsonify({
-            "from": from_dt.isoformat(),
-            "to": to_dt.isoformat(),
-            "daily_throughput": [_serialize_row(r) for r in ps_svc.get_daily_throughput(from_dt=from_dt, to_dt=to_dt)],
-            "pass_rate": [_serialize_row(r) for r in ps_svc.get_pass_rate(from_dt=from_dt, to_dt=to_dt)],
-            "rework_rate": [_serialize_row(r) for r in ps_svc.get_rework_rate(from_dt=from_dt, to_dt=to_dt)],
-        })
+        return productivity_stats_flask_response(
+            build_productivity_stats_summary_response(
+                from_dt=from_dt,
+                to_dt=to_dt,
+                daily_throughput=ps_svc.get_daily_throughput(from_dt=from_dt, to_dt=to_dt),
+                pass_rate=ps_svc.get_pass_rate(from_dt=from_dt, to_dt=to_dt),
+                rework_rate=ps_svc.get_rework_rate(from_dt=from_dt, to_dt=to_dt),
+            )
+        )
     except ValueError as e:
-        return jsonify({"error": "bad_param", "detail": str(e)}), 400
+        return productivity_stats_flask_response(
+            build_productivity_stats_bad_param_response(e)
+        )
     except Exception as e:
-        return jsonify({"error": "internal", "detail": str(e)}), 500
-
-
-def _serialize_row(r: dict) -> dict:
-    """Convert datetime / Decimal to JSON-friendly types."""
-    out = {}
-    for k, v in r.items():
-        if hasattr(v, 'isoformat'):
-            out[k] = v.isoformat()
-        elif hasattr(v, '__float__') and not isinstance(v, (int, float, bool)):
-            out[k] = float(v)
-        else:
-            out[k] = v
-    return out
+        return productivity_stats_flask_response(
+            build_productivity_stats_internal_error_response(e)
+        )
