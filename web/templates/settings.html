@@ -674,7 +674,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 {% endif %}
 
 {# ═════════════════════════════════════════════════════════════
-   Tab · 人声分离（多语种翻译用，调内网开发电脑 GPU 分离 API）
+   Tab · 人声分离（多语种翻译用，调本机 GPU 分离 API）
    ═════════════════════════════════════════════════════════════ #}
 {% if can_manage_pricing and active_tab == 'audio_separation' %}
 <form method="post">
@@ -690,7 +690,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <h2>总开关</h2>
     <p class="step-desc">
       关闭时多语种 / 全能视频翻译走旧逻辑：TTS 直接替换原音轨、不做响度匹配、不混背景音。
-      打开后会在 ASR 步骤之后调用内网 GPU API 做人声分离（同步阻塞 ~10-60s 视频长度），
+      打开后会在 ASR 步骤之后调用本机 GPU API 做人声分离（同步阻塞 ~10-60s 视频长度），
       并在 TTS 完成后做 EBU R128 二阶段响度归一化到原视频人声基准 L₀（±3% 收敛）。
     </p>
     <label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--settings-fg);margin-top:12px;">
@@ -703,7 +703,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   <div class="settings-card" style="margin-top:16px;">
     <h2>API 接入</h2>
     <p class="step-desc">
-      上游服务跑在内网 GPU 机（RTX 3060+），接口协议参考 nomadkaraoke/python-audio-separator。
+      上游服务跑在本机 AudioSeparator（默认 <code>http://127.0.0.1:83</code>），接口协议参考 nomadkaraoke/python-audio-separator。
       留空时等同于关闭总开关。
     </p>
 
@@ -713,10 +713,10 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       </label>
       <input type="text" name="api_url"
              value="{{ audio_separation.api_url }}"
-             placeholder="http://172.30.254.12/"
+             placeholder="http://127.0.0.1:83"
              style="width:100%;max-width:520px;">
       <p class="hint" style="margin-top:6px;">
-        生产服务器从这里发 multipart 上传到 <code>{api_url}/separate/download</code>。
+        服务端从这里探活 <code>{api_url}/health</code>，并发 multipart 上传到 <code>{api_url}/separate/download</code>。
       </p>
     </div>
 

@@ -23,6 +23,7 @@ from appcore.audio_loudness import (
     measure_integrated_lufs,
 )
 from appcore.audio_separation_client import (
+    DEFAULT_BASE_URL,
     DEFAULT_PRESET,
     DEFAULT_TASK_TIMEOUT,
     SeparationApiUnavailable,
@@ -69,7 +70,11 @@ def load_settings() -> SeparationSettings:
     enabled_raw = (get_setting(SETTING_ENABLED) or "0").strip().lower()
     enabled = enabled_raw in {"1", "true", "yes", "on"}
 
-    api_url = (get_setting(SETTING_API_URL) or "").strip()
+    api_url_raw = get_setting(SETTING_API_URL)
+    if api_url_raw is None:
+        api_url = DEFAULT_BASE_URL
+    else:
+        api_url = api_url_raw.strip()
     preset = (get_setting(SETTING_PRESET) or DEFAULT_PRESET).strip() or DEFAULT_PRESET
 
     try:
