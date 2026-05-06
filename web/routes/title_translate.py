@@ -1,9 +1,18 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import llm_bindings, llm_client, title_translate_settings
+from web.services.title_translate import (
+    build_title_translate_empty_model_output_response,
+    build_title_translate_empty_source_response,
+    build_title_translate_invalid_language_response,
+    build_title_translate_languages_response,
+    build_title_translate_model_error_response,
+    build_title_translate_success_response,
+    title_translate_flask_response,
+)
 
 bp = Blueprint("title_translate", __name__)
 
@@ -36,7 +45,9 @@ def api_languages():
                 "prompt": prompt,
             }
         )
-    return jsonify({"languages": languages})
+    return title_translate_flask_response(
+        build_title_translate_languages_response(languages)
+    )
 
 
 @bp.route("/api/title-translate/translate", methods=["POST"])
@@ -51,10 +62,12 @@ def api_translate():
     try:
         language_row = title_translate_settings.get_title_translate_language(language)
     except ValueError:
-        return jsonify({"error": "language 不合法或未启用"}), 400
+        return title_translate_flask_response(
+            build_title_translate_invalid_language_response()
+        )
 
     if not source_text:
-        return jsonify({"error": "source_text 不能为空"}), 400
+        return title_translate_flask_response(build_title_translate_empty_source_response())
 
     prompt = title_translate_settings.get_prompt(language).replace("{{SOURCE_TEXT}}", source_text)
 
@@ -67,19 +80,20 @@ def api_translate():
             max_tokens=2048,
         )
     except Exception as exc:
-        return jsonify({"error": f"翻译失败: {exc}"}), 502
+        return title_translate_flask_response(
+            build_title_translate_model_error_response(exc)
+        )
 
     raw_content = response.get("text")
     if not isinstance(raw_content, str) or not raw_content.strip():
-        return jsonify({"error": "模型输出为空，请重试"}), 502
+        return title_translate_flask_response(
+            build_title_translate_empty_model_output_response()
+        )
 
-    return jsonify(
-        {
-            "result": raw_content.strip(),
-            "language": {
-                "code": (language_row.get("code") or "").strip(),
-                "name_zh": (language_row.get("name_zh") or "").strip(),
-            },
-            "model": _current_model(),
-        }
+    return title_translate_flask_response(
+        build_title_translate_success_response(
+            raw_content=raw_content,
+            language_row=language_row,
+            model=_current_model(),
+        )
     )

@@ -1440,6 +1440,30 @@ def test_productivity_stats_api_responses_live_outside_route_module():
     assert Path("web/services/productivity_stats.py").exists()
 
 
+def test_title_translate_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/title_translate.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in ("api_languages", "api_translate"):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "jsonify(" not in route_source
+    assert "build_title_translate_languages_response" in route_source
+    assert "build_title_translate_invalid_language_response" in route_source
+    assert "build_title_translate_empty_source_response" in route_source
+    assert "build_title_translate_model_error_response" in route_source
+    assert "build_title_translate_empty_model_output_response" in route_source
+    assert "build_title_translate_success_response" in route_source
+    assert "title_translate_flask_response" in route_source
+    assert Path("web/services/title_translate.py").exists()
+
+
 def test_media_link_check_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/link_check.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
