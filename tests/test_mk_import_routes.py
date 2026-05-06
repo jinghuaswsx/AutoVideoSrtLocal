@@ -22,14 +22,19 @@ def test_mk_import_check_rejects_too_many_filenames(authed_client_no_db):
 
 def test_mk_import_check_splits_imported_and_missing(authed_client_no_db, monkeypatch):
     import appcore.db as db
+    from web.routes import mk_import as route
 
     captured = {}
 
     def fake_query_all(sql, args=None):
-        captured["args"] = args
-        return [{"filename": "a.mp4"}]
+        raise AssertionError("route should delegate filename lookup to mk_import service")
+
+    def fake_list_imported_filenames(filenames):
+        captured["filenames"] = filenames
+        return {"a.mp4"}
 
     monkeypatch.setattr(db, "query_all", fake_query_all)
+    monkeypatch.setattr(route.mk_import_svc, "list_imported_filenames", fake_list_imported_filenames)
 
     resp = authed_client_no_db.get(
         "/mk-import/check",
@@ -38,7 +43,7 @@ def test_mk_import_check_splits_imported_and_missing(authed_client_no_db, monkey
 
     assert resp.status_code == 200
     assert resp.get_json() == {"imported": ["a.mp4"], "missing": ["b.mp4"]}
-    assert captured["args"] == ("a.mp4", "b.mp4", "a.mp4")
+    assert captured["filenames"] == ["a.mp4", "b.mp4", "a.mp4"]
 
 
 def test_mk_import_video_rejects_non_admin(authed_user_client_no_db):

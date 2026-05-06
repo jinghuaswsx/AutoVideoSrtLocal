@@ -1861,6 +1861,8 @@ def test_mk_import_api_responses_live_outside_route_module():
     assert "build_mk_import_storage_failed_response" in route_source
     assert "build_mk_import_db_failed_response" in route_source
     assert "mk_import_flask_response" in route_source
+    assert "from appcore.db import" not in route_source
+    assert "query_all(" not in route_source
     assert Path("web/services/mk_import.py").exists()
 
 

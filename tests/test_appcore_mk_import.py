@@ -27,6 +27,31 @@ def test_exception_classes_exist():
     assert issubclass(mk_import.DBError, mk_import.MkImportError)
 
 
+def test_list_imported_filenames_queries_media_items(monkeypatch):
+    captured = {}
+
+    def fake_query_all(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"filename": "a.mp4"}, {"filename": "a.mp4"}]
+
+    monkeypatch.setattr(mk_import, "query_all", fake_query_all)
+
+    assert mk_import.list_imported_filenames(["a.mp4", "b.mp4", "a.mp4"]) == {"a.mp4"}
+    assert "FROM media_items" in captured["sql"]
+    assert "deleted_at IS NULL" in captured["sql"]
+    assert captured["args"] == ("a.mp4", "b.mp4", "a.mp4")
+
+
+def test_list_imported_filenames_returns_empty_without_db_for_empty_input(monkeypatch):
+    def fail_query_all(*args, **kwargs):
+        raise AssertionError("empty filename list should not query db")
+
+    monkeypatch.setattr(mk_import, "query_all", fail_query_all)
+
+    assert mk_import.list_imported_filenames([]) == set()
+
+
 import pytest
 from appcore.db import execute, query_one
 

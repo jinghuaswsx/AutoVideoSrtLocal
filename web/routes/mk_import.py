@@ -39,14 +39,7 @@ def check():
             build_mk_import_too_many_filenames_response(max_filenames=100)
         )
 
-    from appcore.db import query_all
-    rows = query_all(
-        "SELECT filename FROM media_items "
-        "WHERE filename IN (" + ",".join(["%s"] * len(filenames)) + ") "
-        "AND deleted_at IS NULL",
-        tuple(filenames),
-    )
-    imported = {r["filename"] for r in rows}
+    imported = mk_import_svc.list_imported_filenames(filenames)
     return mk_import_flask_response(
         build_mk_import_check_response(filenames=filenames, imported=imported)
     )

@@ -40,7 +40,7 @@ def _normalize_product_code(code: str | None) -> str:
     return _RJC_SUFFIX_RE.sub("", code.strip()).lower()
 
 
-from appcore.db import query_one
+from appcore.db import query_all, query_one
 
 
 def _find_existing_product(normalized_code: str) -> dict | None:
@@ -69,6 +69,19 @@ def _is_video_already_imported(filename: str) -> bool:
         (filename,),
     )
     return bool(row)
+
+
+def list_imported_filenames(filenames: list[str]) -> set[str]:
+    """Return filenames that already exist in non-deleted media_items."""
+    if not filenames:
+        return set()
+    rows = query_all(
+        "SELECT filename FROM media_items "
+        "WHERE filename IN (" + ",".join(["%s"] * len(filenames)) + ") "
+        "AND deleted_at IS NULL",
+        tuple(filenames),
+    )
+    return {row["filename"] for row in rows}
 
 
 def _download_mp4(url: str, dest_path: str, timeout: int = 120) -> int:
