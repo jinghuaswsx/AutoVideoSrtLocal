@@ -2424,6 +2424,15 @@ def test_multi_omni_translate_json_responses_live_outside_route_modules():
     assert Path("web/services/translate_route_responses.py").exists()
 
 
+def test_bulk_translate_json_responses_live_outside_route_module():
+    source = Path("web/routes/bulk_translate.py").read_text(encoding="utf-8")
+
+    assert "jsonify(" not in source
+    assert "bulk_translate_flask_response" in source
+    assert "build_bulk_translate_payload_response" in source
+    assert Path("web/services/bulk_translate_responses.py").exists()
+
+
 def test_task_rename_validation_lives_outside_route_module():
     module_source = Path("web/routes/task.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

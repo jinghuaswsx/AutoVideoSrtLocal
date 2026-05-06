@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from appcore.bulk_translate_estimator import estimate as do_estimate
@@ -44,6 +44,10 @@ from appcore.video_translate_defaults import (
 )
 from web.auth import admin_required
 from web.background import start_background_task
+from web.services.bulk_translate_responses import (
+    build_bulk_translate_payload_response,
+    bulk_translate_flask_response,
+)
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +56,12 @@ profile_bp = Blueprint("video_translate_profile", __name__,
                         url_prefix="/api/video-translate-profile")
 # 页面路由(非 API),没有 /api 前缀
 pages_bp = Blueprint("bulk_translate_pages", __name__)
+
+
+def _json_response(payload, status_code: int = 200):
+    return bulk_translate_flask_response(
+        build_bulk_translate_payload_response(payload, status_code)
+    )
 
 
 @pages_bp.get("/tasks")
@@ -97,16 +107,16 @@ def estimate_endpoint():
     force = bool(payload.get("force_retranslate", False))
 
     if not isinstance(product_id, int):
-        return jsonify({"error": "product_id 必填且为 int"}), 400
+        return _json_response({"error": "product_id 必填且为 int"}, 400)
     if not target_langs or not isinstance(target_langs, list):
-        return jsonify({"error": "target_langs 必填且为非空数组"}), 400
+        return _json_response({"error": "target_langs 必填且为非空数组"}, 400)
     if not content_types or not isinstance(content_types, list):
-        return jsonify({"error": "content_types 必填且为非空数组"}), 400
+        return _json_response({"error": "content_types 必填且为非空数组"}, 400)
 
-    return jsonify({
+    return _json_response({
         "estimate_enabled": False,
         "message": "estimate disabled; actual cost is calculated after successful completion",
-    }), 200
+    }, 200)
 
 
 # ============================================================
@@ -129,7 +139,7 @@ def get_profile():
     lang = lang_raw if lang_raw else None
 
     params = load_effective_params(current_user.id, product_id, lang)
-    return jsonify(params), 200
+    return _json_response(params, 200)
 
 
 @profile_bp.put("")
@@ -156,18 +166,18 @@ def put_profile():
     params = payload.get("params")
 
     if not isinstance(params, dict) or not params:
-        return jsonify({"error": "params 必填且为非空 dict"}), 400
+        return _json_response({"error": "params 必填且为非空 dict"}, 400)
 
     # 白名单校验:只接受 SYSTEM_DEFAULTS 里的 key
     unknown = set(params.keys()) - set(SYSTEM_DEFAULTS.keys())
     if unknown:
-        return jsonify({"error": f"未知参数: {sorted(unknown)}"}), 400
+        return _json_response({"error": f"未知参数: {sorted(unknown)}"}, 400)
 
     if product_id is not None and not isinstance(product_id, int):
-        return jsonify({"error": "product_id 必须是 int 或 null"}), 400
+        return _json_response({"error": "product_id 必须是 int 或 null"}, 400)
 
     save_profile(current_user.id, product_id, lang, params)
-    return jsonify({"ok": True}), 200
+    return _json_response({"ok": True}, 200)
 
 
 # ============================================================
@@ -251,17 +261,17 @@ def _run_scheduler_with_tracking(task_id: str) -> None:
 
 
 def _scheduler_already_running_response():
-    return jsonify({"ok": True, "status": "already_running"}), 202
+    return _json_response({"ok": True, "status": "already_running"}, 202)
 
 
 def _load_and_check_ownership(task_id: str):
     """加载父任务并做 owner 校验。返回 task dict 或 Flask Response。"""
     task = get_task(task_id)
     if not task:
-        return None, (jsonify({"error": "Task not found"}), 404)
+        return None, _json_response({"error": "Task not found"}, 404)
     admin_scope = getattr(current_user, "is_admin", False) and request.args.get("scope") == "admin"
     if task["user_id"] != current_user.id and not admin_scope:
-        return None, (jsonify({"error": "Forbidden"}), 403)
+        return None, _json_response({"error": "Forbidden"}, 403)
     return task, None
 
 
@@ -279,11 +289,11 @@ def create_endpoint():
     video_params = payload.get("video_params") or {}
 
     if not isinstance(product_id, int):
-        return jsonify({"error": "product_id 必填且为 int"}), 400
+        return _json_response({"error": "product_id 必填且为 int"}, 400)
     if not target_langs or not isinstance(target_langs, list):
-        return jsonify({"error": "target_langs 必填且为非空数组"}), 400
+        return _json_response({"error": "target_langs 必填且为非空数组"}, 400)
     if not content_types or not isinstance(content_types, list):
-        return jsonify({"error": "content_types 必填且为非空数组"}), 400
+        return _json_response({"error": "content_types 必填且为非空数组"}, 400)
 
     initiator = {
         "user_id": current_user.id,
@@ -297,7 +307,7 @@ def create_endpoint():
         force_retranslate=force, video_params=video_params,
         initiator=initiator,
     )
-    return jsonify({"task_id": task_id, "status": "planning"}), 201
+    return _json_response({"task_id": task_id, "status": "planning"}, 201)
 
 
 # ------------------------------------------------------------
@@ -312,7 +322,7 @@ def start_endpoint(task_id):
     try:
         start_task(task_id, user_id=current_user.id)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     if not start_bulk_scheduler_background(
         task_id,
         user_id=current_user.id,
@@ -320,7 +330,7 @@ def start_endpoint(task_id):
         action="start",
     ):
         return _scheduler_already_running_response()
-    return jsonify({"ok": True}), 202
+    return _json_response({"ok": True}, 202)
 
 
 # ------------------------------------------------------------
@@ -332,14 +342,14 @@ def get_endpoint(task_id):
     task, err = _load_and_check_ownership(task_id)
     if err:
         return err
-    return jsonify({
+    return _json_response({
         "id": task["id"],
         "status": task["status"],
         "user_id": task["user_id"],
         "state": task["state"],
         "created_at": task["created_at"].isoformat() if task["created_at"] else None,
         "updated_at": task["updated_at"].isoformat() if task["updated_at"] else None,  # updated_at 可能为 None
-    }), 200
+    }, 200)
 
 
 # ------------------------------------------------------------
@@ -378,7 +388,7 @@ def list_endpoint():
             "initiator": state.get("initiator"),
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         })
-    return jsonify(result), 200
+    return _json_response(result, 200)
 
 
 @bp.get("/admin/list")
@@ -386,7 +396,7 @@ def list_endpoint():
 @admin_required
 def admin_list_endpoint():
     limit = request.args.get("limit", type=int) or 300
-    return jsonify(list_admin_tasks(limit=limit)), 200
+    return _json_response(list_admin_tasks(limit=limit), 200)
 
 
 # ------------------------------------------------------------
@@ -401,8 +411,8 @@ def pause_endpoint(task_id):
     try:
         pause_task(task_id, user_id=current_user.id)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    return jsonify({"ok": True}), 200
+        return _json_response({"error": str(e)}, 400)
+    return _json_response({"ok": True}, 200)
 
 
 # ------------------------------------------------------------
@@ -417,7 +427,7 @@ def resume_endpoint(task_id):
     try:
         resume_task(task_id, user_id=current_user.id)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     if not start_bulk_scheduler_background(
         task_id,
         user_id=current_user.id,
@@ -425,7 +435,7 @@ def resume_endpoint(task_id):
         action="resume",
     ):
         return _scheduler_already_running_response()
-    return jsonify({"ok": True}), 202
+    return _json_response({"ok": True}, 202)
 
 
 # ------------------------------------------------------------
@@ -440,8 +450,8 @@ def cancel_endpoint(task_id):
     try:
         cancel_task(task_id, user_id=current_user.id)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    return jsonify({"ok": True}), 200
+        return _json_response({"error": str(e)}, 400)
+    return _json_response({"ok": True}, 200)
 
 
 # ------------------------------------------------------------
@@ -456,11 +466,11 @@ def retry_item_endpoint(task_id):
     payload = request.get_json(force=True, silent=True) or {}
     idx = payload.get("idx")
     if not isinstance(idx, int):
-        return jsonify({"error": "idx 必填且为 int"}), 400
+        return _json_response({"error": "idx 必填且为 int"}, 400)
     try:
         retry_item(task_id, idx=idx, user_id=current_user.id)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     if not start_bulk_scheduler_background(
         task_id,
         user_id=current_user.id,
@@ -469,7 +479,7 @@ def retry_item_endpoint(task_id):
         details={"idx": idx},
     ):
         return _scheduler_already_running_response()
-    return jsonify({"ok": True}), 202
+    return _json_response({"ok": True}, 202)
 
 
 # ------------------------------------------------------------
@@ -484,7 +494,7 @@ def retry_failed_endpoint(task_id):
     try:
         retry_failed_items(task_id, user_id=current_user.id)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return _json_response({"error": str(e)}, 400)
     if not start_bulk_scheduler_background(
         task_id,
         user_id=current_user.id,
@@ -492,7 +502,7 @@ def retry_failed_endpoint(task_id):
         action="retry_failed",
     ):
         return _scheduler_already_running_response()
-    return jsonify({"ok": True}), 202
+    return _json_response({"ok": True}, 202)
 
 
 # ------------------------------------------------------------
@@ -507,12 +517,12 @@ def force_backfill_item_endpoint(task_id):
     payload = request.get_json(force=True, silent=True) or {}
     idx = payload.get("idx")
     if not isinstance(idx, int):
-        return jsonify({"error": "idx 必填且为 int"}), 400
+        return _json_response({"error": "idx 必填且为 int"}, 400)
     try:
         force_backfill_item(task_id, idx=idx, user_id=current_user.id)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 409
-    return jsonify({"ok": True}), 202
+        return _json_response({"error": str(e)}, 409)
+    return _json_response({"ok": True}, 202)
 
 
 # ------------------------------------------------------------
@@ -524,4 +534,4 @@ def audit_endpoint(task_id):
     task, err = _load_and_check_ownership(task_id)
     if err:
         return err
-    return jsonify(task["state"].get("audit_events", [])), 200
+    return _json_response(task["state"].get("audit_events", []), 200)
