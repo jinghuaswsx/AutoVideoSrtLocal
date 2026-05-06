@@ -62,6 +62,29 @@ def list_product_english_items(product_id: int) -> list[dict]:
 
 
 # ---- 共用 helpers (后续 task 用) ----
+def list_task_events(task_id: int) -> list[dict]:
+    rows = query_all(
+        "SELECT te.*, u.username AS actor_username "
+        "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
+        "WHERE te.task_id=%s ORDER BY te.id ASC",
+        (int(task_id),),
+    )
+    return [
+        {
+            "id": row["id"],
+            "task_id": row["task_id"],
+            "event_type": row["event_type"],
+            "actor_user_id": row["actor_user_id"],
+            "actor_username": row["actor_username"],
+            "payload_json": row["payload_json"],
+            "created_at": (
+                row["created_at"].isoformat() if row.get("created_at") else None
+            ),
+        }
+        for row in rows
+    ]
+
+
 def _row(task_id: int) -> dict | None:
     return query_one("SELECT * FROM tasks WHERE id=%s", (int(task_id),))
 

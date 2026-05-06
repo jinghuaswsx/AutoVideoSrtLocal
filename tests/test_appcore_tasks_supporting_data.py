@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 
 def test_list_enabled_target_languages_excludes_english_and_uppercases(monkeypatch):
     from appcore import tasks
@@ -47,3 +49,41 @@ def test_list_product_english_items_filters_product_and_preserves_payload(monkey
     assert "lang='en'" in captured["sql"]
     assert "deleted_at IS NULL" in captured["sql"]
     assert captured["args"] == (417,)
+
+
+def test_list_task_events_serializes_actor_and_created_at(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "id": 3,
+                "task_id": 44,
+                "event_type": "created",
+                "actor_user_id": 7,
+                "actor_username": "alice",
+                "payload_json": '{"ok": true}',
+                "created_at": datetime(2026, 5, 7, 9, 30, 0),
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_events(44) == [
+        {
+            "id": 3,
+            "task_id": 44,
+            "event_type": "created",
+            "actor_user_id": 7,
+            "actor_username": "alice",
+            "payload_json": '{"ok": true}',
+            "created_at": "2026-05-07T09:30:00",
+        }
+    ]
+    assert "FROM task_events" in captured["sql"]
+    assert "LEFT JOIN users" in captured["sql"]
+    assert captured["args"] == (44,)

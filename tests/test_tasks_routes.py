@@ -121,6 +121,36 @@ def test_events_endpoint_registered(authed_client_no_db):
     assert rsp.status_code in (200, 500)
 
 
+def test_api_events_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = []
+    expected_events = [
+        {
+            "id": 1,
+            "task_id": 44,
+            "event_type": "created",
+            "actor_user_id": None,
+            "actor_username": None,
+            "payload_json": None,
+            "created_at": None,
+        }
+    ]
+
+    def fake_list_task_events(task_id):
+        captured.append(task_id)
+        return expected_events
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_events",
+        fake_list_task_events,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/44/events")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"events": expected_events}
+    assert captured == [44]
+
+
 def test_index_html_contains_tab_buttons(authed_client_no_db):
     """Verify the rendered tasks_list.html bootstraps the tab UI + JS."""
     rsp = authed_client_no_db.get("/tasks/")

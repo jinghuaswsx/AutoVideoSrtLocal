@@ -370,26 +370,7 @@ def api_child_cancel(tid: int):
 @bp.route("/api/<int:tid>/events", methods=["GET"])
 @login_required
 def api_events(tid: int):
-    from appcore.db import query_all
-    rows = query_all(
-        "SELECT te.*, u.username AS actor_username "
-        "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
-        "WHERE te.task_id=%s ORDER BY te.id ASC",
-        (tid,),
-    )
-    events = [
-        {
-            "id": r["id"],
-            "task_id": r["task_id"],
-            "event_type": r["event_type"],
-            "actor_user_id": r["actor_user_id"],
-            "actor_username": r["actor_username"],
-            "payload_json": r["payload_json"],
-            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-        }
-        for r in rows
-    ]
-    return _json_response({"events": events})
+    return _json_response({"events": tasks_svc.list_task_events(tid)})
 
 
 @bp.route("/api/translators", methods=["GET"])
