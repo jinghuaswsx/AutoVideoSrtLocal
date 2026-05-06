@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable
 
 from appcore import medias, pushes
-from appcore.db import query_one as db_query_one
+from appcore.openapi_materials import get_push_log_summary
 from web.services.openapi_materials_serializers import iso_or_none, media_download_url
 
 
@@ -21,7 +21,7 @@ def serialize_push_item(
     item: dict,
     product: dict,
     *,
-    query_one_fn: QueryOneFn = db_query_one,
+    query_one_fn: QueryOneFn | None = None,
     media_download_url_fn: MediaUrlFn = media_download_url,
 ) -> dict:
     readiness = pushes.compute_readiness(item, product)
@@ -29,10 +29,10 @@ def serialize_push_item(
     latest_push = None
     latest_id = item.get("latest_push_id")
     if latest_id:
-        row = query_one_fn(
-            "SELECT status, error_message, created_at "
-            "FROM media_push_logs WHERE id=%s",
-            (latest_id,),
+        row = (
+            get_push_log_summary(latest_id, query_one_func=query_one_fn)
+            if query_one_fn is not None
+            else get_push_log_summary(latest_id)
         )
         if row:
             latest_push = {
@@ -78,7 +78,7 @@ def product_shape_from_push_row(row: dict) -> dict:
 def serialize_push_item_rows(
     rows: list[dict],
     *,
-    query_one_fn: QueryOneFn = db_query_one,
+    query_one_fn: QueryOneFn | None = None,
     media_download_url_fn: MediaUrlFn = media_download_url,
 ) -> list[dict]:
     items: list[dict] = []
@@ -110,7 +110,7 @@ def build_push_item_payload_response(
     item: dict,
     product: dict,
     *,
-    query_one_fn: QueryOneFn = db_query_one,
+    query_one_fn: QueryOneFn | None = None,
     media_download_url_fn: MediaUrlFn = media_download_url,
 ) -> dict:
     payload = pushes.build_item_payload(item, product)

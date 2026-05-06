@@ -3274,6 +3274,23 @@ def test_openapi_push_item_writeback_lives_outside_route_module():
     assert Path("web/services/openapi_push_items.py").exists()
 
 
+def test_openapi_service_db_access_lives_in_appcore_dao():
+    service_paths = [
+        Path("web/services/openapi_materials_listing.py"),
+        Path("web/services/openapi_push_items.py"),
+    ]
+
+    for service_path in service_paths:
+        source = service_path.read_text(encoding="utf-8")
+        assert "from appcore.db import" not in source
+        assert "import appcore.db" not in source
+
+    dao_source = Path("appcore/openapi_materials.py").read_text(encoding="utf-8")
+    assert "def list_material_products" in dao_source
+    assert "def list_product_cover_lang_rows" in dao_source
+    assert "def get_push_log_summary" in dao_source
+
+
 def test_openapi_material_push_payload_lives_outside_route_module():
     module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

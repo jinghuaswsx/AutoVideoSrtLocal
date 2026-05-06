@@ -76,6 +76,26 @@ def test_serialize_push_item_includes_latest_push_and_cover_url(monkeypatch):
     assert payload["created_at"] == created_at.isoformat()
 
 
+def test_get_push_log_summary_queries_dao():
+    from appcore.openapi_materials import get_push_log_summary
+
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"status": "failed", "error_message": "HTTP 500", "created_at": None}
+
+    row = get_push_log_summary(88, query_one_func=fake_query_one)
+
+    assert row == {"status": "failed", "error_message": "HTTP 500", "created_at": None}
+    assert calls == [
+        (
+            "SELECT status, error_message, created_at FROM media_push_logs WHERE id=%s",
+            (88,),
+        )
+    ]
+
+
 def test_serialize_push_item_defaults_without_latest_push(monkeypatch):
     from web.services import openapi_push_items
 

@@ -31,6 +31,22 @@ def test_batch_cover_langs_groups_only_rows_with_object_keys():
     assert "media_product_covers" in calls[0][0]
 
 
+def test_list_product_cover_lang_rows_queries_dao():
+    from appcore.openapi_materials import list_product_cover_lang_rows
+
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"product_id": 1, "lang": "de", "object_key": "cover-de"}]
+
+    rows = list_product_cover_lang_rows([1, 2], query_func=fake_query)
+
+    assert rows == [{"product_id": 1, "lang": "de", "object_key": "cover-de"}]
+    assert calls[0][1] == (1, 2)
+    assert "media_product_covers" in calls[0][0]
+
+
 def test_batch_copywriting_langs_groups_languages_with_english_default():
     from web.services.openapi_materials_listing import batch_copywriting_langs
 
