@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from flask import jsonify
+
 from appcore import medias, shopify_image_tasks
 
 
@@ -11,6 +13,10 @@ from appcore import medias, shopify_image_tasks
 class MediaShopifyImageResponse:
     payload: dict
     status_code: int = 200
+
+
+def shopify_image_flask_response(result: MediaShopifyImageResponse):
+    return jsonify(result.payload), result.status_code
 
 
 def normalize_shopify_image_lang(lang: str | None) -> str | None:

@@ -1,6 +1,21 @@
 from __future__ import annotations
 
 
+def test_shopify_image_flask_response_returns_payload_and_status(authed_client_no_db):
+    from web.services.media_shopify_image import (
+        MediaShopifyImageResponse,
+        shopify_image_flask_response,
+    )
+
+    result = MediaShopifyImageResponse({"ok": False, "task": {"status": "blocked"}}, 409)
+
+    with authed_client_no_db.application.app_context():
+        response, status_code = shopify_image_flask_response(result)
+
+    assert status_code == 409
+    assert response.get_json() == {"ok": False, "task": {"status": "blocked"}}
+
+
 def test_normalize_shopify_image_lang_rejects_empty_en_and_unknown(monkeypatch):
     from web.services import media_shopify_image
 

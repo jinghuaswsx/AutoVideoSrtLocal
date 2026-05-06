@@ -1342,7 +1342,9 @@ def test_media_shopify_image_responses_live_outside_route_module():
     assert "TASK_BLOCKED" not in route_source
     assert "mark_link_unavailable" not in route_source
     assert "create_or_reuse_task" not in route_source
+    assert "jsonify(" not in route_source
     assert "normalize_shopify_image_lang" in route_source
+    assert "shopify_image_flask_response" in route_source
     assert "build_shopify_image_confirm_response" in route_source
     assert "build_shopify_image_unavailable_response" in route_source
     assert "build_shopify_image_clear_response" in route_source
