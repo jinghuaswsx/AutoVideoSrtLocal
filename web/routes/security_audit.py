@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import json
-from datetime import date, datetime
+from datetime import date
 from functools import wraps
 from typing import Any
 
-from flask import Blueprint, abort, jsonify, render_template, request
+from flask import Blueprint, abort, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import system_audit
+from web.services.security_audit import (
+    build_security_audit_logs_response,
+    build_security_audit_media_downloads_response,
+    security_audit_flask_response,
+)
 
 bp = Blueprint("security_audit", __name__, url_prefix="/admin/security-audit")
 
@@ -50,31 +54,6 @@ def _filters() -> dict[str, Any]:
     }
 
 
-def _json_detail(raw: Any) -> Any:
-    if raw is None or isinstance(raw, (dict, list)):
-        return raw
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode("utf-8", errors="replace")
-    if isinstance(raw, str):
-        try:
-            return json.loads(raw)
-        except Exception:
-            return raw
-    return raw
-
-
-def _serialize_row(row: dict) -> dict:
-    out: dict[str, Any] = {}
-    for key, value in row.items():
-        if isinstance(value, datetime):
-            out[key] = value.strftime("%Y-%m-%d %H:%M:%S")
-        elif key == "detail_json":
-            out[key] = _json_detail(value)
-        else:
-            out[key] = value
-    return out
-
-
 @bp.route("", methods=["GET"])
 @login_required
 @superadmin_only
@@ -104,12 +83,14 @@ def api_logs():
     }
     rows = system_audit.list_logs(**params)
     total = system_audit.count_logs(**count_params)
-    return jsonify({
-        "items": [_serialize_row(dict(row)) for row in rows],
-        "total": total,
-        "page": f["page"],
-        "page_size": f["page_size"],
-    })
+    return security_audit_flask_response(
+        build_security_audit_logs_response(
+            rows=rows,
+            total=total,
+            page=f["page"],
+            page_size=f["page_size"],
+        )
+    )
 
 
 @bp.route("/api/media-downloads", methods=["GET"])
@@ -130,9 +111,11 @@ def api_media_downloads():
     }
     rows = system_audit.list_daily_media_downloads(**params)
     total = system_audit.count_daily_media_downloads(**count_params)
-    return jsonify({
-        "items": [_serialize_row(dict(row)) for row in rows],
-        "total": total,
-        "page": f["page"],
-        "page_size": f["page_size"],
-    })
+    return security_audit_flask_response(
+        build_security_audit_media_downloads_response(
+            rows=rows,
+            total=total,
+            page=f["page"],
+            page_size=f["page_size"],
+        )
+    )
