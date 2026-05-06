@@ -1418,6 +1418,39 @@ def test_copywriting_translate_start_responses_live_outside_route_module():
     assert Path("web/services/copywriting_translate.py").exists()
 
 
+def test_copywriting_api_responses_live_outside_route_module():
+    module_source = Path("web/routes/copywriting.py").read_text(encoding="utf-8")
+    module = ast.parse(module_source)
+    route_sources = []
+    for function_name in (
+        "upload",
+        "update_inputs",
+        "preview",
+        "generate",
+        "rewrite_segment",
+        "save_segments",
+        "fix_step",
+        "start_tts",
+        "download",
+        "get_keyframe",
+        "get_artifact",
+    ):
+        route_function = next(
+            node
+            for node in module.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
+    route_source = "\n".join(route_sources)
+
+    assert "jsonify(" not in module_source
+    assert "copywriting_flask_response" in route_source
+    assert "build_copywriting_payload_response" in route_source
+    assert "build_copywriting_error_response" in route_source
+    assert "build_copywriting_ok_response" in route_source
+    assert Path("web/services/copywriting.py").exists()
+
+
 def test_productivity_stats_api_responses_live_outside_route_module():
     module_source = Path("web/routes/productivity_stats.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

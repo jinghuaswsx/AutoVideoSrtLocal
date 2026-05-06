@@ -8,7 +8,7 @@ import json
 import os
 import uuid
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
 from appcore import task_state
@@ -25,6 +25,12 @@ from appcore.db import get_conn as get_connection
 from config import UPLOAD_DIR, OUTPUT_DIR
 from web.background import start_background_task
 from web.services.artifact_download import safe_task_file_response
+from web.services.copywriting import (
+    build_copywriting_error_response,
+    build_copywriting_ok_response,
+    build_copywriting_payload_response,
+    copywriting_flask_response,
+)
 
 bp = Blueprint("copywriting", __name__)
 
@@ -124,11 +130,11 @@ def upload():
     """上传视频 + 商品信息，创建文案项目并启动抽帧。"""
     file = request.files.get("video")
     if not file or not file.filename:
-        return jsonify(error="请上传视频文件"), 400
+        return copywriting_flask_response(build_copywriting_error_response("请上传视频文件", 400))
 
     from web.upload_util import save_uploaded_file_to_path, validate_video_extension
     if not validate_video_extension(file.filename):
-        return jsonify(error="不支持的视频格式"), 400
+        return copywriting_flask_response(build_copywriting_error_response("不支持的视频格式", 400))
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -195,7 +201,9 @@ def upload():
     if product_image and product_image.filename:
         from web.upload_util import validate_image_extension
         if not validate_image_extension(product_image.filename):
-            return jsonify(error="不支持的图片格式"), 400
+            return copywriting_flask_response(
+                build_copywriting_error_response("不支持的图片格式", 400)
+            )
         img_path = os.path.join(task_dir, "product_image.jpg")
         product_image.save(img_path)
         conn = get_connection()
@@ -225,14 +233,18 @@ def upload():
             "original_filename": video_filename,
         },
     ):
-        return jsonify({"status": "already_running"}), 409
+        return copywriting_flask_response(
+            build_copywriting_payload_response({"status": "already_running"}, status_code=409)
+        )
     try:
         _start_copywriting_background(task_id, runner.start)
     except BaseException:
         unregister_active_task("copywriting", task_id)
         raise
 
-    return jsonify(task_id=task_id), 201
+    return copywriting_flask_response(
+        build_copywriting_payload_response({"task_id": task_id}, status_code=201)
+    )
 
 
 @bp.route("/api/copywriting/<task_id>/inputs", methods=["PUT"])
@@ -241,11 +253,11 @@ def update_inputs(task_id: str):
     """更新商品信息。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     data = request.get_json()
     if not data:
-        return jsonify(error="缺少数据"), 400
+        return copywriting_flask_response(build_copywriting_error_response("缺少数据", 400))
 
     conn = get_connection()
     try:
@@ -267,7 +279,7 @@ def update_inputs(task_id: str):
             conn.commit()
     finally:
         conn.close()
-    return jsonify(ok=True)
+    return copywriting_flask_response(build_copywriting_ok_response())
 
 
 @bp.route("/api/copywriting/<task_id>/preview", methods=["POST"])
@@ -278,7 +290,7 @@ def preview(task_id: str):
 
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     data = request.get_json(silent=True) or {}
 
@@ -335,7 +347,7 @@ def preview(task_id: str):
         video_path=task.get("video_path"),
         model_override=model_override,
     )
-    return jsonify(result)
+    return copywriting_flask_response(build_copywriting_payload_response(result))
 
 
 @bp.route("/api/copywriting/<task_id>/generate", methods=["POST"])
@@ -344,7 +356,7 @@ def generate(task_id: str):
     """触发文案生成（首次或重新生成）。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     # 可选：前端传入 prompt_id 和 provider
     data = request.get_json(silent=True) or {}
@@ -363,7 +375,9 @@ def generate(task_id: str):
         stage="queued_generate",
         details=active_details,
     ):
-        return jsonify({"status": "already_running"})
+        return copywriting_flask_response(
+            build_copywriting_payload_response({"status": "already_running"})
+        )
 
     from web.extensions import socketio
     bus = EventBus()
@@ -381,7 +395,7 @@ def generate(task_id: str):
         unregister_active_task("copywriting", task_id)
         raise
 
-    return jsonify(ok=True)
+    return copywriting_flask_response(build_copywriting_ok_response())
 
 
 @bp.route("/api/copywriting/<task_id>/rewrite-segment", methods=["POST"])
@@ -390,18 +404,18 @@ def rewrite_segment(task_id: str):
     """单段重写。"""
     data = request.get_json()
     if not data or "index" not in data:
-        return jsonify(error="缺少 index"), 400
+        return copywriting_flask_response(build_copywriting_error_response("缺少 index", 400))
 
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
     if not task.get("copy"):
-        return jsonify(error="文案未生成"), 400
+        return copywriting_flask_response(build_copywriting_error_response("文案未生成", 400))
 
     segments = task["copy"].get("segments", [])
     idx = data["index"]
     if idx < 0 or idx >= len(segments):
-        return jsonify(error="index 超出范围"), 400
+        return copywriting_flask_response(build_copywriting_error_response("index 超出范围", 400))
 
     from pipeline.copywriting import rewrite_segment as _rewrite
 
@@ -444,7 +458,7 @@ def rewrite_segment(task_id: str):
     new_seg["index"] = idx
     task_state.update_copy_segment(task_id, idx, new_seg)
 
-    return jsonify(segment=new_seg)
+    return copywriting_flask_response(build_copywriting_payload_response({"segment": new_seg}))
 
 
 @bp.route("/api/copywriting/<task_id>/segments", methods=["PUT"])
@@ -453,18 +467,18 @@ def save_segments(task_id: str):
     """保存用户编辑后的文案。"""
     data = request.get_json()
     if not data or "segments" not in data:
-        return jsonify(error="缺少 segments"), 400
+        return copywriting_flask_response(build_copywriting_error_response("缺少 segments", 400))
 
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     copy_data = task.get("copy", {})
     copy_data["segments"] = data["segments"]
     copy_data["full_text"] = " ".join(s["text"] for s in data["segments"])
     task_state.set_copy(task_id, copy_data)
 
-    return jsonify(ok=True)
+    return copywriting_flask_response(build_copywriting_ok_response())
 
 
 ALLOWED_FIX_STATUSES = {"pending"}
@@ -476,16 +490,16 @@ def fix_step(task_id: str):
     """修正卡住的步骤状态（前端刷新时检测到不一致）。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
     data = request.get_json(silent=True) or {}
     step = data.get("step")
     status = data.get("status")
     if not step or not status or step not in task.get("steps", {}):
-        return jsonify(error="无效的步骤参数"), 400
+        return copywriting_flask_response(build_copywriting_error_response("无效的步骤参数", 400))
     if status not in ALLOWED_FIX_STATUSES:
-        return jsonify(error="不允许设置该状态"), 400
+        return copywriting_flask_response(build_copywriting_error_response("不允许设置该状态", 400))
     task_state.set_step(task_id, step, status)
-    return jsonify(ok=True)
+    return copywriting_flask_response(build_copywriting_ok_response())
 
 
 @bp.route("/api/copywriting/<task_id>/tts", methods=["POST"])
@@ -494,7 +508,7 @@ def start_tts(task_id: str):
     """触发 TTS + 合成。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     # 可选：前端传入 voice_id
     data = request.get_json(silent=True) or {}
@@ -509,7 +523,9 @@ def start_tts(task_id: str):
         stage="queued_tts",
         details=active_details,
     ):
-        return jsonify({"status": "already_running"})
+        return copywriting_flask_response(
+            build_copywriting_payload_response({"status": "already_running"})
+        )
 
     from web.extensions import socketio
     bus = EventBus()
@@ -523,7 +539,7 @@ def start_tts(task_id: str):
         unregister_active_task("copywriting", task_id)
         raise
 
-    return jsonify(ok=True)
+    return copywriting_flask_response(build_copywriting_ok_response())
 
 
 @bp.route("/api/copywriting/<task_id>/download/<file_type>")
@@ -532,7 +548,7 @@ def download(task_id: str, file_type: str):
     """下载产物。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     if file_type == "copy":
         # 导出纯文案文本
@@ -551,7 +567,7 @@ def download(task_id: str, file_type: str):
     result = task.get("result", {})
     path = result.get(file_type)  # "soft_video", "hard_video", "srt"
     if not path or not os.path.isfile(path):
-        return jsonify(error="文件不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("文件不存在", 404))
     return safe_task_file_response(task, path, not_found_message="file not found", as_attachment=True)
 
 
@@ -561,11 +577,11 @@ def get_keyframe(task_id: str, index: int):
     """获取关键帧图片。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     keyframes = task.get("keyframes", [])
     if index < 0 or index >= len(keyframes):
-        return jsonify(error="帧不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("帧不存在", 404))
 
     return safe_task_file_response(task, keyframes[index], not_found_message="frame not found")
 
@@ -576,7 +592,7 @@ def get_artifact(task_id: str, name: str):
     """获取中间产物（音频预览等）。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
-        return jsonify(error="任务不存在"), 404
+        return copywriting_flask_response(build_copywriting_error_response("任务不存在", 404))
 
     if name == "video_source":
         video_path = task.get("video_path")
@@ -628,7 +644,7 @@ def get_artifact(task_id: str, name: str):
         if video_path and os.path.isfile(video_path):
             return safe_task_file_response(task, video_path, not_found_message="artifact not found")
 
-    return jsonify(error="产物不存在"), 404
+    return copywriting_flask_response(build_copywriting_error_response("产物不存在", 404))
 
 
 # ── 辅助函数 ──────────────────────────────────────────
