@@ -460,10 +460,13 @@ def test_mk_video_proxy_caches_wedev_video_for_local_preview(
 def test_mk_video_proxy_rejects_missing_wedev_credentials_without_request(
     authed_client_no_db,
     monkeypatch,
+    tmp_path,
 ):
     import requests
+    from appcore import local_media_storage
     from web.routes.medias import mk_selection
 
+    monkeypatch.setattr(local_media_storage, "MEDIA_STORE_DIR", tmp_path / "media_store")
     monkeypatch.setattr(mk_selection.pushes, "build_localized_texts_headers", lambda: {})
     monkeypatch.setattr(mk_selection, "_get_mk_token", lambda: "")
     monkeypatch.setattr(mk_selection, "_get_mk_api_base_url", lambda: "https://wedev.example")
