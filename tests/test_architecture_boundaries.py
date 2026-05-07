@@ -73,6 +73,32 @@ def test_runtime_modules_do_not_keep_duplicate_logger_aliases():
     assert offenders == {}
 
 
+def test_runtime_modules_do_not_keep_unused_uuid_imports():
+    offenders: list[str] = []
+
+    for path in Path("appcore/runtime").glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        imported_uuid = any(
+            isinstance(node, ast.Import)
+            and any(alias.name == "uuid" and alias.asname is None for alias in node.names)
+            for node in tree.body
+        )
+        if not imported_uuid:
+            continue
+
+        uuid_uses = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name)
+            and node.id == "uuid"
+            and not isinstance(getattr(node, "ctx", None), ast.Store)
+        ]
+        if not uuid_uses:
+            offenders.append(str(path))
+
+    assert offenders == []
+
+
 def test_appcore_modules_do_not_import_web_package():
     offenders: list[str] = []
 

@@ -9,7 +9,6 @@ import json
 import logging
 import math
 import os
-import uuid
 from datetime import datetime
 
 import config

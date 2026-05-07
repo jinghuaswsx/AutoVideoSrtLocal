@@ -10,7 +10,6 @@ import logging
 import math
 import os
 import time
-import uuid
 from datetime import datetime
 
 # Task-level auto-retry budget：失败时不直接阻塞流水线，先指数退避自愈几次。
