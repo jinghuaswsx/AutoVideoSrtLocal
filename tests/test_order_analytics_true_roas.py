@@ -457,6 +457,151 @@ def test_get_realtime_roas_overview_single_day_includes_order_profit_details(mon
     assert result["order_profit_details"] == []
 
 
+def test_get_realtime_roas_overview_snapshot_includes_order_profit_details(monkeypatch):
+    def profit_detail_row():
+        return {
+            "site_code": "newjoy",
+            "dxm_package_id": "PKG-DE",
+            "dxm_order_id": "DXM-DE",
+            "package_number": "PN-DE",
+            "order_state": "paid",
+            "buyer_country": "DE",
+            "buyer_country_name": "Germany",
+            "order_time": datetime(2026, 5, 7, 18, 30),
+            "line_count": 2,
+            "profit_line_count": 1,
+            "profit_ok_count": 1,
+            "profit_incomplete_count": 0,
+            "units": 3,
+            "product_revenue": 100.0,
+            "shipping_revenue": 10.0,
+            "total_revenue": 110.0,
+            "refund_amount_usd": 12.0,
+            "purchase_cost": 30.0,
+            "logistics_cost": 8.0,
+            "ad_cost": 11.0,
+            "stored_shopify_fee_total": 5.75,
+            "skus": "SKU-A / SKU-B",
+            "product_names": "Product A / Product B",
+        }
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "snapshot_at": datetime(2026, 5, 7, 19, 40),
+                    "source_run_id": 505,
+                    "order_count": 1,
+                    "line_count": 2,
+                    "units": 3,
+                    "order_revenue": 100.0,
+                    "line_revenue": 100.0,
+                    "shipping_revenue": 10.0,
+                    "order_revenue_usd": 100.0,
+                    "shipping_revenue_usd": 10.0,
+                    "ad_spend_usd": 11.0,
+                    "last_order_at": datetime(2026, 5, 7, 18, 30),
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
+            return [profit_detail_row()]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": None}]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": None}]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-07",
+        now=datetime(2026, 5, 7, 20, 0),
+    )
+
+    detail = result["order_profit_details"][0]
+    assert detail["dxm_package_id"] == "PKG-DE"
+    assert detail["order_profit_usd"] == 43.2
+    assert detail["refund_status"] == "partial_refund"
+
+
+def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return []
+        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
+            return [
+                {
+                    "site_code": "omurio",
+                    "dxm_package_id": "PKG-US",
+                    "dxm_order_id": "DXM-US",
+                    "package_number": "PN-US",
+                    "order_state": "refunded",
+                    "buyer_country": "US",
+                    "buyer_country_name": "United States",
+                    "order_time": datetime(2026, 5, 7, 17, 15),
+                    "line_count": 1,
+                    "profit_line_count": 1,
+                    "profit_ok_count": 1,
+                    "profit_incomplete_count": 0,
+                    "units": 1,
+                    "product_revenue": 50.0,
+                    "shipping_revenue": 5.0,
+                    "total_revenue": 55.0,
+                    "refund_amount_usd": 0.0,
+                    "purchase_cost": 10.0,
+                    "logistics_cost": 5.0,
+                    "ad_cost": 2.0,
+                    "stored_shopify_fee_total": 1.68,
+                    "skus": "SKU-US",
+                    "product_names": "Product US",
+                }
+            ]
+        if "GROUP BY HOUR" in sql:
+            return [
+                {
+                    "hour": 1,
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 1,
+                    "order_revenue": 50.0,
+                    "line_revenue": 50.0,
+                    "shipping_revenue": 5.0,
+                    "first_order_at": datetime(2026, 5, 7, 17, 15),
+                    "last_order_at": datetime(2026, 5, 7, 17, 15),
+                    "last_order_updated_at": datetime(2026, 5, 7, 17, 20),
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return []
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-07",
+        now=datetime(2026, 5, 7, 20, 0),
+    )
+
+    detail = result["order_profit_details"][0]
+    assert detail["dxm_package_id"] == "PKG-US"
+    assert detail["order_profit_usd"] == -18.68
+    assert detail["refund_status"] == "full_refund"
+
+
 def test_get_realtime_roas_overview_same_day_range_equals_single_day(monkeypatch):
     """start_date == end_date 时走原单日逻辑（保留 hourly / order_details / campaigns）。"""
     captured = {"single_day_called": False}
