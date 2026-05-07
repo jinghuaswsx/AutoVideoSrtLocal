@@ -173,6 +173,41 @@ def test_bootstrap_returns_product_reference_payload(client, monkeypatch):
     assert payload["reference_images"][0]["storage_backend"] == "local"
 
 
+def test_bootstrap_returns_domain_language_metadata(client, monkeypatch):
+    _stub_enabled_languages(monkeypatch)
+    monkeypatch.setattr("web.routes.openapi_materials.detect_target_language_from_url", lambda url, enabled: "de")
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.find_product_for_link_check_url",
+        lambda url, lang: {
+            "id": 7,
+            "product_code": "demo-rjc",
+            "name": "Demo",
+            "_matched_by": "configured_domain_url",
+            "_matched_domain": "omurio.com",
+            "_matched_status_key": "omurio.com:de",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.list_reference_images_for_lang",
+        lambda pid, lang: [
+            {"id": "cover-de", "kind": "cover", "filename": "cover_de.jpg", "object_key": "covers/de.jpg"},
+        ],
+    )
+    monkeypatch.setattr("web.routes.openapi_materials.medias.get_language_name", lambda code: "DE")
+
+    response = client.post(
+        "/openapi/link-check/bootstrap",
+        headers={"X-API-Key": "demo-key"},
+        json={"target_url": "https://omurio.com/de/products/demo-rjc"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["domain"] == "omurio.com"
+    assert payload["status_key"] == "omurio.com:de"
+    assert payload["matched_by"] == "configured_domain_url"
+
+
 def test_bootstrap_treats_plain_products_path_as_english(client, monkeypatch):
     _stub_enabled_languages(monkeypatch)
     monkeypatch.setattr(

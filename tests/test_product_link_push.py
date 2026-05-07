@@ -56,6 +56,14 @@ def test_build_unsuitable_product_push_preview_uses_text_and_link_types(monkeypa
 
     monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
     monkeypatch.setattr(
+        pushes.product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+            {"id": 2, "domain": "omurio.com"},
+        ],
+    )
+    monkeypatch.setattr(
         pushes,
         "build_localized_texts_target_url",
         lambda mk_id: f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts",
@@ -96,7 +104,10 @@ def test_build_unsuitable_product_push_preview_uses_text_and_link_types(monkeypa
     assert link_type["target_url"] == "https://os.wedev.vip/dify/shopify/medias/links"
     assert link_type["payload"] == {
         "handle": "demo-rjc",
-        "product_links": ["https://newjoyloo.com/products/demo-error-rjc"],
+        "product_links": [
+            "https://newjoyloo.com/products/demo-error-rjc",
+            "https://omurio.com/products/demo-error-rjc",
+        ],
     }
     assert preview["payload"] == {
         "types": [
@@ -124,6 +135,14 @@ def test_push_unsuitable_product_posts_to_text_and_link_endpoints(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(
+        pushes.product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+            {"id": 2, "domain": "omurio.com"},
+        ],
+    )
     monkeypatch.setattr(
         pushes,
         "build_localized_texts_target_url",
@@ -164,7 +183,10 @@ def test_push_unsuitable_product_posts_to_text_and_link_endpoints(monkeypatch):
     }]}
     assert calls[1]["json"] == {
         "handle": "demo-rjc",
-        "product_links": ["https://newjoyloo.com/products/demo-error-rjc"],
+        "product_links": [
+            "https://newjoyloo.com/products/demo-error-rjc",
+            "https://omurio.com/products/demo-error-rjc",
+        ],
     }
 
 

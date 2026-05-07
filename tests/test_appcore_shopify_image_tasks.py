@@ -114,6 +114,88 @@ def test_create_or_reuse_pending_task_inserts_ready_task(monkeypatch):
     assert calls[1][2]["replace_status"] == sit.REPLACE_PENDING
 
 
+def test_evaluate_candidate_returns_all_enabled_domain_link_urls(monkeypatch):
+    monkeypatch.setattr(
+        sit.medias,
+        "get_product",
+        lambda pid: {"id": pid, "product_code": "demo-rjc"},
+    )
+    monkeypatch.setattr(sit.medias, "is_valid_language", lambda lang: lang == "it")
+    monkeypatch.setattr(sit.medias, "resolve_shopify_product_id", lambda pid: "855")
+    monkeypatch.setattr(
+        sit.medias,
+        "list_shopify_localizer_images",
+        lambda pid, lang: [{"id": f"{lang}-1"}],
+    )
+    monkeypatch.setattr(
+        sit.product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+            {"id": 2, "domain": "omurio.com"},
+        ],
+    )
+
+    result = sit.evaluate_candidate(7, "it")
+
+    assert result["ready"] is True
+    assert result["link_url"] == "https://newjoyloo.com/it/products/demo-rjc"
+    assert result["link_urls"] == [
+        {
+            "domain": "newjoyloo.com",
+            "lang": "it",
+            "status_key": "newjoyloo.com:it",
+            "url": "https://newjoyloo.com/it/products/demo-rjc",
+        },
+        {
+            "domain": "omurio.com",
+            "lang": "it",
+            "status_key": "omurio.com:it",
+            "url": "https://omurio.com/it/products/demo-rjc",
+        },
+    ]
+
+
+def test_is_confirmed_for_push_requires_every_enabled_domain_status(monkeypatch):
+    product = {
+        "id": 7,
+        "product_code": "demo-rjc",
+        "shopify_image_status_json": {
+            "newjoyloo.com:it": {
+                "replace_status": "confirmed",
+                "link_status": "normal",
+            },
+            "omurio.com:it": {
+                "replace_status": "auto_done",
+                "link_status": "needs_review",
+            },
+        },
+    }
+    monkeypatch.setattr(
+        sit.product_link_domains,
+        "resolve_product_page_url_rows",
+        lambda product, lang: [
+            {
+                "domain": "newjoyloo.com",
+                "lang": "it",
+                "status_key": "newjoyloo.com:it",
+                "url": "https://newjoyloo.com/it/products/demo-rjc",
+            },
+            {
+                "domain": "omurio.com",
+                "lang": "it",
+                "status_key": "omurio.com:it",
+                "url": "https://omurio.com/it/products/demo-rjc",
+            },
+        ],
+    )
+
+    ok, reason = sit.is_confirmed_for_push(product, "it")
+
+    assert ok is False
+    assert "omurio.com" in reason
+
+
 def test_claim_next_task_marks_running(monkeypatch):
     rows = [
         {

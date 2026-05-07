@@ -14,6 +14,7 @@ import time
 
 import requests
 
+from appcore import product_link_domains
 from ._constants import _TITLE_RE
 from ._helpers import _parse_shopify_ts, _safe_float, _safe_int
 
@@ -168,7 +169,11 @@ def get_import_stats() -> dict:
 
 def fetch_product_page_title(product_code: str) -> str | None:
     """从英文产品页抓取 <title>。"""
-    url = f"https://newjoyloo.com/products/{product_code}"
+    url = product_link_domains.build_product_page_url(
+        product_link_domains.DEFAULT_LINK_DOMAINS[0],
+        "en",
+        product_code,
+    )
     try:
         resp = requests.get(url, timeout=8, allow_redirects=True,
                             headers={"User-Agent": "Mozilla/5.0 AutoVideoSrt/1.0"})

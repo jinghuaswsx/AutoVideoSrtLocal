@@ -1788,8 +1788,9 @@
     const mkIdCell = mkIdText
       ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
       : `<span class="mk-id-text"><span class="muted">—</span></span>`;
+    const productUrl = _defaultProductUrl('en', productCode);
     const productCodeCell = productCode
-      ? `<div class="oc-product-id-main"><a href="https://newjoyloo.com/products/${encodeURIComponent(productCode)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a></div>`
+      ? `<div class="oc-product-id-main"><a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a></div>`
         + `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID">${icon('copy', 12)}<span>复制</span></button>`
       : '<span class="muted">—</span>';
     const shopifyTitle = (p.shopify_title || '').trim();
@@ -3350,6 +3351,7 @@
     detailTranslateTasks: {},
     linkCheckPollTimer: null,
     linkCheckModalLang: '',
+    linkCheckModalDomain: '',
     linkCheckDetailTask: null,
     linkCheckDetailError: '',
   };
@@ -3939,10 +3941,47 @@
   }
 
   // --- 产品链接（按 activeLang）---
-  function _defaultProductUrl(lang, code) {
+  const DEFAULT_LINK_DOMAIN = 'newjoyloo.com';
+
+  function edDomainFromUrl(url) {
+    try {
+      return new URL(String(url || '').trim()).hostname.replace(/^www\./i, '').toLowerCase();
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function edStatusKey(lang, domain) {
+    const normalizedLang = String(lang || '').trim().toLowerCase();
+    const normalizedDomain = String(domain || '').trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*$/, '').toLowerCase();
+    return normalizedDomain ? `${normalizedDomain}:${normalizedLang}` : normalizedLang;
+  }
+
+  function edLocalizedLinkValue(lang, domain) {
+    const links = (edState.productData && edState.productData.product
+                   && edState.productData.product.localized_links) || {};
+    const value = links[lang];
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+      const normalizedDomain = String(domain || '').trim().toLowerCase();
+      if (normalizedDomain && value[normalizedDomain]) return value[normalizedDomain];
+      if (value[DEFAULT_LINK_DOMAIN]) return value[DEFAULT_LINK_DOMAIN];
+      const first = Object.values(value).find((url) => typeof url === 'string' && url.trim());
+      return first || '';
+    }
+    return '';
+  }
+
+  function _defaultProductUrlForDomain(lang, code, domain) {
     if (!code) return '';
-    if (lang === 'en') return `https://newjoyloo.com/products/${code}`;
-    return `https://newjoyloo.com/${lang}/products/${code}`;
+    const normalizedDomain = String(domain || DEFAULT_LINK_DOMAIN).trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*$/, '').toLowerCase() || DEFAULT_LINK_DOMAIN;
+    if (lang === 'en') return `https://${normalizedDomain}/products/${code}`;
+    return `https://${normalizedDomain}/${lang}/products/${code}`;
+  }
+
+  function _defaultProductUrl(lang, code) {
+    return _defaultProductUrlForDomain(lang, code, DEFAULT_LINK_DOMAIN);
   }
 
   function edRenderProductUrl(lang) {
@@ -3950,9 +3989,7 @@
     const hint = $('edProductUrlHint');
     if (!input) return;
     const code = ($('edCode').value || '').trim();
-    const links = (edState.productData && edState.productData.product
-                   && edState.productData.product.localized_links) || {};
-    const override = links[lang];
+    const override = edLocalizedLinkValue(lang, DEFAULT_LINK_DOMAIN);
     const def = _defaultProductUrl(lang, code);
     input.value = override || def || '';
     input.placeholder = def || '留空则用默认模板';
@@ -3969,15 +4006,32 @@
     if (!input || !edState.productData || !edState.productData.product) return;
     const lang = edState.activeLang;
     const code = ($('edCode').value || '').trim();
-    const def = _defaultProductUrl(lang, code);
     const val = (input.value || '').trim();
+    const domain = edDomainFromUrl(val) || DEFAULT_LINK_DOMAIN;
+    const def = _defaultProductUrlForDomain(lang, code, domain);
     if (!edState.productData.product.localized_links) {
       edState.productData.product.localized_links = {};
     }
     const links = edState.productData.product.localized_links;
-    // 如果用户输入的就是默认值或留空 → 不保存（避免冗余写入）
-    if (!val || val === def) delete links[lang];
-    else links[lang] = val;
+    const current = links[lang];
+    if (current && typeof current === 'object') {
+      if (!val || val === def) delete current[domain];
+      else current[domain] = val;
+      if (!Object.keys(current).length) delete links[lang];
+    } else if (domain && domain !== DEFAULT_LINK_DOMAIN) {
+      const next = {};
+      if (typeof current === 'string' && current.trim()) {
+        const currentDomain = edDomainFromUrl(current) || DEFAULT_LINK_DOMAIN;
+        next[currentDomain] = current;
+      }
+      if (val && val !== def) next[domain] = val;
+      if (Object.keys(next).length) links[lang] = next;
+      else delete links[lang];
+    } else if (!val || val === def) {
+      delete links[lang];
+    } else {
+      links[lang] = val;
+    }
   }
 
   function edDetailTranslateStatusLabel(status) {
@@ -4106,16 +4160,29 @@
     return edState.productData.product.link_check_tasks;
   }
 
-  function edGetLinkCheckTask(lang) {
+  function edGetLinkCheckTask(lang, domain) {
     if (!lang) return null;
-    return edLinkCheckTasks()[lang] || null;
+    const tasks = edLinkCheckTasks();
+    const key = edStatusKey(lang, domain || '');
+    return tasks[key] || tasks[lang] || null;
   }
 
   function edSetLinkCheckTask(lang, task) {
     if (!lang || !task || !edState.productData || !edState.productData.product) return null;
     const tasks = edLinkCheckTasks();
-    tasks[lang] = { ...(tasks[lang] || {}), ...task };
-    return tasks[lang];
+    const domain = task.domain || edDomainFromUrl(task.link_url || '');
+    const key = task.status_key || edStatusKey(lang, domain);
+    tasks[key] = { ...(tasks[key] || {}), ...task, status_key: key, domain };
+    return tasks[key];
+  }
+
+  function edActiveLinkCheckDomain(lang) {
+    return edDomainFromUrl(edCurrentLinkUrl(lang));
+  }
+
+  function edDomainQuery(domain) {
+    const normalized = String(domain || '').trim();
+    return normalized ? `?domain=${encodeURIComponent(normalized)}` : '';
   }
 
   function edReadVisibleProductUrl() {
@@ -4125,13 +4192,12 @@
 
   function edCurrentLinkUrl(lang) {
     const code = ($('edCode') && $('edCode').value || '').trim();
-    const links = (edState.productData && edState.productData.product && edState.productData.product.localized_links) || {};
     if (lang === edState.activeLang) {
       const input = $('edProductUrl');
       const current = input ? (input.value || '').trim() : '';
       if (current) return current;
     }
-    return links[lang] || _defaultProductUrl(lang, code) || '';
+    return edLocalizedLinkValue(lang, DEFAULT_LINK_DOMAIN) || _defaultProductUrl(lang, code) || '';
   }
 
   function copyText(text) {
@@ -4289,17 +4355,37 @@
     return edState.productData.product.shopify_image_status;
   }
 
-  function edShopifyImageStatusForLang(lang) {
-    const raw = edShopifyImageStatusMap()[lang] || {};
+  function edShopifyImageStatusForLang(lang, domain) {
+    const statusMap = edShopifyImageStatusMap();
+    const key = edStatusKey(lang, domain || '');
+    const raw = statusMap[key] || statusMap[lang] || {};
     return {
       replace_status: raw.replace_status || 'none',
       link_status: raw.link_status || 'unknown',
+      status_key: raw.status_key || key,
+      domain: raw.domain || domain || '',
+      lang: raw.lang || lang,
       last_error: raw.last_error || '',
       last_task_id: raw.last_task_id || '',
       updated_at: raw.updated_at || '',
       confirmed_at: raw.confirmed_at || '',
       result_summary: raw.result_summary || {},
     };
+  }
+
+  function edShopifyImageStatusesForLang(lang) {
+    const statusMap = edShopifyImageStatusMap();
+    const rows = Object.entries(statusMap)
+      .map(([key, raw]) => {
+        const parts = String(key || '').split(':');
+        const domain = parts.length > 1 ? parts[0] : (raw && raw.domain) || '';
+        const itemLang = parts.length > 1 ? parts.slice(1).join(':') : key;
+        return { key, domain, lang: itemLang, raw };
+      })
+      .filter((item) => item.lang === lang && item.raw && typeof item.raw === 'object')
+      .map((item) => edShopifyImageStatusForLang(lang, item.domain));
+    if (rows.length) return rows;
+    return [edShopifyImageStatusForLang(lang, '')];
   }
 
   const SHOPIFY_IMAGE_ACTION_ENDPOINTS = {
@@ -4325,56 +4411,58 @@
       return;
     }
 
-    const status = edShopifyImageStatusForLang(lang);
-    const summary = status.result_summary || {};
-    const parts = [
-      edLinkCheckBadge(SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status, edShopifyImageBadgeKind(status)),
-      edLinkCheckBadge(SHOPIFY_IMAGE_LINK_LABELS[status.link_status] || status.link_status, edShopifyImageBadgeKind(status)),
-    ];
-    if (status.last_task_id) {
-      parts.push(`<span class="oc-link-check-meta">任务 #${escapeHtml(status.last_task_id)}</span>`);
-    }
-    if (typeof summary.carousel_ok === 'number') {
-      parts.push(`<span class="oc-link-check-meta">轮播 ${escapeHtml(summary.carousel_ok)}/${escapeHtml(summary.carousel_requested || 0)}</span>`);
-    }
-    if (typeof summary.detail_replacement_count === 'number') {
-      parts.push(`<span class="oc-link-check-meta">详情 ${escapeHtml(summary.detail_replacement_count)}</span>`);
-    }
-    if (status.updated_at) {
-      parts.push(`<span class="oc-link-check-meta">更新 ${escapeHtml(fmtDate(status.updated_at))}</span>`);
-    }
-    if (status.last_error) {
-      parts.push(edLinkCheckBadge(status.last_error, 'danger'));
-    }
-
-    const actions = [];
-    if (status.replace_status !== 'confirmed' || status.link_status !== 'normal') {
-      actions.push(`<button type="button" class="oc-btn primary sm" data-shopify-image-action="confirm" data-lang="${escapeHtml(lang)}">确认图片正常</button>`);
-    }
-    actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="requeue" data-lang="${escapeHtml(lang)}">重新排队换图</button>`);
-    if (status.link_status !== 'unavailable') {
-      actions.push(`<button type="button" class="oc-btn text sm" data-shopify-image-action="unavailable" data-lang="${escapeHtml(lang)}">标记链接不可用</button>`);
-    }
-
     box.hidden = false;
-    box.innerHTML = parts.join('') + `<span class="oc-link-check-actions">${actions.join('')}</span>`;
+    const statuses = edShopifyImageStatusesForLang(lang);
+    box.innerHTML = statuses.map((status) => {
+      const summary = status.result_summary || {};
+      const parts = [];
+      if (status.domain) parts.push(edLinkCheckBadge(status.domain, 'info'));
+      parts.push(edLinkCheckBadge(SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status, edShopifyImageBadgeKind(status)));
+      parts.push(edLinkCheckBadge(SHOPIFY_IMAGE_LINK_LABELS[status.link_status] || status.link_status, edShopifyImageBadgeKind(status)));
+      if (status.last_task_id) {
+        parts.push(`<span class="oc-link-check-meta">任务 #${escapeHtml(status.last_task_id)}</span>`);
+      }
+      if (typeof summary.carousel_ok === 'number') {
+        parts.push(`<span class="oc-link-check-meta">轮播 ${escapeHtml(summary.carousel_ok)}/${escapeHtml(summary.carousel_requested || 0)}</span>`);
+      }
+      if (typeof summary.detail_replacement_count === 'number') {
+        parts.push(`<span class="oc-link-check-meta">详情 ${escapeHtml(summary.detail_replacement_count)}</span>`);
+      }
+      if (status.updated_at) {
+        parts.push(`<span class="oc-link-check-meta">更新 ${escapeHtml(fmtDate(status.updated_at))}</span>`);
+      }
+      if (status.last_error) {
+        parts.push(edLinkCheckBadge(status.last_error, 'danger'));
+      }
+
+      const actions = [];
+      const domainAttr = status.domain ? ` data-domain="${escapeHtml(status.domain)}"` : '';
+      if (status.replace_status !== 'confirmed' || status.link_status !== 'normal') {
+        actions.push(`<button type="button" class="oc-btn primary sm" data-shopify-image-action="confirm" data-lang="${escapeHtml(lang)}"${domainAttr}>确认图片正常</button>`);
+      }
+      actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="requeue" data-lang="${escapeHtml(lang)}"${domainAttr}>重新排队换图</button>`);
+      if (status.link_status !== 'unavailable') {
+        actions.push(`<button type="button" class="oc-btn text sm" data-shopify-image-action="unavailable" data-lang="${escapeHtml(lang)}"${domainAttr}>标记链接不可用</button>`);
+      }
+      return parts.join('') + `<span class="oc-link-check-actions">${actions.join('')}</span>`;
+    }).join('');
     box.querySelectorAll('[data-shopify-image-action]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        edApplyShopifyImageAction(btn.dataset.shopifyImageAction, btn.dataset.lang || lang).catch((err) => {
+        edApplyShopifyImageAction(btn.dataset.shopifyImageAction, btn.dataset.lang || lang, btn.dataset.domain || '').catch((err) => {
           alert('图片换图状态更新失败：' + (err.message || err));
         });
       });
     });
   }
 
-  async function edApplyShopifyImageAction(action, lang) {
+  async function edApplyShopifyImageAction(action, lang, domain) {
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid || !lang || lang === 'en') return;
-    let body = null;
+    let body = domain ? { domain } : null;
     if (action === 'unavailable') {
       const reason = prompt('请填写链接不可用原因', '链接不可用，等待负责人处理');
       if (reason === null) return;
-      body = { reason };
+      body = { ...(body || {}), reason };
     }
     if (action === 'requeue' && !confirm('确认重新排队执行该语种的轮播图和详情图替换？')) {
       return;
@@ -4387,7 +4475,8 @@
       body: body ? JSON.stringify(body) : undefined,
     });
     if (resp.status) {
-      edShopifyImageStatusMap()[lang] = resp.status;
+      const key = resp.status.status_key || edStatusKey(lang, resp.status.domain || domain || '');
+      edShopifyImageStatusMap()[key] = resp.status;
     }
     const fresh = await fetchJSON('/medias/api/products/' + pid);
     edSetProductData(fresh);
@@ -4451,6 +4540,9 @@
     if (task.link_url) {
       parts.push(`<span class="oc-link-check-meta mono">${escapeHtml(task.link_url)}</span>`);
     }
+    if (task.domain) {
+      parts.push(edLinkCheckBadge(task.domain, 'info'));
+    }
     if (urlChanged) {
       parts.push(edLinkCheckBadge('链接已变更', 'warning'));
     }
@@ -4474,7 +4566,7 @@
     if (!summaryBox || !refsBox || !itemsBox) return;
 
     const lang = edState.linkCheckModalLang || edState.activeLang;
-    const summaryTask = edGetLinkCheckTask(lang);
+    const summaryTask = edGetLinkCheckTask(lang, edState.linkCheckModalDomain);
     const detailTask = edState.linkCheckDetailTask;
     const task = { ...(summaryTask || {}), ...(detailTask || {}) };
 
@@ -4756,15 +4848,16 @@
     const mask = $('edLinkCheckMask');
     if (mask) mask.hidden = true;
     edState.linkCheckModalLang = '';
+    edState.linkCheckModalDomain = '';
     edState.linkCheckDetailTask = null;
     edState.linkCheckDetailError = '';
   }
 
-  function edLoadLinkCheckDetail(lang) {
+  function edLoadLinkCheckDetail(lang, domain) {
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
-    const task = edGetLinkCheckTask(lang);
+    const task = edGetLinkCheckTask(lang, domain);
     if (!pid || !task || !task.task_id) return Promise.resolve();
-    return fetchJSON(`/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}/detail`)
+    return fetchJSON(`/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}/detail${edDomainQuery(domain || task.domain)}`)
       .then((detail) => {
         edState.linkCheckDetailTask = detail;
         edState.linkCheckDetailError = '';
@@ -4784,47 +4877,50 @@
 
   function edOpenLinkCheckModal() {
     const lang = edState.activeLang;
-    const task = edGetLinkCheckTask(lang);
+    const domain = edActiveLinkCheckDomain(lang);
+    const task = edGetLinkCheckTask(lang, domain);
     if (!task || !task.task_id) return;
     edState.linkCheckModalLang = lang;
+    edState.linkCheckModalDomain = domain || task.domain || '';
     edState.linkCheckDetailTask = null;
     edState.linkCheckDetailError = '';
     $('edLinkCheckMask').hidden = false;
     edRenderLinkCheckModal();
     if (edLinkCheckNeedsPolling(task)) {
-      edPollLinkCheck(lang);
+      edPollLinkCheck(lang, edState.linkCheckModalDomain);
     } else {
-      edLoadLinkCheckDetail(lang);
+      edLoadLinkCheckDetail(lang, edState.linkCheckModalDomain);
     }
   }
 
-  function edPollLinkCheck(lang) {
+  function edPollLinkCheck(lang, domain) {
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid || !lang) return Promise.resolve();
     edStopLinkCheckPoll();
-    return fetchJSON(`/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}`)
+    const targetDomain = domain || edActiveLinkCheckDomain(lang);
+    return fetchJSON(`/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}${edDomainQuery(targetDomain)}`)
       .then((data) => {
         if (data && data.task) {
           edSetLinkCheckTask(lang, data.task);
         }
         if (lang === edState.activeLang) {
-          edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+          edRenderLinkCheckSummary(edGetLinkCheckTask(lang, targetDomain));
         }
         if (edState.linkCheckModalLang === lang) {
           edRenderLinkCheckModal();
         }
-        const task = edGetLinkCheckTask(lang);
+        const task = edGetLinkCheckTask(lang, targetDomain);
         if (task && edState.linkCheckModalLang === lang && !edLinkCheckNeedsPolling(task)) {
-          return edLoadLinkCheckDetail(lang);
+          return edLoadLinkCheckDetail(lang, targetDomain);
         }
         if (task && lang === edState.activeLang && edLinkCheckNeedsPolling(task) && !$('edMask').hidden) {
-          edState.linkCheckPollTimer = setTimeout(() => edPollLinkCheck(lang), 2000);
+          edState.linkCheckPollTimer = setTimeout(() => edPollLinkCheck(lang, targetDomain), 2000);
         }
         return data;
       })
       .catch((err) => {
         if (lang === edState.activeLang) {
-          edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+          edRenderLinkCheckSummary(edGetLinkCheckTask(lang, domain || edActiveLinkCheckDomain(lang)));
         }
         if (edState.linkCheckModalLang === lang) {
           edState.linkCheckDetailError = err.message || String(err);
@@ -4862,6 +4958,8 @@
           task_id: data.task_id,
           status: data.status || 'queued',
           link_url: url,
+          domain: data.domain || edDomainFromUrl(url),
+          status_key: data.status_key || edStatusKey(lang, data.domain || edDomainFromUrl(url)),
           checked_at: new Date().toISOString(),
           summary: {
             overall_decision: 'running',
@@ -4870,7 +4968,7 @@
             review_count: 0,
           },
         });
-        edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+        edRenderLinkCheckSummary(edGetLinkCheckTask(lang, edDomainFromUrl(url)));
         edOpenLinkCheckModal();
       } catch (e) {
         alert('链接检测启动失败：' + (e.message || e));
@@ -4878,7 +4976,7 @@
         if (actionBtn) {
           actionBtn.disabled = false;
         }
-        edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+        edRenderLinkCheckSummary(edGetLinkCheckTask(lang, edDomainFromUrl(url)));
       }
     })();
   }
@@ -4897,10 +4995,11 @@
     edRenderCopyBlock(lang);
     edRenderCopyTranslateButton();
     edRenderProductUrl(lang);
-    edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+    const activeLinkDomain = edActiveLinkCheckDomain(lang);
+    edRenderLinkCheckSummary(edGetLinkCheckTask(lang, activeLinkDomain));
     edRenderShopifyImageStatus(lang);
-    if (edGetLinkCheckTask(lang)) {
-      edPollLinkCheck(lang);
+    if (edGetLinkCheckTask(lang, activeLinkDomain)) {
+      edPollLinkCheck(lang, activeLinkDomain);
     } else {
       edStopLinkCheckPoll();
     }
@@ -5789,14 +5888,14 @@
     if (edCodeInput) {
       edCodeInput.addEventListener('input', () => {
         edRenderProductUrl(edState.activeLang);
-        edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang));
+        edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang, edActiveLinkCheckDomain(edState.activeLang)));
       });
     }
     if (edUrlInput) {
       edUrlInput.addEventListener('blur', () => {
         edFlushProductUrl();
         edRenderProductUrl(edState.activeLang);  // 刷新 hint（是否已自定义）
-        edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang));
+        edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang, edActiveLinkCheckDomain(edState.activeLang)));
       });
     }
     $('edCopyProductIdBtn') && $('edCopyProductIdBtn').addEventListener('click', (e) => edCopyProductId(e.currentTarget));
@@ -5806,12 +5905,13 @@
     $('edLinkCheckDoneBtn') && $('edLinkCheckDoneBtn').addEventListener('click', edCloseLinkCheckModal);
     $('edLinkCheckRefreshBtn') && $('edLinkCheckRefreshBtn').addEventListener('click', () => {
       const lang = edState.linkCheckModalLang || edState.activeLang;
-      const task = edGetLinkCheckTask(lang);
+      const domain = edState.linkCheckModalDomain || edActiveLinkCheckDomain(lang);
+      const task = edGetLinkCheckTask(lang, domain);
       if (!task) return;
       if (edLinkCheckNeedsPolling(task)) {
-        edPollLinkCheck(lang);
+        edPollLinkCheck(lang, domain);
       } else {
-        edLoadLinkCheckDetail(lang);
+        edLoadLinkCheckDetail(lang, domain);
       }
     });
     $('edLinkCheckMask') && $('edLinkCheckMask').addEventListener('click', (e) => {

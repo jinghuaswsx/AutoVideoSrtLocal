@@ -61,6 +61,7 @@ def api_product_link_check_get(pid: int, lang: str):
         lang=lang,
         user_id=current_user.id,
         store_obj=routes.store,
+        domain=request.args.get("domain"),
     )
     return routes._media_link_check_flask_response(result)
 
@@ -78,5 +79,6 @@ def api_product_link_check_detail(pid: int, lang: str):
         user_id=current_user.id,
         store_obj=routes.store,
         serialize_task_fn=routes._serialize_link_check_task,
+        domain=request.args.get("domain"),
     )
     return routes._media_link_check_flask_response(result)

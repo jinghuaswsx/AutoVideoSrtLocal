@@ -10,7 +10,7 @@ import uuid
 
 from flask import jsonify
 
-from appcore import medias
+from appcore import medias, product_link_domains
 
 
 @dataclass(frozen=True)
@@ -63,6 +63,24 @@ def _collect_link_check_reference_images(
     return references
 
 
+def _link_check_domain_metadata(link_url: str, lang: str) -> tuple[str, str, str]:
+    domain = product_link_domains.domain_from_url(link_url)
+    status_key = product_link_domains.domain_lang_key(domain, lang) if domain else lang
+    storage_key = (
+        status_key
+        if domain and domain != product_link_domains.DEFAULT_LINK_DOMAINS[0]
+        else lang
+    )
+    return domain, status_key, storage_key
+
+
+def _task_key(lang: str, domain: str | None) -> str:
+    normalized_domain = product_link_domains.domain_from_url(domain or "")
+    if normalized_domain:
+        return product_link_domains.domain_lang_key(normalized_domain, lang)
+    return lang
+
+
 def build_product_link_check_create_response(
     *,
     product_id: int,
@@ -89,6 +107,7 @@ def build_product_link_check_create_response(
         return MediaLinkCheckResponse({"error": "target language is invalid"}, 400)
 
     task_id = str(task_id_factory())
+    domain, status_key, storage_key = _link_check_domain_metadata(link_url, lang)
     task_dir = Path(output_dir) / "link_check" / task_id
     task_dir.mkdir(parents=True, exist_ok=True)
     references = _collect_link_check_reference_images(
@@ -107,15 +126,19 @@ def build_product_link_check_create_response(
         link_url=link_url,
         target_language=lang,
         target_language_name=language.get("name_zh") or lang,
+        domain=domain,
+        status_key=status_key,
         reference_images=references,
     )
     medias.set_product_link_check_task(
         product_id,
-        lang,
+        storage_key,
         {
             "task_id": task_id,
             "status": "queued",
             "link_url": link_url,
+            "domain": domain,
+            "status_key": status_key,
             "checked_at": now_fn(UTC).isoformat(),
             "summary": {
                 "overall_decision": "running",
@@ -126,8 +149,11 @@ def build_product_link_check_create_response(
         },
     )
     start_runner_fn(task_id)
+    payload = {"task_id": task_id, "status": "queued", "reference_count": len(references)}
+    if storage_key != lang:
+        payload.update({"domain": domain, "status_key": status_key})
     return MediaLinkCheckResponse(
-        {"task_id": task_id, "status": "queued", "reference_count": len(references)},
+        payload,
         202,
     )
 
@@ -138,12 +164,14 @@ def build_product_link_check_summary_response(
     lang: str,
     user_id: int,
     store_obj: Any,
+    domain: str | None = None,
 ) -> MediaLinkCheckResponse:
     if not medias.is_valid_language(lang):
         return MediaLinkCheckResponse({"error": f"不支持的语言: {lang}"}, 400)
 
     tasks = medias.parse_link_check_tasks_json(product.get("link_check_tasks_json"))
-    meta = tasks.get(lang)
+    storage_key = _task_key(lang, domain)
+    meta = tasks.get(storage_key) or (tasks.get(lang) if storage_key != lang else None)
     if not meta:
         return MediaLinkCheckResponse({"task": None}, 200)
 
@@ -155,6 +183,8 @@ def build_product_link_check_summary_response(
         "task_id": meta.get("task_id", ""),
         "status": task.get("status", meta.get("status", "")),
         "link_url": meta.get("link_url", ""),
+        "domain": meta.get("domain") or product_link_domains.domain_from_url(meta.get("link_url", "")),
+        "status_key": meta.get("status_key") or storage_key,
         "checked_at": meta.get("checked_at", ""),
         "summary": dict(task.get("summary") or meta.get("summary") or {}),
         "progress": dict(task.get("progress") or {}),
@@ -164,11 +194,13 @@ def build_product_link_check_summary_response(
     }
     medias.set_product_link_check_task(
         int(product.get("id") or 0),
-        lang,
+        storage_key,
         {
             "task_id": refreshed["task_id"],
             "status": refreshed["status"],
             "link_url": refreshed["link_url"],
+            "domain": refreshed["domain"],
+            "status_key": refreshed["status_key"],
             "checked_at": refreshed["checked_at"],
             "summary": refreshed["summary"],
         },
@@ -183,12 +215,14 @@ def build_product_link_check_detail_response(
     user_id: int,
     store_obj: Any,
     serialize_task_fn: Callable[[dict], dict],
+    domain: str | None = None,
 ) -> MediaLinkCheckResponse:
     if not medias.is_valid_language(lang):
         return MediaLinkCheckResponse({"error": f"不支持的语言: {lang}"}, 400)
 
     tasks = medias.parse_link_check_tasks_json(product.get("link_check_tasks_json"))
-    meta = tasks.get(lang)
+    storage_key = _task_key(lang, domain)
+    meta = tasks.get(storage_key) or (tasks.get(lang) if storage_key != lang else None)
     if not meta:
         return MediaLinkCheckResponse({"error": "task not found"}, 404)
 

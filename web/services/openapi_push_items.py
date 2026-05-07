@@ -13,6 +13,7 @@ QueryOneFn = Callable[[str, tuple], dict | None]
 MediaUrlFn = Callable[[str | None], str | None]
 ListItemsFn = Callable[[int, str], list[dict]]
 ResolvePushTextsFn = Callable[[int], list[dict[str, str]]]
+ResolveProductPageUrlsFn = Callable[[str, dict], list[dict[str, str]]]
 RecordSuccessFn = Callable[..., int]
 RecordFailureFn = Callable[..., int]
 
@@ -138,6 +139,7 @@ def build_material_push_payload(
     product_code: str | None = None,
     list_items_fn: ListItemsFn = medias.list_items,
     resolve_push_texts_fn: ResolvePushTextsFn = pushes.resolve_push_texts,
+    resolve_product_page_urls_fn: ResolveProductPageUrlsFn = pushes.resolve_product_page_urls,
     media_download_url_fn: MediaUrlFn = media_download_url,
 ) -> dict:
     if not medias.is_product_listed(product):
@@ -146,10 +148,14 @@ def build_material_push_payload(
     product_id = int(product["id"])
     items = list_items_fn(product_id, lang)
     code = (product_code or product.get("product_code") or "").strip().lower()
-    product_links = (
-        [f"https://newjoyloo.com/{lang}/products/{code}"]
-        if lang != "en" else []
-    )
+    product_for_links = {**product, "product_code": code}
+    product_links = []
+    if lang != "en":
+        product_links = [
+            row["url"]
+            for row in resolve_product_page_urls_fn(lang, product_for_links)
+            if row.get("url")
+        ]
     texts = resolve_push_texts_fn(product_id)
 
     videos = []

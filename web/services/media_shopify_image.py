@@ -31,8 +31,14 @@ def build_shopify_image_confirm_response(
     product_id: int,
     lang: str,
     user_id: int | None,
+    body: dict | None = None,
 ) -> MediaShopifyImageResponse:
-    status = shopify_image_tasks.confirm_lang(product_id, lang, user_id)
+    body = body if isinstance(body, dict) else {}
+    domain = (body.get("domain") or "").strip()
+    if domain:
+        status = shopify_image_tasks.confirm_lang(product_id, lang, user_id, domain=domain)
+    else:
+        status = shopify_image_tasks.confirm_lang(product_id, lang, user_id)
     return MediaShopifyImageResponse({"ok": True, "status": status})
 
 
@@ -43,11 +49,20 @@ def build_shopify_image_unavailable_response(
     body: dict | None,
 ) -> MediaShopifyImageResponse:
     body = body if isinstance(body, dict) else {}
-    status = shopify_image_tasks.mark_link_unavailable(
-        product_id,
-        lang,
-        (body.get("reason") or "").strip(),
-    )
+    domain = (body.get("domain") or "").strip()
+    if domain:
+        status = shopify_image_tasks.mark_link_unavailable(
+            product_id,
+            lang,
+            (body.get("reason") or "").strip(),
+            domain=domain,
+        )
+    else:
+        status = shopify_image_tasks.mark_link_unavailable(
+            product_id,
+            lang,
+            (body.get("reason") or "").strip(),
+        )
     return MediaShopifyImageResponse({"ok": True, "status": status})
 
 

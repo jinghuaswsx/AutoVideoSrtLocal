@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from appcore import medias
+from appcore import medias, product_link_domains
 from appcore.link_check_locale import detect_target_language_from_url
 from web.services.openapi_materials_serializers import media_download_url, normalize_target_url
 
@@ -92,6 +92,11 @@ def build_link_check_bootstrap_response(
     if not reference_images:
         raise LinkCheckBootstrapError("references not ready", 409)
 
+    domain = product.get("_matched_domain") or product_link_domains.domain_from_url(target_url)
+    status_key = (
+        product.get("_matched_status_key")
+        or (product_link_domains.domain_lang_key(domain, target_language) if domain else target_language)
+    )
     return {
         "product": {
             "id": product.get("id"),
@@ -101,6 +106,8 @@ def build_link_check_bootstrap_response(
         "target_language": target_language,
         "target_language_name": get_language_name_fn(target_language),
         "matched_by": product.get("_matched_by"),
+        "domain": domain,
+        "status_key": status_key,
         "normalized_url": normalize_target_url(target_url),
         "reference_images": reference_images,
     }

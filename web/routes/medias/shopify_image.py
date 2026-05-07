@@ -42,10 +42,12 @@ def _shopify_image_flask_response(result):
 def api_product_shopify_image_confirm(pid: int, lang: str):
     routes = _routes_module()
     _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
+    body = request.get_json(silent=True) or {}
     result = build_shopify_image_confirm_response(
         product_id=pid,
         lang=normalized_lang,
         user_id=getattr(current_user, "id", None),
+        body=body,
     )
     return routes._shopify_image_flask_response(result)
 

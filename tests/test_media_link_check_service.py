@@ -79,6 +79,52 @@ def test_link_check_create_response_collects_references_and_starts_runner(monkey
     assert started == ["lc-fixed"]
 
 
+def test_link_check_create_response_persists_domain_language_key(monkeypatch, tmp_path):
+    from web.services import media_link_check
+
+    created = {}
+    updated = {}
+
+    monkeypatch.setattr(media_link_check.medias, "is_valid_language", lambda code: code == "de")
+    monkeypatch.setattr(
+        media_link_check.medias,
+        "get_language",
+        lambda code: {"code": code, "name_zh": "German", "enabled": 1},
+    )
+    monkeypatch.setattr(media_link_check.medias, "get_product_covers", lambda pid: {"de": "covers/de.jpg"})
+    monkeypatch.setattr(media_link_check.medias, "list_detail_images", lambda pid, lang: [])
+    monkeypatch.setattr(
+        media_link_check.medias,
+        "set_product_link_check_task",
+        lambda pid, key, payload: updated.update({"pid": pid, "key": key, "payload": payload}) or 1,
+    )
+
+    class FakeStore:
+        @staticmethod
+        def create_link_check(task_id, task_dir, **kwargs):
+            created.update(kwargs)
+            return {"id": task_id, "type": "link_check", "_user_id": 2}
+
+    result = media_link_check.build_product_link_check_create_response(
+        product_id=7,
+        body={"lang": "de", "link_url": "https://omurio.com/de/products/demo-rjc"},
+        user_id=2,
+        output_dir=tmp_path,
+        store_obj=FakeStore(),
+        start_runner_fn=lambda task_id: True,
+        download_media_object_fn=lambda object_key, target_path: None,
+        task_id_factory=lambda: "lc-domain",
+    )
+
+    assert result.status_code == 202
+    assert result.payload["status_key"] == "omurio.com:de"
+    assert result.payload["domain"] == "omurio.com"
+    assert created["domain"] == "omurio.com"
+    assert created["status_key"] == "omurio.com:de"
+    assert updated["key"] == "omurio.com:de"
+    assert updated["payload"]["domain"] == "omurio.com"
+
+
 def test_link_check_create_response_rejects_invalid_inputs(monkeypatch, tmp_path):
     from web.services import media_link_check
 

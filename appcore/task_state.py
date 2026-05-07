@@ -664,6 +664,8 @@ def create_link_check(task_id: str, task_dir: str, *,
                       target_language: str,
                       target_language_name: str,
                       reference_images: list[dict],
+                      domain: str = "",
+                      status_key: str = "",
                       display_name: str = "") -> dict:
     task = {
         "id": task_id,
@@ -673,6 +675,8 @@ def create_link_check(task_id: str, task_dir: str, *,
         "display_name": display_name,
         "original_filename": "",
         "link_url": link_url,
+        "domain": domain,
+        "status_key": status_key,
         "resolved_url": "",
         "page_language": "",
         "locale_evidence": {

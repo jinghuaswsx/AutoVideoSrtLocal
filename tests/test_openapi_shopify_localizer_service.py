@@ -39,6 +39,20 @@ def test_shopify_localizer_builds_bootstrap_response():
         resolve_shopify_product_id_fn=fake_resolve_shopify_product_id,
         list_reference_images_for_lang_fn=fake_list_reference_images,
         get_language_name_fn=lambda lang: "Italian",
+        resolve_link_urls_fn=lambda product, lang: [
+            {
+                "domain": "newjoyloo.com",
+                "lang": lang,
+                "status_key": f"newjoyloo.com:{lang}",
+                "url": f"https://newjoyloo.com/{lang}/products/{product['product_code']}",
+            },
+            {
+                "domain": "omurio.com",
+                "lang": lang,
+                "status_key": f"omurio.com:{lang}",
+                "url": f"https://omurio.com/{lang}/products/{product['product_code']}",
+            },
+        ],
         media_download_url_fn=lambda object_key: f"http://local.test/{object_key}",
     )
 
@@ -67,6 +81,21 @@ def test_shopify_localizer_builds_bootstrap_response():
         }
     ]
     assert payload["localized_images"][0]["url"] == "http://local.test/it.jpg"
+    assert payload["link_url"] == "https://newjoyloo.com/it/products/sonic-lens-refresher-rjc"
+    assert payload["link_urls"] == [
+        {
+            "domain": "newjoyloo.com",
+            "lang": "it",
+            "status_key": "newjoyloo.com:it",
+            "url": "https://newjoyloo.com/it/products/sonic-lens-refresher-rjc",
+        },
+        {
+            "domain": "omurio.com",
+            "lang": "it",
+            "status_key": "omurio.com:it",
+            "url": "https://omurio.com/it/products/sonic-lens-refresher-rjc",
+        },
+    ]
 
 
 def test_shopify_localizer_rejects_english_target_language():

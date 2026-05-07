@@ -269,6 +269,8 @@ def _serialize_link_check_task(task: dict) -> dict:
         "type": task["type"],
         "status": task["status"],
         "link_url": task["link_url"],
+        "domain": task.get("domain", ""),
+        "status_key": task.get("status_key", ""),
         "resolved_url": task.get("resolved_url", ""),
         "page_language": task.get("page_language", ""),
         "target_language": task["target_language"],

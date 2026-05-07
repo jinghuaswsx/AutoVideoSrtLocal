@@ -8,7 +8,7 @@ import re
 from flask import jsonify
 import pymysql.err
 
-from appcore import medias
+from appcore import medias, product_link_domains
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$")
@@ -137,10 +137,28 @@ def build_product_update_response(
 
     if isinstance(body.get("localized_links"), dict):
         cleaned = {}
-        for lang, url in body["localized_links"].items():
-            url = (url or "").strip()
-            if url and is_valid_language_fn(lang):
-                cleaned[lang] = url
+        for lang, value in body["localized_links"].items():
+            normalized_lang = str(lang or "").strip().lower()
+            if not is_valid_language_fn(normalized_lang):
+                continue
+            if isinstance(value, dict):
+                domain_links: dict[str, str] = {}
+                for raw_domain, raw_url in value.items():
+                    url = str(raw_url or "").strip()
+                    if not url:
+                        continue
+                    try:
+                        domain = product_link_domains.normalize_domain(str(raw_domain or ""))
+                    except ValueError:
+                        domain = product_link_domains.domain_from_url(url)
+                    if domain:
+                        domain_links[domain] = url
+                if domain_links:
+                    cleaned[normalized_lang] = domain_links
+                continue
+            url = str(value or "").strip()
+            if url:
+                cleaned[normalized_lang] = url
         update_fields["localized_links_json"] = cleaned
 
     if "ad_supported_langs" in body:

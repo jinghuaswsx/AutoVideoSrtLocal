@@ -110,6 +110,10 @@ def test_openapi_materials_serializes_shopify_image_task():
             "lang": "it",
             "shopify_product_id": "8559391932589",
             "link_url": "https://example.com/products/demo",
+            "link_urls": [
+                {"domain": "newjoyloo.com", "url": "https://example.com/products/demo"},
+                {"domain": "omurio.com", "url": "https://omurio.com/products/demo"},
+            ],
             "ignored": "value",
         }
     ) == {
@@ -119,6 +123,10 @@ def test_openapi_materials_serializes_shopify_image_task():
         "lang": "it",
         "shopify_product_id": "8559391932589",
         "link_url": "https://example.com/products/demo",
+        "link_urls": [
+            {"domain": "newjoyloo.com", "url": "https://example.com/products/demo"},
+            {"domain": "omurio.com", "url": "https://omurio.com/products/demo"},
+        ],
     }
 
 

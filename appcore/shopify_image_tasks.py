@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from appcore import medias
+from appcore import medias, product_link_domains
 from appcore.db import execute, query, query_one
 
 
@@ -51,12 +51,24 @@ def parse_status_map(value: str | dict | None) -> dict[str, dict[str, Any]]:
 def status_for_lang(
     status_map: dict[str, dict[str, Any]],
     lang: str,
+    domain: str | None = None,
+    fallback_legacy: bool = True,
 ) -> dict[str, Any]:
     normalized_lang = (lang or "").strip().lower()
-    raw = dict((status_map or {}).get(normalized_lang) or {})
+    normalized_domain = product_link_domains.domain_from_url(domain or "")
+    status_key = (
+        product_link_domains.domain_lang_key(normalized_domain, normalized_lang)
+        if normalized_domain else normalized_lang
+    )
+    raw = dict((status_map or {}).get(status_key) or {})
+    if normalized_domain and fallback_legacy and not raw:
+        raw = dict((status_map or {}).get(normalized_lang) or {})
     return {
         "replace_status": raw.get("replace_status") or REPLACE_NONE,
         "link_status": raw.get("link_status") or LINK_UNKNOWN,
+        "status_key": status_key,
+        "domain": normalized_domain,
+        "lang": normalized_lang,
         "last_task_id": raw.get("last_task_id"),
         "last_error": raw.get("last_error") or "",
         "result_summary": raw.get("result_summary") or {},
@@ -66,22 +78,70 @@ def status_for_lang(
     }
 
 
-def update_lang_status(product_id: int, lang: str, **updates: Any) -> dict[str, Any]:
+def update_lang_status(
+    product_id: int,
+    lang: str,
+    *,
+    domain: str | None = None,
+    **updates: Any,
+) -> dict[str, Any]:
     product = medias.get_product(product_id) or {}
     status_map = parse_status_map(product.get("shopify_image_status_json"))
     normalized_lang = (lang or "").strip().lower()
-    current = status_for_lang(status_map, normalized_lang)
+    normalized_domain = product_link_domains.domain_from_url(domain or "")
+    status_key = (
+        product_link_domains.domain_lang_key(normalized_domain, normalized_lang)
+        if normalized_domain else normalized_lang
+    )
+    current = status_for_lang(status_map, normalized_lang, normalized_domain or None)
     current.update(updates)
+    current["status_key"] = status_key
+    current["domain"] = normalized_domain
+    current["lang"] = normalized_lang
     current["updated_at"] = _now_iso()
-    status_map[normalized_lang] = current
+    status_map[status_key] = current
     medias.update_product(product_id, shopify_image_status_json=status_map)
     return current
 
 
-def confirm_lang(product_id: int, lang: str, user_id: int | None = None) -> dict[str, Any]:
-    return update_lang_status(
+def _enabled_link_rows_for_product(product_id: int, lang: str) -> list[dict[str, str]]:
+    try:
+        product = medias.get_product(product_id) or {}
+        return product_link_domains.resolve_product_page_url_rows(product, lang)
+    except Exception:
+        return []
+
+
+def update_enabled_domain_statuses(product_id: int, lang: str, **updates: Any) -> dict[str, Any]:
+    rows = _enabled_link_rows_for_product(product_id, lang)
+    if not rows:
+        return update_lang_status(product_id, lang, **updates)
+    latest: dict[str, Any] = {}
+    for row in rows:
+        latest = update_lang_status(
+            product_id,
+            lang,
+            domain=row.get("domain"),
+            **updates,
+        )
+    return latest
+
+
+def confirm_lang(
+    product_id: int,
+    lang: str,
+    user_id: int | None = None,
+    *,
+    domain: str | None = None,
+) -> dict[str, Any]:
+    updater = update_lang_status if domain else update_enabled_domain_statuses
+    kwargs: dict[str, Any] = {}
+    if domain:
+        kwargs["domain"] = domain
+    return updater(
         product_id,
         lang,
+        **kwargs,
         replace_status=REPLACE_CONFIRMED,
         link_status=LINK_NORMAL,
         confirmed_by=user_id,
@@ -90,20 +150,36 @@ def confirm_lang(product_id: int, lang: str, user_id: int | None = None) -> dict
     )
 
 
-def mark_link_unavailable(product_id: int, lang: str, reason: str = "") -> dict[str, Any]:
-    return update_lang_status(
+def mark_link_unavailable(
+    product_id: int,
+    lang: str,
+    reason: str = "",
+    *,
+    domain: str | None = None,
+) -> dict[str, Any]:
+    updater = update_lang_status if domain else update_enabled_domain_statuses
+    kwargs: dict[str, Any] = {}
+    if domain:
+        kwargs["domain"] = domain
+    return updater(
         product_id,
         lang,
+        **kwargs,
         replace_status=REPLACE_FAILED,
         link_status=LINK_UNAVAILABLE,
         last_error=(reason or "链接不可用，等待负责人处理"),
     )
 
 
-def reset_lang(product_id: int, lang: str) -> dict[str, Any]:
-    return update_lang_status(
+def reset_lang(product_id: int, lang: str, *, domain: str | None = None) -> dict[str, Any]:
+    updater = update_lang_status if domain else update_enabled_domain_statuses
+    kwargs: dict[str, Any] = {}
+    if domain:
+        kwargs["domain"] = domain
+    return updater(
         product_id,
         lang,
+        **kwargs,
         replace_status=REPLACE_NONE,
         link_status=LINK_UNKNOWN,
         last_error="",
@@ -136,15 +212,37 @@ def _loads_product_links(product: dict) -> dict[str, str]:
     }
 
 
+def resolve_link_urls(product: dict, lang: str) -> list[dict[str, str]]:
+    return product_link_domains.resolve_product_page_url_rows(product or {}, lang)
+
+
 def resolve_link_url(product: dict, lang: str) -> str:
-    normalized_lang = (lang or "en").strip().lower() or "en"
-    links = _loads_product_links(product or {})
-    if links.get(normalized_lang):
-        return links[normalized_lang]
-    product_code = str((product or {}).get("product_code") or "").strip()
-    if normalized_lang == "en":
-        return f"https://newjoyloo.com/products/{product_code}"
-    return f"https://newjoyloo.com/{normalized_lang}/products/{product_code}"
+    rows = resolve_link_urls(product, lang)
+    return rows[0]["url"] if rows else ""
+
+
+def _enrich_task_link_urls(task: dict | None) -> dict | None:
+    if not task:
+        return task
+    if task.get("link_urls"):
+        return task
+    product_id = int(task.get("product_id") or 0)
+    lang = str(task.get("lang") or "").strip().lower()
+    try:
+        product = medias.get_product(product_id) or {}
+    except Exception:
+        product = {}
+    if not product:
+        product = {
+            "id": product_id,
+            "product_code": task.get("product_code"),
+        }
+    link_urls = resolve_link_urls(product, lang)
+    enriched = dict(task)
+    enriched["link_urls"] = link_urls
+    if not enriched.get("link_url") and link_urls:
+        enriched["link_url"] = link_urls[0]["url"]
+    return enriched
 
 
 def evaluate_candidate(product_id: int, lang: str) -> dict[str, Any]:
@@ -157,11 +255,8 @@ def evaluate_candidate(product_id: int, lang: str) -> dict[str, Any]:
     if not str(product.get("product_code") or "").strip():
         return {"ready": False, "block_code": "product_code_missing", "product": product}
 
-    current = status_for_lang(
-        parse_status_map(product.get("shopify_image_status_json")),
-        normalized_lang,
-    )
-    if current["replace_status"] == REPLACE_CONFIRMED and current["link_status"] == LINK_NORMAL:
+    confirmed, _reason = is_confirmed_for_push(product, normalized_lang)
+    if confirmed:
         return {"ready": False, "block_code": "already_confirmed", "product": product}
 
     shopify_product_id = medias.resolve_shopify_product_id(int(product_id))
@@ -187,11 +282,13 @@ def evaluate_candidate(product_id: int, lang: str) -> dict[str, Any]:
             "shopify_product_id": shopify_product_id,
         }
 
+    link_urls = resolve_link_urls(product, normalized_lang)
     return {
         "ready": True,
         "product": product,
         "shopify_product_id": str(shopify_product_id).strip(),
-        "link_url": resolve_link_url(product, normalized_lang),
+        "link_url": link_urls[0]["url"] if link_urls else "",
+        "link_urls": link_urls,
     }
 
 
@@ -215,11 +312,11 @@ def create_or_reuse_task(product_id: int, lang: str) -> dict:
     normalized_lang = (lang or "").strip().lower()
     active = find_active_task(product_id, normalized_lang)
     if active:
-        return active
+        return _enrich_task_link_urls(active) or active
 
     candidate = evaluate_candidate(product_id, normalized_lang)
     if not candidate.get("ready"):
-        update_lang_status(
+        update_enabled_domain_statuses(
             product_id,
             normalized_lang,
             replace_status=REPLACE_FAILED,
@@ -241,7 +338,7 @@ def create_or_reuse_task(product_id: int, lang: str) -> dict:
             candidate["link_url"],
         ),
     )
-    update_lang_status(
+    update_enabled_domain_statuses(
         product_id,
         normalized_lang,
         replace_status=REPLACE_PENDING,
@@ -249,7 +346,7 @@ def create_or_reuse_task(product_id: int, lang: str) -> dict:
         last_task_id=task_id,
         last_error="",
     )
-    return get_task(task_id) or {"id": task_id, "status": TASK_PENDING, **candidate}
+    return _enrich_task_link_urls(get_task(task_id)) or {"id": task_id, "status": TASK_PENDING, **candidate}
 
 
 def claim_next_task(worker_id: str, lock_seconds: int = 900) -> dict | None:
@@ -273,14 +370,14 @@ def claim_next_task(worker_id: str, lock_seconds: int = 900) -> dict | None:
     )
     if not updated:
         return None
-    update_lang_status(
+    update_enabled_domain_statuses(
         int(task["product_id"]),
         task["lang"],
         replace_status=REPLACE_RUNNING,
         link_status=LINK_NEEDS_REVIEW,
         last_task_id=task["id"],
     )
-    return get_task(task["id"]) or task
+    return _enrich_task_link_urls(get_task(task["id"]) or task)
 
 
 def summarize_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -307,7 +404,7 @@ def complete_task(task_id: int, result: dict[str, Any]) -> dict[str, Any]:
         "WHERE id=%s",
         (payload, task_id),
     )
-    return update_lang_status(
+    return update_enabled_domain_statuses(
         int(task["product_id"]),
         task["lang"],
         replace_status=REPLACE_AUTO_DONE,
@@ -344,7 +441,7 @@ def fail_task(
             task_id,
         ),
     )
-    return update_lang_status(
+    return update_enabled_domain_statuses(
         int(task["product_id"]),
         task["lang"],
         replace_status=REPLACE_FAILED,
@@ -368,23 +465,45 @@ def is_confirmed_for_push(product: dict | None, lang: str) -> tuple[bool, str]:
     if normalized_lang == "en":
         return True, ""
 
-    status = status_for_lang(
-        parse_status_map((product or {}).get("shopify_image_status_json")),
-        normalized_lang,
-    )
+    status_map = parse_status_map((product or {}).get("shopify_image_status_json"))
+    link_rows = resolve_link_urls(product or {}, normalized_lang)
+    if not link_rows:
+        link_rows = [{"domain": "", "status_key": normalized_lang}]
+    statuses = [
+        (
+            row,
+            status_for_lang(
+                status_map,
+                normalized_lang,
+                row.get("domain") or None,
+                fallback_legacy=(row.get("domain") == product_link_domains.DEFAULT_LINK_DOMAINS[0]),
+            ),
+        )
+        for row in link_rows
+    ]
+    not_ready: tuple[dict[str, str], dict[str, Any]] | None = None
+    for row, status in statuses:
+        if status["replace_status"] == REPLACE_CONFIRMED and status["link_status"] == LINK_NORMAL:
+            continue
+        not_ready = (row, status)
+        break
+    if not not_ready:
+        return True, ""
+
+    row, status = not_ready
+    domain_label = row.get("domain") or status.get("domain") or ""
+    prefix = f"{domain_label} " if domain_label else ""
     replace_status = status["replace_status"]
     link_status = status["link_status"]
 
-    if replace_status == REPLACE_CONFIRMED and link_status == LINK_NORMAL:
-        return True, ""
     if link_status == LINK_UNAVAILABLE:
-        return False, status["last_error"] or "链接不可用，已阻止推送"
+        return False, prefix + (status["last_error"] or "链接不可用，已阻止推送")
     if replace_status == REPLACE_FAILED:
-        return False, status["last_error"] or "图片自动替换失败，需要处理"
+        return False, prefix + (status["last_error"] or "图片自动替换失败，需要处理")
     if replace_status == REPLACE_AUTO_DONE:
-        return False, "图片已自动替换，等待人工确认"
+        return False, prefix + "图片已自动替换，等待人工确认"
     if replace_status == REPLACE_RUNNING:
-        return False, "图片正在自动替换，暂不可推送"
+        return False, prefix + "图片正在自动替换，暂不可推送"
     if replace_status == REPLACE_PENDING:
-        return False, "图片替换任务已排队，暂不可推送"
-    return False, "图片尚未完成替换确认"
+        return False, prefix + "图片替换任务已排队，暂不可推送"
+    return False, prefix + "图片尚未完成替换确认"

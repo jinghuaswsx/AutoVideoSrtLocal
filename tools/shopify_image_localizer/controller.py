@@ -178,6 +178,9 @@ def run_worker_once(
     reporter(
         f"领取任务 #{task.get('id')}: {task.get('product_code')} / {task.get('lang')}"
     )
+    link_urls = task.get("link_urls") or []
+    if link_urls:
+        reporter(f"任务关联 {len(link_urls)} 个商品域名链接")
     try:
         result = run_shopify_localizer(
             base_url=base_url,
@@ -198,6 +201,11 @@ def run_worker_once(
         )
         return {"status": "failed", "task": task, "error": str(exc)}
 
+    if link_urls:
+        result["link_urls"] = link_urls
+        result["link_url"] = link_urls[0].get("url") or task.get("link_url") or ""
+    elif task.get("link_url"):
+        result["link_url"] = task.get("link_url")
     api_client.complete_task(
         base_url,
         api_key,

@@ -7,6 +7,8 @@ import requests
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from appcore import product_link_domains
+
 
 @dataclass(frozen=True)
 class DetailImagesFromUrlPlan:
@@ -54,11 +56,16 @@ def build_detail_images_from_url_plan(
                 error="product_code required before inferring a default link",
                 status_code=400,
             )
-        url = (
-            f"https://newjoyloo.com/products/{code}"
-            if lang == "en"
-            else f"https://newjoyloo.com/{lang}/products/{code}"
-        )
+        try:
+            url = product_link_domains.first_product_page_url(dict(product), lang)
+        except Exception:
+            url = ""
+        if not url:
+            url = product_link_domains.build_product_page_url(
+                product_link_domains.DEFAULT_LINK_DOMAINS[0],
+                lang,
+                code,
+            )
 
     return DetailImagesFromUrlPlanOutcome(
         plan=DetailImagesFromUrlPlan(
@@ -80,7 +87,16 @@ def _localized_link(raw_links: object, lang: str) -> str:
             parsed = {}
         if isinstance(parsed, dict):
             links = parsed
-    return str(links.get(lang) or "").strip()
+    value = links.get(lang)
+    if isinstance(value, dict):
+        for domain in product_link_domains.DEFAULT_LINK_DOMAINS:
+            if str(value.get(domain) or "").strip():
+                return str(value.get(domain) or "").strip()
+        for url in value.values():
+            if str(url or "").strip():
+                return str(url or "").strip()
+        return ""
+    return str(value or "").strip()
 
 
 def fetch_detail_images_page(url: str, lang: str):

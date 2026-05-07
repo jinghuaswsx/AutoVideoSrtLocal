@@ -97,6 +97,7 @@ def serialize_shopify_image_task(task: dict | None) -> dict | None:
         "lang": task.get("lang"),
         "shopify_product_id": task.get("shopify_product_id"),
         "link_url": task.get("link_url"),
+        "link_urls": task.get("link_urls") or [],
     }
 
 

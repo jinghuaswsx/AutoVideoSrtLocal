@@ -98,6 +98,35 @@ def test_find_product_for_link_check_url_falls_back_to_path_then_product_code(mo
     assert code_product["_matched_by"] == "product_code"
 
 
+def test_find_product_for_link_check_url_matches_generated_enabled_domain(monkeypatch):
+    rows = [
+        {
+            "id": 8,
+            "product_code": "demo-rjc",
+            "name": "Generated",
+            "localized_links_json": {},
+        }
+    ]
+
+    monkeypatch.setattr(medias, "query", lambda sql, args=(): rows)
+    monkeypatch.setattr(medias, "query_one", lambda sql, args=(): None)
+    monkeypatch.setattr(
+        medias.product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [{"id": 2, "domain": "omurio.com"}],
+    )
+
+    product = medias.find_product_for_link_check_url(
+        "https://omurio.com/de/products/demo-rjc?variant=1",
+        "de",
+    )
+
+    assert product["id"] == 8
+    assert product["_matched_by"] == "configured_domain_url"
+    assert product["_matched_domain"] == "omurio.com"
+    assert product["_matched_status_key"] == "omurio.com:de"
+
+
 def test_list_reference_images_for_lang_returns_cover_then_detail_without_english_fallback(monkeypatch):
     def fake_query(sql, args=()):
         sql = " ".join(sql.split())

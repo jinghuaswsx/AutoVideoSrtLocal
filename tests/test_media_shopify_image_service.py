@@ -55,6 +55,29 @@ def test_shopify_image_confirm_response_delegates_to_task_service(monkeypatch):
     assert result.payload["status"]["lang"] == "it"
 
 
+def test_shopify_image_confirm_response_passes_optional_domain(monkeypatch):
+    from web.services import media_shopify_image
+
+    captured = {}
+
+    def fake_confirm(pid, lang, user_id, *, domain=None):
+        captured.update({"pid": pid, "lang": lang, "user_id": user_id, "domain": domain})
+        return {"status_key": "omurio.com:it"}
+
+    monkeypatch.setattr(media_shopify_image.shopify_image_tasks, "confirm_lang", fake_confirm)
+
+    result = media_shopify_image.build_shopify_image_confirm_response(
+        product_id=7,
+        lang="it",
+        user_id=2,
+        body={"domain": "https://omurio.com/"},
+    )
+
+    assert result.status_code == 200
+    assert captured == {"pid": 7, "lang": "it", "user_id": 2, "domain": "https://omurio.com/"}
+    assert result.payload["status"]["status_key"] == "omurio.com:it"
+
+
 def test_shopify_image_unavailable_response_trims_reason(monkeypatch):
     from web.services import media_shopify_image
 

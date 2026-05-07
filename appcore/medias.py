@@ -4,7 +4,7 @@ import re
 import uuid
 from typing import Any
 
-from appcore import product_roas
+from appcore import product_link_domains, product_roas
 from appcore.db import query, query_one, execute, get_conn
 from appcore.material_filename_rules import validate_video_filename_no_spaces
 
@@ -251,6 +251,26 @@ def _parse_localized_links_json(value: str | dict | None) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _iter_localized_link_urls(links: dict, lang: str) -> list[tuple[str, str]]:
+    value = (links or {}).get((lang or "").strip().lower())
+    if isinstance(value, dict):
+        out: list[tuple[str, str]] = []
+        for raw_domain, raw_url in value.items():
+            url = str(raw_url or "").strip()
+            if not url:
+                continue
+            try:
+                domain = product_link_domains.normalize_domain(str(raw_domain or ""))
+            except ValueError:
+                domain = product_link_domains.domain_from_url(url)
+            out.append((domain, url))
+        return out
+    url = str(value or "").strip()
+    if not url:
+        return []
+    return [(product_link_domains.domain_from_url(url), url)]
+
+
 def _link_check_handle_from_url(url: str) -> str:
     from urllib.parse import urlparse
 
@@ -279,17 +299,43 @@ def find_product_for_link_check_url(target_url: str, target_language: str) -> di
     path_match: dict | None = None
     for row in rows:
         links = _parse_localized_links_json(row.get("localized_links_json"))
-        localized_url = (links.get(target_language) or "").strip()
-        if not localized_url:
-            continue
-        normalized_localized_url = _normalize_link_check_url(localized_url)
-        if normalized_localized_url == normalized_target_url:
-            return {**row, "_matched_by": "localized_links_exact"}
-        if normalized_localized_url.split("?", 1)[0] == target_path and path_match is None:
-            path_match = {**row, "_matched_by": "localized_links_path"}
+        for domain, localized_url in _iter_localized_link_urls(links, target_language):
+            normalized_localized_url = _normalize_link_check_url(localized_url)
+            if normalized_localized_url == normalized_target_url:
+                return {
+                    **row,
+                    "_matched_by": "localized_links_exact",
+                    "_matched_domain": domain,
+                    "_matched_status_key": (
+                        product_link_domains.domain_lang_key(domain, target_language)
+                        if domain else target_language
+                    ),
+                }
+            if normalized_localized_url.split("?", 1)[0] == target_path and path_match is None:
+                path_match = {
+                    **row,
+                    "_matched_by": "localized_links_path",
+                    "_matched_domain": domain,
+                    "_matched_status_key": (
+                        product_link_domains.domain_lang_key(domain, target_language)
+                        if domain else target_language
+                    ),
+                }
 
     if path_match:
         return path_match
+
+    for row in rows:
+        product = dict(row)
+        for link_row in product_link_domains.resolve_product_page_url_rows(product, target_language):
+            normalized_link_url = _normalize_link_check_url(link_row.get("url") or "")
+            if normalized_link_url == normalized_target_url or normalized_link_url.split("?", 1)[0] == target_path:
+                return {
+                    **row,
+                    "_matched_by": "configured_domain_url",
+                    "_matched_domain": link_row.get("domain") or "",
+                    "_matched_status_key": link_row.get("status_key") or target_language,
+                }
 
     handle = _link_check_handle_from_url(target_url)
     if not handle:

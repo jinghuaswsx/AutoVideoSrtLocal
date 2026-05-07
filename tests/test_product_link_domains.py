@@ -19,6 +19,63 @@ def test_build_product_page_url_uses_domain_and_language_path():
     ) == "https://omurio.com/de/products/demo-rjc"
 
 
+def test_domain_language_keys_are_stable_and_parseable():
+    from appcore import product_link_domains
+
+    key = product_link_domains.domain_lang_key(" https://Omurio.com/ ", " DE ")
+
+    assert key == "omurio.com:de"
+    assert product_link_domains.parse_domain_lang_key(key) == {
+        "domain": "omurio.com",
+        "lang": "de",
+        "legacy": False,
+    }
+    assert product_link_domains.parse_domain_lang_key("de") == {
+        "domain": "",
+        "lang": "de",
+        "legacy": True,
+    }
+
+
+def test_resolve_product_page_url_rows_expands_enabled_domains_and_overrides(monkeypatch):
+    from appcore import product_link_domains
+
+    monkeypatch.setattr(
+        product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+            {"id": 2, "domain": "omurio.com"},
+        ],
+    )
+    product = {
+        "id": 10,
+        "product_code": "demo-rjc",
+        "localized_links_json": {
+            "de": {
+                "newjoyloo.com": "https://newjoyloo.com/de/products/demo-special-rjc"
+            }
+        },
+    }
+
+    rows = product_link_domains.resolve_product_page_url_rows(product, "de")
+
+    assert rows == [
+        {
+            "domain": "newjoyloo.com",
+            "lang": "de",
+            "status_key": "newjoyloo.com:de",
+            "url": "https://newjoyloo.com/de/products/demo-special-rjc",
+        },
+        {
+            "domain": "omurio.com",
+            "lang": "de",
+            "status_key": "omurio.com:de",
+            "url": "https://omurio.com/de/products/demo-rjc",
+        },
+    ]
+
+
 def test_list_enabled_product_domains_defaults_to_active_global_domains(monkeypatch):
     from appcore import product_link_domains
 

@@ -15,6 +15,7 @@ ResolveShopifyProductIdFn = Callable[[int], str | None]
 ListReferenceImagesFn = Callable[[int, str], list[dict]]
 GetLanguageNameFn = Callable[[str], str]
 MediaDownloadUrlFn = Callable[[str | None], str | None]
+ResolveLinkUrlsFn = Callable[[dict, str], list[dict[str, str]]]
 ClaimNextTaskFn = Callable[..., dict | None]
 HeartbeatTaskFn = Callable[[int, str, int], int]
 CompleteTaskFn = Callable[[int, dict], dict]
@@ -63,6 +64,7 @@ def build_shopify_localizer_bootstrap_response(
     resolve_shopify_product_id_fn: ResolveShopifyProductIdFn | None = None,
     list_reference_images_for_lang_fn: ListReferenceImagesFn | None = None,
     get_language_name_fn: GetLanguageNameFn | None = None,
+    resolve_link_urls_fn: ResolveLinkUrlsFn | None = None,
     media_download_url_fn: MediaDownloadUrlFn = media_download_url,
 ) -> dict:
     body = body or {}
@@ -76,6 +78,7 @@ def build_shopify_localizer_bootstrap_response(
     resolve_shopify_product_id_fn = resolve_shopify_product_id_fn or medias.resolve_shopify_product_id
     list_reference_images_for_lang_fn = list_reference_images_for_lang_fn or medias.list_reference_images_for_lang
     get_language_name_fn = get_language_name_fn or medias.get_language_name
+    resolve_link_urls_fn = resolve_link_urls_fn or shopify_image_tasks.resolve_link_urls
 
     if not is_valid_language_fn(lang):
         raise ShopifyLocalizerBootstrapError("invalid lang", 400)
@@ -112,6 +115,7 @@ def build_shopify_localizer_bootstrap_response(
     if not localized_images:
         raise ShopifyLocalizerBootstrapError("localized images not ready", 409)
 
+    link_urls = resolve_link_urls_fn(product, lang)
     return {
         "product": {
             "id": product.get("id"),
@@ -119,6 +123,8 @@ def build_shopify_localizer_bootstrap_response(
             "shopify_product_id": shopify_product_id,
             "name": product.get("name"),
         },
+        "link_url": link_urls[0]["url"] if link_urls else "",
+        "link_urls": link_urls,
         "language": {
             "code": lang,
             "name_zh": get_language_name_fn(lang),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from urllib.parse import urlparse
 from typing import Any
@@ -54,6 +55,132 @@ def build_product_page_url(domain: str, lang: str, product_code: str) -> str:
     if lang_code == "en":
         return f"https://{normalized_domain}/products/{code}"
     return f"https://{normalized_domain}/{lang_code}/products/{code}"
+
+
+def domain_lang_key(domain: str, lang: str) -> str:
+    normalized_domain = normalize_domain(domain)
+    lang_code = (lang or "en").strip().lower() or "en"
+    return f"{normalized_domain}:{lang_code}"
+
+
+def parse_domain_lang_key(value: str) -> dict[str, Any]:
+    raw = str(value or "").strip().lower()
+    if ":" not in raw:
+        return {"domain": "", "lang": raw, "legacy": True}
+    domain, lang = raw.split(":", 1)
+    try:
+        normalized_domain = normalize_domain(domain)
+    except ValueError:
+        normalized_domain = domain.strip().lower()
+    return {
+        "domain": normalized_domain,
+        "lang": (lang or "en").strip().lower() or "en",
+        "legacy": False,
+    }
+
+
+def _loads_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _localized_link_map(product: dict | None) -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {}
+    if not isinstance(product, dict):
+        return out
+
+    for raw_value in (product.get("localized_links_json"), product.get("localized_links")):
+        parsed = _loads_dict(raw_value)
+        for raw_lang, raw_link in parsed.items():
+            lang = str(raw_lang or "").strip().lower()
+            if not lang:
+                continue
+            bucket = out.setdefault(lang, {})
+            if isinstance(raw_link, dict):
+                for raw_domain, url_value in raw_link.items():
+                    url = str(url_value or "").strip()
+                    if not url:
+                        continue
+                    try:
+                        domain = normalize_domain(str(raw_domain or ""))
+                    except ValueError:
+                        domain = domain_from_url(url)
+                    if domain:
+                        bucket[domain] = url
+                continue
+            url = str(raw_link or "").strip()
+            if url:
+                bucket[""] = url
+                url_domain = domain_from_url(url)
+                if url_domain:
+                    bucket[url_domain] = url
+    return out
+
+
+def _fallback_domain_rows() -> list[dict[str, Any]]:
+    return [{"id": 0, "domain": DEFAULT_LINK_DOMAINS[0], "effective_enabled": True}]
+
+
+def _enabled_domain_rows(product_id: int) -> list[dict[str, Any]]:
+    try:
+        rows = list_enabled_product_domains(product_id) if product_id else []
+    except Exception:
+        rows = []
+    normalized_rows: list[dict[str, Any]] = []
+    for row in rows or []:
+        try:
+            domain = normalize_domain(str(row.get("domain") or ""))
+        except ValueError:
+            continue
+        normalized_rows.append({**dict(row), "domain": domain})
+    return normalized_rows or _fallback_domain_rows()
+
+
+def resolve_product_page_url_rows(product: dict | None, lang: str) -> list[dict[str, str]]:
+    product = product or {}
+    product_code = str(product.get("product_code") or "").strip()
+    if not product_code:
+        return []
+    lang_code = (lang or "en").strip().lower() or "en"
+    try:
+        product_id = int(product.get("id") or 0)
+    except (TypeError, ValueError):
+        product_id = 0
+    link_map = _localized_link_map(product).get(lang_code, {})
+    rows: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for domain_row in _enabled_domain_rows(product_id):
+        domain = normalize_domain(str(domain_row.get("domain") or DEFAULT_LINK_DOMAINS[0]))
+        url = (link_map.get(domain) or "").strip()
+        if not url:
+            legacy_url = (link_map.get("") or "").strip()
+            if legacy_url and domain_from_url(legacy_url) == domain:
+                url = legacy_url
+        if not url:
+            url = build_product_page_url(domain, lang_code, product_code)
+        key = (domain, url)
+        if not url or key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "domain": domain,
+            "lang": lang_code,
+            "status_key": domain_lang_key(domain, lang_code),
+            "url": url,
+        })
+    return rows
+
+
+def first_product_page_url(product: dict | None, lang: str) -> str:
+    rows = resolve_product_page_url_rows(product, lang)
+    return rows[0]["url"] if rows else ""
 
 
 def list_domains(*, include_disabled: bool = True) -> list[dict[str, Any]]:
@@ -159,7 +286,14 @@ def list_enabled_product_domains(product_id: int) -> list[dict[str, Any]]:
 
 def set_product_domain_enabled_ids(product_id: int, enabled_ids: list[int]) -> None:
     pid = int(product_id)
-    enabled_set = {int(value) for value in enabled_ids if int(value) > 0}
+    enabled_set: set[int] = set()
+    for value in enabled_ids:
+        try:
+            domain_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if domain_id > 0:
+            enabled_set.add(domain_id)
     domains = list_domains(include_disabled=True)
     for row in domains:
         domain_id = int(row["id"])

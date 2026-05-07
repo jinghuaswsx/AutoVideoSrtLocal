@@ -419,7 +419,11 @@ def _parse_product_localized_links(product: dict | None) -> dict[str, str]:
 
 
 def _default_product_page_url(lang: str, product_code: str) -> str:
-    return product_link_domains.build_product_page_url("newjoyloo.com", lang, product_code)
+    return product_link_domains.build_product_page_url(
+        product_link_domains.DEFAULT_LINK_DOMAINS[0],
+        lang,
+        product_code,
+    )
 
 
 def resolve_product_page_url(lang: str, product: dict | None) -> str:
@@ -430,42 +434,7 @@ def resolve_product_page_url(lang: str, product: dict | None) -> str:
 
 
 def resolve_product_page_urls(lang: str, product: dict | None) -> list[dict[str, str]]:
-    product = product or {}
-    lang_code = (lang or "en").strip().lower() or "en"
-    links = _parse_product_localized_links(product)
-    override = (links.get(lang_code) or "").strip()
-    override_domain = product_link_domains.domain_from_url(override) if override else ""
-    product_id = int(product.get("id") or 0)
-    try:
-        domains = product_link_domains.list_enabled_product_domains(product_id)
-    except Exception:
-        log.exception("product link domain lookup failed; falling back to default URL")
-        domains = []
-    if not domains:
-        url = override or _default_product_page_url(lang_code, product.get("product_code") or "")
-        return [{"domain": product_link_domains.domain_from_url(url), "url": url}] if url else []
-
-    rows: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for row in domains:
-        domain = str(row.get("domain") or "").strip().lower()
-        if not domain:
-            continue
-        normalized_domain = product_link_domains.normalize_domain(domain)
-        url = (
-            override
-            if override and override_domain == normalized_domain
-            else product_link_domains.build_product_page_url(
-                normalized_domain,
-                lang_code,
-                product.get("product_code") or "",
-            )
-        )
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        rows.append({"domain": normalized_domain, "url": url})
-    return rows
+    return product_link_domains.resolve_product_page_url_rows(product or {}, lang)
 
 
 def _enabled_product_link_langs() -> list[str]:
@@ -500,19 +469,21 @@ def build_product_links_push_preview(product: dict | None) -> dict:
     rows: list[dict[str, str]] = []
     links: list[str] = []
     seen_links: set[str] = set()
-    try:
-        enabled_domains = product_link_domains.list_enabled_product_domains(int(product.get("id") or 0))
-    except Exception:
-        log.exception("product link domain lookup failed; falling back to default domain")
-        enabled_domains = [{"domain": "newjoyloo.com"}]
-    for domain_row in enabled_domains:
-        domain = str(domain_row.get("domain") or "").strip().lower()
-        if not domain:
-            continue
-        normalized_domain = product_link_domains.normalize_domain(domain)
-        for lang in _enabled_product_link_langs():
-            for url_row in resolve_product_page_urls(lang, product):
-                if url_row.get("domain") != normalized_domain:
+    rows_by_lang = [
+        (lang, resolve_product_page_urls(lang, product))
+        for lang in _enabled_product_link_langs()
+    ]
+    domain_order: list[str] = []
+    for _lang, url_rows in rows_by_lang:
+        for url_row in url_rows:
+            domain = str(url_row.get("domain") or "").strip().lower()
+            if domain and domain not in domain_order:
+                domain_order.append(domain)
+
+    for domain in domain_order:
+        for lang, url_rows in rows_by_lang:
+            for url_row in url_rows:
+                if str(url_row.get("domain") or "").strip().lower() != domain:
                     continue
                 url = str(url_row.get("url") or "").strip()
                 if not url or url in seen_links:
@@ -522,9 +493,24 @@ def build_product_links_push_preview(product: dict | None) -> dict:
                 rows.append({
                     "lang": lang,
                     "language_name": medias.get_language_name(lang),
-                    "domain": normalized_domain,
+                    "domain": url_row.get("domain") or product_link_domains.domain_from_url(url),
                     "url": url,
                 })
+    for lang, url_rows in rows_by_lang:
+        for url_row in url_rows:
+            if str(url_row.get("domain") or "").strip().lower():
+                continue
+            url = str(url_row.get("url") or "").strip()
+            if not url or url in seen_links:
+                continue
+            seen_links.add(url)
+            links.append(url)
+            rows.append({
+                "lang": lang,
+                "language_name": medias.get_language_name(lang),
+                "domain": url_row.get("domain") or product_link_domains.domain_from_url(url),
+                "url": url,
+            })
 
     if not links:
         raise ProductLinksPayloadError("product_links_empty")
@@ -642,10 +628,17 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
     copy_request = {
         "texts": [text_payload],
     }
-    error_url = f"https://newjoyloo.com/products/{error_handle}"
+    error_product = {
+        **product,
+        "product_code": error_handle,
+        "localized_links_json": {},
+        "localized_links": {},
+    }
+    error_rows = resolve_product_page_urls("en", error_product)
+    error_urls = [row["url"] for row in error_rows if row.get("url")]
     links_request = {
         "handle": source_handle,
-        "product_links": [error_url],
+        "product_links": error_urls,
     }
     structured = {
         "type": _UNSUITABLE_PRODUCT_TYPE,
@@ -654,7 +647,7 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
         "language": "en",
         "language_name": "英语",
         "texts_count": 1,
-        "links_count": 1,
+        "links_count": len(error_urls),
         "text": _UNSUITABLE_PRODUCT_TEXT,
     }
     types = [
@@ -670,11 +663,16 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
             "label": "推送链接",
             "target_url": links_target_url,
             "payload": links_request,
-            "links": [{
-                "lang": "en",
-                "language_name": "英语",
-                "url": error_url,
-            }],
+            "links": [
+                {
+                    "lang": "en",
+                    "language_name": "英语",
+                    "domain": row.get("domain"),
+                    "status_key": row.get("status_key"),
+                    "url": row.get("url"),
+                }
+                for row in error_rows
+            ],
         },
     ]
     return {
