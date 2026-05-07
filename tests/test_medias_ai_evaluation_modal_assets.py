@@ -86,3 +86,17 @@ def test_medias_js_ai_evaluation_stops_timer_when_request_finishes():
     ]
     assert "stopAiEvaluationTimers(modalState)" in result_block
     assert "stopAiEvaluationTimers(modalState)" in failure_block
+
+
+def test_medias_js_ai_evaluation_preview_sanitizes_product_url_href_protocols():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    preview_block = script[
+        script.index("function renderAiEvaluationRequestPreviewToPanel"):
+        script.index("function renderAiEvaluationPromptSections")
+    ]
+
+    assert "function safeExternalHref(url)" in script
+    assert "const productUrl = safeExternalHref(product.product_url);" in preview_block
+    assert 'href="${escapeHtml(productUrl)}"' in preview_block
+    assert 'href="${escapeHtml(product.product_url)}"' not in preview_block

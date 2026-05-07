@@ -451,6 +451,19 @@
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  function safeExternalHref(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function escapeRegExp(s) {
     return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
@@ -776,6 +789,7 @@
     const cover = (preview.media || []).find((item) => item.role === 'product_cover') || {};
     const video = (preview.media || []).find((item) => item.role === 'english_video') || {};
     const product = preview.product || {};
+    const productUrl = safeExternalHref(product.product_url);
     panel.innerHTML = `
       <div class="ect-ai-actions">
         <button type="button" class="ect-ai-btn primary" data-ai-full-payload>请求报文</button>
@@ -794,7 +808,7 @@
           <dl class="ect-ai-kv">
             <dt>产品</dt><dd>${escapeHtml(product.name || '-')} (#${escapeHtml(product.id || '-')})</dd>
             <dt>产品 ID</dt><dd>${escapeHtml(product.product_code || '-')}</dd>
-            <dt>产品链接</dt><dd>${product.product_url ? `<a href="${escapeHtml(product.product_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(product.product_url)}</a>` : '-'}</dd>
+            <dt>产品链接</dt><dd>${productUrl ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(product.product_url)}</a>` : escapeHtml(product.product_url || '-')}</dd>
             <dt>主图</dt><dd>${escapeHtml(cover.object_key || '-')}</dd>
             <dt>视频</dt><dd>${escapeHtml(video.object_key || '-')}</dd>
             <dt>语种</dt><dd>${escapeHtml((preview.languages || []).map((lang) => `${lang.name}(${lang.code})`).join('、') || '-')}</dd>
@@ -1855,9 +1869,11 @@
           ? `${item.language_name} (${item.lang})`
           : item.lang;
         const label = item.domain ? `${item.domain} · ${langLabel || ''}` : langLabel;
+        const itemUrl = safeExternalHref(item.url);
+        const itemUrlText = String(item.url || '').trim();
         return `<div class="oc-pl-row">
           <div class="oc-pl-lang">${escapeHtml(label || '')}</div>
-          <a class="oc-pl-url" href="${escapeHtml(item.url || '')}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url || '')}</a>
+          ${itemUrl ? `<a class="oc-pl-url" href="${escapeHtml(itemUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(itemUrlText || itemUrl)}</a>` : `<span class="oc-pl-url">${escapeHtml(itemUrlText || '-')}</span>`}
         </div>`;
       }).join('')
       + `</div>`;

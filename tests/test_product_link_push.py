@@ -763,6 +763,21 @@ def test_medias_product_links_push_modal_uses_tabs_and_centered_footer():
     assert "productLinksPushRenderResponse" in script
 
 
+def test_medias_product_links_push_list_sanitizes_link_href_protocols():
+    from pathlib import Path
+
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+    list_block = script[
+        script.index("function renderProductLinksPushList"):
+        script.index("function renderProductLinksPushInfo")
+    ]
+
+    assert "function safeExternalHref(url)" in script
+    assert "const itemUrl = safeExternalHref(item.url);" in list_block
+    assert 'href="${escapeHtml(itemUrl)}"' in list_block
+    assert "href=\"${escapeHtml(item.url || '')}\"" not in list_block
+
+
 def test_medias_product_copy_push_modal_matches_links_push_tabs_and_footer():
     from pathlib import Path
 
