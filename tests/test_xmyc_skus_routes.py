@@ -115,6 +115,23 @@ def test_update_xmyc_sku_writes_field(authed_client_no_db, monkeypatch):
     assert body["item"]["standalone_price_sku"] == "25.00"
 
 
+def test_update_xmyc_sku_forbidden_for_non_admin(authed_user_client_no_db, monkeypatch):
+    called = []
+
+    monkeypatch.setattr(
+        "web.routes.medias._build_xmyc_sku_update_response",
+        lambda *args, **kwargs: called.append((args, kwargs)),
+    )
+
+    resp = authed_user_client_no_db.patch(
+        "/medias/api/xmyc-skus/42",
+        json={"standalone_price_sku": "25.00"},
+    )
+
+    assert resp.status_code == 403
+    assert called == []
+
+
 def test_update_xmyc_sku_rejects_invalid_field(authed_client_no_db, monkeypatch):
     from appcore import xmyc_storage as mod
 

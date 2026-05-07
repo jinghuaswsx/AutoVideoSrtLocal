@@ -350,6 +350,8 @@ def api_set_product_xmyc_skus(pid: int):
 @login_required
 def api_update_xmyc_sku(sku_id: int):
     routes = _routes_module()
+    if not routes._is_admin():
+        abort(403)
     body = request.get_json(silent=True) or {}
     result = routes._build_xmyc_sku_update_response(sku_id, body)
     if result.not_found:
