@@ -384,4 +384,124 @@
     initSocket();
     setInterval(refresh, 10000);
   });
-})()
+})();
+
+(function () {
+  const card = document.getElementById("shopifyidSyncCard");
+  if (!card) return;
+
+  const triggerBtn = document.getElementById("shopifyidSyncTriggerBtn");
+  const refreshBtn = document.getElementById("shopifyidSyncRefreshBtn");
+  const statusEl = document.getElementById("shopifyidSyncStatus");
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[char]));
+  }
+
+  function setMessage(message, tone) {
+    statusEl.className = "shopifyid-sync-status";
+    if (tone) statusEl.classList.add(`is-${tone}`);
+    statusEl.innerHTML = escapeHtml(message);
+  }
+
+  function formatTime(value) {
+    if (!value) return "-";
+    return String(value);
+  }
+
+  function statusLabel(status) {
+    if (status === "running") return "运行中";
+    if (status === "success") return "成功";
+    if (status === "failed") return "失败";
+    return status || "未知";
+  }
+
+  function renderLatest(latest) {
+    if (!latest) {
+      setMessage("还没有同步记录。", "");
+      if (triggerBtn) triggerBtn.disabled = false;
+      return;
+    }
+
+    const status = latest.status || "";
+    const summary = latest.summary || {};
+    const tone = status === "success" ? "success" : status === "running" ? "running" : status === "failed" ? "error" : "";
+    const kpis = [
+      ["抓取", summary.fetched],
+      ["命中", summary.matched],
+      ["新回填", summary.updated],
+      ["已一致", summary.unchanged],
+      ["冲突", summary.conflict],
+      ["远端未匹配", summary.unmatched_remote],
+    ].filter((item) => item[1] !== undefined && item[1] !== null);
+
+    statusEl.className = "shopifyid-sync-status";
+    if (tone) statusEl.classList.add(`is-${tone}`);
+    statusEl.innerHTML = `
+      <div><strong>最近状态：</strong>${escapeHtml(statusLabel(status))}</div>
+      <div><strong>开始：</strong>${escapeHtml(formatTime(latest.started_at))}　<strong>结束：</strong>${escapeHtml(formatTime(latest.finished_at))}</div>
+      ${latest.error_message ? `<div><strong>错误：</strong>${escapeHtml(latest.error_message)}</div>` : ""}
+      ${latest.output_file ? `<div><strong>日志：</strong>${escapeHtml(latest.output_file)}</div>` : ""}
+      ${kpis.length ? `<div class="shopifyid-sync-kpis">${kpis.map((item) => `<span>${escapeHtml(item[0])}: ${escapeHtml(item[1])}</span>`).join("")}</div>` : ""}
+    `;
+    if (triggerBtn) {
+      triggerBtn.disabled = status === "running";
+      triggerBtn.textContent = status === "running" ? "同步中…" : "立即同步";
+    }
+  }
+
+  async function requestJSON(url, options) {
+    const response = await fetch(url, { credentials: "same-origin", ...(options || {}) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error(payload.error || "请求失败");
+      err.payload = payload;
+      err.status = response.status;
+      throw err;
+    }
+    return payload;
+  }
+
+  async function refreshStatus() {
+    try {
+      const payload = await requestJSON("/admin/shopifyid-sync/status");
+      renderLatest(payload.latest);
+    } catch (error) {
+      setMessage(error.message || "读取状态失败", "error");
+    }
+  }
+
+  async function triggerSync() {
+    if (!triggerBtn) return;
+    triggerBtn.disabled = true;
+    triggerBtn.textContent = "启动中…";
+    setMessage("正在提交同步任务…", "running");
+    try {
+      const payload = await requestJSON("/admin/shopifyid-sync/trigger", { method: "POST" });
+      setMessage(payload.message || "已触发同步。", "running");
+      triggerBtn.textContent = "同步中…";
+      window.setTimeout(refreshStatus, 3000);
+    } catch (error) {
+      if (error.status === 409 && error.payload) {
+        renderLatest(error.payload.latest);
+        return;
+      }
+      setMessage(error.message || "启动同步失败", "error");
+      triggerBtn.disabled = false;
+      triggerBtn.textContent = "立即同步";
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (triggerBtn) triggerBtn.addEventListener("click", triggerSync);
+    if (refreshBtn) refreshBtn.addEventListener("click", refreshStatus);
+    refreshStatus();
+    setInterval(refreshStatus, 15000);
+  });
+})();

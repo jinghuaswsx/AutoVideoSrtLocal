@@ -75,6 +75,62 @@ def test_admin_settings_script_moves_voice_library_sync_to_top():
     assert "stack.prepend(section)" in script
 
 
+def test_admin_settings_template_has_shopifyid_sync_bottom_card():
+    from pathlib import Path
+
+    template = Path("web/templates/admin_settings.html").read_text(encoding="utf-8")
+
+    assert 'id="shopifyidSyncCard"' in template
+    assert "Shopify ID 同步" in template
+    assert "shopifyidSyncTriggerBtn" in template
+    assert template.index('id="shopifyidSyncCard"') > template.index('id="voice-library-sync"')
+
+
+def test_admin_shopifyid_sync_trigger_route(authed_client_no_db, monkeypatch):
+    from web.routes import admin as r
+
+    monkeypatch.setattr(
+        r.shopifyid_sync_trigger,
+        "trigger",
+        lambda: {"already_running": False, "message": "已触发同步", "latest": None},
+    )
+
+    resp = authed_client_no_db.post("/admin/shopifyid-sync/trigger")
+
+    assert resp.status_code == 202
+    assert resp.get_json()["message"] == "已触发同步"
+
+
+def test_admin_shopifyid_sync_trigger_route_reports_running(authed_client_no_db, monkeypatch):
+    from web.routes import admin as r
+
+    monkeypatch.setattr(
+        r.shopifyid_sync_trigger,
+        "trigger",
+        lambda: {"already_running": True, "message": "同步任务正在运行中", "latest": {"status": "running"}},
+    )
+
+    resp = authed_client_no_db.post("/admin/shopifyid-sync/trigger")
+
+    assert resp.status_code == 409
+    assert resp.get_json()["already_running"] is True
+
+
+def test_admin_shopifyid_sync_status_route(authed_client_no_db, monkeypatch):
+    from web.routes import admin as r
+
+    monkeypatch.setattr(
+        r.shopifyid_sync_trigger,
+        "latest_run",
+        lambda: {"status": "success", "summary": {"updated_count": 1}},
+    )
+
+    resp = authed_client_no_db.get("/admin/shopifyid-sync/status")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["latest"]["summary"]["updated_count"] == 1
+
+
 def test_admin_media_language_routes_forward_shopify_language_name(authed_client_no_db, monkeypatch):
     from web.routes import admin as r
 

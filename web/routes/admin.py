@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from web.auth import admin_required, superadmin_required
-from appcore import medias, product_roas
+from appcore import medias, product_roas, shopifyid_sync_trigger
 from appcore import voice_library_sync_task as vlst
 from appcore.users import (
     list_users, create_user, set_active, get_by_username,
@@ -376,3 +376,21 @@ def voice_library_sync_status():
         "current": vlst.get_current(),
         "summary": vlst.summarize(),
     })
+
+
+@bp.route("/shopifyid-sync/trigger", methods=["POST"])
+@login_required
+@admin_required
+def api_shopifyid_sync_trigger():
+    try:
+        result = shopifyid_sync_trigger.trigger()
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc), "latest": shopifyid_sync_trigger.latest_run()}), 500
+    return jsonify(result), 409 if result.get("already_running") else 202
+
+
+@bp.route("/shopifyid-sync/status", methods=["GET"])
+@login_required
+@admin_required
+def api_shopifyid_sync_status():
+    return jsonify({"latest": shopifyid_sync_trigger.latest_run()})

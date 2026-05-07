@@ -229,7 +229,36 @@
   .vl-sync-live { margin-top:var(--space-4,16px); padding:var(--space-4,16px); background:var(--accent-subtle,#e8f1ff); border-radius:var(--radius-md,8px); font-size:13px; color:var(--text-main,#111827); }
   .vl-sync-live .bar { height:6px; background:var(--bg-muted,#e5e7eb); border-radius:var(--radius-full,9999px); overflow:hidden; margin-top:var(--space-2,8px); }
   .vl-sync-live .fill { height:100%; width:0%; background:var(--primary-color,#3b82f6); transition:width .2s cubic-bezier(0.32,0.72,0,1); }
+  .shopifyid-sync-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .shopifyid-sync-copy { max-width:760px; }
+  .shopifyid-sync-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:4px; }
+  .shopifyid-sync-status {
+    margin-top:16px; padding:12px 14px; border-radius:10px;
+    background:var(--bg-subtle,oklch(97% 0.006 230));
+    color:var(--fg-muted,oklch(48% 0.018 230));
+    font-size:13px; line-height:1.6;
+    border:1px solid var(--border,oklch(91% 0.012 230));
+  }
+  .shopifyid-sync-status.is-success { background:var(--success-bg,oklch(95% 0.04 165)); border-color:oklch(84% 0.06 165); color:var(--success-fg,oklch(38% 0.09 165)); }
+  .shopifyid-sync-status.is-running { background:var(--accent-subtle,oklch(94% 0.04 225)); border-color:oklch(84% 0.04 225); color:var(--accent-active,oklch(45% 0.16 230)); }
+  .shopifyid-sync-status.is-error { background:var(--danger-bg,oklch(96% 0.04 25)); border-color:oklch(86% 0.08 25); color:var(--danger-fg,oklch(42% 0.14 25)); }
+  .shopifyid-sync-kpis { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .shopifyid-sync-kpis span { display:inline-flex; align-items:center; min-height:24px; padding:0 10px; border-radius:8px; background:var(--accent-subtle,oklch(94% 0.04 225)); color:var(--accent-active,oklch(45% 0.16 230)); font-size:12px; font-weight:700; }
 </style>
+
+<section class="admin-section" id="shopifyidSyncCard">
+  <div class="shopifyid-sync-head">
+    <div class="shopifyid-sync-copy">
+      <h2>Shopify ID 同步</h2>
+      <p class="field-hint">手动触发服务器上的 Shopify ID 获取任务，复用店小秘登录态并回填素材库中为空的 Shopify ID。</p>
+    </div>
+    <div class="shopifyid-sync-actions">
+      <button type="button" class="oc-btn-primary" id="shopifyidSyncTriggerBtn">立即同步</button>
+      <button type="button" class="btn btn-ghost" id="shopifyidSyncRefreshBtn">刷新状态</button>
+    </div>
+  </div>
+  <div id="shopifyidSyncStatus" class="shopifyid-sync-status">正在读取最近一次同步状态…</div>
+</section>
 
 <script>
 (function(){
