@@ -68,14 +68,10 @@ def _mock_public_source_stage(monkeypatch, url: str = "https://example.com/sourc
     )
 
 
-def test_subtitle_removal_bootstrap_defaults_to_volc_tos_upload(authed_client_no_db, monkeypatch):
+def test_subtitle_removal_bootstrap_volc_uses_local_proxy_upload_url(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "web.routes.subtitle_removal.object_keys.build_source_object_key",
         lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
-    )
-    monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.generate_signed_upload_url",
-        lambda key: f"https://tos-upload.example/{key}",
     )
 
     response = authed_client_no_db.post(
@@ -86,8 +82,8 @@ def test_subtitle_removal_bootstrap_defaults_to_volc_tos_upload(authed_client_no
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["subtitle_backend"] == "volc"
-    assert payload["upload_backend"] == "tos"
-    assert payload["upload_url"].startswith("https://tos-upload.example/uploads/1/")
+    assert payload["upload_backend"] == "tos_via_server"
+    assert payload["upload_url"].endswith(f"/api/subtitle-removal/upload/local/{payload['task_id']}")
     reservation = subtitle_removal._upload_bootstrap_reservations[payload["task_id"]]
     assert reservation["subtitle_backend"] == "volc"
 
@@ -122,7 +118,7 @@ def test_subtitle_removal_bootstrap_rejects_invalid_backend(authed_client_no_db)
     assert response.get_json()["error"] == "subtitle_backend must be volc or local_vsr"
 
 
-def test_subtitle_removal_complete_volc_downloads_tos_source_before_prepare(
+def test_subtitle_removal_complete_volc_pushes_local_source_to_tos(
     tmp_path, authed_client_no_db, monkeypatch
 ):
     _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
@@ -130,25 +126,16 @@ def test_subtitle_removal_complete_volc_downloads_tos_source_before_prepare(
         "web.routes.subtitle_removal.object_keys.build_source_object_key",
         lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
     )
-    monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.generate_signed_upload_url",
-        lambda key: f"https://tos-upload.example/{key}",
-    )
-    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.object_exists", lambda key: True)
-    downloaded = []
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.object_exists", lambda key: False)
+    uploaded = []
 
-    def fake_download_file(object_key, local_path):
-        downloaded.append((object_key, local_path))
-        with open(local_path, "wb") as handle:
-            handle.write(b"video-from-tos")
-        return local_path
+    def fake_upload_file(local_path, object_key):
+        uploaded.append((local_path, object_key))
 
-    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.download_file", fake_download_file)
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.upload_file", fake_upload_file)
 
-    payload = authed_client_no_db.post(
-        "/api/subtitle-removal/upload/bootstrap",
-        json={"original_filename": "source.mp4", "subtitle_backend": "volc"},
-    ).get_json()
+    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db, subtitle_backend="volc")
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload, data=b"video-bytes")
 
     response = authed_client_no_db.post(
         "/api/subtitle-removal/upload/complete",
@@ -165,7 +152,7 @@ def test_subtitle_removal_complete_volc_downloads_tos_source_before_prepare(
 
     assert response.status_code == 201
     task = store.get(payload["task_id"])
-    assert downloaded == [(payload["object_key"], task["video_path"])]
+    assert uploaded == [(task["video_path"], payload["object_key"])]
     assert task["subtitle_backend"] == "volc"
     assert task["source_tos_key"] == payload["object_key"]
     assert task["source_object_info"]["storage_backend"] == "tos"

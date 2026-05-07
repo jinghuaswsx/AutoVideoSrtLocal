@@ -718,12 +718,8 @@ def bootstrap_upload():
         content_type=content_type,
         subtitle_backend=subtitle_backend,
     )
-    if subtitle_backend == "local_vsr":
-        upload_url = url_for("subtitle_removal.api_local_upload", task_id=task_id)
-        upload_backend = "local"
-    else:
-        upload_url = tos_clients.generate_signed_upload_url(object_key)
-        upload_backend = "tos"
+    upload_url = url_for("subtitle_removal.api_local_upload", task_id=task_id)
+    upload_backend = "local" if subtitle_backend == "local_vsr" else "tos_via_server"
     return _json_response(
         {
             "task_id": task_id,
@@ -803,17 +799,15 @@ def complete_upload():
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    if subtitle_backend == "volc" and not os.path.exists(video_path):
-        if not tos_clients.object_exists(object_key):
-            return _json_response({"error": "uploaded TOS object missing"}), 400
-        try:
-            tos_clients.download_file(object_key, video_path)
-        except Exception as exc:
-            log.exception("[subtitle_removal] failed to download TOS source task_id=%s", task_id)
-            return _json_response({"error": f"unable to download uploaded source: {exc}"}), 502
-
     if not os.path.exists(video_path):
         return _json_response({"error": "uploaded video file missing"}), 400
+
+    if subtitle_backend == "volc" and not tos_clients.object_exists(object_key):
+        try:
+            tos_clients.upload_file(video_path, object_key)
+        except Exception as exc:
+            log.exception("[subtitle_removal] failed to push source to TOS task_id=%s", task_id)
+            return _json_response({"error": f"unable to push to TOS: {exc}"}), 502
 
     object_size = int(os.path.getsize(video_path) or file_size or 0)
     storage_backend = "tos" if subtitle_backend == "volc" else "local"
