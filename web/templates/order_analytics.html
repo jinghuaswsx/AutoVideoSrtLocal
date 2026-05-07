@@ -5128,7 +5128,11 @@
         productsLoaded = true;
       })
       .catch(function(err) {
-        productSelect.innerHTML = '<option value="">加载失败：' + err + '</option>';
+        productSelect.innerHTML = '';
+        var errorOpt = document.createElement('option');
+        errorOpt.value = '';
+        errorOpt.textContent = '加载失败：' + (err && err.message ? err.message : String(err));
+        productSelect.appendChild(errorOpt);
       });
   }
 

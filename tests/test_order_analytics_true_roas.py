@@ -1034,6 +1034,19 @@ def test_order_analytics_daily_detail_escapes_country_headers(authed_client_no_d
     assert "' + c + '" not in detail_js
 
 
+def test_product_profit_report_product_load_error_uses_text_content(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    products_start = body.index("function loadProducts()")
+    products_end = body.index("// 按钮 → 打开 dialog", products_start)
+    products_js = body[products_start:products_end]
+
+    assert "productSelect.innerHTML = '<option value=\"\">加载失败：' + err + '</option>'" not in products_js
+    assert "errorOpt.textContent = '加载失败：' +" in products_js
+    assert "productSelect.appendChild(errorOpt)" in products_js
+
+
 def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert response.status_code == 200
