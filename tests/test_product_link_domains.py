@@ -76,7 +76,7 @@ def test_resolve_product_page_url_rows_expands_enabled_domains_and_overrides(mon
     ]
 
 
-def test_list_enabled_product_domains_defaults_to_active_global_domains(monkeypatch):
+def test_list_enabled_product_domains_defaults_to_newjoyloo_only(monkeypatch):
     from appcore import product_link_domains
 
     def fake_query(sql, args=()):
@@ -94,7 +94,27 @@ def test_list_enabled_product_domains_defaults_to_active_global_domains(monkeypa
 
     rows = product_link_domains.list_enabled_product_domains(10)
 
-    assert [row["domain"] for row in rows] == ["newjoyloo.com", "omurio.com"]
+    assert [row["domain"] for row in rows] == ["newjoyloo.com"]
+
+    options = product_link_domains.list_product_domain_options(10)
+    by_domain = {row["domain"]: row for row in options}
+    assert by_domain["newjoyloo.com"]["product_enabled"] is True
+    assert by_domain["newjoyloo.com"]["effective_enabled"] is True
+    assert by_domain["omurio.com"]["product_enabled"] is False
+    assert by_domain["omurio.com"]["effective_enabled"] is False
+
+
+def test_resolve_product_page_url_rows_respects_empty_enabled_domain_list(monkeypatch):
+    from appcore import product_link_domains
+
+    monkeypatch.setattr(product_link_domains, "list_enabled_product_domains", lambda product_id: [])
+
+    rows = product_link_domains.resolve_product_page_url_rows(
+        {"id": 10, "product_code": "demo-rjc"},
+        "de",
+    )
+
+    assert rows == []
 
 
 def test_list_enabled_product_domains_uses_product_overrides(monkeypatch):

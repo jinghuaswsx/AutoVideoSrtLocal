@@ -7,6 +7,7 @@ from typing import Any
 
 
 DEFAULT_LINK_DOMAINS: tuple[str, ...] = ("newjoyloo.com", "omurio.com")
+DEFAULT_PRODUCT_LINK_DOMAINS: tuple[str, ...] = ("newjoyloo.com",)
 
 _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
@@ -129,10 +130,12 @@ def _fallback_domain_rows() -> list[dict[str, Any]]:
 
 
 def _enabled_domain_rows(product_id: int) -> list[dict[str, Any]]:
+    if not product_id:
+        return _fallback_domain_rows()
     try:
-        rows = list_enabled_product_domains(product_id) if product_id else []
+        rows = list_enabled_product_domains(product_id)
     except Exception:
-        rows = []
+        return _fallback_domain_rows()
     normalized_rows: list[dict[str, Any]] = []
     for row in rows or []:
         try:
@@ -140,7 +143,7 @@ def _enabled_domain_rows(product_id: int) -> list[dict[str, Any]]:
         except ValueError:
             continue
         normalized_rows.append({**dict(row), "domain": domain})
-    return normalized_rows or _fallback_domain_rows()
+    return normalized_rows
 
 
 def resolve_product_page_url_rows(product: dict | None, lang: str) -> list[dict[str, str]]:
@@ -262,11 +265,15 @@ def list_product_domain_options(product_id: int) -> list[dict[str, Any]]:
     domains = list_domains(include_disabled=True)
     overrides = _product_domain_rows(product_id)
     customized = bool(overrides)
+    default_product_domains = set(DEFAULT_PRODUCT_LINK_DOMAINS)
     options: list[dict[str, Any]] = []
     for row in domains:
         domain_id = int(row["id"])
         global_enabled = bool(row["enabled"])
-        product_enabled = overrides.get(domain_id, global_enabled)
+        if customized:
+            product_enabled = overrides.get(domain_id, False)
+        else:
+            product_enabled = row["domain"] in default_product_domains
         options.append({
             **row,
             "enabled": global_enabled,
