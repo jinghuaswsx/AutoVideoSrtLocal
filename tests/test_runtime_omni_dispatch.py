@@ -101,15 +101,16 @@ def test_pipeline_steps_for_multi_like(monkeypatch, omni_runner):
 def test_pipeline_steps_for_av_sync_current(monkeypatch, omni_runner):
     _patch_resolve_cfg(monkeypatch, CFG_AV_SYNC_CURRENT)
     names = _step_names(omni_runner)
-    # av_sentence translate 不需要 alignment
+    # 2026-05-07 fix: av_sentence 也需要 alignment 产出的 script_segments；
+    # spec §6.1 之前以为可以跳，e2e 撞错后改回 always insert。
     assert names == [
         "extract", "asr", "separate",
         "asr_normalize",
-        "voice_match",
+        "voice_match", "alignment",
         "translate", "tts", "loudness_match", "subtitle",
         "compose", "export",
     ]
-    assert "alignment" not in names
+    assert "alignment" in names
 
 
 def test_pipeline_inserts_av_sync_audit_after_tts_when_enabled(
@@ -122,7 +123,7 @@ def test_pipeline_inserts_av_sync_audit_after_tts_when_enabled(
     assert names == [
         "extract", "asr", "separate",
         "asr_normalize",
-        "voice_match",
+        "voice_match", "alignment",
         "translate", "tts", "av_sync_audit", "loudness_match", "subtitle",
         "compose", "export",
     ]

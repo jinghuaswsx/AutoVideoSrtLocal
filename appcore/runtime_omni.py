@@ -342,12 +342,14 @@ class OmniTranslateRunner(MultiTranslateRunner):
         post_asr_name = "asr_clean" if cfg["asr_post"] == "asr_clean" else "asr_normalize"
         out.append((post_asr_name, lambda: self.profile.post_asr(self, task_id)))
         out.append(("voice_match", lambda: self._step_voice_match(task_id)))
-        # av_sentence 翻译走 sentences 直接生成，不需要 alignment
-        if cfg["translate_algo"] != "av_sentence":
-            out.append((
-                "alignment",
-                lambda: self._step_alignment(task_id, video_path, task_dir),
-            ))
+        # alignment 在所有 cfg 下都需要 —— av_sentence translate 也依赖
+        # alignment 产出的 ``script_segments``（task 必备字段），不能跳过。
+        # 之前 spec §6.1 误以为 av_sentence 不需要 alignment，e2e 验收时撞
+        # "缺少对齐后的句子分段"错（2026-05-07 fix）。
+        out.append((
+            "alignment",
+            lambda: self._step_alignment(task_id, video_path, task_dir),
+        ))
         out.append(("translate", lambda: self.profile.translate(self, task_id)))
         out.append(("tts", lambda: self.profile.tts(self, task_id, task_dir)))
         if cfg["av_sync_audit"] != "off":

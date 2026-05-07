@@ -65,9 +65,10 @@ EXPECTED_OMNI_CURRENT_STEPS = [
     "loudness_match", "subtitle", "compose", "export",
 ]
 EXPECTED_AV_SYNC_CURRENT_STEPS = [
-    # av_sentence 跳过 alignment（spec §6.1）
+    # 2026-05-07 fix: av_sentence translate 也依赖 alignment 产出的
+    # script_segments，alignment 不能跳过。
     "extract", "asr", "separate", "asr_normalize",
-    "voice_match", "translate", "tts",
+    "voice_match", "alignment", "translate", "tts",
     "loudness_match", "subtitle", "compose", "export",
 ]
 EXPECTED_LAB_CURRENT_STEPS = [
@@ -157,7 +158,7 @@ def test_e2e_omni_current_preset_runs_to_export(in_memory_task_state):
 def test_e2e_av_sync_current_preset_runs_to_export(in_memory_task_state):
     _, step_order, task = _simulate_run(CFG_AV_SYNC_CURRENT)
     assert step_order == EXPECTED_AV_SYNC_CURRENT_STEPS
-    assert "alignment" not in step_order  # av_sentence 跳过 alignment
+    assert "alignment" in step_order  # av_sentence 也需要 alignment（fix）
     steps = task.get("steps") or {}
     for s in EXPECTED_AV_SYNC_CURRENT_STEPS:
         assert steps.get(s) == "done", f"step {s!r} not done in av-sync-current"
@@ -205,14 +206,15 @@ def test_voice_separation_off_drops_separate_and_loudness(in_memory_task_state):
     assert "loudness_match" not in step_order
 
 
-def test_av_sentence_translate_omits_alignment(in_memory_task_state):
+def test_av_sentence_translate_keeps_alignment(in_memory_task_state):
+    """2026-05-07 fix: av_sentence 不再跳过 alignment（依赖 script_segments）。"""
     cfg = dict(CFG_OMNI_CURRENT)
     cfg["translate_algo"] = "av_sentence"
     cfg["source_anchored"] = False  # av_sentence + source_anchored 不兼容
     cfg["tts_strategy"] = "sentence_reconcile"  # 配套
     cfg["subtitle"] = "sentence_units"  # 配套
     _, step_order = _resolve_steps_for(cfg)
-    assert "alignment" not in step_order
+    assert "alignment" in step_order
 
 
 def test_shot_decompose_inserts_after_separate_before_post_asr(in_memory_task_state):
