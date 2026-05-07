@@ -262,7 +262,13 @@ def test_delete_multi_translate_task_uses_appcore_cleanup(authed_client_no_db, m
     assert resp.get_json() == {"status": "ok"}
     assert deleted_payloads[0]["task_dir"] == "C:/tmp/task-1"
     assert deleted_payloads[0]["tos_keys"] == ["tos-key"]
-    assert executed == [("UPDATE projects SET deleted_at=NOW() WHERE id=%s", ("task-1",))]
+    assert executed == [
+        (
+            "UPDATE projects SET deleted_at=NOW() "
+            "WHERE id = %s AND user_id = %s AND type = %s",
+            ("task-1", 1, "multi_translate"),
+        )
+    ]
     assert updates == [("task-1", {"status": "deleted"})]
 
 
@@ -473,7 +479,10 @@ def test_multi_translate_start_generates_thumbnail_from_uploaded_video(tmp_path,
     task = store.get(payload["task_id"])
     expected_thumb = str(tmp_path / "output" / payload["task_id"] / "thumbnail.jpg")
     assert task["thumbnail_path"] == expected_thumb
-    assert ("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (expected_thumb, payload["task_id"])) in db_updates
+    assert (
+        "UPDATE projects SET thumbnail_path = %s WHERE id = %s AND type = %s",
+        (expected_thumb, payload["task_id"], "multi_translate"),
+    ) in db_updates
 
 
 def test_multi_translate_list_page_uses_local_multipart_upload():

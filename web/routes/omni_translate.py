@@ -91,9 +91,10 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
     candidate = base
     n = 2
     while True:
-        row = db_query_one(
-            "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND deleted_at IS NULL",
-            (user_id, candidate),
+        row = translation_route_store.find_project_by_display_name(
+            user_id,
+            candidate,
+            query_one_func=db_query_one,
         )
         if not row:
             return candidate
@@ -119,7 +120,12 @@ def _ensure_uploaded_video_thumbnail(task_id: str, video_path: str, task_dir: st
     if not thumb or not os.path.exists(thumb):
         return ""
 
-    db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
+    translation_route_store.set_project_thumbnail_path(
+        task_id,
+        "omni_translate",
+        thumb,
+        execute_func=db_execute,
+    )
     task = store.get(task_id)
     if task is not None:
         task["thumbnail_path"] = thumb
@@ -151,22 +157,15 @@ def _query_viewable_project(
     *,
     include_deleted: bool = True,
 ) -> dict | None:
-    deleted_sql = "" if include_deleted else " AND deleted_at IS NULL"
-    if _is_admin_user():
-        return db_query_one(
-            f"SELECT {columns} FROM projects WHERE id = %s AND type = 'omni_translate'{deleted_sql}",
-            (task_id,),
-        )
-    return db_query_one(
-        f"SELECT {columns} FROM projects WHERE id = %s AND user_id = %s AND type = 'omni_translate'{deleted_sql}",
-        (task_id, current_user.id),
+    return translation_route_store.get_viewable_project(
+        task_id,
+        "omni_translate",
+        user_id=current_user.id,
+        is_admin=_is_admin_user(),
+        columns=columns,
+        include_deleted=include_deleted,
+        query_one_func=db_query_one,
     )
-
-
-def _multi_translate_list_scope() -> tuple[str, tuple]:
-    if _is_admin_user():
-        return "p.type = 'omni_translate' AND p.deleted_at IS NULL", ()
-    return "p.user_id = %s AND p.type = 'omni_translate' AND p.deleted_at IS NULL", (current_user.id,)
 
 
 def _multi_translate_creator_name_expr() -> str:
@@ -191,45 +190,21 @@ def index():
 
     owner_name_expr = _multi_translate_creator_name_expr()
 
-    if lang:
-        scope_sql, scope_args = _multi_translate_list_scope()
-        rows = db_query(
-            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
-            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
-            f"       {owner_name_expr} AS creator_name "
-            "FROM projects p "
-            "LEFT JOIN users u ON u.id = p.user_id "
-            f"WHERE {scope_sql} "
-            "  AND JSON_EXTRACT(p.state_json, '$.target_lang') = %s "
-            "ORDER BY p.created_at DESC",
-            (*scope_args, lang),
-        )
-        for row in rows:
-            try:
-                state = json.loads(row.get("state_json") or "{}")
-            except Exception:
-                state = {}
-            row["source_lang"] = state.get("source_language") or "zh"
-            row["target_lang"] = state.get("target_lang") or ""
-    else:
-        scope_sql, scope_args = _multi_translate_list_scope()
-        rows = db_query(
-            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
-            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
-            f"       {owner_name_expr} AS creator_name "
-            "FROM projects p "
-            "LEFT JOIN users u ON u.id = p.user_id "
-            f"WHERE {scope_sql} "
-            "ORDER BY p.created_at DESC",
-            scope_args,
-        )
-        for row in rows:
-            try:
-                state = json.loads(row.get("state_json") or "{}")
-            except Exception:
-                state = {}
-            row["source_lang"] = state.get("source_language") or "zh"
-            row["target_lang"] = state.get("target_lang") or ""
+    rows = translation_route_store.list_projects_with_creator(
+        user_id=current_user.id,
+        project_type="omni_translate",
+        is_admin=_is_admin_user(),
+        owner_name_expr=owner_name_expr,
+        target_lang=lang,
+        query_func=db_query,
+    )
+    for row in rows:
+        try:
+            state = json.loads(row.get("state_json") or "{}")
+        except Exception:
+            state = {}
+        row["source_lang"] = state.get("source_language") or "zh"
+        row["target_lang"] = state.get("target_lang") or ""
 
     from appcore.settings import get_retention_hours
     return render_template(
@@ -716,9 +691,11 @@ def get_video_ai_review(task_id):
 @login_required
 def delete(task_id):
     """软删除多语种翻译任务。"""
-    row = db_query_one(
-        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = translation_route_store.get_active_project_storage(
+        task_id,
+        current_user.id,
+        "omni_translate",
+        query_one_func=db_query_one,
     )
     if not row:
         return _json_response({"error": "Task not found"}, 404)
@@ -734,9 +711,11 @@ def delete(task_id):
     except Exception:
         pass
 
-    db_execute(
-        "UPDATE projects SET deleted_at=NOW() WHERE id=%s",
-        (task_id,),
+    translation_route_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        "omni_translate",
+        execute_func=db_execute,
     )
     store.update(task_id, status="deleted")
     return _json_response({"status": "ok"})
@@ -839,9 +818,11 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 @login_required
 def run_ai_analysis(task_id):
     """手动触发多语种项目 AI 视频分析，不影响任务整体 status。"""
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = translation_route_store.get_active_project_id(
+        task_id,
+        current_user.id,
+        "omni_translate",
+        query_one_func=db_query_one,
     )
     if not row:
         return _json_response({"error": "Task not found"}, 404)
@@ -878,10 +859,7 @@ def set_user_default_voice_route():
 @bp.route("/api/omni-translate/<task_id>/voice", methods=["PUT"])
 @login_required
 def update_voice(task_id: str):
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "state_json")
     if not row:
         abort(404)
     state = json.loads(row["state_json"] or "{}")
@@ -1009,10 +987,7 @@ def rematch_voice(task_id: str):
 @login_required
 def confirm_voice(task_id: str):
     """Persist the shared-shell voice selection and resume from alignment."""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "state_json")
     if not row:
         abort(404)
 

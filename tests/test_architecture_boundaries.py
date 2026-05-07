@@ -3103,6 +3103,38 @@ def test_omni_translate_route_db_dependencies_use_appcore_store():
     assert store_path.exists()
 
 
+def test_multi_omni_translate_project_sql_lives_in_appcore_store():
+    store_source = Path("appcore/translation_route_store.py").read_text(encoding="utf-8")
+    helper_names = [
+        "find_project_by_display_name",
+        "set_project_thumbnail_path",
+        "get_viewable_project",
+        "list_projects_with_creator",
+        "get_active_project_storage",
+        "soft_delete_project",
+        "get_active_project_id",
+    ]
+
+    for path in [
+        Path("web/routes/multi_translate.py"),
+        Path("web/routes/omni_translate.py"),
+    ]:
+        route_source = path.read_text(encoding="utf-8")
+        assert "FROM projects" not in route_source
+        assert "UPDATE projects SET" not in route_source
+        for helper_name in helper_names:
+            assert f"translation_route_store.{helper_name}" in route_source
+
+    for snippet in [
+        "SELECT p.id, p.original_filename, p.display_name",
+        "LEFT JOIN users u ON u.id = p.user_id",
+        "JSON_EXTRACT(p.state_json, '$.target_lang')",
+        "SELECT {columns} FROM projects WHERE id = %s",
+        "UPDATE projects SET thumbnail_path = %s",
+    ]:
+        assert snippet in store_source
+
+
 def test_bulk_translate_json_responses_live_outside_route_module():
     source = Path("web/routes/bulk_translate.py").read_text(encoding="utf-8")
 

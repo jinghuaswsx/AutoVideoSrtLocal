@@ -118,3 +118,139 @@ def test_soft_delete_project_scopes_by_user_and_type():
             ("de-1", 7, "de_translate"),
         )
     ]
+
+
+def test_set_project_thumbnail_path_scopes_by_type():
+    calls = []
+
+    def fake_execute(sql, args):
+        calls.append((sql, args))
+
+    store.set_project_thumbnail_path(
+        "multi-1",
+        "multi_translate",
+        "output/multi-1/thumbnail.jpg",
+        execute_func=fake_execute,
+    )
+
+    assert calls == [
+        (
+            "UPDATE projects SET thumbnail_path = %s WHERE id = %s AND type = %s",
+            ("output/multi-1/thumbnail.jpg", "multi-1", "multi_translate"),
+        )
+    ]
+
+
+def test_get_viewable_project_omits_user_scope_for_admin():
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"id": "multi-1"}
+
+    row = store.get_viewable_project(
+        "multi-1",
+        "multi_translate",
+        user_id=7,
+        is_admin=True,
+        columns="id, user_id",
+        include_deleted=False,
+        query_one_func=fake_query_one,
+    )
+
+    assert row == {"id": "multi-1"}
+    assert calls == [
+        (
+            "SELECT id, user_id FROM projects WHERE id = %s "
+            "AND type = %s AND deleted_at IS NULL",
+            ("multi-1", "multi_translate"),
+        )
+    ]
+
+
+def test_get_viewable_project_scopes_normal_user():
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"state_json": "{}"}
+
+    row = store.get_viewable_project(
+        "omni-1",
+        "omni_translate",
+        user_id=7,
+        is_admin=False,
+        columns="state_json",
+        query_one_func=fake_query_one,
+    )
+
+    assert row == {"state_json": "{}"}
+    assert calls == [
+        (
+            "SELECT state_json FROM projects WHERE id = %s "
+            "AND user_id = %s AND type = %s",
+            ("omni-1", 7, "omni_translate"),
+        )
+    ]
+
+
+def test_list_projects_with_creator_scopes_user_and_lang_filter():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "multi-1"}]
+
+    rows = store.list_projects_with_creator(
+        user_id=7,
+        project_type="multi_translate",
+        is_admin=False,
+        owner_name_expr="u.username",
+        target_lang="de",
+        query_func=fake_query,
+    )
+
+    assert rows == [{"id": "multi-1"}]
+    assert calls == [
+        (
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            "       u.username AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.user_id = %s AND p.type = 'multi_translate' AND p.deleted_at IS NULL "
+            "  AND JSON_EXTRACT(p.state_json, '$.target_lang') = %s "
+            "ORDER BY p.created_at DESC",
+            (7, "de"),
+        )
+    ]
+
+
+def test_list_projects_with_creator_omits_user_scope_for_admin():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return []
+
+    rows = store.list_projects_with_creator(
+        user_id=7,
+        project_type="omni_translate",
+        is_admin=True,
+        owner_name_expr="COALESCE(u.display_name, u.username)",
+        query_func=fake_query,
+    )
+
+    assert rows == []
+    assert calls == [
+        (
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            "       COALESCE(u.display_name, u.username) AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.type = 'omni_translate' AND p.deleted_at IS NULL "
+            "ORDER BY p.created_at DESC",
+            (),
+        )
+    ]
