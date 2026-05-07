@@ -1477,6 +1477,11 @@ class PipelineRunner:
                 # before each step so the worker can drop everything when
                 # systemd / Gunicorn hands us SIGTERM.
                 throw_if_cancel_requested(f"pipeline step={step_name}")
+                # Per-task cancellation: bulk_translate 父任务 cancel 时会在
+                # 子 task_state 上设 _cancel_requested=True；下一个 step 边界
+                # 抛 OperationCancelled 由下方 except 收尾为 'cancelled'。
+                if (task_state.get(task_id) or {}).get("_cancel_requested"):
+                    raise OperationCancelled("task cancelled by user")
                 step_fn()
                 current = task_state.get(task_id) or {}
                 # 每个 step 成功完成都把 retry 计数清零，让下一个 step 的失败有
@@ -1493,7 +1498,14 @@ class PipelineRunner:
                 "[task %s] pipeline cancelled at step=%s reason=%s",
                 task_id, current_step, exc,
             )
-            self._mark_pipeline_interrupted(task_id, str(exc))
+            # 区分 user cancel（task._cancel_requested）vs systemd SIGTERM。
+            # 前者走 cancelled 收尾让 UI 显示"已取消"，后者保留原 interrupted
+            # 语义提示用户"服务重启中，请重试"。
+            user_cancelled = bool((task_state.get(task_id) or {}).get("_cancel_requested"))
+            if user_cancelled:
+                self._mark_pipeline_cancelled(task_id, str(exc))
+            else:
+                self._mark_pipeline_interrupted(task_id, str(exc))
             # Re-raise so start_tracked_thread's outer handler logs and
             # cleans up _active_tasks; it will not show a traceback.
             raise
@@ -1572,6 +1584,39 @@ class PipelineRunner:
             })
         except Exception:
             log.warning("emit pipeline_error during cancellation failed", exc_info=True)
+
+    def _mark_pipeline_cancelled(self, task_id: str, reason: str) -> None:
+        """User-initiated cancel 收尾。
+
+        和 _mark_pipeline_interrupted 的区别：status='cancelled'、step 标记
+        'cancelled'、错误信息和 UI 文案不再说"服务重启请重试"。语义是用户
+        主动取消（典型场景：bulk_translate 父任务 cancel 级联到子任务）。
+        """
+        task = task_state.get(task_id) or {}
+        steps = dict(task.get("steps") or {})
+        step_messages = dict(task.get("step_messages") or {})
+        changed = False
+        for step, status in list(steps.items()):
+            if status in {"queued", "running", "pending"}:
+                steps[step] = "cancelled"
+                step_messages[step] = "task cancelled by user"
+                changed = True
+        update_kwargs: dict = {
+            "status": "cancelled",
+            "error": "task cancelled by user",
+        }
+        if changed:
+            update_kwargs["steps"] = steps
+            update_kwargs["step_messages"] = step_messages
+        task_state.update(task_id, **update_kwargs)
+        try:
+            self._emit(task_id, EVT_PIPELINE_ERROR, {
+                "error": f"cancelled: {reason}",
+                "cancelled": True,
+                "user_cancelled": True,
+            })
+        except Exception:
+            log.warning("emit pipeline_error during user-cancel failed", exc_info=True)
 
     def _skip_original_video_passthrough_step(
         self,

@@ -654,6 +654,51 @@ def test_create_child_task_drops_orphan_row_when_creator_raises(runtime_env, mon
     assert expected_child_id not in fake_db.rows
 
 
+def test_cancel_task_cascades_cancel_flag_to_active_children(runtime_env, monkeypatch):
+    """父任务 cancel 时，所有 active 子任务的 task_state 必须被设
+    `_cancel_requested=True`，让子 runner 在下一个 step 边界自行退出。
+    """
+    mod, fake_db = runtime_env
+
+    # 构造一个 planning 父任务，加一个 dispatching/running/awaiting_voice/syncing_result
+    # 各一条的 plan，再加一条 done 的（不该被级联）
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="videos", lang="de", status="dispatching"),
+            _item(1, kind="videos", lang="fr", status="running"),
+            _item(2, kind="videos", lang="es", status="awaiting_voice"),
+            _item(3, kind="videos", lang="it", status="syncing_result"),
+            _item(4, kind="videos", lang="pt", status="done"),  # 不级联
+        ],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1, product_id=77,
+        target_langs=["de", "fr", "es", "it", "pt"],
+        content_types=["videos"],
+        force_retranslate=False, video_params={},
+        initiator={"user_id": 1},
+    )
+    # 把 plan item 的 child_task_id 填好（mimic scheduler 派发后状态）
+    state = json.loads(fake_db.rows[task_id]["state_json"])
+    for idx, item in enumerate(state["plan"]):
+        item["child_task_id"] = f"child-{idx}"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state)
+
+    cancel_calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        mod.store, "update",
+        lambda task_id, **fields: cancel_calls.append((task_id, fields)),
+    )
+
+    mod.cancel_task(task_id, user_id=1)
+
+    cancelled_ids = {tid for tid, fields in cancel_calls if fields.get("_cancel_requested") is True}
+    # idx 0/1/2/3 是 active，必须级联；idx 4 是 done，不能级联
+    assert cancelled_ids == {"child-0", "child-1", "child-2", "child-3"}
+
+
 def test_create_video_child_materializes_media_raw_source_locally(runtime_env, monkeypatch, tmp_path):
     mod, _fake_db = runtime_env
     raw_key = "1/medias/77/raw_sources/raw-demo.mp4"
