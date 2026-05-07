@@ -90,6 +90,41 @@
   color: #fff;
 }
 
+/* Tab 切换器 */
+.ppd-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-main);
+  margin-top: -8px;
+}
+.ppd-tab {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-user-badge);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  transition: color .12s, border-color .12s;
+}
+.ppd-tab:hover { color: var(--primary-color); }
+.ppd-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+.ppd-tab-panel { display: none; }
+.ppd-tab-panel.active { display: flex; flex-direction: column; gap: 20px; }
+.ppd-empty-tab {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--text-user-badge);
+  font-size: 14px;
+  background: #fff;
+  border: 1px dashed var(--border-main);
+  border-radius: 12px;
+}
+
 /* 2. 总账卡片 */
 .ppd-stats {
   display: grid;
@@ -336,6 +371,7 @@
   .ppd-stat-value { font-size: 22px; }
   .ppd-orders-head { flex-direction: column; align-items: stretch; }
   .ppd-orders-head input[type="search"] { width: 100%; }
+  .ppd-tabs { overflow-x: auto; flex-wrap: nowrap; }
 }
 </style>
 {% endblock %}
@@ -361,6 +397,34 @@
     </label>
     <button type="button" class="ppd-btn ppd-btn-primary" id="ppd-reload">查询</button>
     <a class="ppd-btn" id="ppd-download" href="#" target="_blank" rel="noopener">下载 Excel</a>
+  </section>
+
+  <!-- Tab 切换骨架（Task 5）：Tab 内容由 Task 6-9 填充 -->
+  <nav class="ppd-tabs" role="tablist">
+    <button type="button" class="ppd-tab active" data-tab="list" role="tab">① 产品列表</button>
+    <button type="button" class="ppd-tab" data-tab="orders" role="tab">② 订单明细</button>
+    <button type="button" class="ppd-tab" data-tab="country" role="tab">③ 国家看板</button>
+    <button type="button" class="ppd-tab" data-tab="ads" role="tab">④ 广告明细</button>
+  </nav>
+
+  <section class="ppd-tab-panel active" data-panel="list">
+    <!-- Task 7 填充 -->
+    <div class="ppd-empty-tab">产品列表（Task 7 填充）</div>
+  </section>
+
+  <section class="ppd-tab-panel" data-panel="orders">
+    <!-- Task 6 把现有 5 个区块迁过来 -->
+    <div class="ppd-empty-tab">订单明细（Task 6 把下方 5 个区块迁入此处）</div>
+  </section>
+
+  <section class="ppd-tab-panel" data-panel="country">
+    <!-- Task 8 填充 -->
+    <div class="ppd-empty-tab">国家看板（Task 8 填充）</div>
+  </section>
+
+  <section class="ppd-tab-panel" data-panel="ads">
+    <!-- Task 9 填充 -->
+    <div class="ppd-empty-tab">广告明细（Task 9 填充）</div>
   </section>
 
   <!-- 加载/空/错状态 -->
@@ -882,6 +946,38 @@
   loadProducts().then(function() {
     if (getSelectedProductId()) runQuery();
   });
+
+  // ========== Tab 切换骨架（Task 5）==========
+  // load 函数由 Task 6-9 填充；这里用 short-circuit 防 ReferenceError
+  function switchTab(tabName) {
+    document.querySelectorAll('.ppd-tab').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.tab === tabName);
+    });
+    document.querySelectorAll('.ppd-tab-panel').forEach(function(p) {
+      p.classList.toggle('active', p.dataset.panel === tabName);
+    });
+    // URL state 同步（Task 10 接管）
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.set('tab', tabName);
+      history.replaceState(null, '', url.toString());
+    } catch (e) { /* IE 等老浏览器忽略 */ }
+    // 触发当前 Tab 的数据加载（Task 6-9 填充对应函数）
+    if (tabName === 'list' && typeof window.loadListTab === 'function') window.loadListTab();
+    else if (tabName === 'orders' && typeof window.loadOrdersTab === 'function') window.loadOrdersTab();
+    else if (tabName === 'country' && typeof window.loadCountryTab === 'function') window.loadCountryTab();
+    else if (tabName === 'ads' && typeof window.loadAdsTab === 'function') window.loadAdsTab();
+  }
+  // 暴露给外部（Tab ① 点产品行 → 切到 Tab ② 这种跨函数调用要用）
+  window.switchTab = switchTab;
+
+  document.querySelectorAll('.ppd-tab').forEach(function(btn) {
+    btn.addEventListener('click', function() { switchTab(btn.dataset.tab); });
+  });
+
+  // 初始化：从 URL 读 ?tab=xxx，默认 'list'
+  var initialTab = (new URLSearchParams(location.search).get('tab')) || 'list';
+  switchTab(initialTab);
 })();
 </script>
 {% endblock %}
