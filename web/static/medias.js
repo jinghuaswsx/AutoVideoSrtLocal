@@ -464,6 +464,21 @@
     }
   }
 
+  function safeInternalHref(url, fallback) {
+    const safeFallback = String(fallback || '#');
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return safeFallback;
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.origin !== window.location.origin) {
+        return safeFallback;
+      }
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return safeFallback;
+    }
+  }
+
   function escapeRegExp(s) {
     return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
@@ -4098,8 +4113,9 @@
     }
     box.innerHTML = tasks.map(task => {
       const progress = task.progress || {};
-      const detailUrl = escapeHtml(task.detail_url || `/image-translate/${task.task_id}`);
-      const taskId = escapeHtml(task.task_id || '');
+      const rawTaskId = String(task.task_id || '');
+      const detailUrl = safeInternalHref(task.detail_url, rawTaskId ? `/image-translate/${encodeURIComponent(rawTaskId)}` : '#');
+      const taskId = escapeHtml(rawTaskId);
       const status = escapeHtml(edDetailTranslateStatusLabel(task.status));
       const applyStatus = escapeHtml(edDetailTranslateApplyLabel(task.apply_status));
       const updatedAt = escapeHtml(fmtDate(task.updated_at || task.created_at || ''));
@@ -4116,7 +4132,7 @@
             <div class="oc-hint">更新时间：${updatedAt || '-'}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
-            <a class="oc-btn ghost sm" href="${detailUrl}" target="_blank" rel="noopener">查看详情</a>
+            <a class="oc-btn ghost sm" href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener">查看详情</a>
             <button type="button" class="oc-btn ghost sm" data-retranslate-lang="${escapeHtml(edState.activeLang)}">重新翻译</button>
           </div>
         </div>
@@ -4712,11 +4728,13 @@
     let html = '';
     if (appliedTask) {
       const appliedLabel = escapeHtml(edDetailTranslateApplyLabel(appliedTask.apply_status || 'applied'));
-      const detailUrl = escapeHtml(appliedTask.detail_url || `/image-translate/${appliedTask.task_id}`);
-      html = `当前 ${escapeHtml(langName)} 详情图已由英语版一键翻译回填（${appliedLabel}）。<a href="${detailUrl}" target="_blank" rel="noopener">查看关联任务</a>`;
+      const appliedRawTaskId = String(appliedTask.task_id || '');
+      const detailUrl = safeInternalHref(appliedTask.detail_url, appliedRawTaskId ? `/image-translate/${encodeURIComponent(appliedRawTaskId)}` : '#');
+      html = `当前 ${escapeHtml(langName)} 详情图已由英语版一键翻译回填（${appliedLabel}）。<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener">查看关联任务</a>`;
     } else if (latest) {
-      const detailUrl = escapeHtml(latest.detail_url || `/image-translate/${latest.task_id}`);
-      html = `最近一次翻译任务：${escapeHtml(edDetailTranslateStatusLabel(latest.status))} / ${escapeHtml(edDetailTranslateApplyLabel(latest.apply_status))}。<a href="${detailUrl}" target="_blank" rel="noopener">查看任务详情</a>`;
+      const latestRawTaskId = String(latest.task_id || '');
+      const detailUrl = safeInternalHref(latest.detail_url, latestRawTaskId ? `/image-translate/${encodeURIComponent(latestRawTaskId)}` : '#');
+      html = `最近一次翻译任务：${escapeHtml(edDetailTranslateStatusLabel(latest.status))} / ${escapeHtml(edDetailTranslateApplyLabel(latest.apply_status))}。<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener">查看任务详情</a>`;
     } else {
       html = `当前 ${escapeHtml(langName)} 还没有执行过从英语版一键翻译。`;
     }
@@ -4845,7 +4863,8 @@
       if (msg) msg.textContent = '翻译任务已创建，可以留在当前页查看历史记录，也可以打开详情页跟踪进度。';
       if (meta) meta.textContent = `任务 ID：${data.task_id} · ${langName} · ${mode === 'parallel' ? '并行' : '串行'}`;
       if (link) {
-        link.href = data.detail_url || `/image-translate/${data.task_id}`;
+        const rawTaskId = String(data.task_id || '');
+        link.href = safeInternalHref(data.detail_url, rawTaskId ? `/image-translate/${encodeURIComponent(rawTaskId)}` : '#');
         link.dataset.taskId = data.task_id || '';
         link.hidden = false;
       }

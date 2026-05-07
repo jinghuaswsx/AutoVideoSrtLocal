@@ -75,6 +75,19 @@
     return escapeHtml(value).replace(/`/g, '&#96;');
   }
 
+  function safeExternalHref(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   async function fetchJSON(url, options) {
     const resp = await fetch(url, options);
     if (!resp.ok && resp.status !== 204) {
@@ -428,8 +441,9 @@
       : `<div class="thumb thumb-empty"></div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
-    const productNameHtml = it.product_page_url
-      ? `<a class="product-name product-link product-name-line" href="${escapeAttr(it.product_page_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>`
+    const productPageUrl = safeExternalHref(it.product_page_url);
+    const productNameHtml = productPageUrl
+      ? `<a class="product-name product-link product-name-line" href="${escapeAttr(productPageUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>`
       : `<div class="product-name product-name-line">${escapeHtml(it.product_name || '')}</div>`;
     const productCode = it.product_code || '';
     const productCodeHtml = productCode
