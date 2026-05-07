@@ -359,6 +359,29 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
                     "purchase": 40,
                     "shipping_cost": 7,
                     "return_reserve": 1,
+                    "purchase_fallback_estimated": 0,
+                    "purchase_fallback_estimated_lines": 0,
+                    "shipping_product_estimated": 2,
+                    "shipping_product_estimated_lines": 1,
+                    "shipping_fallback_estimated": 0,
+                    "shipping_fallback_estimated_lines": 0,
+                },
+                {
+                    "status": "incomplete",
+                    "n": 1,
+                    "revenue": 50,
+                    "profit": 8,
+                    "shopify_fee": 2,
+                    "ad_cost": 5,
+                    "purchase": 5,
+                    "shipping_cost": 10,
+                    "return_reserve": 0.5,
+                    "purchase_fallback_estimated": 5,
+                    "purchase_fallback_estimated_lines": 1,
+                    "shipping_product_estimated": 0,
+                    "shipping_product_estimated_lines": 0,
+                    "shipping_fallback_estimated": 10,
+                    "shipping_fallback_estimated_lines": 1,
                 },
                 {"status": "unknown", "n": 9, "revenue": 999, "profit": 999},
             ]
@@ -379,11 +402,59 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
     assert payload["date_to"] == "2026-05-03"
     assert payload["summary"]["ok"]["lines"] == 2
     assert payload["summary"]["ok"]["profit"] == 25.0
-    assert payload["summary"]["incomplete"]["lines"] == 0
+    assert payload["summary"]["incomplete"]["lines"] == 1
     assert payload["unallocated_ad_spend_usd"] == 12.5
     assert payload["margin_pct"] == 25.0
+    assert payload["overview"] == {
+        "line_count": 3,
+        "revenue_usd": 150.0,
+        "confirmed_profit_usd": 25.0,
+        "estimated_profit_usd": 8.0,
+        "unallocated_ad_spend_usd": 12.5,
+        "total_profit_usd": 20.5,
+        "total_margin_pct": 13.67,
+    }
+    assert payload["estimate_marks"]["shopify_fee"] == {
+        "estimated": True,
+        "amount_usd": 5.0,
+        "lines": 3,
+        "label": "策略 C 估算",
+    }
+    assert payload["estimate_marks"]["purchase_fallback"]["amount_usd"] == 5.0
+    assert payload["estimate_marks"]["purchase_fallback"]["lines"] == 1
+    assert payload["estimate_marks"]["shipping_product_estimated"]["amount_usd"] == 2.0
+    assert payload["estimate_marks"]["shipping_product_estimated"]["lines"] == 1
+    assert payload["estimate_marks"]["shipping_fallback"]["amount_usd"] == 10.0
+    assert payload["estimate_marks"]["shipping_fallback"]["lines"] == 1
+    assert payload["estimate_marks"]["return_reserve"]["amount_usd"] == 1.5
+    assert payload["estimate_marks"]["return_reserve"]["lines"] == 3
+    assert payload["estimate_marks"]["unallocated_ad_spend"]["amount_usd"] == 12.5
     assert "product_id IS NULL" in captured["unallocated_sql"]
     assert captured["unallocated_args"] == (date(2026, 5, 1), date(2026, 5, 3))
+
+
+def test_status_summary_queries_estimated_cost_sources(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            captured["summary_sql"] = sql
+            return []
+        if "FROM order_profit_runs" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    get_order_profit_status_summary(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 3),
+    )
+
+    sql = captured["summary_sql"]
+    assert "JSON_SEARCH(cost_basis, 'one', 'purchase'" in sql
+    assert "JSON_SEARCH(cost_basis, 'one', 'shipping_cost'" in sql
+    assert "JSON_UNQUOTE(JSON_EXTRACT(cost_basis, '$.shipping_cost_source')) = 'product_estimated'" in sql
 
 
 def test_incomplete_products_list_is_scoped_and_deduplicated(monkeypatch):

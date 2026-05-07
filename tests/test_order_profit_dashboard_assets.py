@@ -38,7 +38,6 @@ def test_order_profit_dashboard_escapes_api_backed_html_fields():
     for snippet in expected_escaped_paths:
         assert snippet in TEMPLATE
 
-
 def test_order_profit_campaign_product_picker_is_searchable_and_tall():
     assert ".op-product-picker-trigger" in TEMPLATE
     assert "min-height: 60px" in TEMPLATE
@@ -73,3 +72,13 @@ def test_order_profit_incomplete_products_modal_sanitizes_internal_links():
     assert "function safeInternalHref(url, fallback)" in TEMPLATE
     assert "const href = safeInternalHref(p.medias_search_url, '/medias/?q=' + encodeURIComponent(p.product_code || ''));" in modal_block
     assert "const href = p.medias_search_url || ('/medias/?q=' + encodeURIComponent(p.product_code || ''));" not in modal_block
+
+
+def test_order_profit_dashboard_renders_total_profit_and_estimate_marks():
+    assert 'id="opTotalProfit"' in TEMPLATE
+    assert 'id="opTotalProfitFormula"' in TEMPLATE
+    assert 'id="opEstimateMarksBody"' in TEMPLATE
+    assert "总利润" in TEMPLATE
+    assert "估算标记" in TEMPLATE
+    assert "renderEstimateMarks" in TEMPLATE
+    assert "estimate_marks" in TEMPLATE
