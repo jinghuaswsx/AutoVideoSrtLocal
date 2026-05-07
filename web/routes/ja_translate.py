@@ -10,8 +10,7 @@ from datetime import datetime
 from flask import Blueprint, abort, render_template, request, send_file
 from flask_login import current_user, login_required
 
-from appcore import task_state
-from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
+from appcore import task_state, translation_route_store
 from appcore.project_state import save_project_state
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
@@ -33,6 +32,10 @@ from web.services.translate_route_responses import (
 log = logging.getLogger(__name__)
 
 bp = Blueprint("ja_translate", __name__)
+
+db_query = translation_route_store.query
+db_query_one = translation_route_store.query_one
+db_execute = translation_route_store.execute
 
 
 def _json_response(payload: dict, status_code: int = 200):
