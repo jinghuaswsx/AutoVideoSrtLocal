@@ -148,3 +148,106 @@ def test_edit_video_play_url_sanitizes_media_src_protocols():
     assert "const playUrl = safeMediaSrc(r.url);" in load_block
     assert 'src="${escapeHtml(playUrl)}"' in load_block
     assert 'src="${escapeHtml(r.url)}"' not in load_block
+
+
+def test_medias_js_product_and_detail_image_previews_sanitize_media_src_protocols():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    detail_images = script[
+        script.index("function renderItemHTML"):
+        script.index("function renderInto")
+    ]
+    product_row = script[
+        script.index("function rowHTML(p)"):
+        script.index("function renderProductLinksPushList")
+    ]
+    add_items = script[
+        script.index("function renderItems(items)"):
+        script.index("async function removeItem")
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "const imageUrl = safeMediaSrc(it.thumbnail_url);" in detail_images
+    assert 'src="${escapeHtml(imageUrl)}"' in detail_images
+    assert "const coverUrl = safeMediaSrc(p.cover_thumbnail_url);" in product_row
+    assert 'src="${escapeHtml(coverUrl)}"' in product_row
+    assert "const coverUrl = safeMediaSrc(it.cover_url);" in add_items
+    assert 'src="${escapeHtml(coverUrl)}"' in add_items
+    assert 'src="${escapeHtml(it.thumbnail_url)}"' not in detail_images
+    assert 'src="${escapeHtml(p.cover_thumbnail_url)}"' not in product_row
+    assert 'src="${escapeHtml(it.cover_url)}"' not in add_items
+
+
+def test_medias_js_edit_modal_preview_setters_sanitize_media_src_protocols_but_keep_blob_previews():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    add_cover_setter = script[
+        script.index("function setCover"):
+        script.index("// ---- Item cover")
+    ]
+    add_item_cover_setter = script[
+        script.index("function setItemCover"):
+        script.index("async function uploadItemCover")
+    ]
+    cover_setter = script[
+        script.index("function edSetCoverUI"):
+        script.index("async function edUploadCover")
+    ]
+    item_cover_setter = script[
+        script.index("function edSetItemCover"):
+        script.index("function edSetPickedVideo")
+    ]
+    edit_items = script[
+        script.index("function edRenderItems"):
+        script.index("function edSetItemNameSaving")
+    ]
+
+    assert "const safeUrl = safeMediaSrc(url);" in add_cover_setter
+    assert "img.src = safeUrl;" in add_cover_setter
+    assert "const safeUrl = String(url || '').startsWith('blob:') ? String(url) : safeMediaSrc(url);" in add_item_cover_setter
+    assert "img.src = safeUrl;" in add_item_cover_setter
+    assert "const safeUrl = safeMediaSrc(url);" in cover_setter
+    assert "img.src = safeUrl;" in cover_setter
+    assert "const safeUrl = String(url || '').startsWith('blob:') ? String(url) : safeMediaSrc(url);" in item_cover_setter
+    assert "img.src = safeUrl;" in item_cover_setter
+    assert "const coverUrl = safeMediaSrc(it.cover_url);" in edit_items
+    assert "const coverSrc = coverUrl ? withCacheBuster(coverUrl) : '';" in edit_items
+    assert 'src="${escapeHtml(coverSrc)}"' in edit_items
+    assert "img.src = url;" not in add_cover_setter
+    assert "img.src = url;" not in add_item_cover_setter
+    assert "img.src = url;" not in cover_setter
+    assert "img.src = url;" not in item_cover_setter
+
+
+def test_medias_js_link_check_detail_preview_images_sanitize_media_src_protocols():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    link_check_modal = script[
+        script.index("function edRenderLinkCheckModal"):
+        script.index("function edCloseLinkCheckModal")
+    ]
+
+    assert "const previewUrl = safeMediaSrc(ref.preview_url || '');" in link_check_modal
+    assert 'src="${escapeHtml(previewUrl)}"' in link_check_modal
+    assert "const itemPreviewUrl = safeMediaSrc(item.site_preview_url);" in link_check_modal
+    assert 'src="${escapeHtml(itemPreviewUrl)}"' in link_check_modal
+    assert 'src="${escapeHtml(ref.preview_url || \'\')}"' not in link_check_modal
+    assert 'src="${escapeHtml(item.site_preview_url)}"' not in link_check_modal
+
+
+def test_medias_js_raw_source_cards_sanitize_cover_and_video_media_src_protocols():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    raw_source_card = script[
+        script.index("function renderRawSourceCard"):
+        script.index("function getRawSourceCardTitle")
+    ]
+    raw_source_video = script[
+        script.index("function ensureRawSourceVideoLoaded"):
+        script.index("function bindRawSourceCard")
+    ]
+
+    assert "const coverUrl = safeMediaSrc(it.cover_url);" in raw_source_card
+    assert "const videoUrl = safeMediaSrc(it.video_url);" in raw_source_card
+    assert 'src="${escapeHtml(coverUrl)}"' in raw_source_card
+    assert 'data-video-url="${escapeHtml(videoUrl)}"' in raw_source_card
+    assert "const videoUrl = safeMediaSrc(card.dataset.videoUrl || '');" in raw_source_video
+    assert "video.src = videoUrl;" in raw_source_video
+    assert 'src="${escapeHtml(it.cover_url)}"' not in raw_source_card
+    assert 'data-video-url="${escapeHtml(it.video_url || \'\')}"' not in raw_source_card

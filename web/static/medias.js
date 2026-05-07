@@ -477,6 +477,12 @@
     }
   }
 
+  function withCacheBuster(url) {
+    const safeUrl = safeMediaSrc(url);
+    if (!safeUrl) return '';
+    return `${safeUrl}${safeUrl.includes('?') ? '&' : '?'}_=${Date.now()}`;
+  }
+
   function safeInternalHref(url, fallback) {
     const safeFallback = String(fallback || '#');
     const raw = String(url == null ? '' : url).trim();
@@ -1023,9 +1029,10 @@
     }
 
     function renderItemHTML(it, idx) {
+      const imageUrl = safeMediaSrc(it.thumbnail_url);
       return `
         <div class="oc-detail-image" data-id="${it.id}">
-          <img src="${escapeHtml(it.thumbnail_url)}" alt="详情图 ${idx + 1}" loading="lazy">
+          <img src="${escapeHtml(imageUrl)}" alt="详情图 ${idx + 1}" loading="lazy">
           <span class="oc-detail-image-idx">${idx + 1}</span>
           <button class="oc-detail-image-del" type="button" title="删除这张" aria-label="删除">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
@@ -1811,8 +1818,9 @@
     const count = p.items_count || 0;
     const rawCount = p.raw_sources_count || 0;
     const warnCls = !p.has_en_cover ? ' class="oc-row-warn"' : '';
-    const cover = p.cover_thumbnail_url
-      ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
+    const coverUrl = safeMediaSrc(p.cover_thumbnail_url);
+    const cover = coverUrl
+      ? `<img src="${escapeHtml(coverUrl)}" alt="" loading="lazy">`
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
     const productCode = (p.product_code === null || p.product_code === undefined) ? '' : String(p.product_code).trim();
     const productDetailHref = productDetailPath(productCode);
@@ -3046,8 +3054,9 @@
     const dz = $('coverDropzone');
     const img = $('coverImg');
     const replace = $('coverReplace');
-    if (url) {
-      img.src = url; img.hidden = false; dz.hidden = true;
+    const safeUrl = safeMediaSrc(url);
+    if (safeUrl) {
+      img.src = safeUrl; img.hidden = false; dz.hidden = true;
       if (replace) replace.hidden = false;
     } else {
       img.removeAttribute('src'); img.hidden = true; dz.hidden = false;
@@ -3063,8 +3072,9 @@
     if (!dz || !img) return;
     const replace = $('itemCoverReplace');
     const clear = $('itemCoverClear');
-    if (url) {
-      img.src = url; img.hidden = false; dz.hidden = true;
+    const safeUrl = String(url || '').startsWith('blob:') ? String(url) : safeMediaSrc(url);
+    if (safeUrl) {
+      img.src = safeUrl; img.hidden = false; dz.hidden = true;
       if (replace) replace.hidden = false;
       if (clear) clear.hidden = false;
     } else {
@@ -3161,17 +3171,20 @@
   // ---------- Items ----------
   function renderItems(items) {
     const g = $('itemsGrid');
-    g.innerHTML = items.map(it => `
+    g.innerHTML = items.map(it => {
+      const coverUrl = safeMediaSrc(it.cover_url);
+      return `
       <div class="oc-item" data-item="${it.id}">
         <div class="thumb">
-          ${it.cover_url
-            ? `<img src="${escapeHtml(it.cover_url)}" loading="lazy" alt="">`
+          ${coverUrl
+            ? `<img src="${escapeHtml(coverUrl)}" loading="lazy" alt="">`
             : `<div class="thumb-ph">${icon('film', 20)}</div>`}
           <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
         </div>
         <div class="name" title="${escapeHtml(it.display_name || it.filename)}">${escapeHtml(it.display_name || it.filename)}</div>
       </div>
-    `).join('');
+    `;
+    }).join('');
     g.querySelectorAll('[data-item]').forEach(card => {
       card.querySelector('.rm').addEventListener('click', () => removeItem(+card.dataset.item, card));
     });
@@ -4648,12 +4661,15 @@
     const references = Array.isArray(task.reference_images) ? task.reference_images : [];
     $('edLinkCheckRefsBadge').textContent = String(references.length);
     refsBox.innerHTML = references.length
-      ? references.map(ref => `
+      ? references.map(ref => {
+          const previewUrl = safeMediaSrc(ref.preview_url || '');
+          return `
           <div class="oc-link-check-ref">
-            <img src="${escapeHtml(ref.preview_url || '')}" alt="${escapeHtml(ref.filename || '参考图')}" loading="lazy">
+            <img src="${escapeHtml(previewUrl)}" alt="${escapeHtml(ref.filename || '参考图')}" loading="lazy">
             <span title="${escapeHtml(ref.filename || '')}">${escapeHtml(ref.filename || '')}</span>
           </div>
-        `).join('')
+        `;
+        }).join('')
       : '<div class="oc-detail-images-empty">暂无参考图</div>';
 
     const items = Array.isArray(task.items) ? task.items : [];
@@ -4674,8 +4690,9 @@
       const decision = analysis.decision || '';
       const reason = analysis.quality_reason || analysis.text_summary || item.error || binary.reason || sameImage.reason || '暂无说明';
       const itemLabel = item.kind === 'hero' ? '轮播图' : '详情图';
-      const preview = item.site_preview_url
-        ? `<img src="${escapeHtml(item.site_preview_url)}" alt="${escapeHtml(itemLabel)}" loading="lazy">`
+      const itemPreviewUrl = safeMediaSrc(item.site_preview_url);
+      const preview = itemPreviewUrl
+        ? `<img src="${escapeHtml(itemPreviewUrl)}" alt="${escapeHtml(itemLabel)}" loading="lazy">`
         : `<div class="oc-detail-images-empty" style="height:100%;margin:0;">暂无预览</div>`;
       return `
         <article class="oc-link-check-item">
@@ -5141,7 +5158,8 @@
     const dz = $('edCoverDropzone');
     const img = $('edCoverImg');
     if (!dz || !img) return;
-    if (url) { img.src = url; img.hidden = false; dz.hidden = true; }
+    const safeUrl = safeMediaSrc(url);
+    if (safeUrl) { img.src = safeUrl; img.hidden = false; dz.hidden = true; }
     else { img.removeAttribute('src'); img.hidden = true; dz.hidden = false; }
   }
 
@@ -5262,8 +5280,9 @@
     const img = $('edItemCoverImg');
     const replace = $('edItemCoverReplace');
     const clear = $('edItemCoverClear');
-    if (url) {
-      img.src = url; img.hidden = false; dz.hidden = true;
+    const safeUrl = String(url || '').startsWith('blob:') ? String(url) : safeMediaSrc(url);
+    if (safeUrl) {
+      img.src = safeUrl; img.hidden = false; dz.hidden = true;
       if (replace) replace.hidden = false;
       if (clear) clear.hidden = false;
     } else {
@@ -5494,15 +5513,16 @@
   function edRenderItems(items) {
     const g = $('edItemsGrid');
     g.innerHTML = (items || []).map(it => {
-      const cover = it.cover_url;
+      const coverUrl = safeMediaSrc(it.cover_url);
+      const coverSrc = coverUrl ? withCacheBuster(coverUrl) : '';
       const rawName = it.display_name || it.filename || '';
       const name = escapeHtml(rawName);
       const sourceLabel = itemSourceLabel(it);
       const sourceHtml = sourceLabel
         ? `<div class="vsource" title="${escapeHtml(sourceLabel)}">来源：${escapeHtml(sourceLabel)}</div>`
         : '';
-      const imgTag = cover
-        ? `<img src="${escapeHtml(cover)}?_=${Date.now()}" loading="lazy" alt="">`
+      const imgTag = coverSrc
+        ? `<img src="${escapeHtml(coverSrc)}" loading="lazy" alt="">`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
       return `
       <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}">
@@ -5999,13 +6019,16 @@
 
         const inserted = task.inserted || [];
         if (inserted.length) {
-          imgGrid.innerHTML = inserted.map((it, i) => `
+          imgGrid.innerHTML = inserted.map((it, i) => {
+            const imageUrl = safeMediaSrc(it.thumbnail_url);
+            return `
             <div style="border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;">
-              <img src="${escapeHtml(it.thumbnail_url)}" alt="图 ${i+1}" loading="lazy"
+              <img src="${escapeHtml(imageUrl)}" alt="图 ${i+1}" loading="lazy"
                    style="width:100%;height:120px;object-fit:cover;display:block;">
               <div style="padding:4px 6px;font-size:11px;color:var(--oc-fg-muted);text-align:center;">#${i + 1}</div>
             </div>
-          `).join('');
+          `;
+          }).join('');
         } else if (task.status === 'failed') {
           imgGrid.innerHTML = `<div class="oc-detail-images-empty" style="grid-column:1/-1;color:var(--danger-color,#dc2626);">${escapeHtml(task.error || '抓取失败')}</div>`;
         } else if (task.status === 'done' && !inserted.length) {
@@ -6383,6 +6406,19 @@
     }[ch]));
   }
 
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function fmtRawDuration(seconds) {
     const value = Number(seconds || 0);
     if (!value) return '时长 —';
@@ -6526,14 +6562,16 @@
     const defaultTitle = getRawSourceDefaultTitle(it.id);
     const titleText = rawDisplayName || defaultTitle;
     const title = escapeHtml(titleText);
-    const coverPane = it.cover_url
-      ? `<img src="${escapeHtml(it.cover_url)}" alt="${title}" loading="lazy">`
+    const coverUrl = safeMediaSrc(it.cover_url);
+    const videoUrl = safeMediaSrc(it.video_url);
+    const coverPane = coverUrl
+      ? `<img src="${escapeHtml(coverUrl)}" alt="${title}" loading="lazy">`
       : `<div class="thumb-ph"><svg width="20" height="20" aria-hidden="true"><use href="#ic-film"/></svg></div>`;
     return `
       <article
         class="oc-rs-card oc-vitem"
         data-rs-id="${it.id}"
-        data-video-url="${escapeHtml(it.video_url || '')}"
+        data-video-url="${escapeHtml(videoUrl)}"
         data-display-name="${escapeHtml(rawDisplayName)}"
         data-default-title="${escapeHtml(defaultTitle)}"
       >
@@ -6663,7 +6701,7 @@
   function ensureRawSourceVideoLoaded(card) {
     const pane = card.querySelector('[data-pane="video"]');
     if (!pane || pane.dataset.loaded === '1') return;
-    const videoUrl = card.dataset.videoUrl || '';
+    const videoUrl = safeMediaSrc(card.dataset.videoUrl || '');
     if (!videoUrl) {
       pane.innerHTML = '<div class="vvideo-ph err">视频地址缺失，请重新上传后重试</div>';
       pane.dataset.loaded = '';
