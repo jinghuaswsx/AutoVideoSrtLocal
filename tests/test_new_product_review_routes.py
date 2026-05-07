@@ -109,6 +109,40 @@ def test_get_index_includes_page_scripts(authed_client_no_db, monkeypatch):
     assert "window.nprOpenCellDetail" in body
 
 
+def test_new_product_review_dynamic_table_escapes_api_fields(authed_client_no_db, monkeypatch):
+    _patch_list_deps(monkeypatch)
+
+    resp = authed_client_no_db.get("/new-product-review/")
+
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    table_start = body.index("function renderTable(products, languages)")
+    table_end = body.index("// Update count on load", table_start)
+    table_js = body[table_start:table_end]
+    modal_start = body.index("window.nprOpenCellDetail = function(cell)")
+    modal_end = body.index("// =============================================\n  // AI 评估", modal_start)
+    modal_js = body[modal_start:modal_end]
+
+    assert "function nprEsc(value)" in body
+    assert "function nprAttr(value)" in body
+    assert 'src="${nprAttr(p.main_image)}"' in table_js
+    assert 'data-name="${nprAttr(p.name || \'\')}"' in table_js
+    assert 'data-reason="${nprAttr(c.reason || \'\')}"' in table_js
+    assert "data-suggestions='${nprAttr(JSON.stringify(c.suggestions || []))}'" in table_js
+    assert "${nprEsc(p.name || '—')}" in table_js
+    assert "${nprEsc(p.product_code)}" in table_js
+    assert "${nprEsc(p.translator_name || '—')}" in table_js
+    assert "nprEsc(reason || '—')" in modal_js
+    assert "'<li>' + nprEsc(s) + '</li>'" in modal_js
+
+    assert 'src="${p.main_image}"' not in table_js
+    assert "${p.name||'—'}" not in table_js
+    assert "${p.product_code}" not in table_js
+    assert "${p.translator_name||'—'}" not in table_js
+    assert "+ (reason || '—') +" not in modal_js
+    assert "'<li>' + s + '</li>'" not in modal_js
+
+
 def test_get_list_admin_only(authed_user_client_no_db, monkeypatch):
     """普通用户访问 GET /api/list → 403。"""
     _patch_list_deps(monkeypatch)

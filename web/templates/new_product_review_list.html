@@ -344,6 +344,18 @@
     wrap.appendChild(el);
     setTimeout(() => el.remove(), 3500);
   }
+  function nprEsc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+  function nprAttr(value) {
+    return nprEsc(value);
+  }
 
   window.nprOpenModal = function(id) {
     document.getElementById(id).classList.add('open');
@@ -372,11 +384,11 @@
     const langObj = LANGUAGES.find(l => l.code === lang) || { name_zh: lang };
     document.getElementById('nprCellModalTitle').textContent = langObj.name_zh + ' — 评估详情';
 
-    let html = '<div style="margin-bottom:8px"><b>综合评分：</b><span style="color:var(--oc-accent);font-weight:600">' + score + '</span></div>';
-    html += '<div style="margin-bottom:8px"><b>评估理由：</b>' + (reason || '—') + '</div>';
+    let html = '<div style="margin-bottom:8px"><b>综合评分：</b><span style="color:var(--oc-accent);font-weight:600">' + nprEsc(score || '—') + '</span></div>';
+    html += '<div style="margin-bottom:8px"><b>评估理由：</b>' + nprEsc(reason || '—') + '</div>';
     if (suggestions && suggestions.length) {
       html += '<div><b>建议：</b><ul style="margin:4px 0 0 16px;padding:0">';
-      suggestions.forEach(s => { html += '<li>' + s + '</li>'; });
+      suggestions.forEach(s => { html += '<li>' + nprEsc(s) + '</li>'; });
       html += '</ul></div>';
     }
     document.getElementById('nprCellModalBody').innerHTML = html;
@@ -431,11 +443,11 @@
     LANGUAGES.forEach(lang => {
       const c = countriesMap[lang.code];
       const checked = c && c.is_suitable ? 'checked' : '';
-      const score = c ? c.score.toFixed(0) : '';
+      const score = c ? Number(c.score || 0).toFixed(0) : '';
       grid.innerHTML += `<label class="npr-country-item">
-        <input type="checkbox" value="${lang.code_upper}" ${checked}>
-        <span>${lang.name_zh}</span>
-        ${score ? '<span class="score-hint">' + score + '</span>' : ''}
+        <input type="checkbox" value="${nprAttr(lang.code_upper)}" ${checked}>
+        <span>${nprEsc(lang.name_zh)}</span>
+        ${score ? '<span class="score-hint">' + nprEsc(score) + '</span>' : ''}
       </label>`;
     });
 
@@ -565,6 +577,7 @@
     }
     tbody.innerHTML = products.map((p, idx) => {
       const detail = p.ai_evaluation_detail;
+      const productId = Number(p.id) || 0;
       const countriesMap = {};
       if (detail && detail.countries) {
         detail.countries.forEach(c => { countriesMap[c.lang] = c; });
@@ -581,31 +594,30 @@
       const matrixCells = languages.map(lang => {
         const c = countriesMap[lang.code];
         if (!c) return '<td><div class="npr-cell npr-cell--empty">—</div></td>';
-        const sugg = JSON.stringify(c.suggestions || []).replace(/'/g, '&#39;');
         if (c.is_suitable) {
           return `<td><div class="npr-cell npr-cell--suitable" onclick="nprOpenCellDetail(this)"
-            data-lang="${lang.code}" data-score="${c.score}" data-reason="${(c.reason||'').replace(/"/g,'&quot;')}" data-suggestions='${sugg}'>
+            data-lang="${nprAttr(lang.code)}" data-score="${nprAttr(c.score)}" data-reason="${nprAttr(c.reason || '')}" data-suggestions='${nprAttr(JSON.stringify(c.suggestions || []))}'>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span class="cell-score">${Math.round(c.score)}</span></div></td>`;
+            <span class="cell-score">${Math.round(Number(c.score) || 0)}</span></div></td>`;
         } else {
           return `<td><div class="npr-cell npr-cell--unsuitable" onclick="nprOpenCellDetail(this)"
-            data-lang="${lang.code}" data-score="${c.score}" data-reason="${(c.reason||'').replace(/"/g,'&quot;')}" data-suggestions='${sugg}'>
+            data-lang="${nprAttr(lang.code)}" data-score="${nprAttr(c.score)}" data-reason="${nprAttr(c.reason || '')}" data-suggestions='${nprAttr(JSON.stringify(c.suggestions || []))}'>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            <span class="cell-score">${Math.round(c.score)}</span></div></td>`;
+            <span class="cell-score">${Math.round(Number(c.score) || 0)}</span></div></td>`;
         }
       }).join('');
 
-      const evalStr = JSON.stringify(detail || null).replace(/'/g,'&#39;');
+      const evalStr = nprAttr(JSON.stringify(detail || null));
       const actionBtns = (p.npr_decision_status !== 'approved' && p.npr_decision_status !== 'rejected')
-        ? `<button class="oc-btn oc-btn--ghost" style="height:26px;font-size:12px" onclick="nprTriggerEval(${p.id},this)">AI 评估</button>`
+        ? `<button class="oc-btn oc-btn--ghost" style="height:26px;font-size:12px" onclick="nprTriggerEval(${productId},this)">AI 评估</button>`
           + (p.ai_score != null
-            ? `<button class="oc-btn oc-btn--primary" style="height:26px;font-size:12px" onclick="nprOpenApprove(${p.id})">上架</button>
-               <button class="oc-btn oc-btn--danger" style="height:26px;font-size:12px" onclick="nprOpenReject(${p.id})">拒绝</button>`
+            ? `<button class="oc-btn oc-btn--primary" style="height:26px;font-size:12px" onclick="nprOpenApprove(${productId})">上架</button>
+               <button class="oc-btn oc-btn--danger" style="height:26px;font-size:12px" onclick="nprOpenReject(${productId})">拒绝</button>`
             : '')
         : '';
 
       const coverHtml = p.main_image
-        ? `<img class="npr-cover" src="${p.main_image}" alt="" loading="lazy">`
+        ? `<img class="npr-cover" src="${nprAttr(p.main_image)}" alt="" loading="lazy">`
         : '<div class="npr-cover-ph"></div>';
 
       const scoreHtml = p.ai_score != null
@@ -614,15 +626,15 @@
         ? '<span style="color:var(--oc-danger-fg);font-size:11px">评估失败</span>'
         : '<span style="color:var(--oc-fg-subtle)">—</span>';
 
-      return `<tr data-id="${p.id}" data-name="${(p.name||'').replace(/"/g,'&quot;')}"
-                  data-status="${p.npr_decision_status||''}" data-translator-id="${p.translator_id||''}"
+      return `<tr data-id="${productId}" data-name="${nprAttr(p.name || '')}"
+                  data-status="${nprAttr(p.npr_decision_status || '')}" data-translator-id="${nprAttr(p.translator_id || '')}"
                   data-eval='${evalStr}'>
         <td style="color:var(--oc-fg-subtle);font-size:11px">${idx+1}</td>
         <td>${coverHtml}</td>
-        <td class="text-left"><div style="font-weight:500;font-size:13px">${p.name||'—'}</div>${p.product_code?`<div style="font-size:11px;color:var(--oc-fg-subtle)">${p.product_code}</div>`:''}</td>
+        <td class="text-left"><div style="font-weight:500;font-size:13px">${nprEsc(p.name || '—')}</div>${p.product_code?`<div style="font-size:11px;color:var(--oc-fg-subtle)">${nprEsc(p.product_code)}</div>`:''}</td>
         <td>${scoreHtml}</td>
         ${matrixCells}
-        <td style="font-size:12px">${p.translator_name||'—'}</td>
+        <td style="font-size:12px">${nprEsc(p.translator_name || '—')}</td>
         <td>${statusBadge}</td>
         <td><div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">${actionBtns}</div></td>
       </tr>`;
