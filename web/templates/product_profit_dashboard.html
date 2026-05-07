@@ -722,8 +722,90 @@
   </section>
 
   <section class="ppd-tab-panel" data-panel="ads">
-    <!-- Task 9 填充 -->
-    <div class="ppd-empty-tab">广告明细（Task 9 填充）</div>
+    <!-- Task 9: 广告明细 -->
+    <div class="ppd-empty" id="ppd-ads-empty" style="display:none">请在顶部选择具体产品后查看广告明细。</div>
+    <div class="ppd-loading" id="ppd-ads-loading" style="display:none"><span class="ppd-spinner"></span>加载中…</div>
+    <div class="ppd-error" id="ppd-ads-error" style="display:none"></div>
+
+    <div id="ppd-ads-content" style="display:none; flex-direction:column; gap:20px;">
+
+      <!-- 账户卡片：每账户一张 stat card -->
+      <section class="ppd-stats" id="ppd-ads-accounts"></section>
+
+      <!-- Campaign 表 -->
+      <section class="ppd-orders">
+        <div class="ppd-orders-head">
+          <h3>Campaign 明细 <span id="ppd-ads-campaigns-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span></h3>
+          <span style="font-size:12px;color:var(--text-user-badge);">按花费倒序</span>
+        </div>
+        <div class="ppd-table-wrap" id="ppd-ads-campaigns-wrap" style="display:none">
+          <table class="ppd-table" id="ppd-ads-campaigns-table">
+            <thead>
+              <tr>
+                <th>账户</th>
+                <th>Campaign</th>
+                <th class="ppd-num">花费<span class="col-unit">USD</span></th>
+                <th class="ppd-num">展示</th>
+                <th class="ppd-num">点击</th>
+                <th class="ppd-num">结果</th>
+                <th class="ppd-num">CTR</th>
+                <th class="ppd-num">CPC<span class="col-unit">USD</span></th>
+                <th class="ppd-num">归属订单</th>
+                <th class="ppd-num">归属收入<span class="col-unit">USD</span></th>
+                <th class="ppd-num">ROAS</th>
+                <th class="ppd-num">利润贡献<span class="col-unit">USD</span></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="ppd-empty" id="ppd-ads-campaigns-empty" style="display:none">该产品 + 时段没有匹配上的广告 campaign。</div>
+      </section>
+
+      <!-- 日趋势折叠区（列表展示，简洁实用） -->
+      <details class="ppd-orders" id="ppd-ads-daily-details">
+        <summary style="cursor:pointer; font-size:14px; font-weight:600; color:var(--text-main); padding:4px 0;">
+          每日花费 / 收入 <span id="ppd-ads-daily-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span>
+        </summary>
+        <div class="ppd-table-wrap" id="ppd-ads-daily-wrap" style="margin-top:10px; display:none">
+          <table class="ppd-table" id="ppd-ads-daily-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th class="ppd-num">花费<span class="col-unit">USD</span></th>
+                <th class="ppd-num">归属收入<span class="col-unit">USD</span></th>
+                <th class="ppd-num">日 ROAS</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="ppd-empty" id="ppd-ads-daily-empty" style="display:none">无日数据。</div>
+      </details>
+
+      <!-- 未匹配折叠区 -->
+      <details class="ppd-orders" id="ppd-ads-unmatched-details">
+        <summary style="cursor:pointer; font-size:14px; font-weight:600; color:var(--text-main); padding:4px 0;">
+          未匹配 campaign <span id="ppd-ads-unmatched-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span>
+          <span style="font-size:11px; color:var(--text-user-badge); font-weight:400; margin-left:8px;">花费有进、但 normalized_campaign_code 解析不出产品。可手动归到本产品。</span>
+        </summary>
+        <div class="ppd-table-wrap" id="ppd-ads-unmatched-wrap" style="margin-top:10px; display:none">
+          <table class="ppd-table" id="ppd-ads-unmatched-table">
+            <thead>
+              <tr>
+                <th>Campaign code</th>
+                <th>Campaign name</th>
+                <th class="ppd-num">花费<span class="col-unit">USD</span></th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="ppd-empty" id="ppd-ads-unmatched-empty" style="display:none">无未匹配 campaign。</div>
+      </details>
+
+    </div>
   </section>
 
 </main>
@@ -1307,6 +1389,251 @@
         + '</tr>';
     }).join('');
     tbody.innerHTML = html;
+  }
+
+  // ── Tab ④ 广告明细（Task 9）────────────────────────
+  function loadAdsTab() {
+    var pid = productSelect.value;
+    var df = dateFromInput.value;
+    var dt = dateToInput.value;
+    var country = (countrySelect.value || '').trim();
+
+    var emptyEl = $('ppd-ads-empty');
+    var loadingEl = $('ppd-ads-loading');
+    var errorEl = $('ppd-ads-error');
+    var contentEl = $('ppd-ads-content');
+
+    errorEl.style.display = 'none';
+
+    // 必选具体产品（id=0 / '' / 'ALL' 都视为未选）
+    if (!pid || pid === '0' || pid === 'ALL') {
+      emptyEl.textContent = '请在顶部选择具体产品后查看广告明细。';
+      emptyEl.style.display = 'block';
+      contentEl.style.display = 'none';
+      loadingEl.style.display = 'none';
+      return;
+    }
+
+    if (!df || !dt || df > dt) {
+      emptyEl.style.display = 'none';
+      contentEl.style.display = 'flex';
+      loadingEl.style.display = 'none';
+      errorEl.textContent = '日期范围不正确';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+    contentEl.style.display = 'none';
+    loadingEl.style.display = 'block';
+
+    var url = '/order-analytics/product-profit/ads.json?'
+      + 'product_id=' + encodeURIComponent(pid)
+      + '&date_from=' + encodeURIComponent(df)
+      + '&date_to=' + encodeURIComponent(dt);
+    if (country) url += '&country=' + encodeURIComponent(country);
+
+    fetch(url, { credentials: 'same-origin' })
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'flex';
+        renderAds(data);
+      })
+      .catch(function(err) {
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'flex';
+        errorEl.textContent = '查询失败：' + err.message;
+        errorEl.style.display = 'block';
+      });
+  }
+  window.loadAdsTab = loadAdsTab;
+
+  function renderAds(data) {
+    data = data || {};
+    renderAdsAccounts(data.accounts || []);
+    renderAdsCampaigns(data.campaigns || []);
+    renderAdsDaily(data.daily || []);
+    renderAdsUnmatched(data.unmatched || []);
+  }
+
+  function renderAdsAccounts(accounts) {
+    var container = $('ppd-ads-accounts');
+    container.innerHTML = '';
+    if (!accounts || accounts.length === 0) {
+      container.innerHTML = '<div class="ppd-empty" style="padding:24px;">该产品 + 时段没有广告账户数据。</div>';
+      return;
+    }
+    accounts.forEach(function(a) {
+      var card = document.createElement('div');
+      card.className = 'ppd-stat-card';
+      var label = a.label || a.ad_account_id || '(unknown)';
+      var roasText = a.roas == null ? '—' : Number(a.roas).toFixed(2);
+      var impressions = (a.impressions || 0).toLocaleString();
+      var clicks = (a.clicks || 0).toLocaleString();
+      card.innerHTML =
+        '<div class="ppd-stat-label">' + escHtml(label) + '</div>'
+        + '<div class="ppd-stat-value">' + money(a.spend_usd) + '</div>'
+        + '<div class="ppd-stat-sub">展示 ' + impressions + ' · 点击 ' + clicks + ' · ROAS ' + roasText + '</div>';
+      container.appendChild(card);
+    });
+  }
+
+  function renderAdsCampaigns(campaigns) {
+    var wrap = $('ppd-ads-campaigns-wrap');
+    var emptyEl = $('ppd-ads-campaigns-empty');
+    var countEl = $('ppd-ads-campaigns-count');
+    countEl.textContent = '(' + campaigns.length + ')';
+    if (!campaigns || campaigns.length === 0) {
+      wrap.style.display = 'none';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    wrap.style.display = 'block';
+
+    var tbody = document.querySelector('#ppd-ads-campaigns-table tbody');
+    var html = campaigns.map(function(c) {
+      var ctrText = c.ctr == null ? '—' : (Number(c.ctr) * 100).toFixed(2) + '%';
+      var cpcText = c.cpc == null ? '—' : money(c.cpc);
+      var roasText = c.roas == null ? '—' : Number(c.roas).toFixed(2);
+      // Meta 自报 ROAS / 购买价值（如果有，用小标注挂在 ROAS 旁，不新增列）
+      var roasMetaSub = '';
+      if (c.roas_meta != null && c.roas_meta > 0) {
+        roasMetaSub = '<div style="font-size:10px; color:var(--text-user-badge); font-weight:400;">Meta 自报 '
+          + Number(c.roas_meta).toFixed(2)
+          + (c.purchase_value_usd ? ' / ' + money(c.purchase_value_usd) : '')
+          + '</div>';
+      }
+      var profit = c.profit_contribution_usd;
+      return '<tr>'
+        + '<td>' + escHtml(c.ad_account_name || c.ad_account_id || '') + '</td>'
+        + '<td style="text-align:left; max-width:280px; white-space:normal;">'
+        +   '<div>' + escHtml(c.campaign_name || '(unnamed)') + '</div>'
+        +   '<div style="font-size:11px; color:var(--text-user-badge); font-family:var(--font-sans, sans-serif);">' + escHtml(c.normalized_campaign_code || '') + '</div>'
+        + '</td>'
+        + '<td class="ppd-num">' + money(c.spend_usd) + '</td>'
+        + '<td class="ppd-num">' + (c.impressions || 0).toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + (c.clicks || 0).toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + (c.result_count || 0).toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + ctrText + '</td>'
+        + '<td class="ppd-num">' + cpcText + '</td>'
+        + '<td class="ppd-num">' + (c.attributed_order_count || 0).toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + money(c.attributed_revenue_usd) + '</td>'
+        + '<td class="ppd-num">' + roasText + roasMetaSub + '</td>'
+        + '<td class="ppd-num ' + profitClass(profit) + '">' + money(profit) + '</td>'
+        + '</tr>';
+    }).join('');
+    tbody.innerHTML = html;
+  }
+
+  function renderAdsDaily(daily) {
+    var wrap = $('ppd-ads-daily-wrap');
+    var emptyEl = $('ppd-ads-daily-empty');
+    var countEl = $('ppd-ads-daily-count');
+    countEl.textContent = '(' + daily.length + ')';
+    if (!daily || daily.length === 0) {
+      wrap.style.display = 'none';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    wrap.style.display = 'block';
+
+    var tbody = document.querySelector('#ppd-ads-daily-table tbody');
+    var html = daily.map(function(d) {
+      var spend = Number(d.spend_usd) || 0;
+      var revenue = Number(d.revenue_usd) || 0;
+      var roas = spend > 0 ? (revenue / spend) : null;
+      var roasText = roas == null ? '—' : roas.toFixed(2);
+      return '<tr>'
+        + '<td>' + escHtml(d.date || '') + '</td>'
+        + '<td class="ppd-num">' + money(spend) + '</td>'
+        + '<td class="ppd-num">' + money(revenue) + '</td>'
+        + '<td class="ppd-num">' + roasText + '</td>'
+        + '</tr>';
+    }).join('');
+    tbody.innerHTML = html;
+  }
+
+  function renderAdsUnmatched(unmatched) {
+    var wrap = $('ppd-ads-unmatched-wrap');
+    var emptyEl = $('ppd-ads-unmatched-empty');
+    var countEl = $('ppd-ads-unmatched-count');
+    countEl.textContent = '(' + unmatched.length + ')';
+    if (!unmatched || unmatched.length === 0) {
+      wrap.style.display = 'none';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    wrap.style.display = 'block';
+
+    var tbody = document.querySelector('#ppd-ads-unmatched-table tbody');
+    tbody.innerHTML = '';
+    unmatched.forEach(function(u) {
+      var tr = document.createElement('tr');
+      var code = u.normalized_campaign_code || '';
+      tr.innerHTML =
+          '<td style="text-align:left; font-family:var(--font-sans, sans-serif);">' + escHtml(code) + '</td>'
+        + '<td style="text-align:left; max-width:300px; white-space:normal;">' + escHtml(u.campaign_name || '') + '</td>'
+        + '<td class="ppd-num">' + money(u.spend_usd) + '</td>'
+        + '<td></td>';
+      var actionTd = tr.lastElementChild;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ppd-btn';
+      btn.textContent = '配对到本产品';
+      btn.addEventListener('click', function() {
+        manualMatchCampaign(code, btn);
+      });
+      actionTd.appendChild(btn);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function manualMatchCampaign(campaignCode, btn) {
+    var pid = productSelect.value;
+    if (!pid || pid === '0' || pid === 'ALL') {
+      alert('请先选择具体产品。');
+      return;
+    }
+    if (!campaignCode) {
+      alert('campaign code 缺失。');
+      return;
+    }
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '配对中…';
+    }
+    fetch('/order-analytics/product-profit/ads/manual-match', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_code: campaignCode, product_id: Number(pid) }),
+    })
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        }
+        return r.json();
+      })
+      .then(function() {
+        alert('配对成功');
+        loadAdsTab();
+      })
+      .catch(function(err) {
+        alert('配对失败：' + err.message);
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '配对到本产品';
+        }
+      });
   }
 
   // ── 总账卡片 ───────────────────────────
