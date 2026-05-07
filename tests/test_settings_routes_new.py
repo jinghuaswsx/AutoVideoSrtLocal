@@ -179,6 +179,19 @@ def test_settings_get_renders_bindings_rows(admin_no_db_client):
     assert "video_score.run" in body or "视频评分" in body
 
 
+def test_settings_bindings_doubao_models_include_seed_2_lite(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"):
+        resp = admin_no_db_client.get("/settings?tab=bindings")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "doubao-seed-2-0-lite-260215" in body
+
+
 def test_settings_get_renders_gpt_5_mini_translate_option(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
          patch("web.routes.settings._provider_rows_by_group",
