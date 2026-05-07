@@ -107,7 +107,7 @@ def test_aggregate_stats_empty_db_returns_null_rate(monkeypatch):
 
 
 def test_aggregate_stats_sql_filters_and_uses_owner_expr(monkeypatch):
-    """SQL 应包含 owner_name_expr、排除 lang='en'、排除 deleted_at。"""
+    """SQL 应包含 owner_name_expr、删除过滤和日期过滤，并纳入英语素材。"""
     from appcore import pushes
     captured = {}
 
@@ -122,7 +122,7 @@ def test_aggregate_stats_sql_filters_and_uses_owner_expr(monkeypatch):
     )
     pushes.aggregate_stats_by_owner("2026-04-01", "2026-04-26")
     assert "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)" in captured["sql"]
-    assert "i.lang <> 'en'" in captured["sql"]
+    assert "i.lang <> 'en'" not in captured["sql"]
     assert "i.deleted_at IS NULL" in captured["sql"]
     assert "p.deleted_at IS NULL" in captured["sql"]
     assert "i.created_at >= %s" in captured["sql"]

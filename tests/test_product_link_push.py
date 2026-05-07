@@ -35,19 +35,21 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
     assert preview["payload"] == {
         "handle": "demo-rjc",
         "product_links": [
+            "https://newjoyloo.com/products/demo-rjc",
             "https://newjoyloo.com/de/products/demo-rjc-special",
             "https://newjoyloo.com/fr/products/demo-rjc",
             "https://newjoyloo.com/ja/products/demo-rjc",
+            "https://omurio.com/products/demo-rjc",
             "https://omurio.com/de/products/demo-rjc",
             "https://omurio.com/fr/products/demo-rjc",
             "https://omurio.com/ja/products/demo-rjc",
         ],
     }
     assert preview["links"][0] == {
-        "lang": "de",
-        "language_name": "de",
+        "lang": "en",
+        "language_name": "en",
         "domain": "newjoyloo.com",
-        "url": "https://newjoyloo.com/de/products/demo-rjc-special",
+        "url": "https://newjoyloo.com/products/demo-rjc",
     }
 
 
@@ -376,7 +378,9 @@ def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatc
     assert captured["json"] == {
         "handle": "demo-rjc",
         "product_links": [
+            "https://newjoyloo.com/products/demo-rjc",
             "https://newjoyloo.com/de/products/demo-rjc",
+            "https://omurio.com/products/demo-rjc",
             "https://omurio.com/de/products/demo-rjc",
         ],
     }
@@ -680,7 +684,7 @@ def test_medias_assets_include_product_link_push_entry():
     assert "openProductLinksPushModal" in script
     assert "openProductCopyPushModal" in script
     assert "投放链接 JSON 预览" in template
-    assert "小语种文案 JSON 预览" in template
+    assert "文案 JSON 预览" in template
     assert "推送用户" not in script
     link_preview_start = script.index("function productLinksPushPreviewJson")
     link_preview_end = script.index("function setProductLinksPushActiveTab")
@@ -766,11 +770,11 @@ def test_medias_product_copy_push_modal_matches_links_push_tabs_and_footer():
     script = Path("web/static/medias.js").read_text(encoding="utf-8")
 
     assert 'id="productCopyPushModalMask" class="oc-modal-mask oc oc-product-links-mask"' in template
-    assert 'role="tablist" aria-label="小语种文案推送内容"' in template
+    assert 'role="tablist" aria-label="文案推送内容"' in template
     assert 'data-product-copy-tab="texts"' in template
     assert 'data-product-copy-tab="json"' in template
-    assert "推送小语种文案" in template
-    assert "小语种文案 JSON 预览" in template
+    assert "推送文案" in template
+    assert "文案 JSON 预览" in template
     assert 'id="productCopyPushPanelTexts"' in template
     assert 'id="productCopyPushPanelJson"' in template
     assert 'data-product-copy-panel="texts"' in template

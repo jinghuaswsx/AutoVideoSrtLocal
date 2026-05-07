@@ -149,13 +149,19 @@ def build_material_push_payload(
     items = list_items_fn(product_id, lang)
     code = (product_code or product.get("product_code") or "").strip().lower()
     product_for_links = {**product, "product_code": code}
+    normalized_lang = (lang or "en").strip().lower() or "en"
+    link_langs = ["en"]
+    if normalized_lang != "en":
+        link_langs.append(normalized_lang)
     product_links = []
-    if lang != "en":
-        product_links = [
-            row["url"]
-            for row in resolve_product_page_urls_fn(lang, product_for_links)
-            if row.get("url")
-        ]
+    seen_links: set[str] = set()
+    for link_lang in link_langs:
+        for row in resolve_product_page_urls_fn(link_lang, product_for_links):
+            url = row.get("url")
+            if not url or url in seen_links:
+                continue
+            seen_links.add(url)
+            product_links.append(url)
     texts = resolve_push_texts_fn(product_id)
 
     videos = []

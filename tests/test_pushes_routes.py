@@ -1036,7 +1036,7 @@ def test_logs_returns_history(logged_in_client, seeded_item):
 
 
 # ================================================================
-# 新增：推送凭据 + 小语种文案推送
+# 新增：推送凭据 + 文案推送
 # ================================================================
 
 
@@ -1266,6 +1266,7 @@ def test_pushes_assets_include_product_link_push_tabs():
     assert "product_links_push" in script
     assert "product-links-push" in script
     assert "预览无需推送" not in script
+    assert "if (l.code === 'en') return;" not in script
     assert "function isProductLinksMode" in script
     assert "if (isProductLinksMode())" in script
     assert "setMode(activeMode);" in script

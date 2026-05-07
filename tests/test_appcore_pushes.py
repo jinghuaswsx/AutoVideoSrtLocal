@@ -75,7 +75,17 @@ def user_id():
 def product_with_item(user_id):
     code = f"push-test-{uuid.uuid4().hex[:8]}"
     pid = medias.create_product(user_id, "推送测试产品")
-    medias.update_product(pid, product_code=code, ad_supported_langs="de,fr")
+    medias.update_product(
+        pid,
+        product_code=code,
+        ad_supported_langs="de,fr",
+        shopify_image_status_json={
+            "de": {
+                "replace_status": "confirmed",
+                "link_status": "normal",
+            },
+        },
+    )
     item_id = medias.create_item(
         pid, user_id, filename="demo.mp4", object_key="u/1/m/1/demo.mp4",
         cover_object_key="u/1/m/1/cover.jpg",
@@ -105,6 +115,8 @@ def test_compute_readiness_all_satisfied(product_with_item):
         "has_copywriting": True,
         "lang_supported": True,
         "has_push_texts": True,
+        "shopify_image_confirmed": True,
+        "shopify_image_reason": "",
     }
 
 
@@ -127,6 +139,31 @@ def test_compute_readiness_lang_not_supported(product_with_item):
     product = medias.get_product(pid)
     r = pushes.compute_readiness(item, product)
     assert r["lang_supported"] is False
+
+
+def test_compute_readiness_english_lang_supported_without_ad_supported_langs(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.pushes.query_one",
+        lambda sql, args: {"ok": 1}
+        if "media_copywritings" in sql or "media_push_logs" in sql
+        else None,
+    )
+    monkeypatch.setattr(
+        "appcore.pushes._has_valid_en_push_texts",
+        lambda product_id: True,
+    )
+    item = {
+        "id": 10,
+        "product_id": 20,
+        "lang": "en",
+        "object_key": "video.mp4",
+        "cover_object_key": "cover.jpg",
+    }
+    product = {"id": 20, "ad_supported_langs": "", "listing_status": "上架"}
+    r = pushes.compute_readiness(item, product)
+    assert r["has_copywriting"] is True
+    assert r["lang_supported"] is True
+    assert r["shopify_image_confirmed"] is True
 
 
 def test_compute_status_pushed(product_with_item):
@@ -256,11 +293,63 @@ def test_build_item_payload_basic(monkeypatch, product_with_item):
     assert len(payload["videos"]) == 1
     assert payload["videos"][0]["url"].startswith("http://local.test/medias/obj/")
     assert payload["videos"][0]["image_url"].startswith("http://local.test/medias/obj/")
-    # 6 条非英文链接（排除 en）
-    assert len(payload["product_links"]) == 6
+    # 英语 + 6 条非英文链接
+    assert len(payload["product_links"]) == 7
+    assert f"https://newjoyloo.com/products/{product['product_code']}" in payload["product_links"]
     for link in payload["product_links"]:
-        assert "/en/" not in link
         assert product["product_code"] in link
+
+
+def test_build_item_payload_includes_english_product_link_without_db(monkeypatch):
+    monkeypatch.setattr("appcore.pushes.medias.is_product_listed", lambda product: True)
+    monkeypatch.setattr(
+        "appcore.pushes.medias.list_enabled_language_codes",
+        lambda: ["en", "de"],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_product_page_urls",
+        lambda lang, product: [{
+            "url": (
+                f"https://newjoyloo.com/products/{product['product_code']}"
+                if lang == "en"
+                else f"https://newjoyloo.com/de/products/{product['product_code']}"
+            )
+        }],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_push_texts",
+        lambda product_id: [{"title": "T", "message": "M", "description": "D"}],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.build_media_public_url",
+        lambda key: f"https://local/{key}" if key else None,
+    )
+
+    payload = pushes.build_item_payload(
+        {
+            "id": 1,
+            "product_id": 10,
+            "lang": "de",
+            "display_name": "demo.mp4",
+            "filename": "demo.mp4",
+            "file_size": 123,
+            "object_key": "video.mp4",
+            "cover_object_key": "cover.jpg",
+        },
+        {
+            "id": 10,
+            "name": "Demo",
+            "product_code": "demo-rjc",
+            "importance": 3,
+            "selling_points": "",
+            "listing_status": "上架",
+        },
+    )
+
+    assert payload["product_links"] == [
+        "https://newjoyloo.com/products/demo-rjc",
+        "https://newjoyloo.com/de/products/demo-rjc",
+    ]
 
 
 def test_resolve_localized_text_payload_returns_first_current_lang_copy(monkeypatch):
@@ -398,10 +487,16 @@ def test_build_localized_texts_request_returns_empty_array_when_text_incomplete(
     assert body == {"texts": []}
 
 
-def test_resolve_localized_texts_payload_returns_all_non_english_first_rows(monkeypatch):
+def test_resolve_localized_texts_payload_returns_all_enabled_first_rows_including_english(monkeypatch):
     monkeypatch.setattr(
         "appcore.pushes.query",
         lambda sql, args: [
+            {
+                "lang": "en",
+                "title": "EN 标题",
+                "body": "EN 文案",
+                "description": "EN 描述",
+            },
             {
                 "lang": "fr",
                 "title": "",
@@ -421,12 +516,6 @@ def test_resolve_localized_texts_payload_returns_all_non_english_first_rows(monk
                 "description": "DE 描述",
             },
             {
-                "lang": "en",
-                "title": "EN 标题",
-                "body": "EN 文案",
-                "description": "EN 描述",
-            },
-            {
                 "lang": "it",
                 "title": "IT 标题",
                 "body": "IT 文案",
@@ -437,6 +526,7 @@ def test_resolve_localized_texts_payload_returns_all_non_english_first_rows(monk
     monkeypatch.setattr(
         "appcore.pushes.medias.list_languages",
         lambda: [
+            {"code": "en"},
             {"code": "de"},
             {"code": "fr"},
             {"code": "it"},
@@ -444,12 +534,18 @@ def test_resolve_localized_texts_payload_returns_all_non_english_first_rows(monk
     )
     monkeypatch.setattr(
         "appcore.pushes.medias.get_language_name",
-        lambda code: {"de": "德语", "fr": "法语", "it": "意大利语"}.get(code, code),
+        lambda code: {"en": "英语", "de": "德语", "fr": "法语", "it": "意大利语"}.get(code, code),
     )
 
     payload = pushes.resolve_localized_texts_payload({"product_id": 123})
 
     assert payload == [
+        {
+            "title": "EN 标题",
+            "message": "EN 文案",
+            "description": "EN 描述",
+            "lang": "英语",
+        },
         {
             "title": "DE 标题",
             "message": "DE 文案",
@@ -582,6 +678,32 @@ def test_list_items_for_push_selects_product_owner_name(monkeypatch):
     sql = captured["sql"]
     assert "u.username AS owner_name" in sql
     assert "LEFT JOIN users u ON u.id = p.user_id" in sql
+
+
+def test_list_items_for_push_does_not_exclude_english(monkeypatch):
+    captured = {"count_sql": "", "list_sql": ""}
+
+    def fake_query_one(sql, args):
+        captured["count_sql"] = sql
+        return {"c": 0}
+
+    def fake_query(sql, args):
+        captured["list_sql"] = sql
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query_one", fake_query_one)
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    rows, total = pushes.list_items_for_push(offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    assert "i.lang <> 'en'" not in captured["count_sql"]
+    assert "i.lang <> 'en'" not in captured["list_sql"]
 
 
 def test_list_items_for_push_filter_by_owner_id(monkeypatch):
