@@ -136,6 +136,7 @@ def test_split_shopify_fee_for_order_us_buyer_has_no_card_fee_for_ca_store():
 
     assert result["international_card_fee_usd"] == 0.0
     assert result["shopify_fee_total_usd"] == 2.80
+    assert result["shopify_tier"] == "A"
 
 
 def test_split_shopify_fee_for_order_international_eur():

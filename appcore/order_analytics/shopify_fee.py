@@ -114,13 +114,14 @@ def split_shopify_fee_for_order(
     if buyer_country:
         card_country = buyer_country.strip().upper()
         presentment_currency = infer_presentment_currency_from_country(card_country)
+        is_cross_border = card_country not in {store_country, "US"}
+        tier_card_country = card_country if is_cross_border else store_country
         tier = classify_tier(
             presentment_currency,
-            card_country,
+            tier_card_country,
             settlement_currency=settlement_currency,
             store_country=store_country,
         )
-        is_cross_border = card_country not in {store_country, "US"}
     else:
         card_country = None
         presentment_currency = settlement_currency
