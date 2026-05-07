@@ -94,13 +94,20 @@ class OmniTranslateRunner(MultiTranslateRunner):
     # ------------------------------------------------------------------
 
     def _resolve_av_inputs(self, task: dict) -> dict:
+        # 注意：task_state 给每个 task 默认初始化 av_translate_inputs 含
+        # ``target_language=None`` （AV_TRANSLATE_INPUTS_DEFAULT），所以这些
+        # key 在 dict 里已存在但是 None。setdefault 看到 key 已存不会覆盖，
+        # 会把 None 透传给下游 → 撞"task.target_lang is required"。
+        # 用 active "or" 写入：None / 空串 都被当作未设。
         av_inputs = dict(task.get("av_translate_inputs") or {})
         target_language = self._resolve_target_lang(task)
-        av_inputs.setdefault("target_language", target_language)
-        av_inputs.setdefault("target_language_name", target_language)
-        av_inputs.setdefault("target_market", "US")
-        av_inputs.setdefault("sync_granularity", "sentence")
-        av_inputs.setdefault("product_overrides", {})
+        av_inputs["target_language"] = av_inputs.get("target_language") or target_language
+        av_inputs["target_language_name"] = (
+            av_inputs.get("target_language_name") or target_language
+        )
+        av_inputs["target_market"] = av_inputs.get("target_market") or "US"
+        av_inputs["sync_granularity"] = av_inputs.get("sync_granularity") or "sentence"
+        av_inputs["product_overrides"] = av_inputs.get("product_overrides") or {}
         return av_inputs
 
     def _target_language_name(self, av_inputs: dict) -> str:
