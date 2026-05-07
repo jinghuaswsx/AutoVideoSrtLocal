@@ -388,6 +388,12 @@
       <datalist id="ppd-product-list"></datalist>
     </label>
     <label>
+      <span>国家</span>
+      <select id="ppd-country-select">
+        <option value="">全部</option>
+      </select>
+    </label>
+    <label>
       <span>开始日期</span>
       <input type="date" id="ppd-from">
     </label>
@@ -413,8 +419,100 @@
   </section>
 
   <section class="ppd-tab-panel" data-panel="orders">
-    <!-- Task 6 把现有 5 个区块迁过来 -->
-    <div class="ppd-empty-tab">订单明细（Task 6 把下方 5 个区块迁入此处）</div>
+    <!-- Task 6: 5 区块迁移自 .ppd-main 主区 -->
+    <div class="ppd-empty" id="ppd-orders-empty" style="display:none">请在顶部选择具体产品。</div>
+    <div id="ppd-orders-content" style="display:none; flex-direction:column; gap:20px;">
+
+      <!-- 加载/错状态（订单 Tab 内） -->
+      <div class="ppd-loading" id="ppd-loading" style="display:none"><span class="ppd-spinner"></span>加载中…</div>
+      <div class="ppd-error" id="ppd-error" style="display:none"></div>
+
+      <div id="ppd-content" style="display:none; flex-direction:column; gap:20px;">
+
+        <!-- 2. 总账 -->
+        <section class="ppd-stats">
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">订单数</div>
+            <div class="ppd-stat-value" id="stat-orders">--</div>
+            <div class="ppd-stat-sub" id="stat-orders-sub">SKU 行 -- · 件数 --</div>
+          </div>
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">总收入</div>
+            <div class="ppd-stat-value" id="stat-revenue">--</div>
+            <div class="ppd-stat-sub">USD</div>
+          </div>
+          <div class="ppd-stat-card ppd-stat-emphasis">
+            <div class="ppd-stat-label">总利润</div>
+            <div class="ppd-stat-value" id="stat-profit">--</div>
+            <div class="ppd-stat-sub" id="stat-profit-sub">利润率 --</div>
+            <div class="ppd-stat-warn" id="stat-profit-warn" style="display:none;"></div>
+          </div>
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">广告费（修正）</div>
+            <div class="ppd-stat-value" id="stat-ad">--</div>
+            <div class="ppd-stat-sub">按账户↔店铺 1:1 重算</div>
+          </div>
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">采购+物流+手续费</div>
+            <div class="ppd-stat-value" id="stat-other">--</div>
+            <div class="ppd-stat-sub" id="stat-fee-source">真实 fee 覆盖率 --</div>
+            <div class="ppd-stat-warn" id="stat-cost-warn" style="display:none;"></div>
+          </div>
+        </section>
+
+        <!-- 3. 站点切片 -->
+        <section class="ppd-sites" id="ppd-sites"></section>
+
+        <!-- 4. 图表 -->
+        <section class="ppd-charts">
+          <div class="ppd-chart-card">
+            <h3>每日盈亏趋势</h3>
+            <div class="ppd-chart-wrap">
+              <canvas id="chart-daily"></canvas>
+            </div>
+          </div>
+          <div class="ppd-chart-card">
+            <h3>按国家利润</h3>
+            <div class="ppd-chart-wrap">
+              <canvas id="chart-country"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. 订单明细 -->
+        <section class="ppd-orders">
+          <div class="ppd-orders-head">
+            <h3>订单明细 <span id="orders-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span></h3>
+            <input type="search" id="orders-search" placeholder="按订单号 / SKU / 国家 搜索…">
+          </div>
+          <div class="ppd-table-wrap">
+            <table class="ppd-table" id="ppd-orders-table">
+              <thead>
+                <tr>
+                  <th data-sort="paid_at">付款时间</th>
+                  <th data-sort="dxm_package_id">订单号</th>
+                  <th data-sort="site">站点</th>
+                  <th data-sort="buyer_country">国家</th>
+                  <th data-sort="quantity" class="ppd-num">件数</th>
+                  <th data-sort="revenue_usd" class="ppd-num">收入<span class="col-unit">USD</span></th>
+                  <th data-sort="purchase_cost_usd" class="ppd-num">采购<span class="col-unit">USD</span></th>
+                  <th data-sort="shipping_cost_usd" class="ppd-num">物流<span class="col-unit">USD</span></th>
+                  <th data-sort="shopify_base_fee_usd" class="ppd-num">平台费<span class="col-unit">USD</span></th>
+                  <th data-sort="intl_card_fee_usd" class="ppd-num">国际卡<span class="col-unit">USD</span></th>
+                  <th data-sort="currency_conv_fee_usd" class="ppd-num">货币转换<span class="col-unit">USD</span></th>
+                  <th data-sort="shopify_fee_total_usd" class="ppd-num">合计费<span class="col-unit">USD</span></th>
+                  <th data-sort="ad_cost_recalc_usd" class="ppd-num">广告<span class="col-unit">USD</span></th>
+                  <th data-sort="profit_usd" class="ppd-num">利润<span class="col-unit">USD</span></th>
+                  <th>成本来源</th>
+                  <th>fee 来源</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
   </section>
 
   <section class="ppd-tab-panel" data-panel="country">
@@ -426,97 +524,6 @@
     <!-- Task 9 填充 -->
     <div class="ppd-empty-tab">广告明细（Task 9 填充）</div>
   </section>
-
-  <!-- 加载/空/错状态 -->
-  <div class="ppd-loading" id="ppd-loading"><span class="ppd-spinner"></span>加载中…</div>
-  <div class="ppd-empty" id="ppd-empty" style="display:none">选择产品 + 日期范围后点查询。</div>
-  <div class="ppd-error" id="ppd-error" style="display:none"></div>
-
-  <div id="ppd-content" style="display:none; flex-direction:column; gap:20px;">
-
-    <!-- 2. 总账 -->
-    <section class="ppd-stats">
-      <div class="ppd-stat-card">
-        <div class="ppd-stat-label">订单数</div>
-        <div class="ppd-stat-value" id="stat-orders">--</div>
-        <div class="ppd-stat-sub" id="stat-orders-sub">SKU 行 -- · 件数 --</div>
-      </div>
-      <div class="ppd-stat-card">
-        <div class="ppd-stat-label">总收入</div>
-        <div class="ppd-stat-value" id="stat-revenue">--</div>
-        <div class="ppd-stat-sub">USD</div>
-      </div>
-      <div class="ppd-stat-card ppd-stat-emphasis">
-        <div class="ppd-stat-label">总利润</div>
-        <div class="ppd-stat-value" id="stat-profit">--</div>
-        <div class="ppd-stat-sub" id="stat-profit-sub">利润率 --</div>
-        <div class="ppd-stat-warn" id="stat-profit-warn" style="display:none;"></div>
-      </div>
-      <div class="ppd-stat-card">
-        <div class="ppd-stat-label">广告费（修正）</div>
-        <div class="ppd-stat-value" id="stat-ad">--</div>
-        <div class="ppd-stat-sub">按账户↔店铺 1:1 重算</div>
-      </div>
-      <div class="ppd-stat-card">
-        <div class="ppd-stat-label">采购+物流+手续费</div>
-        <div class="ppd-stat-value" id="stat-other">--</div>
-        <div class="ppd-stat-sub" id="stat-fee-source">真实 fee 覆盖率 --</div>
-        <div class="ppd-stat-warn" id="stat-cost-warn" style="display:none;"></div>
-      </div>
-    </section>
-
-    <!-- 3. 站点切片 -->
-    <section class="ppd-sites" id="ppd-sites"></section>
-
-    <!-- 4. 图表 -->
-    <section class="ppd-charts">
-      <div class="ppd-chart-card">
-        <h3>每日盈亏趋势</h3>
-        <div class="ppd-chart-wrap">
-          <canvas id="chart-daily"></canvas>
-        </div>
-      </div>
-      <div class="ppd-chart-card">
-        <h3>按国家利润</h3>
-        <div class="ppd-chart-wrap">
-          <canvas id="chart-country"></canvas>
-        </div>
-      </div>
-    </section>
-
-    <!-- 5. 订单明细 -->
-    <section class="ppd-orders">
-      <div class="ppd-orders-head">
-        <h3>订单明细 <span id="orders-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span></h3>
-        <input type="search" id="orders-search" placeholder="按订单号 / SKU / 国家 搜索…">
-      </div>
-      <div class="ppd-table-wrap">
-        <table class="ppd-table" id="ppd-orders-table">
-          <thead>
-            <tr>
-              <th data-sort="paid_at">付款时间</th>
-              <th data-sort="dxm_package_id">订单号</th>
-              <th data-sort="site">站点</th>
-              <th data-sort="buyer_country">国家</th>
-              <th data-sort="quantity" class="ppd-num">件数</th>
-              <th data-sort="revenue_usd" class="ppd-num">收入<span class="col-unit">USD</span></th>
-              <th data-sort="purchase_cost_usd" class="ppd-num">采购<span class="col-unit">USD</span></th>
-              <th data-sort="shipping_cost_usd" class="ppd-num">物流<span class="col-unit">USD</span></th>
-              <th data-sort="shopify_base_fee_usd" class="ppd-num">平台费<span class="col-unit">USD</span></th>
-              <th data-sort="intl_card_fee_usd" class="ppd-num">国际卡<span class="col-unit">USD</span></th>
-              <th data-sort="currency_conv_fee_usd" class="ppd-num">货币转换<span class="col-unit">USD</span></th>
-              <th data-sort="shopify_fee_total_usd" class="ppd-num">合计费<span class="col-unit">USD</span></th>
-              <th data-sort="ad_cost_recalc_usd" class="ppd-num">广告<span class="col-unit">USD</span></th>
-              <th data-sort="profit_usd" class="ppd-num">利润<span class="col-unit">USD</span></th>
-              <th>成本来源</th>
-              <th>fee 来源</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-  </div>
 
 </main>
 {% endblock %}
@@ -530,14 +537,16 @@
   var $ = function(id) { return document.getElementById(id); };
   var productInput = $('ppd-product');
   var productListEl = $('ppd-product-list');
+  var countrySelect = $('ppd-country-select');
   var dateFromInput = $('ppd-from');
   var dateToInput = $('ppd-to');
   var reloadBtn = $('ppd-reload');
   var downloadBtn = $('ppd-download');
   var loading = $('ppd-loading');
-  var empty = $('ppd-empty');
   var errorBox = $('ppd-error');
   var content = $('ppd-content');
+  var ordersEmpty = $('ppd-orders-empty');
+  var ordersContent = $('ppd-orders-content');
 
   var dailyChart = null;
   var countryChart = null;
@@ -573,8 +582,17 @@
         productLabelToId = {};
         productCodeToLabel = {};
         var opts = data.products || [];
+        // Task 6: 首选项 "全部产品"（id=0, code=ALL），用于 Tab ① 列表 / Tab ③ 国家看板
+        var ALL_LABEL = '全部产品';
+        productLabelToId[ALL_LABEL] = '0';
+        productCodeToLabel['ALL'] = ALL_LABEL;
+        var allOpt = document.createElement('option');
+        allOpt.value = ALL_LABEL;
+        productListEl.appendChild(allOpt);
         if (opts.length === 0) {
-          productInput.placeholder = '没有产品';
+          productInput.placeholder = '搜索 product_code 或产品名…（仅"全部产品"可用）';
+          // 没有具体产品时仍保留"全部产品"作为默认
+          productInput.value = ALL_LABEL;
           return;
         }
         opts.forEach(function(p) {
@@ -586,9 +604,10 @@
           productListEl.appendChild(o);
         });
         productInput.placeholder = '搜索 product_code 或产品名…';
-        // 默认选中 ARP9 水枪如果有
+        // 默认选中 ARP9 水枪如果有，否则默认 "全部产品"
         var arp9Label = productCodeToLabel['fully-automatic-water-blaster-rjc'];
         if (arp9Label) productInput.value = arp9Label;
+        else productInput.value = ALL_LABEL;
       })
       .catch(function(err) {
         productInput.placeholder = '加载失败：' + err;
@@ -631,37 +650,52 @@
     return d.innerHTML;
   }
 
-  // ── 主查询入口 ─────────────────────────
-  function runQuery() {
+  // ── Tab ② 主查询入口（Task 6: renamed from runQuery → loadOrdersTab）──────
+  function loadOrdersTab() {
     var pid = getSelectedProductId();
+    var country = (countrySelect.value || '').trim();
     var df = dateFromInput.value;
     var dt = dateToInput.value;
     errorBox.style.display = 'none';
-    if (!pid) {
-      errorBox.textContent = productInput.value
-        ? '产品未匹配，请从下拉里选一个'
-        : '请先选择产品';
-      errorBox.style.display = 'block';
-      content.style.display = 'none';
-      empty.style.display = 'none';
+
+    // Task 6: 产品 ID = 0 / 'ALL' / '' → 显示空状态，不发请求
+    // 兼容 datalist 输入：未匹配到 product 时也按"未选具体产品"处理
+    if (!pid || pid === '0') {
+      var rawInput = (productInput.value || '').trim();
+      if (rawInput && rawInput !== '全部产品') {
+        ordersEmpty.textContent = '产品未匹配，请从下拉里选一个具体产品。';
+      } else {
+        ordersEmpty.textContent = '请在顶部选择具体产品。';
+      }
+      ordersEmpty.style.display = 'block';
+      ordersContent.style.display = 'none';
       return;
     }
+
     if (!df || !dt || df > dt) {
+      ordersEmpty.style.display = 'none';
+      ordersContent.style.display = 'flex';
+      content.style.display = 'none';
+      loading.style.display = 'none';
       errorBox.textContent = '日期范围不正确';
       errorBox.style.display = 'block';
       return;
     }
+
+    ordersEmpty.style.display = 'none';
+    ordersContent.style.display = 'flex';
     loading.style.display = 'block';
     content.style.display = 'none';
-    empty.style.display = 'none';
     errorBox.style.display = 'none';
 
-    // 更新下载链接
+    // 更新下载链接（country 暂不传给后端 xlsx，保持原行为）
     downloadBtn.href = '/order-analytics/product-profit/report.xlsx?'
       + 'product_id=' + encodeURIComponent(pid)
       + '&date_from=' + encodeURIComponent(df)
       + '&date_to=' + encodeURIComponent(dt);
 
+    // Task 6 决策：report.json 后端当前不接 country，国家筛选用前端过滤 orders 表
+    // （总账/站点/每日/国家图仍是全量；后续 Task 可改后端）
     var url = '/order-analytics/product-profit/report.json?'
       + 'product_id=' + encodeURIComponent(pid)
       + '&date_from=' + encodeURIComponent(df)
@@ -678,8 +712,12 @@
         lastReport = data;
         loading.style.display = 'none';
         if (!data.orders || data.orders.length === 0) {
-          empty.textContent = '该产品 + 时段没有订单数据';
-          empty.style.display = 'block';
+          content.style.display = 'none';
+          errorBox.textContent = '';
+          errorBox.style.display = 'none';
+          ordersEmpty.textContent = '该产品 + 时段没有订单数据';
+          ordersEmpty.style.display = 'block';
+          ordersContent.style.display = 'none';
           return;
         }
         content.style.display = 'flex';
@@ -695,6 +733,8 @@
         errorBox.style.display = 'block';
       });
   }
+  // 暴露给 switchTab 调用（IIFE 作用域内函数必须 window 暴露）
+  window.loadOrdersTab = loadOrdersTab;
 
   // ── 总账卡片 ───────────────────────────
   function renderTotal(t) {
@@ -842,8 +882,16 @@
 
   function applyFilter(orders) {
     var q = ($('orders-search').value || '').trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter(function(o) {
+    // Task 6: 顶部国家筛选 → 前端过滤 orders 表（大写比较 buyer_country）
+    var country = (countrySelect.value || '').trim().toUpperCase();
+    var filtered = orders;
+    if (country) {
+      filtered = filtered.filter(function(o) {
+        return (o.buyer_country || '').toUpperCase() === country;
+      });
+    }
+    if (!q) return filtered;
+    return filtered.filter(function(o) {
       return ((o.dxm_package_id || '') + ' ' + (o.product_sku || '') + ' '
               + (o.buyer_country || '') + ' ' + (o.site || '')).toLowerCase().includes(q);
     });
@@ -928,23 +976,32 @@
     if (lastReport) renderOrders(lastReport.orders);
   });
 
-  // 触发查询
-  reloadBtn.addEventListener('click', runQuery);
-  // datalist 选中或输入完毕（blur）会触发 change；只在能反查到 id 时自动跑
+  // ── 全局筛选触发：重新加载当前 active Tab（Task 6）─────────
+  function reloadActiveTab() {
+    var activeBtn = document.querySelector('.ppd-tab.active');
+    if (!activeBtn) return;
+    var active = activeBtn.dataset.tab;
+    if (window.switchTab) window.switchTab(active);
+  }
+  reloadBtn.addEventListener('click', reloadActiveTab);
+  // datalist 选中或输入完毕（blur）会触发 change；只在能反查到 id 时（包括"全部产品" → '0'）才重新加载
   productInput.addEventListener('change', function() {
-    if (getSelectedProductId()) runQuery();
+    if (getSelectedProductId() !== '') reloadActiveTab();
   });
   // 输入框里按 Enter 也直接查（不让浏览器只是 form 默认行为）
   productInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      runQuery();
+      reloadActiveTab();
     }
   });
+  countrySelect.addEventListener('change', reloadActiveTab);
 
-  // 初始化
+  // 初始化产品下拉，再走 switchTab 触发当前 Tab 的 load 函数
   loadProducts().then(function() {
-    if (getSelectedProductId()) runQuery();
+    // 初始化 Tab：从 URL 读 ?tab=xxx，默认 'list'
+    var initialTab = (new URLSearchParams(location.search).get('tab')) || 'list';
+    if (window.switchTab) window.switchTab(initialTab);
   });
 
   // ========== Tab 切换骨架（Task 5）==========
@@ -975,9 +1032,8 @@
     btn.addEventListener('click', function() { switchTab(btn.dataset.tab); });
   });
 
-  // 初始化：从 URL 读 ?tab=xxx，默认 'list'
-  var initialTab = (new URLSearchParams(location.search).get('tab')) || 'list';
-  switchTab(initialTab);
+  // Task 5 的末尾初始化已挪到上方 loadProducts().then(...) 内，
+  // 确保产品下拉就绪后再触发当前 Tab 的 load 函数。
 })();
 </script>
 {% endblock %}
