@@ -26,6 +26,7 @@ from appcore.order_analytics.campaign_overrides import (
 from appcore.order_analytics.cost_completeness import get_completeness_overview
 from appcore.order_analytics.order_profit_aggregation import (
     get_order_profit_detail,
+    get_order_profit_incomplete_products,
     get_order_profit_list,
     get_order_profit_loss_alerts,
     get_order_profit_summary_for_window,
@@ -308,6 +309,26 @@ def api_products_for_match():
         build_order_profit_payload_response(
             {"products": list_products_for_manual_match()}
         )
+    )
+
+
+@bp.route("/order-profit/api/incomplete_products")
+@login_required
+@permission_required("order_profit")
+def api_incomplete_products():
+    today = date.today()
+    date_from = _parse_date_param("from", today - timedelta(days=7))
+    date_to = _parse_date_param("to", today)
+    products = get_order_profit_incomplete_products(
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return order_profit_flask_response(
+        build_order_profit_payload_response({
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "products": products,
+        })
     )
 
 

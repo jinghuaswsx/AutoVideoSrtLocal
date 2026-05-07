@@ -15,6 +15,7 @@ import json
 import sys
 from datetime import date
 from typing import Any
+from urllib.parse import quote
 
 
 def _facade():
@@ -86,6 +87,19 @@ def _json_column(value: Any, expected_type: type, default: Any) -> Any:
         if isinstance(parsed, expected_type):
             return parsed
     return default.copy()
+
+
+def _json_list_values(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    values: list[str] = []
+    raw_parts = value.split("||") if isinstance(value, str) else [value]
+    for raw in raw_parts:
+        parsed = _json_column(raw, list, [])
+        for item in parsed:
+            if item:
+                values.append(str(item))
+    return sorted(set(values))
 
 
 def _format_detail_line(row: dict[str, Any]) -> dict[str, Any]:
@@ -325,14 +339,15 @@ def get_order_profit_status_summary(
         bucket["shipping_cost"] = float(row.get("shipping_cost") or 0)
         bucket["return_reserve"] = float(row.get("return_reserve") or 0)
 
-    last_run = query(
-        "SELECT unallocated_ad_spend_usd FROM order_profit_runs "
-        "WHERE status='success' ORDER BY id DESC LIMIT 1",
-        (),
+    unallocated_rows = query(
+        "SELECT COALESCE(SUM(spend_usd), 0) AS unallocated_ad_spend_usd "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE product_id IS NULL AND report_date BETWEEN %s AND %s",
+        (date_from, date_to),
     )
     unallocated = (
-        float((last_run[0] or {}).get("unallocated_ad_spend_usd") or 0)
-        if last_run
+        float((unallocated_rows[0] or {}).get("unallocated_ad_spend_usd") or 0)
+        if unallocated_rows
         else 0
     )
 
@@ -348,6 +363,45 @@ def get_order_profit_status_summary(
         "unallocated_ad_spend_usd": unallocated,
         "margin_pct": round(margin, 2) if margin is not None else None,
     }
+
+
+def get_order_profit_incomplete_products(
+    *,
+    date_from: date,
+    date_to: date,
+) -> list[dict[str, Any]]:
+    rows = query(
+        "SELECT p.product_id, "
+        "       MAX(m.product_code) AS product_code, "
+        "       MAX(m.name) AS product_name, "
+        "       COUNT(*) AS line_count, "
+        "       GROUP_CONCAT(DISTINCT p.missing_fields SEPARATOR '||') AS missing_fields_json, "
+        "       MAX(p.business_date) AS last_seen "
+        "FROM order_profit_lines p "
+        "LEFT JOIN media_products m ON m.id = p.product_id "
+        "WHERE p.business_date BETWEEN %s AND %s "
+        "  AND p.status = 'incomplete' "
+        "  AND p.product_id IS NOT NULL "
+        "GROUP BY p.product_id "
+        "ORDER BY line_count DESC, last_seen DESC",
+        (date_from, date_to),
+    )
+    products: list[dict[str, Any]] = []
+    for row in rows or []:
+        product_code = row.get("product_code") or f"#{row.get('product_id')}"
+        product_name = row.get("product_name") or "未命名产品"
+        last_seen = row.get("last_seen")
+        products.append({
+            "product_id": int(row.get("product_id") or 0),
+            "product_code": product_code,
+            "product_name": product_name,
+            "display_label": f"{product_name} - {product_code}",
+            "line_count": int(row.get("line_count") or 0),
+            "missing_fields": _json_list_values(row.get("missing_fields_json")),
+            "last_seen": last_seen.isoformat() if hasattr(last_seen, "isoformat") else last_seen,
+            "medias_search_url": f"/medias/?q={quote(str(product_code))}",
+        })
+    return products
 
 
 def list_order_profit_lines(

@@ -133,6 +133,47 @@ def test_order_profit_products_for_match_route_delegates_query(
     ]
 
 
+def test_order_profit_incomplete_products_route_delegates_query(
+    authed_client_no_db,
+    monkeypatch,
+):
+    import web.routes.order_profit as route
+
+    captured = {}
+
+    def fake_incomplete_products(**kwargs):
+        captured.update(kwargs)
+        return [
+            {
+                "product_id": 7,
+                "product_name": "阿尔法产品",
+                "product_code": "ALPHA-001",
+                "display_label": "阿尔法产品 - ALPHA-001",
+                "line_count": 3,
+                "missing_fields": ["purchase_price"],
+                "medias_search_url": "/medias/?q=ALPHA-001",
+            }
+        ]
+
+    monkeypatch.setattr(
+        route,
+        "get_order_profit_incomplete_products",
+        fake_incomplete_products,
+    )
+
+    resp = authed_client_no_db.get(
+        "/order-profit/api/incomplete_products?from=2026-05-01&to=2026-05-03"
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["date_from"] == "2026-05-01"
+    assert payload["date_to"] == "2026-05-03"
+    assert payload["products"][0]["display_label"] == "阿尔法产品 - ALPHA-001"
+    assert captured["date_from"].isoformat() == "2026-05-01"
+    assert captured["date_to"].isoformat() == "2026-05-03"
+
+
 def test_order_profit_detail_missing_returns_404(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "web.routes.order_profit.get_order_profit_detail",

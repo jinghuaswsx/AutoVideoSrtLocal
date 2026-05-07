@@ -22,6 +22,10 @@ Scope:
   both `media_products.product_code` and the Chinese product name returned by the
   active-products cache, while saving still submits the selected `product_id` to the
   existing manual-match endpoint.
+- Follow-up feature: summary alerts now stay scoped to the selected date range.
+  `unallocated_ad_spend_usd` is summed from date-range `meta_ad_daily_campaign_metrics`
+  rows where `product_id IS NULL`, and the incomplete SKU card opens a date-range
+  product list with `中文名 - product_code` links to `/medias/?q=<product_code>`.
 
 Verification:
 
@@ -59,6 +63,9 @@ Verification:
 - Campaign pairing inline script syntax check:
   `sed -n '/<script>/,/<\\/script>/p' web/templates/order_profit_dashboard.html | sed '1d;$d' | node --check -`:
   passed.
+- Date-range alert + incomplete-product modal regression:
+  `tests/test_order_profit_routes.py tests/test_order_profit_aggregation.py tests/test_order_profit_dashboard_assets.py tests/test_cost_completeness_overview.py`:
+  `39 passed`.
 - GREEN focused tests:
   `tests/test_order_profit_routes.py`, `tests/test_order_profit_aggregation.py`,
   and `tests/test_architecture_boundaries.py::test_order_profit_route_db_access_lives_in_appcore_order_analytics`:

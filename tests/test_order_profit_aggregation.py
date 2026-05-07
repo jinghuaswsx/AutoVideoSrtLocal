@@ -10,6 +10,7 @@ from appcore.order_analytics.order_profit_aggregation import (
     _derive_order_status,
     _format_order_row,
     get_order_profit_detail,
+    get_order_profit_incomplete_products,
     get_order_profit_list,
     get_order_profit_loss_alerts,
     get_order_profit_summary_for_window,
@@ -342,7 +343,9 @@ def test_summary_window_filters_by_product_id(monkeypatch):
     assert captured[1][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
 
 
-def test_status_summary_aggregates_line_statuses_and_last_run(monkeypatch):
+def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spend(monkeypatch):
+    captured = {}
+
     def fake_query(sql, args=()):
         if "GROUP BY status" in sql:
             return [
@@ -359,7 +362,9 @@ def test_status_summary_aggregates_line_statuses_and_last_run(monkeypatch):
                 },
                 {"status": "unknown", "n": 9, "revenue": 999, "profit": 999},
             ]
-        if "FROM order_profit_runs" in sql:
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            captured["unallocated_sql"] = sql
+            captured["unallocated_args"] = args
             return [{"unallocated_ad_spend_usd": 12.5}]
         raise AssertionError(f"unexpected query: {sql}")
 
@@ -377,6 +382,67 @@ def test_status_summary_aggregates_line_statuses_and_last_run(monkeypatch):
     assert payload["summary"]["incomplete"]["lines"] == 0
     assert payload["unallocated_ad_spend_usd"] == 12.5
     assert payload["margin_pct"] == 25.0
+    assert "product_id IS NULL" in captured["unallocated_sql"]
+    assert captured["unallocated_args"] == (date(2026, 5, 1), date(2026, 5, 3))
+
+
+def test_incomplete_products_list_is_scoped_and_deduplicated(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "product_id": 7,
+                "product_code": "ALPHA-001",
+                "product_name": "阿尔法产品",
+                "line_count": 3,
+                "missing_fields_json": '["purchase_price","packet_cost"]',
+                "last_seen": date(2026, 5, 3),
+            },
+            {
+                "product_id": 8,
+                "product_code": "BETA-002",
+                "product_name": None,
+                "line_count": 1,
+                "missing_fields_json": None,
+                "last_seen": date(2026, 5, 2),
+            },
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    products = get_order_profit_incomplete_products(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 3),
+    )
+
+    assert "p.status = 'incomplete'" in captured["sql"]
+    assert "GROUP BY p.product_id" in captured["sql"]
+    assert captured["args"] == (date(2026, 5, 1), date(2026, 5, 3))
+    assert products == [
+        {
+            "product_id": 7,
+            "product_code": "ALPHA-001",
+            "product_name": "阿尔法产品",
+            "display_label": "阿尔法产品 - ALPHA-001",
+            "line_count": 3,
+            "missing_fields": ["packet_cost", "purchase_price"],
+            "last_seen": "2026-05-03",
+            "medias_search_url": "/medias/?q=ALPHA-001",
+        },
+        {
+            "product_id": 8,
+            "product_code": "BETA-002",
+            "product_name": "未命名产品",
+            "display_label": "未命名产品 - BETA-002",
+            "line_count": 1,
+            "missing_fields": [],
+            "last_seen": "2026-05-02",
+            "medias_search_url": "/medias/?q=BETA-002",
+        },
+    ]
 
 
 def test_list_order_profit_lines_queries_by_filter(monkeypatch):

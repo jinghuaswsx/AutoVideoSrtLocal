@@ -47,3 +47,18 @@ def test_order_profit_campaign_product_picker_is_searchable_and_tall():
     assert "function filterCampaignProductOptions" in TEMPLATE
     assert "function productSearchText" in TEMPLATE
     assert "<select class=\"op-product-select\"" not in TEMPLATE
+
+
+def test_order_profit_dashboard_has_incomplete_products_modal():
+    expected_snippets = [
+        'id="opIncompleteCard"',
+        'role="button"',
+        'id="opIncompleteModal"',
+        'id="opIncompleteProductsList"',
+        "openIncompleteProductsModal",
+        "/order-profit/api/incomplete_products?",
+        "/medias/?q=",
+        "当前时间范围",
+    ]
+    for snippet in expected_snippets:
+        assert snippet in TEMPLATE
