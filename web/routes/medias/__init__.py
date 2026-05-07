@@ -21,6 +21,7 @@ from flask_login import login_required, current_user
 from appcore import (
     local_media_storage,
     material_evaluation,
+    media_route_store,
     medias,
     object_keys,
     product_roas,
@@ -32,7 +33,6 @@ from appcore import (
 )
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
-from appcore.db import query as db_query
 from appcore.material_filename_rules import (
     validate_initial_material_filename,
     validate_material_filename,
@@ -89,6 +89,8 @@ from ._serializers import (
 log = logging.getLogger(__name__)
 
 bp = Blueprint("medias", __name__, url_prefix="/medias")
+
+db_query = media_route_store.query
 
 
 def _media_row_label(row: dict | None) -> str:

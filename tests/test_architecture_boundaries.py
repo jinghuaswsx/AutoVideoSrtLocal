@@ -2494,6 +2494,19 @@ def test_mk_copywriting_http_get_binding_lives_behind_route_adapter():
     assert "http_get_fn=_mk_copywriting_http_get" in module_source
 
 
+def test_medias_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/medias/__init__.py").read_text(encoding="utf-8")
+    helpers_source = Path("web/routes/medias/_helpers.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/media_route_store.py")
+
+    for source in (route_source, helpers_source):
+        assert "from appcore.db import" not in source
+        assert "media_route_store" in source
+        assert "db_query = media_route_store.query" in source
+
+    assert store_path.exists()
+
+
 def test_mk_selection_list_response_lives_outside_route_module():
     module_source = Path("web/routes/medias/mk_selection.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

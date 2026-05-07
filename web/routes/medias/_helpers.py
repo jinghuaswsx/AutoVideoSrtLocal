@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from flask import abort, send_file, url_for
 from flask_login import current_user
 
-from appcore import material_evaluation, medias, runner_lifecycle, task_state
+from appcore import material_evaluation, media_route_store, medias, runner_lifecycle, task_state
 from config import OUTPUT_DIR
 from web.services import media_object_storage
 from web.services.media_image_import import (
@@ -29,7 +29,6 @@ from web.services.media_raw_sources import (
     build_raw_source_filename_error_response,
     raw_source_flask_response,
 )
-from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
 from appcore.material_filename_rules import (
     validate_initial_material_filename,
@@ -72,6 +71,8 @@ _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES = {
     "sv": "瑞典",
     "fi": "芬兰",
 }
+
+db_query = media_route_store.query
 
 
 def _can_access_product(product: dict | None) -> bool:
