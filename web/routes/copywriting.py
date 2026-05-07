@@ -144,37 +144,24 @@ def upload():
     task_state.update(task_id, display_name=display_name)
 
     # 写入数据库
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            copywriting_route_store.insert_project(
-                cur,
-                task_id=task_id,
-                user_id=current_user.id,
-                original_filename=video_filename,
-                display_name=display_name,
-                thumbnail_path=thumbnail_path,
-                task_dir=task_dir,
-                state=task,
-                retention_hours=get_retention_hours("copywriting"),
-            )
-
-            # 保存商品信息
-            selling_points = request.form.get("selling_points", "")
-            copywriting_route_store.insert_inputs(
-                cur,
-                task_id=task_id,
-                product_title=request.form.get("product_title", ""),
-                price=request.form.get("price", ""),
-                selling_points=selling_points,
-                target_audience=request.form.get("target_audience", ""),
-                extra_info=request.form.get("extra_info", ""),
-                language=request.form.get("language", "en"),
-            )
-        conn.commit()
-    finally:
-        conn.close()
-
+    selling_points = request.form.get("selling_points", "")
+    copywriting_route_store.create_project_with_inputs(
+        task_id=task_id,
+        user_id=current_user.id,
+        original_filename=video_filename,
+        display_name=display_name,
+        thumbnail_path=thumbnail_path,
+        task_dir=task_dir,
+        state=task,
+        retention_hours=get_retention_hours("copywriting"),
+        product_title=request.form.get("product_title", ""),
+        price=request.form.get("price", ""),
+        selling_points=selling_points,
+        target_audience=request.form.get("target_audience", ""),
+        extra_info=request.form.get("extra_info", ""),
+        language=request.form.get("language", "en"),
+        connection_factory=get_connection,
+    )
     # 处理商品主图上传
     product_image = request.files.get("product_image")
     if product_image and product_image.filename:

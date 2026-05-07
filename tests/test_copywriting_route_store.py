@@ -160,6 +160,61 @@ def test_insert_inputs_writes_expected_columns():
     ]
 
 
+def test_create_project_with_inputs_commits_single_transaction():
+    cursor = FakeCursor()
+    conn = FakeConnection(cursor)
+    task = {"id": "cw-1", "video_path": "uploads/a.mp4"}
+
+    store.create_project_with_inputs(
+        task_id="cw-1",
+        user_id=53,
+        original_filename="a.mp4",
+        display_name="a",
+        thumbnail_path="thumb.jpg",
+        task_dir="out/cw-1",
+        state=task,
+        retention_hours=72,
+        product_title="Title",
+        price="12.00",
+        selling_points="Fast",
+        target_audience="Buyer",
+        extra_info="Info",
+        language="en",
+        connection_factory=lambda: conn,
+    )
+
+    assert conn.closed is True
+    assert conn.committed is True
+    assert cursor.calls == [
+        (
+            "INSERT INTO projects "
+            "(id, user_id, type, original_filename, display_name, "
+            "thumbnail_path, status, task_dir, state_json, "
+            "created_at, expires_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, 'uploaded', %s, %s, "
+            "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
+            (
+                "cw-1",
+                53,
+                "copywriting",
+                "a.mp4",
+                "a",
+                "thumb.jpg",
+                "out/cw-1",
+                json.dumps(task, ensure_ascii=False),
+                72,
+            ),
+        ),
+        (
+            "INSERT INTO copywriting_inputs "
+            "(project_id, product_title, price, selling_points, "
+            "target_audience, extra_info, language) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            ("cw-1", "Title", "12.00", "Fast", "Buyer", "Info", "en"),
+        ),
+    ]
+
+
 def test_update_inputs_uses_allowlisted_fields_only():
     cursor = FakeCursor()
     conn = FakeConnection(cursor)

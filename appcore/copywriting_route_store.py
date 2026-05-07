@@ -123,6 +123,53 @@ def insert_inputs(
     )
 
 
+def create_project_with_inputs(
+    *,
+    task_id: str,
+    user_id: int,
+    original_filename: str,
+    display_name: str,
+    thumbnail_path: str | None,
+    task_dir: str,
+    state: dict,
+    retention_hours: int,
+    product_title: str,
+    price: str,
+    selling_points: str,
+    target_audience: str,
+    extra_info: str,
+    language: str,
+    connection_factory: ConnectionFactory = get_connection,
+) -> None:
+    conn = connection_factory()
+    try:
+        with conn.cursor() as cur:
+            insert_project(
+                cur,
+                task_id=task_id,
+                user_id=user_id,
+                original_filename=original_filename,
+                display_name=display_name,
+                thumbnail_path=thumbnail_path,
+                task_dir=task_dir,
+                state=state,
+                retention_hours=retention_hours,
+            )
+            insert_inputs(
+                cur,
+                task_id=task_id,
+                product_title=product_title,
+                price=price,
+                selling_points=selling_points,
+                target_audience=target_audience,
+                extra_info=extra_info,
+                language=language,
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def update_inputs(
     task_id: str,
     data: dict,
