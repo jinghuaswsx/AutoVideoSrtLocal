@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
+NEWJOYLOO_NEW_ACCOUNT_ID = "1861285821213497"
+
 
 def test_meta_daily_final_business_date_uses_16_bj_cutover():
     from tools import meta_daily_final_sync
@@ -39,6 +41,46 @@ def test_roi_meta_api_purchase_metric_prefers_known_action_types():
     assert roi_hourly_sync._extract_purchase_metric([
         {"action_type": "custom_purchase_event", "value": "7"},
     ]) == 7.0
+
+
+def test_import_meta_realtime_export_passes_account_context(monkeypatch, tmp_path, capsys):
+    from tools import import_meta_realtime_export
+    from tools import roi_hourly_sync
+
+    campaigns = tmp_path / "newjoyloo_campaigns_2026-05-07.csv"
+    campaigns.write_text("Campaign name,Spend\nDemo,1\n", encoding="utf-8")
+    captured = {}
+
+    def fake_start_meta_run(business_date, snapshot_at, accounts, **kwargs):
+        captured["start_accounts"] = list(accounts)
+        return 7001
+
+    monkeypatch.setattr(roi_hourly_sync, "_start_meta_run", fake_start_meta_run)
+    monkeypatch.setattr(roi_hourly_sync, "_finish_meta_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(roi_hourly_sync, "_insert_daily_snapshot", lambda *args, **kwargs: 88)
+
+    def fake_import(*, run_id, business_date, snapshot_at, campaign_path, account):
+        captured["account"] = account
+        captured["campaign_path"] = campaign_path
+        return {"rows_imported": 1, "spend_usd": 1.0}
+
+    monkeypatch.setattr(roi_hourly_sync, "_import_meta_realtime_campaign_rows", fake_import)
+
+    rc = import_meta_realtime_export.main([
+        "--business-date", "2026-05-07",
+        "--snapshot-at", "2026-05-07 20:00:00",
+        "--campaigns", str(campaigns),
+        "--account-id", "act_" + NEWJOYLOO_NEW_ACCOUNT_ID,
+        "--account-name", "Newjoyloo",
+    ])
+
+    assert rc == 0
+    assert captured["account"].account_id == NEWJOYLOO_NEW_ACCOUNT_ID
+    assert captured["start_accounts"] == [NEWJOYLOO_NEW_ACCOUNT_ID]
+    assert captured["account"].label == "Newjoyloo"
+    assert captured["account"].store_codes == ("newjoy",)
+    assert captured["campaign_path"] == campaigns
+    assert '"status": "success"' in capsys.readouterr().out
 
 
 def _final_account(code: str, account_id: str):

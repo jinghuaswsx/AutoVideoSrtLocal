@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from appcore.meta_ad_accounts import MetaAdAccount
 from tools import roi_hourly_sync as realtime_sync
 
 
@@ -41,6 +42,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ads")
     parser.add_argument("--account-id", default=realtime_sync.META_AD_EXPORT_ACCOUNT_ID)
     parser.add_argument("--account-name", default="Newjoyloo")
+    parser.add_argument("--business-id", default=realtime_sync.META_AD_EXPORT_BUSINESS_ID)
+    parser.add_argument("--csv-prefix", default="newjoyloo")
     return parser
 
 
@@ -51,20 +54,29 @@ def main(argv: list[str] | None = None) -> int:
     campaigns_path = Path(args.campaigns)
     if not campaigns_path.exists():
         raise FileNotFoundError(campaigns_path)
+    account = MetaAdAccount(
+        code=args.account_name or args.account_id,
+        label=args.account_name,
+        account_id=str(args.account_id or "").strip().removeprefix("act_"),
+        business_id=str(args.business_id or "").strip(),
+        csv_prefix=str(args.csv_prefix or args.account_name or "newjoyloo").strip(),
+        store_codes=("newjoy",),
+        enabled=True,
+    )
 
     summary: dict[str, Any] = {
         "business_date": business_date,
         "snapshot_at": snapshot_at,
         "rows_imported": 0,
         "spend_usd": 0.0,
-        "accounts": [args.account_id],
+        "accounts": [account.account_id],
         "account_name": args.account_name,
         "source": "operator_local_browser_ads_manager_csv",
         "data_completeness": "realtime_partial",
         "campaigns_path": str(campaigns_path),
         "ads_path": args.ads,
     }
-    run_id = realtime_sync._start_meta_run(business_date, snapshot_at, [args.account_id])
+    run_id = realtime_sync._start_meta_run(business_date, snapshot_at, [account.account_id])
     summary["run_id"] = run_id
     try:
         import_report = realtime_sync._import_meta_realtime_campaign_rows(
@@ -72,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             business_date=business_date,
             snapshot_at=snapshot_at,
             campaign_path=campaigns_path,
+            account=account,
         )
         summary.update(import_report)
         realtime_sync._finish_meta_run(run_id, "success", summary)

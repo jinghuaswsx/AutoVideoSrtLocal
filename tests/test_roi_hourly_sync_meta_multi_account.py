@@ -10,6 +10,9 @@ from appcore import meta_ad_accounts
 from appcore.meta_ad_accounts import MetaAdAccount
 from tools import roi_hourly_sync
 
+NEWJOYLOO_NEW_ACCOUNT_ID = "1861285821213497"
+NEWJOYLOO_OLD_ACCOUNT_ID = "2110407576446225"
+
 
 @pytest.fixture
 def disable_appcore_db_writes(monkeypatch):
@@ -107,6 +110,35 @@ def test_get_all_accounts_falls_back_to_env_when_setting_unset(monkeypatch):
     assert accounts[0].account_id == "999"
     assert accounts[0].csv_prefix == "newjoyloo"
     assert accounts[0].store_codes == ("newjoy",)
+
+
+def test_get_all_accounts_default_newjoyloo_fallback_uses_new_active_account(monkeypatch):
+    monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: None)
+    monkeypatch.delenv("META_AD_EXPORT_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("META_AD_EXPORT_BUSINESS_ID", raising=False)
+
+    accounts = meta_ad_accounts.get_all_accounts()
+
+    assert len(accounts) == 1
+    assert accounts[0].code == "newjoyloo"
+    assert accounts[0].account_id == NEWJOYLOO_NEW_ACCOUNT_ID
+    assert accounts[0].business_id == "476723373113063"
+    assert accounts[0].enabled is True
+
+
+def test_meta_ad_accounts_seed_switches_newjoyloo_to_new_account_and_keeps_old_disabled():
+    seed = (
+        roi_hourly_sync.REPO_ROOT
+        / "db"
+        / "migrations"
+        / "2026_05_07_meta_ad_accounts_setting.sql"
+    ).read_text(encoding="utf-8")
+
+    assert f'"code":"newjoyloo","label":"Newjoyloo","account_id":"{NEWJOYLOO_NEW_ACCOUNT_ID}"' in seed
+    assert f'"code":"newjoyloo_old","label":"Newjoyloo 旧广告户","account_id":"{NEWJOYLOO_OLD_ACCOUNT_ID}"' in seed
+    assert f'"account_id":"{NEWJOYLOO_OLD_ACCOUNT_ID}"' in seed
+    assert '"enabled":true,"note":"2026-05-07 旧户被封后启用的新广告户"' in seed
+    assert '"enabled":false,"note":"2026-05-07 被 Meta 封禁，保留历史广告费分摊"' in seed
 
 
 def test_get_all_accounts_drops_invalid_and_duplicate_entries(monkeypatch):

@@ -154,6 +154,7 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 
 - 账户配置存 `system_settings.meta_ad_accounts`（JSON 数组），不要把 `account_id` / `business_id` / CSV 前缀写回硬编码常量。
 - 每个账户字段：`code`、`label`、`account_id`、`business_id`、`csv_prefix`、`store_codes`、`enabled`、可选 `note`。`code` 全局唯一、用作 export 子目录名。`csv_prefix` 保留原始大小写（newjoyloo 全小写、Omurio 首字母大写）。`store_codes` 是该广告户对应的店铺编码数组，例如 `["newjoy"]` / `["omurio"]`。
+- 当前 newjoyloo 同步户：`code=newjoyloo`、`account_id=1861285821213497`、`business_id=476723373113063`、`enabled=true`。旧户 `2110407576446225` 已被封，应保留为 `code=newjoyloo_old`、`enabled=false` 只用于历史广告费分摊；不要把旧户重新塞回 `newjoyloo` code。
 - `tools/roi_hourly_sync.py:_sync_meta_realtime_daily` 每次 tick 遍历所有 `enabled=true` 的账户，**单账户失败不影响其他账户**——失败信息写进 `summary_json.account_results[*]`，整体 `status` 只在全部账户失败时才标 failed。
 - `tools/meta_daily_final_sync.py` 收盘日同步也必须遍历所有 `enabled=true` 的账户；导出、删除和写入均按 `account.account_id` 隔离，不能只同步 `META_AD_EXPORT_ACCOUNT_ID` 或固定 `newjoyloo_*.csv`。部分账户失败时成功账户仍入库，整体 run 标 failed，方便 17:00 check 补跑失败账户。
 - 新增 / 暂停账户的标准做法：在数据分析模块「广告账户」Tab 管理 `system_settings.meta_ad_accounts` JSON。账户被封先 `enabled=false`，解封后翻 true 即可。**不要去删 `meta_ad_realtime_*` / `meta_ad_daily_*` 历史数据**，那是按 `ad_account_id` 分行的。
