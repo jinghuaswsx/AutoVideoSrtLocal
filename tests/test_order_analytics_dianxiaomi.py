@@ -337,6 +337,10 @@ def test_upsert_dianxiaomi_order_lines_serializes_json(monkeypatch):
             captured["closed"] = True
 
     monkeypatch.setattr(oa, "get_conn", lambda: Conn())
+    monkeypatch.setattr(
+        "appcore.order_analytics.dianxiaomi.backfill_purchase_price_snapshot",
+        lambda batch_id=None: {"affected": 2},
+    )
 
     result = oa.upsert_dianxiaomi_order_lines(
         42,
@@ -352,7 +356,7 @@ def test_upsert_dianxiaomi_order_lines_serializes_json(monkeypatch):
         }],
     )
 
-    assert result == {"affected": 1, "rows": 1}
+    assert result == {"affected": 1, "rows": 1, "purchase_price_snapshot_filled": 2}
     assert "INSERT INTO dianxiaomi_order_lines" in captured["sql"]
     assert "meta_business_date" in captured["sql"]
     assert any('"id": "9001"' in str(arg) for arg in captured["args"])

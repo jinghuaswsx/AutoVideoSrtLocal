@@ -4446,7 +4446,7 @@
       });
       var countryList = Object.keys(dayCountries).sort();
       countryList.forEach(function(c) {
-        html += '<th style="text-align:right">' + c + '</th>';
+        html += '<th style="text-align:right">' + escHtml(c) + '</th>';
       });
       html += '</tr></thead><tbody>';
 

@@ -932,3 +932,15 @@ def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     assert "start_date=" in subtab_js
     assert "end_date=" in subtab_js
     assert "include_details=1" in subtab_js
+
+
+def test_order_analytics_daily_detail_escapes_country_headers(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    detail_start = body.index("function renderDailyDetail(rows, year, month)")
+    detail_end = body.index("// ── 周度视图", detail_start)
+    detail_js = body[detail_start:detail_end]
+
+    assert "' + escHtml(c) + '" in detail_js
+    assert "' + c + '" not in detail_js
