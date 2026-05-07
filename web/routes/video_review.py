@@ -75,7 +75,11 @@ def _reset_if_stale(task_id: str, state: dict) -> dict:
         "error": state["error"],
         "review_started_at": None,
     })
-    db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
+    video_review_route_store.set_project_status(
+        task_id,
+        "error",
+        execute_func=db_execute,
+    )
     log.warning("[VR] 任务 %s 停留 running 过久，已自动标记为 error", task_id)
     return state
 
@@ -90,12 +94,9 @@ def _emit_to_task(task_id: str, event: str, payload: dict):
 @login_required
 def list_page():
     recover_all_interrupted_tasks()
-    rows = db_query(
-        "SELECT id, display_name, original_filename, thumbnail_path, status, created_at "
-        "FROM projects "
-        "WHERE user_id = %s AND type = 'video_review' AND deleted_at IS NULL "
-        "ORDER BY created_at DESC",
-        (current_user.id,),
+    rows = video_review_route_store.list_user_projects(
+        current_user.id,
+        query_func=db_query,
     )
     return render_template("video_review_list.html", projects=rows)
 
@@ -104,9 +105,10 @@ def list_page():
 @login_required
 def detail_page(task_id: str):
     recover_project_if_needed(task_id, "video_review")
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'video_review' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = video_review_route_store.get_user_project(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return "Not Found", 404
@@ -150,15 +152,15 @@ def upload():
         "result": None,
     }
 
-    db_execute(
-        "INSERT INTO projects "
-        "(id, user_id, type, original_filename, display_name, "
-        "status, task_dir, state_json, created_at, expires_at) "
-        "VALUES (%s, %s, 'video_review', %s, %s, 'uploaded', %s, %s, "
-        "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
-        (task_id, current_user.id, video_filename, display_name,
-         task_dir, json.dumps(state, ensure_ascii=False),
-         get_retention_hours("video_review")),
+    video_review_route_store.insert_project(
+        task_id=task_id,
+        user_id=current_user.id,
+        original_filename=video_filename,
+        display_name=display_name,
+        task_dir=task_dir,
+        state=state,
+        retention_hours=get_retention_hours("video_review"),
+        execute_func=db_execute,
     )
 
     return video_review_flask_response(build_video_review_upload_success_response(task_id))
@@ -168,9 +170,10 @@ def upload():
 @login_required
 def start_review(task_id: str):
     """发起视频评估。"""
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'video_review' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = video_review_route_store.get_user_project(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return video_review_flask_response(build_video_review_not_found_response())
@@ -214,7 +217,11 @@ def start_review(task_id: str):
         "review_started_at": int(time.time()),
         "error": None,
     })
-    db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
+    video_review_route_store.set_project_status(
+        task_id,
+        "running",
+        execute_func=db_execute,
+    )
 
     try:
         start_background_task(
@@ -276,7 +283,11 @@ def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
             "review_started_at": None,
             "error": None,
         })
-        db_execute("UPDATE projects SET status = 'done' WHERE id = %s", (task_id,))
+        video_review_route_store.set_project_status(
+            task_id,
+            "done",
+            execute_func=db_execute,
+        )
 
         _emit_to_task(task_id, EVT_VR_DONE, {"result": result, "stats": stats})
 
@@ -287,7 +298,11 @@ def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
             "review_started_at": None,
             "error": str(e),
         })
-        db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
+        video_review_route_store.set_project_status(
+            task_id,
+            "error",
+            execute_func=db_execute,
+        )
         _emit_to_task(task_id, EVT_VR_ERROR, {"message": f"评估失败: {e}"})
 
 
@@ -303,9 +318,10 @@ def _run_review_with_tracking(task_id: str, video_path: str, model: str, custom_
 @login_required
 def get_video(task_id: str):
     """获取评估的视频文件。"""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_review'",
-        (task_id, current_user.id),
+    row = video_review_route_store.get_user_project_state(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return "Not Found", 404
@@ -344,9 +360,10 @@ def update_prompts():
 @bp.route("/api/video-review/<task_id>", methods=["DELETE"])
 @login_required
 def delete(task_id: str):
-    db_execute(
-        "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s AND type = 'video_review'",
-        (task_id, current_user.id),
+    video_review_route_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        execute_func=db_execute,
     )
     return video_review_flask_response(build_video_review_delete_success_response())
 

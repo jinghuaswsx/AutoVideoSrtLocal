@@ -2223,6 +2223,32 @@ def test_video_review_route_db_dependencies_use_appcore_store():
     assert store_path.exists()
 
 
+def test_video_review_project_sql_lives_in_appcore_store():
+    route_source = Path("web/routes/video_review.py").read_text(encoding="utf-8")
+    store_source = Path("appcore/video_review_route_store.py").read_text(encoding="utf-8")
+
+    route_forbidden_snippets = [
+        "FROM projects",
+        "INSERT INTO projects",
+        "UPDATE projects SET status",
+        "UPDATE projects SET deleted_at",
+    ]
+    for snippet in route_forbidden_snippets:
+        assert snippet not in route_source
+        assert snippet in store_source
+
+    for helper_name in [
+        "list_user_projects",
+        "get_user_project",
+        "get_user_project_state",
+        "insert_project",
+        "set_project_status",
+        "soft_delete_project",
+    ]:
+        assert f"def {helper_name}" in store_source
+        assert f"video_review_route_store.{helper_name}" in route_source
+
+
 def test_voice_library_api_responses_live_outside_route_module():
     module_source = Path("web/routes/voice_library.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
