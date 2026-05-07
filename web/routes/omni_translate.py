@@ -11,9 +11,8 @@ from flask import Blueprint, render_template, request, send_file, abort
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import task_state, medias
+from appcore import task_state, medias, translation_route_store
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
-from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from appcore.project_state import save_project_state
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from pipeline.alignment import build_script_segments
@@ -39,6 +38,10 @@ from web.services.translate_route_responses import (
 log = logging.getLogger(__name__)
 
 bp = Blueprint("omni_translate", __name__)
+
+db_query = translation_route_store.query
+db_query_one = translation_route_store.query_one
+db_execute = translation_route_store.execute
 
 
 def _json_response(payload: dict, status_code: int = 200):
