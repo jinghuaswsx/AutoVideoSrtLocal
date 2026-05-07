@@ -852,8 +852,9 @@
   //   - input.value 是用户看到的字符串："product_code — 产品中文名"
   //   - productLabelToId 把 label 映射回 product_id（提交时反查）
   //   - productCodeToLabel 让"只输入了 product_code"也能匹配上
-  var productLabelToId = {};
-  var productCodeToLabel = {};
+  function makeProductMap() { return Object.create(null); }
+  var productLabelToId = makeProductMap();
+  var productCodeToLabel = makeProductMap();
 
   // ── 默认日期：最近 30 天 ─────────────────────────
   function fmt(d) {
@@ -928,8 +929,8 @@
       .then(function(r) { return r.json(); })
       .then(function(data) {
         productListEl.innerHTML = '';
-        productLabelToId = {};
-        productCodeToLabel = {};
+        productLabelToId = makeProductMap();
+        productCodeToLabel = makeProductMap();
         var opts = data.products || [];
         // Task 6: 首选项 "全部产品"（id=0, code=ALL），用于 Tab ① 列表 / Tab ③ 国家看板
         var ALL_LABEL = '全部产品';
