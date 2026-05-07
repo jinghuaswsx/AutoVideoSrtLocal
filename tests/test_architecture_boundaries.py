@@ -2314,6 +2314,23 @@ def test_translate_lab_api_responses_live_outside_route_module():
     assert Path("web/services/translate_lab.py").exists()
 
 
+def test_translate_lab_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/translate_lab.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/translate_lab_store.py")
+
+    assert "from appcore.db import" not in route_source
+    assert "from appcore import task_state, translate_lab_store" in route_source
+    assert "db_query = translate_lab_store.query" in route_source
+    assert "db_query_one = translate_lab_store.query_one" in route_source
+    assert "db_execute = translate_lab_store.execute" in route_source
+    assert store_path.exists()
+
+    store_source = store_path.read_text(encoding="utf-8")
+    assert "def query(" in store_source
+    assert "def query_one(" in store_source
+    assert "def execute(" in store_source
+
+
 def test_order_profit_api_responses_live_outside_route_module():
     module_source = Path("web/routes/order_profit.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

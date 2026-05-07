@@ -23,9 +23,8 @@ from flask_login import login_required, current_user
 from web.auth import admin_required
 
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import task_state
+from appcore import task_state, translate_lab_store
 from appcore.api_keys import resolve_key
-from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from appcore.settings import get_retention_hours
 from pipeline.voice_library_sync import (
     embed_missing_voices,
@@ -49,6 +48,10 @@ from web.upload_util import save_uploaded_file_to_path, validate_video_extension
 log = logging.getLogger(__name__)
 
 bp = Blueprint("translate_lab", __name__)
+
+db_query = translate_lab_store.query
+db_query_one = translate_lab_store.query_one
+db_execute = translate_lab_store.execute
 
 # 允许的目标语言 / 源语言 / 音色匹配模式
 _ALLOWED_SOURCE_LANGUAGES = {"zh", "en"}

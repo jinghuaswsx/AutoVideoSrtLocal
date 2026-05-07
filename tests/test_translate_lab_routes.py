@@ -254,10 +254,10 @@ def test_list_page_has_create_and_sync_buttons(
     assert "translate_lab.js" in body
 
 
-def test_upload_and_create_returns_task_id(
+def test_upload_and_create_returns_410_after_deprecation(
     authed_client_no_db, monkeypatch, tmp_path,
 ):
-    """POST /api/translate-lab 接收视频文件并调 create_translate_lab。"""
+    """POST /api/translate-lab is deprecated and short-circuits before create."""
     seen: dict = {}
 
     def fake_create(task_id, video_path, task_dir, **kwargs):
@@ -306,33 +306,28 @@ def test_upload_and_create_returns_task_id(
         },
         content_type="multipart/form-data",
     )
-    assert resp.status_code == 201, resp.get_data(as_text=True)
-    data = resp.get_json()
-    assert data["task_id"] == seen["task_id"]
-    assert data["source_language"] == "zh"
-    assert data["target_language"] == "de"
-    assert data["voice_match_mode"] == "manual"
-    # create_translate_lab 收到正确 options
-    assert seen["source_language"] == "zh"
-    assert seen["target_language"] == "de"
-    assert seen["voice_match_mode"] == "manual"
+    assert resp.status_code == 410, resp.get_data(as_text=True)
+    assert "/omni-translate/" in resp.get_json()["error"]
+    assert seen == {}
 
 
-def test_upload_rejects_bad_extension(authed_client_no_db, monkeypatch):
-    """非视频扩展名应当被 validate_video_extension 拦截。"""
+def test_upload_bad_extension_still_short_circuits_to_410(
+    authed_client_no_db, monkeypatch,
+):
+    """Deprecated create endpoint returns 410 before old validation logic."""
     from io import BytesIO
     resp = authed_client_no_db.post(
         "/api/translate-lab",
         data={"video": (BytesIO(b"x"), "foo.txt")},
         content_type="multipart/form-data",
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 410
 
 
-def test_upload_rejects_bad_target_language(
+def test_upload_bad_target_language_still_short_circuits_to_410(
     authed_client_no_db, monkeypatch, tmp_path,
 ):
-    """未在白名单中的 target_language 返回 400。"""
+    """Deprecated create endpoint returns 410 before old validation logic."""
     monkeypatch.setattr(
         "web.routes.translate_lab.OUTPUT_DIR", str(tmp_path / "output"),
     )
@@ -348,7 +343,7 @@ def test_upload_rejects_bad_target_language(
         },
         content_type="multipart/form-data",
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 410
 
 
 def test_download_subtitle_not_ready_returns_404(authed_client_no_db, monkeypatch):
