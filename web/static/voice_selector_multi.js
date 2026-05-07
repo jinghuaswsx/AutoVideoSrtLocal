@@ -406,7 +406,8 @@
     try {
       const resp = await fetch(`${apiBase}/${taskId}/voice-library`);
       if (!resp.ok) {
-        listEl.innerHTML = `<div class="vs-loading">加载失败：${await resp.text()}</div>`;
+        const detail = escapeHtml(await resp.text());
+        listEl.innerHTML = `<div class="vs-loading">加载失败：${detail}</div>`;
         return;
       }
       const data = await resp.json();
