@@ -88,6 +88,74 @@ def _get_realtime_order_details(target: date, day_start: datetime, data_until: d
     return details
 
 
+_REFUND_STATE_KEYWORDS = (
+    "refund",
+    "refunded",
+    "cancel",
+    "cancelled",
+    "closed",
+    "return",
+    "退款",
+    "已退款",
+    "取消",
+    "已取消",
+    "退货",
+)
+
+
+def _is_refund_like_state(order_state: Any) -> bool:
+    if order_state is None:
+        return False
+    text = str(order_state).strip().lower()
+    if not text:
+        return False
+    return any(keyword in text for keyword in _REFUND_STATE_KEYWORDS)
+
+
+def _resolve_refund_deduction(*, total_revenue: Any, refund_amount_usd: Any, order_state: Any) -> float:
+    total = _money(total_revenue)
+    refund_amount = _money(refund_amount_usd)
+    if refund_amount > 0:
+        return round(min(refund_amount, total), 2)
+    if _is_refund_like_state(order_state):
+        return round(total, 2)
+    return 0.0
+
+
+def _derive_refund_status(*, total_revenue: Any, refund_deduction: Any) -> str:
+    total = _money(total_revenue)
+    refund = _money(refund_deduction)
+    if refund <= 0:
+        return "none"
+    if total > 0 and refund >= total:
+        return "full_refund"
+    return "partial_refund"
+
+
+def _derive_order_profit_status(*, line_count: int, ok_count: int, incomplete_count: int) -> str:
+    if line_count <= 0 or ok_count + incomplete_count <= 0:
+        return "not_computed"
+    if incomplete_count <= 0:
+        return "ok"
+    if ok_count <= 0:
+        return "incomplete"
+    return "partially_complete"
+
+
+def _build_order_profit_status_label(profit_status: str, refund_status: str) -> str:
+    label = {
+        "ok": "完整",
+        "partially_complete": "部分完整",
+        "incomplete": "不完整",
+        "not_computed": "未核算",
+    }.get(profit_status, "未核算")
+    if refund_status == "full_refund":
+        return f"{label} / 全额退款"
+    if refund_status == "partial_refund":
+        return f"{label} / 部分退款"
+    return label
+
+
 def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -> list[dict[str, Any]]:
     if not snapshot_at:
         return []
