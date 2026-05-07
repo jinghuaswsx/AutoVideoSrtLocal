@@ -112,6 +112,18 @@ def test_video_creation_api_responses_live_outside_route_module():
     assert Path("web/services/video_creation.py").exists()
 
 
+def test_video_creation_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/video_creation_route_store.py")
+
+    assert "from appcore.db import" not in route_source
+    assert "video_creation_route_store" in route_source
+    assert "db_query = video_creation_route_store.query" in route_source
+    assert "db_query_one = video_creation_route_store.query_one" in route_source
+    assert "db_execute = video_creation_route_store.execute" in route_source
+    assert store_path.exists()
+
+
 def test_translate_voice_routes_use_project_state_helper_for_state_json_writes():
     route_files = [
         Path("web/routes/multi_translate.py"),

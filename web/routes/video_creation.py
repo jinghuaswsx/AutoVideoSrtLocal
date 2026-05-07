@@ -9,7 +9,7 @@ import uuid
 from flask import Blueprint, render_template, request, send_file
 from flask_login import login_required, current_user
 
-from appcore import ai_billing
+from appcore import ai_billing, video_creation_route_store
 from appcore.cancellation import OperationCancelled
 from appcore.llm_provider_configs import ProviderConfigError, require_provider_config
 from appcore.task_recovery import (
@@ -19,7 +19,6 @@ from appcore.task_recovery import (
     unregister_active_task,
 )
 from appcore.settings import get_retention_hours
-from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from appcore.project_state import save_project_state, update_project_state
 from appcore.safe_paths import PathSafetyError, remove_file_under_roots
 from config import DOUBAO_LLM_BASE_URL_DEFAULT, UPLOAD_DIR, OUTPUT_DIR
@@ -37,6 +36,10 @@ from web.upload_util import save_uploaded_file_to_path
 log = logging.getLogger(__name__)
 
 bp = Blueprint("video_creation", __name__)
+db_query = video_creation_route_store.query
+db_query_one = video_creation_route_store.query_one
+db_execute = video_creation_route_store.execute
+
 _DEFAULT_SEEDANCE_MODEL_ID = "doubao-seedance-2-0-260128"
 
 # Backward-compatible alias used by older tests/patch points.
