@@ -238,25 +238,41 @@ def _recalc_ad_cost(line: dict[str, Any], site_units: dict, account_spend: dict)
 
 
 def _build_order_row(line: dict[str, Any], site_units: dict, account_spend: dict, real_fees: dict) -> dict[str, Any]:
-    """组装单条报表行（含 7 列拆分 + 重算利润）。"""
+    """组装单条报表行（含 7 列拆分 + 重算利润）。
+
+    incomplete 行：收入侧仍展示真实数字（line_amount + shipping_allocated），
+    成本侧（采购/物流/手续费/退货占用/利润）返回 None 让前端 num() 显示 "—"。
+    ad_cost 不受 incomplete 影响——始终按账户↔店铺映射现场重算。
+    """
+    is_incomplete = line.get("status") == "incomplete"
     revenue = float(line.get("revenue_usd") or 0)
     line_amount = float(line.get("line_amount_usd") or 0)
-    shopify_fee_total = float(line.get("shopify_fee_usd") or 0)
-    purchase = float(line.get("purchase_usd") or 0)
-    shipping_cost = float(line.get("shipping_cost_usd") or 0)
-    return_reserve = float(line.get("return_reserve_usd") or 0)
+    shipping_allocated = float(line.get("shipping_allocated_usd") or 0)
     buyer_country = line.get("buyer_country")
 
-    fee_split = _split_shopify_fee(line_amount, shopify_fee_total, buyer_country)
+    # ad_cost 跟 status 无关（按 site/account 1:1 + 当日 spend 现场算）
     ad_cost_recalc = _recalc_ad_cost(line, site_units, account_spend)
 
     # Shopify fee 来源标记：如果 order_name 在 real_fees 里就是 real
     order_name = line.get("extended_order_id") or ""
     fee_source = "real" if order_name in real_fees else "estimated"
 
-    profit_recalc = round(
-        revenue - shopify_fee_total - ad_cost_recalc - purchase - shipping_cost - return_reserve, 4
-    )
+    if is_incomplete:
+        purchase = None
+        shipping_cost = None
+        return_reserve = None
+        shopify_fee_total = None
+        fee_split = {"base_fee": None, "intl_fee": None, "conv_fee": None}
+        profit_recalc = None
+    else:
+        purchase = round(float(line.get("purchase_usd") or 0), 4)
+        shipping_cost = round(float(line.get("shipping_cost_usd") or 0), 4)
+        return_reserve = round(float(line.get("return_reserve_usd") or 0), 4)
+        shopify_fee_total = round(float(line.get("shopify_fee_usd") or 0), 4)
+        fee_split = _split_shopify_fee(line_amount, shopify_fee_total, buyer_country)
+        profit_recalc = round(
+            revenue - shopify_fee_total - ad_cost_recalc - purchase - shipping_cost - return_reserve, 4
+        )
 
     return {
         "dxm_package_id": line.get("dxm_package_id"),
@@ -270,20 +286,20 @@ def _build_order_row(line: dict[str, Any], site_units: dict, account_spend: dict
         "product_name": line.get("product_name") or "",
         "quantity": int(line.get("quantity") or 0),
         "line_amount_usd": round(line_amount, 4),
-        "shipping_allocated_usd": round(float(line.get("shipping_allocated_usd") or 0), 4),
+        "shipping_allocated_usd": round(shipping_allocated, 4),
         "revenue_usd": round(revenue, 4),
-        # === 用户要的 7 列 ===
-        "purchase_cost_usd": round(purchase, 4),
-        "shipping_cost_usd": round(shipping_cost, 4),
+        # === 用户要的 7 列（incomplete 时全部为 None，前端显示 "—"）===
+        "purchase_cost_usd": purchase,
+        "shipping_cost_usd": shipping_cost,
         "shopify_base_fee_usd": fee_split["base_fee"],
         "intl_card_fee_usd": fee_split["intl_fee"],
         "currency_conv_fee_usd": fee_split["conv_fee"],
-        "shopify_fee_total_usd": round(shopify_fee_total, 4),
+        "shopify_fee_total_usd": shopify_fee_total,
         "profit_usd": profit_recalc,
         # ===
         "ad_cost_recalc_usd": ad_cost_recalc,
         "ad_cost_old_usd": 0.0,  # 旧值，便于对账
-        "return_reserve_usd": round(return_reserve, 4),
+        "return_reserve_usd": return_reserve,
         "shopify_fee_source": fee_source,
         "shopify_tier": line.get("shopify_tier") or "",
         "profit_old_usd": (
@@ -313,6 +329,11 @@ def generate_report(
 
     orders = [_build_order_row(line, site_units, account_spend, real_fees) for line in lines]
 
+    # incomplete 行的成本字段是 None，聚合时当 0 处理（跟历史口径一致：
+    # 总账只反映 ok 行的成本，incomplete 行只贡献 revenue 和 ad_cost）
+    def _n(v):
+        return float(v) if v is not None else 0.0
+
     # === 聚合：每日 ===
     daily_agg: dict[date, dict[str, Any]] = defaultdict(lambda: {
         "lines": 0, "orders_set": set(), "units": 0,
@@ -326,13 +347,13 @@ def generate_report(
         a["lines"] += 1
         a["orders_set"].add(o["dxm_package_id"])
         a["units"] += o["quantity"]
-        a["revenue"] += o["revenue_usd"]
-        a["shopify_fee"] += o["shopify_fee_total_usd"]
-        a["ad_cost"] += o["ad_cost_recalc_usd"]
-        a["purchase"] += o["purchase_cost_usd"]
-        a["shipping_cost"] += o["shipping_cost_usd"]
-        a["return_reserve"] += o["return_reserve_usd"]
-        a["profit"] += o["profit_usd"]
+        a["revenue"] += _n(o["revenue_usd"])
+        a["shopify_fee"] += _n(o["shopify_fee_total_usd"])
+        a["ad_cost"] += _n(o["ad_cost_recalc_usd"])
+        a["purchase"] += _n(o["purchase_cost_usd"])
+        a["shipping_cost"] += _n(o["shipping_cost_usd"])
+        a["return_reserve"] += _n(o["return_reserve_usd"])
+        a["profit"] += _n(o["profit_usd"])
     daily = []
     for d in sorted(daily_agg.keys()):
         a = daily_agg[d]
@@ -362,12 +383,12 @@ def generate_report(
         a["lines"] += 1
         a["orders_set"].add(o["dxm_package_id"])
         a["units"] += o["quantity"]
-        a["revenue"] += o["revenue_usd"]
-        a["shopify_fee"] += o["shopify_fee_total_usd"]
-        a["ad_cost"] += o["ad_cost_recalc_usd"]
-        a["purchase"] += o["purchase_cost_usd"]
-        a["shipping_cost"] += o["shipping_cost_usd"]
-        a["profit"] += o["profit_usd"]
+        a["revenue"] += _n(o["revenue_usd"])
+        a["shopify_fee"] += _n(o["shopify_fee_total_usd"])
+        a["ad_cost"] += _n(o["ad_cost_recalc_usd"])
+        a["purchase"] += _n(o["purchase_cost_usd"])
+        a["shipping_cost"] += _n(o["shipping_cost_usd"])
+        a["profit"] += _n(o["profit_usd"])
     by_country = []
     for (country, site) in sorted(cs_agg.keys()):
         a = cs_agg[(country, site)]
@@ -396,12 +417,12 @@ def generate_report(
         a["lines"] += 1
         a["orders_set"].add(o["dxm_package_id"])
         a["units"] += o["quantity"]
-        a["revenue"] += o["revenue_usd"]
-        a["shopify_fee"] += o["shopify_fee_total_usd"]
-        a["ad_cost"] += o["ad_cost_recalc_usd"]
-        a["purchase"] += o["purchase_cost_usd"]
-        a["shipping_cost"] += o["shipping_cost_usd"]
-        a["profit"] += o["profit_usd"]
+        a["revenue"] += _n(o["revenue_usd"])
+        a["shopify_fee"] += _n(o["shopify_fee_total_usd"])
+        a["ad_cost"] += _n(o["ad_cost_recalc_usd"])
+        a["purchase"] += _n(o["purchase_cost_usd"])
+        a["shipping_cost"] += _n(o["shipping_cost_usd"])
+        a["profit"] += _n(o["profit_usd"])
     by_site = []
     for site in sorted(site_agg.keys()):
         a = site_agg[site]
@@ -419,14 +440,15 @@ def generate_report(
 
     # === 总账 ===
     total_units = sum(o["quantity"] for o in orders)
-    total_revenue = round(sum(o["revenue_usd"] for o in orders), 2)
-    total_shopify_fee = round(sum(o["shopify_fee_total_usd"] for o in orders), 2)
-    total_ad = round(sum(o["ad_cost_recalc_usd"] for o in orders), 2)
-    total_purchase = round(sum(o["purchase_cost_usd"] for o in orders), 2)
-    total_shipping = round(sum(o["shipping_cost_usd"] for o in orders), 2)
-    total_return = round(sum(o["return_reserve_usd"] for o in orders), 2)
-    total_profit = round(sum(o["profit_usd"] for o in orders), 2)
+    total_revenue = round(sum(_n(o["revenue_usd"]) for o in orders), 2)
+    total_shopify_fee = round(sum(_n(o["shopify_fee_total_usd"]) for o in orders), 2)
+    total_ad = round(sum(_n(o["ad_cost_recalc_usd"]) for o in orders), 2)
+    total_purchase = round(sum(_n(o["purchase_cost_usd"]) for o in orders), 2)
+    total_shipping = round(sum(_n(o["shipping_cost_usd"]) for o in orders), 2)
+    total_return = round(sum(_n(o["return_reserve_usd"]) for o in orders), 2)
+    total_profit = round(sum(_n(o["profit_usd"]) for o in orders), 2)
     orders_count = len({o["dxm_package_id"] for o in orders})
+    incomplete_orders_count = sum(1 for o in orders if o.get("status") == "incomplete")
 
     product_row = query_one(
         "SELECT id, product_code, name FROM media_products WHERE id=%s",
@@ -454,6 +476,7 @@ def generate_report(
             100 * sum(1 for o in orders if o["shopify_fee_source"] == "real") / max(len(orders), 1),
             1,
         ),
+        "incomplete_lines": incomplete_orders_count,
     }
 
     return {

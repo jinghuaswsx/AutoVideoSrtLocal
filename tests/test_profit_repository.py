@@ -65,6 +65,10 @@ def test_upsert_profit_line_incomplete_row(monkeypatch):
         "dxm_order_line_id": 999,
         "missing_fields": ["purchase_price"],
         "profit_usd": None,
+        # incomplete 行的收入侧仍应写入（订单客观事实）
+        "line_amount_usd": 29.95,
+        "shipping_allocated_usd": 6.99,
+        "revenue_usd": 36.94,
     }
 
     upsert_profit_line(
@@ -76,6 +80,40 @@ def test_upsert_profit_line_incomplete_row(monkeypatch):
     # incomplete 行也应该写入（profit_usd=None，status=incomplete）
     assert "incomplete" in captured["args"]
     assert 999 in captured["args"]
+    # 收入侧三字段都应该出现在 args 里（不再被 None 屏蔽）
+    assert 29.95 in captured["args"]
+    assert 6.99 in captured["args"]
+    assert 36.94 in captured["args"]
+
+
+def test_upsert_profit_line_incomplete_row_keeps_cost_fields_null(monkeypatch):
+    """incomplete 行：成本侧（shopify_fee 起到 return_reserve）必须写 NULL。"""
+    captured = {}
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): captured.setdefault("args", args))
+
+    incomplete_result = {
+        "status": "incomplete",
+        "dxm_order_line_id": 1000,
+        "missing_fields": ["purchase_price"],
+        "profit_usd": None,
+        "line_amount_usd": 29.95,
+        "shipping_allocated_usd": 6.99,
+        "revenue_usd": 36.94,
+        # 这些就算 calculate_line_profit 漏写也不能流到 DB
+        "shopify_fee_usd": 2.15,
+        "purchase_usd": 2.27,
+    }
+
+    upsert_profit_line(
+        incomplete_result,
+        business_date=date(2026, 5, 4),
+        paid_at=None,
+        source_run_id=42,
+    )
+    # 成本侧因 is_complete gate 仍写 None，收入侧保留
+    assert 2.15 not in captured["args"]
+    assert 2.27 not in captured["args"]
+    assert 36.94 in captured["args"]
 
 
 def test_start_profit_run_returns_run_id(monkeypatch):

@@ -340,6 +340,75 @@ def test_generate_report_end_to_end(monkeypatch):
     assert total["real_fee_coverage_pct"] == 0.0  # 没传 real_fees
 
 
+def test_generate_report_incomplete_row_keeps_revenue_blanks_costs(monkeypatch):
+    """incomplete 行：revenue 仍展示真实数字，成本/利润字段返 None（前端显示 "—"）。
+
+    业务背景：旧逻辑下 incomplete 行所有金额字段都被仓储层写 NULL → 报表把 NULL 当 0 →
+    UI 大批订单显示 0 收入，看着像账户跑路了。修复后 incomplete 行保留收入侧客观数字。
+    """
+    d = date(2026, 4, 15)
+    lines = [
+        # 一行 ok（基线）
+        {
+            "dxm_order_line_id": 1, "business_date": d, "paid_at": datetime(2026, 4, 15, 10),
+            "buyer_country": "US", "line_amount_usd": 50.0, "shipping_allocated_usd": 5.0,
+            "revenue_usd": 55.0, "shopify_fee_usd": 1.65, "purchase_usd": 8.0,
+            "shipping_cost_usd": 5.0, "return_reserve_usd": 0.55, "profit_old_usd": 30.0,
+            "shopify_tier": "A", "status": "ok",
+            "dxm_package_id": "P1", "extended_order_id": "#1001", "site_code": "newjoy",
+            "product_sku": "SKU-A", "product_display_sku": "SKU-A", "product_name": "ARP9",
+            "quantity": 1, "unit_price": 50.0, "line_amount_native": 50.0,
+            "order_amount_native": 55.0, "order_currency": "USD", "platform": "Shopify",
+        },
+        # 一行 incomplete：revenue 有，成本字段 NULL（DB 状态）
+        {
+            "dxm_order_line_id": 2, "business_date": d, "paid_at": datetime(2026, 4, 15, 11),
+            "buyer_country": "GB", "line_amount_usd": 60.0, "shipping_allocated_usd": 6.0,
+            "revenue_usd": 66.0, "shopify_fee_usd": None, "purchase_usd": None,
+            "shipping_cost_usd": None, "return_reserve_usd": None, "profit_old_usd": None,
+            "shopify_tier": None, "status": "incomplete",
+            "dxm_package_id": "P2", "extended_order_id": "#1002", "site_code": "newjoy",
+            "product_sku": "SKU-B", "product_display_sku": "SKU-B", "product_name": "Insect Set",
+            "quantity": 1, "unit_price": 60.0, "line_amount_native": 60.0,
+            "order_amount_native": 66.0, "order_currency": "GBP", "platform": "Shopify",
+        },
+    ]
+    site_units = {(d, "newjoy"): 2}
+    account_spend = {(d, "2110407576446225"): 20.0}
+    _setup_mock_db(monkeypatch, lines=lines, site_units=site_units, account_spend=account_spend)
+
+    report = ppr.generate_report(product_id=427, date_from=d, date_to=d)
+
+    # 订单明细
+    o_ok, o_inc = report["orders"][0], report["orders"][1]
+    # ok 行：所有字段都有值
+    assert o_ok["status"] == "ok"
+    assert o_ok["revenue_usd"] == pytest.approx(55.0)
+    assert o_ok["purchase_cost_usd"] == pytest.approx(8.0)
+    assert o_ok["profit_usd"] is not None
+
+    # incomplete 行：收入有、成本/利润是 None
+    assert o_inc["status"] == "incomplete"
+    assert o_inc["revenue_usd"] == pytest.approx(66.0)
+    assert o_inc["line_amount_usd"] == pytest.approx(60.0)
+    assert o_inc["shipping_allocated_usd"] == pytest.approx(6.0)
+    assert o_inc["purchase_cost_usd"] is None
+    assert o_inc["shipping_cost_usd"] is None
+    assert o_inc["shopify_fee_total_usd"] is None
+    assert o_inc["shopify_base_fee_usd"] is None
+    assert o_inc["intl_card_fee_usd"] is None
+    assert o_inc["currency_conv_fee_usd"] is None
+    assert o_inc["return_reserve_usd"] is None
+    assert o_inc["profit_usd"] is None
+    # ad_cost 仍现场算（不依赖 status）
+    assert o_inc["ad_cost_recalc_usd"] == pytest.approx(10.0)  # 20 spend / 2 units * 1 = 10
+
+    # 聚合：revenue 包含两行；成本/利润只反映 ok 行（_n() 把 None 当 0）
+    assert report["total"]["revenue_usd"] == pytest.approx(121.0)  # 55 + 66
+    assert report["total"]["purchase_usd"] == pytest.approx(8.0)   # 只有 ok 行
+    assert report["total"]["incomplete_lines"] == 1
+
+
 def test_generate_xlsx_produces_valid_bytes(monkeypatch):
     """端到端验证 Excel 生成：能产出 4-sheet xlsx 字节流。"""
     d = date(2026, 4, 15)

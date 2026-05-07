@@ -92,11 +92,23 @@ def calculate_line_profit(
     if line.get("shipping_cost_cny") is None:
         missing.append("shipping_cost")
     if missing:
+        # incomplete 行也要把订单的客观收入写出来：line_amount + shipping_allocated
+        # 不依赖任何成本数据 → 即便采购价/物流成本待补也不影响。
+        # 成本侧字段（shopify_fee/ad_cost/purchase/shipping_cost/return_reserve/profit）
+        # 在缺少基础数据时仍然返回 None，让仓储层写 NULL、UI 展示 "—"。
+        line_amount = _to_decimal(line.get("line_amount_usd"))
+        shipping_allocated = _to_decimal(line.get("shipping_allocated_usd"))
+        revenue = line_amount + shipping_allocated
         return {
             "status": "incomplete",
             "profit_usd": None,
             "missing_fields": missing,
             "dxm_order_line_id": line.get("dxm_order_line_id"),
+            "product_id": line.get("product_id"),
+            "buyer_country": line.get("buyer_country"),
+            "line_amount_usd": _q4(line_amount),
+            "shipping_allocated_usd": _q4(shipping_allocated),
+            "revenue_usd": _q4(revenue),
         }
 
     # 2. 收入侧

@@ -133,6 +133,10 @@ def test_calculate_line_profit_returns_incomplete_when_purchase_missing():
     assert result["status"] == "incomplete"
     assert "purchase_price" in result["missing_fields"]
     assert result["profit_usd"] is None
+    # incomplete 行也要返回订单的客观收入（不依赖采购价/物流成本）
+    assert result["line_amount_usd"] == pytest.approx(29.95, abs=0.01)
+    assert result["shipping_allocated_usd"] == pytest.approx(6.99, abs=0.01)
+    assert result["revenue_usd"] == pytest.approx(36.94, abs=0.01)
 
 
 def test_calculate_line_profit_returns_incomplete_when_shipping_cost_missing():
@@ -140,6 +144,8 @@ def test_calculate_line_profit_returns_incomplete_when_shipping_cost_missing():
     result = calculate_line_profit(line, rmb_per_usd=Decimal("6.83"))
     assert result["status"] == "incomplete"
     assert "shipping_cost" in result["missing_fields"]
+    # 同上：incomplete 时仍要写出真实收入
+    assert result["revenue_usd"] == pytest.approx(36.94, abs=0.01)
 
 
 def test_calculate_line_profit_single_sku_fallback_uses_line_revenue():

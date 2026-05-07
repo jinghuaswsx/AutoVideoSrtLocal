@@ -55,6 +55,9 @@ def upsert_profit_line(
     status = line_result.get("status", "error")
     is_complete = status == "ok"
 
+    # 收入侧（line_amount / shipping_allocated / revenue）是订单的客观事实，
+    # 不依赖采购价/物流成本是否维护，因此 incomplete 行也直接写入。
+    # 成本侧（shopify_fee 起到 return_reserve）才走 is_complete gate。
     values = (
         line_result.get("dxm_order_line_id"),
         line_result.get("product_id"),
@@ -63,9 +66,9 @@ def upsert_profit_line(
         line_result.get("buyer_country"),
         line_result.get("presentment_currency"),
         line_result.get("shopify_tier"),
-        line_result.get("line_amount_usd") if is_complete else None,
-        line_result.get("shipping_allocated_usd") if is_complete else None,
-        line_result.get("revenue_usd") if is_complete else None,
+        line_result.get("line_amount_usd"),
+        line_result.get("shipping_allocated_usd"),
+        line_result.get("revenue_usd"),
         line_result.get("shopify_fee_usd") if is_complete else None,
         line_result.get("ad_cost_usd") if is_complete else None,
         line_result.get("purchase_usd") if is_complete else None,
