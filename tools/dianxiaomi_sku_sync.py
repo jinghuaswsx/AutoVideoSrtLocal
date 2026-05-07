@@ -196,6 +196,10 @@ def extract_dxm_index(payload: dict[str, Any]) -> dict[str, dict[str, str | None
             if not dxm_sku:
                 continue
             sku_code = str(prod.get("skuCode") or "").strip() or None
+            product_sku = (
+                str(prod.get("productSku") or prod.get("goodsSku") or prod.get("sku") or "").strip()
+                or None
+            )
             name_cn = str(prod.get("name") or "").strip() or None
             name_en = str(prod.get("nameEn") or "").strip() or None
             relation_flag = bool(prod.get("relationFlag"))
@@ -205,6 +209,7 @@ def extract_dxm_index(payload: dict[str, Any]) -> dict[str, dict[str, str | None
                 continue
             index[dxm_sku] = {
                 "dianxiaomi_sku": dxm_sku,
+                "dianxiaomi_product_sku": product_sku,
                 "dianxiaomi_sku_code": sku_code,
                 "dianxiaomi_name": name_cn or name_en,
                 "relation_flag": relation_flag,
@@ -241,6 +246,7 @@ def build_pair_rows(
                 "shopify_weight_grams": variant.get("shopify_weight_grams"),
                 "shopify_variant_title": variant.get("shopify_variant_title"),
                 "dianxiaomi_sku": (dxm_match or {}).get("dianxiaomi_sku") or pair_key,
+                "dianxiaomi_product_sku": (dxm_match or {}).get("dianxiaomi_product_sku"),
                 "dianxiaomi_sku_code": (dxm_match or {}).get("dianxiaomi_sku_code"),
                 "dianxiaomi_name": (dxm_match or {}).get("dianxiaomi_name"),
             })
@@ -288,7 +294,7 @@ def _dxm_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def build_remote_ensure_table_sql() -> str:
-    return (
+    create_sql = (
         "CREATE TABLE IF NOT EXISTS media_product_skus ("
         "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,"
         "product_id BIGINT UNSIGNED NOT NULL,"
@@ -302,18 +308,45 @@ def build_remote_ensure_table_sql() -> str:
         "shopify_weight_grams DECIMAL(10,2) NULL,"
         "shopify_variant_title VARCHAR(512) NULL,"
         "dianxiaomi_sku VARCHAR(128) NULL,"
+        "dianxiaomi_product_sku VARCHAR(128) NULL,"
         "dianxiaomi_sku_code VARCHAR(64) NULL,"
         "dianxiaomi_name VARCHAR(512) NULL,"
         "source VARCHAR(32) NULL,"
+        "manual_override TINYINT(1) NOT NULL DEFAULT 0,"
+        "manual_unit_price_rmb DECIMAL(12,2) NULL,"
+        "manual_goods_name VARCHAR(512) NULL,"
+        "manual_edited_by BIGINT UNSIGNED NULL,"
+        "manual_edited_at DATETIME NULL,"
         "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
         "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
         "UNIQUE KEY uk_media_product_skus_pid_variant (product_id, shopify_variant_id),"
         "KEY idx_media_product_skus_product (product_id),"
+        "KEY idx_media_product_skus_dxm_product_sku (dianxiaomi_product_sku),"
         "KEY idx_media_product_skus_dxm_sku (dianxiaomi_sku),"
         "KEY idx_media_product_skus_dxm_code (dianxiaomi_sku_code),"
         "KEY idx_media_product_skus_shopify_sku (shopify_sku)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n"
     )
+    manual_columns = [
+        ("dianxiaomi_product_sku", "dianxiaomi_product_sku VARCHAR(128) NULL AFTER dianxiaomi_sku"),
+        ("manual_override", "manual_override TINYINT(1) NOT NULL DEFAULT 0 AFTER source"),
+        ("manual_unit_price_rmb", "manual_unit_price_rmb DECIMAL(12,2) NULL AFTER manual_override"),
+        ("manual_goods_name", "manual_goods_name VARCHAR(512) NULL AFTER manual_unit_price_rmb"),
+        ("manual_edited_by", "manual_edited_by BIGINT UNSIGNED NULL AFTER manual_goods_name"),
+        ("manual_edited_at", "manual_edited_at DATETIME NULL AFTER manual_edited_by"),
+    ]
+    alter_sql: list[str] = []
+    for column_name, ddl in manual_columns:
+        alter_sql.append(
+            "SET @ddl := IF("
+            "EXISTS(SELECT 1 FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='media_product_skus' "
+            f"AND COLUMN_NAME='{column_name}'),"
+            "'SELECT 1',"
+            f"'ALTER TABLE media_product_skus ADD COLUMN {ddl}');"
+            "PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;\n"
+        )
+    return create_sql + "".join(alter_sql)
 
 
 def build_remote_add_shopify_title_sql() -> str:
@@ -372,7 +405,8 @@ def build_remote_apply_sql(
         )
     for product_id, pairs in sku_replacements:
         lines.append(
-            f"DELETE FROM media_product_skus WHERE product_id={int(product_id)};"
+            "DELETE FROM media_product_skus "
+            f"WHERE product_id={int(product_id)} AND COALESCE(manual_override, 0)=0;"
         )
         for pair in pairs:
             def num(value):
@@ -382,7 +416,7 @@ def build_remote_apply_sql(
                 "(product_id, shopify_product_id, shopify_variant_id, shopify_sku, "
                 " shopify_price, shopify_compare_at_price, shopify_inventory_quantity, "
                 " shopify_weight_grams, shopify_variant_title, dianxiaomi_sku, "
-                " dianxiaomi_sku_code, dianxiaomi_name, source) VALUES ("
+                " dianxiaomi_product_sku, dianxiaomi_sku_code, dianxiaomi_name, source) VALUES ("
                 f"{int(product_id)}, {_sql_quote(pair.get('shopify_product_id'))}, "
                 f"{_sql_quote(pair.get('shopify_variant_id'))}, "
                 f"{_sql_quote(pair.get('shopify_sku'))}, "
@@ -392,9 +426,23 @@ def build_remote_apply_sql(
                 f"{num(pair.get('shopify_weight_grams'))}, "
                 f"{_sql_quote(pair.get('shopify_variant_title'))}, "
                 f"{_sql_quote(pair.get('dianxiaomi_sku'))}, "
+                f"{_sql_quote(pair.get('dianxiaomi_product_sku'))}, "
                 f"{_sql_quote(pair.get('dianxiaomi_sku_code'))}, "
                 f"{_sql_quote(pair.get('dianxiaomi_name'))}, "
-                f"{_sql_quote(source)});"
+                f"{_sql_quote(source)}) "
+                "ON DUPLICATE KEY UPDATE "
+                "shopify_product_id=IF(COALESCE(manual_override, 0)=1, shopify_product_id, VALUES(shopify_product_id)), "
+                "shopify_sku=IF(COALESCE(manual_override, 0)=1, shopify_sku, VALUES(shopify_sku)), "
+                "shopify_price=IF(COALESCE(manual_override, 0)=1, shopify_price, VALUES(shopify_price)), "
+                "shopify_compare_at_price=IF(COALESCE(manual_override, 0)=1, shopify_compare_at_price, VALUES(shopify_compare_at_price)), "
+                "shopify_inventory_quantity=IF(COALESCE(manual_override, 0)=1, shopify_inventory_quantity, VALUES(shopify_inventory_quantity)), "
+                "shopify_weight_grams=IF(COALESCE(manual_override, 0)=1, shopify_weight_grams, VALUES(shopify_weight_grams)), "
+                "shopify_variant_title=IF(COALESCE(manual_override, 0)=1, shopify_variant_title, VALUES(shopify_variant_title)), "
+                "dianxiaomi_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku, VALUES(dianxiaomi_sku)), "
+                "dianxiaomi_product_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_product_sku, VALUES(dianxiaomi_product_sku)), "
+                "dianxiaomi_sku_code=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku_code, VALUES(dianxiaomi_sku_code)), "
+                "dianxiaomi_name=IF(COALESCE(manual_override, 0)=1, dianxiaomi_name, VALUES(dianxiaomi_name)), "
+                "source=IF(COALESCE(manual_override, 0)=1, source, VALUES(source));"
             )
     lines.append("COMMIT;")
     return "\n".join(lines) + "\n"

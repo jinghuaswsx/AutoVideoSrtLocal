@@ -1525,12 +1525,17 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-sku-meta-grid dd { font-size:13px; color:var(--oc-fg); margin:2px 0 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .oc-sku-detail-cost-note { font-size:12px; color:var(--oc-fg-muted); padding:var(--oc-sp-2) var(--oc-sp-3); background:var(--oc-bg-subtle); border-radius:var(--oc-radius); border-left:3px solid var(--oc-info); }
 .oc-sku-detail-table-wrap { overflow:auto; max-height:60vh; border:1px solid var(--oc-border); border-radius:var(--oc-radius); }
-.oc-sku-detail-table { width:100%; min-width:1200px; }
+.oc-sku-detail-table { width:100%; min-width:1480px; }
 .oc-sku-detail-table th { background:var(--oc-bg-subtle); position:sticky; top:0; z-index:1; }
 .oc-sku-detail-table td { font-size:13px; }
 .oc-sku-detail-table .mono { font-family:var(--oc-font-mono, ui-monospace, monospace); }
 .oc-sku-detail-table .roas-good { color:var(--oc-success); font-weight:600; }
 .oc-sku-detail-table .roas-bad { color:var(--oc-danger); }
+.oc-sku-detail-table .oc-sku-edit-input { width:100%; height:30px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-radius); background:var(--oc-bg); color:var(--oc-fg); padding:0 var(--oc-sp-2); font-size:13px; min-width:0; }
+.oc-sku-detail-table .oc-sku-edit-input:focus { outline:none; border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-sku-detail-table .oc-sku-edit-input.mono { font-family:var(--oc-font-mono, ui-monospace, monospace); }
+.oc-sku-detail-table .sku-actions { display:flex; align-items:center; gap:var(--oc-sp-2); white-space:nowrap; }
+.oc-sku-manual-badge { display:inline-flex; align-items:center; height:22px; padding:0 var(--oc-sp-2); border-radius:var(--oc-radius-md); background:var(--oc-accent-subtle); color:var(--oc-accent); font-size:12px; font-weight:600; }
 .oc-sku-detail-empty { padding:var(--oc-sp-5); text-align:center; color:var(--oc-fg-subtle); }
 .oc-sku-detail-empty .title { font-size:14px; color:var(--oc-fg); margin:0 0 var(--oc-sp-1); }
 .oc-sku-detail-empty .desc { font-size:13px; margin:0; }
@@ -2293,10 +2298,12 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
               <th style="width:84px;">售价 (USD)</th>
               <th style="width:74px;">库存</th>
               <th style="width:130px;">店小秘 SKU</th>
+              <th style="width:130px;">店小秘商品 SKU</th>
               <th style="width:96px;">ERP 编码</th>
               <th style="width:96px;">采购价 (RMB)</th>
               <th>ERP / xmyc 商品名</th>
               <th style="width:104px;">保本 ROAS</th>
+              <th style="width:118px;">操作</th>
             </tr>
           </thead>
           <tbody id="skuDetailRows"></tbody>

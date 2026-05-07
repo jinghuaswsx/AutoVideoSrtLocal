@@ -37,7 +37,19 @@ def _serialize_product_skus(
     for row in rows or []:
         dxm_sku = (row.get("dianxiaomi_sku") or "").strip()
         xmyc_info = (xmyc_index or {}).get(dxm_sku) if dxm_sku else None
-        xmyc_unit_price = (xmyc_info or {}).get("unit_price")
+        manual_unit_price = row.get("manual_unit_price_rmb")
+        xmyc_unit_price = (
+            manual_unit_price
+            if manual_unit_price is not None
+            else (xmyc_info or {}).get("unit_price")
+        )
+        manual_goods_name = (row.get("manual_goods_name") or "").strip()
+        xmyc_goods_name = (
+            manual_goods_name
+            or (xmyc_info or {}).get("goods_name")
+            or ""
+        )
+        manual_override = bool(row.get("manual_override") or 0)
 
         item = {
             "id": row.get("id"),
@@ -51,12 +63,18 @@ def _serialize_product_skus(
             "shopify_weight_grams": _json_number_or_none(row.get("shopify_weight_grams")),
             "shopify_variant_title": row.get("shopify_variant_title") or "",
             "dianxiaomi_sku": row.get("dianxiaomi_sku") or "",
+            "dianxiaomi_product_sku": row.get("dianxiaomi_product_sku") or "",
             "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code") or "",
             "dianxiaomi_name": row.get("dianxiaomi_name") or "",
             "source": row.get("source") or "",
+            "manual_override": manual_override,
+            "manual_unit_price_rmb": _json_number_or_none(manual_unit_price),
+            "manual_goods_name": manual_goods_name,
+            "manual_edited_by": row.get("manual_edited_by"),
+            "manual_edited_at": row["manual_edited_at"].isoformat() if row.get("manual_edited_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             "xmyc_unit_price_rmb": _json_number_or_none(xmyc_unit_price),
-            "xmyc_goods_name": (xmyc_info or {}).get("goods_name") or "",
+            "xmyc_goods_name": xmyc_goods_name,
             "xmyc_stock_available": (xmyc_info or {}).get("stock_available"),
             "xmyc_match_type": (xmyc_info or {}).get("match_type") or "",
             "xmyc_sku_code": (xmyc_info or {}).get("sku_code") or "",
@@ -80,7 +98,9 @@ def _serialize_product_skus(
                     rmb_per_usd=rate,
                 )
                 calc["purchase_basis"] = (
-                    "xmyc_variant" if xmyc_unit_price is not None else "product_level"
+                    "manual_variant"
+                    if manual_unit_price is not None
+                    else ("xmyc_variant" if xmyc_unit_price is not None else "product_level")
                 )
                 item["roas_calculation"] = calc
             except Exception:

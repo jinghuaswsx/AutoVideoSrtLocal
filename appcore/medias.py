@@ -1372,6 +1372,7 @@ _SKU_PAIR_TEXT_FIELDS = (
     "shopify_currency",
     "shopify_variant_title",
     "dianxiaomi_sku",
+    "dianxiaomi_product_sku",
     "dianxiaomi_sku_code",
     "dianxiaomi_name",
 )
@@ -1382,6 +1383,25 @@ _SKU_PAIR_NUMERIC_FIELDS = (
     "shopify_weight_grams",
 )
 _SKU_PAIR_FIELDS = _SKU_PAIR_TEXT_FIELDS + _SKU_PAIR_NUMERIC_FIELDS
+_SKU_MANUAL_EDIT_TEXT_FIELDS = (
+    "shopify_sku",
+    "dianxiaomi_sku",
+    "dianxiaomi_product_sku",
+    "dianxiaomi_sku_code",
+    "manual_goods_name",
+)
+_SKU_MANUAL_EDIT_FLOAT_FIELDS = (
+    "shopify_price",
+    "shopify_compare_at_price",
+    "shopify_weight_grams",
+    "manual_unit_price_rmb",
+)
+_SKU_MANUAL_EDIT_INT_FIELDS = ("shopify_inventory_quantity",)
+_SKU_MANUAL_EDIT_FIELDS = (
+    _SKU_MANUAL_EDIT_TEXT_FIELDS
+    + _SKU_MANUAL_EDIT_FLOAT_FIELDS
+    + _SKU_MANUAL_EDIT_INT_FIELDS
+)
 
 
 def _normalize_sku_pair(pair: dict) -> dict:
@@ -1411,8 +1431,9 @@ _SKU_SELECT_COLUMNS = (
     "id, product_id, shopify_product_id, shopify_variant_id, shopify_sku, "
     "shopify_price, shopify_compare_at_price, shopify_currency, "
     "shopify_inventory_quantity, shopify_weight_grams, shopify_variant_title, "
-    "dianxiaomi_sku, dianxiaomi_sku_code, dianxiaomi_name, source, "
-    "created_at, updated_at"
+    "dianxiaomi_sku, dianxiaomi_product_sku, dianxiaomi_sku_code, dianxiaomi_name, source, "
+    "manual_override, manual_unit_price_rmb, manual_goods_name, "
+    "manual_edited_by, manual_edited_at, created_at, updated_at"
 )
 
 
@@ -1442,6 +1463,79 @@ def list_product_skus_batch(product_ids: list[int]) -> dict[int, list[dict]]:
     return grouped
 
 
+def normalize_product_sku_manual_update(fields: dict[str, Any]) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    for key in _SKU_MANUAL_EDIT_TEXT_FIELDS:
+        if key not in fields:
+            continue
+        value = fields.get(key)
+        if value is None:
+            updates[key] = None
+            continue
+        text = str(value).strip()
+        updates[key] = text or None
+    for key in _SKU_MANUAL_EDIT_FLOAT_FIELDS:
+        if key not in fields:
+            continue
+        value = fields.get(key)
+        if value is None or value == "":
+            updates[key] = None
+            continue
+        try:
+            updates[key] = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{key} must be a number")
+    for key in _SKU_MANUAL_EDIT_INT_FIELDS:
+        if key not in fields:
+            continue
+        value = fields.get(key)
+        if value is None or value == "":
+            updates[key] = None
+            continue
+        try:
+            updates[key] = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{key} must be an integer")
+    if not updates:
+        raise ValueError("no editable fields provided")
+    return updates
+
+
+def update_product_sku_manual(
+    product_id: int,
+    sku_id: int,
+    fields: dict[str, Any],
+    *,
+    edited_by: int | None = None,
+) -> dict:
+    pid = int(product_id)
+    sid = int(sku_id)
+    updates = normalize_product_sku_manual_update(fields)
+    set_clauses = [f"{key}=%s" for key in updates]
+    params: list[Any] = list(updates.values())
+    set_clauses.extend([
+        "manual_override=1",
+        "manual_edited_by=%s",
+        "manual_edited_at=NOW()",
+        "source=%s",
+    ])
+    params.extend([edited_by, "manual_edit", sid, pid])
+    execute(
+        "UPDATE media_product_skus SET "
+        f"{', '.join(set_clauses)} "
+        "WHERE id=%s AND product_id=%s",
+        tuple(params),
+    )
+    row = query_one(
+        f"SELECT {_SKU_SELECT_COLUMNS} "
+        "FROM media_product_skus WHERE id=%s AND product_id=%s",
+        (sid, pid),
+    )
+    if row is None:
+        raise LookupError(f"sku id {sid} not found for product {pid}")
+    return row
+
+
 def replace_product_skus(
     product_id: int,
     pairs: list[dict],
@@ -1464,28 +1558,34 @@ def replace_product_skus(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, shopify_variant_id FROM media_product_skus "
+                "SELECT id, shopify_variant_id, manual_override FROM media_product_skus "
                 "WHERE product_id=%s",
                 (pid,),
             )
             existing_rows = cur.fetchall() or []
             existing_by_variant: dict[str, int] = {}
+            manual_variant_ids: set[str] = set()
             for row in existing_rows:
                 variant_id = str(row.get("shopify_variant_id") or "").strip()
                 if variant_id:
                     existing_by_variant[variant_id] = int(row["id"])
+                    if int(row.get("manual_override") or 0):
+                        manual_variant_ids.add(variant_id)
             keep_variant_ids: set[str] = set()
+            preserved = 0
             for pair in cleaned_pairs:
                 variant_id = str(pair["shopify_variant_id"])
                 keep_variant_ids.add(variant_id)
-                if variant_id in existing_by_variant:
+                if variant_id in manual_variant_ids:
+                    preserved += 1
+                elif variant_id in existing_by_variant:
                     cur.execute(
                         "UPDATE media_product_skus SET "
                         "shopify_product_id=%s, shopify_sku=%s, "
                         "shopify_price=%s, shopify_compare_at_price=%s, "
                         "shopify_currency=%s, shopify_inventory_quantity=%s, "
                         "shopify_weight_grams=%s, shopify_variant_title=%s, "
-                        "dianxiaomi_sku=%s, dianxiaomi_sku_code=%s, "
+                        "dianxiaomi_sku=%s, dianxiaomi_product_sku=%s, dianxiaomi_sku_code=%s, "
                         "dianxiaomi_name=%s, source=%s "
                         "WHERE product_id=%s AND shopify_variant_id=%s",
                         (
@@ -1498,6 +1598,7 @@ def replace_product_skus(
                             pair.get("shopify_weight_grams"),
                             pair.get("shopify_variant_title"),
                             pair.get("dianxiaomi_sku"),
+                            pair.get("dianxiaomi_product_sku"),
                             pair.get("dianxiaomi_sku_code"),
                             pair.get("dianxiaomi_name"),
                             source,
@@ -1513,8 +1614,8 @@ def replace_product_skus(
                         " shopify_sku, shopify_price, shopify_compare_at_price, "
                         " shopify_currency, shopify_inventory_quantity, "
                         " shopify_weight_grams, shopify_variant_title, "
-                        " dianxiaomi_sku, dianxiaomi_sku_code, dianxiaomi_name, source) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        " dianxiaomi_sku, dianxiaomi_product_sku, dianxiaomi_sku_code, dianxiaomi_name, source) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
                             pid,
                             pair.get("shopify_product_id"),
@@ -1527,6 +1628,7 @@ def replace_product_skus(
                             pair.get("shopify_weight_grams"),
                             pair.get("shopify_variant_title"),
                             pair.get("dianxiaomi_sku"),
+                            pair.get("dianxiaomi_product_sku"),
                             pair.get("dianxiaomi_sku_code"),
                             pair.get("dianxiaomi_name"),
                             source,
@@ -1536,6 +1638,7 @@ def replace_product_skus(
             stale_ids = [
                 rid for variant_id, rid in existing_by_variant.items()
                 if variant_id not in keep_variant_ids
+                and variant_id not in manual_variant_ids
             ]
             if stale_ids:
                 placeholders = ",".join(["%s"] * len(stale_ids))
@@ -1548,7 +1651,7 @@ def replace_product_skus(
     except Exception:
         conn.rollback()
         raise
-    return {"inserted": inserted, "updated": updated, "deleted": deleted}
+    return {"inserted": inserted, "updated": updated, "deleted": deleted, "preserved": preserved}
 
 
 def list_xmyc_unit_prices(skus: list[str]) -> dict[str, dict]:

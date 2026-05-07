@@ -24,6 +24,10 @@ from web.services.media_product_mutations import (
     build_product_update_response as _build_product_update_response_impl,
     product_mutation_flask_response as _product_mutation_flask_response_impl,
 )
+from web.services.media_product_sku_manual_edit import (
+    build_product_sku_update_response as _build_product_sku_update_response_impl,
+    product_sku_update_flask_response as _product_sku_update_flask_response_impl,
+)
 from web.services.media_shopify_sku_refresh import (
     build_refresh_product_shopify_sku_response as _build_refresh_product_shopify_sku_response_impl,
     refresh_shopify_sku_flask_response as _refresh_shopify_sku_flask_response_impl,
@@ -193,6 +197,25 @@ def _xmyc_sku_flask_response(result):
     return _xmyc_sku_flask_response_impl(result)
 
 
+def _build_product_sku_update_response(pid: int, sku_id: int, product: dict, body: dict, *, edited_by: int | None):
+    return _build_product_sku_update_response_impl(
+        pid,
+        sku_id,
+        product,
+        body,
+        edited_by=edited_by,
+        update_product_sku_fn=medias.update_product_sku_manual,
+        normalize_fields_fn=medias.normalize_product_sku_manual_update,
+        list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
+        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
+        serialize_product_skus_fn=_serialize_product_skus,
+    )
+
+
+def _product_sku_update_flask_response(result):
+    return _product_sku_update_flask_response_impl(result)
+
+
 def _build_parcel_cost_suggest_response(pid: int, args):
     return _build_parcel_cost_suggest_response_impl(
         pid,
@@ -332,6 +355,27 @@ def api_update_xmyc_sku(sku_id: int):
     if result.not_found:
         abort(404)
     return routes._xmyc_sku_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/skus/<int:sku_id>", methods=["PATCH"])
+@login_required
+def api_update_product_sku(pid: int, sku_id: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    edited_by = int(current_user.id) if getattr(current_user, "id", None) else None
+    result = routes._build_product_sku_update_response(
+        pid,
+        sku_id,
+        p,
+        body,
+        edited_by=edited_by,
+    )
+    if result.not_found:
+        abort(404)
+    return routes._product_sku_update_flask_response(result)
 
 
 @bp.route("/api/supply-pairing/search", methods=["GET"])

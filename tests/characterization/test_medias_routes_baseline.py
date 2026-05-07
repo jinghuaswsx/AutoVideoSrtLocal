@@ -75,6 +75,7 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         ("/medias/api/products/<int:pid>/shopify-image/<lang>/confirm", ("POST",), "medias.api_product_shopify_image_confirm"),
         ("/medias/api/products/<int:pid>/shopify-image/<lang>/requeue", ("POST",), "medias.api_product_shopify_image_requeue"),
         ("/medias/api/products/<int:pid>/shopify-image/<lang>/unavailable", ("POST",), "medias.api_product_shopify_image_unavailable"),
+        ("/medias/api/products/<int:pid>/skus/<int:sku_id>", ("PATCH",), "medias.api_update_product_sku"),
         ("/medias/api/products/<int:pid>/translate", ("POST",), "medias.api_product_translate"),
         ("/medias/api/products/<int:pid>/translation-tasks", ("GET",), "medias.api_product_translation_tasks"),
         ("/medias/api/products/<int:pid>/xmyc-skus", ("GET",), "medias.api_get_product_xmyc_skus"),
