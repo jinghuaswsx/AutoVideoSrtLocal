@@ -10,8 +10,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import llm_client
-from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
+from appcore import llm_client, text_translate_store
 from appcore.project_state import save_project_state
 from appcore.llm_providers._helpers.vertex_json import parse_json_content
 from pipeline.text_translate import _resolve_provider_and_model
@@ -50,6 +49,10 @@ LANGUAGES = [
 
 LANG_MAP = dict(LANGUAGES)
 bp = Blueprint("text_translate", __name__)
+
+db_query = text_translate_store.query
+db_query_one = text_translate_store.query_one
+db_execute = text_translate_store.execute
 
 
 def _build_translate_prompt(source_lang: str, target_lang: str, custom_prompt: str | None = None) -> str:
