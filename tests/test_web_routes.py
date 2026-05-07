@@ -327,6 +327,13 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
+def test_subtitle_removal_upload_script_relies_on_global_xhr_csrf_header():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert 'xhr.setRequestHeader("X-CSRFToken"' not in scripts
+
+
 def test_subtitle_removal_list_page_uses_90x160_first_frame_thumbnails_with_centered_row_content(authed_client_no_db):
     response = authed_client_no_db.get("/subtitle-removal")
 

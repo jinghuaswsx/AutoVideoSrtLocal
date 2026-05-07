@@ -129,10 +129,6 @@
       return new Promise(function (resolve, reject) {
         var xhr = new XMLHttpRequest();
         xhr.open("PUT", bootstrapData.upload_url, true);
-        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
-        if ((bootstrapData.upload_backend || "local") === "local" && csrfMeta) {
-          xhr.setRequestHeader("X-CSRFToken", csrfMeta.getAttribute("content"));
-        }
         xhr.upload.onprogress = function (event) {
           if (!event.lengthComputable) {
             return;

@@ -38,6 +38,7 @@
   - `volc` 任务确保 `source_tos_key` 存在，并继续通过 TOS 签名 URL 调云端。
   - `local_vsr` 任务不做 TOS staging，runtime 直接读取 `video_path`。
 - 上传面板里 `火山` 默认选中；切换到 `本地 VSR` 时隐藏擦除类型。
+- 本地 VSR 的本地 PUT 仍走页面同源接口，CSRF header 由 `layout.html` 全局 XHR 包装统一注入；上传脚本不得再手动设置 `X-CSRFToken`，避免同名 header 被浏览器合并成重复 token 后被后端判为 invalid。
 - 详情页中本地 VSR 任务隐藏擦除类型，只展示处理方式。
 - 列表接口支持 `subtitle_backend=volc|local_vsr` 过滤。
 - 列表表格新增/展示 `处理方式` 字段。
