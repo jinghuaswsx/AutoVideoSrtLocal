@@ -65,6 +65,26 @@ USE_CASES: dict[str, UseCase] = {
         "gemini_vertex",
         "tokens",
     ),
+    "omni_av_sync.diagnose": _uc(
+        "omni_av_sync.diagnose",
+        "omni_translate",
+        "Omni 音画同步诊断",
+        "Doubao Seed 2.0 Lite 多模态理解原视频与句级 TTS 时间轴，输出结构化音画同步问题候选",
+        "doubao",
+        "doubao-seed-2-0-lite-260215",
+        "doubao",
+        "tokens",
+    ),
+    "omni_av_sync.verify": _uc(
+        "omni_av_sync.verify",
+        "omni_translate",
+        "Omni 音画同步复核",
+        "Gemini 3 Flash 复核 Doubao 音画同步问题候选，只保留可安全处理的问题",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
+        "tokens",
+    ),
     # ASR 同语言纯净化（omni 用于 _step_asr_clean，multi 用于 asr_normalize 前置）
     "asr_clean.purify_primary": _uc(
         "asr_clean.purify_primary",

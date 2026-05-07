@@ -98,14 +98,26 @@ CAPABILITY_GROUPS: list[dict[str, Any]] = [
         ],
         "default": True,
     },
+    {
+        "id": "av_sync_audit",
+        "label": "⑨ 音画同步审计",
+        "kind": "radio",
+        "options": [
+            {"value": "off",         "label": "off",         "desc": "关闭审计，保持现有 Omni 行为"},
+            {"value": "report_only", "label": "report_only", "desc": "Doubao 诊断 + Gemini 复核，只输出结构化报告，不自动改文案或音频"},
+            {"value": "safe_auto",   "label": "safe_auto",   "desc": "仅在句级链路内应用安全修正；其他链路自动降级为 report_only"},
+        ],
+        "default": "off",
+    },
 ]
 
-# 4 个 radio 字段的合法取值集合
+# radio 字段的合法取值集合
 _RADIO_VALID_VALUES: dict[str, set[str]] = {
     "asr_post":       {"asr_clean", "asr_normalize"},
     "translate_algo": {"standard", "shot_char_limit", "av_sentence"},
     "tts_strategy":   {"five_round_rewrite", "sentence_reconcile"},
     "subtitle":       {"asr_realign", "sentence_units"},
+    "av_sync_audit":  {"off", "report_only", "safe_auto"},
 }
 
 _BOOL_FIELDS = ("shot_decompose", "source_anchored", "voice_separation", "loudness_match")
@@ -134,8 +146,8 @@ def validate_plugin_config(cfg: dict | None) -> dict:
 
     校验失败抛 ``ValueError``（中文消息）。校验项：
 
-    1. 4 个 radio 字段（``asr_post`` / ``translate_algo`` / ``tts_strategy`` /
-       ``subtitle``）必须存在且取值合法
+    1. radio 字段（``asr_post`` / ``translate_algo`` / ``tts_strategy`` /
+       ``subtitle`` / ``av_sync_audit``）必须存在且取值合法
     2. 4 个 boolean 字段（``shot_decompose`` / ``source_anchored`` /
        ``voice_separation`` / ``loudness_match``）缺失时用默认值补齐
     3. 依赖关系（任一不满足直接拒绝）：
@@ -145,6 +157,8 @@ def validate_plugin_config(cfg: dict | None) -> dict:
     4. silent fix:
         * ``translate_algo == "av_sentence"`` 时 ``source_anchored`` 强制改成 ``False``
           （av_sentence 走完全不同的 prompt 体系，INPUT NOTICE 不适用）
+        * ``av_sync_audit == "safe_auto"`` 但不是句级链路时自动降级为
+          ``report_only``，避免非句级链路被自动改写
     """
     if cfg is None:
         cfg = {}
@@ -190,5 +204,13 @@ def validate_plugin_config(cfg: dict | None) -> dict:
     # 4. silent fix
     if out["translate_algo"] == "av_sentence" and out["source_anchored"]:
         out["source_anchored"] = False
+    if out["av_sync_audit"] == "safe_auto":
+        sentence_chain = (
+            out["translate_algo"] == "av_sentence"
+            and out["tts_strategy"] == "sentence_reconcile"
+            and out["subtitle"] == "sentence_units"
+        )
+        if not sentence_chain:
+            out["av_sync_audit"] = "report_only"
 
     return out

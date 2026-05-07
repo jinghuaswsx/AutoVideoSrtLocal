@@ -27,24 +27,28 @@ CFG_MULTI_LIKE = {
     "translate_algo": "standard", "source_anchored": False,
     "tts_strategy": "five_round_rewrite", "subtitle": "asr_realign",
     "voice_separation": True, "loudness_match": True,
+    "av_sync_audit": "off",
 }
 CFG_OMNI_CURRENT = {
     "asr_post": "asr_clean", "shot_decompose": False,
     "translate_algo": "standard", "source_anchored": True,
     "tts_strategy": "five_round_rewrite", "subtitle": "asr_realign",
     "voice_separation": True, "loudness_match": True,
+    "av_sync_audit": "off",
 }
 CFG_AV_SYNC_CURRENT = {
     "asr_post": "asr_normalize", "shot_decompose": False,
     "translate_algo": "av_sentence", "source_anchored": False,
     "tts_strategy": "sentence_reconcile", "subtitle": "sentence_units",
     "voice_separation": True, "loudness_match": True,
+    "av_sync_audit": "off",
 }
 CFG_LAB_CURRENT = {
     "asr_post": "asr_normalize", "shot_decompose": True,
     "translate_algo": "shot_char_limit", "source_anchored": False,
     "tts_strategy": "five_round_rewrite", "subtitle": "asr_realign",
     "voice_separation": True, "loudness_match": True,
+    "av_sync_audit": "off",
 }
 
 
@@ -106,6 +110,28 @@ def test_pipeline_steps_for_av_sync_current(monkeypatch, omni_runner):
         "compose", "export",
     ]
     assert "alignment" not in names
+
+
+def test_pipeline_inserts_av_sync_audit_after_tts_when_enabled(
+    monkeypatch, omni_runner,
+):
+    cfg = dict(CFG_AV_SYNC_CURRENT)
+    cfg["av_sync_audit"] = "report_only"
+    _patch_resolve_cfg(monkeypatch, cfg)
+    names = _step_names(omni_runner)
+    assert names == [
+        "extract", "asr", "separate",
+        "asr_normalize",
+        "voice_match",
+        "translate", "tts", "av_sync_audit", "loudness_match", "subtitle",
+        "compose", "export",
+    ]
+    assert names.index("tts") < names.index("av_sync_audit") < names.index("subtitle")
+
+
+def test_pipeline_skips_av_sync_audit_when_off(monkeypatch, omni_runner):
+    _patch_resolve_cfg(monkeypatch, CFG_AV_SYNC_CURRENT)
+    assert "av_sync_audit" not in _step_names(omni_runner)
 
 
 def test_pipeline_steps_for_lab_current(monkeypatch, omni_runner):
