@@ -11,6 +11,29 @@ def test_order_profit_summary_route_uses_aggregate_payload(authed_client_no_db, 
                 "ok": {"lines": 2, "profit": 25.0},
                 "incomplete": {"lines": 0, "profit": 0},
             },
+            "overview": {
+                "line_count": 2,
+                "revenue_usd": 100.0,
+                "confirmed_profit_usd": 25.0,
+                "estimated_profit_usd": 0.0,
+                "unallocated_ad_spend_usd": 12.5,
+                "total_profit_usd": 12.5,
+                "total_margin_pct": 12.5,
+            },
+            "estimate_marks": {
+                "shopify_fee": {
+                    "estimated": True,
+                    "amount_usd": 3.0,
+                    "lines": 2,
+                    "label": "策略 C 估算",
+                },
+                "unallocated_ad_spend": {
+                    "estimated": False,
+                    "amount_usd": 12.5,
+                    "lines": 0,
+                    "label": "待配对，已扣入总利润",
+                },
+            },
             "unallocated_ad_spend_usd": 12.5,
             "margin_pct": 25.0,
         },
@@ -24,6 +47,8 @@ def test_order_profit_summary_route_uses_aggregate_payload(authed_client_no_db, 
     assert payload["summary"]["ok"]["profit"] == 25.0
     assert payload["unallocated_ad_spend_usd"] == 12.5
     assert payload["margin_pct"] == 25.0
+    assert payload["overview"]["total_profit_usd"] == 12.5
+    assert payload["estimate_marks"]["shopify_fee"]["label"] == "策略 C 估算"
 
 
 def test_order_profit_lines_route_delegates_query(authed_client_no_db, monkeypatch):

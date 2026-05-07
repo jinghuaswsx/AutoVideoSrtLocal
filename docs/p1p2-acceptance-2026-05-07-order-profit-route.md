@@ -17,6 +17,19 @@ Scope:
   uses a searchable product input backed by active `media_products`; selected
   `product_id` is sent to `/order-profit/api/orders`, and order rows, summary stats,
   and expanded SKU lines are scoped to that product.
+- Follow-up feature: the `/order-profit` summary tab must show an actionable total
+  profit number. The total profit is:
+  `ok_profit + incomplete_estimated_profit - latest_unallocated_ad_spend`.
+  The existing `summary.ok.profit` remains available as the confirmed/complete-line
+  subtotal. The summary payload must additionally expose an `overview` object with
+  revenue, line count, confirmed profit, estimated profit, unallocated ad spend,
+  total profit, and total margin percentage.
+- The summary tab must explicitly mark estimated data sources instead of presenting
+  every cost as equally certain. Required marks:
+  Shopify fee uses strategy C estimates, return reserve is a 1% policy reserve,
+  purchase fallback uses `revenue * 10%`, shipping fallback uses `revenue * 20%`,
+  product `packet_cost_estimated` is an estimated shipping source, and unallocated
+  campaign spend is pending product matching but is deducted in total profit.
 
 Verification:
 
@@ -45,6 +58,27 @@ Verification:
 - Product filter template render smoke test:
   `tests/test_order_menu_permissions.py::test_order_profit_permission_grant_allows_user_page_access`:
   `1 passed`.
+- Summary profit and estimate-mark RED was confirmed with:
+  `tests/test_order_profit_aggregation.py::test_status_summary_aggregates_line_statuses_and_last_run`,
+  `tests/test_order_profit_aggregation.py::test_status_summary_queries_estimated_cost_sources`,
+  and
+  `tests/test_order_profit_dashboard_assets.py::test_order_profit_dashboard_renders_total_profit_and_estimate_marks`:
+  all failed before implementation because the payload had no `overview`,
+  the SQL did not aggregate `cost_basis` estimate sources, and the template had
+  no total-profit / estimate-mark elements.
+- Summary profit and estimate-mark GREEN focused regression:
+  `tests/test_order_profit_aggregation.py::test_status_summary_aggregates_line_statuses_and_last_run`,
+  `tests/test_order_profit_aggregation.py::test_status_summary_queries_estimated_cost_sources`,
+  `tests/test_order_profit_routes.py::test_order_profit_summary_route_uses_aggregate_payload`,
+  and
+  `tests/test_order_profit_dashboard_assets.py::test_order_profit_dashboard_renders_total_profit_and_estimate_marks`:
+  `4 passed`.
+- Summary profit and estimate-mark combined no-db regression:
+  `tests/test_order_profit_routes.py`, `tests/test_order_profit_aggregation.py`,
+  `tests/test_order_profit_response_service.py`, `tests/test_order_profit_dashboard_assets.py`,
+  `tests/test_cost_completeness.py`, `tests/test_profit_repository.py`,
+  `tests/test_profit_calculation.py`, and `tests/test_architecture_boundaries.py`:
+  `294 passed`.
 - GREEN focused tests:
   `tests/test_order_profit_routes.py`, `tests/test_order_profit_aggregation.py`,
   and `tests/test_architecture_boundaries.py::test_order_profit_route_db_access_lives_in_appcore_order_analytics`:

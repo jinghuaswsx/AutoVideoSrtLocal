@@ -287,7 +287,25 @@ def _empty_status_summary_bucket() -> dict[str, float | int]:
         "purchase": 0,
         "shipping_cost": 0,
         "return_reserve": 0,
+        "purchase_fallback_estimated": 0,
+        "purchase_fallback_estimated_lines": 0,
+        "shipping_product_estimated": 0,
+        "shipping_product_estimated_lines": 0,
+        "shipping_fallback_estimated": 0,
+        "shipping_fallback_estimated_lines": 0,
     }
+
+
+def _round_money(value: float) -> float:
+    return round(float(value or 0), 2)
+
+
+def _sum_summary(summary: dict[str, dict[str, float | int]], key: str) -> float:
+    return float(summary["ok"].get(key) or 0) + float(summary["incomplete"].get(key) or 0)
+
+
+def _sum_summary_int(summary: dict[str, dict[str, float | int]], key: str) -> int:
+    return int(summary["ok"].get(key) or 0) + int(summary["incomplete"].get(key) or 0)
 
 
 def get_order_profit_status_summary(
@@ -302,7 +320,19 @@ def get_order_profit_status_summary(
         "       SUM(ad_cost_usd) AS ad_cost, "
         "       SUM(purchase_usd) AS purchase, "
         "       SUM(shipping_cost_usd) AS shipping_cost, "
-        "       SUM(return_reserve_usd) AS return_reserve "
+        "       SUM(return_reserve_usd) AS return_reserve, "
+        "       SUM(CASE WHEN JSON_SEARCH(cost_basis, 'one', 'purchase', NULL, '$.estimated_fields[*]') IS NOT NULL "
+        "                THEN COALESCE(purchase_usd, 0) ELSE 0 END) AS purchase_fallback_estimated, "
+        "       SUM(CASE WHEN JSON_SEARCH(cost_basis, 'one', 'purchase', NULL, '$.estimated_fields[*]') IS NOT NULL "
+        "                THEN 1 ELSE 0 END) AS purchase_fallback_estimated_lines, "
+        "       SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(cost_basis, '$.shipping_cost_source')) = 'product_estimated' "
+        "                THEN COALESCE(shipping_cost_usd, 0) ELSE 0 END) AS shipping_product_estimated, "
+        "       SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(cost_basis, '$.shipping_cost_source')) = 'product_estimated' "
+        "                THEN 1 ELSE 0 END) AS shipping_product_estimated_lines, "
+        "       SUM(CASE WHEN JSON_SEARCH(cost_basis, 'one', 'shipping_cost', NULL, '$.estimated_fields[*]') IS NOT NULL "
+        "                THEN COALESCE(shipping_cost_usd, 0) ELSE 0 END) AS shipping_fallback_estimated, "
+        "       SUM(CASE WHEN JSON_SEARCH(cost_basis, 'one', 'shipping_cost', NULL, '$.estimated_fields[*]') IS NOT NULL "
+        "                THEN 1 ELSE 0 END) AS shipping_fallback_estimated_lines "
         "FROM order_profit_lines "
         "WHERE business_date BETWEEN %s AND %s "
         "GROUP BY status",
@@ -324,6 +354,24 @@ def get_order_profit_status_summary(
         bucket["purchase"] = float(row.get("purchase") or 0)
         bucket["shipping_cost"] = float(row.get("shipping_cost") or 0)
         bucket["return_reserve"] = float(row.get("return_reserve") or 0)
+        bucket["purchase_fallback_estimated"] = float(
+            row.get("purchase_fallback_estimated") or 0
+        )
+        bucket["purchase_fallback_estimated_lines"] = int(
+            row.get("purchase_fallback_estimated_lines") or 0
+        )
+        bucket["shipping_product_estimated"] = float(
+            row.get("shipping_product_estimated") or 0
+        )
+        bucket["shipping_product_estimated_lines"] = int(
+            row.get("shipping_product_estimated_lines") or 0
+        )
+        bucket["shipping_fallback_estimated"] = float(
+            row.get("shipping_fallback_estimated") or 0
+        )
+        bucket["shipping_fallback_estimated_lines"] = int(
+            row.get("shipping_fallback_estimated_lines") or 0
+        )
 
     last_run = query(
         "SELECT unallocated_ad_spend_usd FROM order_profit_runs "
@@ -341,12 +389,80 @@ def get_order_profit_status_summary(
         if summary["ok"]["revenue"] > 0
         else None
     )
+    overview_revenue = _sum_summary(summary, "revenue")
+    confirmed_profit = float(summary["ok"]["profit"] or 0)
+    estimated_profit = float(summary["incomplete"]["profit"] or 0)
+    total_profit = confirmed_profit + estimated_profit - unallocated
+    overview_margin = (
+        (total_profit / overview_revenue) * 100
+        if overview_revenue > 0
+        else None
+    )
+    line_count = _sum_summary_int(summary, "lines")
+    estimate_marks = {
+        "shopify_fee": {
+            "estimated": True,
+            "amount_usd": _round_money(_sum_summary(summary, "shopify_fee")),
+            "lines": line_count,
+            "label": "策略 C 估算",
+        },
+        "purchase_fallback": {
+            "estimated": True,
+            "amount_usd": _round_money(
+                _sum_summary(summary, "purchase_fallback_estimated")
+            ),
+            "lines": _sum_summary_int(summary, "purchase_fallback_estimated_lines"),
+            "label": "缺采购价，按营收 10% 估算",
+        },
+        "shipping_product_estimated": {
+            "estimated": True,
+            "amount_usd": _round_money(
+                _sum_summary(summary, "shipping_product_estimated")
+            ),
+            "lines": _sum_summary_int(summary, "shipping_product_estimated_lines"),
+            "label": "使用产品预估小包成本",
+        },
+        "shipping_fallback": {
+            "estimated": True,
+            "amount_usd": _round_money(
+                _sum_summary(summary, "shipping_fallback_estimated")
+            ),
+            "lines": _sum_summary_int(summary, "shipping_fallback_estimated_lines"),
+            "label": "缺物流成本，按营收 20% 估算",
+        },
+        "return_reserve": {
+            "estimated": True,
+            "amount_usd": _round_money(_sum_summary(summary, "return_reserve")),
+            "lines": line_count,
+            "label": "退货占用 1% 预留",
+        },
+        "unallocated_ad_spend": {
+            "estimated": False,
+            "amount_usd": _round_money(unallocated),
+            "lines": 0,
+            "label": "待配对，已扣入总利润",
+        },
+    }
     return {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
         "summary": summary,
         "unallocated_ad_spend_usd": unallocated,
         "margin_pct": round(margin, 2) if margin is not None else None,
+        "overview": {
+            "line_count": line_count,
+            "revenue_usd": _round_money(overview_revenue),
+            "confirmed_profit_usd": _round_money(confirmed_profit),
+            "estimated_profit_usd": _round_money(estimated_profit),
+            "unallocated_ad_spend_usd": _round_money(unallocated),
+            "total_profit_usd": _round_money(total_profit),
+            "total_margin_pct": (
+                round(overview_margin, 2)
+                if overview_margin is not None
+                else None
+            ),
+        },
+        "estimate_marks": estimate_marks,
     }
 
 

@@ -37,3 +37,13 @@ def test_order_profit_dashboard_escapes_api_backed_html_fields():
     ]
     for snippet in expected_escaped_paths:
         assert snippet in TEMPLATE
+
+
+def test_order_profit_dashboard_renders_total_profit_and_estimate_marks():
+    assert 'id="opTotalProfit"' in TEMPLATE
+    assert 'id="opTotalProfitFormula"' in TEMPLATE
+    assert 'id="opEstimateMarksBody"' in TEMPLATE
+    assert "总利润" in TEMPLATE
+    assert "估算标记" in TEMPLATE
+    assert "renderEstimateMarks" in TEMPLATE
+    assert "estimate_marks" in TEMPLATE
