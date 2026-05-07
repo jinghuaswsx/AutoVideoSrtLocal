@@ -52,6 +52,7 @@
   min-width: 140px;
 }
 .ppd-filters select { min-width: 280px; }
+.ppd-filters #ppd-product { min-width: 320px; }
 .ppd-filters select:focus,
 .ppd-filters input:focus {
   outline: 2px solid rgba(59, 130, 246, .25);
@@ -331,9 +332,9 @@
   <section class="ppd-filters">
     <label>
       <span>产品</span>
-      <select id="ppd-product">
-        <option value="">加载中…</option>
-      </select>
+      <input type="text" id="ppd-product" list="ppd-product-list"
+             placeholder="加载中…" autocomplete="off" spellcheck="false">
+      <datalist id="ppd-product-list"></datalist>
     </label>
     <label>
       <span>开始日期</span>
@@ -445,7 +446,8 @@
   'use strict';
 
   var $ = function(id) { return document.getElementById(id); };
-  var productSelect = $('ppd-product');
+  var productInput = $('ppd-product');
+  var productListEl = $('ppd-product-list');
   var dateFromInput = $('ppd-from');
   var dateToInput = $('ppd-to');
   var reloadBtn = $('ppd-reload');
@@ -460,6 +462,13 @@
   var lastReport = null;
   var sortState = { key: 'paid_at', dir: 'desc' };
 
+  // 产品下拉用 datalist 实现搜索：
+  //   - input.value 是用户看到的字符串："product_code — 产品中文名"
+  //   - productLabelToId 把 label 映射回 product_id（提交时反查）
+  //   - productCodeToLabel 让"只输入了 product_code"也能匹配上
+  var productLabelToId = {};
+  var productCodeToLabel = {};
+
   // ── 默认日期：最近 30 天 ─────────────────────────
   function fmt(d) {
     var m = String(d.getMonth() + 1).padStart(2, '0');
@@ -473,33 +482,50 @@
     dateToInput.value = fmt(today);
   })();
 
-  // ── 产品下拉 ───────────────────────────
+  // ── 产品下拉（input + datalist 搜索）───────────
   function loadProducts() {
     return fetch('/order-analytics/product-profit/products', { credentials: 'same-origin' })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        productSelect.innerHTML = '';
+        productListEl.innerHTML = '';
+        productLabelToId = {};
+        productCodeToLabel = {};
         var opts = data.products || [];
         if (opts.length === 0) {
-          productSelect.innerHTML = '<option value="">没有产品</option>';
+          productInput.placeholder = '没有产品';
           return;
         }
-        var emptyOpt = document.createElement('option');
-        emptyOpt.value = ''; emptyOpt.textContent = '请选择产品';
-        productSelect.appendChild(emptyOpt);
         opts.forEach(function(p) {
+          var label = p.product_code + (p.name ? ' — ' + p.name : '');
+          productLabelToId[label] = p.id;
+          productCodeToLabel[p.product_code] = label;
           var o = document.createElement('option');
-          o.value = p.id;
-          o.textContent = p.product_code + (p.name ? ' — ' + p.name : '');
-          productSelect.appendChild(o);
+          o.value = label;
+          productListEl.appendChild(o);
         });
+        productInput.placeholder = '搜索 product_code 或产品名…';
         // 默认选中 ARP9 水枪如果有
-        var arp9 = opts.find(function(p) { return p.product_code === 'fully-automatic-water-blaster-rjc'; });
-        if (arp9) productSelect.value = arp9.id;
+        var arp9Label = productCodeToLabel['fully-automatic-water-blaster-rjc'];
+        if (arp9Label) productInput.value = arp9Label;
       })
       .catch(function(err) {
-        productSelect.innerHTML = '<option value="">加载失败：' + err + '</option>';
+        productInput.placeholder = '加载失败：' + err;
       });
+  }
+
+  function getSelectedProductId() {
+    var v = (productInput.value || '').trim();
+    if (!v) return '';
+    // 1. 精确匹配 label
+    if (productLabelToId[v]) return productLabelToId[v];
+    // 2. 用户只输入了 product_code（不带 name）→ 补全
+    if (productCodeToLabel[v]) return productLabelToId[productCodeToLabel[v]];
+    // 3. 大小写不敏感的前缀匹配
+    var vl = v.toLowerCase();
+    for (var k in productLabelToId) {
+      if (k.toLowerCase().indexOf(vl) === 0) return productLabelToId[k];
+    }
+    return '';
   }
 
   // ── 数字格式化 ───────────────────────────
@@ -525,12 +551,14 @@
 
   // ── 主查询入口 ─────────────────────────
   function runQuery() {
-    var pid = productSelect.value;
+    var pid = getSelectedProductId();
     var df = dateFromInput.value;
     var dt = dateToInput.value;
     errorBox.style.display = 'none';
     if (!pid) {
-      errorBox.textContent = '请先选择产品';
+      errorBox.textContent = productInput.value
+        ? '产品未匹配，请从下拉里选一个'
+        : '请先选择产品';
       errorBox.style.display = 'block';
       content.style.display = 'none';
       empty.style.display = 'none';
@@ -785,13 +813,21 @@
 
   // 触发查询
   reloadBtn.addEventListener('click', runQuery);
-  productSelect.addEventListener('change', function() {
-    if (productSelect.value) runQuery();
+  // datalist 选中或输入完毕（blur）会触发 change；只在能反查到 id 时自动跑
+  productInput.addEventListener('change', function() {
+    if (getSelectedProductId()) runQuery();
+  });
+  // 输入框里按 Enter 也直接查（不让浏览器只是 form 默认行为）
+  productInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runQuery();
+    }
   });
 
   // 初始化
   loadProducts().then(function() {
-    if (productSelect.value) runQuery();
+    if (getSelectedProductId()) runQuery();
   });
 })();
 </script>
