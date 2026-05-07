@@ -621,6 +621,38 @@ def test_create_child_task_rebuilds_terminal_failed_existing_child(
     assert fake_db.rows[expected_child_id]["type"] == "multi_translate"
 
 
+def test_create_child_task_drops_orphan_row_when_creator_raises(runtime_env, monkeypatch):
+    """场景：_create_video_child 在 store.create 之后、start_runner 之前抛异常。
+    旧逻辑会把已 INSERT 的孤儿 row 伪装成 'running' 返回，scheduler 永远轮询。
+    新逻辑必须 DELETE 该 row + re-raise，让 scheduler 把 item 标 failed 走 retry。
+    """
+    mod, fake_db = runtime_env
+    item = _item(0, kind="videos", ref={"source_raw_id": 301})
+    expected_child_id = uuid.uuid5(uuid.NAMESPACE_URL, "bulk_translate:parent-1:0").hex
+
+    def half_built_then_raise(parent_id, child_item, parent_state):
+        # 模拟：store.create 已经写了 row，store.update 或 start_runner 抛异常
+        fake_db.execute(
+            "INSERT INTO projects (id, user_id, type, status, state_json) "
+            "VALUES (%s, %s, 'bulk_translate', 'planning', %s)",
+            (expected_child_id, 1, "{}"),
+        )
+        raise RuntimeError("simulated start_runner failure")
+
+    monkeypatch.setattr(mod, "_create_video_child", half_built_then_raise)
+
+    with pytest.raises(RuntimeError, match="simulated start_runner failure"):
+        mod._create_child_task(
+            "parent-1",
+            item,
+            {"product_id": 77, "initiator": {"user_id": 1}},
+        )
+
+    # 关键回归：row 必须被清掉，否则下次 _create_child_task 会命中 existing_child
+    # 走 reuse 分支，永远不再启动 runner。
+    assert expected_child_id not in fake_db.rows
+
+
 def test_create_video_child_materializes_media_raw_source_locally(runtime_env, monkeypatch, tmp_path):
     mod, _fake_db = runtime_env
     raw_key = "1/medias/77/raw_sources/raw-demo.mp4"

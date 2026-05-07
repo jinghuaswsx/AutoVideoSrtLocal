@@ -824,15 +824,12 @@ def _create_child_task(parent_id: str, item: dict, parent_state: dict) -> tuple[
         if kind == "cover":
             return _create_video_cover_child(parent_id, item, parent_state)
     except Exception:
-        existing_child = _load_existing_child_project(child_task_id)
-        if existing_child:
-            child_task_type = (
-                existing_child.get("type")
-                or item.get("child_task_type")
-                or _child_type_for_kind(kind)
-            )
-            item["child_task_type"] = child_task_type
-            return child_task_id, child_task_type, existing_child.get("status") or "running"
+        # row 已 INSERT 但 store.update / start_runner 失败时，绝不能伪装成 "running"
+        # 返回——scheduler 会一直轮询一个从未启动 runner 的孤儿子任务。和上方
+        # _FAILURE_CHILD_STATUSES 分支同款处理：DELETE 该 row，让异常上抛给
+        # scheduler 把 item 标失败，retry 时再走一遍完整 INSERT + start_runner。
+        if _load_existing_child_project(child_task_id):
+            execute("DELETE FROM projects WHERE id = %s", (child_task_id,))
         raise
     raise ValueError(f"Unknown plan kind: {kind}")
 
