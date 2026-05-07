@@ -96,6 +96,32 @@ def test_admin_settings_domains_tab_renders_product_domain_management_card(super
     assert "omurio.com" in body
 
 
+def test_admin_settings_domains_add_row_has_large_input_spacing(superadmin_client_no_db):
+    patches = _admin_settings_get_patches([
+        {"id": 1, "domain": "newjoyloo.com", "enabled": True, "sort_order": 10},
+    ])
+    with ExitStack() as stack:
+        for item in patches:
+            stack.enter_context(item)
+        resp = superadmin_client_no_db.get("/admin/settings?tab=domains")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert (
+        ".settings-domain-add { display:grid; grid-template-columns:minmax(220px, 1fr) auto; "
+        "gap:10px; align-items:end; margin-bottom:100px; }"
+    ) in body
+    assert (
+        ".settings-domain-add-field { display:flex; align-items:center; gap:8px; margin:0; "
+        "color:var(--text-main,#111827); font-size:26px; font-weight:700; line-height:1.3; "
+        "white-space:nowrap; }"
+    ) in body
+    assert ".settings-domain-input {" in body
+    assert "width:440px; max-width:100%; height:48px;" in body
+    assert 'class="settings-domain-add-field"' in body
+    assert 'class="settings-domain-input"' in body
+
+
 def test_admin_settings_post_product_domains_adds_normalized_domain(superadmin_client_no_db):
     with patch("web.routes.admin.product_link_domains.upsert_domain") as upsert:
         resp = superadmin_client_no_db.post(
