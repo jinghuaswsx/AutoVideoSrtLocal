@@ -6,6 +6,7 @@
   <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
   <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
   <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
+  <button type="button" class="oa-tab" data-tab="adAccounts" role="tab" aria-selected="false">广告账户</button>
   <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
   <button type="button" class="oa-tab" data-tab="countryDashboard" role="tab" aria-selected="false">国家看板</button>
   <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
@@ -289,6 +290,26 @@
 .oa-table.oar-compact-table { font-size: var(--text-sm); }
 .oa-table.oar-compact-table th, .oa-table.oar-compact-table td {
   padding: 9px var(--space-3); vertical-align: top;
+}
+.maa-input {
+  width: 100%; min-width: 120px; height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--bg-card); color: var(--fg); font-size: var(--text-sm);
+}
+.maa-input:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.maa-input-mono { min-width: 150px; font-family: var(--font-mono); font-size: var(--text-xs); }
+.maa-store-list {
+  min-width: 140px; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+}
+.maa-store-option {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  color: var(--fg); font-size: var(--text-sm); white-space: nowrap;
+}
+.maa-store-option input, .maa-enabled {
+  width: 16px; height: 16px; margin: 0; accent-color: var(--accent);
 }
 .oar-product-cell {
   min-width: 280px; max-width: 520px; white-space: normal; word-break: break-word;
@@ -924,6 +945,7 @@
   <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
   <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
   <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
+  <button type="button" class="oa-tab" data-tab="adAccounts" role="tab" aria-selected="false">广告账户</button>
   <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
   <button type="button" class="oa-tab" data-tab="countryDashboard" role="tab" aria-selected="false">国家看板</button>
   <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
@@ -2182,6 +2204,43 @@
     </div>
   </div>
 </div>
+
+<!-- ═══════ Tab: 广告账户 ═══════ -->
+<section class="oa-panel" id="panelAdAccounts">
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      <button type="button" class="oad-btn-primary" id="metaAdAccountAdd">新增账户</button>
+      <button type="button" class="oad-btn-primary" id="metaAdAccountSave">保存配置</button>
+      <div class="oar-note">用于 Meta 实时同步、收盘日同步和产品盈亏广告费分摊</div>
+    </div>
+  </div>
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">Meta 广告账户与店铺映射</div>
+      <div class="oar-note" id="metaAdAccountsStatus">加载中...</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table oar-compact-table">
+        <thead>
+          <tr>
+            <th>启用</th>
+            <th>店铺</th>
+            <th>名称</th>
+            <th>Code</th>
+            <th>Account ID</th>
+            <th>Business ID</th>
+            <th>CSV 前缀</th>
+            <th>备注</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="metaAdAccountsBody">
+          <tr><td colspan="9" class="oad-loading">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -2211,6 +2270,8 @@
         initAnalytics();
       } else if (tab.dataset.tab === 'ads') {
         initAds();
+      } else if (tab.dataset.tab === 'adAccounts') {
+        initMetaAdAccounts();
       } else if (tab.dataset.tab === 'trueRoas') {
         initTrueRoas();
       } else if (tab.dataset.tab === 'weeklyRoas') {
@@ -3420,6 +3481,146 @@
 
   // ── 广告分析 ──────────────────────────────────────
   var adsInited = false;
+  var metaAdAccountsInited = false;
+  var metaAdAccountsState = { accounts: [], stores: ['newjoy', 'omurio'] };
+
+  function initMetaAdAccounts() {
+    if (!metaAdAccountsInited) {
+      metaAdAccountsInited = true;
+      var addBtn = document.getElementById('metaAdAccountAdd');
+      var saveBtn = document.getElementById('metaAdAccountSave');
+      if (addBtn) addBtn.addEventListener('click', addMetaAdAccountRow);
+      if (saveBtn) saveBtn.addEventListener('click', saveMetaAdAccounts);
+    }
+    loadMetaAdAccounts();
+  }
+
+  function setMetaAdAccountsStatus(text, isError) {
+    var status = document.getElementById('metaAdAccountsStatus');
+    if (!status) return;
+    status.textContent = text || '';
+    status.style.color = isError ? 'var(--danger-fg)' : 'var(--fg-muted)';
+  }
+
+  function loadMetaAdAccounts() {
+    var body = document.getElementById('metaAdAccountsBody');
+    if (body) body.innerHTML = '<tr><td colspan="9" class="oad-loading">加载中...</td></tr>';
+    setMetaAdAccountsStatus('加载中...', false);
+    fetch('/order-analytics/meta-ad-accounts', { cache: 'no-store' })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+      .then(function(res) {
+        if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '加载失败');
+        metaAdAccountsState.stores = res.body.available_store_codes || ['newjoy', 'omurio'];
+        metaAdAccountsState.accounts = res.body.accounts || [];
+        renderMetaAdAccounts();
+        setMetaAdAccountsStatus('共 ' + metaAdAccountsState.accounts.length + ' 个账户', false);
+      })
+      .catch(function(err) {
+        if (body) body.innerHTML = '<tr><td colspan="9" class="oad-error">加载失败：' + escapeHtml(err.message || String(err)) + '</td></tr>';
+        setMetaAdAccountsStatus('加载失败', true);
+      });
+  }
+
+  function metaAdAccountStoreInputs(account) {
+    var selected = new Set((account.store_codes || []).map(function(item) { return String(item).toLowerCase(); }));
+    return metaAdAccountsState.stores.map(function(store) {
+      var checked = selected.has(store) ? ' checked' : '';
+      return '<label class="maa-store-option">' +
+        '<input type="checkbox" data-maa-store value="' + escapeHtml(store) + '"' + checked + '> ' +
+        escapeHtml(store) + '</label>';
+    }).join('');
+  }
+
+  function renderMetaAdAccounts() {
+    var body = document.getElementById('metaAdAccountsBody');
+    if (!body) return;
+    if (!metaAdAccountsState.accounts.length) {
+      body.innerHTML = '<tr><td colspan="9" class="oad-empty">暂无广告账户配置</td></tr>';
+      return;
+    }
+    body.innerHTML = '';
+    metaAdAccountsState.accounts.forEach(function(account, idx) {
+      var tr = document.createElement('tr');
+      tr.dataset.index = String(idx);
+      tr.innerHTML =
+        '<td><input type="checkbox" class="maa-enabled" data-maa-field="enabled"' + (account.enabled ? ' checked' : '') + '></td>' +
+        '<td><div class="maa-store-list">' + metaAdAccountStoreInputs(account) + '</div></td>' +
+        '<td><input class="maa-input" data-maa-field="label" value="' + escapeHtml(account.label || '') + '" aria-label="账户名称"></td>' +
+        '<td><input class="maa-input maa-input-mono" data-maa-field="code" value="' + escapeHtml(account.code || '') + '" aria-label="账户 Code"></td>' +
+        '<td><input class="maa-input maa-input-mono" data-maa-field="account_id" value="' + escapeHtml(account.account_id || '') + '" aria-label="Account ID"></td>' +
+        '<td><input class="maa-input maa-input-mono" data-maa-field="business_id" value="' + escapeHtml(account.business_id || '') + '" aria-label="Business ID"></td>' +
+        '<td><input class="maa-input maa-input-mono" data-maa-field="csv_prefix" value="' + escapeHtml(account.csv_prefix || '') + '" aria-label="CSV 前缀"></td>' +
+        '<td><input class="maa-input" data-maa-field="note" value="' + escapeHtml(account.note || '') + '" aria-label="备注"></td>' +
+        '<td><button type="button" class="oad-btn-ghost" data-maa-remove>删除</button></td>';
+      var removeBtn = tr.querySelector('[data-maa-remove]');
+      if (removeBtn) removeBtn.addEventListener('click', function() {
+        metaAdAccountsState.accounts.splice(idx, 1);
+        renderMetaAdAccounts();
+        setMetaAdAccountsStatus('有未保存更改', false);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  function addMetaAdAccountRow() {
+    metaAdAccountsState.accounts.push({
+      code: '',
+      label: '',
+      account_id: '',
+      business_id: '',
+      csv_prefix: '',
+      store_codes: [],
+      enabled: true,
+      note: '',
+    });
+    renderMetaAdAccounts();
+    setMetaAdAccountsStatus('有未保存更改', false);
+  }
+
+  function collectMetaAdAccounts() {
+    var rows = Array.from(document.querySelectorAll('#metaAdAccountsBody tr[data-index]'));
+    return rows.map(function(row) {
+      function value(field) {
+        var input = row.querySelector('[data-maa-field="' + field + '"]');
+        return input ? input.value.trim() : '';
+      }
+      return {
+        enabled: !!(row.querySelector('[data-maa-field="enabled"]') || {}).checked,
+        store_codes: Array.from(row.querySelectorAll('[data-maa-store]:checked')).map(function(input) { return input.value; }),
+        label: value('label'),
+        code: value('code'),
+        account_id: value('account_id'),
+        business_id: value('business_id'),
+        csv_prefix: value('csv_prefix'),
+        note: value('note'),
+      };
+    });
+  }
+
+  function saveMetaAdAccounts() {
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    var accounts = collectMetaAdAccounts();
+    setMetaAdAccountsStatus('保存中...', false);
+    fetch('/order-analytics/meta-ad-accounts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfMeta ? csrfMeta.content : '',
+      },
+      body: JSON.stringify({ accounts: accounts }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+      .then(function(res) {
+        if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '保存失败');
+        metaAdAccountsState.stores = res.body.available_store_codes || metaAdAccountsState.stores;
+        metaAdAccountsState.accounts = res.body.accounts || accounts;
+        renderMetaAdAccounts();
+        setMetaAdAccountsStatus('已保存', false);
+      })
+      .catch(function(err) {
+        setMetaAdAccountsStatus('保存失败：' + (err.message || String(err)), true);
+      });
+  }
 
   function initAds() {
     if (adsInited) return;

@@ -6,8 +6,8 @@
 -- 不要覆盖现有 JSON。需要更新种子时显式 UPDATE。
 --
 -- 种子数据：
---   newjoyloo  enabled=false  2026-05-07 被 Meta 封禁
---   Omurio     enabled=true   正常投放
+--   newjoyloo  store_codes=["newjoy"]  enabled=false  2026-05-07 被 Meta 封禁
+--   Omurio     store_codes=["omurio"]  enabled=true   正常投放
 --
 -- 解封后只需把 newjoyloo 那个对象的 enabled 改回 true：
 --   UPDATE system_settings
@@ -18,5 +18,5 @@
 INSERT IGNORE INTO system_settings (`key`, `value`) VALUES
   (
     'meta_ad_accounts',
-    '[{"code":"newjoyloo","label":"Newjoyloo","account_id":"2110407576446225","business_id":"476723373113063","csv_prefix":"newjoyloo","enabled":false,"note":"2026-05-07 被 Meta 封禁，等待恢复"},{"code":"Omurio","label":"Omurio","account_id":"1253003326160754","business_id":"909367947900474","csv_prefix":"Omurio","enabled":true,"note":""}]'
+    '[{"code":"newjoyloo","label":"Newjoyloo","account_id":"2110407576446225","business_id":"476723373113063","csv_prefix":"newjoyloo","store_codes":["newjoy"],"enabled":false,"note":"2026-05-07 被 Meta 封禁，等待恢复"},{"code":"Omurio","label":"Omurio","account_id":"1253003326160754","business_id":"909367947900474","csv_prefix":"Omurio","store_codes":["omurio"],"enabled":true,"note":""}]'
   );

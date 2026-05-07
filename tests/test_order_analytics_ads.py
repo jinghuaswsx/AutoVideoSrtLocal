@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 
 from appcore import order_analytics as oa
 
@@ -502,6 +503,101 @@ def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
     assert "广告分析" in body
     assert 'data-tab="ads"' in body
     assert 'id="panelAds"' in body
+
+
+def test_data_analysis_page_has_meta_ad_accounts_tab(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "广告账户" in body
+    assert 'data-tab="adAccounts"' in body
+    assert 'id="panelAdAccounts"' in body
+    assert 'id="metaAdAccountsBody"' in body
+
+
+def test_meta_ad_accounts_api_reads_accounts(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as routes
+
+    account = SimpleNamespace(
+        code="Omurio",
+        label="Omurio",
+        account_id="1253003326160754",
+        business_id="909367947900474",
+        csv_prefix="Omurio",
+        store_codes=("omurio",),
+        enabled=True,
+        note="",
+        to_dict=lambda: {
+            "code": "Omurio",
+            "label": "Omurio",
+            "account_id": "1253003326160754",
+            "business_id": "909367947900474",
+            "csv_prefix": "Omurio",
+            "store_codes": ["omurio"],
+            "enabled": True,
+            "note": "",
+        },
+    )
+    monkeypatch.setattr(
+        routes,
+        "meta_ad_accounts",
+        SimpleNamespace(
+            AVAILABLE_STORE_CODES=("newjoy", "omurio"),
+            get_all_accounts=lambda: [account],
+        ),
+        raising=False,
+    )
+
+    response = authed_client_no_db.get("/order-analytics/meta-ad-accounts")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["available_store_codes"] == ["newjoy", "omurio"]
+    assert payload["accounts"][0]["code"] == "Omurio"
+    assert payload["accounts"][0]["store_codes"] == ["omurio"]
+
+
+def test_meta_ad_accounts_api_saves_accounts(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as routes
+
+    saved = {}
+
+    def fake_set_accounts(accounts):
+        saved["accounts"] = accounts
+
+    monkeypatch.setattr(
+        routes,
+        "meta_ad_accounts",
+        SimpleNamespace(
+            AVAILABLE_STORE_CODES=("newjoy", "omurio"),
+            set_accounts=fake_set_accounts,
+            get_all_accounts=lambda: [],
+        ),
+        raising=False,
+    )
+
+    response = authed_client_no_db.post(
+        "/order-analytics/meta-ad-accounts",
+        json={
+            "accounts": [
+                {
+                    "code": "Omurio",
+                    "label": "Omurio",
+                    "account_id": "act_1253003326160754",
+                    "business_id": "909367947900474",
+                    "csv_prefix": "Omurio",
+                    "store_codes": ["omurio"],
+                    "enabled": True,
+                    "note": "live",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert saved["accounts"][0]["store_codes"] == ["omurio"]
+    assert response.get_json()["ok"] is True
 
 
 def test_data_analysis_tabs_and_type_controls_are_capsule_buttons(authed_client_no_db):
