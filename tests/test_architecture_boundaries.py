@@ -1831,6 +1831,32 @@ def test_copywriting_project_sql_lives_in_appcore_store():
         assert f"copywriting_route_store.{helper_name}" in route_source
 
 
+def test_copywriting_input_and_prompt_sql_lives_in_appcore_store():
+    route_source = Path("web/routes/copywriting.py").read_text(encoding="utf-8")
+    store_source = Path("appcore/copywriting_route_store.py").read_text(encoding="utf-8")
+
+    for snippet in [
+        "FROM copywriting_inputs",
+        "INSERT INTO copywriting_inputs",
+        "UPDATE copywriting_inputs",
+        "FROM user_prompts",
+    ]:
+        assert snippet not in route_source
+        assert snippet in store_source
+
+    for helper_name in [
+        "get_inputs",
+        "insert_inputs",
+        "update_inputs",
+        "update_product_image_url",
+        "get_prompt_text",
+        "get_input_language",
+        "get_product_image_path",
+    ]:
+        assert f"def {helper_name}" in store_source
+        assert f"copywriting_route_store.{helper_name}" in route_source
+
+
 def test_pushes_route_downstream_http_lives_in_appcore_pushes():
     route_source = Path("web/routes/pushes.py").read_text(encoding="utf-8")
     appcore_source = Path("appcore/pushes.py").read_text(encoding="utf-8")
