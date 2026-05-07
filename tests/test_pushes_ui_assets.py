@@ -150,6 +150,20 @@ def test_push_modal_uses_compact_ai_evaluation_detail_table():
     assert "audit-country-table-value" in script
 
 
+def test_push_log_drawer_escapes_log_text_fields():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    start = script.index("async function viewLogs")
+    end = script.index("// ---------- 绑定 ----------", start)
+    view_logs = script[start:end]
+
+    assert "escapeHtml(l.created_at)" in view_logs
+    assert "escapeHtml(l.error_message)" in view_logs
+    assert "escapeHtml(String(l.response_body || '').slice(0, 500))" in view_logs
+    assert "${l.created_at}" not in view_logs
+    assert "${l.error_message}" not in view_logs
+    assert "${l.response_body.slice(0, 500)}" not in view_logs
+
+
 def test_pushes_and_medias_use_shared_ai_evaluation_detail_modal():
     shared = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
     pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")

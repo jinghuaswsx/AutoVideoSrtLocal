@@ -1346,9 +1346,9 @@
         content.innerHTML = data.logs.map(l => `
           <div class="log-row">
             <div><strong>${l.status === 'success' ? '✓ 成功' : '✗ 失败'}</strong>
-                 <span class="time">${l.created_at}</span></div>
-            ${l.error_message ? `<div class="err">${l.error_message}</div>` : ''}
-            ${l.response_body ? `<pre>${l.response_body.slice(0, 500)}</pre>` : ''}
+                 <span class="time">${escapeHtml(l.created_at)}</span></div>
+            ${l.error_message ? `<div class="err">${escapeHtml(l.error_message)}</div>` : ''}
+            ${l.response_body ? `<pre>${escapeHtml(String(l.response_body || '').slice(0, 500))}</pre>` : ''}
           </div>
         `).join('');
       }
