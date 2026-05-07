@@ -35,3 +35,13 @@ def test_omni_pipeline_exposes_asr_clean_prompt_step():
     assert 'id="preview-asr_clean"' in template
     assert '"asr_clean"' in scripts
     assert 'asr_clean: "原文纯净化"' in scripts
+
+
+def test_omni_pipeline_exposes_dynamic_prompt_steps():
+    template = (ROOT / "web/templates/_task_workbench.html").read_text(encoding="utf-8")
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert 'id="step-asr_normalize"' in template
+    assert 'id="step-shot_decompose"' in template
+    assert 'id="step-av_sync_audit"' in template
+    assert 'av_sync_audit: "音画同步审计"' in scripts

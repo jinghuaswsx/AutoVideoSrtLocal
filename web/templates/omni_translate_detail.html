@@ -10,6 +10,7 @@
 {% set default_source_language = state.source_language or 'en' %}
 {% endif %}
 {% set detail_mode = 'multi' %}
+{% set pipeline_kind = 'omni_translate' %}
 
 {% block detail_extra %}
 {# 原文标准化和 ASR 结果纯净化的状态、metadata 与「重选语言」浮层都已直接渲染在 _task_workbench.html 的 step-asr_normalize 步骤卡片内（state.asr_normalize_artifact 为真时），不再单独立一张卡片。重选语言的 JS 在 _task_workbench_scripts.html 末尾按 #relangPanel 的存在与 data-* 启动。 #}

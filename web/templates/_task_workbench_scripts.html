@@ -1,8 +1,11 @@
 ﻿<script>
   const socket = io();
-  {% if api_base == '/api/omni-translate' %}
-  const STEP_ORDER = ["extract", "asr", "asr_clean", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
-  const MAIN_STEPS = ["extract", "asr", "asr_clean", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
+  {% if pipeline_step_order is defined and pipeline_step_order %}
+  const STEP_ORDER = {{ pipeline_step_order|tojson }};
+  const MAIN_STEPS = {{ pipeline_main_steps|default([])|tojson }};
+  {% elif api_base == '/api/omni-translate' %}
+  const STEP_ORDER = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
+  const MAIN_STEPS = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
   {% elif pipeline_kind == 'multi_translate' %}
   const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
   // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
@@ -458,10 +461,12 @@
       asr_clean: "原文纯净化",
       asr_normalize: "原文标准化和ASR结果纯净化",
       separate: "人声分离",
+      shot_decompose: "镜头分镜",
       voice_match: "音色选择",
       alignment: "分段确认",
       translate: "翻译本土化",
       tts: "语音生成",
+      av_sync_audit: "音画同步审计",
       loudness_match: "响度匹配",
       subtitle: "字幕生成",
       quality_assessment: "翻译质量评估",
@@ -3223,7 +3228,7 @@
 
   // Shared subtitle preview controls are mounted from subtitle_preview.js.
 
-  // ⓘ prompt info tooltip (multi_translate only)
+  // ⓘ prompt info tooltip (translation detail pages)
   document.querySelectorAll(".prompt-info").forEach(el => {
     el.addEventListener("mouseenter", async () => {
       if (el.dataset.loaded === "1") return;

@@ -516,7 +516,15 @@
 </div>
 
 <div class="card hidden" id="pipelineCard">
-  {% set extended_pipeline = pipeline_kind == 'multi_translate' or api_base == '/api/omni-translate' %}
+  {% set pipeline_steps = pipeline_main_steps|default([]) %}
+  {% set is_omni_pipeline = api_base == '/api/omni-translate' %}
+  {% set extended_pipeline = pipeline_kind == 'multi_translate' or is_omni_pipeline %}
+  {% set show_separate_step = (extended_pipeline and not pipeline_steps) or ('separate' in pipeline_steps) %}
+  {% set show_shot_decompose_step = 'shot_decompose' in pipeline_steps %}
+  {% set show_asr_normalize_step = pipeline_kind == 'multi_translate' or ('asr_normalize' in pipeline_steps) %}
+  {% set show_asr_clean_step = is_omni_pipeline and ('asr_clean' in pipeline_steps) %}
+  {% set show_av_sync_audit_step = 'av_sync_audit' in pipeline_steps %}
+  {% set show_loudness_step = (extended_pipeline and not pipeline_steps) or ('loudness_match' in pipeline_steps) %}
   <h2>处理进度</h2>
   <div class="steps">
     <div class="step" id="step-extract">
@@ -545,7 +553,7 @@
       </div>
       <div class="step-preview" id="preview-asr"></div>
     </div>
-    {% if pipeline_kind == 'multi_translate' %}
+    {% if show_asr_normalize_step %}
     <div class="step" id="step-asr_normalize">
       <div class="step-main">
         <div class="step-icon" id="icon-asr_normalize">3</div>
@@ -621,7 +629,7 @@
       {% endif %}
       <div class="step-preview" id="preview-asr_normalize"></div>
     </div>
-    {% elif api_base == '/api/omni-translate' %}
+    {% elif show_asr_clean_step %}
     <div class="step" id="step-asr_clean">
       <div class="step-main">
         <div class="step-icon" id="icon-asr_clean">3</div>
@@ -696,7 +704,7 @@
       <div class="step-preview" id="preview-asr_clean"></div>
     </div>
     {% endif %}
-    {% if extended_pipeline %}
+    {% if show_separate_step %}
     <div class="step" id="step-separate">
       <div class="step-main">
         <div class="step-icon" id="icon-separate">4</div>
@@ -709,6 +717,21 @@
         </div>
       </div>
       <div class="step-preview" id="preview-separate"></div>
+    </div>
+    {% endif %}
+    {% if show_shot_decompose_step %}
+    <div class="step" id="step-shot_decompose">
+      <div class="step-main">
+        <div class="step-icon" id="icon-shot_decompose">5</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">镜头分镜</span>
+            <button class="resume-btn hidden" id="resume-shot_decompose" data-step="shot_decompose">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-shot_decompose">等待中...<span class="step-model-tag hidden" id="model-tag-shot_decompose"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-shot_decompose"></div>
     </div>
     {% endif %}
     <div class="step" id="step-alignment">
@@ -730,7 +753,7 @@
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">翻译本土化</span>
-            {% if api_base == '/api/multi-translate' %}
+            {% if api_base in ['/api/multi-translate', '/api/omni-translate'] %}
             <span class="prompt-info" data-slot="base_translation" data-lang="{{ voice_language }}"
                   style="margin-left:8px;cursor:help;opacity:0.7;font-size:14px;">ⓘ</span>
             {% endif %}
@@ -756,7 +779,22 @@
       <div class="step-preview" id="preview-tts"></div>
       <div id="ttsDurationLog" class="duration-log" hidden></div>
     </div>
-    {% if extended_pipeline %}
+    {% if show_av_sync_audit_step %}
+    <div class="step" id="step-av_sync_audit">
+      <div class="step-main">
+        <div class="step-icon" id="icon-av_sync_audit">8</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">音画同步审计</span>
+            <button class="resume-btn hidden" id="resume-av_sync_audit" data-step="av_sync_audit">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-av_sync_audit">等待中...<span class="step-model-tag hidden" id="model-tag-av_sync_audit"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-av_sync_audit"></div>
+    </div>
+    {% endif %}
+    {% if show_loudness_step %}
     <div class="step" id="step-loudness_match">
       <div class="step-main">
         <div class="step-icon" id="icon-loudness_match">8</div>

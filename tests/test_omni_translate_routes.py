@@ -1,7 +1,7 @@
 """Omni-translate route 测试。
 
-聚焦本次新增的 PUT /api/omni-translate/<task_id>/source-language 端点
-（改写源语言并触发 resume from asr_clean）。
+聚焦 PUT /api/omni-translate/<task_id>/source-language 和 resume 端点：
+它们必须按任务 plugin_config 的真实步骤恢复，而不是假定固定 asr_clean。
 """
 from __future__ import annotations
 
@@ -9,6 +9,32 @@ import json
 from unittest.mock import patch
 
 import pytest
+
+
+CFG_ASR_CLEAN = {
+    "asr_post": "asr_clean",
+    "shot_decompose": False,
+    "translate_algo": "standard",
+    "source_anchored": True,
+    "tts_strategy": "five_round_rewrite",
+    "subtitle": "asr_realign",
+    "voice_separation": True,
+    "loudness_match": True,
+    "av_sync_audit": "off",
+}
+
+CFG_ASR_NORMALIZE = {
+    **CFG_ASR_CLEAN,
+    "asr_post": "asr_normalize",
+    "source_anchored": False,
+}
+
+CFG_DYNAMIC_ALL = {
+    **CFG_ASR_NORMALIZE,
+    "shot_decompose": True,
+    "translate_algo": "shot_char_limit",
+    "av_sync_audit": "report_only",
+}
 
 
 def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
@@ -68,6 +94,7 @@ def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db)
         "_user_id": 1,
         "source_language": "zh",
         "utterances_raw": [{"text": "old raw"}],
+        "plugin_config": CFG_ASR_CLEAN,
         "artifacts": {"asr_clean": {"title": "old clean"}, "translate": {"title": "old translate"}},
     }
     with patch("web.routes.omni_translate.store") as mock_store, \
@@ -95,6 +122,37 @@ def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db)
     assert update_kwargs["status"] == "running"
 
     mock_runner.resume.assert_called_once_with("t-1", "asr_clean", user_id=1)
+
+
+def test_update_source_language_uses_actual_asr_normalize_step(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "source_language": "es",
+        "plugin_config": CFG_ASR_NORMALIZE,
+        "artifacts": {
+            "asr_normalize": {"title": "old normalize"},
+            "loudness_match": {"title": "old loudness"},
+        },
+    }
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.put(
+            "/api/omni-translate/t-1/source-language",
+            json={"source_language": "pt"},
+        )
+
+    assert resp.status_code == 200
+    update_kwargs = mock_store.update.call_args.kwargs
+    assert "asr_normalize" not in update_kwargs["artifacts"]
+    assert "loudness_match" not in update_kwargs["artifacts"]
+    pending_steps = [
+        call.args[1] for call in mock_store.set_step.call_args_list
+        if call.args[2] == "pending"
+    ]
+    assert pending_steps[:3] == ["asr_normalize", "voice_match", "alignment"]
+    assert "asr_clean" not in pending_steps
+    mock_runner.resume.assert_called_once_with("t-1", "asr_normalize", user_id=1)
 
 
 def test_update_source_language_rejects_empty_auto_detect(authed_client_no_db):
@@ -175,7 +233,7 @@ def test_update_source_language_404_when_task_missing(authed_client_no_db):
 
 def test_update_source_language_pendings_all_steps_from_asr_clean(authed_client_no_db):
     """改语言后，asr_clean 及之后所有步骤都 reset 为 pending。"""
-    fake_task = {"_user_id": 1, "source_language": "es"}
+    fake_task = {"_user_id": 1, "source_language": "es", "plugin_config": CFG_ASR_CLEAN}
     with patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner"):
         mock_store.get.return_value = fake_task
@@ -196,13 +254,37 @@ def test_update_source_language_pendings_all_steps_from_asr_clean(authed_client_
     assert "tts" in pending_steps
     assert "subtitle" in pending_steps
     assert "compose" in pending_steps
+    assert "export" in pending_steps
     # ASR 之前的步骤不应该 pending
     assert "extract" not in pending_steps
     assert "asr" not in pending_steps
 
 
-def test_resume_maps_legacy_asr_normalize_to_asr_clean(authed_client_no_db):
-    fake_task = {"_user_id": 1, "source_language": "es"}
+def test_resume_rejects_start_step_not_in_actual_pipeline(authed_client_no_db):
+    fake_task = {"_user_id": 1, "source_language": "es", "plugin_config": CFG_ASR_CLEAN}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/resume",
+            json={"start_step": "asr_normalize"},
+        )
+
+    assert resp.status_code == 400
+    assert "asr_normalize" in resp.get_json()["error"]
+    mock_runner.resume.assert_not_called()
+
+
+def test_resume_accepts_actual_asr_normalize_without_alias(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "source_language": "es",
+        "plugin_config": CFG_ASR_NORMALIZE,
+        "artifacts": {
+            "asr_normalize": {"title": "old normalize"},
+            "translate": {"title": "old translate"},
+        },
+    }
     with patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
         mock_store.get.return_value = fake_task
@@ -212,14 +294,45 @@ def test_resume_maps_legacy_asr_normalize_to_asr_clean(authed_client_no_db):
         )
 
     assert resp.status_code == 200
-    assert resp.get_json()["start_step"] == "asr_clean"
+    assert resp.get_json()["start_step"] == "asr_normalize"
+    update_kwargs = mock_store.update.call_args.kwargs
+    assert update_kwargs["utterances_en"] is None
+    assert update_kwargs["asr_normalize_artifact"] is None
+    assert "asr_normalize" not in update_kwargs["artifacts"]
+    assert "translate" not in update_kwargs["artifacts"]
     pending_steps = [
         call.args[1] for call in mock_store.set_step.call_args_list
         if call.args[2] == "pending"
     ]
-    assert "asr_clean" in pending_steps
-    assert "asr_normalize" not in pending_steps
-    mock_runner.resume.assert_called_once_with("t-1", "asr_clean", user_id=1)
+    assert pending_steps[:3] == ["asr_normalize", "voice_match", "alignment"]
+    assert "asr_clean" not in pending_steps
+    mock_runner.resume.assert_called_once_with("t-1", "asr_normalize", user_id=1)
+
+
+@pytest.mark.parametrize("start_step", ["separate", "shot_decompose", "av_sync_audit", "loudness_match"])
+def test_resume_accepts_dynamic_steps_from_plugin_config(authed_client_no_db, start_step):
+    fake_task = {
+        "_user_id": 1,
+        "source_language": "es",
+        "plugin_config": CFG_DYNAMIC_ALL,
+        "artifacts": {start_step: {"title": "old"}},
+    }
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/resume",
+            json={"start_step": start_step},
+        )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["start_step"] == start_step
+    pending_steps = [
+        call.args[1] for call in mock_store.set_step.call_args_list
+        if call.args[2] == "pending"
+    ]
+    assert pending_steps[0] == start_step
+    mock_runner.resume.assert_called_once_with("t-1", start_step, user_id=1)
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +343,7 @@ def test_resume_maps_legacy_asr_normalize_to_asr_clean(authed_client_no_db):
 @pytest.mark.parametrize("lang", ["fr", "it", "ja", "de", "nl", "sv", "fi"])
 def test_update_source_language_accepts_extended_codes(authed_client_no_db, lang):
     """新增 fr/it/ja/de/nl/sv/fi 7 个 code 都应被接受（200 + user_specified=True）。"""
-    fake_task = {"_user_id": 1, "source_language": "zh"}
+    fake_task = {"_user_id": 1, "source_language": "zh", "plugin_config": CFG_ASR_CLEAN}
     with patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
         mock_store.get.return_value = fake_task

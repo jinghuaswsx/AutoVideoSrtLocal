@@ -14,11 +14,18 @@ STEP_LABELS = {
     "asr": "语音识别",
     "asr_normalize": "原文标准化和ASR结果纯净化",
     "asr_clean": "原文纯净化",
+    "separate": "人声分离",
+    "shot_decompose": "镜头分镜",
     "alignment": "分段确认",
     "translate": "翻译本土化",
     "tts": "语音生成",
+    "av_sync_audit": "音画同步审计",
+    "loudness_match": "响度匹配",
+    "subtitle": "字幕生成",
     "quality_assessment": "翻译质量评估",
+    "compose": "视频合成",
     "analysis": "AI 视频分析",
+    "export": "CapCut 导出",
 }
 
 

@@ -81,6 +81,90 @@ def _drop_artifacts(task: dict, *steps: str) -> dict:
     return artifacts
 
 
+def _omni_pipeline_steps_for_task(
+    task_id: str,
+    task: dict | None,
+    *,
+    include_analysis: bool = False,
+) -> list[str]:
+    from appcore.omni_plugin_config import DEFAULT_PLUGIN_CONFIG
+    from appcore.runtime_omni import OmniTranslateRunner
+
+    cfg = (task or {}).get("plugin_config")
+    if not cfg:
+        try:
+            from appcore import omni_preset_dao
+
+            preset = omni_preset_dao.get_default()
+            if preset and preset.get("plugin_config"):
+                cfg = preset["plugin_config"]
+        except Exception:
+            log.warning("[omni] resolve default preset failed for route task=%s", task_id, exc_info=True)
+    cfg = cfg or DEFAULT_PLUGIN_CONFIG
+    try:
+        return OmniTranslateRunner.pipeline_step_names_for_config(
+            cfg,
+            include_analysis=include_analysis,
+        )
+    except Exception:
+        log.warning("[omni] invalid task plugin_config, using default steps task=%s", task_id, exc_info=True)
+        return OmniTranslateRunner.pipeline_step_names_for_config(
+            DEFAULT_PLUGIN_CONFIG,
+            include_analysis=include_analysis,
+        )
+
+
+def _post_asr_step(step_names: list[str]) -> str:
+    for step in step_names:
+        if step in {"asr_clean", "asr_normalize"}:
+            return step
+    raise ValueError("omni pipeline missing post-ASR step")
+
+
+def _drop_steps_from(step_names: list[str], start_step: str) -> list[str]:
+    idx = step_names.index(start_step)
+    drop_steps = list(step_names[idx:])
+    if start_step in {"asr_clean", "asr_normalize"}:
+        drop_steps = ["asr_clean", "asr_normalize"] + [
+            step for step in drop_steps
+            if step not in {"asr_clean", "asr_normalize"}
+        ]
+    return drop_steps
+
+
+def _reset_steps_from(task_id: str, step_names: list[str], start_step: str) -> None:
+    started = False
+    for step in step_names:
+        if step == start_step:
+            started = True
+        if started:
+            store.set_step(task_id, step, "pending")
+            store.set_step_message(task_id, step, "等待中...")
+
+
+def _resume_cleanup_updates(task: dict, step_names: list[str], start_step: str) -> dict:
+    updates: dict = {
+        "artifacts": _drop_artifacts(task, *_drop_steps_from(step_names, start_step)),
+        "status": "running",
+        "current_review_step": "",
+    }
+    if start_step in {"asr_clean", "asr_normalize"}:
+        source_language = (task.get("source_language") or "en").strip()
+        if source_language not in ALLOWED_SOURCE_LANGUAGES:
+            raise ValueError(
+                f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
+            )
+        updates.update(
+            source_language=source_language,
+            user_specified_source_language=True,
+            utterances_en=None,
+            utterances_raw=None,
+            asr_normalize_artifact=None,
+            detected_source_language=None,
+        )
+    return updates
+
+
 def _default_display_name(original_filename: str) -> str:
     name = os.path.splitext(original_filename)[0] if original_filename else ""
     return name[:10] or "未命名"
@@ -233,12 +317,24 @@ def detail(task_id: str):
     target_lang = state.get("target_lang", "")
     from appcore.api_keys import get_key
     translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    pipeline_main_steps = _omni_pipeline_steps_for_task(
+        task_id,
+        state,
+        include_analysis=False,
+    )
+    pipeline_step_order = _omni_pipeline_steps_for_task(
+        task_id,
+        state,
+        include_analysis=True,
+    )
     return render_template(
         "omni_translate_detail.html",
         project=row,
         state=state,
         target_lang=target_lang,
         translate_pref=translate_pref,
+        pipeline_main_steps=pipeline_main_steps,
+        pipeline_step_order=pipeline_step_order,
     )
 
 
@@ -471,7 +567,7 @@ def start(task_id):
 @bp.route("/api/omni-translate/<task_id>/source-language", methods=["PUT"])
 @login_required
 def update_source_language(task_id):
-    """改写源语言并从 asr_clean 步骤重跑。源语言必须人工明确选择。"""
+    """改写源语言并从当前 Omni 配置的 ASR 后处理步骤重跑。"""
     task = _get_viewable_task(task_id)
     if not task:
         return _json_response({"error": "Task not found"}, 404)
@@ -482,6 +578,12 @@ def update_source_language(task_id):
         return _json_response({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}, 400)
     new_lang = raw_lang
 
+    step_names = _omni_pipeline_steps_for_task(task_id, task)
+    start_step = _post_asr_step(step_names)
+    artifacts = _drop_artifacts(
+        task,
+        *_drop_steps_from(step_names, start_step),
+    )
     store.update(
         task_id,
         source_language=new_lang,
@@ -490,29 +592,14 @@ def update_source_language(task_id):
         utterances_raw=None,
         asr_normalize_artifact=None,
         detected_source_language=None,
-        artifacts=_drop_artifacts(
-            task,
-            "asr_clean",
-            "alignment",
-            "translate",
-            "tts",
-            "subtitle",
-            "compose",
-            "export",
-        ),
+        artifacts=artifacts,
         status="running",
         current_review_step="",
     )
 
-    started = False
-    for s in RESUMABLE_STEPS:
-        if s == "asr_clean":
-            started = True
-        if started:
-            store.set_step(task_id, s, "pending")
-            store.set_step_message(task_id, s, "等待中...")
+    _reset_steps_from(task_id, step_names, start_step)
 
-    omni_pipeline_runner.resume(task_id, "asr_clean", user_id=owner_id)
+    omni_pipeline_runner.resume(task_id, start_step, user_id=owner_id)
     return _json_response({
         "status": "started",
         "source_language": new_lang,
@@ -606,9 +693,23 @@ def export(task_id):
     return _json_response({"status": "started"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "asr_clean", "voice_match",
-                   "alignment", "translate", "tts", "subtitle", "compose", "export"]
-RESUME_STEP_ALIASES = {"asr_normalize": "asr_clean"}
+RESUMABLE_STEPS = [
+    "extract",
+    "asr",
+    "separate",
+    "shot_decompose",
+    "asr_clean",
+    "asr_normalize",
+    "voice_match",
+    "alignment",
+    "translate",
+    "tts",
+    "av_sync_audit",
+    "loudness_match",
+    "subtitle",
+    "compose",
+    "export",
+]
 
 
 @bp.route("/api/omni-translate/<task_id>/resume", methods=["POST"])
@@ -620,20 +721,21 @@ def resume(task_id):
         return _json_response({"error": "Task not found"}, 404)
     owner_id = task.get("_user_id") or current_user.id
     body = request.get_json(silent=True) or {}
-    raw_start_step = body.get("start_step", "")
-    start_step = RESUME_STEP_ALIASES.get(raw_start_step, raw_start_step)
-    if start_step not in RESUMABLE_STEPS:
-        return _json_response({"error": f"start_step must be one of {RESUMABLE_STEPS}"}, 400)
+    start_step = body.get("start_step", "")
+    step_names = _omni_pipeline_steps_for_task(task_id, task)
+    if start_step not in step_names:
+        return _json_response({
+            "error": f"start_step {start_step!r} must be one of {step_names}",
+            "steps": step_names,
+        }, 400)
 
-    started = False
-    for s in RESUMABLE_STEPS:
-        if s == start_step:
-            started = True
-        if started:
-            store.set_step(task_id, s, "pending")
-            store.set_step_message(task_id, s, "等待中...")
+    try:
+        updates = _resume_cleanup_updates(task, step_names, start_step)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
 
-    store.update(task_id, status="running", current_review_step="")
+    store.update(task_id, **updates)
+    _reset_steps_from(task_id, step_names, start_step)
     omni_pipeline_runner.resume(task_id, start_step, user_id=owner_id)
     return _json_response({"status": "started", "start_step": start_step})
 

@@ -34,7 +34,28 @@ _ARTIFACT = {
 }
 
 
-def _fake_project(task_id: str, project_type: str) -> dict:
+_OMNI_DYNAMIC_CFG = {
+    "asr_post": "asr_normalize",
+    "shot_decompose": True,
+    "translate_algo": "shot_char_limit",
+    "source_anchored": False,
+    "tts_strategy": "five_round_rewrite",
+    "subtitle": "asr_realign",
+    "voice_separation": True,
+    "loudness_match": True,
+    "av_sync_audit": "report_only",
+}
+
+
+def _fake_project(task_id: str, project_type: str, extra_state: dict | None = None) -> dict:
+    state = {
+        "target_lang": "pt",
+        "source_language": "en",
+        "detected_source_language": "en",
+        "asr_normalize_artifact": _ARTIFACT,
+    }
+    if extra_state:
+        state.update(extra_state)
     return {
         "id": task_id,
         "user_id": 1,
@@ -43,15 +64,7 @@ def _fake_project(task_id: str, project_type: str) -> dict:
         "original_filename": "demo.mp4",
         "status": "done",
         "deleted_at": None,
-        "state_json": json.dumps(
-            {
-                "target_lang": "pt",
-                "source_language": "en",
-                "detected_source_language": "en",
-                "asr_normalize_artifact": _ARTIFACT,
-            },
-            ensure_ascii=False,
-        ),
+        "state_json": json.dumps(state, ensure_ascii=False),
     }
 
 
@@ -110,3 +123,27 @@ def test_asr_normalize_render_merged(
         assert 'id="relangPanel"' in chunk, "omni relang panel missing inside step"
         assert 'id="btnReselectLang"' in chunk, "omni relang button missing inside step"
         assert "data-task-id" in chunk, "relang panel data-task-id wiring missing"
+
+
+def test_omni_detail_renders_dynamic_pipeline_steps(authed_client_no_db):
+    task_id = "omni-dynamic-steps"
+    project = _fake_project(
+        task_id,
+        "omni_translate",
+        {"plugin_config": _OMNI_DYNAMIC_CFG},
+    )
+
+    with patch("web.routes.omni_translate.db_query_one", return_value=project), patch(
+        "web.routes.omni_translate.recover_project_if_needed"
+    ), patch("appcore.api_keys.get_key", return_value="openrouter"):
+        resp = authed_client_no_db.get(f"/omni-translate/{task_id}")
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert 'id="step-asr_normalize"' in html
+    assert 'id="step-asr_clean"' not in html
+    assert 'id="step-shot_decompose"' in html
+    assert 'id="step-av_sync_audit"' in html
+    assert '"shot_decompose"' in html
+    assert '"asr_normalize"' in html
+    assert '"av_sync_audit"' in html

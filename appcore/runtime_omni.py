@@ -375,6 +375,48 @@ class OmniTranslateRunner(MultiTranslateRunner):
             log.warning("[omni] resolve default preset failed", exc_info=True)
         return dict(DEFAULT_PLUGIN_CONFIG)
 
+    @staticmethod
+    def pipeline_step_names_for_config(
+        plugin_config: dict,
+        *,
+        include_analysis: bool = False,
+    ) -> list[str]:
+        """Return the real Omni step order for a validated plugin config."""
+        from appcore.omni_plugin_config import validate_plugin_config
+
+        cfg = validate_plugin_config(plugin_config)
+        names = ["extract", "asr"]
+        if cfg["voice_separation"]:
+            names.append("separate")
+        if cfg["shot_decompose"]:
+            names.append("shot_decompose")
+        names.append("asr_clean" if cfg["asr_post"] == "asr_clean" else "asr_normalize")
+        names.extend(["voice_match", "alignment", "translate", "tts"])
+        if cfg["av_sync_audit"] != "off":
+            names.append("av_sync_audit")
+        if cfg["loudness_match"]:
+            names.append("loudness_match")
+        names.extend(["subtitle", "compose"])
+        if include_analysis:
+            names.append("analysis")
+        names.append("export")
+        return names
+
+    def pipeline_step_names_for_task(
+        self,
+        task_id: str,
+        *,
+        include_analysis: bool | None = None,
+    ) -> list[str]:
+        """Resolve task config and return the dynamic Omni step order."""
+        if include_analysis is None:
+            include_analysis = self.include_analysis_in_main_flow
+        cfg = self._resolve_plugin_config(task_id)
+        return self.pipeline_step_names_for_config(
+            cfg,
+            include_analysis=include_analysis,
+        )
+
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
         """plugin_config-driven dynamic step builder（Phase 2）。
 
@@ -382,48 +424,30 @@ class OmniTranslateRunner(MultiTranslateRunner):
         是否插入由 ``plugin_config`` 决定；step body 都通过 ``self.profile.X``
         / ``self._step_X`` 调用，profile 内部按 cfg 二次 dispatch 到具体算法。
         """
-        cfg = self._resolve_plugin_config(task_id)
-        out: list[tuple[str, callable]] = [
-            ("extract", lambda: self._step_extract(task_id, video_path, task_dir)),
-            ("asr", lambda: self._step_asr(task_id, task_dir)),
+        step_fns = {
+            "extract": lambda: self._step_extract(task_id, video_path, task_dir),
+            "asr": lambda: self._step_asr(task_id, task_dir),
+            "separate": lambda: self._step_separate(task_id, task_dir),
+            "shot_decompose": lambda: self._step_shot_decompose(task_id, video_path, task_dir),
+            "asr_clean": lambda: self.profile.post_asr(self, task_id),
+            "asr_normalize": lambda: self.profile.post_asr(self, task_id),
+            "voice_match": lambda: self._step_voice_match(task_id),
+            # alignment 在所有 cfg 下都需要 —— av_sentence translate 也依赖
+            # alignment 产出的 ``script_segments``（task 必备字段），不能跳过。
+            "alignment": lambda: self._step_alignment(task_id, video_path, task_dir),
+            "translate": lambda: self.profile.translate(self, task_id),
+            "tts": lambda: self.profile.tts(self, task_id, task_dir),
+            "av_sync_audit": lambda: self._step_av_sync_audit(task_id, video_path, task_dir),
+            "loudness_match": lambda: self._step_loudness_match(task_id, task_dir),
+            "subtitle": lambda: self.profile.subtitle(self, task_id, task_dir),
+            "compose": lambda: self._step_compose(task_id, video_path, task_dir),
+            "analysis": lambda: self._step_analysis(task_id),
+            "export": lambda: self._step_export(task_id, video_path, task_dir),
+        }
+        return [
+            (name, step_fns[name])
+            for name in self.pipeline_step_names_for_task(task_id)
         ]
-        if cfg["voice_separation"]:
-            out.append(("separate", lambda: self._step_separate(task_id, task_dir)))
-        if cfg["shot_decompose"]:
-            out.append((
-                "shot_decompose",
-                lambda: self._step_shot_decompose(task_id, video_path, task_dir),
-            ))
-        # post_asr step 名跟着算法走（spec §3 ① ASR 后处理）
-        post_asr_name = "asr_clean" if cfg["asr_post"] == "asr_clean" else "asr_normalize"
-        out.append((post_asr_name, lambda: self.profile.post_asr(self, task_id)))
-        out.append(("voice_match", lambda: self._step_voice_match(task_id)))
-        # alignment 在所有 cfg 下都需要 —— av_sentence translate 也依赖
-        # alignment 产出的 ``script_segments``（task 必备字段），不能跳过。
-        # 之前 spec §6.1 误以为 av_sentence 不需要 alignment，e2e 验收时撞
-        # "缺少对齐后的句子分段"错（2026-05-07 fix）。
-        out.append((
-            "alignment",
-            lambda: self._step_alignment(task_id, video_path, task_dir),
-        ))
-        out.append(("translate", lambda: self.profile.translate(self, task_id)))
-        out.append(("tts", lambda: self.profile.tts(self, task_id, task_dir)))
-        if cfg["av_sync_audit"] != "off":
-            out.append((
-                "av_sync_audit",
-                lambda: self._step_av_sync_audit(task_id, video_path, task_dir),
-            ))
-        if cfg["loudness_match"]:
-            out.append((
-                "loudness_match",
-                lambda: self._step_loudness_match(task_id, task_dir),
-            ))
-        out.append(("subtitle", lambda: self.profile.subtitle(self, task_id, task_dir)))
-        out.append(("compose", lambda: self._step_compose(task_id, video_path, task_dir)))
-        if self.include_analysis_in_main_flow:
-            out.append(("analysis", lambda: self._step_analysis(task_id)))
-        out.append(("export", lambda: self._step_export(task_id, video_path, task_dir)))
-        return out
 
     # Thin shims dispatching to runtime_omni_steps (5 个物理复制的算法体).
     # 这些方法 spec §6.2 要求暴露在 OmniTranslateRunner 上，便于 resume / 测试

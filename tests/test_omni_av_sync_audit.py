@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -185,6 +186,43 @@ def test_report_only_writes_report_without_mutating_sentences(monkeypatch, tmp_p
     assert report["summary"]["diagnosed"] == 1
     assert report["summary"]["accepted"] == 1
     assert report["summary"]["applied"] == 0
+
+
+def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_task(tmp_path, mode="report_only")
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {"provider": "test-provider", "model": f"{use_case}-model"},
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={"json": {"issues": [], "summary": "诊断完成"}}),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {"accepted_issues": [], "rejected_count": 0, "summary": "复核完成"},
+        }),
+    )
+
+    omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    task = task_state.get(task_id)
+    refs = task["llm_debug_refs"]["av_sync_audit"]
+    assert [ref["id"] for ref in refs] == [
+        "av_sync_audit.diagnose",
+        "av_sync_audit.verify",
+    ]
+    diagnose_payload = json.loads((tmp_path / refs[0]["path"]).read_text(encoding="utf-8"))
+    verify_payload = json.loads((tmp_path / refs[1]["path"]).read_text(encoding="utf-8"))
+    assert diagnose_payload["request_payload"]["type"] == "generate"
+    assert diagnose_payload["request_payload"]["use_case_code"] == "omni_av_sync.diagnose"
+    assert verify_payload["request_payload"]["type"] == "chat"
+    assert verify_payload["request_payload"]["use_case_code"] == "omni_av_sync.verify"
 
 
 def test_safe_auto_applies_only_accepted_medium_high_issue(

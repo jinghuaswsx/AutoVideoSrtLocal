@@ -8,6 +8,11 @@ from copy import deepcopy
 from typing import Any
 
 from appcore import llm_client, task_state
+from appcore.llm_debug_payloads import (
+    build_chat_request_payload,
+    build_generate_request_payload,
+    prompt_file_payload,
+)
 from appcore.omni_plugin_config import validate_plugin_config
 from appcore.preview_artifacts import build_tts_artifact
 from appcore.runtime import (
@@ -16,6 +21,7 @@ from appcore.runtime import (
     _ensure_variant_state,
     _normalize_av_sentences,
     _rebuild_tts_full_audio_from_segments,
+    _save_json,
 )
 
 log = logging.getLogger(__name__)
@@ -165,14 +171,114 @@ def _build_verify_messages(diagnosis: dict, task: dict, cfg: dict, sentences: li
     ]
 
 
-def _call_diagnose(runner, task_id: str, video_path: str, task: dict, cfg: dict, sentences: list[dict]) -> dict:
-    result = llm_client.invoke_generate(
-        "omni_av_sync.diagnose",
-        prompt=_build_diagnosis_prompt(task, cfg, sentences),
-        system=(
-            "你是短视频音画同步审计员。你只能提出结构化候选问题，"
-            "不能决定修改视频，也不能建议大幅变速或剪辑。"
+def _resolve_llm_binding(use_case_code: str) -> tuple[str | None, str | None]:
+    try:
+        from appcore import llm_bindings
+
+        binding = llm_bindings.resolve(use_case_code)
+        return binding.get("provider"), binding.get("model")
+    except Exception:
+        try:
+            from appcore.llm_use_cases import get_use_case
+
+            use_case = get_use_case(use_case_code)
+            return use_case.get("default_provider"), use_case.get("default_model")
+        except Exception:
+            return None, None
+
+
+def _save_debug_payload(
+    task_id: str,
+    task_dir: str,
+    *,
+    phase: str,
+    label: str,
+    use_case_code: str,
+    provider: str | None,
+    model: str | None,
+    messages: list[dict],
+    request_payload: dict,
+    input_snapshot: list[dict] | None = None,
+) -> None:
+    filename = f"av_sync_audit.{phase}.json"
+    _save_json(
+        task_dir,
+        filename,
+        prompt_file_payload(
+            phase=phase,
+            label=label,
+            use_case_code=use_case_code,
+            provider=provider,
+            model=model,
+            messages=messages,
+            request_payload=request_payload,
+            input_snapshot=input_snapshot,
         ),
+    )
+    task_state.add_llm_debug_ref(task_id, "av_sync_audit", {
+        "id": f"av_sync_audit.{phase}",
+        "label": label,
+        "path": filename,
+        "phase": phase,
+        "use_case": use_case_code,
+        "provider": provider,
+        "model": model,
+    })
+
+
+def _call_diagnose(
+    runner,
+    task_id: str,
+    video_path: str,
+    task_dir: str,
+    task: dict,
+    cfg: dict,
+    sentences: list[dict],
+) -> dict:
+    use_case_code = "omni_av_sync.diagnose"
+    prompt = _build_diagnosis_prompt(task, cfg, sentences)
+    system = (
+        "你是短视频音画同步审计员。你只能提出结构化候选问题，"
+        "不能决定修改视频，也不能建议大幅变速或剪辑。"
+    )
+    provider, model = _resolve_llm_binding(use_case_code)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ]
+    request_payload = build_generate_request_payload(
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        prompt=prompt,
+        system=system,
+        media=[video_path] if video_path else None,
+        response_schema=_DIAGNOSIS_SCHEMA,
+        temperature=0.1,
+        max_output_tokens=4096,
+    )
+    _save_debug_payload(
+        task_id,
+        task_dir,
+        phase="diagnose",
+        label="Doubao 音画同步诊断",
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=[
+            {
+                "key": "sentences",
+                "title": "句级时间轴",
+                "content": json.dumps(_compact_sentences(sentences), ensure_ascii=False, indent=2),
+            },
+        ],
+    )
+    result = llm_client.invoke_generate(
+        use_case_code,
+        prompt=prompt,
+        system=system,
         media=[video_path] if video_path else None,
         user_id=getattr(runner, "user_id", None),
         project_id=task_id,
@@ -183,18 +289,57 @@ def _call_diagnose(runner, task_id: str, video_path: str, task: dict, cfg: dict,
     return _json_from_result(result, {"issues": [], "summary": ""})
 
 
-def _call_verify(runner, task_id: str, task: dict, cfg: dict, sentences: list[dict], diagnosis: dict) -> dict:
+def _call_verify(
+    runner,
+    task_id: str,
+    task_dir: str,
+    task: dict,
+    cfg: dict,
+    sentences: list[dict],
+    diagnosis: dict,
+) -> dict:
+    use_case_code = "omni_av_sync.verify"
+    messages = _build_verify_messages(diagnosis, task, cfg, sentences)
+    provider, model = _resolve_llm_binding(use_case_code)
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "omni_av_sync_verify", "schema": _VERIFY_SCHEMA},
+    }
+    request_payload = build_chat_request_payload(
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        response_format=response_format,
+        temperature=0.1,
+        max_tokens=4096,
+    )
+    _save_debug_payload(
+        task_id,
+        task_dir,
+        phase="verify",
+        label="Gemini 音画同步复核",
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=[
+            {
+                "key": "diagnosis",
+                "title": "诊断结果",
+                "content": json.dumps(diagnosis, ensure_ascii=False, indent=2),
+            },
+        ],
+    )
     result = llm_client.invoke_chat(
-        "omni_av_sync.verify",
-        messages=_build_verify_messages(diagnosis, task, cfg, sentences),
+        use_case_code,
+        messages=messages,
         user_id=getattr(runner, "user_id", None),
         project_id=task_id,
         temperature=0.1,
         max_tokens=4096,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": "omni_av_sync_verify", "schema": _VERIFY_SCHEMA},
-        },
+        response_format=response_format,
     )
     return _json_from_result(result, {"accepted_issues": [], "rejected_count": 0, "summary": ""})
 
@@ -414,7 +559,7 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
 
         report = _base_report(mode)
         try:
-            diagnosis = _call_diagnose(runner, task_id, video_path, task, cfg, sentences)
+            diagnosis = _call_diagnose(runner, task_id, video_path, task_dir, task, cfg, sentences)
             report["diagnosis"] = diagnosis
             report["summary"]["diagnosed"] = len(diagnosis.get("issues") or [])
         except Exception as exc:  # noqa: BLE001 - 审计失败不阻塞合成
@@ -425,7 +570,7 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
             return report
 
         try:
-            verification = _call_verify(runner, task_id, task, cfg, sentences, report["diagnosis"])
+            verification = _call_verify(runner, task_id, task_dir, task, cfg, sentences, report["diagnosis"])
             report["verification"] = verification
             report["summary"]["accepted"] = len(_candidate_issues(verification))
         except Exception as exc:  # noqa: BLE001 - 复核失败只保留诊断报告

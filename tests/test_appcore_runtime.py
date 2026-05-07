@@ -123,6 +123,60 @@ def test_run_calls_all_steps_in_order():
     assert call_order == ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
 
+def test_run_marks_error_when_start_step_is_not_in_pipeline():
+    task_id = "test_run_missing_start_step"
+    _make_task(task_id)
+    runner, events = _make_runner()
+    runner._step_extract = MagicMock()
+
+    with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
+        runner._run(task_id, start_step="missing_step")
+
+    task = task_state.get(task_id)
+    assert task["status"] == "error"
+    assert "missing_step" in task["error"]
+    runner._step_extract.assert_not_called()
+    error_events = [e for e in events if e.type == EVT_PIPELINE_ERROR]
+    assert len(error_events) == 1
+    assert "missing_step" in error_events[0].payload["error"]
+
+
+def test_auto_retry_resumes_from_dynamic_step(monkeypatch):
+    task_id = "test_retry_dynamic_step"
+    _make_task(task_id)
+    calls: list[str] = []
+
+    class DynamicRunner(PipelineRunner):
+        def __init__(self, bus):
+            super().__init__(bus=bus)
+            self.fail_once = True
+
+        def _get_pipeline_steps(self, task_id, video_path, task_dir):
+            return [
+                ("extract", lambda: calls.append("extract")),
+                ("av_sync_audit", lambda: self._step_dynamic_audit(task_id)),
+                ("export", lambda: calls.append("export")),
+            ]
+
+        def _step_dynamic_audit(self, task_id):
+            calls.append("av_sync_audit")
+            self._set_step(task_id, "av_sync_audit", "running", "audit")
+            if self.fail_once:
+                self.fail_once = False
+                raise RuntimeError("transient audit failure")
+            self._set_step(task_id, "av_sync_audit", "done", "audit done")
+
+    bus = EventBus()
+    runner = DynamicRunner(bus=bus)
+    monkeypatch.setattr("appcore.runtime._pipeline_runner.time.sleep", lambda *_args, **_kwargs: None)
+
+    with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
+        runner._run(task_id)
+
+    assert calls == ["extract", "av_sync_audit", "av_sync_audit", "export"]
+    assert task_state.get(task_id)["_failure_count"] == 0
+
+
 def test_run_publishes_pipeline_error_on_exception():
     task_id = "test_run_error"
     _make_task(task_id)

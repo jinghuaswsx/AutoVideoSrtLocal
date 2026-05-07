@@ -18,8 +18,9 @@ from datetime import datetime
 _TASK_AUTO_RETRY_MAX = 3
 _TASK_AUTO_RETRY_DELAYS = [5, 30, 120]  # seconds before retry 1, 2, 3
 _ALL_STEP_NAMES = (
-    "extract", "asr", "asr_normalize", "voice_match", "alignment",
-    "translate", "tts", "subtitle", "compose", "export",
+    "extract", "asr", "separate", "shot_decompose", "asr_normalize",
+    "asr_clean", "voice_match", "alignment", "translate", "tts",
+    "av_sync_audit", "loudness_match", "subtitle", "compose", "export",
 )
 
 import config
@@ -1465,7 +1466,19 @@ class PipelineRunner:
         video_path = task["video_path"]
         task_dir = task["task_dir"]
         steps = self._get_pipeline_steps(task_id, video_path, task_dir)
+        step_names = tuple(name for name, _fn in steps)
+        if start_step not in step_names:
+            message = (
+                f"start_step {start_step!r} not in current pipeline steps: "
+                f"{list(step_names)}"
+            )
+            log.error("[task %s] %s", task_id, message)
+            task_state.update(task_id, status="error", error=message)
+            task_state.set_expires_at(task_id, self.project_type)
+            self._emit(task_id, EVT_PIPELINE_ERROR, {"error": message})
+            return
 
+        current_running_step = start_step
         try:
             should_run = False
             for step_name, step_fn in steps:
@@ -1482,6 +1495,7 @@ class PipelineRunner:
                 # 抛 OperationCancelled 由下方 except 收尾为 'cancelled'。
                 if (task_state.get(task_id) or {}).get("_cancel_requested"):
                     raise OperationCancelled("task cancelled by user")
+                current_running_step = step_name
                 step_fn()
                 current = task_state.get(task_id) or {}
                 # 每个 step 成功完成都把 retry 计数清零，让下一个 step 的失败有
@@ -1510,7 +1524,12 @@ class PipelineRunner:
             # cleans up _active_tasks; it will not show a traceback.
             raise
         except Exception as exc:
-            current_step = (task_state.get(task_id) or {}).get("current_step") or start_step or "?"
+            current_step = (
+                (task_state.get(task_id) or {}).get("current_step")
+                or current_running_step
+                or start_step
+                or "?"
+            )
             log.exception(
                 "[task %s] pipeline failed at step=%s: %s", task_id, current_step, exc,
             )
@@ -1522,7 +1541,7 @@ class PipelineRunner:
             if failure_count < _TASK_AUTO_RETRY_MAX:
                 delay_idx = min(failure_count - 1, len(_TASK_AUTO_RETRY_DELAYS) - 1)
                 delay = _TASK_AUTO_RETRY_DELAYS[delay_idx]
-                resume_from = current_step if current_step in _ALL_STEP_NAMES else start_step
+                resume_from = current_step if current_step in step_names else start_step
                 log.warning(
                     "[task %s] auto-retry %d/%d after %ds (resume_from=%s): %s",
                     task_id, failure_count, _TASK_AUTO_RETRY_MAX,
