@@ -52,7 +52,11 @@
   min-width: 140px;
 }
 .ppd-filters select { min-width: 280px; }
-.ppd-filters #ppd-product { min-width: 320px; }
+.ppd-filters #ppd-product { min-width: 480px; cursor: pointer; }
+.ppd-filters #ppd-product[readonly] {
+  background: #fff;
+  caret-color: transparent;
+}
 .ppd-filters select:focus,
 .ppd-filters input:focus {
   outline: 2px solid rgba(59, 130, 246, .25);
@@ -88,6 +92,130 @@
   background: #2563eb;
   border-color: #2563eb;
   color: #fff;
+}
+
+/* 产品选择 modal */
+.ppd-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 96px 24px 24px;
+  background: rgba(15, 23, 42, .32);
+}
+.ppd-modal-backdrop[hidden] { display: none; }
+.ppd-product-modal {
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100vh - 140px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .16);
+}
+.ppd-product-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border-main);
+}
+.ppd-product-modal-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.ppd-product-modal-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-main);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-user-badge);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+.ppd-product-modal-close:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+.ppd-product-search-wrap {
+  padding: 14px 18px 10px;
+}
+.ppd-product-search-wrap input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text-main);
+}
+.ppd-product-search-wrap input:focus {
+  outline: 2px solid rgba(59, 130, 246, .25);
+  border-color: var(--primary-color);
+}
+.ppd-product-results-meta {
+  padding: 0 18px 8px;
+  color: var(--text-user-badge);
+  font-size: 12px;
+}
+.ppd-product-results {
+  overflow: auto;
+  padding: 0 10px 12px;
+}
+.ppd-product-option {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(120px, .8fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.ppd-product-option:hover,
+.ppd-product-option:focus {
+  outline: none;
+  background: rgba(59, 130, 246, .08);
+}
+.ppd-product-option.is-selected {
+  background: rgba(59, 130, 246, .12);
+}
+.ppd-product-option-code {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+}
+.ppd-product-option-name {
+  font-size: 13px;
+  color: var(--text-user-badge);
+  overflow-wrap: anywhere;
+}
+.ppd-product-results-empty {
+  padding: 30px 18px 40px;
+  text-align: center;
+  color: var(--text-user-badge);
+  font-size: 13px;
 }
 
 /* Tab 切换器 */
@@ -482,9 +610,9 @@
   <section class="ppd-filters">
     <label>
       <span>产品</span>
-      <input type="text" id="ppd-product" list="ppd-product-list"
+      <input type="text" id="ppd-product" readonly aria-haspopup="dialog"
+             aria-controls="ppd-product-modal"
              placeholder="加载中…" autocomplete="off" spellcheck="false">
-      <datalist id="ppd-product-list"></datalist>
     </label>
     <label>
       <span>国家 <small style="color: var(--text-user-badge); font-weight: normal; font-size: 11px">仅过滤订单表</small></span>
@@ -503,6 +631,21 @@
     <button type="button" class="ppd-btn ppd-btn-primary" id="ppd-reload">查询</button>
     <a class="ppd-btn" id="ppd-download" href="#" target="_blank" rel="noopener">下载 Excel</a>
   </section>
+
+  <div class="ppd-modal-backdrop" id="ppd-product-modal" hidden>
+    <div class="ppd-product-modal" role="dialog" aria-modal="true" aria-labelledby="ppd-product-modal-title">
+      <div class="ppd-product-modal-head">
+        <h2 id="ppd-product-modal-title">选择产品</h2>
+        <button type="button" class="ppd-product-modal-close" id="ppd-product-modal-close" aria-label="关闭产品选择">×</button>
+      </div>
+      <div class="ppd-product-search-wrap">
+        <input type="search" id="ppd-product-search" placeholder="搜索 product_code / 产品名" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="ppd-product-results-meta" id="ppd-product-results-meta">--</div>
+      <div class="ppd-product-results" id="ppd-product-results" role="listbox" aria-label="匹配产品"></div>
+      <div class="ppd-product-results-empty" id="ppd-product-results-empty" style="display:none">没有匹配的产品。</div>
+    </div>
+  </div>
 
   <!-- Tab 切换骨架（Task 5）：Tab 内容由 Task 6-9 填充 -->
   <nav class="ppd-tabs" role="tablist">
@@ -829,7 +972,12 @@
 
   var $ = function(id) { return document.getElementById(id); };
   var productInput = $('ppd-product');
-  var productListEl = $('ppd-product-list');
+  var productModal = $('ppd-product-modal');
+  var productSearchInput = $('ppd-product-search');
+  var productResultsEl = $('ppd-product-results');
+  var productResultsMeta = $('ppd-product-results-meta');
+  var productResultsEmpty = $('ppd-product-results-empty');
+  var productModalClose = $('ppd-product-modal-close');
   var countrySelect = $('ppd-country-select');
   var dateFromInput = $('ppd-from');
   var dateToInput = $('ppd-to');
@@ -847,8 +995,9 @@
   var countryDailyChart = null;      // Task 8: 该国每日盈亏折线
   var lastReport = null;
   var sortState = { key: 'paid_at', dir: 'desc' };
+  var productPickerItems = [];
 
-  // 产品下拉用 datalist 实现搜索：
+  // 产品选择器用 modal 实现搜索：
   //   - input.value 是用户看到的字符串："product_code — 产品中文名"
   //   - productLabelToId 把 label 映射回 product_id（提交时反查）
   //   - productCodeToLabel 让"只输入了 product_code"也能匹配上
@@ -912,7 +1061,7 @@
   function syncUrlState() {
     try {
       var url = new URL(window.location.href);
-      // datalist 输入框：保存解析后的 product_id（可能是 '0' / 数字字符串 / ''）
+      // modal 选择器：保存解析后的 product_id（可能是 '0' / 数字字符串 / ''）
       url.searchParams.set('product_id', getSelectedProductId() || '');
       url.searchParams.set('country', countrySelect.value || '');
       url.searchParams.set('date_from', dateFromInput.value || '');
@@ -923,41 +1072,41 @@
     } catch (e) { /* IE 等老浏览器忽略 */ }
   }
 
-  // ── 产品下拉（input + datalist 搜索）───────────
+  // ── 产品选择器（只读 input + modal 搜索）───────────
   function loadProducts() {
     return fetch('/order-analytics/product-profit/products', { credentials: 'same-origin' })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        productListEl.innerHTML = '';
         productLabelToId = makeProductMap();
         productCodeToLabel = makeProductMap();
         var opts = data.products || [];
+        productPickerItems = opts.slice().sort(function(a, b) {
+          return String(a.product_code || '').localeCompare(String(b.product_code || ''), 'en', { sensitivity: 'base' });
+        }).map(function(p) {
+          return {
+            id: p.id,
+            product_code: p.product_code || '',
+            name: p.name || '',
+            label: (p.product_code || '') + (p.name ? ' — ' + p.name : ''),
+          };
+        });
         // Task 6: 首选项 "全部产品"（id=0, code=ALL），用于 Tab ① 列表 / Tab ③ 国家看板
         var ALL_LABEL = '全部产品';
         productLabelToId[ALL_LABEL] = '0';
         productCodeToLabel['ALL'] = ALL_LABEL;
-        var allOpt = document.createElement('option');
-        allOpt.value = ALL_LABEL;
-        productListEl.appendChild(allOpt);
-        if (opts.length === 0) {
-          productInput.placeholder = '搜索 product_code 或产品名…（仅"全部产品"可用）';
-          // 没有具体产品时仍保留"全部产品"作为默认
-          productInput.value = ALL_LABEL;
-          return;
-        }
-        opts.forEach(function(p) {
-          var label = p.product_code + (p.name ? ' — ' + p.name : '');
-          productLabelToId[label] = p.id;
-          productCodeToLabel[p.product_code] = label;
-          var o = document.createElement('option');
-          o.value = label;
-          productListEl.appendChild(o);
+        productPickerItems.forEach(function(p) {
+          productLabelToId[p.label] = p.id;
+          productCodeToLabel[p.product_code] = p.label;
         });
-        productInput.placeholder = '搜索 product_code 或产品名…';
+
+        productInput.placeholder = opts.length === 0
+          ? '暂无产品，仅可查看全部产品'
+          : '点击选择产品…';
         // 默认选中 ARP9 水枪如果有，否则默认 "全部产品"
         var arp9Label = productCodeToLabel['fully-automatic-water-blaster-rjc'];
         if (arp9Label) productInput.value = arp9Label;
         else productInput.value = ALL_LABEL;
+        renderProductPickerResults('');
       })
       .catch(function(err) {
         productInput.placeholder = '加载失败：' + err;
@@ -977,6 +1126,90 @@
       if (k.toLowerCase().indexOf(vl) === 0) return productLabelToId[k];
     }
     return '';
+  }
+
+  function productSearchText(item) {
+    return ((item.product_code || '') + ' ' + (item.name || '')).toLowerCase();
+  }
+
+  function filterProductPickerItems(query) {
+    var q = (query || '').trim().toLowerCase();
+    if (!q) return productPickerItems;
+    return productPickerItems.filter(function(item) {
+      return productSearchText(item).indexOf(q) !== -1;
+    });
+  }
+
+  function appendProductPickerOption(item, isAllOption) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ppd-product-option';
+    btn.setAttribute('role', 'option');
+    btn.dataset.productLabel = item.label;
+    btn.dataset.productId = String(item.id);
+    if (String(productLabelToId[productInput.value] || '') === String(item.id)) {
+      btn.className += ' is-selected';
+      btn.setAttribute('aria-selected', 'true');
+    } else {
+      btn.setAttribute('aria-selected', 'false');
+    }
+
+    var code = document.createElement('span');
+    code.className = 'ppd-product-option-code';
+    code.textContent = isAllOption ? 'ALL' : (item.product_code || '');
+    var name = document.createElement('span');
+    name.className = 'ppd-product-option-name';
+    name.textContent = isAllOption ? '不限定具体产品' : (item.name || '未命名');
+    btn.appendChild(code);
+    btn.appendChild(name);
+    btn.addEventListener('click', function() {
+      selectProductFromPicker(item.label);
+    });
+    productResultsEl.appendChild(btn);
+  }
+
+  function renderProductPickerResults(query) {
+    var q = (query || '').trim().toLowerCase();
+    var rows = filterProductPickerItems(query);
+    productResultsEl.innerHTML = '';
+
+    var ALL_LABEL = '全部产品';
+    if (!q || productSearchText({ product_code: 'ALL', name: ALL_LABEL }).indexOf(q) !== -1) {
+      appendProductPickerOption({ id: '0', product_code: 'ALL', name: ALL_LABEL, label: ALL_LABEL }, true);
+    }
+
+    rows.forEach(function(item) {
+      appendProductPickerOption(item, false);
+    });
+
+    var optionCount = productResultsEl.querySelectorAll('.ppd-product-option').length;
+    productResultsMeta.textContent = q
+      ? '匹配 ' + optionCount + ' 项'
+      : '全部产品，按 product_code A-Z 排序';
+    productResultsEmpty.style.display = optionCount === 0 ? 'block' : 'none';
+  }
+
+  function openProductModal() {
+    if (!productModal) return;
+    productModal.hidden = false;
+    productSearchInput.value = '';
+    renderProductPickerResults('');
+    setTimeout(function() {
+      productSearchInput.focus();
+    }, 0);
+  }
+
+  function closeProductModal() {
+    if (!productModal || productModal.hidden) return;
+    productModal.hidden = true;
+    productInput.focus();
+  }
+
+  function selectProductFromPicker(label) {
+    if (!label || !productLabelToId[label]) return;
+    productInput.value = label;
+    closeProductModal();
+    reloadActiveTab();
   }
 
   // ── 数字格式化 ───────────────────────────
@@ -1122,12 +1355,12 @@
     }).join('');
     tbody.innerHTML = html;
 
-    // 点击行 → 切到 Tab ② 并把产品下拉设到对应 product_id
+    // 点击行 → 切到 Tab ② 并把产品选择器设到对应 product_id
     tbody.querySelectorAll('tr.ppd-row-clickable').forEach(function(tr) {
       tr.addEventListener('click', function() {
         var pid = tr.getAttribute('data-product-id');
         if (!pid) return;
-        // datalist 模式：从 product_id 反查 label，命中后写入 productInput.value
+        // modal 模式：从 product_id 反查 label，命中后写入 productInput.value
         var matchedLabel = null;
         for (var lbl in productLabelToId) {
           if (String(productLabelToId[lbl]) === String(pid)) { matchedLabel = lbl; break; }
@@ -1153,7 +1386,7 @@
     errorBox.style.display = 'none';
 
     // Task 6: 产品 ID = 0 / 'ALL' / '' → 显示空状态，不发请求
-    // 兼容 datalist 输入：未匹配到 product 时也按"未选具体产品"处理
+    // 兼容未匹配 product 的状态：按"未选具体产品"处理
     if (!pid || pid === '0') {
       var rawInput = (productInput.value || '').trim();
       if (rawInput && rawInput !== '全部产品') {
@@ -1982,29 +2215,45 @@
     if (window.switchTab) window.switchTab(active);
   }
   reloadBtn.addEventListener('click', reloadActiveTab);
-  // datalist 选中或输入完毕（blur）会触发 change；只在能反查到 id 时（包括"全部产品" → '0'）才重新加载
-  productInput.addEventListener('change', function() {
-    if (getSelectedProductId() !== '') reloadActiveTab();
-  });
-  // 输入框里按 Enter 也直接查（不让浏览器只是 form 默认行为）
+  productInput.addEventListener('click', openProductModal);
   productInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openProductModal();
+    }
+  });
+  productSearchInput.addEventListener('input', function() {
+    renderProductPickerResults(productSearchInput.value);
+  });
+  productSearchInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      reloadActiveTab();
+      var first = productResultsEl.querySelector('.ppd-product-option');
+      if (first) first.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeProductModal();
     }
+  });
+  productModalClose.addEventListener('click', closeProductModal);
+  productModal.addEventListener('click', function(e) {
+    if (e.target === productModal) closeProductModal();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && productModal && !productModal.hidden) closeProductModal();
   });
   countrySelect.addEventListener('change', reloadActiveTab);
   // 日期 change：仅同步 URL，不触发 reload（保留原有"改完点查询"的体验）
   dateFromInput.addEventListener('change', syncUrlState);
   dateToInput.addEventListener('change', syncUrlState);
 
-  // 初始化产品下拉，再走 switchTab 触发当前 Tab 的 load 函数
+  // 初始化产品选择器，再走 switchTab 触发当前 Tab 的 load 函数
   loadProducts().then(function() {
     // Task 10: 从 URL 还原筛选条
     var urlParams = new URLSearchParams(location.search);
     var wantProduct = urlParams.get('product_id');
     if (wantProduct !== null && wantProduct !== '') {
-      // datalist 模式：从 product_id 反查 label；仅当 productLabelToId 里能找到时覆盖默认。
+      // modal 模式：从 product_id 反查 label；仅当 productLabelToId 里能找到时覆盖默认。
       var wantLabel = null;
       for (var lbl in productLabelToId) {
         if (String(productLabelToId[lbl]) === String(wantProduct)) { wantLabel = lbl; break; }
@@ -2058,7 +2307,7 @@
   });
 
   // Task 5 的末尾初始化已挪到上方 loadProducts().then(...) 内，
-  // 确保产品下拉就绪后再触发当前 Tab 的 load 函数。
+  // 确保产品选择器就绪后再触发当前 Tab 的 load 函数。
 })();
 </script>
 {% endblock %}
