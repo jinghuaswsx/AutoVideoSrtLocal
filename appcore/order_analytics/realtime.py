@@ -23,6 +23,11 @@ from ._helpers import (
 from .dianxiaomi import compute_meta_business_window_bj, get_dianxiaomi_product_sales_stats
 from .shopify_fee import split_shopify_fee_for_order
 
+ORDER_PROFIT_PAGE_SIZE = 100
+ORDER_PROFIT_MAX_PAGE_SIZE = 100
+PURCHASE_MISSING_ESTIMATE_RATE = 0.10
+LOGISTICS_MISSING_ESTIMATE_RATE = 0.20
+
 
 # DB 入口走 module-level wrapper（与其他 sub-module 同样原理）。
 def _facade():
@@ -45,8 +50,132 @@ def get_conn(*args, **kwargs):
     return _facade().get_conn(*args, **kwargs)
 
 
-def _get_realtime_order_details(target: date, day_start: datetime, data_until: datetime) -> list[dict[str, Any]]:
+def _normalize_positive_int(value: Any, default: int, *, max_value: int | None = None) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    if number < 1:
+        number = default
+    if max_value is not None:
+        number = min(number, max_value)
+    return number
+
+
+def _product_filter_sql(column: str, product_id: int | None) -> tuple[str, list[Any]]:
+    if not product_id:
+        return "", []
+    return f"AND {column} = %s ", [int(product_id)]
+
+
+def _empty_order_profit_summary() -> dict[str, Any]:
+    return {
+        "order_count": 0,
+        "total_revenue_usd": 0.0,
+        "refund_deduction_usd": 0.0,
+        "purchase_cost_usd": 0.0,
+        "purchase_estimate_usd": 0.0,
+        "purchase_cost_with_estimate_usd": 0.0,
+        "purchase_missing_order_count": 0,
+        "purchase_missing_order_ratio": 0.0,
+        "logistics_cost_usd": 0.0,
+        "logistics_estimate_usd": 0.0,
+        "logistics_cost_with_estimate_usd": 0.0,
+        "logistics_missing_order_count": 0,
+        "logistics_missing_order_ratio": 0.0,
+        "shopify_fee_total_usd": 0.0,
+        "ad_cost_usd": 0.0,
+        "profit_with_estimate_usd": 0.0,
+    }
+
+
+def _build_order_profit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    summary = _empty_order_profit_summary()
+    order_count = len(rows or [])
+    summary["order_count"] = order_count
+    if order_count <= 0:
+        return summary
+
+    for row in rows:
+        total_revenue = _money(row.get("total_revenue"))
+        refund = _money(row.get("refund_deduction_usd"))
+        purchase_cost = _money(row.get("purchase_cost_usd"))
+        purchase_estimate = _money(row.get("purchase_estimate_usd"))
+        logistics_cost = _money(row.get("logistics_cost_usd"))
+        logistics_estimate = _money(row.get("logistics_estimate_usd"))
+        shopify_fee = _money(row.get("shopify_fee_total_usd"))
+        ad_cost = _money(row.get("ad_cost_usd"))
+
+        summary["total_revenue_usd"] += total_revenue
+        summary["refund_deduction_usd"] += refund
+        summary["purchase_cost_usd"] += purchase_cost
+        summary["purchase_estimate_usd"] += purchase_estimate
+        summary["logistics_cost_usd"] += logistics_cost
+        summary["logistics_estimate_usd"] += logistics_estimate
+        summary["shopify_fee_total_usd"] += shopify_fee
+        summary["ad_cost_usd"] += ad_cost
+        if row.get("purchase_cost_missing"):
+            summary["purchase_missing_order_count"] += 1
+        if row.get("logistics_cost_missing"):
+            summary["logistics_missing_order_count"] += 1
+
+    summary["purchase_cost_with_estimate_usd"] = (
+        summary["purchase_cost_usd"] + summary["purchase_estimate_usd"]
+    )
+    summary["logistics_cost_with_estimate_usd"] = (
+        summary["logistics_cost_usd"] + summary["logistics_estimate_usd"]
+    )
+    summary["purchase_missing_order_ratio"] = round(
+        summary["purchase_missing_order_count"] / order_count,
+        4,
+    )
+    summary["logistics_missing_order_ratio"] = round(
+        summary["logistics_missing_order_count"] / order_count,
+        4,
+    )
+    summary["profit_with_estimate_usd"] = (
+        summary["total_revenue_usd"]
+        - summary["refund_deduction_usd"]
+        - summary["purchase_cost_with_estimate_usd"]
+        - summary["logistics_cost_with_estimate_usd"]
+        - summary["shopify_fee_total_usd"]
+        - summary["ad_cost_usd"]
+    )
+    for key, value in list(summary.items()):
+        if key.endswith("_count") or key == "order_count":
+            summary[key] = int(value)
+        elif key.endswith("_ratio"):
+            summary[key] = round(float(value), 4)
+        else:
+            summary[key] = round(float(value), 2)
+    return summary
+
+
+def _order_profit_page_info(total: int, page: int, page_size: int) -> dict[str, int]:
+    normalized_page = _normalize_positive_int(page, 1)
+    normalized_size = _normalize_positive_int(
+        page_size,
+        ORDER_PROFIT_PAGE_SIZE,
+        max_value=ORDER_PROFIT_MAX_PAGE_SIZE,
+    )
+    pages = (int(total) + normalized_size - 1) // normalized_size if total else 0
+    return {
+        "page": normalized_page,
+        "page_size": normalized_size,
+        "total": int(total),
+        "pages": pages,
+    }
+
+
+def _get_realtime_order_details(
+    target: date,
+    day_start: datetime,
+    data_until: datetime,
+    *,
+    product_id: int | None = None,
+) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
     rows = query(
         "SELECT site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
         "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -60,10 +189,11 @@ def _get_realtime_order_details(target: date, day_start: datetime, data_until: d
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
+        + product_sql +
         "GROUP BY site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
         "buyer_country, buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, dxm_package_id DESC",
-        (target, data_until),
+        tuple([target, data_until] + product_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -89,8 +219,14 @@ def _get_realtime_order_details(target: date, day_start: datetime, data_until: d
     return details
 
 
-def _get_realtime_order_details_for_range(start: date, end: date) -> list[dict[str, Any]]:
+def _get_realtime_order_details_for_range(
+    start: date,
+    end: date,
+    *,
+    product_id: int | None = None,
+) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
     rows = query(
         "SELECT meta_business_date, site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
         "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -103,10 +239,11 @@ def _get_realtime_order_details_for_range(start: date, end: date) -> list[dict[s
         "FROM dianxiaomi_order_lines "
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND meta_business_date >= %s AND meta_business_date <= %s "
+        + product_sql +
         "GROUP BY meta_business_date, site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
         "buyer_country, buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, dxm_package_id DESC",
-        (start, end),
+        tuple([start, end] + product_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -203,8 +340,28 @@ def _build_order_profit_status_label(profit_status: str, refund_status: str) -> 
     return label
 
 
-def _get_realtime_order_profit_details(target: date, day_start: datetime, data_until: datetime) -> list[dict[str, Any]]:
+def _get_realtime_order_profit_details(
+    target: date,
+    day_start: datetime,
+    data_until: datetime,
+    *,
+    product_id: int | None = None,
+    page: int | None = None,
+    page_size: int | None = None,
+) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    limit_sql = ""
+    limit_args: list[Any] = []
+    if page is not None or page_size is not None:
+        normalized_page = _normalize_positive_int(page, 1)
+        normalized_size = _normalize_positive_int(
+            page_size,
+            ORDER_PROFIT_PAGE_SIZE,
+            max_value=ORDER_PROFIT_MAX_PAGE_SIZE,
+        )
+        limit_sql = " LIMIT %s OFFSET %s"
+        limit_args = [normalized_size, (normalized_page - 1) * normalized_size]
     rows = query(
         "SELECT d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -221,6 +378,11 @@ def _get_realtime_order_profit_details(target: date, day_start: datetime, data_u
         "SUM(COALESCE(p.shipping_cost_usd, 0)) AS logistics_cost, "
         "SUM(COALESCE(p.ad_cost_usd, 0)) AS ad_cost, "
         "SUM(COALESCE(p.shopify_fee_usd, 0)) AS stored_shopify_fee_total, "
+        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%purchase_price%' "
+        "THEN 1 ELSE 0 END) AS purchase_missing_count, "
+        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%shipping_cost%' "
+        "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%packet_cost%' "
+        "THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines d "
@@ -228,99 +390,37 @@ def _get_realtime_order_profit_details(target: date, day_start: datetime, data_u
         "WHERE d.site_code IN ('newjoy', 'omurio') "
         "AND d.meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
+        + product_sql +
         "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
-        "ORDER BY order_time DESC, d.dxm_package_id DESC",
-        (target, data_until),
+        "ORDER BY order_time DESC, d.dxm_package_id DESC"
+        + limit_sql,
+        tuple([target, data_until] + product_args + limit_args),
     )
-    details: list[dict[str, Any]] = []
-    for row in rows:
-        order_time = row.get("order_time")
-        line_count = int(row.get("line_count") or 0)
-        profit_line_count = int(row.get("profit_line_count") or 0)
-        profit_ok_count = int(row.get("profit_ok_count") or 0)
-        profit_incomplete_count = int(row.get("profit_incomplete_count") or 0)
-        product_revenue = _money(row.get("product_revenue"))
-        shipping_revenue = _money(row.get("shipping_revenue"))
-        total_revenue = _money(row.get("total_revenue"))
-        refund_deduction = _resolve_refund_deduction(
-            total_revenue=total_revenue,
-            refund_amount_usd=row.get("refund_amount_usd"),
-            order_state=row.get("order_state"),
-        )
-        purchase_cost = _money(row.get("purchase_cost"))
-        logistics_cost = _money(row.get("logistics_cost"))
-        ad_cost = _money(row.get("ad_cost"))
-        stored_shopify_fee_total = _money(row.get("stored_shopify_fee_total"))
-        shopify_fee = split_shopify_fee_for_order(
-            amount=total_revenue,
-            buyer_country=row.get("buyer_country"),
-        )
-        shopify_platform_fee = _money(shopify_fee.get("shopify_platform_fee_usd"))
-        international_card_fee = _money(shopify_fee.get("international_card_fee_usd"))
-        currency_conversion_fee = _money(shopify_fee.get("currency_conversion_fee_usd"))
-        shopify_fee_total = _money(shopify_fee.get("shopify_fee_total_usd"))
-        order_profit = round(
-            total_revenue
-            - refund_deduction
-            - purchase_cost
-            - logistics_cost
-            - shopify_platform_fee
-            - international_card_fee
-            - currency_conversion_fee
-            - ad_cost,
-            2,
-        )
-        profit_status = _derive_order_profit_status(
-            line_count=line_count,
-            ok_count=profit_ok_count,
-            incomplete_count=profit_incomplete_count,
-        )
-        refund_status = _derive_refund_status(
-            total_revenue=total_revenue,
-            refund_deduction=refund_deduction,
-        )
-        details.append({
-            "order_time": order_time,
-            "business_hour": _business_hour(order_time, day_start),
-            "site_code": row.get("site_code"),
-            "dxm_package_id": row.get("dxm_package_id"),
-            "dxm_order_id": row.get("dxm_order_id"),
-            "package_number": row.get("package_number"),
-            "order_state": row.get("order_state"),
-            "buyer_country": row.get("buyer_country"),
-            "buyer_country_name": row.get("buyer_country_name"),
-            "line_count": line_count,
-            "profit_line_count": profit_line_count,
-            "profit_ok_count": profit_ok_count,
-            "profit_incomplete_count": profit_incomplete_count,
-            "units": int(row.get("units") or 0),
-            "product_revenue": product_revenue,
-            "shipping_revenue": shipping_revenue,
-            "total_revenue": total_revenue,
-            "refund_deduction_usd": refund_deduction,
-            "purchase_cost_usd": purchase_cost,
-            "logistics_cost_usd": logistics_cost,
-            "shopify_platform_fee_usd": shopify_platform_fee,
-            "international_card_fee_usd": international_card_fee,
-            "currency_conversion_fee_usd": currency_conversion_fee,
-            "shopify_fee_total_usd": shopify_fee_total,
-            "stored_shopify_fee_total_usd": stored_shopify_fee_total,
-            "ad_cost_usd": ad_cost,
-            "order_profit_usd": order_profit,
-            "shopify_tier": shopify_fee.get("shopify_tier"),
-            "presentment_currency": shopify_fee.get("presentment_currency"),
-            "profit_status": profit_status,
-            "refund_status": refund_status,
-            "status_label": _build_order_profit_status_label(profit_status, refund_status),
-            "skus": row.get("skus"),
-            "product_names": row.get("product_names"),
-        })
-    return details
+    return _format_realtime_order_profit_rows(rows, day_start)
 
 
-def _get_realtime_order_profit_details_for_range(start: date, end: date) -> list[dict[str, Any]]:
+def _get_realtime_order_profit_details_for_range(
+    start: date,
+    end: date,
+    *,
+    product_id: int | None = None,
+    page: int | None = None,
+    page_size: int | None = None,
+) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    limit_sql = ""
+    limit_args: list[Any] = []
+    if page is not None or page_size is not None:
+        normalized_page = _normalize_positive_int(page, 1)
+        normalized_size = _normalize_positive_int(
+            page_size,
+            ORDER_PROFIT_PAGE_SIZE,
+            max_value=ORDER_PROFIT_MAX_PAGE_SIZE,
+        )
+        limit_sql = " LIMIT %s OFFSET %s"
+        limit_args = [normalized_size, (normalized_page - 1) * normalized_size]
     rows = query(
         "SELECT d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -337,16 +437,23 @@ def _get_realtime_order_profit_details_for_range(start: date, end: date) -> list
         "SUM(COALESCE(p.shipping_cost_usd, 0)) AS logistics_cost, "
         "SUM(COALESCE(p.ad_cost_usd, 0)) AS ad_cost, "
         "SUM(COALESCE(p.shopify_fee_usd, 0)) AS stored_shopify_fee_total, "
+        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%purchase_price%' "
+        "THEN 1 ELSE 0 END) AS purchase_missing_count, "
+        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%shipping_cost%' "
+        "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%packet_cost%' "
+        "THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
         "WHERE d.site_code IN ('newjoy', 'omurio') "
         "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
+        + product_sql +
         "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
-        "ORDER BY order_time DESC, d.dxm_package_id DESC",
-        (start, end),
+        "ORDER BY order_time DESC, d.dxm_package_id DESC"
+        + limit_sql,
+        tuple([start, end] + product_args + limit_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -404,6 +511,31 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             ok_count=profit_ok_count,
             incomplete_count=profit_incomplete_count,
         )
+        purchase_missing_count = int(row.get("purchase_missing_count") or 0)
+        logistics_missing_count = int(row.get("logistics_missing_count") or 0)
+        purchase_cost_missing = (
+            purchase_missing_count > 0
+            or (profit_status != "ok" and purchase_cost <= 0)
+        )
+        logistics_cost_missing = (
+            logistics_missing_count > 0
+            or (profit_status != "ok" and logistics_cost <= 0)
+        )
+        purchase_estimate = round(total_revenue * PURCHASE_MISSING_ESTIMATE_RATE, 2) if purchase_cost_missing else 0.0
+        logistics_estimate = round(total_revenue * LOGISTICS_MISSING_ESTIMATE_RATE, 2) if logistics_cost_missing else 0.0
+        order_profit_with_estimate = round(
+            total_revenue
+            - refund_deduction
+            - purchase_cost
+            - purchase_estimate
+            - logistics_cost
+            - logistics_estimate
+            - shopify_platform_fee
+            - international_card_fee
+            - currency_conversion_fee
+            - ad_cost,
+            2,
+        )
         refund_status = _derive_refund_status(
             total_revenue=total_revenue,
             refund_deduction=refund_deduction,
@@ -428,7 +560,11 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "total_revenue": total_revenue,
             "refund_deduction_usd": refund_deduction,
             "purchase_cost_usd": purchase_cost,
+            "purchase_cost_missing": purchase_cost_missing,
+            "purchase_estimate_usd": purchase_estimate,
             "logistics_cost_usd": logistics_cost,
+            "logistics_cost_missing": logistics_cost_missing,
+            "logistics_estimate_usd": logistics_estimate,
             "shopify_platform_fee_usd": shopify_platform_fee,
             "international_card_fee_usd": international_card_fee,
             "currency_conversion_fee_usd": currency_conversion_fee,
@@ -436,6 +572,7 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "stored_shopify_fee_total_usd": stored_shopify_fee_total,
             "ad_cost_usd": ad_cost,
             "order_profit_usd": order_profit,
+            "order_profit_with_estimate_usd": order_profit_with_estimate,
             "shopify_tier": shopify_fee.get("shopify_tier"),
             "presentment_currency": shopify_fee.get("presentment_currency"),
             "profit_status": profit_status,
@@ -478,11 +615,17 @@ def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -
     return campaigns
 
 
-def _get_realtime_product_sales_stats(target: date, data_until: datetime) -> list[dict[str, Any]]:
+def _get_realtime_product_sales_stats(
+    target: date,
+    data_until: datetime,
+    *,
+    product_id: int | None = None,
+) -> list[dict[str, Any]]:
     rows = get_dianxiaomi_product_sales_stats(
         target,
         target,
         site_codes=["newjoy", "omurio"],
+        product_ids=[product_id] if product_id else None,
         data_until=data_until,
     )
     return [
@@ -500,8 +643,9 @@ def _get_realtime_product_sales_stats(target: date, data_until: datetime) -> lis
     ]
 
 
-def _get_daily_campaigns(target: date) -> list[dict[str, Any]]:
+def _get_daily_campaigns(target: date, *, product_id: int | None = None) -> list[dict[str, Any]]:
     """从 Meta 日级最终报表按 campaign 聚合，字段对齐实时表的 campaign_details。"""
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
     rows = query(
         "SELECT ad_account_id, ad_account_name, campaign_name, normalized_campaign_code, "
         "SUM(result_count) AS result_count, "
@@ -509,9 +653,10 @@ def _get_daily_campaigns(target: date) -> list[dict[str, Any]]:
         "SUM(purchase_value_usd) AS purchase_value "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE meta_business_date=%s "
+        + product_sql +
         "GROUP BY ad_account_id, ad_account_name, campaign_name, normalized_campaign_code "
         "ORDER BY spend DESC, campaign_name",
-        (target,),
+        tuple([target] + product_args),
     )
     out: list[dict[str, Any]] = []
     for row in rows:
@@ -613,12 +758,22 @@ def _get_realtime_order_updated_at(
     return row[0].get("last_order_updated_at")
 
 
-def _build_realtime_overview_for_range(start: date, end: date, now: datetime, *, include_details: bool = False) -> dict:
+def _build_realtime_overview_for_range(
+    start: date,
+    end: date,
+    now: datetime,
+    *,
+    include_details: bool = False,
+    product_id: int | None = None,
+    page: int = 1,
+    page_size: int = ORDER_PROFIT_PAGE_SIZE,
+) -> dict:
     """Date range branch: summary by default, optionally with order details.
 
     Reuses the true ROAS summary aggregation by meta_business_date so historical
     date ranges do not depend on the current realtime business-day window.
     """
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
     order_rows = query(
         "SELECT meta_business_date, "
         "COUNT(DISTINCT dxm_package_id) AS order_count, "
@@ -632,9 +787,11 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime, *,
         "FROM dianxiaomi_order_lines "
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND meta_business_date >= %s AND meta_business_date <= %s "
+        + product_sql +
         "GROUP BY meta_business_date",
-        (start, end),
+        tuple([start, end] + product_args),
     )
+    ad_product_sql, ad_product_args = _product_filter_sql("product_id", product_id)
     ad_rows = query(
         "SELECT meta_business_date, "
         "SUM(spend_usd) AS ad_spend, "
@@ -643,8 +800,9 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime, *,
         "MAX(updated_at) AS last_ad_updated_at "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        + ad_product_sql +
         "GROUP BY meta_business_date",
-        (start, end),
+        tuple([start, end] + ad_product_args),
     )
 
     summary = {
@@ -694,6 +852,25 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime, *,
     range_start_at, _ = compute_meta_business_window_bj(start)
     _, range_end_at = compute_meta_business_window_bj(end)
 
+    order_profit_all = (
+        _get_realtime_order_profit_details_for_range(
+            start,
+            end,
+            product_id=product_id,
+        )
+        if include_details else []
+    )
+    order_profit_details = (
+        _get_realtime_order_profit_details_for_range(
+            start,
+            end,
+            product_id=product_id,
+            page=page,
+            page_size=page_size,
+        )
+        if include_details else []
+    )
+
     return {
         "period": {
             "start_date": start,
@@ -708,6 +885,7 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime, *,
         },
         "scope": {
             "stores": ["newjoy", "omurio"],
+            "product_id": product_id,
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
             "ad_source": "meta_ad_daily_campaign_metrics",
@@ -724,10 +902,21 @@ def _build_realtime_overview_for_range(start: date, end: date, now: datetime, *,
         "hourly": [],
         "roas_points": [],
         "snapshots": [],
-        "order_details": _get_realtime_order_details_for_range(start, end) if include_details else [],
-        "order_profit_details": _get_realtime_order_profit_details_for_range(start, end) if include_details else [],
+        "order_details": _get_realtime_order_details_for_range(
+            start,
+            end,
+            product_id=product_id,
+        ) if include_details else [],
+        "order_profit_details": order_profit_details,
+        "order_profit_details_page": _order_profit_page_info(len(order_profit_all), page, page_size),
+        "order_profit_summary": _build_order_profit_summary(order_profit_all),
         "campaigns": [],
-        "product_sales_stats": [],
+        "product_sales_stats": get_dianxiaomi_product_sales_stats(
+            start,
+            end,
+            site_codes=["newjoy", "omurio"],
+            product_ids=[product_id] if product_id else None,
+        ) if include_details else [],
     }
 
 
@@ -738,8 +927,18 @@ def get_realtime_roas_overview(
     start_date: str | None = None,
     end_date: str | None = None,
     include_details: bool = False,
+    product_id: int | None = None,
+    page: int = 1,
+    page_size: int = ORDER_PROFIT_PAGE_SIZE,
 ) -> dict:
     now = (now or _beijing_now()).replace(microsecond=0)
+    normalized_product_id = int(product_id) if product_id else None
+    normalized_page = _normalize_positive_int(page, 1)
+    normalized_page_size = _normalize_positive_int(
+        page_size,
+        ORDER_PROFIT_PAGE_SIZE,
+        max_value=ORDER_PROFIT_MAX_PAGE_SIZE,
+    )
 
     # 范围模式：start_date / end_date 同时给出，且为不同日期 → 走范围聚合分支
     if start_date and end_date:
@@ -748,7 +947,15 @@ def get_realtime_roas_overview(
         if end < start:
             raise ValueError("end_date must be >= start_date")
         if start != end:
-            return _build_realtime_overview_for_range(start, end, now, include_details=include_details)
+            return _build_realtime_overview_for_range(
+                start,
+                end,
+                now,
+                include_details=include_details,
+                product_id=normalized_product_id,
+                page=normalized_page,
+                page_size=normalized_page_size,
+            )
         # start == end → 走单日分支，把 start_date 作为目标日
         date_text = start_date
 
@@ -796,7 +1003,7 @@ def get_realtime_roas_overview(
 
     # 历史日期直接走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
     # 仅"当天"和"未来"日期下才尝试 ROI 实时快照。
-    latest_snapshot = query(
+    latest_snapshot = [] if normalized_product_id else query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
         "ORDER BY CASE WHEN ad_data_status='ok' THEN 0 ELSE 1 END, snapshot_at DESC, id DESC LIMIT 1",
@@ -809,10 +1016,32 @@ def get_realtime_roas_overview(
         shipping_revenue = _money(snap.get("shipping_revenue_usd"))
         revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
         ad_spend = _money(snap.get("ad_spend_usd"))
-        order_details = _get_realtime_order_details(target, day_start, snapshot_at)
-        order_profit_details = _get_realtime_order_profit_details(target, day_start, snapshot_at)
+        order_details = _get_realtime_order_details(
+            target,
+            day_start,
+            snapshot_at,
+            product_id=normalized_product_id,
+        )
+        order_profit_all = _get_realtime_order_profit_details(
+            target,
+            day_start,
+            snapshot_at,
+            product_id=normalized_product_id,
+        )
+        order_profit_details = _get_realtime_order_profit_details(
+            target,
+            day_start,
+            snapshot_at,
+            product_id=normalized_product_id,
+            page=normalized_page,
+            page_size=normalized_page_size,
+        )
         campaign_details = _get_realtime_campaign_details(target, snapshot_at)
-        product_sales_stats = _get_realtime_product_sales_stats(target, snapshot_at)
+        product_sales_stats = _get_realtime_product_sales_stats(
+            target,
+            snapshot_at,
+            product_id=normalized_product_id,
+        )
         last_order_updated_at = _get_realtime_order_updated_at(target, snapshot_at, snap.get("source_run_id"))
         last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
         return {
@@ -828,6 +1057,7 @@ def get_realtime_roas_overview(
             },
             "scope": {
                 "stores": ["newjoy", "omurio"],
+                "product_id": normalized_product_id,
                 "ad_platforms": ["meta"],
                 "order_source": "dianxiaomi",
                 "ad_source": "roi_realtime_daily_snapshots",
@@ -860,11 +1090,18 @@ def get_realtime_roas_overview(
             "snapshots": [snap],
             "order_details": order_details,
             "order_profit_details": order_profit_details,
+            "order_profit_details_page": _order_profit_page_info(
+                len(order_profit_all),
+                normalized_page,
+                normalized_page_size,
+            ),
+            "order_profit_summary": _build_order_profit_summary(order_profit_all),
             "campaigns": campaign_details,
             "product_sales_stats": product_sales_stats,
         }
 
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    product_sql, product_args = _product_filter_sql("product_id", normalized_product_id)
     order_rows = query(
         "SELECT HOUR(" + order_time_expr + ") AS hour, "
         "COUNT(DISTINCT dxm_package_id) AS order_count, "
@@ -879,18 +1116,21 @@ def get_realtime_roas_overview(
         "FROM dianxiaomi_order_lines "
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
+        + product_sql +
         "GROUP BY HOUR(" + order_time_expr + ") "
         "ORDER BY hour",
-        (day_start, day_end),
+        tuple([day_start, day_end] + product_args),
     )
+    ad_product_sql, ad_product_args = _product_filter_sql("product_id", normalized_product_id)
     ad_rows = query(
         "SELECT SUM(spend_usd) AS ad_spend, "
         "SUM(purchase_value_usd) AS meta_purchase_value, "
         "SUM(result_count) AS meta_purchases, "
         "MAX(updated_at) AS last_ad_updated_at "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE meta_business_date = %s",
-        (target,),
+        "WHERE meta_business_date = %s "
+        + ad_product_sql,
+        tuple([target] + ad_product_args),
     )
 
     orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
@@ -942,6 +1182,20 @@ def get_realtime_roas_overview(
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    order_profit_all = _get_realtime_order_profit_details(
+        target,
+        day_start,
+        data_until,
+        product_id=normalized_product_id,
+    )
+    order_profit_details = _get_realtime_order_profit_details(
+        target,
+        day_start,
+        data_until,
+        product_id=normalized_product_id,
+        page=normalized_page,
+        page_size=normalized_page_size,
+    )
     return {
         "period": {
             "date": target,
@@ -955,6 +1209,7 @@ def get_realtime_roas_overview(
         },
         "scope": {
             "stores": ["newjoy", "omurio"],
+            "product_id": normalized_product_id,
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
             "ad_source": "meta_ad_daily_campaign_metrics",
@@ -970,10 +1225,25 @@ def get_realtime_roas_overview(
         "summary": summary,
         "hourly": hourly,
         "roas_points": roas_points,
-        "order_details": _get_realtime_order_details(target, day_start, data_until),
-        "order_profit_details": _get_realtime_order_profit_details(target, day_start, data_until),
-        "campaigns": _get_daily_campaigns(target),
-        "product_sales_stats": _get_realtime_product_sales_stats(target, data_until),
+        "order_details": _get_realtime_order_details(
+            target,
+            day_start,
+            data_until,
+            product_id=normalized_product_id,
+        ),
+        "order_profit_details": order_profit_details,
+        "order_profit_details_page": _order_profit_page_info(
+            len(order_profit_all),
+            normalized_page,
+            normalized_page_size,
+        ),
+        "order_profit_summary": _build_order_profit_summary(order_profit_all),
+        "campaigns": _get_daily_campaigns(target, product_id=normalized_product_id),
+        "product_sales_stats": _get_realtime_product_sales_stats(
+            target,
+            data_until,
+            product_id=normalized_product_id,
+        ),
     }
 
 
@@ -1076,4 +1346,3 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
         "summary": summary,
         "rows": rows,
     }
-

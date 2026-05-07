@@ -324,13 +324,32 @@ def realtime_overview():
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
     include_details = (request.args.get("include_details") or "").strip() in ("1", "true", "yes")
+    kwargs = {
+        "start_date": start_date,
+        "end_date": end_date,
+        "include_details": include_details,
+    }
+    product_id_text = (request.args.get("product_id") or "").strip()
+    if product_id_text:
+        try:
+            product_id = int(product_id_text)
+        except (TypeError, ValueError):
+            return _json_response(error="invalid_param", detail="product_id must be a positive integer"), 400
+        if product_id <= 0:
+            return _json_response(error="invalid_param", detail="product_id must be a positive integer"), 400
+        kwargs["product_id"] = product_id
+    if "page" in request.args:
+        page = request.args.get("page", type=int)
+        if not page or page <= 0:
+            return _json_response(error="invalid_param", detail="page must be a positive integer"), 400
+        kwargs["page"] = page
+    if "page_size" in request.args:
+        page_size = request.args.get("page_size", type=int)
+        if not page_size or page_size <= 0:
+            return _json_response(error="invalid_param", detail="page_size must be a positive integer"), 400
+        kwargs["page_size"] = min(page_size, 100)
     try:
-        return _json_response(_json_safe(oa.get_realtime_roas_overview(
-            date_text,
-            start_date=start_date,
-            end_date=end_date,
-            include_details=include_details,
-        )))
+        return _json_response(_json_safe(oa.get_realtime_roas_overview(date_text, **kwargs)))
     except ValueError as exc:
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
