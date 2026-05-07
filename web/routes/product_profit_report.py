@@ -17,6 +17,7 @@ from web.auth import permission_required
 from appcore.order_analytics import product_profit_ads as ppa
 from appcore.order_analytics import product_profit_list as ppl
 from appcore.order_analytics import product_profit_report as ppr
+from appcore.order_analytics.campaign_overrides import remove_override
 from appcore.order_analytics.meta_ads import manual_match_meta_ad_campaign
 from appcore.order_analytics.shopify_payments_import import import_payments_csv
 from web.services.product_profit_report import (
@@ -363,6 +364,24 @@ def api_ads_manual_match():
         )
     except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
         log.exception("manual_match_meta_ad_campaign failed")
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
+        )
+
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response({"ok": True, **result})
+    )
+
+
+@bp.route("/ads/manual-match/<int:override_id>", methods=["DELETE"])
+@login_required
+@permission_required("product_profit")
+def api_ads_manual_match_delete(override_id):
+    """解绑一条 campaign_product_overrides 人工配对。"""
+    try:
+        result = remove_override(override_id=override_id)
+    except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
+        log.exception("remove_override failed")
         return product_profit_report_flask_response(
             build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
         )

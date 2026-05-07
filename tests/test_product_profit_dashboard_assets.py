@@ -40,3 +40,16 @@ def test_product_profit_product_picker_sorts_and_empty_search_lists_all_products
     assert "productPickerItems = opts.slice().sort(function(a, b)" in TEMPLATE
     assert "String(a.product_code || '').localeCompare(String(b.product_code || '')" in TEMPLATE
     assert "if (!q) return productPickerItems;" in TEMPLATE
+
+
+def test_product_profit_product_search_has_no_concrete_default():
+    assert "fully-automatic-water-blaster-rjc" not in TEMPLATE
+    assert "默认选中" not in TEMPLATE
+    assert "productInput.value = ALL_LABEL;" not in TEMPLATE
+
+
+def test_product_profit_ads_campaigns_support_manual_unbind_only():
+    assert "manual_override_id" in TEMPLATE
+    assert "unbindManualCampaign" in TEMPLATE
+    assert "DELETE" in TEMPLATE
+    assert "解绑" in TEMPLATE

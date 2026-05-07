@@ -70,15 +70,19 @@ def _load_campaign_metrics(
     product_id 的 race condition）。
     """
     return query(
-        "SELECT report_date, ad_account_id, ad_account_name, "
-        "       normalized_campaign_code, campaign_name, "
-        "       product_id, matched_product_code, "
-        "       spend_usd, result_count, purchase_value_usd, roas_purchase "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE report_date BETWEEN %s AND %s "
-        "  AND (product_id = %s OR product_id IS NULL) "
-        "ORDER BY report_date ASC",
-        (date_from, date_to, product_id),
+        "SELECT m.report_date, m.ad_account_id, m.ad_account_name, "
+        "       m.normalized_campaign_code, m.campaign_name, "
+        "       m.product_id, m.matched_product_code, "
+        "       o.id AS manual_override_id, "
+        "       m.spend_usd, m.result_count, m.purchase_value_usd, m.roas_purchase "
+        "FROM meta_ad_daily_campaign_metrics m "
+        "LEFT JOIN campaign_product_overrides o "
+        "  ON o.normalized_campaign_code = m.normalized_campaign_code "
+        " AND o.product_id = %s "
+        "WHERE m.report_date BETWEEN %s AND %s "
+        "  AND (m.product_id = %s OR m.product_id IS NULL) "
+        "ORDER BY m.report_date ASC",
+        (product_id, date_from, date_to, product_id),
     )
 
 
@@ -249,6 +253,7 @@ def generate_ads_report(
             "campaign_name": "",
             "ad_account_id": "",
             "ad_account_name": "",
+            "manual_override_id": None,
             "spend": Decimal("0"),
             "result_count": 0,
             "purchase_value": Decimal("0"),
@@ -288,6 +293,8 @@ def generate_ads_report(
         b["campaign_name"] = (r.get("campaign_name") or "").strip()
         b["ad_account_id"] = r.get("ad_account_id") or ""
         b["ad_account_name"] = r.get("ad_account_name") or ""
+        if r.get("manual_override_id") is not None:
+            b["manual_override_id"] = int(r["manual_override_id"])
         b["spend"] += spend
         b["result_count"] += int(r.get("result_count") or 0)
         b["purchase_value"] += Decimal(str(r.get("purchase_value_usd") or 0))
@@ -362,6 +369,7 @@ def generate_ads_report(
             "campaign_name": b["campaign_name"],
             "ad_account_id": b["ad_account_id"],
             "ad_account_name": b["ad_account_name"],
+            "manual_override_id": b.get("manual_override_id"),
             "spend_usd": float(spend),
             "result_count": b["result_count"],
             "impressions": impressions,

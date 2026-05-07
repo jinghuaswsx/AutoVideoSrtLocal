@@ -74,6 +74,23 @@
       .replaceAll("'", "&#39;");
   }
 
+  function escapeAttr(value) {
+    return escapeHtml(value).replaceAll("`", "&#96;");
+  }
+
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? "" : url).trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return "";
+    }
+  }
+
   function setStatus(text) {
     const node = $("linkCheckStatus");
     if (node) {
@@ -318,12 +335,13 @@
   }
 
   function renderPreviewPanel(title, imageUrl, emptyText) {
+    const safeImageUrl = safeMediaSrc(imageUrl);
     return `
       <div class="lc-preview-panel">
         <div class="lc-preview-label">${escapeHtml(title)}</div>
         <div class="lc-preview-frame">
-          ${imageUrl
-            ? `<img src="${imageUrl}" alt="${escapeHtml(title)}">`
+          ${safeImageUrl
+            ? `<img src="${escapeAttr(safeImageUrl)}" alt="${escapeHtml(title)}">`
             : `<div class="lc-preview-empty">${escapeHtml(emptyText)}</div>`}
         </div>
       </div>

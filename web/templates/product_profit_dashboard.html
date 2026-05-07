@@ -907,6 +907,7 @@
                 <th class="ppd-num">归属收入<span class="col-unit">USD</span></th>
                 <th class="ppd-num">ROAS</th>
                 <th class="ppd-num">利润贡献<span class="col-unit">USD</span></th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -1102,10 +1103,6 @@
         productInput.placeholder = opts.length === 0
           ? '暂无产品，仅可查看全部产品'
           : '点击选择产品…';
-        // 默认选中 ARP9 水枪如果有，否则默认 "全部产品"
-        var arp9Label = productCodeToLabel['fully-automatic-water-blaster-rjc'];
-        if (arp9Label) productInput.value = arp9Label;
-        else productInput.value = ALL_LABEL;
         renderProductPickerResults('');
       })
       .catch(function(err) {
@@ -1814,6 +1811,13 @@
           + '</div>';
       }
       var profit = c.profit_contribution_usd;
+      var manualOverrideId = c.manual_override_id;
+      var actionHtml = manualOverrideId
+        ? '<button type="button" class="ppd-btn ppd-ads-unbind" data-override-id="'
+          + escHtml(String(manualOverrideId))
+          + '" data-campaign="' + escHtml(c.normalized_campaign_code || c.campaign_name || '')
+          + '">解绑</button>'
+        : '<span style="color:var(--text-user-badge);">—</span>';
       return '<tr>'
         + '<td>' + escHtml(c.ad_account_name || c.ad_account_id || '') + '</td>'
         + '<td style="text-align:left; max-width:280px; white-space:normal;">'
@@ -1830,9 +1834,15 @@
         + '<td class="ppd-num">' + money(c.attributed_revenue_usd) + '</td>'
         + '<td class="ppd-num">' + roasText + roasMetaSub + '</td>'
         + '<td class="ppd-num ' + profitClass(profit) + '">' + money(profit) + '</td>'
+        + '<td>' + actionHtml + '</td>'
         + '</tr>';
     }).join('');
     tbody.innerHTML = html;
+    tbody.querySelectorAll('.ppd-ads-unbind').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        unbindManualCampaign(btn.dataset.overrideId, btn.dataset.campaign, btn);
+      });
+    });
   }
 
   function renderAdsDaily(daily) {
@@ -1935,6 +1945,40 @@
         if (btn) {
           btn.disabled = false;
           btn.textContent = '配对到本产品';
+        }
+      });
+  }
+
+  function unbindManualCampaign(overrideId, campaignCode, btn) {
+    if (!overrideId) {
+      alert('人工绑定 id 缺失。');
+      return;
+    }
+    var label = campaignCode || ('#' + overrideId);
+    if (!confirm('确认解绑 "' + label + '" 吗？')) return;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '解绑中…';
+    }
+    fetch('/order-analytics/product-profit/ads/manual-match/' + encodeURIComponent(overrideId), {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    })
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        }
+        return r.json();
+      })
+      .then(function() {
+        alert('解绑成功');
+        loadAdsTab();
+      })
+      .catch(function(err) {
+        alert('解绑失败：' + err.message);
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '解绑';
         }
       });
   }

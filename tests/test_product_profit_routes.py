@@ -389,6 +389,31 @@ def test_manual_match_200_calls_underlying(authed_client_no_db, monkeypatch):
     assert captured["product_id"] == 42
 
 
+def test_manual_match_delete_calls_remove_override(authed_client_no_db, monkeypatch):
+    """产品盈亏广告明细解绑 → 删除人工 override。"""
+    captured: dict = {}
+
+    def fake_remove_override(*, override_id):
+        captured["override_id"] = override_id
+        return {"removed": 1, "normalized_campaign_code": "CMP_X"}
+
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.remove_override",
+        fake_remove_override,
+    )
+
+    resp = authed_client_no_db.delete(
+        "/order-analytics/product-profit/ads/manual-match/9"
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["removed"] == 1
+    assert data["normalized_campaign_code"] == "CMP_X"
+    assert captured["override_id"] == 9
+
+
 def test_manual_match_underlying_raises_500(authed_client_no_db, monkeypatch):
     """underlying 抛异常 → 500，错误信息回传。"""
     def fake_manual_match(*args, **kwargs):

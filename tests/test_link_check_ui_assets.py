@@ -269,6 +269,20 @@ def test_link_check_detail_script_includes_locale_and_download_evidence_renderer
     assert "download_evidence" in script
 
 
+def test_link_check_preview_image_urls_are_sanitized_before_src_attributes():
+    script = Path("web/static/link_check.js").read_text(encoding="utf-8")
+    preview_block = script[
+        script.index("function renderPreviewPanel"):
+        script.index("function buildPreviewStack")
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "function escapeAttr(value)" in script
+    assert "const safeImageUrl = safeMediaSrc(imageUrl);" in preview_block
+    assert 'src="${escapeAttr(safeImageUrl)}"' in preview_block
+    assert 'src="${imageUrl}"' not in preview_block
+
+
 def test_link_check_projects_css_focuses_on_create_and_list_page():
     style = Path("web/static/link_check.css").read_text(encoding="utf-8")
 
