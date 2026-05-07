@@ -1829,6 +1829,16 @@ def test_admin_api_responses_live_outside_route_module():
     assert Path("web/services/admin.py").exists()
 
 
+def test_admin_settings_delete_setting_lives_in_appcore_settings():
+    module_source = Path("web/routes/admin.py").read_text(encoding="utf-8")
+    settings_source = Path("appcore/settings.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import execute as db_execute" not in module_source
+    assert "db_execute(" not in module_source
+    assert "delete_setting(" in module_source
+    assert "def delete_setting" in settings_source
+
+
 def test_prompt_api_responses_live_outside_route_module():
     module_source = Path("web/routes/prompt.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

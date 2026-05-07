@@ -84,6 +84,18 @@ def test_set_setting(monkeypatch):
     assert calls[0] == ("foo", "bar")
 
 
+def test_delete_setting_deletes_key(monkeypatch):
+    import appcore.settings as settings
+
+    calls = []
+    monkeypatch.setattr(settings, "_execute", lambda sql, args: calls.append((sql, args)) or 1)
+
+    result = settings.delete_setting("foo")
+
+    assert result == 1
+    assert calls == [("DELETE FROM system_settings WHERE `key` = %s", ("foo",))]
+
+
 def test_get_all_retention_settings(monkeypatch):
     import appcore.settings as settings
 

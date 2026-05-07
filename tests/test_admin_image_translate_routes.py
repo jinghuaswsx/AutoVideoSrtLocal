@@ -150,9 +150,8 @@ def test_admin_settings_default_change_skips_per_type_adjust_for_default_types(
     def fake_set_setting(key, value):
         store[key] = value
 
-    def fake_db_execute(sql, args=()):
-        if "DELETE FROM system_settings" in sql:
-            store.pop(args[0], None)
+    def fake_delete_setting(key):
+        store.pop(key, None)
         return 0
 
     per_type_calls = []
@@ -163,7 +162,7 @@ def test_admin_settings_default_change_skips_per_type_adjust_for_default_types(
     monkeypatch.setattr(r, "set_setting", fake_set_setting)
     monkeypatch.setattr(r, "adjust_expires_for_type", lambda *args: per_type_calls.append(args) or 0)
     monkeypatch.setattr(r, "adjust_expires_for_default", lambda *args, **kwargs: default_calls.append((args, kwargs)) or 0)
-    monkeypatch.setattr("appcore.db.execute", fake_db_execute)
+    monkeypatch.setattr(r, "delete_setting", fake_delete_setting)
 
     resp = authed_client_no_db.post(
         "/admin/settings",

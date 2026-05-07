@@ -25,6 +25,7 @@ from appcore.settings import (
     get_setting,
     has_retention_override,
     set_setting,
+    delete_setting,
     adjust_expires_for_type,
     adjust_expires_for_default,
 )
@@ -247,8 +248,6 @@ def _coerce_json(raw):
 @admin_required
 def settings():
     if request.method == "POST":
-        from appcore.db import execute as db_execute
-
         raw_roas_rate = request.form.get("material_roas_rmb_per_usd", "").strip()
         if not raw_roas_rate:
             raw_roas_rate = product_roas.format_decimal(product_roas.DEFAULT_RMB_PER_USD)
@@ -293,11 +292,11 @@ def settings():
                     if hours > 0:
                         set_setting(key, str(hours))
                     else:
-                        db_execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
+                        delete_setting(key)
                 except (ValueError, TypeError):
                     pass
             else:
-                db_execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
+                delete_setting(key)
 
         adjusted = 0
         new_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}

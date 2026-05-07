@@ -61,6 +61,10 @@ def set_setting(key: str, value: str) -> None:
     )
 
 
+def delete_setting(key: str) -> int:
+    return _execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
+
+
 def get_retention_hours(project_type: str) -> int:
     override = _parse_positive_hours(get_setting(f"retention_{project_type}_hours"))
     if override is not None:
