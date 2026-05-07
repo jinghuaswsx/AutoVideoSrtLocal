@@ -50,6 +50,18 @@ def test_product_translation_tasks_dynamic_links_open_new_tabs():
     assert "newTabAttrs(item.detail_url)" in script
 
 
+def test_product_translation_tasks_sanitizes_dynamic_detail_href_protocols():
+    script = Path("web/static/medias_translation_tasks.js").read_text(encoding="utf-8")
+    attrs_block = script[
+        script.index("function newTabAttrs"):
+        script.index("function fmtTime")
+    ]
+
+    assert "function safeInternalHref(url, fallback)" in script
+    assert "safeInternalHref(url, '#')" in attrs_block
+    assert "href=\"${esc(url || '#')}\"" not in attrs_block
+
+
 def test_product_translation_tasks_api_returns_projection(authed_client_no_db, monkeypatch):
     _stub_product(monkeypatch)
     monkeypatch.setattr(

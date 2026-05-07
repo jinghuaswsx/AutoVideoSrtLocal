@@ -34,6 +34,19 @@ def test_admin_bulk_translate_tasks_api_returns_admin_overview(monkeypatch, auth
     assert resp.get_json() == payload
 
 
+def test_admin_bulk_translate_tasks_asset_sanitizes_detail_href_protocols():
+    script = (ROOT / "web" / "static" / "admin_bulk_translate_tasks.js").read_text(encoding="utf-8")
+    item_block = script[
+        script.index("function renderTaskItem"):
+        script.index("function sortTaskItems")
+    ]
+
+    assert "function safeInternalHref(url, fallback)" in script
+    assert "const detailHref = safeInternalHref(" in item_block
+    assert 'href="${esc(detailHref)}"' in item_block
+    assert "href=\"${esc(task.detail_url || `/tasks/${task.id}`)}\"" not in item_block
+
+
 def test_admin_can_open_other_users_bulk_translate_detail(monkeypatch, authed_client_no_db):
     monkeypatch.setattr(
         "web.routes.bulk_translate.get_task",

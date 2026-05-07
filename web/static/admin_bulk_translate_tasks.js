@@ -63,6 +63,8 @@
     const intervention = task.intervention_count > 0
       ? `<span class="bt-admin-task-item__alert">${task.intervention_count} 项需要介入</span>`
       : '';
+    const detailFallback = task.id ? `/tasks/${encodeURIComponent(task.id)}` : '#';
+    const detailHref = safeInternalHref(task.detail_url, detailFallback);
 
     return `
       <article class="bt-admin-task-item bt-admin-task-item--${esc(task.group || 'running')}">
@@ -88,7 +90,7 @@
         <div class="bt-admin-task-item__side">
           ${intervention}
           <span class="bt-admin-task-item__cost">${esc(costText)}</span>
-          <a class="bt-btn bt-btn--primary" href="${esc(task.detail_url || `/tasks/${task.id}`)}">查看详情</a>
+          <a class="bt-btn bt-btn--primary" href="${esc(detailHref)}">查看详情</a>
         </div>
       </article>
     `;
@@ -132,6 +134,21 @@
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g,
       m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  }
+
+  function safeInternalHref(url, fallback) {
+    const safeFallback = String(fallback || '#');
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return safeFallback;
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.origin !== window.location.origin) {
+        return safeFallback;
+      }
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return safeFallback;
+    }
   }
 
   loadTasks();

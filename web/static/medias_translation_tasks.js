@@ -14,8 +14,23 @@
     }[ch]));
   }
 
+  function safeInternalHref(url, fallback) {
+    const safeFallback = String(fallback || '#');
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return safeFallback;
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.origin !== window.location.origin) {
+        return safeFallback;
+      }
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return safeFallback;
+    }
+  }
+
   function newTabAttrs(url) {
-    return `href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer"`;
+    return `href="${esc(safeInternalHref(url, '#'))}" target="_blank" rel="noopener noreferrer"`;
   }
 
   function fmtTime(value) {

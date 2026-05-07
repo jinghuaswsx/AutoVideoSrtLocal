@@ -581,6 +581,21 @@ function escapeHtml(value) {
   })[ch]);
 }
 
+function safeInternalHref(url, fallback) {
+  const safeFallback = String(fallback || '#');
+  const raw = String(url == null ? '' : url).trim();
+  if (!raw) return safeFallback;
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.origin !== window.location.origin) {
+      return safeFallback;
+    }
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch (_) {
+    return safeFallback;
+  }
+}
+
 async function refreshSummary() {
   const f = document.getElementById('opDateFrom').value;
   const t = document.getElementById('opDateTo').value;
@@ -655,7 +670,7 @@ async function openIncompleteProductsModal() {
       const missing = (p.missing_fields || []).length
         ? '缺失：' + escapeHtml((p.missing_fields || []).join(' / '))
         : '缺失字段未记录';
-      const href = p.medias_search_url || ('/medias/?q=' + encodeURIComponent(p.product_code || ''));
+      const href = safeInternalHref(p.medias_search_url, '/medias/?q=' + encodeURIComponent(p.product_code || ''));
       return `
         <a class="op-incomplete-link" href="${escapeHtml(href)}">
           <span>

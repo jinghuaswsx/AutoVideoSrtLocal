@@ -62,3 +62,14 @@ def test_order_profit_dashboard_has_incomplete_products_modal():
     ]
     for snippet in expected_snippets:
         assert snippet in TEMPLATE
+
+
+def test_order_profit_incomplete_products_modal_sanitizes_internal_links():
+    modal_block = TEMPLATE[
+        TEMPLATE.index("async function openIncompleteProductsModal"):
+        TEMPLATE.index("async function refreshOrders")
+    ]
+
+    assert "function safeInternalHref(url, fallback)" in TEMPLATE
+    assert "const href = safeInternalHref(p.medias_search_url, '/medias/?q=' + encodeURIComponent(p.product_code || ''));" in modal_block
+    assert "const href = p.medias_search_url || ('/medias/?q=' + encodeURIComponent(p.product_code || ''));" not in modal_block
