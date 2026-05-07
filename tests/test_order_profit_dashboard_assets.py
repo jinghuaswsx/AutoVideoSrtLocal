@@ -37,3 +37,13 @@ def test_order_profit_dashboard_escapes_api_backed_html_fields():
     ]
     for snippet in expected_escaped_paths:
         assert snippet in TEMPLATE
+
+
+def test_order_profit_campaign_product_picker_is_searchable_and_tall():
+    assert ".op-product-picker-trigger" in TEMPLATE
+    assert "min-height: 60px" in TEMPLATE
+    assert 'data-op-product-search' in TEMPLATE
+    assert 'placeholder="搜索 product_code / 中文产品名"' in TEMPLATE
+    assert "function filterCampaignProductOptions" in TEMPLATE
+    assert "function productSearchText" in TEMPLATE
+    assert "<select class=\"op-product-select\"" not in TEMPLATE
