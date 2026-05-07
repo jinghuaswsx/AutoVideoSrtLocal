@@ -28,8 +28,36 @@
 | 10 | 前端 - URL state 同步 + 国家筛选下拉填充 | 同上 |
 | 11 | 视觉收尾 + 响应式 | 同上 |
 | 12 | 端到端验证 + 部署测试环境 | — |
+| 13 | 前端跟进 - 产品选择 modal | `web/templates/product_profit_dashboard.html` + `tests/test_product_profit_dashboard_assets.py` |
 
 每个 Task 走 TDD：先写失败测试 → 运行确认失败 → 实现 → 运行确认通过 → commit。
+
+## Task 13: 前端跟进 — 产品选择 modal
+
+**Files:**
+- Modify: `web/templates/product_profit_dashboard.html`
+- Modify: `tests/test_product_profit_dashboard_assets.py`
+- Spec anchor: `docs/superpowers/specs/2026-05-07-product-profit-dashboard-tabs-redesign-design.md#5-顶部全局筛选条`
+
+- [ ] **Step 13.1: 写失败测试**
+
+在 `tests/test_product_profit_dashboard_assets.py` 中断言模板包含产品 modal DOM、搜索框、打开后 focus、空搜索展示全部产品、按 `product_code` 排序，以及顶部产品输入框桌面端 `min-width: 480px`。
+
+- [ ] **Step 13.2: 运行测试确认失败**
+
+Run: `pytest tests/test_product_profit_dashboard_assets.py -q`
+
+Expected: 当前模板仍使用 `datalist`，缺少 modal 片段，测试失败。
+
+- [ ] **Step 13.3: 实现最小前端改动**
+
+把顶部产品输入框改为只读 modal trigger；新增 modal DOM/CSS；在 `loadProducts()` 中保留 `productLabelToId` / `productCodeToLabel` 映射，同时维护 `productPickerItems`，按 `product_code` 排序后渲染；实现 `openProductModal()` / `closeProductModal()` / `renderProductPickerResults()` / `selectProductFromPicker()`。
+
+- [ ] **Step 13.4: 运行测试确认通过**
+
+Run: `pytest tests/test_product_profit_dashboard_assets.py tests/test_product_profit_routes.py -q`
+
+Expected: 模板资产测试和产品盈亏路由测试全部通过。
 
 ---
 
