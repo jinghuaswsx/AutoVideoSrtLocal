@@ -296,6 +296,9 @@
 .oar-id-cell {
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
 }
+.oar-profit-loss { color: var(--danger-fg); font-weight: 700; }
+.oar-profit-ok { color: var(--success-fg); font-weight: 700; }
+.oar-status-cell { color: var(--fg-muted); font-weight: 600; }
 .oar-note {
   color: var(--fg-muted); font-size: var(--text-sm);
 }
@@ -1011,6 +1014,7 @@
   <div class="oar-note" style="margin-top: var(--space-5); margin-bottom: var(--space-2);">以下明细仅展示「当前广告系统日」 · 不跟随上方时间范围</div>
   <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
     <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
+    <button type="button" class="oar-subtab" data-realtime-subtab="profitDetails">订单盈亏明细</button>
     <button type="button" class="oar-subtab" data-realtime-subtab="products">产品销量</button>
     <button type="button" class="oar-subtab" data-realtime-subtab="campaigns">广告计划</button>
     <button type="button" class="oar-subtab" data-realtime-subtab="trend">ROAS 走势</button>
@@ -1039,6 +1043,42 @@
             </tr>
           </thead>
           <tbody id="realtimeOrderBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="oar-subpanel" id="realtimeSubProfitDetails">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">订单盈亏明细</div>
+        <div class="oar-note">逐单展示退款、采购、物流、Shopify 手续费与广告分摊后的订单利润</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>订单时间</th>
+              <th>广告日小时</th>
+              <th>店铺</th>
+              <th>订单号</th>
+              <th>国家</th>
+              <th>商品</th>
+              <th>件数</th>
+              <th>总销售额</th>
+              <th>退款扣减</th>
+              <th>采购成本</th>
+              <th>物流成本</th>
+              <th>Shopify平台手续费</th>
+              <th>国际信用卡费</th>
+              <th>货币转换费</th>
+              <th>合计手续费</th>
+              <th>广告费分摊</th>
+              <th>订单利润</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeOrderProfitBody"></tbody>
         </table>
       </div>
     </div>
@@ -2811,10 +2851,12 @@
   function loadRealtimeSubTabs() {
     var hourlyBody = document.getElementById('realtimeHourlyBody');
     var orderBody = document.getElementById('realtimeOrderBody');
+    var orderProfitBody = document.getElementById('realtimeOrderProfitBody');
     var productSalesBody = document.getElementById('realtimeProductSalesBody');
     var campaignBody = document.getElementById('realtimeCampaignBody');
     if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
     if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
     if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
     fetch('/order-analytics/realtime-overview')
@@ -2828,6 +2870,7 @@
           '每 10 分钟记录当天累计订单、商品销售额、运费、广告费和 ROAS；ROAS=总销售额/广告消耗费用';
         renderRealtimeRoasChart(data.roas_points || []);
         renderRealtimeOrders(data.order_details || []);
+        renderRealtimeOrderProfitDetails(data.order_profit_details || []);
         renderRealtimeProductSales(data.product_sales_stats || []);
         renderRealtimeCampaigns(data.campaigns || []);
         hourlyBody.innerHTML = '';
@@ -2871,6 +2914,7 @@
       .catch(function(err) {
         if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
         if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+        if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
         if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
         if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       });
@@ -2896,6 +2940,40 @@
     });
     if (!body.children.length) {
       body.innerHTML = '<tr><td colspan="10">暂无订单数据</td></tr>';
+    }
+  }
+
+  function renderRealtimeOrderProfitDetails(rows) {
+    var body = document.getElementById('realtimeOrderProfitBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      var country = (row.buyer_country_name || row.buyer_country || '-') +
+        (row.buyer_country ? ' / ' + row.buyer_country : '');
+      var profit = Number(row.order_profit_usd || 0);
+      addTextCell(tr, formatShortDateTime(row.order_time));
+      addTextCell(tr, row.business_hour === null || row.business_hour === undefined || row.business_hour === '' ? '-' : String(row.business_hour).padStart(2, '0') + ':00');
+      addTextCell(tr, row.site_code || '-');
+      addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
+      addTextCell(tr, country);
+      addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
+      addTextCell(tr, fmtInt(row.units || 0));
+      addTextCell(tr, fmtMoney(row.total_revenue));
+      addTextCell(tr, fmtMoney(row.refund_deduction_usd));
+      addTextCell(tr, fmtMoney(row.purchase_cost_usd));
+      addTextCell(tr, fmtMoney(row.logistics_cost_usd));
+      addTextCell(tr, fmtMoney(row.shopify_platform_fee_usd));
+      addTextCell(tr, fmtMoney(row.international_card_fee_usd));
+      addTextCell(tr, fmtMoney(row.currency_conversion_fee_usd));
+      addTextCell(tr, fmtMoney(row.shopify_fee_total_usd));
+      addTextCell(tr, fmtMoney(row.ad_cost_usd));
+      addTextCell(tr, fmtMoney(row.order_profit_usd), profit < 0 ? 'oar-profit-loss' : 'oar-profit-ok');
+      addTextCell(tr, row.status_label || row.profit_status || '-', 'oar-status-cell');
+      body.appendChild(tr);
+    });
+    if (!body.children.length) {
+      body.innerHTML = '<tr><td colspan="18">暂无订单盈亏数据</td></tr>';
     }
   }
 

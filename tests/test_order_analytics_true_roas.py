@@ -668,6 +668,17 @@ def test_realtime_overview_endpoint_accepts_start_end_params(authed_client_no_db
 # ── 前端模板回归 ─────────────────────────────────────────
 
 
+def _extract_realtime_panel(body):
+    panel_start = body.index('id="panelRealtime"')
+    if 'id="panelDashboard"' in body[panel_start:]:
+        panel_end = body.index('id="panelDashboard"', panel_start)
+    elif 'id="panelDxmOrders"' in body[panel_start:]:
+        panel_end = body.index('id="panelDxmOrders"', panel_start)
+    else:
+        panel_end = len(body)
+    return body[panel_start:panel_end]
+
+
 def test_realtime_tab_has_country_style_time_picker(authed_client_no_db):
     """实时大盘工具栏应含 6 个时间预设 + 自定义日期范围 + 刷新按钮（仿国家看板）。"""
     response = authed_client_no_db.get("/order-analytics")
@@ -730,3 +741,52 @@ def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
     assert "fmtInt(row.order_count)" in body
     assert "fmtInt(row.units)" in body
     assert "renderRealtimeProductSales(data.product_sales_stats || [])" in body
+
+
+def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    assert 'data-realtime-subtab="profitDetails"' in panel
+    assert 'id="realtimeSubProfitDetails"' in panel
+    assert 'id="realtimeOrderProfitBody"' in panel
+
+
+def test_realtime_order_profit_table_shows_every_fee_column(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    for column in (
+        "订单时间",
+        "广告日小时",
+        "店铺",
+        "订单号",
+        "国家",
+        "商品",
+        "件数",
+        "总销售额",
+        "退款扣减",
+        "采购成本",
+        "物流成本",
+        "Shopify平台手续费",
+        "国际信用卡费",
+        "货币转换费",
+        "合计手续费",
+        "广告费分摊",
+        "订单利润",
+        "状态",
+    ):
+        assert f"<th>{column}</th>" in panel
+
+
+def test_realtime_order_profit_renderer_is_wired(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    assert "function renderRealtimeOrderProfitDetails(rows)" in body
+    assert "renderRealtimeOrderProfitDetails(data.order_profit_details || [])" in body
