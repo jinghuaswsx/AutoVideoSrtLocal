@@ -4162,6 +4162,34 @@ def test_subtitle_removal_route_db_dependencies_use_appcore_store():
     assert store_path.exists()
 
 
+def test_subtitle_removal_project_sql_lives_in_appcore_store():
+    route_source = Path("web/routes/subtitle_removal.py").read_text(encoding="utf-8")
+    store_source = Path("appcore/subtitle_removal_route_store.py").read_text(encoding="utf-8")
+    helper_names = [
+        "list_submitter_rows",
+        "get_project_created_at",
+        "list_inflight_projects",
+        "get_detail_project",
+        "list_tasks",
+        "set_project_display_name",
+        "soft_delete_project",
+    ]
+
+    assert "FROM projects" not in route_source
+    assert "UPDATE projects SET" not in route_source
+    for helper_name in helper_names:
+        assert f"subtitle_removal_route_store.{helper_name}" in route_source
+
+    for snippet in [
+        "SELECT DISTINCT p.user_id, u.username",
+        "SELECT id, user_id, status, state_json",
+        "SELECT * FROM projects WHERE id = %s",
+        "LOWER(COALESCE(p.display_name, '')) LIKE %s",
+        "UPDATE projects SET deleted_at = NOW()",
+    ]:
+        assert snippet in store_source
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

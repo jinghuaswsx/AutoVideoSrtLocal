@@ -115,12 +115,9 @@ def _submitter_name_expr() -> str:
 
 def _list_submitter_options(submitter_name_expr: str) -> list[dict]:
     try:
-        rows = db_query(
-            f"SELECT DISTINCT p.user_id, u.username, {submitter_name_expr} AS submitter_name "
-            "FROM projects p LEFT JOIN users u ON u.id = p.user_id "
-            "WHERE p.type = 'subtitle_removal' AND p.deleted_at IS NULL "
-            "ORDER BY submitter_name ASC, p.user_id ASC",
-            (),
+        rows = subtitle_removal_route_store.list_submitter_rows(
+            submitter_name_expr,
+            query_func=db_query,
         )
     except Exception:
         log.warning("subtitle removal submitter options failed", exc_info=True)
@@ -297,7 +294,10 @@ def _submission_age_seconds(task_id: str, task: dict) -> float:
     submitted_at = _coerce_timestamp_seconds(task.get("provider_task_submitted_at"))
     if submitted_at <= 0:
         try:
-            row = db_query_one("SELECT created_at FROM projects WHERE id = %s", (task_id,))
+            row = subtitle_removal_route_store.get_project_created_at(
+                task_id,
+                query_one_func=db_query_one,
+            )
         except Exception:
             row = None
         if row:
@@ -378,17 +378,7 @@ def _task_needs_resume(task: dict) -> bool:
 def resume_inflight_tasks() -> list[str]:
     restored: list[str] = []
     try:
-        rows = db_query(
-            """
-            SELECT id, user_id, status, state_json
-            FROM projects
-            WHERE type = 'subtitle_removal'
-              AND deleted_at IS NULL
-              AND status IN ('queued', 'running', 'submitted')
-            ORDER BY created_at ASC
-            """,
-            (),
-        )
+        rows = subtitle_removal_route_store.list_inflight_projects(query_func=db_query)
     except Exception:
         return restored
 
@@ -585,9 +575,9 @@ def upload_page():
 @bp.route("/subtitle-removal/<task_id>")
 @login_required
 def detail_page(task_id: str):
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND type = 'subtitle_removal' AND deleted_at IS NULL",
-        (task_id,),
+    row = subtitle_removal_route_store.get_detail_project(
+        task_id,
+        query_one_func=db_query_one,
     )
     if not row:
         abort(404)
@@ -636,31 +626,11 @@ def list_tasks():
         if user_id_filter <= 0:
             return _json_response({"error": "user_id must be positive"}), 400
 
-    query_text = (request.args.get("q") or "").strip().lower()
-    where_parts = ["p.type = 'subtitle_removal'", "p.deleted_at IS NULL"]
-    params: list = []
-    if user_id_filter is not None:
-        where_parts.append("p.user_id = %s")
-        params.append(user_id_filter)
-    if query_text:
-        like = f"%{query_text}%"
-        where_parts.append(
-            "("
-            "LOWER(COALESCE(p.display_name, '')) LIKE %s OR "
-            "LOWER(COALESCE(p.original_filename, '')) LIKE %s OR "
-            "LOWER(COALESCE(p.state_json, '')) LIKE %s"
-            ")"
-        )
-        params.extend([like, like, like])
-    where_sql = " AND ".join(where_parts)
-
-    rows = db_query(
-        f"SELECT p.id, p.user_id, p.status, p.display_name, p.original_filename, p.state_json, p.created_at, "
-        f"u.username, {submitter_name_expr} AS submitter_name "
-        "FROM projects p LEFT JOIN users u ON u.id = p.user_id "
-        f"WHERE {where_sql} "
-        "ORDER BY p.created_at DESC",
-        tuple(params),
+    rows = subtitle_removal_route_store.list_tasks(
+        submitter_name_expr,
+        user_id_filter=user_id_filter,
+        query_text=(request.args.get("q") or "").strip().lower(),
+        query_func=db_query,
     )
     items = []
     for row in rows or []:
@@ -892,7 +862,11 @@ def complete_upload():
     )
     store.set_step(task_id, "prepare", "done")
     store.set_step_message(task_id, "prepare", "首帧提取和媒体信息解析已完成")
-    db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
+    subtitle_removal_route_store.set_project_display_name(
+        task_id,
+        display_name,
+        execute_func=db_execute,
+    )
     _release_upload_bootstrap(task_id)
     return _json_response({"task_id": task_id}), 201
 
@@ -1073,6 +1047,10 @@ def resubmit(task_id: str):
 def delete_task(task_id: str):
     task = _get_owned_task(task_id)
     _cleanup_result_artifacts(task)
-    db_execute("UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s", (task_id, current_user.id))
+    subtitle_removal_route_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        execute_func=db_execute,
+    )
     store.update(task_id, status="deleted", deleted_at=datetime.now().isoformat(timespec="seconds"))
     return ("", 204)
