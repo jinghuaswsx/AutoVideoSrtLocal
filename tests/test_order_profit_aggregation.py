@@ -207,6 +207,51 @@ def test_detail_returns_summary_and_lines(monkeypatch):
     assert len(result["lines"]) == 2
 
 
+def test_detail_normalizes_json_columns_for_lines(monkeypatch):
+    state = {"call": 0}
+
+    def fake_query(sql, args=()):
+        state["call"] += 1
+        if state["call"] == 1:
+            return [{
+                "dxm_package_id": "pkg1",
+                "paid_at": datetime(2026, 5, 4),
+                "business_date": date(2026, 5, 4),
+                "buyer_country": "US",
+                "platform": "shopify",
+                "site_code": "newjoy",
+                "line_count": 1,
+                "ok_count": 0,
+                "incomplete_count": 1,
+                "line_amount_total": 0,
+                "shipping_alloc_total": 0,
+                "revenue_total": 0,
+                "shopify_fee_total": 0,
+                "ad_cost_total": 0,
+                "purchase_total": 0,
+                "shipping_cost_total": 0,
+                "return_reserve_total": 0,
+                "profit_total": None,
+            }]
+        return [{
+            "id": 1,
+            "product_code": "abc",
+            "profit_usd": None,
+            "status": "incomplete",
+            "missing_fields": '["purchase_price", "shipping_cost"]',
+            "cost_basis": '{"shipping_cost_source": "missing"}',
+        }]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    result = get_order_profit_detail("pkg1")
+
+    assert result["lines"][0]["missing_fields"] == [
+        "purchase_price",
+        "shipping_cost",
+    ]
+    assert result["lines"][0]["cost_basis"] == {"shipping_cost_source": "missing"}
+
+
 def test_detail_returns_none_for_unknown_package(monkeypatch):
     monkeypatch.setattr(oa, "query", lambda sql, args=(): [])
     assert get_order_profit_detail("unknown_pkg") is None
