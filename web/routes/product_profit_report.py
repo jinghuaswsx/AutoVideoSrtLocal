@@ -14,8 +14,10 @@ from flask_login import login_required
 
 from web.auth import permission_required
 
+from appcore.order_analytics import product_profit_ads as ppa
 from appcore.order_analytics import product_profit_list as ppl
 from appcore.order_analytics import product_profit_report as ppr
+from appcore.order_analytics.meta_ads import manual_match_meta_ad_campaign
 from appcore.order_analytics.shopify_payments_import import import_payments_csv
 from web.services.product_profit_report import (
     build_product_profit_report_error_response,
@@ -266,3 +268,85 @@ def api_list_xlsx():
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+# ---------------------------------------------------------------------------
+# Tab ④ 广告明细
+# ---------------------------------------------------------------------------
+@bp.route("/ads.json", methods=["GET"])
+@login_required
+@permission_required("product_profit")
+def api_ads_json():
+    """单产品广告明细（Tab ④ 数据源）。
+
+    Query:
+      product_id (int, required)
+      date_from (YYYY-MM-DD, default = today - 30d)
+      date_to   (YYYY-MM-DD, default = today)
+      country   (大写国家代码，可选；空 / "all" = 全部)
+    """
+    try:
+        product_id = int(request.args.get("product_id", "0"))
+    except ValueError:
+        return jsonify({"error": "invalid product_id"}), 400
+    if product_id <= 0:
+        return jsonify({"error": "missing product_id"}), 400
+
+    today = date.today()
+    date_to = _parse_date(request.args.get("date_to"), today)
+    date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
+    if date_from > date_to:
+        return jsonify({"error": "date_from > date_to"}), 400
+
+    country = (request.args.get("country") or "").strip() or None
+    try:
+        report = ppa.generate_ads_report(
+            product_id=product_id,
+            date_from=date_from,
+            date_to=date_to,
+            country=country,
+        )
+    except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
+        log.exception("generate_ads_report failed")
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+    return jsonify(report)
+
+
+@bp.route("/ads/manual-match", methods=["POST"])
+@login_required
+@permission_required("product_profit")
+def api_ads_manual_match():
+    """手动把 normalized_campaign_code 配对到 media_products 产品。
+
+    JSON Body:
+      campaign_code (str, required) — normalized_campaign_code
+      product_id    (int, required) — media_products.id
+      reason        (str, optional)
+    """
+    payload = request.get_json(silent=True) or {}
+
+    campaign_code = (payload.get("campaign_code") or "").strip()
+    if not campaign_code:
+        return jsonify({"error": "missing campaign_code"}), 400
+
+    raw_product_id = payload.get("product_id")
+    try:
+        product_id = int(raw_product_id) if raw_product_id is not None else 0
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid product_id"}), 400
+    if product_id <= 0:
+        return jsonify({"error": "missing product_id"}), 400
+
+    reason = (payload.get("reason") or "").strip()
+    try:
+        result = manual_match_meta_ad_campaign(
+            campaign_code,
+            product_id,
+            reason=reason,
+        )
+    except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
+        log.exception("manual_match_meta_ad_campaign failed")
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+    return jsonify({"ok": True, **result})
