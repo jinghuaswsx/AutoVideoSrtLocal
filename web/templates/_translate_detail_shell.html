@@ -154,11 +154,12 @@
   #configPanel { display: none !important; }
   /* 多语种详情页使用顶部原始语言选择器，隐藏旧的 zh/en 切换条 */
   #sourceLangPanel { display: none !important; }
-  /* 仅移动原文标准化：ASR 与原文标准化同组，音频提取仍保持原来的音色选择上方位置 */
+  /* ASR/原文标准化先展示；音频提取与人声分离保持在音色选择上方 */
   #pipelineCard .steps > #step-asr { order: -2; }
   #pipelineCard .steps > #step-asr_normalize { order: -2; }
   #pipelineCard .steps > #step-asr_clean { order: -2; }
   #pipelineCard .steps > #step-extract { order: -1; }
+  #pipelineCard .steps > #step-separate { order: -1; }
   {% elif detail_mode == 'ja' %}
   #voicePanel { display: none !important; }
   #configPanel { display: none !important; }

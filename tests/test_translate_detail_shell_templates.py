@@ -83,6 +83,17 @@ def test_asr_normalize_card_moves_after_asr_without_reordering_other_cards():
     assert "{% set pipeline_kind = 'multi_translate' %}" in av_sync
 
 
+def test_voice_separation_card_stays_after_audio_extract_before_tts_selector():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+    separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")
+
+    assert "#pipelineCard .steps > #step-extract { order: -1; }" in shared
+    assert "#pipelineCard .steps > #step-separate { order: -1; }" in shared
+    assert "voiceSel.parentNode.insertBefore(step, voiceSel)" not in separation
+    assert "moveSeparateBeforeVoiceSelector" not in separation
+
+
 def test_tts_generation_summary_is_rendered_in_duration_log():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
