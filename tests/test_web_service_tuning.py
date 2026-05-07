@@ -11,6 +11,15 @@ def _make_file(filename: str, content: bytes = b"fake-video-data"):
     return (io.BytesIO(content), filename)
 
 
+@pytest.fixture(autouse=True)
+def _reset_shutdown_coordinator():
+    from appcore import shutdown_coordinator
+
+    shutdown_coordinator.reset()
+    yield
+    shutdown_coordinator.reset()
+
+
 @pytest.fixture
 def authed_client(monkeypatch):
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)

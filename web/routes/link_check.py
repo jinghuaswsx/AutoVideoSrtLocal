@@ -13,6 +13,7 @@ from appcore.task_recovery import recover_all_interrupted_tasks, recover_project
 from config import OUTPUT_DIR
 from web import store
 from web.services.artifact_download import safe_task_file_response
+from web.upload_util import client_filename_basename
 from web.services.link_check import (
     build_link_check_create_success_response,
     build_link_check_delete_success_response,
@@ -235,10 +236,11 @@ def create_task():
     for index, storage in enumerate(request.files.getlist("reference_images")):
         if not storage or not storage.filename:
             continue
-        suffix = Path(storage.filename).suffix.lower()
+        upload_filename = client_filename_basename(storage.filename)
+        suffix = Path(upload_filename).suffix.lower()
         if suffix and suffix not in _ALLOWED_EXT:
             return link_check_flask_response(
-                build_link_check_unsupported_reference_response(storage.filename)
+                build_link_check_unsupported_reference_response(upload_filename)
             )
         local_path = task_dir / "reference" / f"ref_{index:03d}{suffix or '.jpg'}"
         local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -246,7 +248,7 @@ def create_task():
         references.append(
             {
                 "id": f"ref-{index}",
-                "filename": storage.filename,
+                "filename": upload_filename,
                 "local_path": str(local_path),
             }
         )

@@ -59,6 +59,37 @@ def test_create_link_check_task_accepts_optional_reference_images(authed_user_cl
     assert len(created["reference_images"]) == 1
 
 
+def test_create_link_check_task_stores_reference_image_basename(authed_user_client_no_db, monkeypatch):
+    from web import store
+
+    created = {}
+
+    def fake_create(task_id, task_dir, **kwargs):
+        created.update({"task_id": task_id, "task_dir": task_dir, **kwargs})
+        return {"id": task_id, "type": "link_check", "_user_id": 2}
+
+    monkeypatch.setattr(store, "create_link_check", fake_create)
+    monkeypatch.setattr("web.routes.link_check.medias.list_languages", lambda: [])
+    monkeypatch.setattr(
+        "web.routes.link_check.medias.get_language",
+        lambda code: {"code": "de", "name_zh": "德语", "enabled": 1},
+    )
+    monkeypatch.setattr("web.routes.link_check.link_check_runner.start", lambda tid: True)
+
+    response = authed_user_client_no_db.post(
+        "/api/link-check/tasks",
+        data={
+            "link_url": "https://shop.example.com/de/products/demo",
+            "target_language": "de",
+            "reference_images": [(io.BytesIO(b"fake-image"), "..\\..\\ref-1.jpg")],
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 202
+    assert created["reference_images"][0]["filename"] == "ref-1.jpg"
+
+
 def test_get_task_serializes_preview_urls(authed_user_client_no_db, monkeypatch):
     from web import store
 

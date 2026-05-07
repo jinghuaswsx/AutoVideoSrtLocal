@@ -179,7 +179,8 @@ def upload():
     product_image = request.files.get("product_image")
     if product_image and product_image.filename:
         from web.upload_util import validate_image_extension
-        if not validate_image_extension(product_image.filename):
+        product_image_filename = client_filename_basename(product_image.filename)
+        if not validate_image_extension(product_image_filename):
             return copywriting_flask_response(
                 build_copywriting_error_response("不支持的图片格式", 400)
             )

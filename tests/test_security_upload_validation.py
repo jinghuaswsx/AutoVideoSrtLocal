@@ -261,6 +261,52 @@ class TestVideoCreationUploadValidation:
 class TestCopywritingUploadValidation:
     """copywriting 上传端点应校验视频扩展名。"""
 
+    def test_product_image_validates_sanitized_client_filename(self, client, monkeypatch, tmp_path):
+        captured = {}
+
+        class _FakeRunner:
+            start = object()
+
+        def fake_validate(filename):
+            captured["validated_image"] = filename
+            return filename == "cover.jpg"
+
+        monkeypatch.setattr("web.routes.copywriting.OUTPUT_DIR", str(tmp_path / "out"))
+        monkeypatch.setattr("web.routes.copywriting.UPLOAD_DIR", str(tmp_path / "uploads"))
+        monkeypatch.setattr("web.routes.copywriting.get_connection", lambda: _FakeConn())
+        monkeypatch.setattr("web.routes.copywriting.get_retention_hours", lambda project_type: 24)
+        monkeypatch.setattr("web.routes.copywriting._extract_thumbnail", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            "web.upload_util.save_uploaded_file_to_path",
+            lambda _file, destination: captured.setdefault("video_path", destination),
+        )
+        monkeypatch.setattr(
+            "web.routes.copywriting.task_state.create_copywriting",
+            lambda **kwargs: {"id": kwargs["task_id"], "_user_id": kwargs["user_id"]},
+        )
+        monkeypatch.setattr("web.routes.copywriting.task_state.update", lambda *a, **kw: None)
+        monkeypatch.setattr("web.routes.copywriting._register_copywriting_task", lambda *a, **kw: True)
+        monkeypatch.setattr("web.routes.copywriting._start_copywriting_background", lambda *a, **kw: None)
+        monkeypatch.setattr("web.routes.copywriting.CopywritingRunner", lambda *a, **kw: _FakeRunner())
+        monkeypatch.setattr("web.upload_util.validate_image_extension", fake_validate)
+        monkeypatch.setattr(
+            "web.routes.copywriting.copywriting_route_store.update_product_image_url",
+            lambda task_id, img_path, **kwargs: captured.setdefault("image_path", img_path),
+        )
+
+        resp = client.post(
+            "/api/copywriting/upload",
+            data={
+                "video": _make_file("demo.mp4"),
+                "product_image": _make_file("..\\..\\cover.jpg", b"fake-image"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 201
+        assert captured["validated_image"] == "cover.jpg"
+        assert os.path.basename(captured["image_path"]) == "product_image.jpg"
+
     def test_sanitizes_traversal_filename_before_saving(self, client, monkeypatch, tmp_path):
         captured = {}
 
