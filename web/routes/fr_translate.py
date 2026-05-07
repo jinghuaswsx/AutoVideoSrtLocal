@@ -47,9 +47,10 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
     candidate = base
     n = 2
     while True:
-        row = db_query_one(
-            "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND deleted_at IS NULL",
-            (user_id, candidate),
+        row = translation_route_store.find_project_by_display_name(
+            user_id,
+            candidate,
+            query_one_func=db_query_one,
         )
         if not row:
             return candidate
@@ -63,11 +64,10 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
 @login_required
 def index():
     recover_all_interrupted_tasks()
-    rows = db_query(
-        """SELECT id, original_filename, display_name, thumbnail_path, status, created_at, expires_at, deleted_at
-           FROM projects WHERE user_id = %s AND type = 'fr_translate' AND deleted_at IS NULL
-           ORDER BY created_at DESC""",
-        (current_user.id,),
+    rows = translation_route_store.list_user_projects(
+        current_user.id,
+        "fr_translate",
+        query_func=db_query,
     )
     from appcore.settings import get_retention_hours
     return render_template("fr_translate_list.html", projects=rows, now=datetime.now(),
@@ -78,9 +78,11 @@ def index():
 @login_required
 def detail(task_id: str):
     recover_project_if_needed(task_id, "fr_translate")
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
+    row = translation_route_store.get_user_project(
+        task_id,
+        current_user.id,
+        "fr_translate",
+        query_one_func=db_query_one,
     )
     if not row:
         abort(404)
@@ -365,9 +367,11 @@ def download(task_id, file_type):
 @login_required
 def delete(task_id):
     """软删除法语翻译任务。"""
-    row = db_query_one(
-        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = translation_route_store.get_active_project_storage(
+        task_id,
+        current_user.id,
+        "fr_translate",
+        query_one_func=db_query_one,
     )
     if not row:
         return _json_response({"error": "Task not found"}, 404)
@@ -383,9 +387,11 @@ def delete(task_id):
     except Exception:
         pass
 
-    db_execute(
-        "UPDATE projects SET deleted_at=NOW() WHERE id=%s",
-        (task_id,),
+    translation_route_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        "fr_translate",
+        execute_func=db_execute,
     )
     store.update(task_id, status="deleted")
     return _json_response({"status": "ok"})
@@ -462,9 +468,11 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 @login_required
 def run_ai_analysis(task_id):
     """手动触发法语项目 AI 视频分析，不影响任务整体 status。"""
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = translation_route_store.get_active_project_id(
+        task_id,
+        current_user.id,
+        "fr_translate",
+        query_one_func=db_query_one,
     )
     if not row:
         return _json_response({"error": "Task not found"}, 404)

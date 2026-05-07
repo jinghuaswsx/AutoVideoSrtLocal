@@ -3015,6 +3015,37 @@ def test_de_fr_translate_route_db_dependencies_use_appcore_store():
     assert "def execute(" in store_source
 
 
+def test_de_fr_translate_project_sql_lives_in_appcore_store():
+    store_source = Path("appcore/translation_route_store.py").read_text(encoding="utf-8")
+    helper_names = [
+        "find_project_by_display_name",
+        "list_user_projects",
+        "get_user_project",
+        "get_active_project_storage",
+        "get_active_project_id",
+        "soft_delete_project",
+    ]
+
+    for path in [
+        Path("web/routes/de_translate.py"),
+        Path("web/routes/fr_translate.py"),
+    ]:
+        route_source = path.read_text(encoding="utf-8")
+        assert "FROM projects" not in route_source
+        assert "UPDATE projects SET deleted_at" not in route_source
+        for helper_name in helper_names:
+            assert f"translation_route_store.{helper_name}" in route_source
+
+    for snippet in [
+        "SELECT id FROM projects WHERE user_id = %s AND display_name = %s",
+        "FROM projects WHERE user_id = %s AND type = %s",
+        "SELECT * FROM projects WHERE id = %s AND user_id = %s",
+        "SELECT id, task_dir, state_json FROM projects",
+        "UPDATE projects SET deleted_at=NOW()",
+    ]:
+        assert snippet in store_source
+
+
 def test_ja_translate_json_responses_live_outside_route_module():
     source = Path("web/routes/ja_translate.py").read_text(encoding="utf-8")
 
