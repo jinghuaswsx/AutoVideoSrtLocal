@@ -10,6 +10,7 @@
   统一改写为「原文标准化和ASR结果纯净化」（仅 multi 那个 step 改名；omni 仍叫「原文纯净化」）。
 """
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -147,3 +148,19 @@ def test_omni_detail_renders_dynamic_pipeline_steps(authed_client_no_db):
     assert '"shot_decompose"' in html
     assert '"asr_normalize"' in html
     assert '"av_sync_audit"' in html
+
+
+def test_workbench_preview_renderer_skips_non_visual_steps():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "voice_match" in script
+    assert (
+        "const msgEl = document.getElementById(`msg-${step}`);\n"
+        "      if (!stepEl || !iconEl || !msgEl) return;"
+    ) in script
+    assert (
+        "const previewEl = document.getElementById(`preview-${step}`);\n"
+        "      if (!previewEl) return;"
+    ) in script

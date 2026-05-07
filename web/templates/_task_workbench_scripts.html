@@ -826,6 +826,7 @@
       const stepEl = document.getElementById(`step-${step}`);
       const iconEl = document.getElementById(`icon-${step}`);
       const msgEl = document.getElementById(`msg-${step}`);
+      if (!stepEl || !iconEl || !msgEl) return;
       let status = currentTask?.steps?.[step] || "pending";
       if (step === "analysis") {
         // AI 分析是手动触发的附加步骤，不跟随主流程错误
@@ -917,6 +918,7 @@
   function renderStepPreviews(artifacts) {
     STEP_ORDER.forEach(step => {
       const previewEl = document.getElementById(`preview-${step}`);
+      if (!previewEl) return;
       const artifact = artifacts[step];
       const status = currentTask?.steps?.[step] || "pending";
       let html;
