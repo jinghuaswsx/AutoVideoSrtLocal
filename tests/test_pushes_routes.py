@@ -1490,3 +1490,146 @@ def test_public_media_object_rejects_traversal_and_non_user_scope():
     # 空 / 含 .. / 不以 u/ 开头 —— 一律 404
     assert client.get("/medias/obj/../etc/passwd").status_code in (301, 302, 404)
     assert client.get("/medias/obj/not-user/xxx.mp4").status_code == 404
+
+
+# ================================================================
+# 标记不推送 / 恢复推送（skipped 状态）
+# ================================================================
+
+
+def test_compute_status_returns_skipped_when_flag_set():
+    from appcore import pushes
+
+    item = {"skip_push": 1, "pushed_at": None, "latest_push_id": None}
+    product = {}
+    assert pushes.compute_status(item, product) == pushes.STATUS_SKIPPED
+
+
+def test_skip_marks_item_and_sets_audit_columns(logged_in_client, seeded_item):
+    pid, item_id = seeded_item
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/skip")
+    assert resp.status_code == 204
+
+    from appcore.db import query_one
+    row = query_one(
+        "SELECT skip_push, skip_push_by, skip_push_at FROM media_items WHERE id=%s",
+        (item_id,),
+    )
+    assert row["skip_push"] == 1
+    assert row["skip_push_by"] is not None
+    assert row["skip_push_at"] is not None
+
+
+def test_skip_blocked_for_already_pushed_item(logged_in_client, seeded_item):
+    _, item_id = seeded_item
+    from appcore.db import execute as db_execute
+    db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/skip")
+    assert resp.status_code == 409
+    assert resp.get_json()["error"] == "already_pushed"
+
+
+def test_unskip_clears_flag(logged_in_client, seeded_item):
+    _, item_id = seeded_item
+    logged_in_client.post(f"/pushes/api/items/{item_id}/skip")
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/unskip")
+    assert resp.status_code == 204
+
+    from appcore.db import query_one
+    row = query_one(
+        "SELECT skip_push, skip_push_by, skip_push_at FROM media_items WHERE id=%s",
+        (item_id,),
+    )
+    assert row["skip_push"] == 0
+    assert row["skip_push_by"] is None
+    assert row["skip_push_at"] is None
+
+
+def test_skip_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.post("/pushes/api/items/99999/skip")
+    assert resp.status_code == 403
+
+
+def test_skip_unknown_item_returns_404(logged_in_client):
+    resp = logged_in_client.post("/pushes/api/items/99999999/skip")
+    assert resp.status_code == 404
+
+
+def test_status_filter_skipped_returns_only_marked(authed_client_no_db, monkeypatch):
+    rows = [
+        {
+            "id": 201, "product_id": 11, "product_name": "A", "product_code": "a-rjc",
+            "lang": "de", "filename": "a.mp4", "display_name": "a.mp4",
+            "duration_seconds": 5.0, "file_size": 1, "created_at": datetime(2026, 5, 1),
+            "pushed_at": None, "ad_supported_langs": "de", "selling_points": "",
+            "importance": 3, "skip_push": 1, "skip_push_at": datetime(2026, 5, 7),
+        },
+        {
+            "id": 202, "product_id": 12, "product_name": "B", "product_code": "b-rjc",
+            "lang": "de", "filename": "b.mp4", "display_name": "b.mp4",
+            "duration_seconds": 5.0, "file_size": 1, "created_at": datetime(2026, 5, 1),
+            "pushed_at": None, "ad_supported_langs": "de", "selling_points": "",
+            "importance": 3, "skip_push": 0, "skip_push_at": None,
+        },
+    ]
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: (rows, 2),
+    )
+    # 非 skipped 行的 readiness 计算会查 DB，避开真实 DB
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {
+            "is_listed": True, "has_object": True, "has_cover": True,
+            "has_copywriting": True, "lang_supported": True,
+            "has_push_texts": True, "shopify_image_confirmed": True,
+            "shopify_image_reason": None,
+        },
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?status=skipped&page=1")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    ids = [it["id"] for it in data["items"]]
+    assert ids == [201]
+    assert data["items"][0]["status"] == "skipped"
+    assert data["items"][0]["skip_push"] is True
+
+
+def test_pending_filter_excludes_skipped(authed_client_no_db, monkeypatch):
+    rows = [
+        {
+            "id": 301, "product_id": 21, "product_name": "P1", "product_code": "p1-rjc",
+            "lang": "de", "filename": "p1.mp4", "display_name": "p1.mp4",
+            "duration_seconds": 5.0, "file_size": 1, "created_at": datetime(2026, 5, 1),
+            "pushed_at": None, "ad_supported_langs": "de", "selling_points": "",
+            "importance": 3, "skip_push": 1,
+        },
+        {
+            "id": 302, "product_id": 22, "product_name": "P2", "product_code": "p2-rjc",
+            "lang": "de", "filename": "p2.mp4", "display_name": "p2.mp4",
+            "duration_seconds": 5.0, "file_size": 1, "created_at": datetime(2026, 5, 1),
+            "pushed_at": None, "ad_supported_langs": "de", "selling_points": "",
+            "importance": 3, "skip_push": 0,
+        },
+    ]
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: (rows, 2),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {
+            "is_listed": True, "has_object": True, "has_cover": True,
+            "has_copywriting": True, "lang_supported": True,
+            "has_push_texts": True, "shopify_image_confirmed": True,
+            "shopify_image_reason": None,
+        },
+    )
+    # 真实 compute_status 会顶层短路 skip_push=1 → SKIPPED；
+    # 其余按 readiness 应判为 pending。这里直接用真实实现，验证短路行为。
+
+    resp = authed_client_no_db.get("/pushes/api/items?status=pending&page=1")
+    assert resp.status_code == 200
+    ids = [it["id"] for it in resp.get_json()["items"]]
+    assert ids == [302]

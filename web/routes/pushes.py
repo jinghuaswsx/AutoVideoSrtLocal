@@ -59,6 +59,7 @@ from appcore import medias, push_quality_checks, pushes, system_audit
 
 _PAGE_SIZE_DEFAULT = 20
 _AUDIT_RESULT_FILTERS = {"适合推广", "部分适合推广", "不适合推广"}
+_VALID_STATUS_FILTERS = {"not_ready", "pending", "pushed", "failed", "skipped"}
 
 
 def _audit_push_action(
@@ -151,6 +152,8 @@ def _serialize_row(row: dict) -> dict:
         "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
         "listing_status": row.get("listing_status") or "上架",
         "cover_url": cover_url,
+        "skip_push": bool(row.get("skip_push")),
+        "skip_push_at": row["skip_push_at"].isoformat() if row.get("skip_push_at") else None,
         "quality_check": _quality_check_for_item(item_id),
     }
 
@@ -198,7 +201,9 @@ def api_list():
     )
     items = [_serialize_row(r) for r in rows]
     if status_filter:
-        items = [it for it in items if it["status"] in status_filter]
+        valid = [s for s in status_filter if s in _VALID_STATUS_FILTERS]
+        if valid:
+            items = [it for it in items if it["status"] in valid]
 
     total = len(items)
     start = (page - 1) * limit
@@ -450,6 +455,32 @@ def api_mark_failed(item_id: int):
 def api_reset(item_id: int):
     pushes.reset_push_state(item_id)
     _audit_push_action(item_id, "push_reset")
+    return ("", 204)
+
+
+@bp.route("/api/items/<int:item_id>/skip", methods=["POST"])
+@login_required
+@admin_required
+def api_skip(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return _json_response({"error": "item_not_found"}, 404)
+    if item.get("pushed_at"):
+        return _json_response({"error": "already_pushed"}, 409)
+    pushes.mark_skip_push(item_id, current_user.id)
+    _audit_push_action(item_id, "push_skipped")
+    return ("", 204)
+
+
+@bp.route("/api/items/<int:item_id>/unskip", methods=["POST"])
+@login_required
+@admin_required
+def api_unskip(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return _json_response({"error": "item_not_found"}, 404)
+    pushes.unmark_skip_push(item_id)
+    _audit_push_action(item_id, "push_skip_cleared")
     return ("", 204)
 
 

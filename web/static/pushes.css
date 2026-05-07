@@ -640,6 +640,11 @@
   background: var(--oc-danger-bg);
   color: var(--oc-danger-fg);
 }
+.badge-skipped {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-muted);
+  border: 1px dashed var(--oc-border-strong);
+}
 
 /* ---------- 推送按钮 ---------- */
 .btn-push {
@@ -672,6 +677,24 @@
 }
 .btn-push.btn-failed:hover:not(:disabled) {
   background: var(--oc-danger-hover);
+}
+.btn-push.btn-disabled {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-subtle);
+  cursor: not-allowed;
+}
+.btn-mini.btn-skip,
+.btn-mini.btn-unskip {
+  margin-left: var(--oc-sp-2);
+}
+.btn-mini.btn-unskip {
+  color: var(--oc-accent);
+  border-color: var(--oc-accent-subtle);
+}
+.btn-mini.btn-unskip:hover {
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+  border-color: var(--oc-accent);
 }
 
 .pushed-text {

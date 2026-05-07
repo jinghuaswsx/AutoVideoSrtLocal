@@ -363,9 +363,14 @@ STATUS_PUSHED = "pushed"
 STATUS_FAILED = "failed"
 STATUS_PENDING = "pending"        # 就绪 + 未推送
 STATUS_NOT_READY = "not_ready"    # 任一就绪条件不满足
+STATUS_SKIPPED = "skipped"        # 人工标记不推送（互斥的顶层状态）
 
 
 def compute_status(item: dict, product: dict) -> str:
+    # 「标记不推送」优先级最高：一旦被标记，无论 readiness / pushed_at / 历史推送结果，
+    # 都直接显示 skipped。
+    if (item or {}).get("skip_push"):
+        return STATUS_SKIPPED
     if (item or {}).get("pushed_at"):
         return STATUS_PUSHED
     latest_id = (item or {}).get("latest_push_id")
@@ -1110,6 +1115,27 @@ def record_push_failure(item_id: int, operator_user_id: int,
 def reset_push_state(item_id: int) -> None:
     execute(
         "UPDATE media_items SET pushed_at=NULL, latest_push_id=NULL WHERE id=%s",
+        (item_id,),
+    )
+
+
+def mark_skip_push(item_id: int, operator_user_id: int | None) -> None:
+    """把素材标记为「不推送」。已推送（pushed_at IS NOT NULL）的素材会被
+    UPDATE 跳过——调用方应先校验状态并返回 409。"""
+    execute(
+        "UPDATE media_items "
+        "SET skip_push=1, skip_push_at=NOW(), skip_push_by=%s "
+        "WHERE id=%s AND pushed_at IS NULL",
+        (operator_user_id, item_id),
+    )
+
+
+def unmark_skip_push(item_id: int) -> None:
+    """清除「不推送」标记，状态会自动按 readiness 回算到 pending / not_ready / failed。"""
+    execute(
+        "UPDATE media_items "
+        "SET skip_push=0, skip_push_at=NULL, skip_push_by=NULL "
+        "WHERE id=%s",
         (item_id,),
     )
 

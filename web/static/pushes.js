@@ -4,6 +4,7 @@
     pending:   { text: '待推送', cls: 'badge-blue' },
     pushed:    { text: '已推送', cls: 'badge-green' },
     failed:    { text: '推送失败', cls: 'badge-red' },
+    skipped:   { text: '不推送', cls: 'badge-skipped' },
   };
   const READINESS_LABELS = {
     has_object: '视频',
@@ -377,15 +378,21 @@
                 <button class="btn-mini" data-action="reset" data-id="${it.id}">重置</button>
               </div>`;
     }
+    if (it.status === 'skipped') {
+      return `<button class="btn-push btn-disabled" disabled title="已标记不推送">推送</button>
+              <button class="btn-mini btn-unskip" data-action="unskip" data-id="${it.id}">恢复推送</button>`;
+    }
     if (it.status === 'not_ready') {
       const missing = Object.entries(it.readiness)
         .filter(([, v]) => !v).map(([k]) => READINESS_LABELS[k] || k).join(' / ');
-      return `<button class="btn-push" disabled title="缺少：${missing}">推送</button>`;
+      return `<button class="btn-push" disabled title="缺少：${missing}">推送</button>
+              <button class="btn-mini btn-skip" data-action="skip" data-id="${it.id}">标记不推送</button>`;
     }
     const label = it.status === 'failed' ? '重试推送' : '推送';
     const historyBtn = it.status === 'failed'
       ? `<button class="btn-mini" data-action="view-logs" data-id="${it.id}" style="margin-left:8px">历史</button>` : '';
-    return `<button class="btn-push" data-action="open-modal" data-id="${it.id}">${label}</button>${historyBtn}`;
+    return `<button class="btn-push" data-action="open-modal" data-id="${it.id}">${label}</button>
+            <button class="btn-mini btn-skip" data-action="skip" data-id="${it.id}">标记不推送</button>${historyBtn}`;
   }
 
   function renderRowLegacy(it) {
@@ -1333,6 +1340,16 @@
     await load();
   }
 
+  async function skipPush(itemId) {
+    await fetchJSON(`/pushes/api/items/${itemId}/skip`, { method: 'POST' });
+    await load();
+  }
+
+  async function unskipPush(itemId) {
+    await fetchJSON(`/pushes/api/items/${itemId}/unskip`, { method: 'POST' });
+    await load();
+  }
+
   async function viewLogs(itemId) {
     const drawer = document.getElementById('push-log-drawer');
     const content = document.getElementById('drawer-content');
@@ -1386,6 +1403,8 @@
     else if (action === 'ai-detail') showAuditDetail(id);
     else if (action === 'reset') resetPush(id);
     else if (action === 'view-logs') viewLogs(id);
+    else if (action === 'skip') skipPush(id);
+    else if (action === 'unskip') unskipPush(id);
   });
 
   document.getElementById('drawer-close').addEventListener('click', () => {
