@@ -417,6 +417,113 @@
   position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   width: 14px; height: 14px; color: var(--fg-subtle); pointer-events: none;
 }
+.oar-product-search {
+  flex: 0 1 320px;
+  max-width: 360px;
+}
+.oar-product-picker {
+  margin: var(--space-3) 0 0;
+}
+.oa-table-header-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+.oar-profit-header-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.oar-profit-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(132px, 1fr));
+  gap: var(--space-3);
+}
+.oar-profit-summary-item {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+.oar-profit-summary-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  line-height: var(--leading-tight);
+}
+.oar-profit-summary-value {
+  margin-top: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--fg);
+  line-height: var(--leading-tight);
+}
+.oar-profit-summary-note {
+  margin-top: 2px;
+  min-height: 16px;
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  line-height: var(--leading-tight);
+}
+.oar-profit-summary-note.is-warning {
+  color: var(--warning-fg);
+}
+.oar-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.oar-page-btn {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+  cursor: pointer;
+}
+.oar-page-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.oar-page-btn:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+.oar-page-info {
+  min-width: 160px;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+@media (max-width: 1024px) {
+  .oar-profit-summary {
+    grid-template-columns: repeat(3, minmax(132px, 1fr));
+  }
+}
+@media (max-width: 768px) {
+  .oar-product-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .oar-profit-header-line {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .oar-profit-summary {
+    grid-template-columns: 1fr;
+  }
+  .oar-pagination {
+    justify-content: center;
+  }
+}
 
 /* ── 产品选择 ─────────────────────────────────── */
 .oa-product-picker {
@@ -971,7 +1078,17 @@
         <span class="oad-date-range-sep">至</span>
         <input type="date" id="realtimeEndDate" aria-label="结束日期">
       </div>
-      <button type="button" class="oad-btn-primary" id="realtimeRefresh">刷新</button>
+      <button type="button" class="oad-btn-primary" id="realtimeRefresh">查询</button>
+      <div class="oa-search-box oar-product-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="realtimeProductSearchInput" placeholder="搜索产品 ID 或标题…">
+        <div class="oa-search-results" id="realtimeProductSearchResults"></div>
+      </div>
+    </div>
+    <div class="oa-product-picker oar-product-picker" id="realtimeProductPicker" style="display:none;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/></svg>
+      当前筛选产品：<span class="oa-product-name" id="realtimePickerProductName"></span>
+      <button type="button" class="oa-clear-btn" id="realtimeProductClear">清除筛选</button>
     </div>
     <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 16:00 切日</div>
   </div>
@@ -1072,9 +1189,43 @@
 
   <div class="oar-subpanel" id="realtimeSubProfitDetails">
     <div class="oa-table-wrap">
-      <div class="oa-table-header">
-        <div class="oa-table-title">订单盈亏明细</div>
-        <div class="oar-note">逐单展示退款、采购、物流、Shopify 手续费与广告分摊后的订单利润</div>
+      <div class="oa-table-header oa-table-header-stack">
+        <div class="oar-profit-header-line">
+          <div class="oa-table-title">订单盈亏明细</div>
+          <div class="oar-note">逐单展示退款、采购、物流、Shopify 手续费与广告分摊后的订单利润</div>
+        </div>
+        <div class="oar-profit-summary" id="realtimeProfitSummary" aria-label="订单盈亏汇总">
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总销售额</div>
+            <div class="oar-profit-summary-value" id="realtimeProfitTotalRevenue">$0.00</div>
+            <div class="oar-profit-summary-note" id="realtimeProfitTotalRevenueNote">订单 0 单</div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总采购成本</div>
+            <div class="oar-profit-summary-value" id="realtimeProfitPurchase">$0.00</div>
+            <div class="oar-profit-summary-note" id="realtimeProfitPurchaseNote"></div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总物流成本</div>
+            <div class="oar-profit-summary-value" id="realtimeProfitLogistics">$0.00</div>
+            <div class="oar-profit-summary-note" id="realtimeProfitLogisticsNote"></div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总合计手续费</div>
+            <div class="oar-profit-summary-value" id="realtimeProfitFee">$0.00</div>
+            <div class="oar-profit-summary-note">Shopify 平台合计</div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总广告费</div>
+            <div class="oar-profit-summary-value" id="realtimeProfitAd">$0.00</div>
+            <div class="oar-profit-summary-note">按订单分摊</div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总利润额</div>
+            <div class="oar-profit-summary-value" id="realtimeProfitTotal">$0.00</div>
+            <div class="oar-profit-summary-note">含缺失成本估算</div>
+          </div>
+        </div>
       </div>
       <div class="oa-table-scroll">
         <table class="oa-table oar-compact-table">
@@ -1102,6 +1253,11 @@
           </thead>
           <tbody id="realtimeOrderProfitBody"></tbody>
         </table>
+      </div>
+      <div class="oar-pagination" aria-label="订单盈亏明细分页">
+        <button type="button" class="oar-page-btn" id="realtimeProfitPrev">上一页</button>
+        <span class="oar-page-info" id="realtimeProfitPageInfo">第 1 / 1 页 · 共 0 条</span>
+        <button type="button" class="oar-page-btn" id="realtimeProfitNext">下一页</button>
       </div>
     </div>
   </div>
@@ -2765,7 +2921,14 @@
     }
     loadTrueRoas();
   });
-  var realtimeState = { range: 'today' };
+  var realtimeState = {
+    range: 'today',
+    productId: null,
+    productLabel: '',
+    profitPage: 1,
+    profitPageSize: 100
+  };
+  var realtimeProductSearchTimer = null;
 
   var realtimeRefresh = document.getElementById('realtimeRefresh');
   if (realtimeRefresh) {
@@ -2773,8 +2936,8 @@
       if (realtimeState.range && realtimeState.range !== 'custom') {
         setRealtimeRange(realtimeState.range, true);
       }
-      loadRealtimeTopCards();
-      loadRealtimeSubTabs();
+      resetRealtimeProfitPage();
+      loadRealtimeOverview();
     });
   }
   document.querySelectorAll('[data-realtime-range]').forEach(function(btn) {
@@ -2786,9 +2949,36 @@
     var el = document.getElementById(id);
     if (el) el.addEventListener('change', function() {
       syncRealtimeRangeSelection();
-      loadRealtimeTopCards();
+      resetRealtimeProfitPage();
+      loadRealtimeOverview();
     });
   });
+  var realtimeProductInput = document.getElementById('realtimeProductSearchInput');
+  if (realtimeProductInput) {
+    realtimeProductInput.addEventListener('input', onRealtimeProductSearchInput);
+    realtimeProductInput.addEventListener('focus', function() {
+      if (realtimeProductInput.value.trim()) onRealtimeProductSearchInput();
+    });
+  }
+  var realtimeProductClear = document.getElementById('realtimeProductClear');
+  if (realtimeProductClear) {
+    realtimeProductClear.addEventListener('click', clearRealtimeProductFilter);
+  }
+  var realtimeProfitPrev = document.getElementById('realtimeProfitPrev');
+  if (realtimeProfitPrev) {
+    realtimeProfitPrev.addEventListener('click', function() {
+      if (realtimeState.profitPage <= 1) return;
+      realtimeState.profitPage -= 1;
+      loadRealtimeSubTabs();
+    });
+  }
+  var realtimeProfitNext = document.getElementById('realtimeProfitNext');
+  if (realtimeProfitNext) {
+    realtimeProfitNext.addEventListener('click', function() {
+      realtimeState.profitPage += 1;
+      loadRealtimeSubTabs();
+    });
+  }
   document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
@@ -2814,13 +3004,18 @@
     return window.orderAnalyticsMetaCalendar.resolveRange(range);
   }
 
+  function resetRealtimeProfitPage() {
+    realtimeState.profitPage = 1;
+  }
+
   function setRealtimeRange(range, skipLoad) {
     var bounds = resolveRealtimeRange(range || 'today');
     realtimeState.range = range || 'today';
     setInputValue('realtimeStartDate', formatDateInput(bounds.start));
     setInputValue('realtimeEndDate', formatDateInput(bounds.end));
     syncRealtimeRangeSelection();
-    if (!skipLoad) loadRealtimeTopCards();
+    resetRealtimeProfitPage();
+    if (!skipLoad) loadRealtimeOverview();
   }
 
   function syncRealtimeRangeSelection() {
@@ -2870,8 +3065,11 @@
       return;
     }
     if (!range) return;
-    var url = '/order-analytics/realtime-overview?start_date=' +
-      encodeURIComponent(range.start) + '&end_date=' + encodeURIComponent(range.end);
+    var params = new URLSearchParams();
+    params.set('start_date', range.start);
+    params.set('end_date', range.end);
+    if (realtimeState.productId) params.set('product_id', realtimeState.productId);
+    var url = '/order-analytics/realtime-overview?' + params.toString();
     fetch(url)
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
@@ -2920,6 +3118,8 @@
     if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
     if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
+    renderRealtimeOrderProfitSummary(null);
+    renderRealtimeOrderProfitPagination(null);
     var range;
     try {
       range = getRealtimeDateRange();
@@ -2931,9 +3131,14 @@
       if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       return;
     }
-    var url = '/order-analytics/realtime-overview?start_date=' +
-      encodeURIComponent(range.start) + '&end_date=' + encodeURIComponent(range.end) +
-      '&include_details=1';
+    var params = new URLSearchParams();
+    params.set('start_date', range.start);
+    params.set('end_date', range.end);
+    params.set('include_details', '1');
+    params.set('page', realtimeState.profitPage || 1);
+    params.set('page_size', realtimeState.profitPageSize || 100);
+    if (realtimeState.productId) params.set('product_id', realtimeState.productId);
+    var url = '/order-analytics/realtime-overview?' + params.toString();
     fetch(url)
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
@@ -2945,6 +3150,8 @@
           '每 10 分钟记录当天累计订单、商品销售额、运费、广告费和 ROAS；ROAS=总销售额/广告消耗费用';
         renderRealtimeRoasChart(data.roas_points || []);
         renderRealtimeOrders(data.order_details || []);
+        renderRealtimeOrderProfitSummary(data.order_profit_summary || {});
+        renderRealtimeOrderProfitPagination(data.order_profit_details_page || {});
         renderRealtimeOrderProfitDetails(data.order_profit_details || []);
         renderRealtimeProductSales(data.product_sales_stats || []);
         renderRealtimeCampaigns(data.campaigns || []);
@@ -2992,6 +3199,8 @@
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
         if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
         if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
+        renderRealtimeOrderProfitSummary(null);
+        renderRealtimeOrderProfitPagination(null);
       });
   }
 
@@ -3015,6 +3224,80 @@
     });
     if (!body.children.length) {
       body.innerHTML = '<tr><td colspan="10">暂无订单数据</td></tr>';
+    }
+  }
+
+  function setRealtimeProfitText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function setRealtimeProfitNote(id, text, isWarning) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('is-warning', Boolean(isWarning));
+  }
+
+  function formatRealtimeMissingNote(count, ratio, estimate) {
+    count = parseInt(count, 10) || 0;
+    ratio = Number(ratio) || 0;
+    if (count <= 0) return '无缺失';
+    return '缺失 ' + (ratio * 100).toFixed(1) + '% 订单，估算 ' + fmtMoney(estimate);
+  }
+
+  function renderRealtimeOrderProfitSummary(summary) {
+    var s = summary || {};
+    var orderCount = parseInt(s.order_count, 10) || 0;
+    var purchaseCost = s.purchase_cost_with_estimate_usd;
+    if (purchaseCost === null || purchaseCost === undefined) purchaseCost = s.purchase_cost_usd;
+    var logisticsCost = s.logistics_cost_with_estimate_usd;
+    if (logisticsCost === null || logisticsCost === undefined) logisticsCost = s.logistics_cost_usd;
+    var profit = Number(s.profit_with_estimate_usd || 0);
+
+    setRealtimeProfitText('realtimeProfitTotalRevenue', fmtMoney(s.total_revenue_usd));
+    setRealtimeProfitText('realtimeProfitPurchase', fmtMoney(purchaseCost));
+    setRealtimeProfitText('realtimeProfitLogistics', fmtMoney(logisticsCost));
+    setRealtimeProfitText('realtimeProfitFee', fmtMoney(s.shopify_fee_total_usd));
+    setRealtimeProfitText('realtimeProfitAd', fmtMoney(s.ad_cost_usd));
+    setRealtimeProfitText('realtimeProfitTotal', fmtMoney(profit));
+    setRealtimeProfitText('realtimeProfitTotalRevenueNote', '订单 ' + fmtInt(orderCount) + ' 单');
+    setRealtimeProfitNote(
+      'realtimeProfitPurchaseNote',
+      formatRealtimeMissingNote(s.purchase_missing_order_count, s.purchase_missing_order_ratio, s.purchase_estimate_usd),
+      (parseInt(s.purchase_missing_order_count, 10) || 0) > 0
+    );
+    setRealtimeProfitNote(
+      'realtimeProfitLogisticsNote',
+      formatRealtimeMissingNote(s.logistics_missing_order_count, s.logistics_missing_order_ratio, s.logistics_estimate_usd),
+      (parseInt(s.logistics_missing_order_count, 10) || 0) > 0
+    );
+
+    var profitEl = document.getElementById('realtimeProfitTotal');
+    if (profitEl) {
+      profitEl.classList.toggle('oar-profit-loss', profit < 0);
+      profitEl.classList.toggle('oar-profit-ok', profit >= 0);
+    }
+  }
+
+  function renderRealtimeOrderProfitPagination(pageInfo) {
+    var info = pageInfo || {};
+    var page = parseInt(info.page, 10) || realtimeState.profitPage || 1;
+    var pageSize = parseInt(info.page_size, 10) || realtimeState.profitPageSize || 100;
+    var total = parseInt(info.total, 10) || 0;
+    var pages = parseInt(info.pages, 10) || 0;
+    if (pages <= 0) pages = total > 0 ? 1 : 0;
+    realtimeState.profitPage = page;
+
+    var prev = document.getElementById('realtimeProfitPrev');
+    var next = document.getElementById('realtimeProfitNext');
+    var label = document.getElementById('realtimeProfitPageInfo');
+    if (prev) prev.disabled = total <= 0 || page <= 1;
+    if (next) next.disabled = total <= 0 || page >= pages;
+    if (label) {
+      label.textContent = total > 0
+        ? '第 ' + page + ' / ' + pages + ' 页 · 共 ' + fmtInt(total) + ' 条 · 每页 ' + fmtInt(pageSize) + ' 条'
+        : '第 1 / 1 页 · 共 0 条';
     }
   }
 
@@ -3093,6 +3376,75 @@
     if (!body.children.length) {
       body.innerHTML = '<tr><td colspan="9">暂无广告计划数据</td></tr>';
     }
+  }
+
+  function onRealtimeProductSearchInput() {
+    clearTimeout(realtimeProductSearchTimer);
+    var input = document.getElementById('realtimeProductSearchInput');
+    var q = input ? input.value.trim() : '';
+    if (!q) {
+      hideRealtimeProductSearchResults();
+      return;
+    }
+    realtimeProductSearchTimer = setTimeout(function() {
+      fetch('/order-analytics/search?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(items) { renderRealtimeProductSearchResults(items || []); });
+    }, 300);
+  }
+
+  function renderRealtimeProductSearchResults(items) {
+    var box = document.getElementById('realtimeProductSearchResults');
+    if (!box) return;
+    if (!items.length) {
+      box.innerHTML = '<div class="oa-search-item" style="color:var(--fg-subtle)">无匹配结果</div>';
+      box.classList.add('show');
+      return;
+    }
+    box.innerHTML = '';
+    items.forEach(function(item) {
+      var label = item.display_name || item.product_name || item.product_code || String(item.product_id || '');
+      var div = document.createElement('div');
+      div.className = 'oa-search-item';
+      div.innerHTML = escapeHtml(label || '未知') +
+        (item.product_code ? '<span class="oa-si-code">' + escapeHtml(item.product_code) + '</span>' : '');
+      div.onclick = function() {
+        selectRealtimeProduct(item.product_id, label || '未知产品');
+        hideRealtimeProductSearchResults();
+      };
+      box.appendChild(div);
+    });
+    box.classList.add('show');
+  }
+
+  function hideRealtimeProductSearchResults() {
+    var box = document.getElementById('realtimeProductSearchResults');
+    if (box) box.classList.remove('show');
+  }
+
+  function selectRealtimeProduct(pid, name) {
+    realtimeState.productId = pid;
+    realtimeState.productLabel = name;
+    resetRealtimeProfitPage();
+    var nameEl = document.getElementById('realtimePickerProductName');
+    if (nameEl) nameEl.textContent = name;
+    var picker = document.getElementById('realtimeProductPicker');
+    if (picker) picker.style.display = '';
+    var input = document.getElementById('realtimeProductSearchInput');
+    if (input) input.value = '';
+    loadRealtimeOverview();
+  }
+
+  function clearRealtimeProductFilter() {
+    realtimeState.productId = null;
+    realtimeState.productLabel = '';
+    resetRealtimeProfitPage();
+    var picker = document.getElementById('realtimeProductPicker');
+    if (picker) picker.style.display = 'none';
+    var input = document.getElementById('realtimeProductSearchInput');
+    if (input) input.value = '';
+    hideRealtimeProductSearchResults();
+    loadRealtimeOverview();
   }
 
   function addTextCell(tr, value, className) {
@@ -4563,7 +4915,10 @@
   }
 
   document.addEventListener('click', function(e) {
-    if (!e.target.closest('.oa-search-box')) hideSearchResults();
+    if (!e.target.closest('.oa-search-box')) {
+      hideSearchResults();
+      hideRealtimeProductSearchResults();
+    }
   });
 
   function selectProduct(pid, name) {

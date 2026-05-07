@@ -7,6 +7,7 @@ from appcore.order_analytics.realtime import (
     _build_order_profit_status_label,
     _derive_order_profit_status,
     _derive_refund_status,
+    _format_realtime_order_profit_rows,
     _get_realtime_order_profit_details,
     _is_refund_like_state,
     _resolve_refund_deduction,
@@ -199,3 +200,118 @@ def test_get_realtime_order_profit_details_marks_missing_profit_lines_incomplete
 
     assert detail["profit_status"] == "partially_complete"
     assert detail["status_label"] == "部分完整"
+
+
+def test_get_realtime_order_profit_details_supports_product_filter_and_pagination(monkeypatch):
+    target = date(2026, 5, 6)
+    day_start = datetime(2026, 5, 5, 16, 0)
+    data_until = datetime(2026, 5, 6, 12, 0)
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    rows = _get_realtime_order_profit_details(
+        target,
+        day_start,
+        data_until,
+        product_id=42,
+        page=2,
+        page_size=100,
+    )
+
+    assert rows == []
+    assert "AND d.product_id = %s" in captured["sql"]
+    assert "LIMIT %s OFFSET %s" in captured["sql"]
+    assert captured["args"] == (target, data_until, 42, 100, 100)
+
+
+def test_format_order_profit_rows_marks_missing_cost_estimates():
+    row = {
+        "site_code": "newjoy",
+        "dxm_package_id": "PKG-MISSING",
+        "dxm_order_id": "DXM-MISSING",
+        "package_number": "PN-MISSING",
+        "order_state": "paid",
+        "buyer_country": "US",
+        "buyer_country_name": "United States",
+        "order_time": datetime(2026, 5, 6, 10, 30),
+        "line_count": 1,
+        "profit_line_count": 1,
+        "profit_ok_count": 0,
+        "profit_incomplete_count": 1,
+        "purchase_missing_count": 1,
+        "logistics_missing_count": 1,
+        "units": 1,
+        "product_revenue": 120.0,
+        "shipping_revenue": 0.0,
+        "total_revenue": 120.0,
+        "refund_amount_usd": 0.0,
+        "purchase_cost": 0.0,
+        "logistics_cost": 0.0,
+        "ad_cost": 6.0,
+        "stored_shopify_fee_total": 3.3,
+        "skus": "SKU-M",
+        "product_names": "Missing Cost Product",
+    }
+
+    detail = _format_realtime_order_profit_rows([row], datetime(2026, 5, 5, 16, 0))[0]
+
+    assert detail["purchase_cost_missing"] is True
+    assert detail["purchase_estimate_usd"] == 12.0
+    assert detail["logistics_cost_missing"] is True
+    assert detail["logistics_estimate_usd"] == 24.0
+    assert detail["order_profit_with_estimate_usd"] == 74.7
+
+
+def test_build_order_profit_summary_uses_estimates_for_missing_costs():
+    from appcore.order_analytics.realtime import _build_order_profit_summary
+
+    rows = [
+        {
+            "total_revenue": 100.0,
+            "refund_deduction_usd": 0.0,
+            "purchase_cost_usd": 10.0,
+            "purchase_estimate_usd": 0.0,
+            "purchase_cost_missing": False,
+            "logistics_cost_usd": 20.0,
+            "logistics_estimate_usd": 0.0,
+            "logistics_cost_missing": False,
+            "shopify_fee_total_usd": 5.0,
+            "ad_cost_usd": 7.0,
+        },
+        {
+            "total_revenue": 200.0,
+            "refund_deduction_usd": 10.0,
+            "purchase_cost_usd": 0.0,
+            "purchase_estimate_usd": 20.0,
+            "purchase_cost_missing": True,
+            "logistics_cost_usd": 0.0,
+            "logistics_estimate_usd": 40.0,
+            "logistics_cost_missing": True,
+            "shopify_fee_total_usd": 8.0,
+            "ad_cost_usd": 12.0,
+        },
+    ]
+
+    summary = _build_order_profit_summary(rows)
+
+    assert summary["order_count"] == 2
+    assert summary["total_revenue_usd"] == 300.0
+    assert summary["purchase_cost_usd"] == 10.0
+    assert summary["purchase_estimate_usd"] == 20.0
+    assert summary["purchase_cost_with_estimate_usd"] == 30.0
+    assert summary["purchase_missing_order_count"] == 1
+    assert summary["purchase_missing_order_ratio"] == 0.5
+    assert summary["logistics_cost_usd"] == 20.0
+    assert summary["logistics_estimate_usd"] == 40.0
+    assert summary["logistics_cost_with_estimate_usd"] == 60.0
+    assert summary["logistics_missing_order_count"] == 1
+    assert summary["logistics_missing_order_ratio"] == 0.5
+    assert summary["shopify_fee_total_usd"] == 13.0
+    assert summary["ad_cost_usd"] == 19.0
+    assert summary["profit_with_estimate_usd"] == 168.0

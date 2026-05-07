@@ -18,6 +18,38 @@
 
 该 tab 基于现有实时大盘订单明细的数据范围，展示当前广告系统日的订单级利润明细。所有费用项目都必须在前端单独显示，不能只展示一个合计成本。
 
+## 2026-05-07 增量需求：分页、汇总、估算和产品筛选
+
+用户在截图红框位置确认了 5 个增量要求：
+
+1. `订单盈亏明细` 改为分页展示，每页固定 100 条订单级数据。
+2. 表格标题右侧的红框区域展示当前筛选范围内的汇总：总销售额、总采购成本、总物流成本、总合计手续费、总广告费、总利润额。
+3. 采购成本和物流成本存在缺失时，汇总卡片用小字标注订单缺失比例；汇总计算使用估算值补齐缺失成本：采购成本按订单总销售额 10% 估算，物流成本按订单总销售额 20% 估算。
+4. 实时大盘顶部时间预设和日期输入一旦选择即自动查询；原「刷新」按钮改为「查询」，保留在日期选择框后面，用于手动重查当前条件。
+5. 实时大盘增加产品搜索框。选择产品后，顶部数据卡、订单明细和订单盈亏明细都按该产品过滤，以便查看单产品数据。
+
+### 增量口径
+
+- 分页只影响明细表 rows，不影响汇总。汇总必须基于当前日期范围和产品筛选后的全量订单集合计算，不能只统计当前页 100 条。
+- 产品筛选使用 `dianxiaomi_order_lines.product_id = product_id`。多产品订单被筛选后只统计选中产品对应的订单行金额、成本和广告分摊，订单号仍按 `dxm_package_id` 聚合展示。
+- 采购缺失订单：筛选后的订单行中存在缺少 `order_profit_lines`，或利润行 `missing_fields` 包含 `purchase_price`，或采购成本聚合为 0 且利润状态不是完整时，视为该订单采购缺失。
+- 物流缺失订单：筛选后的订单行中存在缺少 `order_profit_lines`，或利润行 `missing_fields` 包含 `shipping_cost` / `packet_cost`，或物流成本聚合为 0 且利润状态不是完整时，视为该订单物流缺失。
+- 汇总展示的采购成本使用 `purchase_cost_usd + purchase_estimate_usd`，其中缺失订单的 `purchase_estimate_usd = total_revenue * 0.10`。
+- 汇总展示的物流成本使用 `logistics_cost_usd + logistics_estimate_usd`，其中缺失订单的 `logistics_estimate_usd = total_revenue * 0.20`。
+- 汇总利润使用补齐后的采购和物流成本：
+
+```text
+summary_profit =
+  total_revenue
+  - refund_deduction
+  - (purchase_cost + purchase_estimate)
+  - (logistics_cost + logistics_estimate)
+  - shopify_fee_total
+  - ad_cost
+```
+
+行级利润仍展示当前逐单计算值，同时响应中返回该行是否使用采购/物流估算以及估算后的利润，便于前端后续提示；V1 前端汇总必须明确显示缺失比例，行级不强制额外加列。
+
 最终列：
 
 | 列 | 说明 |
@@ -274,7 +306,31 @@ order_profit = (
 
 ```json
 {
-  "order_profit_details": []
+  "order_profit_details": [],
+  "order_profit_details_page": {
+    "page": 1,
+    "page_size": 100,
+    "total": 0,
+    "pages": 0
+  },
+  "order_profit_summary": {
+    "order_count": 0,
+    "total_revenue_usd": 0.0,
+    "refund_deduction_usd": 0.0,
+    "purchase_cost_usd": 0.0,
+    "purchase_estimate_usd": 0.0,
+    "purchase_cost_with_estimate_usd": 0.0,
+    "purchase_missing_order_count": 0,
+    "purchase_missing_order_ratio": 0.0,
+    "logistics_cost_usd": 0.0,
+    "logistics_estimate_usd": 0.0,
+    "logistics_cost_with_estimate_usd": 0.0,
+    "logistics_missing_order_count": 0,
+    "logistics_missing_order_ratio": 0.0,
+    "shopify_fee_total_usd": 0.0,
+    "ad_cost_usd": 0.0,
+    "profit_with_estimate_usd": 0.0
+  }
 }
 ```
 
@@ -294,7 +350,14 @@ order_profit = (
 }
 ```
 
-原因：现有实时大盘子 tab 始终展示当前广告系统日，不跟随顶部日期范围。这个新增 tab 也保持同一规则。
+2026-05-07 增量后，前端子 tab 跟随顶部日期范围；范围模式在 `include_details=1` 时可以返回分页订单明细和订单盈亏明细。未传 `include_details` 时仍返回空数组，避免顶部卡片请求拖慢。
+
+### 新增查询参数
+
+- `include_details=1`：返回订单明细和订单盈亏明细。
+- `page`：订单盈亏明细页码，最小 1。
+- `page_size`：订单盈亏明细每页条数，V1 固定 100，后端做上限保护。
+- `product_id`：可选，按 `dianxiaomi_order_lines.product_id` 过滤顶部汇总、订单明细和订单盈亏明细。
 
 ## 前端设计
 
@@ -315,6 +378,19 @@ order_profit = (
 ```
 
 ### 表格展示
+
+`订单盈亏明细` 标题行右侧新增紧凑汇总条，放在截图红框位置。汇总项：
+
+```text
+总销售额
+总采购成本（缺失 x.x%）
+总物流成本（缺失 x.x%）
+总合计手续费
+总广告费
+总利润额
+```
+
+采购和物流显示的是“实际 + 估算”后的金额；括号内小字显示缺失订单比例。没有缺失时不显示括号。
 
 表头完整展示每个费用项目：
 
@@ -353,12 +429,16 @@ UI 约束：
 
 ```javascript
 function renderRealtimeOrderProfitDetails(rows) { ... }
+function renderRealtimeOrderProfitSummary(summary) { ... }
+function renderRealtimeOrderProfitPagination(pageInfo) { ... }
 ```
 
 `loadRealtimeSubTabs()` 在拿到 `/order-analytics/realtime-overview` 后调用：
 
 ```javascript
 renderRealtimeOrderProfitDetails(data.order_profit_details || []);
+renderRealtimeOrderProfitSummary(data.order_profit_summary || {});
+renderRealtimeOrderProfitPagination(data.order_profit_details_page || {});
 ```
 
 加载态和错误态：

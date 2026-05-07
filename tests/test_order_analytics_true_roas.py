@@ -479,6 +479,8 @@ def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
 
 
 def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypatch):
+    profit_query_args = []
+
     def fake_query(sql, args=()):
         if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
             return []
@@ -486,7 +488,10 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
             return []
         if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
             assert "d.meta_business_date >= %s AND d.meta_business_date <= %s" in sql
-            assert args == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            assert args[:2] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            if len(args) == 4:
+                assert args[2:] == (100, 0)
+            profit_query_args.append(args)
             return [
                 {
                     "meta_business_date": oa._parse_meta_date("2026-04-30"),
@@ -530,6 +535,8 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
     assert detail["dxm_package_id"] == "PKG-PROFIT-RANGE"
     assert detail["business_hour"] == 23
     assert detail["order_profit_usd"] == 43.2
+    assert result["order_profit_details_page"] == {"page": 1, "page_size": 100, "total": 1, "pages": 1}
+    assert len(profit_query_args) == 2
 
 
 def test_get_realtime_roas_overview_single_day_includes_order_profit_details(monkeypatch):
@@ -793,6 +800,53 @@ def test_realtime_overview_endpoint_accepts_include_details(authed_client_no_db,
     assert captured["include_details"] is True
 
 
+def test_realtime_overview_endpoint_forwards_product_and_pagination(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_overview(
+        date_text=None,
+        *,
+        start_date=None,
+        end_date=None,
+        include_details=False,
+        product_id=None,
+        page=1,
+        page_size=100,
+        now=None,
+    ):
+        captured["start_date"] = start_date
+        captured["end_date"] = end_date
+        captured["include_details"] = include_details
+        captured["product_id"] = product_id
+        captured["page"] = page
+        captured["page_size"] = page_size
+        return {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {"order_revenue": 0, "ad_spend": 0, "true_roas": None},
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [],
+            "order_details": [],
+            "order_profit_details": [],
+            "order_profit_details_page": {"page": page, "page_size": page_size, "total": 0, "pages": 0},
+            "order_profit_summary": {"order_count": 0},
+            "campaigns": [],
+            "roas_points": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-overview"
+        "?start_date=2026-04-29&end_date=2026-04-30"
+        "&include_details=1&product_id=42&page=2&page_size=100"
+    )
+
+    assert response.status_code == 200
+    assert captured["product_id"] == 42
+    assert captured["page"] == 2
+    assert captured["page_size"] == 100
+
+
 # ── 前端模板回归 ─────────────────────────────────────────
 
 
@@ -822,6 +876,19 @@ def test_realtime_tab_has_country_style_time_picker(authed_client_no_db):
     assert 'id="realtimeStartDate"' in panel
     assert 'id="realtimeEndDate"' in panel
     assert 'id="realtimeRefresh"' in panel
+
+
+def test_realtime_toolbar_uses_query_button_and_product_search(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    assert 'id="realtimeRefresh">查询</button>' in panel
+    assert 'id="realtimeProductSearchInput"' in panel
+    assert 'id="realtimeProductSearchResults"' in panel
+    assert 'id="realtimeProductPicker"' in panel
+    assert 'id="realtimeProductClear"' in panel
 
 
 def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
@@ -920,6 +987,27 @@ def test_realtime_order_profit_renderer_is_wired(authed_client_no_db):
     assert "renderRealtimeOrderProfitDetails(data.order_profit_details || [])" in body
 
 
+def test_realtime_order_profit_has_summary_and_pagination_controls(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    for element_id in (
+        "realtimeProfitSummary",
+        "realtimeProfitTotalRevenue",
+        "realtimeProfitPurchase",
+        "realtimeProfitLogistics",
+        "realtimeProfitFee",
+        "realtimeProfitAd",
+        "realtimeProfitTotal",
+        "realtimeProfitPrev",
+        "realtimeProfitPageInfo",
+        "realtimeProfitNext",
+    ):
+        assert f'id="{element_id}"' in panel
+
+
 def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert response.status_code == 200
@@ -929,6 +1017,20 @@ def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     subtab_js = body[subtab_start:subtab_end]
 
     assert "getRealtimeDateRange()" in subtab_js
-    assert "start_date=" in subtab_js
-    assert "end_date=" in subtab_js
-    assert "include_details=1" in subtab_js
+    assert "params.set('start_date', range.start)" in subtab_js
+    assert "params.set('end_date', range.end)" in subtab_js
+    assert "params.set('include_details', '1')" in subtab_js
+
+
+def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    subtab_start = body.index("function loadRealtimeSubTabs()")
+    subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
+    subtab_js = body[subtab_start:subtab_end]
+
+    assert "product_id" in subtab_js
+    assert "page" in subtab_js
+    assert "page_size" in subtab_js
+    assert "100" in subtab_js
