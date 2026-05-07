@@ -14,6 +14,7 @@ from flask_login import login_required
 
 from web.auth import permission_required
 
+from appcore.order_analytics import product_profit_list as ppl
 from appcore.order_analytics import product_profit_report as ppr
 from appcore.order_analytics.shopify_payments_import import import_payments_csv
 from web.services.product_profit_report import (
@@ -197,4 +198,61 @@ def api_report_json():
 
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(_iso_dict(report))
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tab ① 全产品聚合列表
+# ---------------------------------------------------------------------------
+@bp.route("/list.json", methods=["GET"])
+@login_required
+@permission_required("product_profit")
+def api_list_json():
+    """全产品聚合列表（Tab ① 数据源）。
+
+    Query:
+      date_from (YYYY-MM-DD, default = month-start)
+      date_to   (YYYY-MM-DD, default = today)
+      country   (大写国家代码，可选；空 / "all" = 全部)
+    """
+    today = date.today()
+    month_start = today.replace(day=1)
+    date_from = _parse_date(request.args.get("date_from"), month_start)
+    date_to = _parse_date(request.args.get("date_to"), today)
+    if date_from > date_to:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("date_from > date_to", 400)
+        )
+
+    country = (request.args.get("country") or "").strip() or None
+    result = ppl.generate_list(date_from=date_from, date_to=date_to, country=country)
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response(result)
+    )
+
+
+@bp.route("/list.xlsx", methods=["GET"])
+@login_required
+@permission_required("product_profit")
+def api_list_xlsx():
+    """全产品聚合列表的 xlsx 导出（2 sheet：summary + products）。"""
+    today = date.today()
+    month_start = today.replace(day=1)
+    date_from = _parse_date(request.args.get("date_from"), month_start)
+    date_to = _parse_date(request.args.get("date_to"), today)
+    if date_from > date_to:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("date_from > date_to", 400)
+        )
+
+    country = (request.args.get("country") or "").strip() or None
+    report = ppl.generate_list(date_from=date_from, date_to=date_to, country=country)
+    xlsx_bytes = ppl.generate_list_xlsx(report)
+
+    filename = f"product_profit_list_{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    return send_file(
+        io.BytesIO(xlsx_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )

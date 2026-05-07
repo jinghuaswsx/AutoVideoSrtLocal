@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import io
 import logging
 import sys
 from collections import defaultdict
@@ -290,3 +291,49 @@ def generate_list(
         "overall_roas": float(total_revenue / total_ad) if total_ad > 0 else None,
     }
     return {"rows": rows, "summary": summary}
+
+
+# ---------------------------------------------------------------------------
+# xlsx 导出（Tab ① 列表）
+# ---------------------------------------------------------------------------
+def generate_list_xlsx(report: dict[str, Any]) -> bytes:
+    """把 generate_list() 的结果导出为 xlsx。两个 sheet：summary、products。
+
+    与 product_profit_report.generate_xlsx 一致采用 lazy import openpyxl 的模式，
+    避免在不需要导出时额外加载依赖。
+    """
+    import openpyxl  # noqa: PLC0415 - lazy import 同 product_profit_report.generate_xlsx
+
+    wb = openpyxl.Workbook()
+
+    ws1 = wb.active
+    ws1.title = "summary"
+    s = report["summary"]
+    ws1.append(["指标", "值"])
+    ws1.append(["产品数", s["product_count"]])
+    ws1.append(["订单数", s["total_orders"]])
+    ws1.append(["收入(USD)", s["total_revenue_usd"]])
+    ws1.append(["利润(USD)", s["total_profit_usd"]])
+    ws1.append(["整体 ROAS", s["overall_roas"]])
+
+    ws2 = wb.create_sheet("products")
+    headers = [
+        "产品代码", "产品名", "订单数", "收入(USD)",
+        "物流(USD)", "物流占比", "采购(USD)", "采购占比",
+        "广告(USD)", "广告占比", "ROAS", "利润(USD)", "利润率", "成本完备",
+    ]
+    ws2.append(headers)
+    for r in report["rows"]:
+        ws2.append([
+            r["product_code"], r["name"], r["order_count"], r["revenue_usd"],
+            r["shipping_cost_usd"], r["shipping_pct"],
+            r["purchase_usd"], r["purchase_pct"],
+            r["ad_cost_usd"], r["ad_pct"],
+            r["roas"] if r["roas"] is not None else "",
+            r["profit_usd"], r["profit_pct"],
+            r["cost_completeness"],
+        ])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
