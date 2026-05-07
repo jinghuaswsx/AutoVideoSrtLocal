@@ -54,7 +54,7 @@ def _load_lines(date_from: date, date_to: date, country: str | None) -> list[dic
         "  opl.business_date, opl.buyer_country, "
         "  opl.revenue_usd, opl.shopify_fee_usd, opl.purchase_usd, "
         "  opl.shipping_cost_usd, opl.return_reserve_usd, "
-        "  dol.site_code, dol.quantity "
+        "  dol.site_code, dol.quantity, dol.dxm_package_id "
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "JOIN media_products mp ON mp.id = opl.product_id "
@@ -203,7 +203,9 @@ def generate_list(
             "product_id": 0,
             "product_code": "",
             "name": "",
-            "line_count": 0,
+            # order_keys: set[dxm_package_id]，用于按订单去重计数
+            # 同一订单包含 N 个 SKU 行时只算 1 单，避免出现「1 单 2 SKU 显示为 2 单」。
+            "order_keys": set(),
             "revenue": Decimal("0"),
             "shopify_fee": Decimal("0"),
             "purchase": Decimal("0"),
@@ -220,7 +222,9 @@ def generate_list(
         bucket["product_id"] = pid
         bucket["product_code"] = line.get("product_code") or ""
         bucket["name"] = line.get("name") or ""
-        bucket["line_count"] += 1
+        pkg_id = line.get("dxm_package_id")
+        if pkg_id is not None:
+            bucket["order_keys"].add(pkg_id)
         bucket["revenue"] += Decimal(str(line.get("revenue_usd") or 0))
         bucket["shopify_fee"] += Decimal(str(line.get("shopify_fee_usd") or 0))
         bucket["purchase"] += Decimal(str(line.get("purchase_usd") or 0))
@@ -255,7 +259,7 @@ def generate_list(
             - b["return_reserve"]
         )
         roas = float(revenue / b["ad_cost"]) if b["ad_cost"] > 0 else None
-        order_count = b["line_count"]
+        order_count = len(b["order_keys"])
         rows.append({
             "product_id": pid,
             "product_code": b["product_code"],
