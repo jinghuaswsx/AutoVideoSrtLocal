@@ -2498,6 +2498,32 @@ def test_translate_lab_route_db_dependencies_use_appcore_store():
     assert "def execute(" in store_source
 
 
+def test_translate_lab_project_sql_lives_in_appcore_store():
+    route_source = Path("web/routes/translate_lab.py").read_text(encoding="utf-8")
+    store_source = Path("appcore/translate_lab_store.py").read_text(encoding="utf-8")
+
+    for snippet in [
+        "FROM projects",
+        "UPDATE projects SET display_name",
+        "UPDATE projects SET thumbnail_path",
+        "UPDATE projects SET deleted_at",
+    ]:
+        assert snippet not in route_source
+        assert snippet in store_source
+
+    for helper_name in [
+        "find_project_by_display_name",
+        "list_user_projects",
+        "get_user_project",
+        "set_project_display_name",
+        "set_project_thumbnail_path",
+        "get_active_user_project_id",
+        "soft_delete_project",
+    ]:
+        assert f"def {helper_name}" in store_source
+        assert f"translate_lab_store.{helper_name}" in route_source
+
+
 def test_order_profit_api_responses_live_outside_route_module():
     module_source = Path("web/routes/order_profit.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -71,10 +71,10 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
     candidate = base
     n = 2
     while True:
-        row = db_query_one(
-            "SELECT id FROM projects WHERE user_id=%s AND display_name=%s "
-            "AND deleted_at IS NULL",
-            (user_id, candidate),
+        row = translate_lab_store.find_project_by_display_name(
+            user_id,
+            candidate,
+            query_one_func=db_query_one,
         )
         if not row:
             return candidate
@@ -100,13 +100,9 @@ def _get_lab_task(task_id: str, user_id: int) -> dict | None:
 @bp.route("/translate-lab")
 @login_required
 def index():
-    rows = db_query(
-        """SELECT id, original_filename, display_name, thumbnail_path, status,
-                  created_at, expires_at, deleted_at, state_json
-           FROM projects
-           WHERE user_id = %s AND type = 'translate_lab' AND deleted_at IS NULL
-           ORDER BY created_at DESC""",
-        (current_user.id,),
+    rows = translate_lab_store.list_user_projects(
+        current_user.id,
+        query_func=db_query,
     )
     # source_language / target_language live inside state_json, not as DB
     # columns — parse them out so templates can display actual values instead
@@ -140,9 +136,10 @@ def index():
 @bp.route("/translate-lab/<task_id>")
 @login_required
 def detail(task_id: str):
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
+    row = translate_lab_store.get_user_project(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row or row.get("type") != "translate_lab":
         abort(404)
@@ -237,9 +234,10 @@ def upload_and_create():
     display_name = _resolve_name_conflict(
         user_id, _default_display_name(original_filename),
     )
-    db_execute(
-        "UPDATE projects SET display_name=%s WHERE id=%s",
-        (display_name, task_id),
+    translate_lab_store.set_project_display_name(
+        task_id,
+        display_name,
+        execute_func=db_execute,
     )
     task_state.update(task_id, display_name=display_name)
 
@@ -248,9 +246,10 @@ def upload_and_create():
         from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
         thumb = _extract_thumbnail(video_path, task_dir)
         if thumb:
-            db_execute(
-                "UPDATE projects SET thumbnail_path=%s WHERE id=%s",
-                (thumb, task_id),
+            translate_lab_store.set_project_thumbnail_path(
+                task_id,
+                thumb,
+                execute_func=db_execute,
             )
     except Exception:
         log.warning("[translate_lab] 缩略图生成失败 task_id=%s",
@@ -271,18 +270,19 @@ def upload_and_create():
 def delete_task(task_id: str):
     """软删除 translate_lab 任务。"""
     user_id = current_user.id
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s "
-        "AND type='translate_lab' AND deleted_at IS NULL",
-        (task_id, user_id),
+    row = translate_lab_store.get_active_user_project_id(
+        task_id,
+        user_id,
+        query_one_func=db_query_one,
     )
     if not row:
         return translate_lab_flask_response(
             build_translate_lab_error_response("任务不存在", 404)
         )
-    db_execute(
-        "UPDATE projects SET deleted_at=NOW() WHERE id=%s",
-        (task_id,),
+    translate_lab_store.soft_delete_project(
+        task_id,
+        user_id,
+        execute_func=db_execute,
     )
     try:
         task_state.update(task_id, status="deleted")
