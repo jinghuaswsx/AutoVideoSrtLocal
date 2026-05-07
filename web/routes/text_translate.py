@@ -73,12 +73,9 @@ Do not use em dashes or en dashes. Use plain punctuation only."""
 @bp.route("/text-translate")
 @login_required
 def list_page():
-    rows = db_query(
-        "SELECT id, display_name, status, created_at "
-        "FROM projects "
-        "WHERE user_id = %s AND type = 'text_translate' AND deleted_at IS NULL "
-        "ORDER BY created_at DESC",
-        (current_user.id,),
+    rows = text_translate_store.list_user_projects(
+        current_user.id,
+        query_func=db_query,
     )
     return render_template("text_translate_list.html", records=rows)
 
@@ -86,9 +83,10 @@ def list_page():
 @bp.route("/text-translate/<task_id>")
 @login_required
 def detail_page(task_id: str):
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'text_translate' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = text_translate_store.get_user_project(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return "Not Found", 404
@@ -111,16 +109,13 @@ def create():
         "provider": None,
         "prompt_id": None,
     }
-    db_execute(
-        "INSERT INTO projects (id, user_id, type, display_name, status, state_json, created_at, expires_at) "
-        "VALUES (%s, %s, 'text_translate', %s, 'created', %s, NOW(), %s)",
-        (
-            task_id,
-            current_user.id,
-            display_name,
-            json.dumps(state, ensure_ascii=False),
-            datetime.now() + timedelta(days=30),
-        ),
+    text_translate_store.insert_project(
+        task_id=task_id,
+        user_id=current_user.id,
+        display_name=display_name,
+        state=state,
+        expires_at=datetime.now() + timedelta(days=30),
+        execute_func=db_execute,
     )
     return text_translate_flask_response(
         build_text_translate_created_response(task_id=task_id)
@@ -130,9 +125,10 @@ def create():
 @bp.route("/api/text-translate/<task_id>/translate", methods=["POST"])
 @login_required
 def translate(task_id: str):
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'text_translate' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = text_translate_store.get_user_project(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return text_translate_flask_response(build_text_translate_not_found_response())
@@ -165,9 +161,10 @@ def translate(task_id: str):
 
     custom_prompt = (body.get("custom_prompt") or "").strip() or None
     if not custom_prompt and prompt_id:
-        prompt_row = db_query_one(
-            "SELECT prompt_text FROM user_prompts WHERE id = %s AND user_id = %s",
-            (prompt_id, current_user.id),
+        prompt_row = text_translate_store.get_user_prompt(
+            prompt_id,
+            current_user.id,
+            query_one_func=db_query_one,
         )
         if prompt_row:
             custom_prompt = prompt_row["prompt_text"]
@@ -269,8 +266,9 @@ def translate(task_id: str):
 @bp.route("/api/text-translate/<task_id>", methods=["DELETE"])
 @login_required
 def delete(task_id: str):
-    db_execute(
-        "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s AND type = 'text_translate'",
-        (task_id, current_user.id),
+    text_translate_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        execute_func=db_execute,
     )
     return text_translate_flask_response(build_text_translate_delete_success_response())
