@@ -24,6 +24,7 @@ from appcore import (
     media_route_store,
     medias,
     object_keys,
+    product_link_domains,
     product_roas,
     pushes,
     shopify_image_localizer_release,
@@ -410,6 +411,8 @@ api_mk_copywriting = _products.api_mk_copywriting
 api_list_products = _products.api_list_products
 api_create_product = _products.api_create_product
 api_get_product = _products.api_get_product
+api_get_product_link_domains = _products.api_get_product_link_domains
+api_set_product_link_domains = _products.api_set_product_link_domains
 api_update_product = _products.api_update_product
 api_update_product_owner = _products.api_update_product_owner
 api_delete_product = _products.api_delete_product

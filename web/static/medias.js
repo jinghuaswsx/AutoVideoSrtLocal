@@ -1404,6 +1404,12 @@
         const product = items.find(item => Number(item.id) === Number(b.dataset.productUnsuitablePush));
         openProductUnsuitablePushModal(product || null);
       }));
+    grid.querySelectorAll('[data-product-link-domains]').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const product = items.find(item => Number(item.id) === Number(b.dataset.productLinkDomains));
+        openProductLinkDomainsModal(product || null);
+      }));
     grid.querySelectorAll('.oc-product-id-copy').forEach(b =>
       b.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1692,6 +1698,7 @@
             <button class="oc-btn sm ghost" data-ai-evaluate="${p.id}" title="手动触发 AI 评估">${icon('zap', 12)}<span>${aiEvalBtnLabel(p)}</span></button>
             <button class="oc-btn sm ghost" data-roas="${p.id}"><span>ROAS</span></button>
             <button class="oc-btn sm ghost" data-refresh-sku="${p.id}" title="从店小秘拉取最新英文名和 SKU 配对">${icon('refresh', 12)}<span>刷 SKU</span></button>
+            <button class="oc-btn sm ghost" data-product-link-domains="${p.id}" title="管理该产品启用的投放链接域名">${icon('external-link', 12)}<span>链接管理</span></button>
           </div>
         </td>
       </tr>`;
@@ -1703,9 +1710,10 @@
     }
     return `<div class="oc-pl-list">`
       + links.map((item) => {
-        const label = item.language_name
+        const langLabel = item.language_name
           ? `${item.language_name} (${item.lang})`
           : item.lang;
+        const label = item.domain ? `${item.domain} · ${langLabel || ''}` : langLabel;
         return `<div class="oc-pl-row">
           <div class="oc-pl-lang">${escapeHtml(label || '')}</div>
           <a class="oc-pl-url" href="${escapeHtml(item.url || '')}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url || '')}</a>
@@ -1898,6 +1906,131 @@
       }, false);
       submit.disabled = false;
       submit.textContent = '推送';
+    }
+  }
+
+  function resetProductLinkDomainsResponse() {
+    const resp = $('productLinkDomainsResponse');
+    const body = $('productLinkDomainsResponseBody');
+    const title = $('productLinkDomainsResponseTitle');
+    if (resp) {
+      resp.hidden = true;
+      resp.classList.remove('success', 'danger');
+    }
+    if (title) title.textContent = '保存响应';
+    if (body) body.textContent = '';
+  }
+
+  function renderProductLinkDomainRows(domains) {
+    if (!Array.isArray(domains) || !domains.length) {
+      return '<div class="oc-pl-empty">暂无可用域名，请先到系统设置新增域名。</div>';
+    }
+    return domains.map((item) => {
+      const enabled = !!item.product_enabled && !!item.enabled;
+      const globallyDisabled = !item.enabled;
+      const status = globallyDisabled
+        ? '<span class="oc-domain-state disabled">全局停用</span>'
+        : (enabled ? '<span class="oc-domain-state active">已启用</span>' : '<span class="oc-domain-state">未启用</span>');
+      return `<div class="oc-pl-row oc-domain-row">
+        <label>
+          <input type="checkbox" value="${escapeHtml(item.id)}" data-product-link-domain-checkbox ${enabled ? 'checked' : ''} ${globallyDisabled ? 'disabled' : ''}>
+          <span class="oc-pl-url">${escapeHtml(item.domain || '')}</span>
+        </label>
+        ${status}
+      </div>`;
+    }).join('');
+  }
+
+  function renderProductLinkDomainsResponse(data, ok) {
+    const resp = $('productLinkDomainsResponse');
+    const body = $('productLinkDomainsResponseBody');
+    const title = $('productLinkDomainsResponseTitle');
+    if (!resp || !body) return;
+    resp.hidden = false;
+    resp.classList.toggle('success', !!ok);
+    resp.classList.toggle('danger', !ok);
+    if (title) title.textContent = ok ? '保存成功' : '保存失败';
+    body.textContent = JSON.stringify(data || {}, null, 2);
+  }
+
+  async function openProductLinkDomainsModal(product) {
+    if (!product || !product.id) return;
+    const mask = $('productLinkDomainsModalMask');
+    const title = $('productLinkDomainsTitle');
+    const meta = $('productLinkDomainsMeta');
+    const info = $('productLinkDomainsInfo');
+    const list = $('productLinkDomainsList');
+    const submit = $('productLinkDomainsSubmit');
+    if (!mask || !list || !submit) return;
+    mask.hidden = false;
+    mask.dataset.pid = String(product.id);
+    resetProductLinkDomainsResponse();
+    if (title) title.textContent = '链接管理';
+    if (meta) meta.textContent = `${product.name || ''} · ${product.product_code || ''}`;
+    if (info) {
+      info.innerHTML = '<div class="oc-pl-info-block"><h4>域名启用</h4><dl class="oc-pl-info-list"><dt>产品</dt><dd>加载中…</dd></dl></div>';
+    }
+    list.innerHTML = '<div class="oc-pl-empty">加载域名中…</div>';
+    submit.disabled = true;
+
+    try {
+      const data = await fetchJSON(`/medias/api/products/${product.id}/product-link-domains`);
+      const domains = data.domains || [];
+      if (info) {
+        const activeCount = domains.filter((item) => item.enabled && item.product_enabled).length;
+        info.innerHTML = `<div class="oc-pl-info-block">
+          <h4>域名启用</h4>
+          <dl class="oc-pl-info-list">
+            <dt>产品</dt><dd>${escapeHtml(product.name || product.product_code || '')}</dd>
+            <dt>已启用</dt><dd>${activeCount} / ${domains.length}</dd>
+          </dl>
+        </div>`;
+      }
+      list.innerHTML = renderProductLinkDomainRows(domains);
+      submit.disabled = false;
+    } catch (err) {
+      const message = err.message || '加载失败';
+      if (info) info.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
+      list.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
+      submit.disabled = true;
+    }
+  }
+
+  function closeProductLinkDomainsModal() {
+    const mask = $('productLinkDomainsModalMask');
+    if (!mask) return;
+    mask.hidden = true;
+    mask.dataset.pid = '';
+    resetProductLinkDomainsResponse();
+  }
+
+  async function submitProductLinkDomains() {
+    const mask = $('productLinkDomainsModalMask');
+    const submit = $('productLinkDomainsSubmit');
+    const list = $('productLinkDomainsList');
+    const pid = mask && mask.dataset.pid;
+    if (!mask || !pid || !submit) return;
+    const enabledIds = Array.from(document.querySelectorAll('[data-product-link-domain-checkbox]:checked'))
+      .map((node) => Number(node.value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    submit.disabled = true;
+    submit.textContent = '保存中…';
+    try {
+      const data = await fetchJSON(`/medias/api/products/${pid}/product-link-domains`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled_domain_ids: enabledIds }),
+      });
+      if (list) list.innerHTML = renderProductLinkDomainRows(data.domains || []);
+      renderProductLinkDomainsResponse({ ok: true }, true);
+    } catch (err) {
+      renderProductLinkDomainsResponse({
+        error: err.error || 'request_failed',
+        message: err.message || '保存失败',
+      }, false);
+    } finally {
+      submit.disabled = false;
+      submit.textContent = '保存';
     }
   }
 
@@ -2320,6 +2453,9 @@
   window.setProductCopyPushActiveTab = setProductCopyPushActiveTab;
   window.submitProductLinksPush = submitProductLinksPush;
   window.closeProductLinksPushModal = closeProductLinksPushModal;
+  window.openProductLinkDomainsModal = openProductLinkDomainsModal;
+  window.submitProductLinkDomains = submitProductLinkDomains;
+  window.closeProductLinkDomainsModal = closeProductLinkDomainsModal;
   window.submitProductCopyPush = submitProductCopyPush;
   window.closeProductCopyPushModal = closeProductCopyPushModal;
   window.openProductUnsuitablePushModal = openProductUnsuitablePushModal;
@@ -6737,6 +6873,12 @@
       return;
     }
 
+    if (event.target.closest('#productLinkDomainsSubmit')) {
+      event.preventDefault();
+      await window.submitProductLinkDomains();
+      return;
+    }
+
     if (event.target.closest('#productCopyPushSubmit')) {
       event.preventDefault();
       await window.submitProductCopyPush();
@@ -6766,6 +6908,14 @@
       || event.target.closest('#productLinksPushClose')
     ) {
       window.closeProductLinksPushModal();
+      return;
+    }
+
+    if (
+      event.target === $('productLinkDomainsModalMask')
+      || event.target.closest('#productLinkDomainsClose')
+    ) {
+      window.closeProductLinkDomainsModal();
       return;
     }
 

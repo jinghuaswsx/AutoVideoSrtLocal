@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+
+def test_medias_product_link_domains_payload_endpoint_returns_options(
+    authed_client_no_db, monkeypatch
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    options = [
+        {
+            "id": 1,
+            "domain": "newjoyloo.com",
+            "enabled": True,
+            "product_enabled": True,
+            "effective_enabled": True,
+        },
+        {
+            "id": 2,
+            "domain": "omurio.com",
+            "enabled": True,
+            "product_enabled": False,
+            "effective_enabled": False,
+        },
+    ]
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+    monkeypatch.setattr(
+        "web.routes.medias.product_link_domains.list_product_domain_options",
+        lambda product_id: options,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.get("/medias/api/products/10/product-link-domains")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"product": product, "domains": options}
+
+
+def test_medias_product_link_domains_post_saves_enabled_ids(
+    authed_client_no_db, monkeypatch
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    captured = {}
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+    monkeypatch.setattr(
+        "web.routes.medias.product_link_domains.set_product_domain_enabled_ids",
+        lambda product_id, ids: captured.update({"product_id": product_id, "ids": ids}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.medias.product_link_domains.list_product_domain_options",
+        lambda product_id: [{"id": 2, "domain": "omurio.com", "product_enabled": True}],
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/10/product-link-domains",
+        json={"enabled_domain_ids": [2, "3", "bad", 0]},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {"product_id": 10, "ids": [2, 3]}
+    assert resp.get_json()["domains"] == [
+        {"id": 2, "domain": "omurio.com", "product_enabled": True}
+    ]

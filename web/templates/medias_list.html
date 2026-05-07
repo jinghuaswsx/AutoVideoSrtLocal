@@ -1624,6 +1624,38 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   text-decoration:none;
 }
 .oc-pl-url:hover { color:var(--oc-accent); text-decoration:underline; }
+.oc-domain-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--oc-sp-3);
+}
+.oc-domain-row label {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-2);
+  min-width:0;
+  color:var(--oc-fg);
+  font-size:13px;
+  font-weight:600;
+}
+.oc-domain-row input[type="checkbox"] { width:16px; height:16px; accent-color:var(--oc-accent); }
+.oc-domain-state {
+  flex:0 0 auto;
+  padding:3px 8px;
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-muted);
+  color:var(--oc-fg-muted);
+  font-size:12px;
+}
+.oc-domain-state.active {
+  background:var(--oc-accent-subtle);
+  color:var(--oc-accent);
+}
+.oc-domain-state.disabled {
+  background:var(--oc-danger-bg);
+  color:var(--oc-danger-fg);
+}
 .oc-pl-info { margin-bottom:var(--oc-sp-4); }
 .oc-pl-info-block {
   padding:var(--oc-sp-4);
@@ -2080,6 +2112,30 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     </div>
     <div class="oc-modal-foot oc-product-links-footer">
       <button type="button" id="productLinksPushSubmit" class="oc-btn primary oc-product-links-submit">推送</button>
+    </div>
+  </div>
+</div>
+<div id="productLinkDomainsModalMask" class="oc-modal-mask oc oc-product-links-mask" hidden>
+  <div class="oc-modal oc-product-links-modal" role="dialog" aria-modal="true" aria-labelledby="productLinkDomainsTitle">
+    <div class="oc-modal-head">
+      <div>
+        <h3 id="productLinkDomainsTitle">链接管理</h3>
+        <p id="productLinkDomainsMeta" class="oc-product-links-meta">—</p>
+      </div>
+      <button type="button" id="productLinkDomainsClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body">
+      <div id="productLinkDomainsInfo" class="oc-pl-info"></div>
+      <div id="productLinkDomainsList" class="oc-pl-list"></div>
+      <section id="productLinkDomainsResponse" class="oc-pl-response" hidden>
+        <h4 id="productLinkDomainsResponseTitle">保存响应</h4>
+        <pre id="productLinkDomainsResponseBody" class="oc-pl-json"></pre>
+      </section>
+    </div>
+    <div class="oc-modal-foot oc-product-links-footer">
+      <button type="button" id="productLinkDomainsSubmit" class="oc-btn primary oc-product-links-submit">保存</button>
     </div>
   </div>
 </div>
