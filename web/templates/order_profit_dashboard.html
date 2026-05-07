@@ -391,6 +391,16 @@ async function fetchJSON(url) {
   return r.json();
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[ch]);
+}
+
 async function refreshSummary() {
   const f = document.getElementById('opDateFrom').value;
   const t = document.getElementById('opDateTo').value;
@@ -466,10 +476,10 @@ async function refreshOrders() {
   tbody.innerHTML = data.orders.map(o => {
     const profitClass = (o.profit_total_usd != null && o.profit_total_usd < 0) ? ' loss' : '';
     return `
-    <tr class="op-order-row${profitClass}" data-pkg="${o.dxm_package_id}" style="cursor:pointer;">
-      <td><code style="font-size:12px;">${o.dxm_package_id}</code></td>
+    <tr class="op-order-row${profitClass}" data-pkg="${escapeHtml(o.dxm_package_id || '')}" style="cursor:pointer;">
+      <td><code style="font-size:12px;">${escapeHtml(o.dxm_package_id || '-')}</code></td>
       <td style="font-size:12px;">${o.paid_at ? new Date(o.paid_at).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}) : '-'}</td>
-      <td>${o.buyer_country || '-'}</td>
+      <td>${escapeHtml(o.buyer_country || '-')}</td>
       <td class="num">${fmtInt(o.line_count)}</td>
       <td>${statusBadge(o.status)}</td>
       <td class="num">${fmtUSD(o.revenue_total_usd)}</td>
@@ -506,8 +516,8 @@ async function refreshOrders() {
         detailRow.className = 'op-order-detail';
         const detailHTML = detailLines.map(l => `
           <div style="padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; gap: var(--space-3); font-size: 13px;">
-            <code style="min-width: 220px; font-size:12px;">${l.product_code || '#'+l.product_id || '-'}</code>
-            <span style="color: var(--fg-muted); min-width: 60px;">SKU ${l.product_sku || ''}</span>
+            <code style="min-width: 220px; font-size:12px;">${escapeHtml(l.product_code || ('#' + l.product_id) || '-')}</code>
+            <span style="color: var(--fg-muted); min-width: 60px;">SKU ${escapeHtml(l.product_sku || '')}</span>
             <span style="min-width: 40px;">×${fmtInt(l.quantity)}</span>
             <span style="min-width: 80px;">营收 ${fmtUSD(l.revenue_usd)}</span>
             <span style="min-width: 80px;">采购 ${fmtUSD(l.purchase_usd)}</span>
@@ -515,7 +525,7 @@ async function refreshOrders() {
             <span style="min-width: 80px;">手续费 ${fmtUSD(l.shopify_fee_usd)}</span>
             <span style="min-width: 80px;">广告 ${fmtUSD(l.ad_cost_usd)}</span>
             <span style="min-width: 80px; font-weight: 500; color: ${(parseFloat(l.profit_usd)||0) < 0 ? 'var(--danger)' : 'var(--success-fg)'};">利润 ${fmtUSD(l.profit_usd)}</span>
-            ${l.status === 'incomplete' ? '<span style="color: var(--danger-fg)">缺：'+(l.missing_fields||[]).join('/')+'</span>' : ''}
+            ${l.status === 'incomplete' ? '<span style="color: var(--danger-fg)">缺：' + escapeHtml((l.missing_fields || []).join('/')) + '</span>' : ''}
           </div>`).join('');
         detailRow.innerHTML = `<td colspan="11" style="background: var(--bg-subtle); padding: var(--space-3) var(--space-4);">${detailHTML || '<span style="color: var(--fg-subtle);">无明细</span>'}</td>`;
         row.parentNode.insertBefore(detailRow, row.nextSibling);
@@ -537,9 +547,9 @@ async function refreshLosses() {
   }
   tbody.innerHTML = data.loss_lines.map(r => `
     <tr class="loss">
-      <td>${r.product_id || '-'}</td>
-      <td>${r.business_date}</td>
-      <td>${r.buyer_country || '-'}</td>
+      <td>${escapeHtml(r.product_id || '-')}</td>
+      <td>${escapeHtml(r.business_date || '-')}</td>
+      <td>${escapeHtml(r.buyer_country || '-')}</td>
       <td class="num">${fmtUSD(r.revenue_usd)}</td>
       <td class="num">${fmtUSD(r.shopify_fee_usd)}</td>
       <td class="num">${fmtUSD(r.ad_cost_usd)}</td>
@@ -561,12 +571,13 @@ async function refreshCompleteness() {
       ? '<span style="color: var(--success-fg)">完备</span>'
       : '<span style="color: var(--danger-fg)">缺失</span>';
     const missing = p.completeness.missing.length
-      ? p.completeness.missing.join(' / ')
+      ? escapeHtml(p.completeness.missing.join(' / '))
       : '-';
-    const editLink = `/medias?edit_product_id=${p.product_id}`;
+    const productText = escapeHtml(p.product_code || ('#' + p.product_id));
+    const editLink = `/medias?edit_product_id=${encodeURIComponent(p.product_id)}`;
     const productCell = p.completeness.ok
-      ? `${p.product_code || '#'+p.product_id}`
-      : `<a href="${editLink}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">${p.product_code || '#'+p.product_id} ↗</a>`;
+      ? productText
+      : `<a href="${editLink}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">${productText} ↗</a>`;
     return `<tr class="op-completeness-row">
       <td>${productCell}</td>
       <td>${status}</td>
@@ -596,7 +607,7 @@ function orderProductLabel(p) {
 function buildProductSelect(currentProductId) {
   const products = _productsCache || [];
   const opts = products.map(p =>
-    `<option value="${p.id}" ${p.id === currentProductId ? 'selected' : ''}>${p.product_code || '#' + p.id} — ${p.name || ''}</option>`
+    `<option value="${escapeHtml(p.id || '')}" ${p.id === currentProductId ? 'selected' : ''}>${escapeHtml(p.product_code || '#' + p.id)} — ${escapeHtml(p.name || '')}</option>`
   ).join('');
   return `<select class="op-product-select" data-op-product-select><option value="">— 选择产品 —</option>${opts}</select>`;
 }
@@ -659,8 +670,8 @@ async function refreshMatching() {
     tbody.innerHTML = '<tr><td colspan="6" class="op-loading">无未匹配 campaign 🎉</td></tr>';
   } else {
     tbody.innerHTML = data.campaigns.map(c => `
-      <tr data-campaign="${c.normalized_campaign_code}">
-        <td><code>${c.normalized_campaign_code}</code></td>
+      <tr data-campaign="${escapeHtml(c.normalized_campaign_code || '')}">
+        <td><code>${escapeHtml(c.normalized_campaign_code || '')}</code></td>
         <td class="num">${fmtInt(c.days)}</td>
         <td class="num" style="font-weight: 500;">${fmtUSD(c.spend)}</td>
         <td>${buildProductSelect()}</td>
@@ -706,11 +717,11 @@ async function refreshOverrides() {
   }
   tbody.innerHTML = data.overrides.map(o => `
     <tr>
-      <td><code>${o.normalized_campaign_code}</code></td>
-      <td>${o.product_code || '#' + o.product_id}</td>
-      <td>${o.reason || '-'}</td>
-      <td style="color: var(--fg-muted); font-size: 12px;">${o.created_by || '-'} · ${o.created_at}</td>
-      <td><button class="op-delete-btn" data-id="${o.id}" data-code="${o.normalized_campaign_code}" style="height:28px; padding:0 12px; background:var(--bg-muted); color:var(--danger-fg); border:1px solid var(--border); border-radius:4px; cursor:pointer;">删除</button></td>
+      <td><code>${escapeHtml(o.normalized_campaign_code || '')}</code></td>
+      <td>${escapeHtml(o.product_code || ('#' + o.product_id))}</td>
+      <td>${escapeHtml(o.reason || '-')}</td>
+      <td style="color: var(--fg-muted); font-size: 12px;">${escapeHtml(o.created_by || '-')} · ${escapeHtml(o.created_at || '')}</td>
+      <td><button class="op-delete-btn" data-id="${escapeHtml(o.id || '')}" data-code="${escapeHtml(o.normalized_campaign_code || '')}" style="height:28px; padding:0 12px; background:var(--bg-muted); color:var(--danger-fg); border:1px solid var(--border); border-radius:4px; cursor:pointer;">删除</button></td>
     </tr>
   `).join('');
   tbody.querySelectorAll('.op-delete-btn').forEach(btn => {
