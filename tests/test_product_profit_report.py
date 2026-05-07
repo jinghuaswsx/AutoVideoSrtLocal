@@ -129,11 +129,11 @@ def test_recalc_ad_cost_omurio_uses_omurio_account():
 
 
 def test_recalc_ad_cost_uses_meta_account_store_mapping(monkeypatch):
-    """同一店铺绑定多个 enabled 广告户时，广告费按该店铺多个账户 spend 合计分摊。"""
+    """同一店铺绑定多个广告户时，广告费按该店铺多个账户 spend 合计分摊。"""
     monkeypatch.setattr(
         ppr,
         "meta_ad_accounts",
-        SimpleNamespace(site_account_map=lambda: {"newjoy": ("111", "222")}),
+        SimpleNamespace(site_account_map=lambda enabled_only=True: {"newjoy": ("111", "222")}),
         raising=False,
     )
     line = {
@@ -151,6 +151,31 @@ def test_recalc_ad_cost_uses_meta_account_store_mapping(monkeypatch):
     ad_cost = ppr._recalc_ad_cost(line, site_units, account_spend)
 
     assert ad_cost == pytest.approx(30.0, abs=0.01)
+
+
+def test_product_profit_mapping_includes_disabled_accounts(monkeypatch):
+    """产品盈亏历史分摊使用全部配置账户，不受 enabled 同步开关影响。"""
+    calls = []
+
+    def fake_site_account_map(*, enabled_only=True):
+        calls.append(enabled_only)
+        return {"newjoy": ("2110407576446225",)}
+
+    monkeypatch.setattr(
+        ppr,
+        "meta_ad_accounts",
+        SimpleNamespace(site_account_map=fake_site_account_map),
+        raising=False,
+    )
+
+    ad_cost = ppr._recalc_ad_cost(
+        {"site_code": "newjoy", "business_date": date(2026, 4, 15), "quantity": 1},
+        {(date(2026, 4, 15), "newjoy"): 2},
+        {(date(2026, 4, 15), "2110407576446225"): 50.0},
+    )
+
+    assert calls == [False]
+    assert ad_cost == pytest.approx(25.0, abs=0.01)
 
 
 def test_recalc_ad_cost_zero_when_no_units():
