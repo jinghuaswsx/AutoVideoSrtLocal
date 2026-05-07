@@ -456,7 +456,7 @@
       extract: "音频提取",
       asr: "语音识别",
       asr_clean: "原文纯净化",
-      asr_normalize: "原文标准化",
+      asr_normalize: "原文标准化和ASR结果纯净化",
       separate: "人声分离",
       voice_match: "音色选择",
       alignment: "分段确认",
@@ -3284,6 +3284,55 @@
     });
   }
   window.bootCollapsibleCards = bootCollapsibleCards;
+</script>
+
+{# omni-translate 重选语言（从 step-asr_normalize 内的 #relangPanel 读 data-*） #}
+<script>
+(function() {
+  var panel = document.getElementById('relangPanel');
+  if (!panel) return;
+  var apiBase = panel.dataset.apiBase || '/api/omni-translate';
+  var taskId = panel.dataset.taskId || '';
+  var current = panel.dataset.currentLang || 'zh';
+  var sel = document.getElementById('relangSelect');
+  if (sel && current) sel.value = current;
+
+  var btnOpen = document.getElementById('btnReselectLang');
+  var btnCancel = document.getElementById('btnRelangCancel');
+  var btnSave = document.getElementById('btnRelangSave');
+
+  if (btnOpen) btnOpen.addEventListener('click', function() {
+    panel.classList.remove('hidden');
+    if (sel) sel.focus();
+  });
+  if (btnCancel) btnCancel.addEventListener('click', function() {
+    panel.classList.add('hidden');
+  });
+  if (btnSave) btnSave.addEventListener('click', async function() {
+    if (!sel) return;
+    var newLang = sel.value;
+    var label = sel.options[sel.selectedIndex].text;
+    if (!confirm('改语言为「' + label + '」会丢弃当前的翻译/TTS/字幕/合成产物，并从「原文标准化和ASR结果纯净化」步骤开始重跑。\n\n确认继续吗？')) {
+      return;
+    }
+    btnSave.disabled = true;
+    btnSave.textContent = '提交中...';
+    try {
+      var res = await fetch(apiBase + '/' + taskId + '/source-language', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({source_language: newLang}),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || '改语言失败');
+      window.location.reload();
+    } catch (err) {
+      alert(err.message);
+      btnSave.disabled = false;
+      btnSave.textContent = '保存并重跑';
+    }
+  });
+})();
 </script>
 
 {# 翻译质量评估卡片脚本：脚本自带 DOMContentLoaded 自动初始化（按 #quality-assessment-card 上的 data-* 读取参数）。 #}

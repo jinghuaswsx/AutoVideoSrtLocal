@@ -12,7 +12,7 @@ from appcore.safe_paths import PathSafetyError, resolve_under_allowed_roots
 STEP_LABELS = {
     "extract": "音频提取",
     "asr": "语音识别",
-    "asr_normalize": "原文标准化",
+    "asr_normalize": "原文标准化和ASR结果纯净化",
     "asr_clean": "原文纯净化",
     "alignment": "分段确认",
     "translate": "翻译本土化",

@@ -1929,3 +1929,134 @@ video.media-player {
 }
 .tts-speedup-retry-btn:hover { background: var(--bg-muted); }
 .tts-speedup-retry-btn:disabled { opacity: 0.6; cursor: progress; }
+
+/* ===== 原文标准化和 ASR 纯净化（asr_normalize step inline metadata） ===== */
+.asr-normalize-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-main);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.asr-normalize-detail .asr-normalize-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.asr-normalize-detail .badge {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-radius: var(--radius-md);
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.asr-normalize-detail .kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+.asr-normalize-detail .kv .k {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  display: block;
+}
+.asr-normalize-detail .kv .v {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.asr-normalize-detail details summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+.asr-normalize-detail .preview {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  margin-top: var(--space-2);
+  max-height: 220px;
+  overflow: auto;
+}
+.asr-normalize-detail .tokens {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+}
+
+/* 重选语言按钮（在 step-name-row 里靠右；multi 在 step-asr_normalize、omni 在 step-asr_clean） */
+#step-asr_normalize .step-name-row .btn-relang,
+#step-asr_clean .step-name-row .btn-relang {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease);
+  margin-left: auto;
+}
+#step-asr_normalize .step-name-row .btn-relang:hover,
+#step-asr_clean .step-name-row .btn-relang:hover {
+  background: var(--accent-subtle);
+}
+.asr-normalize-detail .relang-panel {
+  margin-top: 4px;
+  padding: var(--space-4);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.asr-normalize-detail .relang-panel.hidden { display: none; }
+.asr-normalize-detail .relang-panel label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+.asr-normalize-detail .relang-panel select {
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  background: #fff;
+}
+.asr-normalize-detail .relang-hint {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+.asr-normalize-detail .relang-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.asr-normalize-detail .relang-actions button {
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+}
+.asr-normalize-detail .relang-actions .btn-cancel {
+  background: #fff;
+  color: var(--fg);
+}
+.asr-normalize-detail .relang-actions .btn-save {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.asr-normalize-detail .relang-actions .btn-save:hover {
+  background: var(--accent-hover);
+}
+.asr-normalize-detail .relang-actions .btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

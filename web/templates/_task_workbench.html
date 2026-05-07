@@ -551,12 +551,74 @@
         <div class="step-icon" id="icon-asr_normalize">3</div>
         <div style="flex:1">
           <div class="step-name-row">
-            <span class="step-name">原文标准化</span>
+            <span class="step-name">原文标准化和ASR结果纯净化</span>
+            {% if state.asr_normalize_artifact and api_base == '/api/omni-translate' %}
+            <button type="button" class="btn-relang" id="btnReselectLang">重选语言</button>
+            {% endif %}
             <button class="resume-btn hidden" id="resume-asr_normalize" data-step="asr_normalize">从此步继续</button>
           </div>
           <div class="step-msg" id="msg-asr_normalize">等待中...<span class="step-model-tag hidden" id="model-tag-asr_normalize"></span></div>
         </div>
       </div>
+      {% if state.asr_normalize_artifact %}
+      {% set norm = state.asr_normalize_artifact %}
+      {% set is_user_specified = norm.detection_source == 'user_specified' %}
+      <div class="asr-normalize-detail">
+        <div class="asr-normalize-detail-head">
+          <span class="badge route-{{ norm.route }}">{{ norm.route }}</span>
+        </div>
+        <div class="kv">
+          <div><span class="k">源语言</span><span class="v">{{ norm.input.language_label }}（{{ norm.detected_source_language }}）</span></div>
+          <div><span class="k">置信度</span><span class="v">{{ '100%' if is_user_specified else ('%.2f' % norm.confidence) }}</span></div>
+          <div><span class="k">是否混合</span><span class="v">{{ '是' if norm.is_mixed else '否' }}</span></div>
+          <div><span class="k">耗时</span><span class="v">{{ (norm.elapsed_ms / 1000) | round(1) }}s</span></div>
+        </div>
+        {% if norm.input.full_text_preview %}
+        <details>
+          <summary>原文预览（前 200 字符）</summary>
+          <pre class="preview">{{ norm.input.full_text_preview }}</pre>
+        </details>
+        {% endif %}
+        {% if norm.output.full_text_preview and norm.route not in ['en_skip', 'zh_skip'] %}
+        <details>
+          <summary>英文标准化预览（前 200 字符）</summary>
+          <pre class="preview">{{ norm.output.full_text_preview }}</pre>
+        </details>
+        {% endif %}
+        <div class="tokens">
+          detect: {{ norm.tokens.detect.input_tokens or 0 }}↑/{{ norm.tokens.detect.output_tokens or 0 }}↓
+          {% if norm.tokens.translate.input_tokens %}
+            · translate: {{ norm.tokens.translate.input_tokens }}↑/{{ norm.tokens.translate.output_tokens or 0 }}↓
+          {% endif %}
+        </div>
+        {% if api_base == '/api/omni-translate' %}
+        <div class="relang-panel hidden" id="relangPanel"
+             data-current-lang="{{ state.source_language or state.detected_source_language or 'zh' }}"
+             data-api-base="{{ api_base }}"
+             data-task-id="{{ task_id }}">
+          <label for="relangSelect">改选源语言</label>
+          <select id="relangSelect">
+            <option value="zh">中文（豆包 ASR）</option>
+            <option value="en">英文（豆包 ASR）</option>
+            <option value="es">西班牙语（ElevenLabs Scribe）</option>
+            <option value="pt">葡萄牙语（ElevenLabs Scribe）</option>
+            <option value="fr">法语（ElevenLabs Scribe）</option>
+            <option value="it">意大利语（ElevenLabs Scribe）</option>
+            <option value="ja">日语（ElevenLabs Scribe）</option>
+            <option value="de">德语（ElevenLabs Scribe）</option>
+            <option value="nl">荷兰语（ElevenLabs Scribe）</option>
+            <option value="sv">瑞典语（ElevenLabs Scribe）</option>
+            <option value="fi">芬兰语（ElevenLabs Scribe）</option>
+          </select>
+          <div class="relang-hint">保存后会从「原文标准化和ASR结果纯净化」步骤开始重跑，并丢弃当前的翻译/TTS/字幕/合成产物</div>
+          <div class="relang-actions">
+            <button type="button" class="btn-cancel" id="btnRelangCancel">取消</button>
+            <button type="button" class="btn-save" id="btnRelangSave">保存并重跑</button>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
       <div class="step-preview" id="preview-asr_normalize"></div>
     </div>
     {% elif api_base == '/api/omni-translate' %}
@@ -566,11 +628,71 @@
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">原文纯净化</span>
+            {% if state.asr_normalize_artifact %}
+            <button type="button" class="btn-relang" id="btnReselectLang">重选语言</button>
+            {% endif %}
             <button class="resume-btn hidden" id="resume-asr_clean" data-step="asr_clean">从此步继续</button>
           </div>
           <div class="step-msg" id="msg-asr_clean">等待中...<span class="step-model-tag hidden" id="model-tag-asr_clean"></span></div>
         </div>
       </div>
+      {% if state.asr_normalize_artifact %}
+      {% set norm = state.asr_normalize_artifact %}
+      {% set is_user_specified = norm.detection_source == 'user_specified' %}
+      <div class="asr-normalize-detail">
+        <div class="asr-normalize-detail-head">
+          <span class="badge route-{{ norm.route }}">{{ norm.route }}</span>
+        </div>
+        <div class="kv">
+          <div><span class="k">源语言</span><span class="v">{{ norm.input.language_label }}（{{ norm.detected_source_language }}）</span></div>
+          <div><span class="k">置信度</span><span class="v">{{ '100%' if is_user_specified else ('%.2f' % norm.confidence) }}</span></div>
+          <div><span class="k">是否混合</span><span class="v">{{ '是' if norm.is_mixed else '否' }}</span></div>
+          <div><span class="k">耗时</span><span class="v">{{ (norm.elapsed_ms / 1000) | round(1) }}s</span></div>
+        </div>
+        {% if norm.input.full_text_preview %}
+        <details>
+          <summary>原文预览（前 200 字符）</summary>
+          <pre class="preview">{{ norm.input.full_text_preview }}</pre>
+        </details>
+        {% endif %}
+        {% if norm.output.full_text_preview and norm.route not in ['en_skip', 'zh_skip'] %}
+        <details>
+          <summary>英文标准化预览（前 200 字符）</summary>
+          <pre class="preview">{{ norm.output.full_text_preview }}</pre>
+        </details>
+        {% endif %}
+        <div class="tokens">
+          detect: {{ norm.tokens.detect.input_tokens or 0 }}↑/{{ norm.tokens.detect.output_tokens or 0 }}↓
+          {% if norm.tokens.translate.input_tokens %}
+            · translate: {{ norm.tokens.translate.input_tokens }}↑/{{ norm.tokens.translate.output_tokens or 0 }}↓
+          {% endif %}
+        </div>
+        <div class="relang-panel hidden" id="relangPanel"
+             data-current-lang="{{ state.source_language or state.detected_source_language or 'zh' }}"
+             data-api-base="{{ api_base }}"
+             data-task-id="{{ task_id }}">
+          <label for="relangSelect">改选源语言</label>
+          <select id="relangSelect">
+            <option value="zh">中文（豆包 ASR）</option>
+            <option value="en">英文（豆包 ASR）</option>
+            <option value="es">西班牙语（ElevenLabs Scribe）</option>
+            <option value="pt">葡萄牙语（ElevenLabs Scribe）</option>
+            <option value="fr">法语（ElevenLabs Scribe）</option>
+            <option value="it">意大利语（ElevenLabs Scribe）</option>
+            <option value="ja">日语（ElevenLabs Scribe）</option>
+            <option value="de">德语（ElevenLabs Scribe）</option>
+            <option value="nl">荷兰语（ElevenLabs Scribe）</option>
+            <option value="sv">瑞典语（ElevenLabs Scribe）</option>
+            <option value="fi">芬兰语（ElevenLabs Scribe）</option>
+          </select>
+          <div class="relang-hint">保存后会从「原文标准化和ASR结果纯净化」步骤开始重跑，并丢弃当前的翻译/TTS/字幕/合成产物</div>
+          <div class="relang-actions">
+            <button type="button" class="btn-cancel" id="btnRelangCancel">取消</button>
+            <button type="button" class="btn-save" id="btnRelangSave">保存并重跑</button>
+          </div>
+        </div>
+      </div>
+      {% endif %}
       <div class="step-preview" id="preview-asr_clean"></div>
     </div>
     {% endif %}
