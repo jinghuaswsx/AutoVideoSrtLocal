@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from flask import Blueprint, request
 
-from appcore import medias, pushes
+from appcore import medias, openapi_materials as openapi_materials_store, pushes
 from appcore.link_check_locale import detect_target_language_from_url
-from appcore.db import query, query_one
 from appcore.llm_provider_configs import get_provider_config
 from appcore.openapi_auth import validate_openapi_key
 from web.services.openapi_materials_listing import (
@@ -208,7 +207,7 @@ def list_materials():
             page_size_raw=request.args.get("page_size") or "20",
             q=request.args.get("q") or "",
             archived_raw=request.args.get("archived") or "0",
-            query_fn=query,
+            query_fn=openapi_materials_store.query_material_rows,
         )
     )
 
@@ -263,7 +262,10 @@ def list_push_items():
         limit=10000,
     )
 
-    all_items = _serialize_push_item_rows(rows, query_one_fn=query_one)
+    all_items = _serialize_push_item_rows(
+        rows,
+        query_one_fn=openapi_materials_store.query_one_material_row,
+    )
     all_items = _filter_push_items_by_status(all_items, status_filter)
     total = len(all_items)
     items = _paginate_push_items(all_items, page=page, page_size=page_size)
@@ -289,7 +291,13 @@ def get_push_item(item_id: int):
     product = medias.get_product(item["product_id"])
     if not product:
         return _openapi_error_response("product not found", 404)
-    return _openapi_payload_response(_serialize_push_item(item, product, query_one_fn=query_one))
+    return _openapi_payload_response(
+        _serialize_push_item(
+            item,
+            product,
+            query_one_fn=openapi_materials_store.query_one_material_row,
+        )
+    )
 
 
 @push_bp.route("/by-keys", methods=["GET"], strict_slashes=False)
@@ -323,7 +331,11 @@ def get_push_item_payload_by_keys():
         return _openapi_error_response("product not found", 404)
 
     try:
-        response_payload = _build_push_item_payload_response(item, product, query_one_fn=query_one)
+        response_payload = _build_push_item_payload_response(
+            item,
+            product,
+            query_one_fn=openapi_materials_store.query_one_material_row,
+        )
     except pushes.ProductNotListedError as exc:
         return _openapi_error_response(str(exc), 409, code="product_not_listed")
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:

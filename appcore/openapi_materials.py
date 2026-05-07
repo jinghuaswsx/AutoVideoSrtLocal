@@ -8,6 +8,14 @@ QueryFunc = Callable[[str, tuple], list[dict]]
 QueryOneFunc = Callable[[str, tuple], dict | None]
 
 
+def query_material_rows(sql: str, args: tuple = ()) -> list[dict]:
+    return query(sql, args)
+
+
+def query_one_material_row(sql: str, args: tuple = ()) -> dict | None:
+    return query_one(sql, args)
+
+
 def _placeholders(values: list[int]) -> str:
     return ",".join(["%s"] * len(values))
 

@@ -83,7 +83,10 @@ def test_list_returns_paginated_products(client, monkeypatch):
             ]
         return []
 
-    monkeypatch.setattr("web.routes.openapi_materials.query", fake_query)
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.openapi_materials_store.query_material_rows",
+        fake_query,
+    )
 
     response = client.get(
         "/openapi/materials?page=1&page_size=10",
@@ -122,7 +125,10 @@ def test_list_clamps_page_size(client, monkeypatch):
             return []
         return []
 
-    monkeypatch.setattr("web.routes.openapi_materials.query", fake_query)
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.openapi_materials_store.query_material_rows",
+        fake_query,
+    )
     response = client.get(
         "/openapi/materials?page=2&page_size=999",
         headers={"X-API-Key": "demo-key"},
@@ -487,7 +493,7 @@ def test_push_items_list_returns_items_with_status(client, monkeypatch):
         lambda item, product: "pending",
     )
     monkeypatch.setattr(
-        "web.routes.openapi_materials.query_one",
+        "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",
         lambda sql, args: None,
     )
 
@@ -546,7 +552,7 @@ def test_push_items_list_filters_by_status(client, monkeypatch):
         lambda item, product: next(statuses),
     )
     monkeypatch.setattr(
-        "web.routes.openapi_materials.query_one",
+        "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",
         lambda sql, args: None,
     )
 
@@ -681,7 +687,7 @@ def test_get_push_item_returns_single(client, monkeypatch):
         lambda item, product: "pending",
     )
     monkeypatch.setattr(
-        "web.routes.openapi_materials.query_one",
+        "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",
         lambda sql, args: None,
     )
 
@@ -775,7 +781,7 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
         lambda item, product: "pending",
     )
     monkeypatch.setattr(
-        "web.routes.openapi_materials.query_one",
+        "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",
         lambda sql, args: None,
     )
 

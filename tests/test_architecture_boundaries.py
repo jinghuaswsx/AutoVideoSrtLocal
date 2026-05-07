@@ -3526,6 +3526,20 @@ def test_openapi_service_db_access_lives_in_appcore_dao():
     assert "def get_push_log_summary" in dao_source
 
 
+def test_openapi_materials_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in route_source
+    assert "query_fn=query" not in route_source
+    assert "query_one_fn=query_one" not in route_source
+    assert "openapi_materials_store.query_material_rows" in route_source
+    assert "openapi_materials_store.query_one_material_row" in route_source
+
+    store_source = Path("appcore/openapi_materials.py").read_text(encoding="utf-8")
+    assert "def query_material_rows" in store_source
+    assert "def query_one_material_row" in store_source
+
+
 def test_openapi_material_push_payload_lives_outside_route_module():
     module_source = Path("web/routes/openapi_materials.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

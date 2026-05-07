@@ -47,6 +47,36 @@ def test_list_product_cover_lang_rows_queries_dao():
     assert "media_product_covers" in calls[0][0]
 
 
+def test_openapi_material_query_wrappers_delegate_to_db(monkeypatch):
+    from appcore import openapi_materials
+
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append(("query", sql, args))
+        return [{"id": 1}]
+
+    def fake_query_one(sql, args):
+        calls.append(("query_one", sql, args))
+        return {"id": 2}
+
+    monkeypatch.setattr(openapi_materials, "query", fake_query)
+    monkeypatch.setattr(openapi_materials, "query_one", fake_query_one)
+
+    assert openapi_materials.query_material_rows(
+        "SELECT * FROM t WHERE id=%s",
+        (1,),
+    ) == [{"id": 1}]
+    assert openapi_materials.query_one_material_row(
+        "SELECT * FROM t WHERE id=%s",
+        (2,),
+    ) == {"id": 2}
+    assert calls == [
+        ("query", "SELECT * FROM t WHERE id=%s", (1,)),
+        ("query_one", "SELECT * FROM t WHERE id=%s", (2,)),
+    ]
+
+
 def test_batch_copywriting_langs_groups_languages_with_english_default():
     from web.services.openapi_materials_listing import batch_copywriting_langs
 
