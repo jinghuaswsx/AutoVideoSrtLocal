@@ -100,3 +100,19 @@ def test_medias_js_ai_evaluation_preview_sanitizes_product_url_href_protocols():
     assert "const productUrl = safeExternalHref(product.product_url);" in preview_block
     assert 'href="${escapeHtml(productUrl)}"' in preview_block
     assert 'href="${escapeHtml(product.product_url)}"' not in preview_block
+
+
+def test_medias_js_ai_evaluation_preview_sanitizes_media_src_protocols():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+    preview_block = script[
+        script.index("function renderAiEvaluationRequestPreviewToPanel"):
+        script.index("function renderAiEvaluationPromptSections")
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "const coverPreviewUrl = safeMediaSrc(cover.preview_url);" in preview_block
+    assert "const videoPreviewUrl = safeMediaSrc(video.preview_url);" in preview_block
+    assert 'src="${escapeHtml(coverPreviewUrl)}"' in preview_block
+    assert 'src="${escapeHtml(videoPreviewUrl)}"' in preview_block
+    assert 'src="${escapeHtml(cover.preview_url)}"' not in preview_block
+    assert 'src="${escapeHtml(video.preview_url)}"' not in preview_block

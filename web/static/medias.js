@@ -464,6 +464,19 @@
     }
   }
 
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function safeInternalHref(url, fallback) {
     const safeFallback = String(fallback || '#');
     const raw = String(url == null ? '' : url).trim();
@@ -805,6 +818,8 @@
     const video = (preview.media || []).find((item) => item.role === 'english_video') || {};
     const product = preview.product || {};
     const productUrl = safeExternalHref(product.product_url);
+    const coverPreviewUrl = safeMediaSrc(cover.preview_url);
+    const videoPreviewUrl = safeMediaSrc(video.preview_url);
     panel.innerHTML = `
       <div class="ect-ai-actions">
         <button type="button" class="ect-ai-btn primary" data-ai-full-payload>请求报文</button>
@@ -813,9 +828,9 @@
         <div class="ect-ai-card">
           <h4>素材预览</h4>
           <div class="ect-ai-media">
-            <div class="ect-ai-cover">${cover.preview_url ? `<img src="${escapeHtml(cover.preview_url)}" alt="商品主图">` : '暂无主图'}</div>
+            <div class="ect-ai-cover">${coverPreviewUrl ? `<img src="${escapeHtml(coverPreviewUrl)}" alt="商品主图">` : '暂无主图'}</div>
             <div class="ect-ai-video-name" title="${escapeHtml(video.filename || video.object_key || '')}">${escapeHtml(video.filename || video.object_key || '暂无视频文件名')}</div>
-            <div class="ect-ai-video">${video.preview_url ? `<video controls preload="metadata" src="${escapeHtml(video.preview_url)}"></video>` : '暂无视频'}</div>
+            <div class="ect-ai-video">${videoPreviewUrl ? `<video controls preload="metadata" src="${escapeHtml(videoPreviewUrl)}"></video>` : '暂无视频'}</div>
           </div>
         </div>
         <div class="ect-ai-card">
@@ -5663,7 +5678,9 @@
     pane.innerHTML = `<div class="vvideo-ph">加载中…</div>`;
     try {
       const r = await fetchJSON(`/medias/api/items/${itemId}/play_url`);
-      pane.innerHTML = `<video controls preload="metadata" src="${escapeHtml(r.url)}"></video>`;
+      const playUrl = safeMediaSrc(r.url);
+      if (!playUrl) throw new Error('视频地址不可用');
+      pane.innerHTML = `<video controls preload="metadata" src="${escapeHtml(playUrl)}"></video>`;
       pane.dataset.loaded = '1';
     } catch (e) {
       pane.innerHTML = `<div class="vvideo-ph err">加载失败：${escapeHtml(e.message || '')}</div>`;
@@ -6940,10 +6957,11 @@
   function renderTranslateRawSourceChoice(it) {
     const title = escapeHtml(it.display_name || `原始视频 #${it.id}`);
     const inputId = `rst-rs-${it.id}`;
-    const videoUrl = escapeHtml(it.video_url || '');
-    const poster = it.cover_url ? ` poster="${escapeHtml(it.cover_url)}"` : '';
+    const videoUrl = safeMediaSrc(it.video_url || '');
+    const posterUrl = safeMediaSrc(it.cover_url || '');
+    const poster = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : '';
     const preview = videoUrl
-      ? `<span class="oc-rst-choice-preview"><video class="oc-rst-choice-video" src="${videoUrl}"${poster} controls playsinline preload="metadata" aria-label="${title}"></video></span>`
+      ? `<span class="oc-rst-choice-preview"><video class="oc-rst-choice-video" src="${escapeHtml(videoUrl)}"${poster} controls playsinline preload="metadata" aria-label="${title}"></video></span>`
       : `<span class="oc-rst-choice-preview"><span class="ph"><svg width="20" height="20" aria-hidden="true"><use href="#ic-film"/></svg></span></span>`;
     return `
       <li class="oc-rst-choice">

@@ -78,12 +78,12 @@ def test_medias_translate_modal_matches_shared_subtitle_size_options():
     assert "Number(button.dataset.size) || 10" in script
 
 
-def test_medias_list_keeps_two_row_lang_coverage_layout():
+def test_medias_list_keeps_compact_lang_coverage_rows():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert "const midpoint = Math.ceil(chips.length / 2);" in script
+    assert "for (let i = 0; i < chips.length; i += 4) rows.push(chips.slice(i, i + 4));" in script
     assert 'class="oc-lang-row"' in script
     assert ".oc-lang-bar {" in template
     assert "flex-direction:column;" in template
@@ -219,3 +219,19 @@ def test_medias_translation_tasks_parent_meta_shows_raw_source_filenames():
 
     assert "原始视频:" in script
     assert "task.raw_source_display_names" in script
+
+
+def test_medias_raw_source_translate_choices_sanitize_media_src_protocols():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    choice_block = script[
+        script.index("function renderTranslateRawSourceChoice"):
+        script.index("function renderTranslateLanguageChoice")
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "const videoUrl = safeMediaSrc(it.video_url || '');" in choice_block
+    assert "const posterUrl = safeMediaSrc(it.cover_url || '');" in choice_block
+    assert 'src="${escapeHtml(videoUrl)}"' in choice_block
+    assert 'poster="${escapeHtml(posterUrl)}"' in choice_block
+    assert "const videoUrl = escapeHtml(it.video_url || '');" not in choice_block

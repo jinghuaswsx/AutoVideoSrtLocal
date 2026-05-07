@@ -135,3 +135,16 @@ def test_edit_detail_translate_task_links_sanitize_internal_hrefs():
     assert "link.href = safeInternalHref(data.detail_url" in submit_block
     assert "escapeHtml(task.detail_url ||" not in history_block
     assert "link.href = data.detail_url ||" not in submit_block
+
+
+def test_edit_video_play_url_sanitizes_media_src_protocols():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    load_block = script[
+        script.index("async function edEnsureVideoLoaded"):
+        script.index("function edPickItemCover")
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "const playUrl = safeMediaSrc(r.url);" in load_block
+    assert 'src="${escapeHtml(playUrl)}"' in load_block
+    assert 'src="${escapeHtml(r.url)}"' not in load_block
