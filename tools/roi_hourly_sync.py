@@ -22,9 +22,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from appcore import meta_ad_accounts
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query, query_one
+from appcore.meta_ad_accounts import MetaAdAccount
 
 TIMEZONE = "Asia/Shanghai"
 STORE_SCOPE = "newjoy,omurio"
@@ -322,14 +324,18 @@ def _meta_api_get_json(url: str, token: str) -> tuple[dict[str, Any], dict[str, 
     return payload, headers
 
 
-def _fetch_meta_marketing_api_insights(business_date, snapshot_at: datetime) -> dict[str, Any]:
+def _fetch_meta_marketing_api_insights(
+    business_date,
+    snapshot_at: datetime,
+    account: MetaAdAccount,
+) -> dict[str, Any]:
     token = _meta_api_access_token()
     if not token:
         raise RuntimeError(
             "META_MARKETING_API_ACCESS_TOKEN is not configured; cannot use Meta API channel"
         )
 
-    account_id = _meta_api_account_id()
+    account_id = account.account_id
     next_url = _meta_api_insights_url(business_date, account_id)
     rows: list[dict[str, Any]] = []
     request_count = 0
@@ -430,10 +436,19 @@ def _insert_meta_realtime_campaign_metric(
     )
 
 
-def _run_meta_ads_manager_export(business_date, snapshot_at: datetime) -> dict[str, Any]:
+def _run_meta_ads_manager_export(
+    business_date,
+    snapshot_at: datetime,
+    account: MetaAdAccount,
+) -> dict[str, Any]:
     if not META_AD_EXPORT_SCRIPT.exists():
         raise FileNotFoundError(f"Meta export script not found: {META_AD_EXPORT_SCRIPT}")
-    export_dir = META_REALTIME_EXPORT_ROOT / business_date.isoformat() / snapshot_at.strftime("%Y%m%d_%H%M%S")
+    export_dir = (
+        META_REALTIME_EXPORT_ROOT
+        / business_date.isoformat()
+        / snapshot_at.strftime("%Y%m%d_%H%M%S")
+        / account.code
+    )
     export_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable,
@@ -449,9 +464,11 @@ def _run_meta_ads_manager_export(business_date, snapshot_at: datetime) -> dict[s
         "--min-day-seconds",
         "0",
         "--account-id",
-        META_AD_EXPORT_ACCOUNT_ID,
+        account.account_id,
         "--business-id",
-        META_AD_EXPORT_BUSINESS_ID,
+        account.business_id,
+        "--csv-prefix",
+        account.csv_prefix,
         "--cdp-url",
         META_AD_EXPORT_CDP_URL,
     ]
@@ -468,10 +485,12 @@ def _run_meta_ads_manager_export(business_date, snapshot_at: datetime) -> dict[s
         "command": cmd,
         "returncode": completed.returncode,
         "export_dir": str(export_dir),
+        "account_code": account.code,
+        "account_id": account.account_id,
         "stdout_tail": completed.stdout[-3000:],
         "stderr_tail": completed.stderr[-3000:],
-        "campaigns_path": str(export_dir / f"newjoyloo_campaigns_{business_date.isoformat()}.csv"),
-        "ads_path": str(export_dir / f"newjoyloo_ads_{business_date.isoformat()}.csv"),
+        "campaigns_path": str(export_dir / f"{account.csv_prefix}_campaigns_{business_date.isoformat()}.csv"),
+        "ads_path": str(export_dir / f"{account.csv_prefix}_ads_{business_date.isoformat()}.csv"),
     }
 
 
@@ -572,12 +591,14 @@ def _import_meta_realtime_campaign_rows(
     business_date,
     snapshot_at: datetime,
     campaign_path: Path,
+    account: MetaAdAccount,
 ) -> dict[str, Any]:
     rows = _read_meta_report_rows(campaign_path)
     execute(
         "DELETE FROM meta_ad_realtime_daily_campaign_metrics "
-        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial'",
-        (business_date, snapshot_at),
+        "WHERE business_date=%s AND snapshot_at=%s AND ad_account_id=%s "
+        "AND data_completeness='realtime_partial'",
+        (business_date, snapshot_at, account.account_id),
     )
     imported = 0
     spend_total = 0.0
@@ -600,7 +621,7 @@ def _import_meta_realtime_campaign_rows(
             row,
             ("账户编号", "广告账户编号", "Account ID", "Ad account ID"),
             (("account", "id"), ("账户", "编号")),
-        ) or META_AD_EXPORT_ACCOUNT_ID).strip().removeprefix("act_")
+        ) or account.account_id).strip().removeprefix("act_") or account.account_id
         account_name = str(_pick_value(
             row,
             ("账户名称", "广告账户名称", "Account name", "Ad account name"),
@@ -646,7 +667,7 @@ def _import_meta_realtime_campaign_rows(
                 run_id,
                 business_date,
                 snapshot_at,
-                account_id or META_AD_EXPORT_ACCOUNT_ID,
+                account_id or account.account_id,
                 account_name,
                 campaign_id,
                 campaign_name,
@@ -670,11 +691,13 @@ def _import_meta_realtime_api_rows(
     business_date,
     snapshot_at: datetime,
     rows: list[dict[str, Any]],
+    account: MetaAdAccount,
 ) -> dict[str, Any]:
     execute(
         "DELETE FROM meta_ad_realtime_daily_campaign_metrics "
-        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial'",
-        (business_date, snapshot_at),
+        "WHERE business_date=%s AND snapshot_at=%s AND ad_account_id=%s "
+        "AND data_completeness='realtime_partial'",
+        (business_date, snapshot_at, account.account_id),
     )
     imported = 0
     spend_total = 0.0
@@ -684,7 +707,7 @@ def _import_meta_realtime_api_rows(
         if not campaign_name_raw:
             continue
         campaign_name = _fit_text(campaign_name_raw, 255)
-        account_id = str(row.get("account_id") or _meta_api_account_id()).strip().removeprefix("act_")
+        account_id = str(row.get("account_id") or account.account_id).strip().removeprefix("act_") or account.account_id
         account_name = str(row.get("account_name") or "").strip() or None
         campaign_id = _fit_report_identifier(
             row.get("campaign_id"),
@@ -703,7 +726,7 @@ def _import_meta_realtime_api_rows(
             run_id=run_id,
             business_date=business_date,
             snapshot_at=snapshot_at,
-            account_id=account_id or _meta_api_account_id(),
+            account_id=account_id or account.account_id,
             account_name=account_name,
             campaign_id=campaign_id,
             campaign_name=campaign_name,
@@ -722,6 +745,69 @@ def _import_meta_realtime_api_rows(
         "spend_usd": spend_total,
         "account_currencies": sorted(currencies),
     }
+
+
+def _sync_meta_account_browser(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    account: MetaAdAccount,
+) -> dict[str, Any]:
+    export_report = _run_meta_ads_manager_export(business_date, snapshot_at, account)
+    result: dict[str, Any] = {"export_report": export_report}
+    rc = int(export_report.get("returncode") or 0)
+    if rc != 0:
+        if "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
+            raise RuntimeError(
+                f"[{account.code}] Meta Ads Manager export failed: server browser is not logged in"
+            )
+        raise RuntimeError(
+            f"[{account.code}] Meta Ads Manager export failed with code {rc}"
+        )
+    campaign_path = Path(str(export_report["campaigns_path"]))
+    if not campaign_path.exists() or campaign_path.stat().st_size <= 100:
+        raise RuntimeError(
+            f"[{account.code}] Meta campaign export missing or empty: {campaign_path}"
+        )
+    import_report = _import_meta_realtime_campaign_rows(
+        run_id=run_id,
+        business_date=business_date,
+        snapshot_at=snapshot_at,
+        campaign_path=campaign_path,
+        account=account,
+    )
+    result.update(import_report)
+    return result
+
+
+def _sync_meta_account_api(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    account: MetaAdAccount,
+) -> dict[str, Any]:
+    api_report = _fetch_meta_marketing_api_insights(business_date, snapshot_at, account)
+    rows = api_report.pop("rows")
+    result: dict[str, Any] = {"api_report": api_report}
+    import_report = _import_meta_realtime_api_rows(
+        run_id=run_id,
+        business_date=business_date,
+        snapshot_at=snapshot_at,
+        rows=rows,
+        account=account,
+    )
+    result.update(import_report)
+    expected_currency = os.environ.get("META_MARKETING_API_EXPECTED_CURRENCY", "USD").strip().upper()
+    currencies = [str(value).upper() for value in result.get("account_currencies") or []]
+    if expected_currency and currencies and any(value != expected_currency for value in currencies):
+        result["currency_warning"] = {
+            "expected": expected_currency,
+            "seen": currencies,
+            "message": "Spend was stored in spend_usd column but Meta returned a different account currency.",
+        }
+    return result
 
 
 def _sync_meta_realtime_daily(
@@ -744,81 +830,86 @@ def _sync_meta_realtime_daily(
             "status": "skipped",
         }
 
-    accounts = [_meta_api_account_id() if channel == "api" else META_AD_EXPORT_ACCOUNT_ID]
+    enabled_accounts = meta_ad_accounts.get_enabled_accounts()
     source_version = (
         f"api:{META_MARKETING_API_VERSION.strip()}"
         if channel == "api"
         else "ads_manager_csv"
     )
-    summary = {
+    source_label = "marketing_api_insights" if channel == "api" else "ads_manager_daily_export_script"
+    summary: dict[str, Any] = {
         "business_date": business_date,
         "snapshot_at": snapshot_at,
         "rows_imported": 0,
         "spend_usd": 0.0,
-        "accounts": accounts,
-        "source": "marketing_api_insights" if channel == "api" else "ads_manager_daily_export_script",
+        "accounts": [a.account_id for a in enabled_accounts],
+        "account_codes": [a.code for a in enabled_accounts],
+        "source": source_label,
         "channel": channel,
         "data_completeness": "realtime_partial",
+        "account_results": [],
     }
-    run_id = _start_meta_run(business_date, snapshot_at, accounts, source_version=source_version)
-    summary["run_id"] = run_id
-    try:
-        if channel == "api":
-            api_report = _fetch_meta_marketing_api_insights(business_date, snapshot_at)
-            rows = api_report.pop("rows")
-            summary["api_report"] = api_report
-            import_report = _import_meta_realtime_api_rows(
-                run_id=run_id,
-                business_date=business_date,
-                snapshot_at=snapshot_at,
-                rows=rows,
-            )
-            summary.update(import_report)
-            expected_currency = os.environ.get("META_MARKETING_API_EXPECTED_CURRENCY", "USD").strip().upper()
-            currencies = [str(value).upper() for value in summary.get("account_currencies") or []]
-            if expected_currency and currencies and any(value != expected_currency for value in currencies):
-                summary["currency_warning"] = {
-                    "expected": expected_currency,
-                    "seen": currencies,
-                    "message": "Spend was stored in spend_usd column but Meta returned a different account currency.",
-                }
-            _finish_meta_run(run_id, "success", summary)
-            summary["status"] = "success"
-            return summary
+    if not enabled_accounts:
+        summary["status"] = "skipped"
+        summary["error"] = "no enabled meta ad accounts configured"
+        return summary
 
-        export_report = _run_meta_ads_manager_export(business_date, snapshot_at)
-        summary["export_report"] = export_report
-        if int(export_report.get("returncode") or 0) != 0:
-            if "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
-                error = "Meta Ads Manager export failed: server browser is not logged in"
+    run_id = _start_meta_run(
+        business_date,
+        snapshot_at,
+        [a.account_id for a in enabled_accounts],
+        source_version=source_version,
+    )
+    summary["run_id"] = run_id
+
+    success_count = 0
+    errors: list[str] = []
+    for account in enabled_accounts:
+        account_result: dict[str, Any] = {
+            "code": account.code,
+            "account_id": account.account_id,
+            "rows_imported": 0,
+            "spend_usd": 0.0,
+        }
+        try:
+            if channel == "api":
+                report = _sync_meta_account_api(
+                    run_id=run_id,
+                    business_date=business_date,
+                    snapshot_at=snapshot_at,
+                    account=account,
+                )
             else:
-                error = f"Meta Ads Manager export failed with code {export_report.get('returncode')}"
-            _finish_meta_run(run_id, "failed", summary, error)
-            summary["status"] = "failed"
-            summary["error"] = error
-            return summary
-        campaign_path = Path(str(export_report["campaigns_path"]))
-        if not campaign_path.exists() or campaign_path.stat().st_size <= 100:
-            error = f"Meta campaign export missing or empty: {campaign_path}"
-            _finish_meta_run(run_id, "failed", summary, error)
-            summary["status"] = "failed"
-            summary["error"] = error
-            return summary
-        import_report = _import_meta_realtime_campaign_rows(
-            run_id=run_id,
-            business_date=business_date,
-            snapshot_at=snapshot_at,
-            campaign_path=campaign_path,
+                report = _sync_meta_account_browser(
+                    run_id=run_id,
+                    business_date=business_date,
+                    snapshot_at=snapshot_at,
+                    account=account,
+                )
+            account_result.update(report)
+            account_result["status"] = "success"
+            success_count += 1
+        except Exception as exc:
+            account_result["status"] = "failed"
+            account_result["error"] = str(exc)
+            errors.append(f"[{account.code}] {exc}")
+        summary["account_results"].append(account_result)
+        summary["rows_imported"] += int(account_result.get("rows_imported") or 0)
+        summary["spend_usd"] = round(
+            float(summary["spend_usd"]) + float(account_result.get("spend_usd") or 0),
+            4,
         )
-        summary.update(import_report)
-        _finish_meta_run(run_id, "success", summary)
-        summary["status"] = "success"
-        return summary
-    except Exception as exc:
-        summary["status"] = "failed"
-        summary["error"] = str(exc)
-        _finish_meta_run(run_id, "failed", summary, str(exc))
-        return summary
+
+    if success_count > 0:
+        run_status = "success"
+    else:
+        run_status = "failed"
+    error_message = "; ".join(errors) if errors else None
+    summary["status"] = run_status
+    if error_message:
+        summary["error"] = error_message
+    _finish_meta_run(run_id, run_status, summary, error_message)
+    return summary
 
 
 def _hour_ranges(window_start: datetime, window_end: datetime) -> list[tuple[datetime, datetime]]:

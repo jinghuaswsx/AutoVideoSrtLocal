@@ -97,6 +97,17 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - `detail_extra` 占位符位置：[_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 的 `{% block content %}` 内、`{% include "_task_workbench.html" %}` 之后、`{% endif %}` 之前。内容由此自然落进 `<main class="main-content">`。新增第四个 detail_mode（比如 av_sync 之外的）时，沿用同一 block。
 - 自检：改动 [multi_translate_detail.html](web/templates/multi_translate_detail.html) / [omni_translate_detail.html](web/templates/omni_translate_detail.html) / [ja_translate_detail.html](web/templates/ja_translate_detail.html) / [_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 后，至少运行 `pytest tests/test_multi_translate_routes.py tests/test_omni_translate_routes.py tests/test_runtime_multi_asr_normalize.py -q`；如有 asr-normalize-card 渲染路径，再用 Playwright 或 devtools 确认 `document.querySelector('section.asr-normalize-card').parentElement` 链路上能找到 `<main class="main-content">`，且其 `getBoundingClientRect()` 横向 bbox 在 main 的 left/right 内（不会贴 viewport 右沿）。
 
+## Meta 广告多账户同步（2026-05-07 起）
+
+详细设计：[docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md](docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md)
+
+- 账户配置存 `system_settings.meta_ad_accounts`（JSON 数组），不要把 `account_id` / `business_id` / CSV 前缀写回硬编码常量。
+- 每个账户字段：`code`、`label`、`account_id`、`business_id`、`csv_prefix`、`enabled`、可选 `note`。`code` 全局唯一、用作 export 子目录名。`csv_prefix` 保留原始大小写（newjoyloo 全小写、Omurio 首字母大写）。
+- `tools/roi_hourly_sync.py:_sync_meta_realtime_daily` 每次 tick 遍历所有 `enabled=true` 的账户，**单账户失败不影响其他账户**——失败信息写进 `summary_json.account_results[*]`，整体 `status` 只在全部账户失败时才标 failed。
+- 新增 / 暂停账户的标准做法：改 `system_settings.meta_ad_accounts` JSON。账户被封先 `enabled=false`，解封后翻 true 即可。**不要去删 `meta_ad_realtime_*` 历史数据**，那是按 `ad_account_id` 分行的。
+- CSV 导出目录按账户分子目录：`output/meta_realtime_exports/<business_date>/<snapshot_ts>/<account.code>/<account.csv_prefix>_*.csv`。`scripts/run_meta_ads_backfill_range.py` 接受 `--csv-prefix` 参数。
+- 改这条链路至少运行 `pytest tests/test_roi_hourly_sync.py tests/test_roi_hourly_sync_meta_multi_account.py -q`。
+
 ---
 
 # Frontend Design System — Ocean Blue Admin
