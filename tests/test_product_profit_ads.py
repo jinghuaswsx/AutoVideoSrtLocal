@@ -90,6 +90,37 @@ def test_generate_ads_report_matched_campaign_aggregates():
     assert result["unmatched"] == []
 
 
+def test_generate_ads_report_marks_manual_override_campaign():
+    """手动绑定的 campaign 行返回 override id，供前端显示解绑按钮。"""
+    fake_metrics = [
+        {
+            "report_date": date(2026, 5, 5),
+            "ad_account_id": "2110407576446225",
+            "ad_account_name": "newjoyloo",
+            "normalized_campaign_code": "manual-campaign",
+            "campaign_name": "Manual Campaign",
+            "product_id": 100,
+            "matched_product_code": "manual-product",
+            "manual_override_id": 9,
+            "spend_usd": Decimal("8.00"),
+            "result_count": 5,
+            "purchase_value_usd": Decimal("60.00"),
+            "roas_purchase": Decimal("7.50"),
+        },
+    ]
+    with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
+         patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
+         patch.object(ppa, "_load_attributed_orders", return_value={}):
+        result = ppa.generate_ads_report(
+            product_id=100,
+            date_from=date(2026, 5, 1),
+            date_to=date(2026, 5, 7),
+        )
+
+    assert result["campaigns"][0]["manual_override_id"] == 9
+
+
 def test_generate_ads_report_unmatched_goes_to_unmatched_bucket():
     """campaign 没有 product_id 且 resolve_ad_product_match 也匹配不上 → 进 unmatched。"""
     fake_metrics = [
