@@ -473,7 +473,7 @@
       }
       renderPagination();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="${colspan}">加载失败: ${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${colspan}">加载失败: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
 

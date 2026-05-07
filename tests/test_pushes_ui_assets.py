@@ -164,6 +164,13 @@ def test_push_log_drawer_escapes_log_text_fields():
     assert "${l.response_body.slice(0, 500)}" not in view_logs
 
 
+def test_pushes_load_error_escapes_exception_message():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert 'tbody.innerHTML = `<tr><td colspan="${colspan}">加载失败: ${escapeHtml(e.message)}</td></tr>`;' in script
+    assert 'tbody.innerHTML = `<tr><td colspan="${colspan}">加载失败: ${e.message}</td></tr>`;' not in script
+
+
 def test_pushes_and_medias_use_shared_ai_evaluation_detail_modal():
     shared = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
     pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")
