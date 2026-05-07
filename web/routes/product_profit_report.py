@@ -14,7 +14,10 @@ from flask_login import login_required
 
 from web.auth import permission_required
 
+from appcore.order_analytics import product_profit_ads as ppa
+from appcore.order_analytics import product_profit_list as ppl
 from appcore.order_analytics import product_profit_report as ppr
+from appcore.order_analytics.meta_ads import manual_match_meta_ad_campaign
 from appcore.order_analytics.shopify_payments_import import import_payments_csv
 from web.services.product_profit_report import (
     build_product_profit_report_error_response,
@@ -197,4 +200,173 @@ def api_report_json():
 
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(_iso_dict(report))
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tab ① 全产品聚合列表
+# ---------------------------------------------------------------------------
+@bp.route("/list.json", methods=["GET"])
+@login_required
+@permission_required("product_profit")
+def api_list_json():
+    """全产品聚合列表（Tab ① 数据源）。
+
+    Query:
+      date_from (YYYY-MM-DD, default = month-start)
+      date_to   (YYYY-MM-DD, default = today)
+      country   (大写国家代码，可选；空 / "all" = 全部)
+    """
+    today = date.today()
+    month_start = today.replace(day=1)
+    date_from = _parse_date(request.args.get("date_from"), month_start)
+    date_to = _parse_date(request.args.get("date_to"), today)
+    if date_from > date_to:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("date_from > date_to", 400)
+        )
+
+    country = (request.args.get("country") or "").strip() or None
+    result = ppl.generate_list(date_from=date_from, date_to=date_to, country=country)
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response(result)
+    )
+
+
+@bp.route("/list.xlsx", methods=["GET"])
+@login_required
+@permission_required("product_profit")
+def api_list_xlsx():
+    """全产品聚合列表的 xlsx 导出（2 sheet：summary + products）。"""
+    today = date.today()
+    month_start = today.replace(day=1)
+    date_from = _parse_date(request.args.get("date_from"), month_start)
+    date_to = _parse_date(request.args.get("date_to"), today)
+    if date_from > date_to:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("date_from > date_to", 400)
+        )
+
+    country = (request.args.get("country") or "").strip() or None
+    report = ppl.generate_list(date_from=date_from, date_to=date_to, country=country)
+    xlsx_bytes = ppl.generate_list_xlsx(
+        report, date_from=date_from, date_to=date_to, country=country,
+    )
+
+    # 选具体国家时把大写国家代码拼进文件名，避免「越南 / 全部」下载同名混淆。
+    if country and country.lower() != "all":
+        country_part = f"{country.upper()}_"
+    else:
+        country_part = ""
+    filename = (
+        f"product_profit_list_{country_part}"
+        f"{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    )
+    return send_file(
+        io.BytesIO(xlsx_bytes),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tab ④ 广告明细
+# ---------------------------------------------------------------------------
+@bp.route("/ads.json", methods=["GET"])
+@login_required
+@permission_required("product_profit")
+def api_ads_json():
+    """单产品广告明细（Tab ④ 数据源）。
+
+    Query:
+      product_id (int, required)
+      date_from (YYYY-MM-DD, default = today - 30d)
+      date_to   (YYYY-MM-DD, default = today)
+      country   (大写国家代码，可选；空 / "all" = 全部)
+    """
+    try:
+        product_id = int(request.args.get("product_id", "0"))
+    except ValueError:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("invalid product_id", 400)
+        )
+    if product_id <= 0:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("missing product_id", 400)
+        )
+
+    today = date.today()
+    date_to = _parse_date(request.args.get("date_to"), today)
+    date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
+    if date_from > date_to:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("date_from > date_to", 400)
+        )
+
+    country = (request.args.get("country") or "").strip() or None
+    try:
+        report = ppa.generate_ads_report(
+            product_id=product_id,
+            date_from=date_from,
+            date_to=date_to,
+            country=country,
+        )
+    except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
+        log.exception("generate_ads_report failed")
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
+        )
+
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response(report)
+    )
+
+
+@bp.route("/ads/manual-match", methods=["POST"])
+@login_required
+@permission_required("product_profit")
+def api_ads_manual_match():
+    """手动把 normalized_campaign_code 配对到 media_products 产品。
+
+    JSON Body:
+      campaign_code (str, required) — normalized_campaign_code
+      product_id    (int, required) — media_products.id
+      reason        (str, optional)
+    """
+    payload = request.get_json(silent=True) or {}
+
+    campaign_code = (payload.get("campaign_code") or "").strip()
+    if not campaign_code:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("missing campaign_code", 400)
+        )
+
+    raw_product_id = payload.get("product_id")
+    try:
+        product_id = int(raw_product_id) if raw_product_id is not None else 0
+    except (TypeError, ValueError):
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("invalid product_id", 400)
+        )
+    if product_id <= 0:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("missing product_id", 400)
+        )
+
+    reason = (payload.get("reason") or "").strip()
+    try:
+        result = manual_match_meta_ad_campaign(
+            campaign_code,
+            product_id,
+            reason=reason,
+        )
+    except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
+        log.exception("manual_match_meta_ad_campaign failed")
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
+        )
+
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response({"ok": True, **result})
     )
