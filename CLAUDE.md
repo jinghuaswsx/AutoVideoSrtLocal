@@ -19,19 +19,23 @@
   - 不要把 token 拷到对话里（即便用户原始提供的那条消息已经在 transcript 里，也不要在新消息里复述）。
 - 失效兜底：如果 push 报 403/401，先确认 `~/.git-credentials` 还在、文件权限是 600；只有当确认 token 被 revoke 时，才请用户重新签发并直接 `printf 'https://jinghuaswsx:NEW_TOKEN@github.com\n' > ~/.git-credentials && chmod 600 ~/.git-credentials` 覆盖更新。
 
-## 本机发布流程（线上 / 测试）
+## 发布流程（线上 / 测试）
 
-**硬规则：本机就是部署机，不走 SSH，不走 `deploy/publish.sh`。**
+**通用约束**：
 
 - 线上环境：`http://172.30.254.14/`，目录 `/opt/autovideosrt`，服务 `autovideosrt.service`。
 - 测试环境：`http://172.30.254.14:8080/`，目录 `/opt/autovideosrt-test`，服务 `autovideosrt-test.service`。
 - 代码先在 worktree 完成验证并提交，再合并到 `master`，再 `git push origin master`。
-- 发布目录属于 `root`，本机发布必须用 `sudo` 在本机执行 `git pull` + `systemctl restart`。
-- **不要使用 `ssh root@172.30.254.14 ...`，不要要求 `~/.ssh/CC.pem`，不要调用 `bash deploy/publish.sh`。** 这些是旧的外部开发机发布方式。
+- 发布目录属于 `root`，需要 `sudo` 或 `root` 权限做 `git pull` + `systemctl restart`。
 - 发布后 systemd 启动会自动 apply 所有未登记的 SQL migration（参考全局 memory `deploy_migration_workflow`）。**不要手动跑 SQL**——除非同时 `INSERT INTO schema_migrations` 登记，否则启动器会重复执行报错。
 - 用户没说“测试发布 / 发测试”时，不要主动重启测试服务；用户没说“线上发布 / 发布线上 / 上线”时，不要主动重启线上服务。
+- `deploy/publish.sh` 已废弃，**任何场景都不要调用它**。
 
-### 测试发布
+**两种 Claude 跑环境，部署路径不同**：
+
+### 路径 A — Claude 跑在 Linux 服务器（172.30.254.14 上的 cjh agent）
+
+**这是默认场景**。本机就是部署机，cjh 已配 sudo 密码（参见仓库内提示），直接本机 `sudo` 跑：
 
 ```bash
 git push origin master
@@ -48,14 +52,51 @@ curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/
 '
 ```
 
-期望：`systemctl is-active` 输出 `active`，HTTP 返回 `200` 或登录跳转 `302`，不能是 `404/500/000`。
+线上发布同款，把 `-test` 去掉、目录换 `/opt/autovideosrt`、加上 systemd unit 同步检查（见下方"完整线上命令"）。
 
-### 线上发布
+**禁用清单（路径 A）**：
+- 不要 `ssh root@172.30.254.14 ...`，本机已经在那台机器上了。
+- 不要要求 `~/.ssh/CC.pem`，sudo 比 ssh 更直接。
+
+### 路径 B — Claude 跑在外部工作站（Windows admin / Mac / 其它）
+
+**条件**：当前 Claude 不在 `172.30.254.14`（uname / hostname 不是 `autovideosrt`），但能 ssh 到它。
+
+允许走 **SSH + key 认证**直接登 prod root：
+
+- key：`~/.ssh/CC.pem`（Windows: `$env:USERPROFILE\.ssh\CC.pem`）
+- 用户：`root`（避免再 `sudo` 一层）
+- ssh 命令：`ssh -i <CC.pem> -o BatchMode=yes root@172.30.254.14 '<command>'`
+- 把"路径 A"里 `sudo -S -k bash -c '...'` 的 here-doc 内容**原样**喂给 ssh stdin（去掉 `sudo -S -k`，因为 root 不需要再 sudo）。
+
+例子（Windows PowerShell，测试发布）：
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\CC.pem" -o BatchMode=yes root@172.30.254.14 @'
+set -e
+cd /opt/autovideosrt-test
+git config --global --add safe.directory /opt/autovideosrt-test || true
+git pull origin master --ff-only
+systemctl restart autovideosrt-test
+sleep 3
+systemctl is-active autovideosrt-test
+curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/
+'@
+```
+
+**约束（路径 B）**：
+- 仍然遵守"未经许可不得 restart 服务"硬规则——用户要明确说"发布 / 发测试 / 上线"才能 restart。
+- 不要走 `bash deploy/publish.sh`，那是废弃的旧 publish 流程。
+- ssh 命令里只放发布相关的命令，不要顺手做别的运维动作。
+- here-string / here-doc 里 `'` 配对要小心（PowerShell `@'...'@` 单引号 here-string 不展开 `$`，但内部 bash 会照常解析其中的单引号配对）。
+
+### 完整线上发布命令（适用两条路径，路径 A 加 `sudo -S -k bash -c '...'` 包一层）
 
 ```bash
 git push origin master
 
-sudo -S -k bash -c '
+# 路径 A：sudo -S -k bash -c '...' 
+# 路径 B：ssh -i CC.pem root@172.30.254.14 << 'EOF' ... EOF
 set -e
 git config --global --add safe.directory /opt/autovideosrt || true
 cd /opt/autovideosrt
@@ -69,10 +110,20 @@ systemctl restart autovideosrt
 sleep 3
 systemctl is-active autovideosrt
 curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
-'
 ```
 
 期望：`systemctl is-active` 输出 `active`，HTTP 返回 `200` 或登录跳转 `302`，不能是 `404/500/000`。
+
+### 基础设施凭据 / TOS Bucket 配置（重要）
+
+`config.TOS_BUCKET` / `config.TOS_ACCESS_KEY` 等基础设施凭据**不是从 .env 读的**，而是启动时由 [appcore/infra_credentials.py](appcore/infra_credentials.py) 的 `sync_to_runtime()` 从 DB 表 `infra_credentials`（行 `tos_main` / `tos_backup` / `vod_main`）覆盖到 `config.XXX` 模块属性。
+
+- `.env` 里的同名变量是 **fallback**，DB 行未启用时才生效；DB 行启用后 .env 完全被覆盖。
+- 改这些值的两条路：
+  1. **admin UI**（首选）：登录 `/settings?tab=infrastructure`，改完保存，`save_config()` 自动 `sync_to_runtime()` + 失效 SDK client 缓存，**不需要 restart**。
+  2. **直接调 DAO**（没有 UI 时兜底）：跑一次性 python `infra_credentials.save_config("tos_main", {"bucket": "..."}, updated_by=None)`。但这只在调用进程里 sync，gunicorn worker 仍持旧值——**调完必须 `systemctl restart`**。
+- **千万不要**只改 `.env` 然后 restart 就以为生效——DB 行启用着，restart 后 sync_to_runtime 会再次用 DB 旧值覆盖你刚改的 .env。
+- 现役主桶：`autovideosrtlocal`（与 ASR / 灾备共用，prefix 隔离）。旧桶 `auto-video-srt` 已删除，任何 NoSuchBucket 报错先怀疑这条配置链路。
 
 ## Shopify Image Localizer 发布打包
 
