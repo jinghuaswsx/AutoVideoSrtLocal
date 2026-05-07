@@ -1204,9 +1204,16 @@
 
   function selectProductFromPicker(label) {
     if (!label || !productLabelToId[label]) return;
+    var selectedProductId = String(productLabelToId[label] || '');
     productInput.value = label;
     closeProductModal();
-    reloadActiveTab();
+    if (selectedProductId === '0') {
+      if (window.switchTab) window.switchTab('list');
+      else if (window.loadListTab) window.loadListTab();
+      return;
+    }
+    if (window.switchTab) window.switchTab('orders');
+    else if (window.loadOrdersTab) window.loadOrdersTab();
   }
 
   // ── 数字格式化 ───────────────────────────

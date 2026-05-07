@@ -48,6 +48,13 @@ def test_product_profit_product_search_has_no_concrete_default():
     assert "productInput.value = ALL_LABEL;" not in TEMPLATE
 
 
+def test_product_profit_product_picker_redirects_after_selection():
+    assert "if (selectedProductId === '0') {" in TEMPLATE
+    assert "window.switchTab('list');" in TEMPLATE
+    assert "window.switchTab('orders');" in TEMPLATE
+    assert "reloadActiveTab();" not in TEMPLATE
+
+
 def test_product_profit_ads_campaigns_support_manual_unbind_only():
     assert "manual_override_id" in TEMPLATE
     assert "unbindManualCampaign" in TEMPLATE
