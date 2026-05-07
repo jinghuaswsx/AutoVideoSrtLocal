@@ -107,7 +107,7 @@ def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[d
         "  opl.buyer_country, opl.line_amount_usd, opl.shipping_allocated_usd, "
         "  opl.revenue_usd, opl.shopify_fee_usd, opl.purchase_usd, "
         "  opl.shipping_cost_usd, opl.return_reserve_usd, opl.profit_usd AS profit_old_usd, "
-        "  opl.shopify_tier, opl.status, "
+        "  opl.shopify_tier, opl.status, opl.missing_fields, opl.cost_basis, "
         "  dol.dxm_package_id, dol.extended_order_id, dol.site_code, "
         "  dol.product_sku, dol.product_display_sku, dol.product_name, "
         "  dol.quantity, dol.unit_price, dol.line_amount AS line_amount_native, "
@@ -240,15 +240,45 @@ def _recalc_ad_cost(line: dict[str, Any], site_units: dict, account_spend: dict)
 def _build_order_row(line: dict[str, Any], site_units: dict, account_spend: dict, real_fees: dict) -> dict[str, Any]:
     """组装单条报表行（含 7 列拆分 + 重算利润）。
 
-    incomplete 行：收入侧仍展示真实数字（line_amount + shipping_allocated），
-    成本侧（采购/物流/手续费/退货占用/利润）返回 None 让前端 num() 显示 "—"。
-    ad_cost 不受 incomplete 影响——始终按账户↔店铺映射现场重算。
+    incomplete 行：calculate_line_profit 已经在缺采购价/物流时用 fallback 比例
+    （PURCHASE_FALLBACK_RATIO=0.10 / SHIPPING_FALLBACK_RATIO=0.20）算出估算值，
+    本函数把这些估算值带出 + 标注 cost_basis_source / estimated_fields，
+    前端据此渲染 "估算" 标签。ad_cost 始终按账户↔店铺映射现场重算。
     """
     is_incomplete = line.get("status") == "incomplete"
     revenue = float(line.get("revenue_usd") or 0)
     line_amount = float(line.get("line_amount_usd") or 0)
     shipping_allocated = float(line.get("shipping_allocated_usd") or 0)
     buyer_country = line.get("buyer_country")
+
+    # 解析 cost_basis 拿出估算字段标识（DB 里以 JSON 文本存）
+    raw_cost_basis = line.get("cost_basis")
+    cost_basis_dict: dict = {}
+    if isinstance(raw_cost_basis, dict):
+        cost_basis_dict = raw_cost_basis
+    elif isinstance(raw_cost_basis, str) and raw_cost_basis:
+        try:
+            import json as _json
+            cost_basis_dict = _json.loads(raw_cost_basis) or {}
+        except (ValueError, TypeError):
+            cost_basis_dict = {}
+    estimated_fields = list(cost_basis_dict.get("estimated_fields") or [])
+    if is_incomplete and not estimated_fields:
+        # 历史数据可能没回填 cost_basis.estimated_fields，从 missing_fields 兜底推断
+        raw_missing = line.get("missing_fields")
+        missing_list: list = []
+        if isinstance(raw_missing, list):
+            missing_list = raw_missing
+        elif isinstance(raw_missing, str) and raw_missing:
+            try:
+                import json as _json
+                missing_list = _json.loads(raw_missing) or []
+            except (ValueError, TypeError):
+                missing_list = []
+        if "purchase_price" in missing_list:
+            estimated_fields.append("purchase")
+        if "shipping_cost" in missing_list:
+            estimated_fields.append("shipping_cost")
 
     # ad_cost 跟 status 无关（按 site/account 1:1 + 当日 spend 现场算）
     ad_cost_recalc = _recalc_ad_cost(line, site_units, account_spend)
@@ -257,22 +287,23 @@ def _build_order_row(line: dict[str, Any], site_units: dict, account_spend: dict
     order_name = line.get("extended_order_id") or ""
     fee_source = "real" if order_name in real_fees else "estimated"
 
-    if is_incomplete:
-        purchase = None
-        shipping_cost = None
-        return_reserve = None
-        shopify_fee_total = None
-        fee_split = {"base_fee": None, "intl_fee": None, "conv_fee": None}
-        profit_recalc = None
+    # 成本字段：一律取 DB 上的值（incomplete 时这些是 calc 用 fallback 估算的）
+    purchase = round(float(line.get("purchase_usd") or 0), 4) if line.get("purchase_usd") is not None else 0.0
+    shipping_cost = round(float(line.get("shipping_cost_usd") or 0), 4) if line.get("shipping_cost_usd") is not None else 0.0
+    return_reserve = round(float(line.get("return_reserve_usd") or 0), 4) if line.get("return_reserve_usd") is not None else 0.0
+    shopify_fee_total = round(float(line.get("shopify_fee_usd") or 0), 4) if line.get("shopify_fee_usd") is not None else 0.0
+    fee_split = _split_shopify_fee(line_amount, shopify_fee_total, buyer_country)
+    profit_recalc = round(
+        revenue - shopify_fee_total - ad_cost_recalc - purchase - shipping_cost - return_reserve, 4
+    )
+
+    # cost_basis_source: 整体一行的成本性质标识，给前端用
+    if not is_incomplete:
+        cost_basis_source = "real"  # 完整真实
+    elif len(estimated_fields) >= 2:
+        cost_basis_source = "estimated"  # 全估算
     else:
-        purchase = round(float(line.get("purchase_usd") or 0), 4)
-        shipping_cost = round(float(line.get("shipping_cost_usd") or 0), 4)
-        return_reserve = round(float(line.get("return_reserve_usd") or 0), 4)
-        shopify_fee_total = round(float(line.get("shopify_fee_usd") or 0), 4)
-        fee_split = _split_shopify_fee(line_amount, shopify_fee_total, buyer_country)
-        profit_recalc = round(
-            revenue - shopify_fee_total - ad_cost_recalc - purchase - shipping_cost - return_reserve, 4
-        )
+        cost_basis_source = "partial_estimated"  # 仅部分字段估算
 
     return {
         "dxm_package_id": line.get("dxm_package_id"),
@@ -307,6 +338,10 @@ def _build_order_row(line: dict[str, Any], site_units: dict, account_spend: dict
             if line.get("profit_old_usd") is not None else None
         ),
         "status": line.get("status"),
+        # 整体成本性质："real" / "partial_estimated" / "estimated"
+        "cost_basis_source": cost_basis_source,
+        # 哪些成本字段是估算（"purchase" / "shipping_cost"）
+        "estimated_fields": estimated_fields,
     }
 
 
@@ -449,6 +484,9 @@ def generate_report(
     total_profit = round(sum(_n(o["profit_usd"]) for o in orders), 2)
     orders_count = len({o["dxm_package_id"] for o in orders})
     incomplete_orders_count = sum(1 for o in orders if o.get("status") == "incomplete")
+    # 估算行的成本贡献（让前端能展示 "X 收入由估算成本支撑"）
+    estimated_revenue = round(sum(_n(o["revenue_usd"]) for o in orders if o.get("status") == "incomplete"), 2)
+    estimated_profit_contrib = round(sum(_n(o["profit_usd"]) for o in orders if o.get("status") == "incomplete"), 2)
 
     product_row = query_one(
         "SELECT id, product_code, name FROM media_products WHERE id=%s",
@@ -477,6 +515,11 @@ def generate_report(
             1,
         ),
         "incomplete_lines": incomplete_orders_count,
+        "incomplete_pct": round(100 * incomplete_orders_count / max(len(orders), 1), 1),
+        "estimated_revenue_usd": estimated_revenue,
+        "estimated_profit_usd": estimated_profit_contrib,
+        "fallback_purchase_ratio_pct": 10.0,  # PURCHASE_FALLBACK_RATIO × 100
+        "fallback_shipping_ratio_pct": 20.0,  # SHIPPING_FALLBACK_RATIO × 100
     }
 
     return {

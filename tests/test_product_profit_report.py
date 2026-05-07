@@ -341,10 +341,11 @@ def test_generate_report_end_to_end(monkeypatch):
 
 
 def test_generate_report_incomplete_row_keeps_revenue_blanks_costs(monkeypatch):
-    """incomplete 行：revenue 仍展示真实数字，成本/利润字段返 None（前端显示 "—"）。
+    """incomplete 行（含估算值）：UI 收到估算成本 + estimated_fields 标识。
 
-    业务背景：旧逻辑下 incomplete 行所有金额字段都被仓储层写 NULL → 报表把 NULL 当 0 →
-    UI 大批订单显示 0 收入，看着像账户跑路了。修复后 incomplete 行保留收入侧客观数字。
+    业务背景：缺采购价 / 物流成本时，calculate_line_profit 用 fallback 比例估算成本
+    （purchase = revenue × 10%, shipping = revenue × 20%）；report 层把估算值带出 +
+    标注 cost_basis_source / estimated_fields，前端据此渲染 "估算" 标签。
     """
     d = date(2026, 4, 15)
     lines = [
@@ -355,18 +356,25 @@ def test_generate_report_incomplete_row_keeps_revenue_blanks_costs(monkeypatch):
             "revenue_usd": 55.0, "shopify_fee_usd": 1.65, "purchase_usd": 8.0,
             "shipping_cost_usd": 5.0, "return_reserve_usd": 0.55, "profit_old_usd": 30.0,
             "shopify_tier": "A", "status": "ok",
+            "missing_fields": "[]", "cost_basis": '{"estimated_fields": []}',
             "dxm_package_id": "P1", "extended_order_id": "#1001", "site_code": "newjoy",
             "product_sku": "SKU-A", "product_display_sku": "SKU-A", "product_name": "ARP9",
             "quantity": 1, "unit_price": 50.0, "line_amount_native": 50.0,
             "order_amount_native": 55.0, "order_currency": "USD", "platform": "Shopify",
         },
-        # 一行 incomplete：revenue 有，成本字段 NULL（DB 状态）
+        # 一行 incomplete-estimated（缺采购价，DB 已经存了估算值）
         {
             "dxm_order_line_id": 2, "business_date": d, "paid_at": datetime(2026, 4, 15, 11),
-            "buyer_country": "GB", "line_amount_usd": 60.0, "shipping_allocated_usd": 6.0,
-            "revenue_usd": 66.0, "shopify_fee_usd": None, "purchase_usd": None,
-            "shipping_cost_usd": None, "return_reserve_usd": None, "profit_old_usd": None,
-            "shopify_tier": None, "status": "incomplete",
+            "buyer_country": "GB",
+            "line_amount_usd": 60.0, "shipping_allocated_usd": 6.0, "revenue_usd": 66.0,
+            "shopify_fee_usd": 3.30,
+            "purchase_usd": 6.6,   # = 66 × 10% 估算值
+            "shipping_cost_usd": 5.0,
+            "return_reserve_usd": 0.66,
+            "profit_old_usd": None,
+            "shopify_tier": "D", "status": "incomplete",
+            "missing_fields": '["purchase_price"]',
+            "cost_basis": '{"estimated_fields": ["purchase"], "purchase_fallback_ratio": 0.10}',
             "dxm_package_id": "P2", "extended_order_id": "#1002", "site_code": "newjoy",
             "product_sku": "SKU-B", "product_display_sku": "SKU-B", "product_name": "Insect Set",
             "quantity": 1, "unit_price": 60.0, "line_amount_native": 60.0,
@@ -379,34 +387,29 @@ def test_generate_report_incomplete_row_keeps_revenue_blanks_costs(monkeypatch):
 
     report = ppr.generate_report(product_id=427, date_from=d, date_to=d)
 
-    # 订单明细
     o_ok, o_inc = report["orders"][0], report["orders"][1]
-    # ok 行：所有字段都有值
-    assert o_ok["status"] == "ok"
-    assert o_ok["revenue_usd"] == pytest.approx(55.0)
+    # ok 行：cost_basis_source = real，estimated_fields 空
+    assert o_ok["cost_basis_source"] == "real"
+    assert o_ok["estimated_fields"] == []
     assert o_ok["purchase_cost_usd"] == pytest.approx(8.0)
-    assert o_ok["profit_usd"] is not None
 
-    # incomplete 行：收入有、成本/利润是 None
+    # incomplete 行：估算值有数字，标记 partial_estimated（仅 purchase 估算）
     assert o_inc["status"] == "incomplete"
     assert o_inc["revenue_usd"] == pytest.approx(66.0)
-    assert o_inc["line_amount_usd"] == pytest.approx(60.0)
-    assert o_inc["shipping_allocated_usd"] == pytest.approx(6.0)
-    assert o_inc["purchase_cost_usd"] is None
-    assert o_inc["shipping_cost_usd"] is None
-    assert o_inc["shopify_fee_total_usd"] is None
-    assert o_inc["shopify_base_fee_usd"] is None
-    assert o_inc["intl_card_fee_usd"] is None
-    assert o_inc["currency_conv_fee_usd"] is None
-    assert o_inc["return_reserve_usd"] is None
-    assert o_inc["profit_usd"] is None
-    # ad_cost 仍现场算（不依赖 status）
-    assert o_inc["ad_cost_recalc_usd"] == pytest.approx(10.0)  # 20 spend / 2 units * 1 = 10
+    assert o_inc["purchase_cost_usd"] == pytest.approx(6.6)  # 估算值带出
+    assert o_inc["shipping_cost_usd"] == pytest.approx(5.0)
+    assert o_inc["profit_usd"] is not None
+    assert o_inc["cost_basis_source"] == "partial_estimated"
+    assert o_inc["estimated_fields"] == ["purchase"]
+    assert o_inc["ad_cost_recalc_usd"] == pytest.approx(10.0)
 
-    # 聚合：revenue 包含两行；成本/利润只反映 ok 行（_n() 把 None 当 0）
+    # 总账：incomplete 行也参与 sum
     assert report["total"]["revenue_usd"] == pytest.approx(121.0)  # 55 + 66
-    assert report["total"]["purchase_usd"] == pytest.approx(8.0)   # 只有 ok 行
+    assert report["total"]["purchase_usd"] == pytest.approx(14.6)   # 8 + 6.6
     assert report["total"]["incomplete_lines"] == 1
+    assert report["total"]["incomplete_pct"] == 50.0  # 1 / 2
+    assert report["total"]["fallback_purchase_ratio_pct"] == 10.0
+    assert report["total"]["fallback_shipping_ratio_pct"] == 20.0
 
 
 def test_generate_xlsx_produces_valid_bytes(monkeypatch):

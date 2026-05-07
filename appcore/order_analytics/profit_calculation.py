@@ -29,6 +29,13 @@ from .shopify_fee import estimate_fee_for_buyer_country
 _DEFAULT_RETURN_RESERVE_RATE = Decimal("0.01")
 _RETURN_RESERVE_RATE_SETTING_KEY = "order_profit_return_reserve_rate"
 
+# Fallback ratios — 当产品 media_products 上没维护采购价/物流成本时的估算公式：
+#   purchase_usd = revenue × PURCHASE_FALLBACK_RATIO
+#   shipping_cost_usd = revenue × SHIPPING_FALLBACK_RATIO
+# 这些是粗略估算，让 incomplete 行的利润仍可参考；真实数字仍需 admin 在 medias 维护。
+PURCHASE_FALLBACK_RATIO = Decimal("0.10")
+SHIPPING_FALLBACK_RATIO = Decimal("0.20")
+
 
 def get_configured_return_reserve_rate() -> Decimal:
     """读 system_settings.order_profit_return_reserve_rate（默认 0.01 = 1%）。
@@ -85,33 +92,17 @@ def calculate_line_profit(
         若不完备：
             {status: 'incomplete', profit_usd: None, missing_fields: [...]}
     """
-    # 1. 完备性 gate
+    # 1. 完备性检查（不再 early return：缺数据的字段用估算 fallback，让 profit 仍可算）
     missing: list[str] = []
+    estimated_fields: list[str] = []
     if line.get("product_purchase_price_cny") is None:
         missing.append("purchase_price")
+        estimated_fields.append("purchase")
     if line.get("shipping_cost_cny") is None:
         missing.append("shipping_cost")
-    if missing:
-        # incomplete 行也要把订单的客观收入写出来：line_amount + shipping_allocated
-        # 不依赖任何成本数据 → 即便采购价/物流成本待补也不影响。
-        # 成本侧字段（shopify_fee/ad_cost/purchase/shipping_cost/return_reserve/profit）
-        # 在缺少基础数据时仍然返回 None，让仓储层写 NULL、UI 展示 "—"。
-        line_amount = _to_decimal(line.get("line_amount_usd"))
-        shipping_allocated = _to_decimal(line.get("shipping_allocated_usd"))
-        revenue = line_amount + shipping_allocated
-        return {
-            "status": "incomplete",
-            "profit_usd": None,
-            "missing_fields": missing,
-            "dxm_order_line_id": line.get("dxm_order_line_id"),
-            "product_id": line.get("product_id"),
-            "buyer_country": line.get("buyer_country"),
-            "line_amount_usd": _q4(line_amount),
-            "shipping_allocated_usd": _q4(shipping_allocated),
-            "revenue_usd": _q4(revenue),
-        }
+        estimated_fields.append("shipping_cost")
 
-    # 2. 收入侧
+    # 2. 收入侧（不依赖完备性，永远算）
     line_amount = _to_decimal(line.get("line_amount_usd"))
     shipping_allocated = _to_decimal(line.get("shipping_allocated_usd"))
     revenue = line_amount + shipping_allocated
@@ -146,23 +137,33 @@ def calculate_line_profit(
         daily_spend_usd=float(line.get("sku_daily_ad_spend_usd") or 0),
     ))
 
-    # 5. 采购成本（CNY → USD）
+    # 5. 采购成本（CNY → USD），缺采购价时按 revenue × PURCHASE_FALLBACK_RATIO 估算
     quantity = _to_decimal(line.get("quantity"))
-    purchase_cny = _to_decimal(line.get("product_purchase_price_cny"))
-    purchase_usd = (purchase_cny * quantity) / rmb_per_usd
+    if "purchase" in estimated_fields:
+        purchase_usd = revenue * PURCHASE_FALLBACK_RATIO
+        purchase_cny = Decimal("0")  # 真实值未知
+    else:
+        purchase_cny = _to_decimal(line.get("product_purchase_price_cny"))
+        purchase_usd = (purchase_cny * quantity) / rmb_per_usd
 
-    # 6. 小包物流成本（CNY → USD），已由调用方预解析为行级总额
-    shipping_cost_cny = _to_decimal(line.get("shipping_cost_cny"))
-    shipping_cost_usd = shipping_cost_cny / rmb_per_usd
+    # 6. 小包物流成本（CNY → USD），缺物流成本时按 revenue × SHIPPING_FALLBACK_RATIO 估算
+    if "shipping_cost" in estimated_fields:
+        shipping_cost_usd = revenue * SHIPPING_FALLBACK_RATIO
+        shipping_cost_cny = Decimal("0")  # 真实值未知
+    else:
+        shipping_cost_cny = _to_decimal(line.get("shipping_cost_cny"))
+        shipping_cost_usd = shipping_cost_cny / rmb_per_usd
 
-    # 7. 退货占用
+    # 7. 退货占用（按 revenue 算，跟成本完备性无关）
     return_reserve = revenue * return_reserve_rate
 
-    # 8. 利润
+    # 8. 利润（即使估算了 purchase/shipping，也算出 profit 让前端能展示）
     profit = revenue - shopify_fee - ad_cost - purchase_usd - shipping_cost_usd - return_reserve
 
+    status = "incomplete" if missing else "ok"
+
     return {
-        "status": "ok",
+        "status": status,
         "dxm_order_line_id": line.get("dxm_order_line_id"),
         "product_id": line.get("product_id"),
         "buyer_country": line.get("buyer_country"),
@@ -177,7 +178,7 @@ def calculate_line_profit(
         "shipping_cost_usd": _q4(shipping_cost_usd),
         "return_reserve_usd": _q4(return_reserve),
         "profit_usd": _q4(profit),
-        "missing_fields": [],
+        "missing_fields": missing,
         "cost_basis": {
             "rmb_per_usd": float(rmb_per_usd),
             "return_reserve_rate": float(return_reserve_rate),
@@ -186,6 +187,9 @@ def calculate_line_profit(
             "shipping_cost_source": line.get("shipping_cost_source"),
             "sku_daily_units": int(line.get("sku_daily_units") or 0),
             "sku_daily_ad_spend_usd": float(line.get("sku_daily_ad_spend_usd") or 0),
+            "estimated_fields": estimated_fields,
+            "purchase_fallback_ratio": float(PURCHASE_FALLBACK_RATIO) if "purchase" in estimated_fields else None,
+            "shipping_fallback_ratio": float(SHIPPING_FALLBACK_RATIO) if "shipping_cost" in estimated_fields else None,
         },
     }
 

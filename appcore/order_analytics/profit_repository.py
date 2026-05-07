@@ -53,11 +53,12 @@ def upsert_profit_line(
     incomplete 行也写入：profit_usd=NULL，missing_fields 列出缺什么。
     """
     status = line_result.get("status", "error")
-    is_complete = status == "ok"
 
-    # 收入侧（line_amount / shipping_allocated / revenue）是订单的客观事实，
-    # 不依赖采购价/物流成本是否维护，因此 incomplete 行也直接写入。
-    # 成本侧（shopify_fee 起到 return_reserve）才走 is_complete gate。
+    # incomplete 行也写完整的金额字段：
+    #   - 收入侧（line_amount/shipping_allocated/revenue）：订单客观事实
+    #   - 成本侧（shopify_fee/ad_cost/purchase/shipping_cost/return_reserve/profit）：
+    #     calculate_line_profit 在 incomplete 时用 fallback 估算值算出，
+    #     cost_basis.estimated_fields 标记哪些字段是估算
     values = (
         line_result.get("dxm_order_line_id"),
         line_result.get("product_id"),
@@ -69,11 +70,11 @@ def upsert_profit_line(
         line_result.get("line_amount_usd"),
         line_result.get("shipping_allocated_usd"),
         line_result.get("revenue_usd"),
-        line_result.get("shopify_fee_usd") if is_complete else None,
-        line_result.get("ad_cost_usd") if is_complete else None,
-        line_result.get("purchase_usd") if is_complete else None,
-        line_result.get("shipping_cost_usd") if is_complete else None,
-        line_result.get("return_reserve_usd") if is_complete else None,
+        line_result.get("shopify_fee_usd"),
+        line_result.get("ad_cost_usd"),
+        line_result.get("purchase_usd"),
+        line_result.get("shipping_cost_usd"),
+        line_result.get("return_reserve_usd"),
         line_result.get("profit_usd"),
         status,
         json.dumps(line_result.get("missing_fields") or [], ensure_ascii=False),

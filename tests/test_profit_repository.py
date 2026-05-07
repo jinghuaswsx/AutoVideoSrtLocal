@@ -86,8 +86,8 @@ def test_upsert_profit_line_incomplete_row(monkeypatch):
     assert 36.94 in captured["args"]
 
 
-def test_upsert_profit_line_incomplete_row_keeps_cost_fields_null(monkeypatch):
-    """incomplete 行：成本侧（shopify_fee 起到 return_reserve）必须写 NULL。"""
+def test_upsert_profit_line_incomplete_row_with_estimates(monkeypatch):
+    """incomplete 行（含估算）：所有金额字段都写入 DB（成本侧来自 fallback 估算）。"""
     captured = {}
     monkeypatch.setattr(oa, "execute", lambda sql, args=(): captured.setdefault("args", args))
 
@@ -95,13 +95,15 @@ def test_upsert_profit_line_incomplete_row_keeps_cost_fields_null(monkeypatch):
         "status": "incomplete",
         "dxm_order_line_id": 1000,
         "missing_fields": ["purchase_price"],
-        "profit_usd": None,
+        "profit_usd": 22.0,  # 用估算算出来的
         "line_amount_usd": 29.95,
         "shipping_allocated_usd": 6.99,
         "revenue_usd": 36.94,
-        # 这些就算 calculate_line_profit 漏写也不能流到 DB
         "shopify_fee_usd": 2.15,
-        "purchase_usd": 2.27,
+        "ad_cost_usd": 5.0,
+        "purchase_usd": 3.694,  # = 36.94 × 0.10 估算
+        "shipping_cost_usd": 3.0,
+        "return_reserve_usd": 0.37,
     }
 
     upsert_profit_line(
@@ -110,10 +112,12 @@ def test_upsert_profit_line_incomplete_row_keeps_cost_fields_null(monkeypatch):
         paid_at=None,
         source_run_id=42,
     )
-    # 成本侧因 is_complete gate 仍写 None，收入侧保留
-    assert 2.15 not in captured["args"]
-    assert 2.27 not in captured["args"]
+    # 所有金额字段都进 args（不再被 if-gate 屏蔽）
     assert 36.94 in captured["args"]
+    assert 3.694 in captured["args"]   # 估算 purchase
+    assert 2.15 in captured["args"]    # shopify_fee
+    assert 22.0 in captured["args"]    # profit
+    assert "incomplete" in captured["args"]
 
 
 def test_start_profit_run_returns_run_id(monkeypatch):

@@ -149,26 +149,9 @@ def _process_line(
     if shipping_cost_cny is None:
         missing.append("shipping_cost")
 
-    if missing:
-        # incomplete 行也写出客观收入（line_amount + shipping_allocated）。
-        # 这里也要按运费摊分逻辑算 shipping_allocated，跟完备路径一致。
-        shipping_alloc = allocate_shipping_to_line(
-            line_amount=line_amount,
-            order_total_line_amount=order_total_amount,
-            order_shipping_usd=order_shipping,
-        )
-        revenue = round(line_amount + shipping_alloc, 4)
-        return {
-            "status": "incomplete",
-            "profit_usd": None,
-            "missing_fields": missing,
-            "dxm_order_line_id": line["dxm_order_line_id"],
-            "product_id": product_id,
-            "buyer_country": line.get("buyer_country"),
-            "line_amount_usd": round(line_amount, 4),
-            "shipping_allocated_usd": round(shipping_alloc, 4),
-            "revenue_usd": revenue,
-        }, business_date
+    # 不再 early return：缺采购价/物流成本时仍走完整 calc，
+    # calculate_line_profit 内部会用 PURCHASE_FALLBACK_RATIO / SHIPPING_FALLBACK_RATIO
+    # 估算成本，profit 仍可算出，status='incomplete' 标记估算来源。
 
     # 当日 SKU 总 units / spend（带缓存避免重复查 DB）
     cache_key = (product_id, business_date)
