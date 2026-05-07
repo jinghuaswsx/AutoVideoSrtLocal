@@ -72,7 +72,7 @@ def _site_full(site_code: str | None) -> str:
 
 def _site_to_ad_accounts() -> dict[str, tuple[str, ...]]:
     try:
-        configured = meta_ad_accounts.site_account_map()
+        configured = meta_ad_accounts.site_account_map(enabled_only=False)
     except Exception as exc:  # noqa: BLE001 - reporting should still render if settings are unavailable.
         log.warning("failed to load meta ad account site mapping: %s", exc)
         return dict(DEFAULT_SITE_TO_AD_ACCOUNTS)

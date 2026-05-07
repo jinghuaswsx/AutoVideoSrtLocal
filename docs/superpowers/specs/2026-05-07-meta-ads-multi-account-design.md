@@ -58,8 +58,8 @@
 - `code`：账户唯一 code，用作 export 子目录名 / 日志标签；不可重复。
 - `account_id` / `business_id`：Meta Ads Manager URL 里的 `act=` / `business_id=`。
 - `csv_prefix`：CSV 文件名前缀。**保持原始大小写**（沿用线上 `newjoyloo`、Omurio 后台显示 `Omurio`）。
-- `store_codes`：该广告账户覆盖的店铺编码数组，例如 `newjoy`、`omurio`。一个账户可对应多个店铺；同一个店铺同时绑定多个 enabled 账户时，利润分摊按该店铺所有账户 spend 合计。
-- `enabled`：是否参与每轮同步。被封 / 未授权账户置 false。
+- `store_codes`：该广告账户覆盖的店铺编码数组，例如 `newjoy`、`omurio`。一个账户可对应多个店铺；同一个店铺绑定多个账户时，利润分摊按该店铺所有账户 spend 合计。
+- `enabled`：是否参与每轮同步。被封 / 未授权账户置 false；暂停同步不代表历史广告数据失效，产品盈亏分摊仍使用该账户的 `store_codes` 映射。
 - `note`：可选备注。
 - `label`：UI 展示名（暂未用，预留）。
 

@@ -158,7 +158,7 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - `tools/meta_daily_final_sync.py` 收盘日同步也必须遍历所有 `enabled=true` 的账户；导出、删除和写入均按 `account.account_id` 隔离，不能只同步 `META_AD_EXPORT_ACCOUNT_ID` 或固定 `newjoyloo_*.csv`。部分账户失败时成功账户仍入库，整体 run 标 failed，方便 17:00 check 补跑失败账户。
 - 新增 / 暂停账户的标准做法：在数据分析模块「广告账户」Tab 管理 `system_settings.meta_ad_accounts` JSON。账户被封先 `enabled=false`，解封后翻 true 即可。**不要去删 `meta_ad_realtime_*` / `meta_ad_daily_*` 历史数据**，那是按 `ad_account_id` 分行的。
 - CSV 导出目录按账户分子目录：`output/meta_realtime_exports/<business_date>/<snapshot_ts>/<account.code>/<account.csv_prefix>_*.csv`。`scripts/run_meta_ads_backfill_range.py` 接受 `--csv-prefix` 参数。
-- 产品盈亏广告费分摊必须从 `meta_ad_accounts.store_codes` 生成店铺到账户映射，不要新增硬编码 `site_code -> account_id` 常量。
+- 产品盈亏广告费分摊必须从 `meta_ad_accounts.store_codes` 生成店铺到账户映射，不要新增硬编码 `site_code -> account_id` 常量。这里使用所有已配置账户（包括 `enabled=false` 的历史账户），因为暂停同步不代表历史广告数据失效。
 - 改这条链路至少运行 `pytest tests/test_roi_hourly_sync.py tests/test_roi_hourly_sync_meta_multi_account.py tests/test_meta_server_sync_tools.py tests/test_order_analytics_ads.py tests/test_product_profit_report.py -q`。
 
 ---
