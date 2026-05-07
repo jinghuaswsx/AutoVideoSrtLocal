@@ -1047,7 +1047,26 @@ def confirm_voice(task_id: str):
     task_state.set_step(task_id, "voice_match", "done")
     task_state.set_current_review_step(task_id, "")
 
-    omni_pipeline_runner.resume(task_id, "alignment", user_id=current_user.id)
+    # Phase 3 bug fix (2026-05-07): av_sentence cfg 跳过 alignment，
+    # 硬编码 resume("alignment") 在 av-sync-current preset 下找不到 step
+    # 名导致 _run 整个循环跳过、task 卡 limbo。改成从当前 plugin_config
+    # 解析出来的 step 列表里找 voice_match 的下一步。
+    next_step = "alignment"  # 兜底（multi-like / omni-current / lab-current 都对）
+    try:
+        from appcore.events import EventBus
+        from appcore.runtime_omni import OmniTranslateRunner
+
+        _runner = OmniTranslateRunner(bus=EventBus(), user_id=current_user.id)
+        _steps = _runner._get_pipeline_steps(
+            task_id, state.get("video_path", ""), state.get("task_dir", ""),
+        )
+        _names = [n for n, _ in _steps]
+        idx = _names.index("voice_match")
+        if idx + 1 < len(_names):
+            next_step = _names[idx + 1]
+    except Exception:
+        log.warning("[omni] confirm-voice: next_step 解析失败，回退 alignment", exc_info=True)
+    omni_pipeline_runner.resume(task_id, next_step, user_id=current_user.id)
 
     medias_context = state.get("medias_context") or {}
     parent_task_id = (medias_context.get("parent_task_id") or "").strip()
