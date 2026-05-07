@@ -18,6 +18,19 @@
     }[c]));
   }
 
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? "" : url).trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return "";
+    }
+  }
+
   // ─────────── Tabs ───────────
   function setActiveTab(name) {
     state.tab = name;
@@ -162,7 +175,7 @@
 
     const playBtn = card.querySelector(".vl-play-btn");
     playBtn.dataset.voice = v.voice_id || "";
-    playBtn.dataset.url = v.preview_url || "";
+    playBtn.dataset.url = safeMediaSrc(v.preview_url);
     playBtn.addEventListener("click", (e) => togglePlay(e.currentTarget));
     return card;
   }
@@ -182,7 +195,7 @@
   }
 
   function togglePlay(btn) {
-    const url = btn.dataset.url;
+    const url = safeMediaSrc(btn.dataset.url);
     const vid = btn.dataset.voice;
     if (!url) return;
     if (playingVoiceId === vid) {

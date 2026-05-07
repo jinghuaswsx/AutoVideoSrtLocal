@@ -11,6 +11,20 @@
   const hardVideoArtifactUrl = `${apiBase}/${taskId}/artifact/hard_video`;
   void detailMode;
 
+  function safeMediaSrc(url, opts) {
+    const raw = String(url == null ? "" : url).trim();
+    if (!raw) return "";
+    if (opts && opts.allowBlob && raw.startsWith("blob:")) return raw;
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return "";
+    }
+  }
+
   // 把音色选择器挪到 ASR 步骤卡之后，跟业务顺序（上传→提取→ASR→选音色→后续）一致
   function repositionAfterAsr() {
     const anchor = document.getElementById("step-asr");
@@ -142,15 +156,15 @@
   function tryAttachPreviewVideo() {
     if (!previewVideo) return false;
     const sourceVideo = document.querySelector("#preview-extract video.media-player, #preview-asr video.media-player, video.media-player");
-    const src = sourceVideo && sourceVideo.getAttribute("src");
-    if (!src) {
+    const videoSrc = safeMediaSrc(sourceVideo && sourceVideo.getAttribute("src"), { allowBlob: true });
+    if (!videoSrc) {
       setPreviewNote("当前还没有可复用的视频预览，等原视频预览加载后这里会自动同步。", "note");
       return false;
     }
-    if (previewVideo.getAttribute("src") === src) {
+    if (previewVideo.getAttribute("src") === videoSrc) {
       return true;
     }
-    previewVideo.src = src;
+    previewVideo.src = videoSrc;
     previewVideo.load();
     markVideoLoaded();
     setPreviewNote("已复用当前任务的原始视频预览，字幕会直接叠加在真实画面上。", "success");
@@ -162,11 +176,12 @@
   }
 
   function attachPreviewVideo(src, message) {
-    if (!previewVideo || !src) return false;
-    if (previewVideo.getAttribute("src") === src) return true;
-    previewPayloadVideoUrl = src;
+    const videoSrc = safeMediaSrc(src, { allowBlob: true });
+    if (!previewVideo || !videoSrc) return false;
+    if (previewVideo.getAttribute("src") === videoSrc) return true;
+    previewPayloadVideoUrl = videoSrc;
     previewVideo.preload = "metadata";
-    previewVideo.src = src;
+    previewVideo.src = videoSrc;
     previewVideo.load();
     markVideoLoaded();
     if (message) setPreviewNote(message, "success");
@@ -214,7 +229,7 @@
       setSubtitlePositionY(data.subtitle_position_y);
     }
 
-    const videoUrl = String(data.video_url || "").trim();
+    const videoUrl = safeMediaSrc(data.video_url || "", { allowBlob: true });
     if (videoUrl) {
       attachPreviewVideo(videoUrl, "已加载当前任务的英文原版视频，字幕样式会在这里实时预览。");
       return;
@@ -286,9 +301,10 @@
   let resultVideoLoaded = false;
 
   function loadResultVideo(src) {
-    if (!resultVideo || !src || resultVideoLoaded) return;
+    const videoSrc = safeMediaSrc(src);
+    if (!resultVideo || !videoSrc || resultVideoLoaded) return;
     resultVideoLoaded = true;
-    resultVideo.src = src;
+    resultVideo.src = videoSrc;
     resultVideo.style.display = "block";
     resultVideo.pause();
     resultVideo.currentTime = 0;
@@ -466,8 +482,9 @@
     if (isSelected) classes.push("selected");
     const meta = [v.gender, v.accent, v.age, v.description || v.descriptive || ""]
       .filter(Boolean).map(escapeHtml).join(" · ");
-    const preview = v.preview_url
-      ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>`
+    const previewUrl = safeMediaSrc(v.preview_url);
+    const preview = previewUrl
+      ? `<audio controls preload="none" src="${escapeHtml(previewUrl)}"></audio>`
       : "";
     return `
       <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"

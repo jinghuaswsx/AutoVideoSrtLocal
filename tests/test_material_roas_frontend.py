@@ -139,6 +139,19 @@ def test_xmyc_match_modal_has_roas_row_highlighting():
     assert ".roas-negative" in styles
 
 
+def test_xmyc_match_modal_sanitizes_sku_image_src_protocols():
+    modal_js = (ROOT / "web" / "static" / "xmyc_match_modal.js").read_text(encoding="utf-8")
+    image_block = modal_js[
+        modal_js.index("function renderImageCell"):
+        modal_js.index("function startEdit")
+    ]
+
+    assert "function safeMediaSrc(url)" in modal_js
+    assert "const url = safeMediaSrc(item && item.image_url);" in image_block
+    assert "' + escapeHtml(url) + '" in image_block
+    assert "String(item.image_url).trim()" not in image_block
+
+
 def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     html = PARTIAL.read_text(encoding="utf-8")
 

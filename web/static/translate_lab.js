@@ -21,6 +21,19 @@
       .replace(/'/g, "&#39;");
   }
 
+  function safeMediaSrc(url) {
+    var raw = String(url == null ? "" : url).trim();
+    if (!raw) return "";
+    try {
+      var parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return "";
+    }
+  }
+
   function formatTime(sec) {
     sec = Number(sec) || 0;
     var m = Math.floor(sec / 60);
@@ -528,7 +541,7 @@
       var score = v.score !== undefined
         ? ('分数 ' + Number(v.score).toFixed(2))
         : "";
-      var preview = v.preview_url || v.preview_audio || "";
+      var preview = safeMediaSrc(v.preview_url || v.preview_audio || "");
       return ''
         + '<div class="voice-card" data-voice-id="' + escapeHtml(v.voice_id || "") + '">'
         + '  <div class="voice-card-head">'
@@ -583,8 +596,10 @@
   function playVoicePreview(url, btn) {
     var audio = $("#labVoicePreviewAudio");
     if (!audio) return;
+    var safeUrl = safeMediaSrc(url);
+    if (!safeUrl) return;
     // 正在同一条：切暂停
-    if (audio._currentUrl === url && !audio.paused) {
+    if (audio._currentUrl === safeUrl && !audio.paused) {
       audio.pause();
       return;
     }
@@ -592,8 +607,8 @@
       b.classList.remove("playing");
       b.textContent = "▶";
     });
-    audio.src = url;
-    audio._currentUrl = url;
+    audio.src = safeUrl;
+    audio._currentUrl = safeUrl;
     audio.play().catch(function () {});
     btn.classList.add("playing");
     btn.textContent = "■";
@@ -604,6 +619,7 @@
   }
 
   function renderVoiceConfirmed(voice) {
+    var preview = safeMediaSrc(voice.preview_url || "");
     D.voiceConfirmed = voice;
     var section = $("#labVoiceSection");
     var list = $("#labVoiceMatch");
@@ -616,8 +632,8 @@
       + '<div class="voice-card voice-card--chosen">'
       + '  <div class="voice-card-head">'
       + '    <span class="voice-name">' + escapeHtml(voice.name || voice.voice_id || "—") + '</span>'
-      + (voice.preview_url
-          ? '    <button type="button" class="voice-play-btn" data-preview="' + escapeHtml(voice.preview_url) + '" aria-label="试听">▶</button>'
+      + (preview
+          ? '    <button type="button" class="voice-play-btn" data-preview="' + escapeHtml(preview) + '" aria-label="试听">▶</button>'
           : '')
       + '  </div>'
       + '  <div class="voice-meta">'

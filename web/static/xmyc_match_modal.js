@@ -12,6 +12,19 @@
       .replace(/'/g, '&#39;');
   }
 
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function formatPrice(value) {
     if (value === null || value === undefined || value === '') return '—';
     const n = Number(value);
@@ -103,7 +116,7 @@
   }
 
   function renderImageCell(item) {
-    const url = (item && item.image_url) ? String(item.image_url).trim() : '';
+    const url = safeMediaSrc(item && item.image_url);
     const label = (item && (item.goods_name || item.sku)) || 'SKU图片';
     if (!url) {
       return '<td class="image-cell"><span class="oc-xmyc-sku-image-ph">—</span></td>';
