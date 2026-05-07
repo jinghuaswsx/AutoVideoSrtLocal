@@ -10,7 +10,7 @@ import uuid
 from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
-from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
+from appcore import video_review_route_store
 from appcore.project_state import update_project_state
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
@@ -45,6 +45,10 @@ from web.upload_util import save_uploaded_file_to_path
 log = logging.getLogger(__name__)
 
 bp = Blueprint("video_review", __name__)
+
+db_query = video_review_route_store.query
+db_query_one = video_review_route_store.query_one
+db_execute = video_review_route_store.execute
 
 # SocketIO 事件
 EVT_VR_STEP = "vr_step_update"
