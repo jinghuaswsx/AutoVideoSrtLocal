@@ -358,6 +358,90 @@
 }
 @keyframes ppd-spin { to { transform: rotate(360deg); } }
 
+/* Tab ① 产品列表 */
+.ppd-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ppd-list-summary {
+  font-size: 13px;
+  color: var(--text-main);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: baseline;
+}
+.ppd-list-summary .ppd-summary-item { display: inline-flex; gap: 6px; align-items: baseline; }
+.ppd-list-summary .ppd-summary-label { font-size: 12px; color: var(--text-user-badge); font-weight: 500; }
+.ppd-list-summary .ppd-summary-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 15px;
+  color: var(--text-main);
+}
+.ppd-list-summary .ppd-summary-value.is-positive { color: #15803d; }
+.ppd-list-summary .ppd-summary-value.is-negative { color: #b91c1c; }
+
+/* 占比 chip */
+.ppd-pct-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  height: 16px;
+  line-height: 16px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-sans, sans-serif);
+  background: #e0f2fe;
+  color: #075985;
+  vertical-align: middle;
+}
+.ppd-pct-chip.is-warn { background: #fef3c7; color: #92400e; }
+.ppd-pct-chip.is-bad { background: #fee2e2; color: #991b1b; }
+
+/* 产品列 (left-align name) */
+.ppd-list-table-product {
+  text-align: left !important;
+  white-space: normal;
+  max-width: 320px;
+}
+.ppd-list-table-product .ppd-list-code {
+  font-size: 11px;
+  color: var(--text-user-badge);
+  font-family: var(--font-sans, sans-serif);
+  margin-top: 2px;
+}
+.ppd-list-table-product .ppd-list-name {
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+/* 亏损行 */
+.ppd-row-loss td { background: rgba(239, 68, 68, .04); }
+.ppd-row-loss:hover td { background: rgba(239, 68, 68, .08); }
+
+/* 完备徽章 */
+.ppd-badge-complete,
+.ppd-badge-incomplete {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: var(--font-sans, sans-serif);
+  font-weight: 500;
+}
+.ppd-badge-complete { background: #dcfce7; color: #166534; }
+.ppd-badge-incomplete { background: #fef3c7; color: #92400e; }
+
+/* clickable row */
+.ppd-row-clickable { cursor: pointer; }
+.ppd-row-clickable:hover { background: rgba(59, 130, 246, .06); }
+
 @media (max-width: 1024px) {
   .ppd-charts { grid-template-columns: 1fr; }
   .ppd-sites { grid-template-columns: 1fr; }
@@ -414,8 +498,32 @@
   </nav>
 
   <section class="ppd-tab-panel active" data-panel="list">
-    <!-- Task 7 填充 -->
-    <div class="ppd-empty-tab">产品列表（Task 7 填充）</div>
+    <!-- Task 7: 产品列表 -->
+    <div class="ppd-list-head">
+      <div class="ppd-list-summary" id="ppd-list-summary">--</div>
+      <a class="ppd-btn" id="ppd-list-download" href="#" target="_blank" rel="noopener">下载 Excel</a>
+    </div>
+    <div class="ppd-loading" id="ppd-list-loading" style="display:none"><span class="ppd-spinner"></span>加载中…</div>
+    <div class="ppd-error" id="ppd-list-error" style="display:none"></div>
+    <div class="ppd-empty" id="ppd-list-empty" style="display:none">该时段没有产品销售数据。</div>
+    <div class="ppd-table-wrap" id="ppd-list-wrap" style="display:none">
+      <table class="ppd-table" id="ppd-list-table">
+        <thead>
+          <tr>
+            <th>产品</th>
+            <th class="ppd-num">订单数</th>
+            <th class="ppd-num">收入<span class="col-unit">USD</span></th>
+            <th class="ppd-num">物流<span class="col-unit">USD · %</span></th>
+            <th class="ppd-num">采购<span class="col-unit">USD · %</span></th>
+            <th class="ppd-num">广告<span class="col-unit">USD · %</span></th>
+            <th class="ppd-num">ROAS</th>
+            <th class="ppd-num">利润<span class="col-unit">USD · %</span></th>
+            <th>成本完备</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 
   <section class="ppd-tab-panel" data-panel="orders">
@@ -648,6 +756,147 @@
     var d = document.createElement('div');
     d.textContent = s == null ? '' : s;
     return d.innerHTML;
+  }
+
+  // ── Tab ① 全产品列表（Task 7）─────────────────────
+  var listLoading = $('ppd-list-loading');
+  var listError = $('ppd-list-error');
+  var listEmpty = $('ppd-list-empty');
+  var listWrap = $('ppd-list-wrap');
+  var listSummary = $('ppd-list-summary');
+  var listDownloadBtn = $('ppd-list-download');
+
+  function fmtPct(v, decimals) {
+    if (v === null || v === undefined) return '--';
+    decimals = decimals === undefined ? 1 : decimals;
+    return (Number(v) * 100).toFixed(decimals) + '%';
+  }
+  function pctChipClass(pct) {
+    // pct 已经是 fraction，> 0.5 红，> 0.3 黄，否则蓝
+    if (pct == null) return 'ppd-pct-chip';
+    if (pct >= 0.5) return 'ppd-pct-chip is-bad';
+    if (pct >= 0.3) return 'ppd-pct-chip is-warn';
+    return 'ppd-pct-chip';
+  }
+
+  function loadListTab() {
+    var df = dateFromInput.value;
+    var dt = dateToInput.value;
+    var country = (countrySelect.value || '').trim();
+
+    listError.style.display = 'none';
+    listEmpty.style.display = 'none';
+    listWrap.style.display = 'none';
+    listSummary.innerHTML = '';
+
+    if (!df || !dt || df > dt) {
+      listError.textContent = '日期范围不正确';
+      listError.style.display = 'block';
+      return;
+    }
+
+    listLoading.style.display = 'block';
+
+    var qs = 'date_from=' + encodeURIComponent(df) + '&date_to=' + encodeURIComponent(dt);
+    if (country) qs += '&country=' + encodeURIComponent(country);
+
+    // 更新下载链接
+    listDownloadBtn.href = '/order-analytics/product-profit/list.xlsx?' + qs;
+
+    fetch('/order-analytics/product-profit/list.json?' + qs, { credentials: 'same-origin' })
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        listLoading.style.display = 'none';
+        renderList(data);
+      })
+      .catch(function(err) {
+        listLoading.style.display = 'none';
+        listError.textContent = '加载失败：' + err.message;
+        listError.style.display = 'block';
+      });
+  }
+  // 暴露给 switchTab 调用
+  window.loadListTab = loadListTab;
+
+  function renderList(data) {
+    var rows = (data && data.rows) || [];
+    var summary = (data && data.summary) || {};
+
+    // summary 区
+    var profitVal = summary.total_profit_usd;
+    var profitCls = profitVal == null ? '' : (profitVal >= 0 ? 'is-positive' : 'is-negative');
+    listSummary.innerHTML = ''
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">产品数</span>'
+      + '<span class="ppd-summary-value">' + (summary.product_count || 0) + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">订单数</span>'
+      + '<span class="ppd-summary-value">' + (summary.total_orders || 0).toLocaleString() + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">总收入</span>'
+      + '<span class="ppd-summary-value">' + money(summary.total_revenue_usd) + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">总利润</span>'
+      + '<span class="ppd-summary-value ' + profitCls + '">' + money(profitVal) + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">整体 ROAS</span>'
+      + '<span class="ppd-summary-value">' + (summary.overall_roas == null ? '—' : Number(summary.overall_roas).toFixed(2)) + '</span></span>';
+
+    if (rows.length === 0) {
+      listEmpty.style.display = 'block';
+      listWrap.style.display = 'none';
+      return;
+    }
+
+    listEmpty.style.display = 'none';
+    listWrap.style.display = 'block';
+
+    var tbody = document.querySelector('#ppd-list-table tbody');
+    var html = rows.map(function(r) {
+      var rowCls = (r.profit_usd != null && r.profit_usd < 0) ? 'ppd-row-loss ppd-row-clickable' : 'ppd-row-clickable';
+      var roasText = r.roas == null ? '—' : Number(r.roas).toFixed(2);
+      var completeBadge = r.cost_completeness === 'ok'
+        ? '<span class="ppd-badge-complete">✓ 完备</span>'
+        : '<span class="ppd-badge-incomplete">⚠ 不完备</span>';
+
+      return '<tr class="' + rowCls + '" data-product-id="' + escHtml(String(r.product_id)) + '">'
+        + '<td class="ppd-list-table-product">'
+        +   '<div class="ppd-list-name">' + escHtml(r.name || '(未命名)') + '</div>'
+        +   '<div class="ppd-list-code">' + escHtml(r.product_code || '') + '</div>'
+        + '</td>'
+        + '<td class="ppd-num">' + (r.order_count || 0).toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + money(r.revenue_usd) + '</td>'
+        + '<td class="ppd-num">' + money(r.shipping_cost_usd)
+        +   '<span class="' + pctChipClass(r.shipping_pct) + '">' + fmtPct(r.shipping_pct) + '</span></td>'
+        + '<td class="ppd-num">' + money(r.purchase_usd)
+        +   '<span class="' + pctChipClass(r.purchase_pct) + '">' + fmtPct(r.purchase_pct) + '</span></td>'
+        + '<td class="ppd-num">' + money(r.ad_cost_usd)
+        +   '<span class="' + pctChipClass(r.ad_pct) + '">' + fmtPct(r.ad_pct) + '</span></td>'
+        + '<td class="ppd-num">' + roasText + '</td>'
+        + '<td class="ppd-num ' + profitClass(r.profit_usd) + '">' + money(r.profit_usd)
+        +   '<span class="ppd-pct-chip">' + fmtPct(r.profit_pct) + '</span></td>'
+        + '<td>' + completeBadge + '</td>'
+        + '</tr>';
+    }).join('');
+    tbody.innerHTML = html;
+
+    // 点击行 → 切到 Tab ② 并把产品下拉设到对应 product_id
+    tbody.querySelectorAll('tr.ppd-row-clickable').forEach(function(tr) {
+      tr.addEventListener('click', function() {
+        var pid = tr.getAttribute('data-product-id');
+        if (!pid) return;
+        // 检查该 product_id 是否在产品下拉里（应该都在；防御一下）
+        var opt = productSelect.querySelector('option[value="' + pid + '"]');
+        if (opt) {
+          productSelect.value = pid;
+        }
+        if (window.switchTab) {
+          window.switchTab('orders');
+        } else if (window.loadOrdersTab) {
+          window.loadOrdersTab();
+        }
+      });
+    });
   }
 
   // ── Tab ② 主查询入口（Task 6: renamed from runQuery → loadOrdersTab）──────
