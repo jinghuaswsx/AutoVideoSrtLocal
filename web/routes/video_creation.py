@@ -680,13 +680,14 @@ def add_asset(task_id: str, kind: str):
         return video_creation_flask_response(build_video_creation_error_response("请上传文件", 400))
 
     from web.upload_util import secure_filename_component, validate_video_extension, validate_image_extension
+    upload_filename = client_filename_basename(upload_file.filename)
 
     if kind == "video":
         if state.get("video_path"):
             return video_creation_flask_response(build_video_creation_error_response("已存在视频，请先删除", 400))
-        if not validate_video_extension(upload_file.filename):
+        if not validate_video_extension(upload_filename):
             return video_creation_flask_response(build_video_creation_error_response("不支持的视频格式", 400))
-        safe_name = secure_filename_component(upload_file.filename)
+        safe_name = secure_filename_component(upload_filename)
         path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{safe_name}")
         save_uploaded_file_to_path(upload_file, path)
         state["video_path"] = path
@@ -694,9 +695,9 @@ def add_asset(task_id: str, kind: str):
         image_paths = state.get("image_paths", [])
         if len(image_paths) >= 9:
             return video_creation_flask_response(build_video_creation_error_response("图片最多 9 张", 400))
-        if not validate_image_extension(upload_file.filename):
+        if not validate_image_extension(upload_filename):
             return video_creation_flask_response(build_video_creation_error_response("不支持的图片格式", 400))
-        safe_name = secure_filename_component(upload_file.filename)
+        safe_name = secure_filename_component(upload_filename)
         idx = len(image_paths)
         path = os.path.join(UPLOAD_DIR, f"{task_id}_img{idx}_{safe_name}")
         upload_file.save(path)
@@ -706,7 +707,7 @@ def add_asset(task_id: str, kind: str):
     elif kind == "audio":
         if state.get("audio_path"):
             return video_creation_flask_response(build_video_creation_error_response("已存在音频，请先删除", 400))
-        safe_name = secure_filename_component(upload_file.filename)
+        safe_name = secure_filename_component(upload_filename)
         path = os.path.join(UPLOAD_DIR, f"{task_id}_audio_{safe_name}")
         upload_file.save(path)
         state["audio_path"] = path

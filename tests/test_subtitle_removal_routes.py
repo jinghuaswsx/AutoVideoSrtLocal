@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import posixpath
+
 import pytest
 
 import web.routes.subtitle_removal as subtitle_removal
@@ -106,6 +108,27 @@ def test_subtitle_removal_bootstrap_local_vsr_uses_local_upload_url(authed_clien
     assert payload["upload_url"].endswith(f"/api/subtitle-removal/upload/local/{payload['task_id']}")
     reservation = subtitle_removal._upload_bootstrap_reservations[payload["task_id"]]
     assert reservation["subtitle_backend"] == "local_vsr"
+
+
+def test_subtitle_removal_bootstrap_strips_windows_client_path_segments(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(subtitle_removal.os.path, "basename", posixpath.basename)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
+        lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "..\\..\\source.mp4", "subtitle_backend": "local_vsr"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["object_key"].endswith("/source.mp4")
+    reservation = subtitle_removal._upload_bootstrap_reservations[payload["task_id"]]
+    assert reservation["original_filename"] == "source.mp4"
+    assert ".." not in reservation["video_path"]
+    assert "\\" not in payload["object_key"]
 
 
 def test_subtitle_removal_bootstrap_rejects_invalid_backend(authed_client_no_db):

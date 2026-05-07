@@ -208,6 +208,46 @@ class TestVideoCreationUploadValidation:
         assert inserted["display_name"] == "escape"
         assert inserted["state"]["display_name"] == "escape"
 
+    def test_add_asset_validates_sanitized_client_filename(self, client, monkeypatch, tmp_path):
+        captured = {}
+        state = {
+            "task_dir": str(tmp_path / "out" / "vc-task"),
+            "steps": {"generate": "idle"},
+            "video_path": None,
+            "image_paths": [],
+            "audio_path": None,
+        }
+
+        def fake_validate(filename):
+            captured["validated"] = filename
+            return filename == "escape.mp4"
+
+        monkeypatch.setattr("web.routes.video_creation.recover_project_if_needed", lambda *a, **kw: None)
+        monkeypatch.setattr("web.routes.video_creation.UPLOAD_DIR", str(tmp_path / "uploads"))
+        monkeypatch.setattr(
+            "web.routes.video_creation.video_creation_route_store.get_user_project_state",
+            lambda *a, **kw: {"state_json": json.dumps(state, ensure_ascii=False)},
+        )
+        monkeypatch.setattr("web.routes.video_creation.save_project_state", lambda task_id, new_state, **kw: captured.setdefault("state", new_state))
+        monkeypatch.setattr(
+            "web.routes.video_creation.save_uploaded_file_to_path",
+            lambda _file, destination: captured.setdefault("path", destination),
+        )
+        monkeypatch.setattr("web.upload_util.validate_video_extension", fake_validate)
+
+        resp = client.post(
+            "/api/video-creation/vc-task/asset/video",
+            data={"file": _make_file("..\\..\\escape.mp4")},
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 200
+        assert captured["validated"] == "escape.mp4"
+        saved_path = os.path.normpath(captured["path"])
+        assert os.path.dirname(saved_path) == os.path.normpath(str(tmp_path / "uploads"))
+        assert os.path.basename(saved_path).endswith("_escape.mp4")
+        assert captured["state"]["video_path"] == captured["path"]
+
     @pytest.mark.parametrize("ext", REJECTED_EXTS)
     def test_rejects_non_video_extensions(self, client, ext):
         resp = client.post("/api/video-creation/upload",

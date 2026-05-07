@@ -25,7 +25,7 @@ from web.services.subtitle_removal_responses import (
     build_subtitle_removal_payload_response,
     subtitle_removal_flask_response,
 )
-from web.upload_util import validate_video_extension, write_stream_to_path
+from web.upload_util import client_filename_basename, validate_video_extension, write_stream_to_path
 
 log = logging.getLogger(__name__)
 
@@ -693,7 +693,7 @@ def list_tasks():
 @login_required
 def bootstrap_upload():
     body = request.get_json(silent=True) or {}
-    original_filename = os.path.basename((body.get("original_filename") or "").strip())
+    original_filename = client_filename_basename((body.get("original_filename") or "").strip())
     if not original_filename:
         return _json_response({"error": "original_filename required"}), 400
     if not validate_video_extension(original_filename):
@@ -753,7 +753,7 @@ def complete_upload():
 
     body = request.get_json(silent=True) or {}
     task_id = (body.get("task_id") or "").strip()
-    original_filename = os.path.basename((body.get("original_filename") or "").strip())
+    original_filename = client_filename_basename((body.get("original_filename") or "").strip())
     object_key = (body.get("object_key") or "").strip()
     content_type = (body.get("content_type") or "").strip()
     try:
