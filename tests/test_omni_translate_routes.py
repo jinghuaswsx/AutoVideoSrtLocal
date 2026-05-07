@@ -144,13 +144,13 @@ def test_update_source_language_rejects_unsupported_lang(authed_client_no_db):
     mock_runner.resume.assert_not_called()
 
 
-def test_update_source_language_404_for_other_user(authed_client_no_db):
-    """task 属于别人 → 404。"""
+def test_update_source_language_404_for_non_admin_other_user(authed_user_client_no_db):
+    """普通用户访问别人的 task → 404。"""
     fake_task = {"_user_id": 999}
     with patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
         mock_store.get.return_value = fake_task
-        resp = authed_client_no_db.put(
+        resp = authed_user_client_no_db.put(
             "/api/omni-translate/t-1/source-language",
             json={"source_language": "es"},
         )
@@ -258,4 +258,136 @@ def test_update_source_language_rejects_unsupported_extended(authed_client_no_db
     assert resp.status_code == 400
     assert "source_language" in resp.get_json()["error"]
     mock_store.update.assert_not_called()
+    mock_runner.resume.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Admin 代他人操作 omni 流程（superadmin / admin 都视作 is_admin）
+#
+# 需求：所有 omni mutating 路由（resume / restart / start / segments /
+# alignment / source-language / export）admin 都能代任意 owner 触发。
+# 关键：runner / restart_task 收到的 user_id 必须是 task owner 的 id（不是
+# admin 自己的 id），否则 ai_billing / LLM 用量都会污染到 admin 账户。
+# ---------------------------------------------------------------------------
+
+
+def test_admin_can_resume_other_users_task_uses_owner_user_id(authed_client_no_db):
+    """admin (id=1) 调 resume 操作 _user_id=99 的 task → 200，runner 收到 user_id=99。"""
+    fake_task = {"_user_id": 99, "source_language": "es"}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/resume",
+            json={"start_step": "translate"},
+        )
+
+    assert resp.status_code == 200, resp.get_json()
+    mock_runner.resume.assert_called_once_with("t-1", "translate", user_id=99)
+
+
+def test_admin_can_update_segments_other_users_task_uses_owner_user_id(authed_client_no_db):
+    """admin 调 PUT segments 操作 _user_id=99 的 task → 200，runner 收到 user_id=99。"""
+    fake_task = {"_user_id": 99, "variants": {"normal": {}}}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.put(
+            "/api/omni-translate/t-1/segments",
+            json={"segments": [{"index": 0, "translated": "Hola"}]},
+        )
+
+    assert resp.status_code == 200
+    mock_runner.resume.assert_called_once_with("t-1", "tts", user_id=99)
+
+
+def test_admin_can_export_other_users_task_uses_owner_user_id(authed_client_no_db):
+    """admin 调 export 操作 _user_id=99 的 task → 200，runner 收到 user_id=99。"""
+    fake_task = {"_user_id": 99}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post("/api/omni-translate/t-1/export")
+
+    assert resp.status_code == 200
+    mock_runner.resume.assert_called_once_with("t-1", "compose", user_id=99)
+
+
+def test_admin_can_update_source_language_other_users_task_uses_owner_user_id(authed_client_no_db):
+    """admin 调 PUT source-language 操作 _user_id=99 的 task → 200，runner 收到 user_id=99。"""
+    fake_task = {"_user_id": 99, "source_language": "zh"}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.put(
+            "/api/omni-translate/t-1/source-language",
+            json={"source_language": "es"},
+        )
+
+    assert resp.status_code == 200
+    mock_runner.resume.assert_called_once_with("t-1", "asr_clean", user_id=99)
+
+
+def test_admin_can_update_alignment_other_users_task_uses_owner_user_id(authed_client_no_db):
+    """admin 调 PUT alignment 操作 _user_id=99 的 task → 200，runner 收到 user_id=99。"""
+    fake_task = {
+        "_user_id": 99,
+        "utterances": [{"start_time": 0.0, "end_time": 1.0, "text": "hi"}],
+        "scene_cuts": [],
+        "interactive_review": False,
+    }
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner, \
+         patch("web.routes.omni_translate.build_script_segments", return_value=[]), \
+         patch("web.preview_artifacts.build_alignment_artifact", return_value={}):
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.put(
+            "/api/omni-translate/t-1/alignment",
+            json={"break_after": []},
+        )
+
+    assert resp.status_code == 200
+    mock_runner.resume.assert_called_once_with("t-1", "translate", user_id=99)
+
+
+def test_admin_can_restart_other_users_task_uses_owner_user_id(authed_client_no_db):
+    """admin 调 restart 操作 _user_id=99 的 task → 200，restart_task 收到 user_id=99。"""
+    fake_task = {"_user_id": 99}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.services.task_restart.restart_task") as mock_restart:
+        mock_store.get.return_value = fake_task
+        mock_restart.return_value = {"status": "restarted"}
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/restart",
+            json={"voice_id": "auto"},
+        )
+
+    assert resp.status_code == 200
+    assert mock_restart.call_args.kwargs["user_id"] == 99
+
+
+def test_admin_can_start_other_users_task_uses_owner_user_id(authed_client_no_db):
+    """admin 调 start 操作 _user_id=99 的 task → 200，runner 收到 user_id=99。"""
+    fake_task = {"_user_id": 99}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post("/api/omni-translate/t-1/start")
+
+    assert resp.status_code == 200
+    mock_runner.start.assert_called_once_with("t-1", user_id=99)
+
+
+def test_non_admin_cannot_resume_other_users_task(authed_user_client_no_db):
+    """普通用户调 resume 操作别人 task → 404，runner 不被调用。"""
+    fake_task = {"_user_id": 999, "source_language": "es"}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_user_client_no_db.post(
+            "/api/omni-translate/t-1/resume",
+            json={"start_step": "translate"},
+        )
+
+    assert resp.status_code == 404
     mock_runner.resume.assert_not_called()
