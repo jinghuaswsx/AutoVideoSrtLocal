@@ -47,6 +47,15 @@ def test_ja_translate_start_creates_ja_task_and_starts_ja_runner(tmp_path, authe
     assert started["task_id"] == payload["task_id"]
 
 
+def test_ja_translate_list_sanitizes_upload_redirect_url():
+    template = Path("web/templates/ja_translate_list.html").read_text(encoding="utf-8")
+
+    assert "function safeInternalHref(url, fallback)" in template
+    assert "var detailUrl = safeInternalHref(data.redirect_url," in template
+    assert "window.location.href = detailUrl;" in template
+    assert "window.location.href = data.redirect_url ||" not in template
+
+
 def test_multi_translate_start_keeps_ja_on_multi_module(tmp_path, authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "multi-output"))
     monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "multi-uploads"))

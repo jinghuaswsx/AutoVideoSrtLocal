@@ -745,6 +745,20 @@ function openUpload() {
   });
 })();
 
+function safeInternalHref(url, fallback) {
+  var safeFallback = String(fallback || {{ module_list_path|tojson }});
+  var raw = String(url == null ? '' : url).trim();
+  if (!raw) return safeFallback;
+  try {
+    var parsed = new URL(raw, window.location.origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return safeFallback;
+    if (parsed.origin !== window.location.origin) return safeFallback;
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch (_) {
+    return safeFallback;
+  }
+}
+
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   var uploadForm = document.getElementById('uploadForm');
@@ -795,7 +809,9 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     });
     var data = await res.json();
     if (!res.ok) throw new Error(data.error || '创建任务失败');
-    window.location.href = data.redirect_url || ({{ module_detail_path|tojson }} + '/' + data.task_id);
+    var fallbackUrl = {{ module_detail_path|tojson }} + '/' + encodeURIComponent(data.task_id || '');
+    var detailUrl = safeInternalHref(data.redirect_url, fallbackUrl);
+    window.location.href = detailUrl;
   } catch (err) {
     alert(err.message);
     btn.disabled = false;

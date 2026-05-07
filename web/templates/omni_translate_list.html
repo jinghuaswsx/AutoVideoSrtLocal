@@ -1062,6 +1062,20 @@ document.addEventListener('click', async function(e) {
   }
 });
 
+function safeInternalHref(url, fallback) {
+  var safeFallback = String(fallback || '/omni-translate');
+  var raw = String(url == null ? '' : url).trim();
+  if (!raw) return safeFallback;
+  try {
+    var parsed = new URL(raw, window.location.origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return safeFallback;
+    if (parsed.origin !== window.location.origin) return safeFallback;
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch (_) {
+    return safeFallback;
+  }
+}
+
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   var uploadForm = document.getElementById('uploadForm');
@@ -1122,7 +1136,9 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     });
     var data = await res.json();
     if (!res.ok) throw new Error(data.error || '创建任务失败');
-    window.location.href = data.redirect_url || ('/omni-translate/' + data.task_id);
+    var fallbackUrl = '/omni-translate/' + encodeURIComponent(data.task_id || '');
+    var detailUrl = safeInternalHref(data.redirect_url, fallbackUrl);
+    window.location.href = detailUrl;
   } catch (err) {
     alert(err.message);
     btn.disabled = false;

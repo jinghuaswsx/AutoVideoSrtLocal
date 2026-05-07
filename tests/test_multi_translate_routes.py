@@ -499,6 +499,18 @@ def test_multi_translate_list_page_uses_local_multipart_upload():
     assert "xhr.open('PUT'" not in template
 
 
+def test_multi_and_omni_translate_list_sanitize_upload_redirect_url():
+    root = Path(__file__).resolve().parents[1]
+    multi_template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
+    omni_template = (root / "web" / "templates" / "omni_translate_list.html").read_text(encoding="utf-8")
+
+    for template in (multi_template, omni_template):
+        assert "function safeInternalHref(url, fallback)" in template
+        assert "var detailUrl = safeInternalHref(data.redirect_url," in template
+        assert "window.location.href = detailUrl;" in template
+        assert "window.location.href = data.redirect_url ||" not in template
+
+
 def test_multi_translate_create_modal_uses_visible_target_language_select():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
