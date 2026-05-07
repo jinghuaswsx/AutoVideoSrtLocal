@@ -65,6 +65,20 @@
 }
 {% endblock %}
 {% block content %}
+<section class="admin-section" id="shopifyidSyncCard" style="margin-bottom:24px;">
+  <div class="shopifyid-sync-head">
+    <div class="shopifyid-sync-copy">
+      <h2>Shopify ID 同步</h2>
+      <p class="field-hint">手动触发服务器上的 Shopify ID 获取任务，复用店小秘登录态并回填素材库中为空的 Shopify ID。</p>
+    </div>
+    <div class="shopifyid-sync-actions">
+      <button type="button" class="oc-btn-primary" id="shopifyidSyncTriggerBtn">立即同步</button>
+      <button type="button" class="btn btn-ghost" id="shopifyidSyncRefreshBtn">刷新状态</button>
+    </div>
+  </div>
+  <div id="shopifyidSyncStatus" class="shopifyid-sync-status">正在读取最近一次同步状态…</div>
+</section>
+
 <div class="settings-stack">
   <div class="settings-card narrow">
     <h2>项目保留周期</h2>
@@ -255,20 +269,6 @@
   .shopifyid-sync-kpis { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
   .shopifyid-sync-kpis span { display:inline-flex; align-items:center; min-height:24px; padding:0 10px; border-radius:8px; background:var(--accent-subtle,oklch(94% 0.04 225)); color:var(--accent-active,oklch(45% 0.16 230)); font-size:12px; font-weight:700; }
 </style>
-
-<section class="admin-section" id="shopifyidSyncCard">
-  <div class="shopifyid-sync-head">
-    <div class="shopifyid-sync-copy">
-      <h2>Shopify ID 同步</h2>
-      <p class="field-hint">手动触发服务器上的 Shopify ID 获取任务，复用店小秘登录态并回填素材库中为空的 Shopify ID。</p>
-    </div>
-    <div class="shopifyid-sync-actions">
-      <button type="button" class="oc-btn-primary" id="shopifyidSyncTriggerBtn">立即同步</button>
-      <button type="button" class="btn btn-ghost" id="shopifyidSyncRefreshBtn">刷新状态</button>
-    </div>
-  </div>
-  <div id="shopifyidSyncStatus" class="shopifyid-sync-status">正在读取最近一次同步状态…</div>
-</section>
 
 <script>
 (function(){
