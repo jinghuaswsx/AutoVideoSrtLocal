@@ -7,8 +7,7 @@ from pathlib import Path
 
 from flask import Blueprint, abort, render_template, request, url_for
 from flask_login import current_user, login_required
-from appcore import cleanup, medias
-from appcore.db import execute, query, query_one
+from appcore import cleanup, medias, project_state as project_store
 from appcore.link_check_locale import build_link_check_display_name, detect_target_language_from_url
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
 from config import OUTPUT_DIR
@@ -115,10 +114,7 @@ def _load_task_from_row(row: dict | None) -> dict | None:
 
 
 def _get_project_row(task_id: str) -> dict:
-    row = query_one(
-        "SELECT * FROM projects WHERE id = %s AND type = 'link_check' AND deleted_at IS NULL",
-        (task_id,),
-    )
+    row = project_store.get_link_check_project(task_id)
     if not row:
         abort(404)
     return row
@@ -192,14 +188,7 @@ def _serialize_task(task_id: str, task: dict) -> dict:
 def page():
     recover_all_interrupted_tasks()
     try:
-        rows = query(
-            """SELECT id, display_name, original_filename, status, created_at
-               FROM projects
-               WHERE type = 'link_check' AND deleted_at IS NULL
-               ORDER BY created_at DESC
-               LIMIT 200""",
-            (),
-        )
+        rows = project_store.list_link_check_projects()
     except Exception:
         rows = []
     return render_template("link_check.html", projects=rows or [])
@@ -294,10 +283,7 @@ def get_task(task_id: str):
 @bp.route("/api/link-check/tasks/<task_id>", methods=["PATCH"])
 @login_required
 def rename_task(task_id: str):
-    row = query_one(
-        "SELECT id FROM projects WHERE id = %s AND type = 'link_check' AND deleted_at IS NULL",
-        (task_id,),
-    )
+    row = project_store.get_link_check_project(task_id)
     if not row:
         return link_check_flask_response(build_link_check_task_not_found_response())
 
@@ -308,7 +294,7 @@ def rename_task(task_id: str):
     if len(new_name) > 50:
         return link_check_flask_response(build_link_check_rename_too_long_response())
 
-    execute("UPDATE projects SET display_name=%s WHERE id=%s", (new_name, task_id))
+    project_store.rename_link_check_project(task_id, new_name)
     task = store.get(task_id)
     if task and task.get("type") == "link_check":
         store.update(task_id, display_name=new_name)
@@ -318,10 +304,7 @@ def rename_task(task_id: str):
 @bp.route("/api/link-check/tasks/<task_id>", methods=["DELETE"])
 @login_required
 def delete_task(task_id: str):
-    row = query_one(
-        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND type = 'link_check' AND deleted_at IS NULL",
-        (task_id,),
-    )
+    row = project_store.get_link_check_project(task_id)
     if not row:
         return link_check_flask_response(build_link_check_task_not_found_response())
 
@@ -335,10 +318,7 @@ def delete_task(task_id: str):
     except Exception:
         pass
 
-    execute(
-        "UPDATE projects SET deleted_at=%s WHERE id=%s",
-        (datetime.now(timezone.utc), task_id),
-    )
+    project_store.soft_delete_link_check_project(task_id, datetime.now(timezone.utc))
     if task and task.get("type") == "link_check":
         store.update(task_id, status="deleted")
     return link_check_flask_response(build_link_check_delete_success_response())

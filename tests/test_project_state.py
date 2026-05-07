@@ -258,6 +258,79 @@ def test_update_project_display_name_writes_display_name_only():
     ]
 
 
+def test_list_link_check_projects_queries_global_link_check_rows():
+    from appcore.project_state import list_link_check_projects
+
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "lc-1"}]
+
+    rows = list_link_check_projects(query_func=fake_query)
+
+    assert rows == [{"id": "lc-1"}]
+    assert "FROM projects" in calls[0][0]
+    assert "type = 'link_check'" in calls[0][0]
+    assert "deleted_at IS NULL" in calls[0][0]
+    assert "user_id" not in calls[0][0]
+    assert calls[0][1] == ()
+
+
+def test_get_link_check_project_queries_global_active_project():
+    from appcore.project_state import get_link_check_project
+
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"id": "lc-1", "type": "link_check"}
+
+    row = get_link_check_project("lc-1", query_one_func=fake_query_one)
+
+    assert row == {"id": "lc-1", "type": "link_check"}
+    assert "SELECT * FROM projects" in calls[0][0]
+    assert "type = 'link_check'" in calls[0][0]
+    assert "deleted_at IS NULL" in calls[0][0]
+    assert "user_id" not in calls[0][0]
+    assert calls[0][1] == ("lc-1",)
+
+
+def test_rename_link_check_project_updates_display_name():
+    from appcore.project_state import rename_link_check_project
+
+    calls = []
+
+    rename_link_check_project(
+        "lc-1",
+        "Renamed",
+        execute_func=lambda sql, args: calls.append((sql, args)) or 1,
+    )
+
+    assert calls == [
+        ("UPDATE projects SET display_name=%s WHERE id=%s", ("Renamed", "lc-1"))
+    ]
+
+
+def test_soft_delete_link_check_project_sets_deleted_at():
+    from datetime import datetime, timezone
+
+    from appcore.project_state import soft_delete_link_check_project
+
+    calls = []
+    deleted_at = datetime.now(timezone.utc)
+
+    soft_delete_link_check_project(
+        "lc-1",
+        deleted_at,
+        execute_func=lambda sql, args: calls.append((sql, args)) or 1,
+    )
+
+    assert calls == [
+        ("UPDATE projects SET deleted_at=%s WHERE id=%s", (deleted_at, "lc-1"))
+    ]
+
+
 def test_resolve_project_display_name_conflict_appends_counter_until_available():
     from appcore.project_state import resolve_project_display_name_conflict
 

@@ -2064,6 +2064,25 @@ def test_link_check_project_api_responses_live_outside_route_module():
     assert Path("web/services/link_check.py").exists()
 
 
+def test_link_check_project_db_access_lives_in_appcore_project_state():
+    route_source = Path("web/routes/link_check.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in route_source
+    assert "query(" not in route_source
+    assert "query_one(" not in route_source
+    assert "execute(" not in route_source
+    assert "project_store.list_link_check_projects" in route_source
+    assert "project_store.get_link_check_project" in route_source
+    assert "project_store.rename_link_check_project" in route_source
+    assert "project_store.soft_delete_link_check_project" in route_source
+
+    store_source = Path("appcore/project_state.py").read_text(encoding="utf-8")
+    assert "def list_link_check_projects" in store_source
+    assert "def get_link_check_project" in store_source
+    assert "def rename_link_check_project" in store_source
+    assert "def soft_delete_link_check_project" in store_source
+
+
 def test_video_review_api_responses_live_outside_route_module():
     module_source = Path("web/routes/video_review.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

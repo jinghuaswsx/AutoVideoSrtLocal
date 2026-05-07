@@ -206,6 +206,55 @@ def update_project_display_name(
     )
 
 
+def list_link_check_projects(
+    *,
+    query_func: QueryFunc = query,
+) -> list[dict]:
+    return query_func(
+        """SELECT id, display_name, original_filename, status, created_at
+           FROM projects
+           WHERE type = 'link_check' AND deleted_at IS NULL
+           ORDER BY created_at DESC
+           LIMIT 200""",
+        (),
+    )
+
+
+def get_link_check_project(
+    task_id: str,
+    *,
+    query_one_func: QueryOneFunc = query_one,
+) -> dict | None:
+    return query_one_func(
+        "SELECT * FROM projects WHERE id = %s AND type = 'link_check' AND deleted_at IS NULL",
+        (task_id,),
+    )
+
+
+def rename_link_check_project(
+    task_id: str,
+    display_name: str,
+    *,
+    execute_func: ExecuteFunc = execute,
+) -> int:
+    return execute_func(
+        "UPDATE projects SET display_name=%s WHERE id=%s",
+        (display_name, task_id),
+    )
+
+
+def soft_delete_link_check_project(
+    task_id: str,
+    deleted_at: Any,
+    *,
+    execute_func: ExecuteFunc = execute,
+) -> int:
+    return execute_func(
+        "UPDATE projects SET deleted_at=%s WHERE id=%s",
+        (deleted_at, task_id),
+    )
+
+
 def resolve_project_display_name_conflict(
     user_id: int,
     desired_name: str,

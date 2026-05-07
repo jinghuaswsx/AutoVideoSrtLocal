@@ -8,8 +8,8 @@ def test_link_check_list_page_renders_global_projects(authed_user_client_no_db, 
 
     monkeypatch.setattr("web.routes.link_check.recover_all_interrupted_tasks", lambda: recovered.append(True))
     monkeypatch.setattr(
-        "web.routes.link_check.query",
-        lambda sql, args=(): [
+        "web.routes.link_check.project_store.list_link_check_projects",
+        lambda: [
             {
                 "id": "lc-global-1",
                 "display_name": "Global Link Check A",
@@ -134,8 +134,8 @@ def test_link_check_detail_page_bootstraps_state_from_projects_row(authed_user_c
     monkeypatch.setattr("web.routes.link_check.recover_project_if_needed", lambda task_id, project_type: None)
     monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: None)
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
             "id": "lc-db-1",
             "type": "link_check",
             "display_name": "Persisted Link Check",
@@ -156,8 +156,8 @@ def test_link_check_detail_page_bootstraps_state_from_projects_row(authed_user_c
 def test_link_check_detail_page_uses_project_row_metadata_when_store_hits(authed_user_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.link_check.recover_project_if_needed", lambda task_id, project_type: None)
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
             "id": "lc-store-1",
             "type": "link_check",
             "display_name": "Store-backed Link Check",
@@ -207,8 +207,8 @@ def test_link_check_api_prefers_recovered_row_state_over_stale_store_cache(authe
 
     monkeypatch.setattr("web.routes.link_check.recover_project_if_needed", lambda task_id, project_type: recovered)
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
             "id": "lc-stale-1",
             "type": "link_check",
             "display_name": "Recovered Link Check",
@@ -243,7 +243,7 @@ def test_link_check_api_prefers_recovered_row_state_over_stale_store_cache(authe
 
 def test_link_check_api_rejects_deleted_project_even_if_store_has_task(authed_user_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: {"id": task_id, "type": "link_check"})
-    monkeypatch.setattr("web.routes.link_check.query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.link_check.project_store.get_link_check_project", lambda task_id: None)
 
     response = authed_user_client_no_db.get("/api/link-check/tasks/lc-deleted-1")
 
@@ -267,10 +267,10 @@ def test_link_check_api_does_not_fallback_to_store_when_project_query_errors(aut
         },
     )
 
-    def _boom(sql, args):
+    def _boom(task_id):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr("web.routes.link_check.query_one", _boom)
+    monkeypatch.setattr("web.routes.link_check.project_store.get_link_check_project", _boom)
 
     response = authed_user_client_no_db.get("/api/link-check/tasks/lc-db-error-1")
 
@@ -280,20 +280,20 @@ def test_link_check_api_does_not_fallback_to_store_when_project_query_errors(aut
 def test_link_check_rename_route_updates_global_project(authed_user_client_no_db, monkeypatch):
     calls = {}
 
-    def fake_query_one(sql, args):
-        calls["query"] = {"sql": sql, "args": args}
+    def fake_get_project(task_id):
+        calls["get"] = task_id
         return {"id": "lc-rename-1"}
 
-    def fake_execute(sql, args):
-        calls["execute"] = {"sql": sql, "args": args}
+    def fake_rename(task_id, display_name):
+        calls["rename"] = {"task_id": task_id, "display_name": display_name}
 
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        fake_query_one,
+        "web.routes.link_check.project_store.get_link_check_project",
+        fake_get_project,
     )
     monkeypatch.setattr(
-        "web.routes.link_check.execute",
-        fake_execute,
+        "web.routes.link_check.project_store.rename_link_check_project",
+        fake_rename,
     )
     monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: {"id": task_id, "type": "link_check"})
     monkeypatch.setattr(
@@ -308,29 +308,31 @@ def test_link_check_rename_route_updates_global_project(authed_user_client_no_db
 
     assert response.status_code == 200
     assert response.get_json()["display_name"] == "Renamed Link Check"
-    assert "user_id" not in calls["query"]["sql"]
-    assert "type = 'link_check'" in calls["query"]["sql"]
-    assert calls["execute"]["args"] == ("Renamed Link Check", "lc-rename-1")
+    assert calls["get"] == "lc-rename-1"
+    assert calls["rename"] == {
+        "task_id": "lc-rename-1",
+        "display_name": "Renamed Link Check",
+    }
     assert calls["update"]["fields"]["display_name"] == "Renamed Link Check"
 
 
 def test_link_check_delete_route_soft_deletes_global_project(authed_user_client_no_db, monkeypatch):
     calls = {}
 
-    def fake_query_one(sql, args):
-        calls["query"] = {"sql": sql, "args": args}
+    def fake_get_project(task_id):
+        calls["get"] = task_id
         return {
             "id": "lc-delete-1",
             "task_dir": "C:/tmp/lc-delete-1",
             "state_json": json.dumps({"tos_keys": ["x"]}, ensure_ascii=False),
         }
 
-    def fake_execute(sql, args):
-        calls["execute"] = {"sql": sql, "args": args}
+    def fake_soft_delete(task_id, deleted_at):
+        calls["delete"] = {"task_id": task_id, "deleted_at": deleted_at}
 
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        fake_query_one,
+        "web.routes.link_check.project_store.get_link_check_project",
+        fake_get_project,
     )
     monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: {"id": task_id, "type": "link_check"})
     monkeypatch.setattr(
@@ -342,8 +344,8 @@ def test_link_check_delete_route_soft_deletes_global_project(authed_user_client_
         lambda task: calls.setdefault("cleanup", task),
     )
     monkeypatch.setattr(
-        "web.routes.link_check.execute",
-        fake_execute,
+        "web.routes.link_check.project_store.soft_delete_link_check_project",
+        fake_soft_delete,
     )
     monkeypatch.setattr(
         "web.routes.link_check.store.update",
@@ -354,9 +356,8 @@ def test_link_check_delete_route_soft_deletes_global_project(authed_user_client_
 
     assert response.status_code == 200
     assert response.get_json() == {"status": "ok"}
-    assert "user_id" not in calls["query"]["sql"]
-    assert "type = 'link_check'" in calls["query"]["sql"]
-    assert "deleted_at" in calls["execute"]["sql"]
+    assert calls["get"] == "lc-delete-1"
+    assert calls["delete"]["task_id"] == "lc-delete-1"
     assert calls["cleanup"]["task_dir"] == "C:/tmp/lc-delete-1"
     assert calls["cleanup"]["tos_keys"] == ["collected-key"]
     assert calls["update"]["fields"]["status"] == "deleted"
@@ -379,8 +380,8 @@ def test_link_check_detail_page_bootstrap_json_escapes_script_terminator(authed_
     monkeypatch.setattr("web.routes.link_check.recover_project_if_needed", lambda task_id, project_type: None)
     monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: None)
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
             "id": "lc-xss-1",
             "type": "link_check",
             "display_name": "Safe Link Check",

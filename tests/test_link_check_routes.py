@@ -3,7 +3,7 @@ import json
 
 
 def test_link_check_page_renders_form(authed_user_client_no_db, monkeypatch):
-    monkeypatch.setattr("web.routes.link_check.query", lambda sql, args=(): [])
+    monkeypatch.setattr("web.routes.link_check.project_store.list_link_check_projects", lambda: [])
 
     response = authed_user_client_no_db.get("/link-check")
 
@@ -14,7 +14,7 @@ def test_link_check_page_renders_form(authed_user_client_no_db, monkeypatch):
 
 
 def test_link_check_page_renders_project_list_contract_without_legacy_shell(authed_user_client_no_db, monkeypatch):
-    monkeypatch.setattr("web.routes.link_check.query", lambda sql, args=(): [])
+    monkeypatch.setattr("web.routes.link_check.project_store.list_link_check_projects", lambda: [])
 
     response = authed_user_client_no_db.get("/link-check")
     html = response.get_data(as_text=True)
@@ -63,9 +63,9 @@ def test_get_task_serializes_preview_urls(authed_user_client_no_db, monkeypatch)
     from web import store
 
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
-            "id": args[0],
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
+            "id": task_id,
             "type": "link_check",
             "display_name": "Demo Link Check",
             "status": "done",
@@ -169,15 +169,15 @@ def test_get_task_serializes_locale_and_download_evidence(authed_user_client_no_
     }
 
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
-            "id": args[0],
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
+            "id": task_id,
             "type": "link_check",
             "display_name": "Demo Link Check",
             "status": "done",
             "state_json": json.dumps(
                 {
-                    "id": args[0],
+                    "id": task_id,
                     "type": "link_check",
                     "status": "done",
                     "link_url": "https://shop.example.com/de/products/demo",
@@ -214,15 +214,15 @@ def test_get_task_backfills_locale_evidence_defaults_from_empty_or_partial_state
     current_locale_evidence = {}
 
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
-            "id": args[0],
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
+            "id": task_id,
             "type": "link_check",
             "display_name": "Demo Link Check",
             "status": "done",
             "state_json": json.dumps(
                 {
-                    "id": args[0],
+                    "id": task_id,
                     "type": "link_check",
                     "status": "done",
                     "link_url": "https://shop.example.com/de/products/demo",
@@ -286,9 +286,9 @@ def test_link_check_site_image_rejects_path_outside_task_storage(
         "reference_images": [],
     }
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
-            "id": args[0],
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
+            "id": task_id,
             "type": "link_check",
             "status": "done",
             "task_dir": str(task_dir),
@@ -336,9 +336,9 @@ def test_link_check_reference_image_serves_path_inside_task_storage(
         "reference_images": [{"id": "ref-1", "local_path": str(inside)}],
     }
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
-            "id": args[0],
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
+            "id": task_id,
             "type": "link_check",
             "status": "done",
             "task_dir": str(task_dir),
@@ -370,15 +370,15 @@ def test_get_task_normalizes_invalid_locale_evidence_values(authed_user_client_n
     current_locale_evidence = {}
 
     monkeypatch.setattr(
-        "web.routes.link_check.query_one",
-        lambda sql, args: {
-            "id": args[0],
+        "web.routes.link_check.project_store.get_link_check_project",
+        lambda task_id: {
+            "id": task_id,
             "type": "link_check",
             "display_name": "Demo Link Check",
             "status": "done",
             "state_json": json.dumps(
                 {
-                    "id": args[0],
+                    "id": task_id,
                     "type": "link_check",
                     "status": "done",
                     "link_url": "https://shop.example.com/de/products/demo",
