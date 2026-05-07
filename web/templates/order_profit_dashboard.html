@@ -373,15 +373,18 @@
 
   <div data-op-panel="summary">
     <div class="op-cards">
-      <div class="op-card"><h3>总营收</h3><div class="value" id="opRevenue">-</div><div class="sub" id="opRevenueLines">-</div></div>
       <div class="op-card" id="opTotalProfitCard"><h3>总利润</h3><div class="value" id="opTotalProfit">-</div><div class="sub" id="opTotalProfitFormula">-</div></div>
+      <div class="op-card"><h3>总营收</h3><div class="value" id="opTotalRevenue">-</div><div class="sub" id="opTotalRevenueSub">-</div></div>
+      <div class="op-card" id="opProfitCard"><h3>完整利润</h3><div class="value" id="opCompleteProfit">-</div><div class="sub" id="opCompleteMargin">-</div></div>
+      <div class="op-card warn"><h3>未核算营收</h3><div class="value" id="opUnaccountedRevenue">-</div><div class="sub" id="opUnaccountedRevenueSub">不完备 SKU 行营收</div></div>
+      <div class="op-card warn"><h3>未核算成本</h3><div class="value" id="opUnaccountedCost">-</div><div class="sub" id="opUnaccountedCostSub">采购估算 - ｜ 物流估算 -</div></div>
       <div class="op-card warn"><h3>待配对广告费</h3><div class="value" id="opUnallocated">-</div><div class="sub" id="opUnallocatedSub">当前时间范围内 campaign 未匹配 product，已扣入总利润</div></div>
       <div class="op-card warn op-card-action" id="opIncompleteCard" role="button" tabindex="0" aria-haspopup="dialog" aria-controls="opIncompleteModal"><h3>不完备 SKU 行</h3><div class="value" id="opIncomplete">-</div><div class="sub">点击查看当前时间范围的问题产品</div></div>
       <div class="op-card warn"><h3>估算数据</h3><div class="value" id="opEstimatedData">-</div><div class="sub" id="opEstimatedDataSub">-</div></div>
     </div>
 
     <div class="op-section">
-      <h2>成本拆分（总览）</h2>
+      <h2>成本拆分（含估算）</h2>
       <table class="op-table op-cost-breakdown">
         <thead><tr><th>项目</th><th class="num">USD</th><th class="num">占营收 %</th></tr></thead>
         <tbody id="opCostBreakdownBody"></tbody>
@@ -667,17 +670,35 @@ async function refreshSummary() {
   const inc = data.summary.incomplete;
   const overview = data.overview || {};
   const marks = data.estimate_marks || {};
+  const estimated = data.estimated || {};
   const totalLines = overview.line_count ?? ((ok.lines || 0) + (inc.lines || 0));
-  const totalRevenue = overview.revenue_usd ?? ((ok.revenue || 0) + (inc.revenue || 0));
+  const totalRevenue = data.total_revenue_usd ?? overview.revenue_usd ?? ((ok.revenue || 0) + (inc.revenue || 0));
+  const knownRevenue = data.known_revenue_usd ?? (ok.revenue || 0);
+  const unaccountedRevenue = data.unaccounted_revenue_usd ?? (inc.revenue || 0);
+  const completeProfit = data.profit_with_estimate_usd ?? ((ok.profit || 0) + (estimated.profit_usd || 0));
+  const totalProfit = overview.total_profit_usd ?? (completeProfit - (data.unallocated_ad_spend_usd || 0));
+  const estimatedPurchase = estimated.purchase_usd || 0;
+  const estimatedShipping = estimated.shipping_cost_usd || 0;
+  const estimatedCost = estimated.total_cost_usd ?? (estimatedPurchase + estimatedShipping);
 
-  document.getElementById('opRevenue').textContent = fmtUSD(totalRevenue);
-  document.getElementById('opRevenueLines').textContent = `${fmtInt(totalLines)} 行：完备 ${fmtInt(ok.lines)} / 估算 ${fmtInt(inc.lines)}`;
-  document.getElementById('opTotalProfit').textContent = fmtUSD(overview.total_profit_usd);
-  if ((overview.total_profit_usd || 0) < 0) document.getElementById('opTotalProfitCard').classList.add('neg');
+  document.getElementById('opTotalProfit').textContent = fmtUSD(totalProfit);
+  if ((totalProfit || 0) < 0) document.getElementById('opTotalProfitCard').classList.add('neg');
   else document.getElementById('opTotalProfitCard').classList.remove('neg');
   const marginText = overview.total_margin_pct == null ? '总利润率：-' : `总利润率：${overview.total_margin_pct}%`;
   document.getElementById('opTotalProfitFormula').textContent =
     `${marginText}｜已核算 ${fmtUSD(overview.confirmed_profit_usd)} + 估算 ${fmtUSD(overview.estimated_profit_usd)} - 待配对广告 ${fmtUSD(overview.unallocated_ad_spend_usd)}`;
+  document.getElementById('opTotalRevenue').textContent = fmtUSD(totalRevenue);
+  document.getElementById('opTotalRevenueSub').textContent = `已核算 ${fmtUSD(knownRevenue)} ｜ 未核算 ${fmtUSD(unaccountedRevenue)} ｜ ${fmtInt(totalLines)} 行`;
+  document.getElementById('opCompleteProfit').textContent = fmtUSD(completeProfit);
+  if ((completeProfit || 0) < 0) document.getElementById('opProfitCard').classList.add('neg');
+  else document.getElementById('opProfitCard').classList.remove('neg');
+  document.getElementById('opCompleteMargin').textContent = data.profit_with_estimate_margin_pct == null
+    ? `已核算利润 ${fmtUSD(ok.profit)}`
+    : `完整利润率：${data.profit_with_estimate_margin_pct}% ｜ 已核算利润 ${fmtUSD(ok.profit)}`;
+  document.getElementById('opUnaccountedRevenue').textContent = fmtUSD(unaccountedRevenue);
+  document.getElementById('opUnaccountedRevenueSub').textContent = `${fmtInt(inc.lines)} 行不完备 SKU`;
+  document.getElementById('opUnaccountedCost').textContent = fmtUSD(estimatedCost);
+  document.getElementById('opUnaccountedCostSub').textContent = `采购估算 ${fmtUSD(estimated.purchase_usd)} ｜ 物流估算 ${fmtUSD(estimated.shipping_cost_usd)}`;
   document.getElementById('opUnallocated').textContent = fmtUSD(data.unallocated_ad_spend_usd);
   document.getElementById('opUnallocatedSub').textContent = `${data.date_from || f} 至 ${data.date_to || t} 未匹配 product`;
   document.getElementById('opIncomplete').textContent = `${fmtInt(inc.lines)} 行`;
@@ -690,11 +711,15 @@ async function refreshSummary() {
   // 成本拆分
   const rev = totalRevenue || 0;
   const sumCost = key => Number(ok[key] || 0) + Number(inc[key] || 0);
+  const purchaseActual = (ok.purchase_actual ?? ok.purchase ?? 0) + (inc.purchase_actual ?? inc.purchase ?? 0);
+  const shippingActual = (ok.shipping_cost_actual ?? ok.shipping_cost ?? 0) + (inc.shipping_cost_actual ?? inc.shipping_cost ?? 0);
   const items = [
     ['Shopify 手续费', sumCost('shopify_fee'), estimateNote(marks.shopify_fee)],
     ['广告费分摊', sumCost('ad_cost'), ''],
-    ['采购成本 (RMB→USD)', sumCost('purchase'), estimateNote(marks.purchase_fallback)],
-    ['小包物流 (RMB→USD)', sumCost('shipping_cost'), `${estimateNote(marks.shipping_product_estimated)}${estimateNote(marks.shipping_fallback)}`],
+    ['采购成本（已核算）', purchaseActual, ''],
+    ['采购成本估算（未核算）', estimatedPurchase, estimateNote(marks.purchase_fallback)],
+    ['小包物流（已核算）', shippingActual, estimateNote(marks.shipping_product_estimated)],
+    ['小包物流估算（未核算）', estimatedShipping, estimateNote(marks.shipping_fallback)],
     ['退货占用', sumCost('return_reserve'), estimateNote(marks.return_reserve)],
     ['待配对广告费', overview.unallocated_ad_spend_usd ?? data.unallocated_ad_spend_usd ?? 0, estimateNote(marks.unallocated_ad_spend)],
   ];

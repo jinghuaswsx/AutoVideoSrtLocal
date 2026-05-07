@@ -56,6 +56,20 @@ def test_pushes_script_renders_product_link_and_copy_button():
     assert "f-owner" in script
 
 
+def test_pushes_script_sanitizes_product_page_url_href_protocols():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    render_start = script.index("function renderRow(it)")
+    render_row = script[
+        render_start:
+        script.index("async function load", render_start)
+    ]
+
+    assert "function safeExternalHref(url)" in script
+    assert "const productPageUrl = safeExternalHref(it.product_page_url);" in render_row
+    assert 'href="${escapeAttr(productPageUrl)}"' in render_row
+    assert 'href="${escapeAttr(it.product_page_url)}"' not in render_row
+
+
 def test_pushes_script_persists_filters_pagination_and_sort_in_url():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
 

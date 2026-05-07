@@ -82,3 +82,30 @@ def test_order_profit_dashboard_renders_total_profit_and_estimate_marks():
     assert "估算标记" in TEMPLATE
     assert "renderEstimateMarks" in TEMPLATE
     assert "estimate_marks" in TEMPLATE
+
+
+def test_order_profit_dashboard_renders_complete_profit_summary_cards():
+    expected_labels = [
+        "总营收",
+        "总利润",
+        "完整利润",
+        "未核算营收",
+        "未核算成本",
+    ]
+    for label in expected_labels:
+        assert label in TEMPLATE
+
+    expected_bindings = [
+        "opTotalRevenue",
+        "opCompleteProfit",
+        "opUnaccountedRevenue",
+        "opUnaccountedCost",
+        "data.total_revenue_usd",
+        "data.unaccounted_revenue_usd",
+        "data.profit_with_estimate_usd",
+        "estimated.purchase_usd",
+        "estimated.shipping_cost_usd",
+        "overview.total_profit_usd",
+    ]
+    for snippet in expected_bindings:
+        assert snippet in TEMPLATE

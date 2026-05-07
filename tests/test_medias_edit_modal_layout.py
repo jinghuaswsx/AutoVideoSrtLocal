@@ -111,3 +111,27 @@ def test_edit_video_material_cards_support_inline_filename_edit():
     assert "edSaveItemNameEdit" in script
     assert "edCancelItemNameEdit" in script
     assert 'method: "PATCH"' in script or "method: 'PATCH'" in script
+
+
+def test_edit_detail_translate_task_links_sanitize_internal_hrefs():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    history_block = script[
+        script.index("function edRenderDetailTranslateHistory"):
+        script.index("const LINK_CHECK_STATUS_LABELS")
+    ]
+    state_block = script[
+        script.index("function edRenderDetailTranslateState"):
+        script.index("async function edRefreshDetailImagesPanel")
+    ]
+    submit_block = script[
+        script.index("async function edSubmitDetailTranslate"):
+        script.index("function edCloseLinkCheckModal")
+    ]
+
+    assert "function safeInternalHref(url, fallback)" in script
+    assert "safeInternalHref(task.detail_url" in history_block
+    assert "safeInternalHref(appliedTask.detail_url" in state_block
+    assert "safeInternalHref(latest.detail_url" in state_block
+    assert "link.href = safeInternalHref(data.detail_url" in submit_block
+    assert "escapeHtml(task.detail_url ||" not in history_block
+    assert "link.href = data.detail_url ||" not in submit_block
