@@ -1710,6 +1710,27 @@ def test_copywriting_route_db_connection_uses_appcore_store():
     assert store_path.exists()
 
 
+def test_copywriting_project_sql_lives_in_appcore_store():
+    route_source = Path("web/routes/copywriting.py").read_text(encoding="utf-8")
+    store_source = Path("appcore/copywriting_route_store.py").read_text(encoding="utf-8")
+
+    for snippet in [
+        "FROM projects",
+        "INSERT INTO projects",
+        "SELECT thumbnail_path FROM projects",
+    ]:
+        assert snippet not in route_source
+        assert snippet in store_source
+
+    for helper_name in [
+        "list_user_projects",
+        "insert_project",
+        "get_project_thumbnail_path",
+    ]:
+        assert f"def {helper_name}" in store_source
+        assert f"copywriting_route_store.{helper_name}" in route_source
+
+
 def test_productivity_stats_api_responses_live_outside_route_module():
     module_source = Path("web/routes/productivity_stats.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 
@@ -43,20 +42,7 @@ get_connection = copywriting_route_store.get_connection
 def list_page():
     recover_all_interrupted_tasks()
     """文案项目列表页。"""
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, display_name, original_filename, thumbnail_path, "
-                "status, created_at, expires_at "
-                "FROM projects "
-                "WHERE user_id = %s AND type = 'copywriting' AND deleted_at IS NULL "
-                "ORDER BY created_at DESC",
-                (current_user.id,),
-            )
-            projects = cur.fetchall()
-    finally:
-        conn.close()
+    projects = copywriting_route_store.list_user_projects(current_user.id)
     from datetime import datetime
     return render_template("copywriting_list.html", projects=projects, now=datetime.now(),
                            retention_hours=get_retention_hours("copywriting"))
@@ -166,16 +152,16 @@ def upload():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO projects "
-                "(id, user_id, type, original_filename, display_name, "
-                "thumbnail_path, status, task_dir, state_json, "
-                "created_at, expires_at) "
-                "VALUES (%s, %s, 'copywriting', %s, %s, %s, 'uploaded', %s, %s, "
-                "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
-                (task_id, current_user.id, video_filename, display_name,
-                 thumbnail_path, task_dir, json.dumps(task, ensure_ascii=False),
-                 get_retention_hours("copywriting")),
+            copywriting_route_store.insert_project(
+                cur,
+                task_id=task_id,
+                user_id=current_user.id,
+                original_filename=video_filename,
+                display_name=display_name,
+                thumbnail_path=thumbnail_path,
+                task_dir=task_dir,
+                state=task,
+                retention_hours=get_retention_hours("copywriting"),
             )
 
             # 保存商品信息
@@ -617,22 +603,13 @@ def get_artifact(task_id: str, name: str):
         finally:
             conn.close()
     elif name == "thumbnail":
-        conn = get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT thumbnail_path FROM projects WHERE id = %s",
-                    (task_id,),
-                )
-                row = cur.fetchone()
-                if row and row.get("thumbnail_path") and os.path.isfile(row["thumbnail_path"]):
-                    return safe_task_file_response(
-                        task,
-                        row["thumbnail_path"],
-                        not_found_message="artifact not found",
-                    )
-        finally:
-            conn.close()
+        thumbnail_path = copywriting_route_store.get_project_thumbnail_path(task_id)
+        if thumbnail_path and os.path.isfile(thumbnail_path):
+            return safe_task_file_response(
+                task,
+                thumbnail_path,
+                not_found_message="artifact not found",
+            )
     elif name == "tts_audio":
         artifacts = task.get("artifacts", {})
         tts = artifacts.get("tts", {})
