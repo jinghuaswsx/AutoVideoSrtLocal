@@ -412,9 +412,10 @@ def get_llm_debug(task_id: str, step: str):
 def restart(task_id):
     """清上一轮产物，用新参数重跑多语种翻译流水线。"""
     recover_task_if_needed(task_id)
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
 
     body = request.get_json(silent=True) or {}
     raw_source_language = body.get("source_language", None)
@@ -435,7 +436,7 @@ def restart(task_id):
         subtitle_position=body.get("subtitle_position", "bottom"),
         interactive_review=body.get("interactive_review", "false") in ("true", True, "1"),
         source_language=raw_source_language,
-        user_id=current_user.id,
+        user_id=owner_id,
         runner=omni_pipeline_runner,
     )
     return _json_response({"status": "restarted", "task": updated})
@@ -445,9 +446,10 @@ def restart(task_id):
 @login_required
 def start(task_id):
     recover_task_if_needed(task_id)
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
 
     body = request.get_json(silent=True) or {}
     store.update(
@@ -461,7 +463,7 @@ def start(task_id):
         interactive_review=body.get("interactive_review", "false") in ("true", True, "1"),
     )
 
-    omni_pipeline_runner.start(task_id, user_id=current_user.id)
+    omni_pipeline_runner.start(task_id, user_id=owner_id)
     updated_task = store.get(task_id) or task
     return _json_response({"status": "started", "task": updated_task})
 
@@ -470,9 +472,10 @@ def start(task_id):
 @login_required
 def update_source_language(task_id):
     """改写源语言并从 asr_clean 步骤重跑。源语言必须人工明确选择。"""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
     body = request.get_json(silent=True) or {}
     raw_lang = (body.get("source_language") or "").strip()
     if raw_lang not in ALLOWED_SOURCE_LANGUAGES:
@@ -509,7 +512,7 @@ def update_source_language(task_id):
             store.set_step(task_id, s, "pending")
             store.set_step_message(task_id, s, "等待中...")
 
-    omni_pipeline_runner.resume(task_id, "asr_clean", user_id=current_user.id)
+    omni_pipeline_runner.resume(task_id, "asr_clean", user_id=owner_id)
     return _json_response({
         "status": "started",
         "source_language": new_lang,
@@ -520,9 +523,10 @@ def update_source_language(task_id):
 @bp.route("/api/omni-translate/<task_id>/alignment", methods=["PUT"])
 @login_required
 def update_alignment(task_id):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
 
     body = request.get_json(silent=True) or {}
     break_after = body.get("break_after")
@@ -550,7 +554,7 @@ def update_alignment(task_id):
         store.set_step_message(task_id, "translate", "请选择翻译模型和提示词")
         store.update(task_id, _translate_pre_select=True)
     else:
-        omni_pipeline_runner.resume(task_id, "translate", user_id=current_user.id)
+        omni_pipeline_runner.resume(task_id, "translate", user_id=owner_id)
     return _json_response({"status": "ok", "script_segments": script_segments})
 
 
@@ -558,9 +562,10 @@ def update_alignment(task_id):
 @login_required
 def update_segments(task_id):
     """用户确认/编辑多语种翻译结果。"""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
 
     body = request.get_json(silent=True) or {}
     segments = body.get("segments")
@@ -586,17 +591,18 @@ def update_segments(task_id):
                      evals_invalidated_at=datetime.now(timezone.utc).isoformat())
 
     store.set_current_review_step(task_id, "")
-    omni_pipeline_runner.resume(task_id, "tts", user_id=current_user.id)
+    omni_pipeline_runner.resume(task_id, "tts", user_id=owner_id)
     return _json_response({"status": "ok"})
 
 
 @bp.route("/api/omni-translate/<task_id>/export", methods=["POST"])
 @login_required
 def export(task_id):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return _json_response({"error": "Task not found"}, 404)
-    omni_pipeline_runner.resume(task_id, "compose", user_id=current_user.id)
+    owner_id = task.get("_user_id") or current_user.id
+    omni_pipeline_runner.resume(task_id, "compose", user_id=owner_id)
     return _json_response({"status": "started"})
 
 
@@ -609,9 +615,10 @@ RESUME_STEP_ALIASES = {"asr_normalize": "asr_clean"}
 @login_required
 def resume(task_id):
     recover_task_if_needed(task_id)
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
     body = request.get_json(silent=True) or {}
     raw_start_step = body.get("start_step", "")
     start_step = RESUME_STEP_ALIASES.get(raw_start_step, raw_start_step)
@@ -627,7 +634,7 @@ def resume(task_id):
             store.set_step_message(task_id, s, "等待中...")
 
     store.update(task_id, status="running", current_review_step="")
-    omni_pipeline_runner.resume(task_id, start_step, user_id=current_user.id)
+    omni_pipeline_runner.resume(task_id, start_step, user_id=owner_id)
     return _json_response({"status": "started", "start_step": start_step})
 
 
@@ -987,9 +994,10 @@ def rematch_voice(task_id: str):
 @login_required
 def confirm_voice(task_id: str):
     """Persist the shared-shell voice selection and resume from alignment."""
-    row = _query_viewable_project(task_id, "state_json")
+    row = _query_viewable_project(task_id, "state_json, user_id")
     if not row:
         abort(404)
+    owner_id = row.get("user_id") or current_user.id
 
     body = request.get_json() or {}
     state = json.loads(row["state_json"] or "{}")
@@ -1034,7 +1042,7 @@ def confirm_voice(task_id: str):
         from appcore.events import EventBus
         from appcore.runtime_omni import OmniTranslateRunner
 
-        _runner = OmniTranslateRunner(bus=EventBus(), user_id=current_user.id)
+        _runner = OmniTranslateRunner(bus=EventBus(), user_id=owner_id)
         _steps = _runner._get_pipeline_steps(
             task_id, state.get("video_path", ""), state.get("task_dir", ""),
         )
@@ -1044,7 +1052,7 @@ def confirm_voice(task_id: str):
             next_step = _names[idx + 1]
     except Exception:
         log.warning("[omni] confirm-voice: next_step 解析失败，回退 alignment", exc_info=True)
-    omni_pipeline_runner.resume(task_id, next_step, user_id=current_user.id)
+    omni_pipeline_runner.resume(task_id, next_step, user_id=owner_id)
 
     medias_context = state.get("medias_context") or {}
     parent_task_id = (medias_context.get("parent_task_id") or "").strip()
@@ -1054,7 +1062,7 @@ def confirm_voice(task_id: str):
 
             start_bulk_scheduler_background(
                 parent_task_id,
-                user_id=current_user.id,
+                user_id=owner_id,
                 entrypoint="omni_translate.voice_confirm",
                 action="resume_after_voice_confirm",
                 details={"child_task_id": task_id},
