@@ -118,6 +118,26 @@ def test_eval_country_table_expands_risk_section_but_keeps_meta_collapsed():
     assert 'return `<details class="ect-collapsible" open>' not in meta_section
 
 
+def test_eval_country_table_sanitizes_product_url_href_protocols():
+    script = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
+    product_link_start = script.index("function productLinkHtml")
+    summary_start = script.index("function summaryHtml", product_link_start)
+    product_link = script[product_link_start:summary_start]
+    meta_start = script.index("function metaSectionHtml")
+    modal_start = script.index("function render", meta_start)
+    meta_section = script[meta_start:modal_start]
+
+    assert "function safeExternalHref(url)" in script
+    assert "const safeUrl = safeExternalHref(url);" in product_link
+    assert "if (!safeUrl) return '';" in product_link
+    assert 'href="${escapeHtml(safeUrl)}"' in product_link
+    assert "const productUrl = safeExternalHref(detail.product_url);" in meta_section
+    assert 'href="${escapeHtml(productUrl)}"' in meta_section
+
+    assert 'href="${escapeHtml(url)}"' not in product_link
+    assert "const productUrl = String(detail.product_url || '').trim();" not in meta_section
+
+
 def test_eval_country_table_has_compact_push_detail_table_renderer():
     script = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
 

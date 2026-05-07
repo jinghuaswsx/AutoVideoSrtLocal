@@ -209,6 +209,19 @@
     }[c]));
   }
 
+  function safeExternalHref(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function parse(raw) {
     if (raw && typeof raw === 'object') return raw;
     const text = String(raw == null ? '' : raw).trim();
@@ -310,7 +323,9 @@
   function productLinkHtml(detail) {
     const url = String((detail && detail.product_url) || '').trim();
     if (!url) return '';
-    return `<a class="ect-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${externalLinkSvg()}<span>商品链接</span></a>`;
+    const safeUrl = safeExternalHref(url);
+    if (!safeUrl) return '';
+    return `<a class="ect-link-btn" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${externalLinkSvg()}<span>商品链接</span></a>`;
   }
 
   function summaryHtml(detail, countries) {
@@ -534,7 +549,7 @@
       const abs = formatAbsolute(evaluatedAt);
       items.push({ label: '评估时间', value: `${escapeHtml(abs)} <span style="color:var(--oc-fg-subtle)">（${escapeHtml(rel)}）</span>` });
     }
-    const productUrl = String(detail.product_url || '').trim();
+    const productUrl = safeExternalHref(detail.product_url);
     if (productUrl) {
       items.push({ label: '商品链接', value: `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productUrl)}</a>` });
     }
