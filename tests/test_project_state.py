@@ -331,6 +331,46 @@ def test_soft_delete_link_check_project_sets_deleted_at():
     ]
 
 
+def test_get_project_delete_row_scopes_by_user_and_active_project():
+    from appcore.project_state import get_project_delete_row
+
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"id": "task-1", "task_dir": "out/task-1", "state_json": "{}"}
+
+    row = get_project_delete_row("task-1", 7, query_one_func=fake_query_one)
+
+    assert row == {"id": "task-1", "task_dir": "out/task-1", "state_json": "{}"}
+    assert calls == [
+        (
+            "SELECT id, task_dir, state_json FROM projects "
+            "WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+            ("task-1", 7),
+        )
+    ]
+
+
+def test_soft_delete_project_sets_deleted_at():
+    from datetime import datetime, timezone
+
+    from appcore.project_state import soft_delete_project
+
+    calls = []
+    deleted_at = datetime(2026, 5, 7, tzinfo=timezone.utc)
+
+    soft_delete_project(
+        "task-1",
+        deleted_at,
+        execute_func=lambda sql, args: calls.append((sql, args)) or 1,
+    )
+
+    assert calls == [
+        ("UPDATE projects SET deleted_at=%s WHERE id=%s", (deleted_at, "task-1"))
+    ]
+
+
 def test_resolve_project_display_name_conflict_appends_counter_until_available():
     from appcore.project_state import resolve_project_display_name_conflict
 

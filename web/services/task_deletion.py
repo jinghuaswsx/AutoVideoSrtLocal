@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from appcore import cleanup
+from appcore.project_state import get_project_delete_row, soft_delete_project
 from web import store
 from web.services.task_access import refresh_task as refresh_task_state
 
@@ -52,9 +53,10 @@ def delete_task_workflow(
     update_task: Callable[..., object] = store.update,
     now_factory: Callable[[], datetime] = _utc_now,
 ) -> TaskDeleteOutcome:
-    row = query_one(
-        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, user_id),
+    row = get_project_delete_row(
+        task_id,
+        user_id,
+        query_one_func=query_one,
     )
     if not row:
         return TaskDeleteOutcome({"error": "Task not found"}, 404, not_found=True)
@@ -66,9 +68,6 @@ def delete_task_workflow(
         delete_task_storage=delete_task_storage,
     )
 
-    execute(
-        "UPDATE projects SET deleted_at=%s WHERE id=%s",
-        (now_factory(), task_id),
-    )
+    soft_delete_project(task_id, now_factory(), execute_func=execute)
     update_task(task_id, status="deleted")
     return TaskDeleteOutcome({"status": "ok"})

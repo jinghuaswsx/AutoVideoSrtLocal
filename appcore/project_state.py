@@ -93,6 +93,31 @@ def get_project_for_user(
     )
 
 
+def get_project_delete_row(
+    task_id: str,
+    user_id: int,
+    *,
+    query_one_func: QueryOneFunc = query_one,
+) -> dict | None:
+    return query_one_func(
+        "SELECT id, task_dir, state_json FROM projects "
+        "WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, user_id),
+    )
+
+
+def soft_delete_project(
+    task_id: str,
+    deleted_at: Any,
+    *,
+    execute_func: ExecuteFunc = execute,
+) -> int:
+    return execute_func(
+        "UPDATE projects SET deleted_at=%s WHERE id=%s",
+        (deleted_at, task_id),
+    )
+
+
 def create_copywriting_translate_project(
     task_id: str,
     user_id: int,
