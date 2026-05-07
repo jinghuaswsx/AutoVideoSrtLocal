@@ -26,7 +26,7 @@ from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
 
-DEFAULT_STORE_DOMAIN = "newjoyloo.com"
+DEFAULT_STORE_DOMAIN = settings.DEFAULT_SHOPIFY_DOMAIN
 LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
 VISUAL_MATCH_MIN_SCORE = 0.80
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
@@ -782,6 +782,12 @@ def run(
     visual_pair_confirm_cb: VisualPairConfirmCallback | None = None,
 ) -> dict[str, Any]:
     cfg = settings.load_runtime_config()
+    browser_user_data_dir = str(
+        getattr(args, "browser_user_data_dir", "") or cfg["browser_user_data_dir"]
+    )
+    store_slug = str(
+        getattr(args, "store_slug", "") or settings.shopify_store_slug_for_domain(args.store_domain)
+    )
     cancellation.throw_if_cancelled(cancel_token)
     source_product = fetch_storefront_product(args.product_code, store_domain=args.store_domain)
     cancellation.throw_if_cancelled(cancel_token)
@@ -818,6 +824,9 @@ def run(
         "shop_locale": args.shop_locale,
         "taa_shop_locale": getattr(args, "taa_shop_locale", args.shop_locale),
         "shopify_product_id": product_id,
+        "store_domain": args.store_domain,
+        "store_slug": store_slug,
+        "browser_user_data_dir": browser_user_data_dir,
         "workspace": str(workspace.root),
         "download_dir": str(workspace.source_localized_dir),
         "carousel": None,
@@ -829,9 +838,9 @@ def run(
     if not args.skip_carousel:
         cancellation.throw_if_cancelled(cancel_token)
         _preload_chrome_tab_to_url(
-            user_data_dir=cfg["browser_user_data_dir"],
+            user_data_dir=browser_user_data_dir,
             port=args.port,
-            target_url=session.build_ez_url(product_id),
+            target_url=session.build_ez_url(product_id, store_slug=store_slug),
             label="轮播图",
         )
         print("轮播图：正在按文件名/哈希比对位置与本地化图片")
@@ -892,10 +901,10 @@ def run(
             }
         else:
             print(f"轮播图：开始替换 {len(pairs)} 个位置")
-            ez_url = session.build_ez_url(product_id)
+            ez_url = session.build_ez_url(product_id, store_slug=store_slug)
             carousel_results = ez_cdp.replace_many(
                 ez_url=ez_url,
-                user_data_dir=cfg["browser_user_data_dir"],
+                user_data_dir=browser_user_data_dir,
                 pairs=pairs,
                 language=args.language,
                 replace_existing=not args.skip_existing_carousel,
@@ -932,7 +941,7 @@ def run(
                 product_code=args.product_code,
                 locale=args.shop_locale,
                 store_domain=args.store_domain,
-                user_data_dir=cfg["browser_user_data_dir"],
+                user_data_dir=browser_user_data_dir,
                 port=args.port,
                 cancel_token=cancel_token,
             )
@@ -946,11 +955,12 @@ def run(
             )
         print(f"详情图：使用源图序号映射 {source_index_map}")
         _preload_chrome_tab_to_url(
-            user_data_dir=cfg["browser_user_data_dir"],
+            user_data_dir=browser_user_data_dir,
             port=args.port,
             target_url=session.build_translate_url(
                 product_id,
                 getattr(args, "taa_shop_locale", args.shop_locale),
+                store_slug=store_slug,
             ),
             label="详情图",
         )
@@ -1010,8 +1020,9 @@ def run(
         detail_result = taa_cdp.replace_detail_images(
             product_id=product_id,
             shop_locale=getattr(args, "taa_shop_locale", args.shop_locale),
-            user_data_dir=cfg["browser_user_data_dir"],
+            user_data_dir=browser_user_data_dir,
             localized_images=downloaded,
+            store_slug=store_slug,
             source_index_by_token=source_index_map,
             forced_replacements_by_src=detail_visual_plan.get("forced_replacements_by_src") or {},
             display_size_by_src=display_size_by_src,
@@ -1062,6 +1073,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--language", default="")
     parser.add_argument("--product-id", default="")
     parser.add_argument("--store-domain", default=DEFAULT_STORE_DOMAIN)
+    parser.add_argument("--store-slug", default="")
+    parser.add_argument("--browser-user-data-dir", default="")
     parser.add_argument("--bootstrap-timeout-s", type=int, default=60)
     parser.add_argument("--port", type=int, default=ez_cdp.DEFAULT_CDP_PORT)
     parser.add_argument("--carousel-limit", type=int, default=0)
@@ -1080,6 +1093,8 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     args.lang = str(args.lang or "").strip().lower()
+    args.store_domain = settings.normalize_domain(args.store_domain)
+    args.store_slug = str(args.store_slug or settings.shopify_store_slug_for_domain(args.store_domain)).strip()
     args.shop_locale = str(args.shop_locale or args.lang).strip().lower()
     args.taa_shop_locale = locales.translate_and_adapt_locale_for(
         str(args.taa_shop_locale or args.shop_locale).strip()

@@ -40,6 +40,18 @@ def fetch_languages(base_url: str, api_key: str, *, timeout: int = 20) -> dict[s
     return payload
 
 
+def fetch_domains(base_url: str, api_key: str, *, timeout: int = 20) -> dict[str, Any]:
+    response = requests.get(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/domains",
+        headers={"X-API-Key": api_key},
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload
+
+
 def fetch_bootstrap(
     base_url: str,
     api_key: str,

@@ -284,15 +284,17 @@ class TaaSession:
         product_id: str,
         shop_locale: str,
         user_data_dir: str,
+        store_slug: str | None = None,
         port: int = ez_cdp.DEFAULT_CDP_PORT,
         cancel_token: cancellation.CancellationToken | None = None,
     ) -> None:
         self.product_id = str(product_id).strip()
         self.shop_locale = locales.translate_and_adapt_locale_for(str(shop_locale).strip())
         self.user_data_dir = user_data_dir
+        self.store_slug = store_slug
         self.port = port
         self.cancel_token = cancel_token
-        self.outer_url = session.build_translate_url(self.product_id, self.shop_locale)
+        self.outer_url = session.build_translate_url(self.product_id, self.shop_locale, store_slug=store_slug)
         self._playwright = None
         self._browser = None
         self._page = None
@@ -920,6 +922,7 @@ def replace_detail_images(
     source_index_by_token: dict[str, int] | None = None,
     forced_replacements_by_src: dict[str, dict[str, Any]] | None = None,
     display_size_by_src: dict[str, dict[str, Any]] | None = None,
+    store_slug: str | None = None,
     port: int = ez_cdp.DEFAULT_CDP_PORT,
     replace_shopify_cdn: bool = False,
     verify_reload: bool = True,
@@ -929,6 +932,7 @@ def replace_detail_images(
         product_id=product_id,
         shop_locale=shop_locale,
         user_data_dir=user_data_dir,
+        store_slug=store_slug,
         port=port,
         cancel_token=cancel_token,
     ) as taa:
@@ -993,6 +997,7 @@ def replace_detail_images(
             product_id=product_id,
             shop_locale=shop_locale,
             user_data_dir=user_data_dir,
+            store_slug=store_slug,
             port=port,
             cancel_token=cancel_token,
         ) as taa:

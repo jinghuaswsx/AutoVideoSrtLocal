@@ -38,6 +38,9 @@ class ShopifyImageLocalizerApp:
         self.base_url_var = tk.StringVar(value=runtime_config["base_url"])
         self.api_key_var = tk.StringVar(value=runtime_config["api_key"])
         self.browser_user_data_dir_var = tk.StringVar(value=runtime_config["browser_user_data_dir"])
+        self.current_shopify_domain_var = tk.StringVar(
+            value=runtime_config.get("shopify_domain") or settings.DEFAULT_SHOPIFY_DOMAIN
+        )
         self.product_code_var = tk.StringVar()
         self.shopify_product_id_var = tk.StringVar()
         self.language_var = tk.StringVar()
@@ -47,6 +50,7 @@ class ShopifyImageLocalizerApp:
         self.language_label_to_code: dict[str, str] = {}
         self.language_label_to_shop_locale: dict[str, str] = {}
         self.language_label_to_shopify_name: dict[str, str] = {}
+        self.domain_items: list[dict] = settings.default_domain_items()
         self._workspace_root = ""
         self._download_dir = ""
         self._current_cancel_token: cancellation.CancellationToken | None = None
@@ -67,6 +71,7 @@ class ShopifyImageLocalizerApp:
 
         self._append_log("程序已启动，正在加载线上语言列表")
         self._load_languages_async()
+        self._load_domains_async()
         _ = prompt_on_start
 
     def _build_form(self) -> None:
@@ -80,6 +85,7 @@ class ShopifyImageLocalizerApp:
             height=2,
         )
         self.login_shopify_button.pack(side="left")
+        self._refresh_login_button_text()
         self._login_shopify_tip_full_text = "第一次用或者店铺登录掉线，先点左侧按钮"
         self.login_shopify_tip_label = tk.Label(
             self.login_shopify_frame,
@@ -552,6 +558,89 @@ class ShopifyImageLocalizerApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _refresh_login_button_text(self) -> None:
+        domain = settings.normalize_domain(self.current_shopify_domain_var.get())
+        self.current_shopify_domain_var.set(domain)
+        self.login_shopify_button.configure(text=f"登录 {domain} 店铺")
+
+    def _set_domain_items(self, items: list[dict], fallback: bool = False) -> None:
+        normalized_items: list[dict] = []
+        seen: set[str] = set()
+        for item in items or []:
+            domain = settings.normalize_domain((item or {}).get("domain"))
+            if domain in seen:
+                continue
+            seen.add(domain)
+            normalized_items.append({**dict(item or {}), "domain": domain})
+        if not normalized_items:
+            normalized_items = settings.default_domain_items()
+
+        self.domain_items = normalized_items
+        domains = [row["domain"] for row in normalized_items]
+        current = settings.normalize_domain(self.current_shopify_domain_var.get())
+        if current not in domains:
+            current = domains[0]
+        self.current_shopify_domain_var.set(current)
+        self._refresh_login_button_text()
+        if fallback:
+            self._append_log("域名列表加载失败，已使用默认域名 newjoyloo.com")
+        else:
+            self._append_log(f"已加载 {len(domains)} 个启用域名：{', '.join(domains)}")
+
+    def _load_domains_async(self) -> None:
+        def worker() -> None:
+            try:
+                payload = api_client.fetch_domains(
+                    settings.DEFAULT_BASE_URL,
+                    self.api_key_var.get().strip(),
+                )
+                items = list(payload.get("items") or [])
+                self.root.after(0, self._set_domain_items, items, False)
+            except Exception as exc:
+                self.root.after(0, self._append_log, f"加载启用域名失败：{exc}")
+                self.root.after(0, self._set_domain_items, settings.default_domain_items(), True)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _choose_shopify_domain(self) -> str:
+        items = self.domain_items or settings.default_domain_items()
+        domains = [settings.normalize_domain(item.get("domain")) for item in items]
+        current = settings.normalize_domain(self.current_shopify_domain_var.get())
+        if len(domains) <= 1:
+            return domains[0] if domains else current
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("选择 Shopify 店铺域名")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        selected_var = tk.StringVar(value=current if current in domains else domains[0])
+        result = {"domain": ""}
+
+        frame = tk.Frame(dialog, padx=16, pady=14)
+        frame.pack(fill="both", expand=True)
+        tk.Label(frame, text="选择要登录的店铺域名", anchor="w").pack(anchor="w", pady=(0, 8))
+        domain_box = ttk.Combobox(frame, textvariable=selected_var, state="readonly", values=domains, width=36)
+        domain_box.pack(fill="x", pady=(0, 12))
+        domain_box.focus_set()
+
+        button_frame = tk.Frame(frame)
+        button_frame.pack(fill="x")
+
+        def confirm() -> None:
+            result["domain"] = settings.normalize_domain(selected_var.get())
+            dialog.destroy()
+
+        def cancel() -> None:
+            dialog.destroy()
+
+        tk.Button(button_frame, text="取消", command=cancel, width=10).pack(side="right")
+        tk.Button(button_frame, text="登录", command=confirm, width=10).pack(side="right", padx=(0, 8))
+        dialog.bind("<Return>", lambda _event: confirm())
+        dialog.bind("<Escape>", lambda _event: cancel())
+        self.root.wait_window(dialog)
+        return result["domain"]
+
     def _selected_lang_code(self, language_label: str) -> str:
         mapped = self.language_label_to_code.get(language_label)
         if mapped:
@@ -587,6 +676,7 @@ class ShopifyImageLocalizerApp:
         self.base_url_var.set(base_url)
         api_key = self.api_key_var.get().strip()
         browser_dir = self.browser_user_data_dir_var.get().strip()
+        shopify_domain = settings.normalize_domain(self.current_shopify_domain_var.get())
         if not api_key or not browser_dir:
             messagebox.showerror("错误", "高级设置里的 OpenAPI Key 和 Chrome 用户目录不能为空")
             return
@@ -618,6 +708,7 @@ class ShopifyImageLocalizerApp:
                 lang_code,
                 shop_locale,
                 shopify_product_id,
+                shopify_domain,
                 shopify_language_name,
                 cancel_token,
             ),
@@ -644,6 +735,7 @@ class ShopifyImageLocalizerApp:
         self.base_url_var.set(base_url)
         api_key = self.api_key_var.get().strip()
         browser_dir = self.browser_user_data_dir_var.get().strip()
+        shopify_domain = settings.normalize_domain(self.current_shopify_domain_var.get())
         if not api_key or not browser_dir:
             messagebox.showerror("错误", "高级设置里的 OpenAPI Key 和 Chrome 用户目录不能为空")
             return
@@ -658,7 +750,17 @@ class ShopifyImageLocalizerApp:
         )
         threading.Thread(
             target=self._open_shopify_target_worker,
-            args=(target, base_url, api_key, browser_dir, product_code, lang_code, shop_locale, shopify_product_id),
+            args=(
+                target,
+                base_url,
+                api_key,
+                browser_dir,
+                product_code,
+                lang_code,
+                shop_locale,
+                shopify_product_id,
+                shopify_domain,
+            ),
             daemon=True,
         ).start()
 
@@ -667,6 +769,11 @@ class ShopifyImageLocalizerApp:
         self.base_url_var.set(base_url)
         api_key = self.api_key_var.get().strip()
         browser_dir = self.browser_user_data_dir_var.get().strip()
+        shopify_domain = self._choose_shopify_domain()
+        if not shopify_domain:
+            return
+        self.current_shopify_domain_var.set(shopify_domain)
+        self._refresh_login_button_text()
         if not browser_dir:
             messagebox.showerror("错误", "高级设置里的 Chrome 用户目录不能为空")
             return
@@ -677,7 +784,7 @@ class ShopifyImageLocalizerApp:
         self._append_log("准备打开 Shopify 产品列表页用于店铺登录")
         threading.Thread(
             target=self._open_shopify_login_worker,
-            args=(base_url, api_key, browser_dir),
+            args=(base_url, api_key, browser_dir, shopify_domain),
             daemon=True,
         ).start()
 
@@ -686,12 +793,14 @@ class ShopifyImageLocalizerApp:
         base_url: str,
         api_key: str,
         browser_dir: str,
+        shopify_domain: str,
     ) -> None:
         try:
             result = controller.open_shopify_login_page(
                 base_url=base_url,
                 api_key=api_key,
                 browser_user_data_dir=browser_dir,
+                shopify_domain=shopify_domain,
             )
             self.root.after(0, self._render_login_open_result, result)
         except Exception as exc:
@@ -719,6 +828,7 @@ class ShopifyImageLocalizerApp:
         lang_code: str,
         shop_locale: str,
         shopify_product_id: str,
+        shopify_domain: str,
     ) -> None:
         try:
             result = controller.open_shopify_target(
@@ -730,6 +840,7 @@ class ShopifyImageLocalizerApp:
                 lang=lang_code,
                 shop_locale=shop_locale,
                 shopify_product_id=shopify_product_id,
+                shopify_domain=shopify_domain,
             )
             self.root.after(0, self._render_open_result, result, product_code)
         except Exception as exc:
@@ -761,6 +872,7 @@ class ShopifyImageLocalizerApp:
         lang_code: str,
         shop_locale: str,
         shopify_product_id: str,
+        shopify_domain: str,
         shopify_language_name: str,
         cancel_token: cancellation.CancellationToken,
     ) -> None:
@@ -773,6 +885,7 @@ class ShopifyImageLocalizerApp:
                 lang=lang_code,
                 shop_locale=shop_locale,
                 shopify_product_id=shopify_product_id,
+                shopify_domain=shopify_domain,
                 shopify_language_name=shopify_language_name,
                 cancel_token=cancel_token,
                 status_cb=lambda message: self.root.after(0, self._handle_status, message),

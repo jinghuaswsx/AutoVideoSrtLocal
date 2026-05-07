@@ -27,6 +27,7 @@ from web.services.openapi_link_check import (
 from web.services.openapi_shopify_localizer import (
     ShopifyLocalizerBootstrapError as _ShopifyLocalizerBootstrapError,
     build_shopify_localizer_bootstrap_response as _build_shopify_localizer_bootstrap_response,
+    build_shopify_localizer_domains_response as _build_shopify_localizer_domains_response,
     build_shopify_localizer_task_claim_response as _build_shopify_localizer_task_claim_response,
     build_shopify_localizer_task_complete_response as _build_shopify_localizer_task_complete_response,
     build_shopify_localizer_task_fail_response as _build_shopify_localizer_task_fail_response,
@@ -86,6 +87,13 @@ def shopify_localizer_languages():
     if not _api_key_valid():
         return _openapi_error_response("invalid api key", 401)
     return _openapi_payload_response({"items": medias.list_shopify_localizer_languages()})
+
+
+@shopify_localizer_bp.route("/domains", methods=["GET"])
+def shopify_localizer_domains():
+    if not _api_key_valid():
+        return _openapi_error_response("invalid api key", 401)
+    return _openapi_payload_response(_build_shopify_localizer_domains_response())
 
 
 @shopify_localizer_bp.route("/bootstrap", methods=["POST"])

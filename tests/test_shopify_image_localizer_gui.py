@@ -13,6 +13,7 @@ from tools.shopify_image_localizer import cancellation, gui
 
 def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_languages_async", lambda self: None)
+    monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_domains_async", lambda self: None)
     monkeypatch.setattr(
         gui.settings,
         "load_runtime_config",
@@ -20,6 +21,7 @@ def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
             "base_url": "http://172.30.254.14",
             "api_key": "demo-key",
             "browser_user_data_dir": r"C:\chrome-shopify-image",
+            "shopify_domain": "newjoyloo.com",
         },
     )
     monkeypatch.setattr(gui.messagebox, "showinfo", lambda *args, **kwargs: None)
@@ -111,7 +113,7 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         opened: list[str] = []
         monkeypatch.setattr(app, "open_shopify_login", lambda: opened.append("login"))
 
-        assert app.login_shopify_button["text"] == "登录shopify店铺"
+        assert "newjoyloo.com" in app.login_shopify_button["text"]
         assert int(app.login_shopify_button["width"]) >= int(app.start_button["width"]) * 2
         assert app.login_shopify_tip_label["fg"] == "red"
         assert (
@@ -125,6 +127,45 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         app.login_shopify_button.invoke()
 
         assert opened == ["login"]
+    finally:
+        app.root.destroy()
+
+
+def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app._set_domain_items(
+            [
+                {"domain": "newjoyloo.com"},
+                {"domain": "omurio.com"},
+            ]
+        )
+
+        assert app.current_shopify_domain_var.get() == "newjoyloo.com"
+        assert "newjoyloo.com" in app.login_shopify_button["text"]
+
+        monkeypatch.setattr(app, "_choose_shopify_domain", lambda: "omurio.com")
+        thread_args = []
+
+        class FakeThread:
+            def __init__(self, *, target, args, daemon):
+                thread_args.append((target, args, daemon))
+
+            def start(self):
+                return None
+
+        monkeypatch.setattr(gui.threading, "Thread", FakeThread)
+
+        app.open_shopify_login()
+
+        assert app.current_shopify_domain_var.get() == "omurio.com"
+        assert "omurio.com" in app.login_shopify_button["text"]
+        assert thread_args[0][1] == (
+            "http://172.30.254.14",
+            "demo-key",
+            r"C:\chrome-shopify-image",
+            "omurio.com",
+        )
     finally:
         app.root.destroy()
 
@@ -238,6 +279,7 @@ def test_controller_opens_products_page_for_login_shortcut(monkeypatch: pytest.M
             "base_url": "https://example.test",
             "api_key": "demo-key",
             "browser_user_data_dir": r"C:\chrome-shopify-image",
+            "shopify_domain": "newjoyloo.com",
         }
     ]
     assert killed_profiles == [r"C:\chrome-shopify-image"]
@@ -250,6 +292,8 @@ def test_controller_opens_products_page_for_login_shortcut(monkeypatch: pytest.M
     assert result == {
         "status": "opened",
         "target": "shopify_login",
+        "shopify_domain": "newjoyloo.com",
+        "browser_user_data_dir": r"C:\chrome-shopify-image",
         "url": "https://admin.shopify.com/store/0ixug9-pv/products",
     }
 

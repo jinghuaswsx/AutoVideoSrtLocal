@@ -22,10 +22,10 @@ import subprocess
 import time
 from pathlib import Path
 
-from tools.shopify_image_localizer import locales
+from tools.shopify_image_localizer import locales, settings
 
 
-STORE_SLUG = "0ixug9-pv"
+STORE_SLUG = settings.DEFAULT_SHOPIFY_STORE_SLUG
 
 # 固定窗口参数：1920×1080，副屏左上为原点；无副屏放主屏 (0,0)
 FIXED_WINDOW_SIZE = "1920,1080"
@@ -102,27 +102,31 @@ def detect_window_bounds() -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def build_ez_url(shopify_product_id: str) -> str:
+def _store_slug(value: str | None = None) -> str:
+    return str(value or STORE_SLUG).strip() or STORE_SLUG
+
+
+def build_ez_url(shopify_product_id: str, *, store_slug: str | None = None) -> str:
     return (
-        f"https://admin.shopify.com/store/{STORE_SLUG}/apps/"
+        f"https://admin.shopify.com/store/{_store_slug(store_slug)}/apps/"
         f"ez-product-image-translate/product/{shopify_product_id}"
     )
 
 
-def build_translate_url(shopify_product_id: str, shop_locale: str) -> str:
+def build_translate_url(shopify_product_id: str, shop_locale: str, *, store_slug: str | None = None) -> str:
     taa_locale = locales.translate_and_adapt_locale_for(shop_locale)
     return (
-        f"https://admin.shopify.com/store/{STORE_SLUG}/apps/translate-and-adapt/localize/product"
+        f"https://admin.shopify.com/store/{_store_slug(store_slug)}/apps/translate-and-adapt/localize/product"
         f"?highlight=handle&id={shopify_product_id}&shopLocale={taa_locale}"
     )
 
 
-def build_admin_home_url() -> str:
-    return f"https://admin.shopify.com/store/{STORE_SLUG}"
+def build_admin_home_url(*, store_slug: str | None = None) -> str:
+    return f"https://admin.shopify.com/store/{_store_slug(store_slug)}"
 
 
-def build_products_url() -> str:
-    return f"{build_admin_home_url()}/products"
+def build_products_url(*, store_slug: str | None = None) -> str:
+    return f"{build_admin_home_url(store_slug=store_slug)}/products"
 
 
 # ---------------------------------------------------------------------------

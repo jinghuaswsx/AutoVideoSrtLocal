@@ -73,6 +73,69 @@ def test_run_worker_once_completes_claimed_task(monkeypatch):
     assert calls[0][0] == "complete"
 
 
+def test_run_worker_once_runs_each_link_domain_with_selected_domain(monkeypatch):
+    calls = []
+    completed = []
+    monkeypatch.setattr(
+        controller.api_client,
+        "claim_task",
+        lambda base_url, api_key, worker_id, lock_seconds=900: {
+            "task": {
+                "id": 9,
+                "product_code": "demo-rjc",
+                "lang": "it",
+                "shopify_product_id": "855",
+                "link_urls": [
+                    {
+                        "domain": "newjoyloo.com",
+                        "url": "https://newjoyloo.com/it/products/demo-rjc",
+                    },
+                    {
+                        "domain": "omurio.com",
+                        "url": "https://omurio.com/it/products/demo-rjc",
+                    },
+                ],
+            }
+        },
+    )
+
+    def fake_run_shopify_localizer(**kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "done",
+            "shopify_domain": kwargs["shopify_domain"],
+            "browser_user_data_dir": kwargs["browser_user_data_dir"],
+            "carousel": {"ok": 1},
+        }
+
+    monkeypatch.setattr(controller, "run_shopify_localizer", fake_run_shopify_localizer)
+    monkeypatch.setattr(
+        controller.api_client,
+        "complete_task",
+        lambda *args, **kwargs: completed.append((args, kwargs)) or {"ok": True},
+    )
+
+    result = controller.run_worker_once(
+        base_url="http://server",
+        api_key="key",
+        browser_user_data_dir=r"C:\chrome-shopify-image",
+        worker_id="w1",
+    )
+
+    assert result["status"] == "completed"
+    assert [call["shopify_domain"] for call in calls] == ["newjoyloo.com", "omurio.com"]
+    assert [call["browser_user_data_dir"] for call in calls] == [
+        r"C:\chrome-shopify-image",
+        r"C:\chrome-shopify-image",
+    ]
+    completed_result = completed[0][1]["result"]
+    assert completed_result["domains_processed"] == ["newjoyloo.com", "omurio.com"]
+    assert [row["domain"] for row in completed_result["domain_results"]] == [
+        "newjoyloo.com",
+        "omurio.com",
+    ]
+
+
 def test_run_worker_once_reports_failure(monkeypatch):
     calls = []
     monkeypatch.setattr(

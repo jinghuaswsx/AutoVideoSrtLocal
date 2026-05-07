@@ -471,7 +471,7 @@ def test_run_uses_confirmed_visual_carousel_fallback_when_deterministic_pairing_
             ],
         },
     )
-    monkeypatch.setattr(run_product_cdp.session, "build_ez_url", lambda product_id: f"https://ez/{product_id}")
+    monkeypatch.setattr(run_product_cdp.session, "build_ez_url", lambda product_id, **_kwargs: f"https://ez/{product_id}")
 
     def fake_replace_many(**kwargs):
         replaced_pairs.extend(kwargs["pairs"])

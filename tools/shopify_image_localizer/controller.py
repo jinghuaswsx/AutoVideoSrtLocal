@@ -52,10 +52,13 @@ def _build_batch_args(
     product_code: str,
     lang: str,
     shopify_product_id: str,
+    shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
+    browser_user_data_dir: str = settings.DEFAULT_BROWSER_USER_DATA_DIR,
     shopify_language_name: str = "",
     shop_locale: str = "",
 ) -> argparse.Namespace:
     normalized_lang = str(lang or "").strip().lower()
+    normalized_domain = settings.normalize_domain(shopify_domain)
     language_name = str(shopify_language_name or "").strip() or locales.english_name_for(normalized_lang)
     taa_shop_locale = locales.translate_and_adapt_locale_for(shop_locale or normalized_lang)
     return argparse.Namespace(
@@ -65,7 +68,9 @@ def _build_batch_args(
         taa_shop_locale=taa_shop_locale,
         language=language_name,
         product_id=str(shopify_product_id or "").strip(),
-        store_domain=run_product_cdp.DEFAULT_STORE_DOMAIN,
+        store_domain=normalized_domain,
+        store_slug=settings.shopify_store_slug_for_domain(normalized_domain),
+        browser_user_data_dir=str(browser_user_data_dir or "").strip(),
         bootstrap_timeout_s=120,
         port=run_product_cdp.ez_cdp.DEFAULT_CDP_PORT,
         carousel_limit=0,
@@ -88,6 +93,7 @@ def run_shopify_localizer(
     product_code: str,
     lang: str,
     shopify_product_id: str = "",
+    shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
     shopify_language_name: str = "",
     shop_locale: str = "",
     status_cb: StatusCallback | None = None,
@@ -97,6 +103,8 @@ def run_shopify_localizer(
 ) -> dict:
     reporter = status_cb or _noop
     cancellation.throw_if_cancelled(cancel_token)
+    normalized_domain = settings.normalize_domain(shopify_domain)
+    effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
     workspace = storage.create_workspace(product_code, lang)
 
     def emit(message: str) -> None:
@@ -108,14 +116,17 @@ def run_shopify_localizer(
         base_url=base_url,
         api_key=api_key,
         browser_user_data_dir=browser_user_data_dir,
+        shopify_domain=normalized_domain,
     )
     emit("正在清理旧 Chrome 浏览器进程")
-    session.kill_chrome_for_profile(browser_user_data_dir)
+    session.kill_chrome_for_profile(effective_browser_dir)
 
     args = _build_batch_args(
         product_code=product_code,
         lang=lang,
         shopify_product_id=shopify_product_id,
+        shopify_domain=normalized_domain,
+        browser_user_data_dir=effective_browser_dir,
         shopify_language_name=shopify_language_name,
         shop_locale=shop_locale,
     )
@@ -126,6 +137,7 @@ def run_shopify_localizer(
         product_code=args.product_code,
         lang=args.lang,
         shopify_product_id=args.product_id,
+        shopify_domain=normalized_domain,
     )
     args.product_id = resolved_product_id
     if shopify_product_id_cb is not None:
@@ -151,9 +163,28 @@ def run_shopify_localizer(
         **result,
         "status": "done",
         "mode": "batch_cdp",
+        "shopify_domain": normalized_domain,
+        "browser_user_data_dir": effective_browser_dir,
         "workspace_root": str(result.get("workspace") or workspace.root),
         "manifest_path": str(output_path),
     }
+
+
+def _task_domain_rows(task: dict) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in task.get("link_urls") or []:
+        if not isinstance(item, dict):
+            continue
+        domain = settings.normalize_domain(item.get("domain") or item.get("url"))
+        if domain in seen:
+            continue
+        seen.add(domain)
+        rows.append({"domain": domain, "url": str(item.get("url") or "").strip()})
+    if not rows:
+        domain = settings.normalize_domain(task.get("link_url"))
+        rows.append({"domain": domain, "url": str(task.get("link_url") or "").strip()})
+    return rows
 
 
 def run_worker_once(
@@ -182,15 +213,36 @@ def run_worker_once(
     if link_urls:
         reporter(f"任务关联 {len(link_urls)} 个商品域名链接")
     try:
-        result = run_shopify_localizer(
-            base_url=base_url,
-            api_key=api_key,
-            browser_user_data_dir=browser_user_data_dir,
-            product_code=task["product_code"],
-            lang=task["lang"],
-            shopify_product_id=task.get("shopify_product_id") or "",
-            status_cb=reporter,
-        )
+        domain_rows = _task_domain_rows(task)
+        domain_results: list[dict] = []
+        for row in domain_rows:
+            domain = row["domain"]
+            reporter(f"开始处理域名店铺：{domain}")
+            task_shopify_product_id = (
+                task.get("shopify_product_id") or ""
+                if domain == settings.DEFAULT_SHOPIFY_DOMAIN
+                else ""
+            )
+            domain_result = run_shopify_localizer(
+                base_url=base_url,
+                api_key=api_key,
+                browser_user_data_dir=browser_user_data_dir,
+                product_code=task["product_code"],
+                lang=task["lang"],
+                shopify_product_id=task_shopify_product_id,
+                shopify_domain=domain,
+                status_cb=reporter,
+            )
+            domain_results.append({
+                "domain": domain,
+                "url": row.get("url") or "",
+                "result": domain_result,
+            })
+        result = dict(domain_results[-1]["result"]) if domain_results else {"status": "done"}
+        if domain_results:
+            result["shopify_domain"] = domain_results[-1]["domain"]
+            result["domains_processed"] = [row["domain"] for row in domain_results]
+            result["domain_results"] = domain_results
     except Exception as exc:
         api_client.fail_task(
             base_url,
@@ -222,6 +274,7 @@ def resolve_shopify_product_id(
     product_code: str,
     lang: str,
     shopify_product_id: str = "",
+    shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
 ) -> str:
     manual_id = str(shopify_product_id or "").strip()
     if manual_id:
@@ -229,7 +282,19 @@ def resolve_shopify_product_id(
 
     normalized_product_code = str(product_code or "").strip().lower()
     normalized_lang = str(lang or "").strip().lower()
+    normalized_domain = settings.normalize_domain(shopify_domain)
     resolved = ""
+    if normalized_domain != settings.DEFAULT_SHOPIFY_DOMAIN:
+        try:
+            product = run_product_cdp.fetch_storefront_product(
+                normalized_product_code,
+                store_domain=normalized_domain,
+            )
+            resolved = str(product.get("id") or "").strip()
+        except Exception:
+            resolved = ""
+        if resolved:
+            return resolved
     try:
         payload = api_client.fetch_bootstrap(
             base_url,
@@ -244,22 +309,32 @@ def resolve_shopify_product_id(
             raise
 
     if not resolved:
-        product = run_product_cdp.fetch_storefront_product(normalized_product_code)
+        product = run_product_cdp.fetch_storefront_product(
+            normalized_product_code,
+            store_domain=normalized_domain,
+        )
         resolved = str(product.get("id") or "").strip()
     if not resolved:
         raise RuntimeError("未能从服务端 bootstrap 返回中解析到 Shopify ID，请手动填写 Shopify ID 后再打开。")
     return resolved
 
 
-def build_shopify_target_url(*, target: str, shopify_product_id: str, lang: str) -> str:
+def build_shopify_target_url(
+    *,
+    target: str,
+    shopify_product_id: str,
+    lang: str,
+    shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
+) -> str:
     normalized_target = str(target or "").strip().lower()
     product_id = str(shopify_product_id or "").strip()
     if not product_id:
         raise RuntimeError("Shopify ID 不能为空")
+    store_slug = settings.shopify_store_slug_for_domain(shopify_domain)
     if normalized_target == "ez":
-        return session.build_ez_url(product_id)
+        return session.build_ez_url(product_id, store_slug=store_slug)
     if normalized_target == "detail":
-        return session.build_translate_url(product_id, str(lang or "").strip())
+        return session.build_translate_url(product_id, str(lang or "").strip(), store_slug=store_slug)
     raise ValueError(f"unsupported Shopify target: {target}")
 
 
@@ -273,11 +348,15 @@ def open_shopify_target(
     lang: str,
     shopify_product_id: str = "",
     shop_locale: str = "",
+    shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
 ) -> dict:
+    normalized_domain = settings.normalize_domain(shopify_domain)
+    effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
     settings.save_runtime_config(
         base_url=base_url,
         api_key=api_key,
         browser_user_data_dir=browser_user_data_dir,
+        shopify_domain=normalized_domain,
     )
     product_id = resolve_shopify_product_id(
         base_url=base_url,
@@ -285,18 +364,22 @@ def open_shopify_target(
         product_code=product_code,
         lang=lang,
         shopify_product_id=shopify_product_id,
+        shopify_domain=normalized_domain,
     )
     url = build_shopify_target_url(
         target=target,
         shopify_product_id=product_id,
         lang=shop_locale or lang,
+        shopify_domain=normalized_domain,
     )
-    session.open_urls_in_chrome(browser_user_data_dir, [url])
+    session.open_urls_in_chrome(effective_browser_dir, [url])
     return {
         "status": "opened",
         "target": str(target or "").strip().lower(),
         "shopify_product_id": product_id,
         "lang": str(lang or "").strip().lower(),
+        "shopify_domain": normalized_domain,
+        "browser_user_data_dir": effective_browser_dir,
         "url": url,
     }
 
@@ -306,17 +389,23 @@ def open_shopify_login_page(
     base_url: str,
     api_key: str,
     browser_user_data_dir: str,
+    shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
 ) -> dict:
+    normalized_domain = settings.normalize_domain(shopify_domain)
+    effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
     settings.save_runtime_config(
         base_url=base_url,
         api_key=api_key,
         browser_user_data_dir=browser_user_data_dir,
+        shopify_domain=normalized_domain,
     )
-    session.kill_chrome_for_profile(browser_user_data_dir)
-    url = session.build_products_url()
-    session.start_chrome(browser_user_data_dir, [url])
+    session.kill_chrome_for_profile(effective_browser_dir)
+    url = session.build_products_url(store_slug=settings.shopify_store_slug_for_domain(normalized_domain))
+    session.start_chrome(effective_browser_dir, [url])
     return {
         "status": "opened",
         "target": "shopify_login",
+        "shopify_domain": normalized_domain,
+        "browser_user_data_dir": effective_browser_dir,
         "url": url,
     }

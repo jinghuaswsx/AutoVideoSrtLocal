@@ -251,3 +251,32 @@ def test_complete_task_sets_auto_done_needs_review(monkeypatch):
     assert calls[0][1][0] == '{"carousel": {"ok": 11}, "detail": {"replacement_count": 4}}'
     assert calls[1][2]["replace_status"] == sit.REPLACE_AUTO_DONE
     assert calls[1][2]["link_status"] == sit.LINK_NEEDS_REVIEW
+
+
+def test_summarize_result_aggregates_domain_results():
+    result = sit.summarize_result(
+        {
+            "domain_results": [
+                {
+                    "domain": "newjoyloo.com",
+                    "result": {
+                        "carousel": {"requested": 2, "ok": 1, "skipped": 1},
+                        "detail": {"replacement_count": 3, "skipped_existing_count": 0},
+                    },
+                },
+                {
+                    "domain": "omurio.com",
+                    "result": {
+                        "carousel": {"requested": 4, "ok": 4, "skipped": 0},
+                        "detail": {"replacement_count": 5, "skipped_existing_count": 2},
+                    },
+                },
+            ]
+        }
+    )
+
+    assert result["carousel_requested"] == 6
+    assert result["carousel_ok"] == 5
+    assert result["carousel_skipped"] == 1
+    assert result["detail_replacement_count"] == 8
+    assert result["detail_skipped_existing_count"] == 2

@@ -381,6 +381,22 @@ def claim_next_task(worker_id: str, lock_seconds: int = 900) -> dict | None:
 
 
 def summarize_result(result: dict[str, Any]) -> dict[str, Any]:
+    domain_results = (result or {}).get("domain_results") or []
+    if isinstance(domain_results, list) and domain_results:
+        summary = {
+            "carousel_requested": 0,
+            "carousel_ok": 0,
+            "carousel_skipped": 0,
+            "detail_replacement_count": 0,
+            "detail_skipped_existing_count": 0,
+        }
+        for row in domain_results:
+            if not isinstance(row, dict):
+                continue
+            nested = summarize_result(row.get("result") or row)
+            for key in summary:
+                summary[key] += int(nested.get(key) or 0)
+        return summary
     carousel = (result or {}).get("carousel") or {}
     detail = (result or {}).get("detail") or {}
     return {

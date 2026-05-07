@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from appcore import medias, shopify_image_tasks
+from appcore import medias, product_link_domains, shopify_image_tasks
 from web.services.openapi_materials_serializers import media_download_url, serialize_shopify_image_task
 
 
@@ -16,6 +16,7 @@ ListReferenceImagesFn = Callable[[int, str], list[dict]]
 GetLanguageNameFn = Callable[[str], str]
 MediaDownloadUrlFn = Callable[[str | None], str | None]
 ResolveLinkUrlsFn = Callable[[dict, str], list[dict[str, str]]]
+ListDomainsFn = Callable[..., list[dict]]
 ClaimNextTaskFn = Callable[..., dict | None]
 HeartbeatTaskFn = Callable[[int, str, int], int]
 CompleteTaskFn = Callable[[int, dict], dict]
@@ -28,6 +29,27 @@ class ShopifyLocalizerBootstrapError(Exception):
     error: str
     status_code: int
     message: str | None = None
+
+
+def build_shopify_localizer_domains_response(
+    *,
+    list_domains_fn: ListDomainsFn | None = None,
+) -> dict:
+    list_domains_fn = list_domains_fn or product_link_domains.list_domains
+    rows = list_domains_fn(include_disabled=False)
+    items: list[dict] = []
+    for row in rows or []:
+        if not row.get("enabled", True):
+            continue
+        domain = str(row.get("domain") or "").strip().lower()
+        if not domain:
+            continue
+        items.append({
+            "id": int(row.get("id") or 0),
+            "domain": domain,
+            "enabled": True,
+        })
+    return {"items": items}
 
 
 def _serialize_detail_images(

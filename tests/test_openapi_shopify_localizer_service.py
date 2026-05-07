@@ -114,6 +114,25 @@ def test_shopify_localizer_rejects_english_target_language():
     assert exc.value.status_code == 400
 
 
+def test_shopify_localizer_domains_response_returns_enabled_domains():
+    from web.services.openapi_shopify_localizer import build_shopify_localizer_domains_response
+
+    payload = build_shopify_localizer_domains_response(
+        list_domains_fn=lambda include_disabled=False: [
+            {"id": 1, "domain": "newjoyloo.com", "enabled": True},
+            {"id": 2, "domain": "omurio.com", "enabled": True},
+            {"id": 3, "domain": "disabled.test", "enabled": False},
+        ]
+    )
+
+    assert payload == {
+        "items": [
+            {"id": 1, "domain": "newjoyloo.com", "enabled": True},
+            {"id": 2, "domain": "omurio.com", "enabled": True},
+        ]
+    }
+
+
 def test_shopify_localizer_task_claim_builds_response():
     from web.services.openapi_shopify_localizer import build_shopify_localizer_task_claim_response
 
