@@ -54,6 +54,37 @@ def test_order_profit_lines_route_delegates_query(authed_client_no_db, monkeypat
     assert captured["offset"] == 1
 
 
+def test_order_profit_orders_route_passes_product_filter(
+    authed_client_no_db,
+    monkeypatch,
+):
+    import web.routes.order_profit as route
+
+    captured = {}
+
+    def fake_list(**kwargs):
+        captured["list"] = kwargs
+        return []
+
+    def fake_summary(**kwargs):
+        captured["summary"] = kwargs
+        return {"total_orders": 0, "profit_total_usd": 0}
+
+    monkeypatch.setattr(route, "get_order_profit_list", fake_list)
+    monkeypatch.setattr(route, "get_order_profit_summary_for_window", fake_summary)
+
+    resp = authed_client_no_db.get(
+        "/order-profit/api/orders?from=2026-05-01&to=2026-05-03"
+        "&product_id=123&limit=2&offset=1"
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["filter_product_id"] == 123
+    assert captured["list"]["product_id"] == 123
+    assert captured["summary"]["product_id"] == 123
+
+
 def test_order_profit_loss_alerts_route_delegates_query(authed_client_no_db, monkeypatch):
     import web.routes.order_profit as route
 

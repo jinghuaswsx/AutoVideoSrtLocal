@@ -13,6 +13,10 @@ Scope:
   DB driver as a JSON string; `/order-profit/api/orders/<dxm_package_id>` must expose
   it as a list so the dashboard can render incomplete line details without a browser
   `join is not a function` alert.
+- Follow-up feature: the order detail tab supports product filtering. The dashboard
+  uses a searchable product input backed by active `media_products`; selected
+  `product_id` is sent to `/order-profit/api/orders`, and order rows, summary stats,
+  and expanded SKU lines are scoped to that product.
 
 Verification:
 
@@ -29,6 +33,18 @@ Verification:
   and
   `tests/test_architecture_boundaries.py::test_order_profit_route_db_access_lives_in_appcore_order_analytics`:
   `2 passed`.
+- Product filter RED was confirmed with:
+  `tests/test_order_profit_aggregation.py::test_list_filters_by_product_id`,
+  `tests/test_order_profit_aggregation.py::test_summary_window_filters_by_product_id`,
+  and
+  `tests/test_order_profit_routes.py::test_order_profit_orders_route_passes_product_filter`:
+  all failed before implementation.
+- Product filter GREEN focused regression:
+  `tests/test_order_profit_routes.py tests/test_order_profit_aggregation.py tests/test_order_profit_response_service.py`:
+  `33 passed`.
+- Product filter template render smoke test:
+  `tests/test_order_menu_permissions.py::test_order_profit_permission_grant_allows_user_page_access`:
+  `1 passed`.
 - GREEN focused tests:
   `tests/test_order_profit_routes.py`, `tests/test_order_profit_aggregation.py`,
   and `tests/test_architecture_boundaries.py::test_order_profit_route_db_access_lives_in_appcore_order_analytics`:

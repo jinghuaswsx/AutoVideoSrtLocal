@@ -61,6 +61,17 @@ def _parse_date_param(name: str, default: date) -> date:
         return default
 
 
+def _parse_positive_int_param(name: str) -> int | None:
+    raw = (request.args.get(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
 @bp.route("/order-profit")
 @login_required
 @permission_required("order_profit")
@@ -91,6 +102,7 @@ def api_orders_list():
     Query params:
         from / to : business_date 闭区间，默认近 7 天
         status    : 'ok' | 'incomplete' | 'partially_complete'，默认全部
+        product_id: media_products.id，默认全部
         limit     : 默认 100，上限 500
         offset    : 默认 0
     """
@@ -98,21 +110,23 @@ def api_orders_list():
     date_from = _parse_date_param("from", today - timedelta(days=7))
     date_to = _parse_date_param("to", today)
     status = (request.args.get("status") or "").strip() or None
+    product_id = _parse_positive_int_param("product_id")
     limit = min(int(request.args.get("limit", "100") or 100), 500)
     offset = int(request.args.get("offset", "0") or 0)
 
     orders = get_order_profit_list(
         date_from=date_from, date_to=date_to,
-        status=status, limit=limit, offset=offset,
+        status=status, product_id=product_id, limit=limit, offset=offset,
     )
     summary = get_order_profit_summary_for_window(
-        date_from=date_from, date_to=date_to
+        date_from=date_from, date_to=date_to, product_id=product_id
     )
     return order_profit_flask_response(
         build_order_profit_payload_response({
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "filter_status": status,
+            "filter_product_id": product_id,
             "limit": limit,
             "offset": offset,
             "orders": orders,

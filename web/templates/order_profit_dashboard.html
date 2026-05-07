@@ -122,6 +122,30 @@
 }
 .op-date-range-field input:focus-visible { outline: none; box-shadow: none; }
 .op-date-range-sep { color: var(--fg-subtle); font-size: 13px; }
+.op-filter-bar {
+  display: flex; align-items: center; gap: var(--space-3);
+  flex-wrap: wrap; margin-bottom: var(--space-4);
+}
+.op-filter-label { font-size: 13px; color: var(--fg-muted); }
+.op-filter-select,
+.op-filter-input {
+  height: 30px; padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--bg-card); color: var(--fg); font-size: 13px;
+}
+.op-filter-input { width: min(360px, 100%); }
+.op-filter-select:focus-visible,
+.op-filter-input:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.op-filter-clear {
+  height: 30px; padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--bg-card); color: var(--fg-muted);
+  cursor: pointer; font-size: 13px;
+}
+.op-filter-clear:hover { background: var(--bg-muted); color: var(--fg); }
 {% endblock %}
 
 {% block content %}
@@ -180,15 +204,20 @@
       <p style="color: var(--fg-muted); font-size: 13px; margin: 0 0 var(--space-4);">
         按订单粒度看每单赚 / 亏多少。点订单 ID 展开 SKU 行。
       </p>
-      <div style="margin-bottom: var(--space-4);">
-        <label style="font-size: 13px; color: var(--fg-muted);">状态：</label>
-        <select id="opOrderStatusFilter" style="height:30px; padding:0 8px; border:1px solid var(--border-strong); border-radius:4px; font-size:13px;">
+      <div class="op-filter-bar">
+        <label class="op-filter-label" for="opOrderStatusFilter">状态：</label>
+        <select id="opOrderStatusFilter" class="op-filter-select">
           <option value="">全部</option>
           <option value="ok">完备</option>
           <option value="incomplete">不完备</option>
           <option value="partially_complete">部分完备</option>
         </select>
-        <span id="opOrderStats" style="margin-left: var(--space-4); font-size: 13px; color: var(--fg-muted);"></span>
+        <label class="op-filter-label" for="opOrderProductSearch">产品：</label>
+        <input id="opOrderProductSearch" class="op-filter-input" list="opOrderProductOptions" placeholder="搜索产品编码/名称" autocomplete="off">
+        <input type="hidden" id="opOrderProductId">
+        <datalist id="opOrderProductOptions"></datalist>
+        <button type="button" id="opOrderProductClear" class="op-filter-clear">清空</button>
+        <span id="opOrderStats" style="font-size: 13px; color: var(--fg-muted);"></span>
       </div>
       <table class="op-table">
         <thead><tr>
@@ -411,8 +440,11 @@ async function refreshOrders() {
   const f = document.getElementById('opDateFrom').value;
   const t = document.getElementById('opDateTo').value;
   const status = document.getElementById('opOrderStatusFilter').value;
-  const url = `/order-profit/api/orders?from=${f}&to=${t}&limit=200` + (status ? `&status=${status}` : '');
-  const data = await fetchJSON(url);
+  const productId = getSelectedOrderProductId();
+  const params = new URLSearchParams({from: f, to: t, limit: '200'});
+  if (status) params.set('status', status);
+  if (productId) params.set('product_id', String(productId));
+  const data = await fetchJSON(`/order-profit/api/orders?${params.toString()}`);
   const tbody = document.getElementById('opOrdersBody');
   const statsEl = document.getElementById('opOrderStats');
 
@@ -466,9 +498,13 @@ async function refreshOrders() {
       // 加载并展开
       try {
         const detail = await fetchJSON(`/order-profit/api/orders/${encodeURIComponent(pkg)}`);
+        const selectedProductId = getSelectedOrderProductId();
+        const detailLines = (detail.lines || []).filter(l =>
+          !selectedProductId || Number(l.product_id) === selectedProductId
+        );
         const detailRow = document.createElement('tr');
         detailRow.className = 'op-order-detail';
-        const detailHTML = (detail.lines || []).map(l => `
+        const detailHTML = detailLines.map(l => `
           <div style="padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; gap: var(--space-3); font-size: 13px;">
             <code style="min-width: 220px; font-size:12px;">${l.product_code || '#'+l.product_id || '-'}</code>
             <span style="color: var(--fg-muted); min-width: 60px;">SKU ${l.product_sku || ''}</span>
@@ -543,11 +579,18 @@ async function refreshCompleteness() {
 
 // ---- Campaign 配对（人工兜底）----
 let _productsCache = null;
+let _orderProductLabelToId = new Map();
 async function loadProductsCache() {
   if (_productsCache) return _productsCache;
   const data = await fetchJSON('/order-profit/api/products_for_match');
   _productsCache = data.products || [];
   return _productsCache;
+}
+
+function orderProductLabel(p) {
+  const code = p.product_code || '#' + p.id;
+  const name = p.name ? ` — ${p.name}` : '';
+  return `${code}${name} (#${p.id})`;
 }
 
 function buildProductSelect(currentProductId) {
@@ -556,6 +599,56 @@ function buildProductSelect(currentProductId) {
     `<option value="${p.id}" ${p.id === currentProductId ? 'selected' : ''}>${p.product_code || '#' + p.id} — ${p.name || ''}</option>`
   ).join('');
   return `<select class="op-product-select" data-op-product-select><option value="">— 选择产品 —</option>${opts}</select>`;
+}
+
+function renderOrderProductOptions(products) {
+  const datalist = document.getElementById('opOrderProductOptions');
+  if (!datalist) return;
+  _orderProductLabelToId = new Map();
+  datalist.replaceChildren();
+  products.forEach(p => {
+    const label = orderProductLabel(p);
+    _orderProductLabelToId.set(label, Number(p.id));
+    const option = document.createElement('option');
+    option.value = label;
+    datalist.appendChild(option);
+  });
+}
+
+function getSelectedOrderProductId() {
+  const raw = document.getElementById('opOrderProductId')?.value || '';
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function syncOrderProductFilterFromInput() {
+  const input = document.getElementById('opOrderProductSearch');
+  const hidden = document.getElementById('opOrderProductId');
+  if (!input || !hidden) return false;
+  const label = input.value.trim();
+  const next = label ? (_orderProductLabelToId.get(label) || '') : '';
+  if (hidden.value === String(next)) return false;
+  hidden.value = next ? String(next) : '';
+  return true;
+}
+
+function initOrderProductFilter() {
+  const input = document.getElementById('opOrderProductSearch');
+  const clear = document.getElementById('opOrderProductClear');
+  if (!input || !clear) return;
+  loadProductsCache().then(renderOrderProductOptions).catch(() => {});
+  input.addEventListener('input', () => {
+    if (syncOrderProductFilterFromInput()) refreshOrders();
+  });
+  input.addEventListener('change', () => {
+    if (syncOrderProductFilterFromInput()) refreshOrders();
+  });
+  clear.addEventListener('click', () => {
+    const hadFilter = input.value || getSelectedOrderProductId();
+    input.value = '';
+    document.getElementById('opOrderProductId').value = '';
+    if (hadFilter) refreshOrders();
+  });
 }
 
 async function refreshMatching() {
@@ -662,6 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 订单状态筛选下拉变化时立刻刷
   const filter = document.getElementById('opOrderStatusFilter');
   if (filter) filter.addEventListener('change', refreshOrders);
+  initOrderProductFilter();
 
   // tab 切换
   document.querySelectorAll('.op-tab').forEach(btn => {

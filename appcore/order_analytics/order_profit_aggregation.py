@@ -100,6 +100,7 @@ def get_order_profit_list(
     date_from: date,
     date_to: date,
     status: str | None = None,
+    product_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -135,9 +136,13 @@ def get_order_profit_list(
         "FROM dianxiaomi_order_lines d "
         "INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
         "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s "
-        "GROUP BY d.dxm_package_id "
     )
     args: list[Any] = [date_from, date_to]
+    if product_id:
+        sql += "AND p.product_id = %s "
+        args.append(int(product_id))
+
+    sql += "GROUP BY d.dxm_package_id "
 
     if status:
         # status 是从 GROUP BY 后派生的，要用 HAVING
@@ -208,9 +213,15 @@ def get_order_profit_detail(dxm_package_id: str) -> dict[str, Any] | None:
 
 
 def get_order_profit_summary_for_window(
-    *, date_from: date, date_to: date
+    *, date_from: date, date_to: date, product_id: int | None = None
 ) -> dict[str, Any]:
     """订单级聚合：按时段统计订单数 + status 分布 + GMV / 利润总和。"""
+    args: list[Any] = [date_from, date_to]
+    product_filter = ""
+    if product_id:
+        product_filter = " AND p.product_id = %s"
+        args.append(int(product_id))
+
     row = query_one(
         "SELECT COUNT(DISTINCT d.dxm_package_id) AS total_orders, "
         "       SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS ok_lines, "
@@ -219,8 +230,9 @@ def get_order_profit_summary_for_window(
         "       SUM(p.profit_usd) AS profit_total "
         "FROM dianxiaomi_order_lines d "
         "INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s",
-        (date_from, date_to),
+        "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s"
+        f"{product_filter}",
+        tuple(args),
     )
     if not row:
         return {
@@ -246,10 +258,11 @@ def get_order_profit_summary_for_window(
         "         END AS status_per_order "
         "  FROM dianxiaomi_order_lines d "
         "  INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "  WHERE DATE(d.order_paid_at) BETWEEN %s AND %s "
+        "  WHERE DATE(d.order_paid_at) BETWEEN %s AND %s"
+        f"{product_filter} "
         "  GROUP BY d.dxm_package_id"
         ") sub",
-        (date_from, date_to),
+        tuple(args),
     ) or {}
 
     return {

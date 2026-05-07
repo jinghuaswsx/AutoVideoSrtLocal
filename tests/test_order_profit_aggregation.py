@@ -163,6 +163,28 @@ def test_list_with_status_partial_filter(monkeypatch):
     assert "HAVING ok_count > 0 AND incomplete_count > 0" in captured["sql"]
 
 
+def test_list_filters_by_product_id(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    get_order_profit_list(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 4),
+        product_id=123,
+        limit=10,
+        offset=5,
+    )
+
+    assert "AND p.product_id = %s" in captured["sql"]
+    assert captured["args"] == (date(2026, 5, 1), date(2026, 5, 4), 123, 10, 5)
+
+
 # -------- get_order_profit_detail --------
 
 def test_detail_returns_summary_and_lines(monkeypatch):
@@ -288,6 +310,36 @@ def test_summary_window_returns_buckets(monkeypatch):
     assert result["orders_incomplete"] == 25
     assert result["orders_partial"] == 5
     assert result["profit_total_usd"] == 800.0
+
+
+def test_summary_window_filters_by_product_id(monkeypatch):
+    captured = []
+
+    def fake_query_one(sql, args=()):
+        captured.append((sql, args))
+        if "status_per_order" not in sql:
+            return {
+                "total_orders": 10,
+                "ok_lines": 8,
+                "incomplete_lines": 2,
+                "revenue_total": 500.0,
+                "profit_total": 80.0,
+            }
+        return {"orders_ok": 7, "orders_incomplete": 2, "orders_partial": 1}
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+
+    get_order_profit_summary_for_window(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 4),
+        product_id=123,
+    )
+
+    assert len(captured) == 2
+    assert "AND p.product_id = %s" in captured[0][0]
+    assert captured[0][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
+    assert "AND p.product_id = %s" in captured[1][0]
+    assert captured[1][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
 
 
 def test_status_summary_aggregates_line_statuses_and_last_run(monkeypatch):
