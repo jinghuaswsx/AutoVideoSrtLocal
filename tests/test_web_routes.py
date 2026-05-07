@@ -327,6 +327,31 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
+def test_subtitle_removal_upload_panel_hides_local_vsr_backend_column():
+    """本地 VSR 暂时下线：上传页面的 local-vsr backend 列必须 hidden，避免用户提交无法处理的任务。"""
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_subtitle_removal_upload_panel.html").read_text(encoding="utf-8")
+
+    column_idx = template.index('class="sr-backend-column is-local-vsr"')
+    column_open_start = template.rfind("<div", 0, column_idx)
+    column_open_end = template.index(">", column_idx)
+    column_open_tag = template[column_open_start:column_open_end + 1]
+    assert " hidden" in column_open_tag, f"local-vsr column must have hidden attribute, got: {column_open_tag!r}"
+
+
+def test_subtitle_removal_list_filter_hides_local_vsr_pill(authed_client_no_db):
+    """列表页顶部的 backend filter pill：本地 VSR 暂时下线，按钮必须 hidden。"""
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    pill_idx = body.index('data-backend-filter="local_vsr"')
+    pill_open_start = body.rfind("<button", 0, pill_idx)
+    pill_open_end = body.index(">", pill_idx)
+    pill_open_tag = body[pill_open_start:pill_open_end + 1]
+    assert " hidden" in pill_open_tag, f"local_vsr filter pill must have hidden attribute, got: {pill_open_tag!r}"
+
+
 def test_subtitle_removal_upload_places_erase_type_under_volc_backend():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_subtitle_removal_upload_panel.html").read_text(encoding="utf-8")

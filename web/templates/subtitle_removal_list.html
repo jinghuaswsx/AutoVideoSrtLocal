@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block title %}字幕移除{% endblock %}
-{% block page_title %}字幕移除 <span class="sr-page-title-hint">所有字幕移除任务（全局可见，任何登录用户都可提交和查看）</span><span class="sr-title-backend-filter" id="srBackendFilter" aria-label="处理方式筛选"><button type="button" class="sr-backend-filter-pill" data-backend-filter="volc" aria-pressed="false">火山</button><button type="button" class="sr-backend-filter-pill" data-backend-filter="local_vsr" aria-pressed="false">本地 VSR</button></span>{% endblock %}
+{% block page_title %}字幕移除 <span class="sr-page-title-hint">所有字幕移除任务（全局可见，任何登录用户都可提交和查看）</span><span class="sr-title-backend-filter" id="srBackendFilter" aria-label="处理方式筛选"><button type="button" class="sr-backend-filter-pill" data-backend-filter="volc" aria-pressed="false">火山</button><button type="button" class="sr-backend-filter-pill" data-backend-filter="local_vsr" aria-pressed="false" hidden>本地 VSR</button></span>{% endblock %}
 {% block extra_style %}
 {% include "_subtitle_removal_styles.html" %}
 <style>

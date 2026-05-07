@@ -25,7 +25,8 @@
           </div>
         </div>
       </div>
-      <div class="sr-backend-column is-local-vsr">
+      {# 本地 VSR 暂时下线（GPU 推理库环境问题），节点保留以便后续恢复，hidden 后默认 display:none。 #}
+      <div class="sr-backend-column is-local-vsr" hidden>
         <label class="sr-backend-tab" data-role="subtitle-backend-tab">
           <input type="radio" name="subtitle_backend" value="local_vsr">
           <span class="sr-backend-title">本地 VSR</span>
