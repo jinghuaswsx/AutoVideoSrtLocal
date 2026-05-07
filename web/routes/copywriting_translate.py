@@ -8,15 +8,14 @@
 """
 from __future__ import annotations
 
-import json
 import uuid
 
 from flask import Blueprint, request
 from flask_login import current_user, login_required
 
 from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
-from appcore.db import execute as db_execute
 from appcore.events import Event, EventBus, EVT_CT_PROGRESS
+from appcore import project_state as project_store
 from appcore.task_recovery import try_register_active_task, unregister_active_task
 from web.background import start_background_task
 from web.services.copywriting_translate import (
@@ -128,13 +127,7 @@ def start():
         "target_lang": target_lang,
         "parent_task_id": parent_task_id,
     }
-    db_execute(
-        """
-        INSERT INTO projects (id, user_id, type, status, state_json)
-        VALUES (%s, %s, 'copywriting_translate', 'queued', %s)
-        """,
-        (task_id, current_user.id, json.dumps(state, ensure_ascii=False)),
-    )
+    project_store.create_copywriting_translate_project(task_id, current_user.id, state)
 
     if not _start_runner_background(
         task_id,

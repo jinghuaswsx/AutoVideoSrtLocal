@@ -93,6 +93,22 @@ def get_project_for_user(
     )
 
 
+def create_copywriting_translate_project(
+    task_id: str,
+    user_id: int,
+    state: dict[str, Any],
+    *,
+    execute_func: ExecuteFunc = execute,
+) -> int:
+    return execute_func(
+        """
+        INSERT INTO projects (id, user_id, type, status, state_json)
+        VALUES (%s, %s, 'copywriting_translate', 'queued', %s)
+        """,
+        (task_id, user_id, json.dumps(state, ensure_ascii=False)),
+    )
+
+
 def list_translation_projects(
     user_id: int,
     *,

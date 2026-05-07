@@ -89,6 +89,34 @@ def test_get_project_for_user_queries_active_project():
     ]
 
 
+def test_create_copywriting_translate_project_inserts_queued_state():
+    from appcore.project_state import create_copywriting_translate_project
+
+    calls = []
+    state = {
+        "source_copy_id": 101,
+        "source_lang": "en",
+        "target_lang": "de",
+        "parent_task_id": "parent-1",
+    }
+
+    create_copywriting_translate_project(
+        "task-ct",
+        7,
+        state,
+        execute_func=lambda sql, args: calls.append((sql, args)) or 1,
+    )
+
+    assert len(calls) == 1
+    sql, args = calls[0]
+    assert "INSERT INTO projects" in sql
+    assert "copywriting_translate" in sql
+    assert args[0] == "task-ct"
+    assert args[1] == 7
+    saved = json.loads(args[2])
+    assert saved == state
+
+
 def test_list_translation_projects_queries_user_translation_projects():
     from appcore.project_state import list_translation_projects
 

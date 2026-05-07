@@ -27,14 +27,17 @@ def client_patched(monkeypatch):
     spawned = []
     active = []
 
-    def fake_execute(sql, args=None):
-        inserted.append({"sql": sql, "args": args})
+    def fake_create_project(task_id, user_id, state):
+        inserted.append({"task_id": task_id, "user_id": user_id, "state": state})
         return 1
 
     def fake_spawn(fn, *a, **kw):
         spawned.append({"fn": fn, "args": a, "kwargs": kw})
 
-    monkeypatch.setattr("web.routes.copywriting_translate.db_execute", fake_execute)
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.project_store.create_copywriting_translate_project",
+        fake_create_project,
+    )
     monkeypatch.setattr("web.routes.copywriting_translate.start_background_task", fake_spawn)
     monkeypatch.setattr(
         "web.routes.copywriting_translate.try_register_active_task",
@@ -104,13 +107,9 @@ def test_start_returns_task_id_and_spawns_runner(client_patched):
     # 插入了 projects 行
     assert len(client_patched._inserted) == 1
     ins = client_patched._inserted[0]
-    assert "INSERT INTO projects" in ins["sql"]
-    # args: task_id, user_id=1, json(state)
-    assert ins["args"][0] == data["task_id"]
-    assert ins["args"][1] == 1
-
-    import json as _j
-    state = _j.loads(ins["args"][2])
+    assert ins["task_id"] == data["task_id"]
+    assert ins["user_id"] == 1
+    state = ins["state"]
     assert state["source_copy_id"] == 101
     assert state["target_lang"] == "de"
     assert state["source_lang"] == "en"
@@ -162,8 +161,7 @@ def test_start_parent_task_id_optional(client_patched):
     )
     assert resp.status_code == 202
 
-    import json as _j
-    state = _j.loads(client_patched._inserted[0]["args"][2])
+    state = client_patched._inserted[0]["state"]
     assert state["parent_task_id"] is None
 
 
@@ -176,8 +174,7 @@ def test_start_custom_source_lang(client_patched):
         },
     )
     assert resp.status_code == 202
-    import json as _j
-    state = _j.loads(client_patched._inserted[0]["args"][2])
+    state = client_patched._inserted[0]["state"]
     assert state["source_lang"] == "zh"
 
 
