@@ -120,7 +120,7 @@ def split_shopify_fee_for_order(
             settlement_currency=settlement_currency,
             store_country=store_country,
         )
-        is_cross_border = card_country != store_country
+        is_cross_border = card_country not in {store_country, "US"}
     else:
         card_country = None
         presentment_currency = settlement_currency

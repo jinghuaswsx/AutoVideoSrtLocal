@@ -125,6 +125,19 @@ def test_split_shopify_fee_for_order_domestic_usd():
     assert result["shopify_fee_total_usd"] == 2.80
 
 
+def test_split_shopify_fee_for_order_us_buyer_has_no_card_fee_for_ca_store():
+    from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
+
+    result = split_shopify_fee_for_order(
+        amount=100,
+        buyer_country="US",
+        store_country="CA",
+    )
+
+    assert result["international_card_fee_usd"] == 0.0
+    assert result["shopify_fee_total_usd"] == 2.80
+
+
 def test_split_shopify_fee_for_order_international_eur():
     from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
 
