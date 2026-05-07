@@ -223,6 +223,35 @@ X-Requested-With: XMLHttpRequest
 
 ---
 
+## 11. 2026-05-07 增补：剩余候选改为审核优先
+
+同步 `origin/master` 到 `95f3c9bc` 后复查，1688 相关链路没有新提交继续推进；现有实现仍停留在 2026-05-05 的 `alibabaProductId` fallback、全量 `status=""` 拉取、前端读取 `extracted_1688_url` 和批量脚本四级匹配。
+
+最新只读验证：
+
+- 聚焦测试：`pytest tests/test_supply_pairing.py tests/test_media_supply_pairing_service.py tests/test_medias_supply_pairing_route.py -q` 通过，`23 passed`。
+- `tools/backfill_1688_urls.py --dry-run` 拉到店小秘记录 336 条，本地仍缺 `purchase_1688_url` 的产品 27 个。
+- 当前脚本会命中 19 个候选、准备更新 17 个、8 个无匹配、2 个因 URL 重复被丢弃。
+
+风险结论：剩余 17 个准备更新的候选几乎全来自弱关键词，如 `套装`、`多功能`、`汽车`、`金属`、`pe`。这些词不能证明本地产品和店小秘记录是同一商品，继续直接写库会把错误 1688 链接固化到 `purchase_1688_url`。
+
+本轮修正方向：
+
+1. 将批量脚本里的候选生成、关键词过滤、URL 去重拆成可测试纯函数。
+2. 禁止英文 2-gram / 3-gram 泛匹配，只保留完整英文 token；中文关键词加入泛词停用表，过滤 `套装`、`多功能`、`汽车` 等低区分度词。
+3. 默认运行改为审核优先：弱匹配只导出 CSV 候选，不直接写库。
+4. 新增 CSV 审核导入：只有人工填写或确认的 `reviewed_url` 才允许导入，且必须是 `1688.com` 域名；默认只更新当前仍为空的产品。
+5. 自动写库只保留高置信 SKU 命中；关键词命中必须通过导出/人工审核/导入闭环进入数据库。
+
+实施后验证：
+
+- 新增 `tests/test_backfill_1688_urls.py` 覆盖真实 1688 域名校验、泛词过滤、英文 token 不生成 2-gram、exact SKU 自动候选、CSV 导出和审核导入。
+- 聚焦测试：`pytest tests/test_supply_pairing.py tests/test_media_supply_pairing_service.py tests/test_medias_supply_pairing_route.py tests/test_backfill_1688_urls.py -q` 通过，`29 passed`。
+- 新版 `tools/backfill_1688_urls.py --dry-run --export-csv /tmp/1688_candidates_review.csv` 拉到店小秘记录 336 条，扫描缺 URL 产品 27 个，导出 14 个审核候选，自动写库候选 0 个。
+- 修正前的 `套装`、`多功能`、`金属`、`pe` 等高风险命中不再进入自动更新；剩余候选仍需人工检查 `candidate_url` 与 `paired_name`，确认后填写 `reviewed_url` 再导入。
+
+---
+
 ## 8. 给下一个 Agent 的交接指令
 
 > 将以下内容粘贴给下一个 agent 开始工作：
