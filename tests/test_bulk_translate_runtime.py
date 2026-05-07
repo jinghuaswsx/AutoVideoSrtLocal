@@ -696,6 +696,10 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     assert updated[child_task_id]["subtitle_size"] == 18
     assert updated[child_task_id]["subtitle_position_y"] == 0.55
     assert preview_files[child_task_id]["source_video"] == created["video_path"]
+    # 回归：必须显式标记英文 + user_specified，否则 _step_asr_normalize 会因
+    # source_language='' 直接 failed（详见 appcore/runtime_multi.py 的 _step_asr_normalize）。
+    assert updated[child_task_id]["source_language"] == "en"
+    assert updated[child_task_id]["user_specified_source_language"] is True
 
 
 def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatch, tmp_path):

@@ -1152,6 +1152,11 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
         type=child_project_type,
         display_name=f"{(raw_source.get('display_name') or Path(source_name).stem)}-{lang}",
         target_lang=lang,
+        # media_raw_sources 表无 lang 列，业务上 raw 素材即英文（plan 也只查 lang='en'），
+        # 与 multi_translate 单独上传路径保持一致：必须显式标记用户已选源语言，
+        # 否则 _step_asr_normalize 会因 source_language 为空直接 failed。
+        source_language="en",
+        user_specified_source_language=True,
         source_tos_key="",
         source_object_info={
             "file_size": raw_source.get("file_size"),
