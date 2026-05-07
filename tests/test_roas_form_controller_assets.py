@@ -83,3 +83,17 @@ def test_controller_clears_pending_before_recursive_save():
     assert pending_clear < recursive_save, (
         "_pendingPayload must be cleared before recursive save() to avoid infinite recursion"
     )
+
+
+def test_controller_sanitizes_product_cover_media_src_protocols():
+    src = JS.read_text(encoding="utf-8")
+    fill_start = src.index("fillFromProduct(product)")
+    fill_block = src[
+        fill_start:
+        src.index("collectPayload()", fill_start)
+    ]
+
+    assert "function safeMediaSrc(url)" in src
+    assert "const coverUrl = safeMediaSrc(product.cover_thumbnail_url);" in fill_block
+    assert 'src="${escapeAttr(coverUrl)}"' in fill_block
+    assert "String(product.cover_thumbnail_url).replace" not in fill_block

@@ -3231,8 +3231,9 @@ def test_medias_scripts_wire_raw_source_translate_dialog():
     assert "rstPreview" in medias_js
     assert '/medias/api/languages' in medias_js
     assert '/medias/api/products/${pid}/translate' in medias_js
-    assert "const videoUrl = escapeHtml(it.video_url || '')" in medias_js
-    assert "poster=\"${escapeHtml(it.cover_url)}\"" in medias_js
+    assert "const videoUrl = safeMediaSrc(it.video_url || '')" in medias_js
+    assert "const posterUrl = safeMediaSrc(it.cover_url || '')" in medias_js
+    assert "poster=\"${escapeHtml(posterUrl)}\"" in medias_js
     assert 'class="oc-rst-choice-video"' in medias_js
     assert 'controls playsinline preload="metadata"' in medias_js
     assert "function rawSourceLangDisplayName(lang)" in medias_js

@@ -80,6 +80,19 @@
     }[ch]));
   }
 
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
@@ -189,11 +202,12 @@
     }
     rawList.innerHTML = state.rawSources.map((item, index) => {
       const translatedSummary = rawTranslationSummary(item);
+      const coverUrl = safeMediaSrc(item.cover_url);
       return `
       <label class="mt-choice mt-choice--raw ${translatedSummary ? 'mt-choice--has-status' : ''}">
         <input type="checkbox" value="${item.id}" ${state.selectedRawIds.has(Number(item.id)) ? 'checked' : ''}>
         <span class="mt-choice__cover">
-          ${item.cover_url ? `<img src="${esc(item.cover_url)}" alt="${esc(item.display_name || `原始视频 #${item.id}`)}" loading="lazy">` : '<span class="mt-choice__cover-ph">VIDEO</span>'}
+          ${coverUrl ? `<img src="${esc(coverUrl)}" alt="${esc(item.display_name || `原始视频 #${item.id}`)}" loading="lazy">` : '<span class="mt-choice__cover-ph">VIDEO</span>'}
         </span>
         <span class="mt-choice__body">
           <strong>${esc(item.display_name || `原始视频 #${item.id}`)}</strong>
@@ -327,13 +341,14 @@
       setPreviewIdle('当前商品还没有原始视频素材，暂时只能预览字幕样式。');
       return;
     }
-    if (!raw.video_url) {
+    const videoUrl = safeMediaSrc(raw.video_url);
+    if (!videoUrl) {
       setPreviewIdle(`原始视频「${raw.display_name || `#${raw.id}`}」缺少可播放地址，仅能预览字幕样式。`);
       return;
     }
-    if (previewVideo.getAttribute('src') !== raw.video_url) {
+    if (previewVideo.getAttribute('src') !== videoUrl) {
       previewVideo.pause();
-      previewVideo.src = raw.video_url;
+      previewVideo.src = videoUrl;
       previewVideo.currentTime = 0;
       previewVideo.load();
     }

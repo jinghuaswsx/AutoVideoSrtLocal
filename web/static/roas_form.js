@@ -39,6 +39,30 @@
     return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
+  function escapeAttr(value) {
+    return String(value == null ? '' : value).replace(/[&<>"'`]/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '`': '&#96;',
+    }[ch]));
+  }
+
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   class RoasFormController {
     constructor(rootEl, opts) {
       if (!rootEl) throw new Error('RoasFormController: rootEl required');
@@ -256,8 +280,9 @@
       if (codeEl) codeEl.textContent = product.product_code || '—';
       const cover = this.root.querySelector('#roasProductCover');
       if (cover) {
-        cover.innerHTML = product.cover_thumbnail_url
-          ? `<img src="${String(product.cover_thumbnail_url).replace(/"/g, '&quot;')}" alt="">`
+        const coverUrl = safeMediaSrc(product.cover_thumbnail_url);
+        cover.innerHTML = coverUrl
+          ? `<img src="${escapeAttr(coverUrl)}" alt="">`
           : '<svg width="24" height="24"><use href="#ic-package"/></svg>';
       }
       this.renderResult();

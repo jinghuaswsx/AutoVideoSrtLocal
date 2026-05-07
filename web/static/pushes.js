@@ -88,6 +88,19 @@
     }
   }
 
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return '';
+    }
+  }
+
   async function fetchJSON(url, options) {
     const resp = await fetch(url, options);
     if (!resp.ok && resp.status !== 204) {
@@ -409,8 +422,9 @@
   }
 
   function renderRowLegacy(it) {
-    const thumb = it.cover_url
-      ? `<img class="thumb" src="${escapeAttr(it.cover_url)}" alt="">`
+    const thumbUrl = safeMediaSrc(it.cover_url);
+    const thumb = thumbUrl
+      ? `<img class="thumb" src="${escapeAttr(thumbUrl)}" alt="">`
       : `<div class="thumb thumb-empty"></div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
@@ -436,8 +450,9 @@
   }
 
   function renderRow(it) {
-    const thumb = it.cover_url
-      ? `<img class="thumb" src="${escapeAttr(it.cover_url)}" alt="">`
+    const thumbUrl = safeMediaSrc(it.cover_url);
+    const thumb = thumbUrl
+      ? `<img class="thumb" src="${escapeAttr(thumbUrl)}" alt="">`
       : `<div class="thumb thumb-empty"></div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
@@ -600,13 +615,14 @@
         // 展示用封面优先走 previewCoverUrl（/medias/thumb/<id> 等已登录路由，
         // 依赖本地入库 thumbnail，可靠性高）。v.image_url 是发给下游的 /medias/obj URL，
         // 老素材本地未回填时会 404。
-        const coverSrc = previewCoverUrl || v.image_url || null;
+        const coverSrc = safeMediaSrc(previewCoverUrl || v.image_url || null);
+        const videoSrc = safeMediaSrc(v.url);
         if (coverSrc) {
           preview.appendChild(el('img', { class: 'pm-thumb', src: coverSrc, alt: `cover-${i}` }));
         }
-        if (v.url) {
+        if (videoSrc) {
           preview.appendChild(el('video', {
-            class: 'pm-thumb', src: v.url, poster: coverSrc,
+            class: 'pm-thumb', src: videoSrc, poster: coverSrc,
             controls: true, preload: 'metadata',
           }));
         }
@@ -877,7 +893,7 @@
 
   function renderQualityCoverPreview(payload, previewCoverUrl) {
     const video = firstPayloadVideo(payload);
-    const coverSrc = previewCoverUrl || (video && video.image_url) || '';
+    const coverSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');
     const root = el('div', { class: 'pm-quality-cover-preview pm-quality-media-preview' });
     const frame = el('div', { class: 'pm-quality-media-frame' });
     if (coverSrc) {
@@ -893,11 +909,13 @@
     const video = firstPayloadVideo(payload);
     const root = el('div', { class: 'pm-quality-video-preview pm-quality-media-preview' });
     const frame = el('div', { class: 'pm-quality-media-frame' });
-    if (video && video.url) {
+    const videoSrc = safeMediaSrc(video && video.url);
+    const posterSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');
+    if (videoSrc) {
       frame.appendChild(el('video', {
         class: 'pm-quality-video',
-        src: video.url,
-        poster: previewCoverUrl || video.image_url || '',
+        src: videoSrc,
+        poster: posterSrc,
         controls: true,
         preload: 'metadata',
       }));

@@ -235,3 +235,24 @@ def test_medias_raw_source_translate_choices_sanitize_media_src_protocols():
     assert 'src="${escapeHtml(videoUrl)}"' in choice_block
     assert 'poster="${escapeHtml(posterUrl)}"' in choice_block
     assert "const videoUrl = escapeHtml(it.video_url || '');" not in choice_block
+
+
+def test_medias_translate_modal_sanitizes_raw_preview_media_src_protocols():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias_translate_modal.js").read_text(encoding="utf-8")
+    raw_list_block = script[
+        script.index("function renderRawSources"):
+        script.index("function renderLanguages")
+    ]
+    preview_block = script[
+        script.index("function applyRawPreview"):
+        script.index("function collectExistingDefaults")
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "const coverUrl = safeMediaSrc(item.cover_url);" in raw_list_block
+    assert 'src="${esc(coverUrl)}"' in raw_list_block
+    assert "const videoUrl = safeMediaSrc(raw.video_url);" in preview_block
+    assert "previewVideo.src = videoUrl;" in preview_block
+    assert 'src="${esc(item.cover_url)}"' not in raw_list_block
+    assert "previewVideo.src = raw.video_url;" not in preview_block

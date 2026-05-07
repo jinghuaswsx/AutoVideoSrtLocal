@@ -77,13 +77,62 @@ def test_pushes_legacy_row_renderer_escapes_api_fields_if_reused():
         script.index("function renderRow(it)")
     ]
 
-    assert 'src="${escapeAttr(it.cover_url)}"' in legacy
+    assert 'src="${escapeAttr(thumbUrl)}"' in legacy
     assert 'data-id="${escapeAttr(it.id)}"' in legacy
     assert "escapeHtml(it.product_name || '')" in legacy
     assert "escapeHtml(it.product_code || '')" in legacy
     assert "escapeHtml(it.display_name || it.filename || '')" in legacy
     assert "${it.product_name || ''}" not in legacy
     assert "${it.product_code || ''}" not in legacy
+
+
+def test_pushes_row_renderers_sanitize_cover_media_src_protocols():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    legacy = script[
+        script.index("function renderRowLegacy"):
+        script.index("function renderRow(it)")
+    ]
+    current = script[
+        script.index("function renderRow(it)"):
+        script.index("async function load", script.index("function renderRow(it)"))
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "const thumbUrl = safeMediaSrc(it.cover_url);" in legacy
+    assert "const thumbUrl = safeMediaSrc(it.cover_url);" in current
+    assert 'src="${escapeAttr(thumbUrl)}"' in legacy
+    assert 'src="${escapeAttr(thumbUrl)}"' in current
+    assert 'src="${escapeAttr(it.cover_url)}"' not in legacy
+    assert 'src="${escapeAttr(it.cover_url)}"' not in current
+
+
+def test_pushes_payload_and_quality_previews_sanitize_media_src_protocols():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    payload_view = script[
+        script.index("function renderPayloadView"):
+        script.index("function renderTagList")
+    ]
+    quality_cover = script[
+        script.index("function renderQualityCoverPreview"):
+        script.index("function renderQualityVideoPreview")
+    ]
+    quality_video = script[
+        script.index("function renderQualityVideoPreview"):
+        script.index("function renderQualitySidePanel")
+    ]
+
+    assert "function safeMediaSrc(url)" in script
+    assert "const coverSrc = safeMediaSrc(previewCoverUrl || v.image_url || null);" in payload_view
+    assert "const videoSrc = safeMediaSrc(v.url);" in payload_view
+    assert "src: coverSrc" in payload_view
+    assert "src: videoSrc" in payload_view
+    assert "poster: coverSrc" in payload_view
+    assert "const coverSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in quality_cover
+    assert "const videoSrc = safeMediaSrc(video && video.url);" in quality_video
+    assert "const posterSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in quality_video
+    assert "src: videoSrc" in quality_video
+    assert "poster: posterSrc" in quality_video
+    assert "src: video.url" not in quality_video
 
 
 def test_pushes_script_persists_filters_pagination_and_sort_in_url():
