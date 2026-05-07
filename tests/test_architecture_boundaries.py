@@ -124,6 +124,32 @@ def test_video_creation_route_db_dependencies_use_appcore_store():
     assert store_path.exists()
 
 
+def test_video_creation_project_sql_lives_in_appcore_store():
+    route_source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
+    store_source = Path("appcore/video_creation_route_store.py").read_text(encoding="utf-8")
+
+    for snippet in [
+        "FROM projects",
+        "INSERT INTO projects",
+        "UPDATE projects SET status",
+        "UPDATE projects SET deleted_at",
+    ]:
+        assert snippet not in route_source
+        assert snippet in store_source
+
+    for helper_name in [
+        "list_user_projects",
+        "get_user_project",
+        "insert_project",
+        "set_project_status",
+        "get_user_project_state",
+        "get_user_project_storage",
+        "soft_delete_project",
+    ]:
+        assert f"def {helper_name}" in store_source
+        assert f"video_creation_route_store.{helper_name}" in route_source
+
+
 def test_translate_voice_routes_use_project_state_helper_for_state_json_writes():
     route_files = [
         Path("web/routes/multi_translate.py"),

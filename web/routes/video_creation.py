@@ -180,12 +180,9 @@ def _resolve_seedance_config() -> dict[str, str]:
 @login_required
 def list_page():
     recover_all_interrupted_tasks()
-    rows = db_query(
-        "SELECT id, display_name, original_filename, thumbnail_path, status, created_at "
-        "FROM projects "
-        "WHERE user_id = %s AND type = 'video_creation' AND deleted_at IS NULL "
-        "ORDER BY created_at DESC",
-        (current_user.id,),
+    rows = video_creation_route_store.list_user_projects(
+        current_user.id,
+        query_func=db_query,
     )
     return render_template("video_creation_list.html", projects=rows)
 
@@ -194,9 +191,10 @@ def list_page():
 @login_required
 def detail_page(task_id: str):
     recover_project_if_needed(task_id, "video_creation")
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = video_creation_route_store.get_user_project(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return "Not Found", 404
@@ -309,15 +307,16 @@ def upload():
         "result_video_path": None,
     }
 
-    db_execute(
-        "INSERT INTO projects "
-        "(id, user_id, type, original_filename, display_name, thumbnail_path, "
-        "status, task_dir, state_json, created_at, expires_at) "
-        "VALUES (%s, %s, 'video_creation', %s, %s, %s, 'uploaded', %s, %s, "
-        "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
-        (task_id, current_user.id, original_filename, display_name,
-         thumbnail_path, task_dir, json.dumps(state, ensure_ascii=False),
-         get_retention_hours("video_creation")),
+    video_creation_route_store.insert_project(
+        task_id=task_id,
+        user_id=current_user.id,
+        original_filename=original_filename,
+        display_name=display_name,
+        thumbnail_path=thumbnail_path,
+        task_dir=task_dir,
+        state=state,
+        retention_hours=get_retention_hours("video_creation"),
+        execute_func=db_execute,
     )
 
     # 异步生成
@@ -403,7 +402,11 @@ def _do_generate_v2(
 
     try:
         _update_state(task_id, {"steps.generate": "running"})
-        db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
+        video_creation_route_store.set_project_status(
+            task_id,
+            "running",
+            execute_func=db_execute,
+        )
         _emit_to_task(task_id, EVT_VC_STEP, {"step": "generate", "status": "running", "message": "上传素材到云存储..."})
 
         # 上传本地文件到 TOS 获取公网 URL
@@ -496,7 +499,11 @@ def _do_generate_v2(
             "result_video_path": local_video_path,
             "steps.generate": "done",
         })
-        db_execute("UPDATE projects SET status = 'done' WHERE id = %s", (task_id,))
+        video_creation_route_store.set_project_status(
+            task_id,
+            "done",
+            execute_func=db_execute,
+        )
 
         _emit_to_task(task_id, EVT_VC_DONE, {
             "video_url": video_result_url,
@@ -513,7 +520,11 @@ def _do_generate_v2(
             )
         log.exception("[VC] 视频生成失败: %s", task_id)
         _update_state(task_id, {"steps.generate": "error"})
-        db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
+        video_creation_route_store.set_project_status(
+            task_id,
+            "error",
+            execute_func=db_execute,
+        )
         _emit_to_task(task_id, EVT_VC_ERROR, {"message": f"视频生成失败: {e}"})
 
 
@@ -543,9 +554,10 @@ def _run_generate_with_tracking(
 @login_required
 def get_result_video(task_id: str):
     """下载生成的视频。"""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation'",
-        (task_id, current_user.id),
+    row = video_creation_route_store.get_user_project_state(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return "Not Found", 404
@@ -566,9 +578,10 @@ def get_result_video(task_id: str):
 @login_required
 def get_asset(task_id: str, kind: str, idx: int):
     """获取任务素材文件（kind = video / image / audio，idx 对 image 为 0-8，其余为 0）。"""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation'",
-        (task_id, current_user.id),
+    row = video_creation_route_store.get_user_project_state(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return "Not Found", 404
@@ -602,9 +615,11 @@ def delete_asset(task_id: str, kind: str, idx: int):
     """删除某项素材。kind = video / image / audio。仅当 steps.generate != running 时允许。"""
     recover_project_if_needed(task_id, "video_creation")
     recover_project_if_needed(task_id, "video_creation")
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = video_creation_route_store.get_user_project_state(
+        task_id,
+        current_user.id,
+        active_only=True,
+        query_one_func=db_query_one,
     )
     if not row:
         return video_creation_flask_response(build_video_creation_error_response("not found", 404))
@@ -650,9 +665,11 @@ def delete_asset(task_id: str, kind: str, idx: int):
 def add_asset(task_id: str, kind: str):
     recover_project_if_needed(task_id, "video_creation")
     """追加素材。kind = video / image / audio。multipart: files['file']。"""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = video_creation_route_store.get_user_project_state(
+        task_id,
+        current_user.id,
+        active_only=True,
+        query_one_func=db_query_one,
     )
     if not row:
         return video_creation_flask_response(build_video_creation_error_response("not found", 404))
@@ -709,9 +726,11 @@ def add_asset(task_id: str, kind: str):
 def regenerate(task_id: str):
     recover_project_if_needed(task_id, "video_creation")
     """重新触发 Seedance 生成。仅当状态不是 running 时允许。"""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = video_creation_route_store.get_user_project_state(
+        task_id,
+        current_user.id,
+        active_only=True,
+        query_one_func=db_query_one,
     )
     if not row:
         return video_creation_flask_response(build_video_creation_error_response("not found", 404))
@@ -762,18 +781,19 @@ def regenerate(task_id: str):
 @bp.route("/api/video-creation/<task_id>", methods=["DELETE"])
 @login_required
 def delete(task_id: str):
-    row = db_query_one(
-        "SELECT task_dir, state_json FROM projects "
-        "WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = video_creation_route_store.get_user_project_storage(
+        task_id,
+        current_user.id,
+        query_one_func=db_query_one,
     )
     if not row:
         return video_creation_flask_response(build_video_creation_error_response("not found", 404))
     from appcore import cleanup
     cleanup.delete_task_storage(row)
-    db_execute(
-        "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
+    video_creation_route_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        execute_func=db_execute,
     )
     return video_creation_flask_response(build_video_creation_ok_status_response())
 
