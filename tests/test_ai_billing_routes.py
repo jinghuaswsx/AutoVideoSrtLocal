@@ -86,8 +86,13 @@ def test_ai_billing_template_has_detail_filters_summary_and_payload_sizes():
 def _install_template_stub(monkeypatch):
     from flask import jsonify
     from web.routes import admin_ai_billing as route_mod
+
+    def fail_route_query(*args, **kwargs):
+        raise AssertionError("AI usage report queries should live in appcore.usage_log")
+
+    monkeypatch.setattr(route_mod, "query", fail_route_query, raising=False)
     monkeypatch.setattr(
-        route_mod.medias,
+        route_mod.usage_log.medias,
         "_media_product_owner_name_expr",
         lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
     )
@@ -160,7 +165,7 @@ def test_my_ai_usage_only_returns_current_user_rows(authed_user_client_no_db, mo
             ]
         return []
 
-    monkeypatch.setattr(route_mod, "query", fake_query)
+    monkeypatch.setattr(route_mod.usage_log, "query", fake_query)
 
     resp = authed_user_client_no_db.get("/my-ai-usage")
     assert resp.status_code == 200
@@ -216,7 +221,7 @@ def test_admin_ai_usage_user_id_filter_is_parameterized(authed_client_no_db, mon
             ]
         return []
 
-    monkeypatch.setattr(route_mod, "query", fake_query)
+    monkeypatch.setattr(route_mod.usage_log, "query", fake_query)
 
     resp = authed_client_no_db.get("/admin/ai-usage?user_id=' OR 1=1 --")
     assert resp.status_code == 200
@@ -238,7 +243,7 @@ def test_admin_ai_usage_payload_delegates_lookup(authed_client_no_db, monkeypatc
         captured["log_id"] = log_id
         return {"request_data": {"prompt": "hello"}, "response_data": {"text": "world"}}
 
-    monkeypatch.setattr(route_mod, "query", fail_query)
+    monkeypatch.setattr(route_mod.usage_log, "query", fail_query)
     monkeypatch.setattr(route_mod.usage_log, "get_usage_payload", fake_get_usage_payload, raising=False)
 
     resp = authed_client_no_db.get("/admin/ai-usage/payload/42")
@@ -261,7 +266,7 @@ def test_my_ai_usage_payload_delegates_scoped_lookup(authed_user_client_no_db, m
         captured["user_id"] = user_id
         return None
 
-    monkeypatch.setattr(route_mod, "query", fail_query)
+    monkeypatch.setattr(route_mod.usage_log, "query", fail_query)
     monkeypatch.setattr(route_mod.usage_log, "get_user_usage_payload", fake_get_user_usage_payload, raising=False)
 
     resp = authed_user_client_no_db.get("/my-ai-usage/payload/42")
@@ -273,8 +278,13 @@ def test_my_ai_usage_payload_delegates_scoped_lookup(authed_user_client_no_db, m
 
 def test_admin_ai_usage_csv_export_has_header_and_all_rows(authed_client_no_db, monkeypatch):
     from web.routes import admin_ai_billing as route_mod
+
+    def fail_route_query(*args, **kwargs):
+        raise AssertionError("AI usage report queries should live in appcore.usage_log")
+
+    monkeypatch.setattr(route_mod, "query", fail_route_query, raising=False)
     monkeypatch.setattr(
-        route_mod.medias,
+        route_mod.usage_log.medias,
         "_media_product_owner_name_expr",
         lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
     )
@@ -336,7 +346,7 @@ def test_admin_ai_usage_csv_export_has_header_and_all_rows(authed_client_no_db, 
             ]
         return []
 
-    monkeypatch.setattr(route_mod, "query", fake_query)
+    monkeypatch.setattr(route_mod.usage_log, "query", fake_query)
 
     resp = authed_client_no_db.get("/admin/ai-usage/export.csv")
     assert resp.status_code == 200
@@ -388,7 +398,7 @@ def test_admin_ai_usage_includes_material_evaluation_rows(authed_client_no_db, m
             }]
         return []
 
-    monkeypatch.setattr(route_mod, "query", fake_query)
+    monkeypatch.setattr(route_mod.usage_log, "query", fake_query)
 
     resp = authed_client_no_db.get("/admin/ai-usage?module=material&use_case=material_evaluation.evaluate")
     assert resp.status_code == 200
@@ -458,7 +468,7 @@ def test_admin_ai_usage_detail_filters_do_not_change_top_summary(authed_client_n
             }]
         return []
 
-    monkeypatch.setattr(route_mod, "query", fake_query)
+    monkeypatch.setattr(route_mod.usage_log, "query", fake_query)
 
     resp = authed_client_no_db.get(
         "/admin/ai-usage?detail_user_id=2&detail_module=image"

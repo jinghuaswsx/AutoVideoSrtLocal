@@ -2,11 +2,32 @@
 from __future__ import annotations
 from decimal import Decimal
 import logging
+import math
 from typing import Any
 
+from appcore import medias
 from appcore.db import query
 
 log = logging.getLogger(__name__)
+
+
+AI_USAGE_GROUP_BY_FIELDS = {
+    "module": ("ul.module", "group_value"),
+    "use_case": ("ul.use_case_code", "group_value"),
+    "provider": ("ul.provider", "group_value"),
+    "model": ("ul.model_name", "group_value"),
+    "user": ("__user_display__", "group_value"),
+}
+
+REQUEST_PAYLOAD_BYTES_SQL = """
+COALESCE(
+    CAST(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.request_data, '$.network_estimate.estimated_base64_payload_bytes')), 'null'), '') AS UNSIGNED),
+    CAST(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.request_data, '$.estimated_base64_payload_bytes')), 'null'), '') AS UNSIGNED),
+    OCTET_LENGTH(CAST(p.request_data AS CHAR))
+)
+"""
+
+RESPONSE_PAYLOAD_BYTES_SQL = "OCTET_LENGTH(CAST(p.response_data AS CHAR))"
 
 
 def _build_usage_report_filter(
@@ -94,6 +115,311 @@ def get_usage_report(
         "summary": summary,
         "service_list": [row["service"] for row in services],
     }
+
+
+def normalize_ai_usage_group_by(raw: str | None, *, admin: bool) -> str:
+    group_by = (raw or "module").strip().lower()
+    if group_by not in AI_USAGE_GROUP_BY_FIELDS:
+        group_by = "module"
+    if not admin and group_by == "user":
+        group_by = "module"
+    return group_by
+
+
+def get_ai_usage_report(
+    *,
+    filters: dict,
+    detail_filters: dict,
+    admin: bool,
+    paged: bool,
+    page_size: int = 50,
+) -> dict:
+    where_sql, where_args = _build_ai_usage_where_clause(filters=filters, admin=admin)
+    detail_where_sql, detail_where_args = _build_ai_usage_detail_where_clause(
+        filters=filters,
+        detail_filters=detail_filters,
+        admin=admin,
+    )
+    detail_filter_options = _query_ai_usage_detail_filter_options(
+        filters=filters,
+        admin=admin,
+    )
+    user_display_expr = _ai_usage_user_display_expr()
+    group_field, group_alias = AI_USAGE_GROUP_BY_FIELDS[filters["group_by"]]
+    if group_field == "__user_display__":
+        group_field = user_display_expr
+
+    summary_rows = query(
+        f"""
+        SELECT
+            COALESCE(SUM(ul.cost_cny), 0) AS total_cost_cny,
+            COUNT(*) AS total_calls,
+            COALESCE(SUM(CASE WHEN ul.cost_source <> 'unknown' AND ul.cost_cny IS NOT NULL THEN 1 ELSE 0 END), 0) AS billed_calls,
+            COALESCE(SUM(CASE WHEN ul.cost_source = 'unknown' OR ul.cost_cny IS NULL THEN 1 ELSE 0 END), 0) AS unbilled_calls
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        {where_sql}
+        """,
+        tuple(where_args),
+    )
+    summary = summary_rows[0] if summary_rows else {
+        "total_cost_cny": Decimal("0"),
+        "total_calls": 0,
+        "billed_calls": 0,
+        "unbilled_calls": 0,
+    }
+
+    groups = query(
+        f"""
+        SELECT
+            {group_field} AS {group_alias},
+            COUNT(*) AS calls,
+            COALESCE(SUM(ul.request_units), 0) AS request_units,
+            COALESCE(SUM(ul.cost_cny), 0) AS cost_cny
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        {where_sql}
+        GROUP BY {group_field}
+        ORDER BY cost_cny DESC, {group_alias} ASC
+        """,
+        tuple(where_args),
+    )
+
+    detail_summary_rows = query(
+        f"""
+        SELECT
+            COUNT(*) AS detail_total_calls,
+            COALESCE(SUM(ul.cost_cny), 0) AS detail_total_cost_cny,
+            COALESCE(SUM(
+                COALESCE({REQUEST_PAYLOAD_BYTES_SQL}, 0)
+                + COALESCE({RESPONSE_PAYLOAD_BYTES_SQL}, 0)
+            ), 0) AS detail_payload_bytes,
+            COALESCE(SUM(CASE
+                WHEN p.request_data IS NOT NULL OR p.response_data IS NOT NULL THEN 1
+                ELSE 0
+            END), 0) AS payload_recorded_calls
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        LEFT JOIN usage_log_payloads p ON p.log_id = ul.id
+        {detail_where_sql}
+        """,
+        tuple(detail_where_args),
+    )
+    detail_summary = detail_summary_rows[0] if detail_summary_rows else {
+        "detail_total_calls": 0,
+        "detail_total_cost_cny": Decimal("0"),
+        "detail_payload_bytes": 0,
+        "payload_recorded_calls": 0,
+    }
+    detail_summary["detail_payload_mb"] = _format_ai_usage_mb(
+        detail_summary.get("detail_payload_bytes")
+    )
+
+    rows_sql = f"""
+        SELECT
+            ul.id,
+            ul.called_at,
+            ul.user_id,
+            u.username,
+            {user_display_expr} AS user_display_name,
+            ul.project_id,
+            ul.service,
+            ul.use_case_code,
+            ul.module,
+            ul.provider,
+            ul.model_name,
+            ul.success,
+            ul.input_tokens,
+            ul.output_tokens,
+            ul.audio_duration_seconds,
+            ul.request_units,
+            ul.units_type,
+            ul.cost_cny,
+            ul.cost_source,
+            ul.extra_data,
+            {REQUEST_PAYLOAD_BYTES_SQL} AS request_payload_bytes,
+            {RESPONSE_PAYLOAD_BYTES_SQL} AS response_payload_bytes
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        LEFT JOIN usage_log_payloads p ON p.log_id = ul.id
+        {detail_where_sql}
+        ORDER BY ul.called_at DESC, ul.id DESC
+    """
+    row_args = list(detail_where_args)
+    if paged:
+        offset = (filters["page"] - 1) * page_size
+        rows_sql += " LIMIT %s OFFSET %s"
+        row_args.extend([page_size, offset])
+    rows = query(rows_sql, tuple(row_args))
+    for row in rows:
+        row["request_payload_mb"] = _format_ai_usage_mb(row.get("request_payload_bytes"))
+        row["response_payload_mb"] = _format_ai_usage_mb(row.get("response_payload_bytes"))
+
+    total_calls = int(detail_summary.get("detail_total_calls") or 0)
+    total_pages = max(1, math.ceil(total_calls / page_size)) if paged else 1
+
+    return {
+        "summary": summary,
+        "detail_summary": detail_summary,
+        "groups": groups,
+        "rows": rows,
+        "filters": filters,
+        "detail_filters": detail_filters,
+        "detail_filter_options": detail_filter_options,
+        "group_by": filters["group_by"],
+        "page": filters["page"],
+        "total_pages": total_pages,
+    }
+
+
+def _build_ai_usage_where_clause(*, filters: dict, admin: bool) -> tuple[str, list]:
+    clauses, args = _build_ai_usage_clause_parts(filters=filters, admin=admin)
+    if not clauses:
+        return "", args
+    return "WHERE " + " AND ".join(clauses), args
+
+
+def _build_ai_usage_detail_where_clause(
+    *,
+    filters: dict,
+    detail_filters: dict,
+    admin: bool,
+) -> tuple[str, list]:
+    clauses, args = _build_ai_usage_clause_parts(filters=filters, admin=admin)
+
+    if admin:
+        _append_ai_usage_in_clause(clauses, args, "ul.user_id", detail_filters["user_ids"])
+
+    _append_ai_usage_in_clause(clauses, args, "ul.module", detail_filters["modules"])
+    _append_ai_usage_in_clause(clauses, args, "ul.use_case_code", detail_filters["use_cases"])
+    _append_ai_usage_in_clause(clauses, args, "ul.provider", detail_filters["providers"])
+    _append_ai_usage_in_clause(
+        clauses,
+        args,
+        "ul.success",
+        [1 if status else 0 for status in detail_filters["statuses"]],
+    )
+
+    if not clauses:
+        return "", args
+    return "WHERE " + " AND ".join(clauses), args
+
+
+def _append_ai_usage_in_clause(clauses: list[str], args: list, field: str, values: list) -> None:
+    if not values:
+        return
+    placeholders = ", ".join(["%s"] * len(values))
+    clauses.append(f"{field} IN ({placeholders})")
+    args.extend(values)
+
+
+def _build_ai_usage_clause_parts(*, filters: dict, admin: bool) -> tuple[list[str], list]:
+    clauses: list[str] = []
+    args: list = []
+
+    if admin:
+        if filters["user_id"] is not None:
+            clauses.append("ul.user_id = %s")
+            args.append(filters["user_id"])
+    else:
+        clauses.append("ul.user_id = %s")
+        args.append(filters["user_id"])
+
+    if filters["date_from"]:
+        clauses.append("DATE(ul.called_at) >= %s")
+        args.append(filters["date_from"])
+    if filters["date_to"]:
+        clauses.append("DATE(ul.called_at) <= %s")
+        args.append(filters["date_to"])
+    if filters["module"]:
+        clauses.append("ul.module = %s")
+        args.append(filters["module"])
+    if filters["use_case"]:
+        clauses.append("ul.use_case_code = %s")
+        args.append(filters["use_case"])
+    if filters["provider"]:
+        clauses.append("ul.provider = %s")
+        args.append(filters["provider"])
+    if filters["model"]:
+        clauses.append("ul.model_name = %s")
+        args.append(filters["model"])
+    if filters["status"] is not None:
+        clauses.append("ul.success = %s")
+        args.append(1 if filters["status"] else 0)
+    if filters["q"]:
+        clauses.append("ul.project_id LIKE %s")
+        args.append(f"%{filters['q']}%")
+
+    return clauses, args
+
+
+def _query_ai_usage_detail_filter_options(*, filters: dict, admin: bool) -> dict:
+    clauses, args = _build_ai_usage_clause_parts(filters=filters, admin=admin)
+    where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
+    return {
+        "statuses": [
+            {"value": "success", "label": "成功"},
+            {"value": "failed", "label": "失败"},
+        ],
+        "modules": _query_ai_usage_distinct_options("ul.module", where_sql, args),
+        "use_cases": _query_ai_usage_distinct_options("ul.use_case_code", where_sql, args),
+        "providers": _query_ai_usage_distinct_options("ul.provider", where_sql, args),
+        "users": _query_ai_usage_user_options(where_sql, args) if admin else [],
+    }
+
+
+def _query_ai_usage_distinct_options(field: str, where_sql: str, args: list) -> list[dict]:
+    rows = query(
+        f"""
+        SELECT DISTINCT {field} AS value
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        {_ai_usage_where_with_extra(where_sql, f"{field} IS NOT NULL AND {field} <> ''")}
+        ORDER BY value ASC
+        """,
+        tuple(args),
+    )
+    return [{"value": row["value"], "label": row["value"]} for row in rows]
+
+
+def _query_ai_usage_user_options(where_sql: str, args: list) -> list[dict]:
+    user_display_expr = _ai_usage_user_display_expr()
+    rows = query(
+        f"""
+        SELECT DISTINCT ul.user_id AS value, {user_display_expr} AS label
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        {_ai_usage_where_with_extra(where_sql, "ul.user_id IS NOT NULL")}
+        ORDER BY label ASC, value ASC
+        """,
+        tuple(args),
+    )
+    return [
+        {"value": int(row["value"]), "label": (row.get("label") or f"用户 {row['value']}")}
+        for row in rows
+    ]
+
+
+def _ai_usage_user_display_expr() -> str:
+    return medias._media_product_owner_name_expr()
+
+
+def _ai_usage_where_with_extra(where_sql: str, extra_condition: str) -> str:
+    if where_sql:
+        return f"{where_sql} AND {extra_condition}"
+    return f"WHERE {extra_condition}"
+
+
+def _format_ai_usage_mb(raw_bytes) -> str | None:
+    if raw_bytes is None:
+        return None
+    try:
+        size = int(raw_bytes)
+    except (TypeError, ValueError):
+        return None
+    if size <= 0:
+        return None
+    return f"{size / 1024 / 1024:.2f} MB"
 
 
 def get_usage_payload(log_id: int) -> dict | None:

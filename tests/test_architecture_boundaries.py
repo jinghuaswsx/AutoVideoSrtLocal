@@ -1575,6 +1575,20 @@ def test_admin_ai_billing_payload_responses_live_outside_route_module():
     assert Path("web/services/admin_ai_billing.py").exists()
 
 
+def test_admin_ai_billing_report_queries_live_in_appcore_usage_log():
+    route_source = Path("web/routes/admin_ai_billing.py").read_text(encoding="utf-8")
+    usage_source = Path("appcore/usage_log.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import query" not in route_source
+    assert "FROM usage_logs ul" not in route_source
+    assert "LEFT JOIN usage_log_payloads" not in route_source
+    assert "usage_log.get_ai_usage_report" in route_source
+    assert "usage_log.normalize_ai_usage_group_by" in route_source
+    assert "def get_ai_usage_report" in usage_source
+    assert "def normalize_ai_usage_group_by" in usage_source
+    assert "FROM usage_logs ul" in usage_source
+
+
 def test_copywriting_translate_start_responses_live_outside_route_module():
     module_source = Path("web/routes/copywriting_translate.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
