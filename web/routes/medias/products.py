@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import abort, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, parcel_cost_suggest, product_roas, pushes, sku_aggregates, supply_pairing, xmyc_storage
+from appcore import medias, parcel_cost_suggest, product_link_domains, product_roas, pushes, sku_aggregates, supply_pairing, xmyc_storage
 from . import bp
 from ._serializers import _serialize_item, _serialize_product, _serialize_product_skus
 from web.services.media_products_listing import (
@@ -297,6 +297,53 @@ def api_get_product(pid: int):
     return routes._product_detail_flask_response(
         routes._build_product_detail_response(pid, p)
     )
+
+
+def _parse_enabled_domain_ids(body: dict) -> list[int]:
+    raw_ids = body.get("enabled_domain_ids") if isinstance(body, dict) else []
+    if not isinstance(raw_ids, list):
+        return []
+    ids: list[int] = []
+    seen: set[int] = set()
+    for value in raw_ids:
+        try:
+            domain_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if domain_id <= 0 or domain_id in seen:
+            continue
+        seen.add(domain_id)
+        ids.append(domain_id)
+    return ids
+
+
+@bp.route("/api/products/<int:pid>/product-link-domains", methods=["GET"])
+@login_required
+def api_get_product_link_domains(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    return {
+        "product": p,
+        "domains": product_link_domains.list_product_domain_options(pid),
+    }
+
+
+@bp.route("/api/products/<int:pid>/product-link-domains", methods=["POST"])
+@login_required
+def api_set_product_link_domains(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    enabled_ids = _parse_enabled_domain_ids(body)
+    product_link_domains.set_product_domain_enabled_ids(pid, enabled_ids)
+    return {
+        "ok": True,
+        "domains": product_link_domains.list_product_domain_options(pid),
+    }
 
 
 @bp.route("/api/products/<int:pid>/parcel-cost-suggest", methods=["GET"])

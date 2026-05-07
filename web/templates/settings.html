@@ -43,6 +43,21 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 .success { background:var(--settings-success-bg); border:1px solid oklch(88% 0.06 165); color:var(--settings-success-fg); font-size:13px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
 .hint { color:var(--settings-fg-soft); font-size:12px; margin-top:4px; }
 .divider { border:none; border-top:1px dashed var(--settings-border); margin:16px 0; }
+.settings-domain-card { display:grid; gap:16px; }
+.settings-domain-add { display:grid; grid-template-columns:minmax(220px, 1fr) auto; gap:10px; align-items:end; }
+.settings-domain-table { width:100%; border-collapse:separate; border-spacing:0; overflow:hidden; border:1px solid var(--settings-border); border-radius:12px; }
+.settings-domain-table th,
+.settings-domain-table td { padding:12px 14px; border-bottom:1px solid var(--settings-border); font-size:13px; text-align:left; vertical-align:middle; }
+.settings-domain-table th { background:var(--settings-surface-muted); color:var(--settings-fg-muted); font-size:12px; font-weight:700; }
+.settings-domain-table tr:last-child td { border-bottom:none; }
+.settings-domain-name { font-family:var(--font-mono, ui-monospace, Consolas, monospace); color:var(--settings-fg); }
+.settings-domain-actions { display:flex; gap:8px; align-items:center; justify-content:flex-end; }
+.settings-domain-btn { height:32px; padding:0 12px; border-radius:8px; border:1px solid var(--settings-border-strong); background:var(--settings-surface); color:var(--settings-fg-muted); font-size:12px; font-weight:600; cursor:pointer; }
+.settings-domain-btn.primary { border-color:var(--settings-accent); background:var(--settings-accent); color:oklch(99% 0 0); }
+.settings-domain-btn.danger { border-color:oklch(82% 0.08 25); background:var(--settings-danger-bg); color:var(--settings-danger-fg); }
+.settings-domain-btn:hover { background:var(--settings-accent-subtle); color:var(--settings-accent-strong); }
+.settings-domain-btn.primary:hover { background:var(--settings-accent-strong); color:oklch(99% 0 0); }
+.settings-domain-empty { padding:14px; border:1px dashed var(--settings-border); border-radius:12px; color:var(--settings-fg-muted); background:var(--settings-surface-muted); font-size:13px; }
 
 /* Tab 2: Bindings */
 .bindings-module { background:var(--settings-surface); border:1.5px solid var(--settings-border); border-radius:14px; padding:20px 24px; margin-bottom:16px; }
@@ -130,6 +145,69 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 {% with messages = get_flashed_messages() %}
   {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
 {% endwith %}
+
+{% if can_manage_pricing %}
+<section class="settings-card settings-domain-card" id="domainManagementCard">
+  <div>
+    <h2>域名管理</h2>
+    <p class="step-desc">统一维护产品投放链接可用域名；产品行里的“链接管理”会从这里读取可选域名。</p>
+  </div>
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="tab" value="domains">
+    <input type="hidden" name="return_tab" value="{{ active_tab }}">
+    <input type="hidden" name="domain_action" value="save">
+
+    <div class="settings-domain-add">
+      <label for="new_domain" style="margin-top:0">
+        新增域名
+        <input type="text" id="new_domain" name="new_domain" placeholder="https://omurio.com/">
+      </label>
+      <button class="settings-domain-btn primary" type="submit"
+              onclick="this.form.domain_action.value='add'">新增</button>
+    </div>
+
+    {% if product_link_domains %}
+    <table class="settings-domain-table">
+      <thead>
+        <tr>
+          <th style="width:64px">启用</th>
+          <th>域名</th>
+          <th style="width:120px">排序</th>
+          <th style="width:96px;text-align:right">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in product_link_domains %}
+        <tr>
+          <td>
+            <input type="checkbox" name="enabled_domain_ids" value="{{ row.id }}"
+                   {% if row.enabled %}checked{% endif %}>
+          </td>
+          <td><span class="settings-domain-name">{{ row.domain }}</span></td>
+          <td class="settings-domain-name">{{ row.sort_order }}</td>
+          <td>
+            <div class="settings-domain-actions">
+              <button class="settings-domain-btn danger" type="submit"
+                      name="delete_domain_id" value="{{ row.id }}"
+                      onclick="this.form.domain_action.value='delete'; return confirm('确认删除该域名？产品级勾选也会一起移除。')">删除</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="settings-domain-empty">暂无域名，先新增一个域名后再保存。</div>
+    {% endif %}
+
+    <div class="settings-domain-actions">
+      <button class="settings-domain-btn primary" type="submit"
+              onclick="this.form.domain_action.value='save'">保存启用状态</button>
+    </div>
+  </form>
+</section>
+{% endif %}
 
 {# ═════════════════════════════════════════════════════════════
    Tab 1 · 服务商接入（2026-04-25 重构：DB 驱动，每功能独立 provider_code）

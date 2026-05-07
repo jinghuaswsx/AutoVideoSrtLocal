@@ -11,7 +11,7 @@ from typing import Any
 import requests
 
 import config
-from appcore import medias, settings as system_settings, shopify_image_tasks
+from appcore import medias, product_link_domains, settings as system_settings, shopify_image_tasks
 from appcore.db import query, query_one, execute
 
 log = logging.getLogger(__name__)
@@ -419,24 +419,53 @@ def _parse_product_localized_links(product: dict | None) -> dict[str, str]:
 
 
 def _default_product_page_url(lang: str, product_code: str) -> str:
-    code = (product_code or "").strip()
-    if not code:
-        return ""
-
-    lang_code = (lang or "en").strip().lower() or "en"
-    if lang_code == "en":
-        return f"https://newjoyloo.com/products/{code}"
-    return f"https://newjoyloo.com/{lang_code}/products/{code}"
+    return product_link_domains.build_product_page_url("newjoyloo.com", lang, product_code)
 
 
 def resolve_product_page_url(lang: str, product: dict | None) -> str:
+    rows = resolve_product_page_urls(lang, product)
+    if rows:
+        return rows[0]["url"]
+    return ""
+
+
+def resolve_product_page_urls(lang: str, product: dict | None) -> list[dict[str, str]]:
     product = product or {}
     lang_code = (lang or "en").strip().lower() or "en"
     links = _parse_product_localized_links(product)
     override = (links.get(lang_code) or "").strip()
-    if override:
-        return override
-    return _default_product_page_url(lang_code, product.get("product_code") or "")
+    override_domain = product_link_domains.domain_from_url(override) if override else ""
+    product_id = int(product.get("id") or 0)
+    try:
+        domains = product_link_domains.list_enabled_product_domains(product_id)
+    except Exception:
+        log.exception("product link domain lookup failed; falling back to default URL")
+        domains = []
+    if not domains:
+        url = override or _default_product_page_url(lang_code, product.get("product_code") or "")
+        return [{"domain": product_link_domains.domain_from_url(url), "url": url}] if url else []
+
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in domains:
+        domain = str(row.get("domain") or "").strip().lower()
+        if not domain:
+            continue
+        normalized_domain = product_link_domains.normalize_domain(domain)
+        url = (
+            override
+            if override and override_domain == normalized_domain
+            else product_link_domains.build_product_page_url(
+                normalized_domain,
+                lang_code,
+                product.get("product_code") or "",
+            )
+        )
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        rows.append({"domain": normalized_domain, "url": url})
+    return rows
 
 
 def _enabled_product_link_langs() -> list[str]:
@@ -471,17 +500,31 @@ def build_product_links_push_preview(product: dict | None) -> dict:
     rows: list[dict[str, str]] = []
     links: list[str] = []
     seen_links: set[str] = set()
-    for lang in _enabled_product_link_langs():
-        url = resolve_product_page_url(lang, product).strip()
-        if not url or url in seen_links:
+    try:
+        enabled_domains = product_link_domains.list_enabled_product_domains(int(product.get("id") or 0))
+    except Exception:
+        log.exception("product link domain lookup failed; falling back to default domain")
+        enabled_domains = [{"domain": "newjoyloo.com"}]
+    for domain_row in enabled_domains:
+        domain = str(domain_row.get("domain") or "").strip().lower()
+        if not domain:
             continue
-        seen_links.add(url)
-        links.append(url)
-        rows.append({
-            "lang": lang,
-            "language_name": medias.get_language_name(lang),
-            "url": url,
-        })
+        normalized_domain = product_link_domains.normalize_domain(domain)
+        for lang in _enabled_product_link_langs():
+            for url_row in resolve_product_page_urls(lang, product):
+                if url_row.get("domain") != normalized_domain:
+                    continue
+                url = str(url_row.get("url") or "").strip()
+                if not url or url in seen_links:
+                    continue
+                seen_links.add(url)
+                links.append(url)
+                rows.append({
+                    "lang": lang,
+                    "language_name": medias.get_language_name(lang),
+                    "domain": normalized_domain,
+                    "url": url,
+                })
 
     if not links:
         raise ProductLinksPayloadError("product_links_empty")
@@ -989,7 +1032,18 @@ def build_item_payload(item: dict, product: dict) -> dict:
     }
 
     enabled_langs = [c for c in medias.list_enabled_language_codes() if c != "en"]
-    product_links = [build_product_link(lang, product_code) for lang in enabled_langs]
+    product_links: list[str] = []
+    seen_product_links: set[str] = set()
+    for lang in enabled_langs:
+        url_rows = resolve_product_page_urls(lang, product)
+        if not url_rows:
+            url_rows = [{"url": build_product_link(lang, product_code)}]
+        for url_row in url_rows:
+            url = str(url_row.get("url") or "").strip()
+            if not url or url in seen_product_links:
+                continue
+            seen_product_links.add(url)
+            product_links.append(url)
 
     texts = resolve_push_texts(product["id"])
 

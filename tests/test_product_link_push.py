@@ -12,6 +12,14 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
     )
     monkeypatch.setattr(pushes.medias, "get_language_name", lambda code: code)
     monkeypatch.setattr(pushes.system_settings, "get_setting", lambda key: None)
+    monkeypatch.setattr(
+        pushes.product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+            {"id": 2, "domain": "omurio.com"},
+        ],
+    )
     product = {
         "id": 10,
         "product_code": "demo-rjc",
@@ -30,11 +38,15 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
             "https://newjoyloo.com/de/products/demo-rjc-special",
             "https://newjoyloo.com/fr/products/demo-rjc",
             "https://newjoyloo.com/ja/products/demo-rjc",
+            "https://omurio.com/de/products/demo-rjc",
+            "https://omurio.com/fr/products/demo-rjc",
+            "https://omurio.com/ja/products/demo-rjc",
         ],
     }
     assert preview["links"][0] == {
         "lang": "de",
         "language_name": "de",
+        "domain": "newjoyloo.com",
         "url": "https://newjoyloo.com/de/products/demo-rjc-special",
     }
 
@@ -310,6 +322,14 @@ def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatc
     monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
     monkeypatch.setattr(pushes.medias, "list_enabled_language_codes", lambda: ["en", "de"])
     monkeypatch.setattr(pushes.medias, "get_language_name", lambda code: code)
+    monkeypatch.setattr(
+        pushes.product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+            {"id": 2, "domain": "omurio.com"},
+        ],
+    )
     monkeypatch.setattr(pushes.requests, "post", fake_post)
 
     def fake_setting(key):
@@ -333,7 +353,10 @@ def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatc
     assert captured["url"] == "https://os.wedev.vip/dify/shopify/medias/links"
     assert captured["json"] == {
         "handle": "demo-rjc",
-        "product_links": ["https://newjoyloo.com/de/products/demo-rjc"],
+        "product_links": [
+            "https://newjoyloo.com/de/products/demo-rjc",
+            "https://omurio.com/de/products/demo-rjc",
+        ],
     }
     assert set(captured["json"]) == {"handle", "product_links"}
     token = base64.b64encode("蔡靖华:你的密码".encode("utf-8")).decode("ascii")
@@ -626,6 +649,10 @@ def test_medias_assets_include_product_link_push_entry():
     assert "<th>投放链接</th>" not in script
     assert "data-product-links-push" in script
     assert "data-product-copy-push" in script
+    assert "data-product-link-domains" in script
+    assert "openProductLinkDomainsModal" in script
+    assert "product-link-domains" in script
+    assert "id=\"productLinkDomainsModalMask\"" in template
     assert "推送链接" in script
     assert "推送文案" in script
     assert "openProductLinksPushModal" in script
