@@ -326,9 +326,35 @@
 .oa-filter-field {
   display: inline-flex; align-items: center; gap: var(--space-2);
 }
+.dxm-store-filter {
+  gap: var(--space-3);
+  font-size: calc(var(--text-base) * 2);
+  font-weight: 700;
+}
+.dxm-store-filter label {
+  color: var(--fg);
+  line-height: var(--leading-tight);
+}
+.dxm-store-filter select {
+  height: calc(var(--space-8) + var(--space-6));
+  min-width: var(--sidebar-w);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--fg);
+  font-size: inherit;
+  font-weight: 600;
+}
+.dxm-store-filter select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
 @media (max-width: 768px) {
   .oa-filter-field { width: 100%; align-items: flex-start; flex-direction: column; }
   .oa-filter-field select, .oa-filter-field input[type="date"] { width: 100%; }
+  .dxm-store-filter select { min-width: 0; }
   .oa-filter-row .btn { width: 100%; justify-content: center; }
 }
 .oa-search-box {
@@ -1771,7 +1797,7 @@
       <button type="button" class="oad-btn-primary" id="dxmOrderRefresh">查询</button>
     </div>
     <div class="oad-toolbar-row">
-      <div class="oa-filter-field">
+      <div class="oa-filter-field dxm-store-filter">
         <label for="dxmStoreFilter">店铺：</label>
         <select id="dxmStoreFilter">
           <option value="">全部店铺</option>

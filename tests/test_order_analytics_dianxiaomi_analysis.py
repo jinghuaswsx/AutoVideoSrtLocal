@@ -579,6 +579,22 @@ def test_data_analysis_page_dianxiaomi_uses_compact_country_style_toolbar(authed
     assert "function syncDxmRangeSelection(" in body
 
 
+def test_data_analysis_page_enlarges_dianxiaomi_store_filter(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    panel_start = body.index('id="panelDxmOrders"')
+    panel_end = body.index('class="oa-panel"', panel_start + 1) if 'class="oa-panel"' in body[panel_start + 1:] else len(body)
+    panel = body[panel_start:panel_end]
+
+    assert 'class="oa-filter-field dxm-store-filter"' in panel
+    assert ".dxm-store-filter {" in body
+    assert "font-size: calc(var(--text-base) * 2);" in body
+    assert "height: calc(var(--space-8) + var(--space-6));" in body
+
+
 def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
