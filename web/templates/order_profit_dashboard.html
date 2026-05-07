@@ -146,6 +146,121 @@
   cursor: pointer; font-size: 13px;
 }
 .op-filter-clear:hover { background: var(--bg-muted); color: var(--fg); }
+.op-product-picker {
+  position: relative;
+  width: 100%;
+  min-width: 360px;
+}
+.op-product-picker-trigger {
+  position: relative;
+  width: 100%;
+  min-height: 60px;
+  padding: var(--space-2) 36px var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.op-product-picker-trigger::after {
+  content: "";
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--fg-muted);
+  border-bottom: 1.5px solid var(--fg-muted);
+  transform: translateY(-65%) rotate(45deg);
+}
+.op-product-picker-trigger:hover { border-color: var(--accent); }
+.op-product-picker-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.op-product-picker-placeholder {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.op-product-picker-code {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.op-product-picker-name {
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.3;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.op-product-picker-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 420px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-xs);
+}
+.op-product-picker-search {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+  font-size: 13px;
+}
+.op-product-picker-search:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.op-product-picker-options {
+  max-height: 260px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-2);
+}
+.op-product-picker-option {
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.op-product-picker-option:hover,
+.op-product-picker-option:focus-visible {
+  outline: none;
+  background: var(--bg-muted);
+}
+.op-product-picker-option[hidden] { display: none; }
+.op-product-picker-empty {
+  padding: var(--space-3);
+  color: var(--fg-subtle);
+  font-size: 13px;
+  text-align: center;
+}
 {% endblock %}
 
 {% block content %}
@@ -604,12 +719,152 @@ function orderProductLabel(p) {
   return `${code}${name} (#${p.id})`;
 }
 
+function productIdValue(p) {
+  const value = Number(p.id || p.product_id);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function productSearchText(p) {
+  return [
+    p.product_code || '',
+    p.name || '',
+    p.id || p.product_id || '',
+  ].join(' ').toLowerCase();
+}
+
+function productPickerTriggerHtml(product) {
+  if (!product) {
+    return '<span class="op-product-picker-placeholder">— 选择产品 —</span>';
+  }
+  const code = product.product_code || ('#' + productIdValue(product));
+  return `
+    <span class="op-product-picker-code">${escapeHtml(code)}</span>
+    <span class="op-product-picker-name">${escapeHtml(product.name || '')}</span>
+  `;
+}
+
 function buildProductSelect(currentProductId) {
   const products = _productsCache || [];
-  const opts = products.map(p =>
-    `<option value="${escapeHtml(p.id || '')}" ${p.id === currentProductId ? 'selected' : ''}>${escapeHtml(p.product_code || '#' + p.id)} — ${escapeHtml(p.name || '')}</option>`
-  ).join('');
-  return `<select class="op-product-select" data-op-product-select><option value="">— 选择产品 —</option>${opts}</select>`;
+  const selectedId = Number(currentProductId || 0);
+  const selectedProduct = products.find(p => productIdValue(p) === selectedId);
+  const opts = products.map(p => {
+    const id = productIdValue(p);
+    const code = p.product_code || ('#' + id);
+    return `
+      <button type="button" class="op-product-picker-option" data-op-product-option
+        data-product-id="${escapeHtml(id || '')}"
+        data-product-search="${escapeHtml(productSearchText(p))}"
+        role="option">
+        <span class="op-product-picker-code">${escapeHtml(code)}</span>
+        <span class="op-product-picker-name">${escapeHtml(p.name || '')}</span>
+      </button>
+    `;
+  }).join('');
+  return `
+    <div class="op-product-picker" data-op-product-picker>
+      <input class="op-product-select" data-op-product-select type="hidden" value="${escapeHtml(selectedId || '')}">
+      <button type="button" class="op-product-picker-trigger" data-op-product-trigger aria-haspopup="listbox" aria-expanded="false">
+        ${productPickerTriggerHtml(selectedProduct)}
+      </button>
+      <div class="op-product-picker-menu" data-op-product-menu hidden>
+        <input type="search" class="op-product-picker-search" data-op-product-search placeholder="搜索 product_code / 中文产品名" autocomplete="off">
+        <div class="op-product-picker-options" role="listbox">${opts}</div>
+        <div class="op-product-picker-empty" data-op-product-empty hidden>无匹配产品</div>
+      </div>
+    </div>
+  `;
+}
+
+function findCachedProductById(productId) {
+  const id = Number(productId);
+  return (_productsCache || []).find(p => productIdValue(p) === id) || null;
+}
+
+function closeCampaignProductPickers(exceptPicker) {
+  document.querySelectorAll('[data-op-product-picker]').forEach(picker => {
+    if (picker === exceptPicker) return;
+    const menu = picker.querySelector('[data-op-product-menu]');
+    const trigger = picker.querySelector('[data-op-product-trigger]');
+    if (menu) menu.hidden = true;
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function filterCampaignProductOptions(picker) {
+  const search = picker.querySelector('[data-op-product-search]');
+  const empty = picker.querySelector('[data-op-product-empty]');
+  const query = (search?.value || '').trim().toLowerCase();
+  let visible = 0;
+  picker.querySelectorAll('[data-op-product-option]').forEach(option => {
+    const text = option.dataset.productSearch || '';
+    const matched = !query || text.includes(query);
+    option.hidden = !matched;
+    if (matched) visible += 1;
+  });
+  if (empty) empty.hidden = visible > 0;
+}
+
+function openCampaignProductPicker(picker) {
+  const menu = picker.querySelector('[data-op-product-menu]');
+  const trigger = picker.querySelector('[data-op-product-trigger]');
+  const search = picker.querySelector('[data-op-product-search]');
+  if (!menu || !trigger || !search) return;
+  closeCampaignProductPickers(picker);
+  menu.hidden = false;
+  trigger.setAttribute('aria-expanded', 'true');
+  search.value = '';
+  filterCampaignProductOptions(picker);
+  window.setTimeout(() => search.focus(), 0);
+}
+
+function closeCampaignProductPicker(picker) {
+  const menu = picker.querySelector('[data-op-product-menu]');
+  const trigger = picker.querySelector('[data-op-product-trigger]');
+  if (menu) menu.hidden = true;
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function selectCampaignProduct(picker, productId) {
+  const hidden = picker.querySelector('[data-op-product-select]');
+  const trigger = picker.querySelector('[data-op-product-trigger]');
+  const product = findCachedProductById(productId);
+  if (!hidden || !trigger || !product) return;
+  hidden.value = String(productIdValue(product));
+  trigger.innerHTML = productPickerTriggerHtml(product);
+  closeCampaignProductPicker(picker);
+  trigger.focus();
+}
+
+function initCampaignProductPickers(root) {
+  root.querySelectorAll('[data-op-product-picker]').forEach(picker => {
+    if (picker.dataset.ready === '1') return;
+    picker.dataset.ready = '1';
+    const trigger = picker.querySelector('[data-op-product-trigger]');
+    const search = picker.querySelector('[data-op-product-search]');
+    trigger?.addEventListener('click', () => openCampaignProductPicker(picker));
+    trigger?.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openCampaignProductPicker(picker);
+      }
+    });
+    search?.addEventListener('input', () => filterCampaignProductOptions(picker));
+    search?.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeCampaignProductPicker(picker);
+        trigger?.focus();
+      }
+    });
+    picker.querySelectorAll('[data-op-product-option]').forEach(option => {
+      option.addEventListener('click', () => {
+        const productId = Number(option.dataset.productId);
+        if (Number.isInteger(productId) && productId > 0) {
+          selectCampaignProduct(picker, productId);
+        }
+      });
+    });
+  });
 }
 
 function renderOrderProductOptions(products) {
@@ -679,6 +934,7 @@ async function refreshMatching() {
         <td><button class="op-save-btn" style="height:28px; padding:0 12px; background:var(--accent); color:#fff; border:0; border-radius:4px; cursor:pointer;">保存</button></td>
       </tr>
     `).join('');
+    initCampaignProductPickers(tbody);
     tbody.querySelectorAll('.op-save-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const tr = e.target.closest('tr');
@@ -767,6 +1023,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const filter = document.getElementById('opOrderStatusFilter');
   if (filter) filter.addEventListener('change', refreshOrders);
   initOrderProductFilter();
+  document.addEventListener('click', event => {
+    const target = event.target;
+    if (!target || !target.closest || !target.closest('[data-op-product-picker]')) {
+      closeCampaignProductPickers();
+    }
+  });
 
   // tab 切换
   document.querySelectorAll('.op-tab').forEach(btn => {

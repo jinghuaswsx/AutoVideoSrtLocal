@@ -17,6 +17,11 @@ Scope:
   uses a searchable product input backed by active `media_products`; selected
   `product_id` is sent to `/order-profit/api/orders`, and order rows, summary stats,
   and expanded SKU lines are scoped to that product.
+- Follow-up UI refinement: the Campaign pairing product selector must be tall enough
+  for repeated manual matching work and searchable after click/focus. Search matches
+  both `media_products.product_code` and the Chinese product name returned by the
+  active-products cache, while saving still submits the selected `product_id` to the
+  existing manual-match endpoint.
 
 Verification:
 
@@ -45,6 +50,15 @@ Verification:
 - Product filter template render smoke test:
   `tests/test_order_menu_permissions.py::test_order_profit_permission_grant_allows_user_page_access`:
   `1 passed`.
+- Campaign pairing product selector RED was confirmed with
+  `tests/test_order_profit_dashboard_assets.py::test_order_profit_campaign_product_picker_is_searchable_and_tall`:
+  failed before implementation because `.op-product-picker-trigger` was absent.
+- Campaign pairing product selector GREEN focused regression:
+  `tests/test_order_profit_dashboard_assets.py tests/test_order_profit_routes.py tests/test_order_profit_aggregation.py tests/test_order_profit_response_service.py`:
+  `35 passed`.
+- Campaign pairing inline script syntax check:
+  `sed -n '/<script>/,/<\\/script>/p' web/templates/order_profit_dashboard.html | sed '1d;$d' | node --check -`:
+  passed.
 - GREEN focused tests:
   `tests/test_order_profit_routes.py`, `tests/test_order_profit_aggregation.py`,
   and `tests/test_architecture_boundaries.py::test_order_profit_route_db_access_lives_in_appcore_order_analytics`:
