@@ -858,6 +858,60 @@
     dateToInput.value = fmt(today);
   })();
 
+  // ── 国家下拉动态填充（Task 10）──────────────────
+  // 数据源：data.by_country（来自 /report.json，结构 [{buyer_country, site, ...}]）。
+  // 触发点：loadOrdersTab / loadCountryTab 拿到 report 后调用。
+  // 行为：保留首项 "全部"，保留当前选中值（即便新列表不含）；空数组不清空既有选项。
+  function refreshCountryOptions(byCountry) {
+    if (!Array.isArray(byCountry) || byCountry.length === 0) return;
+    var current = countrySelect.value || '';
+    var seen = {};
+    var countries = [];
+    byCountry.forEach(function(row) {
+      var c = (row && row.buyer_country ? String(row.buyer_country) : '').trim();
+      if (!c || seen[c]) return;
+      seen[c] = true;
+      countries.push(c);
+    });
+    countries.sort();
+    // 重建 options：首项 "全部" + 排序后的国家。如果当前选中值不在新列表里，仍补一个保留之。
+    countrySelect.innerHTML = '';
+    var allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = '全部';
+    countrySelect.appendChild(allOpt);
+    countries.forEach(function(c) {
+      var o = document.createElement('option');
+      o.value = c;
+      o.textContent = c;
+      countrySelect.appendChild(o);
+    });
+    if (current && !seen[current]) {
+      var keep = document.createElement('option');
+      keep.value = current;
+      keep.textContent = current;
+      countrySelect.appendChild(keep);
+    }
+    countrySelect.value = current;
+  }
+
+  // ── URL state 同步（Task 10）──────────────────
+  // 写入：tab / product_id / country / date_from / date_to。
+  // 用 replaceState 避免污染浏览器历史；不触发任何 reload，避免与 listener 形成回环。
+  function syncUrlState() {
+    try {
+      var url = new URL(window.location.href);
+      // datalist 输入框：保存解析后的 product_id（可能是 '0' / 数字字符串 / ''）
+      url.searchParams.set('product_id', getSelectedProductId() || '');
+      url.searchParams.set('country', countrySelect.value || '');
+      url.searchParams.set('date_from', dateFromInput.value || '');
+      url.searchParams.set('date_to', dateToInput.value || '');
+      var activeBtn = document.querySelector('.ppd-tab.active');
+      if (activeBtn) url.searchParams.set('tab', activeBtn.dataset.tab);
+      history.replaceState(null, '', url.toString());
+    } catch (e) { /* IE 等老浏览器忽略 */ }
+  }
+
   // ── 产品下拉（input + datalist 搜索）───────────
   function loadProducts() {
     return fetch('/order-analytics/product-profit/products', { credentials: 'same-origin' })
@@ -1062,10 +1116,13 @@
       tr.addEventListener('click', function() {
         var pid = tr.getAttribute('data-product-id');
         if (!pid) return;
-        // 检查该 product_id 是否在产品下拉里（应该都在；防御一下）
-        var opt = productSelect.querySelector('option[value="' + pid + '"]');
-        if (opt) {
-          productSelect.value = pid;
+        // datalist 模式：从 product_id 反查 label，命中后写入 productInput.value
+        var matchedLabel = null;
+        for (var lbl in productLabelToId) {
+          if (String(productLabelToId[lbl]) === String(pid)) { matchedLabel = lbl; break; }
+        }
+        if (matchedLabel) {
+          productInput.value = matchedLabel;
         }
         if (window.switchTab) {
           window.switchTab('orders');
@@ -1152,6 +1209,7 @@
         renderDailyChart(data.daily);
         renderCountryChart(data.by_country);
         renderOrders(data.orders);
+        refreshCountryOptions(data.by_country); // Task 10: 国家下拉动态填充
       })
       .catch(function(err) {
         loading.style.display = 'none';
@@ -1165,7 +1223,7 @@
   // ── Tab ③ 国家看板（Task 8）────────────────────────
   // 复用 /report.json，前端按 buyer_country 过滤 orders 做下钻聚合 / 折线 / 表格。
   function loadCountryTab() {
-    var pid = productSelect.value;
+    var pid = getSelectedProductId();
     var df = dateFromInput.value;
     var dt = dateToInput.value;
 
@@ -1223,6 +1281,7 @@
         }
         contentEl.style.display = 'flex';
         renderCountryTabContent(data);
+        refreshCountryOptions(data.by_country); // Task 10: 国家下拉动态填充
       })
       .catch(function(err) {
         loadingEl.style.display = 'none';
@@ -1393,7 +1452,7 @@
 
   // ── Tab ④ 广告明细（Task 9）────────────────────────
   function loadAdsTab() {
-    var pid = productSelect.value;
+    var pid = getSelectedProductId();
     var df = dateFromInput.value;
     var dt = dateToInput.value;
     var country = (countrySelect.value || '').trim();
@@ -1598,7 +1657,7 @@
   }
 
   function manualMatchCampaign(campaignCode, btn) {
-    var pid = productSelect.value;
+    var pid = getSelectedProductId();
     if (!pid || pid === '0' || pid === 'ALL') {
       alert('请先选择具体产品。');
       return;
@@ -1924,11 +1983,42 @@
     }
   });
   countrySelect.addEventListener('change', reloadActiveTab);
+  // 日期 change：仅同步 URL，不触发 reload（保留原有"改完点查询"的体验）
+  dateFromInput.addEventListener('change', syncUrlState);
+  dateToInput.addEventListener('change', syncUrlState);
 
   // 初始化产品下拉，再走 switchTab 触发当前 Tab 的 load 函数
   loadProducts().then(function() {
-    // 初始化 Tab：从 URL 读 ?tab=xxx，默认 'list'
-    var initialTab = (new URLSearchParams(location.search).get('tab')) || 'list';
+    // Task 10: 从 URL 还原筛选条
+    var urlParams = new URLSearchParams(location.search);
+    var wantProduct = urlParams.get('product_id');
+    if (wantProduct !== null && wantProduct !== '') {
+      // datalist 模式：从 product_id 反查 label；仅当 productLabelToId 里能找到时覆盖默认。
+      var wantLabel = null;
+      for (var lbl in productLabelToId) {
+        if (String(productLabelToId[lbl]) === String(wantProduct)) { wantLabel = lbl; break; }
+      }
+      if (wantLabel) productInput.value = wantLabel;
+    }
+    var wantCountry = urlParams.get('country');
+    if (wantCountry !== null && wantCountry !== '') {
+      // countrySelect 此时只有 "全部"，主动补上目标 option 后再 set value，
+      // 后续 refreshCountryOptions 会保留当前选中值（即便 by_country 不含它）。
+      var hasCountryOpt = Array.from(countrySelect.options).some(function(o) { return o.value === wantCountry; });
+      if (!hasCountryOpt) {
+        var co = document.createElement('option');
+        co.value = wantCountry;
+        co.textContent = wantCountry;
+        countrySelect.appendChild(co);
+      }
+      countrySelect.value = wantCountry;
+    }
+    var wantFrom = urlParams.get('date_from');
+    if (wantFrom) dateFromInput.value = wantFrom;
+    var wantTo = urlParams.get('date_to');
+    if (wantTo) dateToInput.value = wantTo;
+
+    var initialTab = urlParams.get('tab') || 'list';
     if (window.switchTab) window.switchTab(initialTab);
   });
 
@@ -1941,12 +2031,8 @@
     document.querySelectorAll('.ppd-tab-panel').forEach(function(p) {
       p.classList.toggle('active', p.dataset.panel === tabName);
     });
-    // URL state 同步（Task 10 接管）
-    try {
-      var url = new URL(window.location.href);
-      url.searchParams.set('tab', tabName);
-      history.replaceState(null, '', url.toString());
-    } catch (e) { /* IE 等老浏览器忽略 */ }
+    // URL state 同步（Task 10）：tab 已通过 .active class 切换，syncUrlState 读 active dataset
+    syncUrlState();
     // 触发当前 Tab 的数据加载（Task 6-9 填充对应函数）
     if (tabName === 'list' && typeof window.loadListTab === 'function') window.loadListTab();
     else if (tabName === 'orders' && typeof window.loadOrdersTab === 'function') window.loadOrdersTab();
