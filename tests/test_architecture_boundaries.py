@@ -1790,6 +1790,23 @@ def test_text_translate_api_responses_live_outside_route_module():
     assert Path("web/services/text_translate.py").exists()
 
 
+def test_text_translate_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/text_translate.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/text_translate_store.py")
+
+    assert "from appcore.db import" not in route_source
+    assert "from appcore import llm_client, text_translate_store" in route_source
+    assert "db_query = text_translate_store.query" in route_source
+    assert "db_query_one = text_translate_store.query_one" in route_source
+    assert "db_execute = text_translate_store.execute" in route_source
+    assert store_path.exists()
+
+    store_source = store_path.read_text(encoding="utf-8")
+    assert "def query(" in store_source
+    assert "def query_one(" in store_source
+    assert "def execute(" in store_source
+
+
 def test_admin_prompts_api_responses_live_outside_route_module():
     module_source = Path("web/routes/admin_prompts.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
