@@ -21,6 +21,7 @@ from appcore.task_recovery import (
 from appcore.settings import get_retention_hours
 from appcore.project_state import save_project_state, update_project_state
 from appcore.safe_paths import PathSafetyError, remove_file_under_roots
+from appcore.video_creation_downloads import download_generated_video_result
 from config import DOUBAO_LLM_BASE_URL_DEFAULT, UPLOAD_DIR, OUTPUT_DIR
 from pipeline.storage import upload_file as public_exchange_upload
 from web.background import start_background_task
@@ -484,14 +485,7 @@ def _do_generate_v2(
         billing_logged = True
 
         # 下载生成的视频到本地
-        local_video_path = None
-        if video_result_url:
-            import requests as req
-            local_video_path = os.path.join(task_dir, "generated_video.mp4")
-            resp = req.get(video_result_url, timeout=120)
-            resp.raise_for_status()
-            with open(local_video_path, "wb") as f:
-                f.write(resp.content)
+        local_video_path = download_generated_video_result(video_result_url, task_dir)
 
         _update_state(task_id, {
             "seedance_task_id": seedance_task_id,

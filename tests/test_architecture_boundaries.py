@@ -124,6 +124,15 @@ def test_video_creation_route_db_dependencies_use_appcore_store():
     assert store_path.exists()
 
 
+def test_video_creation_result_download_lives_outside_route_module():
+    route_source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
+
+    assert "import requests as req" not in route_source
+    assert "req.get(" not in route_source
+    assert "download_generated_video_result(" in route_source
+    assert Path("appcore/video_creation_downloads.py").exists()
+
+
 def test_video_creation_project_sql_lives_in_appcore_store():
     route_source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
     store_source = Path("appcore/video_creation_route_store.py").read_text(encoding="utf-8")
