@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from functools import wraps
 
-import requests
 from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
@@ -319,19 +318,19 @@ def api_push(item_id: int):
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
         return _json_response({"error": "copywriting_invalid", "detail": str(exc)}, 400)
 
-    try:
-        resp = requests.post(
-            push_url,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=30,
-        )
-    except requests.RequestException as exc:
+    post_result = pushes.post_json_payload(
+        push_url,
+        payload,
+        headers={"Content-Type": "application/json"},
+        timeout=30,
+    )
+    if post_result.get("error") == "downstream_unreachable":
+        detail = str(post_result.get("detail") or "")
         pushes.record_push_failure(
             item_id=item_id,
             operator_user_id=current_user.id,
             payload=payload,
-            error_message=f"network_error: {exc}",
+            error_message=f"network_error: {detail}",
             response_body=None,
         )
         _audit_push_action(
@@ -340,10 +339,10 @@ def api_push(item_id: int):
             status="failed",
             detail={"error": "downstream_unreachable"},
         )
-        return _json_response({"error": "downstream_unreachable", "detail": str(exc)}, 502)
+        return _json_response({"error": "downstream_unreachable", "detail": detail}, 502)
 
-    body_text = resp.text or ""
-    if resp.ok:
+    body_text = str(post_result.get("response_body_full") or "")
+    if post_result.get("ok"):
         pushes.record_push_success(
             item_id=item_id,
             operator_user_id=current_user.id,
@@ -353,7 +352,7 @@ def api_push(item_id: int):
         _audit_push_action(
             item_id,
             "push_succeeded",
-            detail={"upstream_status": resp.status_code},
+            detail={"upstream_status": post_result.get("upstream_status")},
         )
 
         # 推送成功后，回填 mk_id（失败不阻塞主响应，只附在 mk_id_match 里告诉前端）
@@ -381,8 +380,8 @@ def api_push(item_id: int):
 
         return _json_response({
             "ok": True,
-            "upstream_status": resp.status_code,
-            "response_body": body_text[:4000],
+            "upstream_status": post_result.get("upstream_status"),
+            "response_body": post_result.get("response_body") or "",
             "mk_id_match": mk_id_match,
         })
 
@@ -390,19 +389,19 @@ def api_push(item_id: int):
         item_id=item_id,
         operator_user_id=current_user.id,
         payload=payload,
-        error_message=f"HTTP {resp.status_code}",
+        error_message=f"HTTP {post_result.get('upstream_status')}",
         response_body=body_text,
     )
     _audit_push_action(
         item_id,
         "push_failed",
         status="failed",
-        detail={"upstream_status": resp.status_code},
+        detail={"upstream_status": post_result.get("upstream_status")},
     )
     return _json_response({
         "error": "downstream_error",
-        "upstream_status": resp.status_code,
-        "response_body": body_text[:4000],
+        "upstream_status": post_result.get("upstream_status"),
+        "response_body": post_result.get("response_body") or "",
     }, 502)
 
 
@@ -535,9 +534,9 @@ def api_push_localized_texts(item_id: int):
     if not body.get("texts"):
         return _json_response({"error": "localized_texts_empty"}, 400)
 
-    try:
-        resp = requests.post(target_url, json=body, headers=headers, timeout=30)
-    except requests.RequestException as exc:
+    post_result = pushes.post_json_payload(target_url, body, headers=headers, timeout=30)
+    if post_result.get("error") == "downstream_unreachable":
+        detail = str(post_result.get("detail") or "")
         _audit_push_action(
             item_id,
             "push_localized_texts_failed",
@@ -546,33 +545,32 @@ def api_push_localized_texts(item_id: int):
         )
         return _json_response({
             "error": "downstream_unreachable",
-            "detail": str(exc),
+            "detail": detail,
             "target_url": target_url,
         }, 502)
 
-    body_text = resp.text or ""
-    if resp.ok:
+    if post_result.get("ok"):
         _audit_push_action(
             item_id,
             "push_localized_texts_succeeded",
-            detail={"upstream_status": resp.status_code},
+            detail={"upstream_status": post_result.get("upstream_status")},
         )
         return _json_response({
             "ok": True,
-            "upstream_status": resp.status_code,
-            "response_body": body_text[:4000],
+            "upstream_status": post_result.get("upstream_status"),
+            "response_body": post_result.get("response_body") or "",
             "target_url": target_url,
         })
     _audit_push_action(
         item_id,
         "push_localized_texts_failed",
         status="failed",
-        detail={"upstream_status": resp.status_code},
+        detail={"upstream_status": post_result.get("upstream_status")},
     )
     return _json_response({
         "error": "downstream_error",
-        "upstream_status": resp.status_code,
-        "response_body": body_text[:4000],
+        "upstream_status": post_result.get("upstream_status"),
+        "response_body": post_result.get("response_body") or "",
         "target_url": target_url,
     }, 502)
 

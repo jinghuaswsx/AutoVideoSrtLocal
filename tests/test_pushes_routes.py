@@ -901,7 +901,7 @@ def test_push_success_marks_pushed(logged_in_client, seeded_item, monkeypatch):
         captured["url"] = url
         captured["payload"] = kwargs.get("json")
         return _FakeResponse(200, '{"ok":true}')
-    monkeypatch.setattr("web.routes.pushes.requests.post", fake_post)
+    monkeypatch.setattr("appcore.pushes.requests.post", fake_post)
 
     resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
     assert resp.status_code == 200
@@ -922,7 +922,7 @@ def test_push_downstream_4xx_records_failure(logged_in_client, seeded_item, monk
     _stub_probe_ok(monkeypatch)
     monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
     monkeypatch.setattr(
-        "web.routes.pushes.requests.post",
+        "appcore.pushes.requests.post",
         lambda url, **kw: _FakeResponse(400, "bad request"),
     )
     resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
@@ -944,7 +944,7 @@ def test_push_network_error_records_failure(logged_in_client, seeded_item, monke
     import requests as _req
     def boom(url, **kw):
         raise _req.ConnectionError("connection refused")
-    monkeypatch.setattr("web.routes.pushes.requests.post", boom)
+    monkeypatch.setattr("appcore.pushes.requests.post", boom)
 
     resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
     assert resp.status_code == 502
@@ -954,6 +954,69 @@ def test_push_network_error_records_failure(logged_in_client, seeded_item, monke
     it = medias.get_item(item_id)
     assert it["pushed_at"] is None
     assert it["latest_push_id"] is not None
+
+
+def test_push_route_delegates_downstream_post_to_appcore_helper_no_db(
+    authed_client_no_db, monkeypatch
+):
+    calls = {}
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "http://downstream.invalid/push",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {"id": item_id, "product_id": 11, "lang": "de", "pushed_at": None},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_product",
+        lambda product_id: {"id": product_id, "product_code": "demo-rjc"},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {"ready": True},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.is_ready", lambda readiness: True)
+    monkeypatch.setattr("web.routes.pushes.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item, product: {"mode": "create", "item_id": item["id"]},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.lookup_mk_id", lambda product_code: (None, "no_match"))
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.record_push_success",
+        lambda **kwargs: calls.setdefault("record_success", kwargs),
+    )
+
+    def fake_post_json_payload(target_url, payload, *, headers=None, timeout=30):
+        calls["post"] = {
+            "target_url": target_url,
+            "payload": payload,
+            "headers": headers,
+            "timeout": timeout,
+        }
+        return {
+            "ok": True,
+            "upstream_status": 201,
+            "response_body": "created",
+            "response_body_full": "created-full",
+        }
+
+    monkeypatch.setattr("web.routes.pushes.pushes.post_json_payload", fake_post_json_payload)
+
+    response = authed_client_no_db.post("/pushes/api/items/7/push")
+
+    assert response.status_code == 200
+    assert response.get_json()["upstream_status"] == 201
+    assert calls["post"] == {
+        "target_url": "http://downstream.invalid/push",
+        "payload": {"mode": "create", "item_id": 7},
+        "headers": {"Content-Type": "application/json"},
+        "timeout": 30,
+    }
+    assert calls["record_success"]["response_body"] == "created-full"
 
 
 def test_push_requires_admin(authed_user_client_no_db):
@@ -1078,13 +1141,69 @@ def test_push_localized_texts_success(logged_in_client, seeded_item, monkeypatch
         captured["json"] = kw.get("json")
         captured["headers"] = kw.get("headers")
         return _FakeResponse(200, '{"ok":true}')
-    monkeypatch.setattr("web.routes.pushes.requests.post", fake_post)
+    monkeypatch.setattr("appcore.pushes.requests.post", fake_post)
 
     resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push-localized-texts")
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert captured["url"] == f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts"
     assert captured["headers"]["Authorization"] == "Bearer sometoken"
     assert isinstance(captured["json"]["texts"], list) and captured["json"]["texts"]
+
+
+def test_push_localized_texts_route_delegates_downstream_post_to_appcore_helper_no_db(
+    authed_client_no_db, monkeypatch
+):
+    calls = {}
+
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {"id": item_id, "product_id": 18},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_product",
+        lambda product_id: {"id": product_id, "mk_id": 66},
+    )
+    monkeypatch.setattr("web.routes.pushes.medias.is_product_listed", lambda product: True)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_target_url",
+        lambda mk_id: f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_headers",
+        lambda: {"Content-Type": "application/json", "Authorization": "Bearer token"},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_request",
+        lambda item: {"texts": [{"lang": "German", "title": "T", "message": "M", "description": "D"}]},
+    )
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+
+    def fake_post_json_payload(target_url, payload, *, headers=None, timeout=30):
+        calls["post"] = {
+            "target_url": target_url,
+            "payload": payload,
+            "headers": headers,
+            "timeout": timeout,
+        }
+        return {
+            "ok": True,
+            "upstream_status": 200,
+            "response_body": '{"ok":true}',
+            "response_body_full": '{"ok":true}',
+        }
+
+    monkeypatch.setattr("web.routes.pushes.pushes.post_json_payload", fake_post_json_payload)
+
+    response = authed_client_no_db.post("/pushes/api/items/7/push-localized-texts")
+
+    assert response.status_code == 200
+    assert response.get_json()["target_url"] == "https://os.wedev.vip/api/marketing/medias/66/texts"
+    assert calls["post"] == {
+        "target_url": "https://os.wedev.vip/api/marketing/medias/66/texts",
+        "payload": {"texts": [{"lang": "German", "title": "T", "message": "M", "description": "D"}]},
+        "headers": {"Content-Type": "application/json", "Authorization": "Bearer token"},
+        "timeout": 30,
+    }
 
 
 def test_push_product_links_from_pushes_modal_success(
@@ -1235,7 +1354,7 @@ def test_push_mk_id_match_writes_back(logged_in_client, seeded_item, monkeypatch
     monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
 
     # 拦截下游推送
-    monkeypatch.setattr("web.routes.pushes.requests.post",
+    monkeypatch.setattr("appcore.pushes.requests.post",
                         lambda url, **kw: _mk_push_ok_response())
 
     # 拦截 wedev 列表查询：返回两条都精准匹配的 items，要求取 id 最大的
@@ -1280,7 +1399,7 @@ def test_push_mk_id_no_match_tells_frontend(logged_in_client, seeded_item, monke
     monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
                         lambda: "Bearer tok")
     monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
-    monkeypatch.setattr("web.routes.pushes.requests.post",
+    monkeypatch.setattr("appcore.pushes.requests.post",
                         lambda url, **kw: _mk_push_ok_response())
 
     # wedev 返回的 product_links 末段都对不上
@@ -1312,7 +1431,7 @@ def test_push_mk_id_lookup_failure_does_not_block_success(
     monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
                         lambda: "Bearer tok")
     monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
-    monkeypatch.setattr("web.routes.pushes.requests.post",
+    monkeypatch.setattr("appcore.pushes.requests.post",
                         lambda url, **kw: _mk_push_ok_response())
 
     import requests as _req

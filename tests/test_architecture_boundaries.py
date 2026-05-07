@@ -1731,6 +1731,16 @@ def test_copywriting_project_sql_lives_in_appcore_store():
         assert f"copywriting_route_store.{helper_name}" in route_source
 
 
+def test_pushes_route_downstream_http_lives_in_appcore_pushes():
+    route_source = Path("web/routes/pushes.py").read_text(encoding="utf-8")
+    appcore_source = Path("appcore/pushes.py").read_text(encoding="utf-8")
+
+    assert "import requests" not in route_source
+    assert "requests.post(" not in route_source
+    assert "requests.RequestException" not in route_source
+    assert "def post_json_payload" in appcore_source
+
+
 def test_productivity_stats_api_responses_live_outside_route_module():
     module_source = Path("web/routes/productivity_stats.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

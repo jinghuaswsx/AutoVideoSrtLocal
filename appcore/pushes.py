@@ -178,6 +178,41 @@ def build_localized_texts_headers() -> dict[str, str]:
     return headers
 
 
+def post_json_payload(
+    target_url: str,
+    payload: dict[str, Any],
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: int | float = 30,
+) -> dict[str, Any]:
+    try:
+        resp = requests.post(
+            target_url,
+            json=payload,
+            headers=headers,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "error": "downstream_unreachable",
+            "detail": str(exc),
+            "response_body": None,
+            "response_body_full": None,
+        }
+
+    body_text = resp.text or ""
+    result: dict[str, Any] = {
+        "ok": bool(resp.ok),
+        "upstream_status": resp.status_code,
+        "response_body": body_text[:4000],
+        "response_body_full": body_text,
+    }
+    if not resp.ok:
+        result["error"] = "downstream_error"
+    return result
+
+
 class CopywritingMissingError(Exception):
     """产品没有英文 idx=1 文案。"""
 

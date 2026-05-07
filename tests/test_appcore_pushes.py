@@ -5,6 +5,65 @@ from appcore import medias, pushes
 from appcore.db import query_one, execute as db_execute
 
 
+class _JsonPostResponse:
+    def __init__(self, status_code=200, text='{"ok":true}', ok=True):
+        self.status_code = status_code
+        self.text = text
+        self.ok = ok
+
+
+def test_post_json_payload_success(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        captured["headers"] = kwargs.get("headers")
+        captured["timeout"] = kwargs.get("timeout")
+        return _JsonPostResponse(201, "created", True)
+
+    monkeypatch.setattr("appcore.pushes.requests.post", fake_post)
+
+    result = pushes.post_json_payload(
+        "https://downstream.example/push",
+        {"mode": "create"},
+        headers={"X-Test": "1"},
+        timeout=9,
+    )
+
+    assert captured == {
+        "url": "https://downstream.example/push",
+        "json": {"mode": "create"},
+        "headers": {"X-Test": "1"},
+        "timeout": 9,
+    }
+    assert result == {
+        "ok": True,
+        "upstream_status": 201,
+        "response_body": "created",
+        "response_body_full": "created",
+    }
+
+
+def test_post_json_payload_network_error(monkeypatch):
+    import requests as _requests
+
+    def boom(url, **kwargs):
+        raise _requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr("appcore.pushes.requests.post", boom)
+
+    result = pushes.post_json_payload(
+        "https://downstream.example/push",
+        {"mode": "create"},
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "downstream_unreachable"
+    assert result["detail"] == "connection refused"
+    assert result["response_body_full"] is None
+
+
 @pytest.fixture
 def user_id():
     row = query_one("SELECT id FROM users ORDER BY id ASC LIMIT 1")
