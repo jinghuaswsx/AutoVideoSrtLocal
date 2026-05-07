@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from appcore import order_analytics as oa
+from appcore.order_analytics import realtime as realtime_oa
 
 
 def test_get_true_roas_summary_uses_total_revenue_over_ad_spend(monkeypatch):
@@ -537,6 +538,38 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
     assert detail["order_profit_usd"] == 43.2
     assert result["order_profit_details_page"] == {"page": 1, "page_size": 100, "total": 1, "pages": 1}
     assert len(profit_query_args) == 2
+
+
+def test_realtime_order_profit_missing_field_like_patterns_escape_pymysql_wildcards(monkeypatch):
+    captured_sql = []
+
+    def fake_query(sql, args=()):
+        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
+            captured_sql.append(sql)
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    target = oa._parse_meta_date("2026-04-29")
+    realtime_oa._get_realtime_order_profit_details(
+        target,
+        datetime(2026, 4, 29, 16, 0),
+        datetime(2026, 4, 30, 15, 59),
+        page=1,
+        page_size=100,
+    )
+    realtime_oa._get_realtime_order_profit_details_for_range(
+        oa._parse_meta_date("2026-04-01"),
+        oa._parse_meta_date("2026-04-30"),
+        page=1,
+        page_size=100,
+    )
+
+    assert len(captured_sql) == 2
+    for sql in captured_sql:
+        assert "LIKE '%%purchase_price%%'" in sql
+        assert "LIKE '%%shipping_cost%%'" in sql
+        assert "LIKE '%%packet_cost%%'" in sql
 
 
 def test_get_realtime_roas_overview_single_day_includes_order_profit_details(monkeypatch):
