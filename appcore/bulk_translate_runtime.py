@@ -1147,7 +1147,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
     store.update(
         child_task_id,
         type=child_project_type,
-        display_name=f"{(raw_source.get('display_name') or Path(source_name).stem)}-{lang}",
+        display_name=f"{(raw_source.get('display_name') or Path(source_name).stem)}-{lang}-{datetime.now().strftime('%m%d%H%M%S')}",
         target_lang=lang,
         # media_raw_sources 表无 lang 列，业务上 raw 素材即英文（plan 也只查 lang='en'），
         # 与 multi_translate 单独上传路径保持一致：必须显式标记用户已选源语言，

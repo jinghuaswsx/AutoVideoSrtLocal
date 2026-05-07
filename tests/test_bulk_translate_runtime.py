@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 
 import pytest
@@ -732,6 +733,8 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     # source_language='' 直接 failed（详见 appcore/runtime_multi.py 的 _step_asr_normalize）。
     assert updated[child_task_id]["source_language"] == "en"
     assert updated[child_task_id]["user_specified_source_language"] is True
+    # 回归：display_name 末尾追加 MMDDHHMMSS 时间戳，避免同素材重复发起翻译时撞名。
+    assert re.fullmatch(r"raw-demo-pt-\d{10}", updated[child_task_id]["display_name"])
 
 
 def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatch, tmp_path):
