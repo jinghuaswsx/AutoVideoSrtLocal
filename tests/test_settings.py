@@ -115,6 +115,168 @@ def test_get_all_retention_settings(monkeypatch):
     assert result.get("translation") is None
 
 
+def test_list_ai_model_prices_serializes_rows(monkeypatch):
+    from decimal import Decimal
+
+    import appcore.settings as settings
+
+    captured = {}
+    rows = [
+        {
+            "id": 7,
+            "provider": "gemini_vertex",
+            "model": "gemini-3.1-pro-preview",
+            "units_type": "tokens",
+            "unit_input_cny": Decimal("0.003"),
+            "unit_output_cny": Decimal("0.012"),
+            "unit_flat_cny": None,
+            "note": "ok",
+            "updated_at": "2026-05-07 10:00:00",
+        }
+    ]
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return rows
+
+    monkeypatch.setattr(settings, "_query", fake_query)
+
+    result = settings.list_ai_model_prices()
+
+    assert "FROM ai_model_prices" in captured["sql"]
+    assert "ORDER BY provider ASC, model ASC, id ASC" in captured["sql"]
+    assert captured["args"] == ()
+    assert result == [
+        {
+            "id": 7,
+            "provider": "gemini_vertex",
+            "model": "gemini-3.1-pro-preview",
+            "units_type": "tokens",
+            "unit_input_cny": 0.003,
+            "unit_output_cny": 0.012,
+            "unit_flat_cny": None,
+            "note": "ok",
+            "updated_at": "2026-05-07 10:00:00",
+        }
+    ]
+
+
+def test_create_ai_model_price_inserts_and_returns_created_row(monkeypatch):
+    import appcore.settings as settings
+
+    calls = []
+
+    def fake_execute(sql, args):
+        calls.append((sql, args))
+        return 9
+
+    def fake_query(sql, args=()):
+        assert "WHERE id = %s" in sql
+        assert args == (9,)
+        return [
+            {
+                "id": 9,
+                "provider": "elevenlabs",
+                "model": "eleven_multilingual_v2",
+                "units_type": "chars",
+                "unit_input_cny": None,
+                "unit_output_cny": None,
+                "unit_flat_cny": 0.0002,
+                "note": "created",
+                "updated_at": "2026-05-07 11:00:00",
+            }
+        ]
+
+    monkeypatch.setattr(settings, "_execute", fake_execute)
+    monkeypatch.setattr(settings, "_query", fake_query)
+
+    result = settings.create_ai_model_price(
+        {
+            "provider": "elevenlabs",
+            "model": "eleven_multilingual_v2",
+            "units_type": "chars",
+            "unit_input_cny": None,
+            "unit_output_cny": None,
+            "unit_flat_cny": 0.0002,
+            "note": "created",
+        }
+    )
+
+    assert "INSERT INTO ai_model_prices" in calls[0][0]
+    assert calls[0][1] == (
+        "elevenlabs",
+        "eleven_multilingual_v2",
+        "chars",
+        None,
+        None,
+        0.0002,
+        "created",
+    )
+    assert result["id"] == 9
+    assert result["unit_flat_cny"] == 0.0002
+
+
+def test_update_ai_model_price_updates_price_fields_and_returns_row(monkeypatch):
+    import appcore.settings as settings
+
+    calls = []
+
+    def fake_execute(sql, args):
+        calls.append((sql, args))
+        return 1
+
+    def fake_query(sql, args=()):
+        assert args == (9,)
+        return [
+            {
+                "id": 9,
+                "provider": "elevenlabs",
+                "model": "eleven_multilingual_v2",
+                "units_type": "chars",
+                "unit_input_cny": None,
+                "unit_output_cny": None,
+                "unit_flat_cny": 0.0003,
+                "note": "updated",
+                "updated_at": "2026-05-07 12:00:00",
+            }
+        ]
+
+    monkeypatch.setattr(settings, "_execute", fake_execute)
+    monkeypatch.setattr(settings, "_query", fake_query)
+
+    result = settings.update_ai_model_price(
+        9,
+        {
+            "provider": "ignored-on-update",
+            "model": "ignored-on-update",
+            "units_type": "chars",
+            "unit_input_cny": None,
+            "unit_output_cny": None,
+            "unit_flat_cny": 0.0003,
+            "note": "updated",
+        },
+    )
+
+    assert "UPDATE ai_model_prices" in calls[0][0]
+    assert "provider =" not in calls[0][0]
+    assert "model =" not in calls[0][0]
+    assert calls[0][1] == ("chars", None, None, 0.0003, "updated", 9)
+    assert result["unit_flat_cny"] == 0.0003
+
+
+def test_delete_ai_model_price_deletes_by_id(monkeypatch):
+    import appcore.settings as settings
+
+    calls = []
+    monkeypatch.setattr(settings, "_execute", lambda sql, args: calls.append((sql, args)) or 1)
+
+    result = settings.delete_ai_model_price(9)
+
+    assert result == 1
+    assert calls == [("DELETE FROM ai_model_prices WHERE id = %s", (9,))]
+
+
 def test_project_type_labels_include_subtitle_removal():
     import appcore.settings as settings
 

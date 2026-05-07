@@ -18,9 +18,15 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import asr_routing_config, infra_credentials, llm_bindings, llm_provider_configs, pricing
+from appcore import (
+    asr_routing_config,
+    infra_credentials,
+    llm_bindings,
+    llm_provider_configs,
+    pricing,
+    settings as settings_store,
+)
 from appcore.api_keys import get_all, set_key
-from appcore.db import execute, query
 from web.auth import superadmin_required
 from appcore.llm_models import VIDEO_CAPABLE_MODELS
 from appcore.image_translate_settings import (
@@ -548,47 +554,6 @@ def _parse_price_decimal(raw_value, field_label: str) -> float | None:
     return float(value)
 
 
-def _serialize_price_row(row: dict) -> dict:
-    return {
-        "id": row["id"],
-        "provider": row["provider"],
-        "model": row["model"],
-        "units_type": row["units_type"],
-        "unit_input_cny": None if row.get("unit_input_cny") is None else float(row["unit_input_cny"]),
-        "unit_output_cny": None if row.get("unit_output_cny") is None else float(row["unit_output_cny"]),
-        "unit_flat_cny": None if row.get("unit_flat_cny") is None else float(row["unit_flat_cny"]),
-        "note": row.get("note"),
-        "updated_at": str(row.get("updated_at") or ""),
-    }
-
-
-def _list_ai_pricing_rows() -> list[dict]:
-    rows = query(
-        """
-        SELECT id, provider, model, units_type,
-               unit_input_cny, unit_output_cny, unit_flat_cny,
-               note, updated_at
-        FROM ai_model_prices
-        ORDER BY provider ASC, model ASC, id ASC
-        """
-    )
-    return [_serialize_price_row(row) for row in rows]
-
-
-def _get_ai_pricing_row(price_id: int) -> dict | None:
-    rows = query(
-        """
-        SELECT id, provider, model, units_type,
-               unit_input_cny, unit_output_cny, unit_flat_cny,
-               note, updated_at
-        FROM ai_model_prices
-        WHERE id = %s
-        """,
-        (price_id,),
-    )
-    return _serialize_price_row(rows[0]) if rows else None
-
-
 def _parse_ai_pricing_payload() -> dict:
     body = request.get_json(silent=True) or {}
     provider = (body.get("provider") or "").strip()
@@ -631,7 +596,7 @@ def ai_pricing_page():
 @superadmin_required
 def ai_pricing_list():
     return settings_ai_pricing_flask_response(
-        build_ai_pricing_list_response(_list_ai_pricing_rows())
+        build_ai_pricing_list_response(settings_store.list_ai_model_prices())
     )
 
 
@@ -641,28 +606,11 @@ def ai_pricing_list():
 def ai_pricing_create():
     try:
         payload = _parse_ai_pricing_payload()
-        price_id = execute(
-            """
-            INSERT INTO ai_model_prices (
-              provider, model, units_type,
-              unit_input_cny, unit_output_cny, unit_flat_cny, note
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                payload["provider"],
-                payload["model"],
-                payload["units_type"],
-                payload["unit_input_cny"],
-                payload["unit_output_cny"],
-                payload["unit_flat_cny"],
-                payload["note"],
-            ),
-        )
+        row = settings_store.create_ai_model_price(payload)
         pricing.invalidate_cache()
         return settings_ai_pricing_flask_response(
             build_ai_pricing_success_response(
-                _get_ai_pricing_row(int(price_id)),
+                row,
                 status_code=201,
             )
         )
@@ -676,35 +624,17 @@ def ai_pricing_create():
 @login_required
 @superadmin_required
 def ai_pricing_update(price_id: int):
-    if _get_ai_pricing_row(price_id) is None:
+    if settings_store.get_ai_model_price(price_id) is None:
         return settings_ai_pricing_flask_response(build_ai_pricing_not_found_response())
 
     try:
         payload = _parse_ai_pricing_payload()
-        updated = execute(
-            """
-            UPDATE ai_model_prices
-            SET units_type = %s,
-                unit_input_cny = %s,
-                unit_output_cny = %s,
-                unit_flat_cny = %s,
-                note = %s
-            WHERE id = %s
-            """,
-            (
-                payload["units_type"],
-                payload["unit_input_cny"],
-                payload["unit_output_cny"],
-                payload["unit_flat_cny"],
-                payload["note"],
-                price_id,
-            ),
-        )
-        if not updated:
+        row = settings_store.update_ai_model_price(price_id, payload)
+        if row is None:
             return settings_ai_pricing_flask_response(build_ai_pricing_not_found_response())
         pricing.invalidate_cache()
         return settings_ai_pricing_flask_response(
-            build_ai_pricing_success_response(_get_ai_pricing_row(price_id))
+            build_ai_pricing_success_response(row)
         )
     except ValueError as exc:
         return settings_ai_pricing_flask_response(build_ai_pricing_error_response(exc))
@@ -716,7 +646,7 @@ def ai_pricing_update(price_id: int):
 @login_required
 @superadmin_required
 def ai_pricing_delete(price_id: int):
-    deleted = execute("DELETE FROM ai_model_prices WHERE id = %s", (price_id,))
+    deleted = settings_store.delete_ai_model_price(price_id)
     if not deleted:
         return settings_ai_pricing_flask_response(build_ai_pricing_not_found_response())
     pricing.invalidate_cache()

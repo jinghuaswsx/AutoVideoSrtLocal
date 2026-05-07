@@ -1947,6 +1947,25 @@ def test_settings_ai_pricing_responses_live_outside_route_module():
     assert Path("web/services/settings_ai_pricing.py").exists()
 
 
+def test_settings_ai_pricing_db_access_lives_in_appcore_settings():
+    module_source = Path("web/routes/settings.py").read_text(encoding="utf-8")
+    settings_source = Path("appcore/settings.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in module_source
+    assert "_list_ai_pricing_rows" not in module_source
+    assert "_get_ai_pricing_row" not in module_source
+    assert "settings_store.list_ai_model_prices" in module_source
+    assert "settings_store.get_ai_model_price" in module_source
+    assert "settings_store.create_ai_model_price" in module_source
+    assert "settings_store.update_ai_model_price" in module_source
+    assert "settings_store.delete_ai_model_price" in module_source
+    assert "def list_ai_model_prices" in settings_source
+    assert "def get_ai_model_price" in settings_source
+    assert "def create_ai_model_price" in settings_source
+    assert "def update_ai_model_price" in settings_source
+    assert "def delete_ai_model_price" in settings_source
+
+
 def test_voice_api_responses_live_outside_route_module():
     module_source = Path("web/routes/voice.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

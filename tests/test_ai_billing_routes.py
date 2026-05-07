@@ -485,6 +485,7 @@ def test_admin_ai_usage_detail_filters_do_not_change_top_summary(authed_client_n
 
 def _install_pricing_store(monkeypatch):
     from web.routes import settings as route_mod
+    from appcore import settings as settings_store
 
     rows = [
         {
@@ -501,56 +502,55 @@ def _install_pricing_store(monkeypatch):
     ]
     state = {"invalidations": 0}
 
-    def fake_query(sql, args=()):
-        if "FROM ai_model_prices" in sql:
-            if "WHERE id = %s" in sql:
-                row_id = int(args[0])
-                return [row.copy() for row in rows if row["id"] == row_id]
-            return [row.copy() for row in rows]
-        return []
+    def fake_list_ai_model_prices():
+        return [row.copy() for row in rows]
 
-    def fake_execute(sql, args=()):
-        if sql.strip().startswith("INSERT INTO ai_model_prices"):
-            next_id = max((row["id"] for row in rows), default=0) + 1
-            rows.append(
-                {
-                    "id": next_id,
-                    "provider": args[0],
-                    "model": args[1],
-                    "units_type": args[2],
-                    "unit_input_cny": args[3],
-                    "unit_output_cny": args[4],
-                    "unit_flat_cny": args[5],
-                    "note": args[6],
-                    "updated_at": "2026-04-21 11:00:00",
-                }
-            )
-            return next_id
-        if sql.strip().startswith("UPDATE ai_model_prices"):
-            row_id = int(args[-1])
-            for row in rows:
-                if row["id"] == row_id:
-                    row.update(
-                        {
-                            "units_type": args[0],
-                            "unit_input_cny": args[1],
-                            "unit_output_cny": args[2],
-                            "unit_flat_cny": args[3],
-                            "note": args[4],
-                            "updated_at": "2026-04-21 12:00:00",
-                        }
-                    )
-                    return 1
-            return 0
-        if sql.strip().startswith("DELETE FROM ai_model_prices"):
-            row_id = int(args[0])
-            before = len(rows)
-            rows[:] = [row for row in rows if row["id"] != row_id]
-            return 1 if len(rows) != before else 0
-        return 0
+    def fake_get_ai_model_price(price_id):
+        return next((row.copy() for row in rows if row["id"] == int(price_id)), None)
 
-    monkeypatch.setattr(route_mod, "query", fake_query)
-    monkeypatch.setattr(route_mod, "execute", fake_execute)
+    def fake_create_ai_model_price(payload):
+        next_id = max((row["id"] for row in rows), default=0) + 1
+        rows.append(
+            {
+                "id": next_id,
+                "provider": payload["provider"],
+                "model": payload["model"],
+                "units_type": payload["units_type"],
+                "unit_input_cny": payload["unit_input_cny"],
+                "unit_output_cny": payload["unit_output_cny"],
+                "unit_flat_cny": payload["unit_flat_cny"],
+                "note": payload["note"],
+                "updated_at": "2026-04-21 11:00:00",
+            }
+        )
+        return fake_get_ai_model_price(next_id)
+
+    def fake_update_ai_model_price(price_id, payload):
+        row = next((row for row in rows if row["id"] == int(price_id)), None)
+        if row is None:
+            return None
+        row.update(
+            {
+                "units_type": payload["units_type"],
+                "unit_input_cny": payload["unit_input_cny"],
+                "unit_output_cny": payload["unit_output_cny"],
+                "unit_flat_cny": payload["unit_flat_cny"],
+                "note": payload["note"],
+                "updated_at": "2026-04-21 12:00:00",
+            }
+        )
+        return row.copy()
+
+    def fake_delete_ai_model_price(price_id):
+        before = len(rows)
+        rows[:] = [row for row in rows if row["id"] != int(price_id)]
+        return 1 if len(rows) != before else 0
+
+    monkeypatch.setattr(settings_store, "list_ai_model_prices", fake_list_ai_model_prices)
+    monkeypatch.setattr(settings_store, "get_ai_model_price", fake_get_ai_model_price)
+    monkeypatch.setattr(settings_store, "create_ai_model_price", fake_create_ai_model_price)
+    monkeypatch.setattr(settings_store, "update_ai_model_price", fake_update_ai_model_price)
+    monkeypatch.setattr(settings_store, "delete_ai_model_price", fake_delete_ai_model_price)
     monkeypatch.setattr(route_mod.pricing, "invalidate_cache", lambda: state.__setitem__("invalidations", state["invalidations"] + 1))
     return route_mod, rows, state
 

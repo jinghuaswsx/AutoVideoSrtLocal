@@ -65,6 +65,104 @@ def delete_setting(key: str) -> int:
     return _execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
 
 
+def _serialize_ai_model_price_row(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "provider": row["provider"],
+        "model": row["model"],
+        "units_type": row["units_type"],
+        "unit_input_cny": (
+            None if row.get("unit_input_cny") is None else float(row["unit_input_cny"])
+        ),
+        "unit_output_cny": (
+            None if row.get("unit_output_cny") is None else float(row["unit_output_cny"])
+        ),
+        "unit_flat_cny": (
+            None if row.get("unit_flat_cny") is None else float(row["unit_flat_cny"])
+        ),
+        "note": row.get("note"),
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def list_ai_model_prices() -> list[dict]:
+    rows = _query(
+        """
+        SELECT id, provider, model, units_type,
+               unit_input_cny, unit_output_cny, unit_flat_cny,
+               note, updated_at
+        FROM ai_model_prices
+        ORDER BY provider ASC, model ASC, id ASC
+        """
+    )
+    return [_serialize_ai_model_price_row(row) for row in rows]
+
+
+def get_ai_model_price(price_id: int) -> dict | None:
+    rows = _query(
+        """
+        SELECT id, provider, model, units_type,
+               unit_input_cny, unit_output_cny, unit_flat_cny,
+               note, updated_at
+        FROM ai_model_prices
+        WHERE id = %s
+        """,
+        (price_id,),
+    )
+    return _serialize_ai_model_price_row(rows[0]) if rows else None
+
+
+def create_ai_model_price(payload: dict) -> dict | None:
+    price_id = _execute(
+        """
+        INSERT INTO ai_model_prices (
+          provider, model, units_type,
+          unit_input_cny, unit_output_cny, unit_flat_cny, note
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            payload["provider"],
+            payload["model"],
+            payload["units_type"],
+            payload["unit_input_cny"],
+            payload["unit_output_cny"],
+            payload["unit_flat_cny"],
+            payload["note"],
+        ),
+    )
+    return get_ai_model_price(int(price_id))
+
+
+def update_ai_model_price(price_id: int, payload: dict) -> dict | None:
+    updated = _execute(
+        """
+        UPDATE ai_model_prices
+        SET units_type = %s,
+            unit_input_cny = %s,
+            unit_output_cny = %s,
+            unit_flat_cny = %s,
+            note = %s
+        WHERE id = %s
+        """,
+        (
+            payload["units_type"],
+            payload["unit_input_cny"],
+            payload["unit_output_cny"],
+            payload["unit_flat_cny"],
+            payload["note"],
+            price_id,
+        ),
+    )
+    if not updated:
+        return None
+    return get_ai_model_price(price_id)
+
+
+def delete_ai_model_price(price_id: int) -> int:
+    return _execute("DELETE FROM ai_model_prices WHERE id = %s", (price_id,))
+
+
 def get_retention_hours(project_type: str) -> int:
     override = _parse_positive_hours(get_setting(f"retention_{project_type}_hours"))
     if override is not None:
