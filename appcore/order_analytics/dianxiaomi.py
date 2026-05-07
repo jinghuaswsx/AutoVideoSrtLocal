@@ -529,7 +529,42 @@ def upsert_dianxiaomi_order_lines(batch_id: int, rows: list[dict[str, Any]]) -> 
         conn.commit()
     finally:
         conn.close()
-    return {"affected": affected, "rows": len(rows)}
+
+    # 自动给本批次填充采购价快照（订单付款时点固化，后续 media_products.purchase_price
+    # 改动不会回溯影响已有订单的成本）。已有 snapshot 的不动。
+    snapshot = backfill_purchase_price_snapshot(batch_id=batch_id)
+    return {
+        "affected": affected,
+        "rows": len(rows),
+        "purchase_price_snapshot_filled": snapshot.get("affected", 0),
+    }
+
+
+def backfill_purchase_price_snapshot(batch_id: int | None = None) -> dict[str, int]:
+    """把还未填充 purchase_price_cny 的订单行用 media_products.purchase_price 填上 + NOW()。
+
+    Args:
+        batch_id: 限定 batch；None 则全表 backfill（管理员一次性脚本用）。
+
+    只更新 d.purchase_price_cny IS NULL AND product_id 有效 AND product 配置了
+    purchase_price 的行。已有快照的行**不会**被覆盖（这是固化的核心保证）。
+    """
+    sql_parts = [
+        "UPDATE dianxiaomi_order_lines d",
+        "JOIN media_products m ON m.id = d.product_id",
+        "SET d.purchase_price_cny = m.purchase_price,",
+        "    d.purchase_price_at = NOW()",
+        "WHERE d.purchase_price_cny IS NULL",
+        "  AND d.product_id IS NOT NULL",
+        "  AND m.purchase_price IS NOT NULL",
+    ]
+    params: tuple = ()
+    if batch_id is not None:
+        sql_parts.append("  AND d.batch_id = %s")
+        params = (int(batch_id),)
+    sql = " ".join(sql_parts)
+    affected = execute(sql, params)
+    return {"affected": int(affected or 0)}
 
 
 def get_dianxiaomi_order_import_batches(limit: int = 20) -> list[dict]:

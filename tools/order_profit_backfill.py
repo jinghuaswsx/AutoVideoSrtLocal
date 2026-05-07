@@ -55,7 +55,12 @@ _LINE_QUERY = (
     "       d.line_amount, d.order_amount, d.ship_amount, d.buyer_country, "
     "       d.order_paid_at, d.paid_at, d.dxm_package_id, "
     "       d.logistic_fee, "
-    "       m.purchase_price, m.packet_cost_actual, m.packet_cost_estimated "
+    # 采购价：优先用订单上的 snapshot（订单付款时点冻结的值），
+    # 没有就 fallback 到 media_products.purchase_price（当前值）。
+    "       COALESCE(d.purchase_price_cny, m.purchase_price) AS purchase_price, "
+    "       d.purchase_price_cny AS purchase_price_snapshot_cny, "
+    "       d.purchase_price_at  AS purchase_price_snapshot_at, "
+    "       m.packet_cost_actual, m.packet_cost_estimated "
     "FROM dianxiaomi_order_lines d "
     "LEFT JOIN media_products m ON m.id = d.product_id "
     "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s "
