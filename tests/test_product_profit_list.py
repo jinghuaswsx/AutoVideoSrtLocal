@@ -50,21 +50,13 @@ def test_generate_list_single_product_aggregates_columns():
             "dxm_package_id": "PKG-B",
         },
     ]
-    fake_ads = {
-        # (date, ad_account_id) → spend_usd
-        (date(2026, 5, 5), "2110407576446225"): Decimal("8.00"),
-        (date(2026, 5, 6), "2110407576446225"): Decimal("8.00"),
-    }
-    fake_site_units = {
-        (date(2026, 5, 5), "newjoy"): 1,
-        (date(2026, 5, 6), "newjoy"): 1,
-    }
+    # 新口径：直接按 product_id 取该产品在日期范围的广告 spend 累加
+    fake_ads = {100: Decimal("16.00")}
     fake_product_costs = {
         100: {"purchase_price": Decimal("3.00"), "packet_cost_actual": Decimal("1.50")},
     }
     with patch.object(ppl, "_load_lines", return_value=fake_lines), \
          patch.object(ppl, "_load_ad_spend", return_value=fake_ads), \
-         patch.object(ppl, "_load_site_units", return_value=fake_site_units), \
          patch.object(ppl, "_load_product_costs", return_value=fake_product_costs):
         result = ppl.generate_list(
             date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country=None,
@@ -75,7 +67,7 @@ def test_generate_list_single_product_aggregates_columns():
     assert row["product_code"] == "ABC"
     assert row["order_count"] == 2
     assert row["revenue_usd"] == 100.0
-    assert row["ad_cost_usd"] == 16.0      # 全产品占用全站广告
+    assert row["ad_cost_usd"] == 16.0
     assert row["roas"] == 100.0 / 16.0
     # profit = 100 - 4 - 16 - 20 - 6 - 1 = 53
     assert row["profit_usd"] == 53.0
@@ -96,7 +88,6 @@ def test_generate_list_country_filter_passes_country_to_loader():
     with patch.object(ppl, "_load_lines") as load:
         load.return_value = fake_lines
         with patch.object(ppl, "_load_ad_spend", return_value={}), \
-             patch.object(ppl, "_load_site_units", return_value={}), \
              patch.object(ppl, "_load_product_costs", return_value={}):
             ppl.generate_list(date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country="vn")
     args, kwargs = load.call_args
@@ -178,7 +169,6 @@ def test_generate_list_multiple_products_sorted_by_revenue_desc():
     ]
     with patch.object(ppl, "_load_lines", return_value=fake_lines), \
          patch.object(ppl, "_load_ad_spend", return_value={}), \
-         patch.object(ppl, "_load_site_units", return_value={}), \
          patch.object(ppl, "_load_product_costs", return_value={}):
         result = ppl.generate_list(
             date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country=None,
@@ -200,12 +190,10 @@ def test_generate_list_zero_revenue_safe_division():
             quantity=1, dxm_package_id="PKG-Z1",
         ),
     ]
-    fake_ads = {(date(2026, 5, 5), "2110407576446225"): Decimal("8.00")}
-    fake_site_units = {(date(2026, 5, 5), "newjoy"): 1}
+    fake_ads = {10: Decimal("8.00")}
 
     with patch.object(ppl, "_load_lines", return_value=fake_lines), \
          patch.object(ppl, "_load_ad_spend", return_value=fake_ads), \
-         patch.object(ppl, "_load_site_units", return_value=fake_site_units), \
          patch.object(ppl, "_load_product_costs", return_value={}):
         result = ppl.generate_list(
             date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country=None,
@@ -214,7 +202,7 @@ def test_generate_list_zero_revenue_safe_division():
     assert len(result["rows"]) == 1
     row = result["rows"][0]
     assert row["revenue_usd"] == 0.0
-    assert row["ad_cost_usd"] == 8.0           # 全部分摊到这一行
+    assert row["ad_cost_usd"] == 8.0           # 该产品归属的 spend 直接累加
     # 各占比 → 0.0（不能炸）
     assert row["shipping_pct"] == 0.0
     assert row["purchase_pct"] == 0.0
@@ -226,31 +214,24 @@ def test_generate_list_zero_revenue_safe_division():
     assert row["roas"] in (None, 0.0)
 
 
-def test_generate_list_unknown_site_skips_ad_allocation():
-    """line.site_code 不在 SITE_TO_AD_ACCOUNT（如 'amazon'）→ ad_cost=0，profit 不扣广告。"""
+def test_generate_list_no_ad_spend_for_product_means_zero_ad_cost():
+    """ad_spend 表里没该 product_id 行 → ad_cost=0、roas=None；
+    跟订单的 site_code 无关（新口径不再做 site→account 全账户均摊）。"""
     fake_lines = [
         _line(
-            product_id=20, product_code="AMZ", name="Amazon Product",
+            product_id=20, product_code="NOAD", name="No Ad Product",
             business_date=date(2026, 5, 5),
-            site_code="amazon",                # 不在映射里
+            site_code="amazon",                # 任意 site_code 都不再影响 ad_cost
             revenue="100", shopify_fee="2",
             purchase="10", shipping="3", return_reserve="0.5",
-            quantity=1, dxm_package_id="PKG-AMZ-1",
+            quantity=1, dxm_package_id="PKG-NOAD-1",
         ),
     ]
-    # 即使有 ad_spend / site_units，amazon 站不应该被分摊
-    fake_ads = {
-        (date(2026, 5, 5), "2110407576446225"): Decimal("999.00"),
-        (date(2026, 5, 5), "1253003326160754"): Decimal("999.00"),
-    }
-    fake_site_units = {
-        (date(2026, 5, 5), "amazon"): 1,
-        (date(2026, 5, 5), "newjoy"): 10,
-    }
+    # 别的产品有 spend，但 product_id=20 没有 → 该产品 ad_cost = 0
+    fake_ads = {99: Decimal("999.00")}
 
     with patch.object(ppl, "_load_lines", return_value=fake_lines), \
          patch.object(ppl, "_load_ad_spend", return_value=fake_ads), \
-         patch.object(ppl, "_load_site_units", return_value=fake_site_units), \
          patch.object(ppl, "_load_product_costs", return_value={}):
         result = ppl.generate_list(
             date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country=None,
@@ -291,7 +272,6 @@ def test_generate_list_order_count_dedups_by_dxm_package_id():
     ]
     with patch.object(ppl, "_load_lines", return_value=fake_lines), \
          patch.object(ppl, "_load_ad_spend", return_value={}), \
-         patch.object(ppl, "_load_site_units", return_value={}), \
          patch.object(ppl, "_load_product_costs", return_value={}):
         result = ppl.generate_list(
             date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country=None,
@@ -325,7 +305,6 @@ def test_generate_list_incomplete_cost_marks_row():
     }
     with patch.object(ppl, "_load_lines", return_value=fake_lines), \
          patch.object(ppl, "_load_ad_spend", return_value={}), \
-         patch.object(ppl, "_load_site_units", return_value={}), \
          patch.object(ppl, "_load_product_costs", return_value=fake_product_costs):
         result = ppl.generate_list(
             date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country=None,

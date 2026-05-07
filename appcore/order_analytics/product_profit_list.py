@@ -5,9 +5,10 @@
 
 数据口径与 product_profit_report.generate_report() 单产品口径完全一致：
 - 订单 / 收入 / 各项费用：order_profit_lines + dianxiaomi_order_lines JOIN
-- 广告费：按订单 site_code → ad_account 1:1 映射，按当日 units 分摊
-  （广告费表与 product_profit_report 一致使用 meta_ad_daily_campaign_metrics +
-   report_date 字段，避免引入新口径）
+- 广告费：直接读 meta_ad_daily_campaign_metrics 已按 campaign → product 回填的
+  product_id 维度 SUM(spend_usd)，**不再做 site → ad_account 全账户均摊**。
+  这与 product_profit_report.generate_report 在单产品维度的口径一致：
+  WHERE product_id = X 的 spend 之和即该产品的广告费。
 - 利润 = revenue - shopify_fee - ad_cost - purchase - shipping - return_reserve
 """
 from __future__ import annotations
@@ -21,7 +22,6 @@ from decimal import Decimal
 from typing import Any
 
 from .cost_completeness import check_sku_cost_completeness
-from .product_profit_report import _site_to_ad_accounts
 
 log = logging.getLogger(__name__)
 
@@ -69,48 +69,30 @@ def _load_lines(date_from: date, date_to: date, country: str | None) -> list[dic
     return query(sql, tuple(params))
 
 
-def _load_ad_spend(date_from: date, date_to: date) -> dict[tuple[date, str], Decimal]:
-    """日期 × 广告账户 → spend_usd。
+def _load_ad_spend(date_from: date, date_to: date) -> dict[int, Decimal]:
+    """每个产品在日期范围内归属的广告 spend 合计。
 
-    用同款 meta_ad_daily_campaign_metrics + report_date，与 product_profit_report
-    保持口径一致（不引入 realtime 表的不同业务日定义）。
+    数据来自 meta_ad_daily_campaign_metrics（campaign → product 同步阶段已回填
+    product_id），按 product_id GROUP BY SUM(spend_usd)。和
+    product_profit_report.generate_report 单产品 `WHERE product_id = X` 累加同口径。
+
+    返回：{product_id: total_spend_usd}。product_id IS NULL 的 campaign（未匹配）
+    被丢弃——它们既不属于任何已知产品，也不该按 units 比例摊给其他产品。
     """
     rows = query(
-        "SELECT report_date, ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
+        "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE report_date BETWEEN %s AND %s "
-        "GROUP BY report_date, ad_account_id",
+        "  AND product_id IS NOT NULL "
+        "GROUP BY product_id",
         (date_from, date_to),
     )
-    out: dict[tuple[date, str], Decimal] = {}
+    out: dict[int, Decimal] = {}
     for r in rows:
-        d = r["report_date"]
-        acc = r.get("ad_account_id") or ""
-        if not acc:
+        pid = r.get("product_id")
+        if pid is None:
             continue
-        out[(d, acc)] = Decimal(str(r["spend"] or 0))
-    return out
-
-
-def _load_site_units(date_from: date, date_to: date) -> dict[tuple[date, str], int]:
-    """每天 × 每站点的全产品总 units，用于按 units 比例分摊广告费。
-
-    与 product_profit_report._load_site_daily_units 的差别：这里是全产品维度，
-    不限定 product_id。
-    """
-    rows = query(
-        "SELECT opl.business_date, dol.site_code, "
-        "       COALESCE(SUM(dol.quantity), 0) AS units "
-        "FROM order_profit_lines opl "
-        "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
-        "WHERE opl.business_date BETWEEN %s AND %s "
-        "GROUP BY opl.business_date, dol.site_code",
-        (date_from, date_to),
-    )
-    out: dict[tuple[date, str], int] = {}
-    for r in rows:
-        site = r.get("site_code") or ""
-        out[(r["business_date"], site)] = int(r["units"] or 0)
+        out[int(pid)] = Decimal(str(r["spend"] or 0))
     return out
 
 
@@ -194,7 +176,6 @@ def generate_list(
         }
 
     ad_spend = _load_ad_spend(date_from, date_to)
-    site_units = _load_site_units(date_from, date_to)
     product_ids = list({int(line["product_id"]) for line in lines if line.get("product_id") is not None})
     product_costs = _load_product_costs(product_ids)
 
@@ -212,7 +193,6 @@ def generate_list(
             "purchase": Decimal("0"),
             "shipping_cost": Decimal("0"),
             "return_reserve": Decimal("0"),
-            "ad_cost": Decimal("0"),
         }
 
     by_product: dict[int, dict[str, Any]] = defaultdict(_zero_bucket)
@@ -232,22 +212,6 @@ def generate_list(
         bucket["shipping_cost"] += Decimal(str(line.get("shipping_cost_usd") or 0))
         bucket["return_reserve"] += Decimal(str(line.get("return_reserve_usd") or 0))
 
-        # 广告分摊：当日当站"全部账户合计 spend" × (本行 units / 当日当站全部 units)
-        # site → ad_accounts 映射来自 system_settings.meta_ad_accounts（兜底用 DEFAULT_*），
-        # 与 product_profit_report.compute_ad_cost 保持口径一致（多账户一并计入）。
-        site_code = line.get("site_code") or ""
-        account_ids = _site_to_ad_accounts().get(site_code) or ()
-        if account_ids:
-            day_spend = sum(
-                (ad_spend.get((line["business_date"], acc), Decimal("0")) for acc in account_ids),
-                Decimal("0"),
-            )
-            day_units = site_units.get((line["business_date"], site_code), 0)
-            line_units = int(line.get("quantity") or 0)
-            if day_spend > 0 and day_units > 0 and line_units > 0:
-                share = Decimal(line_units) / Decimal(day_units)
-                bucket["ad_cost"] += day_spend * share
-
     # 转 rows（按 revenue 降序）
     rows: list[dict[str, Any]] = []
     total_orders = 0
@@ -256,15 +220,16 @@ def generate_list(
     total_ad = Decimal("0")
     for pid, b in sorted(by_product.items(), key=lambda kv: -kv[1]["revenue"]):
         revenue = b["revenue"]
+        ad_cost = ad_spend.get(pid, Decimal("0"))
         profit = (
             revenue
             - b["shopify_fee"]
-            - b["ad_cost"]
+            - ad_cost
             - b["purchase"]
             - b["shipping_cost"]
             - b["return_reserve"]
         )
-        roas = float(revenue / b["ad_cost"]) if b["ad_cost"] > 0 else None
+        roas = float(revenue / ad_cost) if ad_cost > 0 else None
         order_count = len(b["order_keys"])
         rows.append({
             "product_id": pid,
@@ -276,8 +241,8 @@ def generate_list(
             "shipping_pct": float(b["shipping_cost"] / revenue) if revenue > 0 else 0.0,
             "purchase_usd": float(b["purchase"]),
             "purchase_pct": float(b["purchase"] / revenue) if revenue > 0 else 0.0,
-            "ad_cost_usd": float(b["ad_cost"]),
-            "ad_pct": float(b["ad_cost"] / revenue) if revenue > 0 else 0.0,
+            "ad_cost_usd": float(ad_cost),
+            "ad_pct": float(ad_cost / revenue) if revenue > 0 else 0.0,
             "roas": roas,
             "profit_usd": float(profit),
             "profit_pct": float(profit / revenue) if revenue > 0 else 0.0,
@@ -286,7 +251,7 @@ def generate_list(
         total_orders += order_count
         total_revenue += revenue
         total_profit += profit
-        total_ad += b["ad_cost"]
+        total_ad += ad_cost
 
     summary = {
         "product_count": len(rows),
