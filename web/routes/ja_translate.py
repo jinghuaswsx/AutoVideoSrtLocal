@@ -63,9 +63,10 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
     candidate = base
     n = 2
     while True:
-        row = db_query_one(
-            "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND deleted_at IS NULL",
-            (user_id, candidate),
+        row = translation_route_store.find_project_by_display_name(
+            user_id,
+            candidate,
+            query_one_func=db_query_one,
         )
         if not row:
             return candidate
@@ -88,7 +89,12 @@ def _ensure_uploaded_video_thumbnail(task_id: str, video_path: str, task_dir: st
         return ""
     if not thumb or not os.path.exists(thumb):
         return ""
-    db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
+    translation_route_store.set_project_thumbnail_path(
+        task_id,
+        "ja_translate",
+        thumb,
+        execute_func=db_execute,
+    )
     task = store.get(task_id)
     if task is not None:
         task["thumbnail_path"] = thumb
@@ -120,15 +126,14 @@ def _query_viewable_project(
     *,
     include_deleted: bool = True,
 ) -> dict | None:
-    deleted_sql = "" if include_deleted else " AND deleted_at IS NULL"
-    if _is_admin_user():
-        return db_query_one(
-            f"SELECT {columns} FROM projects WHERE id = %s AND type = 'ja_translate'{deleted_sql}",
-            (task_id,),
-        )
-    return db_query_one(
-        f"SELECT {columns} FROM projects WHERE id = %s AND user_id = %s AND type = 'ja_translate'{deleted_sql}",
-        (task_id, current_user.id),
+    return translation_route_store.get_viewable_project(
+        task_id,
+        "ja_translate",
+        user_id=current_user.id,
+        is_admin=_is_admin_user(),
+        columns=columns,
+        include_deleted=include_deleted,
+        query_one_func=db_query_one,
     )
 
 
@@ -146,12 +151,6 @@ def _project_row_from_task(task: dict) -> dict:
         "expires_at": task.get("expires_at"),
         "deleted_at": task.get("deleted_at"),
     }
-
-
-def _list_scope() -> tuple[str, tuple]:
-    if _is_admin_user():
-        return "type = 'ja_translate' AND deleted_at IS NULL", ()
-    return "user_id = %s AND type = 'ja_translate' AND deleted_at IS NULL", (current_user.id,)
 
 
 def create_ja_translate_task_from_upload(file, *, user_id: int | None = None, auto_start: bool = True) -> dict:
@@ -218,14 +217,11 @@ def create_ja_translate_task_from_upload(file, *, user_id: int | None = None, au
 @login_required
 def index():
     recover_all_interrupted_tasks()
-    scope_sql, scope_args = _list_scope()
-    rows = db_query(
-        "SELECT id, original_filename, display_name, thumbnail_path, status, "
-        "       state_json, created_at, expires_at, deleted_at "
-        "FROM projects "
-        f"WHERE {scope_sql} "
-        "ORDER BY created_at DESC",
-        scope_args,
+    rows = translation_route_store.list_projects_with_state(
+        user_id=current_user.id,
+        project_type="ja_translate",
+        is_admin=_is_admin_user(),
+        query_func=db_query,
     )
     from appcore.settings import get_retention_hours
 
@@ -392,10 +388,7 @@ def rematch_voice(task_id: str):
 @bp.route("/api/ja-translate/<task_id>/confirm-voice", methods=["POST"])
 @login_required
 def confirm_voice(task_id: str):
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "state_json")
     if not row:
         abort(404)
 
@@ -651,9 +644,11 @@ def download(task_id: str, file_type: str):
 @bp.route("/api/ja-translate/<task_id>", methods=["DELETE"])
 @login_required
 def delete(task_id: str):
-    row = db_query_one(
-        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
-        (task_id, current_user.id),
+    row = translation_route_store.get_active_project_storage(
+        task_id,
+        current_user.id,
+        "ja_translate",
+        query_one_func=db_query_one,
     )
     if not row:
         return _json_response({"error": "Task not found"}, 404)
@@ -670,7 +665,12 @@ def delete(task_id: str):
     except Exception:
         pass
 
-    db_execute("UPDATE projects SET deleted_at=NOW() WHERE id=%s", (task_id,))
+    translation_route_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        "ja_translate",
+        execute_func=db_execute,
+    )
     store.update(task_id, status="deleted")
     return _json_response({"status": "ok"})
 

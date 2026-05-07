@@ -192,3 +192,28 @@ def list_projects_with_creator(
         args = (*scope_args, target_lang)
     sql += "ORDER BY p.created_at DESC"
     return query_func(sql, args)
+
+
+def list_projects_with_state(
+    *,
+    user_id: int,
+    project_type: str,
+    is_admin: bool,
+    query_func=query,
+) -> list[dict]:
+    _validate_project_type(project_type)
+    if is_admin:
+        where_sql = "type = %s AND deleted_at IS NULL"
+        args = (project_type,)
+    else:
+        where_sql = "user_id = %s AND type = %s AND deleted_at IS NULL"
+        args = (user_id, project_type)
+
+    return query_func(
+        "SELECT id, original_filename, display_name, thumbnail_path, status, "
+        "       state_json, created_at, expires_at, deleted_at "
+        "FROM projects "
+        f"WHERE {where_sql} "
+        "ORDER BY created_at DESC",
+        args,
+    )

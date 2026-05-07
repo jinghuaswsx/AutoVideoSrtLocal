@@ -254,3 +254,57 @@ def test_list_projects_with_creator_omits_user_scope_for_admin():
             (),
         )
     ]
+
+
+def test_list_projects_with_state_scopes_user_type_and_active_rows():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "ja-1", "state_json": "{}"}]
+
+    rows = store.list_projects_with_state(
+        user_id=7,
+        project_type="ja_translate",
+        is_admin=False,
+        query_func=fake_query,
+    )
+
+    assert rows == [{"id": "ja-1", "state_json": "{}"}]
+    assert calls == [
+        (
+            "SELECT id, original_filename, display_name, thumbnail_path, status, "
+            "       state_json, created_at, expires_at, deleted_at "
+            "FROM projects "
+            "WHERE user_id = %s AND type = %s AND deleted_at IS NULL "
+            "ORDER BY created_at DESC",
+            (7, "ja_translate"),
+        )
+    ]
+
+
+def test_list_projects_with_state_omits_user_scope_for_admin():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return []
+
+    rows = store.list_projects_with_state(
+        user_id=7,
+        project_type="ja_translate",
+        is_admin=True,
+        query_func=fake_query,
+    )
+
+    assert rows == []
+    assert calls == [
+        (
+            "SELECT id, original_filename, display_name, thumbnail_path, status, "
+            "       state_json, created_at, expires_at, deleted_at "
+            "FROM projects "
+            "WHERE type = %s AND deleted_at IS NULL "
+            "ORDER BY created_at DESC",
+            ("ja_translate",),
+        )
+    ]

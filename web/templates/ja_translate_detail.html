@@ -1,3 +1,4 @@
+{% extends "_translate_detail_shell.html" %}
 {% if not project.deleted_at %}
 {% set allow_upload = false %}
 {% set show_back_link = false %}
@@ -9,4 +10,3 @@
 {% set default_source_language = state.source_language or 'en' %}
 {% endif %}
 {% set detail_mode = 'ja' %}
-{% include "_translate_detail_shell.html" %}

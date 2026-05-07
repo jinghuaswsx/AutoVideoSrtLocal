@@ -1,13 +1,15 @@
 from pathlib import Path
 
 
-def test_multi_and_ja_detail_templates_include_shared_shell():
+def test_multi_and_ja_detail_templates_extend_shared_shell():
     root = Path(__file__).resolve().parents[1]
     multi = (root / "web" / "templates" / "multi_translate_detail.html").read_text(encoding="utf-8")
     ja = (root / "web" / "templates" / "ja_translate_detail.html").read_text(encoding="utf-8")
 
-    assert '{% include "_translate_detail_shell.html" %}' in multi
-    assert '{% include "_translate_detail_shell.html" %}' in ja
+    assert '{% extends "_translate_detail_shell.html" %}' in multi
+    assert '{% extends "_translate_detail_shell.html" %}' in ja
+    assert '{% include "_translate_detail_shell.html" %}' not in multi
+    assert '{% include "_translate_detail_shell.html" %}' not in ja
 
 
 def test_shared_shell_contains_mode_specific_layout_rules():
@@ -38,7 +40,7 @@ def test_shared_shell_does_not_label_source_language_as_auto_detected():
 
 def test_omni_detail_reselect_source_language_offers_all_manual_codes():
     root = Path(__file__).resolve().parents[1]
-    template = (root / "web" / "templates" / "omni_translate_detail.html").read_text(encoding="utf-8")
+    template = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
 
     for code in ("zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi"):
         assert f'<option value="{code}"' in template
