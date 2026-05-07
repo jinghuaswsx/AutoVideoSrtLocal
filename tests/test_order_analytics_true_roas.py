@@ -249,8 +249,9 @@ def test_get_realtime_roas_overview_reports_snapshot_order_updated_at(monkeypatc
 def test_realtime_roas_endpoint_returns_json(authed_client_no_db, monkeypatch):
     captured = {}
 
-    def fake_overview(date_text=None, *, start_date=None, end_date=None, now=None):
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
         captured["date"] = date_text
+        captured["include_details"] = include_details
         return {
             "period": {"date": "2026-04-29"},
             "summary": {"order_revenue": 2000.0, "ad_spend": 1000.0, "true_roas": 2.0},
@@ -263,6 +264,7 @@ def test_realtime_roas_endpoint_returns_json(authed_client_no_db, monkeypatch):
 
     assert response.status_code == 200
     assert captured["date"] == "2026-04-29"
+    assert captured["include_details"] is False
     assert response.get_json()["summary"]["true_roas"] == 2.0
 
 
@@ -402,9 +404,8 @@ def test_get_realtime_roas_overview_aggregates_date_range(monkeypatch):
     assert result["summary"]["meta_purchases"] == 14
     assert round(result["summary"]["true_roas"], 4) == round(3300.0 / 1200.0, 4)
     assert round(result["summary"]["meta_roas"], 4) == round(2300.0 / 1200.0, 4)
-    # 范围分支不返回逐小时/订单/广告明细
+    # 范围分支不返回逐小时/广告明细
     assert result["hourly"] == []
-    assert result["order_details"] == []
     assert result["campaigns"] == []
     assert result["roas_points"] == []
     # period 字段使用 start/end 而非 date
@@ -430,6 +431,105 @@ def test_get_realtime_roas_overview_range_includes_empty_order_profit_details(mo
     )
 
     assert result["order_profit_details"] == []
+
+
+def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date, site_code" in sql:
+            assert args == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-30"),
+                    "site_code": "newjoy",
+                    "dxm_package_id": "PKG-RANGE",
+                    "dxm_order_id": "DXM-RANGE",
+                    "package_number": "PN-RANGE",
+                    "order_state": "paid",
+                    "buyer_country": "US",
+                    "buyer_country_name": "United States",
+                    "order_time": datetime(2026, 5, 1, 15, 30),
+                    "line_count": 1,
+                    "units": 2,
+                    "product_revenue": 80.0,
+                    "shipping_revenue": 6.0,
+                    "total_revenue": 86.0,
+                    "skus": "SKU-R",
+                    "product_names": "Range Product",
+                }
+            ]
+        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-04-01",
+        end_date="2026-04-30",
+        include_details=True,
+        now=datetime(2026, 5, 1, 12, 0),
+    )
+
+    detail = result["order_details"][0]
+    assert detail["dxm_package_id"] == "PKG-RANGE"
+    assert detail["business_hour"] == 23
+    assert detail["total_revenue"] == 86.0
+
+
+def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
+            assert "d.meta_business_date >= %s AND d.meta_business_date <= %s" in sql
+            assert args == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-30"),
+                    "site_code": "newjoy",
+                    "dxm_package_id": "PKG-PROFIT-RANGE",
+                    "dxm_order_id": "DXM-PROFIT-RANGE",
+                    "package_number": "PN-PROFIT-RANGE",
+                    "order_state": "paid",
+                    "buyer_country": "DE",
+                    "buyer_country_name": "Germany",
+                    "order_time": datetime(2026, 5, 1, 15, 30),
+                    "line_count": 1,
+                    "profit_line_count": 1,
+                    "profit_ok_count": 1,
+                    "profit_incomplete_count": 0,
+                    "units": 1,
+                    "product_revenue": 100.0,
+                    "shipping_revenue": 10.0,
+                    "total_revenue": 110.0,
+                    "refund_amount_usd": 12.0,
+                    "purchase_cost": 30.0,
+                    "logistics_cost": 8.0,
+                    "ad_cost": 11.0,
+                    "stored_shopify_fee_total": 5.8,
+                    "skus": "SKU-DE",
+                    "product_names": "Range Profit Product",
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-04-01",
+        end_date="2026-04-30",
+        include_details=True,
+        now=datetime(2026, 5, 1, 12, 0),
+    )
+
+    detail = result["order_profit_details"][0]
+    assert detail["dxm_package_id"] == "PKG-PROFIT-RANGE"
+    assert detail["business_hour"] == 23
+    assert detail["order_profit_usd"] == 43.2
 
 
 def test_get_realtime_roas_overview_single_day_includes_order_profit_details(monkeypatch):
@@ -642,10 +742,11 @@ def test_get_realtime_roas_overview_rejects_inverted_range(monkeypatch):
 def test_realtime_overview_endpoint_accepts_start_end_params(authed_client_no_db, monkeypatch):
     captured = {}
 
-    def fake_overview(date_text=None, *, start_date=None, end_date=None, now=None):
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
         captured["date"] = date_text
         captured["start_date"] = start_date
         captured["end_date"] = end_date
+        captured["include_details"] = include_details
         return {
             "period": {"start_date": start_date, "end_date": end_date},
             "summary": {"order_revenue": 3000.0, "ad_spend": 1200.0, "true_roas": 2.5},
@@ -662,7 +763,34 @@ def test_realtime_overview_endpoint_accepts_start_end_params(authed_client_no_db
     assert response.status_code == 200
     assert captured["start_date"] == "2026-04-29"
     assert captured["end_date"] == "2026-04-30"
+    assert captured["include_details"] is False
     assert response.get_json()["summary"]["true_roas"] == 2.5
+
+
+def test_realtime_overview_endpoint_accepts_include_details(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
+        captured["start_date"] = start_date
+        captured["end_date"] = end_date
+        captured["include_details"] = include_details
+        return {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {"order_revenue": 0, "ad_spend": 0, "true_roas": None},
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [], "order_details": [], "order_profit_details": [], "campaigns": [], "roas_points": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-overview?start_date=2026-04-29&end_date=2026-04-30&include_details=1"
+    )
+
+    assert response.status_code == 200
+    assert captured["start_date"] == "2026-04-29"
+    assert captured["end_date"] == "2026-04-30"
+    assert captured["include_details"] is True
 
 
 # ── 前端模板回归 ─────────────────────────────────────────
@@ -790,3 +918,17 @@ def test_realtime_order_profit_renderer_is_wired(authed_client_no_db):
 
     assert "function renderRealtimeOrderProfitDetails(rows)" in body
     assert "renderRealtimeOrderProfitDetails(data.order_profit_details || [])" in body
+
+
+def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    subtab_start = body.index("function loadRealtimeSubTabs()")
+    subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
+    subtab_js = body[subtab_start:subtab_end]
+
+    assert "getRealtimeDateRange()" in subtab_js
+    assert "start_date=" in subtab_js
+    assert "end_date=" in subtab_js
+    assert "include_details=1" in subtab_js

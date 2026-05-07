@@ -323,11 +323,13 @@ def realtime_overview():
     date_text = (request.args.get("date") or "").strip() or None
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
+    include_details = (request.args.get("include_details") or "").strip() in ("1", "true", "yes")
     try:
         return _json_response(_json_safe(oa.get_realtime_roas_overview(
             date_text,
             start_date=start_date,
             end_date=end_date,
+            include_details=include_details,
         )))
     except ValueError as exc:
         return _json_response(error="invalid_date", detail=str(exc)), 400

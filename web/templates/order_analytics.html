@@ -1033,7 +1033,7 @@
     </div>
   </div>
 
-  <div class="oar-note" style="margin-top: var(--space-5); margin-bottom: var(--space-2);">以下明细仅展示「当前广告系统日」 · 不跟随上方时间范围</div>
+  <div class="oar-note" style="margin-top: var(--space-5); margin-bottom: var(--space-2);">订单明细、订单盈亏明细跟随上方日期范围；产品销量、广告计划和 ROAS 走势按当前实时数据展示</div>
   <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
     <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
     <button type="button" class="oar-subtab" data-realtime-subtab="profitDetails">订单盈亏明细</button>
@@ -2908,7 +2908,7 @@
       });
   }
 
-  // ── 子 tab：永远展示"当前广告系统日"（不传日期参数）──
+  // ── 子 tab：跟随当前选择的广告系统日范围 ──
   function loadRealtimeSubTabs() {
     var hourlyBody = document.getElementById('realtimeHourlyBody');
     var orderBody = document.getElementById('realtimeOrderBody');
@@ -2920,7 +2920,21 @@
     if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
     if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
-    fetch('/order-analytics/realtime-overview')
+    var range;
+    try {
+      range = getRealtimeDateRange();
+    } catch (err) {
+      if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+      if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+      if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
+      if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
+      if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
+      return;
+    }
+    var url = '/order-analytics/realtime-overview?start_date=' +
+      encodeURIComponent(range.start) + '&end_date=' + encodeURIComponent(range.end) +
+      '&include_details=1';
+    fetch(url)
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
         return r.json();
