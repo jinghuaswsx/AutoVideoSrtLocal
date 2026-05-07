@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 
 def test_video_review_video_route_rejects_path_outside_task_storage(
@@ -74,3 +75,31 @@ def test_video_review_video_route_serves_path_inside_task_storage(
     assert response.status_code == 200
     assert response.text == "sent"
     assert sent[0][0][0].endswith("inside.mp4")
+
+
+def test_video_review_detail_escapes_llm_result_fields():
+    template = Path("web/templates/video_review_detail.html").read_text(encoding="utf-8")
+
+    assert "function vrEsc(value)" in template
+    assert "${vrEsc(s.completed_at || '-')}" in template
+    assert "${vrEsc((s.model || '').replace('google/', ''))}" in template
+    assert "${vrEsc(scoring.verdict || '')}" in template
+    assert "${vrEsc(scoring.summary || '')}" in template
+    assert "${vrEsc(ov.content_summary || '')}" in template
+    assert "${vrEsc(ov.target_audience || '')}" in template
+    assert "${vrEsc(ov.platform_fit || '')}" in template
+    assert "${vrEsc(d.details || '')}" in template
+    assert "const severity = getIssueSeverity(issue.severity);" in template
+    assert '<span class="vr-issue-severity ${severity}">' in template
+    assert "${vrEsc(issue.category || '')}" in template
+    assert "${vrEsc(issue.description || '')}" in template
+    assert "${vrEsc(issue.suggestion || '')}" in template
+
+    assert "${scoring.verdict || ''}" not in template
+    assert "${scoring.summary || ''}" not in template
+    assert "${ov.content_summary || ''}" not in template
+    assert "${d.details || ''}" not in template
+    assert '${issue.severity || \'low\'}' not in template
+    assert "${issue.category || ''}" not in template
+    assert "${issue.description || ''}" not in template
+    assert "${issue.suggestion || ''}" not in template

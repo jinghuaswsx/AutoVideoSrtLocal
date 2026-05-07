@@ -193,6 +193,16 @@ let promptData = {en: '', zh: ''};
 let activeTab = 'en';
 let selectedLang = '{{ state.get("prompt_lang", "en") }}';
 
+function vrEsc(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
 // ── 提示词 ──
 async function loadPrompts() {
   try {
@@ -347,10 +357,10 @@ function renderStats(s) {
   if (!s) return;
   const tokens = s.total_tokens ? (s.total_tokens > 1000 ? (s.total_tokens / 1000).toFixed(1) + 'k' : s.total_tokens) : '-';
   document.getElementById('statsArea').innerHTML = `<div class="vr-stats-bar">
-    <div class="vr-stat">完成时间: <span class="vr-stat-value">${s.completed_at || '-'}</span></div>
-    <div class="vr-stat">耗时: <span class="vr-stat-value">${s.elapsed_seconds || '-'}s</span></div>
-    <div class="vr-stat">消耗 Token: <span class="vr-stat-value">${tokens}</span></div>
-    <div class="vr-stat">模型: <span class="vr-stat-value">${(s.model || '').replace('google/', '')}</span></div>
+    <div class="vr-stat">完成时间: <span class="vr-stat-value">${vrEsc(s.completed_at || '-')}</span></div>
+    <div class="vr-stat">耗时: <span class="vr-stat-value">${vrEsc(s.elapsed_seconds || '-')}s</span></div>
+    <div class="vr-stat">消耗 Token: <span class="vr-stat-value">${vrEsc(tokens)}</span></div>
+    <div class="vr-stat">模型: <span class="vr-stat-value">${vrEsc((s.model || '').replace('google/', ''))}</span></div>
   </div>`;
 }
 
@@ -363,6 +373,11 @@ function getGradeClass(grade) {
   if (g === 'C') return 'grade-c';
   if (g === 'D') return 'grade-d';
   return 'grade-f';
+}
+
+function getIssueSeverity(severity) {
+  const value = String(severity || '').toLowerCase();
+  return ['high', 'medium', 'low'].includes(value) ? value : 'low';
 }
 
 function getScoreColor(score) {
@@ -385,14 +400,16 @@ function renderResult(r) {
   // 评分总览
   const scoring = r.scoring || {};
   const gc = getGradeClass(scoring.grade);
+  const totalScore = Number.isFinite(Number(scoring.total_score)) ? Number(scoring.total_score) : '?';
+  const grade = scoring.grade || '?';
   html += `<div class="vr-score-header">
     <div class="vr-total-score">
-      <div class="vr-total-num ${gc}">${scoring.total_score || '?'}</div>
-      <div class="vr-grade ${gc}">${scoring.grade || '?'}</div>
+      <div class="vr-total-num ${gc}">${vrEsc(totalScore)}</div>
+      <div class="vr-grade ${gc}">${vrEsc(grade)}</div>
     </div>
     <div class="vr-verdict">
-      <div class="vr-verdict-text">${scoring.verdict || ''}</div>
-      <div class="vr-verdict-summary">${scoring.summary || ''}</div>
+      <div class="vr-verdict-text">${vrEsc(scoring.verdict || '')}</div>
+      <div class="vr-verdict-summary">${vrEsc(scoring.summary || '')}</div>
     </div>
   </div>`;
 
@@ -402,11 +419,11 @@ function renderResult(r) {
     <div class="vr-card-title">概述</div>
     <div class="vr-overview">
       <div class="vr-overview-label">内容概述</div>
-      <p>${ov.content_summary || ''}</p>
+      <p>${vrEsc(ov.content_summary || '')}</p>
       <div class="vr-overview-label">目标受众</div>
-      <p>${ov.target_audience || ''}</p>
+      <p>${vrEsc(ov.target_audience || '')}</p>
       <div class="vr-overview-label">平台适用性</div>
-      <p>${ov.platform_fit || ''}</p>
+      <p>${vrEsc(ov.platform_fit || '')}</p>
     </div>
   </div>`;
 
@@ -423,15 +440,15 @@ function renderResult(r) {
   html += '<div class="vr-card" style="margin-bottom:16px; padding:16px;"><div class="vr-card-title">质量评估</div><div class="vr-dimensions">';
   for (const [key, label] of dims) {
     const d = qa[key] || {};
-    const s = d.score || 0;
+    const s = Math.max(0, Math.min(10, Number(d.score) || 0));
     const color = getScoreColor(s);
     html += `<div class="vr-dim">
       <div class="vr-dim-header">
         <span class="vr-dim-name">${label}</span>
-        <span class="vr-dim-score" style="color:${color}">${s}</span>
+        <span class="vr-dim-score" style="color:${color}">${vrEsc(s)}</span>
       </div>
       <div class="vr-dim-bar"><div class="vr-dim-fill" style="width:${s*10}%;background:${color}"></div></div>
-      <div class="vr-dim-detail">${d.details || ''}</div>
+      <div class="vr-dim-detail">${vrEsc(d.details || '')}</div>
     </div>`;
   }
   html += '</div></div>';
@@ -441,15 +458,16 @@ function renderResult(r) {
   if (issues.length) {
     html += '<div class="vr-card" style="margin-bottom:16px; padding:16px;"><div class="vr-card-title">问题诊断</div><div class="vr-issues">';
     for (const issue of issues) {
+      const severity = getIssueSeverity(issue.severity);
       html += `<div class="vr-issue">
         <div class="vr-issue-header">
-          <span class="vr-issue-severity ${issue.severity || 'low'}">${
-            issue.severity === 'high' ? '严重' : issue.severity === 'medium' ? '中等' : '轻微'
+          <span class="vr-issue-severity ${severity}">${
+            severity === 'high' ? '严重' : severity === 'medium' ? '中等' : '轻微'
           }</span>
-          <span class="vr-issue-category">${issue.category || ''}</span>
+          <span class="vr-issue-category">${vrEsc(issue.category || '')}</span>
         </div>
-        <div class="vr-issue-desc">${issue.description || ''}</div>
-        <div class="vr-issue-suggestion">${issue.suggestion || ''}</div>
+        <div class="vr-issue-desc">${vrEsc(issue.description || '')}</div>
+        <div class="vr-issue-suggestion">${vrEsc(issue.suggestion || '')}</div>
       </div>`;
     }
     html += '</div></div>';
