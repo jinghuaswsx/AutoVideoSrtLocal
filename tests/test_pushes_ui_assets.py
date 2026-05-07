@@ -70,6 +70,22 @@ def test_pushes_script_sanitizes_product_page_url_href_protocols():
     assert 'href="${escapeAttr(it.product_page_url)}"' not in render_row
 
 
+def test_pushes_legacy_row_renderer_escapes_api_fields_if_reused():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    legacy = script[
+        script.index("function renderRowLegacy"):
+        script.index("function renderRow(it)")
+    ]
+
+    assert 'src="${escapeAttr(it.cover_url)}"' in legacy
+    assert 'data-id="${escapeAttr(it.id)}"' in legacy
+    assert "escapeHtml(it.product_name || '')" in legacy
+    assert "escapeHtml(it.product_code || '')" in legacy
+    assert "escapeHtml(it.display_name || it.filename || '')" in legacy
+    assert "${it.product_name || ''}" not in legacy
+    assert "${it.product_code || ''}" not in legacy
+
+
 def test_pushes_script_persists_filters_pagination_and_sort_in_url():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
 

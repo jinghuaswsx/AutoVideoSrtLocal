@@ -410,27 +410,27 @@
 
   function renderRowLegacy(it) {
     const thumb = it.cover_url
-      ? `<img class="thumb" src="${it.cover_url}" alt="">`
+      ? `<img class="thumb" src="${escapeAttr(it.cover_url)}" alt="">`
       : `<div class="thumb thumb-empty"></div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
-    return `<tr data-id="${it.id}">
+    return `<tr data-id="${escapeAttr(it.id)}">
       <td>${thumb}</td>
       <td>
-        <div class="product-name product-name-line">${it.product_name || ''}</div>
+        <div class="product-name product-name-line">${escapeHtml(it.product_name || '')}</div>
         <div class="product-code-row">
-          <span class="product-code">${it.product_code || ''}</span>
+          <span class="product-code">${escapeHtml(it.product_code || '')}</span>
         </div>
       </td>
       <td><span class="product-owner-name">${escapeHtml(it.product_owner_name || '-')}</span></td>
       <td>
-        <div class="item-name">${it.display_name || it.filename || ''}</div>
-        <div class="item-meta">${durStr} · ${sizeStr}</div>
+        <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
+        <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
       <td><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
       <td class="ready-cell">${renderReadinessText(it.readiness)}</td>
       <td>${renderStatusBadge(it.status)}</td>
-      <td class="time">${(it.created_at || '').replace('T', ' ').slice(0, 16)}</td>
+      <td class="time">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
       ${window.PUSH_IS_ADMIN ? `<td>${renderActionCell(it)}</td>` : ''}
     </tr>`;
   }
