@@ -58,16 +58,10 @@ def detail_page(task_id: str):
         return "Not found", 404
 
     # 加载商品信息
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM copywriting_inputs WHERE project_id = %s",
-                (task_id,),
-            )
-            inputs = cur.fetchone() or {}
-    finally:
-        conn.close()
+    inputs = copywriting_route_store.get_inputs(
+        task_id,
+        connection_factory=get_connection,
+    )
 
     from pipeline.copywriting import DEFAULT_SYSTEM_PROMPT_EN, DEFAULT_SYSTEM_PROMPT_ZH
     from pipeline.copywriting import _resolve_model_only
@@ -166,18 +160,15 @@ def upload():
 
             # 保存商品信息
             selling_points = request.form.get("selling_points", "")
-            cur.execute(
-                "INSERT INTO copywriting_inputs "
-                "(project_id, product_title, price, selling_points, "
-                "target_audience, extra_info, language) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (task_id,
-                 request.form.get("product_title", ""),
-                 request.form.get("price", ""),
-                 selling_points,
-                 request.form.get("target_audience", ""),
-                 request.form.get("extra_info", ""),
-                 request.form.get("language", "en")),
+            copywriting_route_store.insert_inputs(
+                cur,
+                task_id=task_id,
+                product_title=request.form.get("product_title", ""),
+                price=request.form.get("price", ""),
+                selling_points=selling_points,
+                target_audience=request.form.get("target_audience", ""),
+                extra_info=request.form.get("extra_info", ""),
+                language=request.form.get("language", "en"),
             )
         conn.commit()
     finally:
@@ -193,17 +184,11 @@ def upload():
             )
         img_path = os.path.join(task_dir, "product_image.jpg")
         product_image.save(img_path)
-        conn = get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE copywriting_inputs SET product_image_url = %s "
-                    "WHERE project_id = %s",
-                    (img_path, task_id),
-                )
-            conn.commit()
-        finally:
-            conn.close()
+        copywriting_route_store.update_product_image_url(
+            task_id,
+            img_path,
+            connection_factory=get_connection,
+        )
 
     # 后台启动管线（keyframe → copywrite）
     from web.extensions import socketio
@@ -246,26 +231,11 @@ def update_inputs(task_id: str):
     if not data:
         return copywriting_flask_response(build_copywriting_error_response("缺少数据", 400))
 
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            fields = []
-            values = []
-            for key in ("product_title", "price", "selling_points",
-                        "target_audience", "extra_info", "language"):
-                if key in data:
-                    fields.append(f"{key} = %s")
-                    values.append(data[key])
-            if fields:
-                values.append(task_id)
-                cur.execute(
-                    f"UPDATE copywriting_inputs SET {', '.join(fields)} "
-                    "WHERE project_id = %s",
-                    values,
-                )
-            conn.commit()
-    finally:
-        conn.close()
+    copywriting_route_store.update_inputs(
+        task_id,
+        data,
+        connection_factory=get_connection,
+    )
     return copywriting_flask_response(build_copywriting_ok_response())
 
 
@@ -282,19 +252,10 @@ def preview(task_id: str):
     data = request.get_json(silent=True) or {}
 
     # 加载商品信息
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT product_title, product_image_url, price, "
-                "selling_points, target_audience, extra_info, language "
-                "FROM copywriting_inputs WHERE project_id = %s",
-                (task_id,),
-            )
-            row = cur.fetchone()
-            product_inputs = dict(row) if row else {"language": "en"}
-    finally:
-        conn.close()
+    product_inputs = dict(copywriting_route_store.get_inputs(
+        task_id,
+        connection_factory=get_connection,
+    )) or {"language": "en"}
 
     language = product_inputs.get("language", "en")
 
@@ -305,22 +266,12 @@ def preview(task_id: str):
     custom_prompt = None
     prompt_id = data.get("prompt_id")
     if prompt_id:
-        conn = get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT prompt_text, prompt_text_zh FROM user_prompts "
-                    "WHERE id = %s AND user_id = %s AND type = 'copywriting'",
-                    (prompt_id, current_user.id),
-                )
-                row = cur.fetchone()
-                if row:
-                    if language == "zh" and row.get("prompt_text_zh"):
-                        custom_prompt = row["prompt_text_zh"]
-                    else:
-                        custom_prompt = row.get("prompt_text")
-        finally:
-            conn.close()
+        custom_prompt = copywriting_route_store.get_prompt_text(
+            prompt_id,
+            user_id=current_user.id,
+            language=language,
+            connection_factory=get_connection,
+        )
 
     model_override = data.get("model")
 
@@ -416,19 +367,10 @@ def rewrite_segment(task_id: str):
     except Exception:
         pass
 
-    language = "en"
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT language FROM copywriting_inputs WHERE project_id = %s",
-                (task_id,),
-            )
-            row = cur.fetchone()
-            if row:
-                language = row["language"]
-    finally:
-        conn.close()
+    language = copywriting_route_store.get_input_language(
+        task_id,
+        connection_factory=get_connection,
+    )
 
     new_seg = _rewrite(
         full_text=task["copy"].get("full_text", ""),
@@ -586,22 +528,16 @@ def get_artifact(task_id: str, name: str):
         if video_path and os.path.isfile(video_path):
             return safe_task_file_response(task, video_path, not_found_message="artifact not found")
     elif name == "product_image":
-        conn = get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT product_image_url FROM copywriting_inputs WHERE project_id = %s",
-                    (task_id,),
-                )
-                row = cur.fetchone()
-                if row and row.get("product_image_url") and os.path.isfile(row["product_image_url"]):
-                    return safe_task_file_response(
-                        task,
-                        row["product_image_url"],
-                        not_found_message="artifact not found",
-                    )
-        finally:
-            conn.close()
+        product_image_path = copywriting_route_store.get_product_image_path(
+            task_id,
+            connection_factory=get_connection,
+        )
+        if product_image_path and os.path.isfile(product_image_path):
+            return safe_task_file_response(
+                task,
+                product_image_path,
+                not_found_message="artifact not found",
+            )
     elif name == "thumbnail":
         thumbnail_path = copywriting_route_store.get_project_thumbnail_path(task_id)
         if thumbnail_path and os.path.isfile(thumbnail_path):
