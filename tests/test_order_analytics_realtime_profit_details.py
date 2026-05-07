@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from appcore.order_analytics.realtime import (
+    _build_order_profit_status_label,
     _derive_order_profit_status,
     _derive_refund_status,
     _is_refund_like_state,
@@ -51,3 +52,12 @@ def test_derive_order_profit_status():
     assert _derive_order_profit_status(line_count=2, ok_count=1, incomplete_count=1) == "partially_complete"
     assert _derive_order_profit_status(line_count=2, ok_count=0, incomplete_count=2) == "incomplete"
     assert _derive_order_profit_status(line_count=0, ok_count=0, incomplete_count=0) == "not_computed"
+
+
+def test_build_order_profit_status_label():
+    assert _build_order_profit_status_label("ok", "none") == "完整"
+    assert _build_order_profit_status_label("partially_complete", "none") == "部分完整"
+    assert _build_order_profit_status_label("incomplete", "none") == "不完整"
+    assert _build_order_profit_status_label("not_computed", "none") == "未核算"
+    assert _build_order_profit_status_label("ok", "full_refund") == "完整 / 全额退款"
+    assert _build_order_profit_status_label("ok", "partial_refund") == "完整 / 部分退款"
