@@ -356,6 +356,18 @@
   function nprAttr(value) {
     return nprEsc(value);
   }
+  function safeMediaSrc(url) {
+    const raw = String(url == null ? '' : url).trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href;
+      if (parsed.protocol === 'blob:') return raw;
+    } catch (e) {
+      if (raw.charAt(0) === '/' && raw.charAt(1) !== '/') return raw;
+    }
+    return '';
+  }
 
   window.nprOpenModal = function(id) {
     document.getElementById(id).classList.add('open');
@@ -616,8 +628,9 @@
             : '')
         : '';
 
-      const coverHtml = p.main_image
-        ? `<img class="npr-cover" src="${nprAttr(p.main_image)}" alt="" loading="lazy">`
+      const coverUrl = safeMediaSrc(p.main_image || '');
+      const coverHtml = coverUrl
+        ? `<img class="npr-cover" src="${nprAttr(coverUrl)}" alt="" loading="lazy">`
         : '<div class="npr-cover-ph"></div>';
 
       const scoreHtml = p.ai_score != null

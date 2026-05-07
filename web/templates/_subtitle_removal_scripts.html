@@ -17,6 +17,27 @@
       return Number.isFinite(next) ? next : null;
     }
 
+    function safeMediaSrc(url) {
+      var raw = String(url == null ? "" : url).trim();
+      if (!raw) {
+        return "";
+      }
+      try {
+        var parsed = new URL(raw, window.location.origin);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+          return parsed.href;
+        }
+        if (parsed.protocol === "blob:") {
+          return raw;
+        }
+      } catch (_) {
+        if (raw.charAt(0) === "/" && raw.charAt(1) !== "/") {
+          return raw;
+        }
+      }
+      return "";
+    }
+
     function normalizeSelectionBox(selectionBox, positionPayload) {
       var x1 = numberOrNull(selectionBox && (selectionBox.x1 != null ? selectionBox.x1 : selectionBox.l));
       var y1 = numberOrNull(selectionBox && (selectionBox.y1 != null ? selectionBox.y1 : selectionBox.t));
@@ -249,7 +270,7 @@
           });
         })
         .then(function (data) {
-          window.location.href = `/subtitle-removal/${data.task_id}`;
+          window.location.href = "/subtitle-removal/" + encodeURIComponent(data.task_id || "");
         })
         .catch(function (error) {
           setUploadBusy(false, "重新选择视频");
@@ -660,12 +681,13 @@
       if (stateHint) {
         stateHint.textContent = mode === "box" ? "请在首帧图上拖拽字幕区域" : "全屏去除将直接提交整帧";
       }
-      if (selectionImage && state.thumbnail_url) {
-        selectionImage.src = state.thumbnail_url;
+      var safeThumbnailUrl = safeMediaSrc(state.thumbnail_url);
+      if (selectionImage && safeThumbnailUrl) {
+        selectionImage.src = safeThumbnailUrl;
         selectionImage.hidden = false;
       }
       if (selectionEmpty) {
-        selectionEmpty.hidden = !!state.thumbnail_url;
+        selectionEmpty.hidden = !!safeThumbnailUrl;
       }
       if (state.remove_mode) {
         modeInputs.forEach(function (input) {

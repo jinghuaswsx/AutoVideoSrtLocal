@@ -125,7 +125,8 @@ def test_new_product_review_dynamic_table_escapes_api_fields(authed_client_no_db
 
     assert "function nprEsc(value)" in body
     assert "function nprAttr(value)" in body
-    assert 'src="${nprAttr(p.main_image)}"' in table_js
+    assert "const coverUrl = safeMediaSrc(p.main_image || '');" in table_js
+    assert 'src="${nprAttr(coverUrl)}"' in table_js
     assert 'data-name="${nprAttr(p.name || \'\')}"' in table_js
     assert 'data-reason="${nprAttr(c.reason || \'\')}"' in table_js
     assert "data-suggestions='${nprAttr(JSON.stringify(c.suggestions || []))}'" in table_js
@@ -135,6 +136,7 @@ def test_new_product_review_dynamic_table_escapes_api_fields(authed_client_no_db
     assert "nprEsc(reason || '—')" in modal_js
     assert "'<li>' + nprEsc(s) + '</li>'" in modal_js
 
+    assert 'src="${nprAttr(p.main_image)}"' not in table_js
     assert 'src="${p.main_image}"' not in table_js
     assert "${p.name||'—'}" not in table_js
     assert "${p.product_code}" not in table_js

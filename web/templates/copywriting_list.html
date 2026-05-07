@@ -425,7 +425,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     var resp = await fetch('/api/copywriting/upload', { method: 'POST', body: form });
     var data = await resp.json();
     if (data.task_id) {
-      location.href = '/copywriting/' + data.task_id;
+      location.href = '/copywriting/' + encodeURIComponent(data.task_id || '');
     } else {
       alert(data.error || '上传失败');
     }

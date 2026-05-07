@@ -280,6 +280,8 @@ def test_de_translate_list_page_uses_local_multipart_upload():
 
     assert "new FormData(uploadForm)" in template
     assert "fetch('/api/de-translate/start'" in template
+    assert "window.location.href = '/de-translate/' + encodeURIComponent(data.task_id || '');" in template
+    assert "window.location.href = '/de-translate/' + data.task_id;" not in template
     assert "/api/de-translate/bootstrap" not in template
     assert "/api/de-translate/complete" not in template
     assert "/api/de-translate/compat-bootstrap" not in template
@@ -293,6 +295,8 @@ def test_fr_translate_list_page_uses_local_multipart_upload():
 
     assert "new FormData(uploadForm)" in template
     assert "fetch('/api/fr-translate/start'" in template
+    assert "window.location.href = '/fr-translate/' + encodeURIComponent(data.task_id || '');" in template
+    assert "window.location.href = '/fr-translate/' + data.task_id;" not in template
     assert "/api/fr-translate/bootstrap" not in template
     assert "/api/fr-translate/complete" not in template
     assert "/api/fr-translate/compat-bootstrap" not in template
@@ -323,8 +327,73 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "/api/subtitle-removal/upload/complete" in scripts
     assert "subtitle_backend: readUploadSubtitleBackend()" in scripts
     assert 'xhr.open("PUT", bootstrapData.upload_url, true)' in scripts
-    assert "window.location.href = `/subtitle-removal/${data.task_id}`;" in scripts
+    assert "function safeMediaSrc(url)" in scripts
+    assert "var safeThumbnailUrl = safeMediaSrc(state.thumbnail_url);" in scripts
+    assert "selectionImage.src = safeThumbnailUrl;" in scripts
+    assert "selectionImage.src = state.thumbnail_url;" not in scripts
+    assert 'window.location.href = "/subtitle-removal/" + encodeURIComponent(data.task_id || "");' in scripts
+    assert "window.location.href = `/subtitle-removal/${data.task_id}`;" not in scripts
     assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
+
+
+def test_misc_upload_redirects_encode_dynamic_task_ids():
+    root = Path(__file__).resolve().parents[1]
+    expectations = {
+        "web/templates/copywriting_list.html": (
+            "location.href = '/copywriting/' + encodeURIComponent(data.task_id || '');",
+            "location.href = '/copywriting/' + data.task_id;",
+        ),
+        "web/templates/video_review_list.html": (
+            "location.href = '/video-review/' + encodeURIComponent(data.id || '');",
+            "location.href = '/video-review/' + data.id;",
+        ),
+        "web/templates/video_creation_list.html": (
+            "location.href = '/video-creation/' + encodeURIComponent(data.id || '');",
+            "location.href = '/video-creation/' + data.id;",
+        ),
+        "web/templates/text_translate_list.html": (
+            "location.href = '/text-translate/' + encodeURIComponent(data.id || '');",
+            "location.href = '/text-translate/' + data.id;",
+        ),
+        "web/templates/_image_translate_scripts.html": (
+            'location.href = "/image-translate/" + encodeURIComponent(complete.task_id || "");',
+            'location.href = "/image-translate/" + complete.task_id;',
+        ),
+        "web/templates/_task_workbench_scripts.html": (
+            'TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", encodeURIComponent(data.task_id || ""));',
+            'TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", data.task_id);',
+        ),
+        "web/templates/raw_video_pool_list.html": (
+            'window.location.href = "/raw-video-pool/api/task/" + encodeURIComponent(tid || "") + "/download";',
+            "window.location.href = `/raw-video-pool/api/task/${tid}/download`;",
+        ),
+    }
+
+    for rel_path, (safe_snippet, unsafe_snippet) in expectations.items():
+        source = (root / rel_path).read_text(encoding="utf-8")
+        assert safe_snippet in source
+        assert unsafe_snippet not in source
+
+
+def test_task_and_order_window_open_calls_use_noopener_and_encoded_params():
+    root = Path(__file__).resolve().parents[1]
+    tasks_template = (root / "web" / "templates" / "tasks_list.html").read_text(encoding="utf-8")
+    order_template = (root / "web" / "templates" / "order_analytics.html").read_text(encoding="utf-8")
+
+    assert "new URLSearchParams({" in tasks_template
+    assert "window.open(url, '_blank', 'noopener,noreferrer');" in tasks_template
+    assert "window.open('/raw-video-pool/', '_blank', 'noopener,noreferrer');" in tasks_template
+    assert "window.open(url, '_blank');" not in tasks_template
+    assert "window.open('/raw-video-pool/', '_blank');" not in tasks_template
+    assert "window.open('/medias?product_id=' + encodeURIComponent(pid || ''), '_blank', 'noopener,noreferrer');" in order_template
+    assert "window.open('/medias?product_id=' + pid, '_blank');" not in order_template
+
+
+def test_copywriting_download_window_open_uses_noopener_and_encoded_task_id():
+    scripts = Path("web/templates/_copywriting_scripts.html").read_text(encoding="utf-8")
+
+    assert 'window.open("/api/copywriting/" + encodeURIComponent(TASK_ID || "") + "/download/copy", "_blank", "noopener,noreferrer");' in scripts
+    assert 'window.open("/api/copywriting/" + TASK_ID + "/download/copy");' not in scripts
 
 
 def test_subtitle_removal_upload_panel_hides_local_vsr_backend_column():

@@ -639,7 +639,7 @@
       if (!response.ok) throw new Error(data.error || "鍒涘缓浠诲姟澶辫触");
       if (progressEl) progressEl.style.width = "100%";
       if (percentEl) percentEl.textContent = "100%";
-      window.location.href = TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", data.task_id);
+      window.location.href = TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", encodeURIComponent(data.task_id || ""));
     }).catch(err => {
       showError(err.message || "涓婁紶澶辫触");
     });

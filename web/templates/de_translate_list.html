@@ -321,7 +321,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     });
     var data = await res.json();
     if (!res.ok) throw new Error(data.error || '鍒涘缓浠诲姟澶辫触');
-    window.location.href = '/de-translate/' + data.task_id;
+    window.location.href = '/de-translate/' + encodeURIComponent(data.task_id || '');
   } catch (err) {
     alert(err.message);
     btn.disabled = false;

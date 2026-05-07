@@ -406,17 +406,29 @@ async function tcAction(kind, id, action) {
 }
 
 function tcChildJumpTranslate(taskId, country, productId) {
-  const url = `/medias/?from_task=${taskId}&product=${productId}&lang=${country.toLowerCase()}&action=translate`;
-  window.open(url, '_blank');
+  const params = new URLSearchParams({
+    from_task: String(taskId || ''),
+    product: String(productId || ''),
+    lang: String(country || '').toLowerCase(),
+    action: 'translate',
+  });
+  const url = `/medias/?${params.toString()}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 function tcChildJumpHistory(taskId, country, productId) {
-  const url = `/medias/?from_task=${taskId}&product=${productId}&lang=${country.toLowerCase()}&action=history`;
-  window.open(url, '_blank');
+  const params = new URLSearchParams({
+    from_task: String(taskId || ''),
+    product: String(productId || ''),
+    lang: String(country || '').toLowerCase(),
+    action: 'history',
+  });
+  const url = `/medias/?${params.toString()}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 function tcParentUploadDone(id, productId) {
   // D 子系统上线后，处理人在"原始素材任务库"完成下载/上传/自动 mark_uploaded 全流程。
   // 这里只做跳转，不再保留 prompt fallback。
-  window.open('/raw-video-pool/', '_blank');
+  window.open('/raw-video-pool/', '_blank', 'noopener,noreferrer');
 }
 let TC_REASON_CTX = null;
 function tcOpenReason(kind, id, action) {

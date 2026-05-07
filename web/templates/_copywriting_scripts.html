@@ -270,7 +270,7 @@ function exportCopy() {
 }
 
 function downloadCopy() {
-    window.open("/api/copywriting/" + TASK_ID + "/download/copy");
+    window.open("/api/copywriting/" + encodeURIComponent(TASK_ID || "") + "/download/copy", "_blank", "noopener,noreferrer");
 }
 
 function startTTS() {

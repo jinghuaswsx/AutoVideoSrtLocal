@@ -252,7 +252,7 @@ document.getElementById('uploadForm').addEventListener('submit', async e => {
       throw new Error(err.error || 'Upload failed');
     }
     const data = await res.json();
-    location.href = '/video-creation/' + data.id;
+    location.href = '/video-creation/' + encodeURIComponent(data.id || '');
   } catch (err) {
     alert('提交失败: ' + err.message);
     btn.disabled = false;

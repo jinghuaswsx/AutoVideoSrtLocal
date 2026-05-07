@@ -216,7 +216,7 @@
           }),
         }).then(r => r.json().then(d => { if(!r.ok) throw new Error(d.error||"complete failed"); return d; }));
 
-        location.href = "/image-translate/" + complete.task_id;
+        location.href = "/image-translate/" + encodeURIComponent(complete.task_id || "");
       } catch (e) {
         showError(e.message || "提交失败");
         submitBtn.disabled = false;

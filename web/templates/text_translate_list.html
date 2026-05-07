@@ -73,7 +73,7 @@ async function createNew() {
   });
   if (!res.ok) { alert('创建失败'); return; }
   const data = await res.json();
-  location.href = '/text-translate/' + data.id;
+  location.href = '/text-translate/' + encodeURIComponent(data.id || '');
 }
 
 async function deleteItem(e, id) {

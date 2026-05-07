@@ -1750,7 +1750,7 @@
           var tab = document.querySelector('[data-tab="ads"]');
           if (tab) tab.click();
         } else if (action === 'medias') {
-          window.open('/medias?product_id=' + pid, '_blank');
+          window.open('/medias?product_id=' + encodeURIComponent(pid || ''), '_blank', 'noopener,noreferrer');
         }
       });
     });

@@ -26,3 +26,14 @@ def test_translate_lab_sanitizes_voice_preview_audio_sources():
     assert "var preview = safeMediaSrc(voice.preview_url || \"\");" in confirmed_block
     assert "audio.src = url;" not in play_block
     assert "escapeHtml(voice.preview_url)" not in confirmed_block
+
+
+def test_translate_lab_create_redirect_encodes_task_id():
+    start = SCRIPT.index('requestJson("/api/translate-lab"')
+    submit_block = SCRIPT[
+        start:
+        SCRIPT.index('var syncBtn = $("#syncVoiceLibraryBtn");', start)
+    ]
+
+    assert 'window.location.href = "/translate-lab/" + encodeURIComponent(data.task_id || "");' in submit_block
+    assert 'window.location.href = "/translate-lab/" + data.task_id;' not in submit_block

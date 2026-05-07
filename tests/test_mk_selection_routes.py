@@ -65,6 +65,16 @@ def test_selection_center_tabs_and_heading_on_related_pages():
     assert "新品审核" not in npr_template
 
 
+def test_new_product_review_cover_preview_sanitizes_media_sources():
+    template = Path("web/templates/new_product_review_list.html").read_text(encoding="utf-8")
+
+    assert "function safeMediaSrc(url)" in template
+    assert "const coverUrl = safeMediaSrc(p.main_image || '');" in template
+    assert "const coverHtml = coverUrl" in template
+    assert '`<img class="npr-cover" src="${nprAttr(coverUrl)}"' in template
+    assert 'src="${nprAttr(p.main_image)}"' not in template
+
+
 def test_mk_selection_video_cards_use_single_preview_with_metrics():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

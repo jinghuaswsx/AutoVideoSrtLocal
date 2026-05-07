@@ -113,7 +113,7 @@
 
         requestJson("/api/translate-lab", { method: "POST", body: fd })
           .then(function (data) {
-            window.location.href = "/translate-lab/" + data.task_id;
+            window.location.href = "/translate-lab/" + encodeURIComponent(data.task_id || "");
           })
           .catch(function (err) {
             showToast(err.message || "创建失败", "error");

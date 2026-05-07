@@ -178,7 +178,7 @@ async function rvpClaim(tid, btn) {
 
 function rvpDownload(tid) {
   // Browser GET with auth cookie — server triggers download via send_file
-  window.location.href = `/raw-video-pool/api/task/${tid}/download`;
+  window.location.href = "/raw-video-pool/api/task/" + encodeURIComponent(tid || "") + "/download";
 }
 
 let _rvpUploadCtx = null;
