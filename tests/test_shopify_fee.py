@@ -152,6 +152,24 @@ def test_split_shopify_fee_for_order_international_eur():
     assert result["shopify_fee_total_usd"] == 5.30
 
 
+def test_split_shopify_fee_for_order_total_matches_displayed_parts_after_rounding():
+    from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
+
+    result = split_shopify_fee_for_order(amount=1, buyer_country="DE")
+
+    displayed_parts_total = round(
+        result["shopify_platform_fee_usd"]
+        + result["international_card_fee_usd"]
+        + result["currency_conversion_fee_usd"],
+        2,
+    )
+    assert result["shopify_platform_fee_usd"] == 0.33
+    assert result["international_card_fee_usd"] == 0.01
+    assert result["currency_conversion_fee_usd"] == 0.02
+    assert result["shopify_fee_total_usd"] == displayed_parts_total
+    assert result["shopify_fee_total_usd"] == 0.36
+
+
 def test_split_shopify_fee_for_order_unknown_country_uses_estimated_cross_border_usd():
     from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
 
@@ -160,6 +178,18 @@ def test_split_shopify_fee_for_order_unknown_country_uses_estimated_cross_border
     assert result["presentment_currency"] == "USD"
     assert result["shopify_tier"] == "B_estimated"
     assert result["shopify_platform_fee_usd"] == 2.80
+    assert result["international_card_fee_usd"] == 1.00
+    assert result["currency_conversion_fee_usd"] == 0.0
+    assert result["shopify_fee_total_usd"] == 3.80
+
+
+def test_split_shopify_fee_for_order_blank_country_uses_estimated_cross_border_usd():
+    from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
+
+    result = split_shopify_fee_for_order(amount=100, buyer_country="   ")
+
+    assert result["presentment_currency"] == "USD"
+    assert result["shopify_tier"] == "B_estimated"
     assert result["international_card_fee_usd"] == 1.00
     assert result["currency_conversion_fee_usd"] == 0.0
     assert result["shopify_fee_total_usd"] == 3.80

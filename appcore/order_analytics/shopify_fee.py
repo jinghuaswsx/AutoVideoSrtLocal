@@ -110,9 +110,10 @@ def split_shopify_fee_for_order(
     amount_d = _to_decimal(amount)
     settlement_currency = settlement_currency.upper()
     store_country = store_country.upper()
+    normalized_country = buyer_country.strip().upper() if buyer_country else None
 
-    if buyer_country:
-        card_country = buyer_country.strip().upper()
+    if normalized_country:
+        card_country = normalized_country
         presentment_currency = infer_presentment_currency_from_country(card_country)
         is_cross_border = card_country not in {store_country, "US"}
         tier_card_country = card_country if is_cross_border else store_country
@@ -144,17 +145,22 @@ def split_shopify_fee_for_order(
     currency_conversion_fee_d = (
         amount_d * CURRENCY_CONVERSION_RATE if needs_conversion else Decimal("0")
     )
-    total_fee_d = (
-        platform_fee_d + international_card_fee_d + currency_conversion_fee_d
+    platform_fee = _round2(platform_fee_d)
+    international_card_fee = _round2(international_card_fee_d)
+    currency_conversion_fee = _round2(currency_conversion_fee_d)
+    total_fee = _round2(
+        Decimal(str(platform_fee))
+        + Decimal(str(international_card_fee))
+        + Decimal(str(currency_conversion_fee))
     )
 
     return {
         "presentment_currency": presentment_currency,
         "shopify_tier": tier,
-        "shopify_platform_fee_usd": _round2(platform_fee_d),
-        "international_card_fee_usd": _round2(international_card_fee_d),
-        "currency_conversion_fee_usd": _round2(currency_conversion_fee_d),
-        "shopify_fee_total_usd": _round2(total_fee_d),
+        "shopify_platform_fee_usd": platform_fee,
+        "international_card_fee_usd": international_card_fee,
+        "currency_conversion_fee_usd": currency_conversion_fee,
+        "shopify_fee_total_usd": total_fee,
     }
 
 
