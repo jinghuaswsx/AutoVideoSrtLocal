@@ -112,6 +112,45 @@ def test_verify_fee_recognizes_domestic_match():
     assert result["matches_standard"] is True
 
 
+def test_split_shopify_fee_for_order_domestic_usd():
+    from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
+
+    result = split_shopify_fee_for_order(amount=100, buyer_country="US")
+
+    assert result["presentment_currency"] == "USD"
+    assert result["shopify_tier"] == "A"
+    assert result["shopify_platform_fee_usd"] == 2.80
+    assert result["international_card_fee_usd"] == 0.0
+    assert result["currency_conversion_fee_usd"] == 0.0
+    assert result["shopify_fee_total_usd"] == 2.80
+
+
+def test_split_shopify_fee_for_order_international_eur():
+    from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
+
+    result = split_shopify_fee_for_order(amount=100, buyer_country="DE")
+
+    assert result["presentment_currency"] == "EUR"
+    assert result["shopify_tier"] == "D"
+    assert result["shopify_platform_fee_usd"] == 2.80
+    assert result["international_card_fee_usd"] == 1.00
+    assert result["currency_conversion_fee_usd"] == 1.50
+    assert result["shopify_fee_total_usd"] == 5.30
+
+
+def test_split_shopify_fee_for_order_unknown_country_uses_estimated_cross_border_usd():
+    from appcore.order_analytics.shopify_fee import split_shopify_fee_for_order
+
+    result = split_shopify_fee_for_order(amount=100, buyer_country=None)
+
+    assert result["presentment_currency"] == "USD"
+    assert result["shopify_tier"] == "B_estimated"
+    assert result["shopify_platform_fee_usd"] == 2.80
+    assert result["international_card_fee_usd"] == 1.00
+    assert result["currency_conversion_fee_usd"] == 0.0
+    assert result["shopify_fee_total_usd"] == 3.80
+
+
 def test_verify_fee_recognizes_international_match():
     """实际 fee = $1.41 (Tier D)，应识别为 international + matches_standard。"""
     result = verify_fee(amount=22.13, actual_fee=1.41, presentment_currency="EUR")

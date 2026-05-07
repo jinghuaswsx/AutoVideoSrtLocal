@@ -100,6 +100,63 @@ def estimate_fee_for_buyer_country(
     )
 
 
+def split_shopify_fee_for_order(
+    *,
+    amount: Any,
+    buyer_country: str | None,
+    settlement_currency: str = DEFAULT_SETTLEMENT_CURRENCY,
+    store_country: str = DEFAULT_STORE_COUNTRY,
+) -> dict[str, Any]:
+    amount_d = _to_decimal(amount)
+    settlement_currency = settlement_currency.upper()
+    store_country = store_country.upper()
+
+    if buyer_country:
+        card_country = buyer_country.strip().upper()
+        presentment_currency = infer_presentment_currency_from_country(card_country)
+        tier = classify_tier(
+            presentment_currency,
+            card_country,
+            settlement_currency=settlement_currency,
+            store_country=store_country,
+        )
+        is_cross_border = card_country != store_country
+    else:
+        card_country = None
+        presentment_currency = settlement_currency
+        tier = (
+            classify_tier(
+                presentment_currency,
+                card_country,
+                settlement_currency=settlement_currency,
+                store_country=store_country,
+            )
+            + "_estimated"
+        )
+        is_cross_border = True
+
+    needs_conversion = presentment_currency.upper() != settlement_currency
+    platform_fee_d = amount_d * BASE_RATE + FIXED_FEE
+    international_card_fee_d = (
+        amount_d * CROSS_BORDER_RATE if is_cross_border else Decimal("0")
+    )
+    currency_conversion_fee_d = (
+        amount_d * CURRENCY_CONVERSION_RATE if needs_conversion else Decimal("0")
+    )
+    total_fee_d = (
+        platform_fee_d + international_card_fee_d + currency_conversion_fee_d
+    )
+
+    return {
+        "presentment_currency": presentment_currency,
+        "shopify_tier": tier,
+        "shopify_platform_fee_usd": _round2(platform_fee_d),
+        "international_card_fee_usd": _round2(international_card_fee_d),
+        "currency_conversion_fee_usd": _round2(currency_conversion_fee_d),
+        "shopify_fee_total_usd": _round2(total_fee_d),
+    }
+
+
 def _to_decimal(value: Any) -> Decimal:
     if isinstance(value, Decimal):
         return value
