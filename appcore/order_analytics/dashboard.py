@@ -37,6 +37,11 @@ def get_conn(*args, **kwargs):
     return _facade().get_conn(*args, **kwargs)
 
 
+def _current_meta_business_date() -> date:
+    facade = _facade()
+    return facade.current_meta_business_date(facade._beijing_now())
+
+
 def _resolve_period_range(
     period: str,
     *,
@@ -52,7 +57,7 @@ def _resolve_period_range(
     - week: ISO 周一 ~ 周日；若为当周，end = 昨日
     - day: date_str ~ date_str
     """
-    today = today or current_meta_business_date()
+    today = today or _current_meta_business_date()
     yesterday = today - timedelta(days=1)
 
     if period == "month":
@@ -278,7 +283,7 @@ def get_dashboard(
     today: date | None = None,
 ) -> dict:
     """产品看板查询主入口。详见 spec。"""
-    today = today or current_meta_business_date()
+    today = today or _current_meta_business_date()
     period_type = period
     if start_date and end_date:
         start = _parse_iso_date_param(start_date, "start_date")
