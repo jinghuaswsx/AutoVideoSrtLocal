@@ -449,6 +449,85 @@ def test_click_sync_products_button_retries_after_notice_overlay_cleanup():
     assert 300 in page.waits
 
 
+def test_connect_existing_browser_context_restarts_shared_browser_once_after_cdp_timeout(monkeypatch):
+    mod = _load_module()
+    attempts = []
+    restarts = []
+    waits = []
+    context = object()
+
+    class FakeBrowser:
+        contexts = [context]
+
+    class FakeChromium:
+        def connect_over_cdp(self, cdp_url, **kwargs):
+            attempts.append((cdp_url, kwargs))
+            if len(attempts) == 1:
+                raise TimeoutError("Timeout 180000ms exceeded")
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+    monkeypatch.setattr(
+        mod,
+        "_wait_for_cdp_ready",
+        lambda cdp_url, timeout_s=30: waits.append((cdp_url, timeout_s)),
+    )
+    monkeypatch.setattr(
+        mod,
+        "_restart_server_browser_service",
+        lambda service_name, **kwargs: restarts.append((service_name, kwargs)),
+    )
+
+    browser, selected_context = mod._connect_existing_browser_context(
+        FakePlaywright(),
+        "http://127.0.0.1:9222",
+        browser_service_name="autovideosrt-browser.service",
+        connect_timeout_ms=1234,
+        restart_wait_seconds=7,
+    )
+
+    assert isinstance(browser, FakeBrowser)
+    assert selected_context is context
+    assert attempts == [
+        ("http://127.0.0.1:9222", {"timeout": 1234}),
+        ("http://127.0.0.1:9222", {"timeout": 1234}),
+    ]
+    assert restarts == [("autovideosrt-browser.service", {})]
+    assert waits == [
+        ("http://127.0.0.1:9222", 30),
+        ("http://127.0.0.1:9222", 7),
+        ("http://127.0.0.1:9222", 30),
+    ]
+
+
+def test_connect_existing_browser_context_reports_restart_failure(monkeypatch):
+    mod = _load_module()
+
+    class FakeChromium:
+        def connect_over_cdp(self, cdp_url, **kwargs):
+            raise TimeoutError("Timeout 180000ms exceeded")
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+    monkeypatch.setattr(mod, "_wait_for_cdp_ready", lambda *args, **kwargs: None)
+
+    def fake_restart(service_name, **kwargs):
+        raise RuntimeError("systemctl denied")
+
+    monkeypatch.setattr(mod, "_restart_server_browser_service", fake_restart)
+
+    with pytest.raises(RuntimeError, match="autovideosrt-browser.service.*systemctl denied"):
+        mod._connect_existing_browser_context(
+            FakePlaywright(),
+            "http://127.0.0.1:9222",
+            browser_service_name="autovideosrt-browser.service",
+            connect_timeout_ms=1234,
+        )
+
+
 def test_module_exposes_main_entrypoint_for_systemd_timer():
     mod = _load_module()
 

@@ -20,6 +20,8 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from tools.shopifyid_dianxiaomi_sync import (
     BROWSER_MODES,
@@ -28,6 +30,8 @@ from tools.shopifyid_dianxiaomi_sync import (
     REMOTE_ENVS,
     REPO_ROOT,
     SERVER_BROWSER_CDP_URL,
+    SERVER_BROWSER_SERVICE_NAME,
+    _connect_existing_browser_context,
     _open_browser_context,
     _run_mysql,
     _sql_quote,
@@ -42,6 +46,11 @@ SHOPIFY_ONLINE_URL = "https://www.dianxiaomi.com/web/shopifyProduct/online"
 SHOPIFY_API_URL = "https://www.dianxiaomi.com/api/shopifyProduct/pageList.json"
 DXM_PRODUCT_PAGE_URL = "https://www.dianxiaomi.com/web/dxmCommodityProduct/index"
 DXM_PRODUCT_API_URL = "https://www.dianxiaomi.com/api/dxmCommodityProduct/pageList.json"
+PUBLIC_SHOPIFY_PRODUCT_DOMAINS = (
+    "newjoyloo.com",
+    "omurio.com",
+    "0ixug9-pv.myshopify.com",
+)
 
 OUTPUT_DIR = REPO_ROOT / "output" / "dianxiaomi_sku_sync"
 TASK_CODE = "dianxiaomi_sku"
@@ -118,6 +127,39 @@ def _normalize_weight_grams(weight: Any, unit: Any) -> float | None:
     return round(w * factor, 2)
 
 
+def _normalize_public_shopify_price(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            if "." in text:
+                return float(text)
+            numeric = int(text)
+        except ValueError:
+            return None
+    else:
+        numeric_value = _normalize_decimal(value)
+        if numeric_value is None:
+            return None
+        if numeric_value != int(numeric_value):
+            return numeric_value
+        numeric = int(numeric_value)
+    return round(numeric / 100.0, 2)
+
+
+def _normalize_public_shopify_weight_grams(variant: dict[str, Any]) -> float | None:
+    grams = _normalize_decimal(variant.get("grams"))
+    if grams is not None:
+        return round(grams, 2)
+    return _normalize_weight_grams(
+        variant.get("weight"),
+        variant.get("weight_unit") or variant.get("weightUnit") or variant.get("weighUnit"),
+    )
+
+
 def build_shopify_payload(page_no: int, **overrides: Any) -> dict[str, Any]:
     payload = dict(SHOPIFY_DEFAULT_PAYLOAD)
     payload["pageNo"] = page_no
@@ -180,6 +222,115 @@ def extract_shopify_products(payload: dict[str, Any]) -> list[dict[str, Any]]:
             "variants": variants,
         })
     return products
+
+
+def extract_public_shopify_product(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """从 Shopify 公开商品 JSON（.js 或 .json）里抽完整 variants。"""
+    product = payload.get("product") if isinstance(payload.get("product"), dict) else payload
+    if not isinstance(product, dict):
+        return None
+    shopify_product_id = str(product.get("id") or "").strip()
+    if not shopify_product_id:
+        return None
+    variants: list[dict[str, Any]] = []
+    for v in product.get("variants") or []:
+        if not isinstance(v, dict):
+            continue
+        variant_id = str(v.get("id") or v.get("shopifyVariantId") or "").strip()
+        if not variant_id:
+            continue
+        sku_raw = v.get("sku")
+        sku = str(sku_raw or "").strip()
+        title = str(v.get("title") or "").strip()
+        if not title or title == "Default Title":
+            option_parts: list[str] = []
+            for key in ("option1", "option2", "option3"):
+                value = v.get(key)
+                if value is None:
+                    continue
+                text = str(value).strip()
+                if text and text != "Default Title":
+                    option_parts.append(text)
+            title = " / ".join(option_parts)
+        variants.append({
+            "shopify_variant_id": variant_id,
+            "shopify_sku": sku or None,
+            "shopify_price": _normalize_public_shopify_price(v.get("price")),
+            "shopify_compare_at_price": _normalize_public_shopify_price(
+                v.get("compare_at_price") if "compare_at_price" in v else v.get("compareAtPrice")
+            ),
+            "shopify_inventory_quantity": _normalize_int(
+                v.get("inventory_quantity") if "inventory_quantity" in v else v.get("inventoryQuantity")
+            ),
+            "shopify_weight_grams": _normalize_public_shopify_weight_grams(v),
+            "shopify_variant_title": title or None,
+            "pair_key": sku or variant_id,
+        })
+    return {
+        "shopify_product_id": shopify_product_id,
+        "shopify_handle": str(product.get("handle") or "").strip(),
+        "shopify_title": str(product.get("title") or "").strip(),
+        "shop_id": "",
+        "variants": variants,
+    }
+
+
+def enrich_shopify_products_with_public_variants(
+    shopify_products: list[dict[str, Any]],
+    *,
+    fetch_public_shopify_product: Callable[[dict[str, Any]], dict[str, Any] | None] | None,
+) -> list[dict[str, Any]]:
+    if fetch_public_shopify_product is None:
+        return shopify_products
+    enriched: list[dict[str, Any]] = []
+    for product in shopify_products:
+        updated = dict(product)
+        try:
+            public_product = fetch_public_shopify_product(product)
+        except Exception:
+            public_product = None
+        if (
+            public_product
+            and str(public_product.get("shopify_product_id") or "")
+            == str(product.get("shopify_product_id") or "")
+            and len(public_product.get("variants") or []) > len(product.get("variants") or [])
+        ):
+            updated["variants"] = list(public_product.get("variants") or [])
+            updated["shopify_title"] = public_product.get("shopify_title") or product.get("shopify_title")
+            updated["shopify_handle"] = public_product.get("shopify_handle") or product.get("shopify_handle")
+        enriched.append(updated)
+    return enriched
+
+
+def build_public_shopify_product_urls(handle: str) -> list[str]:
+    safe_handle = str(handle or "").strip().strip("/")
+    if not safe_handle:
+        return []
+    urls: list[str] = []
+    for domain in PUBLIC_SHOPIFY_PRODUCT_DOMAINS:
+        if domain.endswith(".myshopify.com"):
+            urls.append(f"https://{domain}/products/{safe_handle}.json")
+        urls.append(f"https://{domain}/products/{safe_handle}.js")
+    return urls
+
+
+def fetch_public_shopify_product(product: dict[str, Any], *, timeout_seconds: int = 10) -> dict[str, Any] | None:
+    expected_id = str(product.get("shopify_product_id") or "").strip()
+    handle = str(product.get("shopify_handle") or "").strip()
+    for url in build_public_shopify_product_urls(handle):
+        request = Request(url, headers={"User-Agent": "AutoVideoSrtLocal/1.0"})
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        except (HTTPError, URLError, OSError, TimeoutError, json.JSONDecodeError):
+            continue
+        public_product = extract_public_shopify_product(payload)
+        if (
+            public_product
+            and str(public_product.get("shopify_product_id") or "") == expected_id
+        ):
+            return public_product
+    return None
 
 
 def extract_dxm_index(payload: dict[str, Any]) -> dict[str, dict[str, str | None]]:
@@ -525,6 +676,7 @@ def run_sync(
     fetch_local_products: Callable[[], list[dict[str, Any]]],
     apply_changes: Callable[[dict[str, Any]], None],
     output_dir: Path,
+    fetch_public_shopify_product: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
     now_text: str | None = None,
 ) -> dict[str, Any]:
     _, shopify_items = fetch_all_pages(
@@ -535,6 +687,10 @@ def run_sync(
     shopify_products: list[dict[str, Any]] = []
     for raw in shopify_items:
         shopify_products.extend(extract_shopify_products({"data": {"page": {"list": [raw]}}}))
+    shopify_products = enrich_shopify_products_with_public_variants(
+        shopify_products,
+        fetch_public_shopify_product=fetch_public_shopify_product,
+    )
 
     _, dxm_items = fetch_all_pages(
         fetch_dxm_page,
@@ -631,14 +787,12 @@ def fetch_shopify_and_dxm_via_cdp(
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(cdp_url)
+        browser, context = _connect_existing_browser_context(
+            playwright,
+            cdp_url,
+            browser_service_name=SERVER_BROWSER_SERVICE_NAME,
+        )
         try:
-            deadline = time.time() + 5
-            while time.time() < deadline and not browser.contexts:
-                time.sleep(0.2)
-            if not browser.contexts:
-                raise RuntimeError("connected to CDP browser but no context is available")
-            context = browser.contexts[0]
             page = context.pages[0] if context.pages else context.new_page()
             page.set_default_timeout(timeout_seconds * 1000)
 
@@ -656,6 +810,10 @@ def fetch_shopify_and_dxm_via_cdp(
             shopify_products: list[dict[str, Any]] = []
             for raw in shopify_items:
                 shopify_products.extend(extract_shopify_products({"data": {"page": {"list": [raw]}}}))
+            shopify_products = enrich_shopify_products_with_public_variants(
+                shopify_products,
+                fetch_public_shopify_product=fetch_public_shopify_product,
+            )
 
             page.goto(DXM_PRODUCT_PAGE_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(600)
@@ -816,6 +974,7 @@ def _run_main_impl(argv: list[str] | None = None):
                 fetch_local_products=fetch_local_products,
                 apply_changes=apply_changes,
                 output_dir=OUTPUT_DIR,
+                fetch_public_shopify_product=fetch_public_shopify_product,
             )
         finally:
             browser.close()

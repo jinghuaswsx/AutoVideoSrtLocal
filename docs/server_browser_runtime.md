@@ -109,6 +109,17 @@ http://127.0.0.1:9224    # 小秘云仓 profile
 
 并使用对应 profile 浏览器上下文，就可以复用同一套登录态。
 
+## CDP 连接恢复
+
+`shopifyid` 和 `dianxiaomi_sku` 这类依赖 `127.0.0.1:9222` 的任务必须使用带恢复机制的 CDP 连接入口：
+
+- 先探测 `http://127.0.0.1:9222/json/version`。
+- Playwright `connect_over_cdp` 超时或 CDP 不可用时，自动重启一次 `autovideosrt-browser.service`。
+- 重启后等待 CDP 恢复并重试一次连接。
+- 仍失败时抛出明确错误；定时任务主流程会写入 `scheduled_task_runs`，后台 admin 通过定时任务失败告警看到原因。
+
+手动触发的后台刷新如果遇到同类失败，也必须写入对应 task code 的 `scheduled_task_runs` 失败记录，避免只给当前请求返回 502 而没有后台可追踪告警。
+
 ## Shopify ID 回填定时任务
 
 服务器上使用 systemd timer 运行 Shopify ID 回填：

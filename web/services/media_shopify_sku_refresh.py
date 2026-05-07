@@ -30,6 +30,7 @@ def build_refresh_product_shopify_sku_response(
     list_xmyc_unit_prices_fn: Callable[[list[str]], dict],
     get_configured_rmb_per_usd_fn: Callable[[], float],
     serialize_product_skus_fn: Callable[..., list[dict]],
+    record_fetch_failure_fn: Callable[..., int] | None = None,
 ) -> RefreshShopifySkuResponse:
     shopify_id = (product.get("shopifyid") or "").strip()
     if not shopify_id:
@@ -44,10 +45,24 @@ def build_refresh_product_shopify_sku_response(
     try:
         shopify_products, dxm_index = fetch_shopify_and_dxm_fn()
     except Exception as exc:
+        message = f"店小秘数据拉取失败：{exc}"
+        if record_fetch_failure_fn is not None:
+            try:
+                record_fetch_failure_fn(
+                    task_code="dianxiaomi_sku",
+                    error_message=message,
+                    summary={
+                        "stage": "manual_refresh_fetch",
+                        "product_id": int(product_id),
+                        "shopifyid": shopify_id,
+                    },
+                )
+            except Exception:
+                pass
         return RefreshShopifySkuResponse(
             {
                 "error": "fetch_failed",
-                "message": f"店小秘数据拉取失败：{exc}",
+                "message": message,
             },
             502,
         )

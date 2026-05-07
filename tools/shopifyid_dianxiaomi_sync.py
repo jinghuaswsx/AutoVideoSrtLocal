@@ -30,6 +30,9 @@ REMOTE_MEDIA_TABLE = "media_products"
 CDP_PORT = 9222
 CDP_URL = f"http://127.0.0.1:{CDP_PORT}"
 SERVER_BROWSER_CDP_URL = "http://127.0.0.1:9222"
+SERVER_BROWSER_SERVICE_NAME = "autovideosrt-browser.service"
+SERVER_BROWSER_CDP_CONNECT_TIMEOUT_MS = 30000
+SERVER_BROWSER_RESTART_WAIT_SECONDS = 30
 BROWSER_MODES = ("auto", "local-chrome", "server-cdp")
 DB_MODES = ("auto", "ssh", "local")
 TASK_CODE = "shopifyid"
@@ -397,15 +400,70 @@ def _wait_for_cdp_ready(cdp_url: str = CDP_URL, *, timeout_s: float = 15) -> Non
     raise RuntimeError(f"Chrome 调试端口未就绪：{last_error}")
 
 
-def _connect_existing_browser_context(playwright, cdp_url: str):
-    _wait_for_cdp_ready(cdp_url, timeout_s=30)
-    browser = playwright.chromium.connect_over_cdp(cdp_url)
+def _restart_server_browser_service(service_name: str, *, timeout_s: float = 60) -> None:
+    completed = subprocess.run(
+        ["systemctl", "restart", service_name],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout_s,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise RuntimeError(f"systemctl restart {service_name} failed: {detail or completed.returncode}")
+
+
+def _connect_over_cdp(playwright, cdp_url: str, *, connect_timeout_ms: int | None):
+    kwargs: dict[str, Any] = {}
+    if connect_timeout_ms:
+        kwargs["timeout"] = int(connect_timeout_ms)
+    return playwright.chromium.connect_over_cdp(cdp_url, **kwargs)
+
+
+def _select_browser_context(browser):
     deadline = time.time() + 5
     while time.time() < deadline:
         if browser.contexts:
             return browser, browser.contexts[0]
         time.sleep(0.2)
     raise RuntimeError("Connected to shared Chrome, but no browser context is available.")
+
+
+def _connect_existing_browser_context(
+    playwright,
+    cdp_url: str,
+    *,
+    browser_service_name: str = SERVER_BROWSER_SERVICE_NAME,
+    connect_timeout_ms: int = SERVER_BROWSER_CDP_CONNECT_TIMEOUT_MS,
+    restart_wait_seconds: float = SERVER_BROWSER_RESTART_WAIT_SECONDS,
+):
+    try:
+        _wait_for_cdp_ready(cdp_url, timeout_s=30)
+        browser = _connect_over_cdp(playwright, cdp_url, connect_timeout_ms=connect_timeout_ms)
+        return _select_browser_context(browser)
+    except Exception as first_exc:
+        first_error = str(first_exc)
+
+    try:
+        _restart_server_browser_service(browser_service_name)
+        _wait_for_cdp_ready(cdp_url, timeout_s=restart_wait_seconds)
+    except Exception as restart_exc:
+        raise RuntimeError(
+            f"CDP {cdp_url} 首次连接失败（{first_error}），"
+            f"且无法重启 {browser_service_name}：{restart_exc}"
+        ) from restart_exc
+
+    try:
+        _wait_for_cdp_ready(cdp_url, timeout_s=30)
+        browser = _connect_over_cdp(playwright, cdp_url, connect_timeout_ms=connect_timeout_ms)
+        return _select_browser_context(browser)
+    except Exception as retry_exc:
+        raise RuntimeError(
+            f"CDP {cdp_url} 首次连接失败（{first_error}），"
+            f"已重启 {browser_service_name} 但仍无法连接：{retry_exc}"
+        ) from retry_exc
 
 
 def _launch_local_browser_context(playwright):

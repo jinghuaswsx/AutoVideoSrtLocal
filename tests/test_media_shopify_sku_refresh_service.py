@@ -59,6 +59,37 @@ def test_build_refresh_product_shopify_sku_response_maps_fetch_error():
     assert result.payload == {"error": "fetch_failed", "message": "店小秘数据拉取失败：cdp closed"}
 
 
+def test_build_refresh_product_shopify_sku_response_records_fetch_failure_for_admin_alert():
+    from web.services.media_shopify_sku_refresh import build_refresh_product_shopify_sku_response
+
+    captured = {}
+
+    result = build_refresh_product_shopify_sku_response(
+        42,
+        {"id": 42, "shopifyid": "SP1"},
+        fetch_shopify_and_dxm_fn=lambda: (_ for _ in ()).throw(RuntimeError("cdp restart failed")),
+        build_pair_rows_fn=lambda *args: {},
+        update_product_fn=lambda *args, **kwargs: None,
+        replace_product_skus_fn=lambda *args, **kwargs: None,
+        list_product_skus_fn=lambda pid: [],
+        list_xmyc_unit_prices_fn=lambda skus: {},
+        get_configured_rmb_per_usd_fn=lambda: 7.0,
+        serialize_product_skus_fn=lambda *args, **kwargs: [],
+        record_fetch_failure_fn=lambda **kwargs: captured.update(kwargs) or 99,
+    )
+
+    assert result.status_code == 502
+    assert captured == {
+        "task_code": "dianxiaomi_sku",
+        "error_message": "店小秘数据拉取失败：cdp restart failed",
+        "summary": {
+            "stage": "manual_refresh_fetch",
+            "product_id": 42,
+            "shopifyid": "SP1",
+        },
+    }
+
+
 def test_build_refresh_product_shopify_sku_response_maps_missing_shopify_product():
     from web.services.media_shopify_sku_refresh import build_refresh_product_shopify_sku_response
 

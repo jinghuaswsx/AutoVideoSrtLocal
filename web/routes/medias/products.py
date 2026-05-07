@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import abort, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, parcel_cost_suggest, product_link_domains, product_roas, pushes, sku_aggregates, supply_pairing, xmyc_storage
+from appcore import medias, parcel_cost_suggest, product_link_domains, product_roas, pushes, scheduled_tasks, sku_aggregates, supply_pairing, xmyc_storage
 from . import bp
 from ._serializers import _serialize_item, _serialize_product, _serialize_product_skus
 from web.services.media_products_listing import (
@@ -260,6 +260,7 @@ def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
         list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
         get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
         serialize_product_skus_fn=_serialize_product_skus,
+        record_fetch_failure_fn=scheduled_tasks.record_failure,
     )
 
 
