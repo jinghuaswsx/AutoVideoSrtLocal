@@ -288,15 +288,21 @@ def api_ads_json():
     try:
         product_id = int(request.args.get("product_id", "0"))
     except ValueError:
-        return jsonify({"error": "invalid product_id"}), 400
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("invalid product_id", 400)
+        )
     if product_id <= 0:
-        return jsonify({"error": "missing product_id"}), 400
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("missing product_id", 400)
+        )
 
     today = date.today()
     date_to = _parse_date(request.args.get("date_to"), today)
     date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
     if date_from > date_to:
-        return jsonify({"error": "date_from > date_to"}), 400
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("date_from > date_to", 400)
+        )
 
     country = (request.args.get("country") or "").strip() or None
     try:
@@ -308,9 +314,13 @@ def api_ads_json():
         )
     except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
         log.exception("generate_ads_report failed")
-        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
+        )
 
-    return jsonify(report)
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response(report)
+    )
 
 
 @bp.route("/ads/manual-match", methods=["POST"])
@@ -328,15 +338,21 @@ def api_ads_manual_match():
 
     campaign_code = (payload.get("campaign_code") or "").strip()
     if not campaign_code:
-        return jsonify({"error": "missing campaign_code"}), 400
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("missing campaign_code", 400)
+        )
 
     raw_product_id = payload.get("product_id")
     try:
         product_id = int(raw_product_id) if raw_product_id is not None else 0
     except (TypeError, ValueError):
-        return jsonify({"error": "invalid product_id"}), 400
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("invalid product_id", 400)
+        )
     if product_id <= 0:
-        return jsonify({"error": "missing product_id"}), 400
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("missing product_id", 400)
+        )
 
     reason = (payload.get("reason") or "").strip()
     try:
@@ -347,6 +363,10 @@ def api_ads_manual_match():
         )
     except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
         log.exception("manual_match_meta_ad_campaign failed")
-        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
+        )
 
-    return jsonify({"ok": True, **result})
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response({"ok": True, **result})
+    )

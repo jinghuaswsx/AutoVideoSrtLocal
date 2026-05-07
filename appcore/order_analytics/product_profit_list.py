@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import Any
 
 from .cost_completeness import check_sku_cost_completeness
-from .product_profit_report import SITE_TO_AD_ACCOUNT
+from .product_profit_report import _site_to_ad_accounts
 
 log = logging.getLogger(__name__)
 
@@ -232,11 +232,16 @@ def generate_list(
         bucket["shipping_cost"] += Decimal(str(line.get("shipping_cost_usd") or 0))
         bucket["return_reserve"] += Decimal(str(line.get("return_reserve_usd") or 0))
 
-        # 广告分摊：当日当站全部 spend × (本行 units / 当日当站全部 units)
+        # 广告分摊：当日当站"全部账户合计 spend" × (本行 units / 当日当站全部 units)
+        # site → ad_accounts 映射来自 system_settings.meta_ad_accounts（兜底用 DEFAULT_*），
+        # 与 product_profit_report.compute_ad_cost 保持口径一致（多账户一并计入）。
         site_code = line.get("site_code") or ""
-        ad_account = SITE_TO_AD_ACCOUNT.get(site_code) if site_code else None
-        if ad_account:
-            day_spend = ad_spend.get((line["business_date"], ad_account), Decimal("0"))
+        account_ids = _site_to_ad_accounts().get(site_code) or ()
+        if account_ids:
+            day_spend = sum(
+                (ad_spend.get((line["business_date"], acc), Decimal("0")) for acc in account_ids),
+                Decimal("0"),
+            )
             day_units = site_units.get((line["business_date"], site_code), 0)
             line_units = int(line.get("quantity") or 0)
             if day_spend > 0 and day_units > 0 and line_units > 0:
