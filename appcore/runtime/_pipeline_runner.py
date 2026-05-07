@@ -2832,6 +2832,16 @@ class PipelineRunner:
         task_state.update(task_id, separation=separation)
         return mixed_path
 
+    def _resolve_compose_variant_name(self, task: dict) -> str:
+        """变体名解析（compose / export 共用）。
+
+        默认按 ``_is_av_pipeline_task`` 决定（老 av_translate / sentence_translate
+        runner 走 'av'）。OmniTranslateRunner 在 plugin_config.translate_algo ==
+        'av_sentence' 时也要走 'av'（对齐 av_sync_profile.tts/translate/subtitle
+        写到 variants["av"] 的位置），通过 override 本方法实现。
+        """
+        return "av" if _is_av_pipeline_task(task) else "normal"
+
     def _step_compose(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         if _is_original_video_passthrough(task):
@@ -2840,7 +2850,7 @@ class PipelineRunner:
         self._set_step(task_id, "compose", "running", "正在合成视频...")
         from pipeline.compose import compose_video
 
-        variant = "av" if _is_av_pipeline_task(task) else "normal"
+        variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
         audio_for_compose = self._maybe_mix_background_for_compose(
@@ -2948,7 +2958,7 @@ class PipelineRunner:
         from pipeline.capcut import export_capcut_project
         from pipeline import audio_separation as sep
 
-        variant = "av" if _is_av_pipeline_task(task) else "normal"
+        variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
         jianying_project_root = resolve_jianying_project_root(self.user_id)

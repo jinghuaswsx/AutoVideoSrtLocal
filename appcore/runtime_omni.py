@@ -127,6 +127,22 @@ class OmniTranslateRunner(MultiTranslateRunner):
             raise RuntimeError("未找到可用音色，无法继续生成配音")
         return voice, tts_voice_id, speech_rate_voice_id
 
+    def _resolve_compose_variant_name(self, task: dict) -> str:
+        """根据 plugin_config 解析 compose / export 用的 variant。
+
+        av_sync_profile.tts / translate / subtitle 都把数据写到 variants["av"]，
+        所以 omni 任务在 av_sentence preset 下 compose / export 也得读 "av"。
+        其他 cfg（standard / shot_char_limit）写 "normal"。
+
+        2026-05-07 fix：base ``_is_av_pipeline_task`` 看 task.type / pipeline_version
+        判断，omni 任务两个都不满足 → 误读 "normal" → variant_state["tts_audio_path"]
+        KeyError 卡 compose。
+        """
+        cfg = (task or {}).get("plugin_config") or {}
+        if cfg.get("translate_algo") == "av_sentence":
+            return "av"
+        return super()._resolve_compose_variant_name(task)
+
     # Override the base ASR step to dispatch by source_language.
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         from pipeline.extract import get_video_duration
