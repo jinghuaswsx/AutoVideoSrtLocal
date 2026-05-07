@@ -20,6 +20,7 @@ from web.services.raw_video_pool import (
     build_raw_video_pool_upload_success_response,
     raw_video_pool_flask_response,
 )
+from web.upload_util import client_filename_basename
 
 bp = Blueprint("raw_video_pool", __name__, url_prefix="/raw-video-pool")
 
@@ -101,7 +102,8 @@ def api_upload(tid: int):
         return raw_video_pool_flask_response(
             build_raw_video_pool_file_too_large_response(max_mb=500)
         )
-    if not (f.filename or "").lower().endswith(ALLOWED_EXT):
+    filename = client_filename_basename(f.filename)
+    if not filename.lower().endswith(ALLOWED_EXT):
         return raw_video_pool_flask_response(build_raw_video_pool_unsupported_type_response())
     try:
         new_size = rvp_svc.replace_processed_video(

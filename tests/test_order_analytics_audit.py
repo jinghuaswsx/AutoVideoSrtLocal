@@ -8,7 +8,13 @@ def test_shopify_order_upload_records_audit(authed_client_no_db, monkeypatch):
     from web.routes import order_analytics as route_mod
 
     calls = []
-    monkeypatch.setattr(route_mod.oa, "parse_shopify_file", lambda stream, filename: [{"row": 1}])
+    parsed = {}
+
+    def fake_parse_shopify_file(stream, filename):
+        parsed["filename"] = filename
+        return [{"row": 1}]
+
+    monkeypatch.setattr(route_mod.oa, "parse_shopify_file", fake_parse_shopify_file)
     monkeypatch.setattr(route_mod.oa, "import_orders", lambda rows: {"imported": 2, "skipped": 1})
     monkeypatch.setattr(route_mod.oa, "match_orders_to_products", lambda: 2)
     monkeypatch.setattr(
@@ -32,11 +38,12 @@ def test_shopify_order_upload_records_audit(authed_client_no_db, monkeypatch):
 
     response = authed_client_no_db.post(
         "/order-analytics/upload",
-        data={"file": (io.BytesIO(b"orders"), "orders.csv")},
+        data={"file": (io.BytesIO(b"orders"), "..\\..\\orders.csv")},
         content_type="multipart/form-data",
     )
 
     assert response.status_code == 200
+    assert parsed["filename"] == "orders.csv"
     assert calls[0]["action"] == "order_analytics_shopify_orders_uploaded"
     assert calls[0]["module"] == "order_analytics"
     assert calls[0]["target_type"] == "order_import"
@@ -50,11 +57,18 @@ def test_meta_ad_upload_records_audit(authed_client_no_db, monkeypatch):
     from web.routes import order_analytics as route_mod
 
     calls = []
-    monkeypatch.setattr(route_mod.oa, "parse_meta_ad_file", lambda stream, filename: [{"campaign_name": "demo"}])
+    parsed = {}
+    imported = {}
+
+    def fake_parse_meta_ad_file(stream, filename):
+        parsed["filename"] = filename
+        return [{"campaign_name": "demo"}]
+
+    monkeypatch.setattr(route_mod.oa, "parse_meta_ad_file", fake_parse_meta_ad_file)
     monkeypatch.setattr(
         route_mod.oa,
         "import_meta_ad_rows",
-        lambda rows, filename, file_bytes, import_frequency: {
+        lambda rows, filename, file_bytes, import_frequency: imported.update({"filename": filename}) or {
             "batch_id": 9,
             "imported": 1,
             "updated": 0,
@@ -74,12 +88,14 @@ def test_meta_ad_upload_records_audit(authed_client_no_db, monkeypatch):
         "/order-analytics/ad-upload",
         data={
             "frequency": "weekly",
-            "file": (io.BytesIO(b"meta"), "meta.csv"),
+            "file": (io.BytesIO(b"meta"), "..\\..\\meta.csv"),
         },
         content_type="multipart/form-data",
     )
 
     assert response.status_code == 200
+    assert parsed["filename"] == "meta.csv"
+    assert imported["filename"] == "meta.csv"
     assert calls[0]["action"] == "order_analytics_meta_ads_uploaded"
     assert calls[0]["module"] == "order_analytics"
     assert calls[0]["target_type"] == "meta_ad_import"

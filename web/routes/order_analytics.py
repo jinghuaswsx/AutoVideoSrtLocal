@@ -13,6 +13,7 @@ from web.services.order_analytics_responses import (
     build_order_analytics_payload_response,
     order_analytics_flask_response,
 )
+from web.upload_util import client_filename_basename
 
 from appcore import order_analytics as oa
 from appcore import system_audit
@@ -102,16 +103,18 @@ def upload():
         )
         return _json_response(error="请选择文件"), 400
 
+    filename = client_filename_basename(f.filename)
+
     try:
-        rows = oa.parse_shopify_file(f.stream, f.filename)
+        rows = oa.parse_shopify_file(f.stream, filename)
     except Exception as exc:
         log.warning("order_analytics upload parse error: %s", exc, exc_info=True)
         _audit_order_analytics_action(
             "order_analytics_shopify_orders_uploaded",
             target_type="order_import",
-            target_label=f.filename,
+            target_label=filename,
             status="failure",
-            detail={"filename": f.filename, "error": str(exc)},
+            detail={"filename": filename, "error": str(exc)},
         )
         return _json_response(error=f"文件解析失败：{exc}"), 400
 
@@ -119,9 +122,9 @@ def upload():
         _audit_order_analytics_action(
             "order_analytics_shopify_orders_uploaded",
             target_type="order_import",
-            target_label=f.filename,
+            target_label=filename,
             status="failure",
-            detail={"filename": f.filename, "error": "empty_or_invalid_file"},
+            detail={"filename": filename, "error": "empty_or_invalid_file"},
         )
         return _json_response(error="文件为空或格式不正确"), 400
 
@@ -134,9 +137,9 @@ def upload():
     _audit_order_analytics_action(
         "order_analytics_shopify_orders_uploaded",
         target_type="order_import",
-        target_label=f.filename,
+        target_label=filename,
         detail={
-            "filename": f.filename,
+            "filename": filename,
             "imported": result["imported"],
             "skipped": result["skipped"],
             "matched": matched,
@@ -176,17 +179,18 @@ def ad_upload():
 
     frequency = (request.form.get("frequency") or "custom").strip().lower()
     file_bytes = f.stream.read()
+    filename = client_filename_basename(f.filename)
 
     try:
-        rows = oa.parse_meta_ad_file(io.BytesIO(file_bytes), f.filename)
+        rows = oa.parse_meta_ad_file(io.BytesIO(file_bytes), filename)
     except Exception as exc:
         log.warning("order_analytics ad upload parse error: %s", exc, exc_info=True)
         _audit_order_analytics_action(
             "order_analytics_meta_ads_uploaded",
             target_type="meta_ad_import",
-            target_label=f.filename,
+            target_label=filename,
             status="failure",
-            detail={"filename": f.filename, "frequency": frequency, "error": str(exc)},
+            detail={"filename": filename, "frequency": frequency, "error": str(exc)},
         )
         return _json_response(error=f"广告报表解析失败：{exc}"), 400
 
@@ -194,15 +198,15 @@ def ad_upload():
         _audit_order_analytics_action(
             "order_analytics_meta_ads_uploaded",
             target_type="meta_ad_import",
-            target_label=f.filename,
+            target_label=filename,
             status="failure",
-            detail={"filename": f.filename, "frequency": frequency, "error": "empty_or_invalid_file"},
+            detail={"filename": filename, "frequency": frequency, "error": "empty_or_invalid_file"},
         )
         return _json_response(error="广告报表为空或格式不正确"), 400
 
     result = oa.import_meta_ad_rows(
         rows,
-        filename=f.filename,
+        filename=filename,
         file_bytes=file_bytes,
         import_frequency=frequency,
     )
@@ -211,9 +215,9 @@ def ad_upload():
         "order_analytics_meta_ads_uploaded",
         target_type="meta_ad_import",
         target_id=result.get("batch_id"),
-        target_label=f.filename,
+        target_label=filename,
         detail={
-            "filename": f.filename,
+            "filename": filename,
             "frequency": frequency,
             "batch_id": result.get("batch_id"),
             "imported": result.get("imported"),

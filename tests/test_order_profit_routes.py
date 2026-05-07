@@ -124,6 +124,32 @@ def test_order_profit_import_rejects_missing_file(authed_client_no_db):
     assert resp.get_json()["error"] == "缺少 file 字段"
 
 
+def test_order_profit_import_sanitizes_source_filename(authed_client_no_db, monkeypatch):
+    import io
+
+    captured = {}
+
+    def fake_import_payments_csv(stream, *, source_csv):
+        captured["content"] = stream.read()
+        captured["source_csv"] = source_csv
+        return {"inserted": 1}
+
+    monkeypatch.setattr(
+        "web.routes.order_profit.import_payments_csv",
+        fake_import_payments_csv,
+    )
+
+    resp = authed_client_no_db.post(
+        "/order-profit/api/payments_csv/import",
+        data={"file": (io.BytesIO(b"amount\n1"), "..\\..\\payments.csv")},
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 200
+    assert captured["source_csv"] == "payments.csv"
+    assert captured["content"] == "amount\n1"
+
+
 def test_order_profit_manual_match_routes_are_no_db(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "web.routes.order_profit.create_override",

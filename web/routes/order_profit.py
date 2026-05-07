@@ -44,6 +44,7 @@ from web.services.order_profit import (
     build_order_profit_payload_response,
     order_profit_flask_response,
 )
+from web.upload_util import client_filename_basename
 
 log = logging.getLogger(__name__)
 
@@ -199,7 +200,10 @@ def api_import_payments_csv():
         return order_profit_flask_response(
             build_order_profit_error_response("文件编码必须是 UTF-8", 400)
         )
-    stats = import_payments_csv(io.StringIO(content), source_csv=f.filename or "")
+    stats = import_payments_csv(
+        io.StringIO(content),
+        source_csv=client_filename_basename(f.filename),
+    )
     return order_profit_flask_response(build_order_profit_ok_response(stats=stats))
 
 
