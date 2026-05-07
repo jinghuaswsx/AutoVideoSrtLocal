@@ -1517,15 +1517,27 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 
 /* ────────── SKU detail modal (variant 配对详情) ────────── */
-.oc-sku-detail-modal .oc-modal-body { padding:var(--oc-sp-5); display:flex; flex-direction:column; gap:var(--oc-sp-4); min-height:0; }
+#skuDetailMask.oc-sku-detail-mask {
+  inset:0 0 0 220px;
+  padding:10vh 10vw;
+  align-items:stretch;
+  justify-content:flex-end;
+}
+.oc-sku-detail-modal {
+  width:100%;
+  height:100%;
+  max-width:none;
+  max-height:none;
+}
+.oc-sku-detail-modal .oc-modal-body { padding:var(--oc-sp-5); display:flex; flex:1 1 auto; flex-direction:column; gap:var(--oc-sp-4); min-height:0; overflow:hidden; }
 .oc-sku-detail-meta { display:flex; flex-direction:column; gap:var(--oc-sp-3); }
 .oc-sku-meta-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:var(--oc-sp-2) var(--oc-sp-4); margin:0; }
 .oc-sku-meta-grid div { min-width:0; }
 .oc-sku-meta-grid dt { font-size:12px; color:var(--oc-fg-subtle); margin:0; }
 .oc-sku-meta-grid dd { font-size:13px; color:var(--oc-fg); margin:2px 0 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .oc-sku-detail-cost-note { font-size:12px; color:var(--oc-fg-muted); padding:var(--oc-sp-2) var(--oc-sp-3); background:var(--oc-bg-subtle); border-radius:var(--oc-radius); border-left:3px solid var(--oc-info); }
-.oc-sku-detail-table-wrap { overflow:auto; max-height:60vh; border:1px solid var(--oc-border); border-radius:var(--oc-radius); }
-.oc-sku-detail-table { width:100%; min-width:1480px; }
+.oc-sku-detail-table-wrap { flex:1 1 auto; min-height:0; overflow:auto; max-height:none; border:1px solid var(--oc-border); border-radius:var(--oc-radius); }
+.oc-sku-detail-table { width:100%; min-width:1780px; }
 .oc-sku-detail-table th { background:var(--oc-bg-subtle); position:sticky; top:0; z-index:1; }
 .oc-sku-detail-table td { font-size:13px; }
 .oc-sku-detail-table .mono { font-family:var(--oc-font-mono, ui-monospace, monospace); }
@@ -1545,6 +1557,18 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
 .sku-summary-head { font-size:12px; color:var(--oc-fg); }
 .sku-summary-codes { font-size:11px; color:var(--oc-fg-muted); margin-top:2px; }
 .sku-summary-codes.muted { color:var(--oc-fg-subtle); }
+@media (max-width: 1024px) {
+  #skuDetailMask.oc-sku-detail-mask {
+    inset:0;
+    padding:0;
+  }
+  .oc-sku-detail-modal {
+    border-radius:0;
+  }
+  .oc-sku-meta-grid {
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+  }
+}
 .oc-product-links-mask {
   align-items:flex-start;
   padding-top:100px;
@@ -2328,8 +2352,8 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     </div>
   </div>
 </div>
-<div id="skuDetailMask" class="oc-modal-mask oc" hidden>
-  <div class="oc-modal oc-sku-detail-modal" role="dialog" aria-modal="true" aria-labelledby="skuDetailTitle" style="max-width:1280px; width:96vw;">
+<div id="skuDetailMask" class="oc-modal-mask oc oc-sku-detail-mask" hidden>
+  <div class="oc-modal oc-sku-detail-modal" role="dialog" aria-modal="true" aria-labelledby="skuDetailTitle">
     <div class="oc-modal-head">
       <h3 id="skuDetailTitle">SKU 配对详情</h3>
       <button type="button" id="skuDetailClose" class="oc-icon-btn" aria-label="关闭">
@@ -2350,17 +2374,17 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
         <table class="oc-table oc-sku-detail-table">
           <thead>
             <tr>
-              <th style="width:180px;">变体</th>
-              <th style="width:130px;">Shopify SKU</th>
-              <th style="width:84px;">售价 (USD)</th>
-              <th style="width:74px;">库存</th>
-              <th style="width:130px;">店小秘 SKU</th>
-              <th style="width:130px;">店小秘商品 SKU</th>
-              <th style="width:96px;">ERP 编码</th>
-              <th style="width:96px;">采购价 (RMB)</th>
-              <th>ERP / xmyc 商品名</th>
-              <th style="width:104px;">保本 ROAS</th>
-              <th style="width:118px;">操作</th>
+              <th style="width:220px;">变体</th>
+              <th style="width:210px;">Shopify SKU</th>
+              <th style="width:104px;">售价 (USD)</th>
+              <th style="width:86px;">库存</th>
+              <th style="width:210px;">店小秘 SKU</th>
+              <th style="width:210px;">店小秘商品 SKU</th>
+              <th style="width:140px;">ERP 编码</th>
+              <th style="width:120px;">采购价 (RMB)</th>
+              <th style="width:260px;">ERP / xmyc 商品名</th>
+              <th style="width:120px;">保本 ROAS</th>
+              <th style="width:130px;">操作</th>
             </tr>
           </thead>
           <tbody id="skuDetailRows"></tbody>
