@@ -12,6 +12,7 @@ def test_generate_ads_report_empty():
     """无广告数据 → 返回空列表 + 空 daily / unmatched / accounts。"""
     with patch.object(ppa, "_load_campaign_metrics", return_value=[]), \
          patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
          patch.object(ppa, "_load_attributed_orders", return_value={}):
         result = ppa.generate_ads_report(
             product_id=100,
@@ -52,6 +53,7 @@ def test_generate_ads_report_matched_campaign_aggregates():
     }
     with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
          patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
          patch.object(ppa, "_load_attributed_orders", return_value=fake_attributed):
         result = ppa.generate_ads_report(
             product_id=100,
@@ -107,6 +109,7 @@ def test_generate_ads_report_unmatched_goes_to_unmatched_bucket():
     ]
     with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
          patch.object(ppa, "_load_match_map", return_value={"mystery": None}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
          patch.object(ppa, "_load_attributed_orders", return_value={}):
         result = ppa.generate_ads_report(
             product_id=100,
@@ -151,6 +154,7 @@ def test_generate_ads_report_resolve_recovers_unmatched_to_current_product():
     }
     with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
          patch.object(ppa, "_load_match_map", return_value={"abc-rjc": 100}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
          patch.object(ppa, "_load_attributed_orders", return_value=fake_attributed):
         result = ppa.generate_ads_report(
             product_id=100,
@@ -183,6 +187,7 @@ def test_generate_ads_report_other_product_excluded_silently():
     ]
     with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
          patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
          patch.object(ppa, "_load_attributed_orders", return_value={}):
         result = ppa.generate_ads_report(
             product_id=100,
@@ -196,7 +201,7 @@ def test_generate_ads_report_other_product_excluded_silently():
 
 
 def test_generate_ads_report_attributed_orders_split_by_spend_pro_rata():
-    """两个 campaign 同产品 → 归属订单数按 spend 比例分摊（不是每行都展示总数）。"""
+    """两个 campaign 同产品 → 归属订单数按日按 spend 比例分摊（同日内 spend 占比）。"""
     fake_metrics = [
         {
             "report_date": date(2026, 5, 5),
@@ -206,7 +211,7 @@ def test_generate_ads_report_attributed_orders_split_by_spend_pro_rata():
             "campaign_name": "ABC-rjc",
             "product_id": 100,
             "matched_product_code": "abc",
-            "spend_usd": Decimal("9"),       # 75%
+            "spend_usd": Decimal("9"),       # 75%（同日）
             "result_count": 3,
             "purchase_value_usd": Decimal("27"),
             "roas_purchase": Decimal("3"),
@@ -219,7 +224,7 @@ def test_generate_ads_report_attributed_orders_split_by_spend_pro_rata():
             "campaign_name": "ABC2-rjc",
             "product_id": 100,
             "matched_product_code": "abc",
-            "spend_usd": Decimal("3"),       # 25%
+            "spend_usd": Decimal("3"),       # 25%（同日）
             "result_count": 1,
             "purchase_value_usd": Decimal("9"),
             "roas_purchase": Decimal("3"),
@@ -236,6 +241,7 @@ def test_generate_ads_report_attributed_orders_split_by_spend_pro_rata():
     }
     with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
          patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
          patch.object(ppa, "_load_attributed_orders", return_value=fake_attributed):
         result = ppa.generate_ads_report(
             product_id=100,
@@ -248,7 +254,7 @@ def test_generate_ads_report_attributed_orders_split_by_spend_pro_rata():
     small = result["campaigns"][1]
     assert big["spend_usd"] == 9.0
     assert small["spend_usd"] == 3.0
-    # 归属订单 4 单按 spend 比例分摊：9 / 12 → 3 单，3 / 12 → 1 单
+    # 归属订单 4 单按当日 spend 比例分摊：9 / 12 → 3 单，3 / 12 → 1 单
     assert big["attributed_order_count"] == 3
     assert small["attributed_order_count"] == 1
     # 归属收入：100 × 9/12 = 75；100 × 3/12 = 25
@@ -257,3 +263,168 @@ def test_generate_ads_report_attributed_orders_split_by_spend_pro_rata():
     # 同 ad_account → accounts 仅 1 行
     assert len(result["accounts"]) == 1
     assert result["accounts"][0]["spend_usd"] == 12.0
+
+
+def test_generate_ads_report_includes_impressions_clicks_ctr_cpc():
+    """spec §9 要求 campaign 行包含 impressions / clicks / ctr / cpc 4 列。
+
+    数据来自 ``meta_ad_campaign_metrics`` period 主表，按 normalized_campaign_code SUM。
+    """
+    fake_metrics = [
+        {
+            "report_date": date(2026, 5, 5),
+            "ad_account_id": "2110407576446225",
+            "ad_account_name": "newjoyloo",
+            "normalized_campaign_code": "abc-rjc",
+            "campaign_name": "ABC-rjc",
+            "product_id": 100,
+            "matched_product_code": "abc",
+            "spend_usd": Decimal("8.00"),
+            "result_count": 5,
+            "purchase_value_usd": Decimal("60.00"),
+            "roas_purchase": Decimal("7.50"),
+        },
+    ]
+    fake_attributed = {
+        date(2026, 5, 5): {
+            "revenue": Decimal("50"),
+            "purchase": Decimal("10"),
+            "shipping": Decimal("3"),
+            "reserve": Decimal("0.50"),
+            "order_count": 1,
+        },
+    }
+    fake_perf = {
+        "abc-rjc": {
+            "impressions": 1000,
+            "clicks": 50,
+        },
+    }
+    with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
+         patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value=fake_perf), \
+         patch.object(ppa, "_load_attributed_orders", return_value=fake_attributed):
+        result = ppa.generate_ads_report(
+            product_id=100,
+            date_from=date(2026, 5, 1),
+            date_to=date(2026, 5, 7),
+        )
+    assert len(result["campaigns"]) == 1
+    c = result["campaigns"][0]
+    assert c["impressions"] == 1000
+    assert c["clicks"] == 50
+    # ctr = 50 / 1000 = 0.05
+    assert c["ctr"] == 0.05
+    # cpc = 8 / 50 = 0.16
+    assert c["cpc"] == 8.0 / 50.0
+    # accounts 也要带 impressions / clicks（spec 账户卡片：花费 / 展示 / 点击 / ROAS）
+    assert len(result["accounts"]) == 1
+    a = result["accounts"][0]
+    assert a["impressions"] == 1000
+    assert a["clicks"] == 50
+
+
+def test_generate_ads_report_ctr_cpc_zero_division_safe():
+    """impressions=0 → ctr=0.0；clicks=0 → cpc=None；perf 行缺失 → 0/None。"""
+    fake_metrics = [
+        {
+            "report_date": date(2026, 5, 5),
+            "ad_account_id": "2110407576446225",
+            "ad_account_name": "newjoyloo",
+            "normalized_campaign_code": "no-perf",
+            "campaign_name": "NoPerf",
+            "product_id": 100,
+            "matched_product_code": "noperf",
+            "spend_usd": Decimal("4"),
+            "result_count": 0,
+            "purchase_value_usd": Decimal("0"),
+            "roas_purchase": None,
+        },
+    ]
+    fake_attributed: dict = {}
+    # _load_campaign_perf 没匹配上这个 code → 不在 dict 里
+    with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
+         patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
+         patch.object(ppa, "_load_attributed_orders", return_value=fake_attributed):
+        result = ppa.generate_ads_report(
+            product_id=100,
+            date_from=date(2026, 5, 1),
+            date_to=date(2026, 5, 7),
+        )
+    assert len(result["campaigns"]) == 1
+    c = result["campaigns"][0]
+    assert c["impressions"] == 0
+    assert c["clicks"] == 0
+    assert c["ctr"] == 0.0
+    assert c["cpc"] is None
+
+
+def test_generate_ads_report_attribution_per_day_not_total_range():
+    """跨日分摊：归属订单 / 收入按 *当日* spend 占比分摊，不是整范围 totals。
+
+    Day1: cA=10, cB=0   attributed.revenue=100, orders=2
+    Day2: cA=0,  cB=10  attributed.revenue=50,  orders=1
+    总 spend(cA)=10, 总 spend(cB)=10；若按整范围分摊：cA=cB=各 50%×150=75 / 各 1.5 单
+    按日分摊：cA = 100 (Day1 全占), cB = 50 (Day2 全占)；订单 cA=2, cB=1。
+    """
+    fake_metrics = [
+        {
+            "report_date": date(2026, 5, 1),
+            "ad_account_id": "acct-A",
+            "ad_account_name": "A",
+            "normalized_campaign_code": "ca",
+            "campaign_name": "CA",
+            "product_id": 100,
+            "matched_product_code": "x",
+            "spend_usd": Decimal("10"),
+            "result_count": 2,
+            "purchase_value_usd": Decimal("0"),
+            "roas_purchase": None,
+        },
+        {
+            "report_date": date(2026, 5, 2),
+            "ad_account_id": "acct-A",
+            "ad_account_name": "A",
+            "normalized_campaign_code": "cb",
+            "campaign_name": "CB",
+            "product_id": 100,
+            "matched_product_code": "x",
+            "spend_usd": Decimal("10"),
+            "result_count": 1,
+            "purchase_value_usd": Decimal("0"),
+            "roas_purchase": None,
+        },
+    ]
+    fake_attributed = {
+        date(2026, 5, 1): {
+            "revenue": Decimal("100"),
+            "purchase": Decimal("10"),
+            "shipping": Decimal("2"),
+            "reserve": Decimal("0"),
+            "order_count": 2,
+        },
+        date(2026, 5, 2): {
+            "revenue": Decimal("50"),
+            "purchase": Decimal("5"),
+            "shipping": Decimal("1"),
+            "reserve": Decimal("0"),
+            "order_count": 1,
+        },
+    }
+    with patch.object(ppa, "_load_campaign_metrics", return_value=fake_metrics), \
+         patch.object(ppa, "_load_match_map", return_value={}), \
+         patch.object(ppa, "_load_campaign_perf", return_value={}), \
+         patch.object(ppa, "_load_attributed_orders", return_value=fake_attributed):
+        result = ppa.generate_ads_report(
+            product_id=100,
+            date_from=date(2026, 5, 1),
+            date_to=date(2026, 5, 7),
+        )
+    by_code = {c["normalized_campaign_code"]: c for c in result["campaigns"]}
+    # ca 在 Day1 独占 spend → 拿全 Day1 归属
+    assert by_code["ca"]["attributed_revenue_usd"] == 100.0
+    assert by_code["ca"]["attributed_order_count"] == 2
+    # cb 在 Day2 独占 spend → 拿全 Day2 归属
+    assert by_code["cb"]["attributed_revenue_usd"] == 50.0
+    assert by_code["cb"]["attributed_order_count"] == 1

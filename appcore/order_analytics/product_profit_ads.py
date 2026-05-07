@@ -11,14 +11,17 @@
      利润贡献 = 归属收入 - 花费 - 同期同产品的成本（按 spend 比例分摊）。
 
 设计取舍：
-  - 真实表 ``meta_ad_daily_campaign_metrics`` **没有** ``campaign_id`` / ``impressions`` /
-    ``clicks`` 字段，所以本 module 输出的 campaign 行用 ``normalized_campaign_code`` 作为
-    主键，且不暴露 impressions/clicks/ctr/cpc 字段（plan §3.2 里假设的字段在真实 schema
-    不存在）。能展示的可观测指标：``spend_usd`` / ``result_count`` /
-    ``purchase_value_usd`` / ``roas_purchase``（Meta 自报）。
-  - **归属订单数采用按 spend 比例分摊**：单 campaign 不应该展示整产品全部订单数（plan
-    §3.2 注释里的简化口径），否则两个 campaign 都展示 4 单视觉上是重复计费 8 单。
-    选择 ``int(round(total_orders * spend / total_spend))``，与归属收入 / 归属成本同口径。
+  - 日表 ``meta_ad_daily_campaign_metrics`` **没有** ``impressions`` / ``link_clicks`` 字段
+    （只有 spend / result_count / purchase_value），所以 impressions/clicks 走 period
+    主表 ``meta_ad_campaign_metrics`` 按 ``normalized_campaign_code`` SUM 聚合（spec §9
+    要求 campaign 行展示 [展示][点击][CTR][CPC]）。period 表按 ``report_start_date /
+    report_end_date`` 分桶而不是按日，所以 SUM 是估算（多个 period 完全覆盖范围时偏多
+    一点），但简单可解释；列表只用作量级展示而非精确归因。
+  - 本 module 输出的 campaign 行用 ``normalized_campaign_code`` 作为主键。
+  - **归属订单 / 收入 / 成本按日按 spend 占比分摊**（与 ``allocate_ad_cost_to_line()``
+    口径一致）：``campaign.attributed_revenue = Σ_d daily_spend[campaign,d] /
+    daily_total_spend[d] × attributed[d].revenue``。这样跨日不同 campaign 的归属互不
+    串扰，避免整范围 totals 分摊把别的日子的订单算到本 campaign 头上。
   - country 过滤：仅透传给 ``_load_attributed_orders`` 的订单 SQL。campaign 维度的国家
     通常没有意义（同一 campaign 可投到多国），所以 campaign 行不做 country 过滤。
 """
@@ -77,6 +80,49 @@ def _load_campaign_metrics(
         "ORDER BY report_date ASC",
         (date_from, date_to, product_id),
     )
+
+
+def _load_campaign_perf(
+    normalized_codes: set[str], date_from: date, date_to: date
+) -> dict[str, dict[str, int]]:
+    """从 period 主表 ``meta_ad_campaign_metrics`` 拉 impressions / link_clicks。
+
+    日表没有这两个字段，period 表按 ``report_start_date / report_end_date`` 分桶。
+    用 ``report_start_date BETWEEN ... OR report_end_date BETWEEN ...`` 拉与日期范围
+    有重叠的 period，再按 ``normalized_campaign_code`` SUM。结果是估算（多 period
+    完全覆盖范围时偏多），但供"花费量级 + 点击量级"展示已够用。
+
+    Returns:
+        ``{normalized_campaign_code: {"impressions": int, "clicks": int}}``
+    """
+    if not normalized_codes:
+        return {}
+    placeholders = ",".join(["%s"] * len(normalized_codes))
+    sql = (
+        "SELECT normalized_campaign_code AS code, "
+        "       SUM(impressions) AS impressions, "
+        "       SUM(link_clicks) AS clicks "
+        "FROM meta_ad_campaign_metrics "
+        f"WHERE normalized_campaign_code IN ({placeholders}) "
+        "  AND (report_start_date BETWEEN %s AND %s "
+        "       OR report_end_date BETWEEN %s AND %s "
+        "       OR (report_start_date <= %s AND report_end_date >= %s)) "
+        "GROUP BY normalized_campaign_code"
+    )
+    params: list[Any] = list(normalized_codes) + [
+        date_from, date_to,
+        date_from, date_to,
+        date_from, date_to,
+    ]
+    rows = query(sql, tuple(params))
+    return {
+        (r["code"] or "").strip(): {
+            "impressions": int(r["impressions"] or 0),
+            "clicks": int(r["clicks"] or 0),
+        }
+        for r in rows
+        if (r["code"] or "").strip()
+    }
 
 
 def _load_match_map(normalized_codes: set[str]) -> dict[str, int | None]:
@@ -164,13 +210,15 @@ def generate_ads_report(
         {
           "accounts": [
             {"ad_account_id": str, "label": str, "spend_usd": float,
-             "result_count": int, "attributed_revenue_usd": float,
-             "roas": float | None}
+             "result_count": int, "impressions": int, "clicks": int,
+             "attributed_revenue_usd": float, "roas": float | None}
           ],
           "campaigns": [
             {"normalized_campaign_code": str, "campaign_name": str,
              "ad_account_id": str, "ad_account_name": str,
              "spend_usd": float, "result_count": int,
+             "impressions": int, "clicks": int,
+             "ctr": float, "cpc": float | None,
              "purchase_value_usd": float, "roas_meta": float | None,
              "attributed_order_count": int, "attributed_revenue_usd": float,
              "roas": float | None, "profit_contribution_usd": float}, ...
@@ -208,6 +256,8 @@ def generate_ads_report(
 
     by_campaign: dict[str, dict[str, Any]] = defaultdict(_campaign_zero)
     daily_spend: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
+    # (norm_code, date) → daily spend，用于按日分摊
+    daily_campaign_spend: dict[tuple[str, date], Decimal] = defaultdict(lambda: Decimal("0"))
     unmatched: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"normalized_campaign_code": "", "campaign_name": "", "spend": Decimal("0")}
     )
@@ -244,15 +294,36 @@ def generate_ads_report(
         report_date = r.get("report_date")
         if report_date is not None:
             daily_spend[report_date] += spend
+            daily_campaign_spend[(norm, report_date)] += spend
 
-    # 按 spend 比例分摊归属收入 / 成本 / 订单数
-    total_spend = sum((b["spend"] for b in by_campaign.values()), Decimal("0"))
-    total_revenue = sum((a["revenue"] for a in attributed.values()), Decimal("0"))
-    total_costs = sum(
-        (a["purchase"] + a["shipping"] + a["reserve"] for a in attributed.values()),
-        Decimal("0"),
+    # period 表里的 impressions / link_clicks（按 norm code SUM）
+    matched_codes: set[str] = {norm for norm in by_campaign.keys() if norm}
+    perf_map = _load_campaign_perf(matched_codes, date_from, date_to) if matched_codes else {}
+
+    # 按"当日 spend 占比 × 当日 attributed.*"分摊归属收入 / 成本 / 订单数
+    # campaign.attributed_revenue = Σ_d daily_campaign_spend[(norm, d)] / daily_spend[d] × attributed[d].revenue
+    attributed_per_campaign: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "revenue": Decimal("0"),
+            "costs": Decimal("0"),
+            "orders": 0.0,
+        }
     )
-    total_orders = sum(a["order_count"] for a in attributed.values())
+    for (norm, d), spend_in_day in daily_campaign_spend.items():
+        day_total_spend = daily_spend.get(d, Decimal("0"))
+        if day_total_spend <= 0:
+            continue
+        share = spend_in_day / day_total_spend
+        day_attr = attributed.get(d)
+        if not day_attr:
+            continue
+        bucket = attributed_per_campaign[norm]
+        bucket["revenue"] += day_attr["revenue"] * share
+        bucket["costs"] += (
+            day_attr["purchase"] + day_attr["shipping"] + day_attr["reserve"]
+        ) * share
+        # orders 用浮点累加，最终 round 一次（每日 round 累加误差更大）
+        bucket["orders"] += float(day_attr["order_count"]) * float(share)
 
     campaigns: list[dict[str, Any]] = []
     by_account: dict[str, dict[str, Any]] = defaultdict(
@@ -261,16 +332,24 @@ def generate_ads_report(
             "label": "",
             "spend": Decimal("0"),
             "result_count": 0,
+            "impressions": 0,
+            "clicks": 0,
             "attributed_revenue": Decimal("0"),
         }
     )
 
     for norm, b in by_campaign.items():
         spend = b["spend"]
-        share = (spend / total_spend) if total_spend > 0 else Decimal("0")
-        attributed_revenue_share = total_revenue * share
-        attributed_costs_share = total_costs * share
-        attributed_orders = int(round(float(total_orders) * float(share))) if total_spend > 0 else 0
+        attr = attributed_per_campaign.get(norm, {"revenue": Decimal("0"), "costs": Decimal("0"), "orders": 0.0})
+        attributed_revenue_share = attr["revenue"]
+        attributed_costs_share = attr["costs"]
+        attributed_orders = int(round(attr["orders"]))
+
+        perf = perf_map.get(norm, {})
+        impressions = int(perf.get("impressions") or 0)
+        clicks = int(perf.get("clicks") or 0)
+        ctr = float(clicks) / float(impressions) if impressions > 0 else 0.0
+        cpc = float(spend) / float(clicks) if clicks > 0 else None
 
         roas = float(attributed_revenue_share / spend) if spend > 0 else None
         roas_meta = (
@@ -285,6 +364,10 @@ def generate_ads_report(
             "ad_account_name": b["ad_account_name"],
             "spend_usd": float(spend),
             "result_count": b["result_count"],
+            "impressions": impressions,
+            "clicks": clicks,
+            "ctr": ctr,
+            "cpc": cpc,
             "purchase_value_usd": float(b["purchase_value"]),
             "roas_meta": roas_meta,
             "attributed_order_count": attributed_orders,
@@ -298,6 +381,8 @@ def generate_ads_report(
         acc["label"] = b["ad_account_name"] or acc["label"]
         acc["spend"] += spend
         acc["result_count"] += b["result_count"]
+        acc["impressions"] += impressions
+        acc["clicks"] += clicks
         acc["attributed_revenue"] += attributed_revenue_share
 
     campaigns.sort(key=lambda c: -c["spend_usd"])
@@ -311,6 +396,8 @@ def generate_ads_report(
             "label": a["label"],
             "spend_usd": float(spend),
             "result_count": a["result_count"],
+            "impressions": a["impressions"],
+            "clicks": a["clicks"],
             "attributed_revenue_usd": float(a["attributed_revenue"]),
             "roas": roas,
         })
