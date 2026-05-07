@@ -445,6 +445,96 @@ def test_incomplete_products_list_is_scoped_and_deduplicated(monkeypatch):
     ]
 
 
+def test_status_summary_sql_estimates_missing_purchase_and_shipping(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            captured["sql"] = sql
+        if "FROM order_profit_runs" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    get_order_profit_status_summary(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 3),
+    )
+
+    sql = captured["sql"]
+    assert "purchase_price" in sql
+    assert "shipping_cost" in sql
+    assert "packet_cost" in sql
+    assert "revenue_usd, 0) * 0.10" in sql
+    assert "revenue_usd, 0) * 0.20" in sql
+
+
+def test_status_summary_returns_complete_profit_with_missing_cost_estimates(monkeypatch):
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            return [
+                {
+                    "status": "ok",
+                    "n": 2,
+                    "revenue": 100.0,
+                    "profit": 25.0,
+                    "shopify_fee": 3.0,
+                    "ad_cost": 10.0,
+                    "purchase": 30.0,
+                    "shipping_cost": 20.0,
+                    "return_reserve": 1.0,
+                    "purchase_actual": 30.0,
+                    "purchase_estimate": 0.0,
+                    "purchase_with_estimate": 30.0,
+                    "shipping_cost_actual": 20.0,
+                    "shipping_cost_estimate": 0.0,
+                    "shipping_cost_with_estimate": 20.0,
+                    "profit_with_estimate": 25.0,
+                },
+                {
+                    "status": "incomplete",
+                    "n": 1,
+                    "revenue": 200.0,
+                    "profit": None,
+                    "shopify_fee": 5.0,
+                    "ad_cost": 20.0,
+                    "purchase": 0.0,
+                    "shipping_cost": 0.0,
+                    "return_reserve": 2.0,
+                    "purchase_actual": 0.0,
+                    "purchase_estimate": 20.0,
+                    "purchase_with_estimate": 20.0,
+                    "shipping_cost_actual": 0.0,
+                    "shipping_cost_estimate": 40.0,
+                    "shipping_cost_with_estimate": 40.0,
+                    "profit_with_estimate": 113.0,
+                },
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"unallocated_ad_spend_usd": 0}]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    payload = get_order_profit_status_summary(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 3),
+    )
+
+    assert payload["total_revenue_usd"] == 300.0
+    assert payload["known_revenue_usd"] == 100.0
+    assert payload["unaccounted_revenue_usd"] == 200.0
+    assert payload["estimated"]["purchase_usd"] == 20.0
+    assert payload["estimated"]["shipping_cost_usd"] == 40.0
+    assert payload["estimated"]["total_cost_usd"] == 60.0
+    assert payload["estimated"]["profit_usd"] == 113.0
+    assert payload["profit_with_estimate_usd"] == 138.0
+    assert payload["profit_with_estimate_margin_pct"] == 46.0
+    assert payload["purchase_cost_with_estimate_usd"] == 50.0
+    assert payload["shipping_cost_with_estimate_usd"] == 60.0
+
+
 def test_list_order_profit_lines_queries_by_filter(monkeypatch):
     captured = {}
 

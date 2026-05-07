@@ -38,7 +38,6 @@ def test_order_profit_dashboard_escapes_api_backed_html_fields():
     for snippet in expected_escaped_paths:
         assert snippet in TEMPLATE
 
-
 def test_order_profit_campaign_product_picker_is_searchable_and_tall():
     assert ".op-product-picker-trigger" in TEMPLATE
     assert "min-height: 60px" in TEMPLATE
@@ -73,3 +72,28 @@ def test_order_profit_incomplete_products_modal_sanitizes_internal_links():
     assert "function safeInternalHref(url, fallback)" in TEMPLATE
     assert "const href = safeInternalHref(p.medias_search_url, '/medias/?q=' + encodeURIComponent(p.product_code || ''));" in modal_block
     assert "const href = p.medias_search_url || ('/medias/?q=' + encodeURIComponent(p.product_code || ''));" not in modal_block
+
+
+def test_order_profit_dashboard_renders_complete_profit_summary_cards():
+    expected_labels = [
+        "总营收",
+        "完整利润",
+        "未核算营收",
+        "未核算成本",
+    ]
+    for label in expected_labels:
+        assert label in TEMPLATE
+
+    expected_bindings = [
+        "opTotalRevenue",
+        "opCompleteProfit",
+        "opUnaccountedRevenue",
+        "opUnaccountedCost",
+        "data.total_revenue_usd",
+        "data.unaccounted_revenue_usd",
+        "data.profit_with_estimate_usd",
+        "estimated.purchase_usd",
+        "estimated.shipping_cost_usd",
+    ]
+    for snippet in expected_bindings:
+        assert snippet in TEMPLATE

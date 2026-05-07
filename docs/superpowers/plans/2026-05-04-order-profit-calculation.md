@@ -55,7 +55,35 @@ profit_usd        = revenue_usd - shopify_fee_usd - ad_cost_usd
 
 订单级利润 = 该订单内所有 SKU 行 `profit_usd` 求和。
 
-**完备性 gate**：某 SKU 行所属产品若 `purchase_price IS NULL` 或两个 packet_cost 字段都 NULL，则该行 `cost_completeness_status='missing'`、不写入 `profit_usd`、列出缺哪些字段；否则 `status='ok'`、计算 profit。
+**完备性 gate**：某 SKU 行所属产品若 `purchase_price IS NULL` 或两个 packet_cost 字段都 NULL，则该行 `status='incomplete'`，并在 `missing_fields` 列出缺哪些字段；否则 `status='ok'`。`incomplete` 行的缺失成本按后续 2026-05-07 增量口径估算，用于总览参考利润，不改变其“不完备”状态。
+
+## 2026-05-07 增量：总览完整利润估算
+
+`/order-profit` 总览页需要同时展示已核算与不完备 SKU 行，不能只让业务方看到已核算部分：
+
+- `总营收` = 当前时间范围内 `status='ok'` 与 `status='incomplete'` 的 `revenue_usd` 合计。
+- `未核算营收` = 当前时间范围内 `status='incomplete'` 的 `revenue_usd` 合计。
+- `未核算成本` 只表示不完备 SKU 行里缺失的采购/物流成本估算，不覆盖已有真实字段。
+- 缺采购价时，估算采购成本 = 该 SKU 行 `revenue_usd * 10%`。
+- 缺物流成本时，估算物流成本 = 该 SKU 行 `revenue_usd * 20%`。
+- `完整利润` = 对当前时间范围内所有 ok/incomplete SKU 行重新汇总：
+
+```text
+完整利润 =
+  revenue_usd
+  - shopify_fee_usd
+  - ad_cost_usd
+  - 采购成本（真实值；缺失时用 revenue_usd * 10%）
+  - 物流成本（真实值；缺失时用 revenue_usd * 20%）
+  - return_reserve_usd
+```
+
+展示要求：
+
+- 总览卡片列出 `总营收`、`完整利润`、`未核算营收`、`未核算成本`。
+- `未核算成本` 小字拆出 `采购估算` 与 `物流估算`。
+- 成本拆分表展示真实采购/物流与估算采购/物流，避免把估算数据混进真实成本里。
+- 保留原有 `已核算营收`、`已核算利润` 作为小字或兼容字段，方便和旧口径对账。
 
 ## 国家→货币推断（策略 C 用）
 

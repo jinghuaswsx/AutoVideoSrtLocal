@@ -299,9 +299,40 @@ def _empty_status_summary_bucket() -> dict[str, float | int]:
         "shopify_fee": 0,
         "ad_cost": 0,
         "purchase": 0,
+        "purchase_actual": 0,
+        "purchase_estimate": 0,
+        "purchase_with_estimate": 0,
         "shipping_cost": 0,
+        "shipping_cost_actual": 0,
+        "shipping_cost_estimate": 0,
+        "shipping_cost_with_estimate": 0,
         "return_reserve": 0,
+        "profit_with_estimate": 0,
     }
+
+
+_PURCHASE_MISSING_SQL = (
+    "COALESCE(p.status, '') <> 'ok' AND ("
+    "CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%purchase_price%%' "
+    "OR COALESCE(p.purchase_usd, 0) = 0"
+    ")"
+)
+_SHIPPING_MISSING_SQL = (
+    "COALESCE(p.status, '') <> 'ok' AND ("
+    "CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%shipping_cost%%' "
+    "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%packet_cost%%' "
+    "OR COALESCE(p.shipping_cost_usd, 0) = 0"
+    ")"
+)
+_PURCHASE_ESTIMATE_SQL = "COALESCE(p.revenue_usd, 0) * 0.10"
+_SHIPPING_ESTIMATE_SQL = "COALESCE(p.revenue_usd, 0) * 0.20"
+
+
+def _row_float(row: dict[str, Any], key: str, fallback: float = 0.0) -> float:
+    value = row.get(key)
+    if value is None:
+        return fallback
+    return float(value or 0)
 
 
 def get_order_profit_status_summary(
@@ -310,15 +341,47 @@ def get_order_profit_status_summary(
     date_to: date,
 ) -> dict[str, Any]:
     rows = query(
-        "SELECT status, COUNT(*) AS n, "
-        "       SUM(revenue_usd) AS revenue, SUM(profit_usd) AS profit, "
-        "       SUM(shopify_fee_usd) AS shopify_fee, "
-        "       SUM(ad_cost_usd) AS ad_cost, "
-        "       SUM(purchase_usd) AS purchase, "
-        "       SUM(shipping_cost_usd) AS shipping_cost, "
-        "       SUM(return_reserve_usd) AS return_reserve "
-        "FROM order_profit_lines "
-        "WHERE business_date BETWEEN %s AND %s "
+        "SELECT p.status, COUNT(*) AS n, "
+        "       SUM(p.revenue_usd) AS revenue, SUM(p.profit_usd) AS profit, "
+        "       SUM(p.shopify_fee_usd) AS shopify_fee, "
+        "       SUM(p.ad_cost_usd) AS ad_cost, "
+        "       SUM(p.purchase_usd) AS purchase, "
+        "       SUM(CASE WHEN "
+        f"{_PURCHASE_MISSING_SQL} "
+        "           THEN 0 ELSE COALESCE(p.purchase_usd, 0) END) AS purchase_actual, "
+        "       SUM(CASE WHEN "
+        f"{_PURCHASE_MISSING_SQL} "
+        f"           THEN {_PURCHASE_ESTIMATE_SQL} ELSE 0 END) AS purchase_estimate, "
+        "       SUM(CASE WHEN "
+        f"{_PURCHASE_MISSING_SQL} "
+        f"           THEN {_PURCHASE_ESTIMATE_SQL} "
+        "           ELSE COALESCE(p.purchase_usd, 0) END) AS purchase_with_estimate, "
+        "       SUM(p.shipping_cost_usd) AS shipping_cost, "
+        "       SUM(CASE WHEN "
+        f"{_SHIPPING_MISSING_SQL} "
+        "           THEN 0 ELSE COALESCE(p.shipping_cost_usd, 0) END) AS shipping_cost_actual, "
+        "       SUM(CASE WHEN "
+        f"{_SHIPPING_MISSING_SQL} "
+        f"           THEN {_SHIPPING_ESTIMATE_SQL} ELSE 0 END) AS shipping_cost_estimate, "
+        "       SUM(CASE WHEN "
+        f"{_SHIPPING_MISSING_SQL} "
+        f"           THEN {_SHIPPING_ESTIMATE_SQL} "
+        "           ELSE COALESCE(p.shipping_cost_usd, 0) END) AS shipping_cost_with_estimate, "
+        "       SUM(p.return_reserve_usd) AS return_reserve, "
+        "       SUM(COALESCE(p.revenue_usd, 0) "
+        "           - COALESCE(p.shopify_fee_usd, 0) "
+        "           - COALESCE(p.ad_cost_usd, 0) "
+        "           - (CASE WHEN "
+        f"{_PURCHASE_MISSING_SQL} "
+        f"              THEN {_PURCHASE_ESTIMATE_SQL} "
+        "              ELSE COALESCE(p.purchase_usd, 0) END) "
+        "           - (CASE WHEN "
+        f"{_SHIPPING_MISSING_SQL} "
+        f"              THEN {_SHIPPING_ESTIMATE_SQL} "
+        "              ELSE COALESCE(p.shipping_cost_usd, 0) END) "
+        "           - COALESCE(p.return_reserve_usd, 0)) AS profit_with_estimate "
+        "FROM order_profit_lines p "
+        "WHERE p.business_date BETWEEN %s AND %s "
         "GROUP BY status",
         (date_from, date_to),
     )
@@ -336,8 +399,31 @@ def get_order_profit_status_summary(
         bucket["shopify_fee"] = float(row.get("shopify_fee") or 0)
         bucket["ad_cost"] = float(row.get("ad_cost") or 0)
         bucket["purchase"] = float(row.get("purchase") or 0)
+        bucket["purchase_actual"] = _row_float(
+            row, "purchase_actual", bucket["purchase"]
+        )
+        bucket["purchase_estimate"] = _row_float(row, "purchase_estimate")
+        bucket["purchase_with_estimate"] = _row_float(
+            row,
+            "purchase_with_estimate",
+            bucket["purchase_actual"] + bucket["purchase_estimate"],
+        )
         bucket["shipping_cost"] = float(row.get("shipping_cost") or 0)
+        bucket["shipping_cost_actual"] = _row_float(
+            row, "shipping_cost_actual", bucket["shipping_cost"]
+        )
+        bucket["shipping_cost_estimate"] = _row_float(
+            row, "shipping_cost_estimate"
+        )
+        bucket["shipping_cost_with_estimate"] = _row_float(
+            row,
+            "shipping_cost_with_estimate",
+            bucket["shipping_cost_actual"] + bucket["shipping_cost_estimate"],
+        )
         bucket["return_reserve"] = float(row.get("return_reserve") or 0)
+        bucket["profit_with_estimate"] = _row_float(
+            row, "profit_with_estimate", bucket["profit"]
+        )
 
     unallocated_rows = query(
         "SELECT COALESCE(SUM(spend_usd), 0) AS unallocated_ad_spend_usd "
@@ -356,12 +442,49 @@ def get_order_profit_status_summary(
         if summary["ok"]["revenue"] > 0
         else None
     )
+    total_revenue = summary["ok"]["revenue"] + summary["incomplete"]["revenue"]
+    profit_with_estimate = (
+        summary["ok"]["profit_with_estimate"]
+        + summary["incomplete"]["profit_with_estimate"]
+    )
+    profit_with_estimate_margin = (
+        (profit_with_estimate / total_revenue) * 100 if total_revenue > 0 else None
+    )
+    purchase_with_estimate = (
+        summary["ok"]["purchase_with_estimate"]
+        + summary["incomplete"]["purchase_with_estimate"]
+    )
+    shipping_with_estimate = (
+        summary["ok"]["shipping_cost_with_estimate"]
+        + summary["incomplete"]["shipping_cost_with_estimate"]
+    )
+    estimated_purchase = summary["incomplete"]["purchase_estimate"]
+    estimated_shipping = summary["incomplete"]["shipping_cost_estimate"]
     return {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
         "summary": summary,
         "unallocated_ad_spend_usd": unallocated,
         "margin_pct": round(margin, 2) if margin is not None else None,
+        "total_revenue_usd": round(total_revenue, 2),
+        "known_revenue_usd": round(summary["ok"]["revenue"], 2),
+        "unaccounted_revenue_usd": round(summary["incomplete"]["revenue"], 2),
+        "known_profit_usd": round(summary["ok"]["profit"], 2),
+        "profit_with_estimate_usd": round(profit_with_estimate, 2),
+        "profit_with_estimate_margin_pct": (
+            round(profit_with_estimate_margin, 2)
+            if profit_with_estimate_margin is not None else None
+        ),
+        "purchase_cost_with_estimate_usd": round(purchase_with_estimate, 2),
+        "shipping_cost_with_estimate_usd": round(shipping_with_estimate, 2),
+        "estimated": {
+            "lines": summary["incomplete"]["lines"],
+            "revenue_usd": round(summary["incomplete"]["revenue"], 2),
+            "purchase_usd": round(estimated_purchase, 2),
+            "shipping_cost_usd": round(estimated_shipping, 2),
+            "total_cost_usd": round(estimated_purchase + estimated_shipping, 2),
+            "profit_usd": round(summary["incomplete"]["profit_with_estimate"], 2),
+        },
     }
 
 
