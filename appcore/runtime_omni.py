@@ -87,6 +87,39 @@ class OmniTranslateRunner(MultiTranslateRunner):
     project_type: str = "omni_translate"
     profile_code: str = "omni"
 
+    # ------------------------------------------------------------------
+    # AV-sync helpers (av_sentence translate / sentence_units subtitle 路径用)
+    # 从 SentenceTranslateRunner 复制（spec §6.2 物理隔离原则；调 AvSyncProfile
+    # 时 runner 是 OmniTranslateRunner，缺这些 helper 会 AttributeError）。
+    # ------------------------------------------------------------------
+
+    def _resolve_av_inputs(self, task: dict) -> dict:
+        av_inputs = dict(task.get("av_translate_inputs") or {})
+        target_language = self._resolve_target_lang(task)
+        av_inputs.setdefault("target_language", target_language)
+        av_inputs.setdefault("target_language_name", target_language)
+        av_inputs.setdefault("target_market", "US")
+        av_inputs.setdefault("sync_granularity", "sentence")
+        av_inputs.setdefault("product_overrides", {})
+        return av_inputs
+
+    def _target_language_name(self, av_inputs: dict) -> str:
+        return str(
+            av_inputs.get("target_language_name")
+            or av_inputs.get("target_language")
+            or "target language"
+        ).strip()
+
+    def _resolve_av_voice(self, task: dict) -> tuple[dict, str, str]:
+        voice = self._resolve_voice(task, self._get_localization_module(task))
+        tts_voice_id = str(
+            voice.get("elevenlabs_voice_id") or voice.get("id") or ""
+        ).strip()
+        speech_rate_voice_id = str(voice.get("id") or tts_voice_id or "").strip()
+        if not tts_voice_id:
+            raise RuntimeError("未找到可用音色，无法继续生成配音")
+        return voice, tts_voice_id, speech_rate_voice_id
+
     # Override the base ASR step to dispatch by source_language.
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         from pipeline.extract import get_video_duration
