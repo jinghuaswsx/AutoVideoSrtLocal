@@ -60,6 +60,16 @@ def _normalize_subtitle_backend(value: str | None) -> str:
     return backend
 
 
+def _subtitle_backend_label(value: str | None) -> str:
+    try:
+        backend = _normalize_subtitle_backend(value)
+    except ValueError:
+        backend = "volc"
+    if backend == "local_vsr":
+        return "本地 VSR"
+    return "火山"
+
+
 def _local_vsr_options_for_submission(mode: str, selection_box: dict) -> dict:
     options = {
         "detection": "ocr",
@@ -221,6 +231,7 @@ def _reserve_upload_bootstrap(
     *,
     video_path: str = "",
     content_type: str = "",
+    subtitle_backend: str = "volc",
 ) -> None:
     with _upload_bootstrap_guard:
         _upload_bootstrap_reservations[task_id] = {
@@ -230,6 +241,7 @@ def _reserve_upload_bootstrap(
             "object_key": object_key,
             "video_path": video_path,
             "content_type": content_type,
+            "subtitle_backend": subtitle_backend,
         }
 
 
@@ -446,9 +458,11 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     except ValueError as exc:
         return _json_response({"error": str(exc)}), 400
 
-    erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
-    if erase_text_type not in {"subtitle", "text"}:
-        return _json_response({"error": "erase_text_type must be subtitle or text"}), 400
+    erase_text_type = ""
+    if subtitle_backend != "local_vsr":
+        erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
+        if erase_text_type not in {"subtitle", "text"}:
+            return _json_response({"error": "erase_text_type must be subtitle or text"}), 400
     if subtitle_backend != "local_vsr":
         try:
             _ensure_public_source_url(task_id, task)
@@ -518,8 +532,9 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "original_filename": task.get("original_filename") or "",
         "display_name": task.get("display_name") or "",
         "subtitle_backend": task.get("subtitle_backend") or "volc",
+        "subtitle_backend_label": _subtitle_backend_label(task.get("subtitle_backend")),
         "remove_mode": task.get("remove_mode") or "",
-        "erase_text_type": task.get("erase_text_type") or "subtitle",
+        "erase_text_type": "" if (task.get("subtitle_backend") or "volc") == "local_vsr" else (task.get("erase_text_type") or "subtitle"),
         "local_vsr_options": dict(task.get("local_vsr_options") or {}),
         "selection_box": task.get("selection_box"),
         "position_payload": task.get("position_payload"),
@@ -598,6 +613,13 @@ def get_state(task_id: str):
 @login_required
 def list_tasks():
     """全局可见：所有字幕移除任务（不按 user_id 过滤）。"""
+    backend_filter = (request.args.get("subtitle_backend") or "").strip()
+    if backend_filter:
+        try:
+            backend_filter = _normalize_subtitle_backend(backend_filter)
+        except ValueError as exc:
+            return _json_response({"error": str(exc)}), 400
+
     submitter_name_expr = _submitter_name_expr()
     submitter_options = _list_submitter_options(submitter_name_expr)
 
@@ -647,6 +669,13 @@ def list_tasks():
                 state = {}
         media_info = state.get("media_info") or {}
         status = state.get("status") or row.get("status") or ""
+        subtitle_backend = state.get("subtitle_backend") or "volc"
+        try:
+            subtitle_backend = _normalize_subtitle_backend(subtitle_backend)
+        except ValueError:
+            subtitle_backend = "volc"
+        if backend_filter and subtitle_backend != backend_filter:
+            continue
         elapsed_seconds = None
         if status == "done":
             created_at = row.get("created_at")
@@ -673,8 +702,9 @@ def list_tasks():
                 "duration": media_info.get("duration") or 0,
                 "provider_status": state.get("provider_status") or "",
                 "provider_result_url": state.get("provider_result_url") or "",
-                "subtitle_backend": state.get("subtitle_backend") or "volc",
-                "erase_text_type": state.get("erase_text_type") or "",
+                "subtitle_backend": subtitle_backend,
+                "subtitle_backend_label": _subtitle_backend_label(subtitle_backend),
+                "erase_text_type": "" if subtitle_backend == "local_vsr" else (state.get("erase_text_type") or ""),
                 "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=row.get("id")) if state.get("thumbnail_path") else "",
                 "detail_url": url_for("subtitle_removal.detail_page", task_id=row.get("id")),
                 "download_url": url_for("subtitle_removal.download_result", task_id=row.get("id")),
@@ -695,6 +725,11 @@ def bootstrap_upload():
         return _json_response({"error": "original_filename required"}), 400
     if not validate_video_extension(original_filename):
         return _json_response({"error": "invalid video file type"}), 400
+    subtitle_backend_raw = body.get("subtitle_backend")
+    try:
+        subtitle_backend = _normalize_subtitle_backend(subtitle_backend_raw)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}), 400
 
     task_id = str(uuid.uuid4())
     object_key = object_keys.build_source_object_key(current_user.id, task_id, original_filename)
@@ -708,12 +743,22 @@ def bootstrap_upload():
         object_key,
         video_path=video_path,
         content_type=content_type,
+        subtitle_backend=subtitle_backend,
     )
+    if subtitle_backend == "local_vsr":
+        upload_url = url_for("subtitle_removal.api_local_upload", task_id=task_id)
+        upload_backend = "local"
+    else:
+        upload_url = tos_clients.generate_signed_upload_url(object_key)
+        upload_backend = "tos"
     return _json_response(
         {
             "task_id": task_id,
             "object_key": object_key,
-            "upload_url": url_for("subtitle_removal.api_local_upload", task_id=task_id),
+            "upload_url": upload_url,
+            "subtitle_backend": subtitle_backend,
+            "subtitle_backend_label": _subtitle_backend_label(subtitle_backend),
+            "upload_backend": upload_backend,
         }
     )
 
@@ -747,13 +792,8 @@ def complete_upload():
     except (TypeError, ValueError):
         return _json_response({"error": "file_size must be an integer"}), 400
 
+    subtitle_backend_raw = body.get("subtitle_backend")
     erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
-    if erase_text_type not in {"subtitle", "text"}:
-        return _json_response({"error": "erase_text_type must be subtitle or text"}), 400
-    try:
-        subtitle_backend = _normalize_subtitle_backend(body.get("subtitle_backend"))
-    except ValueError as exc:
-        return _json_response({"error": str(exc)}), 400
 
     if not task_id or not original_filename or not object_key:
         return _json_response({"error": "task_id, original_filename and object_key required"}), 400
@@ -767,6 +807,18 @@ def complete_upload():
         return _json_response({"error": "bootstrap reservation owned by another user"}), 403
     if reservation.get("original_filename") != original_filename or reservation.get("object_key") != object_key:
         return _json_response({"error": "bootstrap reservation mismatch"}), 403
+    try:
+        subtitle_backend = _normalize_subtitle_backend(subtitle_backend_raw or reservation.get("subtitle_backend"))
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}), 400
+    reservation_backend = (reservation.get("subtitle_backend") or "volc").strip().lower()
+    if reservation_backend != subtitle_backend:
+        return _json_response({"error": "bootstrap reservation backend mismatch"}), 403
+    if subtitle_backend == "volc":
+        if erase_text_type not in {"subtitle", "text"}:
+            return _json_response({"error": "erase_text_type must be subtitle or text"}), 400
+    else:
+        erase_text_type = ""
 
     expected_key = object_keys.build_source_object_key(current_user.id, task_id, original_filename)
     if object_key != expected_key:
@@ -778,15 +830,25 @@ def complete_upload():
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+    if subtitle_backend == "volc" and not os.path.exists(video_path):
+        if not tos_clients.object_exists(object_key):
+            return _json_response({"error": "uploaded TOS object missing"}), 400
+        try:
+            tos_clients.download_file(object_key, video_path)
+        except Exception as exc:
+            log.exception("[subtitle_removal] failed to download TOS source task_id=%s", task_id)
+            return _json_response({"error": f"unable to download uploaded source: {exc}"}), 502
+
     if not os.path.exists(video_path):
         return _json_response({"error": "uploaded video file missing"}), 400
 
     object_size = int(os.path.getsize(video_path) or file_size or 0)
+    storage_backend = "tos" if subtitle_backend == "volc" else "local"
     source_object_info = build_source_object_info(
         original_filename=original_filename,
         content_type=content_type or reservation.get("content_type") or "application/octet-stream",
         file_size=object_size,
-        storage_backend="local",
+        storage_backend=storage_backend,
         uploaded_at=datetime.now().isoformat(timespec="seconds"),
     )
 
@@ -799,10 +861,10 @@ def complete_upload():
     )
     store.update(
         task_id,
-        source_tos_key="",
+        source_tos_key=object_key if subtitle_backend == "volc" else "",
         source_object_info=source_object_info,
         subtitle_backend=subtitle_backend,
-        erase_text_type=erase_text_type,
+        erase_text_type=erase_text_type if subtitle_backend == "volc" else "",
     )
 
     media_info = dict(probe_media_info(video_path) or {})

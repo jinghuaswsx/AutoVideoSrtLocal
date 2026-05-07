@@ -113,6 +113,7 @@
           original_filename: file.name,
           file_size: file.size,
           content_type: file.type || "application/octet-stream",
+          subtitle_backend: readUploadSubtitleBackend(),
         }),
       }).then(function (response) {
         return response.json().then(function (data) {
@@ -129,7 +130,7 @@
         var xhr = new XMLHttpRequest();
         xhr.open("PUT", bootstrapData.upload_url, true);
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');
-        if (csrfMeta) {
+        if ((bootstrapData.upload_backend || "local") === "local" && csrfMeta) {
           xhr.setRequestHeader("X-CSRFToken", csrfMeta.getAttribute("content"));
         }
         xhr.upload.onprogress = function (event) {
@@ -176,11 +177,25 @@
           var input = tab.querySelector("input[name='subtitle_backend']");
           tab.classList.toggle("is-active", !!input && input.checked);
         });
+        syncUploadBackendControls();
       }
       inputs.forEach(function (input) {
         input.addEventListener("change", sync);
       });
       sync();
+    }
+
+    function syncUploadBackendControls() {
+      var backend = readUploadSubtitleBackend();
+      var isLocalVsr = backend === "local_vsr";
+      var groups = Array.prototype.slice.call(document.querySelectorAll(".sr-upload-card .sr-erase-type-group"));
+      groups.forEach(function (group) {
+        group.hidden = isLocalVsr;
+        group.classList.toggle("sr-hidden", isLocalVsr);
+        Array.prototype.slice.call(group.querySelectorAll("input[name='erase_text_type']")).forEach(function (input) {
+          input.disabled = isLocalVsr;
+        });
+      });
     }
 
     function bindUploadEraseTypeRadios() {
@@ -199,6 +214,7 @@
     }
 
     function completeSubtitleRemovalUpload(file, bootstrapData) {
+      var subtitleBackend = readUploadSubtitleBackend();
       return fetch("/api/subtitle-removal/upload/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -208,8 +224,8 @@
           original_filename: file.name,
           file_size: file.size,
           content_type: file.type || "application/octet-stream",
-          subtitle_backend: readUploadSubtitleBackend(),
-          erase_text_type: readUploadEraseType(),
+          subtitle_backend: subtitleBackend,
+          erase_text_type: subtitleBackend === "local_vsr" ? "" : readUploadEraseType(),
         }),
       }).then(function (response) {
         return response.json().then(function (data) {
@@ -323,7 +339,9 @@
     var radioTiles = Array.prototype.slice.call(document.querySelectorAll(".sr-radio-tile"));
     var eraseTypeInputs = Array.prototype.slice.call(document.querySelectorAll("input[name='erase_text_type']"));
     var eraseTypeOptions = Array.prototype.slice.call(document.querySelectorAll("[data-role='erase-type-option']"));
+    var detailEraseTypeGroup = document.getElementById("srDetailEraseTypeGroup");
     var stateEraseType = document.getElementById("srStateEraseType");
+    var stateEraseTypeItem = stateEraseType && stateEraseType.closest ? stateEraseType.closest(".sr-status-item") : null;
 
     var selectionState = {
       mode: bootstrap.remove_mode || "full",
@@ -470,10 +488,13 @@
     }
 
     function getActionPayload() {
+      var subtitleBackend = (bootstrap.subtitle_backend || "volc").replace("-", "_");
       var payload = {
         remove_mode: selectionState.mode,
-        erase_text_type: currentEraseType(),
       };
+      if (subtitleBackend !== "local_vsr") {
+        payload.erase_text_type = currentEraseType();
+      }
       if (selectionState.mode === "box") {
         var box = getCurrentSelectionPayload();
         if (box) {
@@ -611,6 +632,15 @@
       if (stateBackend) {
         stateBackend.textContent = backendLabel((state && state.subtitle_backend) || "volc");
       }
+      var isLocalVsr = ((state && state.subtitle_backend) || "volc") === "local_vsr";
+      if (detailEraseTypeGroup) {
+        detailEraseTypeGroup.hidden = isLocalVsr;
+        detailEraseTypeGroup.classList.toggle("sr-hidden", isLocalVsr);
+      }
+      if (stateEraseTypeItem) {
+        stateEraseTypeItem.hidden = isLocalVsr;
+        stateEraseTypeItem.classList.toggle("sr-hidden", isLocalVsr);
+      }
       var mode = state.remove_mode || selectionState.mode || "full";
       selectionState.mode = mode;
       if (stateMode) {
@@ -648,11 +678,11 @@
           updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, state.media_info || getMediaInfo()));
         }
       }
-      var nextEraseType = (state && state.erase_text_type) || "subtitle";
+      var nextEraseType = isLocalVsr ? "" : ((state && state.erase_text_type) || "subtitle");
       syncEraseType(nextEraseType);
       var srStatus = (state && state.status) || "";
       var lockStates = { queued: 1, running: 1, submitted: 1, done: 1, error: 1 };
-      setEraseTypeDisabled(!!lockStates[srStatus]);
+      setEraseTypeDisabled(isLocalVsr || !!lockStates[srStatus]);
       renderResultPanel(state);
       renderComparePreviews(state);
     }

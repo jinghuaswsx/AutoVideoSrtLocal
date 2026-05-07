@@ -25,7 +25,7 @@ def _mock_subtitle_removal_upload_env(tmp_path, monkeypatch, *, probe_media_info
     monkeypatch.setattr("web.routes.subtitle_removal.UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.is_tos_configured", lambda: True)
     monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.build_source_object_key",
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
         lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
     )
     monkeypatch.setattr(
@@ -43,10 +43,10 @@ def _mock_subtitle_removal_upload_env(tmp_path, monkeypatch, *, probe_media_info
     monkeypatch.setattr("web.routes.subtitle_removal.db_execute", lambda sql, args: None)
 
 
-def _bootstrap_subtitle_removal_upload(authed_client_no_db):
+def _bootstrap_subtitle_removal_upload(authed_client_no_db, *, subtitle_backend: str = "local_vsr"):
     response = authed_client_no_db.post(
         "/api/subtitle-removal/upload/bootstrap",
-        json={"original_filename": "source.mp4"},
+        json={"original_filename": "source.mp4", "subtitle_backend": subtitle_backend},
     )
     assert response.status_code == 200
     return response.get_json()
@@ -66,6 +66,167 @@ def _mock_public_source_stage(monkeypatch, url: str = "https://example.com/sourc
         "web.routes.subtitle_removal._ensure_public_source_url",
         lambda task_id, task: url,
     )
+
+
+def test_subtitle_removal_bootstrap_defaults_to_volc_tos_upload(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
+        lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
+    )
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.generate_signed_upload_url",
+        lambda key: f"https://tos-upload.example/{key}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4", "content_type": "video/mp4"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["subtitle_backend"] == "volc"
+    assert payload["upload_backend"] == "tos"
+    assert payload["upload_url"].startswith("https://tos-upload.example/uploads/1/")
+    reservation = subtitle_removal._upload_bootstrap_reservations[payload["task_id"]]
+    assert reservation["subtitle_backend"] == "volc"
+
+
+def test_subtitle_removal_bootstrap_local_vsr_uses_local_upload_url(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
+        lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4", "subtitle_backend": "local_vsr"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["subtitle_backend"] == "local_vsr"
+    assert payload["upload_backend"] == "local"
+    assert payload["upload_url"].endswith(f"/api/subtitle-removal/upload/local/{payload['task_id']}")
+    reservation = subtitle_removal._upload_bootstrap_reservations[payload["task_id"]]
+    assert reservation["subtitle_backend"] == "local_vsr"
+
+
+def test_subtitle_removal_bootstrap_rejects_invalid_backend(authed_client_no_db):
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4", "subtitle_backend": "unknown"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "subtitle_backend must be volc or local_vsr"
+
+
+def test_subtitle_removal_complete_volc_downloads_tos_source_before_prepare(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
+        lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
+    )
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.generate_signed_upload_url",
+        lambda key: f"https://tos-upload.example/{key}",
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.object_exists", lambda key: True)
+    downloaded = []
+
+    def fake_download_file(object_key, local_path):
+        downloaded.append((object_key, local_path))
+        with open(local_path, "wb") as handle:
+            handle.write(b"video-from-tos")
+        return local_path
+
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.download_file", fake_download_file)
+
+    payload = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4", "subtitle_backend": "volc"},
+    ).get_json()
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+            "subtitle_backend": "volc",
+            "erase_text_type": "text",
+        },
+    )
+
+    assert response.status_code == 201
+    task = store.get(payload["task_id"])
+    assert downloaded == [(payload["object_key"], task["video_path"])]
+    assert task["subtitle_backend"] == "volc"
+    assert task["source_tos_key"] == payload["object_key"]
+    assert task["source_object_info"]["storage_backend"] == "tos"
+    assert task["erase_text_type"] == "text"
+
+
+def test_subtitle_removal_complete_rejects_backend_mismatch(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    payload = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4", "subtitle_backend": "local_vsr"},
+    ).get_json()
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+            "subtitle_backend": "volc",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "bootstrap reservation backend mismatch"
+    assert store.get(payload["task_id"]) is None
+
+
+def test_subtitle_removal_complete_local_vsr_ignores_erase_text_type(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    payload = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4", "subtitle_backend": "local_vsr"},
+    ).get_json()
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+            "subtitle_backend": "local_vsr",
+            "erase_text_type": "text",
+        },
+    )
+
+    assert response.status_code == 201
+    task = store.get(payload["task_id"])
+    assert task["subtitle_backend"] == "local_vsr"
+    assert task["source_tos_key"] == ""
+    assert task.get("erase_text_type") == ""
 
 
 def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_client_no_db, monkeypatch):
@@ -93,7 +254,7 @@ def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_
     assert task["media_info"]["resolution"] == "720x1280"
     assert task["source_tos_key"] == ""
     assert task["source_object_info"]["storage_backend"] == "local"
-    assert task["subtitle_backend"] == "volc"
+    assert task["subtitle_backend"] == "local_vsr"
 
 
 def test_subtitle_removal_complete_upload_persists_local_vsr_backend(
@@ -205,17 +366,19 @@ def test_subtitle_removal_bootstrap_rejects_invalid_video_extension(authed_clien
 def test_subtitle_removal_bootstrap_allows_local_upload_without_tos(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.is_tos_configured", lambda: False)
     monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.build_source_object_key",
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
         lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
     )
 
     response = authed_client_no_db.post(
         "/api/subtitle-removal/upload/bootstrap",
-        json={"original_filename": "source.mp4"},
+        json={"original_filename": "source.mp4", "subtitle_backend": "local_vsr"},
     )
 
     assert response.status_code == 200
     payload = response.get_json()
+    assert payload["subtitle_backend"] == "local_vsr"
+    assert payload["upload_backend"] == "local"
     assert payload["upload_url"].endswith(f"/api/subtitle-removal/upload/local/{payload['task_id']}")
 
 
@@ -1368,6 +1531,69 @@ def test_subtitle_removal_list_returns_erase_text_type(authed_client_no_db, monk
     items = (response.get_json() or {}).get("items") or []
     assert items, "list 接口应返回至少一条"
     assert items[0]["erase_text_type"] == "text"
+
+
+def test_subtitle_removal_list_filters_by_backend_and_returns_label(authed_client_no_db, monkeypatch):
+    import json as _json
+
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args=None: None)
+
+    def fake_db_query(sql, args=None):
+        if "SELECT DISTINCT p.user_id" in sql:
+            return []
+        return [
+            {
+                "id": "sr-list-volc",
+                "user_id": 1,
+                "status": "done",
+                "state_json": _json.dumps({
+                    "display_name": "volc task",
+                    "original_filename": "volc.mp4",
+                    "status": "done",
+                    "subtitle_backend": "volc",
+                    "erase_text_type": "subtitle",
+                    "media_info": {"resolution": "720x1280", "duration": 10.0},
+                    "thumbnail_path": "",
+                    "provider_result_url": "",
+                }),
+                "created_at": None,
+                "username": "tester",
+            },
+            {
+                "id": "sr-list-local",
+                "user_id": 1,
+                "status": "done",
+                "state_json": _json.dumps({
+                    "display_name": "local task",
+                    "original_filename": "local.mp4",
+                    "status": "done",
+                    "subtitle_backend": "local_vsr",
+                    "erase_text_type": "",
+                    "media_info": {"resolution": "720x1280", "duration": 10.0},
+                    "thumbnail_path": "",
+                    "provider_result_url": "",
+                }),
+                "created_at": None,
+                "username": "tester",
+            },
+        ]
+
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query", fake_db_query)
+
+    response = authed_client_no_db.get("/api/subtitle-removal/list?subtitle_backend=local_vsr")
+
+    assert response.status_code == 200
+    items = (response.get_json() or {}).get("items") or []
+    assert [item["id"] for item in items] == ["sr-list-local"]
+    assert items[0]["subtitle_backend"] == "local_vsr"
+    assert items[0]["subtitle_backend_label"] == "本地 VSR"
+
+
+def test_subtitle_removal_list_rejects_invalid_backend_filter(authed_client_no_db):
+    response = authed_client_no_db.get("/api/subtitle-removal/list?subtitle_backend=unknown")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "subtitle_backend must be volc or local_vsr"
 
 
 def test_subtitle_removal_list_applies_submitter_and_project_search_filters(authed_client_no_db, monkeypatch):

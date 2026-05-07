@@ -1,11 +1,17 @@
 {% extends "layout.html" %}
 {% block title %}字幕移除{% endblock %}
-{% block page_title %}字幕移除 <span class="sr-page-title-hint">所有字幕移除任务（全局可见，任何登录用户都可提交和查看）</span>{% endblock %}
+{% block page_title %}字幕移除 <span class="sr-page-title-hint">所有字幕移除任务（全局可见，任何登录用户都可提交和查看）</span><span class="sr-title-backend-filter" id="srBackendFilter" aria-label="处理方式筛选"><button type="button" class="sr-backend-filter-pill" data-backend-filter="volc" aria-pressed="false">火山</button><button type="button" class="sr-backend-filter-pill" data-backend-filter="local_vsr" aria-pressed="false">本地 VSR</button></span>{% endblock %}
 {% block extra_style %}
 {% include "_subtitle_removal_styles.html" %}
 <style>
   .sr-list-shell { padding: 24px; }
   .topbar-title .sr-page-title-hint { margin-left: 12px; color: var(--fg-subtle); font-size: 13px; font-weight: 400; }
+  .topbar-title .sr-title-backend-filter { display: inline-flex; align-items: center; gap: 6px; margin-left: 16px; vertical-align: middle; }
+  .sr-backend-filter-pill { height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-full); background: var(--bg); color: var(--fg-muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: background-color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease); }
+  .sr-backend-filter-pill:hover,
+  .sr-backend-filter-pill:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+  .sr-backend-filter-pill.is-active,
+  .sr-backend-filter-pill[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-subtle); color: var(--accent-active); }
   .sr-list-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
   .sr-list-shell .sr-upload-card { margin-bottom: 20px; }
   .sr-list-filters { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
@@ -17,7 +23,7 @@
   .sr-filter-field select:focus,
   .sr-filter-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
   .sr-list-table { width: 100%; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-  .sr-list-row { display: grid; grid-template-columns: 90px 1fr 140px 140px 160px 180px 220px; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+  .sr-list-row { display: grid; grid-template-columns: 90px 1fr 120px 120px 140px 150px 170px 190px; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
   .sr-list-row:last-child { border-bottom: none; }
   .sr-list-row.is-header { background: var(--bg-subtle); font-size: 12px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.05em; }
   .sr-list-thumb { width: 90px; height: 160px; border-radius: var(--radius); background: var(--bg-muted); object-fit: cover; display: block; }
@@ -36,6 +42,7 @@
   .sr-list-actions .btn { padding: 5px 12px; font-size: 12px; }
   @media (max-width: 768px) {
     .topbar-title .sr-page-title-hint { display: block; margin-left: 0; margin-top: 2px; }
+    .topbar-title .sr-title-backend-filter { display: flex; margin-left: 0; margin-top: 8px; }
     .sr-list-head { align-items: stretch; }
     .sr-list-filters,
     .sr-filter-field,
@@ -69,6 +76,7 @@
       <div>首帧</div>
       <div>任务 / 文件</div>
       <div>状态</div>
+      <div>处理方式</div>
       <div>擦除类型</div>
       <div>分辨率 / 时长</div>
       <div>提交人 / 时间</div>
@@ -82,6 +90,8 @@
     var body = document.getElementById("srListBody");
     var submitterFilter = document.getElementById("srSubmitterFilter");
     var projectSearch = document.getElementById("srProjectSearch");
+    var backendFilter = "";
+    var backendFilterButtons = Array.prototype.slice.call(document.querySelectorAll("[data-backend-filter]"));
     var searchTimer = null;
     if (!body) return;
 
@@ -119,6 +129,12 @@
       return "—";
     }
 
+    function backendLabel(value, fallback) {
+      if (fallback) return fallback;
+      if (value === "local_vsr") return "本地 VSR";
+      return "火山";
+    }
+
     function fmtDate(iso) {
       if (!iso) return "-";
       var d = new Date(iso);
@@ -128,7 +144,7 @@
     }
 
     function hasActiveFilters() {
-      return Boolean((submitterFilter && submitterFilter.value) || (projectSearch && projectSearch.value.trim()));
+      return Boolean(backendFilter || (submitterFilter && submitterFilter.value) || (projectSearch && projectSearch.value.trim()));
     }
 
     function populateUsers(users) {
@@ -174,6 +190,7 @@
             '<span class="sr-list-status is-' + escapeHtml(status) + '">' + escapeHtml(status || "-") + '</span>' +
             (elapsedLabel ? '<div class="sr-list-meta">耗时 ' + escapeHtml(elapsedLabel) + '</div>' : '') +
           '</div>' +
+          '<div>' + escapeHtml(backendLabel(it.subtitle_backend, it.subtitle_backend_label)) + '</div>' +
           '<div>' + escapeHtml(eraseTypeLabel(it.erase_text_type)) + '</div>' +
           '<div>' +
             '<div>' + escapeHtml(it.resolution || "-") + '</div>' +
@@ -198,7 +215,18 @@
       if (projectSearch && projectSearch.value.trim()) {
         url.searchParams.set("q", projectSearch.value.trim());
       }
+      if (backendFilter) {
+        url.searchParams.set("subtitle_backend", backendFilter);
+      }
       return url.pathname + url.search;
+    }
+
+    function syncBackendFilterButtons() {
+      backendFilterButtons.forEach(function (button) {
+        var isActive = button.getAttribute("data-backend-filter") === backendFilter;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
     }
 
     function fetchList() {
@@ -225,7 +253,16 @@
       projectSearch.addEventListener("input", scheduleFetch);
       projectSearch.addEventListener("search", fetchList);
     }
+    backendFilterButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        var next = button.getAttribute("data-backend-filter") || "";
+        backendFilter = backendFilter === next ? "" : next;
+        syncBackendFilterButtons();
+        fetchList();
+      });
+    });
 
+    syncBackendFilterButtons();
     fetchList();
     setInterval(fetchList, 5000);
   })();

@@ -332,7 +332,7 @@ def test_subtitle_removal_list_page_uses_90x160_first_frame_thumbnails_with_cent
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "grid-template-columns: 90px 1fr 140px 140px 160px 180px 220px;" in body
+    assert "grid-template-columns: 90px 1fr 120px 120px 140px 150px 170px 190px;" in body
     assert "align-items: center;" in body
     assert ".sr-list-thumb { width: 90px; height: 160px;" in body
 
@@ -346,6 +346,19 @@ def test_subtitle_removal_list_page_moves_hint_to_topbar_and_has_filters():
     assert 'id="srSubmitterFilter"' in template
     assert 'id="srProjectSearch"' in template
     assert "所有字幕移除任务（全局可见，任何登录用户都可提交和查看）" in template
+
+
+def test_subtitle_removal_list_page_exposes_backend_filter_pills(authed_client_no_db):
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="srBackendFilter"' in body
+    assert 'data-backend-filter="volc"' in body
+    assert 'data-backend-filter="local_vsr"' in body
+    assert 'aria-pressed="false"' in body
+    assert ">处理方式<" in body
+    assert "subtitle_backend" in body
 
 
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
@@ -1352,7 +1365,9 @@ def test_subtitle_removal_detail_shell_renders_bottom_compare_previews(authed_cl
     body = response.get_data(as_text=True)
     assert 'id="srCompareCard"' in body
     assert 'id="srCompareGrid"' in body
-    assert "grid-template-columns: repeat(2, minmax(0, 360px));" in body
+    assert ".sr-compare-grid" in body
+    assert "display: flex;" in body
+    assert "flex-wrap: wrap;" in body
     assert "srCompareOriginalPanel" in body
     assert "srCompareResultPanel" in body
     assert "source_video_url" in body
@@ -1362,7 +1377,7 @@ def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(aut
     joined_rooms = []
 
     monkeypatch.setattr("web.app.join_room", lambda room: joined_rooms.append(room))
-    monkeypatch.setattr("web.store.get", lambda task_id: None)
+    store._tasks.pop("sr-db", None)
     monkeypatch.setattr(
         "appcore.db.query_one",
         lambda sql, args: {
