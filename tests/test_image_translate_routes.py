@@ -357,18 +357,18 @@ def test_system_prompts_endpoint_rejects_en_and_unsupported_lang(authed_client_n
 
 
 def test_image_translate_empty_state_container(authed_client_no_db, monkeypatch):
-    from appcore import db as app_db
+    from web.routes import image_translate as r
 
-    monkeypatch.setattr(app_db, "query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(r, "db_query", lambda *args, **kwargs: [])
     resp = authed_client_no_db.get("/image-translate")
     assert resp.status_code == 200
     assert 'id="itLanguageEmpty"' in resp.get_data(as_text=True)
 
 
 def test_image_translate_page_emphasizes_product_name_before_submit(authed_client_no_db, monkeypatch):
-    from appcore import db as app_db
+    from web.routes import image_translate as r
 
-    monkeypatch.setattr(app_db, "query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(r, "db_query", lambda *args, **kwargs: [])
     resp = authed_client_no_db.get("/image-translate")
     body = resp.get_data(as_text=True)
 
@@ -700,9 +700,9 @@ def test_admin_state_api_uses_viewable_task_access(monkeypatch):
 
     app = Flask(__name__)
     with app.app_context():
-        resp = r.api_state.__wrapped__("foreign-img-task")
+        resp, status_code = r.api_state.__wrapped__("foreign-img-task")
 
-    assert resp.status_code == 200
+    assert status_code == 200
     assert resp.get_json()["id"] == "foreign-img-task"
 
 
@@ -776,9 +776,9 @@ def test_admin_state_api_uses_viewable_task_access(monkeypatch):
 
     app = Flask(__name__)
     with app.app_context():
-        resp = r.api_state.__wrapped__("foreign-img-task")
+        resp, status_code = r.api_state.__wrapped__("foreign-img-task")
 
-    assert resp.status_code == 200
+    assert status_code == 200
     assert resp.get_json()["id"] == "foreign-img-task"
 
 

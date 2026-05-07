@@ -11,9 +11,7 @@ from datetime import datetime
 from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import local_media_storage, medias, runner_dispatch, task_state
-from appcore.db import execute as db_execute
-from appcore.db import query_one as db_query_one
+from appcore import image_translate_store, local_media_storage, medias, runner_dispatch, task_state
 from appcore.gemini_image import is_valid_image_model, list_image_models
 from appcore import image_translate_settings as its
 
@@ -38,6 +36,10 @@ from web.services.image_translate import (
 )
 
 bp = Blueprint("image_translate", __name__)
+
+db_query = image_translate_store.query
+db_query_one = image_translate_store.query_one
+db_execute = image_translate_store.execute
 
 _MAX_ITEMS = task_state.IMAGE_TRANSLATE_MAX_ITEMS
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -718,7 +720,7 @@ def api_download_zip(task_id: str):
 @login_required
 def page_list():
     import json as _json
-    from appcore.db import query as db_query
+
     rows = db_query(
         """
         SELECT id, created_at, status, state_json

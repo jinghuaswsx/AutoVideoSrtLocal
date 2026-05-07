@@ -1737,6 +1737,23 @@ def test_image_translate_api_responses_live_outside_route_module():
     assert Path("web/services/image_translate.py").exists()
 
 
+def test_image_translate_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/image_translate.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/image_translate_store.py")
+
+    assert "from appcore.db import" not in route_source
+    assert "image_translate_store" in route_source
+    assert "db_query = image_translate_store.query" in route_source
+    assert "db_query_one = image_translate_store.query_one" in route_source
+    assert "db_execute = image_translate_store.execute" in route_source
+    assert store_path.exists()
+
+    store_source = store_path.read_text(encoding="utf-8")
+    assert "def query(" in store_source
+    assert "def query_one(" in store_source
+    assert "def execute(" in store_source
+
+
 def test_translation_quality_api_responses_live_outside_route_module():
     module_source = Path("web/routes/translation_quality.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
