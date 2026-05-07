@@ -222,6 +222,11 @@
   height: 280px;
   position: relative;
 }
+.ppd-chart-wrap-tall {
+  height: 420px;
+}
+/* Tab ③ 国家柱状图独占整行 */
+.ppd-country-charts { grid-template-columns: 1fr; }
 
 /* 5. 订单明细表 */
 .ppd-orders {
@@ -624,8 +629,96 @@
   </section>
 
   <section class="ppd-tab-panel" data-panel="country">
-    <!-- Task 8 填充 -->
-    <div class="ppd-empty-tab">国家看板（Task 8 填充）</div>
+    <!-- Task 8: 国家看板 -->
+    <div class="ppd-empty" id="ppd-country-empty" style="display:none">请在顶部选择具体产品后查看国家看板。</div>
+    <div class="ppd-loading" id="ppd-country-loading" style="display:none"><span class="ppd-spinner"></span>加载中…</div>
+    <div class="ppd-error" id="ppd-country-error" style="display:none"></div>
+
+    <div id="ppd-country-content" style="display:none; flex-direction:column; gap:20px;">
+      <!-- 国家柱状图 -->
+      <section class="ppd-charts ppd-country-charts">
+        <div class="ppd-chart-card">
+          <h3>按国家利润（点击柱条筛选下钻）</h3>
+          <div class="ppd-chart-wrap ppd-chart-wrap-tall">
+            <canvas id="chart-country-tab3"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- 下钻：选定国家后显示 -->
+      <div id="ppd-country-drilldown" style="display:none; flex-direction:column; gap:20px;">
+        <!-- 该国聚合卡片 -->
+        <section class="ppd-stats">
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">订单数 <span id="country-name-tag" class="ppd-site-tag" style="margin-left:4px;"></span></div>
+            <div class="ppd-stat-value" id="country-stat-orders">--</div>
+            <div class="ppd-stat-sub" id="country-stat-orders-sub">SKU 行 -- · 件数 --</div>
+          </div>
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">收入</div>
+            <div class="ppd-stat-value" id="country-stat-revenue">--</div>
+            <div class="ppd-stat-sub">USD</div>
+          </div>
+          <div class="ppd-stat-card ppd-stat-emphasis">
+            <div class="ppd-stat-label">利润</div>
+            <div class="ppd-stat-value" id="country-stat-profit">--</div>
+            <div class="ppd-stat-sub" id="country-stat-profit-sub">利润率 --</div>
+          </div>
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">广告费</div>
+            <div class="ppd-stat-value" id="country-stat-ad">--</div>
+            <div class="ppd-stat-sub" id="country-stat-roas-sub">ROAS --</div>
+          </div>
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">采购+物流+手续费</div>
+            <div class="ppd-stat-value" id="country-stat-other">--</div>
+            <div class="ppd-stat-sub">USD</div>
+          </div>
+        </section>
+
+        <!-- 该国每日盈亏折线 -->
+        <section class="ppd-charts">
+          <div class="ppd-chart-card">
+            <h3>该国每日盈亏</h3>
+            <div class="ppd-chart-wrap">
+              <canvas id="chart-country-daily"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- 该国订单明细（前 100 行）-->
+        <section class="ppd-orders">
+          <div class="ppd-orders-head">
+            <h3>该国订单明细 <span id="country-orders-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span></h3>
+            <span style="font-size:12px;color:var(--text-user-badge);">最多显示前 100 行</span>
+          </div>
+          <div class="ppd-table-wrap">
+            <table class="ppd-table" id="ppd-country-orders-table">
+              <thead>
+                <tr>
+                  <th>付款时间</th>
+                  <th>订单号</th>
+                  <th>站点</th>
+                  <th class="ppd-num">件数</th>
+                  <th class="ppd-num">收入<span class="col-unit">USD</span></th>
+                  <th class="ppd-num">采购<span class="col-unit">USD</span></th>
+                  <th class="ppd-num">物流<span class="col-unit">USD</span></th>
+                  <th class="ppd-num">合计费<span class="col-unit">USD</span></th>
+                  <th class="ppd-num">广告<span class="col-unit">USD</span></th>
+                  <th class="ppd-num">利润<span class="col-unit">USD</span></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- 未选国家时的提示条 -->
+      <div id="ppd-country-hint" class="ppd-empty-tab" style="display:none">
+        点击上方柱条或在顶部选择具体国家可查看下钻明细。
+      </div>
+    </div>
   </section>
 
   <section class="ppd-tab-panel" data-panel="ads">
@@ -658,6 +751,8 @@
 
   var dailyChart = null;
   var countryChart = null;
+  var countryChartsByKey = {};       // Task 8: Tab ③ 多 canvas 共用 renderCountryChart
+  var countryDailyChart = null;      // Task 8: 该国每日盈亏折线
   var lastReport = null;
   var sortState = { key: 'paid_at', dir: 'desc' };
 
@@ -985,6 +1080,235 @@
   // 暴露给 switchTab 调用（IIFE 作用域内函数必须 window 暴露）
   window.loadOrdersTab = loadOrdersTab;
 
+  // ── Tab ③ 国家看板（Task 8）────────────────────────
+  // 复用 /report.json，前端按 buyer_country 过滤 orders 做下钻聚合 / 折线 / 表格。
+  function loadCountryTab() {
+    var pid = productSelect.value;
+    var df = dateFromInput.value;
+    var dt = dateToInput.value;
+
+    var emptyEl = $('ppd-country-empty');
+    var loadingEl = $('ppd-country-loading');
+    var errorEl = $('ppd-country-error');
+    var contentEl = $('ppd-country-content');
+
+    // 重置
+    errorEl.style.display = 'none';
+
+    // 必选具体产品（id=0 / '' / 'ALL' 都视为未选）
+    if (!pid || pid === '0' || pid === 'ALL') {
+      emptyEl.textContent = '请在顶部选择具体产品后查看国家看板。';
+      emptyEl.style.display = 'block';
+      contentEl.style.display = 'none';
+      loadingEl.style.display = 'none';
+      return;
+    }
+
+    if (!df || !dt || df > dt) {
+      emptyEl.style.display = 'none';
+      contentEl.style.display = 'flex';
+      loadingEl.style.display = 'none';
+      errorEl.textContent = '日期范围不正确';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+    contentEl.style.display = 'none';
+    loadingEl.style.display = 'block';
+
+    var url = '/order-analytics/product-profit/report.json?'
+      + 'product_id=' + encodeURIComponent(pid)
+      + '&date_from=' + encodeURIComponent(df)
+      + '&date_to=' + encodeURIComponent(dt);
+
+    fetch(url, { credentials: 'same-origin' })
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        loadingEl.style.display = 'none';
+        // 共享 lastReport，便于 Tab 间切换不重发请求时用
+        lastReport = data;
+        if (!data.orders || data.orders.length === 0) {
+          emptyEl.textContent = '该产品 + 时段没有订单数据';
+          emptyEl.style.display = 'block';
+          contentEl.style.display = 'none';
+          return;
+        }
+        contentEl.style.display = 'flex';
+        renderCountryTabContent(data);
+      })
+      .catch(function(err) {
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'flex';
+        errorEl.textContent = '查询失败：' + err.message;
+        errorEl.style.display = 'block';
+      });
+  }
+  window.loadCountryTab = loadCountryTab;
+
+  // 渲染 Tab ③ 内容：柱状图 + 下钻（如果选了国家）
+  function renderCountryTabContent(data) {
+    // 1. 柱状图（独立 canvas，点击柱条 → 设 countrySelect 触发 reload）
+    renderCountryChart(data.by_country, {
+      canvasId: 'chart-country-tab3',
+      chartHolder: 'tab3',
+      onClick: function(country) {
+        countrySelect.value = country;
+        countrySelect.dispatchEvent(new Event('change'));
+      },
+    });
+
+    // 2. 下钻：当前 countrySelect 是否选了具体国家？
+    var selected = (countrySelect.value || '').trim();
+    var drilldown = $('ppd-country-drilldown');
+    var hint = $('ppd-country-hint');
+    if (!selected) {
+      drilldown.style.display = 'none';
+      hint.style.display = 'block';
+      return;
+    }
+    hint.style.display = 'none';
+    drilldown.style.display = 'flex';
+
+    // 前端过滤 orders：buyer_country 大写比较（与 Tab ② applyFilter 保持一致）
+    var selectedUpper = selected.toUpperCase();
+    var countryOrders = (data.orders || []).filter(function(o) {
+      return (o.buyer_country || '').toUpperCase() === selectedUpper;
+    });
+
+    renderCountryAggregate(selected, countryOrders);
+    renderCountryDailyChart(countryOrders);
+    renderCountryOrdersTable(countryOrders);
+  }
+
+  // 该国聚合卡片（从过滤后的 orders 重算）
+  function renderCountryAggregate(country, orders) {
+    $('country-name-tag').textContent = country;
+
+    var orderSet = {};
+    var units = 0, revenue = 0, ad = 0, purchase = 0, shipping = 0, fee = 0, profit = 0;
+    orders.forEach(function(o) {
+      if (o.dxm_package_id) orderSet[o.dxm_package_id] = 1;
+      units += Number(o.quantity) || 0;
+      revenue += Number(o.revenue_usd) || 0;
+      ad += Number(o.ad_cost_recalc_usd) || 0;
+      purchase += Number(o.purchase_cost_usd) || 0;
+      shipping += Number(o.shipping_cost_usd) || 0;
+      fee += Number(o.shopify_fee_total_usd) || 0;
+      profit += Number(o.profit_usd) || 0;
+    });
+    var ordersCount = Object.keys(orderSet).length;
+    var profitPct = revenue > 0 ? (100 * profit / revenue) : null;
+    var roas = ad > 0 ? (revenue / ad) : null;
+
+    $('country-stat-orders').textContent = ordersCount.toLocaleString();
+    $('country-stat-orders-sub').textContent = 'SKU 行 ' + orders.length + ' · 件数 ' + units;
+    $('country-stat-revenue').textContent = money(revenue);
+    var profitEl = $('country-stat-profit');
+    profitEl.textContent = money(profit);
+    profitEl.className = 'ppd-stat-value ' + profitClass(profit);
+    $('country-stat-profit-sub').textContent = '利润率 ' + (profitPct == null ? '--' : profitPct.toFixed(2) + '%');
+    $('country-stat-ad').textContent = money(ad);
+    $('country-stat-roas-sub').textContent = 'ROAS ' + (roas == null ? '--' : roas.toFixed(2));
+    $('country-stat-other').textContent = money(purchase + shipping + fee);
+  }
+
+  // 该国每日盈亏折线（从过滤后的 orders 按 business_date group）
+  function renderCountryDailyChart(orders) {
+    var agg = {};
+    orders.forEach(function(o) {
+      var d = o.business_date || '';
+      if (!d) return;
+      if (!agg[d]) agg[d] = { revenue: 0, profit: 0, ad: 0 };
+      agg[d].revenue += Number(o.revenue_usd) || 0;
+      agg[d].profit += Number(o.profit_usd) || 0;
+      agg[d].ad += Number(o.ad_cost_recalc_usd) || 0;
+    });
+    var dates = Object.keys(agg).sort();
+
+    if (countryDailyChart) countryDailyChart.destroy();
+    var canvas = $('chart-country-daily');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    countryDailyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [
+          {
+            label: '收入',
+            data: dates.map(function(d){ return agg[d].revenue; }),
+            borderColor: 'rgba(59,130,246,1)',
+            backgroundColor: 'rgba(59,130,246,.15)',
+            tension: 0.25,
+            fill: false,
+          },
+          {
+            label: '广告费',
+            data: dates.map(function(d){ return agg[d].ad; }),
+            borderColor: 'rgba(234,179,8,1)',
+            backgroundColor: 'rgba(234,179,8,.15)',
+            tension: 0.25,
+            fill: false,
+          },
+          {
+            label: '利润',
+            data: dates.map(function(d){ return agg[d].profit; }),
+            borderColor: 'rgba(34,197,94,1)',
+            backgroundColor: 'rgba(34,197,94,.15)',
+            tension: 0.25,
+            fill: true,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: function(ctx){ return ctx.dataset.label + ': ' + money(ctx.parsed.y); } } },
+        },
+        scales: {
+          x: { ticks: { font: { size: 10 } } },
+          y: { ticks: { callback: function(v){ return '$'+v; }, font: { size: 10 } } },
+        },
+      },
+    });
+  }
+
+  // 该国订单明细表（前 100 行，按 paid_at desc）
+  function renderCountryOrdersTable(orders) {
+    var sorted = orders.slice().sort(function(a, b) {
+      var va = a.paid_at || '', vb = b.paid_at || '';
+      return String(vb).localeCompare(String(va));
+    });
+    var capped = sorted.slice(0, 100);
+    $('country-orders-count').textContent = '(' + capped.length + ' / ' + orders.length + ')';
+
+    var tbody = document.querySelector('#ppd-country-orders-table tbody');
+    var html = capped.map(function(o) {
+      var siteSlug = o.site === 'newjoyloo' ? 'newjoyloo' : (o.site === 'Omurio' ? 'omurio' : 'other');
+      return '<tr>'
+        + '<td>' + escHtml((o.paid_at || '').replace('T', ' ').slice(0, 19)) + '</td>'
+        + '<td>' + escHtml(o.dxm_package_id || '') + '</td>'
+        + '<td><span class="ppd-tag ppd-tag-site-' + siteSlug + '">' + escHtml(o.site) + '</span></td>'
+        + '<td class="ppd-num">' + (o.quantity || 0) + '</td>'
+        + '<td class="ppd-num">' + num(o.revenue_usd) + '</td>'
+        + '<td class="ppd-num">' + num(o.purchase_cost_usd) + '</td>'
+        + '<td class="ppd-num">' + num(o.shipping_cost_usd) + '</td>'
+        + '<td class="ppd-num">' + num(o.shopify_fee_total_usd) + '</td>'
+        + '<td class="ppd-num">' + num(o.ad_cost_recalc_usd) + '</td>'
+        + '<td class="ppd-num ' + profitClass(o.profit_usd) + '">' + num(o.profit_usd) + '</td>'
+        + '</tr>';
+    }).join('');
+    tbody.innerHTML = html;
+  }
+
   // ── 总账卡片 ───────────────────────────
   function renderTotal(t) {
     if (!t) return;
@@ -1077,8 +1401,13 @@
   }
 
   // ── 按国家图（按 country 聚合，相同 country 跨 site 累加）──────────────
-  function renderCountryChart(byCountry) {
-    if (countryChart) countryChart.destroy();
+  // canvasId/onClick 可选；不传时保持 Tab ② 老行为（chart-country, 不可点）
+  function renderCountryChart(byCountry, opts) {
+    opts = opts || {};
+    var canvasId = opts.canvasId || 'chart-country';
+    var onClick = opts.onClick || null;
+    var chartHolder = opts.chartHolder || '__default__';
+
     var agg = {};
     (byCountry || []).forEach(function(c) {
       var k = c.buyer_country || '?';
@@ -1087,8 +1416,18 @@
       agg[k].revenue += Number(c.revenue_usd) || 0;
     });
     var keys = Object.keys(agg).sort(function(a,b){ return agg[b].revenue - agg[a].revenue; });
-    var ctx = $('chart-country').getContext('2d');
-    countryChart = new Chart(ctx, {
+
+    // 销毁旧实例
+    if (chartHolder === '__default__') {
+      if (countryChart) countryChart.destroy();
+    } else if (countryChartsByKey[chartHolder]) {
+      countryChartsByKey[chartHolder].destroy();
+    }
+
+    var canvas = $(canvasId);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var chartCfg = {
       type: 'bar',
       data: {
         labels: keys,
@@ -1114,7 +1453,20 @@
           y: { ticks: { font: { size: 11 } } },
         },
       },
-    });
+    };
+    if (onClick) {
+      chartCfg.options.onClick = function(evt, items) {
+        if (!items || !items.length) return;
+        var label = keys[items[0].index];
+        if (label) onClick(label);
+      };
+    }
+    var inst = new Chart(ctx, chartCfg);
+    if (chartHolder === '__default__') {
+      countryChart = inst;
+    } else {
+      countryChartsByKey[chartHolder] = inst;
+    }
   }
 
   // ── 订单明细表 ─────────────────────────
