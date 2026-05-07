@@ -1,6 +1,7 @@
 """素材管理 DAO：产品/文案/素材三张表的增删改查。"""
 from __future__ import annotations
 import re
+import uuid
 from typing import Any
 
 from appcore import product_roas
@@ -1402,6 +1403,8 @@ _SKU_MANUAL_EDIT_FIELDS = (
     + _SKU_MANUAL_EDIT_FLOAT_FIELDS
     + _SKU_MANUAL_EDIT_INT_FIELDS
 )
+_SKU_MANUAL_VARIANT_TITLE_FIELD = "shopify_variant_title"
+_SKU_MANUAL_VARIANT_ID_PREFIX = "manual-"
 
 
 def _normalize_sku_pair(pair: dict) -> dict:
@@ -1463,9 +1466,17 @@ def list_product_skus_batch(product_ids: list[int]) -> dict[int, list[dict]]:
     return grouped
 
 
-def normalize_product_sku_manual_update(fields: dict[str, Any]) -> dict[str, Any]:
+def normalize_product_sku_manual_update(
+    fields: dict[str, Any],
+    *,
+    allow_variant_title: bool = False,
+    require_variant_title: bool = False,
+) -> dict[str, Any]:
     updates: dict[str, Any] = {}
-    for key in _SKU_MANUAL_EDIT_TEXT_FIELDS:
+    text_fields = _SKU_MANUAL_EDIT_TEXT_FIELDS
+    if allow_variant_title:
+        text_fields = (_SKU_MANUAL_VARIANT_TITLE_FIELD,) + text_fields
+    for key in text_fields:
         if key not in fields:
             continue
         value = fields.get(key)
@@ -1474,6 +1485,8 @@ def normalize_product_sku_manual_update(fields: dict[str, Any]) -> dict[str, Any
             continue
         text = str(value).strip()
         updates[key] = text or None
+    if require_variant_title and not updates.get(_SKU_MANUAL_VARIANT_TITLE_FIELD):
+        raise ValueError("shopify_variant_title is required")
     for key in _SKU_MANUAL_EDIT_FLOAT_FIELDS:
         if key not in fields:
             continue
@@ -1501,6 +1514,18 @@ def normalize_product_sku_manual_update(fields: dict[str, Any]) -> dict[str, Any
     return updates
 
 
+def can_edit_product_sku_variant_title(product_id: int, sku_id: int) -> bool:
+    row = query_one(
+        "SELECT shopify_variant_id, manual_override FROM media_product_skus "
+        "WHERE id=%s AND product_id=%s",
+        (int(sku_id), int(product_id)),
+    )
+    if row is None:
+        return False
+    variant_id = str(row.get("shopify_variant_id") or "").strip()
+    return bool(row.get("manual_override") or 0) and variant_id.startswith(_SKU_MANUAL_VARIANT_ID_PREFIX)
+
+
 def update_product_sku_manual(
     product_id: int,
     sku_id: int,
@@ -1510,7 +1535,15 @@ def update_product_sku_manual(
 ) -> dict:
     pid = int(product_id)
     sid = int(sku_id)
-    updates = normalize_product_sku_manual_update(fields)
+    if query_one(
+        "SELECT id FROM media_product_skus WHERE id=%s AND product_id=%s",
+        (sid, pid),
+    ) is None:
+        raise LookupError(f"sku id {sid} not found for product {pid}")
+    updates = normalize_product_sku_manual_update(
+        fields,
+        allow_variant_title=can_edit_product_sku_variant_title(pid, sid),
+    )
     set_clauses = [f"{key}=%s" for key in updates]
     params: list[Any] = list(updates.values())
     set_clauses.extend([
@@ -1533,6 +1566,70 @@ def update_product_sku_manual(
     )
     if row is None:
         raise LookupError(f"sku id {sid} not found for product {pid}")
+    return row
+
+
+def _new_manual_variant_id() -> str:
+    return f"{_SKU_MANUAL_VARIANT_ID_PREFIX}{uuid.uuid4().hex[:24]}"
+
+
+def create_product_sku_manual(
+    product_id: int,
+    fields: dict[str, Any],
+    *,
+    edited_by: int | None = None,
+    shopify_product_id: str | None = None,
+    variant_id_factory=None,
+) -> dict:
+    pid = int(product_id)
+    updates = normalize_product_sku_manual_update(
+        fields,
+        allow_variant_title=True,
+        require_variant_title=True,
+    )
+    make_variant_id = variant_id_factory or _new_manual_variant_id
+    variant_id = str(make_variant_id()).strip()
+    if not variant_id:
+        raise ValueError("shopify_variant_id is required")
+    if len(variant_id) > 32:
+        raise ValueError("shopify_variant_id is too long")
+    row_id = execute(
+        "INSERT INTO media_product_skus "
+        "(product_id, shopify_product_id, shopify_variant_id, shopify_sku, "
+        " shopify_price, shopify_compare_at_price, shopify_currency, "
+        " shopify_inventory_quantity, shopify_weight_grams, shopify_variant_title, "
+        " dianxiaomi_sku, dianxiaomi_product_sku, dianxiaomi_sku_code, dianxiaomi_name, "
+        " source, manual_override, manual_unit_price_rmb, manual_goods_name, "
+        " manual_edited_by, manual_edited_at) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,NOW())",
+        (
+            pid,
+            str(shopify_product_id or "").strip() or None,
+            variant_id,
+            updates.get("shopify_sku"),
+            updates.get("shopify_price"),
+            updates.get("shopify_compare_at_price"),
+            "USD",
+            updates.get("shopify_inventory_quantity"),
+            updates.get("shopify_weight_grams"),
+            updates.get("shopify_variant_title"),
+            updates.get("dianxiaomi_sku"),
+            updates.get("dianxiaomi_product_sku"),
+            updates.get("dianxiaomi_sku_code"),
+            None,
+            "manual_edit",
+            updates.get("manual_unit_price_rmb"),
+            updates.get("manual_goods_name"),
+            edited_by,
+        ),
+    )
+    row = query_one(
+        f"SELECT {_SKU_SELECT_COLUMNS} "
+        "FROM media_product_skus WHERE id=%s AND product_id=%s",
+        (int(row_id), pid),
+    )
+    if row is None:
+        raise LookupError(f"manual sku insert failed for product {pid}")
     return row
 
 

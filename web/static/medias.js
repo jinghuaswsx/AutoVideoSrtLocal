@@ -1472,11 +1472,62 @@
     if (!_skuDetailProduct || !Array.isArray(_skuDetailProduct.skus)) return;
     const idx = _skuDetailProduct.skus.findIndex(s => Number(s.id) === Number(item.id));
     if (idx >= 0) _skuDetailProduct.skus[idx] = item;
+    else _skuDetailProduct.skus.push(item);
     const listItem = (window.__lastListItems || []).find(p => Number(p.id) === _skuDetailProductId);
-    if (listItem && Array.isArray(listItem.skus)) {
+    if (listItem) {
+      if (!Array.isArray(listItem.skus)) listItem.skus = [];
       const listIdx = listItem.skus.findIndex(s => Number(s.id) === Number(item.id));
       if (listIdx >= 0) listItem.skus[listIdx] = item;
+      else listItem.skus.push(item);
     }
+  }
+
+  function renderSkuDetailRow(s) {
+    const variantTitle = s.shopify_variant_title || '-';
+    const sku = s.shopify_sku || '';
+    const dxmSku = s.dianxiaomi_sku || '';
+    const dxmProductSku = s.dianxiaomi_product_sku || '';
+    const skuCode = s.dianxiaomi_sku_code || '';
+    const xmycName = (s.xmyc_goods_name || '').trim();
+    const dxmName = (s.dianxiaomi_name || '').trim();
+    const goodsName = s.manual_goods_name || xmycName || dxmName;
+    const purchaseValue = (s.manual_unit_price_rmb !== null && s.manual_unit_price_rmb !== undefined)
+      ? s.manual_unit_price_rmb
+      : s.xmyc_unit_price_rmb;
+    const manualBadge = s.manual_override ? '<span class="oc-sku-manual-badge">人工</span>' : '';
+    const canEditVariant = s.manual_override && String(s.shopify_variant_id || '').startsWith('manual-');
+    const variantCell = canEditVariant
+      ? skuInput('shopify_variant_title', variantTitle)
+      : escapeHtml(variantTitle);
+    return `<tr data-sku-id="${escapeHtml(s.id)}" class="${s.manual_override ? 'is-manual' : ''}">
+      <td title="${escapeHtml(variantTitle)}">${variantCell}</td>
+      <td class="mono">${skuInput('shopify_sku', sku, 'mono')}</td>
+      <td class="mono">${skuNumberInput('shopify_price', s.shopify_price, 'mono')}</td>
+      <td class="mono">${skuNumberInput('shopify_inventory_quantity', s.shopify_inventory_quantity, 'mono int')}</td>
+      <td class="mono">${skuInput('dianxiaomi_sku', dxmSku, 'mono')}</td>
+      <td class="mono">${skuInput('dianxiaomi_product_sku', dxmProductSku, 'mono')}</td>
+      <td class="mono">${skuInput('dianxiaomi_sku_code', skuCode, 'mono')}</td>
+      <td>${skuNumberInput('manual_unit_price_rmb', purchaseValue, 'mono')}</td>
+      <td title="${escapeHtml(goodsName)}">${skuInput('manual_goods_name', goodsName)}</td>
+      <td class="mono">${fmtRoas(s.roas_calculation)}</td>
+      <td class="sku-actions">${manualBadge}<button type="button" class="oc-btn sm primary" data-save-sku-row="${escapeHtml(s.id)}">${icon('check', 12)}<span>保存</span></button></td>
+    </tr>`;
+  }
+
+  function manualSkuDraftRowHtml() {
+    return `<tr data-new-sku-row="1" class="is-manual is-draft">
+      <td>${skuInput('shopify_variant_title', '', '')}</td>
+      <td class="mono">${skuInput('shopify_sku', '', 'mono')}</td>
+      <td class="mono">${skuNumberInput('shopify_price', '', 'mono')}</td>
+      <td class="mono">${skuNumberInput('shopify_inventory_quantity', '', 'mono int')}</td>
+      <td class="mono">${skuInput('dianxiaomi_sku', '', 'mono')}</td>
+      <td class="mono">${skuInput('dianxiaomi_product_sku', '', 'mono')}</td>
+      <td class="mono">${skuInput('dianxiaomi_sku_code', '', 'mono')}</td>
+      <td>${skuNumberInput('manual_unit_price_rmb', '', 'mono')}</td>
+      <td>${skuInput('manual_goods_name', '')}</td>
+      <td class="mono"><span class="muted">-</span></td>
+      <td class="sku-actions"><span class="oc-sku-manual-badge">新增</span><button type="button" class="oc-btn sm primary" data-create-sku-row>${icon('check', 12)}<span>保存</span></button><button type="button" class="oc-btn sm ghost" data-cancel-new-sku-row>取消</button></td>
+    </tr>`;
   }
 
   function openSkuDetail(product) {
@@ -1507,35 +1558,35 @@
       const xmycHits = skus.filter(s => s.xmyc_unit_price_rmb !== null && s.xmyc_unit_price_rmb !== undefined).length;
       const manualCount = skus.filter(s => !!s.manual_override).length;
       summary.textContent = `共 ${skus.length} 个 variant；店小秘 ERP 配对 ${matched}，采购价 ${xmycHits}，人工编辑 ${manualCount}`;
-      tbody.innerHTML = skus.map(s => {
-        const variantTitle = s.shopify_variant_title || '—';
-        const sku = s.shopify_sku || '';
-        const dxmSku = s.dianxiaomi_sku || '';
-        const dxmProductSku = s.dianxiaomi_product_sku || '';
-        const skuCode = s.dianxiaomi_sku_code || '';
-        const xmycName = (s.xmyc_goods_name || '').trim();
-        const dxmName = (s.dianxiaomi_name || '').trim();
-        const goodsName = s.manual_goods_name || xmycName || dxmName;
-        const purchaseValue = (s.manual_unit_price_rmb !== null && s.manual_unit_price_rmb !== undefined)
-          ? s.manual_unit_price_rmb
-          : s.xmyc_unit_price_rmb;
-        const manualBadge = s.manual_override ? '<span class="oc-sku-manual-badge">人工</span>' : '';
-        return `<tr data-sku-id="${escapeHtml(s.id)}" class="${s.manual_override ? 'is-manual' : ''}">
-          <td title="${escapeHtml(variantTitle)}">${escapeHtml(variantTitle)}</td>
-          <td class="mono">${skuInput('shopify_sku', sku, 'mono')}</td>
-          <td class="mono">${skuNumberInput('shopify_price', s.shopify_price, 'mono')}</td>
-          <td class="mono">${skuNumberInput('shopify_inventory_quantity', s.shopify_inventory_quantity, 'mono int')}</td>
-          <td class="mono">${skuInput('dianxiaomi_sku', dxmSku, 'mono')}</td>
-          <td class="mono">${skuInput('dianxiaomi_product_sku', dxmProductSku, 'mono')}</td>
-          <td class="mono">${skuInput('dianxiaomi_sku_code', skuCode, 'mono')}</td>
-          <td>${skuNumberInput('manual_unit_price_rmb', purchaseValue, 'mono')}</td>
-          <td title="${escapeHtml(goodsName)}">${skuInput('manual_goods_name', goodsName)}</td>
-          <td class="mono">${fmtRoas(s.roas_calculation)}</td>
-          <td class="sku-actions">${manualBadge}<button type="button" class="oc-btn sm primary" data-save-sku-row="${escapeHtml(s.id)}">${icon('check', 12)}<span>保存</span></button></td>
-        </tr>`;
-      }).join('');
+      tbody.innerHTML = skus.map(renderSkuDetailRow).join('');
     }
     mask.hidden = false;
+  }
+
+  function collectSkuRowBody(tr) {
+    const body = {};
+    tr.querySelectorAll('[data-sku-edit-field]').forEach(input => {
+      body[input.getAttribute('data-sku-edit-field')] = input.value;
+    });
+    return body;
+  }
+
+  function addManualSkuDraftRow() {
+    if (!_skuDetailProductId) return;
+    const tbody = document.getElementById('skuDetailRows');
+    const empty = document.getElementById('skuDetailEmpty');
+    if (!tbody) return;
+    const existing = tbody.querySelector('[data-new-sku-row]');
+    if (existing) {
+      const firstInput = existing.querySelector('[data-sku-edit-field]');
+      if (firstInput) firstInput.focus();
+      return;
+    }
+    if (empty) empty.hidden = true;
+    tbody.insertAdjacentHTML('beforeend', manualSkuDraftRowHtml());
+    const draft = tbody.querySelector('[data-new-sku-row]');
+    const firstInput = draft && draft.querySelector('[data-sku-edit-field="shopify_variant_title"]');
+    if (firstInput) firstInput.focus();
   }
 
   async function saveSkuDetailRow(btn) {
@@ -1543,16 +1594,38 @@
     const tr = btn.closest('tr[data-sku-id]');
     const skuId = tr ? tr.getAttribute('data-sku-id') : '';
     if (!tr || !skuId) return;
-    const body = {};
-    tr.querySelectorAll('[data-sku-edit-field]').forEach(input => {
-      body[input.getAttribute('data-sku-edit-field')] = input.value;
-    });
+    const body = collectSkuRowBody(tr);
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = `${icon('check', 12)}<span>保存中</span>`;
     try {
       const data = await fetchJSON(`/medias/api/products/${_skuDetailProductId}/skus/${encodeURIComponent(skuId)}`, {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (data && data.item) {
+        upsertSkuDetailRow(data.item);
+        openSkuDetail(_skuDetailProduct);
+      }
+    } catch (err) {
+      window.alert(`保存失败：${(err && err.message) || err}`);
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+
+  async function createSkuDetailRow(btn) {
+    if (!_skuDetailProductId || !btn) return;
+    const tr = btn.closest('tr[data-new-sku-row]');
+    if (!tr) return;
+    const body = collectSkuRowBody(tr);
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `${icon('check', 12)}<span>保存中</span>`;
+    try {
+      const data = await fetchJSON(`/medias/api/products/${_skuDetailProductId}/skus`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -1580,14 +1653,26 @@
     const close = document.getElementById('skuDetailClose');
     const cancel = document.getElementById('skuDetailCancel');
     const refresh = document.getElementById('skuDetailRefresh');
+    const addManual = document.getElementById('skuDetailAddManual');
     const mask = document.getElementById('skuDetailMask');
     if (close) close.addEventListener('click', closeSkuDetail);
     if (cancel) cancel.addEventListener('click', closeSkuDetail);
+    if (addManual) addManual.addEventListener('click', addManualSkuDraftRow);
     if (mask) mask.addEventListener('click', (e) => { if (e.target === mask) closeSkuDetail(); });
     const rows = document.getElementById('skuDetailRows');
     if (rows) rows.addEventListener('click', (e) => {
       const btn = e.target.closest && e.target.closest('[data-save-sku-row]');
       if (btn) saveSkuDetailRow(btn);
+      const createBtn = e.target.closest && e.target.closest('[data-create-sku-row]');
+      if (createBtn) createSkuDetailRow(createBtn);
+      const cancelBtn = e.target.closest && e.target.closest('[data-cancel-new-sku-row]');
+      if (cancelBtn) {
+        const tr = cancelBtn.closest('[data-new-sku-row]');
+        if (tr) tr.remove();
+        const tbody = document.getElementById('skuDetailRows');
+        const empty = document.getElementById('skuDetailEmpty');
+        if (empty && tbody && !tbody.children.length) empty.hidden = false;
+      }
     });
     if (refresh) refresh.addEventListener('click', async () => {
       if (!_skuDetailProductId) return;

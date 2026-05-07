@@ -1536,6 +1536,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-sku-detail-table .oc-sku-edit-input.mono { font-family:var(--oc-font-mono, ui-monospace, monospace); }
 .oc-sku-detail-table .sku-actions { display:flex; align-items:center; gap:var(--oc-sp-2); white-space:nowrap; }
 .oc-sku-manual-badge { display:inline-flex; align-items:center; height:22px; padding:0 var(--oc-sp-2); border-radius:var(--oc-radius-md); background:var(--oc-accent-subtle); color:var(--oc-accent); font-size:12px; font-weight:600; }
+.oc-sku-detail-table tr.is-draft td { background:var(--oc-accent-subtle); }
 .oc-sku-detail-empty { padding:var(--oc-sp-5); text-align:center; color:var(--oc-fg-subtle); }
 .oc-sku-detail-empty .title { font-size:14px; color:var(--oc-fg); margin:0 0 var(--oc-sp-1); }
 .oc-sku-detail-empty .desc { font-size:13px; margin:0; }
@@ -2369,12 +2370,13 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
         <p class="title">该产品尚未同步 SKU 配对</p>
         <p class="desc">请先点击行内"刷 SKU"按钮，从店小秘拉取 variant 与 ERP 配对。</p>
       </div>
-    </div>
-    <div class="oc-modal-foot">
-      <span id="skuDetailSummary" class="muted"></span>
-      <button type="button" id="skuDetailCancel" class="oc-btn ghost">关闭</button>
-      <button type="button" id="skuDetailRefresh" class="oc-btn primary">从店小秘刷新</button>
-    </div>
+      </div>
+      <div class="oc-modal-foot">
+        <span id="skuDetailSummary" class="muted"></span>
+        <button type="button" id="skuDetailAddManual" class="oc-btn ghost">新增手动变体</button>
+        <button type="button" id="skuDetailCancel" class="oc-btn ghost">关闭</button>
+        <button type="button" id="skuDetailRefresh" class="oc-btn primary">从店小秘刷新</button>
+      </div>
   </div>
 </div>
 

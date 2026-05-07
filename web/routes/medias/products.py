@@ -25,6 +25,7 @@ from web.services.media_product_mutations import (
     product_mutation_flask_response as _product_mutation_flask_response_impl,
 )
 from web.services.media_product_sku_manual_edit import (
+    build_product_sku_create_response as _build_product_sku_create_response_impl,
     build_product_sku_update_response as _build_product_sku_update_response_impl,
     product_sku_update_flask_response as _product_sku_update_flask_response_impl,
 )
@@ -205,6 +206,21 @@ def _build_product_sku_update_response(pid: int, sku_id: int, product: dict, bod
         body,
         edited_by=edited_by,
         update_product_sku_fn=medias.update_product_sku_manual,
+        normalize_fields_fn=medias.normalize_product_sku_manual_update,
+        can_edit_variant_title_fn=medias.can_edit_product_sku_variant_title,
+        list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
+        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
+        serialize_product_skus_fn=_serialize_product_skus,
+    )
+
+
+def _build_product_sku_create_response(pid: int, product: dict, body: dict, *, edited_by: int | None):
+    return _build_product_sku_create_response_impl(
+        pid,
+        product,
+        body,
+        edited_by=edited_by,
+        create_product_sku_fn=medias.create_product_sku_manual,
         normalize_fields_fn=medias.normalize_product_sku_manual_update,
         list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
         get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
@@ -424,6 +440,24 @@ def api_update_product_sku(pid: int, sku_id: int):
     )
     if result.not_found:
         abort(404)
+    return routes._product_sku_update_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/skus", methods=["POST"])
+@login_required
+def api_create_product_sku(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    edited_by = int(current_user.id) if getattr(current_user, "id", None) else None
+    result = routes._build_product_sku_create_response(
+        pid,
+        p,
+        body,
+        edited_by=edited_by,
+    )
     return routes._product_sku_update_flask_response(result)
 
 

@@ -104,6 +104,7 @@ def test_manual_product_sku_update_filters_variant_and_serializes_updated_row():
         },
         edited_by=9,
         update_product_sku_fn=fake_update,
+        can_edit_variant_title_fn=lambda product_id, sku_id: False,
         list_xmyc_unit_prices_fn=lambda skus: captured.update(xmyc_skus=skus) or {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda rows, **kwargs: captured.update(
@@ -158,6 +159,185 @@ def test_manual_product_sku_update_rejects_invalid_numeric_value():
         "message": "shopify_price must be a number",
     }
     assert called == []
+
+
+def test_manual_product_sku_create_filters_and_serializes_new_row():
+    from web.services.media_product_sku_manual_edit import build_product_sku_create_response
+
+    captured = {}
+    product = {
+        "id": 42,
+        "shopifyid": "SP1",
+        "purchase_price": "20",
+        "packet_cost_estimated": "2",
+        "packet_cost_actual": "3",
+        "standalone_shipping_fee": "4",
+    }
+
+    def fake_create(product_id, fields, *, edited_by=None, shopify_product_id=None):
+        captured["create"] = (product_id, fields, edited_by, shopify_product_id)
+        return {
+            "id": 88,
+            "product_id": product_id,
+            "shopify_product_id": shopify_product_id,
+            "shopify_variant_id": "manual-abc",
+            "shopify_variant_title": fields["shopify_variant_title"],
+            "shopify_sku": fields["shopify_sku"],
+            "shopify_price": fields["shopify_price"],
+            "shopify_inventory_quantity": fields["shopify_inventory_quantity"],
+            "dianxiaomi_sku": fields["dianxiaomi_sku"],
+            "dianxiaomi_product_sku": fields["dianxiaomi_product_sku"],
+            "dianxiaomi_sku_code": fields["dianxiaomi_sku_code"],
+            "manual_unit_price_rmb": fields["manual_unit_price_rmb"],
+            "manual_goods_name": fields["manual_goods_name"],
+            "manual_override": 1,
+            "source": "manual_edit",
+            "updated_at": None,
+        }
+
+    result = build_product_sku_create_response(
+        42,
+        product,
+        {
+            "shopify_variant_title": "  Manual Combo  ",
+            "shopify_sku": "  SHOP-MANUAL ",
+            "shopify_price": "19.95",
+            "shopify_inventory_quantity": "-3",
+            "dianxiaomi_sku": " DXM-MANUAL ",
+            "dianxiaomi_product_sku": " DXM-PRODUCT-MANUAL ",
+            "dianxiaomi_sku_code": " ERP-MANUAL ",
+            "manual_unit_price_rmb": "12.5",
+            "manual_goods_name": " Manual goods ",
+        },
+        edited_by=9,
+        create_product_sku_fn=fake_create,
+        list_xmyc_unit_prices_fn=lambda skus: captured.update(xmyc_skus=skus) or {},
+        get_configured_rmb_per_usd_fn=lambda: 7.0,
+        serialize_product_skus_fn=lambda rows, **kwargs: captured.update(
+            serialize=(rows, kwargs)
+        )
+        or [{"id": rows[0]["id"], "manual_override": True}],
+    )
+
+    assert result.status_code == 201
+    assert result.payload == {"ok": True, "item": {"id": 88, "manual_override": True}}
+    assert captured["create"] == (
+        42,
+        {
+            "shopify_variant_title": "Manual Combo",
+            "shopify_sku": "SHOP-MANUAL",
+            "shopify_price": 19.95,
+            "shopify_inventory_quantity": -3,
+            "dianxiaomi_sku": "DXM-MANUAL",
+            "dianxiaomi_product_sku": "DXM-PRODUCT-MANUAL",
+            "dianxiaomi_sku_code": "ERP-MANUAL",
+            "manual_unit_price_rmb": 12.5,
+            "manual_goods_name": "Manual goods",
+        },
+        9,
+        "SP1",
+    )
+    assert captured["xmyc_skus"] == ["DXM-MANUAL"]
+
+
+def test_manual_product_sku_create_requires_variant_title():
+    from web.services.media_product_sku_manual_edit import build_product_sku_create_response
+
+    called = []
+
+    result = build_product_sku_create_response(
+        42,
+        {"id": 42, "shopifyid": "SP1"},
+        {"shopify_sku": "SHOP-MANUAL"},
+        edited_by=9,
+        create_product_sku_fn=lambda *args, **kwargs: called.append("create"),
+    )
+
+    assert result.status_code == 400
+    assert result.payload == {
+        "error": "invalid_fields",
+        "message": "shopify_variant_title is required",
+    }
+    assert called == []
+
+
+def test_manual_product_sku_update_keeps_variant_readonly_for_auto_rows():
+    from web.services.media_product_sku_manual_edit import build_product_sku_update_response
+
+    captured = {}
+
+    def fake_update(product_id, sku_id, fields, *, edited_by=None):
+        captured["fields"] = fields
+        return {
+            "id": sku_id,
+            "product_id": product_id,
+            "shopify_variant_id": "V1",
+            "shopify_variant_title": "Auto Blue",
+            "dianxiaomi_sku": fields["dianxiaomi_sku"],
+            "manual_override": 1,
+            "source": "manual_edit",
+            "updated_at": None,
+        }
+
+    result = build_product_sku_update_response(
+        42,
+        5,
+        {"id": 42},
+        {
+            "shopify_variant_title": "Should not change",
+            "dianxiaomi_sku": "DXM-EDIT",
+        },
+        edited_by=9,
+        update_product_sku_fn=fake_update,
+        can_edit_variant_title_fn=lambda product_id, sku_id: False,
+        list_xmyc_unit_prices_fn=lambda skus: {},
+        get_configured_rmb_per_usd_fn=lambda: 7.0,
+        serialize_product_skus_fn=lambda rows, **kwargs: [{"id": rows[0]["id"]}],
+    )
+
+    assert result.status_code == 200
+    assert captured["fields"] == {"dianxiaomi_sku": "DXM-EDIT"}
+
+
+def test_manual_product_sku_update_allows_variant_title_for_manual_rows():
+    from web.services.media_product_sku_manual_edit import build_product_sku_update_response
+
+    captured = {}
+
+    def fake_update(product_id, sku_id, fields, *, edited_by=None):
+        captured["fields"] = fields
+        return {
+            "id": sku_id,
+            "product_id": product_id,
+            "shopify_variant_id": "manual-abc",
+            "shopify_variant_title": fields["shopify_variant_title"],
+            "dianxiaomi_sku": fields["dianxiaomi_sku"],
+            "manual_override": 1,
+            "source": "manual_edit",
+            "updated_at": None,
+        }
+
+    result = build_product_sku_update_response(
+        42,
+        5,
+        {"id": 42},
+        {
+            "shopify_variant_title": " Manual Combo Edited ",
+            "dianxiaomi_sku": "DXM-EDIT",
+        },
+        edited_by=9,
+        update_product_sku_fn=fake_update,
+        can_edit_variant_title_fn=lambda product_id, sku_id: True,
+        list_xmyc_unit_prices_fn=lambda skus: {},
+        get_configured_rmb_per_usd_fn=lambda: 7.0,
+        serialize_product_skus_fn=lambda rows, **kwargs: [{"id": rows[0]["id"]}],
+    )
+
+    assert result.status_code == 200
+    assert captured["fields"] == {
+        "shopify_variant_title": "Manual Combo Edited",
+        "dianxiaomi_sku": "DXM-EDIT",
+    }
 
 
 def test_remote_sku_sync_sql_preserves_manual_override_rows():

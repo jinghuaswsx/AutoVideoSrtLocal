@@ -36,6 +36,19 @@ def test_medias_js_wires_roas_button_and_calculation():
     assert "roas_calculation" in js
 
 
+def test_sku_detail_modal_supports_manual_variant_creation():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'id="skuDetailAddManual"' in html
+    assert "data-create-sku-row" in js
+    assert "data-cancel-new-sku-row" in js
+    assert "createSkuDetailRow" in js
+    assert "addManualSkuDraftRow" in js
+    assert "shopify_variant_title" in js
+    assert "`/medias/api/products/${_skuDetailProductId}/skus`" in js
+
+
 def test_medias_html_has_parcel_cost_suggest_button():
     # Button lives in the shared partial (used by both modal and standalone page)
     partial = PARTIAL.read_text(encoding="utf-8")
