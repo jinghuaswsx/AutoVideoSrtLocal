@@ -413,6 +413,50 @@ def test_get_realtime_roas_overview_aggregates_date_range(monkeypatch):
     assert result["period"]["day_definition"] == "meta_ad_platform_business_day_range"
 
 
+def test_get_realtime_roas_overview_range_includes_empty_order_profit_details(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-04-29",
+        end_date="2026-04-30",
+        now=datetime(2026, 5, 1, 12, 0),
+    )
+
+    assert result["order_profit_details"] == []
+
+
+def test_get_realtime_roas_overview_single_day_includes_order_profit_details(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return []
+        if "GROUP BY HOUR" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"ad_spend": 0, "meta_purchase_value": 0, "meta_purchases": 0, "last_ad_updated_at": None}]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-04-29",
+        now=datetime(2026, 4, 29, 14, 0),
+    )
+
+    assert "order_profit_details" in result
+    assert result["order_profit_details"] == []
+
+
 def test_get_realtime_roas_overview_same_day_range_equals_single_day(monkeypatch):
     """start_date == end_date 时走原单日逻辑（保留 hourly / order_details / campaigns）。"""
     captured = {"single_day_called": False}
