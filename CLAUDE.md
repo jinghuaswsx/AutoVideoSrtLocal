@@ -35,12 +35,12 @@
 
 ### 路径 A — Claude 跑在 Linux 服务器（172.30.254.14 上的 cjh agent）
 
-**这是默认场景**。本机就是部署机，cjh 已配 sudo 密码（参见仓库内提示），直接本机 `sudo` 跑：
+**这是默认场景**。本机就是部署机，cjh 已配**免密 sudo**（`/etc/sudoers.d/cjh`，2026-05-07 起），直接本机 `sudo` 跑，**不需要喂密码**：
 
 ```bash
 git push origin master
 
-sudo -S -k bash -c '
+sudo bash -c '
 set -e
 git config --global --add safe.directory /opt/autovideosrt-test || true
 cd /opt/autovideosrt-test
@@ -67,7 +67,7 @@ curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/
 - key：`~/.ssh/CC.pem`（Windows: `$env:USERPROFILE\.ssh\CC.pem`）
 - 用户：`root`（避免再 `sudo` 一层）
 - ssh 命令：`ssh -i <CC.pem> -o BatchMode=yes root@172.30.254.14 '<command>'`
-- 把"路径 A"里 `sudo -S -k bash -c '...'` 的 here-doc 内容**原样**喂给 ssh stdin（去掉 `sudo -S -k`，因为 root 不需要再 sudo）。
+- 把"路径 A"里 `sudo bash -c '...'` 的 here-doc 内容**原样**喂给 ssh stdin（去掉外层 `sudo bash -c`，因为 root 不需要再 sudo）。
 
 例子（Windows PowerShell，测试发布）：
 
@@ -90,12 +90,12 @@ curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/
 - ssh 命令里只放发布相关的命令，不要顺手做别的运维动作。
 - here-string / here-doc 里 `'` 配对要小心（PowerShell `@'...'@` 单引号 here-string 不展开 `$`，但内部 bash 会照常解析其中的单引号配对）。
 
-### 完整线上发布命令（适用两条路径，路径 A 加 `sudo -S -k bash -c '...'` 包一层）
+### 完整线上发布命令（适用两条路径，路径 A 加 `sudo bash -c '...'` 包一层）
 
 ```bash
 git push origin master
 
-# 路径 A：sudo -S -k bash -c '...' 
+# 路径 A：sudo bash -c '...'   （cjh 免密，不要再 echo 密码）
 # 路径 B：ssh -i CC.pem root@172.30.254.14 << 'EOF' ... EOF
 set -e
 git config --global --add safe.directory /opt/autovideosrt || true
@@ -452,8 +452,10 @@ push 报 `non-fast-forward` 说明 master 又被推了 commit → 重复 fetch +
 
 ### 3. sudo 同步 prod + 重启服务（一条命令）
 
+cjh 已配**免密 sudo**（2026-05-07 起，`/etc/sudoers.d/cjh`），直接 `sudo bash -c '...'`，不要再 `echo 'cjh123' | sudo -S`。
+
 ```bash
-echo 'cjh123' | sudo -S -k bash -c '
+sudo bash -c '
 set -e
 git config --global --add safe.directory /opt/autovideosrt
 cd /opt/autovideosrt
