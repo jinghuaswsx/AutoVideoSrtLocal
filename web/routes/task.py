@@ -105,9 +105,9 @@ def upload():
     if not file.filename:
         return _json_response({"error": "Empty filename"}, 400)
 
-    from web.upload_util import save_uploaded_video, validate_video_extension
+    from web.upload_util import client_filename_basename, save_uploaded_video, validate_video_extension
 
-    original_filename = os.path.basename(file.filename)
+    original_filename = client_filename_basename(file.filename)
     if not validate_video_extension(original_filename):
         return _json_response({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}, 400)
     form_payload = request.form.to_dict(flat=True)

@@ -160,9 +160,9 @@ def create_ja_translate_task_from_upload(file, *, user_id: int | None = None, au
     if not file.filename:
         raise ValueError("Empty filename")
 
-    from web.upload_util import build_source_object_info, save_uploaded_video, validate_video_extension
+    from web.upload_util import build_source_object_info, client_filename_basename, save_uploaded_video, validate_video_extension
 
-    original_filename = os.path.basename(file.filename)
+    original_filename = client_filename_basename(file.filename)
     if not validate_video_extension(original_filename):
         raise ValueError("不支持的视频格式")
 

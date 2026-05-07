@@ -16,6 +16,7 @@ from web.auth import admin_required
 
 from appcore.order_analytics import product_profit_report as ppr
 from appcore.order_analytics.shopify_payments_import import import_payments_csv
+from web.upload_util import client_filename_basename
 
 log = logging.getLogger(__name__)
 
@@ -64,15 +65,17 @@ def api_import_payments_csv():
             "hint": "需要 1-32 个字母/数字/下划线，例如 newjoyloo / Omurio",
         }), 400
 
+    raw_content = f.read()
     try:
-        content = f.read().decode("utf-8-sig")
+        content = raw_content.decode("utf-8-sig")
     except UnicodeDecodeError:
         try:
-            content = f.read().decode("gbk")
+            content = raw_content.decode("gbk")
         except Exception:
             return jsonify({"error": "csv encoding not utf-8 or gbk"}), 400
 
-    source_label = f"{store_code}__{f.filename}"
+    filename = client_filename_basename(f.filename)
+    source_label = f"{store_code}__{filename}"
     try:
         stats = import_payments_csv(io.StringIO(content), source_csv=source_label)
     except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
@@ -81,7 +84,7 @@ def api_import_payments_csv():
 
     return jsonify({
         "store_code": store_code,
-        "filename": f.filename,
+        "filename": filename,
         "source_csv": source_label,
         **stats,
     })

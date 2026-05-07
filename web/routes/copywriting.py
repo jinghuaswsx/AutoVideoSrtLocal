@@ -113,8 +113,8 @@ def upload():
     if not file or not file.filename:
         return copywriting_flask_response(build_copywriting_error_response("请上传视频文件", 400))
 
-    from web.upload_util import save_uploaded_file_to_path, secure_filename_component, validate_video_extension
-    video_filename = os.path.basename(file.filename)
+    from web.upload_util import client_filename_basename, save_uploaded_file_to_path, secure_filename_component, validate_video_extension
+    video_filename = client_filename_basename(file.filename)
     if not validate_video_extension(video_filename):
         return copywriting_flask_response(build_copywriting_error_response("不支持的视频格式", 400))
 

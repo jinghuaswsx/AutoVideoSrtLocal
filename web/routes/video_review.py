@@ -127,8 +127,8 @@ def upload():
     if not file or not file.filename:
         return video_review_flask_response(build_video_review_missing_upload_response())
 
-    from web.upload_util import validate_video_extension
-    video_filename = os.path.basename(file.filename)
+    from web.upload_util import client_filename_basename, validate_video_extension
+    video_filename = client_filename_basename(file.filename)
     if not validate_video_extension(video_filename):
         return video_review_flask_response(build_video_review_unsupported_upload_response())
 

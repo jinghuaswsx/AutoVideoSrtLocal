@@ -301,11 +301,20 @@ class TestImageExtensionValidation:
 class TestSecureFilename:
     """web.upload_util.secure_filename_component 单元测试。"""
 
+    def test_client_filename_basename_strips_windows_path_segments(self):
+        from web.upload_util import client_filename_basename
+        assert client_filename_basename("..\\..\\escape.mp4") == "escape.mp4"
+
     def test_strips_path_traversal(self):
         from web.upload_util import secure_filename_component
         result = secure_filename_component("../../etc/passwd")
         assert "/" not in result
         assert ".." not in result or result.startswith("_")
+
+    def test_strips_windows_path_traversal(self):
+        from web.upload_util import secure_filename_component
+        result = secure_filename_component("..\\..\\escape.mp4")
+        assert result == "escape.mp4"
 
     def test_preserves_normal_name(self):
         from web.upload_util import secure_filename_component

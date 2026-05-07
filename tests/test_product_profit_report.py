@@ -4,11 +4,42 @@
 """
 from __future__ import annotations
 
+import io
 from datetime import date, datetime
 
 import pytest
 
 from appcore.order_analytics import product_profit_report as ppr
+
+
+def test_payments_csv_import_sanitizes_filename_and_decodes_gbk(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_import_payments_csv(stream, *, source_csv):
+        captured["content"] = stream.read()
+        captured["source_csv"] = source_csv
+        return {"inserted": 1, "updated": 0}
+
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.import_payments_csv",
+        fake_import_payments_csv,
+    )
+
+    resp = authed_client_no_db.post(
+        "/order-analytics/product-profit/payments_csv/import",
+        data={
+            "store_code": "newjoyloo",
+            "file": (io.BytesIO("订单金额\n100".encode("gbk")), "..\\..\\payments.csv"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["filename"] == "payments.csv"
+    assert payload["source_csv"] == "newjoyloo__payments.csv"
+    assert captured["source_csv"] == "newjoyloo__payments.csv"
+    assert captured["content"] == "订单金额\n100"
 
 
 # ---------------------------------------------------------------------------

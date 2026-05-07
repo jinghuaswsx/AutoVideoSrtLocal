@@ -43,7 +43,7 @@ from web.services.translate_lab import (
     build_translate_lab_voice_confirmed_response,
     translate_lab_flask_response,
 )
-from web.upload_util import save_uploaded_file_to_path, validate_video_extension
+from web.upload_util import client_filename_basename, save_uploaded_file_to_path, validate_video_extension
 
 log = logging.getLogger(__name__)
 
@@ -188,7 +188,8 @@ def upload_and_create():
         return translate_lab_flask_response(
             build_translate_lab_error_response("文件名为空", 400)
         )
-    if not validate_video_extension(file.filename):
+    original_filename = client_filename_basename(file.filename)
+    if not validate_video_extension(original_filename):
         return translate_lab_flask_response(
             build_translate_lab_error_response("不支持的视频格式", 400)
         )
@@ -214,12 +215,11 @@ def upload_and_create():
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = os.path.splitext(original_filename)[1].lower()
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
     save_uploaded_file_to_path(file, video_path)
 
     user_id = current_user.id
-    original_filename = os.path.basename(file.filename)
     store.create_translate_lab(
         task_id,
         video_path,

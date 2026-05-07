@@ -28,9 +28,14 @@ def validate_image_extension(filename: str) -> bool:
     return ext in ALLOWED_IMAGE_EXTS
 
 
+def client_filename_basename(filename) -> str:
+    """Return the final client-provided filename segment for either slash style."""
+    return os.path.basename(str(filename or "").replace("\\", "/"))
+
+
 def secure_filename_component(filename: str) -> str:
     """清洗文件名：去路径分隔符，只保留安全字符，截断 100 字符。"""
-    name = os.path.basename(filename)
+    name = client_filename_basename(filename)
     name = re.sub(r'[^\w\u4e00-\u9fff.\-]', '_', name)
     return name[:100] if name else "unnamed"
 
