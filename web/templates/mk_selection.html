@@ -200,6 +200,12 @@ function escapeHtml(value) {
   })[ch]);
 }
 
+function safeExternalHref(value) {
+  const url = String(value ?? '').trim();
+  if (!/^https?:\/\//i.test(url)) return '';
+  return escapeHtml(url);
+}
+
 function fmtMkSpendText(raw, parsed) {
   const text = String(raw || '').trim();
   if (text && text !== '0') return text;
@@ -228,31 +234,35 @@ async function loadData(page) {
   tbody.innerHTML = data.items.map((r, i) => {
     const heat = heatLevel(r.mk_total_spends);
     const linked = r.media_product_id ? `<span class="oc-badge oc-badge--linked">已关联</span>` : `<span class="text-muted">未关联</span>`;
-    const productName = r.product_name.length > 28 ? r.product_name.substring(0,28)+'...' : r.product_name;
-    const cnName = r.mk_product_name || r.mp_name || '--';
+    const rawProductName = String(r.product_name || '');
+    const productName = rawProductName.length > 28 ? rawProductName.substring(0,28)+'...' : rawProductName;
+    const cnName = String(r.mk_product_name || r.mp_name || '--');
     const cnNameShort = cnName.length > 16 ? cnName.substring(0,16)+'...' : cnName;
-    const handle = r.product_url ? r.product_url.split('/products/')[1] || '' : '';
+    const safeProductUrl = safeExternalHref(r.product_url);
+    const handle = r.product_url ? String(r.product_url).split('/products/')[1] || '' : '';
+    const mkProductId = Number(r.mk_product_id) || 0;
+    const mkNameArg = escapeHtml(JSON.stringify(r.mk_product_name || ""));
 
     return `<tr>
-      <td class="text-mono text-muted">${r.rank}</td>
+      <td class="text-mono text-muted">${Number(r.rank || i + 1)}</td>
       <td style="text-align:left;">
-        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.product_name}">
-          ${r.product_url ? `<a href="${r.product_url}" target="_blank" class="oc-link">${productName}</a>` : productName}
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(rawProductName)}">
+          ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" class="oc-link">${escapeHtml(productName)}</a>` : escapeHtml(productName)}
         </div>
-        <div class="text-muted" style="font-size:14px; font-family:monospace;">${handle}</div>
+        <div class="text-muted" style="font-size:14px; font-family:monospace;">${escapeHtml(handle)}</div>
       </td>
-      <td title="${cnName}" style="text-align:left;">${cnNameShort}</td>
-      <td>${r.store}</td>
-      <td class="text-right text-mono">${r.sales_count.toLocaleString()}</td>
-      <td class="text-right text-mono">${r.revenue_main || '--'}</td>
+      <td title="${escapeHtml(cnName)}" style="text-align:left;">${escapeHtml(cnNameShort)}</td>
+      <td>${escapeHtml(r.store || '--')}</td>
+      <td class="text-right text-mono">${Number(r.sales_count || 0).toLocaleString()}</td>
+      <td class="text-right text-mono">${escapeHtml(r.revenue_main || '--')}</td>
       <td class="text-right">
         <span class="oc-badge oc-badge--${heat.cls}">${fmtMoney(r.mk_total_spends)}</span>
       </td>
-      <td class="text-right text-mono">${r.mk_video_count}</td>
-      <td class="text-right text-mono">${r.mk_total_ads}</td>
+      <td class="text-right text-mono">${Number(r.mk_video_count || 0)}</td>
+      <td class="text-right text-mono">${Number(r.mk_total_ads || 0)}</td>
       <td>${linked}</td>
       <td>
-        ${r.mk_product_id ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick='openDetail(${r.mk_product_id},${JSON.stringify(r.mk_product_name||"")})'>查看素材</button>` : '--'}
+        ${mkProductId ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick='openDetail(${mkProductId},${mkNameArg})'>查看素材</button>` : '--'}
       </td>
     </tr>`;
   }).join('');
@@ -280,12 +290,12 @@ async function openDetail(mkId, mkName) {
     // 产品信息头部
     let html = `<div style="display:flex; gap:16px; margin-bottom:20px; padding:14px 16px; background:var(--oc-bg-subtle); border-radius:var(--oc-r-md);">
       <div style="flex:1;">
-        <div style="font-size:18px; font-weight:600; margin-bottom:6px;">${item.product_name}</div>
-        <div style="font-size:14px; color:var(--oc-fg-muted);">ID: ${item.id} | 等级: ${item.level} | 来源: ${item.admin_name || '--'}</div>
+        <div style="font-size:18px; font-weight:600; margin-bottom:6px;">${escapeHtml(item.product_name || '--')}</div>
+        <div style="font-size:14px; color:var(--oc-fg-muted);">ID: ${escapeHtml(item.id || '--')} | 等级: ${escapeHtml(item.level || '--')} | 来源: ${escapeHtml(item.admin_name || '--')}</div>
       </div>
       <div style="text-align:right; font-size:14px; color:var(--oc-fg-muted);">
-        <div>平台: ${(item.platforms||[]).join(', ') || '--'}</div>
-        <div>ROAS: ${item.target_roas || '--'}</div>
+        <div>平台: ${escapeHtml((item.platforms||[]).join(', ') || '--')}</div>
+        <div>ROAS: ${escapeHtml(item.target_roas || '--')}</div>
       </div>
     </div>`;
 
@@ -293,7 +303,11 @@ async function openDetail(mkId, mkName) {
     if (item.product_links && item.product_links.length) {
       html += `<div style="margin-bottom:16px; font-size:14px;"><strong>产品链接：</strong><div style="margin-top:4px;">`;
       item.product_links.forEach(l => {
-        html += `<a href="${l}" target="_blank" class="oc-link" style="display:block; font-size:13px; margin:2px 0; word-break:break-all;">${l}</a>`;
+        const href = safeExternalHref(l);
+        const label = escapeHtml(l || '');
+        html += href
+          ? `<a href="${href}" target="_blank" rel="noopener noreferrer" class="oc-link" style="display:block; font-size:13px; margin:2px 0; word-break:break-all;">${label}</a>`
+          : `<span style="display:block; font-size:13px; margin:2px 0; word-break:break-all;">${label}</span>`;
       });
       html += `</div></div>`;
     }
@@ -303,10 +317,10 @@ async function openDetail(mkId, mkName) {
       html += `<div style="margin-bottom:16px;"><strong style="font-size:15px;">文案（${item.texts.length} 条）：</strong>`;
       item.texts.forEach((t, i) => {
         html += `<div style="background:var(--oc-bg-subtle); padding:10px 14px; border-radius:var(--oc-r); margin:6px 0; font-size:14px; border-left:3px solid var(--oc-accent);">
-          <div style="font-weight:600; margin-bottom:4px;">${t.lang || '未标注'} #${i+1}</div>
-          <div><strong>标题:</strong> ${t.title}</div>
-          <div><strong>文案:</strong> ${t.message}</div>
-          ${t.description ? `<div><strong>描述:</strong> ${t.description}</div>` : ''}
+          <div style="font-weight:600; margin-bottom:4px;">${escapeHtml(t.lang || '未标注')} #${i+1}</div>
+          <div><strong>标题:</strong> ${escapeHtml(t.title || '')}</div>
+          <div><strong>文案:</strong> ${escapeHtml(t.message || '')}</div>
+          ${t.description ? `<div><strong>描述:</strong> ${escapeHtml(t.description)}</div>` : ''}
         </div>`;
       });
       html += `</div>`;
@@ -359,13 +373,13 @@ async function openDetail(mkId, mkName) {
         <button class="mki-btn mki-btn--add"
             data-mki-filename="${escapeHtml(v.name || '')}"
             data-mki-mp4-url="${safeVideoUrl}"
-            data-mki-duration="${v.duration_seconds || v.duration || 0}"
+            data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
             data-mki-cover-url="${safeCoverUrl}"
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
             data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
-            data-mki-mk-id="${item.id || ''}"
+            data-mki-mk-id="${escapeHtml(item.id || '')}"
             onclick="mkiHandleClick(this)">
           加入素材库
         </button>
@@ -376,7 +390,7 @@ async function openDetail(mkId, mkName) {
     document.getElementById('detailContent').innerHTML = html;
     mkiCheckRenderedButtons();  // mk-import: Task 9 — check after render
   } catch (e) {
-    document.getElementById('detailContent').innerHTML = `<p style="color:red; font-size:16px;">加载失败: ${e.message}</p>`;
+    document.getElementById('detailContent').innerHTML = `<p style="color:red; font-size:16px;">加载失败: ${escapeHtml(e.message)}</p>`;
   }
 }
 
@@ -491,7 +505,7 @@ async function mkiOpenTranslatorModal() {
     return null;
   }
   const sel = document.getElementById('mkiTranslatorSel');
-  sel.innerHTML = mkiTranslatorsCache.map(t => `<option value="${t.id}">${t.username}</option>`).join('');
+  sel.innerHTML = mkiTranslatorsCache.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.username || '')}</option>`).join('');
   document.getElementById('mkiTranslatorModal').style.display = 'block';
   return new Promise(resolve => { mkiTranslatorResolve = resolve; });
 }

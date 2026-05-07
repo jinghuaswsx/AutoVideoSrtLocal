@@ -102,6 +102,37 @@ def test_mk_selection_video_cards_include_local_video_preview():
     assert "loading=\"lazy\"" in template
 
 
+def test_mk_selection_dynamic_html_escapes_api_fields():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function safeExternalHref(value)" in template
+    assert 'title="${escapeHtml(rawProductName)}"' in template
+    assert 'href="${safeProductUrl}"' in template
+    assert "${escapeHtml(productName)}" in template
+    assert "${escapeHtml(cnNameShort)}" in template
+    assert "${escapeHtml(r.store || '--')}" in template
+    assert "${escapeHtml(r.revenue_main || '--')}" in template
+    assert "${escapeHtml(item.product_name || '--')}" in template
+    assert "${escapeHtml(item.admin_name || '--')}" in template
+    assert "${escapeHtml(t.title || '')}" in template
+    assert "${escapeHtml(t.message || '')}" in template
+    assert 'href="${href}"' in template
+    assert '加载失败: ${escapeHtml(e.message)}' in template
+    assert '<option value="${escapeHtml(t.id)}">${escapeHtml(t.username || \'\')}</option>' in template
+
+    assert 'title="${r.product_name}"' not in template
+    assert 'href="${r.product_url}"' not in template
+    assert "${productName}</a>" not in template
+    assert "${cnNameShort}</td>" not in template
+    assert "<td>${r.store}</td>" not in template
+    assert "${item.product_name}</div>" not in template
+    assert '<a href="${l}"' not in template
+    assert "${t.title}</div>" not in template
+    assert "${t.message}</div>" not in template
+    assert '加载失败: ${e.message}' not in template
+    assert '>${t.username}</option>' not in template
+
+
 def test_mk_selection_api_handles_legacy_rankings_schema_without_mk_columns(
     authed_client_no_db,
     monkeypatch,
