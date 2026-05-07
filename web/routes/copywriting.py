@@ -11,7 +11,7 @@ import uuid
 from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
-from appcore import task_state
+from appcore import copywriting_route_store, task_state
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
     recover_task_if_needed,
@@ -21,7 +21,6 @@ from appcore.task_recovery import (
 from appcore.settings import get_retention_hours
 from appcore.copywriting_runtime import CopywritingRunner
 from appcore.events import EventBus
-from appcore.db import get_conn as get_connection
 from config import UPLOAD_DIR, OUTPUT_DIR
 from web.background import start_background_task
 from web.services.artifact_download import safe_task_file_response
@@ -33,6 +32,8 @@ from web.services.copywriting import (
 )
 
 bp = Blueprint("copywriting", __name__)
+
+get_connection = copywriting_route_store.get_connection
 
 
 # ── 页面路由 ──────────────────────────────────────────

@@ -1674,6 +1674,16 @@ def test_copywriting_api_responses_live_outside_route_module():
     assert Path("web/services/copywriting.py").exists()
 
 
+def test_copywriting_route_db_connection_uses_appcore_store():
+    route_source = Path("web/routes/copywriting.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/copywriting_route_store.py")
+
+    assert "from appcore.db import" not in route_source
+    assert "copywriting_route_store" in route_source
+    assert "get_connection = copywriting_route_store.get_connection" in route_source
+    assert store_path.exists()
+
+
 def test_productivity_stats_api_responses_live_outside_route_module():
     module_source = Path("web/routes/productivity_stats.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
