@@ -300,6 +300,22 @@ def cancel_task(task_id: str, user_id: int) -> None:
         raise ValueError(f"Task {task_id} not found")
     state = task["state"]
     state["cancel_requested"] = True
+    # 级联 cancel 信号到所有 active 子任务（dispatching / running / syncing_result /
+    # awaiting_voice）。子 runner 在下一个 step 边界检测到 _cancel_requested=True
+    # 自行退出（轻量方案 A1：当前正在执行的慢调用本身不中断，最多再花当前一步的钱）。
+    for item in state.get("plan") or []:
+        if _normalized_status(item.get("status")) not in _ACTIVE_ITEM_STATUSES:
+            continue
+        child_task_id = item.get("child_task_id")
+        if not child_task_id:
+            continue
+        try:
+            store.update(child_task_id, _cancel_requested=True)
+        except Exception:
+            log.warning(
+                "cascade cancel to child task_id=%s failed",
+                child_task_id, exc_info=True,
+            )
     _append_audit(state, user_id, "cancel")
     _save_state(task_id, state)
 
