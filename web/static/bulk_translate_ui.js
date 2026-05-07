@@ -180,7 +180,8 @@
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
-        box.innerHTML = `<span class="bt-warn">预估失败: ${err.error || resp.status}</span>`;
+        const detail = escapeHtml(err.error || resp.status);
+        box.innerHTML = `<span class="bt-warn">预估失败: ${detail}</span>`;
         return;
       }
       const d = await resp.json();
@@ -202,7 +203,7 @@
         <strong>预估费用 ≈ ¥${d.estimated_cost_cny || 0}</strong>
       `;
     } catch (e) {
-      box.innerHTML = `<span class="bt-warn">网络错误: ${e.message}</span>`;
+      box.innerHTML = `<span class="bt-warn">网络错误: ${escapeHtml(e.message || e)}</span>`;
     }
   }
 
