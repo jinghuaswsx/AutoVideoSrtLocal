@@ -641,26 +641,29 @@
     }
   }
 
-  .sr-backend-group,
-  .sr-erase-type-group {
-    margin-bottom: 16px;
-  }
+  .sr-backend-group { width: 100%; margin-bottom: 16px; }
+  .sr-erase-type-group { margin-top: 10px; margin-bottom: 0; }
   .sr-backend-tabs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 16px;
+    align-items: start;
+  }
+  .sr-backend-column {
+    min-width: 0;
   }
   .sr-backend-tab {
     position: relative;
     display: grid;
-    gap: 4px;
-    min-height: 74px;
-    padding: 14px 16px;
-    border: 1px solid rgba(14, 86, 152, 0.14);
-    border-radius: 12px;
+    gap: 8px;
+    width: 100%;
+    min-height: 110px;
+    padding: 18px 24px;
+    border: 1px solid rgba(14, 86, 152, 0.16);
+    border-radius: 16px;
     background: #f8fbff;
     cursor: pointer;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
   }
   .sr-backend-tab input[type="radio"] {
     position: absolute;
@@ -670,22 +673,31 @@
   }
   .sr-backend-tab.is-active,
   .sr-backend-tab:has(input[type="radio"]:checked) {
-    border-color: rgba(29, 111, 232, 0.42);
-    background: rgba(29, 111, 232, 0.08);
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    box-shadow: 0 12px 24px rgba(29, 111, 232, 0.24);
   }
-  .sr-backend-title {
+  .sr-backend-title { font-size: 28px; font-weight: 800;
     color: #17324d;
-    font-size: 14px;
-    font-weight: 700;
     line-height: 1.3;
+  }
+  .sr-backend-tab.is-active .sr-backend-title,
+  .sr-backend-tab:has(input[type="radio"]:checked) .sr-backend-title {
+    color: #fff;
   }
   .sr-backend-hint {
     color: #5f7690;
-    font-size: 12px;
+    font-size: 15px;
+    font-weight: 600;
     line-height: 1.45;
   }
+  .sr-backend-tab.is-active .sr-backend-hint,
+  .sr-backend-tab:has(input[type="radio"]:checked) .sr-backend-hint {
+    color: rgba(255, 255, 255, 0.86);
+  }
   .sr-erase-type-label {
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 700;
     color: #6b7280;
     margin-bottom: 8px;
   }
@@ -699,13 +711,13 @@
   }
   .sr-erase-type-option {
     position: relative;
-    padding: 6px 18px;
+    padding: 8px 20px;
     border-radius: 9999px;
     cursor: pointer;
     background: transparent;
     color: #6b7280;
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 16px;
+    font-weight: 800;
     text-align: center;
     white-space: nowrap;
     user-select: none;
@@ -721,6 +733,7 @@
   .sr-erase-type-option:has(input[type="radio"]:checked) {
     background: var(--primary-color);
     color: #fff;
+    box-shadow: 0 6px 14px rgba(29, 111, 232, 0.22);
   }
   .sr-erase-type-option.is-disabled {
     opacity: 0.6;

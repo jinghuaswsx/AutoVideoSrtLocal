@@ -6,12 +6,12 @@
 <style>
   .sr-list-shell { padding: 24px; }
   .topbar-title .sr-page-title-hint { margin-left: 12px; color: var(--fg-subtle); font-size: 13px; font-weight: 400; }
-  .topbar-title .sr-title-backend-filter { display: inline-flex; align-items: center; gap: 6px; margin-left: 16px; vertical-align: middle; }
-  .sr-backend-filter-pill { height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-full); background: var(--bg); color: var(--fg-muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: background-color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease); }
+  .topbar-title .sr-title-backend-filter { display: inline-flex; align-items: center; gap: 4px; margin-left: 16px; padding: 4px; border-radius: var(--radius-full); background: #f3f4f6; vertical-align: middle; }
+  .sr-backend-filter-pill { min-height: 44px; padding: 0 24px; border: 1px solid transparent; border-radius: var(--radius-full); background: transparent; color: #17324d; font-size: 26px; font-weight: 800; line-height: 1; cursor: pointer; transition: background-color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease); }
   .sr-backend-filter-pill:hover,
-  .sr-backend-filter-pill:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+  .sr-backend-filter-pill:focus-visible { color: var(--primary-color); outline: none; }
   .sr-backend-filter-pill.is-active,
-  .sr-backend-filter-pill[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-subtle); color: var(--accent-active); }
+  .sr-backend-filter-pill[aria-pressed="true"] { border-color: var(--primary-color); background: var(--primary-color); color: #fff; box-shadow: 0 8px 18px rgba(29, 111, 232, 0.22); }
   .sr-list-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
   .sr-list-shell .sr-upload-card { margin-bottom: 20px; }
   .sr-list-filters { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }

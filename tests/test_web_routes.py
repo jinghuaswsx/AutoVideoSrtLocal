@@ -327,6 +327,19 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
+def test_subtitle_removal_upload_places_erase_type_under_volc_backend():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_subtitle_removal_upload_panel.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_subtitle_removal_styles.html").read_text(encoding="utf-8")
+
+    assert 'class="sr-backend-column is-volc"' in template
+    assert 'class="sr-backend-column is-local-vsr"' in template
+    assert template.index('class="sr-backend-column is-volc"') < template.index('class="sr-erase-type-group"')
+    assert template.index('class="sr-erase-type-group"') < template.index('class="sr-backend-column is-local-vsr"')
+    assert ".sr-backend-title { font-size: 28px; font-weight: 800;" in styles
+    assert ".sr-backend-tab.is-active .sr-backend-title" in styles
+
+
 def test_subtitle_removal_upload_script_relies_on_global_xhr_csrf_header():
     root = Path(__file__).resolve().parents[1]
     scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
@@ -366,6 +379,21 @@ def test_subtitle_removal_list_page_exposes_backend_filter_pills(authed_client_n
     assert 'aria-pressed="false"' in body
     assert ">处理方式<" in body
     assert "subtitle_backend" in body
+
+
+def test_subtitle_removal_backend_filter_pills_have_strong_selected_state(authed_client_no_db):
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert ".topbar-title .sr-title-backend-filter { display: inline-flex;" in body
+    assert "background: #f3f4f6;" in body
+    assert ".sr-backend-filter-pill { min-height: 44px;" in body
+    assert "font-size: 26px;" in body
+    assert "font-weight: 800;" in body
+    assert ".sr-backend-filter-pill.is-active," in body
+    assert "background: var(--primary-color);" in body
+    assert "color: #fff;" in body
 
 
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
