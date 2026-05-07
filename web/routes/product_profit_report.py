@@ -247,9 +247,19 @@ def api_list_xlsx():
 
     country = (request.args.get("country") or "").strip() or None
     report = ppl.generate_list(date_from=date_from, date_to=date_to, country=country)
-    xlsx_bytes = ppl.generate_list_xlsx(report)
+    xlsx_bytes = ppl.generate_list_xlsx(
+        report, date_from=date_from, date_to=date_to, country=country,
+    )
 
-    filename = f"product_profit_list_{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    # 选具体国家时把大写国家代码拼进文件名，避免「越南 / 全部」下载同名混淆。
+    if country and country.lower() != "all":
+        country_part = f"{country.upper()}_"
+    else:
+        country_part = ""
+    filename = (
+        f"product_profit_list_{country_part}"
+        f"{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    )
     return send_file(
         io.BytesIO(xlsx_bytes),
         as_attachment=True,

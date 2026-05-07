@@ -296,44 +296,107 @@ def generate_list(
 # ---------------------------------------------------------------------------
 # xlsx 导出（Tab ① 列表）
 # ---------------------------------------------------------------------------
-def generate_list_xlsx(report: dict[str, Any]) -> bytes:
+def generate_list_xlsx(
+    report: dict[str, Any],
+    *,
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> bytes:
     """把 generate_list() 的结果导出为 xlsx。两个 sheet：summary、products。
 
-    与 product_profit_report.generate_xlsx 一致采用 lazy import openpyxl 的模式，
+    与 product_profit_report.generate_xlsx 一致采用 lazy import xlsxwriter 的模式，
     避免在不需要导出时额外加载依赖。
+
+    summary sheet 头部追加 2 行上下文（日期范围 / 国家筛选），方便下载后核对来源。
     """
-    import openpyxl  # noqa: PLC0415 - lazy import 同 product_profit_report.generate_xlsx
+    import xlsxwriter  # noqa: PLC0415 - lazy import 同 product_profit_report.generate_xlsx
 
-    wb = openpyxl.Workbook()
+    buf = io.BytesIO()
+    book = xlsxwriter.Workbook(buf, {"in_memory": True})
 
-    ws1 = wb.active
-    ws1.title = "summary"
+    fmt_header = book.add_format({
+        "bold": True, "bg_color": "#1e40af", "font_color": "#ffffff",
+        "border": 1, "align": "center", "valign": "vcenter",
+    })
+    fmt_money = book.add_format({"num_format": "#,##0.00"})
+    fmt_pct = book.add_format({"num_format": "0.00%"})
+    fmt_int = book.add_format({"num_format": "#,##0"})
+    fmt_bold = book.add_format({"bold": True})
+
     s = report["summary"]
-    ws1.append(["指标", "值"])
-    ws1.append(["产品数", s["product_count"]])
-    ws1.append(["订单数", s["total_orders"]])
-    ws1.append(["收入(USD)", s["total_revenue_usd"]])
-    ws1.append(["利润(USD)", s["total_profit_usd"]])
-    ws1.append(["整体 ROAS", s["overall_roas"]])
 
-    ws2 = wb.create_sheet("products")
+    # Sheet 1: summary（前 2 行是上下文，后面跟指标表）
+    ws1 = book.add_worksheet("summary")
+    ws1.write(0, 0, "日期范围", fmt_bold)
+    ws1.write(0, 1, f"{date_from.isoformat()} ~ {date_to.isoformat()}")
+    ws1.write(1, 0, "国家筛选", fmt_bold)
+    ws1.write(1, 1, country.upper() if country else "全部")
+
+    ws1.write(3, 0, "指标", fmt_header)
+    ws1.write(3, 1, "值", fmt_header)
+    summary_rows: list[tuple[str, Any, Any]] = [
+        ("产品数", s["product_count"], fmt_int),
+        ("订单数", s["total_orders"], fmt_int),
+        ("收入(USD)", s["total_revenue_usd"], fmt_money),
+        ("利润(USD)", s["total_profit_usd"], fmt_money),
+        ("整体 ROAS", s["overall_roas"], fmt_money),
+    ]
+    for idx, (label, val, num_fmt) in enumerate(summary_rows, start=4):
+        ws1.write(idx, 0, label, fmt_bold)
+        if val is None:
+            ws1.write(idx, 1, "")
+        elif isinstance(val, (int, float)):
+            ws1.write_number(idx, 1, float(val), num_fmt)
+        else:
+            ws1.write(idx, 1, val)
+    ws1.set_column(0, 0, 20)
+    ws1.set_column(1, 1, 32)
+
+    # Sheet 2: products
+    ws2 = book.add_worksheet("products")
     headers = [
         "产品代码", "产品名", "订单数", "收入(USD)",
         "物流(USD)", "物流占比", "采购(USD)", "采购占比",
         "广告(USD)", "广告占比", "ROAS", "利润(USD)", "利润率", "成本完备",
     ]
-    ws2.append(headers)
-    for r in report["rows"]:
-        ws2.append([
+    for col_idx, label in enumerate(headers):
+        ws2.write(0, col_idx, label, fmt_header)
+
+    money_cols = {3, 4, 6, 8, 11}      # 收入 / 物流 / 采购 / 广告 / 利润
+    pct_cols = {5, 7, 9, 12}            # 各 _pct 列
+    int_cols = {2}                       # 订单数
+
+    for row_idx, r in enumerate(report["rows"], start=1):
+        values: list[Any] = [
             r["product_code"], r["name"], r["order_count"], r["revenue_usd"],
             r["shipping_cost_usd"], r["shipping_pct"],
             r["purchase_usd"], r["purchase_pct"],
             r["ad_cost_usd"], r["ad_pct"],
-            r["roas"] if r["roas"] is not None else "",
-            r["profit_usd"], r["profit_pct"],
+            r["roas"], r["profit_usd"], r["profit_pct"],
             r["cost_completeness"],
-        ])
+        ]
+        for col_idx, val in enumerate(values):
+            if val is None:
+                ws2.write(row_idx, col_idx, "")
+            elif col_idx in money_cols and isinstance(val, (int, float)):
+                ws2.write_number(row_idx, col_idx, float(val), fmt_money)
+            elif col_idx in pct_cols and isinstance(val, (int, float)):
+                ws2.write_number(row_idx, col_idx, float(val), fmt_pct)
+            elif col_idx in int_cols and isinstance(val, int):
+                ws2.write_number(row_idx, col_idx, val, fmt_int)
+            elif col_idx == 10 and isinstance(val, (int, float)):
+                # ROAS 用 money 格式（带 2 位小数）
+                ws2.write_number(row_idx, col_idx, float(val), fmt_money)
+            else:
+                ws2.write(row_idx, col_idx, val)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+    ws2.freeze_panes(1, 0)
+    if report["rows"]:
+        ws2.autofilter(0, 0, len(report["rows"]), len(headers) - 1)
+    for col_idx, label in enumerate(headers):
+        ws2.set_column(col_idx, col_idx, max(len(label) * 2 + 2, 12))
+
+    book.close()
+    buf.seek(0)
+    return buf.read()

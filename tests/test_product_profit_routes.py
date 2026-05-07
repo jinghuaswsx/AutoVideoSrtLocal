@@ -136,3 +136,51 @@ def test_list_xlsx_invalid_date_range_400(authed_client_no_db):
         "?date_from=2026-06-01&date_to=2026-05-01"
     )
     assert resp.status_code == 400
+
+
+def test_list_xlsx_filename_includes_country_when_specified(
+    authed_client_no_db, monkeypatch,
+):
+    """选具体国家（country=vn）→ filename 含大写国家代码 VN_；不传 / 'all' → 不含。"""
+    fake_report = {
+        "rows": [],
+        "summary": {
+            "product_count": 0, "total_orders": 0,
+            "total_revenue_usd": 0.0, "total_profit_usd": 0.0,
+            "overall_roas": None,
+        },
+    }
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.ppl.generate_list",
+        lambda **kwargs: fake_report,
+    )
+
+    # 选具体国家（小写传入也归一为大写）
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/list.xlsx"
+        "?date_from=2026-05-01&date_to=2026-05-07&country=vn"
+    )
+    assert resp.status_code == 200
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "product_profit_list_VN_2026-05-01_2026-05-07.xlsx" in cd
+
+    # 不传 country → 不含国家段
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/list.xlsx"
+        "?date_from=2026-05-01&date_to=2026-05-07"
+    )
+    assert resp.status_code == 200
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "product_profit_list_2026-05-01_2026-05-07.xlsx" in cd
+    assert "_VN_" not in cd
+    assert "_ALL_" not in cd
+
+    # country=all → 视作全部，不含国家段
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/list.xlsx"
+        "?date_from=2026-05-01&date_to=2026-05-07&country=all"
+    )
+    assert resp.status_code == 200
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "product_profit_list_2026-05-01_2026-05-07.xlsx" in cd
+    assert "_ALL_" not in cd
