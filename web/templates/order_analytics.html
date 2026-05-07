@@ -14,6 +14,27 @@
   <button type="button" class="oa-tab" data-tab="analytics" role="tab" aria-selected="false">Shopify 订单分析</button>
 </span>
 {% endblock %}
+{% block topbar_actions %}
+<span class="ppr-actions">
+  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-import" title="导入 Shopify Payments CSV">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    <span>Payments 导入</span>
+  </button>
+  <button type="button" class="ppr-btn ppr-btn-ghost" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 3v18h18"/>
+      <rect x="7" y="13" width="3" height="5"/>
+      <rect x="12" y="9" width="3" height="9"/>
+      <rect x="17" y="5" width="3" height="13"/>
+    </svg>
+    <span>产品盈亏报表</span>
+  </button>
+</span>
+{% endblock %}
 {% block extra_style %}
 :root {
   --bg: oklch(99% 0.004 230);
@@ -750,6 +771,146 @@
   .oa-stat-value { font-size: 18px; }
   .oa-stat-label { font-size: 11px; }
   .oa-stat-sub { font-size: 11px; }
+}
+
+/* === 产品盈亏报表 / Payments 导入（数据分析页面右上角） === */
+.ppr-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  margin-right: 12px;
+}
+.ppr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid var(--btn-ghost-border);
+  background: var(--btn-ghost-bg);
+  color: var(--btn-ghost-text);
+  transition: background .12s, border-color .12s, color .12s;
+  white-space: nowrap;
+}
+.ppr-btn:hover {
+  border-color: var(--btn-ghost-hover-border);
+  color: var(--btn-ghost-hover-text);
+}
+.ppr-btn-primary {
+  background: var(--primary-color);
+  color: #fff;
+  border-color: var(--primary-color);
+}
+.ppr-btn-primary:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+.ppr-btn svg { flex-shrink: 0; }
+
+.ppr-dialog {
+  border: none;
+  border-radius: 12px;
+  padding: 0;
+  width: min(520px, 92vw);
+  box-shadow: 0 12px 24px -4px rgba(15, 23, 42, .12), 0 4px 8px -2px rgba(15, 23, 42, .08);
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+.ppr-dialog::backdrop { background: rgba(15, 23, 42, .35); }
+.ppr-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-main);
+  font-size: 16px;
+  font-weight: 600;
+}
+.ppr-dialog-close {
+  background: none;
+  border: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-user-badge);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.ppr-dialog-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ppr-dialog-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-user-badge);
+  font-weight: 500;
+}
+.ppr-dialog-body select,
+.ppr-dialog-body input[type="date"],
+.ppr-dialog-body input[type="file"] {
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-family: inherit;
+}
+.ppr-dialog-body select:focus,
+.ppr-dialog-body input:focus {
+  outline: 2px solid rgba(59, 130, 246, .25);
+  border-color: var(--primary-color);
+}
+.ppr-dialog-row {
+  display: flex;
+  gap: 10px;
+}
+.ppr-dialog-row > label {
+  flex: 1;
+}
+.ppr-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-main);
+}
+.ppr-dialog-result {
+  font-size: 12px;
+  color: var(--text-user-badge);
+  background: var(--bg-user-badge);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SF Mono, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  display: none;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.ppr-dialog-result.is-error { color: #b91c1c; background: #fee2e2; }
+.ppr-dialog-result.is-ok { color: #166534; background: #dcfce7; }
+
+@media (max-width: 768px) {
+  .ppr-actions {
+    flex-basis: 100%;
+    order: 99;
+    margin: 6px 0 0;
+    justify-content: flex-end;
+  }
+  .ppr-btn span { display: none; }
+  .ppr-btn { padding: 0 10px; }
 }
 {% endblock %}
 
@@ -4201,6 +4362,243 @@
     div.textContent = s;
     return div.innerHTML;
   }
+})();
+</script>
+
+<!-- ═══════ 产品盈亏报表 / Payments 导入对话框 ═══════ -->
+<dialog id="ppr-dialog-import" class="ppr-dialog">
+  <form method="dialog" id="ppr-form-import">
+    <div class="ppr-dialog-head">
+      <span>导入 Shopify Payments CSV</span>
+      <button type="button" class="ppr-dialog-close" data-ppr="close-import" aria-label="关闭">×</button>
+    </div>
+    <div class="ppr-dialog-body">
+      <label>
+        <span>店铺归属</span>
+        <select name="store_code" required>
+          <option value="">请选择店铺</option>
+          <option value="newjoyloo">newjoyloo</option>
+          <option value="Omurio">Omurio</option>
+        </select>
+      </label>
+      <label>
+        <span>CSV 文件（Shopify 后台 Settings → Payments → Transactions 导出）</span>
+        <input type="file" name="file" accept=".csv,text/csv" required>
+      </label>
+      <div class="ppr-dialog-result" id="ppr-import-result"></div>
+    </div>
+    <div class="ppr-dialog-foot">
+      <button type="button" class="ppr-btn ppr-btn-ghost" data-ppr="close-import">取消</button>
+      <button type="submit" class="ppr-btn ppr-btn-primary" id="ppr-import-submit">开始导入</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ppr-dialog-report" class="ppr-dialog">
+  <form method="dialog" id="ppr-form-report">
+    <div class="ppr-dialog-head">
+      <span>下载产品盈亏报表</span>
+      <button type="button" class="ppr-dialog-close" data-ppr="close-report" aria-label="关闭">×</button>
+    </div>
+    <div class="ppr-dialog-body">
+      <label>
+        <span>产品</span>
+        <select name="product_id" id="ppr-product-select" required>
+          <option value="">加载中…</option>
+        </select>
+      </label>
+      <div class="ppr-dialog-row">
+        <label>
+          <span>开始日期</span>
+          <input type="date" name="date_from" id="ppr-date-from" required>
+        </label>
+        <label>
+          <span>结束日期</span>
+          <input type="date" name="date_to" id="ppr-date-to" required>
+        </label>
+      </div>
+      <div class="ppr-dialog-result" id="ppr-report-result">
+        报表含 4 个 sheet：订单明细 / 每日盈亏 / 按国家 / 产品总账。
+        广告费已按"账户↔店铺 1:1 映射"重新分摊；Shopify 手续费按 base / 国际信用卡 / 货币转换三项拆分。
+      </div>
+    </div>
+    <div class="ppr-dialog-foot">
+      <button type="button" class="ppr-btn ppr-btn-ghost" data-ppr="close-report">取消</button>
+      <button type="submit" class="ppr-btn ppr-btn-primary" id="ppr-report-submit">下载 Excel</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function() {
+  'use strict';
+  var dlgImport = document.getElementById('ppr-dialog-import');
+  var dlgReport = document.getElementById('ppr-dialog-report');
+  if (!dlgImport || !dlgReport) return;
+
+  var formImport = document.getElementById('ppr-form-import');
+  var formReport = document.getElementById('ppr-form-report');
+  var resImport = document.getElementById('ppr-import-result');
+  var resReport = document.getElementById('ppr-report-result');
+  var btnImportSubmit = document.getElementById('ppr-import-submit');
+  var btnReportSubmit = document.getElementById('ppr-report-submit');
+  var productSelect = document.getElementById('ppr-product-select');
+  var dateFromInput = document.getElementById('ppr-date-from');
+  var dateToInput = document.getElementById('ppr-date-to');
+
+  // 默认日期：最近 30 天
+  function setDefaultDates() {
+    var today = new Date();
+    var from = new Date(today.getTime() - 30 * 24 * 3600 * 1000);
+    function fmt(d) {
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var dd = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + dd;
+    }
+    dateFromInput.value = fmt(from);
+    dateToInput.value = fmt(today);
+  }
+  setDefaultDates();
+
+  // 产品下拉懒加载（首次打开报表 dialog 时拉一次）
+  var productsLoaded = false;
+  function loadProducts() {
+    if (productsLoaded) return Promise.resolve();
+    return fetch('/order-analytics/product-profit/products', { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        productSelect.innerHTML = '';
+        var emptyOpt = document.createElement('option');
+        emptyOpt.value = ''; emptyOpt.textContent = '请选择产品';
+        productSelect.appendChild(emptyOpt);
+        (data.products || []).forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.product_code + (p.name ? ' — ' + p.name : '');
+          productSelect.appendChild(opt);
+        });
+        productsLoaded = true;
+      })
+      .catch(function(err) {
+        productSelect.innerHTML = '<option value="">加载失败：' + err + '</option>';
+      });
+  }
+
+  // 按钮 → 打开 dialog
+  document.querySelectorAll('[data-ppr="open-import"]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      resImport.style.display = 'none';
+      resImport.className = 'ppr-dialog-result';
+      formImport.reset();
+      dlgImport.showModal();
+    });
+  });
+  document.querySelectorAll('[data-ppr="open-report"]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      loadProducts();
+      dlgReport.showModal();
+    });
+  });
+
+  // 关闭按钮
+  document.querySelectorAll('[data-ppr="close-import"]').forEach(function(btn) {
+    btn.addEventListener('click', function() { dlgImport.close(); });
+  });
+  document.querySelectorAll('[data-ppr="close-report"]').forEach(function(btn) {
+    btn.addEventListener('click', function() { dlgReport.close(); });
+  });
+
+  // 导入：multipart POST
+  formImport.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var fd = new FormData(formImport);
+    if (!fd.get('store_code') || !fd.get('file')) {
+      resImport.className = 'ppr-dialog-result is-error';
+      resImport.textContent = '请选择店铺和 CSV 文件';
+      resImport.style.display = 'block';
+      return;
+    }
+    btnImportSubmit.disabled = true;
+    btnImportSubmit.textContent = '导入中…';
+    resImport.className = 'ppr-dialog-result';
+    resImport.style.display = 'block';
+    resImport.textContent = '上传 + 解析中，请稍候…';
+    fetch('/order-analytics/product-profit/payments_csv/import', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, body: j }; }); })
+      .then(function(out) {
+        if (!out.ok) {
+          resImport.className = 'ppr-dialog-result is-error';
+          resImport.textContent = '导入失败：' + (out.body.error || JSON.stringify(out.body));
+          return;
+        }
+        var b = out.body;
+        resImport.className = 'ppr-dialog-result is-ok';
+        resImport.textContent =
+          '✓ 导入完成\n' +
+          '  店铺: ' + b.store_code + '\n' +
+          '  文件: ' + b.filename + '\n' +
+          '  总行数: ' + b.total + '\n' +
+          '  入库/更新: ' + (b.inserted || 0) + '\n' +
+          '  跳过（amount=0）: ' + (b.skipped || 0) + '\n' +
+          '  匹配标准费率: ' + (b.matches_standard || 0) + '\n' +
+          '  异常费率（待复核）: ' + (b.anomalies || 0);
+      })
+      .catch(function(err) {
+        resImport.className = 'ppr-dialog-result is-error';
+        resImport.textContent = '请求失败：' + err;
+      })
+      .finally(function() {
+        btnImportSubmit.disabled = false;
+        btnImportSubmit.textContent = '开始导入';
+      });
+  });
+
+  // 报表：直接拼 URL 触发 xlsx 下载
+  formReport.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var pid = productSelect.value;
+    var df = dateFromInput.value;
+    var dt = dateToInput.value;
+    if (!pid || !df || !dt) {
+      resReport.className = 'ppr-dialog-result is-error';
+      resReport.textContent = '请选择产品和时间范围';
+      resReport.style.display = 'block';
+      return;
+    }
+    if (df > dt) {
+      resReport.className = 'ppr-dialog-result is-error';
+      resReport.textContent = '开始日期不能晚于结束日期';
+      resReport.style.display = 'block';
+      return;
+    }
+    btnReportSubmit.disabled = true;
+    btnReportSubmit.textContent = '生成中…';
+    resReport.className = 'ppr-dialog-result is-ok';
+    resReport.textContent = '正在生成报表… 浏览器开始下载即可关闭对话框';
+    resReport.style.display = 'block';
+
+    var url = '/order-analytics/product-profit/report.xlsx?'
+      + 'product_id=' + encodeURIComponent(pid)
+      + '&date_from=' + encodeURIComponent(df)
+      + '&date_to=' + encodeURIComponent(dt);
+
+    // 用 anchor 触发下载（保留 cookie 鉴权）
+    var a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setTimeout(function() {
+      btnReportSubmit.disabled = false;
+      btnReportSubmit.textContent = '下载 Excel';
+    }, 1500);
+  });
 })();
 </script>
 {% endblock %}
