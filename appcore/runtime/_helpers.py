@@ -10,45 +10,8 @@ import json
 import logging
 import math
 import os
-from datetime import datetime
 
-import config
-
-import appcore.task_state as task_state
-from appcore.api_keys import resolve_jianying_project_root
 from appcore import ai_billing
-from appcore import tts_generation_stats
-from appcore.events import (
-    EVT_ALIGNMENT_READY,
-    EVT_ASR_RESULT,
-    EVT_CAPCUT_READY,
-    EVT_ENGLISH_ASR_RESULT,
-    EVT_PIPELINE_DONE,
-    EVT_PIPELINE_ERROR,
-    EVT_STEP_UPDATE,
-    EVT_SUBTITLE_READY,
-    EVT_TRANSLATE_RESULT,
-    EVT_TTS_SCRIPT_READY,
-    EVT_VOICE_MATCH_READY,
-    Event,
-    EventBus,
-)
-from appcore.preview_artifacts import (
-    build_alignment_artifact,
-    build_analysis_artifact,
-    build_asr_artifact,
-    build_compose_artifact,
-    build_export_artifact,
-    build_extract_artifact,
-    build_subtitle_artifact,
-    build_translate_artifact,
-    build_tts_artifact,
-)
-from appcore.tts_language_guard import (
-    TtsLanguageValidationError,
-    extract_tts_script_text,
-    validate_tts_script_language_or_raise,
-)
 
 
 def _skip_legacy_artifact_upload(task: dict, task_id: str) -> None:

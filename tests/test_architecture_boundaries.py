@@ -99,6 +99,31 @@ def test_runtime_modules_do_not_keep_unused_uuid_imports():
     assert offenders == []
 
 
+def test_runtime_helpers_do_not_keep_unused_imports():
+    path = Path("appcore/runtime/_helpers.py")
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    used_names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    offenders: list[str] = []
+
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.asname or alias.name.split(".")[0]
+                if name not in used_names:
+                    offenders.append(f"{path}:{node.lineno}:{name}")
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "__future__":
+                continue
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                name = alias.asname or alias.name
+                if name not in used_names:
+                    offenders.append(f"{path}:{node.lineno}:{name}")
+
+    assert offenders == []
+
+
 def test_appcore_modules_do_not_import_web_package():
     offenders: list[str] = []
 
