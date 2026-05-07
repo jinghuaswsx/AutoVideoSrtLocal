@@ -3896,6 +3896,18 @@ def test_subtitle_removal_json_responses_live_outside_route_module():
     assert Path("web/services/subtitle_removal_responses.py").exists()
 
 
+def test_subtitle_removal_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/subtitle_removal.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/subtitle_removal_route_store.py")
+
+    assert "from appcore.db import" not in route_source
+    assert "subtitle_removal_route_store" in route_source
+    assert "db_query = subtitle_removal_route_store.query" in route_source
+    assert "db_query_one = subtitle_removal_route_store.query_one" in route_source
+    assert "db_execute = subtitle_removal_route_store.execute" in route_source
+    assert store_path.exists()
+
+
 def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
     allowed_direct_thread_files = {
         "appcore/runner_lifecycle.py",

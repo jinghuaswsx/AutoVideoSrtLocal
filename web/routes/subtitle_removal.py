@@ -12,9 +12,8 @@ import config
 from flask import Blueprint, render_template, abort, request, redirect, url_for
 from flask_login import login_required, current_user
 
-from appcore import object_keys, subtitle_removal_source_storage, task_state
+from appcore import object_keys, subtitle_removal_route_store, subtitle_removal_source_storage, task_state
 from appcore import tos_clients
-from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 from appcore.safe_paths import PathSafetyError, remove_file_under_roots
 from appcore.vod_erase_provider import VodEraseError, get_play_info
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -31,6 +30,10 @@ from web.upload_util import validate_video_extension, write_stream_to_path
 log = logging.getLogger(__name__)
 
 bp = Blueprint("subtitle_removal", __name__)
+
+db_query = subtitle_removal_route_store.query
+db_query_one = subtitle_removal_route_store.query_one
+db_execute = subtitle_removal_route_store.execute
 
 
 def _json_response(payload):
