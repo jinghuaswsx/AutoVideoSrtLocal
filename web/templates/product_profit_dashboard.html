@@ -239,22 +239,34 @@
   font-weight: 600;
   font-size: 12px;
   color: var(--text-user-badge);
-  text-align: left;
+  text-align: center;          /* 列名居中 */
   white-space: nowrap;
   z-index: 1;
+  vertical-align: middle;
 }
 .ppd-table thead th[data-sort] { cursor: pointer; user-select: none; }
 .ppd-table thead th[data-sort]:hover { background: #f1f5f9; color: var(--primary-color); }
 .ppd-table thead th .sort-arrow { font-size: 10px; color: var(--primary-color); margin-left: 2px; }
+.ppd-table thead th .col-unit {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-user-badge);
+  opacity: 0.75;
+  margin-top: 2px;
+  letter-spacing: 0.4px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
 .ppd-table tbody td {
   padding: 8px;
   border-bottom: 1px solid var(--border-main);
   white-space: nowrap;
   color: var(--text-main);
+  text-align: center;          /* 数据居中 */
+  vertical-align: middle;
 }
 .ppd-table tbody tr:hover { background: rgba(59, 130, 246, .04); }
 .ppd-num {
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .ppd-num.is-positive { color: #15803d; font-weight: 600; }
@@ -405,15 +417,15 @@
               <th data-sort="site">站点</th>
               <th data-sort="buyer_country">国家</th>
               <th data-sort="quantity" class="ppd-num">件数</th>
-              <th data-sort="revenue_usd" class="ppd-num">收入</th>
-              <th data-sort="purchase_cost_usd" class="ppd-num">采购</th>
-              <th data-sort="shipping_cost_usd" class="ppd-num">物流</th>
-              <th data-sort="shopify_base_fee_usd" class="ppd-num">平台费</th>
-              <th data-sort="intl_card_fee_usd" class="ppd-num">国际卡</th>
-              <th data-sort="currency_conv_fee_usd" class="ppd-num">货币转换</th>
-              <th data-sort="shopify_fee_total_usd" class="ppd-num">合计费</th>
-              <th data-sort="ad_cost_recalc_usd" class="ppd-num">广告</th>
-              <th data-sort="profit_usd" class="ppd-num">利润</th>
+              <th data-sort="revenue_usd" class="ppd-num">收入<span class="col-unit">USD</span></th>
+              <th data-sort="purchase_cost_usd" class="ppd-num">采购<span class="col-unit">USD</span></th>
+              <th data-sort="shipping_cost_usd" class="ppd-num">物流<span class="col-unit">USD</span></th>
+              <th data-sort="shopify_base_fee_usd" class="ppd-num">平台费<span class="col-unit">USD</span></th>
+              <th data-sort="intl_card_fee_usd" class="ppd-num">国际卡<span class="col-unit">USD</span></th>
+              <th data-sort="currency_conv_fee_usd" class="ppd-num">货币转换<span class="col-unit">USD</span></th>
+              <th data-sort="shopify_fee_total_usd" class="ppd-num">合计费<span class="col-unit">USD</span></th>
+              <th data-sort="ad_cost_recalc_usd" class="ppd-num">广告<span class="col-unit">USD</span></th>
+              <th data-sort="profit_usd" class="ppd-num">利润<span class="col-unit">USD</span></th>
               <th>fee 来源</th>
             </tr>
           </thead>
