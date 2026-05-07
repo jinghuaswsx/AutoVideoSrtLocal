@@ -26,7 +26,6 @@ _ALL_STEP_NAMES = (
 import config
 
 log = logging.getLogger(__name__)
-logger = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
@@ -1457,7 +1456,7 @@ class PipelineRunner:
             from appcore.source_video import ensure_local_source_video
             ensure_local_source_video(task_id)
         except Exception as exc:
-            logger.exception("[task %s] source video ensure failed: %s", task_id, exc)
+            log.exception("[task %s] source video ensure failed: %s", task_id, exc)
             task_state.update(task_id, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
@@ -1501,7 +1500,7 @@ class PipelineRunner:
             raise
         except Exception as exc:
             current_step = (task_state.get(task_id) or {}).get("current_step") or start_step or "?"
-            logger.exception(
+            log.exception(
                 "[task %s] pipeline failed at step=%s: %s", task_id, current_step, exc,
             )
             # Auto-retry budget：单点失败不直接阻塞整条流水线，先指数退避自愈几次。

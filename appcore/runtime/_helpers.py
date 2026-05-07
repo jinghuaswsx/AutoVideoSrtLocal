@@ -52,10 +52,6 @@ from appcore.tts_language_guard import (
 )
 
 
-log = logging.getLogger(__name__)
-logger = logging.getLogger(__name__)
-
-
 def _skip_legacy_artifact_upload(task: dict, task_id: str) -> None:
     """Compatibility shim for legacy object-storage metadata.
 
@@ -64,9 +60,6 @@ def _skip_legacy_artifact_upload(task: dict, task_id: str) -> None:
     final outputs to object storage by default.
     """
     return
-
-
-logger = logging.getLogger(__name__)
 
 
 def _save_json(task_dir: str, filename: str, data) -> None:

@@ -15,7 +15,6 @@ from datetime import datetime
 import config
 
 log = logging.getLogger(__name__)
-logger = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
@@ -86,6 +85,9 @@ from ._helpers import (
 )
 
 
+# Keep the submodule bound on reimport so monkeypatch/importlib callers can
+# address appcore.runtime._pipeline_runner after sys.modules cache churn.
+from . import _pipeline_runner as _pipeline_runner
 from ._pipeline_runner import PipelineRunner
 
 

@@ -48,6 +48,31 @@ def test_pipeline_runner_class_lives_outside_runtime_facade():
     assert Path("appcore/runtime/_pipeline_runner.py").exists()
 
 
+def test_runtime_modules_do_not_keep_duplicate_logger_aliases():
+    offenders: dict[str, list[tuple[str, int]]] = {}
+
+    for path in Path("appcore/runtime").glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        aliases: list[tuple[str, int]] = []
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if not isinstance(node.value, ast.Call):
+                continue
+            call = node.value
+            if not isinstance(call.func, ast.Attribute) or call.func.attr != "getLogger":
+                continue
+            if not isinstance(call.func.value, ast.Name) or call.func.value.id != "logging":
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in {"log", "logger"}:
+                    aliases.append((target.id, node.lineno))
+        if len(aliases) > 1 or any(name != "log" for name, _line in aliases):
+            offenders[str(path)] = aliases
+
+    assert offenders == {}
+
+
 def test_appcore_modules_do_not_import_web_package():
     offenders: list[str] = []
 

@@ -170,6 +170,18 @@ def test_no_flask_or_socketio_imports():
     assert not forbidden, f"appcore.runtime imported forbidden modules: {forbidden}"
 
 
+def test_runtime_reimport_keeps_pipeline_runner_submodule_attribute():
+    import importlib
+    import sys
+
+    import appcore.runtime._pipeline_runner as pipeline_runner_module
+
+    sys.modules.pop("appcore.runtime", None)
+    reloaded_runtime = importlib.import_module("appcore.runtime")
+
+    assert reloaded_runtime._pipeline_runner is pipeline_runner_module
+
+
 def test_pipeline_runner_has_tts_class_attributes():
     from appcore.runtime import PipelineRunner
     # Default (English) values
