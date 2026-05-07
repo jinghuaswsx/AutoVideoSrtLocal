@@ -898,12 +898,25 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         {% if field.is_secret %}<span style="color:var(--settings-danger-fg);font-weight:700;margin-left:4px;">·敏感</span>{% endif %}
         <span class="binding-code" style="margin-left:6px;font-weight:400;text-transform:none;">→ config.{{ field.config_attr }}</span>
       </label>
-      <input type="text"
+      <input type="{{ 'password' if field.is_secret else 'text' }}"
              id="infra_{{ row.code }}_{{ field.json_key }}"
              name="infra_{{ row.code }}_{{ field.json_key }}"
              value="{{ field.value }}"
-             autocomplete="off"
+             placeholder="{% if field.is_secret %}{{ '已配置，留空不变' if field.secret_present else '未配置，输入后保存' }}{% endif %}"
+             autocomplete="{{ 'new-password' if field.is_secret else 'off' }}"
              spellcheck="false">
+      {% if field.is_secret %}
+      <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+        <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
+          <input type="checkbox"
+                 name="clear"
+                 value="infra_{{ row.code }}_{{ field.json_key }}"
+                 {% if not field.secret_present %}disabled{% endif %}>
+          清空该字段
+        </label>
+        <span class="hint" style="margin:0">状态：{{ field.secret_mask if field.secret_present else '未配置' }}</span>
+      </div>
+      {% endif %}
       {% endfor %}
     </div>
     {% endfor %}

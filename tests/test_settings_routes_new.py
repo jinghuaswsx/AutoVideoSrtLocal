@@ -145,6 +145,128 @@ def test_provider_rows_by_group_masks_api_key_in_view(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Infrastructure credentials
+# ---------------------------------------------------------------------------
+
+def test_infrastructure_rows_mask_secret_values_in_view(monkeypatch):
+    from appcore.infra_credentials import CredentialField, InfraCredential
+    from web.routes import settings as settings_routes
+
+    monkeypatch.setattr(
+        settings_routes.infra_credentials,
+        "GROUP_ORDER",
+        [("object_storage", "Object Storage")],
+    )
+    monkeypatch.setattr(
+        settings_routes.infra_credentials,
+        "known_codes",
+        lambda: ["tos_main"],
+    )
+    monkeypatch.setattr(
+        settings_routes.infra_credentials,
+        "display_meta",
+        lambda code: ("TOS", "object_storage"),
+    )
+    monkeypatch.setattr(
+        settings_routes.infra_credentials,
+        "schema_for",
+        lambda code: [
+            CredentialField(
+                "access_key",
+                "TOS_ACCESS_KEY",
+                "TOS_ACCESS_KEY",
+                "Access Key",
+                is_secret=True,
+            ),
+            CredentialField("bucket", "TOS_BUCKET", "TOS_BUCKET", "Bucket"),
+        ],
+    )
+    monkeypatch.setattr(
+        settings_routes.infra_credentials,
+        "list_configs",
+        lambda: [
+            InfraCredential(
+                code="tos_main",
+                display_name="TOS",
+                group_code="object_storage",
+                config={"access_key": "AK123456", "bucket": "media-bucket"},
+                enabled=True,
+            )
+        ],
+    )
+
+    groups = settings_routes._infrastructure_rows_by_group()
+    fields = {field["json_key"]: field for field in groups[0]["rows"][0]["fields"]}
+
+    assert fields["access_key"]["value"] == ""
+    assert fields["access_key"]["secret_present"] is True
+    assert "3456" in fields["access_key"]["secret_mask"]
+    assert "AK123456" not in repr(groups)
+    assert fields["bucket"]["value"] == "media-bucket"
+
+
+def test_settings_post_infrastructure_keeps_secret_when_blank(admin_no_db_client):
+    from appcore.infra_credentials import CredentialField
+
+    saved = []
+    with patch("web.routes.settings.infra_credentials.known_codes", return_value=["tos_main"]), \
+         patch("web.routes.settings.infra_credentials.schema_for", return_value=[
+             CredentialField(
+                 "access_key",
+                 "TOS_ACCESS_KEY",
+                 "TOS_ACCESS_KEY",
+                 "Access Key",
+                 is_secret=True,
+             ),
+             CredentialField("bucket", "TOS_BUCKET", "TOS_BUCKET", "Bucket"),
+         ]), \
+         patch(
+             "web.routes.settings.infra_credentials.save_config",
+             side_effect=lambda code, fields, updated_by=None: saved.append((code, fields, updated_by)),
+         ):
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "infrastructure",
+            "infra_tos_main_access_key": "",
+            "infra_tos_main_bucket": "media-bucket",
+        })
+
+    assert resp.status_code in (302, 303)
+    assert saved == [("tos_main", {"bucket": "media-bucket"}, 1)]
+
+
+def test_settings_post_infrastructure_clears_secret_only_when_requested(
+    admin_no_db_client,
+):
+    from appcore.infra_credentials import CredentialField
+
+    saved = []
+    with patch("web.routes.settings.infra_credentials.known_codes", return_value=["tos_main"]), \
+         patch("web.routes.settings.infra_credentials.schema_for", return_value=[
+             CredentialField(
+                 "access_key",
+                 "TOS_ACCESS_KEY",
+                 "TOS_ACCESS_KEY",
+                 "Access Key",
+                 is_secret=True,
+             ),
+             CredentialField("bucket", "TOS_BUCKET", "TOS_BUCKET", "Bucket"),
+         ]), \
+         patch(
+             "web.routes.settings.infra_credentials.save_config",
+             side_effect=lambda code, fields, updated_by=None: saved.append((code, fields, updated_by)),
+         ):
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "infrastructure",
+            "infra_tos_main_access_key": "",
+            "infra_tos_main_bucket": "media-bucket",
+            "clear": "infra_tos_main_access_key",
+        })
+
+    assert resp.status_code in (302, 303)
+    assert saved == [("tos_main", {"access_key": "", "bucket": "media-bucket"}, 1)]
+
+
+# ---------------------------------------------------------------------------
 # 权限
 # ---------------------------------------------------------------------------
 

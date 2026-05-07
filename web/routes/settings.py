@@ -123,8 +123,8 @@ def _mask_secret(value: str | None) -> str:
 def _infrastructure_rows_by_group() -> list[dict]:
     """基础设施凭据 tab 数据视图。
 
-    与 providers tab 不同，这里**明文回显**所有字段（包括 access_key /
-    secret_key），admin 自己运维需要直接看到当前值方便对照修改。
+    Secret fields follow the providers tab rule: show configured status and a
+    mask only, never put the stored credential back into an input value.
     """
     rows = infra_credentials.list_configs()
     by_code = {r.code: r for r in rows}
@@ -140,20 +140,24 @@ def _infrastructure_rows_by_group() -> list[dict]:
                 cred.display_name if cred else infra_credentials.display_meta(code)[0]
             )
             enabled = bool(cred.enabled) if cred else True
+            fields = []
+            for spec in infra_credentials.schema_for(code):
+                raw_value = str(cfg_data.get(spec.json_key, "") or "")
+                is_secret = bool(spec.is_secret)
+                fields.append({
+                    "json_key": spec.json_key,
+                    "label": spec.label,
+                    "config_attr": spec.config_attr,
+                    "is_secret": is_secret,
+                    "value": "" if is_secret else raw_value,
+                    "secret_present": bool(raw_value) if is_secret else False,
+                    "secret_mask": _mask_secret(raw_value) if is_secret else "",
+                })
             group_rows.append({
                 "code": code,
                 "display_name": display_name,
                 "enabled": enabled,
-                "fields": [
-                    {
-                        "json_key": spec.json_key,
-                        "label": spec.label,
-                        "config_attr": spec.config_attr,
-                        "is_secret": spec.is_secret,
-                        "value": str(cfg_data.get(spec.json_key, "") or ""),
-                    }
-                    for spec in infra_credentials.schema_for(code)
-                ],
+                "fields": fields,
             })
         if group_rows:
             view.append({
@@ -463,6 +467,7 @@ def _handle_infrastructure_post() -> None:
     if not getattr(current_user, "is_admin", False):
         return
     user_id = current_user.id
+    clear_keys = set(request.form.getlist("clear") or [])
     for code in infra_credentials.known_codes():
         prefix = f"infra_{code}_"
         touched = any(field.startswith(prefix) for field in request.form.keys())
@@ -472,7 +477,14 @@ def _handle_infrastructure_post() -> None:
         for spec in infra_credentials.schema_for(code):
             form_key = f"{prefix}{spec.json_key}"
             if form_key in request.form:
-                fields[spec.json_key] = (request.form.get(form_key) or "").strip()
+                raw_value = (request.form.get(form_key) or "").strip()
+                if spec.is_secret:
+                    if raw_value:
+                        fields[spec.json_key] = raw_value
+                    elif form_key in clear_keys:
+                        fields[spec.json_key] = ""
+                else:
+                    fields[spec.json_key] = raw_value
         if not fields:
             continue
         try:
