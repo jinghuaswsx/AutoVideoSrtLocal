@@ -452,15 +452,25 @@
   .ppd-sites { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
-  .ppd-main { padding: 14px; }
-  .ppd-filters { padding: 12px; }
+  .ppd-main { padding: 12px; }
+  .ppd-filters {
+    padding: 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
   .ppd-filters label { width: 100%; }
   .ppd-filters select,
   .ppd-filters input { width: 100%; min-width: 0; }
+  .ppd-filters .ppd-btn { width: 100%; }
+  .ppd-stats { grid-template-columns: 1fr; }
   .ppd-stat-value { font-size: 22px; }
+  .ppd-charts { grid-template-columns: 1fr; }
+  .ppd-country-charts { grid-template-columns: 1fr; }
+  .ppd-sites { grid-template-columns: 1fr; }
   .ppd-orders-head { flex-direction: column; align-items: stretch; }
   .ppd-orders-head input[type="search"] { width: 100%; }
   .ppd-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .ppd-table { font-size: 12px; }
 }
 </style>
 {% endblock %}
