@@ -237,3 +237,133 @@ def get_order_profit_summary_for_window(
         "revenue_total_usd": float(row.get("revenue_total") or 0),
         "profit_total_usd": float(row.get("profit_total") or 0),
     }
+
+
+def _empty_status_summary_bucket() -> dict[str, float | int]:
+    return {
+        "lines": 0,
+        "revenue": 0,
+        "profit": 0,
+        "shopify_fee": 0,
+        "ad_cost": 0,
+        "purchase": 0,
+        "shipping_cost": 0,
+        "return_reserve": 0,
+    }
+
+
+def get_order_profit_status_summary(
+    *,
+    date_from: date,
+    date_to: date,
+) -> dict[str, Any]:
+    rows = query(
+        "SELECT status, COUNT(*) AS n, "
+        "       SUM(revenue_usd) AS revenue, SUM(profit_usd) AS profit, "
+        "       SUM(shopify_fee_usd) AS shopify_fee, "
+        "       SUM(ad_cost_usd) AS ad_cost, "
+        "       SUM(purchase_usd) AS purchase, "
+        "       SUM(shipping_cost_usd) AS shipping_cost, "
+        "       SUM(return_reserve_usd) AS return_reserve "
+        "FROM order_profit_lines "
+        "WHERE business_date BETWEEN %s AND %s "
+        "GROUP BY status",
+        (date_from, date_to),
+    )
+    summary = {
+        "ok": _empty_status_summary_bucket(),
+        "incomplete": _empty_status_summary_bucket(),
+    }
+    for row in rows or []:
+        bucket = summary.get(row.get("status"))
+        if bucket is None:
+            continue
+        bucket["lines"] = int(row.get("n") or 0)
+        bucket["revenue"] = float(row.get("revenue") or 0)
+        bucket["profit"] = float(row.get("profit") or 0)
+        bucket["shopify_fee"] = float(row.get("shopify_fee") or 0)
+        bucket["ad_cost"] = float(row.get("ad_cost") or 0)
+        bucket["purchase"] = float(row.get("purchase") or 0)
+        bucket["shipping_cost"] = float(row.get("shipping_cost") or 0)
+        bucket["return_reserve"] = float(row.get("return_reserve") or 0)
+
+    last_run = query(
+        "SELECT unallocated_ad_spend_usd FROM order_profit_runs "
+        "WHERE status='success' ORDER BY id DESC LIMIT 1",
+        (),
+    )
+    unallocated = (
+        float((last_run[0] or {}).get("unallocated_ad_spend_usd") or 0)
+        if last_run
+        else 0
+    )
+
+    margin = (
+        (summary["ok"]["profit"] / summary["ok"]["revenue"]) * 100
+        if summary["ok"]["revenue"] > 0
+        else None
+    )
+    return {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "summary": summary,
+        "unallocated_ad_spend_usd": unallocated,
+        "margin_pct": round(margin, 2) if margin is not None else None,
+    }
+
+
+def list_order_profit_lines(
+    *,
+    date_from: date,
+    date_to: date,
+    status: str,
+    limit: int,
+    offset: int,
+) -> list[dict[str, Any]]:
+    return query(
+        "SELECT id, dxm_order_line_id, product_id, business_date, paid_at, "
+        "       buyer_country, shopify_tier, "
+        "       line_amount_usd, shipping_allocated_usd, revenue_usd, "
+        "       shopify_fee_usd, ad_cost_usd, purchase_usd, "
+        "       shipping_cost_usd, return_reserve_usd, profit_usd, "
+        "       status, missing_fields "
+        "FROM order_profit_lines "
+        "WHERE business_date BETWEEN %s AND %s AND status=%s "
+        "ORDER BY id DESC LIMIT %s OFFSET %s",
+        (date_from, date_to, status, int(limit), int(offset)),
+    ) or []
+
+
+def get_order_profit_loss_alerts(
+    *,
+    date_from: date,
+    date_to: date,
+    limit: int,
+) -> dict[str, Any]:
+    rows = query(
+        "SELECT product_id, business_date, buyer_country, "
+        "       revenue_usd, profit_usd, shopify_fee_usd, ad_cost_usd, "
+        "       purchase_usd, shipping_cost_usd "
+        "FROM order_profit_lines "
+        "WHERE business_date BETWEEN %s AND %s "
+        "  AND status='ok' AND profit_usd < 0 "
+        "ORDER BY profit_usd ASC LIMIT %s",
+        (date_from, date_to, int(limit)),
+    ) or []
+    total_loss = sum(float(r["profit_usd"] or 0) for r in rows)
+    return {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "loss_lines": rows,
+        "loss_count": len(rows),
+        "total_loss_usd": round(total_loss, 2),
+    }
+
+
+def list_products_for_manual_match() -> list[dict[str, Any]]:
+    return query(
+        "SELECT id, product_code, name FROM media_products "
+        "WHERE archived = 0 AND deleted_at IS NULL "
+        "ORDER BY product_code",
+        (),
+    ) or []

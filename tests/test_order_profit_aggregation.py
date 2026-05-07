@@ -11,7 +11,11 @@ from appcore.order_analytics.order_profit_aggregation import (
     _format_order_row,
     get_order_profit_detail,
     get_order_profit_list,
+    get_order_profit_loss_alerts,
     get_order_profit_summary_for_window,
+    get_order_profit_status_summary,
+    list_order_profit_lines,
+    list_products_for_manual_match,
 )
 
 
@@ -239,3 +243,103 @@ def test_summary_window_returns_buckets(monkeypatch):
     assert result["orders_incomplete"] == 25
     assert result["orders_partial"] == 5
     assert result["profit_total_usd"] == 800.0
+
+
+def test_status_summary_aggregates_line_statuses_and_last_run(monkeypatch):
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            return [
+                {
+                    "status": "ok",
+                    "n": 2,
+                    "revenue": 100,
+                    "profit": 25,
+                    "shopify_fee": 3,
+                    "ad_cost": 10,
+                    "purchase": 40,
+                    "shipping_cost": 7,
+                    "return_reserve": 1,
+                },
+                {"status": "unknown", "n": 9, "revenue": 999, "profit": 999},
+            ]
+        if "FROM order_profit_runs" in sql:
+            return [{"unallocated_ad_spend_usd": 12.5}]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    payload = get_order_profit_status_summary(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 3),
+    )
+
+    assert payload["date_from"] == "2026-05-01"
+    assert payload["date_to"] == "2026-05-03"
+    assert payload["summary"]["ok"]["lines"] == 2
+    assert payload["summary"]["ok"]["profit"] == 25.0
+    assert payload["summary"]["incomplete"]["lines"] == 0
+    assert payload["unallocated_ad_spend_usd"] == 12.5
+    assert payload["margin_pct"] == 25.0
+
+
+def test_list_order_profit_lines_queries_by_filter(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"id": 1, "status": "ok"}]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    rows = list_order_profit_lines(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 2),
+        status="ok",
+        limit=20,
+        offset=5,
+    )
+
+    assert rows == [{"id": 1, "status": "ok"}]
+    assert "FROM order_profit_lines" in captured["sql"]
+    assert "status=%s" in captured["sql"]
+    assert captured["args"] == (date(2026, 5, 1), date(2026, 5, 2), "ok", 20, 5)
+
+
+def test_loss_alerts_sum_negative_profit(monkeypatch):
+    def fake_query(sql, args=()):
+        assert "profit_usd < 0" in sql
+        assert args == (date(2026, 5, 1), date(2026, 5, 2), 10)
+        return [
+            {"product_id": 1, "profit_usd": -2.25},
+            {"product_id": 2, "profit_usd": -1.25},
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    payload = get_order_profit_loss_alerts(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 2),
+        limit=10,
+    )
+
+    assert payload["loss_count"] == 2
+    assert payload["total_loss_usd"] == -3.5
+
+
+def test_list_products_for_manual_match_queries_active_products(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"id": 1, "product_code": "alpha", "name": "Alpha"}]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    rows = list_products_for_manual_match()
+
+    assert rows == [{"id": 1, "product_code": "alpha", "name": "Alpha"}]
+    assert "FROM media_products" in captured["sql"]
+    assert "deleted_at IS NULL" in captured["sql"]
+    assert captured["args"] == ()

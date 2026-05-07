@@ -2268,6 +2268,21 @@ def test_order_profit_api_responses_live_outside_route_module():
     assert Path("web/services/order_profit.py").exists()
 
 
+def test_order_profit_route_db_access_lives_in_appcore_order_analytics():
+    route_source = Path("web/routes/order_profit.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import" not in route_source
+    assert "query(" not in route_source
+
+    dao_source = Path("appcore/order_analytics/order_profit_aggregation.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def get_order_profit_status_summary" in dao_source
+    assert "def list_order_profit_lines" in dao_source
+    assert "def get_order_profit_loss_alerts" in dao_source
+    assert "def list_products_for_manual_match" in dao_source
+
+
 def test_media_shopify_image_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/shopify_image.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

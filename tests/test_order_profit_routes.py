@@ -1,26 +1,20 @@
 def test_order_profit_summary_route_uses_aggregate_payload(authed_client_no_db, monkeypatch):
     import web.routes.order_profit as route
 
-    def fake_query(sql, args=()):
-        if "GROUP BY status" in sql:
-            return [
-                {
-                    "status": "ok",
-                    "n": 2,
-                    "revenue": 100,
-                    "profit": 25,
-                    "shopify_fee": 3,
-                    "ad_cost": 10,
-                    "purchase": 40,
-                    "shipping_cost": 7,
-                    "return_reserve": 1,
-                }
-            ]
-        if "FROM order_profit_runs" in sql:
-            return [{"unallocated_ad_spend_usd": 12.5}]
-        return []
-
-    monkeypatch.setattr(route, "query", fake_query)
+    monkeypatch.setattr(
+        route,
+        "get_order_profit_status_summary",
+        lambda **kwargs: {
+            "date_from": kwargs["date_from"].isoformat(),
+            "date_to": kwargs["date_to"].isoformat(),
+            "summary": {
+                "ok": {"lines": 2, "profit": 25.0},
+                "incomplete": {"lines": 0, "profit": 0},
+            },
+            "unallocated_ad_spend_usd": 12.5,
+            "margin_pct": 25.0,
+        },
+    )
 
     resp = authed_client_no_db.get("/order-profit/api/summary")
 
@@ -30,6 +24,82 @@ def test_order_profit_summary_route_uses_aggregate_payload(authed_client_no_db, 
     assert payload["summary"]["ok"]["profit"] == 25.0
     assert payload["unallocated_ad_spend_usd"] == 12.5
     assert payload["margin_pct"] == 25.0
+
+
+def test_order_profit_lines_route_delegates_query(authed_client_no_db, monkeypatch):
+    import web.routes.order_profit as route
+
+    captured = {}
+
+    def fake_list_order_profit_lines(**kwargs):
+        captured.update(kwargs)
+        return [{"id": 7, "status": "incomplete"}]
+
+    monkeypatch.setattr(route, "list_order_profit_lines", fake_list_order_profit_lines)
+
+    resp = authed_client_no_db.get(
+        "/order-profit/api/lines?from=2026-05-01&to=2026-05-03"
+        "&status=incomplete&limit=2&offset=1"
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["lines"] == [{"id": 7, "status": "incomplete"}]
+    assert payload["limit"] == 2
+    assert payload["offset"] == 1
+    assert captured["date_from"].isoformat() == "2026-05-01"
+    assert captured["date_to"].isoformat() == "2026-05-03"
+    assert captured["status"] == "incomplete"
+    assert captured["limit"] == 2
+    assert captured["offset"] == 1
+
+
+def test_order_profit_loss_alerts_route_delegates_query(authed_client_no_db, monkeypatch):
+    import web.routes.order_profit as route
+
+    captured = {}
+
+    def fake_loss_alerts(**kwargs):
+        captured.update(kwargs)
+        return {
+            "date_from": kwargs["date_from"].isoformat(),
+            "date_to": kwargs["date_to"].isoformat(),
+            "loss_lines": [{"product_id": 1}],
+            "loss_count": 1,
+            "total_loss_usd": -3.5,
+        }
+
+    monkeypatch.setattr(route, "get_order_profit_loss_alerts", fake_loss_alerts)
+
+    resp = authed_client_no_db.get(
+        "/order-profit/api/loss_alerts?from=2026-05-01&to=2026-05-02&limit=5"
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["loss_lines"] == [{"product_id": 1}]
+    assert payload["total_loss_usd"] == -3.5
+    assert captured["limit"] == 5
+
+
+def test_order_profit_products_for_match_route_delegates_query(
+    authed_client_no_db,
+    monkeypatch,
+):
+    import web.routes.order_profit as route
+
+    monkeypatch.setattr(
+        route,
+        "list_products_for_manual_match",
+        lambda: [{"id": 1, "product_code": "alpha", "name": "Alpha"}],
+    )
+
+    resp = authed_client_no_db.get("/order-profit/api/products_for_match")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["products"] == [
+        {"id": 1, "product_code": "alpha", "name": "Alpha"}
+    ]
 
 
 def test_order_profit_detail_missing_returns_404(authed_client_no_db, monkeypatch):

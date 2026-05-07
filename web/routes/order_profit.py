@@ -17,7 +17,6 @@ import io
 from flask import Blueprint, render_template, request
 from flask_login import login_required
 
-from appcore.db import query
 from appcore.order_analytics.campaign_overrides import (
     create_override,
     list_overrides,
@@ -28,7 +27,11 @@ from appcore.order_analytics.cost_completeness import get_completeness_overview
 from appcore.order_analytics.order_profit_aggregation import (
     get_order_profit_detail,
     get_order_profit_list,
+    get_order_profit_loss_alerts,
     get_order_profit_summary_for_window,
+    get_order_profit_status_summary,
+    list_order_profit_lines,
+    list_products_for_manual_match,
 )
 from appcore.order_analytics.shopify_payments_import import (
     import_payments_csv,
@@ -72,57 +75,9 @@ def api_summary():
     date_from = _parse_date_param("from", today - timedelta(days=30))
     date_to = _parse_date_param("to", today)
 
-    rows = query(
-        "SELECT status, COUNT(*) AS n, "
-        "       SUM(revenue_usd) AS revenue, SUM(profit_usd) AS profit, "
-        "       SUM(shopify_fee_usd) AS shopify_fee, "
-        "       SUM(ad_cost_usd) AS ad_cost, "
-        "       SUM(purchase_usd) AS purchase, "
-        "       SUM(shipping_cost_usd) AS shipping_cost, "
-        "       SUM(return_reserve_usd) AS return_reserve "
-        "FROM order_profit_lines "
-        "WHERE business_date BETWEEN %s AND %s "
-        "GROUP BY status",
-        (date_from, date_to),
-    )
-    summary = {
-        "ok": {"lines": 0, "revenue": 0, "profit": 0,
-               "shopify_fee": 0, "ad_cost": 0, "purchase": 0,
-               "shipping_cost": 0, "return_reserve": 0},
-        "incomplete": {"lines": 0, "revenue": 0, "profit": 0,
-                       "shopify_fee": 0, "ad_cost": 0, "purchase": 0,
-                       "shipping_cost": 0, "return_reserve": 0},
-    }
-    for row in rows:
-        bucket = summary.get(row["status"], {})
-        bucket["lines"] = int(row["n"])
-        bucket["revenue"] = float(row["revenue"] or 0)
-        bucket["profit"] = float(row["profit"] or 0)
-        bucket["shopify_fee"] = float(row["shopify_fee"] or 0)
-        bucket["ad_cost"] = float(row["ad_cost"] or 0)
-        bucket["purchase"] = float(row["purchase"] or 0)
-        bucket["shipping_cost"] = float(row["shipping_cost"] or 0)
-        bucket["return_reserve"] = float(row["return_reserve"] or 0)
-
-    # 最新一次跑的 unallocated_ad_spend
-    last_run = query(
-        "SELECT unallocated_ad_spend_usd FROM order_profit_runs "
-        "WHERE status='success' ORDER BY id DESC LIMIT 1"
-    )
-    unallocated = float((last_run[0] or {}).get("unallocated_ad_spend_usd") or 0) if last_run else 0
-
-    margin = (
-        (summary["ok"]["profit"] / summary["ok"]["revenue"]) * 100
-        if summary["ok"]["revenue"] > 0 else None
-    )
+    payload = get_order_profit_status_summary(date_from=date_from, date_to=date_to)
     return order_profit_flask_response(
-        build_order_profit_payload_response({
-            "date_from": date_from.isoformat(),
-            "date_to": date_to.isoformat(),
-            "summary": summary,
-            "unallocated_ad_spend_usd": unallocated,
-            "margin_pct": round(margin, 2) if margin is not None else None,
-        })
+        build_order_profit_payload_response(payload)
     )
 
 
@@ -193,17 +148,12 @@ def api_lines():
     offset = int(request.args.get("offset", "0") or 0)
     status = (request.args.get("status") or "ok").strip()
 
-    rows = query(
-        "SELECT id, dxm_order_line_id, product_id, business_date, paid_at, "
-        "       buyer_country, shopify_tier, "
-        "       line_amount_usd, shipping_allocated_usd, revenue_usd, "
-        "       shopify_fee_usd, ad_cost_usd, purchase_usd, "
-        "       shipping_cost_usd, return_reserve_usd, profit_usd, "
-        "       status, missing_fields "
-        "FROM order_profit_lines "
-        "WHERE business_date BETWEEN %s AND %s AND status=%s "
-        "ORDER BY id DESC LIMIT %s OFFSET %s",
-        (date_from, date_to, status, limit, offset),
+    rows = list_order_profit_lines(
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        limit=limit,
+        offset=offset,
     )
     return order_profit_flask_response(
         build_order_profit_payload_response(
@@ -222,25 +172,14 @@ def api_loss_alerts():
     date_to = _parse_date_param("to", today)
     limit = min(int(request.args.get("limit", "50") or 50), 200)
 
-    rows = query(
-        "SELECT product_id, business_date, buyer_country, "
-        "       revenue_usd, profit_usd, shopify_fee_usd, ad_cost_usd, "
-        "       purchase_usd, shipping_cost_usd "
-        "FROM order_profit_lines "
-        "WHERE business_date BETWEEN %s AND %s "
-        "  AND status='ok' AND profit_usd < 0 "
-        "ORDER BY profit_usd ASC LIMIT %s",
-        (date_from, date_to, limit),
-    )
-    total_loss = sum(float(r["profit_usd"] or 0) for r in rows)
     return order_profit_flask_response(
-        build_order_profit_payload_response({
-            "date_from": date_from.isoformat(),
-            "date_to": date_to.isoformat(),
-            "loss_lines": rows,
-            "loss_count": len(rows),
-            "total_loss_usd": round(total_loss, 2),
-        })
+        build_order_profit_payload_response(
+            get_order_profit_loss_alerts(
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+            )
+        )
     )
 
 
@@ -347,13 +286,10 @@ def api_delete_manual_match(override_id):
 @permission_required("order_profit")
 def api_products_for_match():
     """提供给前端做 product 下拉选择：所有上架产品（轻量字段）。"""
-    rows = query(
-        "SELECT id, product_code, name FROM media_products "
-        "WHERE archived = 0 AND deleted_at IS NULL "
-        "ORDER BY product_code"
-    )
     return order_profit_flask_response(
-        build_order_profit_payload_response({"products": rows})
+        build_order_profit_payload_response(
+            {"products": list_products_for_manual_match()}
+        )
     )
 
 
