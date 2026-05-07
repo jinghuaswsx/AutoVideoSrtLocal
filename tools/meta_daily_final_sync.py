@@ -16,9 +16,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from appcore import meta_ad_accounts
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query_one
+from appcore.meta_ad_accounts import MetaAdAccount
 from tools import roi_hourly_sync as realtime_sync
 
 TIMEZONE = "Asia/Shanghai"
@@ -83,18 +85,38 @@ def _hash_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def already_successful(target_date: date, *, account_id: str = META_AD_EXPORT_ACCOUNT_ID) -> bool:
+def already_successful(
+    target_date: date,
+    *,
+    account_id: str = META_AD_EXPORT_ACCOUNT_ID,
+    account_ids: list[str] | tuple[str, ...] | None = None,
+) -> bool:
     row = query_one(
-        "SELECT id, status FROM scheduled_task_runs "
+        "SELECT id, status, summary_json FROM scheduled_task_runs "
         "WHERE task_code=%s AND status='success' "
         "AND JSON_UNQUOTE(JSON_EXTRACT(summary_json, '$.target_date'))=%s "
         "ORDER BY started_at DESC, id DESC LIMIT 1",
         (TASK_CODE, target_date.isoformat()),
     )
-    return bool(row)
+    if not row:
+        return False
+    expected = {str(value).strip().removeprefix("act_") for value in (account_ids or []) if str(value).strip()}
+    if not expected:
+        return bool(row)
+    raw_summary = row.get("summary_json")
+    try:
+        summary = json.loads(raw_summary) if isinstance(raw_summary, str) else (raw_summary or {})
+    except (TypeError, ValueError):
+        return False
+    successful = {
+        str(item.get("account_id") or "").strip().removeprefix("act_")
+        for item in summary.get("account_results") or []
+        if isinstance(item, dict) and item.get("status") == "success"
+    }
+    return expected.issubset(successful)
 
 
-def _run_meta_ads_export(target_date: date, export_dir: Path) -> dict[str, Any]:
+def _run_meta_ads_export(target_date: date, export_dir: Path, account: MetaAdAccount) -> dict[str, Any]:
     export_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable,
@@ -110,9 +132,11 @@ def _run_meta_ads_export(target_date: date, export_dir: Path) -> dict[str, Any]:
         "--min-day-seconds",
         "0",
         "--account-id",
-        META_AD_EXPORT_ACCOUNT_ID,
+        account.account_id,
         "--business-id",
-        META_AD_EXPORT_BUSINESS_ID,
+        account.business_id,
+        "--csv-prefix",
+        account.csv_prefix,
         "--cdp-url",
         META_AD_EXPORT_CDP_URL,
     ]
@@ -129,10 +153,12 @@ def _run_meta_ads_export(target_date: date, export_dir: Path) -> dict[str, Any]:
         "command": cmd,
         "returncode": completed.returncode,
         "export_dir": str(export_dir),
+        "account_code": account.code,
+        "account_id": account.account_id,
         "stdout_tail": completed.stdout[-4000:],
         "stderr_tail": completed.stderr[-4000:],
-        "campaigns_path": str(export_dir / f"newjoyloo_campaigns_{target_date.isoformat()}.csv"),
-        "ads_path": str(export_dir / f"newjoyloo_ads_{target_date.isoformat()}.csv"),
+        "campaigns_path": str(export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"),
+        "ads_path": str(export_dir / f"{account.csv_prefix}_ads_{target_date.isoformat()}.csv"),
     }
 
 
@@ -148,12 +174,12 @@ def _text(value: Any, length: int) -> str:
     return realtime_sync._fit_text(str(value or "").strip(), length)
 
 
-def _account_id(row: dict[str, Any]) -> str:
+def _account_id(row: dict[str, Any], account: MetaAdAccount) -> str:
     return str(_pick(
         row,
         ("账户编号", "广告账户编号", "Account ID", "Ad account ID"),
         (("account", "id"), ("账户", "编号")),
-    ) or META_AD_EXPORT_ACCOUNT_ID).strip().removeprefix("act_")
+    ) or account.account_id).strip().removeprefix("act_")
 
 
 def _account_name(row: dict[str, Any]) -> str | None:
@@ -197,7 +223,7 @@ def _common_metrics(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_campaign_rows(path: Path, target_date: date) -> list[dict[str, Any]]:
+def _normalize_campaign_rows(path: Path, target_date: date, account: MetaAdAccount) -> list[dict[str, Any]]:
     rows = []
     for row in realtime_sync._read_meta_report_rows(path):
         campaign_name_raw = str(_pick(
@@ -211,7 +237,7 @@ def _normalize_campaign_rows(path: Path, target_date: date) -> list[dict[str, An
         report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
         campaign_name = _text(campaign_name_raw, 255)
         item = {
-            "ad_account_id": _account_id(row),
+            "ad_account_id": _account_id(row, account),
             "ad_account_name": _account_name(row),
             "report_date": target_date,
             "report_start_date": report_start,
@@ -226,7 +252,7 @@ def _normalize_campaign_rows(path: Path, target_date: date) -> list[dict[str, An
     return rows
 
 
-def _normalize_ad_rows(path: Path, target_date: date) -> list[dict[str, Any]]:
+def _normalize_ad_rows(path: Path, target_date: date, account: MetaAdAccount) -> list[dict[str, Any]]:
     rows = []
     for row in realtime_sync._read_meta_report_rows(path):
         ad_name_raw = str(_pick(
@@ -240,7 +266,7 @@ def _normalize_ad_rows(path: Path, target_date: date) -> list[dict[str, Any]]:
         report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
         ad_name = _text(ad_name_raw, 512)
         item = {
-            "ad_account_id": _account_id(row),
+            "ad_account_id": _account_id(row, account),
             "ad_account_name": _account_name(row),
             "report_date": target_date,
             "report_start_date": report_start,
@@ -307,13 +333,13 @@ def _match_product(product_code: str | None) -> dict[str, Any] | None:
         return None
 
 
-def _replace_campaign_daily_rows(path: Path, target_date: date) -> dict[str, Any]:
-    rows = aggregate_daily_entity_rows(_normalize_campaign_rows(path, target_date), entity_key="campaign_name")
+def _replace_campaign_daily_rows(path: Path, target_date: date, account: MetaAdAccount) -> dict[str, Any]:
+    rows = aggregate_daily_entity_rows(_normalize_campaign_rows(path, target_date, account), entity_key="campaign_name")
     batch_id = _insert_batch(path, target_date=target_date, raw_row_count=len(rows), level="campaign")
     window_start, window_end = _meta_business_window(target_date)
     execute(
         "DELETE FROM meta_ad_daily_campaign_metrics WHERE meta_business_date=%s AND ad_account_id=%s",
-        (target_date, META_AD_EXPORT_ACCOUNT_ID),
+        (target_date, account.account_id),
     )
     imported = 0
     matched = 0
@@ -333,7 +359,7 @@ def _replace_campaign_daily_rows(path: Path, target_date: date) -> dict[str, Any
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 batch_id,
-                row.get("ad_account_id") or META_AD_EXPORT_ACCOUNT_ID,
+                row.get("ad_account_id") or account.account_id,
                 row.get("ad_account_name"),
                 row["report_date"],
                 row["report_start_date"],
@@ -361,13 +387,13 @@ def _replace_campaign_daily_rows(path: Path, target_date: date) -> dict[str, Any
     return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
 
 
-def _replace_ad_daily_rows(path: Path, target_date: date) -> dict[str, Any]:
-    rows = aggregate_daily_entity_rows(_normalize_ad_rows(path, target_date), entity_key="ad_name")
+def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount) -> dict[str, Any]:
+    rows = aggregate_daily_entity_rows(_normalize_ad_rows(path, target_date, account), entity_key="ad_name")
     batch_id = _insert_batch(path, target_date=target_date, raw_row_count=len(rows), level="ad")
     window_start, window_end = _meta_business_window(target_date)
     execute(
         "DELETE FROM meta_ad_daily_ad_metrics WHERE meta_business_date=%s AND ad_account_id=%s",
-        (target_date, META_AD_EXPORT_ACCOUNT_ID),
+        (target_date, account.account_id),
     )
     imported = 0
     matched = 0
@@ -387,7 +413,7 @@ def _replace_ad_daily_rows(path: Path, target_date: date) -> dict[str, Any]:
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 batch_id,
-                row.get("ad_account_id") or META_AD_EXPORT_ACCOUNT_ID,
+                row.get("ad_account_id") or account.account_id,
                 row.get("ad_account_name"),
                 row["report_date"],
                 row["report_start_date"],
@@ -433,8 +459,8 @@ def _refresh_final_roas_snapshot(target_date: date, source_run_id: int) -> int:
     ad_row = query_one(
         "SELECT SUM(spend_usd) AS ad_spend_usd "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE meta_business_date=%s AND ad_account_id=%s",
-        (target_date, META_AD_EXPORT_ACCOUNT_ID),
+        "WHERE meta_business_date=%s",
+        (target_date,),
     ) or {}
     ad_spend = round(float(ad_row.get("ad_spend_usd") or 0), 4)
     execute(
@@ -477,7 +503,9 @@ def _refresh_final_roas_snapshot(target_date: date, source_run_id: int) -> int:
 
 
 def run_final_sync(target_date: date, *, mode: str = "run") -> dict[str, Any]:
-    if mode == "check" and already_successful(target_date, account_id=META_AD_EXPORT_ACCOUNT_ID):
+    accounts = meta_ad_accounts.get_enabled_accounts()
+    account_ids = [account.account_id for account in accounts]
+    if mode == "check" and accounts and already_successful(target_date, account_ids=account_ids):
         return {
             "status": "skipped",
             "reason": "already_successful",
@@ -491,50 +519,97 @@ def run_final_sync(target_date: date, *, mode: str = "run") -> dict[str, Any]:
         "target_date": target_date.isoformat(),
         "window_start_at": _meta_business_window(target_date)[0],
         "window_end_at": _meta_business_window(target_date)[1],
-        "account_id": META_AD_EXPORT_ACCOUNT_ID,
+        "accounts": account_ids,
+        "account_codes": [account.code for account in accounts],
+        "account_results": [],
         "mode": mode,
         "export_dir": str(export_dir),
+        "campaign_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
+        "ad_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
     }
-    try:
-        export_report = _run_meta_ads_export(target_date, export_dir)
-        summary["export_report"] = export_report
-        if int(export_report.get("returncode") or 0) != 0:
-            error = f"Meta Ads Manager final daily export failed with code {export_report.get('returncode')}"
-            if "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
-                error = "Meta Ads Manager final daily export failed: server browser is not logged in"
-            raise RuntimeError(error)
 
-        campaign_path = Path(str(export_report["campaigns_path"]))
-        ad_path = Path(str(export_report["ads_path"]))
-        if not campaign_path.exists() or campaign_path.stat().st_size <= 100:
-            raise RuntimeError(f"Meta campaign final export missing or empty: {campaign_path}")
-        if not ad_path.exists() or ad_path.stat().st_size <= 100:
-            raise RuntimeError(f"Meta ad final export missing or empty: {ad_path}")
-
-        campaign_report = _replace_campaign_daily_rows(campaign_path, target_date)
-        ad_report = _replace_ad_daily_rows(ad_path, target_date)
-        snapshot_id = _refresh_final_roas_snapshot(target_date, run_id)
-        summary.update({
-            "campaign_report": campaign_report,
-            "ad_report": ad_report,
-            "snapshot_id": snapshot_id,
-            "duration_seconds": round(time.time() - started, 2),
-        })
-        scheduled_tasks.finish_run(run_id, status="success", summary=summary, output_file=str(export_dir))
-        summary["status"] = "success"
-        summary["run_id"] = run_id
-        return summary
-    except Exception as exc:
+    if not accounts:
         summary["duration_seconds"] = round(time.time() - started, 2)
-        summary["error"] = str(exc)
+        summary["error"] = "no enabled meta ad accounts configured"
+        summary["status"] = "failed"
+        summary["run_id"] = run_id
         scheduled_tasks.finish_run(
             run_id,
             status="failed",
             summary=summary,
-            error_message=str(exc),
+            error_message=summary["error"],
             output_file=str(export_dir),
         )
-        raise
+        return summary
+
+    success_count = 0
+    errors: list[str] = []
+    for account in accounts:
+        account_export_dir = export_dir / account.code
+        account_result: dict[str, Any] = {
+            "code": account.code,
+            "label": account.label or account.code,
+            "account_id": account.account_id,
+            "store_codes": list(account.store_codes),
+        }
+        try:
+            export_report = _run_meta_ads_export(target_date, account_export_dir, account)
+            account_result["export_report"] = export_report
+            if int(export_report.get("returncode") or 0) != 0:
+                error = f"Meta Ads Manager final daily export failed with code {export_report.get('returncode')}"
+                if "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
+                    error = "Meta Ads Manager final daily export failed: server browser is not logged in"
+                raise RuntimeError(error)
+
+            campaign_path = Path(str(export_report["campaigns_path"]))
+            ad_path = Path(str(export_report["ads_path"]))
+            if not campaign_path.exists() or campaign_path.stat().st_size <= 100:
+                raise RuntimeError(f"Meta campaign final export missing or empty: {campaign_path}")
+            if not ad_path.exists() or ad_path.stat().st_size <= 100:
+                raise RuntimeError(f"Meta ad final export missing or empty: {ad_path}")
+
+            campaign_report = _replace_campaign_daily_rows(campaign_path, target_date, account)
+            ad_report = _replace_ad_daily_rows(ad_path, target_date, account)
+            account_result.update({
+                "status": "success",
+                "campaign_report": campaign_report,
+                "ad_report": ad_report,
+            })
+            for key in ("rows", "matched"):
+                summary["campaign_report"][key] += int(campaign_report.get(key) or 0)
+                summary["ad_report"][key] += int(ad_report.get(key) or 0)
+            summary["campaign_report"]["spend_usd"] = round(
+                float(summary["campaign_report"]["spend_usd"]) + float(campaign_report.get("spend_usd") or 0),
+                4,
+            )
+            summary["ad_report"]["spend_usd"] = round(
+                float(summary["ad_report"]["spend_usd"]) + float(ad_report.get("spend_usd") or 0),
+                4,
+            )
+            success_count += 1
+        except Exception as exc:
+            account_result["status"] = "failed"
+            account_result["error"] = str(exc)
+            errors.append(f"[{account.code}] {exc}")
+        summary["account_results"].append(account_result)
+
+    if success_count:
+        summary["snapshot_id"] = _refresh_final_roas_snapshot(target_date, run_id)
+    status = "success" if success_count == len(accounts) else "failed"
+    error_message = "; ".join(errors) if errors else None
+    summary["duration_seconds"] = round(time.time() - started, 2)
+    summary["status"] = status
+    summary["run_id"] = run_id
+    if error_message:
+        summary["error"] = error_message
+    scheduled_tasks.finish_run(
+        run_id,
+        status=status,
+        summary=summary,
+        error_message=error_message,
+        output_file=str(export_dir),
+    )
+    return summary
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -549,7 +624,7 @@ def main(argv: list[str] | None = None) -> int:
     target = _parse_date(args.date) if args.date else completed_meta_business_date()
     result = run_final_sync(target, mode=args.mode)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=_json_default))
-    return 0
+    return 0 if result.get("status") in {"success", "skipped"} else 1
 
 
 if __name__ == "__main__":

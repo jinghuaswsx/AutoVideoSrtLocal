@@ -16,6 +16,7 @@ from web.services.order_analytics_responses import (
 from web.upload_util import client_filename_basename
 
 from appcore import order_analytics as oa
+from appcore import meta_ad_accounts
 from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 
@@ -271,6 +272,48 @@ def ad_summary():
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
     return _json_response(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
+
+
+@bp.route("/order-analytics/meta-ad-accounts", methods=["GET"])
+@login_required
+@admin_required
+def meta_ad_accounts_get():
+    """返回数据分析模块的 Meta 广告账户配置。"""
+    return _json_response(_json_safe({
+        "available_store_codes": list(meta_ad_accounts.AVAILABLE_STORE_CODES),
+        "accounts": [account.to_dict() for account in meta_ad_accounts.get_all_accounts()],
+    }))
+
+
+@bp.route("/order-analytics/meta-ad-accounts", methods=["POST"])
+@login_required
+@admin_required
+def meta_ad_accounts_save():
+    """覆盖保存 Meta 广告账户配置。"""
+    payload = request.get_json(silent=True) or {}
+    accounts = payload.get("accounts")
+    if not isinstance(accounts, list):
+        return _json_response(error="invalid_payload", detail="accounts must be a list"), 400
+    try:
+        meta_ad_accounts.set_accounts(accounts)
+    except ValueError as exc:
+        _audit_order_analytics_action(
+            "order_analytics_meta_ad_accounts_saved",
+            target_type="meta_ad_accounts",
+            status="failure",
+            detail={"error": str(exc)},
+        )
+        return _json_response(error="invalid_account", detail=str(exc)), 400
+    _audit_order_analytics_action(
+        "order_analytics_meta_ad_accounts_saved",
+        target_type="meta_ad_accounts",
+        detail={"account_count": len(accounts)},
+    )
+    return _json_response({
+        "ok": True,
+        "available_store_codes": list(meta_ad_accounts.AVAILABLE_STORE_CODES),
+        "accounts": [account.to_dict() for account in meta_ad_accounts.get_all_accounts()],
+    })
 
 
 @bp.route("/order-analytics/realtime-overview")

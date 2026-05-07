@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -125,6 +126,31 @@ def test_recalc_ad_cost_omurio_uses_omurio_account():
     }
     ad_cost = ppr._recalc_ad_cost(line, site_units, account_spend)
     assert ad_cost == pytest.approx(50.0, abs=0.01)  # 200 * 1/4
+
+
+def test_recalc_ad_cost_uses_meta_account_store_mapping(monkeypatch):
+    """同一店铺绑定多个 enabled 广告户时，广告费按该店铺多个账户 spend 合计分摊。"""
+    monkeypatch.setattr(
+        ppr,
+        "meta_ad_accounts",
+        SimpleNamespace(site_account_map=lambda: {"newjoy": ("111", "222")}),
+        raising=False,
+    )
+    line = {
+        "site_code": "newjoy",
+        "business_date": date(2026, 4, 15),
+        "quantity": 3,
+    }
+    site_units = {(date(2026, 4, 15), "newjoy"): 6}
+    account_spend = {
+        (date(2026, 4, 15), "111"): 20.0,
+        (date(2026, 4, 15), "222"): 40.0,
+        (date(2026, 4, 15), "333"): 999.0,
+    }
+
+    ad_cost = ppr._recalc_ad_cost(line, site_units, account_spend)
+
+    assert ad_cost == pytest.approx(30.0, abs=0.01)
 
 
 def test_recalc_ad_cost_zero_when_no_units():

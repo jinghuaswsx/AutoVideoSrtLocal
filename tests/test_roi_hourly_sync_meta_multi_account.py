@@ -44,6 +44,7 @@ def _account(code: str, account_id: str, *, enabled: bool = True) -> MetaAdAccou
         account_id=account_id,
         business_id="b-" + account_id,
         csv_prefix=code,
+        store_codes=(code.lower(),),
         enabled=enabled,
         label=code,
     )
@@ -53,8 +54,22 @@ def _account(code: str, account_id: str, *, enabled: bool = True) -> MetaAdAccou
 
 def test_get_all_accounts_parses_setting_json(monkeypatch):
     payload = json.dumps([
-        {"code": "newjoyloo", "account_id": "111", "business_id": "222", "csv_prefix": "newjoyloo", "enabled": False},
-        {"code": "Omurio", "account_id": "act_333", "business_id": "444", "csv_prefix": "Omurio", "enabled": True},
+        {
+            "code": "newjoyloo",
+            "account_id": "111",
+            "business_id": "222",
+            "csv_prefix": "newjoyloo",
+            "store_codes": ["newjoy"],
+            "enabled": False,
+        },
+        {
+            "code": "Omurio",
+            "account_id": "act_333",
+            "business_id": "444",
+            "csv_prefix": "Omurio",
+            "store_codes": [" Omurio ", "omurio"],
+            "enabled": True,
+        },
     ], ensure_ascii=False)
     monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
 
@@ -64,12 +79,14 @@ def test_get_all_accounts_parses_setting_json(monkeypatch):
     # `act_` prefix is stripped to keep DB writes consistent.
     assert accounts[1].account_id == "333"
     assert [a.enabled for a in accounts] == [False, True]
+    assert accounts[0].store_codes == ("newjoy",)
+    assert accounts[1].store_codes == ("omurio",)
 
 
 def test_get_enabled_accounts_filters_disabled(monkeypatch):
     payload = json.dumps([
-        {"code": "a", "account_id": "1", "business_id": "10", "csv_prefix": "a", "enabled": False},
-        {"code": "b", "account_id": "2", "business_id": "20", "csv_prefix": "b", "enabled": True},
+        {"code": "a", "account_id": "1", "business_id": "10", "csv_prefix": "a", "store_codes": ["newjoy"], "enabled": False},
+        {"code": "b", "account_id": "2", "business_id": "20", "csv_prefix": "b", "store_codes": ["omurio"], "enabled": True},
     ])
     monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
 
@@ -89,13 +106,14 @@ def test_get_all_accounts_falls_back_to_env_when_setting_unset(monkeypatch):
     assert accounts[0].code == "newjoyloo"
     assert accounts[0].account_id == "999"
     assert accounts[0].csv_prefix == "newjoyloo"
+    assert accounts[0].store_codes == ("newjoy",)
 
 
 def test_get_all_accounts_drops_invalid_and_duplicate_entries(monkeypatch):
     payload = json.dumps([
-        {"code": "ok", "account_id": "1", "business_id": "10", "csv_prefix": "ok", "enabled": True},
+        {"code": "ok", "account_id": "1", "business_id": "10", "csv_prefix": "ok", "store_codes": ["newjoy"], "enabled": True},
         {"code": "", "account_id": "2", "business_id": "20", "csv_prefix": "x"},
-        {"code": "ok", "account_id": "3", "business_id": "30", "csv_prefix": "ok"},
+        {"code": "ok", "account_id": "3", "business_id": "30", "csv_prefix": "ok", "store_codes": ["omurio"]},
         "not-a-dict",
     ])
     monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
@@ -104,6 +122,22 @@ def test_get_all_accounts_drops_invalid_and_duplicate_entries(monkeypatch):
 
     assert [a.code for a in accounts] == ["ok"]
     assert accounts[0].account_id == "1"
+
+
+def test_site_account_map_groups_enabled_accounts_by_store(monkeypatch):
+    payload = json.dumps([
+        {"code": "a", "account_id": "act_111", "business_id": "10", "csv_prefix": "a", "store_codes": ["newjoy"], "enabled": True},
+        {"code": "b", "account_id": "222", "business_id": "20", "csv_prefix": "b", "store_codes": ["newjoy", "omurio"], "enabled": True},
+        {"code": "c", "account_id": "333", "business_id": "30", "csv_prefix": "c", "store_codes": ["omurio"], "enabled": False},
+    ])
+    monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
+
+    mapping = meta_ad_accounts.site_account_map()
+
+    assert mapping == {
+        "newjoy": ("111", "222"),
+        "omurio": ("222",),
+    }
 
 
 # ---------- _sync_meta_realtime_daily multi-account orchestration ----------
