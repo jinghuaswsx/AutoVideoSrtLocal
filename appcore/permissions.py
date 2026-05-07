@@ -65,6 +65,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("bulk_translate_admin",  GROUP_MANAGEMENT, "批量翻译任务管理", True,  False),
     ("data_analytics",        GROUP_MANAGEMENT, "数据分析",         True,  False),
     menu_permission("order_profit",          GROUP_MANAGEMENT, "订单利润核算"),
+    menu_permission("product_profit",        GROUP_MANAGEMENT, "产品盈亏看板"),
     menu_permission("orphan_orders",         GROUP_MANAGEMENT, "未建档订单"),
     ("lab",                   GROUP_MANAGEMENT, "实验室",           True,  False),
     ("ai_billing",            GROUP_MANAGEMENT, "API 账单",         True,  False),

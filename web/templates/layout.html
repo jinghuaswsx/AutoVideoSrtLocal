@@ -542,6 +542,11 @@
         <span class="nav-icon">💰</span> 订单利润核算
       </a>
       {% endif %}
+      {% if has_permission('product_profit') %}
+      <a href="/product-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/product-profit') %}class="active"{% endif %}>
+        <span class="nav-icon">📈</span> 产品盈亏看板
+      </a>
+      {% endif %}
       {% if has_permission('orphan_orders') %}
       <a href="/order-analytics/orphan-orders" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics/orphan-orders') %}class="active"{% endif %}>
         <span class="nav-icon">🕵</span> 未建档订单

@@ -82,6 +82,7 @@ from web.routes.voice_library import bp as voice_library_bp
 from web.routes.order_analytics import bp as order_analytics_bp
 from web.routes.order_profit import bp as order_profit_bp
 from web.routes.product_profit_report import bp as product_profit_report_bp
+from web.routes.product_profit_dashboard import bp as product_profit_dashboard_bp
 from web.routes.scheduled_tasks import bp as scheduled_tasks_bp
 from web.routes.security_audit import bp as security_audit_bp
 from web.routes.mk_import import bp as mk_import_bp
@@ -310,6 +311,7 @@ def create_app() -> Flask:
     csrf.exempt(order_profit_bp)
     app.register_blueprint(product_profit_report_bp)
     csrf.exempt(product_profit_report_bp)
+    app.register_blueprint(product_profit_dashboard_bp)
     app.register_blueprint(scheduled_tasks_bp)
     app.register_blueprint(security_audit_bp)
     app.register_blueprint(mk_import_bp)

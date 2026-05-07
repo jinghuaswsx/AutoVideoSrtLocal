@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, jsonify, request, send_file
 from flask_login import login_required
 
-from web.auth import admin_required
+from web.auth import permission_required
 
 from appcore.order_analytics import product_profit_report as ppr
 from appcore.order_analytics.shopify_payments_import import import_payments_csv
@@ -38,7 +38,7 @@ def _parse_date(value: str | None, default: date) -> date:
 
 @bp.route("/products", methods=["GET"])
 @login_required
-@admin_required
+@permission_required("product_profit")
 def api_list_products():
     """产品下拉数据。"""
     return jsonify({"products": ppr.list_products()})
@@ -46,7 +46,7 @@ def api_list_products():
 
 @bp.route("/payments_csv/import", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("product_profit")
 def api_import_payments_csv():
     """上传 Shopify Payments CSV → 解析 + 反推 + 入库 shopify_payments_transactions。
 
@@ -92,7 +92,7 @@ def api_import_payments_csv():
 
 @bp.route("/report.xlsx", methods=["GET"])
 @login_required
-@admin_required
+@permission_required("product_profit")
 def api_download_xlsx():
     """生成产品盈亏 Excel 报表（4 sheet）。
 
@@ -130,7 +130,7 @@ def api_download_xlsx():
 
 @bp.route("/report.json", methods=["GET"])
 @login_required
-@admin_required
+@permission_required("product_profit")
 def api_report_json():
     """同 report.xlsx，但返回 JSON（便于前端预览或调试）。"""
     try:
