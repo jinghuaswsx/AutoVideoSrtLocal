@@ -330,8 +330,14 @@ def test_build_material_push_payload_lists_items_and_serializes_video_urls(monke
         captured["resolve_push_texts"] = product_id
         return [{"title": "T", "message": "M", "description": "D"}]
 
+    captured["resolve_product_page_urls"] = []
+
     def fake_resolve_product_page_urls(lang, product):
-        captured["resolve_product_page_urls"] = (lang, product["id"])
+        captured["resolve_product_page_urls"].append((lang, product["id"]))
+        if lang == "en":
+            return [
+                {"domain": "newjoyloo.com", "url": "https://newjoyloo.com/products/alpha-rjc"},
+            ]
         return [
             {"domain": "newjoyloo.com", "url": "https://newjoyloo.com/de/products/alpha-rjc"},
             {"domain": "omurio.com", "url": "https://omurio.com/de/products/alpha-rjc"},
@@ -358,12 +364,13 @@ def test_build_material_push_payload_lists_items_and_serializes_video_urls(monke
     assert captured == {
         "list_items": (123, "de"),
         "resolve_push_texts": 123,
-        "resolve_product_page_urls": ("de", 123),
+        "resolve_product_page_urls": [("en", 123), ("de", 123)],
     }
     assert payload["mode"] == "create"
     assert payload["product_name"] == "Alpha"
     assert payload["texts"] == [{"title": "T", "message": "M", "description": "D"}]
     assert payload["product_links"] == [
+        "https://newjoyloo.com/products/alpha-rjc",
         "https://newjoyloo.com/de/products/alpha-rjc",
         "https://omurio.com/de/products/alpha-rjc",
     ]

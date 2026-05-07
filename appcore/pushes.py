@@ -17,7 +17,7 @@ from appcore.db import query, query_one, execute
 log = logging.getLogger(__name__)
 
 
-# ---------- 推送目标 + 小语种文案推送凭据（DB 优先，env 兜底） ----------
+# ---------- 推送目标 + 文案推送凭据（DB 优先，env 兜底） ----------
 # 管理员在 /settings?tab=push 页面维护；或通过 tools/wedev_sync.py 自动同步。
 
 _PUSH_SETTING_ENV_FALLBACK = {
@@ -234,11 +234,11 @@ class ProductLinksPushConfigError(Exception):
 
 
 class ProductLocalizedTextsPayloadError(Exception):
-    """产品小语种文案推送报文无法组装。"""
+    """产品文案推送报文无法组装。"""
 
 
 class ProductLocalizedTextsPushConfigError(Exception):
-    """产品小语种文案推送配置不完整。"""
+    """产品文案推送配置不完整。"""
 
 
 _COPY_LABEL_RE = re.compile(r"(标题|文案|描述)\s*[:：]\s*")
@@ -329,7 +329,7 @@ def compute_readiness(item: dict, product: dict) -> dict:
         has_copywriting = bool(row)
 
     supported = medias.parse_ad_supported_langs((product or {}).get("ad_supported_langs"))
-    lang_supported = lang in supported
+    lang_supported = True if lang == "en" else lang in supported
 
     has_push_texts = _has_valid_en_push_texts(pid) if pid else False
     shopify_image_confirmed, shopify_image_reason = shopify_image_tasks.is_confirmed_for_push(
@@ -383,8 +383,15 @@ def compute_status(item: dict, product: dict) -> str:
 # ---------- 链接模板与探活 ----------
 
 def build_product_link(lang: str, product_code: str) -> str:
+    lang_code = (lang or "en").strip().lower() or "en"
+    if lang_code == "en":
+        return product_link_domains.build_product_page_url(
+            product_link_domains.DEFAULT_LINK_DOMAINS[0],
+            "en",
+            product_code,
+        )
     tpl = config.AD_URL_TEMPLATE or ""
-    return tpl.format(lang=lang, product_code=product_code)
+    return tpl.format(lang=lang_code, product_code=product_code)
 
 
 def _parse_product_localized_links(product: dict | None) -> dict[str, str]:
@@ -442,7 +449,7 @@ def _enabled_product_link_langs() -> list[str]:
     out: list[str] = []
     for code in medias.list_enabled_language_codes() or []:
         lang = str(code or "").strip().lower()
-        if not lang or lang == "en" or lang in seen:
+        if not lang or lang in seen:
             continue
         seen.add(lang)
         out.append(lang)
@@ -453,7 +460,7 @@ def build_product_links_push_preview(product: dict | None) -> dict:
     """组装产品维度的投放链接补推预览。
 
     `handle` 直接使用产品的 product_code，不额外拼接后缀。product_links
-    以 Media Language 中 enabled=1 的非英语语种为准。
+    以 Media Language 中 enabled=1 的语种为准，包含英语。
     """
     if not isinstance(product, dict):
         raise ProductLinksPayloadError("product_not_found")
@@ -595,7 +602,7 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
     """组装“不合适产品”投放推送预览。
 
     该入口复用两个独立下游接口：
-    1. 小语种文案接口：只推一条英语文案；
+    1. 文案接口：只推一条英语文案；
     2. 投放链接接口：只推一条英语 error handle 链接。
     """
     if not isinstance(product, dict):
@@ -821,24 +828,24 @@ def _get_first_copywriting(product_id: int, lang: str) -> dict | None:
     )
 
 
-def _list_first_non_english_copywritings(product_id: int) -> list[dict]:
+def _list_first_enabled_copywritings(product_id: int) -> list[dict]:
+    enabled_order = {
+        (row.get("code") or "").strip().lower(): index
+        for index, row in enumerate(medias.list_languages() or [])
+    }
     rows = query(
         "SELECT lang, title, body, description FROM media_copywritings "
-        "WHERE product_id=%s AND lang<>'en' "
+        "WHERE product_id=%s "
         "ORDER BY lang ASC, idx ASC, id ASC",
         (product_id,),
     )
     first_rows: dict[str, dict] = {}
     for row in rows or []:
         lang = ((row or {}).get("lang") or "").strip().lower()
-        if not lang or lang == "en" or lang in first_rows:
+        if not lang or lang not in enabled_order or lang in first_rows:
             continue
         first_rows[lang] = row
 
-    enabled_order = {
-        (row.get("code") or "").strip().lower(): index
-        for index, row in enumerate(medias.list_languages() or [])
-    }
     return sorted(
         first_rows.values(),
         key=lambda row: (
@@ -908,7 +915,7 @@ def resolve_localized_texts_payload(item: dict) -> list[dict[str, str]]:
         return []
 
     texts: list[dict[str, str]] = []
-    for row in _list_first_non_english_copywritings(int(product_id)):
+    for row in _list_first_enabled_copywritings(int(product_id)):
         lang = ((row or {}).get("lang") or "").strip().lower()
         fields = _normalize_localized_copywriting_fields(row)
         if not fields:
@@ -931,7 +938,7 @@ def build_localized_texts_request(item: dict) -> dict[str, list[dict[str, str]]]
 
 
 def build_product_localized_texts_push_preview(product: dict | None) -> dict:
-    """组装产品维度的小语种文案推送预览，复用推送管理的 texts 规则。"""
+    """组装产品维度的文案推送预览，复用推送管理的 texts 规则。"""
     if not isinstance(product, dict):
         raise ProductLocalizedTextsPayloadError("product_not_found")
     if not medias.is_product_listed(product):
@@ -1029,7 +1036,11 @@ def build_item_payload(item: dict, product: dict) -> dict:
         "image_url": build_media_public_url(cover_object_key),
     }
 
-    enabled_langs = [c for c in medias.list_enabled_language_codes() if c != "en"]
+    enabled_langs = [
+        str(c or "").strip().lower()
+        for c in medias.list_enabled_language_codes()
+        if str(c or "").strip()
+    ]
     product_links: list[str] = []
     seen_product_links: set[str] = set()
     for lang in enabled_langs:
@@ -1132,7 +1143,7 @@ def list_items_for_push(
     `limit=None` 表示不分页，用于需要在内存中先按状态过滤再分页的场景。
     说明：`media_items` 表没有 `updated_at` 列，排序与日期过滤均使用 `i.created_at`。
     """
-    where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL", "i.lang <> 'en'"]
+    where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL"]
     args: list[Any] = []
 
     if langs:
@@ -1251,7 +1262,6 @@ def aggregate_stats_by_owner(
         "LEFT JOIN users u ON u.id = p.user_id "
         "WHERE i.deleted_at IS NULL "
         "  AND p.deleted_at IS NULL "
-        "  AND i.lang <> 'en' "
         "  AND i.created_at >= %s "
         "  AND i.created_at <  %s "
         "GROUP BY u.id, owner_name "

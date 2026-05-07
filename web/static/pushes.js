@@ -146,7 +146,6 @@
       all.value = ''; all.textContent = '全部';
       sel.innerHTML = ''; sel.appendChild(all);
       LANGUAGES.forEach(l => {
-        if (l.code === 'en') return;
         const opt = document.createElement('option');
         opt.value = l.code; opt.textContent = formatLanguageLabel(l.code);
         sel.appendChild(opt);
@@ -636,7 +635,7 @@
     root.appendChild(target);
 
     if (!texts.length) {
-      root.appendChild(el('p', { class: 'pm-empty' }, '当前暂无可推送小语种文案（需要产品下有非英文且标题/文案/描述齐全的 copywriting）'));
+      root.appendChild(el('p', { class: 'pm-empty' }, '当前暂无可推送文案（需要产品下有英语或其他启用语种，且标题/文案/描述齐全的 copywriting）'));
       return root;
     }
 
@@ -953,8 +952,8 @@
     if (err === 'push_target_not_configured') return '后端未配置 PUSH_TARGET_URL（去 /settings?tab=push）';
     if (err === 'push_localized_texts_base_url_missing') return '未配置 wedev Base URL（去 /settings?tab=push）';
     if (err === 'push_localized_texts_credentials_missing') return '未配置 wedev 的 Authorization 或 Cookie（去 /settings?tab=push 或用 tools/wedev_sync.py）';
-    if (err === 'mk_id_missing') return '该产品缺少 mk_id，不能推送小语种文案';
-    if (err === 'localized_texts_empty') return '当前没有可推送的小语种文案';
+    if (err === 'mk_id_missing') return '该产品缺少 mk_id，不能推送文案';
+    if (err === 'localized_texts_empty') return '当前没有可推送文案';
     if (err === 'downstream_unreachable') return `下游不可达：${detail}`;
     if (err === 'downstream_error') {
       const preview = (body.response_body || '').slice(0, 200);
@@ -1124,7 +1123,7 @@
           ? '文案已推送'
           : noTarget
             ? (!mkId ? '缺少 mk_id' : '未配 base_url')
-            : noTexts ? '无可推送文案' : '推送小语种文案';
+            : noTexts ? '无可推送文案' : '推送文案';
         return;
       }
       btnPush.disabled = materialPushed || !payloadData;
@@ -1198,7 +1197,7 @@
       } else if (match.status === 'credentials_expired') {
         respMkIdTip.textContent = '配对 mk_id 失败：wedev 登录凭据已失效，请在本机跑 tools/wedev_sync.py 重新同步';
       } else {
-        respMkIdTip.textContent = '配对 mk_id 失败，请检查，当前无法完成小语种文案推送，缺失 mk_id';
+        respMkIdTip.textContent = '配对 mk_id 失败，请检查，当前无法完成文案推送，缺失 mk_id';
       }
     }
 
@@ -1285,7 +1284,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
           });
-          showResponse(body, false, '小语种文案推送响应');
+          showResponse(body, false, '文案推送响应');
           localizedPushed = true;
           anyPushSucceeded = true;
         } else {
@@ -1297,7 +1296,7 @@
           showMkIdMatch(body.mk_id_match);
           materialPushed = true;
           anyPushSucceeded = true;
-          // mk_id 匹配成功 → 同步刷新顶部信息 + 小语种文案 pane + JSON 预览 + 推送按钮状态
+          // mk_id 匹配成功 → 同步刷新顶部信息 + 文案 pane + JSON 预览 + 推送按钮状态
           if (body.mk_id_match && body.mk_id_match.mk_id) {
             mkId = body.mk_id_match.mk_id;
             mkIdValue.textContent = String(mkId);
@@ -1318,7 +1317,7 @@
         showResponse(describeError(err), true,
           isProductLinksMode()
             ? '推送链接失败'
-            : isLocalizedMode() ? '小语种文案推送失败' : '素材推送失败');
+            : isLocalizedMode() ? '文案推送失败' : '素材推送失败');
       } finally {
         btnCancel.disabled = false;
         syncPushButton();

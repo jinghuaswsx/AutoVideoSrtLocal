@@ -1823,7 +1823,7 @@
             <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
               ${icon('upload', 12)}<span>推送链接</span>
             </button>
-            <button class="oc-btn sm ghost" data-product-copy-push="${p.id}" title="推送该产品的小语种文案">
+            <button class="oc-btn sm ghost" data-product-copy-push="${p.id}" title="推送该产品文案">
               ${icon('edit', 12)}<span>推送文案</span>
             </button>
             <button class="oc-btn sm ghost" data-product-unsuitable-push="${p.id}" title="推送该产品的不合适标注报文">
@@ -2177,7 +2177,7 @@
 
   function renderProductCopyPushList(texts) {
     if (!Array.isArray(texts) || !texts.length) {
-      return '<div class="oc-pl-empty">暂无可推送小语种文案</div>';
+      return '<div class="oc-pl-empty">暂无可推送文案</div>';
     }
     return `<div class="oc-copy-list">`
       + texts.map((item) => `<div class="oc-copy-row">
@@ -2284,7 +2284,7 @@
       meta.textContent = `${product.name || ''} · ${product.product_code || ''} · mk_id ${mkId || '—'}`;
     }
     if (info) info.innerHTML = '<div class="oc-pl-empty">加载接口信息中…</div>';
-    list.innerHTML = '<div class="oc-pl-empty">加载小语种文案中…</div>';
+    list.innerHTML = '<div class="oc-pl-empty">加载文案中…</div>';
     jsonPre.textContent = '加载中…';
     submit.disabled = true;
     submit.textContent = '推送';
