@@ -23,7 +23,6 @@ from appcore import (
     infra_credentials,
     llm_bindings,
     llm_provider_configs,
-    product_link_domains,
     pricing,
     settings as settings_store,
 )
@@ -215,9 +214,6 @@ def index():
             _handle_bindings_post()
         elif tab == "push":
             _handle_push_post()
-        elif tab == "domains":
-            _handle_domains_post()
-            tab = (request.form.get("return_tab") or "providers").strip() or "providers"
         elif tab == "asr_routing":
             _handle_asr_routing_post()
         elif tab == "infrastructure":
@@ -327,28 +323,12 @@ def index():
         can_manage_pricing=is_admin,
         pricing_units_types=PRICING_UNITS_TYPES,
         push_credentials_view=push_credentials_view,
-        product_link_domains=product_link_domains.list_domains(include_disabled=True),
         asr_stage_providers=asr_routing_config.get_all_stage_providers(),
         asr_stages=asr_routing_config.STAGES,
         asr_stage_labels=asr_routing_config.STAGE_LABELS,
         asr_routing_provider_options=asr_routing_config.list_available_providers(),
         audio_separation=audio_separation_view,
     )
-
-
-def _parse_int_list(values) -> list[int]:
-    out: list[int] = []
-    seen: set[int] = set()
-    for value in values or []:
-        try:
-            item = int(value)
-        except (TypeError, ValueError):
-            continue
-        if item <= 0 or item in seen:
-            continue
-        seen.add(item)
-        out.append(item)
-    return out
 
 
 def _load_translate_pref() -> str:
@@ -572,32 +552,6 @@ def _handle_push_post() -> None:
             set_setting(key, raw)
         elif key in clear_keys:
             set_setting(key, "")
-
-
-def _handle_domains_post() -> None:
-    if not getattr(current_user, "is_admin", False):
-        return
-    action = (request.form.get("domain_action") or "save").strip().lower()
-    if action == "add":
-        raw_domain = (request.form.get("new_domain") or "").strip()
-        if not raw_domain:
-            flash("域名不能为空", "error")
-            return
-        try:
-            product_link_domains.upsert_domain(raw_domain, enabled=True)
-        except ValueError as exc:
-            flash(f"域名格式不正确：{exc}", "error")
-        return
-    if action == "delete":
-        try:
-            domain_id = int((request.form.get("delete_domain_id") or 0) or 0)
-        except (TypeError, ValueError):
-            domain_id = 0
-        product_link_domains.delete_domain(domain_id)
-        return
-
-    enabled_ids = _parse_int_list(request.form.getlist("enabled_domain_ids"))
-    product_link_domains.set_global_enabled_domain_ids(enabled_ids)
 
 
 def _parse_price_decimal(raw_value, field_label: str) -> float | None:

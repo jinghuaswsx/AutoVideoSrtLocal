@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from web.auth import admin_required, superadmin_required
-from appcore import medias, product_roas, shopifyid_sync_trigger, system_audit
+from appcore import medias, product_link_domains, product_roas, shopifyid_sync_trigger, system_audit
 from appcore import voice_library_sync_task as vlst
 from web.services.admin import (
     admin_flask_response,
@@ -243,11 +243,61 @@ def _coerce_json(raw):
         return None
 
 
+def _parse_int_list(values) -> list[int]:
+    out: list[int] = []
+    seen: set[int] = set()
+    for value in values or []:
+        try:
+            item = int(value)
+        except (TypeError, ValueError):
+            continue
+        if item <= 0 or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _handle_product_link_domains_post() -> None:
+    action = (request.form.get("domain_action") or "save").strip().lower()
+    if action == "add":
+        raw_domain = (request.form.get("new_domain") or "").strip()
+        if not raw_domain:
+            flash("域名不能为空", "error")
+            return
+        try:
+            product_link_domains.upsert_domain(raw_domain, enabled=True)
+            flash("域名已新增")
+        except ValueError as exc:
+            flash(f"域名格式不正确：{exc}", "error")
+        return
+    if action == "delete":
+        try:
+            domain_id = int((request.form.get("delete_domain_id") or 0) or 0)
+        except (TypeError, ValueError):
+            domain_id = 0
+        product_link_domains.delete_domain(domain_id)
+        flash("域名已删除")
+        return
+
+    enabled_ids = _parse_int_list(request.form.getlist("enabled_domain_ids"))
+    product_link_domains.set_global_enabled_domain_ids(enabled_ids)
+    flash("域名启用状态已保存")
+
+
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
 @admin_required
 def settings():
+    active_tab = (request.values.get("tab") or "general").strip().lower()
+    if active_tab not in {"general", "domains"}:
+        active_tab = "general"
+
     if request.method == "POST":
+        if active_tab == "domains":
+            _handle_product_link_domains_post()
+            return redirect(url_for("admin.settings", tab="domains"))
+
         raw_roas_rate = request.form.get("material_roas_rmb_per_usd", "").strip()
         if not raw_roas_rate:
             raw_roas_rate = product_roas.format_decimal(product_roas.DEFAULT_RMB_PER_USD)
@@ -319,7 +369,7 @@ def settings():
             flash(f"保留周期设置已保存，已同步调整 {adjusted} 个项目的过期时间")
         else:
             flash("保留周期设置已保存")
-        return redirect(url_for("admin.settings"))
+        return redirect(url_for("admin.settings", tab="general"))
 
     current = get_all_retention_settings()
     tts_concurrency_raw = get_setting("tts_max_concurrency")
@@ -334,6 +384,8 @@ def settings():
         roas_rmb_per_usd=product_roas.format_decimal(product_roas.get_configured_rmb_per_usd()),
         media_languages=medias.list_languages_for_admin(),
         tts_max_concurrency=tts_concurrency,
+        product_link_domains=product_link_domains.list_domains(include_disabled=True),
+        active_tab=active_tab,
     )
 
 
