@@ -40,7 +40,7 @@ from web.services.video_review import (
     build_video_review_upload_success_response,
     video_review_flask_response,
 )
-from web.upload_util import save_uploaded_file_to_path
+from web.upload_util import save_uploaded_file_to_path, secure_filename_component
 
 log = logging.getLogger(__name__)
 
@@ -128,15 +128,16 @@ def upload():
         return video_review_flask_response(build_video_review_missing_upload_response())
 
     from web.upload_util import validate_video_extension
-    if not validate_video_extension(file.filename):
+    video_filename = os.path.basename(file.filename)
+    if not validate_video_extension(video_filename):
         return video_review_flask_response(build_video_review_unsupported_upload_response())
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
 
-    video_filename = file.filename
-    video_path = os.path.join(UPLOAD_DIR, f"{task_id}_{video_filename}")
+    safe_video_filename = secure_filename_component(video_filename)
+    video_path = os.path.join(UPLOAD_DIR, f"{task_id}_{safe_video_filename}")
     save_uploaded_file_to_path(file, video_path)
 
     display_name = os.path.splitext(video_filename)[0]

@@ -113,8 +113,9 @@ def upload():
     if not file or not file.filename:
         return copywriting_flask_response(build_copywriting_error_response("请上传视频文件", 400))
 
-    from web.upload_util import save_uploaded_file_to_path, validate_video_extension
-    if not validate_video_extension(file.filename):
+    from web.upload_util import save_uploaded_file_to_path, secure_filename_component, validate_video_extension
+    video_filename = os.path.basename(file.filename)
+    if not validate_video_extension(video_filename):
         return copywriting_flask_response(build_copywriting_error_response("不支持的视频格式", 400))
 
     task_id = str(uuid.uuid4())
@@ -122,8 +123,8 @@ def upload():
     os.makedirs(task_dir, exist_ok=True)
 
     # 保存视频
-    video_filename = file.filename
-    video_path = os.path.join(UPLOAD_DIR, f"{task_id}_{video_filename}")
+    safe_video_filename = secure_filename_component(video_filename)
+    video_path = os.path.join(UPLOAD_DIR, f"{task_id}_{safe_video_filename}")
     save_uploaded_file_to_path(file, video_path)
 
     # 生成缩略图

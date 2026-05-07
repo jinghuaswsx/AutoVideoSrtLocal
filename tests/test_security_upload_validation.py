@@ -19,6 +19,34 @@ def _make_file(filename: str, content: bytes = b"fake-video-data"):
     return (io.BytesIO(content), filename)
 
 
+class _FakeCursor:
+    def execute(self, *args, **kwargs):
+        pass
+
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class _FakeConn:
+    def cursor(self):
+        return _FakeCursor()
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
+
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     """Flask test client with mocked user, no DB dependency for upload tests."""
@@ -102,6 +130,28 @@ class TestVideoReviewUploadValidation:
                            content_type="multipart/form-data")
         assert resp.status_code == 201
 
+    def test_sanitizes_traversal_filename_before_saving(self, client, monkeypatch, tmp_path):
+        captured = {}
+
+        monkeypatch.setattr("web.routes.video_review.db_execute", lambda *a, **kw: None)
+        monkeypatch.setattr("web.routes.video_review.OUTPUT_DIR", str(tmp_path / "out"))
+        monkeypatch.setattr("web.routes.video_review.UPLOAD_DIR", str(tmp_path / "uploads"))
+        monkeypatch.setattr(
+            "web.routes.video_review.save_uploaded_file_to_path",
+            lambda _file, destination: captured.setdefault("path", destination),
+        )
+
+        resp = client.post(
+            "/api/video-review/upload",
+            data={"video": _make_file("../../escape.mp4")},
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 201
+        saved_path = os.path.normpath(captured["path"])
+        assert os.path.dirname(saved_path) == os.path.normpath(str(tmp_path / "uploads"))
+        assert os.path.basename(saved_path).endswith("_escape.mp4")
+
     @pytest.mark.parametrize("ext", REJECTED_EXTS)
     def test_rejects_non_video_extensions(self, client, ext):
         resp = client.post("/api/video-review/upload",
@@ -126,6 +176,41 @@ class TestVideoCreationUploadValidation:
 
 class TestCopywritingUploadValidation:
     """copywriting 上传端点应校验视频扩展名。"""
+
+    def test_sanitizes_traversal_filename_before_saving(self, client, monkeypatch, tmp_path):
+        captured = {}
+
+        class _FakeRunner:
+            start = object()
+
+        monkeypatch.setattr("web.routes.copywriting.OUTPUT_DIR", str(tmp_path / "out"))
+        monkeypatch.setattr("web.routes.copywriting.UPLOAD_DIR", str(tmp_path / "uploads"))
+        monkeypatch.setattr("web.routes.copywriting.get_connection", lambda: _FakeConn())
+        monkeypatch.setattr("web.routes.copywriting.get_retention_hours", lambda project_type: 24)
+        monkeypatch.setattr("web.routes.copywriting._extract_thumbnail", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            "web.upload_util.save_uploaded_file_to_path",
+            lambda _file, destination: captured.setdefault("path", destination),
+        )
+        monkeypatch.setattr(
+            "web.routes.copywriting.task_state.create_copywriting",
+            lambda **kwargs: {"id": kwargs["task_id"], "_user_id": kwargs["user_id"]},
+        )
+        monkeypatch.setattr("web.routes.copywriting.task_state.update", lambda *a, **kw: None)
+        monkeypatch.setattr("web.routes.copywriting._register_copywriting_task", lambda *a, **kw: True)
+        monkeypatch.setattr("web.routes.copywriting._start_copywriting_background", lambda *a, **kw: None)
+        monkeypatch.setattr("web.routes.copywriting.CopywritingRunner", lambda *a, **kw: _FakeRunner())
+
+        resp = client.post(
+            "/api/copywriting/upload",
+            data={"video": _make_file("../../escape.mp4")},
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 201
+        saved_path = os.path.normpath(captured["path"])
+        assert os.path.dirname(saved_path) == os.path.normpath(str(tmp_path / "uploads"))
+        assert os.path.basename(saved_path).endswith("_escape.mp4")
 
     @pytest.mark.parametrize("ext", REJECTED_EXTS)
     def test_rejects_non_video_extensions(self, client, ext):
