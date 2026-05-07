@@ -1802,6 +1802,25 @@ def test_image_translate_route_db_dependencies_use_appcore_store():
     assert "def execute(" in store_source
 
 
+def test_image_translate_project_sql_lives_in_appcore_store():
+    route_source = Path("web/routes/image_translate.py").read_text(encoding="utf-8")
+    store_source = Path("appcore/image_translate_store.py").read_text(encoding="utf-8")
+
+    for snippet in [
+        "FROM projects",
+        "UPDATE projects SET deleted_at",
+    ]:
+        assert snippet not in route_source
+        assert snippet in store_source
+
+    for helper_name in [
+        "list_user_projects",
+        "soft_delete_project",
+    ]:
+        assert f"def {helper_name}" in store_source
+        assert f"image_translate_store.{helper_name}" in route_source
+
+
 def test_translation_quality_api_responses_live_outside_route_module():
     module_source = Path("web/routes/translation_quality.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)

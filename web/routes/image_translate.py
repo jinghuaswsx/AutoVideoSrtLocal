@@ -721,15 +721,9 @@ def api_download_zip(task_id: str):
 def page_list():
     import json as _json
 
-    rows = db_query(
-        """
-        SELECT id, created_at, status, state_json
-        FROM projects
-        WHERE user_id=%s AND type='image_translate' AND deleted_at IS NULL
-        ORDER BY created_at DESC
-        LIMIT 100
-        """,
-        (current_user.id,),
+    rows = image_translate_store.list_user_projects(
+        current_user.id,
+        query_func=db_query,
     )
     _STATUS_LABELS = {
         "queued": "排队中",
@@ -801,9 +795,10 @@ def api_delete_task(task_id: str):
         if dst_key:
             _delete_artifact_object(dst_key)
     try:
-        db_execute(
-            "UPDATE projects SET deleted_at = NOW() WHERE id=%s AND user_id=%s",
-            (task_id, current_user.id),
+        image_translate_store.soft_delete_project(
+            task_id,
+            current_user.id,
+            execute_func=db_execute,
         )
     except Exception:
         pass
