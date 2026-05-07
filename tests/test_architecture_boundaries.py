@@ -207,6 +207,21 @@ def test_detail_image_zip_archive_construction_lives_outside_route_module():
     assert Path("web/services/media_detail_archives.py").exists()
 
 
+def test_medias_facade_does_not_repeat_uuid_import():
+    facade_path = Path("web/routes/medias/__init__.py")
+    tree = ast.parse(facade_path.read_text(encoding="utf-8-sig"), filename=str(facade_path))
+
+    import_lines = [
+        node.lineno
+        for node in tree.body
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "uuid"
+    ]
+
+    assert len(import_lines) == 1
+
+
 def test_detail_image_archive_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
