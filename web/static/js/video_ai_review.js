@@ -64,6 +64,16 @@ window.VideoAiReview = (function () {
       .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
   }
 
+  function _scoreText(value) {
+    if (value == null || value === "") return "—";
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? String(numeric) : String(value);
+  }
+
+  function _verdictTier(verdict) {
+    return VERDICT_TIER[verdict] || "";
+  }
+
   function _fmtBytes(n) {
     if (!n || n <= 0) return "—";
     if (n < 1024) return n + " B";
@@ -217,14 +227,14 @@ window.VideoAiReview = (function () {
     }
     // done
     const verdictText = VERDICT_LABEL[r.verdict] || r.verdict || "";
-    const tier = VERDICT_TIER[r.verdict] || "";
-    msg.innerHTML = `综合分 <b>${r.overall_score ?? "—"}</b> · ${_esc(verdictText)} · ${_fmtElapsed(r.request_duration_ms)} · ${_esc(r.channel || "")}`;
+    const tier = _verdictTier(r.verdict);
+    msg.innerHTML = `综合分 <b>${_esc(_scoreText(r.overall_score))}</b> · ${_esc(verdictText)} · ${_fmtElapsed(r.request_duration_ms)} · ${_esc(r.channel || "")}`;
     if (preview) {
       const dims = (r.dimensions || {});
       const dimRows = Object.keys(DIM_LABELS).map(k => {
         const v = dims[k];
         if (v == null) return "";
-        return `<div class="vr-dim"><span class="vr-dim-label">${DIM_LABELS[k]}</span><span class="vr-dim-score">${v}</span></div>`;
+        return `<div class="vr-dim"><span class="vr-dim-label">${DIM_LABELS[k]}</span><span class="vr-dim-score">${_esc(_scoreText(v))}</span></div>`;
       }).filter(Boolean).join("");
       const reason = r.verdict_reason ? `<div class="vr-reason">${_esc(r.verdict_reason)}</div>` : "";
       preview.innerHTML = `<div class="vr-inline ${tier}">${dimRows}${reason}</div>`;
@@ -459,18 +469,18 @@ window.VideoAiReview = (function () {
     }
     // done
     const verdictText = VERDICT_LABEL[r.verdict] || r.verdict || "";
-    const tier = VERDICT_TIER[r.verdict] || "";
+    const tier = _verdictTier(r.verdict);
     const dims = r.dimensions || {};
     const dimRows = Object.keys(DIM_LABELS).map(k => {
       const v = dims[k];
-      const display = v == null ? "<span class='vr-meta'>跳过 / 无数据</span>" : `<b>${v}</b>`;
+      const display = v == null ? "<span class='vr-meta'>跳过 / 无数据</span>" : `<b>${_esc(_scoreText(v))}</b>`;
       return `<tr><td>${DIM_LABELS[k]}</td><td>${display}</td></tr>`;
     }).join("");
     const issuesHtml = (r.issues || []).map(s => `<li>${_esc(s)}</li>`).join("") || "<li class='vr-meta'>—</li>";
     const highlightsHtml = (r.highlights || []).map(s => `<li>${_esc(s)}</li>`).join("") || "<li class='vr-meta'>—</li>";
     pane.innerHTML = `
       <div class="vr-summary ${tier}">
-        <div class="vr-score-big">${r.overall_score ?? "—"}</div>
+        <div class="vr-score-big">${_esc(_scoreText(r.overall_score))}</div>
         <div>
           <div class="vr-verdict-text">${_esc(verdictText)}</div>
           <div class="vr-meta">${_esc(r.verdict_reason || "")}</div>
