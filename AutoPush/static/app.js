@@ -30,6 +30,19 @@ function el(tag, attrs = {}, children = []) {
 
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+function safeMediaSrc(url) {
+  const raw = String(url == null ? "" : url).trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch (_) {
+    return "";
+  }
+}
+
 /* ---------- API 调用（同源代理，走 FastAPI） ---------- */
 
 async function apiJson(url, options = {}) {
@@ -622,12 +635,14 @@ function renderPayloadView(payload) {
       sub.appendChild(vkv);
 
       const preview = el("div", { class: "ap-video-preview", style: "margin-top: 8px;" });
-      if (v.image_url) {
-        preview.appendChild(el("img", { class: "ap-thumb", src: v.image_url, alt: `cover-${i}` }));
+      const coverSrc = safeMediaSrc(v.image_url);
+      const videoSrc = safeMediaSrc(v.url);
+      if (coverSrc) {
+        preview.appendChild(el("img", { class: "ap-thumb", src: coverSrc, alt: `cover-${i}` }));
       }
-      if (v.url) {
+      if (videoSrc) {
         preview.appendChild(el("video", {
-          class: "ap-thumb", src: v.url, poster: v.image_url || null,
+          class: "ap-thumb", src: videoSrc, poster: coverSrc,
           controls: true, preload: "metadata",
         }));
       }
@@ -814,9 +829,10 @@ function renderList(container) {
 
       // 封面
       const coverTd = el("td");
-      if (item.cover_url) {
+      const coverUrl = safeMediaSrc(item.cover_url);
+      if (coverUrl) {
         coverTd.appendChild(el("img", {
-          class: "ap-list-thumb", src: item.cover_url, alt: item.filename || "",
+          class: "ap-list-thumb", src: coverUrl, alt: item.filename || "",
         }));
       } else {
         coverTd.appendChild(el("div", { class: "ap-list-thumb ap-media-empty" }, "无"));
@@ -1008,9 +1024,11 @@ function renderPayload(container) {
       const coverItem = el("div", { class: "ap-media-item" }, [
         el("span", { class: "ap-input-label" }, `videos[${i}].image_url`),
       ]);
-      if (v.image_url) {
+      const coverSrc = safeMediaSrc(v.image_url);
+      const videoSrc = safeMediaSrc(v.url);
+      if (coverSrc) {
         coverItem.appendChild(el("img", {
-          class: "ap-media-frame", src: v.image_url, alt: v.name ?? `cover-${i}`,
+          class: "ap-media-frame", src: coverSrc, alt: v.name ?? `cover-${i}`,
         }));
       } else {
         coverItem.appendChild(el("div", { class: "ap-media-frame ap-media-empty" }, "无封面"));
@@ -1019,10 +1037,10 @@ function renderPayload(container) {
       const videoItem = el("div", { class: "ap-media-item" }, [
         el("span", { class: "ap-input-label" }, `videos[${i}].url`),
       ]);
-      if (v.url) {
+      if (videoSrc) {
         videoItem.appendChild(el("video", {
-          class: "ap-media-frame", src: v.url,
-          poster: v.image_url || null, controls: true, preload: "metadata",
+          class: "ap-media-frame", src: videoSrc,
+          poster: coverSrc, controls: true, preload: "metadata",
         }));
       } else {
         videoItem.appendChild(el("div", { class: "ap-media-frame ap-media-empty" }, "无视频"));

@@ -61,6 +61,20 @@
     return payload;
   }
 
+  function safeInternalHref(url, fallback) {
+    const safeFallback = String(fallback || "/link-check");
+    const raw = String(url == null ? "" : url).trim();
+    if (!raw) return safeFallback;
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return safeFallback;
+      if (parsed.origin !== window.location.origin) return safeFallback;
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (_) {
+      return safeFallback;
+    }
+  }
+
   function normalizeLocaleSegment(segment) {
     return String(segment || "").trim().toLowerCase();
   }
@@ -208,7 +222,9 @@
         body: new FormData(form),
       });
       setStatus("创建成功，正在跳转详情页...");
-      window.location.assign(payload.detail_url);
+      const fallbackDetailUrl = payload.task_id ? `/link-check/${encodeURIComponent(payload.task_id)}` : "/link-check";
+      const detailUrl = safeInternalHref(payload.detail_url, fallbackDetailUrl);
+      window.location.assign(detailUrl);
     } catch (error) {
       showError(error.message || "创建项目失败");
       setStatus("创建失败");

@@ -36,6 +36,19 @@ def test_link_check_projects_script_includes_locale_detection_and_redirect():
     assert 'linkInput.addEventListener("input", syncLanguageFromUrl)' in script
 
 
+def test_link_check_projects_script_sanitizes_detail_redirect_url():
+    script = Path("web/static/link_check_projects.js").read_text(encoding="utf-8")
+    submit_block = script[
+        script.index("async function onSubmit"):
+        script.index("function onLanguageChange")
+    ]
+
+    assert "function safeInternalHref(url, fallback)" in script
+    assert "const detailUrl = safeInternalHref(" in submit_block
+    assert "window.location.assign(detailUrl);" in submit_block
+    assert "window.location.assign(payload.detail_url);" not in submit_block
+
+
 def test_link_check_projects_script_checks_full_segment_before_primary_subtag_fallback():
     script = Path("web/static/link_check_projects.js").read_text(encoding="utf-8")
 
