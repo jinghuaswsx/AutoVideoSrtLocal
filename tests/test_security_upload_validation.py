@@ -164,6 +164,50 @@ class TestVideoReviewUploadValidation:
 
 class TestVideoCreationUploadValidation:
 
+    def test_sanitizes_traversal_filename_before_saving_and_project_metadata(self, client, monkeypatch, tmp_path):
+        captured = {}
+
+        monkeypatch.setattr("web.routes.video_creation.OUTPUT_DIR", str(tmp_path / "out"))
+        monkeypatch.setattr("web.routes.video_creation.UPLOAD_DIR", str(tmp_path / "uploads"))
+        monkeypatch.setattr("web.routes.video_creation.get_retention_hours", lambda project_type: 24)
+        monkeypatch.setattr(
+            "web.routes.video_creation._resolve_seedance_config",
+            lambda: {
+                "api_key": "seedance-key",
+                "base_url": "https://seedance.example.test",
+                "model_id": "seedance-test",
+            },
+        )
+        monkeypatch.setattr(
+            "web.routes.video_creation.save_uploaded_file_to_path",
+            lambda _file, destination: captured.setdefault("path", destination),
+        )
+        monkeypatch.setattr(
+            "web.routes.video_creation.video_creation_route_store.insert_project",
+            lambda **kwargs: captured.setdefault("insert", kwargs),
+        )
+        monkeypatch.setattr("web.routes.video_creation.try_register_active_task", lambda *a, **kw: True)
+        monkeypatch.setattr("web.routes.video_creation.start_background_task", lambda *a, **kw: None)
+
+        resp = client.post(
+            "/api/video-creation/upload",
+            data={
+                "prompt": "make a product video",
+                "video": _make_file("..\\..\\escape.mp4"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        assert resp.status_code == 201
+        saved_path = os.path.normpath(captured["path"])
+        assert os.path.dirname(saved_path) == os.path.normpath(str(tmp_path / "uploads"))
+        assert os.path.basename(saved_path).endswith("_escape.mp4")
+
+        inserted = captured["insert"]
+        assert inserted["original_filename"] == "escape.mp4"
+        assert inserted["display_name"] == "escape"
+        assert inserted["state"]["display_name"] == "escape"
+
     @pytest.mark.parametrize("ext", REJECTED_EXTS)
     def test_rejects_non_video_extensions(self, client, ext):
         resp = client.post("/api/video-creation/upload",

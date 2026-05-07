@@ -80,6 +80,10 @@ def _build_public_exchange_key(task_id: str, state: dict, asset_kind: str, filen
     return f"{base}/video/{safe_name}"
 
 
+def _client_filename_basename(filename: str | None) -> str:
+    return os.path.basename((filename or "").replace("\\", "/"))
+
+
 from pipeline.ffutil import extract_thumbnail
 
 
@@ -247,20 +251,21 @@ def upload():
     video_path = None
     video_filename = None
     if video_file:
-        if not validate_video_extension(video_file.filename):
+        video_filename = _client_filename_basename(video_file.filename)
+        if not validate_video_extension(video_filename):
             return video_creation_flask_response(build_video_creation_error_response("不支持的视频格式", 400))
-        video_filename = video_file.filename
         video_path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{secure_filename_component(video_filename)}")
         save_uploaded_file_to_path(video_file, video_path)
 
     # 保存图片
     image_paths = []
     for idx, img in enumerate(images):
-        if not validate_image_extension(img.filename):
+        image_filename = _client_filename_basename(img.filename)
+        if not validate_image_extension(image_filename):
             return video_creation_flask_response(
-                build_video_creation_error_response(f"图片 {img.filename} 格式不支持", 400)
+                build_video_creation_error_response(f"图片 {image_filename} 格式不支持", 400)
             )
-        safe_name = secure_filename_component(img.filename)
+        safe_name = secure_filename_component(image_filename)
         img_path = os.path.join(UPLOAD_DIR, f"{task_id}_img{idx}_{safe_name}")
         img.save(img_path)
         image_paths.append(img_path)
@@ -268,7 +273,8 @@ def upload():
     # 保存音频
     audio_path = None
     if audio_file:
-        safe_name = secure_filename_component(audio_file.filename)
+        audio_filename = _client_filename_basename(audio_file.filename)
+        safe_name = secure_filename_component(audio_filename)
         audio_path = os.path.join(UPLOAD_DIR, f"{task_id}_audio_{safe_name}")
         audio_file.save(audio_path)
 
@@ -285,7 +291,7 @@ def upload():
     else:
         display_name = prompt[:30].replace("\n", " ").replace("\r", "")
 
-    original_filename = video_filename or (images[0].filename if images else "")
+    original_filename = video_filename or (_client_filename_basename(images[0].filename) if images else "")
 
     state = {
         "task_dir": task_dir,
