@@ -519,15 +519,16 @@
       if (!compareCard || !compareOriginalPanel || !compareResultPanel) {
         return;
       }
+      var taskStatus = (state && state.status) || "";
       var sourceVideoUrl = (state && state.source_video_url) || "";
       var sourceThumbnailUrl = (state && state.thumbnail_url) || "";
       var resultPreviewUrl = (state && state.result_artifact_url) || "";
       var resultTosKey = (state && state.result_tos_key) || "";
       var resultVideoPath = (state && state.result_video_path) || "";
-      var providerResultUrl = (state && state.provider_result_url) || "";
-      var hasResult = !!(resultTosKey || resultVideoPath || providerResultUrl);
+      // provider_result_url 在 local VSR 提交阶段就是 127.0.0.1:84 的内网地址，不能作为"有结果"判据。
+      var hasResult = !!(resultTosKey || resultVideoPath);
 
-      if (!hasResult || !resultPreviewUrl) {
+      if (taskStatus !== "done" || !hasResult || !resultPreviewUrl) {
         compareCard.hidden = true;
         compareCard.classList.add("sr-hidden");
         compareOriginalPanel.innerHTML = "";
@@ -576,13 +577,13 @@
       var providerTaskId = (state && state.provider_task_id) || "";
       var resultTosKey = (state && state.result_tos_key) || "";
       var resultVideoPath = (state && state.result_video_path) || "";
-      var providerResultUrl = (state && state.provider_result_url) || "";
-      var previewUrl = (state && state.result_artifact_url) || "";
       var downloadUrl = (state && state.result_download_url) || "";
       var providerStatus = (state && state.provider_status) || "";
       var providerMessage = (state && state.provider_emsg) || "";
+      var taskError = (state && state.error) || "";
       var html = "";
-      var hasResult = !!(resultTosKey || resultVideoPath || providerResultUrl);
+      // provider_result_url 在 local VSR 提交阶段就是 127.0.0.1:84 的内网地址，不能作为"有结果"判据。
+      var hasResult = !!(resultTosKey || resultVideoPath);
 
       if (taskStatus === "done" && hasResult) {
         html = [
@@ -596,6 +597,13 @@
           '</div>',
           '</div>',
         ].join("");
+      } else if (taskStatus === "error") {
+        html = [
+          '<div class="sr-result-empty">',
+          '<div class="sr-selection-empty-title">任务失败</div>',
+          '<div class="sr-hint">' + escapeHtml(taskError || providerMessage || providerStatus || "请检查后台日志后点「重提」重新生成。") + '</div>',
+          '</div>',
+        ].join("");
       } else {
         html = [
           '<div class="sr-result-empty">',
@@ -607,7 +615,8 @@
 
       resultPanel.innerHTML = html;
       if (resumeButton) {
-        resumeButton.hidden = !(providerTaskId && taskStatus !== "done");
+        // status=error 时旧 provider_task_id 在服务侧通常已被清掉，resume 必然 404，仅在 in-flight 时显示。
+        resumeButton.hidden = !(providerTaskId && taskStatus !== "done" && taskStatus !== "error");
       }
       if (resubmitButton) {
         resubmitButton.hidden = taskStatus === "deleted";

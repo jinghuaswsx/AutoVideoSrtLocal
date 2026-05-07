@@ -1242,6 +1242,73 @@ def test_subtitle_removal_resubmit_recent_provider_task_resumes_poll_without_new
     assert saved["steps"]["poll"] == "running"
 
 
+def test_subtitle_removal_resubmit_error_status_skips_resume_and_resubmits(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    """status=error 的任务即使 age 在 resume window 内也必须重新提交，不能 resume 旧 provider_task。
+
+    本地 VSR 失败后旧 provider_task_id 已被服务清掉，resume 必然 404，必须强制重新提交。
+    """
+    store.create_subtitle_removal(
+        "sr-resubmit-error",
+        "uploads/source.mp4",
+        "output/sr-resubmit-error",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-resubmit-error",
+        status="error",
+        subtitle_backend="local_vsr",
+        media_info={
+            "width": 1080,
+            "height": 1920,
+            "resolution": "1080x1920",
+            "duration": 35.0,
+            "file_size_mb": 9.0,
+        },
+        remove_mode="full",
+        selection_box={"x1": 0, "y1": 0, "x2": 1080, "y2": 1920},
+        position_payload={"l": 0, "t": 0, "w": 1080, "h": 1920},
+        provider_task_id="provider-task-already-cleaned",
+        provider_status="failed",
+        provider_emsg="resolution exceeds max",
+        provider_result_url="http://127.0.0.1:84/download/provider-task-already-cleaned",
+        provider_task_submitted_at=1234.0,
+        steps={
+            "prepare": "done",
+            "submit": "done",
+            "poll": "error",
+            "download_result": "pending",
+            "upload_result": "pending",
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr("web.routes.subtitle_removal._submission_age_seconds", lambda task_id, task: 60)
+    started = []
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.append((task_id, user_id)) or True,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-resubmit-error/resubmit",
+        json={"remove_mode": "full"},
+    )
+
+    assert response.status_code == 202
+    assert response.get_json()["status"] == "queued"
+    assert started == [("sr-resubmit-error", 1)]
+    saved = store.get("sr-resubmit-error")
+    assert saved["status"] == "queued"
+    assert saved["provider_task_id"] == ""
+    assert saved["provider_status"] == "queued"
+    assert saved["provider_result_url"] == ""
+    assert saved["provider_emsg"] == ""
+    assert saved["steps"]["submit"] == "queued"
+    assert saved["steps"]["poll"] == "pending"
+
+
 def test_subtitle_removal_resume_poll_restarts_runner_for_existing_provider_task(authed_client_no_db, monkeypatch):
     task = store.create_subtitle_removal(
         "sr-resume",

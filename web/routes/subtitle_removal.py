@@ -1052,7 +1052,8 @@ def resubmit(task_id: str):
         if task_status in {"queued", "running"}:
             return _json_response({"error": "task is already running"}), 409
         provider_task_id = (task.get("provider_task_id") or "").strip()
-        if task_status not in {"done", "ready"} and provider_task_id:
+        # status=error 的任务 provider 侧通常已清掉旧 task_id，resume 必然 404；强制重新提交。
+        if task_status not in {"done", "ready", "error"} and provider_task_id:
             age_seconds = _submission_age_seconds(task_id, task)
             window_seconds = int(getattr(config, "SUBTITLE_REMOVAL_RESUBMIT_POLL_WINDOW_SECONDS", 1800) or 1800)
             if age_seconds <= window_seconds:
