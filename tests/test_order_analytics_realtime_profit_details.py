@@ -156,3 +156,46 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
     assert us_order["refund_status"] == "full_refund"
     assert us_order["profit_status"] == "ok"
     assert us_order["order_profit_usd"] == -18.68
+
+
+def test_get_realtime_order_profit_details_marks_missing_profit_lines_incomplete(monkeypatch):
+    target = date(2026, 5, 6)
+    day_start = datetime(2026, 5, 5, 16, 0)
+    data_until = datetime(2026, 5, 6, 12, 0)
+
+    def fake_query(sql, args=()):
+        assert "p.id IS NULL" in sql
+        return [
+            {
+                "site_code": "newjoy",
+                "dxm_package_id": "PKG-PARTIAL",
+                "dxm_order_id": "DXM-PARTIAL",
+                "package_number": "PN-PARTIAL",
+                "order_state": "paid",
+                "buyer_country": "US",
+                "buyer_country_name": "United States",
+                "order_time": datetime(2026, 5, 6, 10, 30),
+                "line_count": 2,
+                "profit_line_count": 1,
+                "profit_ok_count": 1,
+                "profit_incomplete_count": 1,
+                "units": 2,
+                "product_revenue": 100.0,
+                "shipping_revenue": 0.0,
+                "total_revenue": 100.0,
+                "refund_amount_usd": 0.0,
+                "purchase_cost": 30.0,
+                "logistics_cost": 8.0,
+                "ad_cost": 11.0,
+                "stored_shopify_fee_total": 2.8,
+                "skus": "SKU-A / SKU-B",
+                "product_names": "Product A / Product B",
+            }
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    detail = _get_realtime_order_profit_details(target, day_start, data_until)[0]
+
+    assert detail["profit_status"] == "partially_complete"
+    assert detail["status_label"] == "部分完整"

@@ -165,7 +165,7 @@ def _get_realtime_order_profit_details(target: date, day_start: datetime, data_u
         "COUNT(*) AS line_count, "
         "SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) AS profit_line_count, "
         "SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS profit_ok_count, "
-        "SUM(CASE WHEN p.id IS NOT NULL AND COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
+        "SUM(CASE WHEN p.id IS NULL OR COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
         "SUM(COALESCE(d.quantity, 0)) AS units, "
         "SUM(COALESCE(d.line_amount, 0)) AS product_revenue, "
         "SUM(COALESCE(d.ship_amount, 0)) AS shipping_revenue, "
