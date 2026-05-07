@@ -177,6 +177,87 @@ def _parse_json_content(raw: str):
     return json.loads(content.strip())
 
 
+def _upload_media_for_provider(path: str | Path) -> str:
+    """Stage local media for provider URL-pull APIs."""
+    from pipeline.storage import upload_file
+
+    local_path = Path(path)
+    if not local_path.is_file():
+        raise RuntimeError(f"media file does not exist: {local_path}")
+    object_key = f"llm_media/{int(time.time())}_{local_path.name}"
+    return upload_file(str(local_path), object_key, expires=3600)
+
+
+def _doubao_media_content_item(path: str | Path) -> dict:
+    local_path = Path(path)
+    mime = _guess_mime(local_path)
+    public_url = _upload_media_for_provider(local_path)
+    if mime.startswith("image/"):
+        return {"type": "input_image", "image_url": public_url}
+    if mime.startswith("video/"):
+        return {"type": "input_video", "video_url": public_url}
+    raise RuntimeError(f"unsupported media mime for Doubao: {mime}")
+
+
+def _create_ark_client(*, api_key: str, base_url: str):
+    try:
+        from volcenginesdkarkruntime import Ark
+    except ImportError as exc:
+        raise ImportError(
+            "volcenginesdkarkruntime 未安装，请运行: pip install volcenginesdkarkruntime"
+        ) from exc
+    return Ark(api_key=api_key, base_url=base_url)
+
+
+def _extract_ark_text(response) -> str:
+    output = getattr(response, "output", None)
+    if isinstance(output, str):
+        return output
+    if isinstance(output, list):
+        for item in output:
+            content = getattr(item, "content", None)
+            if content is None and isinstance(item, dict):
+                content = item.get("content")
+            for part in content or []:
+                text = getattr(part, "text", None)
+                if text is None and isinstance(part, dict):
+                    text = part.get("text")
+                if text:
+                    return str(text)
+        for item in output:
+            text = getattr(item, "text", None)
+            if text:
+                return str(text)
+    if output is not None:
+        content = getattr(output, "content", None)
+        for part in content or []:
+            text = getattr(part, "text", None)
+            if text:
+                return str(text)
+    raise RuntimeError(f"无法从 Ark 响应中提取文本: {repr(output)[:500]}")
+
+
+def _extract_ark_usage(response) -> dict:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        meta = getattr(response, "ResponseMeta", None) or getattr(response, "response_meta", None)
+        usage = getattr(meta, "Usage", None) or getattr(meta, "usage", None) if meta else None
+    if usage is None:
+        return {"input_tokens": None, "output_tokens": None}
+    return {
+        "input_tokens": (
+            getattr(usage, "prompt_tokens", None)
+            or getattr(usage, "PromptTokens", None)
+            or getattr(usage, "input_tokens", None)
+        ),
+        "output_tokens": (
+            getattr(usage, "completion_tokens", None)
+            or getattr(usage, "CompletionTokens", None)
+            or getattr(usage, "output_tokens", None)
+        ),
+    }
+
+
 def _append_schema_instruction(prompt: str, response_schema: dict | None) -> str:
     if not response_schema:
         return prompt
@@ -350,6 +431,47 @@ class DoubaoAdapter(LLMAdapter):
                 "output_tokens": getattr(usage, "completion_tokens", None) if usage else None,
             },
         }
+
+    def generate(self, *, model, prompt, user_id=None, system=None,
+                 media=None, response_schema=None, temperature=None,
+                 max_output_tokens=None, google_search=None):
+        creds = self.resolve_credentials(user_id, media_kind="video" if media else "text")
+        client = _create_ark_client(api_key=creds["api_key"], base_url=creds["base_url"])
+        media_list = _normalize_media(media)
+        prompt_for_model = _append_schema_instruction(prompt, response_schema)
+
+        user_content: list[dict] = [{"type": "input_text", "text": prompt_for_model}]
+        for item in media_list or []:
+            user_content.append(_doubao_media_content_item(item))
+
+        input_messages: list[dict] = []
+        if system:
+            input_messages.append({
+                "role": "system",
+                "content": [{"type": "input_text", "text": system}],
+            })
+        input_messages.append({"role": "user", "content": user_content})
+
+        kwargs: dict = {"model": model, "input": input_messages}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        if max_output_tokens is not None:
+            kwargs["max_output_tokens"] = max_output_tokens
+        response = _call_with_network_retry(
+            lambda: client.responses.create(**kwargs),
+            label="doubao-responses",
+        )
+        text = _extract_ark_text(response)
+        result = {
+            "text": text,
+            "json": None,
+            "raw": response,
+            "usage": _extract_ark_usage(response),
+        }
+        if response_schema is not None:
+            result["json"] = _parse_json_content(text)
+            result["text"] = None
+        return result
 
 
 __all__ = ["OpenRouterAdapter", "DoubaoAdapter", "ProviderConfigError"]

@@ -15,16 +15,16 @@ from appcore.omni_plugin_config import (
 # ---------------------------------------------------------------------------
 
 
-def test_capability_groups_have_8_entries():
-    """8 分组（spec §3）：1 个 ASR 后处理 + shot_decompose + 翻译算法 + prompt
-    增强 + TTS 收敛 + 字幕 + 人声分离 + 响度匹配。"""
-    assert len(CAPABILITY_GROUPS) == 8
+def test_capability_groups_have_9_entries():
+    """9 分组：8 个 Omni 基线能力点 + AV 同步审计。"""
+    assert len(CAPABILITY_GROUPS) == 9
 
 
 def test_default_plugin_config_has_all_keys():
     expected = {
         "asr_post", "shot_decompose", "translate_algo", "source_anchored",
         "tts_strategy", "subtitle", "voice_separation", "loudness_match",
+        "av_sync_audit",
     }
     assert set(DEFAULT_PLUGIN_CONFIG) == expected
 
@@ -39,6 +39,7 @@ def test_default_matches_omni_current_baseline():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "av_sync_audit": "off",
     }
 
 
@@ -101,6 +102,7 @@ def test_validate_accepts_none_as_empty():
         ("translate_algo", "magic"),
         ("tts_strategy", "asdf"),
         ("subtitle", "wat"),
+        ("av_sync_audit", "anything"),
     ],
 )
 def test_validate_rejects_unknown_radio_value(field, bad_value):
@@ -205,6 +207,34 @@ def test_validate_keeps_source_anchored_for_standard_translate():
     assert out["source_anchored"] is True
 
 
+def test_validate_keeps_report_only_for_any_chain():
+    cfg = dict(DEFAULT_PLUGIN_CONFIG)
+    cfg["av_sync_audit"] = "report_only"
+    out = validate_plugin_config(cfg)
+    assert out["av_sync_audit"] == "report_only"
+
+
+def test_validate_downgrades_safe_auto_unless_sentence_chain():
+    cfg = dict(DEFAULT_PLUGIN_CONFIG)
+    cfg["av_sync_audit"] = "safe_auto"
+    out = validate_plugin_config(cfg)
+    assert out["av_sync_audit"] == "report_only"
+
+
+def test_validate_accepts_safe_auto_for_sentence_chain():
+    cfg = dict(DEFAULT_PLUGIN_CONFIG)
+    cfg.update({
+        "asr_post": "asr_normalize",
+        "translate_algo": "av_sentence",
+        "source_anchored": False,
+        "tts_strategy": "sentence_reconcile",
+        "subtitle": "sentence_units",
+        "av_sync_audit": "safe_auto",
+    })
+    out = validate_plugin_config(cfg)
+    assert out["av_sync_audit"] == "safe_auto"
+
+
 def test_validate_rejects_non_dict_input():
     with pytest.raises(ValueError):
         validate_plugin_config("not a dict")
@@ -225,6 +255,7 @@ def test_baseline_preset_multi_like_validates():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg
 
@@ -239,6 +270,7 @@ def test_baseline_preset_omni_current_validates():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg
 
@@ -253,6 +285,7 @@ def test_baseline_preset_av_sync_current_validates():
         "subtitle": "sentence_units",
         "voice_separation": True,
         "loudness_match": True,
+        "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg
 
@@ -267,5 +300,6 @@ def test_baseline_preset_lab_current_validates():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg

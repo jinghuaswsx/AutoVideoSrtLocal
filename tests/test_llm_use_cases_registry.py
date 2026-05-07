@@ -72,7 +72,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 43
+    assert len(USE_CASES) == 45
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -178,6 +178,22 @@ def test_video_translate_av_sync_uses_gpt55_openrouter():
     assert rewrite["default_provider"] == "openrouter"
     assert rewrite["default_model"] == "openai/gpt-5.5"
     assert rewrite["units_type"] == "tokens"
+
+
+def test_omni_av_sync_audit_use_cases_defaults():
+    diagnose = USE_CASES["omni_av_sync.diagnose"]
+    assert diagnose["module"] == "omni_translate"
+    assert diagnose["default_provider"] == "doubao"
+    assert diagnose["default_model"] == "doubao-seed-2-0-lite-260215"
+    assert diagnose["usage_log_service"] == "doubao"
+    assert diagnose["units_type"] == "tokens"
+
+    verify = USE_CASES["omni_av_sync.verify"]
+    assert verify["module"] == "omni_translate"
+    assert verify["default_provider"] == "openrouter"
+    assert verify["default_model"] == "google/gemini-3-flash-preview"
+    assert verify["usage_log_service"] == "openrouter"
+    assert verify["units_type"] == "tokens"
 
 
 def test_get_use_case_unknown_raises():

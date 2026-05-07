@@ -154,7 +154,7 @@ def test_list_returns_visible_presets_plus_default_id_and_capability_groups(
     assert names == {"sys1", "alice-1"}
     # capability_groups 元数据带回（前端表单用）
     assert isinstance(data["capability_groups"], list)
-    assert len(data["capability_groups"]) == 8
+    assert len(data["capability_groups"]) == 9
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +198,7 @@ def _baseline_cfg():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "av_sync_audit": "off",
     }
 
 

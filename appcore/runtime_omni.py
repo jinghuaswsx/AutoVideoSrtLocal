@@ -350,6 +350,11 @@ class OmniTranslateRunner(MultiTranslateRunner):
             ))
         out.append(("translate", lambda: self.profile.translate(self, task_id)))
         out.append(("tts", lambda: self.profile.tts(self, task_id, task_dir)))
+        if cfg["av_sync_audit"] != "off":
+            out.append((
+                "av_sync_audit",
+                lambda: self._step_av_sync_audit(task_id, video_path, task_dir),
+            ))
         if cfg["loudness_match"]:
             out.append((
                 "loudness_match",
@@ -386,6 +391,10 @@ class OmniTranslateRunner(MultiTranslateRunner):
     def _step_subtitle_asr_realign(self, task_id: str, task_dir: str) -> None:
         from appcore import runtime_omni_steps
         runtime_omni_steps.step_subtitle_asr_realign(self, task_id, task_dir)
+
+    def _step_av_sync_audit(self, task_id: str, video_path: str, task_dir: str) -> None:
+        from pipeline import omni_av_sync_audit
+        omni_av_sync_audit.run(self, task_id, video_path, task_dir)
 
     def _get_localization_module(self, task: dict):
         lang = self._resolve_target_lang(task)

@@ -23,6 +23,7 @@ def _baseline_cfg():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "av_sync_audit": "off",
     }
 
 
