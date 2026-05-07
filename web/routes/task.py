@@ -61,7 +61,10 @@ from web.services.task_voice_rematch import rematch_task_voice
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
 )
-from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
+from appcore import cleanup, task_route_store
+
+db_query_one = task_route_store.query_one
+db_execute = task_route_store.execute
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
@@ -534,6 +537,8 @@ def delete_task(task_id):
         user_id=current_user.id,
         query_one=db_query_one,
         execute=db_execute,
+        collect_task_tos_keys=cleanup.collect_task_tos_keys,
+        delete_task_storage=cleanup.delete_task_storage,
     )
     if outcome.not_found:
         return task_not_found_response()

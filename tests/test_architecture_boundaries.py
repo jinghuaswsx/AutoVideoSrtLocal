@@ -1589,6 +1589,17 @@ def test_admin_ai_billing_report_queries_live_in_appcore_usage_log():
     assert "FROM usage_logs ul" in usage_source
 
 
+def test_task_route_db_dependencies_use_appcore_store():
+    route_source = Path("web/routes/task.py").read_text(encoding="utf-8")
+    store_path = Path("appcore/task_route_store.py")
+
+    assert "from appcore.db import" not in route_source
+    assert "task_route_store" in route_source
+    assert "db_query_one = task_route_store.query_one" in route_source
+    assert "db_execute = task_route_store.execute" in route_source
+    assert store_path.exists()
+
+
 def test_copywriting_translate_start_responses_live_outside_route_module():
     module_source = Path("web/routes/copywriting_translate.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
