@@ -2805,6 +2805,27 @@ def test_de_fr_translate_json_responses_live_outside_route_modules():
     assert Path("web/services/translate_route_responses.py").exists()
 
 
+def test_de_fr_translate_route_db_dependencies_use_appcore_store():
+    store_path = Path("appcore/translation_route_store.py")
+
+    for path in [
+        Path("web/routes/de_translate.py"),
+        Path("web/routes/fr_translate.py"),
+    ]:
+        source = path.read_text(encoding="utf-8")
+        assert "from appcore.db import" not in source
+        assert "translation_route_store" in source
+        assert "db_query = translation_route_store.query" in source
+        assert "db_query_one = translation_route_store.query_one" in source
+        assert "db_execute = translation_route_store.execute" in source
+
+    assert store_path.exists()
+    store_source = store_path.read_text(encoding="utf-8")
+    assert "def query(" in store_source
+    assert "def query_one(" in store_source
+    assert "def execute(" in store_source
+
+
 def test_ja_translate_json_responses_live_outside_route_module():
     source = Path("web/routes/ja_translate.py").read_text(encoding="utf-8")
 
