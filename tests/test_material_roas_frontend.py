@@ -49,6 +49,37 @@ def test_sku_detail_modal_supports_manual_variant_creation():
     assert "`/medias/api/products/${_skuDetailProductId}/skus`" in js
 
 
+def test_sku_detail_modal_fills_main_area_with_room_for_codes():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert 'id="skuDetailMask" class="oc-modal-mask oc oc-sku-detail-mask"' in html
+    assert 'style="max-width:1280px; width:96vw;"' not in html
+
+    mask_css = html.split("#skuDetailMask.oc-sku-detail-mask {", 1)[1].split("}", 1)[0]
+    modal_css = html.split(".oc-sku-detail-modal {", 1)[1].split("}", 1)[0]
+    body_css = html.split(".oc-sku-detail-modal .oc-modal-body {", 1)[1].split("}", 1)[0]
+    table_wrap_css = html.split(".oc-sku-detail-table-wrap {", 1)[1].split("}", 1)[0]
+    table_css = html.split(".oc-sku-detail-table {", 1)[1].split("}", 1)[0]
+
+    assert "inset:0 0 0 220px" in mask_css
+    assert "padding:10vh 10vw" in mask_css
+    assert "align-items:stretch" in mask_css
+    assert "justify-content:flex-end" in mask_css
+    assert "width:100%" in modal_css
+    assert "height:100%" in modal_css
+    assert "max-width:none" in modal_css
+    assert "flex:1 1 auto" in body_css
+    assert "flex:1 1 auto" in table_wrap_css
+    assert "max-height:none" in table_wrap_css
+    assert "min-width:1780px" in table_css
+
+    assert '<th style="width:210px;">Shopify SKU</th>' in html
+    assert '<th style="width:210px;">店小秘 SKU</th>' in html
+    assert '<th style="width:210px;">店小秘商品 SKU</th>' in html
+    assert '<th style="width:140px;">ERP 编码</th>' in html
+    assert '<th style="width:260px;">ERP / xmyc 商品名</th>' in html
+
+
 def test_medias_html_has_parcel_cost_suggest_button():
     # Button lives in the shared partial (used by both modal and standalone page)
     partial = PARTIAL.read_text(encoding="utf-8")
