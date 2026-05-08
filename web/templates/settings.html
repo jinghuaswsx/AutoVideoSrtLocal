@@ -115,6 +115,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
      class="settings-tab {{ 'active' if active_tab == 'pricing' }}">AI 定价</a>
   <a href="{{ url_for('settings.index', tab='push') }}"
      class="settings-tab {{ 'active' if active_tab == 'push' }}">推送</a>
+  <a href="{{ url_for('settings.index', tab='feishu_alerts') }}"
+     class="settings-tab {{ 'active' if active_tab == 'feishu_alerts' }}">飞书告警</a>
   <a href="{{ url_for('settings.index', tab='asr_routing') }}"
      class="settings-tab {{ 'active' if active_tab == 'asr_routing' }}">ASR 路由</a>
   <a href="{{ url_for('settings.index', tab='infrastructure') }}"
@@ -620,6 +622,70 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     </div>
     <pre style="background:var(--settings-surface-muted);border:1px solid var(--settings-border);border-radius:8px;padding:12px;font-size:12px;overflow:auto;font-family:ui-monospace,Consolas,monospace;color:var(--settings-fg)">python tools/wedev_sync.py</pre>
     <p class="hint">工具会打开浏览器让你登录 <code>os.wedev.vip</code>，然后读 Chrome cookies + localStorage token + 主项目 session，一键 POST 到 <code>/pushes/api/push-credentials</code>。Windows 也可直接双击 <code>tools/wedev_sync.bat</code>。</p>
+  </div>
+</form>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab · 飞书告警（admin-only）— 应用机器人主动通知 scheduled_task_runs 失败
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'feishu_alerts' %}
+<form method="post" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="feishu_alerts">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:var(--settings-fg);margin:0">飞书告警</h1>
+    <button class="btn btn-primary save-btn" type="submit" style="margin:0">保存</button>
+  </div>
+
+  <div class="settings-card">
+    <h2>应用机器人通知</h2>
+    <div class="step-desc">
+      使用飞书自建应用机器人向指定群聊发送 <code>scheduled_task_runs</code> 失败通知。
+      机器人必须已加入接收群，且应用已开启机器人能力。
+    </div>
+
+    <label style="margin-top:0;text-transform:none;font-weight:500;display:inline-flex;align-items:center;gap:8px">
+      <input type="checkbox"
+             name="feishu_alerts_enabled"
+             value="1"
+             {% if feishu_alerts_view.enabled %}checked{% endif %}>
+      启用飞书失败告警
+    </label>
+
+    <label for="feishu_alerts_app_id">App ID</label>
+    <input type="text"
+           id="feishu_alerts_app_id"
+           name="feishu_alerts_app_id"
+           value="{{ feishu_alerts_view.app_id or '' }}"
+           placeholder="cli_xxx">
+
+    <label for="feishu_alerts_app_secret">App Secret</label>
+    <input type="password"
+           id="feishu_alerts_app_secret"
+           name="feishu_alerts_app_secret"
+           value=""
+           placeholder="{{ '已配置，留空不变' if feishu_alerts_view.app_secret_present else '未配置，输入后保存' }}">
+    <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+      <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
+        <input type="checkbox" name="clear" value="feishu_alerts.app_secret" {% if not feishu_alerts_view.app_secret_present %}disabled{% endif %}>
+        清空该字段
+      </label>
+      <span class="hint" style="margin:0">状态：{{ feishu_alerts_view.app_secret_mask if feishu_alerts_view.app_secret_present else '未配置' }}</span>
+    </div>
+
+    <label for="feishu_alerts_chat_id">接收群 Chat ID</label>
+    <input type="text"
+           id="feishu_alerts_chat_id"
+           name="feishu_alerts_chat_id"
+           value="{{ feishu_alerts_view.chat_id or '' }}"
+           placeholder="oc_xxx">
+
+    <p class="hint">
+      测试通知使用命令：<code>python3 -m tools.send_feishu_test_alert</code>。
+      页面不会展示 App Secret 明文。
+    </p>
   </div>
 </form>
 {% endif %}

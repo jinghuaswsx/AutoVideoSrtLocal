@@ -127,3 +127,16 @@ python3 -m tools.send_feishu_test_alert
 - 不做多群路由、告警级别订阅、静默时段或去重聚合。
 - 不扫描系统 journal、Nginx log、Python log 文件。
 - 不把飞书凭据写入 `.env`、源码常量、文档、测试 fixture 或日志。
+
+## 实现记录
+
+2026-05-08 已完成第一版接入：
+
+- 新增 `appcore.feishu_alerts`，使用飞书自建应用机器人获取 `tenant_access_token` 并向配置的 `chat_id` 发送 IM 文本消息。
+- `appcore.scheduled_tasks.finish_run()` 在 `status="failed"` 且失败记录成功写入后触发飞书告警；告警发送异常只记录 warning，不影响原始失败记录。
+- `/settings?tab=feishu_alerts` 支持启用开关、App ID、App Secret 和 Chat ID 配置；App Secret 不回显，留空保存表示保留旧值。
+- 新增 `python3 -m tools.send_feishu_test_alert` 测试通知 CLI。
+- 聚焦回归：`tests/test_feishu_alerts.py tests/test_appcore_scheduled_tasks.py tests/test_settings_routes_new.py tests/test_scheduled_tasks_ui.py` 通过，结果为 `62 passed`。
+- 编译检查：`python3 -m compileall appcore/feishu_alerts.py appcore/scheduled_tasks.py web/routes/settings.py tools/send_feishu_test_alert.py` 通过。
+- 格式检查：`git diff --check` 通过。
+- 使用测试环境配置发送真实飞书测试通知成功，飞书返回 `message_id=om_x100b50e0a13c0c98c4f135cb1d02078`。

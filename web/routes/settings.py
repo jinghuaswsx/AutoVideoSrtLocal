@@ -20,6 +20,7 @@ from flask_login import current_user, login_required
 
 from appcore import (
     asr_routing_config,
+    feishu_alerts,
     infra_credentials,
     llm_bindings,
     llm_provider_configs,
@@ -212,6 +213,8 @@ def index():
         tab = (request.form.get("tab") or "providers").strip()
         if tab == "bindings":
             _handle_bindings_post()
+        elif tab == "feishu_alerts":
+            _handle_feishu_alerts_post()
         elif tab == "push":
             _handle_push_post()
         elif tab == "asr_routing":
@@ -264,6 +267,7 @@ def index():
     if is_admin:
         allowed_tabs.add("pricing")
         allowed_tabs.add("push")
+        allowed_tabs.add("feishu_alerts")
         allowed_tabs.add("asr_routing")
         allowed_tabs.add("infrastructure")
         allowed_tabs.add("audio_separation")
@@ -323,6 +327,7 @@ def index():
         can_manage_pricing=is_admin,
         pricing_units_types=PRICING_UNITS_TYPES,
         push_credentials_view=push_credentials_view,
+        feishu_alerts_view=feishu_alerts.config_view() if is_admin else {},
         asr_stage_providers=asr_routing_config.get_all_stage_providers(),
         asr_stages=asr_routing_config.STAGES,
         asr_stage_labels=asr_routing_config.STAGE_LABELS,
@@ -552,6 +557,31 @@ def _handle_push_post() -> None:
             set_setting(key, raw)
         elif key in clear_keys:
             set_setting(key, "")
+
+
+def _handle_feishu_alerts_post() -> None:
+    """飞书告警 tab：保存应用机器人凭据和接收群。"""
+    if not getattr(current_user, "is_admin", False):
+        return
+
+    settings_store.set_setting(
+        feishu_alerts.SETTING_ENABLED,
+        "1" if request.form.get("feishu_alerts_enabled") == "1" else "0",
+    )
+    settings_store.set_setting(
+        feishu_alerts.SETTING_APP_ID,
+        (request.form.get("feishu_alerts_app_id") or "").strip(),
+    )
+    settings_store.set_setting(
+        feishu_alerts.SETTING_CHAT_ID,
+        (request.form.get("feishu_alerts_chat_id") or "").strip(),
+    )
+    secret = (request.form.get("feishu_alerts_app_secret") or "").strip()
+    clear_keys = set((request.form.getlist("clear") or []))
+    if secret:
+        settings_store.set_setting(feishu_alerts.SETTING_APP_SECRET, secret)
+    elif feishu_alerts.SETTING_APP_SECRET in clear_keys:
+        settings_store.set_setting(feishu_alerts.SETTING_APP_SECRET, "")
 
 
 def _parse_price_decimal(raw_value, field_label: str) -> float | None:

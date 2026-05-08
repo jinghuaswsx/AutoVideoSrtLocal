@@ -758,6 +758,34 @@ def finish_run(
         "WHERE id=%s",
         (status, summary_json, error_message, output_file, int(run_id)),
     )
+    if status == "failed":
+        _dispatch_failure_alert(int(run_id))
+
+
+def _scheduled_task_run_by_id(run_id: int) -> dict[str, Any] | None:
+    rows = query(
+        """
+        SELECT id, task_code, task_name, status, scheduled_for, started_at,
+               finished_at, duration_seconds, summary_json, error_message,
+               output_file, created_at, updated_at
+        FROM scheduled_task_runs
+        WHERE id = %s
+        """,
+        (int(run_id),),
+    )
+    return _normalize_row(rows[0]) if rows else None
+
+
+def _dispatch_failure_alert(run_id: int) -> None:
+    try:
+        row = _scheduled_task_run_by_id(run_id)
+        if not row:
+            return
+        from appcore import feishu_alerts
+
+        feishu_alerts.send_scheduled_task_failure(row)
+    except Exception:
+        log.warning("failed to dispatch scheduled task failure alert", exc_info=True)
 
 
 def record_failure(

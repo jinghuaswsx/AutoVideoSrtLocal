@@ -422,6 +422,56 @@ def test_settings_push_secrets_do_not_render_plain_text(admin_no_db_client):
     assert "状态：已配置" in body
 
 
+def test_settings_feishu_alerts_tab_masks_secret(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3.1-flash-image-preview"), \
+         patch("appcore.feishu_alerts.config_view",
+               return_value={
+                   "enabled": True,
+                   "app_id": "cli_visible",
+                   "app_secret": "visible-secret",
+                   "app_secret_present": True,
+                   "app_secret_mask": "已配置（末四位 cret）",
+                   "chat_id": "oc_visible",
+               }):
+        resp = admin_no_db_client.get("/settings?tab=feishu_alerts")
+
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "飞书告警" in body
+    assert "cli_visible" in body
+    assert "oc_visible" in body
+    assert "visible-secret" not in body
+    assert "已配置（末四位 cret）" in body
+
+
+def test_settings_feishu_alerts_post_preserves_blank_secret(admin_no_db_client):
+    saved = []
+
+    def fake_set_setting(key, value):
+        saved.append((key, value))
+
+    with patch("web.routes.settings.settings_store.set_setting", fake_set_setting):
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "feishu_alerts",
+            "feishu_alerts_enabled": "1",
+            "feishu_alerts_app_id": "cli_new",
+            "feishu_alerts_app_secret": "",
+            "feishu_alerts_chat_id": "oc_new",
+        })
+
+    assert resp.status_code in (302, 303)
+    assert ("feishu_alerts.enabled", "1") in saved
+    assert ("feishu_alerts.app_id", "cli_new") in saved
+    assert ("feishu_alerts.chat_id", "oc_new") in saved
+    assert not any(key == "feishu_alerts.app_secret" for key, value in saved)
+
+
 def test_settings_get_renders_seedream_channel_label(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
          patch("web.routes.settings._provider_rows_by_group",

@@ -27,6 +27,70 @@ def test_latest_failure_alert_only_returns_failed_latest_run(monkeypatch):
     assert scheduled_tasks.latest_failure_alert() is None
 
 
+def test_finish_run_dispatches_feishu_alert_for_failed_run(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "shopifyid",
+                "task_name": "Shopify ID 获取",
+                "status": "failed",
+                "started_at": "2026-05-08 10:00:00",
+                "finished_at": "2026-05-08 10:00:02",
+                "duration_seconds": 2,
+                "summary_json": '{"updated": 0}',
+                "error_message": "boom",
+                "output_file": None,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
+
+    assert sent and sent[0]["id"] == 42
+    assert sent[0]["summary"] == {"updated": 0}
+
+
+def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    updates = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: updates.append(a) or 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "shopifyid",
+                "task_name": "Shopify ID 获取",
+                "status": "failed",
+                "summary_json": "{}",
+            }
+        ],
+    )
+
+    def fake_send(row):
+        raise RuntimeError("feishu down")
+
+    monkeypatch.setattr(feishu_alerts, "send_scheduled_task_failure", fake_send)
+
+    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
+
+    assert updates
+
+
 def test_normalize_row_decodes_summary_json():
     from appcore import scheduled_tasks
 
