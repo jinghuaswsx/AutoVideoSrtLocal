@@ -90,6 +90,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_mk_server_browser
 
 前三个 `User=cjh`，`After=graphical.target`，优先依赖 cjh 真桌面登录后启动。noVNC 是 `User=root`，`After=graphical.target`（5900 上的 x11vnc 是 cjh 桌面里跑的，所以也要等桌面起来）。
 
+CDP 拆分后，ROI 实时同步主 unit 必须直接执行 `tools/roi_hourly_sync.py`，不能再被 `/etc/systemd/system/autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf` 这类历史 drop-in 覆盖到 `with_browser_lock.sh`。运行 `deploy/server_browser/install_cdp_environment_watchdog_timer.sh` 时会清理该遗留 drop-in；如果手工部署 systemd unit，也要同步删除后 `systemctl daemon-reload`。
+
 ## X11 失效时的 CDP 兜底
 
 `deploy/server_browser/run_server_browser.sh` 启动 Chromium 前必须检查 `DISPLAY` 对应的 `/tmp/.X11-unix/X*` socket 是否存在。

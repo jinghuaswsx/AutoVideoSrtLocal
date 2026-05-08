@@ -27,6 +27,8 @@ install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-meta-daily-final-che
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-shopifyid-sync.service" /etc/systemd/system/autovideosrt-shopifyid-sync.service
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-xmyc-storage-sync.service" /etc/systemd/system/autovideosrt-xmyc-storage-sync.service
 
+rm -f /etc/systemd/system/autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf
+
 systemctl daemon-reload
 systemctl disable --now autovideosrt-browser.service autovideosrt-mk-browser.service autovideosrt-rjc-vnc.service >/dev/null 2>&1 || true
 systemctl enable --now autovideosrt-dxm01-meta-vnc.service autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service

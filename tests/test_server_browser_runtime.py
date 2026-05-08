@@ -163,6 +163,13 @@ def test_shopifyid_and_roi_units_use_split_cdp_environments_without_shared_lock(
     assert "--skip-meta-fetch" not in roi
 
 
+def test_cdp_environment_installer_removes_stale_roi_browser_lock_dropin():
+    installer = _read("deploy/server_browser/install_cdp_environment_watchdog_timer.sh")
+
+    assert "autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf" in installer
+    assert "rm -f" in installer
+
+
 def test_meta_daily_final_units_use_dxm01_meta_without_shared_lock_and_staggered_timers():
     sync_service = _read("deploy/server_browser/autovideosrt-meta-daily-final-sync.service")
     check_service = _read("deploy/server_browser/autovideosrt-meta-daily-final-check.service")
