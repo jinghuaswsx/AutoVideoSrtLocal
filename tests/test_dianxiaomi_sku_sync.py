@@ -138,41 +138,38 @@ def test_public_shopify_variants_do_not_replace_when_product_id_mismatches():
     ]
 
 
-def test_fetch_via_browser_uses_context_request_when_page_execution_context_is_navigating():
+def test_fetch_via_context_request_reuses_browser_context_without_page_evaluate():
     from tools import dianxiaomi_sku_sync as mod
 
     captured = {}
 
     class FakeResponse:
-        ok = True
         status = 200
+        ok = True
 
         def text(self):
-            return '{"code":0,"data":{"page":{"totalPage":1,"list":[]}}}'
+            return '{"code":0,"msg":"Successful","data":{"page":{"totalPage":1,"list":[]}}}'
 
-    class FakeRequestContext:
+    class FakeRequest:
         def post(self, api_url, **kwargs):
             captured["api_url"] = api_url
-            captured["kwargs"] = kwargs
+            captured.update(kwargs)
             return FakeResponse()
 
     class FakeContext:
-        request = FakeRequestContext()
+        request = FakeRequest()
 
-    class FakePage:
-        context = FakeContext()
-        url = "https://www.dianxiaomi.com/web/shopifyProduct/online"
-
-        def evaluate(self, *_args, **_kwargs):
-            raise RuntimeError("Page.evaluate: Execution context was destroyed, most likely because of a navigation")
-
-    payload = mod._fetch_via_browser(
-        FakePage(),
-        "https://www.dianxiaomi.com/api/shopifyProduct/pageList.json",
-        {"pageNo": 1, "shopId": "-1"},
+    result = mod._fetch_via_context_request(
+        FakeContext(),
+        "https://www.dianxiaomi.com/api/example.json",
+        {"pageNo": 1, "empty": None, "searchValue": "abc"},
+        referer_url="https://www.dianxiaomi.com/web/example",
+        timeout_ms=12345,
     )
 
-    assert payload["code"] == 0
-    assert captured["api_url"] == "https://www.dianxiaomi.com/api/shopifyProduct/pageList.json"
-    assert captured["kwargs"]["form"] == {"pageNo": "1", "shopId": "-1"}
-    assert captured["kwargs"]["headers"]["X-Requested-With"] == "XMLHttpRequest"
+    assert result["code"] == 0
+    assert captured["api_url"] == "https://www.dianxiaomi.com/api/example.json"
+    assert captured["form"] == {"pageNo": "1", "empty": "", "searchValue": "abc"}
+    assert captured["headers"]["X-Requested-With"] == "XMLHttpRequest"
+    assert captured["headers"]["Referer"] == "https://www.dianxiaomi.com/web/example"
+    assert captured["timeout"] == 12345

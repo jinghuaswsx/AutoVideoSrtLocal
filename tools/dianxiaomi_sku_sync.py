@@ -750,20 +750,26 @@ def _parse_dianxiaomi_response(*, ok: bool, status: int | None, text: str) -> di
         raise RuntimeError(f"店小秘接口返回了非 JSON 内容：{text[:200]}") from exc
 
 
-def _fetch_via_browser_context_request(page, api_url: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-    context = getattr(page, "context", None)
-    request_context = getattr(context, "request", None)
-    post = getattr(request_context, "post", None)
-    if post is None:
-        return None
+def _fetch_via_context_request(
+    context,
+    api_url: str,
+    payload: dict[str, Any],
+    *,
+    referer_url: str,
+    timeout_ms: int,
+) -> dict[str, Any]:
     headers = {
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://www.dianxiaomi.com",
+        "Referer": referer_url,
     }
-    page_url = str(getattr(page, "url", "") or "")
-    if page_url.startswith("https://www.dianxiaomi.com/"):
-        headers["Referer"] = page_url
-    response = post(api_url, form=_stringify_form_payload(payload), headers=headers)
+    response = context.request.post(
+        api_url,
+        form=_stringify_form_payload(payload),
+        headers=headers,
+        timeout=timeout_ms,
+    )
     response_ok = getattr(response, "ok", False)
     if callable(response_ok):
         response_ok = response_ok()
@@ -771,39 +777,6 @@ def _fetch_via_browser_context_request(page, api_url: str, payload: dict[str, An
         ok=bool(response_ok),
         status=getattr(response, "status", None),
         text=response.text(),
-    )
-
-
-def _fetch_via_browser(page, api_url: str, payload: dict[str, Any]) -> dict[str, Any]:
-    request_payload = _fetch_via_browser_context_request(page, api_url, payload)
-    if request_payload is not None:
-        return request_payload
-    result = page.evaluate(
-        """
-        async ({ apiUrl, payload }) => {
-          const body = new URLSearchParams();
-          for (const [key, value] of Object.entries(payload)) {
-            body.append(key, String(value ?? ""));
-          }
-          const response = await fetch(apiUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-              "X-Requested-With": "XMLHttpRequest",
-            },
-            credentials: "include",
-            body: body.toString(),
-          });
-          const text = await response.text();
-          return { ok: response.ok, status: response.status, text };
-        }
-        """,
-        {"apiUrl": api_url, "payload": payload},
-    )
-    return _parse_dianxiaomi_response(
-        ok=bool(result.get("ok")),
-        status=result.get("status"),
-        text=str(result.get("text") or ""),
     )
 
 
@@ -822,8 +795,8 @@ def fetch_shopify_and_dxm_via_cdp(
     供 web 路由（"刷新 SKU/英文名"按钮）使用。函数**不会**关闭浏览器进程，
     避免破坏 shopifyid_dianxiaomi_sync.py 同享的登录态。
 
-    分页拉取的耗时由 timeout_seconds 控制（playwright 的 evaluate 会在浏览器
-    端拉接口）。
+    分页拉取的耗时由 timeout_seconds 控制；接口请求通过浏览器上下文级
+    request 复用登录 cookie，不依赖当前页面执行上下文。
     """
     from playwright.sync_api import sync_playwright
 
@@ -834,14 +807,16 @@ def fetch_shopify_and_dxm_via_cdp(
             browser_service_name=SERVER_BROWSER_SERVICE_NAME,
         )
         try:
-            page = context.pages[0] if context.pages else context.new_page()
-            page.set_default_timeout(timeout_seconds * 1000)
-
-            page.goto(SHOPIFY_ONLINE_URL, wait_until="domcontentloaded")
-            page.wait_for_timeout(600)
+            timeout_ms = timeout_seconds * 1000
 
             def _shopify_fetch(page_no: int) -> dict[str, Any]:
-                return _fetch_via_browser(page, SHOPIFY_API_URL, build_shopify_payload(page_no))
+                return _fetch_via_context_request(
+                    context,
+                    SHOPIFY_API_URL,
+                    build_shopify_payload(page_no),
+                    referer_url=SHOPIFY_ONLINE_URL,
+                    timeout_ms=timeout_ms,
+                )
 
             _, shopify_items = fetch_all_pages(
                 _shopify_fetch,
@@ -856,11 +831,14 @@ def fetch_shopify_and_dxm_via_cdp(
                 fetch_public_shopify_product=fetch_public_shopify_product,
             )
 
-            page.goto(DXM_PRODUCT_PAGE_URL, wait_until="domcontentloaded")
-            page.wait_for_timeout(600)
-
             def _dxm_fetch(page_no: int) -> dict[str, Any]:
-                return _fetch_via_browser(page, DXM_PRODUCT_API_URL, build_dxm_payload(page_no))
+                return _fetch_via_context_request(
+                    context,
+                    DXM_PRODUCT_API_URL,
+                    build_dxm_payload(page_no),
+                    referer_url=DXM_PRODUCT_PAGE_URL,
+                    timeout_ms=timeout_ms,
+                )
 
             _, dxm_items = fetch_all_pages(
                 _dxm_fetch,
@@ -980,22 +958,31 @@ def _run_main_impl(argv: list[str] | None = None):
         )
         try:
             page = context.pages[0] if context.pages else context.new_page()
-            page.goto(SHOPIFY_ONLINE_URL, wait_until="domcontentloaded")
-            print(f"已打开店小秘页面：{SHOPIFY_ONLINE_URL}")
             if not args.skip_login_prompt:
+                page.goto(SHOPIFY_ONLINE_URL, wait_until="domcontentloaded")
+                print(f"已打开店小秘页面：{SHOPIFY_ONLINE_URL}")
                 input("如果还没登录，请先登录店小秘；登录完成后按回车继续...")
                 page.goto(SHOPIFY_ONLINE_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(1200)
+            timeout_ms = 60 * 1000
 
             def fetch_shopify_page(page_no: int) -> dict[str, Any]:
-                return _fetch_via_browser(page, SHOPIFY_API_URL, build_shopify_payload(page_no))
-
-            # 切到商品管理页（不强制，只是更直观）
-            page.goto(DXM_PRODUCT_PAGE_URL, wait_until="domcontentloaded")
-            page.wait_for_timeout(1200)
+                return _fetch_via_context_request(
+                    context,
+                    SHOPIFY_API_URL,
+                    build_shopify_payload(page_no),
+                    referer_url=SHOPIFY_ONLINE_URL,
+                    timeout_ms=timeout_ms,
+                )
 
             def fetch_dxm_page(page_no: int) -> dict[str, Any]:
-                return _fetch_via_browser(page, DXM_PRODUCT_API_URL, build_dxm_payload(page_no))
+                return _fetch_via_context_request(
+                    context,
+                    DXM_PRODUCT_API_URL,
+                    build_dxm_payload(page_no),
+                    referer_url=DXM_PRODUCT_PAGE_URL,
+                    timeout_ms=timeout_ms,
+                )
 
             def fetch_local_products() -> list[dict[str, Any]]:
                 output = _run_mysql(build_remote_select_products_sql(), db_name, db_mode=db_mode)

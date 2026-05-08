@@ -22,12 +22,12 @@
 3. 未匹配到 ERP SKU 编码的 Shopify 变体也必须保留到配对结果中，前端显示为空 ERP 配对，而不是隐藏该变体。
 4. CDP 连接必须有有界超时和恢复流程：
    - 先探测 `/json/version`。
-   - Playwright 连接超时或 CDP 不可用时，针对 `127.0.0.1:9222` 的共享浏览器重启 `autovideosrt-browser.service` 一次。
+   - Playwright 连接超时或 CDP 不可用时，针对 DXM03-RJC `127.0.0.1:9225` 重启 `autovideosrt-dxm03-rjc-vnc.service` 一次。
    - 等待 CDP 恢复后重试连接一次。
    - 仍失败时抛出明确错误。
 5. 如果 CDP 恢复失败、没有权限重启、重启命令失败或重启后仍不可访问，必须记录 `scheduled_task_runs` 失败记录。现有 `layout.html` 的定时任务失败 banner 会把该错误通知给 admin。
 6. Web 后台手动刷新 SKU/英文名时，如果数据拉取失败，也应把失败写入 `dianxiaomi_sku` 的定时任务失败记录，避免只返回 502 而后台没有可追踪告警。
-7. Web 后台手动刷新 SKU/英文名不得依赖常驻可视化页面的 JS execution context 完成接口请求。该刷新链路应优先使用浏览器上下文级请求复用店小秘登录 Cookie，避免用户手工操作、订单页自动刷新或店小秘页面跳转导致 `Page.evaluate: Execution context was destroyed`。
+7. SKU 同步调用店小秘接口时，应优先使用同一浏览器上下文的 `BrowserContext.request.post(...)` 复用登录 cookie；不要依赖业务页面上的 `page.evaluate(fetch(...))` 作为主路径，避免用户手工操作、订单页自动刷新或店小秘页面跳转导致 `Page.evaluate: Execution context was destroyed`。
 
 ## 验收
 
@@ -36,4 +36,4 @@
 - CDP 初次连接超时时，应调用一次 browser service restart，然后重试连接。
 - browser service restart 不可用或重试仍失败时，应记录失败，并给出包含 CDP URL / service 名称 / 失败阶段的错误。
 - 后台手动刷新捕获拉取失败时，应调用注入的失败记录函数，返回原有 502 响应。
-- 后台手动刷新通过 CDP 拉取店小秘接口时，即使页面处于导航中，也不应因 `Page.evaluate: Execution context was destroyed` 直接失败。
+- 店小秘 API 抓取不应因页面在请求期间导航而抛出 `Page.evaluate: Execution context was destroyed`；测试应覆盖不通过 `page.evaluate` 仍能经 context request 拉取 JSON。

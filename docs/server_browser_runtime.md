@@ -116,14 +116,15 @@ http://127.0.0.1:9225    # DXM03-RJC
 
 ## CDP 连接恢复
 
-`shopifyid` 和 `dianxiaomi_sku` 这类依赖 `127.0.0.1:9222` 的任务必须使用带恢复机制的 CDP 连接入口：
+`shopifyid` 和 `dianxiaomi_sku` 这类依赖 DXM03-RJC `127.0.0.1:9225` 的任务必须使用带恢复机制的 CDP 连接入口：
 
-- 先探测 `http://127.0.0.1:9222/json/version`。
-- Playwright `connect_over_cdp` 超时或 CDP 不可用时，自动重启一次 `autovideosrt-browser.service`。
+- 先探测 `http://127.0.0.1:9225/json/version`。
+- Playwright `connect_over_cdp` 超时或 CDP 不可用时，自动重启一次 `autovideosrt-dxm03-rjc-vnc.service`。
 - 重启后等待 CDP 恢复并重试一次连接。
 - 仍失败时抛出明确错误；定时任务主流程会写入 `scheduled_task_runs`，后台 admin 通过定时任务失败告警看到原因。
 
 手动触发的后台刷新如果遇到同类失败，也必须写入对应 task code 的 `scheduled_task_runs` 失败记录，避免只给当前请求返回 502 而没有后台可追踪告警。
+SKU 同步调用店小秘接口时应使用浏览器上下文级 request 复用登录态，避免在可视业务页上执行 `page.evaluate(fetch(...))` 时被店小秘 SPA 导航打断。
 
 ## Shopify ID 回填定时任务
 
@@ -145,11 +146,11 @@ bash deploy/server_browser/install_shopifyid_sync_timer.sh
 /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py \
   --skip-login-prompt \
   --browser-mode server-cdp \
-  --browser-cdp-url http://127.0.0.1:9222 \
+  --browser-cdp-url http://127.0.0.1:9225 \
   --db-mode local
 ```
 
-它会复用 `/data/autovideosrt/browser/profiles/shared` 里的店小秘登录态，并通过 `/data/autovideosrt/browser/runtime/automation.lock` 串行执行，避免后续多个浏览器自动化模块同时操作同一个 Chrome。
+它会复用 `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` 里的店小秘登录态，并依赖 DXM03-RJC 独立 CDP 环境，避免与 Meta / 明空选品浏览器互相切页。
 
 ## 小秘云仓采购价定时任务
 
