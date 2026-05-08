@@ -162,13 +162,13 @@ def _setup_mock_db(monkeypatch, *, lines, site_units, account_spend, real_fees=N
 
     def fake_query(sql, params=None):
         s = sql.upper()
-        if "FROM ORDER_PROFIT_LINES OPL" in s and "JOIN DIANXIAOMI_ORDER_LINES" in s:
-            return lines
-        if "FROM DIANXIAOMI_ORDER_LINES DOL" in s and "GROUP BY DOL.META_BUSINESS_DATE" in s:
+        if "COALESCE(SUM(DOL.QUANTITY), 0) AS UNITS" in s and "GROUP BY OPL.BUSINESS_DATE" in s:
             return [
                 {"d": d, "site_code": site, "units": units}
                 for (d, site), units in site_units.items()
             ]
+        if "FROM ORDER_PROFIT_LINES OPL" in s and "JOIN DIANXIAOMI_ORDER_LINES" in s:
+            return lines
         if "FROM META_AD_DAILY_CAMPAIGN_METRICS" in s and "GROUP BY COALESCE(META_BUSINESS_DATE, REPORT_DATE)" in s:
             return [
                 {"report_date": d, "ad_account_id": acc, "spend": spend}
@@ -188,7 +188,7 @@ def _setup_mock_db(monkeypatch, *, lines, site_units, account_spend, real_fees=N
     monkeypatch.setattr(pkg_mod, "query_one", fake_query_one)
 
 
-def test_load_site_daily_units_uses_meta_business_date(monkeypatch):
+def test_load_site_daily_units_uses_order_profit_business_date(monkeypatch):
     captured = {}
 
     def fake_query(sql, params):
@@ -200,8 +200,11 @@ def test_load_site_daily_units_uses_meta_business_date(monkeypatch):
 
     ppr._load_site_daily_units(427, date(2026, 5, 1), date(2026, 5, 7))
 
-    assert "dol.meta_business_date AS d" in captured["sql"]
-    assert "dol.meta_business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "opl.business_date AS d" in captured["sql"]
+    assert "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id" in captured["sql"]
+    assert "opl.business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "GROUP BY opl.business_date, dol.site_code" in captured["sql"]
+    assert "dol.meta_business_date" not in captured["sql"]
     assert "DATE(dol.order_paid_at)" not in captured["sql"]
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
 
@@ -266,6 +269,41 @@ def test_generate_report_total_ad_matches_product_attributed_spend(monkeypatch):
     assert report["total"]["ad_cost_usd"] == pytest.approx(50.0)
     assert sum(o["ad_cost_recalc_usd"] for o in report["orders"]) == pytest.approx(50.0)
     assert report["total"]["profit_usd"] == pytest.approx(150.0)
+
+
+def test_generate_report_total_includes_unallocated_product_spend(monkeypatch):
+    """Top total follows Tab ① product spend even when a spend day has no order rows."""
+    order_day = date(2026, 5, 8)
+    no_order_day = date(2026, 5, 9)
+    lines = [
+        {
+            "dxm_order_line_id": 1, "business_date": order_day, "paid_at": datetime(2026, 5, 8, 10),
+            "buyer_country": "US", "line_amount_usd": 100.0, "shipping_allocated_usd": 0.0,
+            "revenue_usd": 100.0, "shopify_fee_usd": 0.0, "purchase_usd": 0.0,
+            "shipping_cost_usd": 0.0, "return_reserve_usd": 0.0, "profit_old_usd": 100.0,
+            "shopify_tier": "A", "status": "ok",
+            "dxm_package_id": "P1", "extended_order_id": "#1001", "site_code": "newjoy",
+            "product_sku": "SKU-A", "product_display_sku": "SKU-A", "product_name": "ARP9",
+            "quantity": 1, "unit_price": 100.0, "line_amount_native": 100.0,
+            "order_amount_native": 100.0, "order_currency": "USD", "platform": "Shopify",
+        },
+    ]
+    _setup_mock_db(
+        monkeypatch,
+        lines=lines,
+        site_units={(order_day, "newjoy"): 1},
+        account_spend={
+            (order_day, "2110407576446225"): 50.0,
+            (no_order_day, "2110407576446225"): 10.0,
+        },
+    )
+
+    report = ppr.generate_report(product_id=427, date_from=order_day, date_to=no_order_day)
+
+    assert report["orders"][0]["ad_cost_recalc_usd"] == pytest.approx(50.0)
+    assert report["total"]["ad_cost_usd"] == pytest.approx(60.0)
+    assert report["total"]["unallocated_ad_spend_usd"] == pytest.approx(10.0)
+    assert report["total"]["profit_usd"] == pytest.approx(40.0)
 
 
 def test_generate_report_end_to_end(monkeypatch):

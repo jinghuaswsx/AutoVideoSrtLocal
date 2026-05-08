@@ -829,7 +829,7 @@
           <div class="ppd-stat-card">
             <div class="ppd-stat-label">广告费（修正）</div>
             <div class="ppd-stat-value" id="stat-ad">--</div>
-            <div class="ppd-stat-sub">按账户↔店铺 1:1 重算</div>
+            <div class="ppd-stat-sub" id="stat-ad-sub">按 product_id 广告归属汇总</div>
           </div>
           <div class="ppd-stat-card">
             <div class="ppd-stat-label">采购+物流+手续费</div>
@@ -2521,6 +2521,10 @@
     profitEl.className = 'ppd-stat-value ' + profitClass(t.profit_usd);
     $('stat-profit-sub').textContent = '利润率 ' + (t.profit_pct == null ? '--' : t.profit_pct + '%');
     $('stat-ad').textContent = money(t.ad_cost_usd);
+    var unallocatedAd = Number(t.unallocated_ad_spend_usd) || 0;
+    $('stat-ad-sub').textContent = unallocatedAd > 0
+      ? ('含无订单日期 ' + money(unallocatedAd))
+      : '按 product_id 广告归属汇总';
     var others = (Number(t.purchase_usd) || 0) + (Number(t.shipping_cost_usd) || 0) + (Number(t.shopify_fee_usd) || 0);
     $('stat-other').textContent = money(others);
     $('stat-fee-source').textContent = '真实 fee 覆盖率 ' + (t.real_fee_coverage_pct || 0) + '%';

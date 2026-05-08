@@ -7,8 +7,8 @@
     比例拆出 base / cross_border / currency_conversion 三项（保证拆分后
     base + intl + conv = order_profit_lines.shopify_fee_usd 不丢精度）。
   - **广告费现场重算**：读取 meta_ad_daily_campaign_metrics 已按 campaign → product
-    回填的 product_id 维度 spend，按该产品当日 total units 分摊到订单行。
-    这与产品列表 Tab 的广告费口径保持一致，避免同一产品跨 Tab 盈亏不一致。
+    回填的 product_id 维度 spend，订单行按该产品当日 total units 分摊；总账则
+    直接使用 product_id 日期范围 spend，保证与产品列表 Tab 的广告费口径一致。
   - **订单利润现场重算**：revenue - shopify_fee - ad_cost_recalc - purchase
     - shipping_cost - return_reserve。
 
@@ -102,16 +102,18 @@ def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[d
 def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> dict[tuple[date, str], int]:
     """加载每天 × 每站点的产品总 units。
 
-    Key: (business_date, site_code) → units. 广告费分摊时会把同一天所有站点的
-    units 合计成产品当日总 units，保证总广告费等于 product_id 归属 spend。
+    Key: (business_date, site_code) → units. 这里必须使用 order_profit_lines
+    的 business_date，和 _load_order_lines 的行日期保持一致；否则订单行和分摊
+    分母不在同一日期基准上，会导致日广告费被多摊或少摊。
     """
     rows = query(
-        "SELECT dol.meta_business_date AS d, dol.site_code, "
+        "SELECT opl.business_date AS d, dol.site_code, "
         "       COALESCE(SUM(dol.quantity), 0) AS units "
-        "FROM dianxiaomi_order_lines dol "
-        "WHERE dol.product_id = %s "
-        "  AND dol.meta_business_date BETWEEN %s AND %s "
-        "GROUP BY dol.meta_business_date, dol.site_code",
+        "FROM order_profit_lines opl "
+        "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
+        "WHERE opl.product_id = %s "
+        "  AND opl.business_date BETWEEN %s AND %s "
+        "GROUP BY opl.business_date, dol.site_code",
         (product_id, date_from, date_to),
     )
     out: dict[tuple[date, str], int] = {}
@@ -143,6 +145,19 @@ def _load_account_daily_spend(product_id: int, date_from: date, date_to: date) -
         acc = r.get("ad_account_id") or ""
         out[(d, acc)] = float(r["spend"] or 0)
     return out
+
+
+def _daily_account_spend(account_spend: dict[tuple[date, str], float]) -> dict[date, float]:
+    """把 account 维度 spend 汇总成每天的 product_id spend。"""
+    out: dict[date, float] = defaultdict(float)
+    for (spend_date, _account_id), value in account_spend.items():
+        out[spend_date] += float(value or 0.0)
+    return out
+
+
+def _total_account_spend(account_spend: dict[tuple[date, str], float]) -> float:
+    """单产品日期范围内的广告 spend，总账与 Tab ① 使用同一 product_id 口径。"""
+    return round(sum(_daily_account_spend(account_spend).values()), 2)
 
 
 def _load_real_fees(extended_order_ids: list[str]) -> dict[str, float]:
@@ -459,13 +474,28 @@ def generate_report(
 
     # === 总账 ===
     total_units = sum(o["quantity"] for o in orders)
-    total_revenue = round(sum(_n(o["revenue_usd"]) for o in orders), 2)
-    total_shopify_fee = round(sum(_n(o["shopify_fee_total_usd"]) for o in orders), 2)
-    total_ad = round(sum(_n(o["ad_cost_recalc_usd"]) for o in orders), 2)
-    total_purchase = round(sum(_n(o["purchase_cost_usd"]) for o in orders), 2)
-    total_shipping = round(sum(_n(o["shipping_cost_usd"]) for o in orders), 2)
-    total_return = round(sum(_n(o["return_reserve_usd"]) for o in orders), 2)
-    total_profit = round(sum(_n(o["profit_usd"]) for o in orders), 2)
+    raw_revenue = sum(_n(o["revenue_usd"]) for o in orders)
+    raw_shopify_fee = sum(_n(o["shopify_fee_total_usd"]) for o in orders)
+    raw_purchase = sum(_n(o["purchase_cost_usd"]) for o in orders)
+    raw_shipping = sum(_n(o["shipping_cost_usd"]) for o in orders)
+    raw_return = sum(_n(o["return_reserve_usd"]) for o in orders)
+    total_revenue = round(raw_revenue, 2)
+    total_shopify_fee = round(raw_shopify_fee, 2)
+    allocated_ad = round(sum(_n(o["ad_cost_recalc_usd"]) for o in orders), 2)
+    total_ad = _total_account_spend(account_spend)
+    total_purchase = round(raw_purchase, 2)
+    total_shipping = round(raw_shipping, 2)
+    total_return = round(raw_return, 2)
+    unallocated_ad = round(total_ad - allocated_ad, 2)
+    total_profit = round(
+        raw_revenue
+        - raw_shopify_fee
+        - total_ad
+        - raw_purchase
+        - raw_shipping
+        - raw_return,
+        2,
+    )
     orders_count = len({o["dxm_package_id"] for o in orders})
     incomplete_orders_count = sum(1 for o in orders if o.get("status") == "incomplete")
     # 估算行的成本贡献（让前端能展示 "X 收入由估算成本支撑"）
@@ -489,6 +519,8 @@ def generate_report(
         "revenue_usd": total_revenue,
         "shopify_fee_usd": total_shopify_fee,
         "ad_cost_usd": total_ad,
+        "allocated_ad_spend_usd": allocated_ad,
+        "unallocated_ad_spend_usd": unallocated_ad,
         "purchase_usd": total_purchase,
         "shipping_cost_usd": total_shipping,
         "return_reserve_usd": total_return,
