@@ -434,6 +434,74 @@ def test_get_realtime_roas_overview_range_includes_empty_order_profit_details(mo
     assert result["order_profit_details"] == []
 
 
+def test_get_realtime_roas_overview_range_can_return_profit_summary_without_details(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        return []
+
+    profit_calls = []
+
+    def fake_profit_rows(start, end, *, product_id=None, page=None, page_size=None):
+        profit_calls.append(
+            {
+                "start": start,
+                "end": end,
+                "product_id": product_id,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+        return [
+            {
+                "total_revenue": 100.0,
+                "refund_deduction_usd": 5.0,
+                "purchase_cost_usd": 20.0,
+                "purchase_estimate_usd": 0.0,
+                "logistics_cost_usd": 10.0,
+                "logistics_estimate_usd": 0.0,
+                "shopify_fee_total_usd": 3.0,
+                "ad_cost_usd": 12.0,
+                "purchase_cost_missing": False,
+                "logistics_cost_missing": False,
+            }
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        realtime_oa,
+        "_get_realtime_order_profit_details_for_range",
+        fake_profit_rows,
+    )
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-04-29",
+        end_date="2026-04-30",
+        include_profit_summary=True,
+        now=datetime(2026, 5, 1, 12, 0),
+    )
+
+    assert result["order_profit_details"] == []
+    assert result["order_profit_details_page"] == {
+        "page": 1,
+        "page_size": 100,
+        "total": 1,
+        "pages": 1,
+    }
+    assert result["order_profit_summary"]["profit_with_estimate_usd"] == 50.0
+    assert profit_calls == [
+        {
+            "start": oa._parse_meta_date("2026-04-29"),
+            "end": oa._parse_meta_date("2026-04-30"),
+            "product_id": None,
+            "page": None,
+            "page_size": None,
+        }
+    ]
+
+
 def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date, site_code" in sql:
@@ -896,6 +964,48 @@ def test_realtime_overview_endpoint_accepts_include_details(authed_client_no_db,
     assert captured["include_details"] is True
 
 
+def test_realtime_overview_endpoint_accepts_include_profit_summary(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_overview(
+        date_text=None,
+        *,
+        start_date=None,
+        end_date=None,
+        include_details=False,
+        include_profit_summary=False,
+        now=None,
+    ):
+        captured["start_date"] = start_date
+        captured["end_date"] = end_date
+        captured["include_details"] = include_details
+        captured["include_profit_summary"] = include_profit_summary
+        return {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {"order_revenue": 0, "ad_spend": 0, "true_roas": None},
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [],
+            "order_details": [],
+            "order_profit_details": [],
+            "order_profit_summary": {"profit_with_estimate_usd": 0.0},
+            "campaigns": [],
+            "roas_points": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-overview"
+        "?start_date=2026-04-29&end_date=2026-04-30&include_profit_summary=1"
+    )
+
+    assert response.status_code == 200
+    assert captured["start_date"] == "2026-04-29"
+    assert captured["end_date"] == "2026-04-30"
+    assert captured["include_details"] is False
+    assert captured["include_profit_summary"] is True
+
+
 def test_realtime_overview_endpoint_forwards_product_and_pagination(authed_client_no_db, monkeypatch):
     captured = {}
 
@@ -1043,6 +1153,41 @@ def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):
     assert 'data-realtime-subtab="profitDetails"' in panel
     assert 'id="realtimeSubProfitDetails"' in panel
     assert 'id="realtimeOrderProfitBody"' in panel
+
+
+def test_realtime_summary_has_profit_card_and_time_row(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    summary_start = panel.index('id="realtimeSummary"')
+    summary_end = panel.index('id="realtimeSubOrders"', summary_start)
+    summary = panel[summary_start:summary_end]
+
+    assert 'class="oar-summary-row oar-summary-row-main"' in summary
+    assert 'class="oar-summary-row oar-summary-row-time"' in summary
+    assert 'id="realtimeProfit"' in summary
+    assert 'id="realtimeProfitSub"' in summary
+
+    main_row_start = summary.index('class="oar-summary-row oar-summary-row-main"')
+    time_row_start = summary.index('class="oar-summary-row oar-summary-row-time"')
+    main_row = summary[main_row_start:time_row_start]
+    time_row = summary[time_row_start:]
+
+    assert main_row.index("商品件数") < main_row.index("利润")
+    assert "订单最新时间" not in main_row
+    assert "订单最新时间" in time_row
+    assert "订单数据更新时间" in time_row
+    assert "广告数据更新时间" in time_row
+    assert "数据快照时间" in time_row
+
+    top_cards_start = body.index("function loadRealtimeTopCards()")
+    top_cards_end = body.index("// ── 子 tab：跟随当前选择的广告系统日范围", top_cards_start)
+    top_cards_js = body[top_cards_start:top_cards_end]
+    assert "params.set('include_profit_summary', '1')" in top_cards_js
+    assert "document.getElementById('realtimeProfit')" in top_cards_js
+    assert "profitEl.textContent" in top_cards_js
 
 
 def test_realtime_order_profit_table_shows_every_fee_column(authed_client_no_db):

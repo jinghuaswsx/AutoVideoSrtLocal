@@ -764,6 +764,7 @@ def _build_realtime_overview_for_range(
     now: datetime,
     *,
     include_details: bool = False,
+    include_profit_summary: bool = False,
     product_id: int | None = None,
     page: int = 1,
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
@@ -852,13 +853,14 @@ def _build_realtime_overview_for_range(
     range_start_at, _ = compute_meta_business_window_bj(start)
     _, range_end_at = compute_meta_business_window_bj(end)
 
+    include_profit = include_details or include_profit_summary
     order_profit_all = (
         _get_realtime_order_profit_details_for_range(
             start,
             end,
             product_id=product_id,
         )
-        if include_details else []
+        if include_profit else []
     )
     order_profit_details = (
         _get_realtime_order_profit_details_for_range(
@@ -927,6 +929,7 @@ def get_realtime_roas_overview(
     start_date: str | None = None,
     end_date: str | None = None,
     include_details: bool = False,
+    include_profit_summary: bool = False,
     product_id: int | None = None,
     page: int = 1,
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
@@ -952,6 +955,7 @@ def get_realtime_roas_overview(
                 end,
                 now,
                 include_details=include_details,
+                include_profit_summary=include_profit_summary,
                 product_id=normalized_product_id,
                 page=normalized_page,
                 page_size=normalized_page_size,

@@ -377,11 +377,14 @@ def realtime_overview():
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
     include_details = (request.args.get("include_details") or "").strip() in ("1", "true", "yes")
+    include_profit_summary = (request.args.get("include_profit_summary") or "").strip() in ("1", "true", "yes")
     kwargs = {
         "start_date": start_date,
         "end_date": end_date,
         "include_details": include_details,
     }
+    if include_profit_summary:
+        kwargs["include_profit_summary"] = True
     product_id_text = (request.args.get("product_id") or "").strip()
     if product_id_text:
         try:

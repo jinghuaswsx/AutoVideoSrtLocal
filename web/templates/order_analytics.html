@@ -214,6 +214,24 @@
 }
 .oa-stat-label { font-size: 12px; color: var(--fg-subtle); font-weight: 500; }
 .oa-stat-value { font-size: 24px; font-weight: 700; color: var(--fg); margin-top: 4px; }
+.oar-summary-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.oar-summary-row {
+  display: grid;
+  gap: 16px;
+}
+.oar-summary-row-main { grid-template-columns: repeat(9, minmax(142px, 1fr)); }
+.oar-summary-row-time { grid-template-columns: repeat(4, minmax(180px, 1fr)); }
+.oar-summary-stats .oa-stat-card { min-width: 0; }
+.oar-summary-stats .oa-stat-value { overflow-wrap: anywhere; }
+@media (max-width: 1850px) {
+  .oar-summary-row-main { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .oar-summary-row-time { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+}
 
 /* ── 导入结果 ─────────────────────────────────── */
 .oa-import-result {
@@ -964,6 +982,8 @@
   .oa-mobile-tabs { display: block; }
   .oa-stats { gap: 12px; }
   .oa-stat-card { min-width: 0; flex: 1 1 calc(50% - 6px); padding: 12px 14px; }
+  .oar-summary-stats { gap: 12px; }
+  .oar-summary-row { gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .oa-stat-value { font-size: 20px; }
   .oa-controls { gap: 8px; }
   .oa-controls label,
@@ -1175,60 +1195,69 @@
     <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 16:00 切日</div>
   </div>
 
-  <div class="oa-stats" id="realtimeSummary">
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">商品销售额</div>
-      <div class="oa-stat-value" id="realtimeRevenue">$0.00</div>
-      <div class="oa-stat-sub" id="realtimeRevenueSub">订单 0 单</div>
+  <div class="oa-stats oar-summary-stats" id="realtimeSummary">
+    <div class="oar-summary-row oar-summary-row-main">
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">商品销售额</div>
+        <div class="oa-stat-value" id="realtimeRevenue">$0.00</div>
+        <div class="oa-stat-sub" id="realtimeRevenueSub">订单 0 单</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">运费</div>
+        <div class="oa-stat-value" id="realtimeShipping">$0.00</div>
+        <div class="oa-stat-sub">订单收取的运费</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">总销售额</div>
+        <div class="oa-stat-value" id="realtimeRevenueWithShipping">$0.00</div>
+        <div class="oa-stat-sub">商品销售额 + 运费</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">广告消耗费用</div>
+        <div class="oa-stat-value" id="realtimeSpend">$0.00</div>
+        <div class="oa-stat-sub">Meta 实际消耗</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">真实 ROAS</div>
+        <div class="oa-stat-value" id="realtimeRoas">-</div>
+        <div class="oa-stat-sub" id="realtimeWindow">总销售额 / 广告费</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">Meta ROAS</div>
+        <div class="oa-stat-value" id="realtimeMetaRoas">-</div>
+        <div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">订单数</div>
+        <div class="oa-stat-value" id="realtimeOrderCount">0</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">商品件数</div>
+        <div class="oa-stat-value" id="realtimeUnits">0</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">利润</div>
+        <div class="oa-stat-value" id="realtimeProfit">$0.00</div>
+        <div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div>
+      </div>
     </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">运费</div>
-      <div class="oa-stat-value" id="realtimeShipping">$0.00</div>
-      <div class="oa-stat-sub">订单收取的运费</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">总销售额</div>
-      <div class="oa-stat-value" id="realtimeRevenueWithShipping">$0.00</div>
-      <div class="oa-stat-sub">商品销售额 + 运费</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">广告消耗费用</div>
-      <div class="oa-stat-value" id="realtimeSpend">$0.00</div>
-      <div class="oa-stat-sub">Meta 实际消耗</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">真实 ROAS</div>
-      <div class="oa-stat-value" id="realtimeRoas">-</div>
-      <div class="oa-stat-sub" id="realtimeWindow">总销售额 / 广告费</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">Meta ROAS</div>
-      <div class="oa-stat-value" id="realtimeMetaRoas">-</div>
-      <div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">订单数</div>
-      <div class="oa-stat-value" id="realtimeOrderCount">0</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">商品件数</div>
-      <div class="oa-stat-value" id="realtimeUnits">0</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">订单最新时间</div>
-      <div class="oa-stat-value" id="realtimeFreshness">-</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">订单数据更新时间</div>
-      <div class="oa-stat-value" id="realtimeOrderDataUpdatedAt">-</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">广告数据更新时间</div>
-      <div class="oa-stat-value" id="realtimeAdFreshness">-</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">数据快照时间</div>
-      <div class="oa-stat-value" id="realtimeSnapshotAt">-</div>
+    <div class="oar-summary-row oar-summary-row-time">
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">订单最新时间</div>
+        <div class="oa-stat-value" id="realtimeFreshness">-</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">订单数据更新时间</div>
+        <div class="oa-stat-value" id="realtimeOrderDataUpdatedAt">-</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">广告数据更新时间</div>
+        <div class="oa-stat-value" id="realtimeAdFreshness">-</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">数据快照时间</div>
+        <div class="oa-stat-value" id="realtimeSnapshotAt">-</div>
+      </div>
     </div>
   </div>
 
@@ -3199,7 +3228,7 @@
     loadRealtimeSubTabs();
   }
 
-  // ── 顶部 11 张卡：按选择的时间范围聚合 ───────────────
+  // ── 顶部卡片：按选择的时间范围聚合 ───────────────
   function loadRealtimeTopCards() {
     var range;
     try {
@@ -3213,6 +3242,7 @@
     var params = new URLSearchParams();
     params.set('start_date', range.start);
     params.set('end_date', range.end);
+    params.set('include_profit_summary', '1');
     if (realtimeState.productId) params.set('product_id', realtimeState.productId);
     var url = '/order-analytics/realtime-overview?' + params.toString();
     fetch(url)
@@ -3239,6 +3269,23 @@
         document.getElementById('realtimeUnits').textContent = s.units || 0;
         document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
         document.getElementById('realtimeRevenueWithShipping').textContent = fmtMoney(revenueWithShipping);
+        var profitSummary = data.order_profit_summary || {};
+        var profitValue = Number(profitSummary.profit_with_estimate_usd);
+        var profitEl = document.getElementById('realtimeProfit');
+        if (profitEl) {
+          profitEl.textContent = Number.isFinite(profitValue) ? fmtMoney(profitValue) : '-';
+          profitEl.classList.toggle('oar-profit-loss', Number.isFinite(profitValue) && profitValue < 0);
+          profitEl.classList.toggle('oar-profit-ok', Number.isFinite(profitValue) && profitValue >= 0);
+        }
+        var profitSub = document.getElementById('realtimeProfitSub');
+        if (profitSub) {
+          var profitOrders = Number(profitSummary.order_count || 0);
+          var estimatedOrders = Number(profitSummary.purchase_missing_order_count || 0)
+            + Number(profitSummary.logistics_missing_order_count || 0);
+          profitSub.textContent = profitOrders > 0
+            ? '利润口径 ' + fmtInt(profitOrders) + ' 单' + (estimatedOrders > 0 ? '，含估算' : '')
+            : '暂无利润数据';
+        }
         document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
         document.getElementById('realtimeOrderDataUpdatedAt').textContent = formatShortDateTime((data.freshness || {}).last_order_updated_at);
         document.getElementById('realtimeAdFreshness').textContent = formatShortDateTime((data.freshness || {}).last_ad_updated_at);
