@@ -718,6 +718,8 @@
 {% block content %}
 <main class="ppd-main">
 
+  {% include "_data_quality_bar.html" %}
+
   <!-- Tab 胶囊切换器 -->
   <nav class="ppd-tabs" role="tablist">
     <button type="button" class="ppd-tab active" data-tab="list" role="tab">① 产品列表</button>
@@ -1607,6 +1609,9 @@
       })
       .then(function(data) {
         listLoading.style.display = 'none';
+        if (typeof window.renderDataQualityBar === 'function') {
+          window.renderDataQualityBar(data && data.data_quality);
+        }
         renderList(data);
       })
       .catch(function(err) {
@@ -1753,6 +1758,9 @@
       .then(function(data) {
         lastReport = data;
         loading.style.display = 'none';
+        if (typeof window.renderDataQualityBar === 'function') {
+          window.renderDataQualityBar(data && data.data_quality);
+        }
         if (!data.orders || data.orders.length === 0) {
           content.style.display = 'none';
           errorBox.textContent = '';

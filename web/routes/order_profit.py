@@ -18,6 +18,7 @@ from flask import Blueprint, render_template, request
 from flask_login import login_required
 
 from appcore.order_analytics import current_meta_business_date
+from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics.campaign_overrides import (
     create_override,
     list_overrides,
@@ -94,6 +95,16 @@ def api_summary():
     date_to = _parse_date_param("to", today)
 
     payload = get_order_profit_status_summary(date_from=date_from, date_to=date_to)
+    summary = payload.get("summary") or {}
+    allocated = sum(
+        float((summary.get(bucket) or {}).get("ad_cost") or 0)
+        for bucket in ("ok", "incomplete")
+    )
+    payload["data_quality"] = dq.build_for_order_profit(
+        date_from=date_from,
+        date_to=date_to,
+        allocated_ad_spend_usd=allocated,
+    )
     return order_profit_flask_response(
         build_order_profit_payload_response(payload)
     )
@@ -137,6 +148,13 @@ def api_orders_list():
             "offset": offset,
             "orders": orders,
             "summary": summary,
+            "data_quality": dq.build_for_order_profit(
+                date_from=date_from,
+                date_to=date_to,
+                allocated_ad_spend_usd=sum(
+                    float(o.get("ad_cost_total_usd") or 0) for o in orders
+                ),
+            ),
         })
     )
 
@@ -178,7 +196,15 @@ def api_lines():
     )
     return order_profit_flask_response(
         build_order_profit_payload_response(
-            {"lines": rows, "limit": limit, "offset": offset}
+            {
+                "lines": rows,
+                "limit": limit,
+                "offset": offset,
+                "data_quality": dq.build_for_order_profit(
+                    date_from=date_from,
+                    date_to=date_to,
+                ),
+            }
         )
     )
 

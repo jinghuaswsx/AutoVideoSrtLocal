@@ -21,6 +21,7 @@ from appcore import meta_ad_accounts
 from appcore import meta_ad_manual_sync
 from appcore import system_audit
 from appcore import weekly_roas_report as wrr
+from appcore.order_analytics import data_quality as dq
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,71 @@ def _json_safe(value):
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
     return value
+
+
+def _coerce_business_date(value):
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str) and value:
+        try:
+            return datetime.strptime(value[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def _attach_realtime_data_quality(result):
+    """给 ``realtime-overview`` 响应顶层加 ``data_quality``。
+
+    Docs-anchor: docs/analytics-data-quality-guardrails.md
+    """
+    if not isinstance(result, dict):
+        return result
+    period = result.get("period") or {}
+    business_date = (
+        _coerce_business_date(period.get("date"))
+        or _coerce_business_date(period.get("start_date"))
+    )
+    if business_date is None:
+        return result
+    scope = result.get("scope") or {}
+    ad_source = scope.get("ad_source") or ""
+    if "realtime" in ad_source:
+        source_mode = dq.SOURCE_MODE_REALTIME_SNAPSHOT
+    elif ad_source.startswith("meta_ad_daily"):
+        source_mode = dq.SOURCE_MODE_DAILY_FINAL
+    else:
+        source_mode = dq.resolve_source_mode(
+            business_date_from=business_date,
+            business_date_to=business_date,
+        )
+    freshness = result.get("freshness") or {}
+    try:
+        result["data_quality"] = dq.build_for_realtime_overview(
+            business_date=business_date,
+            source_mode=source_mode,
+            last_order_at=freshness.get("last_order_at"),
+            last_ad_snapshot_at=freshness.get("last_ad_updated_at"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("attach realtime data_quality failed: %s", exc)
+        result.setdefault(
+            "data_quality",
+            {
+                "status": "warning",
+                "source_mode": "unknown",
+                "business_date_from": business_date.isoformat(),
+                "business_date_to": business_date.isoformat(),
+                "warnings": [],
+                "errors": [],
+                "checks": [],
+                "watermarks": {},
+                "generated_at": None,
+            },
+        )
+    return result
 
 
 def _audit_order_analytics_action(
@@ -405,7 +471,9 @@ def realtime_overview():
             return _json_response(error="invalid_param", detail="page_size must be a positive integer"), 400
         kwargs["page_size"] = min(page_size, 100)
     try:
-        return _json_response(_json_safe(oa.get_realtime_roas_overview(date_text, **kwargs)))
+        result = oa.get_realtime_roas_overview(date_text, **kwargs)
+        result = _attach_realtime_data_quality(result)
+        return _json_response(_json_safe(result))
     except ValueError as exc:
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:

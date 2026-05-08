@@ -1,6 +1,85 @@
 from datetime import date
 
 
+def _stub_data_quality(monkeypatch):
+    """Patch data_quality.build_for_order_profit to a deterministic payload."""
+    def fake_build(*, date_from, date_to, allocated_ad_spend_usd=None):
+        return {
+            "status": "ok",
+            "source_mode": "daily_final",
+            "business_date_from": date_from.isoformat(),
+            "business_date_to": date_to.isoformat(),
+            "generated_at": "2026-05-08T18:30:00",
+            "watermarks": {},
+            "checks": [],
+            "warnings": [],
+            "errors": [],
+            "_test_allocated": allocated_ad_spend_usd,
+        }
+
+    monkeypatch.setattr("web.routes.order_profit.dq.build_for_order_profit", fake_build)
+    return fake_build
+
+
+def test_order_profit_summary_includes_data_quality(authed_client_no_db, monkeypatch):
+    import web.routes.order_profit as route
+
+    _stub_data_quality(monkeypatch)
+    monkeypatch.setattr(
+        route,
+        "get_order_profit_status_summary",
+        lambda **kw: {
+            "summary": {"ok": {"ad_cost": 100.0}, "incomplete": {"ad_cost": 25.0}},
+            "overview": {},
+        },
+    )
+
+    resp = authed_client_no_db.get("/order-profit/api/summary")
+    payload = resp.get_json()
+    assert payload["data_quality"]["status"] == "ok"
+    assert payload["data_quality"]["source_mode"] == "daily_final"
+    # 已分摊广告费由 ok + incomplete 求和
+    assert payload["data_quality"]["_test_allocated"] == 125.0
+
+
+def test_order_profit_orders_includes_data_quality(authed_client_no_db, monkeypatch):
+    import web.routes.order_profit as route
+
+    _stub_data_quality(monkeypatch)
+    monkeypatch.setattr(
+        route,
+        "get_order_profit_list",
+        lambda **kw: [
+            {"dxm_package_id": "p1", "ad_cost_total_usd": 30.0},
+            {"dxm_package_id": "p2", "ad_cost_total_usd": 20.5},
+        ],
+    )
+    monkeypatch.setattr(
+        route, "get_order_profit_summary_for_window", lambda **kw: {"total_orders": 2}
+    )
+
+    resp = authed_client_no_db.get(
+        "/order-profit/api/orders?from=2026-05-01&to=2026-05-03"
+    )
+    payload = resp.get_json()
+    assert payload["data_quality"]["status"] == "ok"
+    assert payload["data_quality"]["_test_allocated"] == 50.5
+
+
+def test_order_profit_lines_includes_data_quality(authed_client_no_db, monkeypatch):
+    import web.routes.order_profit as route
+
+    _stub_data_quality(monkeypatch)
+    monkeypatch.setattr(route, "list_order_profit_lines", lambda **kw: [])
+
+    resp = authed_client_no_db.get(
+        "/order-profit/api/lines?from=2026-05-01&to=2026-05-03"
+    )
+    payload = resp.get_json()
+    assert payload["data_quality"]["status"] == "ok"
+    assert payload["data_quality"]["business_date_from"] == "2026-05-01"
+
+
 def test_order_profit_summary_route_uses_aggregate_payload(authed_client_no_db, monkeypatch):
     import web.routes.order_profit as route
 

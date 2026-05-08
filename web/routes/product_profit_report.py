@@ -16,6 +16,7 @@ from web.auth import permission_required
 
 from appcore import medias
 from appcore.order_analytics import current_meta_business_date
+from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics import product_profit_ads as ppa
 from appcore.order_analytics import product_profit_list as ppl
 from appcore.order_analytics import product_profit_report as ppr
@@ -57,6 +58,43 @@ _COUNTRY_LABELS = {
 
 def _default_business_today() -> date:
     return current_meta_business_date()
+
+
+def _extract_allocated_ad_spend(payload: dict) -> float | None:
+    """从产品盈亏 JSON 结果里抽取已分摊广告费总额，用于 data_quality 对账。
+
+    报表 / 列表 / 广告明细的形状各不相同，按已知键名兜底兜底兜。
+    Docs-anchor: docs/analytics-data-quality-guardrails.md
+    """
+    if not isinstance(payload, dict):
+        return None
+    candidates: list[float] = []
+    for key in ("ad_spend_usd", "ad_cost_usd", "allocated_ad_spend_usd"):
+        value = payload.get(key)
+        if value is not None:
+            try:
+                candidates.append(float(value))
+            except (TypeError, ValueError):
+                continue
+    total = payload.get("total")
+    if isinstance(total, dict):
+        for key in ("ad_spend_usd", "ad_cost_usd"):
+            value = total.get(key)
+            if value is not None:
+                try:
+                    candidates.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+    summary = payload.get("summary")
+    if isinstance(summary, dict):
+        for key in ("ad_spend_usd", "total_ad_spend_usd"):
+            value = summary.get(key)
+            if value is not None:
+                try:
+                    candidates.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+    return max(candidates) if candidates else None
 
 
 def _parse_date(value: str | None, default: date) -> date:
@@ -292,8 +330,15 @@ def api_report_json():
             return [_iso_dict(x) for x in d]
         return _iso(d)
 
+    payload = _iso_dict(report)
+    if isinstance(payload, dict):
+        payload["data_quality"] = dq.build_for_product_profit(
+            date_from=date_from,
+            date_to=date_to,
+            allocated_ad_spend_usd=_extract_allocated_ad_spend(payload),
+        )
     return product_profit_report_flask_response(
-        build_product_profit_report_payload_response(_iso_dict(report))
+        build_product_profit_report_payload_response(payload)
     )
 
 
@@ -322,6 +367,12 @@ def api_list_json():
 
     country = (request.args.get("country") or "").strip() or None
     result = ppl.generate_list(date_from=date_from, date_to=date_to, country=country)
+    if isinstance(result, dict):
+        result["data_quality"] = dq.build_for_product_profit(
+            date_from=date_from,
+            date_to=date_to,
+            allocated_ad_spend_usd=_extract_allocated_ad_spend(result),
+        )
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(result)
     )
@@ -412,6 +463,12 @@ def api_ads_json():
             build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
         )
 
+    if isinstance(report, dict):
+        report["data_quality"] = dq.build_for_product_profit(
+            date_from=date_from,
+            date_to=date_to,
+            allocated_ad_spend_usd=_extract_allocated_ad_spend(report),
+        )
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(report)
     )

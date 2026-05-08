@@ -81,6 +81,14 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 
 验收口径：`active`，且 HTTP 为 `200` 或登录跳转 `302`；`404/500/000` 视为发布失败。
 
+## 数据分析数据质量护栏（2026-05-08 起）
+
+- 设计与实施细则：[docs/analytics-data-quality-guardrails.md](docs/analytics-data-quality-guardrails.md)。
+  所有 `/order-profit/*`、`/order-analytics/realtime-overview`、`/order-analytics/product-profit/*` JSON 返回顶层都带 `data_quality`；前端缺失时按 `unknown` 处理，不要默认 `ok`。
+- 后端校验逻辑集中在 [appcore/order_analytics/data_quality.py](appcore/order_analytics/data_quality.py)，禁止在 route 或模板里散开。
+- 定时巡检 `analytics_data_quality_inspection` 已登记到 [appcore/scheduled_tasks.py](appcore/scheduled_tasks.py)；新增类似巡检必须同步登记。
+- 改这条链路至少运行：`pytest tests/test_order_analytics_data_quality.py tests/test_order_profit_routes.py tests/test_product_profit_routes.py tests/test_order_analytics_true_roas.py tests/test_data_quality_frontend_assets.py -q`。
+
 ## Link Check Desktop Commands
 
 - 开发运行：`python -m link_check_desktop.main`

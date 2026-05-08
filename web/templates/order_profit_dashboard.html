@@ -416,6 +416,8 @@ button.op-aux-chip:focus-visible { outline: none; border-color: var(--accent); b
   </div>
   <div id="opTimeWindowHint" style="margin: -8px 0 var(--space-5); color: var(--fg-muted); font-size: 12px;"></div>
 
+  {% include "_data_quality_bar.html" %}
+
   <div id="opAlertsBanner"></div>
 
   <div class="op-modal-backdrop" id="opIncompleteModal" hidden role="dialog" aria-modal="true" aria-labelledby="opIncompleteModalTitle">
@@ -814,6 +816,9 @@ async function refreshSummary() {
   const f = document.getElementById('opDateFrom').value;
   const t = document.getElementById('opDateTo').value;
   const data = await fetchJSON(`/order-profit/api/summary?from=${f}&to=${t}`);
+  if (typeof window.renderDataQualityBar === 'function') {
+    window.renderDataQualityBar(data && data.data_quality);
+  }
   const ok = data.summary.ok;
   const inc = data.summary.incomplete;
   const overview = data.overview || {};

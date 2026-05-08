@@ -1109,6 +1109,49 @@ def test_realtime_overview_endpoint_accepts_start_end_params(authed_client_no_db
     assert response.get_json()["summary"]["true_roas"] == 2.5
 
 
+def test_realtime_overview_endpoint_attaches_data_quality(authed_client_no_db, monkeypatch):
+    """Docs-anchor: docs/analytics-data-quality-guardrails.md"""
+
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
+        return {
+            "period": {"date": "2026-04-29"},
+            "scope": {"ad_source": "meta_ad_realtime_daily_campaign_metrics"},
+            "summary": {"order_revenue": 0, "ad_spend": 0, "true_roas": None},
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [], "order_details": [], "campaigns": [], "roas_points": [],
+        }
+
+    captured_kwargs = {}
+
+    def fake_build_for_realtime_overview(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "status": "warning",
+            "source_mode": "realtime_snapshot",
+            "business_date_from": "2026-04-29",
+            "business_date_to": "2026-04-29",
+            "checks": [],
+            "warnings": [],
+            "errors": [],
+            "watermarks": {},
+            "generated_at": "2026-04-29T18:00:00",
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        fake_build_for_realtime_overview,
+    )
+
+    response = authed_client_no_db.get("/order-analytics/realtime-overview?date=2026-04-29")
+    payload = response.get_json()
+    assert payload["data_quality"]["source_mode"] == "realtime_snapshot"
+    assert captured_kwargs["source_mode"] == "realtime_snapshot"
+    # business_date 来自 period.date
+    from datetime import date as _date
+    assert captured_kwargs["business_date"] == _date(2026, 4, 29)
+
+
 def test_realtime_overview_endpoint_accepts_include_details(authed_client_no_db, monkeypatch):
     captured = {}
 

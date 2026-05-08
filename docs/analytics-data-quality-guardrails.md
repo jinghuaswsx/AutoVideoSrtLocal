@@ -1,6 +1,11 @@
 # 数据分析看板数据质量护栏实施指令
 
-最后更新：2026-05-08
+最后更新：2026-05-08（首版实施落地）
+
+实施状态：v1 已落地。后端模块 `appcore/order_analytics/data_quality.py`、
+共享前端组件 `web/templates/_data_quality_bar.html`、定时巡检任务
+`analytics_data_quality_inspection`（登记于 `appcore/scheduled_tasks.py`）已就位。
+后续阶段（巡检结果落库、xlsx 导出说明页、单元 tab 级别广告费分摊重算）见末尾「后续 TODO」。
 
 ## 给执行 agent 的入口
 
@@ -253,6 +258,20 @@
 - 不改变 Meta 业务日 16:00 切日规则。
 - 不引入新的广告账户配置方式。
 - 不把所有历史派生表一次性重算；优先保证页面返回值和质量状态准确。
+
+## 后续 TODO
+
+首版仅在 API 顶层挂上 `data_quality` 并接入前端状态条，下面这些点还要后续 PR 跟进：
+
+- 巡检结果落库：`run_recent_inspection` 当前只返回内存对象，待加 `data_quality_inspection_runs`
+  表或写入 `scheduled_task_runs.summary_json`，便于历史检索。
+- 产品盈亏 tab 级别（订单/国家/广告明细）的广告费现场重算：当前 `data_quality` 校验依赖
+  接口已聚合好的总额；个别 tab 没有"已分摊广告费"字段时只能落 `unknown`，需要后续把现场
+  重算下沉到聚合层。
+- xlsx 导出顶层说明页：`/order-analytics/product-profit/list.xlsx` / `report.xlsx` 还没有
+  把 `data_quality` 摘要页打入文件。
+- `/order-profit/api/orders/<id>` 单订单详情、`/order-profit/api/cost_completeness` 等
+  辅助接口暂未挂 `data_quality`，前端读到时按 `unknown` 处理。
 
 ## 提交流程要求
 

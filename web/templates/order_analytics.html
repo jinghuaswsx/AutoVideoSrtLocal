@@ -1169,6 +1169,8 @@
 {% block content %}
 <div class="oa-error" id="errorBox"></div>
 
+{% include "_data_quality_bar.html" %}
+
 <nav class="oa-mobile-tabs" role="tablist" aria-label="数据分析模块（移动）">
   <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
   <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
@@ -3276,6 +3278,9 @@
         return r.json();
       })
       .then(function(data) {
+        if (typeof window.renderDataQualityBar === 'function') {
+          window.renderDataQualityBar(data && data.data_quality);
+        }
         var s = data.summary || {};
         var revenueWithShipping = Number(s.revenue_with_shipping);
         if (!Number.isFinite(revenueWithShipping) || revenueWithShipping === 0) {

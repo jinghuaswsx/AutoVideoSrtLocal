@@ -293,6 +293,22 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "output_file": "scratch/meta_realtime_local/logs/",
         "default_enabled": False,
     },
+    "analytics_data_quality_inspection": {
+        "code": "analytics_data_quality_inspection",
+        "name": "数据分析数据质量巡检",
+        "description": (
+            "近 7 个 Meta 业务日扫描：广告费源表 vs 已分摊+未分摊对账、订单利润派生表新鲜度。"
+            "结果写入 scheduled_task_runs.summary_json，供 /order-profit 等页面 data_quality "
+            "复用。Docs-anchor: docs/analytics-data-quality-guardrails.md"
+        ),
+        "schedule": "每小时整点（与 ROI :02/:22/:42 错峰）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer（待启用）",
+        "source_ref": "autovideosrt-analytics-data-quality.timer",
+        "runner": "appcore.order_analytics.data_quality.run_recent_inspection",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
 }
 
 _RUNS_TABLE_SQL = """

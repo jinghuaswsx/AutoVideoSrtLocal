@@ -11,6 +11,49 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # /list.json
 # ---------------------------------------------------------------------------
+def _stub_pp_data_quality(monkeypatch):
+    def fake_build(*, date_from, date_to, allocated_ad_spend_usd=None):
+        return {
+            "status": "ok",
+            "source_mode": "daily_final",
+            "business_date_from": date_from.isoformat(),
+            "business_date_to": date_to.isoformat(),
+            "checks": [],
+            "warnings": [],
+            "errors": [],
+            "watermarks": {},
+            "generated_at": "2026-05-08T18:30:00",
+            "_test_allocated": allocated_ad_spend_usd,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.dq.build_for_product_profit",
+        fake_build,
+    )
+
+
+def test_list_json_includes_data_quality(authed_client_no_db, monkeypatch):
+    """Docs-anchor: docs/analytics-data-quality-guardrails.md"""
+    _stub_pp_data_quality(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.ppl.generate_list",
+        lambda **kwargs: {
+            "products": [],
+            "summary": {"ad_spend_usd": 1234.56},
+        },
+    )
+
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/list.json"
+        "?date_from=2026-05-01&date_to=2026-05-07"
+    )
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["data_quality"]["status"] == "ok"
+    assert payload["data_quality"]["business_date_from"] == "2026-05-01"
+    assert payload["data_quality"]["_test_allocated"] == 1234.56
+
+
 def test_list_json_200_default_dates(authed_client_no_db, monkeypatch):
     """无日期参数 → 默认当前 Meta 业务月，200 返回 rows + summary。"""
     import web.routes.product_profit_report as route
