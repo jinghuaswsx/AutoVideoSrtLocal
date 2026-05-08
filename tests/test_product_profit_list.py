@@ -78,21 +78,22 @@ def test_generate_list_single_product_aggregates_columns():
 
 
 def test_generate_list_country_filter_passes_country_to_loader():
-    """country='vn' 时 _load_lines 会收到 country 参数（值原样透传，归一化在 loader 内）。"""
+    """country='vn' 时订单 loader 和广告 spend loader 都会收到 country 参数。"""
     fake_lines = [
         {"product_id": 100, "product_code": "A", "name": "A", "business_date": date(2026, 5, 5),
          "buyer_country": "VN", "site_code": "newjoy", "revenue_usd": Decimal("50"),
          "shopify_fee_usd": Decimal("2"), "purchase_usd": Decimal("10"),
          "shipping_cost_usd": Decimal("3"), "return_reserve_usd": Decimal("0.5"), "quantity": 1},
     ]
-    with patch.object(ppl, "_load_lines") as load:
+    with patch.object(ppl, "_load_lines") as load, \
+         patch.object(ppl, "_load_ad_spend", return_value={}) as load_ads:
         load.return_value = fake_lines
-        with patch.object(ppl, "_load_ad_spend", return_value={}), \
-             patch.object(ppl, "_load_product_costs", return_value={}):
+        with patch.object(ppl, "_load_product_costs", return_value={}):
             ppl.generate_list(date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country="vn")
     args, kwargs = load.call_args
     flat = list(args) + list(kwargs.values())
     assert "vn" in flat, f"_load_lines 未收到 country 参数：{flat}"
+    assert load_ads.call_args.args == (date(2026, 5, 1), date(2026, 5, 7), "vn")
 
 
 def test_generate_list_load_lines_appends_country_predicate():
@@ -159,6 +160,26 @@ def test_load_ad_spend_uses_meta_business_date_with_report_date_fallback():
     assert "COALESCE(meta_business_date, report_date) BETWEEN %s AND %s" in captured["sql"]
     assert "GROUP BY product_id" in captured["sql"]
     assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7))
+
+
+def test_load_ad_spend_with_country_uses_ad_level_market_country():
+    """国家维度广告费必须从 ad 层 market_country 过滤，不能使用产品全量 campaign spend。"""
+    captured: dict[str, Any] = {}
+
+    def _fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"product_id": 317, "spend": Decimal("20335.80")}]
+
+    with patch.object(ppl, "query", side_effect=_fake_query):
+        result = ppl._load_ad_spend(date(2026, 4, 7), date(2026, 5, 7), "us")
+
+    assert result == {317: Decimal("20335.80")}
+    assert "FROM meta_ad_daily_ad_metrics" in captured["sql"]
+    assert "market_country = %s" in captured["sql"]
+    assert "FROM meta_ad_daily_campaign_metrics" not in captured["sql"]
+    assert "GROUP BY product_id" in captured["sql"]
+    assert captured["params"] == (date(2026, 4, 7), date(2026, 5, 7), "US")
 
 
 def _line(

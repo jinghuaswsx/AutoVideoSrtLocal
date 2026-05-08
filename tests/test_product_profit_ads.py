@@ -42,6 +42,21 @@ def test_load_campaign_metrics_uses_meta_business_date_with_report_date_fallback
     assert captured["params"] == (100, date(2026, 5, 1), date(2026, 5, 7), 100)
 
 
+def test_load_campaign_metrics_with_country_filters_market_country():
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    with patch.object(ppa, "query", side_effect=fake_query):
+        ppa._load_campaign_metrics(100, date(2026, 5, 1), date(2026, 5, 7), country="fr")
+
+    assert "m.market_country = %s" in captured["sql"]
+    assert captured["params"] == (100, date(2026, 5, 1), date(2026, 5, 7), 100, "FR")
+
+
 def test_load_attributed_orders_uses_meta_business_date_basis():
     captured = {}
 

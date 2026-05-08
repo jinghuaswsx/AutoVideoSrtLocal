@@ -224,11 +224,18 @@ def api_download_xlsx():
             build_product_profit_report_error_response("date_from > date_to", 400)
         )
 
-    report = ppr.generate_report(product_id=product_id, date_from=date_from, date_to=date_to)
+    country = (request.args.get("country") or "").strip() or None
+    report = ppr.generate_report(
+        product_id=product_id,
+        date_from=date_from,
+        date_to=date_to,
+        country=country,
+    )
     xlsx_bytes = ppr.generate_xlsx(report)
 
     code = report["total"].get("product_code") or f"product-{product_id}"
-    filename = f"profit_{code}_{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    country_part = f"_{country.upper()}" if country and country.lower() != "all" else ""
+    filename = f"profit_{code}{country_part}_{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
 
     return send_file(
         io.BytesIO(xlsx_bytes),
@@ -262,7 +269,13 @@ def api_report_json():
             build_product_profit_report_error_response("date_from > date_to", 400)
         )
 
-    report = ppr.generate_report(product_id=product_id, date_from=date_from, date_to=date_to)
+    country = (request.args.get("country") or "").strip() or None
+    report = ppr.generate_report(
+        product_id=product_id,
+        date_from=date_from,
+        date_to=date_to,
+        country=country,
+    )
 
     # JSON 友好：日期/datetime 转字符串
     def _iso(v):

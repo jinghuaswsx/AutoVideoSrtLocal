@@ -22,6 +22,7 @@ from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query_one
 from appcore.meta_ad_accounts import MetaAdAccount
+from appcore.order_analytics.ad_market_country import extract_market_country_from_names
 from tools import roi_hourly_sync as realtime_sync
 
 TIMEZONE = "Asia/Shanghai"
@@ -286,6 +287,7 @@ def _normalize_campaign_rows(path: Path, target_date: date, account: MetaAdAccou
             "campaign_name": campaign_name,
             "normalized_campaign_code": campaign_name.lower(),
             "product_code": _text(campaign_name_raw.lower(), 255) or None,
+            "market_country": extract_market_country_from_names(campaign_name=campaign_name_raw),
             "raw": dict(row),
         }
         item.update(_common_metrics(row))
@@ -303,6 +305,16 @@ def _normalize_ad_rows(path: Path, target_date: date, account: MetaAdAccount) ->
         ) or "").strip()
         if not ad_name_raw:
             continue
+        adset_name_raw = str(_pick(
+            row,
+            ("广告组名称", "广告集名称", "Ad set name", "Ad Set Name"),
+            (("ad", "set", "name"), ("广告组", "名称"), ("广告集", "名称")),
+        ) or "").strip()
+        campaign_name_raw = str(_pick(
+            row,
+            ("广告系列名称", "Campaign name", "Campaign Name"),
+            (("广告系列", "名称"), ("campaign", "name")),
+        ) or "").strip()
         report_start = _parse_optional_report_date(_pick(row, ("报告开始日期", "Reporting starts", "Report start date")), target_date)
         report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
         ad_name = _text(ad_name_raw, 512)
@@ -315,6 +327,11 @@ def _normalize_ad_rows(path: Path, target_date: date, account: MetaAdAccount) ->
             "ad_name": ad_name,
             "normalized_ad_code": ad_name.lower(),
             "product_code": _extract_product_code_from_ad_name(ad_name_raw),
+            "market_country": extract_market_country_from_names(
+                ad_name=ad_name_raw,
+                adset_name=adset_name_raw,
+                campaign_name=campaign_name_raw,
+            ),
             "raw": dict(row),
         }
         item.update(_common_metrics(row))
@@ -332,6 +349,11 @@ def _normalize_adset_rows(path: Path, target_date: date, account: MetaAdAccount)
         ) or "").strip()
         if not adset_name_raw:
             continue
+        campaign_name_raw = str(_pick(
+            row,
+            ("广告系列名称", "Campaign name", "Campaign Name"),
+            (("广告系列", "名称"), ("campaign", "name")),
+        ) or "").strip()
         report_start = _parse_optional_report_date(_pick(row, ("报告开始日期", "Reporting starts", "Report start date")), target_date)
         report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
         adset_name = _text(adset_name_raw, 512)
@@ -344,6 +366,10 @@ def _normalize_adset_rows(path: Path, target_date: date, account: MetaAdAccount)
             "adset_name": adset_name,
             "normalized_adset_code": adset_name.lower(),
             "product_code": _extract_product_code_from_ad_name(adset_name_raw),
+            "market_country": extract_market_country_from_names(
+                adset_name=adset_name_raw,
+                campaign_name=campaign_name_raw,
+            ),
             "raw": dict(row),
         }
         item.update(_common_metrics(row))
@@ -367,6 +393,8 @@ def aggregate_daily_entity_rows(rows: list[dict[str, Any]], *, entity_key: str) 
             float(current.get("purchase_value_usd") or 0) + float(row.get("purchase_value_usd") or 0),
             4,
         )
+        if not current.get("market_country") and row.get("market_country"):
+            current["market_country"] = row.get("market_country")
         raw = current.setdefault("raw", {"merged_rows": 0, "rows": []})
         raw["merged_rows"] = int(raw.get("merged_rows") or 0) + 1
         raw.setdefault("rows", []).append(row.get("raw") or {})
@@ -424,9 +452,9 @@ def _replace_campaign_daily_rows(path: Path, target_date: date, account: MetaAdA
             "INSERT INTO meta_ad_daily_campaign_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
             "campaign_name, normalized_campaign_code, product_code, matched_product_code, product_id, "
-            "result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
+            "market_country, result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
             "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 batch_id,
                 row.get("ad_account_id") or account.account_id,
@@ -439,6 +467,7 @@ def _replace_campaign_daily_rows(path: Path, target_date: date, account: MetaAdA
                 row.get("product_code"),
                 matched_product_code,
                 product_id,
+                row.get("market_country"),
                 row.get("result_count") or 0,
                 row.get("result_metric"),
                 row.get("spend_usd") or 0,
@@ -478,9 +507,9 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
             "INSERT INTO meta_ad_daily_ad_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
             "ad_name, normalized_ad_code, product_code, matched_product_code, product_id, "
-            "result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
+            "market_country, result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
             "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 batch_id,
                 row.get("ad_account_id") or account.account_id,
@@ -493,6 +522,7 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
                 row.get("product_code"),
                 matched_product_code,
                 product_id,
+                row.get("market_country"),
                 row.get("result_count") or 0,
                 row.get("result_metric"),
                 row.get("spend_usd") or 0,
@@ -532,9 +562,9 @@ def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAcco
             "INSERT INTO meta_ad_daily_adset_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
             "adset_name, normalized_adset_code, product_code, matched_product_code, product_id, "
-            "result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
+            "market_country, result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
             "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 batch_id,
                 row.get("ad_account_id") or account.account_id,
@@ -547,6 +577,7 @@ def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAcco
                 row.get("product_code"),
                 matched_product_code,
                 product_id,
+                row.get("market_country"),
                 row.get("result_count") or 0,
                 row.get("result_metric"),
                 row.get("spend_usd") or 0,

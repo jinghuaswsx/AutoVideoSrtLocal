@@ -25,6 +25,10 @@
 - 不改数据库表结构、不改利润计算公式（[appcore/order_analytics/profit_calculation.py](appcore/order_analytics/profit_calculation.py)）。
 - 不改权限模型、菜单项、路由 URL。
 - 不在本期改造 `tools/roi_hourly_sync.py` 同步逻辑（保持 campaign 级），ad_set / ad 级单独迭代（§11）。
+- 2026-05-08 补充：产品盈亏的国家筛选不能继续只过滤订单表。没有 Meta API
+  country breakdown 时，单国家广告费先采用 `campaign / ad_set / ad` 三层名称解析出的
+  `market_country` 字段作为估算口径；该字段来自广告命名中的市场标签（例如 `美国`、
+  `法国`、`德国`），不是 Meta 投放地域 API 字段。
 
 ## 4. 信息架构
 
@@ -85,6 +89,17 @@
 - 底部分页（默认 50 行）
 - 顶部小字摘要："共 N 个产品 / 总收入 $X / 总利润 $Y / 整体 ROAS Z"
 - "国家"维度由顶部全局筛选器承担（选越南 → 表格只展示越南维度的聚合），不另设列
+
+国家筛选广告费口径（2026-05-08 起）：
+
+- `country` 为空或 `all`：保持全产品总口径，广告费来自
+  `meta_ad_daily_campaign_metrics.product_id` 的日期范围汇总。
+- `country` 为具体国家代码：订单侧按 `buyer_country` 过滤；广告侧按
+  `meta_ad_daily_ad_metrics.market_country = country` 过滤并按 `product_id` 汇总。
+  采用 ad 层是因为 ad 名称最接近真实投放素材，且能承载 campaign/ad_set/ad 三层导出
+  中最细粒度的市场标签。没有解析出 `market_country` 的广告行不进入单国家广告费。
+- `market_country` 是从名称解析出的运营市场估算字段，不代表 Meta API 返回的投放国家。
+  `E5`、`16国`、`澳新` 等多市场标签记录为多市场，不并入单个国家。
 
 ## 7. Tab ② 订单明细（迁移现有 + 增强）
 

@@ -46,9 +46,23 @@
   - Ad Set：`campaign_id`、`campaign_name`、`adset_id`、`adset_name`
   - Ad：`campaign_id`、`campaign_name`、`adset_id`、`adset_name`、`ad_id`、`ad_name`
 - 产品匹配：`product_code`、`matched_product_code`、`product_id`
+- 市场估算：`market_country`
 - 指标：`result_count`、`result_metric`、`spend_usd`、`purchase_value_usd`、`roas_purchase`、`link_clicks`、`add_to_cart_count`、`initiate_checkout_count`、`impressions`、`raw_json`
 
 唯一键按 `ad_account_id + meta_business_date + 层级 id/name` 建立，重复抓同一天同一层级时覆盖更新，不叠加。
+
+`market_country` 解析规则：
+
+- 来源优先级按层级自身名称解析：Campaign 用 `campaign_name`，Ad Set 用
+  `adset_name`，Ad 用 `ad_name`；如果导出行同时包含上层名称，可按
+  `ad_name → adset_name → campaign_name` 兜底。
+- 目标是从运营命名中识别市场标签，例如 `美国 → US`、`英国 → GB`、`法国 → FR`、
+  `德国 → DE`、`西班牙 → ES`、`意大利 → IT`、`日本 → JP`、`葡萄牙 → PT`、
+  `荷兰 → NL`、`加拿大 → CA`、`澳大利亚/澳洲 → AU`、`新西兰 → NZ`。
+- `E5`、`16国`、`多国`、`欧洲`、`澳新` 等不是单一国家，统一作为多市场标签处理，
+  不参与单国家产品盈亏广告费过滤。
+- 该字段是广告命名解析结果，不是 Meta API `breakdowns=country` 数据；用于当前没有
+  投放地域 breakdown 时的产品盈亏国家维度估算。
 
 ## 抓取与进度
 

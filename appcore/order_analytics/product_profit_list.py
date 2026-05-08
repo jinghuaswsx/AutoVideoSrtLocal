@@ -5,8 +5,9 @@
 
 数据口径与 product_profit_report.generate_report() 单产品口径完全一致：
 - 订单 / 收入 / 各项费用：order_profit_lines + dianxiaomi_order_lines JOIN
-- 广告费：直接读 meta_ad_daily_campaign_metrics 已按 campaign → product 回填的
-  product_id 维度 SUM(spend_usd)，**不再做 site → ad_account 全账户均摊**。
+- 广告费：全国家口径直接读 meta_ad_daily_campaign_metrics 已按 campaign → product
+  回填的 product_id 维度 SUM(spend_usd)，**不再做 site → ad_account 全账户均摊**。
+  单国家口径读 meta_ad_daily_ad_metrics.market_country 过滤后的 ad 层 spend。
   这与 product_profit_report.generate_report 在单产品维度的口径一致：
   WHERE product_id = X 的 spend 之和即该产品的广告费。
 - 利润 = revenue - shopify_fee - ad_cost - purchase - shipping - return_reserve
@@ -23,6 +24,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from .ad_market_country import is_single_market_country, normalize_market_country
 from .cost_completeness import check_sku_cost_completeness
 
 log = logging.getLogger(__name__)
@@ -64,31 +66,46 @@ def _load_lines(date_from: date, date_to: date, country: str | None) -> list[dic
         "WHERE dol.meta_business_date BETWEEN %s AND %s "
     )
     params: list[Any] = [date_from, date_to]
-    if country and country.strip().lower() not in ("", "all"):
+    normalized_country = normalize_market_country(country)
+    if normalized_country:
         sql += " AND opl.buyer_country = %s "
-        params.append(country.strip().upper())
+        params.append(normalized_country)
     sql += " ORDER BY opl.product_id, dol.meta_business_date"
     return query(sql, tuple(params))
 
 
-def _load_ad_spend(date_from: date, date_to: date) -> dict[int, Decimal]:
+def _load_ad_spend(date_from: date, date_to: date, country: str | None = None) -> dict[int, Decimal]:
     """每个产品在日期范围内归属的广告 spend 合计。
 
-    数据来自 meta_ad_daily_campaign_metrics（campaign → product 同步阶段已回填
-    product_id），按 product_id GROUP BY SUM(spend_usd)。和
-    product_profit_report.generate_report 单产品 `WHERE product_id = X` 累加同口径。
+    全部国家：数据来自 meta_ad_daily_campaign_metrics（campaign → product 同步阶段已回填
+    product_id），按 product_id GROUP BY SUM(spend_usd)。
+
+    单国家：使用 ad 层 ``market_country`` 过滤后的 spend。该字段来自广告命名解析，
+    不是 Meta API country breakdown。
 
     返回：{product_id: total_spend_usd}。product_id IS NULL 的 campaign（未匹配）
     被丢弃——它们既不属于任何已知产品，也不该按 units 比例摊给其他产品。
     """
-    rows = query(
-        "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-        "  AND product_id IS NOT NULL "
-        "GROUP BY product_id",
-        (date_from, date_to),
-    )
+    market_country = normalize_market_country(country)
+    if is_single_market_country(market_country):
+        rows = query(
+            "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
+            "FROM meta_ad_daily_ad_metrics "
+            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "  AND product_id IS NOT NULL "
+            "  AND market_country = %s "
+            "GROUP BY product_id",
+            (date_from, date_to, market_country),
+        )
+    else:
+        rows = query(
+            "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "  AND product_id IS NOT NULL "
+            "GROUP BY product_id",
+            (date_from, date_to),
+        )
     out: dict[int, Decimal] = {}
     for r in rows:
         pid = r.get("product_id")
@@ -177,7 +194,7 @@ def generate_list(
             },
         }
 
-    ad_spend = _load_ad_spend(date_from, date_to)
+    ad_spend = _load_ad_spend(date_from, date_to, country)
     product_ids = list({int(line["product_id"]) for line in lines if line.get("product_id") is not None})
     product_costs = _load_product_costs(product_ids)
 

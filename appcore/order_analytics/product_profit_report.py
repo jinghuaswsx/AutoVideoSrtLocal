@@ -8,9 +8,11 @@
   - shopify_fee_usd（合计）也直接读，再按 calculate_shopify_fee 的 rate_breakdown
     比例拆出 base / cross_border / currency_conversion 三项（保证拆分后
     base + intl + conv = order_profit_lines.shopify_fee_usd 不丢精度）。
-  - **广告费现场重算**：读取 meta_ad_daily_campaign_metrics 已按 campaign → product
-    回填的 product_id 维度 spend，订单行按该产品当日 total units 分摊；总账则
-    直接使用 product_id 日期范围 spend，保证与产品列表 Tab 的广告费口径一致。
+  - **广告费现场重算**：全国家口径读取 meta_ad_daily_campaign_metrics 已按
+    campaign → product 回填的 product_id 维度 spend；单国家口径读取
+    meta_ad_daily_ad_metrics.market_country 过滤后的 ad 层 spend。订单行按该产品
+    当日 total units 分摊；总账则直接使用 product_id 日期范围 spend，保证与产品列表
+    Tab 的广告费口径一致。
   - **订单利润现场重算**：revenue - shopify_fee - ad_cost_recalc - purchase
     - shipping_cost - return_reserve。
 
@@ -28,6 +30,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from .ad_market_country import is_single_market_country, normalize_market_country
 from .shopify_fee import calculate_shopify_fee, infer_presentment_currency_from_country
 
 # ---------------------------------------------------------------------------
@@ -78,9 +81,14 @@ def list_products() -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # 数据加载
 # ---------------------------------------------------------------------------
-def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[dict[str, Any]]:
+def _load_order_lines(
+    product_id: int,
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> list[dict[str, Any]]:
     """加载产品在指定日期范围内的所有 SKU 行，含订单基础字段 + 现成核算字段。"""
-    return query(
+    sql = (
         "SELECT "
         "  opl.dxm_order_line_id, dol.meta_business_date AS business_date, opl.paid_at, "
         "  opl.buyer_country, opl.line_amount_usd, opl.shipping_allocated_usd, "
@@ -96,28 +104,43 @@ def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[d
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "WHERE opl.product_id = %s "
         "  AND dol.meta_business_date BETWEEN %s AND %s "
-        "ORDER BY dol.meta_business_date ASC, opl.dxm_order_line_id ASC",
-        (product_id, date_from, date_to),
     )
+    params: list[Any] = [product_id, date_from, date_to]
+    normalized_country = normalize_market_country(country)
+    if normalized_country:
+        sql += "  AND opl.buyer_country = %s "
+        params.append(normalized_country)
+    sql += "ORDER BY dol.meta_business_date ASC, opl.dxm_order_line_id ASC"
+    return query(sql, tuple(params))
 
 
-def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> dict[tuple[date, str], int]:
+def _load_site_daily_units(
+    product_id: int,
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> dict[tuple[date, str], int]:
     """加载每天 × 每站点的产品总 units。
 
     Key: (business_date, site_code) → units. 这里必须使用 dianxiaomi_order_lines
     的 meta_business_date，和 _load_order_lines 的行日期、Meta spend 日期保持一致；
     否则订单行和分摊分母不在同一日期基准上，会导致日广告费被多摊或少摊。
     """
-    rows = query(
+    sql = (
         "SELECT dol.meta_business_date AS d, dol.site_code, "
         "       COALESCE(SUM(dol.quantity), 0) AS units "
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "WHERE opl.product_id = %s "
         "  AND dol.meta_business_date BETWEEN %s AND %s "
-        "GROUP BY dol.meta_business_date, dol.site_code",
-        (product_id, date_from, date_to),
     )
+    params: list[Any] = [product_id, date_from, date_to]
+    normalized_country = normalize_market_country(country)
+    if normalized_country:
+        sql += "  AND opl.buyer_country = %s "
+        params.append(normalized_country)
+    sql += "GROUP BY dol.meta_business_date, dol.site_code"
+    rows = query(sql, tuple(params))
     out: dict[tuple[date, str], int] = {}
     for r in rows:
         d = r["d"]
@@ -126,21 +149,39 @@ def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> d
     return out
 
 
-def _load_account_daily_spend(product_id: int, date_from: date, date_to: date) -> dict[tuple[date, str], float]:
+def _load_account_daily_spend(
+    product_id: int,
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> dict[tuple[date, str], float]:
     """每天 × 每账户对该产品的广告 spend。
 
     Key: (business_date, ad_account_id) → spend_usd. 下游会忽略账户归属，只按
     business_date 合计 product_id 维度 spend，与产品列表 Tab 保持一致。
     """
-    rows = query(
-        "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
-        "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE product_id = %s "
-        "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-        "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
-        (product_id, date_from, date_to),
-    )
+    market_country = normalize_market_country(country)
+    if is_single_market_country(market_country):
+        rows = query(
+            "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
+            "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
+            "FROM meta_ad_daily_ad_metrics "
+            "WHERE product_id = %s "
+            "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "  AND market_country = %s "
+            "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
+            (product_id, date_from, date_to, market_country),
+        )
+    else:
+        rows = query(
+            "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
+            "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE product_id = %s "
+            "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
+            (product_id, date_from, date_to),
+        )
     out: dict[tuple[date, str], float] = {}
     for r in rows:
         d = r["report_date"]
@@ -354,11 +395,12 @@ def generate_report(
     product_id: int,
     date_from: date,
     date_to: date,
+    country: str | None = None,
 ) -> dict[str, Any]:
     """返回完整报表字典：{orders, daily, by_country, by_site, total, meta}。"""
-    lines = _load_order_lines(product_id, date_from, date_to)
-    site_units = _load_site_daily_units(product_id, date_from, date_to)
-    account_spend = _load_account_daily_spend(product_id, date_from, date_to)
+    lines = _load_order_lines(product_id, date_from, date_to, country)
+    site_units = _load_site_daily_units(product_id, date_from, date_to, country)
+    account_spend = _load_account_daily_spend(product_id, date_from, date_to, country)
 
     extended_ids = list({(line.get("extended_order_id") or "") for line in lines if line.get("extended_order_id")})
     real_fees = _load_real_fees(extended_ids)
@@ -548,7 +590,12 @@ def generate_report(
         "total": total,
         "meta": {
             "generated_at": datetime.now(),
-            "ad_attribution_basis": "product_id_daily_units",
+            "country": normalize_market_country(country),
+            "ad_attribution_basis": (
+                "product_id_market_country_ad_daily_units"
+                if is_single_market_country(country)
+                else "product_id_daily_units"
+            ),
             "shopify_fee_split_basis": "rate_breakdown_proportional",
         },
     }

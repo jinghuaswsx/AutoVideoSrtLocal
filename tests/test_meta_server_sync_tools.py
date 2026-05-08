@@ -256,6 +256,55 @@ def test_meta_daily_final_sync_replaces_adset_daily_rows(monkeypatch, tmp_path):
     assert insert[6] == "Glow Set - DE"
 
 
+def test_meta_daily_final_sync_normalizes_market_country_from_names(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync
+
+    ad_csv = tmp_path / "ads.csv"
+    ad_csv.write_text(
+        "Reporting starts,Reporting ends,Campaign name,Ad set name,Ad name,Amount spent (USD),Results\n"
+        "2026-01-01,2026-01-01,Campaign 美国,Adset 德国,sonic-lens-refresher-rjc 法国素材,9.50,2\n",
+        encoding="utf-8",
+    )
+    account = _final_account("newjoyloo_old", "2110407576446225")
+
+    rows = meta_daily_final_sync._normalize_ad_rows(ad_csv, date(2026, 1, 1), account)
+
+    assert rows[0]["market_country"] == "FR"
+
+
+def test_meta_daily_final_sync_inserts_market_country_for_ad_rows(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync
+
+    csv_path = tmp_path / "newjoyloo_old_ads_2026-01-01.csv"
+    csv_path.write_text(
+        "Reporting starts,Reporting ends,Ad name,Amount spent (USD),Website purchases conversion value,Results\n"
+        "2026-01-01,2026-01-01,sonic-lens-refresher-rjc 德国素材,12.50,25.00,3\n",
+        encoding="utf-8",
+    )
+    account = _final_account("newjoyloo_old", "2110407576446225")
+    writes = []
+
+    def fake_execute(sql, args=()):
+        writes.append((sql, args))
+        if "INSERT INTO meta_ad_import_batches" in sql:
+            return 701
+        return 1
+
+    monkeypatch.setattr(meta_daily_final_sync, "execute", fake_execute)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_match_product",
+        lambda product_code: {"id": 317, "product_code": "sonic-lens-refresher-rjc"},
+    )
+
+    report = meta_daily_final_sync._replace_ad_daily_rows(csv_path, date(2026, 1, 1), account)
+
+    assert report["rows"] == 1
+    insert = next(args for sql, args in writes if "INSERT INTO meta_ad_daily_ad_metrics" in sql)
+    assert insert[6] == "sonic-lens-refresher-rjc 德国素材"
+    assert insert[11] == "DE"
+
+
 def test_meta_daily_final_sync_account_code_reports_unknown_account(monkeypatch, tmp_path):
     from tools import meta_daily_final_sync
 

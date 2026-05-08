@@ -168,6 +168,9 @@
 对 `/product-profit` 和 `/order-analytics/product-profit/*`：
 
 1. 产品广告费以 `meta_ad_daily_campaign_metrics.product_id` 为主；日终缺失日期应明确 `source_mode`，不要静默使用 0。
+   当产品盈亏接口带具体 `country` 时，广告费不能再使用该产品全量 spend，而应使用广告
+   名称解析出的 `market_country` 过滤后的 ad 层 spend；该口径是运营命名估算，不是
+   Meta API country breakdown。
 2. 总账中必须暴露 `unallocated_ad_spend_usd`，并纳入利润口径或明确说明未纳入口径。
 3. 产品列表、订单明细、国家看板、广告明细的广告费汇总口径必须能互相对账。
 4. 导出的 xlsx 应包含数据质量摘要页或顶部说明。

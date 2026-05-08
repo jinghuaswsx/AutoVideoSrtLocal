@@ -207,6 +207,22 @@ def test_load_order_lines_uses_meta_business_date_basis(monkeypatch):
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
 
 
+def test_load_order_lines_with_country_filters_buyer_country(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_order_lines(427, date(2026, 5, 1), date(2026, 5, 7), country="de")
+
+    assert "opl.buyer_country = %s" in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "DE")
+
+
 def test_load_site_daily_units_uses_meta_business_date(monkeypatch):
     captured = {}
 
@@ -228,6 +244,22 @@ def test_load_site_daily_units_uses_meta_business_date(monkeypatch):
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
 
 
+def test_load_site_daily_units_with_country_filters_buyer_country(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_site_daily_units(427, date(2026, 5, 1), date(2026, 5, 7), country="fr")
+
+    assert "opl.buyer_country = %s" in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "FR")
+
+
 def test_load_account_daily_spend_uses_meta_business_date_with_report_date_fallback(monkeypatch):
     captured = {}
 
@@ -244,6 +276,25 @@ def test_load_account_daily_spend_uses_meta_business_date_with_report_date_fallb
     assert "COALESCE(meta_business_date, report_date) BETWEEN %s AND %s" in captured["sql"]
     assert "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id" in captured["sql"]
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
+
+
+def test_load_account_daily_spend_with_country_uses_ad_level_market_country(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_account_daily_spend(427, date(2026, 5, 1), date(2026, 5, 7), country="de")
+
+    assert "FROM meta_ad_daily_ad_metrics" in captured["sql"]
+    assert "market_country = %s" in captured["sql"]
+    assert "FROM meta_ad_daily_campaign_metrics" not in captured["sql"]
+    assert "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id" in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "DE")
 
 
 def test_generate_report_total_ad_matches_product_attributed_spend(monkeypatch):

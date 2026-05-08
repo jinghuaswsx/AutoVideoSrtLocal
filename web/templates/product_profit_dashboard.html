@@ -736,7 +736,7 @@
              placeholder="加载中…" autocomplete="off" spellcheck="false">
     </label>
     <label data-filter-control="country">
-      <span>国家 <small style="color: var(--text-user-badge); font-weight: normal; font-size: 11px">仅过滤订单表</small></span>
+      <span>国家 <small style="color: var(--text-user-badge); font-weight: normal; font-size: 11px">订单 + 广告命名市场</small></span>
       <select id="ppd-country-select">
         <option value="">全部</option>
       </select>
@@ -1728,18 +1728,20 @@
     content.style.display = 'none';
     errorBox.style.display = 'none';
 
-    // 更新下载链接（country 暂不传给后端 xlsx，保持原行为）
+    var selectedCountry = (countrySelect.value || '').trim();
+
+    // 更新下载链接
     downloadBtn.href = '/order-analytics/product-profit/report.xlsx?'
       + 'product_id=' + encodeURIComponent(pid)
       + '&date_from=' + encodeURIComponent(df)
       + '&date_to=' + encodeURIComponent(dt);
+    if (selectedCountry) downloadBtn.href += '&country=' + encodeURIComponent(selectedCountry);
 
-    // Task 6 决策：report.json 后端当前不接 country，国家筛选用前端过滤 orders 表
-    // （总账/站点/每日/国家图仍是全量；后续 Task 可改后端）
     var url = '/order-analytics/product-profit/report.json?'
       + 'product_id=' + encodeURIComponent(pid)
       + '&date_from=' + encodeURIComponent(df)
       + '&date_to=' + encodeURIComponent(dt);
+    if (selectedCountry) url += '&country=' + encodeURIComponent(selectedCountry);
 
     fetch(url, { credentials: 'same-origin' })
       .then(function(r) {
@@ -1838,6 +1840,7 @@
       + 'product_id=' + encodeURIComponent(pid)
       + '&date_from=' + encodeURIComponent(df)
       + '&date_to=' + encodeURIComponent(dt);
+    if (country) url += '&country=' + encodeURIComponent(country);
 
     fetch(url, { credentials: 'same-origin' })
       .then(function(r) {
@@ -2688,7 +2691,7 @@
 
   function applyFilter(orders) {
     var q = ($('orders-search').value || '').trim().toLowerCase();
-    // Task 6: 顶部国家筛选 → 前端过滤 orders 表（大写比较 buyer_country）
+    // 顶部国家筛选：后端已按同一国家返回订单和广告费；前端保留轻量二次过滤。
     var country = (countrySelect.value || '').trim().toUpperCase();
     var filtered = orders;
     if (country) {

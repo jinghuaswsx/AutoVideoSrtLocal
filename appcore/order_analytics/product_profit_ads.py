@@ -22,8 +22,9 @@
     口径一致）：``campaign.attributed_revenue = Σ_d daily_spend[campaign,d] /
     daily_total_spend[d] × attributed[d].revenue``。这样跨日不同 campaign 的归属互不
     串扰，避免整范围 totals 分摊把别的日子的订单算到本 campaign 头上。
-  - country 过滤：仅透传给 ``_load_attributed_orders`` 的订单 SQL。campaign 维度的国家
-    通常没有意义（同一 campaign 可投到多国），所以 campaign 行不做 country 过滤。
+  - country 过滤：订单侧按 ``buyer_country`` 过滤；campaign 侧按
+    ``meta_ad_daily_campaign_metrics.market_country`` 过滤。该字段来自广告命名解析，
+    不是 Meta API country breakdown。
 """
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from .ad_market_country import is_single_market_country, normalize_market_country
 from .meta_ads import resolve_ad_product_match
 
 log = logging.getLogger(__name__)
@@ -60,7 +62,7 @@ def query_one(*args, **kwargs):
 # 数据加载
 # ---------------------------------------------------------------------------
 def _load_campaign_metrics(
-    product_id: int, date_from: date, date_to: date
+    product_id: int, date_from: date, date_to: date, country: str | None = None
 ) -> list[dict[str, Any]]:
     """拉 ``meta_ad_daily_campaign_metrics`` 在日期范围内与本产品相关的所有行。
 
@@ -70,11 +72,11 @@ def _load_campaign_metrics(
     ``resolve_ad_product_match`` / override 表做兜底实时解析（覆盖同步流程还没回写
     product_id 的 race condition）。
     """
-    return query(
+    sql = (
         "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
         "       m.ad_account_id, m.ad_account_name, "
         "       m.normalized_campaign_code, m.campaign_name, "
-        "       m.product_id, m.matched_product_code, "
+        "       m.product_id, m.matched_product_code, m.market_country, "
         "       o.id AS manual_override_id, "
         "       m.spend_usd, m.result_count, m.purchase_value_usd, m.roas_purchase "
         "FROM meta_ad_daily_campaign_metrics m "
@@ -83,8 +85,16 @@ def _load_campaign_metrics(
         " AND o.product_id = %s "
         "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
         "  AND (m.product_id = %s OR m.product_id IS NULL) "
-        "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
-        (product_id, date_from, date_to, product_id),
+    )
+    params: list[Any] = [product_id, date_from, date_to, product_id]
+    market_country = normalize_market_country(country)
+    if is_single_market_country(market_country):
+        sql += "  AND m.market_country = %s "
+        params.append(market_country)
+    sql += "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC"
+    return query(
+        sql,
+        tuple(params),
     )
 
 
@@ -177,9 +187,10 @@ def _load_attributed_orders(
         "  AND dol.meta_business_date BETWEEN %s AND %s "
     )
     params: list[Any] = [product_id, date_from, date_to]
-    if country and country.strip().lower() not in ("", "all"):
+    normalized_country = normalize_market_country(country)
+    if normalized_country:
         sql += " AND opl.buyer_country = %s "
-        params.append(country.strip().upper())
+        params.append(normalized_country)
     sql += " GROUP BY dol.meta_business_date"
 
     rows = query(sql, tuple(params))
@@ -211,7 +222,7 @@ def generate_ads_report(
         product_id: media_products.id
         date_from / date_to: Meta 业务日期范围（广告按 ``meta_business_date``，
             订单按 ``dianxiaomi_order_lines.meta_business_date``）
-        country: 可选 buyer_country 过滤（仅作用于"归属订单"侧）
+        country: 可选国家过滤；订单侧用 buyer_country，campaign 侧用 market_country
 
     Returns:
         {
@@ -235,7 +246,7 @@ def generate_ads_report(
                          "spend_usd": float}, ...]
         }
     """
-    rows = _load_campaign_metrics(product_id, date_from, date_to)
+    rows = _load_campaign_metrics(product_id, date_from, date_to, country)
     if not rows:
         return {"accounts": [], "campaigns": [], "daily": [], "unmatched": []}
 

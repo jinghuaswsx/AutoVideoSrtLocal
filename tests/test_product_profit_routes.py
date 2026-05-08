@@ -220,6 +220,50 @@ def test_countries_json_returns_us_gb_plus_enabled_language_countries(
 
 
 # ---------------------------------------------------------------------------
+# /report.json — Tab 2/3 单产品报表
+# ---------------------------------------------------------------------------
+def test_report_json_passes_country_param(authed_client_no_db, monkeypatch):
+    """country 参数透传给 generate_report；空串 → None。"""
+    seen: dict = {}
+
+    def fake_generate_report(*, product_id, date_from, date_to, country=None):
+        seen["product_id"] = product_id
+        seen["country"] = country
+        return {
+            "orders": [],
+            "daily": [],
+            "by_country": [],
+            "by_site": [],
+            "total": {
+                "product_id": product_id,
+                "product_code": "ABC",
+                "product_name": "ABC Product",
+                "date_from": date_from,
+                "date_to": date_to,
+            },
+            "meta": {},
+        }
+
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.ppr.generate_report",
+        fake_generate_report,
+    )
+
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/report.json?product_id=42&country=DE"
+    )
+    assert resp.status_code == 200
+    assert seen["product_id"] == 42
+    assert seen["country"] == "DE"
+
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/report.json?product_id=42&country="
+    )
+    assert resp.status_code == 200
+    assert seen["country"] is None
+
+
+# ---------------------------------------------------------------------------
 # /ads.json — Tab 4 广告明细
 # ---------------------------------------------------------------------------
 def _fake_ads_report():
