@@ -574,55 +574,62 @@ _ADS_LIST_SORT_EXPR: dict[str, str] = {
 }
 
 _RAW_JSON_KEY_VARIANTS: dict[str, tuple[str, ...]] = {
+    # CPC: 单次链接点击费用 - 独立用户 (USD) / 单次链接点击费用 (USD) / English variants.
     "cpc_usd": (
-        "link_click_cost",
-        "cpc",
-        "unique_link_click_cost",
+        "单次链接点击费用 - 独立用户 (USD)",
+        "单次链接点击费用 (USD)",
+        "每次链接点击费用 (USD)",
         "unique_link_click_cost_usd",
+        "unique_link_click_cost",
+        "link_click_cost",
         "cost_per_link_click",
         "cost_per_unique_link_click",
-        "每次链接点击费用 (USD)",
-        "单次链接点击费用 (USD)",
+        "cpc",
     ),
+    # eCPM: CPM（千次展示费用） (USD) — note Chinese full-width parens around 千次展示费用.
     "ecpm_usd": (
-        "cpm",
-        "cpm_usd",
-        "ecpm",
-        "cost_per_1000_impressions",
+        "CPM（千次展示费用） (USD)",
+        "CPM (千次展示费用) (USD)",
         "千次展示费用 (USD)",
         "千次展示费用",
+        "cpm_usd",
+        "cpm",
+        "ecpm",
+        "cost_per_1000_impressions",
     ),
     "impressions": (
-        "impressions",
         "展示次数",
         "展示量",
+        "impressions",
     ),
     "link_clicks": (
-        "link_clicks",
-        "linkclicks",
         "链接点击量",
         "链接点击次数",
+        "link_clicks",
+        "linkclicks",
     ),
     "add_to_cart_count": (
+        "加入购物车次数",
+        "加购次数",
         "add_to_cart_count",
         "add_to_cart",
         "atc",
-        "加购次数",
         "Adds to Cart",
     ),
     "initiate_checkout_count": (
+        "结账发起次数",
+        "发起结账次数",
         "initiate_checkout_count",
         "initiates_checkout",
         "ic",
-        "发起结账次数",
         "Initiate Checkouts",
     ),
     "video_avg_play_time": (
+        "视频平均播放时长",
+        "视频均播时长",
         "video_avg_play_time",
         "video_avg_time_watched",
         "video_avg_time_watched_actions",
-        "视频均播时长",
-        "视频平均播放时长",
     ),
 }
 
@@ -653,23 +660,56 @@ def _coerce_ads_date_range(
 
 
 def _parse_raw_json_field(raw_json: Any) -> dict:
+    """Decode raw_json column and return the leaf metric dict.
+
+    Production rows store the report row nested as ``{"rows": [{...metrics}], "merged_rows": N}``;
+    legacy / test fixtures may store the metric dict flat. Unwrap automatically so callers
+    can do flat lookups regardless of source.
+    """
     if not raw_json:
         return {}
-    if isinstance(raw_json, dict):
-        return raw_json
+    parsed: Any = raw_json
     if isinstance(raw_json, str):
         try:
-            return json.loads(raw_json)
+            parsed = json.loads(raw_json)
         except (TypeError, ValueError):
             return {}
-    return {}
+    if not isinstance(parsed, dict):
+        return {}
+    rows = parsed.get("rows")
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return parsed
+
+
+def _parse_hms_to_seconds(value: str) -> float | None:
+    """Parse "HH:MM:SS" / "MM:SS" video play-time strings into seconds."""
+    parts = value.split(":")
+    try:
+        if len(parts) == 3:
+            h, m, s = parts
+            return int(h) * 3600 + int(m) * 60 + float(s)
+        if len(parts) == 2:
+            m, s = parts
+            return int(m) * 60 + float(s)
+    except (TypeError, ValueError):
+        return None
+    return None
 
 
 def _coerce_raw_value(raw: dict, keys: tuple[str, ...]) -> float | None:
     for key in keys:
-        if key in raw and raw[key] not in (None, "", "—", "-"):
+        if key in raw and raw[key] not in (None, "", "—", "-", "00:00:00"):
+            text = str(raw[key]).replace(",", "").replace("%", "").strip()
+            if not text:
+                continue
+            if ":" in text:
+                hms = _parse_hms_to_seconds(text)
+                if hms is not None:
+                    return hms
+                continue
             try:
-                return float(str(raw[key]).replace(",", "").replace("%", "").strip())
+                return float(text)
             except (TypeError, ValueError):
                 continue
     return None

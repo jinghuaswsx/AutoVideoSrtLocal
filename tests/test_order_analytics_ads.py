@@ -1074,6 +1074,59 @@ def test_ads_detail_route_400_for_missing_code(authed_client_no_db):
     assert b"code is required" in response.data
 
 
+def test_get_ads_level_detail_parses_nested_raw_json(monkeypatch):
+    """Production rows store metrics under raw_json["rows"][0]; flat fixtures must still work."""
+    today = oa.current_meta_business_date()
+    yesterday = today - __import__("datetime").timedelta(days=1)
+
+    def fake_query(sql, args=()):
+        return [
+            {
+                "meta_business_date": yesterday,
+                "name": "Glow Go RJC",
+                "ad_account_id": "1234",
+                "ad_account_name": "newjoyloo",
+                "spend_usd": 100.0,
+                "purchase_value_usd": 200.0,
+                "result_count": 5,
+                # Production-style nested structure
+                "raw_json": '{"rows": [{"已花费金额 (USD)": "100", '
+                            '"CPM（千次展示费用） (USD)": "12.34", '
+                            '"单次链接点击费用 - 独立用户 (USD)": "0.50", '
+                            '"展示次数": "10000", "链接点击量": "200", '
+                            '"加入购物车次数": "30", "结账发起次数": "12", '
+                            '"视频平均播放时长": "00:00:08"}], "merged_rows": 1}',
+            },
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "query_one", lambda sql, args=(): None)
+    result = oa.get_ads_level_detail("campaign", code="glow-go-rjc",
+                                      start_date=yesterday.isoformat(),
+                                      end_date=yesterday.isoformat())
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["cpc_usd"] == 0.5
+    assert row["ecpm_usd"] == 12.34
+    assert row["impressions"] == 10000
+    assert row["link_clicks"] == 200
+    assert row["add_to_cart_count"] == 30
+    assert row["initiate_checkout_count"] == 12
+    assert row["video_avg_play_time"] == 8.0
+
+
+def test_parse_raw_json_field_unwraps_rows_envelope():
+    inner = {"展示次数": "5", "链接点击量": "1"}
+    parsed = oa.meta_ads._parse_raw_json_field({"rows": [inner], "merged_rows": 1})
+    assert parsed is inner
+
+
+def test_parse_raw_json_field_passthrough_for_flat_dict():
+    flat = {"link_clicks": 99}
+    parsed = oa.meta_ads._parse_raw_json_field(flat)
+    assert parsed == flat
+
+
 def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeypatch):
     captured = {}
 

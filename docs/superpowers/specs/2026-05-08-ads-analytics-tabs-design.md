@@ -37,6 +37,18 @@
 | Ad Set | `meta_ad_daily_adset_metrics` | （无 realtime 表） | `normalized_adset_code` | `adset_name` | 同上 |
 | Ad | `meta_ad_daily_ad_metrics` | （无 realtime 表） | `normalized_ad_code` | `ad_name` | 同上 |
 
+**`raw_json` 实际形状**（2026-05-08 上线后实测）：
+
+生产环境 `meta_ad_daily_*_metrics.raw_json` 不是扁平 dict，而是 **`{"rows": [{...metrics}], "merged_rows": N}`** 包装结构，单天单 code 可能对应 1+ 条原始 report 行（被同步链路 merge 进同一行）。详情解析时必须先 unwrap 到 `raw_json["rows"][0]`，否则所有 CPC/eCPM/展示量等字段都拿不到。
+
+字段名是 Meta 后台导出的中文标签（含全角括号），常见 key 实测：
+
+- `已花费金额 (USD)` / `CPM（千次展示费用） (USD)` / `单次链接点击费用 - 独立用户 (USD)`
+- `展示次数` / `链接点击量` / `加入购物车次数` / `结账发起次数`
+- `视频平均播放时长`（HH:MM:SS 字符串，如 `00:00:08`，需转秒）
+
+`appcore.order_analytics.meta_ads._RAW_JSON_KEY_VARIANTS` 维护识别白名单。账户切换 / 报表新增字段时新增同义 key，**不要**改成"反向 grep"模糊匹配——容易把无关字段（如带"成本"二字的 cost 字段）算进 CPC。
+
 **已抓字段 vs 用户列出指标差距**（详情页展示策略）：
 
 | 指标 | 来源 | 详情页处理 |
