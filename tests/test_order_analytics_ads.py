@@ -514,6 +514,11 @@ def test_data_analysis_page_has_meta_ad_accounts_tab(authed_client_no_db):
     assert 'data-tab="adAccounts"' in body
     assert 'id="panelAdAccounts"' in body
     assert 'id="metaAdAccountsBody"' in body
+    assert 'id="metaAdSyncModal"' in body
+    assert 'data-meta-sync-tab="settings"' in body
+    assert 'data-meta-sync-tab="progress"' in body
+    assert 'id="metaAdSyncStart"' in body
+    assert "同步进度" in body
 
 
 def test_meta_ad_accounts_api_reads_accounts(authed_client_no_db, monkeypatch):
@@ -598,6 +603,80 @@ def test_meta_ad_accounts_api_saves_accounts(authed_client_no_db, monkeypatch):
     assert response.status_code == 200
     assert saved["accounts"][0]["store_codes"] == ["omurio"]
     assert response.get_json()["ok"] is True
+
+
+def test_meta_ad_account_manual_sync_api_starts_job(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as routes
+
+    started = {}
+
+    def fake_start_job(**kwargs):
+        started.update(kwargs)
+        return {
+            "job_id": "job-1",
+            "status": "queued",
+            "account": {"code": kwargs["account_code"], "label": "Newjoyloo"},
+            "total_days": 2,
+            "completed_days": 0,
+        }
+
+    monkeypatch.setattr(
+        routes,
+        "meta_ad_manual_sync",
+        SimpleNamespace(
+            DEFAULT_INTERVAL_SECONDS=20,
+            ManualSyncAlreadyRunning=RuntimeError,
+            ManualSyncValidationError=ValueError,
+            start_job=fake_start_job,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(routes, "start_background_task", lambda fn, job_id: None, raising=False)
+
+    response = authed_client_no_db.post(
+        "/order-analytics/meta-ad-accounts/newjoyloo/manual-sync",
+        json={"start_date": "2026-05-01", "end_date": "2026-05-02", "interval_seconds": 20},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["job"]["job_id"] == "job-1"
+    assert started["account_code"] == "newjoyloo"
+    assert started["start_date"].isoformat() == "2026-05-01"
+    assert started["end_date"].isoformat() == "2026-05-02"
+    assert started["interval_seconds"] == 20
+
+
+def test_meta_ad_account_manual_sync_status_api_returns_job(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as routes
+
+    monkeypatch.setattr(
+        routes,
+        "meta_ad_manual_sync",
+        SimpleNamespace(get_job=lambda job_id: {"job_id": job_id, "status": "running", "completed_days": 1}),
+        raising=False,
+    )
+
+    response = authed_client_no_db.get("/order-analytics/meta-ad-sync-jobs/job-1")
+
+    assert response.status_code == 200
+    assert response.get_json()["job"]["status"] == "running"
+
+
+def test_meta_ad_account_manual_sync_status_api_reports_missing_job(authed_client_no_db, monkeypatch):
+    from web.routes import order_analytics as routes
+
+    monkeypatch.setattr(
+        routes,
+        "meta_ad_manual_sync",
+        SimpleNamespace(get_job=lambda job_id: None),
+        raising=False,
+    )
+
+    response = authed_client_no_db.get("/order-analytics/meta-ad-sync-jobs/missing")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "job_not_found"
 
 
 def test_data_analysis_tabs_and_type_controls_are_capsule_buttons(authed_client_no_db):
