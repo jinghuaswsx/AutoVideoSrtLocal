@@ -738,6 +738,12 @@
   flex: 1; overflow: auto;
   padding: var(--space-3) var(--space-5) var(--space-5);
 }
+.oam-modal-footer {
+  display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
 .oam-modal-loading, .oam-modal-error {
   text-align: center; padding: var(--space-7) var(--space-4);
   color: var(--fg-muted); font-size: var(--text-sm);
@@ -773,6 +779,82 @@
   width: min(520px, 96vw);
   max-height: 80vh;
 }
+.oam-modal-card.oam-modal-card--sync {
+  width: min(680px, 96vw);
+}
+.maa-action-stack {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+}
+.maa-sync-tabs {
+  display: inline-flex; gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  margin-bottom: var(--space-4);
+}
+.maa-sync-tab {
+  height: 30px; padding: 0 var(--space-3);
+  border: 1px solid transparent; border-radius: var(--radius-full);
+  background: transparent; color: var(--fg-muted);
+  font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+}
+.maa-sync-tab.is-active {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+}
+.maa-sync-panel[hidden] { display: none; }
+.maa-sync-form {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.maa-sync-field {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  font-size: var(--text-sm); color: var(--fg-muted);
+}
+.maa-sync-field input {
+  height: 32px; padding: 0 10px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--bg-card); color: var(--fg); font: inherit;
+}
+.maa-sync-field input:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.maa-sync-account {
+  grid-column: 1 / -1;
+  padding: var(--space-3); border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--bg-subtle);
+  color: var(--fg); font-size: var(--text-sm);
+}
+.maa-sync-progress-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3); margin-bottom: var(--space-3);
+  font-size: var(--text-sm); color: var(--fg-muted);
+}
+.maa-sync-progress-bar {
+  height: 8px; border-radius: var(--radius-full);
+  background: var(--bg-muted); overflow: hidden; margin-bottom: var(--space-4);
+}
+.maa-sync-progress-fill {
+  height: 100%; width: 0;
+  background: var(--accent);
+  transition: width var(--duration) var(--ease-out);
+}
+.maa-sync-days {
+  max-height: 260px; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+}
+.maa-sync-days table {
+  width: 100%; border-collapse: collapse; font-size: var(--text-sm);
+}
+.maa-sync-days th,
+.maa-sync-days td {
+  padding: 8px var(--space-3); border-bottom: 1px solid var(--border); text-align: left;
+}
+.maa-sync-days th { background: var(--bg-subtle); color: var(--fg-muted); font-weight: 600; }
+.maa-sync-days tr:last-child td { border-bottom: 0; }
+.maa-sync-status-success { color: var(--success-fg); }
+.maa-sync-status-failed { color: var(--danger-fg); }
+.maa-sync-status-running { color: var(--accent); }
 .oa-match-search {
   position: relative; margin-bottom: var(--space-4);
 }
@@ -2292,6 +2374,69 @@
         <button type="button" class="oad-btn-ghost" id="adMatchCancel">取消</button>
         <button type="button" class="oad-btn-primary" id="adMatchConfirm" disabled>完成配对</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Meta 广告账户手动同步弹窗 -->
+<div class="oam-modal-overlay" id="metaAdSyncModal" hidden>
+  <div class="oam-modal-card oam-modal-card--sync" role="dialog" aria-labelledby="metaAdSyncTitle">
+    <div class="oam-modal-header">
+      <div>
+        <div class="oam-modal-title" id="metaAdSyncTitle">同步广告账户</div>
+        <div class="oam-modal-subtitle" id="metaAdSyncSubtitle"></div>
+      </div>
+      <button type="button" class="oam-modal-close" id="metaAdSyncClose" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="oam-modal-body">
+      <div class="maa-sync-tabs" role="tablist" aria-label="Meta 广告账户同步">
+        <button type="button" class="maa-sync-tab is-active" data-meta-sync-tab="settings" role="tab" aria-selected="true">同步设置</button>
+        <button type="button" class="maa-sync-tab" data-meta-sync-tab="progress" role="tab" aria-selected="false">同步进度</button>
+      </div>
+
+      <div class="maa-sync-panel" id="metaAdSyncSettingsPanel">
+        <div class="maa-sync-form">
+          <div class="maa-sync-account" id="metaAdSyncAccount"></div>
+          <label class="maa-sync-field">
+            开始日期
+            <input type="date" id="metaAdSyncStartDate">
+          </label>
+          <label class="maa-sync-field">
+            结束日期
+            <input type="date" id="metaAdSyncEndDate">
+          </label>
+          <label class="maa-sync-field">
+            间隔秒数
+            <input type="number" id="metaAdSyncInterval" min="0" max="3600" step="1" value="20">
+          </label>
+        </div>
+      </div>
+
+      <div class="maa-sync-panel" id="metaAdSyncProgressPanel" hidden>
+        <div class="maa-sync-progress-head">
+          <span id="metaAdSyncProgressText">等待开始</span>
+          <span id="metaAdSyncCurrentDate"></span>
+        </div>
+        <div class="maa-sync-progress-bar" aria-hidden="true">
+          <div class="maa-sync-progress-fill" id="metaAdSyncProgressFill"></div>
+        </div>
+        <div class="maa-sync-days">
+          <table>
+            <thead>
+              <tr><th>日期</th><th>状态</th><th>Run ID</th><th>结果</th></tr>
+            </thead>
+            <tbody id="metaAdSyncDaysBody">
+              <tr><td colspan="4" class="oad-empty">等待开始</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="oam-modal-footer">
+      <button type="button" class="oad-btn-ghost" id="metaAdSyncCancel">关闭</button>
+      <button type="button" class="oad-btn-primary" id="metaAdSyncStart">开始同步</button>
     </div>
   </div>
 </div>
@@ -3849,6 +3994,7 @@
   var adsInited = false;
   var metaAdAccountsInited = false;
   var metaAdAccountsState = { accounts: [], stores: ['newjoy', 'omurio'] };
+  var metaAdSyncState = { account: null, jobId: '', pollTimer: null };
 
   function initMetaAdAccounts() {
     if (!metaAdAccountsInited) {
@@ -3857,6 +4003,7 @@
       var saveBtn = document.getElementById('metaAdAccountSave');
       if (addBtn) addBtn.addEventListener('click', addMetaAdAccountRow);
       if (saveBtn) saveBtn.addEventListener('click', saveMetaAdAccounts);
+      initMetaAdSyncModal();
     }
     loadMetaAdAccounts();
   }
@@ -3917,7 +4064,14 @@
         '<td><input class="maa-input maa-input-mono" data-maa-field="business_id" value="' + escapeHtml(account.business_id || '') + '" aria-label="Business ID"></td>' +
         '<td><input class="maa-input maa-input-mono" data-maa-field="csv_prefix" value="' + escapeHtml(account.csv_prefix || '') + '" aria-label="CSV 前缀"></td>' +
         '<td><input class="maa-input" data-maa-field="note" value="' + escapeHtml(account.note || '') + '" aria-label="备注"></td>' +
-        '<td><button type="button" class="oad-btn-ghost" data-maa-remove>删除</button></td>';
+        '<td><div class="maa-action-stack">' +
+          '<button type="button" class="oad-btn-ghost" data-maa-sync>同步</button>' +
+          '<button type="button" class="oad-btn-ghost" data-maa-remove>删除</button>' +
+        '</div></td>';
+      var syncBtn = tr.querySelector('[data-maa-sync]');
+      if (syncBtn) syncBtn.addEventListener('click', function() {
+        openMetaAdSyncModal(collectMetaAdAccountFromRow(tr));
+      });
       var removeBtn = tr.querySelector('[data-maa-remove]');
       if (removeBtn) removeBtn.addEventListener('click', function() {
         metaAdAccountsState.accounts.splice(idx, 1);
@@ -3943,24 +4097,26 @@
     setMetaAdAccountsStatus('有未保存更改', false);
   }
 
+  function collectMetaAdAccountFromRow(row) {
+    function value(field) {
+      var input = row.querySelector('[data-maa-field="' + field + '"]');
+      return input ? input.value.trim() : '';
+    }
+    return {
+      enabled: !!(row.querySelector('[data-maa-field="enabled"]') || {}).checked,
+      store_codes: Array.from(row.querySelectorAll('[data-maa-store]:checked')).map(function(input) { return input.value; }),
+      label: value('label'),
+      code: value('code'),
+      account_id: value('account_id'),
+      business_id: value('business_id'),
+      csv_prefix: value('csv_prefix'),
+      note: value('note'),
+    };
+  }
+
   function collectMetaAdAccounts() {
     var rows = Array.from(document.querySelectorAll('#metaAdAccountsBody tr[data-index]'));
-    return rows.map(function(row) {
-      function value(field) {
-        var input = row.querySelector('[data-maa-field="' + field + '"]');
-        return input ? input.value.trim() : '';
-      }
-      return {
-        enabled: !!(row.querySelector('[data-maa-field="enabled"]') || {}).checked,
-        store_codes: Array.from(row.querySelectorAll('[data-maa-store]:checked')).map(function(input) { return input.value; }),
-        label: value('label'),
-        code: value('code'),
-        account_id: value('account_id'),
-        business_id: value('business_id'),
-        csv_prefix: value('csv_prefix'),
-        note: value('note'),
-      };
-    });
+    return rows.map(collectMetaAdAccountFromRow);
   }
 
   function saveMetaAdAccounts() {
@@ -3986,6 +4142,240 @@
       .catch(function(err) {
         setMetaAdAccountsStatus('保存失败：' + (err.message || String(err)), true);
       });
+  }
+
+  function initMetaAdSyncModal() {
+    var modal = document.getElementById('metaAdSyncModal');
+    var closeBtn = document.getElementById('metaAdSyncClose');
+    var cancelBtn = document.getElementById('metaAdSyncCancel');
+    var startBtn = document.getElementById('metaAdSyncStart');
+    if (closeBtn) closeBtn.addEventListener('click', closeMetaAdSyncModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeMetaAdSyncModal);
+    if (startBtn) startBtn.addEventListener('click', startMetaAdSync);
+    if (modal) {
+      modal.addEventListener('click', function(ev) {
+        if (ev.target === modal) closeMetaAdSyncModal();
+      });
+    }
+    document.querySelectorAll('[data-meta-sync-tab]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        switchMetaAdSyncTab(btn.dataset.metaSyncTab || 'settings');
+      });
+    });
+  }
+
+  function closeMetaAdSyncModal() {
+    var modal = document.getElementById('metaAdSyncModal');
+    if (modal) modal.hidden = true;
+    if (metaAdSyncState.pollTimer) {
+      clearTimeout(metaAdSyncState.pollTimer);
+      metaAdSyncState.pollTimer = null;
+    }
+  }
+
+  function switchMetaAdSyncTab(tabName) {
+    var active = tabName === 'progress' ? 'progress' : 'settings';
+    document.querySelectorAll('[data-meta-sync-tab]').forEach(function(btn) {
+      var isActive = btn.dataset.metaSyncTab === active;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    var settings = document.getElementById('metaAdSyncSettingsPanel');
+    var progress = document.getElementById('metaAdSyncProgressPanel');
+    if (settings) settings.hidden = active !== 'settings';
+    if (progress) progress.hidden = active !== 'progress';
+  }
+
+  function openMetaAdSyncModal(account) {
+    metaAdSyncState.account = account || {};
+    metaAdSyncState.jobId = '';
+    if (metaAdSyncState.pollTimer) {
+      clearTimeout(metaAdSyncState.pollTimer);
+      metaAdSyncState.pollTimer = null;
+    }
+    var modal = document.getElementById('metaAdSyncModal');
+    var title = document.getElementById('metaAdSyncTitle');
+    var subtitle = document.getElementById('metaAdSyncSubtitle');
+    var accountBox = document.getElementById('metaAdSyncAccount');
+    var startInput = document.getElementById('metaAdSyncStartDate');
+    var endInput = document.getElementById('metaAdSyncEndDate');
+    var intervalInput = document.getElementById('metaAdSyncInterval');
+    var yesterday = formatDateInput(addDays(window.orderAnalyticsMetaCalendar.today(), -1));
+    if (title) title.textContent = '同步广告账户';
+    if (subtitle) subtitle.textContent = (account.label || account.code || '未命名账户');
+    if (accountBox) {
+      accountBox.textContent = (account.code || '-') + ' · ' + (account.account_id || '-') +
+        (account.enabled ? '' : ' · 已停用');
+    }
+    if (startInput) startInput.value = yesterday;
+    if (endInput) endInput.value = yesterday;
+    if (intervalInput) intervalInput.value = '20';
+    renderMetaAdSyncJob(null);
+    switchMetaAdSyncTab('settings');
+    var startBtn = document.getElementById('metaAdSyncStart');
+    if (startBtn) {
+      startBtn.disabled = false;
+      startBtn.textContent = '开始同步';
+    }
+    if (modal) modal.hidden = false;
+  }
+
+  function startMetaAdSync() {
+    var account = metaAdSyncState.account || {};
+    var code = String(account.code || '').trim();
+    var startInput = document.getElementById('metaAdSyncStartDate');
+    var endInput = document.getElementById('metaAdSyncEndDate');
+    var intervalInput = document.getElementById('metaAdSyncInterval');
+    var startDate = startInput ? startInput.value : '';
+    var endDate = endInput ? endInput.value : '';
+    var intervalSeconds = parseInt(intervalInput ? intervalInput.value : '20', 10);
+    if (!code) {
+      alert('请先保存账户 Code 后再同步');
+      return;
+    }
+    if (!startDate || !endDate) {
+      alert('请选择开始日期和结束日期');
+      return;
+    }
+    if (endDate < startDate) {
+      alert('结束日期不能早于开始日期');
+      return;
+    }
+    if (!Number.isFinite(intervalSeconds) || intervalSeconds < 0) {
+      alert('间隔秒数必须大于等于 0');
+      return;
+    }
+    var startBtn = document.getElementById('metaAdSyncStart');
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = '启动中...';
+    }
+    switchMetaAdSyncTab('progress');
+    renderMetaAdSyncJob({
+      status: 'queued',
+      total_days: 0,
+      completed_days: 0,
+      success_days: 0,
+      failed_days: 0,
+      current_date: '',
+      days: []
+    });
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    fetch('/order-analytics/meta-ad-accounts/' + encodeURIComponent(code) + '/manual-sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfMeta ? csrfMeta.content : '',
+      },
+      body: JSON.stringify({
+        start_date: startDate,
+        end_date: endDate,
+        interval_seconds: intervalSeconds,
+      }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+      .then(function(res) {
+        if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '启动失败');
+        var job = res.body.job || {};
+        metaAdSyncState.jobId = job.job_id || '';
+        renderMetaAdSyncJob(job);
+        scheduleMetaAdSyncPoll(job);
+      })
+      .catch(function(err) {
+        renderMetaAdSyncError(err.message || String(err));
+      });
+  }
+
+  function scheduleMetaAdSyncPoll(job) {
+    if (!job || ['success', 'failed'].indexOf(job.status) >= 0 || !metaAdSyncState.jobId) {
+      return;
+    }
+    if (metaAdSyncState.pollTimer) clearTimeout(metaAdSyncState.pollTimer);
+    metaAdSyncState.pollTimer = setTimeout(loadMetaAdSyncJob, 2000);
+  }
+
+  function loadMetaAdSyncJob() {
+    if (!metaAdSyncState.jobId) return;
+    fetch('/order-analytics/meta-ad-sync-jobs/' + encodeURIComponent(metaAdSyncState.jobId), { cache: 'no-store' })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+      .then(function(res) {
+        if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '查询失败');
+        var job = res.body.job || {};
+        renderMetaAdSyncJob(job);
+        scheduleMetaAdSyncPoll(job);
+      })
+      .catch(function(err) {
+        renderMetaAdSyncError(err.message || String(err));
+      });
+  }
+
+  function renderMetaAdSyncError(message) {
+    var startBtn = document.getElementById('metaAdSyncStart');
+    if (startBtn) {
+      startBtn.disabled = false;
+      startBtn.textContent = '开始同步';
+    }
+    var progressText = document.getElementById('metaAdSyncProgressText');
+    var body = document.getElementById('metaAdSyncDaysBody');
+    var fill = document.getElementById('metaAdSyncProgressFill');
+    if (progressText) progressText.textContent = '同步失败：' + message;
+    if (fill) fill.style.width = '0%';
+    if (body) body.innerHTML = '<tr><td colspan="4" class="oad-error">' + escapeHtml(message) + '</td></tr>';
+  }
+
+  function renderMetaAdSyncJob(job) {
+    var progressText = document.getElementById('metaAdSyncProgressText');
+    var currentDate = document.getElementById('metaAdSyncCurrentDate');
+    var fill = document.getElementById('metaAdSyncProgressFill');
+    var body = document.getElementById('metaAdSyncDaysBody');
+    var startBtn = document.getElementById('metaAdSyncStart');
+    if (!progressText || !body || !fill) return;
+    if (!job) {
+      progressText.textContent = '等待开始';
+      if (currentDate) currentDate.textContent = '';
+      fill.style.width = '0%';
+      body.innerHTML = '<tr><td colspan="4" class="oad-empty">等待开始</td></tr>';
+      return;
+    }
+    var total = parseInt(job.total_days, 10) || 0;
+    var done = parseInt(job.completed_days, 10) || 0;
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    fill.style.width = pct + '%';
+    progressText.textContent = statusLabel(job.status) + ' · ' + done + ' / ' + total +
+      ' · 成功 ' + (job.success_days || 0) + ' · 失败 ' + (job.failed_days || 0);
+    if (currentDate) currentDate.textContent = job.current_date ? ('当前 ' + job.current_date) : '';
+    if (startBtn) {
+      var running = ['queued', 'running'].indexOf(job.status) >= 0;
+      startBtn.disabled = running;
+      startBtn.textContent = running ? '同步中...' : '开始同步';
+    }
+    var rows = Array.isArray(job.days) ? job.days : [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="4" class="oad-loading">启动中...</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(day) {
+      var cls = 'maa-sync-status-' + escapeHtml(day.status || 'pending');
+      var summary = day.summary || {};
+      var resultText = day.error || summary.error || summary.status || '';
+      return '<tr>' +
+        '<td>' + escapeHtml(day.date || '') + '</td>' +
+        '<td class="' + cls + '">' + escapeHtml(statusLabel(day.status)) + '</td>' +
+        '<td>' + escapeHtml(day.run_id || '') + '</td>' +
+        '<td>' + escapeHtml(resultText) + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function statusLabel(status) {
+    return ({
+      queued: '排队中',
+      running: '同步中',
+      pending: '等待',
+      success: '成功',
+      failed: '失败',
+      skipped: '跳过'
+    })[status] || (status || '-');
   }
 
   function initAds() {

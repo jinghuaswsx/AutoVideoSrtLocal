@@ -14,9 +14,11 @@ from flask_login import login_required
 
 from web.auth import permission_required
 
+from appcore import medias
 from appcore.order_analytics import product_profit_ads as ppa
 from appcore.order_analytics import product_profit_list as ppl
 from appcore.order_analytics import product_profit_report as ppr
+from appcore.order_analytics._constants import COUNTRY_TO_LANG, LANG_PRIORITY_COUNTRIES
 from appcore.order_analytics.campaign_overrides import remove_override
 from appcore.order_analytics.meta_ads import manual_match_meta_ad_campaign
 from appcore.order_analytics.shopify_payments_import import import_payments_csv
@@ -34,6 +36,22 @@ bp = Blueprint("product_profit_report", __name__, url_prefix="/order-analytics/p
 
 _STORE_CODE_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_PRODUCT_PROFIT_COUNTRY_PILL_LIMIT = 9
+_COUNTRY_LABELS = {
+    "GB": "英国",
+    "US": "美国",
+    "DE": "德国",
+    "AT": "奥地利",
+    "FR": "法国",
+    "ES": "西班牙",
+    "IT": "意大利",
+    "JP": "日本",
+    "PT": "葡萄牙",
+    "BR": "巴西",
+    "NL": "荷兰",
+    "SE": "瑞典",
+    "FI": "芬兰",
+}
 
 
 def _parse_date(value: str | None, default: date) -> date:
@@ -45,6 +63,51 @@ def _parse_date(value: str | None, default: date) -> date:
         return default
 
 
+def _primary_country_for_lang(lang: str) -> str | None:
+    normalized = (lang or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized == "en":
+        return "US"
+
+    priority = LANG_PRIORITY_COUNTRIES.get(normalized) or ()
+    if priority:
+        return priority[0]
+
+    for country, mapped_lang in COUNTRY_TO_LANG.items():
+        if str(mapped_lang).strip().lower() == normalized:
+            return country
+    return None
+
+
+def _product_profit_country_pills() -> list[dict]:
+    """国家看板胶囊：US 固定第一、GB 固定第二，其余按启用小语种主国家补足。"""
+    pills: list[dict] = []
+    seen: set[str] = set()
+
+    def add(country: str, lang: str) -> None:
+        code = (country or "").strip().upper()
+        if not code or code in seen or len(pills) >= _PRODUCT_PROFIT_COUNTRY_PILL_LIMIT:
+            return
+        seen.add(code)
+        pills.append({
+            "country": code,
+            "lang": (lang or "").strip().lower(),
+            "label": _COUNTRY_LABELS.get(code, code),
+        })
+
+    add("US", "en")
+    add("GB", "en")
+    for lang, _name in medias.list_enabled_languages_kv():
+        normalized = (lang or "").strip().lower()
+        if normalized == "en":
+            continue
+        country = _primary_country_for_lang(normalized)
+        if country:
+            add(country, normalized)
+    return pills
+
+
 @bp.route("/products", methods=["GET"])
 @login_required
 @permission_required("product_profit")
@@ -52,6 +115,18 @@ def api_list_products():
     """产品下拉数据。"""
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response({"products": ppr.list_products()})
+    )
+
+
+@bp.route("/countries.json", methods=["GET"])
+@login_required
+@permission_required("product_profit")
+def api_country_pills():
+    """国家看板胶囊列表（英国 + 启用小语种主国家，最多 9 个）。"""
+    return product_profit_report_flask_response(
+        build_product_profit_report_payload_response(
+            {"countries": _product_profit_country_pills()}
+        )
     )
 
 

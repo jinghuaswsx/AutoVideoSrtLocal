@@ -13,25 +13,41 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from appcore import order_analytics as oa
-from appcore.browser_automation_lock import browser_automation_lock
-
 ORDER_URL = "https://www.dianxiaomi.com/api/package/list.json"
 PROFIT_URL = "https://www.dianxiaomi.com/api/orderProfit/getOrderProfit.json"
 ORDER_PAGE_URL = "https://www.dianxiaomi.com/web/order/all"
-SERVER_BROWSER_CDP_URL = "http://127.0.0.1:9223"
+SERVER_BROWSER_CDP_URL = "http://127.0.0.1:9225"
 DEFAULT_STATES = [""]
 BROWSER_MODES = ("auto", "server-cdp")
 DXM_ENVIRONMENTS = {
-    "DXM-01": {
-        "label": "Shopify ID 同步店小秘账号",
+    "DXM01-Meta": {
+        "label": "Meta 广告同步环境",
         "cdp_url": "http://127.0.0.1:9222",
-        "novnc_url": "http://127.0.0.1:6080/vnc.html",
-        "profile": "/data/autovideosrt/browser/profiles/shared",
+        "novnc_url": "http://127.0.0.1:6092/vnc.html",
+        "profile": "/data/autovideosrt/browser/profiles/meta-ads",
     },
-    "DXM-02": {
+    "DXM02-MK": {
         "label": "明空选品店小秘账号",
         "cdp_url": "http://127.0.0.1:9223",
-        "novnc_url": "http://127.0.0.1:6081/vnc.html",
+        "novnc_url": "http://127.0.0.1:6093/vnc.html",
+        "profile": "/data/autovideosrt/browser/profiles/mk-selection",
+    },
+    "DXM03-RJC": {
+        "label": "荣锦成店小秘账号",
+        "cdp_url": "http://127.0.0.1:9225",
+        "novnc_url": "http://127.0.0.1:6095/vnc.html",
+        "profile": "/data/autovideosrt/browser/profiles/rjc-dianxiaomi",
+    },
+    "DXM-01": {
+        "label": "Meta 广告同步环境（兼容旧名）",
+        "cdp_url": "http://127.0.0.1:9222",
+        "novnc_url": "http://127.0.0.1:6092/vnc.html",
+        "profile": "/data/autovideosrt/browser/profiles/meta-ads",
+    },
+    "DXM-02": {
+        "label": "明空选品店小秘账号（兼容旧名）",
+        "cdp_url": "http://127.0.0.1:9223",
+        "novnc_url": "http://127.0.0.1:6093/vnc.html",
         "profile": "/data/autovideosrt/browser/profiles/mk-selection",
     },
 }
@@ -485,7 +501,7 @@ def run_import_from_server_browser(
     end_date_text: str,
     site_codes: list[str],
     states: list[str] | None = None,
-    dxm_env: str = "DXM-01",
+    dxm_env: str = "DXM03-RJC",
     browser_cdp_url: str | None = None,
     dry_run: bool = False,
     skip_login_prompt: bool = True,
@@ -547,21 +563,11 @@ def run_import_from_server_browser_locked(
     lock_retry_seconds: int | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    timeout = int(lock_timeout_seconds if lock_timeout_seconds is not None else os.environ.get(
-        "DXM_ORDER_BROWSER_LOCK_TIMEOUT_SECONDS",
-        os.environ.get("BROWSER_AUTOMATION_LOCK_TIMEOUT_SECONDS", "600"),
-    ))
-    retry = int(lock_retry_seconds if lock_retry_seconds is not None else os.environ.get(
-        "BROWSER_AUTOMATION_LOCK_RETRY_SECONDS",
-        "10",
-    ))
-    with browser_automation_lock(
-        task_code="dianxiaomi_order_import",
-        timeout_seconds=timeout,
-        retry_seconds=retry,
-        command="tools.dianxiaomi_order_import.run_import_from_server_browser",
-    ):
-        return run_import_from_server_browser(**kwargs)
+    # Compatibility wrapper for existing web routes. CDP environments are now
+    # isolated by profile/service, so this no longer takes the old shared
+    # browser automation lock.
+    _ = (lock_timeout_seconds, lock_retry_seconds)
+    return run_import_from_server_browser(**kwargs)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -570,7 +576,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", required=True)
     parser.add_argument("--sites", default="newjoy,omurio")
     parser.add_argument("--states", default=",".join(DEFAULT_STATES))
-    parser.add_argument("--dxm-env", choices=sorted(DXM_ENVIRONMENTS.keys()), default="DXM-01")
+    parser.add_argument("--dxm-env", choices=sorted(DXM_ENVIRONMENTS.keys()), default="DXM03-RJC")
     parser.add_argument("--browser-mode", choices=BROWSER_MODES, default=os.environ.get("DXM_ORDER_BROWSER_MODE", "auto"))
     parser.add_argument("--browser-cdp-url", default=os.environ.get("DXM_ORDER_BROWSER_CDP_URL", ""))
     parser.add_argument("--dry-run", action="store_true")
