@@ -342,6 +342,94 @@ def ad_summary():
     return _json_response(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
 
 
+# ── 三级 tab：Campaign / Ad Set / Ad ────────────────────
+# Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md
+
+_ADS_LEVELS = ("campaign", "adset", "ad")
+
+
+def _coerce_ads_level_param() -> str | None:
+    level = (request.args.get("level") or "").strip().lower()
+    return level if level in _ADS_LEVELS else None
+
+
+@bp.route("/order-analytics/ads/list")
+@login_required
+@admin_required
+def ads_level_list():
+    """List Campaign / Ad Set / Ad rows aggregated by code in a date range."""
+    level = _coerce_ads_level_param()
+    if not level:
+        return _json_response(error="invalid_param", detail="level must be one of campaign/adset/ad"), 400
+    try:
+        result = oa.get_ads_level_list(
+            level=level,
+            start_date=(request.args.get("start_date") or "").strip() or None,
+            end_date=(request.args.get("end_date") or "").strip() or None,
+            page=request.args.get("page", default=1, type=int) or 1,
+            page_size=request.args.get("page_size", default=50, type=int) or 50,
+            sort_by=(request.args.get("sort_by") or "spend_usd").strip(),
+            sort_dir=(request.args.get("sort_dir") or "desc").strip(),
+        )
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("ads level list query failed: %s", exc)
+        return _json_response(error="internal_error", detail="ads level list failed"), 500
+    return _json_response(_json_safe(result))
+
+
+@bp.route("/order-analytics/ads/search")
+@login_required
+@admin_required
+def ads_level_search():
+    """Per-tab autocomplete: match name LIKE %q% within one level."""
+    level = _coerce_ads_level_param()
+    if not level:
+        return _json_response(error="invalid_param", detail="level must be one of campaign/adset/ad"), 400
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return _json_response(error="invalid_param", detail="q is required"), 400
+    try:
+        result = oa.search_ads_by_level(
+            level=level,
+            q=q,
+            limit=request.args.get("limit", default=20, type=int) or 20,
+        )
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("ads level search failed: %s", exc)
+        return _json_response(error="internal_error", detail="ads level search failed"), 500
+    return _json_response(_json_safe(result))
+
+
+@bp.route("/order-analytics/ads/detail")
+@login_required
+@admin_required
+def ads_level_detail():
+    """Per-day detail for one Campaign / Ad Set / Ad code in a date range."""
+    level = _coerce_ads_level_param()
+    if not level:
+        return _json_response(error="invalid_param", detail="level must be one of campaign/adset/ad"), 400
+    code = (request.args.get("code") or "").strip()
+    if not code:
+        return _json_response(error="invalid_param", detail="code is required"), 400
+    try:
+        result = oa.get_ads_level_detail(
+            level=level,
+            code=code,
+            start_date=(request.args.get("start_date") or "").strip() or None,
+            end_date=(request.args.get("end_date") or "").strip() or None,
+        )
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("ads level detail failed: %s", exc)
+        return _json_response(error="internal_error", detail="ads level detail failed"), 500
+    return _json_response(_json_safe(result))
+
+
 @bp.route("/order-analytics/meta-ad-accounts", methods=["GET"])
 @login_required
 @admin_required

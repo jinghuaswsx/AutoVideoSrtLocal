@@ -903,3 +903,199 @@ def test_get_dashboard_defaults_to_order_count_sort(monkeypatch):
 def test_dashboard_tab_label_chinese(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert "产品看板" in response.get_data(as_text=True)
+
+
+# ── 三级 tab：list / search / detail（Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md）
+
+def test_get_ads_level_list_rejects_invalid_level():
+    import pytest
+
+    with pytest.raises(ValueError):
+        oa.get_ads_level_list(level="bogus")
+
+
+def test_get_ads_level_list_aggregates_per_code(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        return {"total": 2}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "code": "abc-rjc", "name": "Glow Set",
+                "ad_account_id": "1234", "ad_account_name": "newjoyloo",
+                "spend_usd": 1000.0, "purchase_value_usd": 2000.0,
+                "result_count": 50, "day_count": 7,
+                "roas_purchase": 2.0,
+            },
+        ]
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+    result = oa.get_ads_level_list("campaign", start_date="2026-04-01", end_date="2026-04-14")
+    assert result["level"] == "campaign"
+    assert result["period"]["start_date"] == "2026-04-01"
+    assert result["period"]["end_date"] == "2026-04-14"
+    assert result["rows"][0]["code"] == "abc-rjc"
+    assert result["rows"][0]["roas_purchase"] == 2.0
+    assert result["total"] == 2
+    assert "FROM meta_ad_daily_campaign_metrics" in captured["sql"]
+    assert "GROUP BY normalized_campaign_code" in captured["sql"]
+
+
+def test_search_ads_by_level_rejects_empty_q():
+    import pytest
+
+    with pytest.raises(ValueError):
+        oa.search_ads_by_level("campaign", q="")
+
+
+def test_search_ads_by_level_targets_correct_table(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "code": "glow-go-rjc",
+                "name": "Glow Go RJC",
+                "last_active_date": __import__("datetime").date(2026, 5, 7),
+                "total_spend_usd_30d": 4321.55,
+            },
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    result = oa.search_ads_by_level("adset", q="glow")
+    assert result["level"] == "adset"
+    assert result["rows"][0]["last_active_date"] == "2026-05-07"
+    assert "FROM meta_ad_daily_adset_metrics" in captured["sql"]
+    assert "adset_name LIKE %s" in captured["sql"]
+    assert captured["args"][0] == "%glow%"
+
+
+def test_get_ads_level_detail_includes_realtime_today_for_campaign(monkeypatch):
+    today = oa.current_meta_business_date()
+    yesterday = today - __import__("datetime").timedelta(days=1)
+
+    def fake_query(sql, args=()):
+        # Daily rows query (yesterday only)
+        return [
+            {
+                "meta_business_date": yesterday,
+                "name": "Glow Go RJC",
+                "ad_account_id": "1234",
+                "ad_account_name": "newjoyloo",
+                "spend_usd": 100.0,
+                "purchase_value_usd": 200.0,
+                "result_count": 5,
+                "raw_json": '{"link_click_cost":0.50,"cpm":12.34,"impressions":10000,"link_clicks":200}',
+            },
+        ]
+
+    realtime_called = {"called": False}
+
+    def fake_query_one(sql, args=()):
+        if "realtime" in sql:
+            realtime_called["called"] = True
+            return {
+                "spend_usd": 50.0, "purchase_value_usd": 80.0,
+                "result_count": 3, "impressions": 5000, "clicks": 100,
+                "snapshot_at": None,
+                "campaign_name": "Glow Go RJC",
+                "ad_account_id": "1234",
+                "ad_account_name": "newjoyloo",
+            }
+        return None
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    result = oa.get_ads_level_detail("campaign", code="glow-go-rjc",
+                                      start_date=yesterday.isoformat(),
+                                      end_date=today.isoformat())
+    assert realtime_called["called"]
+    dates = [row["date"] for row in result["rows"]]
+    assert today.isoformat() in dates
+    today_row = next(r for r in result["rows"] if r["date"] == today.isoformat())
+    assert today_row["is_realtime"] is True
+    assert today_row["spend_usd"] == 50.0
+    # CPC = 50 / 100 = 0.5
+    assert today_row["cpc_usd"] == 0.5
+    # eCPM = 50 / 5000 * 1000 = 10.0
+    assert today_row["ecpm_usd"] == 10.0
+    # All rows have null budget (Q2=B placeholder)
+    for row in result["rows"]:
+        assert row["budget_usd"] is None
+
+
+def test_get_ads_level_detail_excludes_realtime_for_adset(monkeypatch):
+    today = oa.current_meta_business_date()
+
+    def fake_query(sql, args=()):
+        # No daily rows; should NOT call realtime path because supports_realtime=False
+        assert "realtime" not in sql
+        return []
+
+    realtime_called = {"called": False}
+
+    def fake_query_one(sql, args=()):
+        if "realtime" in sql:
+            realtime_called["called"] = True
+        return None
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    result = oa.get_ads_level_detail("adset", code="glow-set",
+                                      start_date=today.isoformat(),
+                                      end_date=today.isoformat())
+    assert realtime_called["called"] is False
+    assert result["supports_realtime"] is False
+    assert result["rows"] == []
+
+
+def test_ads_list_route_400_for_invalid_level(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics/ads/list?level=bogus")
+    assert response.status_code == 400
+    assert b"invalid_param" in response.data
+
+
+def test_ads_search_route_400_for_missing_q(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics/ads/search?level=campaign")
+    assert response.status_code == 400
+    assert b"q is required" in response.data
+
+
+def test_ads_detail_route_400_for_missing_code(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics/ads/detail?level=campaign")
+    assert response.status_code == 400
+    assert b"code is required" in response.data
+
+
+def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list(level, start_date, end_date, page, page_size, sort_by, sort_dir):
+        captured.update({
+            "level": level, "start_date": start_date, "end_date": end_date,
+            "page": page, "page_size": page_size,
+            "sort_by": sort_by, "sort_dir": sort_dir,
+        })
+        return {"level": level, "rows": [], "total": 0, "page": page, "page_size": page_size, "has_more": False}
+
+    monkeypatch.setattr(oa, "get_ads_level_list", fake_list)
+    response = authed_client_no_db.get(
+        "/order-analytics/ads/list?level=campaign"
+        "&start_date=2026-04-01&end_date=2026-04-14"
+        "&page=2&page_size=25&sort_by=roas_purchase&sort_dir=asc"
+    )
+    assert response.status_code == 200, response.data
+    assert captured["level"] == "campaign"
+    assert captured["start_date"] == "2026-04-01"
+    assert captured["end_date"] == "2026-04-14"
+    assert captured["page"] == 2
+    assert captured["page_size"] == 25
+    assert captured["sort_by"] == "roas_purchase"
+    assert captured["sort_dir"] == "asc"

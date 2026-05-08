@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from ._constants import (
@@ -18,7 +18,15 @@ from ._constants import (
     _META_AD_REQUIRED_COLS,
     _META_AD_SUMMARY_NUMERIC_FIELDS,
 )
-from ._helpers import _money, _parse_meta_date, _roas, _safe_float_default, _safe_int
+from ._helpers import (
+    _money,
+    _parse_iso_date_param,
+    _parse_meta_date,
+    _roas,
+    _safe_float_default,
+    _safe_int,
+    current_meta_business_date,
+)
 from .dianxiaomi import compute_meta_business_window_bj
 from .shopify_orders import parse_shopify_file
 
@@ -530,4 +538,423 @@ def get_meta_ad_summary(
         },
         "rows": rows,
         "unmatched": unmatched,
+    }
+
+
+# ── 三层级（Campaign / Ad Set / Ad）查询：list / search / detail ──────
+# Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md
+
+_LEVEL_CONFIG: dict[str, dict[str, Any]] = {
+    "campaign": {
+        "table": "meta_ad_daily_campaign_metrics",
+        "code_col": "normalized_campaign_code",
+        "name_col": "campaign_name",
+        "supports_realtime": True,
+    },
+    "adset": {
+        "table": "meta_ad_daily_adset_metrics",
+        "code_col": "normalized_adset_code",
+        "name_col": "adset_name",
+        "supports_realtime": False,
+    },
+    "ad": {
+        "table": "meta_ad_daily_ad_metrics",
+        "code_col": "normalized_ad_code",
+        "name_col": "ad_name",
+        "supports_realtime": False,
+    },
+}
+
+_ADS_LIST_SORT_EXPR: dict[str, str] = {
+    "spend_usd": "SUM(spend_usd)",
+    "purchase_value_usd": "SUM(purchase_value_usd)",
+    "result_count": "SUM(result_count)",
+    "roas_purchase": "(SUM(purchase_value_usd) / NULLIF(SUM(spend_usd), 0))",
+    "day_count": "COUNT(DISTINCT meta_business_date)",
+}
+
+_RAW_JSON_KEY_VARIANTS: dict[str, tuple[str, ...]] = {
+    "cpc_usd": (
+        "link_click_cost",
+        "cpc",
+        "unique_link_click_cost",
+        "unique_link_click_cost_usd",
+        "cost_per_link_click",
+        "cost_per_unique_link_click",
+        "每次链接点击费用 (USD)",
+        "单次链接点击费用 (USD)",
+    ),
+    "ecpm_usd": (
+        "cpm",
+        "cpm_usd",
+        "ecpm",
+        "cost_per_1000_impressions",
+        "千次展示费用 (USD)",
+        "千次展示费用",
+    ),
+    "impressions": (
+        "impressions",
+        "展示次数",
+        "展示量",
+    ),
+    "link_clicks": (
+        "link_clicks",
+        "linkclicks",
+        "链接点击量",
+        "链接点击次数",
+    ),
+    "add_to_cart_count": (
+        "add_to_cart_count",
+        "add_to_cart",
+        "atc",
+        "加购次数",
+        "Adds to Cart",
+    ),
+    "initiate_checkout_count": (
+        "initiate_checkout_count",
+        "initiates_checkout",
+        "ic",
+        "发起结账次数",
+        "Initiate Checkouts",
+    ),
+    "video_avg_play_time": (
+        "video_avg_play_time",
+        "video_avg_time_watched",
+        "video_avg_time_watched_actions",
+        "视频均播时长",
+        "视频平均播放时长",
+    ),
+}
+
+
+def _resolve_ads_level(level: str) -> dict:
+    cfg = _LEVEL_CONFIG.get((level or "").strip().lower())
+    if not cfg:
+        raise ValueError("level must be one of campaign/adset/ad")
+    return cfg
+
+
+def _coerce_ads_date_range(
+    start_date: str | None,
+    end_date: str | None,
+    *,
+    default_days: int = 14,
+) -> tuple[date, date]:
+    today = current_meta_business_date()
+    end = _parse_iso_date_param(end_date, "end_date") if end_date else today
+    start = (
+        _parse_iso_date_param(start_date, "start_date")
+        if start_date
+        else end - timedelta(days=default_days - 1)
+    )
+    if start > end:
+        raise ValueError("start_date must be <= end_date")
+    return start, end
+
+
+def _parse_raw_json_field(raw_json: Any) -> dict:
+    if not raw_json:
+        return {}
+    if isinstance(raw_json, dict):
+        return raw_json
+    if isinstance(raw_json, str):
+        try:
+            return json.loads(raw_json)
+        except (TypeError, ValueError):
+            return {}
+    return {}
+
+
+def _coerce_raw_value(raw: dict, keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        if key in raw and raw[key] not in (None, "", "—", "-"):
+            try:
+                return float(str(raw[key]).replace(",", "").replace("%", "").strip())
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def get_ads_level_list(
+    level: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    sort_by: str = "spend_usd",
+    sort_dir: str = "desc",
+) -> dict:
+    """List Campaign / Ad Set / Ad rows aggregated by code within a date range."""
+    cfg = _resolve_ads_level(level)
+    start, end = _coerce_ads_date_range(start_date, end_date)
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 50), 200))
+
+    sort_expr = _ADS_LIST_SORT_EXPR.get(sort_by) or _ADS_LIST_SORT_EXPR["spend_usd"]
+    sort_dir_norm = "ASC" if (sort_dir or "").lower() == "asc" else "DESC"
+
+    table = cfg["table"]
+    code_col = cfg["code_col"]
+    name_col = cfg["name_col"]
+
+    total_row = query_one(
+        f"SELECT COUNT(DISTINCT {code_col}) AS total FROM {table} "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s",
+        (start, end),
+    )
+    total = int((total_row or {}).get("total") or 0)
+
+    offset = (page - 1) * page_size
+    rows = query(
+        f"SELECT {code_col} AS code, MAX({name_col}) AS name, "
+        "MAX(ad_account_id) AS ad_account_id, MAX(ad_account_name) AS ad_account_name, "
+        "SUM(spend_usd) AS spend_usd, SUM(purchase_value_usd) AS purchase_value_usd, "
+        "SUM(result_count) AS result_count, "
+        "COUNT(DISTINCT meta_business_date) AS day_count, "
+        "(SUM(purchase_value_usd) / NULLIF(SUM(spend_usd), 0)) AS roas_purchase "
+        f"FROM {table} "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        f"GROUP BY {code_col} "
+        f"ORDER BY {sort_expr} {sort_dir_norm} "
+        "LIMIT %s OFFSET %s",
+        (start, end, page_size, offset),
+    )
+
+    out: list[dict] = []
+    for row in rows or []:
+        spend = float(row.get("spend_usd") or 0)
+        purchase = float(row.get("purchase_value_usd") or 0)
+        out.append({
+            "code": row.get("code"),
+            "name": row.get("name"),
+            "ad_account_id": row.get("ad_account_id"),
+            "ad_account_name": row.get("ad_account_name"),
+            "spend_usd": _money(spend),
+            "purchase_value_usd": _money(purchase),
+            "roas_purchase": _roas(purchase, spend),
+            "result_count": int(row.get("result_count") or 0),
+            "day_count": int(row.get("day_count") or 0),
+        })
+
+    return {
+        "level": level,
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "rows": out,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "has_more": (page * page_size) < total,
+    }
+
+
+def search_ads_by_level(level: str, q: str, limit: int = 20) -> dict:
+    """Per-tab autocomplete: match `name` LIKE %q%, return top N by recency + spend."""
+    cfg = _resolve_ads_level(level)
+    q_clean = (q or "").strip()
+    if not q_clean:
+        raise ValueError("q must be non-empty")
+    limit = max(1, min(int(limit or 20), 50))
+
+    table = cfg["table"]
+    code_col = cfg["code_col"]
+    name_col = cfg["name_col"]
+
+    rows = query(
+        f"SELECT {code_col} AS code, MAX({name_col}) AS name, "
+        "MAX(meta_business_date) AS last_active_date, "
+        "SUM(CASE WHEN meta_business_date >= DATE_SUB(CURRENT_DATE, INTERVAL 30 DAY) "
+        "         THEN spend_usd ELSE 0 END) AS total_spend_usd_30d "
+        f"FROM {table} "
+        f"WHERE {name_col} LIKE %s "
+        f"GROUP BY {code_col} "
+        "ORDER BY last_active_date DESC, total_spend_usd_30d DESC "
+        "LIMIT %s",
+        (f"%{q_clean}%", limit),
+    )
+
+    out: list[dict] = []
+    for row in rows or []:
+        last_active = row.get("last_active_date")
+        out.append({
+            "code": row.get("code"),
+            "name": row.get("name"),
+            "last_active_date": last_active.isoformat() if last_active else None,
+            "total_spend_usd_30d": _money(row.get("total_spend_usd_30d") or 0),
+        })
+
+    return {"level": level, "query": q_clean, "rows": out}
+
+
+def _fetch_realtime_today_campaign(
+    code: str,
+    business_date: date,
+) -> dict | None:
+    """Latest-snapshot-per-account aggregation for a single campaign code on `business_date`.
+
+    Mirrors the (business_date, ad_account_id) -> MAX(snapshot_at) rule documented in
+    CLAUDE.md "Meta 广告多账户同步" — DO NOT use a global MAX(snapshot_at).
+    """
+    row = query_one(
+        "SELECT SUM(m.spend_usd) AS spend_usd, "
+        "SUM(m.purchase_value_usd) AS purchase_value_usd, "
+        "SUM(m.result_count) AS result_count, "
+        "SUM(m.impressions) AS impressions, "
+        "SUM(m.clicks) AS clicks, "
+        "MAX(m.snapshot_at) AS snapshot_at, "
+        "MAX(m.campaign_name) AS campaign_name, "
+        "GROUP_CONCAT(DISTINCT m.ad_account_id) AS ad_account_id, "
+        "GROUP_CONCAT(DISTINCT m.ad_account_name) AS ad_account_name "
+        "FROM meta_ad_realtime_daily_campaign_metrics m "
+        "INNER JOIN ("
+        "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
+        "  FROM meta_ad_realtime_daily_campaign_metrics "
+        "  WHERE business_date = %s AND normalized_campaign_code = %s "
+        "  GROUP BY business_date, ad_account_id "
+        ") latest "
+        "ON m.business_date = latest.business_date "
+        "AND m.ad_account_id = latest.ad_account_id "
+        "AND m.snapshot_at = latest.max_snapshot_at "
+        "WHERE m.business_date = %s AND m.normalized_campaign_code = %s",
+        (business_date, code, business_date, code),
+    )
+    if not row or row.get("spend_usd") is None:
+        return None
+    return row
+
+
+def get_ads_level_detail(
+    level: str,
+    code: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
+    """Per-day detail for one Campaign / Ad Set / Ad code within a date range."""
+    cfg = _resolve_ads_level(level)
+    code_clean = (code or "").strip()
+    if not code_clean:
+        raise ValueError("code is required")
+    start, end = _coerce_ads_date_range(start_date, end_date)
+
+    table = cfg["table"]
+    code_col = cfg["code_col"]
+    name_col = cfg["name_col"]
+    supports_realtime = cfg["supports_realtime"]
+
+    raw_rows = query(
+        f"SELECT meta_business_date, {name_col} AS name, "
+        "ad_account_id, ad_account_name, "
+        "spend_usd, purchase_value_usd, result_count, raw_json "
+        f"FROM {table} "
+        f"WHERE {code_col} = %s "
+        "AND meta_business_date >= %s AND meta_business_date <= %s "
+        "ORDER BY meta_business_date DESC",
+        (code_clean, start, end),
+    )
+
+    today = current_meta_business_date()
+    realtime_row = None
+    if supports_realtime and end >= today:
+        realtime_row = _fetch_realtime_today_campaign(code_clean, today)
+
+    daily_by_date: dict[date, list[dict]] = {}
+    name_seen = None
+    account_id_seen = None
+    account_name_seen = None
+    for row in raw_rows or []:
+        d = row.get("meta_business_date")
+        if not d:
+            continue
+        daily_by_date.setdefault(d, []).append(row)
+        name_seen = name_seen or row.get("name")
+        account_id_seen = account_id_seen or row.get("ad_account_id")
+        account_name_seen = account_name_seen or row.get("ad_account_name")
+
+    if realtime_row and not name_seen:
+        name_seen = realtime_row.get("campaign_name")
+    if realtime_row and not account_id_seen:
+        account_id_seen = realtime_row.get("ad_account_id")
+        account_name_seen = realtime_row.get("ad_account_name")
+
+    out_rows: list[dict] = []
+    all_dates: set[date] = set(daily_by_date.keys())
+    if realtime_row:
+        all_dates.add(today)
+
+    for d in sorted(all_dates, reverse=True):
+        if realtime_row and d == today and supports_realtime:
+            spend = float(realtime_row.get("spend_usd") or 0)
+            purchase = float(realtime_row.get("purchase_value_usd") or 0)
+            impressions = int(realtime_row.get("impressions") or 0)
+            link_clicks = int(realtime_row.get("clicks") or 0)
+            out_rows.append({
+                "date": d.isoformat(),
+                "is_realtime": True,
+                "spend_usd": _money(spend),
+                "purchase_value_usd": _money(purchase),
+                "roas_purchase": _roas(purchase, spend),
+                "result_count": int(realtime_row.get("result_count") or 0),
+                "budget_usd": None,
+                "cpc_usd": _money(spend / link_clicks) if link_clicks > 0 else None,
+                "ecpm_usd": _money(spend / impressions * 1000) if impressions > 0 else None,
+                "impressions": impressions if impressions > 0 else None,
+                "link_clicks": link_clicks if link_clicks > 0 else None,
+                "add_to_cart_count": None,
+                "initiate_checkout_count": None,
+                "video_avg_play_time": None,
+            })
+            continue
+
+        rows_for_date = daily_by_date.get(d) or []
+        if not rows_for_date:
+            continue
+        spend = sum(float(r.get("spend_usd") or 0) for r in rows_for_date)
+        purchase = sum(float(r.get("purchase_value_usd") or 0) for r in rows_for_date)
+        result_count_total = sum(int(r.get("result_count") or 0) for r in rows_for_date)
+
+        merged_raw: dict[str, float | None] = {key: None for key in _RAW_JSON_KEY_VARIANTS}
+        for r in rows_for_date:
+            parsed = _parse_raw_json_field(r.get("raw_json"))
+            if not parsed:
+                continue
+            for out_key, candidates in _RAW_JSON_KEY_VARIANTS.items():
+                if merged_raw[out_key] is None:
+                    merged_raw[out_key] = _coerce_raw_value(parsed, candidates)
+
+        out_rows.append({
+            "date": d.isoformat(),
+            "is_realtime": False,
+            "spend_usd": _money(spend),
+            "purchase_value_usd": _money(purchase),
+            "roas_purchase": _roas(purchase, spend),
+            "result_count": result_count_total,
+            "budget_usd": None,
+            "cpc_usd": _money(merged_raw["cpc_usd"]) if merged_raw["cpc_usd"] is not None else None,
+            "ecpm_usd": _money(merged_raw["ecpm_usd"]) if merged_raw["ecpm_usd"] is not None else None,
+            "impressions": int(merged_raw["impressions"]) if merged_raw["impressions"] is not None else None,
+            "link_clicks": int(merged_raw["link_clicks"]) if merged_raw["link_clicks"] is not None else None,
+            "add_to_cart_count": int(merged_raw["add_to_cart_count"]) if merged_raw["add_to_cart_count"] is not None else None,
+            "initiate_checkout_count": int(merged_raw["initiate_checkout_count"]) if merged_raw["initiate_checkout_count"] is not None else None,
+            "video_avg_play_time": _money(merged_raw["video_avg_play_time"]) if merged_raw["video_avg_play_time"] is not None else None,
+        })
+
+    total_spend = sum(r.get("spend_usd") or 0 for r in out_rows)
+    total_purchase = sum(r.get("purchase_value_usd") or 0 for r in out_rows)
+    total_results = sum(r.get("result_count") or 0 for r in out_rows)
+
+    return {
+        "level": level,
+        "code": code_clean,
+        "name": name_seen,
+        "ad_account_id": account_id_seen,
+        "ad_account_name": account_name_seen,
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "rows": out_rows,
+        "totals": {
+            "spend_usd": _money(total_spend),
+            "purchase_value_usd": _money(total_purchase),
+            "roas_purchase": _roas(total_purchase, total_spend),
+            "result_count": total_results,
+            "day_count": len(out_rows),
+        },
+        "supports_realtime": supports_realtime,
     }
