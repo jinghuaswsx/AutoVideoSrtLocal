@@ -85,6 +85,7 @@ from web.routes.product_profit_report import bp as product_profit_report_bp
 from web.routes.product_profit_dashboard import bp as product_profit_dashboard_bp
 from web.routes.scheduled_tasks import bp as scheduled_tasks_bp
 from web.routes.security_audit import bp as security_audit_bp
+from web.routes.browser_monitor import bp as browser_monitor_bp
 from web.routes.mk_import import bp as mk_import_bp
 from web.routes.raw_video_pool import bp as raw_video_pool_bp
 from web.routes.new_product_review import new_product_review_bp
@@ -314,6 +315,7 @@ def create_app() -> Flask:
     app.register_blueprint(product_profit_dashboard_bp)
     app.register_blueprint(scheduled_tasks_bp)
     app.register_blueprint(security_audit_bp)
+    app.register_blueprint(browser_monitor_bp)
     app.register_blueprint(mk_import_bp)
     # mk-import 蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
     csrf.exempt(mk_import_bp)

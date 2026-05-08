@@ -31,7 +31,7 @@ class _SidebarNavParser(HTMLParser):
 
 
 def test_av_sync_menu_page_renders_shared_workbench(authed_client_no_db):
-    resp = authed_client_no_db.get("/video-translate-av-sync")
+    resp = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=True)
 
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
@@ -40,21 +40,21 @@ def test_av_sync_menu_page_renders_shared_workbench(authed_client_no_db):
 
 
 def test_av_sync_menu_page_uses_multilingual_list_shell(authed_client_no_db):
-    resp = authed_client_no_db.get("/video-translate-av-sync")
+    resp = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=True)
 
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert 'id="viewGrid"' in html
     assert 'id="modalLangPills"' in html
     assert 'fetch("/api/tasks"' in html
-    assert '"/projects" + \'/\' + data.task_id' in html
+    assert 'var fallbackUrl = "/sentence_translate" + \'/\' + encodeURIComponent(data.task_id || \'\');' in html
     assert "音画同步配置" not in html
 
 
 def test_dashboard_sidebar_prioritizes_primary_translation_entries(
     authed_client_no_db,
 ):
-    resp = authed_client_no_db.get("/video-translate-av-sync")
+    resp = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=True)
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     nav_html = html[html.index('<nav class="sidebar-nav">'):html.index("</nav>")]
@@ -102,6 +102,19 @@ def test_dashboard_sidebar_moves_lab_group_to_bottom():
     assert '<details class="sidebar-group sidebar-lab-group" open' not in nav_html
 
 
+def test_dashboard_sidebar_lab_group_includes_browser_monitor():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
+    nav_html = template[template.index('<nav class="sidebar-nav">'):template.index("</nav>")]
+
+    lab_group_idx = nav_html.index('<details class="sidebar-group sidebar-lab-group"')
+    browser_monitor_idx = nav_html.index("url_for('browser_monitor.page')")
+    av_sync_idx = nav_html.index("url_for('projects.av_sync_page')")
+
+    assert "浏览器监控" in nav_html
+    assert lab_group_idx < browser_monitor_idx < av_sync_idx
+
+
 def test_dashboard_sidebar_hides_offline_video_translation_entries():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
@@ -113,7 +126,7 @@ def test_dashboard_sidebar_hides_offline_video_translation_entries():
 
 
 def test_dashboard_sidebar_menu_links_open_new_tabs(authed_client_no_db):
-    resp = authed_client_no_db.get("/video-translate-av-sync")
+    resp = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=True)
     assert resp.status_code == 200
     parser = _SidebarNavParser()
     parser.feed(resp.get_data(as_text=True))
@@ -125,7 +138,7 @@ def test_dashboard_sidebar_menu_links_open_new_tabs(authed_client_no_db):
 
 
 def test_dashboard_sidebar_av_sync_uses_icon_instead_of_av_text(authed_client_no_db):
-    resp = authed_client_no_db.get("/video-translate-av-sync")
+    resp = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=True)
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
@@ -137,8 +150,18 @@ def test_dashboard_sidebar_av_sync_uses_icon_instead_of_av_text(authed_client_no
     assert match.group(1).strip() != "AV"
 
 
+def test_browser_monitor_menu_entry_is_active(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.browser_monitor.scheduled_tasks.latest_run", lambda task_code: None)
+
+    resp = authed_client_no_db.get("/browser-monitor")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert re.search(r'<a href="/browser-monitor"[^>]*class="active"', html)
+
+
 def test_dashboard_sidebar_marks_av_sync_entry_active(authed_client_no_db):
-    resp = authed_client_no_db.get("/video-translate-av-sync")
+    resp = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=True)
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 

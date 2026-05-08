@@ -69,6 +69,7 @@ bash deploy/server_browser/install_novnc.sh
    ```
    会直接连进 cjh 桌面，看到三个 Chromium 窗口（店小秘列表 / 明空选品 / 小秘云仓）。
 2. **向日葵远程桌面**：直接进 cjh 桌面（如果 `runsunloginclient.service` 起着）。
+3. **浏览器监控四宫格**：登录 Web 后打开 `/browser-monitor`，或从左侧“实验室”→“浏览器监控”进入。页面会同时加载 DXM01-Meta、DXM02-MK、DXM03-RJC 三个 noVNC 窗口，并在第四格展示 `cdp_environment_watchdog` 最近状态。
 
 需要纯 CDP 访问的本地脚本：
 

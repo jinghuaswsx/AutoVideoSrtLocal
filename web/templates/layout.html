@@ -515,6 +515,8 @@
       or request.path.startswith('/video-creation')
       or request.path.startswith('/video-review')
       or request.path.startswith('/link-check')
+      or request.path.startswith('/browser-monitor')
+      or request.endpoint == 'projects.sentence_translate_page'
       or request.endpoint == 'projects.av_sync_page'
     %}
     <a class="sidebar-brand" href="{{ url_for('projects.root') }}">
@@ -676,7 +678,10 @@
           <a href="{{ url_for('link_check.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/link-check') %}class="active"{% endif %}>
             <span class="nav-icon">🔎</span> 链接检查
           </a>
-          <a href="{{ url_for('projects.av_sync_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.av_sync_page' %}class="active"{% endif %}>
+          <a href="{{ url_for('browser_monitor.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/browser-monitor') %}class="active"{% endif %}>
+            <span class="nav-icon">▦</span> 浏览器监控
+          </a>
+          <a href="{{ url_for('projects.av_sync_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.av_sync_page' or request.endpoint == 'projects.sentence_translate_page' %}class="active"{% endif %}>
             <span class="nav-icon">🎧</span> 视频翻译音画同步
           </a>
         </div>
@@ -949,4 +954,3 @@
   {% block scripts %}{% endblock %}
 </body>
 </html>
-
