@@ -844,6 +844,70 @@ def test_realtime_current_business_day_product_filter_uses_realtime_campaign_sna
     ]
 
 
+def test_realtime_recent_closed_business_day_uses_snapshot_when_daily_ads_missing(monkeypatch):
+    target = oa._parse_meta_date("2026-05-07")
+    snapshot_at = datetime(2026, 5, 8, 15, 40)
+
+    def fake_query(sql, args=()):
+        if "COUNT(*) AS n" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            assert args == (target,)
+            return [{"n": 0}]
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "id": 777,
+                    "snapshot_at": snapshot_at,
+                    "source_run_id": 701,
+                    "order_count": 78,
+                    "line_count": 79,
+                    "units": 91,
+                    "order_revenue_usd": 1918.09,
+                    "shipping_revenue_usd": 634.29,
+                    "ad_spend_usd": 12680.47,
+                    "last_order_at": datetime(2026, 5, 8, 15, 45),
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "ad_account_id": "1861285821213497",
+                    "ad_account_name": "Newjoyloo",
+                    "campaign_id": "cmp-1",
+                    "campaign_name": "newjoyloo-rjc",
+                    "normalized_campaign_code": "newjoyloo-rjc",
+                    "result_count": 585,
+                    "spend_usd": 12680.47,
+                    "purchase_value_usd": 0,
+                    "impressions": 1000,
+                    "clicks": 20,
+                }
+            ]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": datetime(2026, 5, 8, 16, 7)}]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": datetime(2026, 5, 8, 15, 40)}]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-05-07",
+        end_date="2026-05-07",
+        now=datetime(2026, 5, 8, 16, 12),
+    )
+
+    assert result["scope"]["ad_source"] == "roi_realtime_daily_snapshots"
+    assert result["summary"]["ad_spend"] == 12680.47
+    assert result["summary"]["order_count"] == 78
+    assert result["snapshots"][0]["id"] == 777
+
+
 def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM roi_daily_roas_nodes" in sql:
