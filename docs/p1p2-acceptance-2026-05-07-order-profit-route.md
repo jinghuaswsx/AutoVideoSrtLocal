@@ -39,6 +39,27 @@ Scope:
   purchase fallback uses `revenue * 10%`, shipping fallback uses `revenue * 20%`,
   product `packet_cost_estimated` is an estimated shipping source, and unallocated
   campaign spend is pending product matching but is deducted in total profit.
+- Follow-up UI restructure (2026-05-08): the summary tab top cards collapse from
+  eight ad-hoc tiles into three first-class cards (总营收 / 总成本 / 总利润),
+  each splitting into 已核算 + 未核算/估算 sub-rows with share-of-total chips.
+  The reshuffle does not change any backend payload — three identities must
+  hold from `/api/summary` data alone, and are checked numerically against
+  real data on every release:
+    1. `总营收 = summary.ok.revenue + summary.incomplete.revenue`
+       (= `data.known_revenue_usd + data.unaccounted_revenue_usd`).
+    2. `已核算成本 = (ok+inc) purchase_actual + shipping_cost_actual + ad_cost`;
+       `估算成本 = shopify_fee + return_reserve + purchase_estimate + shipping_cost_estimate + unallocated_ad_spend`;
+       `总成本 = 已核算成本 + 估算成本`.
+    3. `总利润 = overview.total_profit_usd`; `已核算利润 = overview.confirmed_profit_usd`;
+       `估算利润 = 总利润 − 已核算利润`. The cards must also satisfy
+       `总营收 − 总成本 ≡ 总利润` (zero residual).
+  「不完备 SKU 行 / 待配对广告 / 估算项」 demote to an auxiliary chip row
+  beneath the three big cards. `opIncompleteCard` becomes a native `<button>`
+  but keeps the same id, modal binding, and click target. The cost-breakdown
+  table, estimate-marks table, and the four detail tabs (订单/亏损/完备性/配对)
+  are intentionally untouched. The data caliber is also encoded as a Jinja
+  comment block at the top of `web/templates/order_profit_dashboard.html`
+  for future-proof anchoring.
 
 Verification:
 
@@ -113,6 +134,18 @@ Verification:
 - `python -m compileall web appcore tests -q` passed.
 - `git diff --check` passed.
 - Route direct DB dependency scan for `web/routes/order_profit.py` passed.
+- Summary cards restructure GREEN regression (2026-05-08):
+  `tests/test_order_profit_dashboard_assets.py tests/test_order_profit_routes.py
+   tests/test_order_profit_response_service.py tests/test_order_profit_aggregation.py`:
+  `44 passed`.
+- Summary cards restructure dev-server smoke (2026-05-08):
+  unauthenticated `GET /order-profit` returned `302`; logged-in `GET /order-profit`
+  returned `200` with all nine card ids
+  (`opTotalRevenue / opKnownRevenue / opUnaccountedRevenue / opTotalCost /
+   opKnownCost / opEstimatedCost / opTotalProfit / opKnownProfit / opEstimatedProfit`)
+  rendering, and `/order-profit/api/summary` arithmetic-checked
+  `总营收 − 总成本 ≡ overview.total_profit_usd` with zero residual
+  on real data (`999.73 − 347.53 = 652.20`).
 
 Local MySQL:
 

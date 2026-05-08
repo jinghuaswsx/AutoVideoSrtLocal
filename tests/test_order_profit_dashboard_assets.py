@@ -51,7 +51,6 @@ def test_order_profit_campaign_product_picker_is_searchable_and_tall():
 def test_order_profit_dashboard_has_incomplete_products_modal():
     expected_snippets = [
         'id="opIncompleteCard"',
-        'role="button"',
         'id="opIncompleteModal"',
         'id="opIncompleteProductsList"',
         "openIncompleteProductsModal",
@@ -84,28 +83,44 @@ def test_order_profit_dashboard_renders_total_profit_and_estimate_marks():
     assert "estimate_marks" in TEMPLATE
 
 
-def test_order_profit_dashboard_renders_complete_profit_summary_cards():
+def test_order_profit_dashboard_renders_three_summary_cards():
+    """顶部三张大卡：总营收 / 总成本 / 总利润，每张拆「已核算 + 未核算/估算」。"""
     expected_labels = [
         "总营收",
+        "总成本",
         "总利润",
-        "完整利润",
+        "已核算营收",
         "未核算营收",
-        "未核算成本",
+        "已核算清楚的成本",
+        "估算的成本",
+        "已核算的利润",
+        "估算的利润",
     ]
     for label in expected_labels:
-        assert label in TEMPLATE
+        assert label in TEMPLATE, f"missing label: {label}"
 
+    expected_ids = [
+        'id="opTotalRevenue"',
+        'id="opKnownRevenue"',
+        'id="opUnaccountedRevenue"',
+        'id="opTotalCost"',
+        'id="opKnownCost"',
+        'id="opEstimatedCost"',
+        'id="opTotalProfit"',
+        'id="opKnownProfit"',
+        'id="opEstimatedProfit"',
+    ]
+    for snippet in expected_ids:
+        assert snippet in TEMPLATE, f"missing id: {snippet}"
+
+    # 后端字段绑定：营收/利润直接复用 overview，成本由前端按口径聚合
     expected_bindings = [
-        "opTotalRevenue",
-        "opCompleteProfit",
-        "opUnaccountedRevenue",
-        "opUnaccountedCost",
         "data.total_revenue_usd",
         "data.unaccounted_revenue_usd",
-        "data.profit_with_estimate_usd",
-        "estimated.purchase_usd",
-        "estimated.shipping_cost_usd",
+        "data.known_revenue_usd",
         "overview.total_profit_usd",
+        "overview.confirmed_profit_usd",
+        "data.unallocated_ad_spend_usd",
     ]
     for snippet in expected_bindings:
-        assert snippet in TEMPLATE
+        assert snippet in TEMPLATE, f"missing binding: {snippet}"
