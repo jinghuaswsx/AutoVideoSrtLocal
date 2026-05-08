@@ -180,29 +180,42 @@ def _load_realtime_ad_snapshot_fallback(
         ]
         if fallback_dates:
             placeholders = _sql_in(fallback_dates)
+            # 按 (business_date, ad_account_id) 取最新 snapshot：账户 tick 不对齐时
+            # 各账户用各自的最新 snapshot，避免落后账户被全局 MAX 静默丢弃。
             snapshot_rows = query(
-                "SELECT business_date, MAX(snapshot_at) AS snapshot_at "
+                "SELECT business_date, ad_account_id, MAX(snapshot_at) AS snapshot_at "
                 "FROM meta_ad_realtime_daily_campaign_metrics "
                 f"WHERE business_date IN ({placeholders}) "
-                "GROUP BY business_date",
+                "GROUP BY business_date, ad_account_id",
                 tuple(fallback_dates),
             )
-            snapshots: dict[date, Any] = {}
+            snapshots: list[tuple[date, str | None, Any]] = []
             for row in snapshot_rows or []:
                 business_date = _date_value(row.get("business_date"))
                 snapshot_at = row.get("snapshot_at")
                 if business_date and snapshot_at:
-                    snapshots[business_date] = snapshot_at
+                    snapshots.append(
+                        (business_date, row.get("ad_account_id"), snapshot_at)
+                    )
 
             match_cache: dict[str, int | None] = {}
-            for business_date, snapshot_at in snapshots.items():
-                campaign_rows = query(
-                    "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
-                    "FROM meta_ad_realtime_daily_campaign_metrics "
-                    "WHERE business_date=%s AND snapshot_at=%s "
-                    "AND data_completeness='realtime_partial'",
-                    (business_date, snapshot_at),
-                )
+            for business_date, ad_account_id, snapshot_at in snapshots:
+                if ad_account_id is None:
+                    campaign_rows = query(
+                        "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                        "FROM meta_ad_realtime_daily_campaign_metrics "
+                        "WHERE business_date=%s AND ad_account_id IS NULL AND snapshot_at=%s "
+                        "AND data_completeness='realtime_partial'",
+                        (business_date, snapshot_at),
+                    )
+                else:
+                    campaign_rows = query(
+                        "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                        "FROM meta_ad_realtime_daily_campaign_metrics "
+                        "WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s "
+                        "AND data_completeness='realtime_partial'",
+                        (business_date, ad_account_id, snapshot_at),
+                    )
                 for row in campaign_rows or []:
                     spend = float(row.get("spend_usd") or 0)
                     if spend <= 0:

@@ -781,31 +781,64 @@ def _get_today_realtime_meta_totals(business_date: date) -> dict[str, Any] | Non
     每天导出的 daily report 在当日往往还没有数据；为了让"真实 ROAS"列表对当天行
     也能展示真实的 Meta 广告费/购物价值，落到实时表上拿最近一次 partial snapshot。
     没数据时返回 None。
+
+    多账户场景下每账户 tick 不一定同时完成（任一账户失败 / 浏览器导出 timeout 都会让
+    该账户最新 snapshot 落后于其他账户）。这里按 (business_date, ad_account_id) 单独
+    取最新 snapshot 后再汇总，避免落后账户被全局 MAX(snapshot_at) 整账户丢弃。
     """
     rows = query(
-        "SELECT MAX(snapshot_at) AS snapshot_at FROM meta_ad_realtime_daily_campaign_metrics "
-        "WHERE business_date=%s",
+        "SELECT ad_account_id, MAX(snapshot_at) AS snapshot_at "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s "
+        "GROUP BY ad_account_id",
         (business_date,),
     )
-    snapshot_at = rows[0].get("snapshot_at") if rows else None
-    if not snapshot_at:
+    if not rows:
         return None
-    agg = query(
-        "SELECT SUM(spend_usd) AS ad_spend, "
-        "SUM(purchase_value_usd) AS meta_purchase_value, "
-        "SUM(result_count) AS meta_purchases "
-        "FROM meta_ad_realtime_daily_campaign_metrics "
-        "WHERE business_date=%s AND snapshot_at=%s",
-        (business_date, snapshot_at),
-    )
-    if not agg:
+    totals = {
+        "ad_spend": 0.0,
+        "meta_purchase_value": 0.0,
+        "meta_purchases": 0,
+    }
+    latest_snapshot: datetime | None = None
+    for row in rows:
+        snapshot_at = row.get("snapshot_at")
+        if not snapshot_at:
+            continue
+        ad_account_id = row.get("ad_account_id")
+        if ad_account_id is None:
+            agg = query(
+                "SELECT SUM(spend_usd) AS ad_spend, "
+                "SUM(purchase_value_usd) AS meta_purchase_value, "
+                "SUM(result_count) AS meta_purchases "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id IS NULL AND snapshot_at=%s",
+                (business_date, snapshot_at),
+            )
+        else:
+            agg = query(
+                "SELECT SUM(spend_usd) AS ad_spend, "
+                "SUM(purchase_value_usd) AS meta_purchase_value, "
+                "SUM(result_count) AS meta_purchases "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s",
+                (business_date, ad_account_id, snapshot_at),
+            )
+        if not agg:
+            continue
+        bucket = agg[0]
+        totals["ad_spend"] += float(bucket.get("ad_spend") or 0)
+        totals["meta_purchase_value"] += float(bucket.get("meta_purchase_value") or 0)
+        totals["meta_purchases"] += int(bucket.get("meta_purchases") or 0)
+        if latest_snapshot is None or snapshot_at > latest_snapshot:
+            latest_snapshot = snapshot_at
+    if latest_snapshot is None:
         return None
-    row = agg[0]
     return {
-        "ad_spend": _money(row.get("ad_spend")),
-        "meta_purchase_value": _money(row.get("meta_purchase_value")),
-        "meta_purchases": int(row.get("meta_purchases") or 0),
-        "snapshot_at": snapshot_at,
+        "ad_spend": _money(totals["ad_spend"]),
+        "meta_purchase_value": _money(totals["meta_purchase_value"]),
+        "meta_purchases": int(totals["meta_purchases"]),
+        "snapshot_at": latest_snapshot,
     }
 
 

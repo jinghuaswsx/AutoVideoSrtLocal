@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from appcore import order_analytics as oa
 from appcore.order_analytics import realtime as realtime_oa
@@ -1523,3 +1523,102 @@ def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no
     assert "page" in subtab_js
     assert "page_size" in subtab_js
     assert "100" in subtab_js
+
+
+# ───────────────────────────────────────────────────────────
+# 多账户实时汇总（Docs-anchor:
+#   docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md「实时表 fallback 读取」）
+# ───────────────────────────────────────────────────────────
+
+
+def test_today_realtime_meta_totals_sums_across_accounts_with_per_account_max(monkeypatch):
+    """每账户最新 snapshot 时间不一致时，应按账户分别取最新 snapshot 后再合并，不能用全局 MAX。"""
+    target = date(2026, 5, 8)
+    omurio_snapshot = datetime(2026, 5, 8, 17, 0)
+    newjoyloo_snapshot = datetime(2026, 5, 8, 16, 40)
+    seen: dict[str, tuple] = {}
+
+    def fake_query(sql, args=()):
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "MAX(snapshot_at)" in sql
+            and "GROUP BY ad_account_id" in sql
+        ):
+            assert args == (target,)
+            return [
+                {
+                    "ad_account_id": "1253003326160754",
+                    "snapshot_at": omurio_snapshot,
+                },
+                {
+                    "ad_account_id": "1861285821213497",
+                    "snapshot_at": newjoyloo_snapshot,
+                },
+            ]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "SUM(spend_usd)" in sql
+            and "ad_account_id=%s" in sql
+        ):
+            _, ad_account_id, snapshot_at = args
+            seen[ad_account_id] = (target, snapshot_at)
+            if ad_account_id == "1253003326160754":
+                return [{"ad_spend": 11.12, "meta_purchase_value": 0.0, "meta_purchases": 0}]
+            if ad_account_id == "1861285821213497":
+                return [{"ad_spend": 246.36, "meta_purchase_value": 320.0, "meta_purchases": 4}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = realtime_oa._get_today_realtime_meta_totals(target)
+
+    assert result is not None
+    # 必须把两个账户的最新 snapshot spend 加起来（11.12 + 246.36），不能只算其中一个
+    assert result["ad_spend"] == 257.48
+    assert result["meta_purchase_value"] == 320.0
+    assert result["meta_purchases"] == 4
+    # snapshot_at 取所有账户里最新的那一个，便于显示数据新鲜度
+    assert result["snapshot_at"] == omurio_snapshot
+    # 每个账户都用了它自己的最新 snapshot
+    assert seen == {
+        "1253003326160754": (target, omurio_snapshot),
+        "1861285821213497": (target, newjoyloo_snapshot),
+    }
+
+
+def test_today_realtime_meta_totals_returns_none_when_no_snapshots(monkeypatch):
+    target = date(2026, 5, 8)
+
+    def fake_query(sql, args=()):
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    assert realtime_oa._get_today_realtime_meta_totals(target) is None
+
+
+def test_today_realtime_meta_totals_handles_legacy_null_account_id(monkeypatch):
+    target = date(2026, 5, 8)
+    snapshot_at = datetime(2026, 5, 8, 16, 40)
+
+    def fake_query(sql, args=()):
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "MAX(snapshot_at)" in sql
+            and "GROUP BY ad_account_id" in sql
+        ):
+            return [{"ad_account_id": None, "snapshot_at": snapshot_at}]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "SUM(spend_usd)" in sql
+            and "ad_account_id IS NULL" in sql
+        ):
+            return [{"ad_spend": 99.0, "meta_purchase_value": 100.0, "meta_purchases": 1}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = realtime_oa._get_today_realtime_meta_totals(target)
+    assert result is not None
+    assert result["ad_spend"] == 99.0
+    assert result["snapshot_at"] == snapshot_at

@@ -973,3 +973,187 @@ def test_list_products_for_manual_match_queries_active_products(monkeypatch):
     assert "FROM media_products" in captured["sql"]
     assert "deleted_at IS NULL" in captured["sql"]
     assert captured["args"] == ()
+
+
+# -------- 多账户实时 fallback（Docs-anchor: docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md「实时表 fallback 读取」） --------
+
+
+def test_realtime_ad_snapshot_fallback_picks_latest_per_account(monkeypatch):
+    """两个账户最新 snapshot 时间不同时，每账户应用各自的最新 snapshot；不允许全局 MAX 把落后账户丢弃。
+
+    复现 2026-05-08 事故：newjoyloo_bak 16:40 与 Omurio 17:00 共存时，
+    旧实现取全局 MAX(snapshot_at)=17:00，newjoyloo_bak 整账户被静默丢掉。
+    """
+    target = date(2026, 5, 8)
+    omurio_snapshot = datetime(2026, 5, 8, 17, 0)
+    newjoyloo_snapshot = datetime(2026, 5, 8, 16, 40)
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return []  # 当日还没收盘 → 进 fallback
+        if (
+            "MAX(snapshot_at)" in sql
+            and "GROUP BY business_date, ad_account_id" in sql
+        ):
+            return [
+                {
+                    "business_date": target,
+                    "ad_account_id": "1253003326160754",  # Omurio
+                    "snapshot_at": omurio_snapshot,
+                },
+                {
+                    "business_date": target,
+                    "ad_account_id": "1861285821213497",  # newjoyloo_bak
+                    "snapshot_at": newjoyloo_snapshot,
+                },
+            ]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "ad_account_id=%s" in sql
+        ):
+            assert len(args) == 3
+            _, ad_account_id, snapshot_at = args
+            if ad_account_id == "1253003326160754":
+                assert snapshot_at == omurio_snapshot
+                return [
+                    {
+                        "business_date": target,
+                        "campaign_name": "omurio-foo-rjc",
+                        "normalized_campaign_code": "omurio-foo-rjc",
+                        "spend_usd": 11.12,
+                    }
+                ]
+            if ad_account_id == "1861285821213497":
+                assert snapshot_at == newjoyloo_snapshot
+                return [
+                    {
+                        "business_date": target,
+                        "campaign_name": "newjoyloo-glow-rjc",
+                        "normalized_campaign_code": "newjoyloo-glow-rjc",
+                        "spend_usd": 246.36,
+                    }
+                ]
+            raise AssertionError(f"unexpected ad_account_id={ad_account_id!r}")
+        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+            return [
+                {"business_date": target, "product_id": 42, "units": 4},
+            ]
+        return []
+
+    def fake_match(code):
+        return {"id": 42} if code == "newjoyloo-glow-rjc" else None
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "resolve_ad_product_match", fake_match, raising=False)
+
+    result = opa._load_realtime_ad_snapshot_fallback(date_from=target, date_to=target)
+
+    # newjoyloo 那条匹到 product_id=42 → 计入 spend_by_product
+    assert result["spend_by_product"][(target, 42)] == pytest.approx(246.36)
+    # Omurio 那条未匹到 product → 走 unallocated
+    assert result["unallocated_spend"] == pytest.approx(11.12)
+
+
+def test_realtime_ad_snapshot_fallback_does_not_lose_lagging_account(monkeypatch):
+    """单账户 tick 落后时，回归全局 MAX 行为会让该账户被丢弃；本测试断言落后账户仍然被纳入。"""
+    target = date(2026, 5, 8)
+    lagging_snapshot = datetime(2026, 5, 8, 16, 40)
+    fresh_snapshot = datetime(2026, 5, 8, 17, 0)
+
+    captured_account_ids: list[str] = []
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return []
+        if (
+            "MAX(snapshot_at)" in sql
+            and "GROUP BY business_date, ad_account_id" in sql
+        ):
+            return [
+                {
+                    "business_date": target,
+                    "ad_account_id": "ACC_LAG",
+                    "snapshot_at": lagging_snapshot,
+                },
+                {
+                    "business_date": target,
+                    "ad_account_id": "ACC_FRESH",
+                    "snapshot_at": fresh_snapshot,
+                },
+            ]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "ad_account_id=%s" in sql
+        ):
+            ad_account_id = args[1]
+            captured_account_ids.append(ad_account_id)
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": f"campaign-{ad_account_id}",
+                    "normalized_campaign_code": f"campaign-{ad_account_id}",
+                    "spend_usd": 100.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        opa,
+        "resolve_ad_product_match",
+        lambda code: None,
+        raising=False,
+    )
+
+    result = opa._load_realtime_ad_snapshot_fallback(date_from=target, date_to=target)
+
+    assert sorted(captured_account_ids) == ["ACC_FRESH", "ACC_LAG"]
+    # 两个账户都未匹到 product，各 100，合计 200 全部进 unallocated
+    assert result["unallocated_spend"] == pytest.approx(200.0)
+
+
+def test_realtime_ad_snapshot_fallback_handles_legacy_null_account_id(monkeypatch):
+    """老历史快照可能没填 ad_account_id；按 IS NULL 走单独分组也要能取到数据。"""
+    target = date(2026, 5, 8)
+    snapshot_at = datetime(2026, 5, 8, 16, 40)
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return []
+        if (
+            "MAX(snapshot_at)" in sql
+            and "GROUP BY business_date, ad_account_id" in sql
+        ):
+            return [
+                {
+                    "business_date": target,
+                    "ad_account_id": None,
+                    "snapshot_at": snapshot_at,
+                },
+            ]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "ad_account_id IS NULL" in sql
+        ):
+            assert len(args) == 2
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "legacy-rjc",
+                    "normalized_campaign_code": "legacy-rjc",
+                    "spend_usd": 50.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        opa,
+        "resolve_ad_product_match",
+        lambda code: None,
+        raising=False,
+    )
+
+    result = opa._load_realtime_ad_snapshot_fallback(date_from=target, date_to=target)
+
+    assert result["unallocated_spend"] == pytest.approx(50.0)

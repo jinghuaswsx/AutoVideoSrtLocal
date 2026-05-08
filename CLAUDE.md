@@ -164,7 +164,8 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - Meta Ads Manager 默认 CDP URL 固定为 `http://127.0.0.1:9222`（`DXM01-Meta`）。Web 进程没有显式环境变量时也必须使用 9222，禁止回落到旧的 `http://127.0.0.1:9845`。
 - CSV 导出目录按账户分子目录：`output/meta_realtime_exports/<business_date>/<snapshot_ts>/<account.code>/<account.csv_prefix>_*.csv`。`scripts/run_meta_ads_backfill_range.py` 接受 `--csv-prefix` 参数。
 - 产品盈亏广告费分摊必须从 `meta_ad_accounts.store_codes` 生成店铺到账户映射，不要新增硬编码 `site_code -> account_id` 常量。这里使用所有已配置账户（包括 `enabled=false` 的历史账户），因为暂停同步不代表历史广告数据失效。
-- 改这条链路至少运行 `pytest tests/test_roi_hourly_sync.py tests/test_roi_hourly_sync_meta_multi_account.py tests/test_meta_server_sync_tools.py tests/test_order_analytics_ads.py tests/test_product_profit_report.py -q`。
+- 实时表 `meta_ad_realtime_daily_campaign_metrics` 在「当天 / 未收盘业务日」的 fallback 读取必须按 **`(business_date, ad_account_id)`** 取最新 snapshot，再合并各账户结果；**不允许**用 `GROUP BY business_date` 取一个全局 `MAX(snapshot_at)` 来代表当日，否则当某个账户某轮 tick 失败 / 落后时，它整账户的消耗会被静默丢弃 → 看板显示偏小或归零。已知事故：2026-05-08 17:00 起 newjoyloo_bak 浏览器导出连续 600s timeout，全局 MAX(snapshot_at)=Omurio 17:00，order-profit 看板「已分摊广告费」整列读到 $0。`appcore/order_analytics/order_profit_aggregation.py::_load_realtime_ad_snapshot_fallback` 与 `appcore/order_analytics/realtime.py::_get_today_realtime_meta_totals` 都遵守这条；新增同类查询要走同款分组。
+- 改这条链路至少运行 `pytest tests/test_roi_hourly_sync.py tests/test_roi_hourly_sync_meta_multi_account.py tests/test_meta_server_sync_tools.py tests/test_order_analytics_ads.py tests/test_product_profit_report.py tests/test_order_profit_aggregation.py -q`。
 
 ---
 
