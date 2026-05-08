@@ -690,6 +690,28 @@ def _get_realtime_order_summary(
     }
 
 
+def _should_try_realtime_snapshot(
+    target: date,
+    current_business_date: date,
+    *,
+    product_id: int | None = None,
+) -> bool:
+    if target >= current_business_date:
+        return True
+    if target != current_business_date - timedelta(days=1):
+        return False
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    rows = query(
+        "SELECT COUNT(*) AS n "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date = %s "
+        + product_sql,
+        tuple([target] + product_args),
+    )
+    row = rows[0] if rows else {}
+    return int(row.get("n") or 0) == 0
+
+
 def _get_realtime_product_sales_stats(
     target: date,
     data_until: datetime,
@@ -1076,14 +1098,19 @@ def get_realtime_roas_overview(
         for hour in range(24)
     ]
 
-    # 历史日期直接走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
-    # 仅"当天"和"未来"日期下才尝试 ROI 实时快照。
+    # 历史日期默认走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
+    # 刚过 16:00 时，上一 Meta 业务日可能已关闭但日终广告表尚未生成；此时用最后一个实时快照兜底。
+    should_try_snapshot = _should_try_realtime_snapshot(
+        target,
+        current_business_date,
+        product_id=normalized_product_id,
+    )
     latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
         "ORDER BY snapshot_at DESC, id DESC LIMIT 1",
         (target,),
-    ) if target >= current_business_date else []
+    ) if should_try_snapshot else []
     if latest_snapshot:
         snap = latest_snapshot[0]
         snapshot_at = snap.get("snapshot_at") or data_until
