@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 from flask import Blueprint, render_template
 from flask_login import login_required
@@ -21,12 +22,24 @@ class BrowserEnvironment:
     port: int
     purpose: str
 
+    def _vnc_url(self, *, resize: str, view_only: bool = False) -> str:
+        params: dict[str, str | int] = {
+            "host": SERVER_HOST,
+            "port": self.port,
+            "autoconnect": "true",
+            "resize": resize,
+        }
+        if view_only:
+            params["view_only"] = "true"
+        return f"http://{SERVER_HOST}:{self.port}/vnc.html?{urlencode(params)}"
+
     @property
     def novnc_url(self) -> str:
-        return (
-            f"http://{SERVER_HOST}:{self.port}/vnc.html"
-            f"?host={SERVER_HOST}&port={self.port}&autoconnect=true&resize=remote"
-        )
+        return self._vnc_url(resize="remote")
+
+    @property
+    def preview_url(self) -> str:
+        return self._vnc_url(resize="scale", view_only=True)
 
 
 ENVIRONMENTS: tuple[BrowserEnvironment, ...] = (

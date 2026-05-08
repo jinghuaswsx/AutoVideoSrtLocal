@@ -11,16 +11,35 @@ def test_browser_monitor_page_renders_three_vnc_iframes(authed_client_no_db, mon
     assert "DXM03-RJC" in html
     assert (
         'src="http://172.30.254.14:6092/vnc.html?host=172.30.254.14'
-        '&amp;port=6092&amp;autoconnect=true&amp;resize=remote"'
+        '&amp;port=6092&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
         'src="http://172.30.254.14:6093/vnc.html?host=172.30.254.14'
-        '&amp;port=6093&amp;autoconnect=true&amp;resize=remote"'
+        '&amp;port=6093&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
         'src="http://172.30.254.14:6095/vnc.html?host=172.30.254.14'
-        '&amp;port=6095&amp;autoconnect=true&amp;resize=remote"'
+        '&amp;port=6095&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
+
+
+def test_browser_monitor_cards_use_scaled_preview_and_open_operable_vnc(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.browser_monitor.scheduled_tasks.latest_run", lambda task_code: None)
+
+    resp = authed_client_no_db.get("/browser-monitor")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert (
+        'src="http://172.30.254.14:6092/vnc.html?host=172.30.254.14'
+        '&amp;port=6092&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
+    ) in html
+    assert (
+        'href="http://172.30.254.14:6092/vnc.html?host=172.30.254.14'
+        '&amp;port=6092&amp;autoconnect=true&amp;resize=remote"'
+    ) in html
+    assert 'class="browser-monitor-frame-link"' in html
+    assert 'aria-label="打开 DXM01-Meta 可操作 VNC 窗口"' in html
 
 
 def test_browser_monitor_page_uses_watchdog_latest_summary(authed_client_no_db, monkeypatch):
