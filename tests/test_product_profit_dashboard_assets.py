@@ -83,3 +83,25 @@ def test_product_profit_country_fallback_pills_start_with_us_then_gb():
     assert TEMPLATE.index("{ country: 'US', lang: 'en', label: '美国' }") < TEMPLATE.index(
         "{ country: 'GB', lang: 'en', label: '英国' }"
     )
+
+
+def test_product_profit_tabs_are_pills_above_tab_specific_filters():
+    assert TEMPLATE.index('<nav class="ppd-tabs" role="tablist">') < TEMPLATE.index('<section class="ppd-filters">')
+    assert "border-radius: 999px;" in TEMPLATE
+    assert 'data-filter-control="product"' in TEMPLATE
+    assert 'data-filter-control="country"' in TEMPLATE
+    assert 'data-filter-control="orders-download"' in TEMPLATE
+    assert "function setFilterControlsForTab(tabName)" in TEMPLATE
+    assert "product-country: ['product', 'from', 'to', 'reload']" in TEMPLATE
+
+
+def test_product_profit_has_product_country_analysis_tab_matrix():
+    assert 'data-tab="product-country"' in TEMPLATE
+    assert 'data-panel="product-country"' in TEMPLATE
+    assert 'id="ppd-product-country-matrix"' in TEMPLATE
+    assert "function loadProductCountryTab()" in TEMPLATE
+    assert "function renderProductCountryMatrix(data)" in TEMPLATE
+    assert "订单量" in TEMPLATE
+    assert "销售额" in TEMPLATE
+    assert "ROAS" in TEMPLATE
+    assert "by_country" in TEMPLATE
