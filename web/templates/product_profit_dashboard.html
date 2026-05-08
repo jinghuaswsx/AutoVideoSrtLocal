@@ -62,6 +62,9 @@
   outline: 2px solid rgba(59, 130, 246, .25);
   border-color: var(--primary-color);
 }
+.ppd-filter-control-hidden {
+  display: none !important;
+}
 .ppd-btn {
   display: inline-flex;
   align-items: center;
@@ -221,25 +224,31 @@
 /* Tab 切换器 */
 .ppd-tabs {
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border-main);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: -8px;
 }
 .ppd-tab {
-  padding: 10px 20px;
-  font-size: 14px;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border-main);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-user-badge);
   cursor: pointer;
-  border: none;
-  background: transparent;
-  border-bottom: 2px solid transparent;
-  transition: color .12s, border-color .12s;
+  transition: background .12s, border-color .12s, color .12s;
 }
-.ppd-tab:hover { color: var(--primary-color); }
-.ppd-tab.active {
+.ppd-tab:hover {
   color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.ppd-tab.active {
+  color: #fff;
+  background: var(--primary-color);
+  border-color: var(--primary-color);
 }
 .ppd-tab-panel { display: none; }
 .ppd-tab-panel.active { display: flex; flex-direction: column; gap: 20px; }
@@ -440,6 +449,27 @@
 }
 .ppd-num.is-positive { color: #15803d; font-weight: 600; }
 .ppd-num.is-negative { color: #b91c1c; font-weight: 600; }
+.ppd-matrix-table th:first-child,
+.ppd-matrix-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 96px;
+  background: #fff;
+  text-align: left;
+}
+.ppd-matrix-table thead th:first-child {
+  z-index: 3;
+  background: #f8fafc;
+}
+.ppd-matrix-table tbody td:first-child {
+  font-family: var(--font-sans, sans-serif);
+  font-weight: 700;
+  color: var(--text-main);
+}
+.ppd-matrix-country {
+  min-width: 96px;
+}
 .ppd-tag {
   display: inline-block;
   padding: 1px 8px;
@@ -688,30 +718,39 @@
 {% block content %}
 <main class="ppd-main">
 
-  <!-- 1. 筛选区 -->
+  <!-- Tab 胶囊切换器 -->
+  <nav class="ppd-tabs" role="tablist">
+    <button type="button" class="ppd-tab active" data-tab="list" role="tab">① 产品列表</button>
+    <button type="button" class="ppd-tab" data-tab="orders" role="tab">② 订单明细</button>
+    <button type="button" class="ppd-tab" data-tab="country" role="tab">③ 国家看板</button>
+    <button type="button" class="ppd-tab" data-tab="ads" role="tab">④ 广告明细</button>
+    <button type="button" class="ppd-tab" data-tab="product-country" role="tab">⑤ 产品国家分析</button>
+  </nav>
+
+  <!-- 当前 Tab 专属筛选区 -->
   <section class="ppd-filters">
-    <label>
+    <label data-filter-control="product">
       <span>产品</span>
       <input type="text" id="ppd-product" readonly aria-haspopup="dialog"
              aria-controls="ppd-product-modal"
              placeholder="加载中…" autocomplete="off" spellcheck="false">
     </label>
-    <label>
+    <label data-filter-control="country">
       <span>国家 <small style="color: var(--text-user-badge); font-weight: normal; font-size: 11px">仅过滤订单表</small></span>
       <select id="ppd-country-select">
         <option value="">全部</option>
       </select>
     </label>
-    <label>
+    <label data-filter-control="from">
       <span>开始日期</span>
       <input type="date" id="ppd-from">
     </label>
-    <label>
+    <label data-filter-control="to">
       <span>结束日期</span>
       <input type="date" id="ppd-to">
     </label>
-    <button type="button" class="ppd-btn ppd-btn-primary" id="ppd-reload">查询</button>
-    <a class="ppd-btn" id="ppd-download" href="#" target="_blank" rel="noopener">下载 Excel</a>
+    <button type="button" class="ppd-btn ppd-btn-primary" id="ppd-reload" data-filter-control="reload">查询</button>
+    <a class="ppd-btn" id="ppd-download" href="#" target="_blank" rel="noopener" data-filter-control="orders-download">下载 Excel</a>
   </section>
 
   <div class="ppd-modal-backdrop" id="ppd-product-modal" hidden>
@@ -728,14 +767,6 @@
       <div class="ppd-product-results-empty" id="ppd-product-results-empty" style="display:none">没有匹配的产品。</div>
     </div>
   </div>
-
-  <!-- Tab 切换骨架（Task 5）：Tab 内容由 Task 6-9 填充 -->
-  <nav class="ppd-tabs" role="tablist">
-    <button type="button" class="ppd-tab active" data-tab="list" role="tab">① 产品列表</button>
-    <button type="button" class="ppd-tab" data-tab="orders" role="tab">② 订单明细</button>
-    <button type="button" class="ppd-tab" data-tab="country" role="tab">③ 国家看板</button>
-    <button type="button" class="ppd-tab" data-tab="ads" role="tab">④ 广告明细</button>
-  </nav>
 
   <section class="ppd-tab-panel active" data-panel="list">
     <!-- Task 7: 产品列表 -->
@@ -1062,6 +1093,31 @@
     </div>
   </section>
 
+  <section class="ppd-tab-panel" data-panel="product-country">
+    <div class="ppd-empty" id="ppd-product-country-empty" style="display:none">请先选择具体产品后查看产品国家分析。</div>
+    <div class="ppd-loading" id="ppd-product-country-loading" style="display:none"><span class="ppd-spinner"></span>加载中…</div>
+    <div class="ppd-error" id="ppd-product-country-error" style="display:none"></div>
+
+    <div id="ppd-product-country-content" style="display:none; flex-direction:column; gap:20px;">
+      <section class="ppd-orders">
+        <div class="ppd-orders-head">
+          <h3>产品国家分析 <span id="ppd-product-country-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span></h3>
+          <span style="font-size:12px;color:var(--text-user-badge);">列为国家，行为订单量 / 销售额 / 利润 / ROAS</span>
+        </div>
+        <div class="ppd-table-wrap">
+          <table class="ppd-table ppd-matrix-table" id="ppd-product-country-matrix">
+            <thead>
+              <tr id="ppd-product-country-head">
+                <th>指标</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </section>
+
 </main>
 {% endblock %}
 
@@ -1120,6 +1176,32 @@
     dateFromInput.value = fmt(from);
     dateToInput.value = fmt(today);
   })();
+
+  function currentActiveTab() {
+    var activeBtn = document.querySelector('.ppd-tab.active');
+    return activeBtn ? activeBtn.dataset.tab : 'list';
+  }
+
+  var TAB_FILTER_CONTROLS = {
+    list: ['country', 'from', 'to', 'reload'],
+    orders: ['product', 'country', 'from', 'to', 'reload', 'orders-download'],
+    country: ['product', 'from', 'to', 'reload'],
+    ads: ['product', 'country', 'from', 'to', 'reload'],
+  };
+  // product-country: ['product', 'from', 'to', 'reload']
+  TAB_FILTER_CONTROLS['product-country'] = ['product', 'from', 'to', 'reload'];
+
+  function setFilterControlsForTab(tabName) {
+    var controls = TAB_FILTER_CONTROLS[tabName] || TAB_FILTER_CONTROLS.list;
+    var visible = Object.create(null);
+    controls.forEach(function(name) {
+      visible[name] = true;
+    });
+    document.querySelectorAll('[data-filter-control]').forEach(function(el) {
+      var name = el.getAttribute('data-filter-control');
+      el.classList.toggle('ppd-filter-control-hidden', !visible[name]);
+    });
+  }
 
   // ── 国家下拉动态填充（Task 10）──────────────────
   // 数据源：data.by_country（来自 /report.json，结构 [{buyer_country, site, ...}]）。
@@ -1405,11 +1487,22 @@
   function selectProductFromPicker(label) {
     if (!label || !productLabelToId[label]) return;
     var selectedProductId = String(productLabelToId[label] || '');
+    var activeTab = currentActiveTab();
     productInput.value = label;
     closeProductModal();
     if (selectedProductId === '0') {
+      if (activeTab === 'country' || activeTab === 'ads' || activeTab === 'product-country') {
+        if (window.switchTab) window.switchTab(activeTab);
+        else if (window.loadListTab) window.loadListTab();
+        return;
+      }
       if (window.switchTab) window.switchTab('list');
       else if (window.loadListTab) window.loadListTab();
+      return;
+    }
+    if (activeTab === 'country' || activeTab === 'ads' || activeTab === 'product-country') {
+      if (window.switchTab) window.switchTab(activeTab);
+      else if (window.loadOrdersTab) window.loadOrdersTab();
       return;
     }
     if (window.switchTab) window.switchTab('orders');
@@ -2022,6 +2115,149 @@
   }
   window.loadAdsTab = loadAdsTab;
 
+  // ── Tab ⑤ 产品国家分析 ─────────────────────────
+  function loadProductCountryTab() {
+    var pid = getSelectedProductId();
+    var df = dateFromInput.value;
+    var dt = dateToInput.value;
+    var emptyEl = $('ppd-product-country-empty');
+    var loadingEl = $('ppd-product-country-loading');
+    var errorEl = $('ppd-product-country-error');
+    var contentEl = $('ppd-product-country-content');
+
+    emptyEl.style.display = 'none';
+    errorEl.style.display = 'none';
+
+    if (!pid || pid === '0' || pid === 'ALL') {
+      emptyEl.textContent = '请先选择具体产品后查看产品国家分析。';
+      emptyEl.style.display = 'block';
+      loadingEl.style.display = 'none';
+      contentEl.style.display = 'none';
+      return;
+    }
+
+    if (!df || !dt || df > dt) {
+      loadingEl.style.display = 'none';
+      contentEl.style.display = 'flex';
+      errorEl.textContent = '日期范围不正确';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    loadingEl.style.display = 'block';
+    contentEl.style.display = 'none';
+
+    var url = '/order-analytics/product-profit/report.json?'
+      + 'product_id=' + encodeURIComponent(pid)
+      + '&date_from=' + encodeURIComponent(df)
+      + '&date_to=' + encodeURIComponent(dt);
+
+    fetch(url, { credentials: 'same-origin' })
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        loadingEl.style.display = 'none';
+        lastReport = data;
+        renderProductCountryMatrix(data);
+        refreshCountryOptions(data.by_country);
+      })
+      .catch(function(err) {
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'flex';
+        errorEl.textContent = '查询失败：' + err.message;
+        errorEl.style.display = 'block';
+      });
+  }
+  window.loadProductCountryTab = loadProductCountryTab;
+
+  function aggregateProductCountryRows(byCountry) {
+    var agg = Object.create(null);
+    (byCountry || []).forEach(function(row) {
+      row = row || {};
+      var country = (row && row.buyer_country ? String(row.buyer_country) : '?').trim().toUpperCase();
+      if (!country) country = '?';
+      if (!agg[country]) {
+        agg[country] = { country: country, orders: 0, revenue: 0, profit: 0, ad: 0 };
+      }
+      agg[country].orders += Number(row.orders) || 0;
+      agg[country].revenue += Number(row.revenue_usd) || 0;
+      agg[country].profit += Number(row.profit_usd) || 0;
+      agg[country].ad += Number(row.ad_cost_usd) || 0;
+    });
+    return Object.keys(agg).map(function(country) {
+      var row = agg[country];
+      row.roas = row.ad > 0 ? row.revenue / row.ad : null;
+      return row;
+    }).sort(function(a, b) {
+      return b.revenue - a.revenue;
+    });
+  }
+
+  function renderProductCountryMatrix(data) {
+    var emptyEl = $('ppd-product-country-empty');
+    var errorEl = $('ppd-product-country-error');
+    var contentEl = $('ppd-product-country-content');
+    var rows = aggregateProductCountryRows((data && data.by_country) || []);
+
+    errorEl.style.display = 'none';
+    $('ppd-product-country-count').textContent = '(' + rows.length + ')';
+
+    if (!rows.length) {
+      emptyEl.textContent = '该产品 + 时段没有国家销售数据。';
+      emptyEl.style.display = 'block';
+      contentEl.style.display = 'none';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+    contentEl.style.display = 'flex';
+
+    var headHtml = '<th>指标</th>' + rows.map(function(row) {
+      var label = countryPillLabel(row.country);
+      var codeHtml = label !== row.country
+        ? '<span class="col-unit">' + escHtml(row.country) + '</span>'
+        : '';
+      return '<th class="ppd-matrix-country">' + escHtml(label) + codeHtml + '</th>';
+    }).join('');
+    $('ppd-product-country-head').innerHTML = headHtml;
+
+    var metrics = [
+      {
+        label: '订单量',
+        tdClass: 'ppd-num',
+        render: function(row) { return (row.orders || 0).toLocaleString(); },
+      },
+      {
+        label: '销售额',
+        tdClass: 'ppd-num',
+        render: function(row) { return money(row.revenue); },
+      },
+      {
+        label: '利润',
+        tdClass: function(row) { return 'ppd-num ' + profitClass(row.profit); },
+        render: function(row) { return money(row.profit); },
+      },
+      {
+        label: 'ROAS',
+        tdClass: 'ppd-num',
+        render: function(row) { return row.roas == null ? '--' : row.roas.toFixed(2); },
+      },
+    ];
+
+    var bodyHtml = metrics.map(function(metric) {
+      var cells = rows.map(function(row) {
+        var tdClass = typeof metric.tdClass === 'function' ? metric.tdClass(row) : metric.tdClass;
+        return '<td class="' + tdClass + '">' + metric.render(row) + '</td>';
+      }).join('');
+      return '<tr><td>' + escHtml(metric.label) + '</td>' + cells + '</tr>';
+    }).join('');
+    document.querySelector('#ppd-product-country-matrix tbody').innerHTML = bodyHtml;
+  }
+
   function renderAds(data) {
     data = data || {};
     renderAdsAccounts(data.accounts || []);
@@ -2521,9 +2757,7 @@
 
   // ── 全局筛选触发：重新加载当前 active Tab（Task 6）─────────
   function reloadActiveTab() {
-    var activeBtn = document.querySelector('.ppd-tab.active');
-    if (!activeBtn) return;
-    var active = activeBtn.dataset.tab;
+    var active = currentActiveTab();
     if (window.switchTab) window.switchTab(active);
   }
   reloadBtn.addEventListener('click', reloadActiveTab);
@@ -2560,8 +2794,7 @@
       activeCountry = selected;
       renderCountryPills();
     }
-    var activeBtn = document.querySelector('.ppd-tab.active');
-    var active = activeBtn ? activeBtn.dataset.tab : 'list';
+    var active = currentActiveTab();
     if (window.switchTab) window.switchTab(active);
   });
   // 日期 change：仅同步 URL，不触发 reload（保留原有"改完点查询"的体验）
@@ -2603,12 +2836,14 @@
   // ========== Tab 切换骨架（Task 5）==========
   // load 函数由 Task 6-9 填充；这里用 short-circuit 防 ReferenceError
   function switchTab(tabName) {
+    if (!TAB_FILTER_CONTROLS[tabName]) tabName = 'list';
     document.querySelectorAll('.ppd-tab').forEach(function(b) {
       b.classList.toggle('active', b.dataset.tab === tabName);
     });
     document.querySelectorAll('.ppd-tab-panel').forEach(function(p) {
       p.classList.toggle('active', p.dataset.panel === tabName);
     });
+    setFilterControlsForTab(tabName);
     // URL state 同步（Task 10）：tab 已通过 .active class 切换，syncUrlState 读 active dataset
     syncUrlState();
     // 触发当前 Tab 的数据加载（Task 6-9 填充对应函数）
@@ -2616,6 +2851,7 @@
     else if (tabName === 'orders' && typeof window.loadOrdersTab === 'function') window.loadOrdersTab();
     else if (tabName === 'country' && typeof window.loadCountryTab === 'function') window.loadCountryTab();
     else if (tabName === 'ads' && typeof window.loadAdsTab === 'function') window.loadAdsTab();
+    else if (tabName === 'product-country' && typeof window.loadProductCountryTab === 'function') window.loadProductCountryTab();
   }
   // 暴露给外部（Tab ① 点产品行 → 切到 Tab ② 这种跨函数调用要用）
   window.switchTab = switchTab;
