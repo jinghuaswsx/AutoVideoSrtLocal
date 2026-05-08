@@ -9,6 +9,7 @@ from decimal import Decimal
 from flask import Blueprint, render_template, request, make_response
 from flask_login import current_user, login_required
 from web.auth import admin_required, permission_required
+from web.background import start_background_task
 from web.services.order_analytics_responses import (
     build_order_analytics_payload_response,
     order_analytics_flask_response,
@@ -17,6 +18,7 @@ from web.upload_util import client_filename_basename
 
 from appcore import order_analytics as oa
 from appcore import meta_ad_accounts
+from appcore import meta_ad_manual_sync
 from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 
@@ -314,6 +316,57 @@ def meta_ad_accounts_save():
         "available_store_codes": list(meta_ad_accounts.AVAILABLE_STORE_CODES),
         "accounts": [account.to_dict() for account in meta_ad_accounts.get_all_accounts()],
     })
+
+
+def _parse_manual_sync_date(payload: dict, key: str) -> date:
+    text = str(payload.get(key) or "").strip()
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise meta_ad_manual_sync.ManualSyncValidationError(f"{key} must be YYYY-MM-DD") from exc
+
+
+@bp.route("/order-analytics/meta-ad-accounts/<account_code>/manual-sync", methods=["POST"])
+@login_required
+@admin_required
+def meta_ad_account_manual_sync_start(account_code: str):
+    """启动单个 Meta 广告账户的手动按天同步。"""
+    payload = request.get_json(silent=True) or {}
+    try:
+        job = meta_ad_manual_sync.start_job(
+            account_code=account_code,
+            start_date=_parse_manual_sync_date(payload, "start_date"),
+            end_date=_parse_manual_sync_date(payload, "end_date"),
+            interval_seconds=payload.get("interval_seconds", meta_ad_manual_sync.DEFAULT_INTERVAL_SECONDS),
+            background_launcher=start_background_task,
+        )
+    except meta_ad_manual_sync.ManualSyncAlreadyRunning as exc:
+        return _json_response(error="manual_sync_running", detail=str(exc)), 409
+    except meta_ad_manual_sync.ManualSyncValidationError as exc:
+        return _json_response(error="invalid_manual_sync", detail=str(exc)), 400
+    _audit_order_analytics_action(
+        "order_analytics_meta_ad_account_manual_sync_started",
+        target_type="meta_ad_account",
+        target_label=account_code,
+        detail={
+            "job_id": job.get("job_id"),
+            "start_date": job.get("start_date"),
+            "end_date": job.get("end_date"),
+            "interval_seconds": job.get("interval_seconds"),
+        },
+    )
+    return _json_response({"ok": True, "job": job})
+
+
+@bp.route("/order-analytics/meta-ad-sync-jobs/<job_id>")
+@login_required
+@admin_required
+def meta_ad_account_manual_sync_status(job_id: str):
+    """返回手动 Meta 广告账户同步 job 状态。"""
+    job = meta_ad_manual_sync.get_job(job_id)
+    if not job:
+        return _json_response(error="job_not_found", detail="manual sync job not found"), 404
+    return _json_response({"ok": True, "job": job})
 
 
 @bp.route("/order-analytics/realtime-overview")

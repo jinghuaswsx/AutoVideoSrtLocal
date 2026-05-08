@@ -20,6 +20,7 @@
 6. `meta_daily_final_sync` 收盘日同步与实时同步共用同一份账户配置，避免只同步一个店铺 / 一个广告户。
 7. 账户必须声明对应店铺 `store_codes`，让同步、看板、产品盈亏广告费分摊共用同一份「店铺 ↔ 广告户」映射。
 8. 旧广告户必须保留历史同步入口：自动定时任务不跑 `enabled=false` 账户，但运维可用 account code 显式指定旧户补抓历史日数据。
+9. 数据分析「广告账户」Tab 每个账户提供手动同步入口，可选择日期范围和每一天之间的同步间隔，并在弹窗内展示整体进度。
 
 ## 非目标
 
@@ -154,6 +155,21 @@ python tools/meta_daily_final_sync.py --date 2026-05-06 --mode run --account-cod
 
 `--account-code` 可重复传入，也可传逗号分隔值。只要显式指定 account code，就从 `get_all_accounts()` 里匹配账户，包括 `enabled=false` 的历史账户；未显式指定时仍只跑 `enabled=true` 账户。这样旧户历史数据可继续同步，但不会影响新户与 Omurio 的自动同步稳定性。
 
+### 数据分析「广告账户」Tab 手动同步
+
+每个账户行在「操作」列提供「同步」按钮。点击后打开 modal 弹窗，弹窗包含两个 Tab：
+
+- `同步设置`：展示当前账户 code / account_id，选择开始日期、结束日期、同步间隔秒数。默认开始日期和结束日期为昨天，默认间隔为 20 秒。
+- `同步进度`：点击「开始同步」后自动切换到该 Tab，弹窗不关闭；前端轮询后台 job 状态，展示整体进度、当前同步日期、成功 / 失败天数和逐日结果。
+
+手动同步必须复用 `tools/meta_daily_final_sync.run_final_sync(target_date, mode="run", account_codes=[account.code])`。即使用户选择 30 天，也必须拆成 30 次调用，每次只同步一天；第 N 天结束后等待配置的间隔秒数，再进入第 N+1 天。间隔只发生在两天之间，最后一天完成后不再等待。
+
+手动同步选择账户时从 `meta_ad_accounts.get_all_accounts()` 读取，允许选择 `enabled=false` 的 `newjoyloo_old` 旧户补抓历史数据。未点击行内同步按钮的自动定时任务行为不变，仍只跑 `enabled=true` 账户。
+
+后台同一时间只允许一个 Meta 广告账户手动同步 job 运行，避免多个 Web 请求同时驱动同一个 Meta Ads Manager 浏览器。若已有 job 处于 `queued` / `running`，新的启动请求返回 409。
+
+手动同步 job 的进度状态保存在 Web 进程内存，单日同步结果仍由 `meta_daily_final_sync` 写入 `scheduled_task_runs(task_code="meta_daily_final")`，可在「定时任务的运行日志」追踪每一天的实际执行摘要。Web 进程重启会丢失弹窗进度，但不会影响已完成单日 run 的日志。
+
 ## 失败隔离决策
 
 | 场景 | 整体 status | 备注 |
@@ -217,6 +233,7 @@ DELETE FROM system_settings WHERE `key`='meta_ad_accounts';
 8. 数据分析「广告账户」Tab API 能读取、校验、保存 `store_codes`。
 9. 产品盈亏广告费分摊从 `meta_ad_accounts.store_codes` 生成映射，不再依赖硬编码常量。
 10. 收盘日同步支持 `--account-code newjoyloo_old` 显式选择 disabled 旧户做历史补抓。
+11. 数据分析「广告账户」Tab 渲染行内「同步」按钮、同步 modal、设置 / 进度 Tab，并通过 Web API 启动和查询手动同步 job。
 
 ## Docs-anchor
 
