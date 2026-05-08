@@ -187,6 +187,31 @@ def test_list_xlsx_filename_includes_country_when_specified(
 
 
 # ---------------------------------------------------------------------------
+# /countries.json — Tab 3 国家胶囊
+# ---------------------------------------------------------------------------
+def test_countries_json_returns_gb_plus_enabled_language_countries(
+    authed_client_no_db, monkeypatch,
+):
+    """国家看板胶囊固定含英国，后续按启用小语种主国家补足，最多 9 个。"""
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.medias.list_enabled_languages_kv",
+        lambda: [
+            ("en", "英语"), ("de", "德语"), ("fr", "法语"), ("es", "西班牙语"),
+            ("it", "意大利语"), ("ja", "日语"), ("pt", "葡萄牙语"),
+            ("nl", "荷兰语"), ("sv", "瑞典语"), ("fi", "芬兰语"),
+        ],
+    )
+
+    resp = authed_client_no_db.get("/order-analytics/product-profit/countries.json")
+    assert resp.status_code == 200
+    countries = resp.get_json()["countries"]
+    assert len(countries) == 9
+    assert countries[0] == {"country": "GB", "lang": "en", "label": "英国"}
+    assert {"country": "DE", "lang": "de", "label": "德国"} in countries
+    assert {"country": "FR", "lang": "fr", "label": "法国"} in countries
+
+
+# ---------------------------------------------------------------------------
 # /ads.json — Tab 4 广告明细
 # ---------------------------------------------------------------------------
 def _fake_ads_report():
