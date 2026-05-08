@@ -590,6 +590,92 @@ def test_status_summary_uses_realtime_ad_snapshot_for_missing_daily_metrics(monk
     assert payload["overview"]["total_profit_usd"] == pytest.approx(87.5)
 
 
+def test_status_summary_counts_realtime_matched_spend_without_units_as_unallocated(monkeypatch):
+    target = date(2026, 5, 7)
+    snapshot_at = datetime(2026, 5, 8, 15, 40)
+
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            return [
+                {
+                    "status": "ok",
+                    "n": 1,
+                    "revenue": 100.0,
+                    "profit": 100.0,
+                    "shopify_fee": 0.0,
+                    "ad_cost": 0.0,
+                    "purchase": 0.0,
+                    "shipping_cost": 0.0,
+                    "return_reserve": 0.0,
+                    "purchase_actual": 0.0,
+                    "purchase_estimate": 0.0,
+                    "purchase_with_estimate": 0.0,
+                    "shipping_cost_actual": 0.0,
+                    "shipping_cost_estimate": 0.0,
+                    "shipping_cost_with_estimate": 0.0,
+                    "profit_with_estimate": 100.0,
+                    "purchase_fallback_estimated": 0.0,
+                    "purchase_fallback_estimated_lines": 0,
+                    "shipping_product_estimated": 0.0,
+                    "shipping_product_estimated_lines": 0,
+                    "shipping_fallback_estimated": 0.0,
+                    "shipping_fallback_estimated_lines": 0,
+                }
+            ]
+        if "product_id IS NULL" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"unallocated_ad_spend_usd": 0.0}]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "COUNT(*) AS n" in sql:
+            return []
+        if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "snapshot_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "newjoyloo-rjc",
+                    "normalized_campaign_code": "newjoyloo-rjc",
+                    "spend_usd": 25.0,
+                },
+                {
+                    "business_date": target,
+                    "campaign_name": "no-order-rjc",
+                    "normalized_campaign_code": "no-order-rjc",
+                    "spend_usd": 40.0,
+                },
+            ]
+        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+            return [{"business_date": target, "product_id": 316, "units": 4}]
+        if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "business_date": target,
+                    "status": "ok",
+                    "product_id": 316,
+                    "quantity": 2,
+                    "ad_cost_usd": 0.0,
+                }
+            ]
+        return []
+
+    def fake_match(code):
+        if code == "newjoyloo-rjc":
+            return {"id": 316}
+        if code == "no-order-rjc":
+            return {"id": 427}
+        return None
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "resolve_ad_product_match", fake_match, raising=False)
+
+    payload = get_order_profit_status_summary(date_from=target, date_to=target)
+
+    assert payload["summary"]["ok"]["ad_cost"] == pytest.approx(12.5)
+    assert payload["unallocated_ad_spend_usd"] == pytest.approx(40.0)
+    assert payload["overview"]["unallocated_ad_spend_usd"] == pytest.approx(40.0)
+    assert payload["overview"]["total_profit_usd"] == pytest.approx(47.5)
+
+
 def test_status_summary_queries_estimated_cost_sources(monkeypatch):
     captured = {}
 

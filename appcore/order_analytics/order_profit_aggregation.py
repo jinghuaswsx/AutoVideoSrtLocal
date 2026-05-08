@@ -264,10 +264,15 @@ def _load_realtime_ad_snapshot_fallback(
                 units_by_product[(business_date, int(product))] = int(
                     row.get("units") or 0
                 )
+        no_unit_spend = sum(
+            float(spend or 0)
+            for key, spend in spend_by_product.items()
+            if int(units_by_product.get(key) or 0) <= 0
+        )
         return {
             "spend_by_product": dict(spend_by_product),
             "units_by_product": units_by_product,
-            "unallocated_spend": unallocated_spend,
+            "unallocated_spend": unallocated_spend + no_unit_spend,
         }
     except Exception as exc:
         logger.warning("order_profit realtime ad fallback skipped: %s", exc)
