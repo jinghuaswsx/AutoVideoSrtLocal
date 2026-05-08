@@ -186,3 +186,4 @@ python -m tools.shopify_image_localizer.build_exe --version 1.0
 - 后端产物结构变化时，同步更新 `web/preview_artifacts.py`、前端模板/静态脚本和对应测试。
 - 新增定时任务必须登记到 `appcore/scheduled_tasks.py`，并说明调度来源、入口、部署位置和日志归属。
 - 前端遵循 Ocean Blue Admin 设计系统，禁止引入紫色/靛蓝色调。
+已接入 multica 看板管理 - 2026-05-08
