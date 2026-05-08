@@ -737,6 +737,113 @@ def test_get_realtime_roas_overview_prefers_latest_order_snapshot_when_ad_pendin
     assert result["snapshots"][0]["id"] == 633
 
 
+def test_realtime_current_business_day_product_filter_uses_realtime_campaign_snapshot(monkeypatch):
+    target = oa._parse_meta_date("2026-05-07")
+    snapshot_at = datetime(2026, 5, 8, 13, 20)
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "id": 673,
+                    "snapshot_at": snapshot_at,
+                    "source_run_id": 690,
+                    "order_count": 61,
+                    "line_count": 62,
+                    "units": 73,
+                    "order_revenue_usd": 1635.17,
+                    "shipping_revenue_usd": 514.17,
+                    "ad_spend_usd": 1173.81,
+                    "last_order_at": datetime(2026, 5, 8, 12, 58),
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "ad_account_id": "1861285821213497",
+                    "ad_account_name": "Newjoyloo",
+                    "campaign_id": "cmp-42",
+                    "campaign_name": "glow-go-insect-set-rjc",
+                    "normalized_campaign_code": "glow-go-insect-set-rjc",
+                    "result_count": 4,
+                    "spend_usd": 50.0,
+                    "purchase_value_usd": 80.0,
+                    "impressions": 1000,
+                    "clicks": 20,
+                },
+                {
+                    "ad_account_id": "1861285821213497",
+                    "ad_account_name": "Newjoyloo",
+                    "campaign_id": "cmp-99",
+                    "campaign_name": "other-product-rjc",
+                    "normalized_campaign_code": "other-product-rjc",
+                    "result_count": 7,
+                    "spend_usd": 70.0,
+                    "purchase_value_usd": 120.0,
+                    "impressions": 2000,
+                    "clicks": 30,
+                },
+            ]
+        if "SUM(COALESCE(line_amount, 0)) AS order_revenue" in sql and "FROM dianxiaomi_order_lines" in sql:
+            assert "meta_business_date=%s" in sql
+            assert args[0] == target
+            assert args[1] == snapshot_at
+            assert args[2] == 42
+            return [
+                {
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 2,
+                    "order_revenue": 100.0,
+                    "line_revenue": 100.0,
+                    "shipping_revenue": 10.0,
+                    "first_order_at": datetime(2026, 5, 8, 12, 10),
+                    "last_order_at": datetime(2026, 5, 8, 12, 10),
+                    "last_order_updated_at": datetime(2026, 5, 8, 12, 12),
+                }
+            ]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": datetime(2026, 5, 8, 13, 18)}]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": datetime(2026, 5, 8, 13, 19)}]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"ad_spend": 0, "meta_purchase_value": 0, "meta_purchases": 0, "last_ad_updated_at": None}]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    def fake_resolve(code):
+        if code == "glow-go-insect-set-rjc":
+            return {"id": 42, "product_code": "glow-go-insect-set-rjc"}
+        if code == "other-product-rjc":
+            return {"id": 99, "product_code": "other-product-rjc"}
+        return None
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(realtime_oa, "resolve_ad_product_match", fake_resolve, raising=False)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-05-07",
+        end_date="2026-05-07",
+        product_id=42,
+        now=datetime(2026, 5, 8, 13, 25),
+    )
+
+    assert result["scope"]["ad_source"] == "meta_ad_realtime_daily_campaign_metrics"
+    assert result["summary"]["order_count"] == 1
+    assert result["summary"]["ad_spend"] == 50.0
+    assert result["summary"]["meta_purchase_value"] == 80.0
+    assert result["summary"]["meta_purchases"] == 4
+    assert result["summary"]["true_roas"] == 2.2
+    assert [campaign["normalized_campaign_code"] for campaign in result["campaigns"]] == [
+        "glow-go-insect-set-rjc"
+    ]
+
+
 def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM roi_daily_roas_nodes" in sql:
@@ -1000,6 +1107,15 @@ def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
     assert "北京时间 16:00 切日" in panel
     assert "window.orderAnalyticsMetaCalendar" in body
     assert "function resolveRealtimeRange(range) {\n    return window.orderAnalyticsMetaCalendar.resolveRange(range);\n  }" in body
+
+
+def test_embedded_product_profit_report_defaults_to_meta_business_date(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    assert "var today = window.orderAnalyticsMetaCalendar.today();" in body
+    assert "var today = new Date();\n    var from = new Date(today.getTime() - 30 * 24 * 3600 * 1000);" not in body
 
 
 def test_realtime_tab_drops_blue_primary_card_class(authed_client_no_db):

@@ -64,13 +64,15 @@ def _load_campaign_metrics(
 ) -> list[dict[str, Any]]:
     """拉 ``meta_ad_daily_campaign_metrics`` 在日期范围内与本产品相关的所有行。
 
-    谓词：``report_date BETWEEN ...`` AND (``product_id = %s`` OR ``product_id IS NULL``)。
+    谓词：业务日期 ``COALESCE(meta_business_date, report_date) BETWEEN ...``
+    AND (``product_id = %s`` OR ``product_id IS NULL``)。
     把未回填的 NULL 行也拉进来，让上层 ``_load_match_map`` 通过
     ``resolve_ad_product_match`` / override 表做兜底实时解析（覆盖同步流程还没回写
     product_id 的 race condition）。
     """
     return query(
-        "SELECT m.report_date, m.ad_account_id, m.ad_account_name, "
+        "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
+        "       m.ad_account_id, m.ad_account_name, "
         "       m.normalized_campaign_code, m.campaign_name, "
         "       m.product_id, m.matched_product_code, "
         "       o.id AS manual_override_id, "
@@ -79,9 +81,9 @@ def _load_campaign_metrics(
         "LEFT JOIN campaign_product_overrides o "
         "  ON o.normalized_campaign_code = m.normalized_campaign_code "
         " AND o.product_id = %s "
-        "WHERE m.report_date BETWEEN %s AND %s "
+        "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
         "  AND (m.product_id = %s OR m.product_id IS NULL) "
-        "ORDER BY m.report_date ASC",
+        "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
         (product_id, date_from, date_to, product_id),
     )
 

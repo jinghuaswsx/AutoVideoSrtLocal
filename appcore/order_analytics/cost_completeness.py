@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
+
+from ._helpers import current_meta_business_date
 
 
 # DB 入口走 facade wrapper（与 dashboard.py 等同模式），方便 monkeypatch。
@@ -104,7 +106,7 @@ def get_completeness_overview(*, lookback_days: int = 30) -> list[dict[str, Any]
           "gmv_usd": float,          # 近 N 天的 GMV (USD)
         }, ...]
     """
-    today = date.today()
+    today = current_meta_business_date()
     start = today - timedelta(days=lookback_days)
 
     products = query(
@@ -118,7 +120,7 @@ def get_completeness_overview(*, lookback_days: int = 30) -> list[dict[str, Any]
         "SELECT product_id, COUNT(*) AS order_lines, "
         "SUM(line_amount) AS gmv "
         "FROM dianxiaomi_order_lines "
-        "WHERE order_paid_at >= %s AND product_id IS NOT NULL "
+        "WHERE meta_business_date >= %s AND product_id IS NOT NULL "
         "GROUP BY product_id",
         (start,),
     )

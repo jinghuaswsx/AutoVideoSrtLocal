@@ -205,12 +205,12 @@ def _setup_mock_db(monkeypatch, *, lines, site_units, account_spend, real_fees=N
         s = sql.upper()
         if "FROM ORDER_PROFIT_LINES OPL" in s and "JOIN DIANXIAOMI_ORDER_LINES" in s:
             return lines
-        if "FROM DIANXIAOMI_ORDER_LINES DOL" in s and "GROUP BY DATE" in s:
+        if "FROM DIANXIAOMI_ORDER_LINES DOL" in s and "GROUP BY DOL.META_BUSINESS_DATE" in s:
             return [
                 {"d": d, "site_code": site, "units": units}
                 for (d, site), units in site_units.items()
             ]
-        if "FROM META_AD_DAILY_CAMPAIGN_METRICS" in s and "GROUP BY REPORT_DATE" in s:
+        if "FROM META_AD_DAILY_CAMPAIGN_METRICS" in s and "GROUP BY COALESCE(META_BUSINESS_DATE, REPORT_DATE)" in s:
             return [
                 {"report_date": d, "ad_account_id": acc, "spend": spend}
                 for (d, acc), spend in account_spend.items()
@@ -227,6 +227,42 @@ def _setup_mock_db(monkeypatch, *, lines, site_units, account_spend, real_fees=N
 
     monkeypatch.setattr(pkg_mod, "query", fake_query)
     monkeypatch.setattr(pkg_mod, "query_one", fake_query_one)
+
+
+def test_load_site_daily_units_uses_meta_business_date(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_site_daily_units(427, date(2026, 5, 1), date(2026, 5, 7))
+
+    assert "dol.meta_business_date AS d" in captured["sql"]
+    assert "dol.meta_business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "DATE(dol.order_paid_at)" not in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
+
+
+def test_load_account_daily_spend_uses_meta_business_date_with_report_date_fallback(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_account_daily_spend(427, date(2026, 5, 1), date(2026, 5, 7))
+
+    assert "COALESCE(meta_business_date, report_date) AS report_date" in captured["sql"]
+    assert "COALESCE(meta_business_date, report_date) BETWEEN %s AND %s" in captured["sql"]
+    assert "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id" in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
 
 
 def test_generate_report_end_to_end(monkeypatch):
