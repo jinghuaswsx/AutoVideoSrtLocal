@@ -37,6 +37,39 @@ CFG_DYNAMIC_ALL = {
 }
 
 
+def test_build_plugin_config_annotation_names_omni_current():
+    from web.services.omni_preset_annotation import build_plugin_config_annotation
+
+    annotation = build_plugin_config_annotation(
+        "t-1",
+        {"plugin_config": CFG_ASR_CLEAN},
+    )
+
+    assert annotation["name"] == "omni-current"
+    assert annotation["source"] == "snapshot"
+    assert "ASR 原样清洗" in annotation["summary"]
+    assert "Source anchored" in annotation["summary"]
+
+
+def test_build_plugin_config_annotation_marks_custom_config():
+    from web.services.omni_preset_annotation import build_plugin_config_annotation
+
+    cfg = {
+        **CFG_ASR_CLEAN,
+        "voice_separation": False,
+        "loudness_match": False,
+    }
+    annotation = build_plugin_config_annotation(
+        "t-1",
+        {"plugin_config": cfg},
+    )
+
+    assert annotation["name"] == "自定义配置"
+    assert annotation["source"] == "snapshot"
+    assert "人声分离关闭" in annotation["summary"]
+    assert "响度匹配关闭" in annotation["summary"]
+
+
 def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
     authed_client_no_db, tmp_path, monkeypatch,
 ):
