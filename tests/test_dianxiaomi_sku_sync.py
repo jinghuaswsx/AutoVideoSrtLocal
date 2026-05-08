@@ -137,3 +137,42 @@ def test_public_shopify_variants_do_not_replace_when_product_id_mismatches():
         "5",
     ]
 
+
+def test_fetch_via_browser_uses_context_request_when_page_execution_context_is_navigating():
+    from tools import dianxiaomi_sku_sync as mod
+
+    captured = {}
+
+    class FakeResponse:
+        ok = True
+        status = 200
+
+        def text(self):
+            return '{"code":0,"data":{"page":{"totalPage":1,"list":[]}}}'
+
+    class FakeRequestContext:
+        def post(self, api_url, **kwargs):
+            captured["api_url"] = api_url
+            captured["kwargs"] = kwargs
+            return FakeResponse()
+
+    class FakeContext:
+        request = FakeRequestContext()
+
+    class FakePage:
+        context = FakeContext()
+        url = "https://www.dianxiaomi.com/web/shopifyProduct/online"
+
+        def evaluate(self, *_args, **_kwargs):
+            raise RuntimeError("Page.evaluate: Execution context was destroyed, most likely because of a navigation")
+
+    payload = mod._fetch_via_browser(
+        FakePage(),
+        "https://www.dianxiaomi.com/api/shopifyProduct/pageList.json",
+        {"pageNo": 1, "shopId": "-1"},
+    )
+
+    assert payload["code"] == 0
+    assert captured["api_url"] == "https://www.dianxiaomi.com/api/shopifyProduct/pageList.json"
+    assert captured["kwargs"]["form"] == {"pageNo": "1", "shopId": "-1"}
+    assert captured["kwargs"]["headers"]["X-Requested-With"] == "XMLHttpRequest"

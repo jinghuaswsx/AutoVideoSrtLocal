@@ -734,7 +734,50 @@ def run_sync(
 # ----------------------------------------------------------------------
 
 
+def _stringify_form_payload(payload: dict[str, Any]) -> dict[str, str]:
+    return {
+        str(key): "" if value is None else str(value)
+        for key, value in payload.items()
+    }
+
+
+def _parse_dianxiaomi_response(*, ok: bool, status: int | None, text: str) -> dict[str, Any]:
+    if not ok:
+        raise RuntimeError(f"店小秘接口请求失败：HTTP {status}")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"店小秘接口返回了非 JSON 内容：{text[:200]}") from exc
+
+
+def _fetch_via_browser_context_request(page, api_url: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    context = getattr(page, "context", None)
+    request_context = getattr(context, "request", None)
+    post = getattr(request_context, "post", None)
+    if post is None:
+        return None
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    page_url = str(getattr(page, "url", "") or "")
+    if page_url.startswith("https://www.dianxiaomi.com/"):
+        headers["Referer"] = page_url
+    response = post(api_url, form=_stringify_form_payload(payload), headers=headers)
+    response_ok = getattr(response, "ok", False)
+    if callable(response_ok):
+        response_ok = response_ok()
+    return _parse_dianxiaomi_response(
+        ok=bool(response_ok),
+        status=getattr(response, "status", None),
+        text=response.text(),
+    )
+
+
 def _fetch_via_browser(page, api_url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    request_payload = _fetch_via_browser_context_request(page, api_url, payload)
+    if request_payload is not None:
+        return request_payload
     result = page.evaluate(
         """
         async ({ apiUrl, payload }) => {
@@ -757,13 +800,11 @@ def _fetch_via_browser(page, api_url: str, payload: dict[str, Any]) -> dict[str,
         """,
         {"apiUrl": api_url, "payload": payload},
     )
-    if not result.get("ok"):
-        raise RuntimeError(f"店小秘接口请求失败：HTTP {result.get('status')}")
-    text = str(result.get("text") or "")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"店小秘接口返回了非 JSON 内容：{text[:200]}") from exc
+    return _parse_dianxiaomi_response(
+        ok=bool(result.get("ok")),
+        status=result.get("status"),
+        text=str(result.get("text") or ""),
+    )
 
 
 # ----------------------------------------------------------------------
