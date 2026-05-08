@@ -135,7 +135,7 @@
       .subtitle-preview-overlay__block {
         position: absolute;
         left: 50%;
-        transform: translateX(-50%) translateY(-50%);
+        transform: translateX(-50%) translateY(-100%);
         text-align: center;
         min-width: min(88%, 520px);
         padding: 8px 12px;
@@ -154,12 +154,6 @@
       }
       .subtitle-preview-line + .subtitle-preview-line {
         margin-top: 2px;
-      }
-      .subtitle-preview-hint {
-        margin-top: 6px;
-        font-size: 12px;
-        line-height: 1.3;
-        color: oklch(94% 0.04 225);
       }
       .subtitle-preview-controls {
         border: 1px solid var(--border);
@@ -264,7 +258,6 @@
         <div class="subtitle-preview-overlay__block" data-role="subtitle-block">
           <div class="subtitle-preview-line" data-role="line-a">Tiktok and facebook shot videos!</div>
           <div class="subtitle-preview-line" data-role="line-b">Tiktok and facebook shot videos!</div>
-          <div class="subtitle-preview-hint">拖动字幕块可调整纵向位置</div>
         </div>
       </div>
     </div>

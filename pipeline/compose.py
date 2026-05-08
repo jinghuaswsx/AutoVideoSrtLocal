@@ -71,11 +71,12 @@ def _compute_font_size(preset) -> int:
 
 
 def _compute_margin_v(position_y: float) -> int:
-    """把「距顶百分比」转成 libass 可用的 ASS MarginV（基于 PlayResY=288）。
+    """把字幕外框底边的「距顶百分比」转成 ASS MarginV（基于 PlayResY=288）。
 
     libass 会按 video_height/288 线性缩放，因此 MarginV 基准用 288 而不是
     视频实际高度；不然会被 libass 再缩放一次把字幕推出画面。
-    position_y=0.68 → MarginV=round(288*0.32)=92 → 1920p 视频实际距底 ≈614 px。
+    position_y=0.68 → MarginV=round(288*0.32)=92，生成字幕底边落在画面
+    高度约 68% 处。前端预览必须用同一个底边锚点，不能把它当中心点。
     """
     return round(288 * (1.0 - position_y))
 

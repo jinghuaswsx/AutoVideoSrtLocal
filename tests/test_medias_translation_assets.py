@@ -26,6 +26,14 @@ def test_medias_translate_modal_script_exposes_new_orchestration_ui():
     assert "subtitle_position_y" in script
 
 
+def test_medias_translate_modal_subtitle_position_matches_hard_subtitle_bottom_anchor():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias_translate_modal.js").read_text(encoding="utf-8")
+
+    assert "subtitleOverlay.style.transform = 'translate(-50%, -100%)';" in script
+    assert "subtitleOverlay.style.transform = 'translate(-50%, -50%)';" not in script
+
+
 def test_medias_translation_tasks_parent_title_shows_started_time():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias_translation_tasks.js").read_text(encoding="utf-8")
