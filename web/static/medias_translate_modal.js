@@ -295,7 +295,7 @@
     subtitleOverlay.style.fontSize = `${Number(state.videoSize)}px`;
     subtitleOverlay.style.top = `${Number(state.subtitlePositionY) * 100}%`;
     subtitleOverlay.style.left = '50%';
-    subtitleOverlay.style.transform = 'translate(-50%, -50%)';
+    subtitleOverlay.style.transform = 'translate(-50%, -100%)';
     subtitleOverlay.style.visibility = state.selectedContentTypes.has('videos') ? 'visible' : 'hidden';
     updateSubtitleHint();
   }
