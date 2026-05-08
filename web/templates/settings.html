@@ -121,6 +121,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
      class="settings-tab {{ 'active' if active_tab == 'asr_routing' }}">ASR 路由</a>
   <a href="{{ url_for('settings.index', tab='infrastructure') }}"
      class="settings-tab {{ 'active' if active_tab == 'infrastructure' }}">基础设施凭据</a>
+  <a href="{{ url_for('settings.index', tab='browser_credentials') }}"
+     class="settings-tab {{ 'active' if active_tab == 'browser_credentials' }}">浏览器登录凭据</a>
   <a href="{{ url_for('settings.index', tab='audio_separation') }}"
      class="settings-tab {{ 'active' if active_tab == 'audio_separation' }}">人声分离</a>
   <a href="{{ url_for('settings.index', tab='omni_preset') }}"
@@ -996,6 +998,75 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   </div>
   {% endif %}
 </form>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab · 浏览器登录凭据（superadmin-only）
+   DXM01-Meta/Facebook 明文存储；页面不回显密码，账号只展示掩码。
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'browser_credentials' %}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:var(--settings-fg);margin:0">浏览器登录凭据</h1>
+  </div>
+
+  <div class="bindings-hint">
+    用于服务器浏览器会话掉线后的临时自动填登录。当前仅接入 <code>DXM01-Meta / facebook</code>；
+    密码按本次需求明文存入 MySQL，页面和日志不回显密码。
+  </div>
+
+  {% for row in browser_credentials %}
+  <form method="post" autocomplete="off" class="settings-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="tab" value="browser_credentials">
+    <input type="hidden" name="browser_env_code" value="{{ row.env_code }}">
+    <input type="hidden" name="browser_provider" value="{{ row.provider }}">
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px">
+      <div>
+        <h2>{{ row.env_code }} / {{ row.provider }}</h2>
+        <p class="step-desc" style="margin-bottom:0">
+          当前账号：{{ row.username_mask if row.username_mask else '未配置' }}；
+          密码：{{ '已配置' if row.password_present else '未配置' }}
+        </p>
+      </div>
+      <label style="display:inline-flex;align-items:center;gap:8px;margin:0;text-transform:none;font-weight:600;color:var(--settings-fg-muted)">
+        <input type="checkbox" name="browser_enabled" value="on" {{ 'checked' if row.enabled }}>
+        启用
+      </label>
+    </div>
+
+    <label for="browser_username_{{ loop.index }}">Facebook 账号</label>
+    <input type="text"
+           id="browser_username_{{ loop.index }}"
+           name="browser_username"
+           value=""
+           placeholder="{{ '留空保留当前账号' if row.username_mask else '输入 Facebook 账号' }}"
+           autocomplete="off"
+           spellcheck="false">
+    <p class="hint">页面只展示账号掩码；需要更换账号时重新输入完整账号。</p>
+
+    <label for="browser_password_{{ loop.index }}">Facebook 密码</label>
+    <input type="password"
+           id="browser_password_{{ loop.index }}"
+           name="browser_password"
+           value=""
+           placeholder="{{ '已配置，留空不变' if row.password_present else '未配置，输入后保存' }}"
+           autocomplete="new-password"
+           spellcheck="false">
+
+    <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="hint" style="margin:0">
+        最近登录：{{ row.last_login_status or '无记录' }}
+        {% if row.last_error %} / {{ row.last_error }}{% endif %}
+      </span>
+      {% if row.last_login_at %}
+      <span class="hint" style="margin:0">{{ row.last_login_at }}</span>
+      {% endif %}
+    </div>
+
+    <button class="btn btn-primary save-btn" type="submit">保存凭据</button>
+  </form>
+  {% endfor %}
 {% endif %}
 
 {# ═════════════════════════════════════════════════════════════

@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from appcore import meta_ad_accounts
+from appcore import meta_login_autofill
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query_one
@@ -695,11 +696,32 @@ def run_final_sync(
             else:
                 export_report = _run_meta_ads_export(target_date, account_export_dir, account)
             account_result["export_report"] = export_report
-            if int(export_report.get("returncode") or 0) != 0:
-                error = f"Meta Ads Manager final daily export failed with code {export_report.get('returncode')}"
+            rc = int(export_report.get("returncode") or 0)
+            if rc != 0:
                 if "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
-                    error = "Meta Ads Manager final daily export failed: server browser is not logged in"
-                raise RuntimeError(error)
+                    login_report = meta_login_autofill.ensure_meta_login(
+                        META_AD_EXPORT_CDP_URL,
+                        target_url=meta_login_autofill.build_ads_manager_campaigns_url(
+                            target_date,
+                            account_id=account.account_id,
+                            business_id=account.business_id,
+                        ),
+                    )
+                    account_result["login_autofill"] = login_report
+                    if login_report.get("status") in ("success", "already_logged_in"):
+                        export_report = _run_meta_ads_export(target_date, account_export_dir, account)
+                        account_result["export_report"] = export_report
+                        rc = int(export_report.get("returncode") or 0)
+                    else:
+                        status = str(login_report.get("status") or "failed")
+                        raise RuntimeError(
+                            f"Meta Ads Manager final daily export failed: login_autofill_{status}"
+                        )
+                if rc != 0:
+                    error = f"Meta Ads Manager final daily export failed with code {export_report.get('returncode')}"
+                    if "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
+                        error = "Meta Ads Manager final daily export failed: server browser is not logged in"
+                    raise RuntimeError(error)
 
             campaign_path = Path(str(export_report["campaigns_path"]))
             ad_path = Path(str(export_report["ads_path"]))

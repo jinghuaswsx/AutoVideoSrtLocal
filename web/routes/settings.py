@@ -20,6 +20,7 @@ from flask_login import current_user, login_required
 
 from appcore import (
     asr_routing_config,
+    browser_login_credentials,
     feishu_alerts,
     infra_credentials,
     llm_bindings,
@@ -221,6 +222,8 @@ def index():
             _handle_asr_routing_post()
         elif tab == "infrastructure":
             _handle_infrastructure_post()
+        elif tab == "browser_credentials":
+            _handle_browser_credentials_post()
         elif tab == "audio_separation":
             _handle_audio_separation_post()
         else:
@@ -270,6 +273,7 @@ def index():
         allowed_tabs.add("feishu_alerts")
         allowed_tabs.add("asr_routing")
         allowed_tabs.add("infrastructure")
+        allowed_tabs.add("browser_credentials")
         allowed_tabs.add("audio_separation")
         allowed_tabs.add("omni_preset")
     if active_tab not in allowed_tabs:
@@ -308,6 +312,11 @@ def index():
         "settings.html",
         provider_groups=_provider_rows_by_group(),
         infrastructure_groups=_infrastructure_rows_by_group() if is_admin else [],
+        browser_credentials=(
+            browser_login_credentials.list_credentials_view()
+            if is_admin and active_tab == "browser_credentials"
+            else []
+        ),
         translate_pref=translate_pref_value,
         video_analysis_models=VIDEO_CAPABLE_MODELS,
         image_translate_channel=current_image_channel,
@@ -496,6 +505,26 @@ def _handle_infrastructure_post() -> None:
             infra_credentials.save_config(code, fields, updated_by=user_id)
         except ValueError as exc:
             flash(str(exc), "error")
+
+
+def _handle_browser_credentials_post() -> None:
+    """浏览器登录凭据 tab：保存 DXM01-Meta/Facebook 明文凭据。
+
+    Password follows the same blank-preserves-old convention as other secret
+    settings, but the stored value is intentionally plaintext per the spec.
+    """
+    if not getattr(current_user, "is_superadmin", False):
+        return
+    password_raw = request.form.get("browser_password")
+    password = str(password_raw) if password_raw else None
+    browser_login_credentials.save_credential(
+        request.form.get("browser_env_code") or browser_login_credentials.DEFAULT_ENV_CODE,
+        request.form.get("browser_provider") or browser_login_credentials.DEFAULT_PROVIDER,
+        username=request.form.get("browser_username") or "",
+        password=password,
+        enabled=(request.form.get("browser_enabled") in ("1", "on", "true", "yes")),
+        updated_by=current_user.id,
+    )
 
 
 def _handle_audio_separation_post() -> None:

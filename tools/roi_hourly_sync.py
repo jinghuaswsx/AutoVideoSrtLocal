@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from appcore import meta_ad_accounts
+from appcore import meta_login_autofill
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query, query_one
@@ -765,9 +766,29 @@ def _sync_meta_account_browser(
     rc = int(export_report.get("returncode") or 0)
     if rc != 0:
         if "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
+            login_report = meta_login_autofill.ensure_meta_login(
+                META_AD_EXPORT_CDP_URL,
+                target_url=meta_login_autofill.build_ads_manager_campaigns_url(
+                    business_date,
+                    account_id=account.account_id,
+                    business_id=account.business_id,
+                ),
+            )
+            result["login_autofill"] = login_report
+            if login_report.get("status") in ("success", "already_logged_in"):
+                export_report = _run_meta_ads_manager_export(business_date, snapshot_at, account)
+                result["export_report"] = export_report
+                rc = int(export_report.get("returncode") or 0)
+            else:
+                status = str(login_report.get("status") or "failed")
+                raise RuntimeError(
+                    f"[{account.code}] Meta Ads Manager export failed: login_autofill_{status}"
+                )
+        if rc != 0 and "FAILED_AUTH" in str(export_report.get("stdout_tail") or ""):
             raise RuntimeError(
                 f"[{account.code}] Meta Ads Manager export failed: server browser is not logged in"
             )
+    if rc != 0:
         raise RuntimeError(
             f"[{account.code}] Meta Ads Manager export failed with code {rc}"
         )
