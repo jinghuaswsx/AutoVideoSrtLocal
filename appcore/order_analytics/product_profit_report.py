@@ -6,9 +6,9 @@
   - shopify_fee_usd（合计）也直接读，再按 calculate_shopify_fee 的 rate_breakdown
     比例拆出 base / cross_border / currency_conversion 三项（保证拆分后
     base + intl + conv = order_profit_lines.shopify_fee_usd 不丢精度）。
-  - **广告费现场重算**：按订单 site_code 从 meta_ad_accounts.store_codes
-    生成店铺到账户映射，从对应账户的 meta_ad_daily_campaign_metrics
-    汇总 spend，按该站当日 units 分摊到行。
+  - **广告费现场重算**：读取 meta_ad_daily_campaign_metrics 已按 campaign → product
+    回填的 product_id 维度 spend，按该产品当日 total units 分摊到订单行。
+    这与产品列表 Tab 的广告费口径保持一致，避免同一产品跨 Tab 盈亏不一致。
   - **订单利润现场重算**：revenue - shopify_fee - ad_cost_recalc - purchase
     - shipping_cost - return_reserve。
 
@@ -20,19 +20,13 @@ Shopify Payments 真实 fee：
 from __future__ import annotations
 
 import io
-import logging
 import sys
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from appcore import meta_ad_accounts
-
 from .shopify_fee import calculate_shopify_fee, infer_presentment_currency_from_country
-
-log = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # DB facade（同 cost_allocation.py / order_profit_aggregation.py 模式）
@@ -49,17 +43,6 @@ def query_one(*args, **kwargs):
     return _facade().query_one(*args, **kwargs)
 
 
-# ---------------------------------------------------------------------------
-# 站点 ↔ 广告账户兜底映射。正常情况下以 system_settings.meta_ad_accounts 为准。
-# ---------------------------------------------------------------------------
-DEFAULT_SITE_TO_AD_ACCOUNTS: dict[str, tuple[str, ...]] = {
-    "newjoy": (
-        meta_ad_accounts.DEFAULT_NEWJOYLOO_ACCOUNT_ID,
-        meta_ad_accounts.LEGACY_NEWJOYLOO_ACCOUNT_ID,
-    ),   # Newjoyloo current + legacy history
-    "omurio": ("1253003326160754",),   # Omurio
-}
-
 # 完整口径：订单 site_code 简称 → 对外展示完整名
 SITE_FULL_NAME: dict[str, str] = {
     "newjoy": "newjoyloo",
@@ -71,15 +54,6 @@ def _site_full(site_code: str | None) -> str:
     if not site_code:
         return "(未知)"
     return SITE_FULL_NAME.get(site_code, site_code)
-
-
-def _site_to_ad_accounts() -> dict[str, tuple[str, ...]]:
-    try:
-        configured = meta_ad_accounts.site_account_map(enabled_only=False)
-    except Exception as exc:  # noqa: BLE001 - reporting should still render if settings are unavailable.
-        log.warning("failed to load meta ad account site mapping: %s", exc)
-        return dict(DEFAULT_SITE_TO_AD_ACCOUNTS)
-    return configured or dict(DEFAULT_SITE_TO_AD_ACCOUNTS)
 
 
 # ---------------------------------------------------------------------------
@@ -126,9 +100,10 @@ def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[d
 
 
 def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> dict[tuple[date, str], int]:
-    """加载每天 × 每站点的产品总 units，用于按站点分摊广告费。
+    """加载每天 × 每站点的产品总 units。
 
-    Key: (business_date, site_code) → units
+    Key: (business_date, site_code) → units. 广告费分摊时会把同一天所有站点的
+    units 合计成产品当日总 units，保证总广告费等于 product_id 归属 spend。
     """
     rows = query(
         "SELECT DATE(dol.order_paid_at) AS d, dol.site_code, "
@@ -150,7 +125,8 @@ def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> d
 def _load_account_daily_spend(product_id: int, date_from: date, date_to: date) -> dict[tuple[date, str], float]:
     """每天 × 每账户对该产品的广告 spend。
 
-    Key: (report_date, ad_account_id) → spend_usd
+    Key: (report_date, ad_account_id) → spend_usd. 下游会忽略账户归属，只按
+    report_date 合计 product_id 维度 spend，与产品列表 Tab 保持一致。
     """
     rows = query(
         "SELECT report_date, ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
@@ -219,21 +195,25 @@ def _split_shopify_fee(line_amount_usd: float, total_fee_usd: float, buyer_count
 
 
 def _recalc_ad_cost(line: dict[str, Any], site_units: dict, account_spend: dict) -> float:
-    """按店铺绑定的一个或多个广告账户分摊广告费到本行。
+    """按 product_id 归属的当日广告费分摊到本行。
 
-    daily_spend = meta_ad_daily_campaign_metrics 中"对应账户集合"对该产品当日 spend
-    site_units  = 该站点当日该产品总 units
-    本行 ad_cost = daily_spend × line_units / site_units
+    daily_spend = meta_ad_daily_campaign_metrics 中该 product_id 当日所有账户 spend
+    daily_units = 该产品当日所有站点 units
+    本行 ad_cost = daily_spend × line_units / daily_units
     """
-    site = line.get("site_code") or ""
     business_date = line.get("business_date")
-    if not site or not business_date:
+    if not business_date:
         return 0.0
-    account_ids = _site_to_ad_accounts().get(site) or ()
-    if not account_ids:
-        return 0.0
-    spend = sum(float(account_spend.get((business_date, account_id), 0.0) or 0.0) for account_id in account_ids)
-    units_total = site_units.get((business_date, site), 0)
+    spend = sum(
+        float(value or 0.0)
+        for (spend_date, _account_id), value in account_spend.items()
+        if spend_date == business_date
+    )
+    units_total = sum(
+        int(units or 0)
+        for (units_date, _site), units in site_units.items()
+        if units_date == business_date
+    )
     line_units = int(line.get("quantity") or 0)
     if spend <= 0 or units_total <= 0 or line_units <= 0:
         return 0.0
@@ -283,7 +263,7 @@ def _build_order_row(line: dict[str, Any], site_units: dict, account_spend: dict
         if "shipping_cost" in missing_list:
             estimated_fields.append("shipping_cost")
 
-    # ad_cost 跟 status 无关（按 site/account 1:1 + 当日 spend 现场算）
+    # ad_cost 跟 status 无关（按 product_id 当日 spend + 当日 units 现场算）
     ad_cost_recalc = _recalc_ad_cost(line, site_units, account_spend)
 
     # Shopify fee 来源标记：如果 order_name 在 real_fees 里就是 real
@@ -533,7 +513,7 @@ def generate_report(
         "total": total,
         "meta": {
             "generated_at": datetime.now(),
-            "ad_attribution_basis": "site_to_account_1to1",
+            "ad_attribution_basis": "product_id_daily_units",
             "shopify_fee_split_basis": "rate_breakdown_proportional",
         },
     }
