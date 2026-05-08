@@ -53,3 +53,19 @@ def test_product_profit_ads_campaigns_support_manual_unbind_only():
     assert "unbindManualCampaign" in TEMPLATE
     assert "DELETE" in TEMPLATE
     assert "解绑" in TEMPLATE
+
+
+def test_product_profit_country_tab_uses_country_pills_not_bar_chart():
+    assert 'id="ppd-country-pills"' in TEMPLATE
+    assert "function loadCountryPills()" in TEMPLATE
+    assert "function selectCountryPill(country)" in TEMPLATE
+    assert "chart-country-tab3" not in TEMPLATE
+    assert "按国家利润（点击柱条筛选下钻）" not in TEMPLATE
+
+
+def test_product_profit_country_tab_ranks_products_when_no_product_selected():
+    assert "fetch('/order-analytics/product-profit/countries.json'" in TEMPLATE
+    assert "function loadCountryProductRanking(country)" in TEMPLATE
+    assert "rows.sort(function(a, b)" in TEMPLATE
+    assert "return (Number(b.order_count) || 0) - (Number(a.order_count) || 0);" in TEMPLATE
+    assert "renderCountryProductRanking" in TEMPLATE
