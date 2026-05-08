@@ -48,6 +48,7 @@
 - [x] Run `pytest tests/test_meta_login_retry.py -q` and confirm failures.
 - [x] Wire helper into both export paths with sanitized errors.
 - [x] Re-run `pytest tests/test_meta_login_retry.py -q`.
+- [x] Preserve `include_adsets=True` on the post-autofill retry so the temporary `newjoyloo_old` three-level backfill still exports campaigns, adsets, and ads after a login refresh.
 
 ## Task 5: Regression And Storage
 

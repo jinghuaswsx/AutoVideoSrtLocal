@@ -709,7 +709,12 @@ def run_final_sync(
                     )
                     account_result["login_autofill"] = login_report
                     if login_report.get("status") in ("success", "already_logged_in"):
-                        export_report = _run_meta_ads_export(target_date, account_export_dir, account)
+                        export_report = _run_meta_ads_export(
+                            target_date,
+                            account_export_dir,
+                            account,
+                            include_adsets=include_adsets,
+                        )
                         account_result["export_report"] = export_report
                         rc = int(export_report.get("returncode") or 0)
                     else:
