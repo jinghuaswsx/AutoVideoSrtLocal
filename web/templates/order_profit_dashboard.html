@@ -512,8 +512,8 @@ button.op-aux-chip:focus-visible { outline: none; border-color: var(--accent); b
         <small>点击查看明细</small>
       </button>
       <span class="op-aux-chip">
-        待配对广告 <strong id="opUnallocated">-</strong>
-        <small id="opUnallocatedSub">未匹配 product，已扣入总利润</small>
+        未分摊广告 <strong id="opUnallocated">-</strong>
+        <small id="opUnallocatedSub">未匹配 product 或无可分摊订单，已扣入总利润</small>
       </span>
       <span class="op-aux-chip">
         估算项 <strong id="opEstimatedData">-</strong>
@@ -782,7 +782,7 @@ function renderEstimateMarks(marks) {
     ['小包物流', marks.shipping_product_estimated, '使用产品维护的 packet_cost_estimated'],
     ['小包物流', marks.shipping_fallback, '缺物流成本时按营收 20% 估算'],
     ['退货占用', marks.return_reserve, '按营收 1% 做预留'],
-    ['待配对广告费', marks.unallocated_ad_spend, 'campaign 尚未匹配 product，已在总利润中扣减'],
+    ['未分摊广告费', marks.unallocated_ad_spend, 'campaign 未匹配 product，或匹配产品当天无可分摊订单，已在总利润中扣减'],
   ].filter(([, mark]) => mark && (mark.estimated || Number(mark.amount_usd || 0) > 0 || Number(mark.lines || 0) > 0));
 
   if (!rows.length) {
@@ -828,7 +828,7 @@ async function refreshSummary() {
 
   // === 成本：拆「真实数据」vs「按规则估算」===
   // 已核算 = (ok+inc) 真实采购 + 真实物流 + 已分摊广告（campaign 已匹配 product）
-  // 估算   = 手续费（策略 C）+ 退货占用（1%）+ 缺数据 fallback（采购/物流）+ 未匹配广告
+  // 估算   = 手续费（策略 C）+ 退货占用（1%）+ 缺数据 fallback（采购/物流）+ 未分摊广告
   const known_purchase = (ok.purchase_actual ?? ok.purchase ?? 0) + (inc.purchase_actual ?? inc.purchase ?? 0);
   const known_shipping = (ok.shipping_cost_actual ?? ok.shipping_cost ?? 0) + (inc.shipping_cost_actual ?? inc.shipping_cost ?? 0);
   const known_ad = Number(ok.ad_cost || 0) + Number(inc.ad_cost || 0);
@@ -873,11 +873,11 @@ async function refreshSummary() {
   const marginText = overview.total_margin_pct == null ? '总利润率：-' : `总利润率：${overview.total_margin_pct}%`;
   const completeProfit = data.profit_with_estimate_usd ?? (knownProfit + (estimated.profit_usd || 0));
   document.getElementById('opTotalProfitFormula').textContent =
-    `${marginText}｜含估算口径 ${fmtUSD(completeProfit)} − 待配对广告 ${fmtUSD(unallocated)}`;
+    `${marginText}｜含估算口径 ${fmtUSD(completeProfit)} − 未分摊广告 ${fmtUSD(unallocated)}`;
 
   // ---- 辅助 chips ----
   document.getElementById('opUnallocated').textContent = fmtUSD(unallocated);
-  document.getElementById('opUnallocatedSub').textContent = `${data.date_from || f} 至 ${data.date_to || t} 未匹配 product`;
+  document.getElementById('opUnallocatedSub').textContent = `${data.date_from || f} 至 ${data.date_to || t} 未匹配 product 或无可分摊订单`;
   document.getElementById('opIncomplete').textContent = `${fmtInt(inc.lines || 0)} 行`;
   const activeEstimateCount = Object.values(marks).filter(mark =>
     mark && mark.estimated && (Number(mark.amount_usd || 0) > 0 || Number(mark.lines || 0) > 0)
@@ -896,7 +896,7 @@ async function refreshSummary() {
     ['小包物流（已核算）', known_shipping, estimateNote(marks.shipping_product_estimated)],
     ['小包物流估算（未核算）', est_shipping_fb, estimateNote(marks.shipping_fallback)],
     ['退货占用', est_return_reserve, estimateNote(marks.return_reserve)],
-    ['待配对广告费', unallocated, estimateNote(marks.unallocated_ad_spend)],
+    ['未分摊广告费', unallocated, estimateNote(marks.unallocated_ad_spend)],
   ];
   const tbody = document.getElementById('opCostBreakdownBody');
   tbody.innerHTML = items.map(([name, val, note]) => {
@@ -909,7 +909,7 @@ async function refreshSummary() {
   const banner = document.getElementById('opAlertsBanner');
   const alerts = [];
   if (data.unallocated_ad_spend_usd > 0) {
-    alerts.push(`未分摊广告费 ${fmtUSD(data.unallocated_ad_spend_usd)}（当前时间范围），请补 campaign-product 配对`);
+    alerts.push(`未分摊广告费 ${fmtUSD(data.unallocated_ad_spend_usd)}（当前时间范围），请补 campaign-product 配对或核查当天是否无可分摊订单`);
   }
   if (inc.lines > ok.lines) {
     alerts.push(`不完备 SKU 行 ${fmtInt(inc.lines)} > 已核算 ${fmtInt(ok.lines)}，请优先维护成本字段`);

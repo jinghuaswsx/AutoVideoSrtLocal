@@ -21,6 +21,7 @@
 7. 成本完备性看板的近 N 天影响范围也按当前 Meta 业务日倒推，并用 `dianxiaomi_order_lines.meta_business_date` 过滤。
 8. 刚过北京时间 16:00 后选择“昨天”时，如果该刚关闭业务日的日终广告表尚未生成，应继续使用该业务日最后一个实时快照兜底，避免广告花费临时显示 0。
 9. 订单利润核算页在所选业务日期缺少 `meta_ad_daily_campaign_metrics` 日终行、但已有 `meta_ad_realtime_daily_campaign_metrics` 快照时，订单列表和汇总应按最新快照的 campaign spend 临时分摊广告费，不能把广告费展示为 0。
+10. 实时快照里已匹配 product、但该 product 在所选业务日没有可分摊订单 units 的广告费，应作为“未分摊广告费”扣入订单利润总利润，不能既不进订单分摊、也不进待处理广告成本。
 
 ## 非目标
 
@@ -36,6 +37,7 @@
 - `/order-analytics/product-profit/*` 默认日期范围的 `date_to` 应为当前 Meta 业务日。
 - `/order-profit/api/orders` 和 summary 类接口按 `order_profit_lines.business_date` 过滤。
 - `/order-profit` 点“昨天”后，如果该业务日只有实时广告快照，`/order-profit/api/orders` 的订单广告费与利润、`/order-profit/api/summary` 的广告成本与总利润都应使用实时快照兜底后的值；预览页面不得继续显示广告费 0。
+- `/order-profit` 汇总里“广告费分摊 + 未分摊广告费”应覆盖实时快照总广告费；未分摊广告费包括未匹配 product，以及已匹配 product 但当天没有可分摊订单 units 的 spend。
 
 ## Docs-anchor
 
