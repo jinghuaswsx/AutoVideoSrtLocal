@@ -9,6 +9,8 @@ from datetime import date
 from typing import Any, Callable
 
 from appcore import browser_login_credentials
+from appcore.browser_automation_lock import BrowserAutomationLockTimeout
+from appcore.meta_ads_cdp import meta_ads_cdp_lock
 
 
 LOGIN_MARKERS = (
@@ -139,22 +141,30 @@ def ensure_meta_login(
 
     from playwright.sync_api import sync_playwright
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(cdp_url)
-        context = browser.contexts[0]
-        page = context.new_page()
-        try:
-            if target_url:
-                page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(8000)
-            return _ensure_meta_login_on_page(
-                page,
-                env_code=env_code,
-                provider=provider,
-                target_url=target_url,
-            )
-        finally:
-            try:
-                page.close()
-            except Exception:
-                pass
+    try:
+        with meta_ads_cdp_lock(
+            task_code="meta_login_autofill",
+            command=target_url or cdp_url,
+        ):
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.connect_over_cdp(cdp_url)
+                context = browser.contexts[0]
+                page = context.new_page()
+                try:
+                    if target_url:
+                        page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
+                        page.wait_for_timeout(8000)
+                    return _ensure_meta_login_on_page(
+                        page,
+                        env_code=env_code,
+                        provider=provider,
+                        target_url=target_url,
+                    )
+                finally:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+    except BrowserAutomationLockTimeout as exc:
+        browser_login_credentials.mark_login_result(env_code, provider, "failed", "lock_timeout")
+        return {"status": "lock_timeout", "error": str(exc)}

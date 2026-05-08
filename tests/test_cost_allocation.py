@@ -108,6 +108,8 @@ def test_get_sku_daily_units_aggregates_by_product_and_date(monkeypatch):
     result = get_sku_daily_units(product_id=316, business_date=date(2026, 5, 4))
     assert result == 12
     assert "FROM dianxiaomi_order_lines" in captured["sql"]
+    assert "meta_business_date = %s" in captured["sql"]
+    assert "DATE(order_paid_at)" not in captured["sql"]
     assert "GROUP BY" not in captured["sql"]  # 单 product 单日只查一行
     assert captured["args"] == (316, date(2026, 5, 4))
 
@@ -118,13 +120,19 @@ def test_get_sku_daily_units_returns_zero_when_no_orders(monkeypatch):
 
 
 def test_get_sku_daily_ad_spend_sums_meta_daily_metrics(monkeypatch):
+    captured = {}
+
     def fake_query_one(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
         return {"spend": 35.50}
 
     monkeypatch.setattr(oa, "query_one", fake_query_one)
 
     result = get_sku_daily_ad_spend(product_id=316, business_date=date(2026, 5, 4))
     assert result == pytest.approx(35.50)
+    assert "COALESCE(meta_business_date, report_date) = %s" in captured["sql"]
+    assert captured["args"] == (316, date(2026, 5, 4))
 
 
 def test_get_sku_daily_ad_spend_returns_zero_when_no_ads(monkeypatch):
@@ -134,10 +142,16 @@ def test_get_sku_daily_ad_spend_returns_zero_when_no_ads(monkeypatch):
 
 def test_get_unallocated_ad_spend_returns_unmatched_total(monkeypatch):
     """campaign 未匹配 product_id 的 spend 总和，按当日。"""
+    captured = {}
+
     def fake_query_one(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
         assert "product_id IS NULL" in sql
         return {"spend": 12.34}
 
     monkeypatch.setattr(oa, "query_one", fake_query_one)
     result = get_unallocated_ad_spend(business_date=date(2026, 5, 4))
     assert result == pytest.approx(12.34)
+    assert "COALESCE(meta_business_date, report_date) = %s" in captured["sql"]
+    assert captured["args"] == (date(2026, 5, 4),)

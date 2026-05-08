@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import os
+import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -10,10 +11,17 @@ from random import uniform
 
 from playwright.sync_api import sync_playwright
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from appcore.browser_automation_lock import BrowserAutomationLockTimeout
+from appcore.meta_ads_cdp import DEFAULT_META_ADS_CDP_URL, meta_ads_cdp_lock
+
 
 ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "1861285821213497")
 BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063")
-CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9845")
+CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", DEFAULT_META_ADS_CDP_URL)
 DEFAULT_CSV_PREFIX = "newjoyloo"
 LEVELS = {
     "campaigns": ("campaigns", "campaigns"),
@@ -173,7 +181,7 @@ def export_one(
     return False
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
@@ -194,7 +202,7 @@ def main() -> int:
         default=0,
         help="Minimum elapsed seconds for each day window, including both campaign and ad exports.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     start = parse_date(args.start)
     end = parse_date(args.end)
@@ -215,51 +223,59 @@ def main() -> int:
     failures: list[tuple[str, str]] = []
     attempted = 0
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(args.cdp_url)
-        context = browser.contexts[0]
-        page = context.new_page()
-        day = start
-        days_done = 0
-        while day <= end:
-            day_started_at = time.monotonic()
-            for level_key in selected_levels:
-                level, label = LEVELS[level_key]
-                result = export_one(
-                    page,
-                    out_dir,
-                    level,
-                    label,
-                    day,
-                    account_id=args.account_id,
-                    business_id=args.business_id,
-                    csv_prefix=args.csv_prefix,
-                )
-                if result == AUTH_FAILED:
-                    failures.append((day.isoformat(), f"{label}:auth"))
-                    print("DONE attempted", attempted + 1, "failures", failures, flush=True)
-                    return 2
-                if not result:
-                    failures.append((day.isoformat(), label))
-                attempted += 1
-                sleep_s = uniform(10, 18)
-                print("SLEEP", round(sleep_s, 1), flush=True)
-                time.sleep(sleep_s)
+    try:
+        with meta_ads_cdp_lock(
+            task_code="meta_ads_manager_export",
+            command=f"{args.csv_prefix} {start.isoformat()}..{end.isoformat()}",
+        ):
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.connect_over_cdp(args.cdp_url)
+                context = browser.contexts[0]
+                page = context.new_page()
+                day = start
+                days_done = 0
+                while day <= end:
+                    day_started_at = time.monotonic()
+                    for level_key in selected_levels:
+                        level, label = LEVELS[level_key]
+                        result = export_one(
+                            page,
+                            out_dir,
+                            level,
+                            label,
+                            day,
+                            account_id=args.account_id,
+                            business_id=args.business_id,
+                            csv_prefix=args.csv_prefix,
+                        )
+                        if result == AUTH_FAILED:
+                            failures.append((day.isoformat(), f"{label}:auth"))
+                            print("DONE attempted", attempted + 1, "failures", failures, flush=True)
+                            return 2
+                        if not result:
+                            failures.append((day.isoformat(), label))
+                        attempted += 1
+                        sleep_s = uniform(10, 18)
+                        print("SLEEP", round(sleep_s, 1), flush=True)
+                        time.sleep(sleep_s)
 
-            days_done += 1
-            elapsed = time.monotonic() - day_started_at
-            if args.min_day_seconds > 0 and elapsed < args.min_day_seconds and day < end:
-                pacing_s = args.min_day_seconds - elapsed
-                print("DAY_PACING_AFTER", day.isoformat(), round(pacing_s, 1), flush=True)
-                time.sleep(pacing_s)
-            if day < end and days_done % args.long_rest_every_days == 0:
-                rest_s = uniform(180, 260)
-                print("LONG_REST_AFTER", day.isoformat(), round(rest_s, 1), flush=True)
-                time.sleep(rest_s)
-            day += timedelta(days=1)
-        page.close()
-        # Connected over CDP to the shared server browser; process exit closes the
-        # websocket without shutting down the long-lived browser service.
+                    days_done += 1
+                    elapsed = time.monotonic() - day_started_at
+                    if args.min_day_seconds > 0 and elapsed < args.min_day_seconds and day < end:
+                        pacing_s = args.min_day_seconds - elapsed
+                        print("DAY_PACING_AFTER", day.isoformat(), round(pacing_s, 1), flush=True)
+                        time.sleep(pacing_s)
+                    if day < end and days_done % args.long_rest_every_days == 0:
+                        rest_s = uniform(180, 260)
+                        print("LONG_REST_AFTER", day.isoformat(), round(rest_s, 1), flush=True)
+                        time.sleep(rest_s)
+                    day += timedelta(days=1)
+                page.close()
+                # Connected over CDP to the shared server browser; process exit closes the
+                # websocket without shutting down the long-lived browser service.
+    except BrowserAutomationLockTimeout as exc:
+        print("LOCK_TIMEOUT", str(exc), flush=True)
+        return 75
 
     print("DONE attempted", attempted, "failures", failures, flush=True)
     return 1 if failures else 0

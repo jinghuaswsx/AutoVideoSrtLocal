@@ -15,6 +15,7 @@ from flask_login import login_required
 from web.auth import permission_required
 
 from appcore import medias
+from appcore.order_analytics import current_meta_business_date
 from appcore.order_analytics import product_profit_ads as ppa
 from appcore.order_analytics import product_profit_list as ppl
 from appcore.order_analytics import product_profit_report as ppr
@@ -52,6 +53,10 @@ _COUNTRY_LABELS = {
     "SE": "瑞典",
     "FI": "芬兰",
 }
+
+
+def _default_business_today() -> date:
+    return current_meta_business_date()
 
 
 def _parse_date(value: str | None, default: date) -> date:
@@ -211,7 +216,7 @@ def api_download_xlsx():
             build_product_profit_report_error_response("missing product_id", 400)
         )
 
-    today = date.today()
+    today = _default_business_today()
     date_to = _parse_date(request.args.get("date_to"), today)
     date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
     if date_from > date_to:
@@ -249,7 +254,7 @@ def api_report_json():
             build_product_profit_report_error_response("missing product_id", 400)
         )
 
-    today = date.today()
+    today = _default_business_today()
     date_to = _parse_date(request.args.get("date_to"), today)
     date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
     if date_from > date_to:
@@ -293,7 +298,7 @@ def api_list_json():
       date_to   (YYYY-MM-DD, default = today)
       country   (大写国家代码，可选；空 / "all" = 全部)
     """
-    today = date.today()
+    today = _default_business_today()
     month_start = today.replace(day=1)
     date_from = _parse_date(request.args.get("date_from"), month_start)
     date_to = _parse_date(request.args.get("date_to"), today)
@@ -314,7 +319,7 @@ def api_list_json():
 @permission_required("product_profit")
 def api_list_xlsx():
     """全产品聚合列表的 xlsx 导出（2 sheet：summary + products）。"""
-    today = date.today()
+    today = _default_business_today()
     month_start = today.replace(day=1)
     date_from = _parse_date(request.args.get("date_from"), month_start)
     date_to = _parse_date(request.args.get("date_to"), today)
@@ -372,7 +377,7 @@ def api_ads_json():
             build_product_profit_report_error_response("missing product_id", 400)
         )
 
-    today = date.today()
+    today = _default_business_today()
     date_to = _parse_date(request.args.get("date_to"), today)
     date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
     if date_from > date_to:

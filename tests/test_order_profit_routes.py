@@ -1,3 +1,6 @@
+from datetime import date
+
+
 def test_order_profit_summary_route_uses_aggregate_payload(authed_client_no_db, monkeypatch):
     import web.routes.order_profit as route
 
@@ -108,6 +111,35 @@ def test_order_profit_orders_route_passes_product_filter(
     assert payload["filter_product_id"] == 123
     assert captured["list"]["product_id"] == 123
     assert captured["summary"]["product_id"] == 123
+
+
+def test_order_profit_orders_route_defaults_to_meta_business_date(
+    authed_client_no_db,
+    monkeypatch,
+):
+    import web.routes.order_profit as route
+
+    captured = {}
+
+    def fake_list(**kwargs):
+        captured["list"] = kwargs
+        return []
+
+    def fake_summary(**kwargs):
+        captured["summary"] = kwargs
+        return {"total_orders": 0}
+
+    monkeypatch.setattr(route, "current_meta_business_date", lambda: date(2026, 5, 7), raising=False)
+    monkeypatch.setattr(route, "get_order_profit_list", fake_list)
+    monkeypatch.setattr(route, "get_order_profit_summary_for_window", fake_summary)
+
+    resp = authed_client_no_db.get("/order-profit/api/orders")
+
+    assert resp.status_code == 200
+    assert captured["list"]["date_from"] == date(2026, 4, 30)
+    assert captured["list"]["date_to"] == date(2026, 5, 7)
+    assert captured["summary"]["date_from"] == date(2026, 4, 30)
+    assert captured["summary"]["date_to"] == date(2026, 5, 7)
 
 
 def test_order_profit_loss_alerts_route_delegates_query(authed_client_no_db, monkeypatch):

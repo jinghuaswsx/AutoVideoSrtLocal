@@ -21,6 +21,7 @@ from ._helpers import (
     _roas,
 )
 from .dianxiaomi import compute_meta_business_window_bj, get_dianxiaomi_product_sales_stats
+from .meta_ads import resolve_ad_product_match
 from .shopify_fee import split_shopify_fee_for_order
 
 ORDER_PROFIT_PAGE_SIZE = 100
@@ -584,17 +585,28 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
     return details
 
 
-def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -> list[dict[str, Any]]:
-    if not snapshot_at:
-        return []
-    rows = query(
-        "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
-        "result_count, spend_usd, purchase_value_usd, impressions, clicks "
-        "FROM meta_ad_realtime_daily_campaign_metrics "
-        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial' "
-        "ORDER BY spend_usd DESC, campaign_name",
-        (target, snapshot_at),
-    )
+def _filter_realtime_campaign_rows_for_product(
+    rows: list[dict[str, Any]],
+    product_id: int | None,
+) -> list[dict[str, Any]]:
+    if not product_id:
+        return rows
+    target_product_id = int(product_id)
+    cache: dict[str, int | None] = {}
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        code = str(row.get("normalized_campaign_code") or row.get("campaign_name") or "").strip().lower()
+        if not code:
+            continue
+        if code not in cache:
+            match = resolve_ad_product_match(code)
+            cache[code] = int(match["id"]) if match and match.get("id") is not None else None
+        if cache[code] == target_product_id:
+            filtered.append(row)
+    return filtered
+
+
+def _format_realtime_campaign_details(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     campaigns: list[dict[str, Any]] = []
     for row in rows:
         spend = _money(row.get("spend_usd"))
@@ -613,6 +625,91 @@ def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -
             "clicks": int(row.get("clicks") or 0),
         })
     return campaigns
+
+
+def _get_realtime_campaign_details(
+    target: date,
+    snapshot_at: datetime | None,
+    *,
+    product_id: int | None = None,
+) -> list[dict[str, Any]]:
+    if not snapshot_at:
+        return []
+    rows = query(
+        "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
+        "result_count, spend_usd, purchase_value_usd, impressions, clicks "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial' "
+        "ORDER BY spend_usd DESC, campaign_name",
+        (target, snapshot_at),
+    )
+    return _format_realtime_campaign_details(
+        _filter_realtime_campaign_rows_for_product(rows, product_id)
+    )
+
+
+def _get_realtime_order_summary(
+    target: date,
+    data_until: datetime,
+    *,
+    product_id: int | None = None,
+) -> dict[str, Any]:
+    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    rows = query(
+        "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "COUNT(*) AS line_count, "
+        "SUM(quantity) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "MIN(" + order_time_expr + ") AS first_order_at, "
+        "MAX(" + order_time_expr + ") AS last_order_at, "
+        "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
+        "FROM dianxiaomi_order_lines "
+        "WHERE site_code IN ('newjoy', 'omurio') "
+        "AND meta_business_date=%s "
+        "AND " + order_time_expr + " <= %s "
+        + product_sql,
+        tuple([target, data_until] + product_args),
+    )
+    row = rows[0] if rows else {}
+    order_revenue = _money(row.get("order_revenue"))
+    shipping_revenue = _money(row.get("shipping_revenue"))
+    return {
+        "order_count": int(row.get("order_count") or 0),
+        "line_count": int(row.get("line_count") or 0),
+        "units": int(row.get("units") or 0),
+        "order_revenue": order_revenue,
+        "line_revenue": _money(row.get("line_revenue")),
+        "shipping_revenue": shipping_revenue,
+        "revenue_with_shipping": _revenue_with_shipping(order_revenue, shipping_revenue),
+        "first_order_at": row.get("first_order_at"),
+        "last_order_at": row.get("last_order_at"),
+        "last_order_updated_at": row.get("last_order_updated_at"),
+    }
+
+
+def _should_try_realtime_snapshot(
+    target: date,
+    current_business_date: date,
+    *,
+    product_id: int | None = None,
+) -> bool:
+    if target >= current_business_date:
+        return True
+    if target != current_business_date - timedelta(days=1):
+        return False
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    rows = query(
+        "SELECT COUNT(*) AS n "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date = %s "
+        + product_sql,
+        tuple([target] + product_args),
+    )
+    row = rows[0] if rows else {}
+    return int(row.get("n") or 0) == 0
 
 
 def _get_realtime_product_sales_stats(
@@ -1005,17 +1102,120 @@ def get_realtime_roas_overview(
         for hour in range(24)
     ]
 
-    # 历史日期直接走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
-    # 仅"当天"和"未来"日期下才尝试 ROI 实时快照。
-    latest_snapshot = [] if normalized_product_id else query(
+    # 历史日期默认走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
+    # 刚过 16:00 时，上一 Meta 业务日可能已关闭但日终广告表尚未生成；此时用最后一个实时快照兜底。
+    should_try_snapshot = _should_try_realtime_snapshot(
+        target,
+        current_business_date,
+        product_id=normalized_product_id,
+    )
+    latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
         "ORDER BY snapshot_at DESC, id DESC LIMIT 1",
         (target,),
-    ) if target >= current_business_date else []
+    ) if should_try_snapshot else []
     if latest_snapshot:
         snap = latest_snapshot[0]
         snapshot_at = snap.get("snapshot_at") or data_until
+        if normalized_product_id:
+            order_summary = _get_realtime_order_summary(
+                target,
+                snapshot_at,
+                product_id=normalized_product_id,
+            )
+            campaign_details = _get_realtime_campaign_details(
+                target,
+                snapshot_at,
+                product_id=normalized_product_id,
+            )
+            ad_spend = round(sum(c["spend_usd"] for c in campaign_details), 2)
+            meta_purchase_value = round(sum(c["purchase_value_usd"] for c in campaign_details), 2)
+            meta_purchases = sum(c["result_count"] for c in campaign_details)
+            order_details = _get_realtime_order_details(
+                target,
+                day_start,
+                snapshot_at,
+                product_id=normalized_product_id,
+            )
+            order_profit_all = _get_realtime_order_profit_details(
+                target,
+                day_start,
+                snapshot_at,
+                product_id=normalized_product_id,
+            )
+            order_profit_details = _get_realtime_order_profit_details(
+                target,
+                day_start,
+                snapshot_at,
+                product_id=normalized_product_id,
+                page=normalized_page,
+                page_size=normalized_page_size,
+            )
+            product_sales_stats = _get_realtime_product_sales_stats(
+                target,
+                snapshot_at,
+                product_id=normalized_product_id,
+            )
+            last_order_updated_at = _get_realtime_order_updated_at(target, snapshot_at, snap.get("source_run_id"))
+            last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
+            revenue_with_shipping = order_summary["revenue_with_shipping"]
+            return {
+                "period": {
+                    "date": target,
+                    "timezone": META_ATTRIBUTION_TIMEZONE,
+                    "day_start_at": day_start,
+                    "day_end_at": day_end,
+                    "data_until_at": snapshot_at,
+                    "complete_hour_until_at": complete_hour_until,
+                    "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+                    "day_definition": "meta_ad_platform_business_day",
+                },
+                "scope": {
+                    "stores": ["newjoy", "omurio"],
+                    "product_id": normalized_product_id,
+                    "ad_platforms": ["meta"],
+                    "order_source": "dianxiaomi",
+                    "ad_source": "meta_ad_realtime_daily_campaign_metrics",
+                    "ad_granularity": "campaign_realtime_snapshot",
+                    "hourly_ad_ready": False,
+                },
+                "freshness": {
+                    "first_order_at": order_summary.get("first_order_at"),
+                    "last_order_at": order_summary.get("last_order_at"),
+                    "last_order_updated_at": last_order_updated_at or order_summary.get("last_order_updated_at"),
+                    "last_ad_updated_at": last_ad_updated_at,
+                },
+                "summary": {
+                    "order_count": order_summary["order_count"],
+                    "line_count": order_summary["line_count"],
+                    "units": order_summary["units"],
+                    "order_revenue": order_summary["order_revenue"],
+                    "revenue_with_shipping": revenue_with_shipping,
+                    "line_revenue": order_summary["line_revenue"],
+                    "shipping_revenue": order_summary["shipping_revenue"],
+                    "ad_spend": ad_spend,
+                    "meta_purchase_value": meta_purchase_value,
+                    "meta_purchases": meta_purchases,
+                    "true_roas": _roas(revenue_with_shipping, ad_spend),
+                    "meta_roas": _roas(meta_purchase_value, ad_spend),
+                    "order_data_status": snap.get("order_data_status") or "ok",
+                    "ad_data_status": snap.get("ad_data_status") or "pending_source",
+                },
+                "hourly": [],
+                "roas_points": roas_points,
+                "snapshots": [snap],
+                "order_details": order_details,
+                "order_profit_details": order_profit_details,
+                "order_profit_details_page": _order_profit_page_info(
+                    len(order_profit_all),
+                    normalized_page,
+                    normalized_page_size,
+                ),
+                "order_profit_summary": _build_order_profit_summary(order_profit_all),
+                "campaigns": campaign_details,
+                "product_sales_stats": product_sales_stats,
+            }
         order_revenue = _money(snap.get("order_revenue_usd"))
         shipping_revenue = _money(snap.get("shipping_revenue_usd"))
         revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)

@@ -779,6 +779,16 @@ def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
     assert "pointerdown" in script
 
 
+def test_voice_selector_multi_subtitle_position_matches_hard_subtitle_bottom_anchor():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_voice_selector_multi.html").read_text(encoding="utf-8")
+    script = (root / "web" / "static" / "voice_selector_multi.js").read_text(encoding="utf-8")
+
+    assert "transform: translate(-50%, -100%);" in template
+    assert "translate(-50%, -50%)" not in template
+    assert "previewSubtitle.style.top = `${(parseFloat(subPosYEl.value) || 0.68) * 100}%`;" in script
+
+
 def test_voice_selector_multi_uses_configured_api_base_for_shared_endpoints():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "voice_selector_multi.js").read_text(encoding="utf-8")
@@ -864,6 +874,15 @@ def test_shared_subtitle_preview_supports_local_video_upload():
     assert "URL.revokeObjectURL" in script
     assert 'addEventListener("drop"' in script
     assert "视频加载失败，拖拽本地视频重新预览" in script
+
+
+def test_shared_subtitle_preview_subtitle_position_matches_hard_subtitle_bottom_anchor():
+    root = Path(__file__).resolve().parents[1]
+    preview_panel = (root / "web" / "templates" / "_subtitle_preview_panel.html").read_text(encoding="utf-8")
+
+    assert "transform: translateX(-50%) translateY(-100%);" in preview_panel
+    assert "translateY(-50%)" not in preview_panel
+    assert "subtitle-preview-hint" not in preview_panel
 
 
 def test_multi_translate_detail_displays_asr_result_before_extracted_audio():

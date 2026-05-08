@@ -46,7 +46,7 @@
 
 删除 `.oar-time-rule` 蓝底提示框，改为工具栏下方一行小灰字 `.oar-note`：
 
-> 「按 Meta 广告系统日聚合 · 订单按广告日归属 · 北京时间 04:00 切日」
+> 「按 Meta 广告系统日聚合 · 订单按广告日归属 · 北京时间 16:00 切日」
 
 **3. 数据卡片（一级 11 张同密度）**
 
@@ -115,7 +115,7 @@
     "start_date": "2026-04-25",
     "end_date": "2026-05-01",
     "timezone": "America/Los_Angeles",
-    "meta_cutover_hour_bj": 4,
+    "meta_cutover_hour_bj": 16,
     "day_definition": "meta_ad_platform_business_day_range"
   },
   "scope": { ... 同原结构 ... },

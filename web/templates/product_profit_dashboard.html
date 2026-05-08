@@ -1170,8 +1170,31 @@
     var dd = String(d.getDate()).padStart(2, '0');
     return d.getFullYear() + '-' + m + '-' + dd;
   }
+  function currentMetaBusinessDate(now) {
+    var metaCutoverHourBj = 16;
+    var parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hour12: false,
+    }).formatToParts(now || new Date()).reduce(function(acc, part) {
+      if (part.type !== 'literal') acc[part.type] = part.value;
+      return acc;
+    }, {});
+    var hour = Number(parts.hour || 0);
+    if (hour >= 24) hour = 0;
+    var businessDate = new Date(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day)
+    );
+    if (hour < metaCutoverHourBj) businessDate.setDate(businessDate.getDate() - 1);
+    return businessDate;
+  }
   (function setDefaultDates() {
-    var today = new Date();
+    var today = currentMetaBusinessDate();
     var from = new Date(today.getTime() - 30 * 86400000);
     dateFromInput.value = fmt(from);
     dateToInput.value = fmt(today);

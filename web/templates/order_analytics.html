@@ -341,6 +341,19 @@
 .oar-note {
   color: var(--fg-muted); font-size: var(--text-sm);
 }
+.oar-realtime-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.oar-product-search-row {
+  display: flex;
+  align-items: center;
+  margin-top: var(--space-3);
+}
+.oar-realtime-toolbar-row + .oar-note {
+  margin-top: var(--space-3);
+}
 .oa-stat-sub {
   margin-top: 4px; color: var(--fg-muted); font-size: var(--text-xs); line-height: 1.4;
 }
@@ -527,6 +540,12 @@
   }
 }
 @media (max-width: 768px) {
+  .oar-realtime-actions {
+    width: 100%;
+  }
+  .oar-realtime-actions .oad-btn-primary {
+    width: 100%;
+  }
   .oar-product-search {
     flex-basis: 100%;
     max-width: none;
@@ -1166,7 +1185,7 @@
 
 <section class="oa-panel active" id="panelRealtime">
   <div class="oad-toolbar">
-    <div class="oad-toolbar-row">
+    <div class="oad-toolbar-row oar-realtime-toolbar-row">
       <div class="oad-range-presets" role="group" aria-label="实时大盘时间范围">
         <button type="button" class="oad-seg is-active" data-realtime-range="today" aria-pressed="true">今天</button>
         <button type="button" class="oad-seg" data-realtime-range="yesterday" aria-pressed="false">昨天</button>
@@ -1180,7 +1199,12 @@
         <span class="oad-date-range-sep">至</span>
         <input type="date" id="realtimeEndDate" aria-label="结束日期">
       </div>
-      <button type="button" class="oad-btn-primary" id="realtimeRefresh">查询</button>
+      <div class="oar-realtime-actions">
+        <button type="button" class="oad-btn-primary" id="realtimeRefresh">查询</button>
+      </div>
+    </div>
+    <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 16:00 切日</div>
+    <div class="oar-product-search-row">
       <div class="oa-search-box oar-product-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="realtimeProductSearchInput" placeholder="搜索产品 ID 或标题…">
@@ -1192,7 +1216,6 @@
       当前筛选产品：<span class="oa-product-name" id="realtimePickerProductName"></span>
       <button type="button" class="oa-clear-btn" id="realtimeProductClear">清除筛选</button>
     </div>
-    <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 16:00 切日</div>
   </div>
 
   <div class="oa-stats oar-summary-stats" id="realtimeSummary">
@@ -1938,7 +1961,9 @@
         hint = document.createElement('div');
         hint.id = key + 'BjHint';
         hint.style.cssText = 'color: var(--fg-muted); font-size: 12px; margin: 4px 0 0; flex-basis: 100%;';
-        anchor.parentElement.insertBefore(hint, anchor.nextSibling);
+        var realtimeActions = anchor.parentElement.querySelector('.oar-realtime-actions');
+        var insertAfter = realtimeActions || anchor;
+        anchor.parentElement.insertBefore(hint, insertAfter.nextSibling);
       }
       hint.textContent = describeBjWindow(pair.start.value, pair.end.value);
     });
@@ -5533,7 +5558,7 @@
 
   // 默认日期：最近 30 天
   function setDefaultDates() {
-    var today = new Date();
+    var today = window.orderAnalyticsMetaCalendar.today();
     var from = new Date(today.getTime() - 30 * 24 * 3600 * 1000);
     function fmt(d) {
       var m = String(d.getMonth() + 1).padStart(2, '0');

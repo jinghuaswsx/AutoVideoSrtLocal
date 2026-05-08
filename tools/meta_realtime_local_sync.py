@@ -20,13 +20,18 @@ from playwright.sync_api import sync_playwright
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from appcore.meta_ads_cdp import DEFAULT_META_ADS_CDP_URL, meta_ads_cdp_lock
+
 EXPORT_SCRIPT = REPO_ROOT / "scripts" / "run_meta_ads_backfill_range.py"
 SCRATCH_ROOT = REPO_ROOT / "scratch" / "meta_realtime_local"
 
 ADS_POWER_ENV_LABEL = "ADS Power 90"
 ADS_POWER_USER_ID = "90"
 CDP_ENV_VAR = "META_AD_EXPORT_CDP_URL"
-LEGACY_CDP_URL = "http://127.0.0.1:9845"
+DEFAULT_CDP_URL = DEFAULT_META_ADS_CDP_URL
 ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "1861285821213497").strip().removeprefix("act_")
 BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063").strip()
 CSV_PREFIX = os.environ.get("META_AD_EXPORT_CSV_PREFIX", "newjoyloo").strip() or "newjoyloo"
@@ -220,7 +225,7 @@ def discover_cdp() -> dict[str, Any]:
     seed_urls = []
     if configured:
         seed_urls.append((configured, "env_override"))
-    seed_urls.append((LEGACY_CDP_URL, "legacy_documented_port"))
+    seed_urls.append((DEFAULT_CDP_URL, "default_dxm01_meta"))
 
     for raw_url, reason in seed_urls:
         url = _normalize_cdp_url(raw_url)
@@ -350,51 +355,52 @@ def check_cdp(cdp_url: str) -> dict[str, Any]:
 
 def check_meta_login(business_date, cdp_url: str, *, attempts: int = 3) -> dict[str, Any]:
     url = _ads_manager_url(business_date)
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(cdp_url)
-        context = browser.contexts[0]
-        last_error = None
-        for attempt in range(1, attempts + 1):
-            page = context.new_page()
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(8000)
-                current_url = page.url
-                body = ""
+    with meta_ads_cdp_lock(task_code="meta_realtime_local_check", command=url):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(cdp_url)
+            context = browser.contexts[0]
+            last_error = None
+            for attempt in range(1, attempts + 1):
+                page = context.new_page()
                 try:
-                    body = page.locator("body").inner_text(timeout=3000).lower()
-                except Exception:
-                    pass
-                login_page = (
-                    "business.facebook.com/business/loginpage" in current_url.lower()
-                    or "facebook.com/login" in current_url.lower()
-                    or "log into ads manager" in body
-                    or "log in with facebook" in body
-                )
-                return {
-                    "ok": not login_page,
-                    "ads_power_env": ADS_POWER_ENV_LABEL,
-                    "cdp_url": cdp_url,
-                    "checked_url": url,
-                    "current_url": current_url,
-                    "title": page.title(),
-                    "attempt": attempt,
-                    "error": "Meta login page detected" if login_page else None,
-                }
-            except Exception as exc:  # noqa: BLE001 - local browser/proxy can transiently fail.
-                last_error = f"{type(exc).__name__}: {str(exc)[:500]}"
-                if attempt < attempts:
-                    time.sleep(10)
-            finally:
-                page.close()
-        return {
-            "ok": False,
-            "ads_power_env": ADS_POWER_ENV_LABEL,
-            "cdp_url": cdp_url,
-            "checked_url": url,
-            "attempts": attempts,
-            "error": last_error or "Meta login check failed",
-        }
+                    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    page.wait_for_timeout(8000)
+                    current_url = page.url
+                    body = ""
+                    try:
+                        body = page.locator("body").inner_text(timeout=3000).lower()
+                    except Exception:
+                        pass
+                    login_page = (
+                        "business.facebook.com/business/loginpage" in current_url.lower()
+                        or "facebook.com/login" in current_url.lower()
+                        or "log into ads manager" in body
+                        or "log in with facebook" in body
+                    )
+                    return {
+                        "ok": not login_page,
+                        "ads_power_env": ADS_POWER_ENV_LABEL,
+                        "cdp_url": cdp_url,
+                        "checked_url": url,
+                        "current_url": current_url,
+                        "title": page.title(),
+                        "attempt": attempt,
+                        "error": "Meta login page detected" if login_page else None,
+                    }
+                except Exception as exc:  # noqa: BLE001 - local browser/proxy can transiently fail.
+                    last_error = f"{type(exc).__name__}: {str(exc)[:500]}"
+                    if attempt < attempts:
+                        time.sleep(10)
+                finally:
+                    page.close()
+            return {
+                "ok": False,
+                "ads_power_env": ADS_POWER_ENV_LABEL,
+                "cdp_url": cdp_url,
+                "checked_url": url,
+                "attempts": attempts,
+                "error": last_error or "Meta login check failed",
+            }
 
 
 def export_csv(business_date, snapshot_at: datetime, out_dir: Path, cdp_url: str) -> dict[str, Any]:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import errno
+import json
 import os
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator, TextIO
 
@@ -60,6 +62,26 @@ def _release(handle: TextIO) -> None:
     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _write_holder(handle: TextIO, *, task_code: str, command: str | None) -> None:
+    payload = {
+        "pid": os.getpid(),
+        "task_code": task_code,
+        "command": command or "",
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    handle.seek(0)
+    handle.truncate()
+    json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+
+
+def _clear_holder(handle: TextIO) -> None:
+    handle.seek(0)
+    handle.truncate()
+    handle.flush()
+
+
 @contextmanager
 def browser_automation_lock(
     *,
@@ -85,6 +107,7 @@ def browser_automation_lock(
 
         while True:
             if _acquire_nonblocking(handle):
+                _write_holder(handle, task_code=task_code, command=command)
                 break
             if time.monotonic() >= deadline:
                 raise BrowserAutomationLockTimeout(
@@ -95,4 +118,5 @@ def browser_automation_lock(
         try:
             yield path
         finally:
+            _clear_holder(handle)
             _release(handle)

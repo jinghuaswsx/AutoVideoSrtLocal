@@ -106,12 +106,38 @@
   line-height: 1.4;
 }
 
-.browser-monitor-frame {
-  width: 100%;
+.browser-monitor-preview {
+  position: relative;
   flex: 1 1 auto;
   min-height: 316px;
+  overflow: hidden;
+  background: var(--bg-muted, #eef2f7);
+}
+
+.browser-monitor-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   border: 0;
   background: var(--bg-muted, #eef2f7);
+}
+
+.browser-monitor-frame-link {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: zoom-in;
+  text-decoration: none;
+}
+
+.browser-monitor-frame-link:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: -3px;
+}
+
+.browser-monitor-card:hover .browser-monitor-frame-link {
+  box-shadow: inset 0 0 0 2px var(--accent-ring, rgba(37, 99, 235, .22));
 }
 
 .browser-monitor-status-card {
@@ -276,14 +302,24 @@
         </div>
         <a class="browser-monitor-single-link" href="{{ env.novnc_url }}" target="_blank" rel="noopener noreferrer">单独打开</a>
       </header>
-      <iframe
-        class="browser-monitor-frame"
-        title="{{ env.label }} VNC"
-        src="{{ env.novnc_url }}"
-        data-monitor-frame="1"
-        loading="eager"
-        referrerpolicy="no-referrer"
-      ></iframe>
+      <div class="browser-monitor-preview">
+        <iframe
+          class="browser-monitor-frame"
+          title="{{ env.label }} VNC 预览"
+          src="{{ env.preview_url }}"
+          data-monitor-frame="1"
+          loading="eager"
+          referrerpolicy="no-referrer"
+          tabindex="-1"
+        ></iframe>
+        <a
+          class="browser-monitor-frame-link"
+          href="{{ env.novnc_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="打开 {{ env.label }} 可操作 VNC 窗口"
+        ></a>
+      </div>
     </article>
     {% endfor %}
 

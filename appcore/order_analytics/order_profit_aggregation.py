@@ -131,7 +131,7 @@ def get_order_profit_list(
     sql = (
         "SELECT d.dxm_package_id, "
         "       MAX(d.order_paid_at) AS paid_at, "
-        "       MAX(DATE(d.order_paid_at)) AS business_date, "
+        "       MAX(p.business_date) AS business_date, "
         "       MAX(d.buyer_country) AS buyer_country, "
         "       MAX(d.platform) AS platform, "
         "       MAX(d.site_code) AS site_code, "
@@ -149,7 +149,7 @@ def get_order_profit_list(
         "       SUM(p.profit_usd) AS profit_total "
         "FROM dianxiaomi_order_lines d "
         "INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s "
+        "WHERE p.business_date BETWEEN %s AND %s "
     )
     args: list[Any] = [date_from, date_to]
     if product_id:
@@ -182,7 +182,7 @@ def get_order_profit_detail(dxm_package_id: str) -> dict[str, Any] | None:
     summary_rows = query(
         "SELECT d.dxm_package_id, "
         "       MAX(d.order_paid_at) AS paid_at, "
-        "       MAX(DATE(d.order_paid_at)) AS business_date, "
+        "       MAX(p.business_date) AS business_date, "
         "       MAX(d.buyer_country) AS buyer_country, "
         "       MAX(d.platform) AS platform, "
         "       MAX(d.site_code) AS site_code, "
@@ -244,7 +244,7 @@ def get_order_profit_summary_for_window(
         "       SUM(p.profit_usd) AS profit_total "
         "FROM dianxiaomi_order_lines d "
         "INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s"
+        "WHERE p.business_date BETWEEN %s AND %s"
         f"{product_filter}",
         tuple(args),
     )
@@ -272,7 +272,7 @@ def get_order_profit_summary_for_window(
         "         END AS status_per_order "
         "  FROM dianxiaomi_order_lines d "
         "  INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "  WHERE DATE(d.order_paid_at) BETWEEN %s AND %s"
+        "  WHERE p.business_date BETWEEN %s AND %s"
         f"{product_filter} "
         "  GROUP BY d.dxm_package_id"
         ") sub",
@@ -480,7 +480,8 @@ def get_order_profit_status_summary(
     unallocated_rows = query(
         "SELECT COALESCE(SUM(spend_usd), 0) AS unallocated_ad_spend_usd "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE product_id IS NULL AND report_date BETWEEN %s AND %s",
+        "WHERE product_id IS NULL "
+        "AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s",
         (date_from, date_to),
     )
     unallocated = (

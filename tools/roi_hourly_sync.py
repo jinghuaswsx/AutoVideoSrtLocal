@@ -28,6 +28,7 @@ from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query, query_one
 from appcore.meta_ad_accounts import MetaAdAccount
+from appcore.meta_ads_cdp import DEFAULT_META_ADS_CDP_URL
 
 TIMEZONE = "Asia/Shanghai"
 STORE_SCOPE = "newjoy,omurio"
@@ -42,7 +43,7 @@ META_AD_EXPORT_BUSINESS_ID = os.environ.get(
     "META_AD_EXPORT_BUSINESS_ID",
     meta_ad_accounts.DEFAULT_NEWJOYLOO_BUSINESS_ID,
 )
-META_AD_EXPORT_CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9845")
+META_AD_EXPORT_CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", DEFAULT_META_ADS_CDP_URL)
 META_REALTIME_EXPORT_ROOT = Path(os.environ.get("META_REALTIME_EXPORT_DIR", REPO_ROOT / "output" / "meta_realtime_exports"))
 META_EXPORT_TIMEOUT_SECONDS = int(os.environ.get("META_AD_REALTIME_EXPORT_TIMEOUT_SECONDS", "600"))
 META_REALTIME_SYNC_CHANNEL = os.environ.get("META_REALTIME_SYNC_CHANNEL", "browser")

@@ -118,6 +118,8 @@ def test_list_basic_query(monkeypatch):
     )
     assert len(result) == 1
     assert result[0]["status"] == "ok"
+    assert "p.business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "DATE(d.order_paid_at)" not in captured["sql"]
     assert "GROUP BY d.dxm_package_id" in captured["sql"]
     assert "ORDER BY paid_at DESC" in captured["sql"]
     assert captured["args"] == (date(2026, 5, 1), date(2026, 5, 4), 50, 0)
@@ -337,8 +339,12 @@ def test_summary_window_filters_by_product_id(monkeypatch):
     )
 
     assert len(captured) == 2
+    assert "p.business_date BETWEEN %s AND %s" in captured[0][0]
+    assert "DATE(d.order_paid_at)" not in captured[0][0]
     assert "AND p.product_id = %s" in captured[0][0]
     assert captured[0][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
+    assert "p.business_date BETWEEN %s AND %s" in captured[1][0]
+    assert "DATE(d.order_paid_at)" not in captured[1][0]
     assert "AND p.product_id = %s" in captured[1][0]
     assert captured[1][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
 

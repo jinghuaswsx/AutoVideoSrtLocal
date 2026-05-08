@@ -171,6 +171,18 @@ python tools/meta_daily_final_sync.py --date 2026-05-06 --mode run --account-cod
 
 手动同步 job 的进度状态保存在 Web 进程内存，单日同步结果仍由 `meta_daily_final_sync` 写入 `scheduled_task_runs(task_code="meta_daily_final")`，可在「定时任务的运行日志」追踪每一天的实际执行摘要。Web 进程重启会丢失弹窗进度，但不会影响已完成单日 run 的日志。
 
+### Meta Ads Manager CDP 锁
+
+所有连接 `DXM01-Meta` / `META_AD_EXPORT_CDP_URL` 的 Meta Ads Manager 自动化入口必须共用一把 OS 级文件锁，默认路径为 `/data/autovideosrt/browser/runtime-meta-ads/automation.lock`。覆盖环境变量为 `META_ADS_CDP_LOCK_PATH`，等待超时配置为 `META_ADS_CDP_LOCK_TIMEOUT_SECONDS`，默认 600 秒；重试间隔为 `META_ADS_CDP_LOCK_RETRY_SECONDS`，默认 5 秒。
+
+锁必须使用 `fcntl.flock`（Linux）或等价的 Windows 文件锁，锁状态绑定打开的文件描述符。锁文件留在磁盘上不代表仍被占用；如果 Web worker、systemd service 或手工脚本进程崩溃 / 被 kill / 服务重启，内核会关闭文件描述符并自动释放锁。实现可以在锁文件中写入 `pid`、`task_code`、`started_at` 等 holder 元信息用于排查，但不得依赖删除锁文件来释放锁。
+
+锁等待不得无限挂起。拿不到锁时必须在超时后失败，并把 lock path、等待秒数、task code 和命令摘要写入错误信息或 summary。这样网页端手动同步拿锁后即使 Web 服务重启，也不会形成永久锁；真正仍活着但卡住的进程会被超时机制暴露出来。
+
+直接运行 `scripts/run_meta_ads_backfill_range.py` 也必须自动获取这把锁。上层调用方（ROI 实时同步、收盘日同步、手动同步、临时旧户回填）不应各自实现不同锁；如果临时 runner 已经在外层持有同一把锁，传给子进程的导出脚本必须显式跳过二次加锁，避免同进程任务在父子进程之间自锁。
+
+Meta Ads Manager 默认 CDP URL 固定为 `http://127.0.0.1:9222`。当 Web 进程没有显式 `META_AD_EXPORT_CDP_URL` 环境变量时，也必须使用 `DXM01-Meta` 的 9222，不能回落到历史旧端口 `9845`。
+
 ### 临时旧户三层级历史回填（2026-05-08）
 
 临时任务用于 `newjoyloo_old` 旧广告户，日期范围固定为 `2026-01-01` 到 `2026-05-08`。它不进入 Web 后台「定时任务管理」，但必须保留文件状态和 systemd journal，方便确认抓到哪一天。
