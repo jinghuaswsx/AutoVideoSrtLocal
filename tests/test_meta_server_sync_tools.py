@@ -161,6 +161,101 @@ def test_meta_daily_final_sync_account_code_can_select_disabled_legacy_account(m
     assert finished[-1]["status"] == "success"
 
 
+def test_meta_daily_final_sync_can_import_adsets_when_requested(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync
+
+    account = _final_account("newjoyloo_old", "2110407576446225")
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "meta_ad_accounts",
+        SimpleNamespace(
+            get_all_accounts=lambda: [account],
+            get_enabled_accounts=lambda: [],
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(meta_daily_final_sync.scheduled_tasks, "start_run", lambda task_code: 906)
+    finished = []
+    monkeypatch.setattr(
+        meta_daily_final_sync.scheduled_tasks,
+        "finish_run",
+        lambda run_id, status, summary, error_message=None, output_file=None: finished.append(summary),
+    )
+    monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
+
+    def fake_export(target_date, export_dir, account, *, include_adsets=False):
+        assert include_adsets is True
+        export_dir.mkdir(parents=True, exist_ok=True)
+        paths = {}
+        for label in ("campaigns", "adsets", "ads"):
+            path = export_dir / f"{account.csv_prefix}_{label}_{target_date.isoformat()}.csv"
+            path.write_text(label * 80, encoding="utf-8")
+            paths[f"{label}_path"] = str(path)
+        return {"returncode": 0, **paths}
+
+    adset_replaces = []
+    monkeypatch.setattr(meta_daily_final_sync, "_run_meta_ads_export", fake_export)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_replace_campaign_daily_rows",
+        lambda path, target_date, account: {"rows": 2, "matched": 0, "spend_usd": 3.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_replace_adset_daily_rows",
+        lambda path, target_date, account: adset_replaces.append((path.name, account.code)) or {"rows": 4, "matched": 0, "spend_usd": 3.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_replace_ad_daily_rows",
+        lambda path, target_date, account: {"rows": 5, "matched": 0, "spend_usd": 0.0},
+    )
+    monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 58)
+
+    result = meta_daily_final_sync.run_final_sync(
+        date(2026, 1, 1),
+        mode="run",
+        account_codes=["newjoyloo_old"],
+        include_adsets=True,
+    )
+
+    assert result["status"] == "success"
+    assert adset_replaces == [("newjoyloo_old_adsets_2026-01-01.csv", "newjoyloo_old")]
+    assert result["adset_report"]["rows"] == 4
+    assert finished[-1]["adset_report"]["rows"] == 4
+
+
+def test_meta_daily_final_sync_replaces_adset_daily_rows(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync
+
+    csv_path = tmp_path / "newjoyloo_old_adsets_2026-01-01.csv"
+    csv_path.write_text(
+        "Reporting starts,Reporting ends,Ad set name,Amount spent (USD),Website purchases conversion value,Results\n"
+        "2026-01-01,2026-01-01,Glow Set - DE,12.50,25.00,3\n",
+        encoding="utf-8",
+    )
+    account = _final_account("newjoyloo_old", "2110407576446225")
+    writes = []
+
+    def fake_execute(sql, args=()):
+        writes.append((sql, args))
+        if "INSERT INTO meta_ad_import_batches" in sql:
+            return 700
+        return 1
+
+    monkeypatch.setattr(meta_daily_final_sync, "execute", fake_execute)
+    monkeypatch.setattr(meta_daily_final_sync, "_match_product", lambda product_code: None)
+
+    report = meta_daily_final_sync._replace_adset_daily_rows(csv_path, date(2026, 1, 1), account)
+
+    assert report["rows"] == 1
+    assert report["spend_usd"] == 12.5
+    assert any("DELETE FROM meta_ad_daily_adset_metrics" in sql for sql, _args in writes)
+    insert = next(args for sql, args in writes if "INSERT INTO meta_ad_daily_adset_metrics" in sql)
+    assert insert[1] == "2110407576446225"
+    assert insert[6] == "Glow Set - DE"
+
+
 def test_meta_daily_final_sync_account_code_reports_unknown_account(monkeypatch, tmp_path):
     from tools import meta_daily_final_sync
 

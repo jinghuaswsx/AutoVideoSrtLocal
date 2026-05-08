@@ -1,0 +1,32 @@
+-- Meta daily ad set metrics for legacy account backfills.
+
+CREATE TABLE IF NOT EXISTS meta_ad_daily_adset_metrics (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  import_batch_id BIGINT NOT NULL,
+  ad_account_id VARCHAR(32) DEFAULT NULL,
+  ad_account_name VARCHAR(128) DEFAULT NULL,
+  report_date DATE NOT NULL,
+  report_start_date DATE NOT NULL,
+  report_end_date DATE NOT NULL,
+  adset_name VARCHAR(512) NOT NULL,
+  normalized_adset_code VARCHAR(512) NOT NULL,
+  product_code VARCHAR(255) DEFAULT NULL,
+  matched_product_code VARCHAR(128) DEFAULT NULL,
+  product_id INT DEFAULT NULL,
+  result_count INT NOT NULL DEFAULT 0,
+  result_metric VARCHAR(128) DEFAULT NULL,
+  spend_usd DECIMAL(14,4) NOT NULL DEFAULT 0,
+  purchase_value_usd DECIMAL(14,4) NOT NULL DEFAULT 0,
+  roas_purchase DECIMAL(12,6) DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  meta_business_date DATE DEFAULT NULL COMMENT 'Meta report day, Beijing 16:00 cutover',
+  meta_window_start_at DATETIME DEFAULT NULL,
+  meta_window_end_at DATETIME DEFAULT NULL,
+  attribution_timezone VARCHAR(64) DEFAULT 'Asia/Shanghai',
+  imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_meta_daily_adset_product (product_id, report_date),
+  KEY idx_meta_daily_adset_report_date (report_date),
+  KEY idx_meta_daily_adset_business_date (meta_business_date),
+  KEY idx_meta_daily_adset_account_date (ad_account_id, meta_business_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Meta daily ad set metrics';
