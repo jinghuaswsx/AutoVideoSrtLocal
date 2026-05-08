@@ -856,7 +856,7 @@ def get_order_profit_status_summary(
             "estimated": False,
             "amount_usd": _round_money(unallocated),
             "lines": 0,
-            "label": "待配对，已扣入总利润",
+            "label": "未匹配 product 或无可分摊订单，已扣入总利润",
         },
     }
     return {
