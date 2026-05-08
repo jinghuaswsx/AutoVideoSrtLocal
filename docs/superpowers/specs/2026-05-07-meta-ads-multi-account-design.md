@@ -21,6 +21,7 @@
 7. 账户必须声明对应店铺 `store_codes`，让同步、看板、产品盈亏广告费分摊共用同一份「店铺 ↔ 广告户」映射。
 8. 旧广告户必须保留历史同步入口：自动定时任务不跑 `enabled=false` 账户，但运维可用 account code 显式指定旧户补抓历史日数据。
 9. 数据分析「广告账户」Tab 每个账户提供手动同步入口，可选择日期范围和每一天之间的同步间隔，并在弹窗内展示整体进度。
+10. 2026-05-08 临时历史回填要求：使用 `DXM01-Meta` / CDP `9222` 对 `newjoyloo_old` 回填 `2026-01-01` 到 `2026-05-08` 的 `campaign`、`ad_set`、`ad` 三层级数据；每轮最多 5 个成功日期，每 10 分钟触发一轮，完成后自动停止临时 timer。
 
 ## 非目标
 
@@ -170,6 +171,18 @@ python tools/meta_daily_final_sync.py --date 2026-05-06 --mode run --account-cod
 
 手动同步 job 的进度状态保存在 Web 进程内存，单日同步结果仍由 `meta_daily_final_sync` 写入 `scheduled_task_runs(task_code="meta_daily_final")`，可在「定时任务的运行日志」追踪每一天的实际执行摘要。Web 进程重启会丢失弹窗进度，但不会影响已完成单日 run 的日志。
 
+### 临时旧户三层级历史回填（2026-05-08）
+
+临时任务用于 `newjoyloo_old` 旧广告户，日期范围固定为 `2026-01-01` 到 `2026-05-08`。它不进入 Web 后台「定时任务管理」，但必须保留文件状态和 systemd journal，方便确认抓到哪一天。
+
+- 运行环境：`DXM01-Meta`，CDP URL 固定为 `http://127.0.0.1:9222`。
+- 账户：`account_code=newjoyloo_old`，即使该账户 `enabled=false` 也可显式选择。
+- 层级：`campaigns`、`adsets`、`ads`。常规收盘同步默认仍只跑 `campaigns` / `ads`；临时 runner 显式启用 `include_adsets=true`。
+- 入库：`campaigns` 写 `meta_ad_daily_campaign_metrics`，`ads` 写 `meta_ad_daily_ad_metrics`，`adsets` 写 `meta_ad_daily_adset_metrics`。
+- 调度：临时 systemd timer 每 10 分钟触发一次，每次最多推进 5 个成功日期；如果浏览器自动化锁超时或 ROI / Meta 收盘同步正在运行，本轮跳过并等待下一轮。
+- 进度：`output/meta_legacy_newjoyloo_old_backfill/state.json` 保存 `next_date`、成功 / 失败日期、最近一次错误、最近运行批次。失败日期不推进游标，下轮从失败日期重试，避免漏抓。
+- 完成：当 `next_date > 2026-05-08` 时 runner 将状态标为 `complete`，并自动 disable 指定的临时 timer。
+
 ## 失败隔离决策
 
 | 场景 | 整体 status | 备注 |
@@ -234,6 +247,7 @@ DELETE FROM system_settings WHERE `key`='meta_ad_accounts';
 9. 产品盈亏广告费分摊从 `meta_ad_accounts.store_codes` 生成映射，不再依赖硬编码常量。
 10. 收盘日同步支持 `--account-code newjoyloo_old` 显式选择 disabled 旧户做历史补抓。
 11. 数据分析「广告账户」Tab 渲染行内「同步」按钮、同步 modal、设置 / 进度 Tab，并通过 Web API 启动和查询手动同步 job。
+12. 临时旧户历史 runner 能按状态文件每轮推进 5 个成功日期、启用 `include_adsets`、遇到失败保留游标、完成后停止 timer。
 
 ## Docs-anchor
 

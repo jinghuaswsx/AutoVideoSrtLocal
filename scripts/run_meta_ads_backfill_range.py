@@ -15,7 +15,11 @@ ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "1861285821213497")
 BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063")
 CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9845")
 DEFAULT_CSV_PREFIX = "newjoyloo"
-LEVELS = [("campaigns", "campaigns"), ("ads", "ads")]
+LEVELS = {
+    "campaigns": ("campaigns", "campaigns"),
+    "adsets": ("adsets", "adsets"),
+    "ads": ("ads", "ads"),
+}
 AUTH_FAILED = "auth_failed"
 DOWNLOAD_URL_PATTERN = "*download_report*"
 
@@ -178,6 +182,11 @@ def main() -> int:
     parser.add_argument("--business-id", default=BUSINESS_ID)
     parser.add_argument("--csv-prefix", default=DEFAULT_CSV_PREFIX)
     parser.add_argument("--cdp-url", default=CDP_URL)
+    parser.add_argument(
+        "--levels",
+        default="campaigns,ads",
+        help="Comma-separated Ads Manager levels to export: campaigns,adsets,ads.",
+    )
     parser.add_argument("--long-rest-every-days", type=int, default=7)
     parser.add_argument(
         "--min-day-seconds",
@@ -191,6 +200,17 @@ def main() -> int:
     end = parse_date(args.end)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    selected_levels = []
+    for raw in str(args.levels or "").split(","):
+        key = raw.strip()
+        if not key:
+            continue
+        if key not in LEVELS:
+            raise ValueError(f"unsupported level: {key}")
+        if key not in selected_levels:
+            selected_levels.append(key)
+    if not selected_levels:
+        raise ValueError("at least one level is required")
 
     failures: list[tuple[str, str]] = []
     attempted = 0
@@ -203,7 +223,8 @@ def main() -> int:
         days_done = 0
         while day <= end:
             day_started_at = time.monotonic()
-            for level, label in LEVELS:
+            for level_key in selected_levels:
+                level, label = LEVELS[level_key]
                 result = export_one(
                     page,
                     out_dir,

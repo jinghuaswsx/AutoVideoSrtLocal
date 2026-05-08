@@ -116,7 +116,13 @@ def already_successful(
     return expected.issubset(successful)
 
 
-def _run_meta_ads_export(target_date: date, export_dir: Path, account: MetaAdAccount) -> dict[str, Any]:
+def _run_meta_ads_export(
+    target_date: date,
+    export_dir: Path,
+    account: MetaAdAccount,
+    *,
+    include_adsets: bool = False,
+) -> dict[str, Any]:
     export_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable,
@@ -140,6 +146,8 @@ def _run_meta_ads_export(target_date: date, export_dir: Path, account: MetaAdAcc
         "--cdp-url",
         META_AD_EXPORT_CDP_URL,
     ]
+    if include_adsets:
+        cmd.extend(["--levels", "campaigns,adsets,ads"])
     completed = subprocess.run(
         cmd,
         cwd=REPO_ROOT,
@@ -149,7 +157,7 @@ def _run_meta_ads_export(target_date: date, export_dir: Path, account: MetaAdAcc
         errors="replace",
         timeout=META_DAILY_FINAL_EXPORT_TIMEOUT_SECONDS,
     )
-    return {
+    report = {
         "command": cmd,
         "returncode": completed.returncode,
         "export_dir": str(export_dir),
@@ -160,6 +168,9 @@ def _run_meta_ads_export(target_date: date, export_dir: Path, account: MetaAdAcc
         "campaigns_path": str(export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"),
         "ads_path": str(export_dir / f"{account.csv_prefix}_ads_{target_date.isoformat()}.csv"),
     }
+    if include_adsets:
+        report["adsets_path"] = str(export_dir / f"{account.csv_prefix}_adsets_{target_date.isoformat()}.csv")
+    return report
 
 
 def _normalize_account_codes(values: list[str] | tuple[str, ...] | None) -> list[str]:
@@ -303,6 +314,35 @@ def _normalize_ad_rows(path: Path, target_date: date, account: MetaAdAccount) ->
             "ad_name": ad_name,
             "normalized_ad_code": ad_name.lower(),
             "product_code": _extract_product_code_from_ad_name(ad_name_raw),
+            "raw": dict(row),
+        }
+        item.update(_common_metrics(row))
+        rows.append(item)
+    return rows
+
+
+def _normalize_adset_rows(path: Path, target_date: date, account: MetaAdAccount) -> list[dict[str, Any]]:
+    rows = []
+    for row in realtime_sync._read_meta_report_rows(path):
+        adset_name_raw = str(_pick(
+            row,
+            ("广告组名称", "广告集名称", "Ad set name", "Ad Set Name"),
+            (("ad", "set", "name"), ("广告组", "名称"), ("广告集", "名称")),
+        ) or "").strip()
+        if not adset_name_raw:
+            continue
+        report_start = _parse_optional_report_date(_pick(row, ("报告开始日期", "Reporting starts", "Report start date")), target_date)
+        report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
+        adset_name = _text(adset_name_raw, 512)
+        item = {
+            "ad_account_id": _account_id(row, account),
+            "ad_account_name": _account_name(row),
+            "report_date": target_date,
+            "report_start_date": report_start,
+            "report_end_date": report_end,
+            "adset_name": adset_name,
+            "normalized_adset_code": adset_name.lower(),
+            "product_code": _extract_product_code_from_ad_name(adset_name_raw),
             "raw": dict(row),
         }
         item.update(_common_metrics(row))
@@ -470,6 +510,60 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
     return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
 
 
+def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAccount) -> dict[str, Any]:
+    rows = aggregate_daily_entity_rows(_normalize_adset_rows(path, target_date, account), entity_key="adset_name")
+    batch_id = _insert_batch(path, target_date=target_date, raw_row_count=len(rows), level="adset")
+    window_start, window_end = _meta_business_window(target_date)
+    execute(
+        "DELETE FROM meta_ad_daily_adset_metrics WHERE meta_business_date=%s AND ad_account_id=%s",
+        (target_date, account.account_id),
+    )
+    imported = 0
+    matched = 0
+    spend_total = 0.0
+    for row in rows:
+        product = _match_product(row.get("product_code"))
+        product_id = product.get("id") if product else None
+        matched_product_code = product.get("product_code") if product else None
+        if product_id:
+            matched += 1
+        execute(
+            "INSERT INTO meta_ad_daily_adset_metrics "
+            "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
+            "adset_name, normalized_adset_code, product_code, matched_product_code, product_id, "
+            "result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
+            "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                batch_id,
+                row.get("ad_account_id") or account.account_id,
+                row.get("ad_account_name"),
+                row["report_date"],
+                row["report_start_date"],
+                row["report_end_date"],
+                row["adset_name"],
+                row["normalized_adset_code"],
+                row.get("product_code"),
+                matched_product_code,
+                product_id,
+                row.get("result_count") or 0,
+                row.get("result_metric"),
+                row.get("spend_usd") or 0,
+                row.get("purchase_value_usd") or 0,
+                row.get("roas_purchase"),
+                json.dumps(row.get("raw") or {}, ensure_ascii=False),
+                target_date,
+                window_start,
+                window_end,
+                TIMEZONE,
+            ),
+        )
+        imported += 1
+        spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
+    _finish_batch(batch_id, imported=imported, matched=matched)
+    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+
+
 def _refresh_final_roas_snapshot(target_date: date, source_run_id: int) -> int:
     day_start, day_end = _meta_business_window(target_date)
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
@@ -536,6 +630,7 @@ def run_final_sync(
     *,
     mode: str = "run",
     account_codes: list[str] | tuple[str, ...] | None = None,
+    include_adsets: bool = False,
 ) -> dict[str, Any]:
     selected_account_codes = _normalize_account_codes(account_codes)
     try:
@@ -566,6 +661,7 @@ def run_final_sync(
         "mode": mode,
         "export_dir": str(export_dir),
         "campaign_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
+        "adset_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
         "ad_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
     }
 
@@ -594,7 +690,10 @@ def run_final_sync(
             "store_codes": list(account.store_codes),
         }
         try:
-            export_report = _run_meta_ads_export(target_date, account_export_dir, account)
+            if include_adsets:
+                export_report = _run_meta_ads_export(target_date, account_export_dir, account, include_adsets=True)
+            else:
+                export_report = _run_meta_ads_export(target_date, account_export_dir, account)
             account_result["export_report"] = export_report
             if int(export_report.get("returncode") or 0) != 0:
                 error = f"Meta Ads Manager final daily export failed with code {export_report.get('returncode')}"
@@ -606,21 +705,35 @@ def run_final_sync(
             ad_path = Path(str(export_report["ads_path"]))
             if not campaign_path.exists() or campaign_path.stat().st_size <= 100:
                 raise RuntimeError(f"Meta campaign final export missing or empty: {campaign_path}")
+            adset_path = Path(str(export_report.get("adsets_path") or "")) if include_adsets else None
+            if include_adsets and (not adset_path or not adset_path.exists() or adset_path.stat().st_size <= 100):
+                raise RuntimeError(f"Meta adset final export missing or empty: {adset_path}")
             if not ad_path.exists() or ad_path.stat().st_size <= 100:
                 raise RuntimeError(f"Meta ad final export missing or empty: {ad_path}")
 
             campaign_report = _replace_campaign_daily_rows(campaign_path, target_date, account)
+            adset_report = (
+                _replace_adset_daily_rows(adset_path, target_date, account)
+                if include_adsets and adset_path is not None
+                else {"rows": 0, "matched": 0, "spend_usd": 0.0}
+            )
             ad_report = _replace_ad_daily_rows(ad_path, target_date, account)
             account_result.update({
                 "status": "success",
                 "campaign_report": campaign_report,
+                "adset_report": adset_report,
                 "ad_report": ad_report,
             })
             for key in ("rows", "matched"):
                 summary["campaign_report"][key] += int(campaign_report.get(key) or 0)
+                summary["adset_report"][key] += int(adset_report.get(key) or 0)
                 summary["ad_report"][key] += int(ad_report.get(key) or 0)
             summary["campaign_report"]["spend_usd"] = round(
                 float(summary["campaign_report"]["spend_usd"]) + float(campaign_report.get("spend_usd") or 0),
+                4,
+            )
+            summary["adset_report"]["spend_usd"] = round(
+                float(summary["adset_report"]["spend_usd"]) + float(adset_report.get("spend_usd") or 0),
                 4,
             )
             summary["ad_report"]["spend_usd"] = round(
