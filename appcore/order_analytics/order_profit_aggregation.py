@@ -12,10 +12,16 @@ H3 修复：补齐订单级专用入口，让 "/order-profit/api/orders" 直接�
 from __future__ import annotations
 
 import json
+import logging
 import sys
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 from typing import Any
 from urllib.parse import quote
+
+from .meta_ads import resolve_ad_product_match
+
+logger = logging.getLogger(__name__)
 
 
 def _facade():
@@ -109,6 +115,250 @@ def _format_detail_line(row: dict[str, Any]) -> dict[str, Any]:
     return line
 
 
+def _date_value(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _business_dates(date_from: date, date_to: date) -> list[date]:
+    days: list[date] = []
+    current = date_from
+    while current <= date_to:
+        days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _sql_in(values: list[Any]) -> str:
+    return ",".join(["%s"] * len(values))
+
+
+def _load_realtime_ad_snapshot_fallback(
+    *,
+    date_from: date,
+    date_to: date,
+    product_id: int | None = None,
+) -> dict[str, Any]:
+    """Load provisional ad spend from realtime snapshots for dates with no daily rows."""
+    try:
+        daily_rows = query(
+            "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
+            "COUNT(*) AS n "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "GROUP BY COALESCE(meta_business_date, report_date)",
+            (date_from, date_to),
+        )
+        finalized_dates = {
+            d
+            for row in daily_rows or []
+            if int(row.get("n") or 0) > 0
+            for d in [_date_value(row.get("business_date"))]
+            if d is not None
+        }
+        fallback_dates = [
+            d for d in _business_dates(date_from, date_to) if d not in finalized_dates
+        ]
+        if not fallback_dates:
+            return {
+                "spend_by_product": {},
+                "units_by_product": {},
+                "unallocated_spend": 0.0,
+            }
+
+        placeholders = _sql_in(fallback_dates)
+        snapshot_rows = query(
+            "SELECT business_date, MAX(snapshot_at) AS snapshot_at "
+            "FROM meta_ad_realtime_daily_campaign_metrics "
+            f"WHERE business_date IN ({placeholders}) "
+            "GROUP BY business_date",
+            tuple(fallback_dates),
+        )
+        snapshots: dict[date, Any] = {}
+        for row in snapshot_rows or []:
+            business_date = _date_value(row.get("business_date"))
+            snapshot_at = row.get("snapshot_at")
+            if business_date and snapshot_at:
+                snapshots[business_date] = snapshot_at
+        if not snapshots:
+            return {
+                "spend_by_product": {},
+                "units_by_product": {},
+                "unallocated_spend": 0.0,
+            }
+
+        target_product_id = int(product_id) if product_id else None
+        match_cache: dict[str, int | None] = {}
+        spend_by_product: dict[tuple[date, int], float] = defaultdict(float)
+        unallocated_spend = 0.0
+        for business_date, snapshot_at in snapshots.items():
+            campaign_rows = query(
+                "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial'",
+                (business_date, snapshot_at),
+            )
+            for row in campaign_rows or []:
+                spend = float(row.get("spend_usd") or 0)
+                if spend <= 0:
+                    continue
+                code = str(
+                    row.get("normalized_campaign_code")
+                    or row.get("campaign_name")
+                    or ""
+                ).strip().lower()
+                product_match_id: int | None = None
+                if code:
+                    if code not in match_cache:
+                        match = resolve_ad_product_match(code)
+                        match_cache[code] = (
+                            int(match["id"])
+                            if match and match.get("id") is not None
+                            else None
+                        )
+                    product_match_id = match_cache[code]
+                if product_match_id is None:
+                    if target_product_id is None:
+                        unallocated_spend += spend
+                    continue
+                if target_product_id and product_match_id != target_product_id:
+                    continue
+                spend_by_product[(business_date, product_match_id)] += spend
+
+        if not spend_by_product:
+            return {
+                "spend_by_product": {},
+                "units_by_product": {},
+                "unallocated_spend": unallocated_spend,
+            }
+
+        unit_dates = sorted({key[0] for key in spend_by_product})
+        unit_args: list[Any] = list(unit_dates)
+        product_filter = ""
+        if target_product_id:
+            product_filter = " AND p.product_id = %s"
+            unit_args.append(target_product_id)
+        unit_rows = query(
+            "SELECT p.business_date AS business_date, p.product_id, "
+            "COALESCE(SUM(d.quantity), 0) AS units "
+            "FROM order_profit_lines p "
+            "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+            f"WHERE p.business_date IN ({_sql_in(unit_dates)}) "
+            "AND p.product_id IS NOT NULL "
+            f"{product_filter} "
+            "GROUP BY p.business_date, p.product_id",
+            tuple(unit_args),
+        )
+        units_by_product: dict[tuple[date, int], int] = {}
+        for row in unit_rows or []:
+            business_date = _date_value(row.get("business_date"))
+            product = row.get("product_id")
+            if business_date and product is not None:
+                units_by_product[(business_date, int(product))] = int(
+                    row.get("units") or 0
+                )
+        return {
+            "spend_by_product": dict(spend_by_product),
+            "units_by_product": units_by_product,
+            "unallocated_spend": unallocated_spend,
+        }
+    except Exception as exc:
+        logger.warning("order_profit realtime ad fallback skipped: %s", exc)
+        return {
+            "spend_by_product": {},
+            "units_by_product": {},
+            "unallocated_spend": 0.0,
+        }
+
+
+def _load_realtime_ad_cost_adjustments(
+    *,
+    date_from: date,
+    date_to: date,
+    product_id: int | None = None,
+) -> dict[str, Any]:
+    fallback = _load_realtime_ad_snapshot_fallback(
+        date_from=date_from,
+        date_to=date_to,
+        product_id=product_id,
+    )
+    spend_by_product: dict[tuple[date, int], float] = fallback["spend_by_product"]
+    units_by_product: dict[tuple[date, int], int] = fallback["units_by_product"]
+    if not spend_by_product:
+        return {
+            "package_deltas": {},
+            "status_deltas": {},
+            "total_delta": 0.0,
+            "unallocated_spend": fallback.get("unallocated_spend", 0.0),
+        }
+
+    args: list[Any] = [date_from, date_to]
+    product_filter = ""
+    if product_id:
+        product_filter = " AND p.product_id = %s"
+        args.append(int(product_id))
+    try:
+        rows = query(
+            "SELECT d.dxm_package_id, p.business_date, p.status, p.product_id, "
+            "d.quantity, p.ad_cost_usd "
+            "FROM order_profit_lines p "
+            "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+            "WHERE p.business_date BETWEEN %s AND %s "
+            "AND p.product_id IS NOT NULL "
+            f"{product_filter}",
+            tuple(args),
+        )
+    except Exception as exc:
+        logger.warning("order_profit realtime ad line adjustment skipped: %s", exc)
+        return {
+            "package_deltas": {},
+            "status_deltas": {},
+            "total_delta": 0.0,
+            "unallocated_spend": fallback.get("unallocated_spend", 0.0),
+        }
+
+    package_deltas: dict[str, float] = defaultdict(float)
+    status_deltas: dict[str, float] = defaultdict(float)
+    total_delta = 0.0
+    for row in rows or []:
+        business_date = _date_value(row.get("business_date"))
+        product = row.get("product_id")
+        if not business_date or product is None:
+            continue
+        key = (business_date, int(product))
+        spend = float(spend_by_product.get(key) or 0)
+        units = int(units_by_product.get(key) or 0)
+        quantity = int(row.get("quantity") or 0)
+        if spend <= 0 or units <= 0 or quantity <= 0:
+            continue
+        realtime_cost = round(spend * quantity / units, 4)
+        stored_cost = float(row.get("ad_cost_usd") or 0)
+        delta = realtime_cost - stored_cost
+        if abs(delta) < 0.0001:
+            continue
+        package_id = str(row.get("dxm_package_id") or "")
+        if package_id:
+            package_deltas[package_id] += delta
+        status = str(row.get("status") or "")
+        if status:
+            status_deltas[status] += delta
+        total_delta += delta
+
+    return {
+        "package_deltas": dict(package_deltas),
+        "status_deltas": dict(status_deltas),
+        "total_delta": total_delta,
+        "unallocated_spend": fallback.get("unallocated_spend", 0.0),
+    }
+
+
 def get_order_profit_list(
     *,
     date_from: date,
@@ -171,6 +421,29 @@ def get_order_profit_list(
     args.extend([int(limit), int(offset)])
 
     rows = query(sql, tuple(args)) or []
+    if rows and any(float(r.get("ad_cost_total") or 0) == 0 for r in rows):
+        adjustments = _load_realtime_ad_cost_adjustments(
+            date_from=date_from,
+            date_to=date_to,
+            product_id=product_id,
+        )
+        package_deltas = adjustments["package_deltas"]
+        if package_deltas:
+            adjusted_rows: list[dict[str, Any]] = []
+            for row in rows:
+                adjusted = dict(row)
+                package_id = str(row.get("dxm_package_id") or "")
+                delta = float(package_deltas.get(package_id) or 0)
+                if delta:
+                    adjusted["ad_cost_total"] = (
+                        float(row.get("ad_cost_total") or 0) + delta
+                    )
+                    if row.get("profit_total") is not None:
+                        adjusted["profit_total"] = (
+                            float(row.get("profit_total") or 0) - delta
+                        )
+                adjusted_rows.append(adjusted)
+            rows = adjusted_rows
     return [_format_order_row(r) for r in rows]
 
 
@@ -241,6 +514,7 @@ def get_order_profit_summary_for_window(
         "       SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS ok_lines, "
         "       SUM(CASE WHEN p.status='incomplete' THEN 1 ELSE 0 END) AS incomplete_lines, "
         "       SUM(p.revenue_usd) AS revenue_total, "
+        "       SUM(p.ad_cost_usd) AS ad_cost_total, "
         "       SUM(p.profit_usd) AS profit_total "
         "FROM dianxiaomi_order_lines d "
         "INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
@@ -279,6 +553,15 @@ def get_order_profit_summary_for_window(
         tuple(args),
     ) or {}
 
+    profit_total = float(row.get("profit_total") or 0)
+    if row.get("ad_cost_total") is not None and int(row.get("total_orders") or 0) > 0:
+        adjustments = _load_realtime_ad_cost_adjustments(
+            date_from=date_from,
+            date_to=date_to,
+            product_id=product_id,
+        )
+        profit_total -= float(adjustments["total_delta"] or 0)
+
     return {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -287,7 +570,7 @@ def get_order_profit_summary_for_window(
         "orders_incomplete": int(bucket_row.get("orders_incomplete") or 0),
         "orders_partial": int(bucket_row.get("orders_partial") or 0),
         "revenue_total_usd": float(row.get("revenue_total") or 0),
-        "profit_total_usd": float(row.get("profit_total") or 0),
+        "profit_total_usd": profit_total,
     }
 
 
@@ -489,6 +772,22 @@ def get_order_profit_status_summary(
         if unallocated_rows
         else 0
     )
+    line_count = _sum_summary_int(summary, "lines")
+    if line_count > 0:
+        adjustments = _load_realtime_ad_cost_adjustments(
+            date_from=date_from,
+            date_to=date_to,
+        )
+        for status, delta in adjustments["status_deltas"].items():
+            bucket = summary.get(status)
+            if bucket is None:
+                continue
+            bucket["ad_cost"] = float(bucket.get("ad_cost") or 0) + float(delta)
+            bucket["profit"] = float(bucket.get("profit") or 0) - float(delta)
+            bucket["profit_with_estimate"] = float(
+                bucket.get("profit_with_estimate") or 0
+            ) - float(delta)
+        unallocated += float(adjustments.get("unallocated_spend") or 0)
 
     margin = (
         (summary["ok"]["profit"] / summary["ok"]["revenue"]) * 100
@@ -517,7 +816,6 @@ def get_order_profit_status_summary(
     estimated_shipping = summary["incomplete"]["shipping_cost_estimate"] or _sum_summary(
         summary, "shipping_fallback_estimated"
     )
-    line_count = _sum_summary_int(summary, "lines")
     estimate_marks = {
         "shopify_fee": {
             "estimated": True,

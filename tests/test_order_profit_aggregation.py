@@ -6,6 +6,7 @@ from datetime import date, datetime
 import pytest
 
 from appcore import order_analytics as oa
+from appcore.order_analytics import order_profit_aggregation as opa
 from appcore.order_analytics.order_profit_aggregation import (
     _derive_order_status,
     _format_order_row,
@@ -186,6 +187,76 @@ def test_list_filters_by_product_id(monkeypatch):
 
     assert "AND p.product_id = %s" in captured["sql"]
     assert captured["args"] == (date(2026, 5, 1), date(2026, 5, 4), 123, 10, 5)
+
+
+def test_list_uses_realtime_ad_snapshot_when_daily_metrics_missing(monkeypatch):
+    target = date(2026, 5, 7)
+    snapshot_at = datetime(2026, 5, 8, 15, 40)
+
+    def fake_query(sql, args=()):
+        if "GROUP BY d.dxm_package_id" in sql:
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "paid_at": datetime(2026, 5, 8, 12, 0),
+                    "business_date": target,
+                    "buyer_country": "DE",
+                    "platform": "shopify",
+                    "site_code": "newjoy",
+                    "line_count": 1,
+                    "ok_count": 1,
+                    "incomplete_count": 0,
+                    "line_amount_total": 100.0,
+                    "shipping_alloc_total": 0.0,
+                    "revenue_total": 100.0,
+                    "shopify_fee_total": 0.0,
+                    "ad_cost_total": 0.0,
+                    "purchase_total": 0.0,
+                    "shipping_cost_total": 0.0,
+                    "return_reserve_total": 0.0,
+                    "profit_total": 100.0,
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "COUNT(*) AS n" in sql:
+            return []
+        if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "snapshot_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "newjoyloo-rjc",
+                    "normalized_campaign_code": "newjoyloo-rjc",
+                    "spend_usd": 25.0,
+                }
+            ]
+        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+            return [{"business_date": target, "product_id": 316, "units": 4}]
+        if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "business_date": target,
+                    "status": "ok",
+                    "product_id": 316,
+                    "quantity": 2,
+                    "ad_cost_usd": 0.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        opa,
+        "resolve_ad_product_match",
+        lambda code: {"id": 316} if code == "newjoyloo-rjc" else None,
+        raising=False,
+    )
+
+    result = get_order_profit_list(date_from=target, date_to=target, limit=50, offset=0)
+
+    assert result[0]["ad_cost_total_usd"] == pytest.approx(12.5)
+    assert result[0]["profit_total_usd"] == pytest.approx(87.5)
 
 
 # -------- get_order_profit_detail --------
@@ -391,10 +462,12 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
                 },
                 {"status": "unknown", "n": 9, "revenue": 999, "profit": 999},
             ]
-        if "FROM meta_ad_daily_campaign_metrics" in sql:
+        if "product_id IS NULL" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
             captured["unallocated_sql"] = sql
             captured["unallocated_args"] = args
             return [{"unallocated_ad_spend_usd": 12.5}]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"business_date": date(2026, 5, 1), "n": 1}]
         raise AssertionError(f"unexpected query: {sql}")
 
     monkeypatch.setattr(oa, "query", fake_query)
@@ -437,6 +510,84 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
     assert payload["estimate_marks"]["unallocated_ad_spend"]["amount_usd"] == 12.5
     assert "product_id IS NULL" in captured["unallocated_sql"]
     assert captured["unallocated_args"] == (date(2026, 5, 1), date(2026, 5, 3))
+
+
+def test_status_summary_uses_realtime_ad_snapshot_for_missing_daily_metrics(monkeypatch):
+    target = date(2026, 5, 7)
+    snapshot_at = datetime(2026, 5, 8, 15, 40)
+
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            return [
+                {
+                    "status": "ok",
+                    "n": 1,
+                    "revenue": 100.0,
+                    "profit": 100.0,
+                    "shopify_fee": 0.0,
+                    "ad_cost": 0.0,
+                    "purchase": 0.0,
+                    "shipping_cost": 0.0,
+                    "return_reserve": 0.0,
+                    "purchase_actual": 0.0,
+                    "purchase_estimate": 0.0,
+                    "purchase_with_estimate": 0.0,
+                    "shipping_cost_actual": 0.0,
+                    "shipping_cost_estimate": 0.0,
+                    "shipping_cost_with_estimate": 0.0,
+                    "profit_with_estimate": 100.0,
+                    "purchase_fallback_estimated": 0.0,
+                    "purchase_fallback_estimated_lines": 0,
+                    "shipping_product_estimated": 0.0,
+                    "shipping_product_estimated_lines": 0,
+                    "shipping_fallback_estimated": 0.0,
+                    "shipping_fallback_estimated_lines": 0,
+                }
+            ]
+        if "product_id IS NULL" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"unallocated_ad_spend_usd": 0.0}]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "COUNT(*) AS n" in sql:
+            return []
+        if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "snapshot_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "newjoyloo-rjc",
+                    "normalized_campaign_code": "newjoyloo-rjc",
+                    "spend_usd": 25.0,
+                }
+            ]
+        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+            return [{"business_date": target, "product_id": 316, "units": 4}]
+        if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "business_date": target,
+                    "status": "ok",
+                    "product_id": 316,
+                    "quantity": 2,
+                    "ad_cost_usd": 0.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        opa,
+        "resolve_ad_product_match",
+        lambda code: {"id": 316} if code == "newjoyloo-rjc" else None,
+        raising=False,
+    )
+
+    payload = get_order_profit_status_summary(date_from=target, date_to=target)
+
+    assert payload["summary"]["ok"]["ad_cost"] == pytest.approx(12.5)
+    assert payload["summary"]["ok"]["profit"] == pytest.approx(87.5)
+    assert payload["known_profit_usd"] == pytest.approx(87.5)
+    assert payload["overview"]["total_profit_usd"] == pytest.approx(87.5)
 
 
 def test_status_summary_queries_estimated_cost_sources(monkeypatch):
