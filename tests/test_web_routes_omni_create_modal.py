@@ -28,6 +28,19 @@ def test_modal_contains_preset_selector(omni_list_html):
     assert 'class="preset-select"' in omni_list_html
 
 
+def test_preset_selector_is_tall_enough_to_avoid_clipping(omni_list_html):
+    import re
+
+    match = re.search(r"\.preset-select\s*\{(?P<body>[^}]+)\}", omni_list_html)
+    assert match, "missing .preset-select CSS rule"
+    css = match.group("body")
+    assert "height: 32px" not in css
+    min_height = re.search(r"min-height:\s*(\d+)px", css)
+    line_height = re.search(r"line-height:\s*(\d+(?:\.\d+)?)", css)
+    assert min_height and int(min_height.group(1)) >= 40
+    assert line_height and float(line_height.group(1)) >= 1.3
+
+
 def test_modal_contains_capability_form_placeholder(omni_list_html):
     assert 'id="pluginCapabilityForm"' in omni_list_html
     assert 'class="plugin-capability-form"' in omni_list_html
