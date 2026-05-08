@@ -76,3 +76,10 @@ def test_product_profit_country_tab_ranks_products_when_no_product_selected():
     assert "rows.sort(function(a, b)" in TEMPLATE
     assert "return (Number(b.order_count) || 0) - (Number(a.order_count) || 0);" in TEMPLATE
     assert "renderCountryProductRanking" in TEMPLATE
+
+
+def test_product_profit_country_fallback_pills_start_with_us_then_gb():
+    assert "{ country: 'US', lang: 'en', label: '美国' }" in TEMPLATE
+    assert TEMPLATE.index("{ country: 'US', lang: 'en', label: '美国' }") < TEMPLATE.index(
+        "{ country: 'GB', lang: 'en', label: '英国' }"
+    )

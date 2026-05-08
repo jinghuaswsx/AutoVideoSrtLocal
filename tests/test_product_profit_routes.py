@@ -189,10 +189,10 @@ def test_list_xlsx_filename_includes_country_when_specified(
 # ---------------------------------------------------------------------------
 # /countries.json — Tab 3 国家胶囊
 # ---------------------------------------------------------------------------
-def test_countries_json_returns_gb_plus_enabled_language_countries(
+def test_countries_json_returns_us_gb_plus_enabled_language_countries(
     authed_client_no_db, monkeypatch,
 ):
-    """国家看板胶囊固定含英国，后续按启用小语种主国家补足，最多 9 个。"""
+    """国家看板胶囊固定美国第一、英国第二，后续按启用小语种主国家补足，最多 9 个。"""
     monkeypatch.setattr(
         "web.routes.product_profit_report.medias.list_enabled_languages_kv",
         lambda: [
@@ -206,7 +206,8 @@ def test_countries_json_returns_gb_plus_enabled_language_countries(
     assert resp.status_code == 200
     countries = resp.get_json()["countries"]
     assert len(countries) == 9
-    assert countries[0] == {"country": "GB", "lang": "en", "label": "英国"}
+    assert countries[0] == {"country": "US", "lang": "en", "label": "美国"}
+    assert countries[1] == {"country": "GB", "lang": "en", "label": "英国"}
     assert {"country": "DE", "lang": "de", "label": "德国"} in countries
     assert {"country": "FR", "lang": "fr", "label": "法国"} in countries
 

@@ -874,7 +874,7 @@
       <section class="ppd-country-toolbar">
         <div class="ppd-country-toolbar-head">
           <h3 class="ppd-country-toolbar-title">国家销售看板</h3>
-          <div class="ppd-country-toolbar-meta">英国 + 启用小语种国家，点击后查看销售情况</div>
+          <div class="ppd-country-toolbar-meta">美国 + 英国 + 启用小语种国家，点击后查看销售情况</div>
         </div>
         <div class="ppd-country-pills" id="ppd-country-pills" role="tablist" aria-label="国家销售筛选"></div>
       </section>
@@ -1171,6 +1171,7 @@
 
   function fallbackCountryPills() {
     return [
+      { country: 'US', lang: 'en', label: '美国' },
       { country: 'GB', lang: 'en', label: '英国' },
       { country: 'DE', lang: 'de', label: '德国' },
       { country: 'FR', lang: 'fr', label: '法国' },
@@ -1179,7 +1180,6 @@
       { country: 'JP', lang: 'ja', label: '日本' },
       { country: 'PT', lang: 'pt', label: '葡萄牙' },
       { country: 'NL', lang: 'nl', label: '荷兰' },
-      { country: 'SE', lang: 'sv', label: '瑞典' },
     ];
   }
 

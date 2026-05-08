@@ -68,7 +68,7 @@ def _primary_country_for_lang(lang: str) -> str | None:
     if not normalized:
         return None
     if normalized == "en":
-        return "GB"
+        return "US"
 
     priority = LANG_PRIORITY_COUNTRIES.get(normalized) or ()
     if priority:
@@ -81,7 +81,7 @@ def _primary_country_for_lang(lang: str) -> str | None:
 
 
 def _product_profit_country_pills() -> list[dict]:
-    """国家看板胶囊：GB 固定第一，其余按启用小语种主国家补足。"""
+    """国家看板胶囊：US 固定第一、GB 固定第二，其余按启用小语种主国家补足。"""
     pills: list[dict] = []
     seen: set[str] = set()
 
@@ -96,6 +96,7 @@ def _product_profit_country_pills() -> list[dict]:
             "label": _COUNTRY_LABELS.get(code, code),
         })
 
+    add("US", "en")
     add("GB", "en")
     for lang, _name in medias.list_enabled_languages_kv():
         normalized = (lang or "").strip().lower()
