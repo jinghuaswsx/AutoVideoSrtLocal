@@ -1932,7 +1932,9 @@
         hint = document.createElement('div');
         hint.id = key + 'BjHint';
         hint.style.cssText = 'color: var(--fg-muted); font-size: 12px; margin: 4px 0 0; flex-basis: 100%;';
-        anchor.parentElement.insertBefore(hint, anchor.nextSibling);
+        var realtimeActions = anchor.parentElement.querySelector('.oar-realtime-actions');
+        var insertAfter = realtimeActions || anchor;
+        anchor.parentElement.insertBefore(hint, insertAfter.nextSibling);
       }
       hint.textContent = describeBjWindow(pair.start.value, pair.end.value);
     });

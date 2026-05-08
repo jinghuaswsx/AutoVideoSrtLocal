@@ -4,8 +4,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _template_source() -> str:
+    return (ROOT / "web" / "templates" / "order_analytics.html").read_text(encoding="utf-8")
+
+
 def _realtime_panel_source() -> str:
-    template = (ROOT / "web" / "templates" / "order_analytics.html").read_text(encoding="utf-8")
+    template = _template_source()
     panel_start = template.index('<section class="oa-panel active" id="panelRealtime">')
     panel_end = template.index("<!-- ═══════ Tab 0: 产品看板 ═══════ -->", panel_start)
     return template[panel_start:panel_end]
@@ -23,3 +27,12 @@ def test_realtime_query_button_is_in_date_toolbar_target_area():
     assert 'id="realtimeProductSearchInput"' not in toolbar_row
     assert panel.index('id="realtimeRefresh"') < panel.index('id="realtimeRangeNote"')
     assert panel.index('id="realtimeRangeNote"') < panel.index('id="realtimeProductSearchInput"')
+
+
+def test_realtime_bj_hint_is_inserted_after_query_button():
+    """北京时间提示不能插入到日期范围和查询按钮之间。"""
+    template = _template_source()
+
+    assert "var realtimeActions = anchor.parentElement.querySelector('.oar-realtime-actions');" in template
+    assert "var insertAfter = realtimeActions || anchor;" in template
+    assert "anchor.parentElement.insertBefore(hint, insertAfter.nextSibling);" in template
