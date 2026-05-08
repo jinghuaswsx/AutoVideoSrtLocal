@@ -145,92 +145,90 @@ def _load_realtime_ad_snapshot_fallback(
     date_to: date,
     product_id: int | None = None,
 ) -> dict[str, Any]:
-    """Load provisional ad spend from realtime snapshots for dates with no daily rows."""
+    """Load live ad spend from daily metrics, with realtime snapshots as fallback."""
     try:
+        target_product_id = int(product_id) if product_id else None
+        spend_by_product: dict[tuple[date, int], float] = defaultdict(float)
+        unallocated_spend = 0.0
+
         daily_rows = query(
             "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
-            "COUNT(*) AS n "
+            "product_id, COALESCE(SUM(spend_usd), 0) AS spend "
             "FROM meta_ad_daily_campaign_metrics "
             "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-            "GROUP BY COALESCE(meta_business_date, report_date)",
+            "GROUP BY COALESCE(meta_business_date, report_date), product_id",
             (date_from, date_to),
         )
-        finalized_dates = {
-            d
-            for row in daily_rows or []
-            if int(row.get("n") or 0) > 0
-            for d in [_date_value(row.get("business_date"))]
-            if d is not None
-        }
+        finalized_dates: set[date] = set()
+        for row in daily_rows or []:
+            business_date = _date_value(row.get("business_date"))
+            if not business_date:
+                continue
+            finalized_dates.add(business_date)
+            product = row.get("product_id")
+            if product is None:
+                continue
+            product_match_id = int(product)
+            if target_product_id and product_match_id != target_product_id:
+                continue
+            spend = float(row.get("spend") or 0)
+            if spend > 0:
+                spend_by_product[(business_date, product_match_id)] += spend
+
         fallback_dates = [
             d for d in _business_dates(date_from, date_to) if d not in finalized_dates
         ]
-        if not fallback_dates:
-            return {
-                "spend_by_product": {},
-                "units_by_product": {},
-                "unallocated_spend": 0.0,
-            }
-
-        placeholders = _sql_in(fallback_dates)
-        snapshot_rows = query(
-            "SELECT business_date, MAX(snapshot_at) AS snapshot_at "
-            "FROM meta_ad_realtime_daily_campaign_metrics "
-            f"WHERE business_date IN ({placeholders}) "
-            "GROUP BY business_date",
-            tuple(fallback_dates),
-        )
-        snapshots: dict[date, Any] = {}
-        for row in snapshot_rows or []:
-            business_date = _date_value(row.get("business_date"))
-            snapshot_at = row.get("snapshot_at")
-            if business_date and snapshot_at:
-                snapshots[business_date] = snapshot_at
-        if not snapshots:
-            return {
-                "spend_by_product": {},
-                "units_by_product": {},
-                "unallocated_spend": 0.0,
-            }
-
-        target_product_id = int(product_id) if product_id else None
-        match_cache: dict[str, int | None] = {}
-        spend_by_product: dict[tuple[date, int], float] = defaultdict(float)
-        unallocated_spend = 0.0
-        for business_date, snapshot_at in snapshots.items():
-            campaign_rows = query(
-                "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+        if fallback_dates:
+            placeholders = _sql_in(fallback_dates)
+            snapshot_rows = query(
+                "SELECT business_date, MAX(snapshot_at) AS snapshot_at "
                 "FROM meta_ad_realtime_daily_campaign_metrics "
-                "WHERE business_date=%s AND snapshot_at=%s "
-                "AND data_completeness='realtime_partial'",
-                (business_date, snapshot_at),
+                f"WHERE business_date IN ({placeholders}) "
+                "GROUP BY business_date",
+                tuple(fallback_dates),
             )
-            for row in campaign_rows or []:
-                spend = float(row.get("spend_usd") or 0)
-                if spend <= 0:
-                    continue
-                code = str(
-                    row.get("normalized_campaign_code")
-                    or row.get("campaign_name")
-                    or ""
-                ).strip().lower()
-                product_match_id: int | None = None
-                if code:
-                    if code not in match_cache:
-                        match = resolve_ad_product_match(code)
-                        match_cache[code] = (
-                            int(match["id"])
-                            if match and match.get("id") is not None
-                            else None
-                        )
-                    product_match_id = match_cache[code]
-                if product_match_id is None:
-                    if target_product_id is None:
-                        unallocated_spend += spend
-                    continue
-                if target_product_id and product_match_id != target_product_id:
-                    continue
-                spend_by_product[(business_date, product_match_id)] += spend
+            snapshots: dict[date, Any] = {}
+            for row in snapshot_rows or []:
+                business_date = _date_value(row.get("business_date"))
+                snapshot_at = row.get("snapshot_at")
+                if business_date and snapshot_at:
+                    snapshots[business_date] = snapshot_at
+
+            match_cache: dict[str, int | None] = {}
+            for business_date, snapshot_at in snapshots.items():
+                campaign_rows = query(
+                    "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                    "FROM meta_ad_realtime_daily_campaign_metrics "
+                    "WHERE business_date=%s AND snapshot_at=%s "
+                    "AND data_completeness='realtime_partial'",
+                    (business_date, snapshot_at),
+                )
+                for row in campaign_rows or []:
+                    spend = float(row.get("spend_usd") or 0)
+                    if spend <= 0:
+                        continue
+                    code = str(
+                        row.get("normalized_campaign_code")
+                        or row.get("campaign_name")
+                        or ""
+                    ).strip().lower()
+                    product_match_id: int | None = None
+                    if code:
+                        if code not in match_cache:
+                            match = resolve_ad_product_match(code)
+                            match_cache[code] = (
+                                int(match["id"])
+                                if match and match.get("id") is not None
+                                else None
+                            )
+                        product_match_id = match_cache[code]
+                    if product_match_id is None:
+                        if target_product_id is None:
+                            unallocated_spend += spend
+                        continue
+                    if target_product_id and product_match_id != target_product_id:
+                        continue
+                    spend_by_product[(business_date, product_match_id)] += spend
 
         if not spend_by_product:
             return {
