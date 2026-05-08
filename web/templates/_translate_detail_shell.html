@@ -243,6 +243,14 @@
       <option value="fi" {% if _default_src_lang == 'fi' %}selected{% endif %}>芬兰语</option>
     </select>
   </div>
+  {% if plugin_config_annotation is defined and plugin_config_annotation %}
+  <div class="omni-preset-summary" aria-label="当前 Omni preset 配置">
+    <span class="omni-preset-summary-label">当前配置</span>
+    <strong class="omni-preset-summary-name">{{ plugin_config_annotation.name }}</strong>
+    <span class="omni-preset-summary-source">{{ plugin_config_annotation.source_label }}</span>
+    <span class="omni-preset-summary-text">{{ plugin_config_annotation.summary }}</span>
+  </div>
+  {% endif %}
   {% endif %}
 </div>
 

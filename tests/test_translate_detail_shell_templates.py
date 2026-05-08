@@ -61,6 +61,16 @@ def test_task_workbench_config_exposes_detail_mode_and_selector_endpoints():
     assert "detailMode:" in script
 
 
+def test_omni_detail_shell_contains_preset_summary_slot():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert "plugin_config_annotation" in shared
+    assert "omni-preset-summary" in shared
+    assert ".omni-preset-summary" in styles
+
+
 def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

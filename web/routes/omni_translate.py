@@ -25,6 +25,7 @@ from web import store
 from web.services import omni_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.llm_debug import build_llm_debug_payload
+from web.services.omni_preset_annotation import build_plugin_config_annotation
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     normalize_confirm_voice_payload,
@@ -335,6 +336,7 @@ def detail(task_id: str):
         translate_pref=translate_pref,
         pipeline_main_steps=pipeline_main_steps,
         pipeline_step_order=pipeline_step_order,
+        plugin_config_annotation=build_plugin_config_annotation(task_id, state),
     )
 
 
