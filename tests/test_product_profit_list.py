@@ -126,6 +126,25 @@ def test_generate_list_load_lines_skips_country_predicate_when_blank():
         assert "opl.buyer_country = %s" not in captured["sql"], f"country={c!r}"
 
 
+def test_generate_list_load_lines_uses_meta_business_date_basis():
+    """产品列表订单侧必须按 Meta 业务日取数，才能和广告 spend 的日期口径一致。"""
+    captured: dict[str, Any] = {}
+
+    def _fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    with patch.object(ppl, "query", side_effect=_fake_query):
+        ppl._load_lines(date(2026, 5, 1), date(2026, 5, 7), None)
+
+    assert "dol.meta_business_date AS business_date" in captured["sql"]
+    assert "dol.meta_business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "ORDER BY opl.product_id, dol.meta_business_date" in captured["sql"]
+    assert "opl.business_date BETWEEN %s AND %s" not in captured["sql"]
+    assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7))
+
+
 def test_load_ad_spend_uses_meta_business_date_with_report_date_fallback():
     captured: dict[str, Any] = {}
 

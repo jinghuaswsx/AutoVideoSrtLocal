@@ -10,6 +10,8 @@
   这与 product_profit_report.generate_report 在单产品维度的口径一致：
   WHERE product_id = X 的 spend 之和即该产品的广告费。
 - 利润 = revenue - shopify_fee - ad_cost - purchase - shipping - return_reserve
+- 日期范围：订单侧按 dianxiaomi_order_lines.meta_business_date 过滤，和 Meta
+  广告 spend 的 meta_business_date 口径一致。
 """
 from __future__ import annotations
 
@@ -52,20 +54,20 @@ def _load_lines(date_from: date, date_to: date, country: str | None) -> list[dic
     sql = (
         "SELECT "
         "  opl.product_id, mp.product_code, mp.name, "
-        "  opl.business_date, opl.buyer_country, "
+        "  dol.meta_business_date AS business_date, opl.buyer_country, "
         "  opl.revenue_usd, opl.shopify_fee_usd, opl.purchase_usd, "
         "  opl.shipping_cost_usd, opl.return_reserve_usd, "
         "  dol.site_code, dol.quantity, dol.dxm_package_id "
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "JOIN media_products mp ON mp.id = opl.product_id "
-        "WHERE opl.business_date BETWEEN %s AND %s "
+        "WHERE dol.meta_business_date BETWEEN %s AND %s "
     )
     params: list[Any] = [date_from, date_to]
     if country and country.strip().lower() not in ("", "all"):
         sql += " AND opl.buyer_country = %s "
         params.append(country.strip().upper())
-    sql += " ORDER BY opl.product_id, opl.business_date"
+    sql += " ORDER BY opl.product_id, dol.meta_business_date"
     return query(sql, tuple(params))
 
 
@@ -135,7 +137,7 @@ def generate_list(
     """生成全产品聚合列表 + summary。
 
     Args:
-        date_from / date_to: 日期范围（按 order_profit_lines.business_date 过滤）
+        date_from / date_to: 日期范围（按 dianxiaomi_order_lines.meta_business_date 过滤）
         country: 可选国家过滤（buyer_country）；None / "" / "all" 视为不过滤
 
     Returns:

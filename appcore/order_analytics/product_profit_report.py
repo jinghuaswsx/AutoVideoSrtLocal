@@ -3,6 +3,8 @@
 跟 order_profit_lines 的关系：
   - 订单基础字段（line_amount / shipping_allocated / revenue / purchase / shipping_cost
     / return_reserve）直接读 order_profit_lines 已有列。
+  - 日期范围按 dianxiaomi_order_lines.meta_business_date 过滤，与 Meta 广告
+    spend 的日期口径一致。
   - shopify_fee_usd（合计）也直接读，再按 calculate_shopify_fee 的 rate_breakdown
     比例拆出 base / cross_border / currency_conversion 三项（保证拆分后
     base + intl + conv = order_profit_lines.shopify_fee_usd 不丢精度）。
@@ -80,7 +82,7 @@ def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[d
     """加载产品在指定日期范围内的所有 SKU 行，含订单基础字段 + 现成核算字段。"""
     return query(
         "SELECT "
-        "  opl.dxm_order_line_id, opl.business_date, opl.paid_at, "
+        "  opl.dxm_order_line_id, dol.meta_business_date AS business_date, opl.paid_at, "
         "  opl.buyer_country, opl.line_amount_usd, opl.shipping_allocated_usd, "
         "  opl.revenue_usd, opl.shopify_fee_usd, opl.purchase_usd, "
         "  opl.shipping_cost_usd, opl.return_reserve_usd, opl.profit_usd AS profit_old_usd, "
@@ -93,8 +95,8 @@ def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[d
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "WHERE opl.product_id = %s "
-        "  AND opl.business_date BETWEEN %s AND %s "
-        "ORDER BY opl.business_date ASC, opl.dxm_order_line_id ASC",
+        "  AND dol.meta_business_date BETWEEN %s AND %s "
+        "ORDER BY dol.meta_business_date ASC, opl.dxm_order_line_id ASC",
         (product_id, date_from, date_to),
     )
 
@@ -102,18 +104,18 @@ def _load_order_lines(product_id: int, date_from: date, date_to: date) -> list[d
 def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> dict[tuple[date, str], int]:
     """加载每天 × 每站点的产品总 units。
 
-    Key: (business_date, site_code) → units. 这里必须使用 order_profit_lines
-    的 business_date，和 _load_order_lines 的行日期保持一致；否则订单行和分摊
-    分母不在同一日期基准上，会导致日广告费被多摊或少摊。
+    Key: (business_date, site_code) → units. 这里必须使用 dianxiaomi_order_lines
+    的 meta_business_date，和 _load_order_lines 的行日期、Meta spend 日期保持一致；
+    否则订单行和分摊分母不在同一日期基准上，会导致日广告费被多摊或少摊。
     """
     rows = query(
-        "SELECT opl.business_date AS d, dol.site_code, "
+        "SELECT dol.meta_business_date AS d, dol.site_code, "
         "       COALESCE(SUM(dol.quantity), 0) AS units "
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "WHERE opl.product_id = %s "
-        "  AND opl.business_date BETWEEN %s AND %s "
-        "GROUP BY opl.business_date, dol.site_code",
+        "  AND dol.meta_business_date BETWEEN %s AND %s "
+        "GROUP BY dol.meta_business_date, dol.site_code",
         (product_id, date_from, date_to),
     )
     out: dict[tuple[date, str], int] = {}
@@ -242,7 +244,7 @@ def _build_order_row(line: dict[str, Any], site_units: dict, account_spend: dict
     incomplete 行：calculate_line_profit 已经在缺采购价/物流时用 fallback 比例
     （PURCHASE_FALLBACK_RATIO=0.10 / SHIPPING_FALLBACK_RATIO=0.20）算出估算值，
     本函数把这些估算值带出 + 标注 cost_basis_source / estimated_fields，
-    前端据此渲染 "估算" 标签。ad_cost 始终按账户↔店铺映射现场重算。
+    前端据此渲染 "估算" 标签。ad_cost 始终按 product_id 当日 spend 现场重算。
     """
     is_incomplete = line.get("status") == "incomplete"
     revenue = float(line.get("revenue_usd") or 0)

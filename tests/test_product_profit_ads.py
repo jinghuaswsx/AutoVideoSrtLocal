@@ -42,6 +42,24 @@ def test_load_campaign_metrics_uses_meta_business_date_with_report_date_fallback
     assert captured["params"] == (100, date(2026, 5, 1), date(2026, 5, 7), 100)
 
 
+def test_load_attributed_orders_uses_meta_business_date_basis():
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    with patch.object(ppa, "query", side_effect=fake_query):
+        ppa._load_attributed_orders(100, date(2026, 5, 1), date(2026, 5, 7), "vn")
+
+    assert "dol.meta_business_date AS d" in captured["sql"]
+    assert "dol.meta_business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "GROUP BY dol.meta_business_date" in captured["sql"]
+    assert "opl.business_date BETWEEN %s AND %s" not in captured["sql"]
+    assert captured["params"] == (100, date(2026, 5, 1), date(2026, 5, 7), "VN")
+
+
 def test_generate_ads_report_matched_campaign_aggregates():
     """campaign 在表里 product_id 已回填 → campaigns 列表 1 行 + accounts 1 行 + daily 1 行。"""
     fake_metrics = [

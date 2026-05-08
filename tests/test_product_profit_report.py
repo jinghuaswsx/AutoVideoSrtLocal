@@ -162,7 +162,7 @@ def _setup_mock_db(monkeypatch, *, lines, site_units, account_spend, real_fees=N
 
     def fake_query(sql, params=None):
         s = sql.upper()
-        if "COALESCE(SUM(DOL.QUANTITY), 0) AS UNITS" in s and "GROUP BY OPL.BUSINESS_DATE" in s:
+        if "COALESCE(SUM(DOL.QUANTITY), 0) AS UNITS" in s and "GROUP BY DOL.META_BUSINESS_DATE" in s:
             return [
                 {"d": d, "site_code": site, "units": units}
                 for (d, site), units in site_units.items()
@@ -188,7 +188,26 @@ def _setup_mock_db(monkeypatch, *, lines, site_units, account_spend, real_fees=N
     monkeypatch.setattr(pkg_mod, "query_one", fake_query_one)
 
 
-def test_load_site_daily_units_uses_order_profit_business_date(monkeypatch):
+def test_load_order_lines_uses_meta_business_date_basis(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_order_lines(427, date(2026, 5, 1), date(2026, 5, 7))
+
+    assert "dol.meta_business_date AS business_date" in captured["sql"]
+    assert "dol.meta_business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "ORDER BY dol.meta_business_date ASC, opl.dxm_order_line_id ASC" in captured["sql"]
+    assert "opl.business_date BETWEEN %s AND %s" not in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
+
+
+def test_load_site_daily_units_uses_meta_business_date(monkeypatch):
     captured = {}
 
     def fake_query(sql, params):
@@ -200,11 +219,11 @@ def test_load_site_daily_units_uses_order_profit_business_date(monkeypatch):
 
     ppr._load_site_daily_units(427, date(2026, 5, 1), date(2026, 5, 7))
 
-    assert "opl.business_date AS d" in captured["sql"]
+    assert "dol.meta_business_date AS d" in captured["sql"]
     assert "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id" in captured["sql"]
-    assert "opl.business_date BETWEEN %s AND %s" in captured["sql"]
-    assert "GROUP BY opl.business_date, dol.site_code" in captured["sql"]
-    assert "dol.meta_business_date" not in captured["sql"]
+    assert "dol.meta_business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "GROUP BY dol.meta_business_date, dol.site_code" in captured["sql"]
+    assert "opl.business_date BETWEEN %s AND %s" not in captured["sql"]
     assert "DATE(dol.order_paid_at)" not in captured["sql"]
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7))
 

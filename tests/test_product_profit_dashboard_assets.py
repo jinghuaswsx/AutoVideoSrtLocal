@@ -102,6 +102,12 @@ def test_product_profit_dashboard_defaults_to_meta_business_date():
     assert "var today = new Date();" not in TEMPLATE
 
 
+def test_product_profit_date_filters_label_meta_business_day():
+    assert "开始日期（Meta业务日）" in TEMPLATE
+    assert "结束日期（Meta业务日）" in TEMPLATE
+    assert "北京时间16:00切日" in TEMPLATE
+
+
 def test_product_profit_has_product_country_analysis_tab_matrix():
     assert 'data-tab="product-country"' in TEMPLATE
     assert 'data-panel="product-country"' in TEMPLATE

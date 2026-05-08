@@ -155,7 +155,7 @@ def _load_attributed_orders(
     date_to: date,
     country: str | None = None,
 ) -> dict[date, dict[str, Any]]:
-    """同期同产品订单按 business_date 聚合（USD 金额 + 订单去重计数）。
+    """同期同产品订单按 Meta business_date 聚合（USD 金额 + 订单去重计数）。
 
     Returns:
         ``{business_date: {revenue, purchase, shipping, reserve, order_count}}``
@@ -165,7 +165,7 @@ def _load_attributed_orders(
     country 过滤：传非空且不是 "all" 时按 ``buyer_country`` 严格过滤（已 upper 归一化）。
     """
     sql = (
-        "SELECT opl.business_date AS d, "
+        "SELECT dol.meta_business_date AS d, "
         "       SUM(opl.revenue_usd) AS revenue, "
         "       SUM(opl.purchase_usd) AS purchase, "
         "       SUM(opl.shipping_cost_usd) AS shipping, "
@@ -174,13 +174,13 @@ def _load_attributed_orders(
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "WHERE opl.product_id = %s "
-        "  AND opl.business_date BETWEEN %s AND %s "
+        "  AND dol.meta_business_date BETWEEN %s AND %s "
     )
     params: list[Any] = [product_id, date_from, date_to]
     if country and country.strip().lower() not in ("", "all"):
         sql += " AND opl.buyer_country = %s "
         params.append(country.strip().upper())
-    sql += " GROUP BY opl.business_date"
+    sql += " GROUP BY dol.meta_business_date"
 
     rows = query(sql, tuple(params))
     return {
@@ -209,7 +209,8 @@ def generate_ads_report(
 
     Args:
         product_id: media_products.id
-        date_from / date_to: 业务日期范围（按 ``report_date`` / ``business_date``）
+        date_from / date_to: Meta 业务日期范围（广告按 ``meta_business_date``，
+            订单按 ``dianxiaomi_order_lines.meta_business_date``）
         country: 可选 buyer_country 过滤（仅作用于"归属订单"侧）
 
     Returns:
