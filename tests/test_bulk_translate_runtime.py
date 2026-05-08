@@ -1328,6 +1328,56 @@ def test_sync_completed_child_backfills_and_finishes_parent(runtime_env, monkeyp
     assert state["plan"][0]["result_synced"] is True
 
 
+def test_sync_done_parent_backfills_unsynced_completed_child(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    synced = []
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [_item(0, kind="detail_images", ref={"source_detail_ids": [1]})],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["it"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "img-1"
+    state["plan"][0]["child_task_type"] = "image_translate"
+    state["plan"][0]["status"] = "done"
+    state["plan"][0]["result_synced"] = False
+    fake_db.rows[task_id]["status"] = "done"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        mod,
+        "_load_child_snapshot",
+        lambda task_type, child_task_id: {
+            "_project_status": "done",
+            "items": [{"idx": 0, "status": "done", "dst_tos_key": "ok.png"}],
+        },
+    )
+    monkeypatch.setattr(
+        mod,
+        "_sync_child_result",
+        lambda parent_id, item, parent_state, child_state: synced.append((parent_id, item["child_task_id"])),
+    )
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == ["sync_child_result", "finish_parent"]
+    assert synced == [(task_id, "img-1")]
+    assert fake_db.rows[task_id]["status"] == "done"
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "done"
+    assert state["plan"][0]["result_synced"] is True
+
+
 def test_resume_task_only_resets_interrupted_items(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(

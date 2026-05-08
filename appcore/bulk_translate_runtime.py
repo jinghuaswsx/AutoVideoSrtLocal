@@ -450,7 +450,9 @@ def sync_task_with_children_once(
         return {"actions": [], "status": "missing"}
     if user_id is not None and int(task.get("user_id") or 0) != int(user_id):
         raise ValueError("Forbidden")
-    if _normalized_status(task.get("status")) in {"done", "cancelled"}:
+
+    current_parent_status = _normalized_status(task.get("status"))
+    if current_parent_status == "cancelled":
         return {"actions": [], "status": task.get("status")}
 
     state = task["state"]
@@ -458,11 +460,22 @@ def sync_task_with_children_once(
     state["plan"] = plan
     actions: list[str] = []
 
+    if current_parent_status == "done" and not any(
+        _completed_item_needs_result_sync(item) for item in plan
+    ):
+        return {"actions": [], "status": task.get("status")}
+
     for item in plan:
         if _normalized_status(item.get("status")) == "interrupted":
             continue
+        if current_parent_status == "done" and not _completed_item_needs_result_sync(item):
+            continue
         child_task_id = (item.get("child_task_id") or "").strip()
-        child_task_type = (item.get("child_task_type") or "").strip()
+        child_task_type = (
+            item.get("child_task_type")
+            or _child_type_for_kind(item.get("kind"))
+            or ""
+        ).strip()
         if not child_task_id or not child_task_type:
             continue
         child_state = _load_child_snapshot(child_task_type, child_task_id)
@@ -492,7 +505,10 @@ def sync_task_with_children_once(
 
         if (
             child_project_status == "done"
-            and _normalized_status(item.get("status")) != "done"
+            and (
+                _normalized_status(item.get("status")) != "done"
+                or _completed_item_needs_result_sync(item)
+            )
         ):
             parent_status = _poll_active_item(task_id, item, state, bus=None)
             if _normalized_status(item.get("status")) == "done":
@@ -507,7 +523,6 @@ def sync_task_with_children_once(
     final_status: str | None = None
     if plan:
         derived = _derive_parent_status(plan, "")
-        current_parent_status = _normalized_status(task.get("status"))
         if current_parent_status == "interrupted" and derived != "done":
             final_status = None
         else:
@@ -520,6 +535,14 @@ def sync_task_with_children_once(
     else:
         _save_state(task_id, state)
     return {"actions": actions, "status": actions[-1] if actions else "synced"}
+
+
+def _completed_item_needs_result_sync(item: dict) -> bool:
+    return (
+        _normalized_status(item.get("status")) == "done"
+        and not bool(item.get("result_synced"))
+        and bool(item.get("child_task_id") or item.get("sub_task_id"))
+    )
 
 
 def _poll_active_item(
@@ -573,7 +596,7 @@ def _apply_child_snapshot(
         item["status"] = "done"
         item["error"] = None
         item["finished_at"] = _now_iso()
-        _roll_up_cost(parent_state, item, child_state)
+        _roll_up_cost_once_for_item(parent_state, item, child_state)
         _save_state(parent_task_id, parent_state, status="running")
         _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
         return
