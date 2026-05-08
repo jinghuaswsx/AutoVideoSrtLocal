@@ -112,22 +112,24 @@ _THROTTLE_RETRY_DELAYS: tuple[float, ...] = (0.5, 1.0, 2.0, 4.0)
 
 
 def _is_concurrent_limit_429(exc: BaseException) -> bool:
-    """识别 ElevenLabs 的 HTTP 429（concurrent_limit_exceeded / rate_limit_exceeded）。"""
+    """识别 ElevenLabs 的瞬时节流/冲突错误。"""
     status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
-    if status != 429:
-        return False
     body = getattr(exc, "body", None) or getattr(exc, "response", None)
     text = str(body or exc).lower()
-    return (
-        "concurrent_limit_exceeded" in text
-        or "rate_limit_exceeded" in text
-        or status == 429  # 拿不到 body 时按 429 直接当节流
-    )
+    if status == 429:
+        return (
+            "concurrent_limit_exceeded" in text
+            or "rate_limit_exceeded" in text
+            or status == 429  # 拿不到 body 时按 429 直接当节流
+        )
+    if status == 409:
+        return "already_running" in text and "voice additions/deletions" in text
+    return False
 
 
 def _call_with_throttle_retry(fn, *, label: str = "elevenlabs"):
-    """ElevenLabs 429（多任务抢并发）专用退避：0.5/1/2/4s 总计 4 次。
-    非 429 错误透传，由 _call_with_network_retry 再处理网络层瞬时故障。"""
+    """ElevenLabs 瞬时节流/冲突专用退避：0.5/1/2/4s 总计 4 次。
+    非可重试错误透传，由 _call_with_network_retry 再处理网络层瞬时故障。"""
     for attempt in range(len(_THROTTLE_RETRY_DELAYS)):
         try:
             return fn()
@@ -135,10 +137,10 @@ def _call_with_throttle_retry(fn, *, label: str = "elevenlabs"):
             if not _is_concurrent_limit_429(exc):
                 raise
             if attempt >= len(_THROTTLE_RETRY_DELAYS) - 1:
-                log.exception("%s throttle retry exhausted: %s", label, exc)
+                log.exception("%s throttle/conflict retry exhausted: %s", label, exc)
                 raise
             delay = _THROTTLE_RETRY_DELAYS[attempt]
-            log.warning("%s 429 throttle, retry in %.1fs: %s", label, delay, exc)
+            log.warning("%s throttle/conflict, retry in %.1fs: %s", label, delay, exc)
             time.sleep(delay)
 
 

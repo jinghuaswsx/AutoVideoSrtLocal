@@ -77,9 +77,36 @@ class _Fake500Error(Exception):
         self.status_code = 500
 
 
+class _Fake409AlreadyRunningError(Exception):
+    def __init__(self):
+        body = {
+            "detail": {
+                "type": "conflict",
+                "code": "already_running",
+                "message": (
+                    "Multiple voice additions/deletions for the same voice "
+                    "were called at the same time. Please retry shortly."
+                ),
+                "status": "already_running",
+            }
+        }
+        super().__init__(body)
+        self.status_code = 409
+        self.body = body
+
+
+class _Fake409OtherError(Exception):
+    def __init__(self):
+        super().__init__({"detail": {"code": "conflict", "message": "not retryable"}})
+        self.status_code = 409
+        self.body = {"detail": {"code": "conflict", "message": "not retryable"}}
+
+
 def test_is_concurrent_limit_429_status_code():
     assert tts._is_concurrent_limit_429(_Fake429Error("concurrent_limit_exceeded")) is True
     assert tts._is_concurrent_limit_429(_Fake429Error("rate_limit_exceeded")) is True
+    assert tts._is_concurrent_limit_429(_Fake409AlreadyRunningError()) is True
+    assert tts._is_concurrent_limit_429(_Fake409OtherError()) is False
     assert tts._is_concurrent_limit_429(_Fake500Error()) is False
     assert tts._is_concurrent_limit_429(ValueError("nope")) is False
 
@@ -99,6 +126,24 @@ def test_call_with_throttle_retry_succeeds_eventually(monkeypatch):
     assert tts._call_with_throttle_retry(flaky) == "ok"
     assert calls["n"] == 3
     assert sleeps == [0.5, 1.0]  # 头两次失败的退避
+
+
+def test_call_with_throttle_retry_retries_elevenlabs_already_running_409(monkeypatch):
+    """ElevenLabs text-to-speech 对同一 voice 的瞬时 409 already_running 应短退避重试。"""
+    sleeps: list[float] = []
+    monkeypatch.setattr(tts.time, "sleep", lambda s: sleeps.append(s))
+
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise _Fake409AlreadyRunningError()
+        return "ok"
+
+    assert tts._call_with_throttle_retry(flaky) == "ok"
+    assert calls["n"] == 2
+    assert sleeps == [0.5]
 
 
 def test_call_with_throttle_retry_exhausts(monkeypatch):
@@ -123,6 +168,23 @@ def test_call_with_throttle_retry_passes_non_429_through(monkeypatch):
         raise _Fake500Error()
 
     with pytest.raises(_Fake500Error):
+        tts._call_with_throttle_retry(boom)
+    assert calls["n"] == 1
+    assert sleeps == []
+
+
+def test_call_with_throttle_retry_passes_non_retryable_409_through(monkeypatch):
+    """不是 already_running voice additions/deletions 的 409 不应被误重试。"""
+    sleeps: list[float] = []
+    monkeypatch.setattr(tts.time, "sleep", lambda s: sleeps.append(s))
+
+    calls = {"n": 0}
+
+    def boom():
+        calls["n"] += 1
+        raise _Fake409OtherError()
+
+    with pytest.raises(_Fake409OtherError):
         tts._call_with_throttle_retry(boom)
     assert calls["n"] == 1
     assert sleeps == []
