@@ -126,6 +126,22 @@ def test_generate_list_load_lines_skips_country_predicate_when_blank():
         assert "opl.buyer_country = %s" not in captured["sql"], f"country={c!r}"
 
 
+def test_load_ad_spend_uses_meta_business_date_with_report_date_fallback():
+    captured: dict[str, Any] = {}
+
+    def _fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    with patch.object(ppl, "query", side_effect=_fake_query):
+        ppl._load_ad_spend(date(2026, 5, 1), date(2026, 5, 7))
+
+    assert "COALESCE(meta_business_date, report_date) BETWEEN %s AND %s" in captured["sql"]
+    assert "GROUP BY product_id" in captured["sql"]
+    assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7))
+
+
 def _line(
     *,
     product_id: int,

@@ -131,12 +131,12 @@ def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> d
     Key: (business_date, site_code) → units
     """
     rows = query(
-        "SELECT DATE(dol.order_paid_at) AS d, dol.site_code, "
+        "SELECT dol.meta_business_date AS d, dol.site_code, "
         "       COALESCE(SUM(dol.quantity), 0) AS units "
         "FROM dianxiaomi_order_lines dol "
         "WHERE dol.product_id = %s "
-        "  AND DATE(dol.order_paid_at) BETWEEN %s AND %s "
-        "GROUP BY DATE(dol.order_paid_at), dol.site_code",
+        "  AND dol.meta_business_date BETWEEN %s AND %s "
+        "GROUP BY dol.meta_business_date, dol.site_code",
         (product_id, date_from, date_to),
     )
     out: dict[tuple[date, str], int] = {}
@@ -150,14 +150,15 @@ def _load_site_daily_units(product_id: int, date_from: date, date_to: date) -> d
 def _load_account_daily_spend(product_id: int, date_from: date, date_to: date) -> dict[tuple[date, str], float]:
     """每天 × 每账户对该产品的广告 spend。
 
-    Key: (report_date, ad_account_id) → spend_usd
+    Key: (business_date, ad_account_id) → spend_usd
     """
     rows = query(
-        "SELECT report_date, ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
+        "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
+        "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE product_id = %s "
-        "  AND report_date BETWEEN %s AND %s "
-        "GROUP BY report_date, ad_account_id",
+        "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+        "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
         (product_id, date_from, date_to),
     )
     out: dict[tuple[date, str], float] = {}

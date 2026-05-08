@@ -82,7 +82,7 @@ def _load_ad_spend(date_from: date, date_to: date) -> dict[int, Decimal]:
     rows = query(
         "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE report_date BETWEEN %s AND %s "
+        "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
         "  AND product_id IS NOT NULL "
         "GROUP BY product_id",
         (date_from, date_to),

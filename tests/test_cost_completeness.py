@@ -8,8 +8,11 @@
 """
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
+from appcore.order_analytics import cost_completeness as cc
 from appcore.order_analytics.cost_completeness import check_sku_cost_completeness
 
 
@@ -140,3 +143,23 @@ def test_actual_zero_estimated_present_uses_estimated():
     result = check_sku_cost_completeness(product)
     assert result["ok"] is True
     assert result["using_packet_cost"] == "estimated"
+
+
+def test_completeness_overview_lookback_uses_meta_business_date(monkeypatch):
+    captured = []
+
+    def fake_query(sql, args=()):
+        captured.append((sql, args))
+        if "FROM media_products" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(cc, "current_meta_business_date", lambda: date(2026, 5, 7), raising=False)
+    monkeypatch.setattr(cc, "query", fake_query)
+
+    cc.get_completeness_overview(lookback_days=7)
+
+    stats_sql, stats_args = captured[1]
+    assert "meta_business_date >= %s" in stats_sql
+    assert "order_paid_at" not in stats_sql
+    assert stats_args == (date(2026, 4, 30),)

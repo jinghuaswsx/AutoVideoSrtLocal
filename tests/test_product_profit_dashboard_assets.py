@@ -95,6 +95,13 @@ def test_product_profit_tabs_are_pills_above_tab_specific_filters():
     assert "product-country: ['product', 'from', 'to', 'reload']" in TEMPLATE
 
 
+def test_product_profit_dashboard_defaults_to_meta_business_date():
+    assert "function currentMetaBusinessDate(now)" in TEMPLATE
+    assert "metaCutoverHourBj = 16" in TEMPLATE
+    assert "var today = currentMetaBusinessDate();" in TEMPLATE
+    assert "var today = new Date();" not in TEMPLATE
+
+
 def test_product_profit_has_product_country_analysis_tab_matrix():
     assert 'data-tab="product-country"' in TEMPLATE
     assert 'data-panel="product-country"' in TEMPLATE

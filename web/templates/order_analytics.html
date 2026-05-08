@@ -5509,7 +5509,7 @@
 
   // 默认日期：最近 30 天
   function setDefaultDates() {
-    var today = new Date();
+    var today = window.orderAnalyticsMetaCalendar.today();
     var from = new Date(today.getTime() - 30 * 24 * 3600 * 1000);
     function fmt(d) {
       var m = String(d.getMonth() + 1).padStart(2, '0');

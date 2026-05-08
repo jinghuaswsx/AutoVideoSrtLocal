@@ -79,14 +79,11 @@ def allocate_shipping_to_line(
 # ---------------------------------------------------------------------------
 
 def get_sku_daily_units(*, product_id: int, business_date: date) -> int:
-    """当日 SKU 总销量（按订单 paid 日 = Asia/Shanghai 自然日）。
-
-    注意：用 DATE(order_paid_at) 截 paid 日，与现有 ROI 体系一致。
-    """
+    """当日 SKU 总销量（按 Meta 业务日归属）。"""
     row = query_one(
         "SELECT COALESCE(SUM(quantity), 0) AS units "
         "FROM dianxiaomi_order_lines "
-        "WHERE product_id = %s AND DATE(order_paid_at) = %s",
+        "WHERE product_id = %s AND meta_business_date = %s",
         (product_id, business_date),
     )
     if not row:
@@ -97,13 +94,13 @@ def get_sku_daily_units(*, product_id: int, business_date: date) -> int:
 def get_sku_daily_ad_spend(*, product_id: int, business_date: date) -> float:
     """当日 SKU 广告 spend（USD）。
 
-    复用现有 `meta_ad_daily_campaign_metrics`：按 product_id + report_date 求和。
+    复用现有 `meta_ad_daily_campaign_metrics`：按 product_id + 业务日求和。
     未匹配 product_id 的 campaign 走 get_unallocated_ad_spend()。
     """
     row = query_one(
         "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE product_id = %s AND report_date = %s",
+        "WHERE product_id = %s AND COALESCE(meta_business_date, report_date) = %s",
         (product_id, business_date),
     )
     if not row:
@@ -119,7 +116,7 @@ def get_unallocated_ad_spend(*, business_date: date) -> float:
     row = query_one(
         "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE product_id IS NULL AND report_date = %s",
+        "WHERE product_id IS NULL AND COALESCE(meta_business_date, report_date) = %s",
         (business_date,),
     )
     if not row:

@@ -12,7 +12,9 @@ from datetime import date
 # /list.json
 # ---------------------------------------------------------------------------
 def test_list_json_200_default_dates(authed_client_no_db, monkeypatch):
-    """无日期参数 → 默认本月，200 返回 rows + summary。"""
+    """无日期参数 → 默认当前 Meta 业务月，200 返回 rows + summary。"""
+    import web.routes.product_profit_report as route
+
     captured: dict = {}
 
     def fake_generate_list(*, date_from, date_to, country):
@@ -34,16 +36,21 @@ def test_list_json_200_default_dates(authed_client_no_db, monkeypatch):
         "web.routes.product_profit_report.ppl.generate_list",
         fake_generate_list,
     )
+    monkeypatch.setattr(
+        route,
+        "current_meta_business_date",
+        lambda: date(2026, 5, 7),
+        raising=False,
+    )
 
     resp = authed_client_no_db.get("/order-analytics/product-profit/list.json")
     assert resp.status_code == 200
     data = resp.get_json()
     assert "rows" in data
     assert "summary" in data
-    # 默认 date_from = 本月 1 号，date_to = 今天
-    today = date.today()
-    assert captured["date_from"] == today.replace(day=1)
-    assert captured["date_to"] == today
+    # 默认 date_from = 当前 Meta 业务月 1 号，date_to = 当前 Meta 业务日
+    assert captured["date_from"] == date(2026, 5, 1)
+    assert captured["date_to"] == date(2026, 5, 7)
     assert captured["country"] is None
 
 

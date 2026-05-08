@@ -17,6 +17,7 @@ import io
 from flask import Blueprint, render_template, request
 from flask_login import login_required
 
+from appcore.order_analytics import current_meta_business_date
 from appcore.order_analytics.campaign_overrides import (
     create_override,
     list_overrides,
@@ -73,6 +74,10 @@ def _parse_positive_int_param(name: str) -> int | None:
     return value if value > 0 else None
 
 
+def _default_business_today() -> date:
+    return current_meta_business_date()
+
+
 @bp.route("/order-profit")
 @login_required
 @permission_required("order_profit")
@@ -84,7 +89,7 @@ def page():
 @login_required
 @permission_required("order_profit")
 def api_summary():
-    today = date.today()
+    today = _default_business_today()
     date_from = _parse_date_param("from", today - timedelta(days=30))
     date_to = _parse_date_param("to", today)
 
@@ -107,7 +112,7 @@ def api_orders_list():
         limit     : 默认 100，上限 500
         offset    : 默认 0
     """
-    today = date.today()
+    today = _default_business_today()
     date_from = _parse_date_param("from", today - timedelta(days=7))
     date_to = _parse_date_param("to", today)
     status = (request.args.get("status") or "").strip() or None
@@ -157,7 +162,7 @@ def api_order_detail(dxm_package_id):
 @login_required
 @permission_required("order_profit")
 def api_lines():
-    today = date.today()
+    today = _default_business_today()
     date_from = _parse_date_param("from", today - timedelta(days=7))
     date_to = _parse_date_param("to", today)
     limit = min(int(request.args.get("limit", "100") or 100), 500)
@@ -183,7 +188,7 @@ def api_lines():
 @permission_required("order_profit")
 def api_loss_alerts():
     """亏损订单（profit_usd < 0）列表。"""
-    today = date.today()
+    today = _default_business_today()
     date_from = _parse_date_param("from", today - timedelta(days=7))
     date_to = _parse_date_param("to", today)
     limit = min(int(request.args.get("limit", "50") or 50), 200)
@@ -316,7 +321,7 @@ def api_products_for_match():
 @login_required
 @permission_required("order_profit")
 def api_incomplete_products():
-    today = date.today()
+    today = _default_business_today()
     date_from = _parse_date_param("from", today - timedelta(days=7))
     date_to = _parse_date_param("to", today)
     products = get_order_profit_incomplete_products(
