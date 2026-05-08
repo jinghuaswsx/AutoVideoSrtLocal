@@ -131,6 +131,18 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },
+    "cdp_environment_watchdog": {
+        "code": "cdp_environment_watchdog",
+        "name": "CDP 环境监控",
+        "description": "每分钟检查 DXM01-Meta、DXM02-MK、DXM03-RJC 的 systemd、CDP 和 noVNC 可用性；异常时重启对应环境并通过本任务失败日志触发 admin 报警。",
+        "schedule": "每 1 分钟",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-cdp-environment-watchdog.timer",
+        "runner": "tools/cdp_environment_watchdog.py",
+        "deployment": "线上已启用",
+        "log_table": "scheduled_task_runs",
+    },
     "product_cover_backfill_tick": {
         "code": "product_cover_backfill_tick",
         "name": "商品组图回填",

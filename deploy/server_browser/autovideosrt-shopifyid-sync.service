@@ -1,18 +1,14 @@
 [Unit]
 Description=AutoVideoSrt Shopify ID Dianxiaomi sync
-Wants=autovideosrt-browser.service
-After=network-online.target autovideosrt-browser.service mysql.service
+Wants=autovideosrt-dxm03-rjc-vnc.service
+After=network-online.target autovideosrt-dxm03-rjc-vnc.service mysql.service
 
 [Service]
 Type=oneshot
 User=root
 WorkingDirectory=/opt/autovideosrt
-EnvironmentFile=-/etc/default/autovideosrt-browser
 Environment=SHOPIFYID_BROWSER_MODE=server-cdp
-Environment=SHOPIFYID_BROWSER_CDP_URL=http://127.0.0.1:9222
+Environment=SHOPIFYID_BROWSER_CDP_URL=http://127.0.0.1:9225
 Environment=SHOPIFYID_DB_MODE=local
-Environment=BROWSER_AUTOMATION_LOCK_TIMEOUT_SECONDS=3600
-Environment=BROWSER_AUTOMATION_LOCK_RETRY_SECONDS=10
-Environment=BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=shopifyid
-ExecStart=/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py --skip-login-prompt --browser-mode server-cdp --browser-cdp-url http://127.0.0.1:9222 --db-mode local
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py --skip-login-prompt --browser-mode server-cdp --browser-cdp-url http://127.0.0.1:9225 --db-mode local
 TimeoutStartSec=7200

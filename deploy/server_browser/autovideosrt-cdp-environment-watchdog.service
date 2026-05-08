@@ -1,0 +1,16 @@
+[Unit]
+Description=AutoVideoSrt CDP environment watchdog
+After=network-online.target mysql.service autovideosrt-dxm01-meta-vnc.service autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service
+Wants=network-online.target autovideosrt-dxm01-meta-vnc.service autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/cdp_environment_watchdog.py --env all
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=180

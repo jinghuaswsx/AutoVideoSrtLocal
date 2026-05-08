@@ -141,7 +141,7 @@ def _run_dxm_recent_import(window_start: datetime, window_end: datetime, *, max_
             end_date_text=day.isoformat(),
             site_codes=["newjoy", "omurio"],
             states=[""],
-            dxm_env="DXM-01",
+            dxm_env="DXM03-RJC",
             dry_run=False,
             skip_login_prompt=True,
             date_filter_mode="recent-scan",

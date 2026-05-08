@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AutoVideoSrt CDP environment watchdog every minute
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=5
+Persistent=true
+Unit=autovideosrt-cdp-environment-watchdog.service
+
+[Install]
+WantedBy=timers.target

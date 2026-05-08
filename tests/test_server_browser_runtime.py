@@ -145,31 +145,33 @@ def test_browser_lock_script_records_timeout_and_fails_systemd_unit():
     assert "exit 0" not in source
 
 
-def test_shopifyid_and_roi_units_use_shared_browser_lock_with_alert_codes():
+def test_shopifyid_and_roi_units_use_split_cdp_environments_without_shared_lock():
     shopify = _read("deploy/server_browser/autovideosrt-shopifyid-sync.service")
     roi = _read("deploy/server_browser/autovideosrt-roi-realtime-sync.service")
 
-    assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" in shopify
-    assert "BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=shopifyid" in shopify
-    assert "/usr/bin/flock -n" not in shopify
+    assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" not in shopify
+    assert "autovideosrt-dxm03-rjc-vnc.service" in shopify
+    assert "--browser-cdp-url http://127.0.0.1:9225" in shopify
 
-    assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" in roi
-    assert "BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=roi_hourly_sync" in roi
+    assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" not in roi
+    assert "autovideosrt-dxm01-meta-vnc.service" in roi
+    assert "autovideosrt-dxm03-rjc-vnc.service" in roi
     assert "META_REALTIME_SYNC_CHANNEL=browser" in roi
     assert "META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222" in roi
+    assert "DXM_ORDER_BROWSER_CDP_URL=http://127.0.0.1:9225" in roi
     assert "--meta-channel browser" in roi
     assert "--skip-meta-fetch" not in roi
 
 
-def test_meta_daily_final_units_use_shared_browser_lock_and_staggered_timers():
+def test_meta_daily_final_units_use_dxm01_meta_without_shared_lock_and_staggered_timers():
     sync_service = _read("deploy/server_browser/autovideosrt-meta-daily-final-sync.service")
     check_service = _read("deploy/server_browser/autovideosrt-meta-daily-final-check.service")
     sync_timer = _read("deploy/server_browser/autovideosrt-meta-daily-final-sync.timer")
     check_timer = _read("deploy/server_browser/autovideosrt-meta-daily-final-check.timer")
 
     for service in (sync_service, check_service):
-        assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" in service
-        assert "BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=meta_daily_final" in service
+        assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" not in service
+        assert "autovideosrt-dxm01-meta-vnc.service" in service
         assert "META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222" in service
 
     assert "--mode run" in sync_service
@@ -194,3 +196,23 @@ def test_server_browser_installers_make_lock_script_executable():
 
     assert 'chmod 755 "deploy/server_browser/with_browser_lock.sh"' in install_browser
     assert 'chmod 755 "$APP_DIR/deploy/server_browser/with_browser_lock.sh"' in install_timer
+
+
+def test_visible_dxm_environment_services_and_watchdog_ports():
+    runner = _read("deploy/server_browser/run_visible_dxm_env.sh")
+    dxm01 = _read("deploy/server_browser/autovideosrt-dxm01-meta-vnc.service")
+    dxm02 = _read("deploy/server_browser/autovideosrt-dxm02-mk-vnc.service")
+    dxm03 = _read("deploy/server_browser/autovideosrt-dxm03-rjc-vnc.service")
+    watchdog = _read("deploy/server_browser/autovideosrt-cdp-environment-watchdog.service")
+    timer = _read("deploy/server_browser/autovideosrt-cdp-environment-watchdog.timer")
+
+    assert "Xvfb" in runner
+    assert "websockify" in runner
+    assert "DXM_NOVNC_PORT=6092" in dxm01
+    assert "DXM_CDP_PORT=9222" in dxm01
+    assert "DXM_NOVNC_PORT=6093" in dxm02
+    assert "DXM_CDP_PORT=9223" in dxm02
+    assert "DXM_NOVNC_PORT=6095" in dxm03
+    assert "DXM_CDP_PORT=9225" in dxm03
+    assert "tools/cdp_environment_watchdog.py --env all" in watchdog
+    assert "OnUnitActiveSec=60" in timer
