@@ -162,6 +162,35 @@ def _run_meta_ads_export(target_date: date, export_dir: Path, account: MetaAdAcc
     }
 
 
+def _normalize_account_codes(values: list[str] | tuple[str, ...] | None) -> list[str]:
+    normalized: list[str] = []
+    for raw in values or []:
+        for part in str(raw or "").split(","):
+            code = part.strip()
+            if code and code not in normalized:
+                normalized.append(code)
+    return normalized
+
+
+def _select_accounts(account_codes: list[str] | tuple[str, ...] | None = None) -> tuple[list[MetaAdAccount], list[str]]:
+    selected_codes = _normalize_account_codes(account_codes)
+    if not selected_codes:
+        return meta_ad_accounts.get_enabled_accounts(), []
+
+    accounts_by_code = {account.code: account for account in meta_ad_accounts.get_all_accounts()}
+    selected: list[MetaAdAccount] = []
+    missing: list[str] = []
+    for code in selected_codes:
+        account = accounts_by_code.get(code)
+        if account is None:
+            missing.append(code)
+        else:
+            selected.append(account)
+    if missing:
+        raise ValueError(f"no matching meta ad accounts configured: {', '.join(missing)}")
+    return selected, selected_codes
+
+
 def _pick(row: dict[str, Any], exact: tuple[str, ...], contains: tuple[tuple[str, ...], ...] = ()) -> Any:
     return realtime_sync._pick_value(row, exact, contains)
 
@@ -502,8 +531,19 @@ def _refresh_final_roas_snapshot(target_date: date, source_run_id: int) -> int:
     return snapshot_id
 
 
-def run_final_sync(target_date: date, *, mode: str = "run") -> dict[str, Any]:
-    accounts = meta_ad_accounts.get_enabled_accounts()
+def run_final_sync(
+    target_date: date,
+    *,
+    mode: str = "run",
+    account_codes: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    selected_account_codes = _normalize_account_codes(account_codes)
+    try:
+        accounts, selected_account_codes = _select_accounts(selected_account_codes)
+        selection_error = None
+    except ValueError as exc:
+        accounts = []
+        selection_error = str(exc)
     account_ids = [account.account_id for account in accounts]
     if mode == "check" and accounts and already_successful(target_date, account_ids=account_ids):
         return {
@@ -521,6 +561,7 @@ def run_final_sync(target_date: date, *, mode: str = "run") -> dict[str, Any]:
         "window_end_at": _meta_business_window(target_date)[1],
         "accounts": account_ids,
         "account_codes": [account.code for account in accounts],
+        "selected_account_codes": selected_account_codes,
         "account_results": [],
         "mode": mode,
         "export_dir": str(export_dir),
@@ -530,7 +571,7 @@ def run_final_sync(target_date: date, *, mode: str = "run") -> dict[str, Any]:
 
     if not accounts:
         summary["duration_seconds"] = round(time.time() - started, 2)
-        summary["error"] = "no enabled meta ad accounts configured"
+        summary["error"] = selection_error or "no enabled meta ad accounts configured"
         summary["status"] = "failed"
         summary["run_id"] = run_id
         scheduled_tasks.finish_run(
@@ -616,13 +657,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Sync the just-closed Meta Ads Manager day into final daily ROAS tables.")
     parser.add_argument("--date", help="Meta business date to fetch, YYYY-MM-DD. Defaults to the just-closed day.")
     parser.add_argument("--mode", choices=("run", "check"), default="run")
+    parser.add_argument(
+        "--account-code",
+        action="append",
+        default=[],
+        help="Optional Meta account code to sync. Can be repeated or comma-separated; includes disabled accounts when explicit.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     target = _parse_date(args.date) if args.date else completed_meta_business_date()
-    result = run_final_sync(target, mode=args.mode)
+    result = run_final_sync(target, mode=args.mode, account_codes=args.account_code)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=_json_default))
     return 0 if result.get("status") in {"success", "skipped"} else 1
 

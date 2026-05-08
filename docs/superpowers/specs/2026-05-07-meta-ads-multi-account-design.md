@@ -19,6 +19,7 @@
 5. `newjoyloo` code 指向新广告户 `1861285821213497` 且 `enabled=true`；旧广告户以 `newjoyloo_old` 保留但 `enabled=false`，只参与历史广告费分摊。
 6. `meta_daily_final_sync` 收盘日同步与实时同步共用同一份账户配置，避免只同步一个店铺 / 一个广告户。
 7. 账户必须声明对应店铺 `store_codes`，让同步、看板、产品盈亏广告费分摊共用同一份「店铺 ↔ 广告户」映射。
+8. 旧广告户必须保留历史同步入口：自动定时任务不跑 `enabled=false` 账户，但运维可用 account code 显式指定旧户补抓历史日数据。
 
 ## 非目标
 
@@ -143,6 +144,16 @@ run_final_sync(target_date, mode)
 
 删除和重写日表时必须按 `target_date + account.account_id` 限定，不得删除其他账户数据。刷新 `roi_realtime_daily_snapshots` 时广告费按 `meta_business_date` 汇总所有账户，不再按单一 `ad_account_id` 过滤。
 
+### 旧户历史同步
+
+旧 `newjoyloo_old` 账户保持 `enabled=false`，避免每 20 分钟实时同步和每日收盘同步反复请求已封账户。但该账户仍完整保留 `account_id`、`business_id`、`csv_prefix`、`store_codes`，可用于人工补抓历史数据：
+
+```bash
+python tools/meta_daily_final_sync.py --date 2026-05-06 --mode run --account-code newjoyloo_old
+```
+
+`--account-code` 可重复传入，也可传逗号分隔值。只要显式指定 account code，就从 `get_all_accounts()` 里匹配账户，包括 `enabled=false` 的历史账户；未显式指定时仍只跑 `enabled=true` 账户。这样旧户历史数据可继续同步，但不会影响新户与 Omurio 的自动同步稳定性。
+
 ## 失败隔离决策
 
 | 场景 | 整体 status | 备注 |
@@ -205,6 +216,7 @@ DELETE FROM system_settings WHERE `key`='meta_ad_accounts';
 7. 收盘日同步部分失败 → 成功账户入库，整体 run failed，summary.account_results 标明失败账户。
 8. 数据分析「广告账户」Tab API 能读取、校验、保存 `store_codes`。
 9. 产品盈亏广告费分摊从 `meta_ad_accounts.store_codes` 生成映射，不再依赖硬编码常量。
+10. 收盘日同步支持 `--account-code newjoyloo_old` 显式选择 disabled 旧户做历史补抓。
 
 ## Docs-anchor
 
