@@ -18,7 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from appcore.browser_automation_lock import BrowserAutomationLockTimeout, browser_automation_lock
+from appcore.browser_automation_lock import BrowserAutomationLockTimeout
+from appcore.meta_ads_cdp import meta_ads_cdp_lock as browser_automation_lock
 from tools import meta_daily_final_sync
 
 DEFAULT_STATE_FILE = REPO_ROOT / "output" / "meta_legacy_newjoyloo_old_backfill" / "state.json"
@@ -111,6 +112,7 @@ def run_batch(
             timeout_seconds=lock_timeout_seconds,
             retry_seconds=1,
             command=f"{account_code} {start_date.isoformat()}..{end_date.isoformat()}",
+            disable_child_lock=True,
         ):
             result = _run_batch_locked(
                 account_code=account_code,
