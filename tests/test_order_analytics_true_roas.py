@@ -674,6 +674,69 @@ def test_get_realtime_roas_overview_snapshot_includes_order_profit_details(monke
     assert detail["refund_status"] == "partial_refund"
 
 
+def test_get_realtime_roas_overview_prefers_latest_order_snapshot_when_ad_pending(monkeypatch):
+    old_ad_ok_snapshot = {
+        "id": 631,
+        "snapshot_at": datetime(2026, 5, 7, 22, 40),
+        "source_run_id": 646,
+        "order_count": 9,
+        "line_count": 10,
+        "units": 15,
+        "order_revenue_usd": 500.60,
+        "shipping_revenue_usd": 103.19,
+        "ad_spend_usd": 106.10,
+        "last_order_at": datetime(2026, 5, 7, 22, 30, 7),
+        "order_data_status": "ok",
+        "ad_data_status": "ok",
+    }
+    latest_order_snapshot = {
+        "id": 633,
+        "snapshot_at": datetime(2026, 5, 8, 11, 0),
+        "source_run_id": 684,
+        "order_count": 57,
+        "line_count": 58,
+        "units": 69,
+        "order_revenue_usd": 1570.64,
+        "shipping_revenue_usd": 481.78,
+        "ad_spend_usd": 0,
+        "last_order_at": datetime(2026, 5, 8, 10, 28, 24),
+        "order_data_status": "ok",
+        "ad_data_status": "pending_source",
+    }
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            if "ORDER BY CASE WHEN ad_data_status='ok'" in sql:
+                return [old_ad_ok_snapshot, latest_order_snapshot]
+            return [latest_order_snapshot, old_ad_ok_snapshot]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": None}]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": None}]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-07",
+        now=datetime(2026, 5, 8, 11, 5),
+    )
+
+    assert result["summary"]["order_count"] == 57
+    assert result["summary"]["units"] == 69
+    assert result["summary"]["ad_data_status"] == "pending_source"
+    assert result["period"]["data_until_at"] == latest_order_snapshot["snapshot_at"]
+    assert result["snapshots"][0]["id"] == 633
+
+
 def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM roi_daily_roas_nodes" in sql:

@@ -1006,7 +1006,7 @@ def get_realtime_roas_overview(
     latest_snapshot = [] if normalized_product_id else query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
-        "ORDER BY CASE WHEN ad_data_status='ok' THEN 0 ELSE 1 END, snapshot_at DESC, id DESC LIMIT 1",
+        "ORDER BY snapshot_at DESC, id DESC LIMIT 1",
         (target,),
     ) if target >= current_business_date else []
     if latest_snapshot:
