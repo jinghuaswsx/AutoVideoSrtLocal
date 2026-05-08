@@ -676,6 +676,69 @@ def test_status_summary_counts_realtime_matched_spend_without_units_as_unallocat
     assert payload["overview"]["total_profit_usd"] == pytest.approx(47.5)
 
 
+def test_status_summary_recalculates_ad_cost_from_daily_metrics_when_profit_lines_are_stale(monkeypatch):
+    target = date(2026, 5, 7)
+
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            return [
+                {
+                    "status": "ok",
+                    "n": 1,
+                    "revenue": 100.0,
+                    "profit": 100.0,
+                    "shopify_fee": 0.0,
+                    "ad_cost": 0.0,
+                    "purchase": 0.0,
+                    "shipping_cost": 0.0,
+                    "return_reserve": 0.0,
+                    "purchase_actual": 0.0,
+                    "purchase_estimate": 0.0,
+                    "purchase_with_estimate": 0.0,
+                    "shipping_cost_actual": 0.0,
+                    "shipping_cost_estimate": 0.0,
+                    "shipping_cost_with_estimate": 0.0,
+                    "profit_with_estimate": 100.0,
+                    "purchase_fallback_estimated": 0.0,
+                    "purchase_fallback_estimated_lines": 0,
+                    "shipping_product_estimated": 0.0,
+                    "shipping_product_estimated_lines": 0,
+                    "shipping_fallback_estimated": 0.0,
+                    "shipping_fallback_estimated_lines": 0,
+                }
+            ]
+        if "product_id IS NULL" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"unallocated_ad_spend_usd": 0.0}]
+        if "AS spend" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "product_id": 316, "spend": 25.0}]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "COUNT(*) AS n" in sql:
+            return [{"business_date": target, "n": 1}]
+        if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            raise AssertionError("daily metrics are available; realtime fallback is not needed")
+        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+            return [{"business_date": target, "product_id": 316, "units": 4}]
+        if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "business_date": target,
+                    "status": "ok",
+                    "product_id": 316,
+                    "quantity": 2,
+                    "ad_cost_usd": 0.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    payload = get_order_profit_status_summary(date_from=target, date_to=target)
+
+    assert payload["summary"]["ok"]["ad_cost"] == pytest.approx(12.5)
+    assert payload["summary"]["ok"]["profit"] == pytest.approx(87.5)
+    assert payload["overview"]["total_profit_usd"] == pytest.approx(87.5)
+
+
 def test_status_summary_queries_estimated_cost_sources(monkeypatch):
     captured = {}
 
