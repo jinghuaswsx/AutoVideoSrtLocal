@@ -86,7 +86,11 @@ def _build_product_detail_response(pid: int, product: dict):
     return _build_product_detail_response_impl(
         pid,
         product=product,
-        serialize_product_fn=_serialize_product,
+        serialize_product_fn=lambda *args, **kwargs: _serialize_product(
+            *args,
+            **kwargs,
+            include_product_link_domains=True,
+        ),
         serialize_item_fn=_serialize_item,
     )
 

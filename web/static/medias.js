@@ -4016,6 +4016,15 @@
     return normalizedDomain ? `${normalizedDomain}:${normalizedLang}` : normalizedLang;
   }
 
+  function edNormalizeDomainValue(domain) {
+    return String(domain || '')
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/^www\./i, '')
+      .replace(/\/.*$/, '')
+      .toLowerCase();
+  }
+
   function edLocalizedLinkValue(lang, domain) {
     const links = (edState.productData && edState.productData.product
                    && edState.productData.product.localized_links) || {};
@@ -4030,6 +4039,34 @@
       return first || '';
     }
     return '';
+  }
+
+  function edProductLinkDomains() {
+    const product = (edState.productData && edState.productData.product) || {};
+    const rows = Array.isArray(product.product_link_domains) ? product.product_link_domains : [];
+    const out = [];
+    const seen = new Set();
+    rows.forEach((row) => {
+      const domain = edNormalizeDomainValue(row && row.domain);
+      if (!domain || seen.has(domain)) return;
+      seen.add(domain);
+      out.push({ domain });
+    });
+    if (!out.length) out.push({ domain: DEFAULT_LINK_DOMAIN });
+    return out;
+  }
+
+  function edProductLinkRowsForLang(lang) {
+    const code = ($('edCode') && $('edCode').value || '').trim();
+    return edProductLinkDomains().map((row) => {
+      const domain = edNormalizeDomainValue(row.domain);
+      return {
+        domain,
+        lang,
+        status_key: edStatusKey(lang, domain),
+        url: edLocalizedLinkValue(lang, domain) || _defaultProductUrlForDomain(lang, code, domain),
+      };
+    }).filter((row) => row.domain);
   }
 
   function _defaultProductUrlForDomain(lang, code, domain) {
@@ -4417,13 +4454,14 @@
 
   function edShopifyImageStatusForLang(lang, domain) {
     const statusMap = edShopifyImageStatusMap();
-    const key = edStatusKey(lang, domain || '');
-    const raw = statusMap[key] || statusMap[lang] || {};
+    const normalizedDomain = edNormalizeDomainValue(domain || '');
+    const key = edStatusKey(lang, normalizedDomain);
+    const raw = statusMap[key] || (normalizedDomain === DEFAULT_LINK_DOMAIN ? statusMap[lang] : {}) || {};
     return {
       replace_status: raw.replace_status || 'none',
       link_status: raw.link_status || 'unknown',
       status_key: raw.status_key || key,
-      domain: raw.domain || domain || '',
+      domain: raw.domain || normalizedDomain,
       lang: raw.lang || lang,
       last_error: raw.last_error || '',
       last_task_id: raw.last_task_id || '',
@@ -4435,16 +4473,31 @@
 
   function edShopifyImageStatusesForLang(lang) {
     const statusMap = edShopifyImageStatusMap();
-    const rows = Object.entries(statusMap)
+    const enabledRows = edProductLinkRowsForLang(lang);
+    const statuses = [];
+    const seen = new Set();
+    const pushStatus = (status) => {
+      const key = status.status_key || edStatusKey(status.lang || lang, status.domain || '');
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      statuses.push(status);
+    };
+    enabledRows.forEach((row) => {
+      pushStatus({ ...edShopifyImageStatusForLang(lang, row.domain), link_url: row.url });
+    });
+    Object.entries(statusMap)
       .map(([key, raw]) => {
         const parts = String(key || '').split(':');
         const domain = parts.length > 1 ? parts[0] : (raw && raw.domain) || '';
-        const itemLang = parts.length > 1 ? parts.slice(1).join(':') : key;
+        const itemLang = parts.length > 1 ? parts.slice(1).join(':') : ((raw && raw.lang) || key);
         return { key, domain, lang: itemLang, raw };
       })
       .filter((item) => item.lang === lang && item.raw && typeof item.raw === 'object')
-      .map((item) => edShopifyImageStatusForLang(lang, item.domain));
-    if (rows.length) return rows;
+      .forEach((item) => {
+        if (enabledRows.length && !item.domain) return;
+        pushStatus(edShopifyImageStatusForLang(lang, item.domain));
+      });
+    if (statuses.length) return statuses;
     return [edShopifyImageStatusForLang(lang, '')];
   }
 
@@ -4479,6 +4532,9 @@
       if (status.domain) parts.push(edLinkCheckBadge(status.domain, 'info'));
       parts.push(edLinkCheckBadge(SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status, edShopifyImageBadgeKind(status)));
       parts.push(edLinkCheckBadge(SHOPIFY_IMAGE_LINK_LABELS[status.link_status] || status.link_status, edShopifyImageBadgeKind(status)));
+      if (status.link_url) {
+        parts.push(`<span class="oc-link-check-meta mono">${escapeHtml(status.link_url)}</span>`);
+      }
       if (status.last_task_id) {
         parts.push(`<span class="oc-link-check-meta">任务 #${escapeHtml(status.last_task_id)}</span>`);
       }

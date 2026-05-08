@@ -82,6 +82,7 @@
 - Test: `tests/test_medias_link_check_routes.py`
 
 - [ ] Serialize `link_check_tasks` and `shopify_image_status` with legacy lang data plus domain-language entries.
+- [ ] Product detail serialization exposes the product's enabled link domains so the edit modal can render one Shopify image confirmation row per enabled domain even before `shopify_image_status_json` has a `domain:lang` entry.
 - [ ] Show domain labels in link-check and Shopify image status blocks.
 - [ ] Add domain selection to link check and Shopify image confirm/unavailable/requeue actions where needed.
 

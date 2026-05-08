@@ -49,6 +49,49 @@ def test_get_product_detail_includes_shopify_image_status(authed_user_client_no_
     assert payload["product"]["shopify_image_status"]["it"]["link_status"] == "needs_review"
 
 
+def test_get_product_detail_includes_enabled_product_link_domains(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.medias.medias.get_product",
+        lambda pid: _product(product_code="dino-glider-launcher-toy-rjc"),
+    )
+    monkeypatch.setattr("web.routes.medias.medias.get_product_covers", lambda pid: {})
+    monkeypatch.setattr("web.routes.medias.medias.list_copywritings", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_items", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_raw_sources", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_product_skus", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_xmyc_unit_prices", lambda skus: {})
+    monkeypatch.setattr(
+        "web.services.media_product_detail.product_roas.get_configured_rmb_per_usd",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "appcore.product_link_domains.resolve_product_page_url_rows",
+        lambda product, lang: [
+            {
+                "domain": "newjoyloo.com",
+                "lang": "en",
+                "status_key": "newjoyloo.com:en",
+                "url": "https://newjoyloo.com/products/dino-glider-launcher-toy-rjc",
+            },
+            {
+                "domain": "omurio.com",
+                "lang": "en",
+                "status_key": "omurio.com:en",
+                "url": "https://omurio.com/products/dino-glider-launcher-toy-rjc",
+            },
+        ],
+    )
+
+    response = authed_user_client_no_db.get("/medias/api/products/7")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["product"]["product_link_domains"] == [
+        {"domain": "newjoyloo.com"},
+        {"domain": "omurio.com"},
+    ]
+
+
 def test_confirm_shopify_image_lang_marks_normal(authed_user_client_no_db, monkeypatch):
     called = {}
     monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: _product())
@@ -99,6 +142,8 @@ def test_medias_js_wires_shopify_image_actions():
     js = open("web/static/medias.js", encoding="utf-8").read()
 
     assert "function edRenderShopifyImageStatus" in js
+    assert "function edProductLinkRowsForLang" in js
+    assert "product.product_link_domains" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/confirm" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/unavailable" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/requeue" in js

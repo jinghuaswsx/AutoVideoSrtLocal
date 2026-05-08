@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from appcore import medias, product_roas, shopify_image_tasks
+from appcore import medias, product_link_domains, product_roas, shopify_image_tasks
 
 
 def _json_number_or_none(value):
@@ -111,6 +111,24 @@ def _serialize_product_skus(
     return out
 
 
+def _serialize_product_link_domains(product: dict) -> list[dict]:
+    try:
+        rows = product_link_domains.resolve_product_page_url_rows(product, "en")
+    except Exception:
+        rows = []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for row in rows or []:
+        domain = str(row.get("domain") or "").strip().lower()
+        if not domain:
+            domain = product_link_domains.domain_from_url(str(row.get("url") or ""))
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        out.append({"domain": domain})
+    return out
+
+
 def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None,
                        items_filenames: list[str] | None = None,
@@ -119,7 +137,8 @@ def _serialize_product(p: dict, items_count: int | None = None,
                        raw_sources_count: int | None = None,
                        roas_rmb_per_usd=None,
                        skus: list[dict] | None = None,
-                       xmyc_index: dict[str, dict] | None = None) -> dict:
+                       xmyc_index: dict[str, dict] | None = None,
+                       include_product_link_domains: bool = False) -> dict:
     if covers is None:
         covers = medias.get_product_covers(p["id"])
     if roas_rmb_per_usd is None:
@@ -179,6 +198,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "cover_thumbnail_url": cover_url,
         "lang_coverage": lang_coverage or {},
         "localized_links": localized_links,
+        "product_link_domains": _serialize_product_link_domains(p) if include_product_link_domains else [],
         "link_check_tasks": link_check_tasks,
         "shopify_image_status": shopify_image_status,
         "raw_sources_count": raw_sources_count or 0,
