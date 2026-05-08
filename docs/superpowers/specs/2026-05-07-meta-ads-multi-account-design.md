@@ -2,12 +2,13 @@
 
 ## 背景
 
-`tools/roi_hourly_sync.py` 调度（systemd timer `autovideosrt-roi-realtime-sync.timer`，每 20 分钟一次）目前**只同步一个 Meta 广告账户** `2110407576446225`（newjoyloo），账户 ID / business ID / CSV 文件名前缀 `newjoyloo` 全部硬编码或仅由环境变量控制。
+`tools/roi_hourly_sync.py` 调度（systemd timer `autovideosrt-roi-realtime-sync.timer`，每 20 分钟一次）原先**只同步一个 Meta 广告账户** `2110407576446225`（newjoyloo），账户 ID / business ID / CSV 文件名前缀 `newjoyloo` 全部硬编码或仅由环境变量控制。
 
 事件：
-- 2026-05-07 newjoyloo 账户被 Meta 封禁，最近的 CSV `已花费金额` 全为 0。
+- 2026-05-07 newjoyloo 旧账户 `2110407576446225` 被 Meta 封禁，最近的 CSV `已花费金额` 全为 0。
+- 2026-05-07 用户提供 newjoyloo 新广告户 Ads Manager URL，解析得到 `business_id=476723373113063`、`act=1861285821213497`；店小秘订单获取环境仍使用 `DXM-01`。
 - 实际公司同时运营 newjoyloo + Omurio 两个账户；订单侧 `STORE_SCOPE = "newjoy,omurio"` 已经在并行同步两个店铺，但 Meta 广告侧从未对接 Omurio。
-- newjoyloo 解封时间未定，期间 Omurio 数据必须可见。
+- newjoyloo 旧户解封时间未定，同步必须切到新户；旧户数据仍保留给历史报表分摊。
 
 ## 目标
 
@@ -15,9 +16,10 @@
 2. 单账户失败不影响其他账户继续跑（CDP 浏览器登录态在某账户失效，不会拖垮整个 sync）。
 3. CSV 文件名前缀按账户走，导出目录按账户分子目录，避免相互覆盖。
 4. 配置存在数据库 `system_settings.meta_ad_accounts`（JSON），并在数据分析模块新增「广告账户」Tab 管理。
-5. newjoyloo 配置保留但 `enabled=false`，Omurio 配置 `enabled=true`，解封后只需把 enabled 翻成 true。
+5. `newjoyloo` code 指向新广告户 `1861285821213497` 且 `enabled=true`；旧广告户以 `newjoyloo_old` 保留但 `enabled=false`，只参与历史广告费分摊。
 6. `meta_daily_final_sync` 收盘日同步与实时同步共用同一份账户配置，避免只同步一个店铺 / 一个广告户。
 7. 账户必须声明对应店铺 `store_codes`，让同步、看板、产品盈亏广告费分摊共用同一份「店铺 ↔ 广告户」映射。
+8. 旧广告户必须保留历史同步入口：自动定时任务不跑 `enabled=false` 账户，但运维可用 account code 显式指定旧户补抓历史日数据。
 
 ## 非目标
 
@@ -35,12 +37,22 @@
   {
     "code": "newjoyloo",
     "label": "Newjoyloo",
-    "account_id": "2110407576446225",
+    "account_id": "1861285821213497",
     "business_id": "476723373113063",
     "csv_prefix": "newjoyloo",
     "store_codes": ["newjoy"],
+    "enabled": true,
+    "note": "2026-05-07 旧户被封后启用的新广告户"
+  },
+  {
+    "code": "newjoyloo_old",
+    "label": "Newjoyloo 旧广告户",
+    "account_id": "2110407576446225",
+    "business_id": "476723373113063",
+    "csv_prefix": "newjoyloo_old",
+    "store_codes": ["newjoy"],
     "enabled": false,
-    "note": "2026-05-07 被 Meta 封禁，等待恢复"
+    "note": "2026-05-07 被 Meta 封禁，保留历史广告费分摊"
   },
   {
     "code": "Omurio",
@@ -55,7 +67,7 @@
 ```
 
 字段说明：
-- `code`：账户唯一 code，用作 export 子目录名 / 日志标签；不可重复。
+- `code`：账户唯一 code，用作 export 子目录名 / 日志标签；不可重复。当前 newjoyloo 新户固定使用 `newjoyloo`，旧户使用 `newjoyloo_old`。
 - `account_id` / `business_id`：Meta Ads Manager URL 里的 `act=` / `business_id=`。
 - `csv_prefix`：CSV 文件名前缀。**保持原始大小写**（沿用线上 `newjoyloo`、Omurio 后台显示 `Omurio`）。
 - `store_codes`：该广告账户覆盖的店铺编码数组，例如 `newjoy`、`omurio`。一个账户可对应多个店铺；同一个店铺绑定多个账户时，利润分摊按该店铺所有账户 spend 合计。
@@ -132,6 +144,16 @@ run_final_sync(target_date, mode)
 
 删除和重写日表时必须按 `target_date + account.account_id` 限定，不得删除其他账户数据。刷新 `roi_realtime_daily_snapshots` 时广告费按 `meta_business_date` 汇总所有账户，不再按单一 `ad_account_id` 过滤。
 
+### 旧户历史同步
+
+旧 `newjoyloo_old` 账户保持 `enabled=false`，避免每 20 分钟实时同步和每日收盘同步反复请求已封账户。但该账户仍完整保留 `account_id`、`business_id`、`csv_prefix`、`store_codes`，可用于人工补抓历史数据：
+
+```bash
+python tools/meta_daily_final_sync.py --date 2026-05-06 --mode run --account-code newjoyloo_old
+```
+
+`--account-code` 可重复传入，也可传逗号分隔值。只要显式指定 account code，就从 `get_all_accounts()` 里匹配账户，包括 `enabled=false` 的历史账户；未显式指定时仍只跑 `enabled=true` 账户。这样旧户历史数据可继续同步，但不会影响新户与 Omurio 的自动同步稳定性。
+
 ## 失败隔离决策
 
 | 场景 | 整体 status | 备注 |
@@ -158,15 +180,18 @@ run_final_sync(target_date, mode)
 
 ## 迁移 / 上线
 
-1. 应用 SQL `db/migrations/2026_05_07_meta_ad_accounts_setting.sql`：
-   - `INSERT INTO system_settings (key, value) VALUES ('meta_ad_accounts', '<seed JSON>') ON DUPLICATE KEY UPDATE value=VALUES(value);`
-   - 包含 newjoyloo (enabled=false, store_codes=["newjoy"]) + Omurio (enabled=true, store_codes=["omurio"]) 两条种子。
-2. 部署代码（按本机部署 SOP）。
-3. 服务重启后 systemd 启动器 apply 该 SQL。
-4. 等下一个 timer tick（最多 20 分钟），观察 `meta_ad_realtime_import_runs`：
-   - `ad_account_ids` 含两个 ID。
+1. 首次种子 SQL：`db/migrations/2026_05_07_meta_ad_accounts_setting.sql`：
+   - `INSERT IGNORE INTO system_settings (key, value) VALUES ('meta_ad_accounts', '<seed JSON>');`
+   - 包含 newjoyloo 新户 (enabled=true, store_codes=["newjoy"]) + newjoyloo_old 旧户 (enabled=false, store_codes=["newjoy"]) + Omurio (enabled=true, store_codes=["omurio"])。
+2. 线上/测试已存在旧 JSON 时应用切户 SQL：`db/migrations/2026_05_07_newjoyloo_meta_ad_account_switch.sql`：
+   - `INSERT ... ON DUPLICATE KEY UPDATE value=VALUES(value);`
+   - 目的：覆盖旧 `newjoyloo=2110407576446225 enabled=false` 配置，确保下一轮 timer 使用新户 `1861285821213497`。
+3. 部署代码（按本机部署 SOP）。
+4. 服务重启后 systemd 启动器 apply 该 SQL。
+5. 等下一个 timer tick（最多 20 分钟），观察 `meta_ad_realtime_import_runs`：
+   - `ad_account_ids` 含 newjoyloo 新户 `1861285821213497` 和 Omurio `1253003326160754`。
    - `summary_json.account_results[*]` 各账户独立结果。
-   - 如果 newjoyloo enabled=false：`account_results` 应只有 Omurio 一条；`ad_account_ids` 只含 Omurio ID。
+   - `newjoyloo_old` 为 `enabled=false`，不应出现在同步账户列表里，但产品盈亏历史分摊仍能通过 `enabled_only=false` 映射到旧户。
 
 ## 回滚
 
@@ -176,7 +201,7 @@ run_final_sync(target_date, mode)
 DELETE FROM system_settings WHERE `key`='meta_ad_accounts';
 ```
 
-代码会回退到环境变量默认值（newjoyloo 单账户旧行为）。
+代码会回退到环境变量默认值（当前 newjoyloo 新户单账户行为）。若要回退到旧户，需显式把 `META_AD_EXPORT_ACCOUNT_ID=2110407576446225` 注入运行环境或在「广告账户」Tab 改配置。
 
 ## 测试覆盖
 
@@ -186,11 +211,12 @@ DELETE FROM system_settings WHERE `key`='meta_ad_accounts';
 2. 一个账户 export 抛异常 → run.status=success、另一个账户的数据仍写入、failed 账户在 account_results 里有 error。
 3. 全部失败 → run.status=failed、error_message 含两个账户错误。
 4. 没有 enabled 账户 → status=skipped、不调 export 子进程。
-5. settings 没设值 → fallback 到 env 默认（newjoyloo 单账户），保持向后兼容。
+5. settings 没设值 → fallback 到 env 默认（newjoyloo 新户单账户），保持向后兼容。
 6. 收盘日同步双账户成功 → 两个账户各自导出 / 删除 / 写入，快照广告费汇总两户。
 7. 收盘日同步部分失败 → 成功账户入库，整体 run failed，summary.account_results 标明失败账户。
 8. 数据分析「广告账户」Tab API 能读取、校验、保存 `store_codes`。
 9. 产品盈亏广告费分摊从 `meta_ad_accounts.store_codes` 生成映射，不再依赖硬编码常量。
+10. 收盘日同步支持 `--account-code newjoyloo_old` 显式选择 disabled 旧户做历史补抓。
 
 ## Docs-anchor
 

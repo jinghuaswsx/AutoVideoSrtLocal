@@ -53,7 +53,10 @@ def query_one(*args, **kwargs):
 # 站点 ↔ 广告账户兜底映射。正常情况下以 system_settings.meta_ad_accounts 为准。
 # ---------------------------------------------------------------------------
 DEFAULT_SITE_TO_AD_ACCOUNTS: dict[str, tuple[str, ...]] = {
-    "newjoy": ("2110407576446225",),   # Newjoyloo
+    "newjoy": (
+        meta_ad_accounts.DEFAULT_NEWJOYLOO_ACCOUNT_ID,
+        meta_ad_accounts.LEGACY_NEWJOYLOO_ACCOUNT_ID,
+    ),   # Newjoyloo current + legacy history
     "omurio": ("1253003326160754",),   # Omurio
 }
 

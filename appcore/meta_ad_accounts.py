@@ -15,6 +15,9 @@ log = logging.getLogger(__name__)
 
 SETTING_KEY = "meta_ad_accounts"
 AVAILABLE_STORE_CODES = ("newjoy", "omurio")
+DEFAULT_NEWJOYLOO_ACCOUNT_ID = "1861285821213497"
+LEGACY_NEWJOYLOO_ACCOUNT_ID = "2110407576446225"
+DEFAULT_NEWJOYLOO_BUSINESS_ID = "476723373113063"
 
 
 @dataclass(frozen=True)
@@ -92,14 +95,14 @@ def _coerce_account(raw: dict) -> MetaAdAccount | None:
 
 
 def _env_default_account() -> MetaAdAccount | None:
-    """没有 setting 时回退到旧版单账户行为（newjoyloo），与 tools.roi_hourly_sync 模块默认对齐。"""
+    """没有 setting 时回退到当前 newjoyloo 单账户行为，与 tools.roi_hourly_sync 模块默认对齐。"""
     account_id = (
         os.environ.get("META_AD_EXPORT_ACCOUNT_ID")
-        or "2110407576446225"
+        or DEFAULT_NEWJOYLOO_ACCOUNT_ID
     ).strip().removeprefix("act_")
     business_id = (
         os.environ.get("META_AD_EXPORT_BUSINESS_ID")
-        or "476723373113063"
+        or DEFAULT_NEWJOYLOO_BUSINESS_ID
     ).strip()
     if not account_id or not business_id:
         return None

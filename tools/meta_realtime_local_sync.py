@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -26,8 +27,10 @@ ADS_POWER_ENV_LABEL = "ADS Power 90"
 ADS_POWER_USER_ID = "90"
 CDP_ENV_VAR = "META_AD_EXPORT_CDP_URL"
 LEGACY_CDP_URL = "http://127.0.0.1:9845"
-ACCOUNT_ID = "2110407576446225"
-BUSINESS_ID = "476723373113063"
+ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "1861285821213497").strip().removeprefix("act_")
+BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063").strip()
+CSV_PREFIX = os.environ.get("META_AD_EXPORT_CSV_PREFIX", "newjoyloo").strip() or "newjoyloo"
+ACCOUNT_NAME = os.environ.get("META_AD_EXPORT_ACCOUNT_NAME", "Newjoyloo").strip() or "Newjoyloo"
 SERVER_HOST = "172.30.254.14"
 SERVER_USER = "root"
 SERVER_APP_DIR = "/opt/autovideosrt"
@@ -409,13 +412,19 @@ def export_csv(business_date, snapshot_at: datetime, out_dir: Path, cdp_url: str
         "99",
         "--min-day-seconds",
         "0",
+        "--account-id",
+        ACCOUNT_ID,
+        "--business-id",
+        BUSINESS_ID,
+        "--csv-prefix",
+        CSV_PREFIX,
         "--cdp-url",
         cdp_url,
     ]
     started = time.time()
     result = _run(cmd, timeout=600, cwd=REPO_ROOT)
-    campaigns = out_dir / f"newjoyloo_campaigns_{business_date.isoformat()}.csv"
-    ads = out_dir / f"newjoyloo_ads_{business_date.isoformat()}.csv"
+    campaigns = out_dir / f"{CSV_PREFIX}_campaigns_{business_date.isoformat()}.csv"
+    ads = out_dir / f"{CSV_PREFIX}_ads_{business_date.isoformat()}.csv"
     return {
         "command": cmd,
         "returncode": result.returncode,
@@ -470,7 +479,8 @@ def upload_and_import(business_date, snapshot_at: datetime, campaigns: Path, ads
         f"--snapshot-at '{snapshot_at.strftime('%Y-%m-%d %H:%M:%S')}' "
         f"--campaigns {remote_campaigns} "
         + (f"--ads {remote_ads} " if remote_ads else "")
-        + f"--account-id {ACCOUNT_ID} --account-name Newjoyloo"
+        + f"--account-id {shlex.quote(ACCOUNT_ID)} --business-id {shlex.quote(BUSINESS_ID)} "
+        + f"--csv-prefix {shlex.quote(CSV_PREFIX)} --account-name {shlex.quote(ACCOUNT_NAME)}"
     )
     imported = _run([*ssh_base, import_cmd], timeout=180)
     return {
