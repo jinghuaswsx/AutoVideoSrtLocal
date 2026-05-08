@@ -86,18 +86,22 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "logistics_missing_order_ratio": 0.0,
         "shopify_fee_total_usd": 0.0,
         "ad_cost_usd": 0.0,
+        "unallocated_ad_spend_usd": 0.0,
+        "total_ad_spend_usd": 0.0,
         "profit_with_estimate_usd": 0.0,
     }
 
 
-def _build_order_profit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_order_profit_summary(
+    rows: list[dict[str, Any]],
+    *,
+    total_ad_spend_usd: float | None = None,
+) -> dict[str, Any]:
     summary = _empty_order_profit_summary()
     order_count = len(rows or [])
     summary["order_count"] = order_count
-    if order_count <= 0:
-        return summary
 
-    for row in rows:
+    for row in rows or []:
         total_revenue = _money(row.get("total_revenue"))
         refund = _money(row.get("refund_deduction_usd"))
         purchase_cost = _money(row.get("purchase_cost_usd"))
@@ -126,14 +130,29 @@ def _build_order_profit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     summary["logistics_cost_with_estimate_usd"] = (
         summary["logistics_cost_usd"] + summary["logistics_estimate_usd"]
     )
-    summary["purchase_missing_order_ratio"] = round(
-        summary["purchase_missing_order_count"] / order_count,
-        4,
-    )
-    summary["logistics_missing_order_ratio"] = round(
-        summary["logistics_missing_order_count"] / order_count,
-        4,
-    )
+    if order_count > 0:
+        summary["purchase_missing_order_ratio"] = round(
+            summary["purchase_missing_order_count"] / order_count,
+            4,
+        )
+        summary["logistics_missing_order_ratio"] = round(
+            summary["logistics_missing_order_count"] / order_count,
+            4,
+        )
+
+    # 未分摊广告费 = 总 spend − 订单已分摊 ad_cost。涵盖两类：
+    #   1) campaign 未匹配 product；
+    #   2) 已匹配 product 但当天没有可分摊订单 units。
+    # 锚点：docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 12 条。
+    if total_ad_spend_usd is not None:
+        total_spend = max(0.0, float(total_ad_spend_usd))
+        summary["total_ad_spend_usd"] = total_spend
+        summary["unallocated_ad_spend_usd"] = max(
+            0.0, total_spend - summary["ad_cost_usd"]
+        )
+    else:
+        summary["total_ad_spend_usd"] = summary["ad_cost_usd"]
+
     summary["profit_with_estimate_usd"] = (
         summary["total_revenue_usd"]
         - summary["refund_deduction_usd"]
@@ -141,6 +160,7 @@ def _build_order_profit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         - summary["logistics_cost_with_estimate_usd"]
         - summary["shopify_fee_total_usd"]
         - summary["ad_cost_usd"]
+        - summary["unallocated_ad_spend_usd"]
     )
     for key, value in list(summary.items()):
         if key.endswith("_count") or key == "order_count":
@@ -633,16 +653,46 @@ def _get_realtime_campaign_details(
     *,
     product_id: int | None = None,
 ) -> list[dict[str, Any]]:
+    """实时大盘 campaign 明细：按 (business_date, ad_account_id) 各自取最新 snapshot
+    再合并，避免落后账户整账户被静默丢弃（与 `_insert_daily_snapshot` 写入端、
+    `_get_today_realtime_meta_totals` 读取兜底端共用同一口径）。
+    锚点：docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 14 条。
+    """
     if not snapshot_at:
         return []
-    rows = query(
-        "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
-        "result_count, spend_usd, purchase_value_usd, impressions, clicks "
+    latest_rows = query(
+        "SELECT ad_account_id, MAX(snapshot_at) AS latest_at "
         "FROM meta_ad_realtime_daily_campaign_metrics "
-        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial' "
-        "ORDER BY spend_usd DESC, campaign_name",
+        "WHERE business_date=%s AND snapshot_at<=%s AND data_completeness='realtime_partial' "
+        "GROUP BY ad_account_id",
         (target, snapshot_at),
-    )
+    ) or []
+    rows: list[dict[str, Any]] = []
+    for row in latest_rows:
+        latest_at = row.get("latest_at")
+        if not latest_at:
+            continue
+        ad_account_id = row.get("ad_account_id")
+        if ad_account_id is None:
+            account_rows = query(
+                "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
+                "result_count, spend_usd, purchase_value_usd, impressions, clicks "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id IS NULL AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial'",
+                (target, latest_at),
+            )
+        else:
+            account_rows = query(
+                "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
+                "result_count, spend_usd, purchase_value_usd, impressions, clicks "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial'",
+                (target, ad_account_id, latest_at),
+            )
+        rows.extend(account_rows or [])
+    rows.sort(key=lambda r: (-float(r.get("spend_usd") or 0), str(r.get("campaign_name") or "")))
     return _format_realtime_campaign_details(
         _filter_realtime_campaign_rows_for_product(rows, product_id)
     )
@@ -1041,7 +1091,10 @@ def _build_realtime_overview_for_range(
         ) if include_details else [],
         "order_profit_details": order_profit_details,
         "order_profit_details_page": _order_profit_page_info(len(order_profit_all), page, page_size),
-        "order_profit_summary": _build_order_profit_summary(order_profit_all),
+        "order_profit_summary": _build_order_profit_summary(
+            order_profit_all,
+            total_ad_spend_usd=summary["ad_spend"],
+        ),
         "campaigns": [],
         "product_sales_stats": get_dianxiaomi_product_sales_stats(
             start,
@@ -1245,7 +1298,10 @@ def get_realtime_roas_overview(
                     normalized_page,
                     normalized_page_size,
                 ),
-                "order_profit_summary": _build_order_profit_summary(order_profit_all),
+                "order_profit_summary": _build_order_profit_summary(
+                    order_profit_all,
+                    total_ad_spend_usd=ad_spend,
+                ),
                 "campaigns": campaign_details,
                 "product_sales_stats": product_sales_stats,
             }
@@ -1332,7 +1388,10 @@ def get_realtime_roas_overview(
                 normalized_page,
                 normalized_page_size,
             ),
-            "order_profit_summary": _build_order_profit_summary(order_profit_all),
+            "order_profit_summary": _build_order_profit_summary(
+                order_profit_all,
+                total_ad_spend_usd=ad_spend,
+            ),
             "campaigns": campaign_details,
             "product_sales_stats": product_sales_stats,
         }
@@ -1474,7 +1533,10 @@ def get_realtime_roas_overview(
             normalized_page,
             normalized_page_size,
         ),
-        "order_profit_summary": _build_order_profit_summary(order_profit_all),
+        "order_profit_summary": _build_order_profit_summary(
+            order_profit_all,
+            total_ad_spend_usd=summary["ad_spend"],
+        ),
         "campaigns": _get_daily_campaigns(target, product_id=normalized_product_id),
         "product_sales_stats": _get_realtime_product_sales_stats(
             target,

@@ -119,12 +119,17 @@ def _resolve_compare_range(start: date, end: date, period: str) -> tuple[date, d
 def _aggregate_orders_by_product(
     start: date, end: date, *, country: str | None = None
 ) -> dict[int, dict]:
-    """按产品聚合订单。返回 {product_id: {orders, units, revenue}}。"""
+    """按产品聚合订单。返回 {product_id: {orders, units, revenue}}。
+
+    `revenue` 口径与实时大盘 / 国家看板 / 真实 ROAS / 订单利润核算保持一致：
+    `line_amount + ship_amount`（含运费）。锚点：
+    docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 13 条。
+    """
     sql = (
         "SELECT product_id, "
         "COUNT(DISTINCT dxm_package_id) AS orders, "
         "SUM(COALESCE(quantity, 0)) AS units, "
-        "SUM(COALESCE(line_amount, 0)) AS revenue "
+        "SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS revenue "
         "FROM dianxiaomi_order_lines "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
         "AND product_id IS NOT NULL "

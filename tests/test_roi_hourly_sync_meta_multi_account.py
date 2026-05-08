@@ -323,3 +323,62 @@ def test_run_meta_ads_manager_export_uses_account_csv_prefix_and_subdir(monkeypa
     assert report["campaigns_path"].endswith("Omurio_campaigns_2026-05-07.csv")
     assert report["ads_path"].endswith("Omurio_ads_2026-05-07.csv")
     assert report["account_code"] == "Omurio"
+
+
+# ---------- _sum_realtime_ad_spend_by_account: 多账户写入修复 ----------
+
+def test_sum_realtime_ad_spend_picks_each_accounts_latest_snapshot(monkeypatch):
+    """新加 spec 第 14 条：写入 roi_realtime_daily_snapshots.ad_spend_usd 时必须按账户
+    各自最新 snapshot 求和；不能用单一 snapshot_at 过滤导致落后账户被丢弃。"""
+    business_date = date(2026, 5, 8)
+    tick_at = datetime(2026, 5, 8, 17, 0)
+
+    calls: list[dict] = []
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id" in sql:
+            assert "snapshot_at<=%s" in sql
+            assert args == (business_date, tick_at)
+            return [
+                {"ad_account_id": "act_newjoyloo", "latest_at": tick_at},
+                # 落后账户：最近一次成功 snapshot 比 tick 更早，但仍要计入。
+                {"ad_account_id": "act_newjoyloo_bak", "latest_at": datetime(2026, 5, 8, 16, 50)},
+            ]
+        calls.append({"sql": sql, "args": args})
+        if "ad_account_id=%s" in sql:
+            ad_account_id = args[1]
+            if ad_account_id == "act_newjoyloo":
+                return {"ad_spend_usd": 600.0}
+            if ad_account_id == "act_newjoyloo_bak":
+                return {"ad_spend_usd": 850.0}
+        return {"ad_spend_usd": 0.0}
+
+    monkeypatch.setattr(roi_hourly_sync, "query", fake_query)
+    monkeypatch.setattr(roi_hourly_sync, "query_one", fake_query)
+
+    total = roi_hourly_sync._sum_realtime_ad_spend_by_account(business_date, tick_at)
+
+    assert total == pytest.approx(1450.0)
+    fetched_accounts = sorted(call["args"][1] for call in calls if "ad_account_id=%s" in call["sql"])
+    assert fetched_accounts == ["act_newjoyloo", "act_newjoyloo_bak"]
+
+
+def test_sum_realtime_ad_spend_ignores_accounts_without_latest_snapshot(monkeypatch):
+    business_date = date(2026, 5, 8)
+    tick_at = datetime(2026, 5, 8, 17, 0)
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id" in sql:
+            return [
+                {"ad_account_id": "act_a", "latest_at": tick_at},
+                {"ad_account_id": "act_b", "latest_at": None},  # 该账户当天还没成功过任何 tick
+            ]
+        if "ad_account_id=%s" in sql and args[1] == "act_a":
+            return {"ad_spend_usd": 300.0}
+        return {"ad_spend_usd": 0.0}
+
+    monkeypatch.setattr(roi_hourly_sync, "query", fake_query)
+    monkeypatch.setattr(roi_hourly_sync, "query_one", fake_query)
+
+    total = roi_hourly_sync._sum_realtime_ad_spend_by_account(business_date, tick_at)
+    assert total == pytest.approx(300.0)

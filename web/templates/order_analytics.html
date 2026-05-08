@@ -511,6 +511,21 @@
   border-top: 1px solid var(--border);
   background: var(--bg-card);
 }
+.oar-profit-reconcile {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  line-height: var(--leading);
+}
+.oar-profit-reconcile:empty {
+  display: none;
+}
+.oar-profit-reconcile.is-warning {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
 .oar-page-btn {
   height: 28px;
   padding: 0 var(--space-3);
@@ -1352,14 +1367,19 @@
             <div class="oar-profit-summary-note">Shopify 平台合计</div>
           </div>
           <div class="oar-profit-summary-item">
-            <div class="oar-profit-summary-label">总广告费</div>
+            <div class="oar-profit-summary-label">已分摊广告费</div>
             <div class="oar-profit-summary-value" id="realtimeProfitAd">$0.00</div>
             <div class="oar-profit-summary-note">按订单分摊</div>
           </div>
           <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">未分摊广告费</div>
+            <div class="oar-profit-summary-value" id="realtimeProfitUnallocatedAd">$0.00</div>
+            <div class="oar-profit-summary-note" id="realtimeProfitUnallocatedAdNote">未匹配 product 或当天无可分摊订单</div>
+          </div>
+          <div class="oar-profit-summary-item">
             <div class="oar-profit-summary-label">总利润额</div>
             <div class="oar-profit-summary-value" id="realtimeProfitTotal">$0.00</div>
-            <div class="oar-profit-summary-note">含缺失成本估算</div>
+            <div class="oar-profit-summary-note">含缺失成本估算 + 未分摊广告费</div>
           </div>
         </div>
       </div>
@@ -1390,6 +1410,7 @@
           <tbody id="realtimeOrderProfitBody"></tbody>
         </table>
       </div>
+      <div class="oar-profit-reconcile" id="realtimeProfitReconcile" aria-live="polite"></div>
       <div class="oar-pagination" aria-label="订单盈亏明细分页">
         <button type="button" class="oar-page-btn" id="realtimeProfitPrev">上一页</button>
         <span class="oar-page-info" id="realtimeProfitPageInfo">第 1 / 1 页 · 共 0 条</span>
@@ -3644,11 +3665,21 @@
     if (logisticsCost === null || logisticsCost === undefined) logisticsCost = s.logistics_cost_usd;
     var profit = Number(s.profit_with_estimate_usd || 0);
 
+    var unallocatedAd = Number(s.unallocated_ad_spend_usd || 0);
+    var totalAdSpend = Number(s.total_ad_spend_usd || 0);
     setRealtimeProfitText('realtimeProfitTotalRevenue', fmtMoney(s.total_revenue_usd));
     setRealtimeProfitText('realtimeProfitPurchase', fmtMoney(purchaseCost));
     setRealtimeProfitText('realtimeProfitLogistics', fmtMoney(logisticsCost));
     setRealtimeProfitText('realtimeProfitFee', fmtMoney(s.shopify_fee_total_usd));
     setRealtimeProfitText('realtimeProfitAd', fmtMoney(s.ad_cost_usd));
+    setRealtimeProfitText('realtimeProfitUnallocatedAd', fmtMoney(unallocatedAd));
+    setRealtimeProfitNote(
+      'realtimeProfitUnallocatedAdNote',
+      totalAdSpend > 0
+        ? '总广告 ' + fmtMoney(totalAdSpend) + '，未匹配 product 或当天无可分摊订单'
+        : '未匹配 product 或当天无可分摊订单',
+      unallocatedAd > 0
+    );
     setRealtimeProfitText('realtimeProfitTotal', fmtMoney(profit));
     setRealtimeProfitText('realtimeProfitTotalRevenueNote', '订单 ' + fmtInt(orderCount) + ' 单');
     setRealtimeProfitNote(
@@ -3666,6 +3697,27 @@
     if (profitEl) {
       profitEl.classList.toggle('oar-profit-loss', profit < 0);
       profitEl.classList.toggle('oar-profit-ok', profit >= 0);
+    }
+
+    // 对账提示：逐行只扣已分摊广告费，未分摊在汇总卡里另算。
+    // 锚点：docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 15 条。
+    var reconcileEl = document.getElementById('realtimeProfitReconcile');
+    if (reconcileEl) {
+      if (orderCount <= 0) {
+        reconcileEl.textContent = '';
+        reconcileEl.classList.remove('is-warning');
+      } else if (unallocatedAd > 0) {
+        reconcileEl.textContent =
+          '逐行「订单利润」只扣已分摊广告费 ' + fmtMoney(s.ad_cost_usd || 0) +
+          '；未分摊广告费 ' + fmtMoney(unallocatedAd) +
+          ' 已额外计入上方汇总「总利润额」' + fmtMoney(profit) +
+          '，故 SUM(逐行利润) − ' + fmtMoney(unallocatedAd) + ' = 总利润额。';
+        reconcileEl.classList.add('is-warning');
+      } else {
+        reconcileEl.textContent =
+          '逐行「订单利润」与上方「总利润额」口径一致：当前业务日不存在未分摊广告费。';
+        reconcileEl.classList.remove('is-warning');
+      }
     }
   }
 

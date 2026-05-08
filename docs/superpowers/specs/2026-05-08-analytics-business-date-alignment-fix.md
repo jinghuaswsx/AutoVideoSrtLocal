@@ -23,6 +23,10 @@
 9. 订单利润核算页在所选业务日期缺少 `meta_ad_daily_campaign_metrics` 日终行、但已有 `meta_ad_realtime_daily_campaign_metrics` 快照时，订单列表和汇总应按最新快照的 campaign spend 临时分摊广告费，不能把广告费展示为 0。
 10. 实时快照里已匹配 product、但该 product 在所选业务日没有可分摊订单 units 的广告费，应作为“未分摊广告费”扣入订单利润总利润，不能既不进订单分摊、也不进待处理广告成本。
 11. 如果 `order_profit_lines.ad_cost_usd` 仍是 0 但 `meta_ad_daily_campaign_metrics` 已有对应业务日的日终广告费，订单利润页也应按日终表现场重算广告分摊；实时快照只作为缺少日终表日期的兜底来源。
+12. `/order-analytics → 实时大盘`的「利润」卡片（`order_profit_summary.profit_with_estimate_usd`）必须与「广告消耗费用」(`summary.ad_spend`) 在同一口径下扣减——也就是先把订单已分摊广告费 (`p.ad_cost_usd`) 求和，再补回 `ad_spend - 已分摊` 的未分摊部分；不能只扣已分摊那部分把利润算虚高。「订单盈亏明细」汇总也透明披露这两块。
+13. 数据分析模块凡是“收入 / 销售额 / ROAS 分母”口径，统一为 `line_amount + ship_amount`（含运费）。这条覆盖：实时大盘、国家看板、真实 ROAS 看板、ROAS 周报、产品看板、订单利润核算。其中产品看板 ([appcore/order_analytics/dashboard.py](appcore/order_analytics/dashboard.py) `_aggregate_orders_by_product`) 之前是 `SUM(line_amount)`-only，需要补上运费；其它已经在该口径下，不要再改。
+14. `roi_realtime_daily_snapshots.ad_spend_usd` 必须按 `(business_date, ad_account_id)` 各自取最新 snapshot 后求和写入，单一 `(business_date, snapshot_at)` 单账户写入会让落后账户整账户被静默丢弃，跟 2026-05-08 17:00 newjoyloo_bak 那次事故同根。写入端 ([tools/roi_hourly_sync.py](tools/roi_hourly_sync.py) `_persist_realtime_daily_snapshot` / `_persist_period_snapshots`) 与读取兜底端 ([appcore/order_analytics/order_profit_aggregation.py](appcore/order_analytics/order_profit_aggregation.py) `_load_realtime_ad_snapshot_fallback`) 共用同款分组规则。
+15. 实时大盘「订单盈亏明细」表需要披露逐行 `订单利润` 与汇总卡 `总利润额` 的对账关系——逐行只扣已分摊广告费，与汇总卡相差的就是「未分摊广告费」。表格附近以提示文案 / 表脚行的方式给出，避免业务方再次怀疑「广告费跟利润对不上」。
 
 ## 非目标
 
@@ -40,6 +44,10 @@
 - `/order-profit` 点“昨天”后，如果该业务日只有实时广告快照，`/order-profit/api/orders` 的订单广告费与利润、`/order-profit/api/summary` 的广告成本与总利润都应使用实时快照兜底后的值；预览页面不得继续显示广告费 0。
 - `/order-profit` 汇总里“广告费分摊 + 未分摊广告费”应覆盖实时快照总广告费；未分摊广告费包括未匹配 product，以及已匹配 product 但当天没有可分摊订单 units 的 spend。
 - `/order-profit` 汇总优先使用日终广告表现场重算；当日终表已到但利润行未回填时，页面不得退回 `order_profit_lines.ad_cost_usd = 0`。
+- `/order-analytics → 实时大盘`的「利润」卡片必须满足 `profit_with_estimate_usd ≤ revenue_with_shipping − ad_spend`（在没有其他成本估算的极端情况下取等号）；日常情况下应进一步小于此值，绝不能因为只扣已分摊广告费而出现「利润 > 销售额 − 广告费」。「订单盈亏明细」汇总同步披露 `已分摊广告费 / 未分摊广告费 / 总广告费 = ad_spend` 三项。
+- `/order-analytics → 产品看板`的「收入」/ ROAS 与同一时段的「实时大盘」、「国家看板」、「真实 ROAS」一致；运费占比再高的产品也不应该看到产品看板偏低。
+- 多账户场景下任意一个账户的实时同步落后（如 newjoyloo_bak 浏览器导出 timeout）时，`/order-analytics → 实时大盘`显示的「广告消耗费用」与「真实 ROAS 看板」、`/order-profit` 看板之间任意两个最多偏差为该账户最近一轮 tick 的 spend，不能整账户读到 0。
+- `/order-analytics → 实时大盘 → 订单盈亏明细`表内某行 `订单利润` 求和加上同表透出的「未分摊广告费」要等于汇总卡的「总利润额」（容差 ≤ 0.01 美元，仅由四舍五入造成）。
 
 ## Docs-anchor
 

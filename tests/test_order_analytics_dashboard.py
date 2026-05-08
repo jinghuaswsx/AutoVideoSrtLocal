@@ -154,7 +154,9 @@ def test_aggregate_orders_by_product_returns_dict_keyed_by_product_id(monkeypatc
     assert "FROM dianxiaomi_order_lines" in captured["sql"]
     assert "meta_business_date >= %s" in captured["sql"]
     assert "meta_business_date <= %s" in captured["sql"]
+    # 收入口径必须含运费，与实时大盘 / 国家看板 / 真实 ROAS / 订单利润核算对齐。
     assert "COALESCE(line_amount" in captured["sql"]
+    assert "COALESCE(ship_amount" in captured["sql"]
     assert "buyer_country" not in captured["sql"]  # 无国家筛选时不带
     assert captured["args"] == (date(2026, 4, 1), date(2026, 4, 25))
 

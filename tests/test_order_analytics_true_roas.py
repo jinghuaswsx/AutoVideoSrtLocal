@@ -502,6 +502,78 @@ def test_get_realtime_roas_overview_range_can_return_profit_summary_without_deta
     ]
 
 
+def test_get_realtime_roas_overview_range_subtracts_unallocated_ad_spend(monkeypatch):
+    """range 模式：summary.ad_spend 大于已分摊 → 利润扣未分摊。"""
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-29"),
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 1,
+                    "order_revenue": 100.0,
+                    "line_revenue": 100.0,
+                    "shipping_revenue": 0.0,
+                    "last_order_at": None,
+                    "last_order_updated_at": None,
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-29"),
+                    "ad_spend": 80.0,
+                    "meta_purchase_value": 0.0,
+                    "meta_purchases": 0,
+                    "last_ad_updated_at": None,
+                }
+            ]
+        return []
+
+    def fake_profit_rows(start, end, *, product_id=None, page=None, page_size=None):
+        return [
+            {
+                "total_revenue": 100.0,
+                "refund_deduction_usd": 0.0,
+                "purchase_cost_usd": 10.0,
+                "purchase_estimate_usd": 0.0,
+                "logistics_cost_usd": 5.0,
+                "logistics_estimate_usd": 0.0,
+                "shopify_fee_total_usd": 3.0,
+                "ad_cost_usd": 20.0,
+                "purchase_cost_missing": False,
+                "logistics_cost_missing": False,
+            }
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        realtime_oa,
+        "_get_realtime_order_profit_details_for_range",
+        fake_profit_rows,
+    )
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-04-29",
+        end_date="2026-04-30",
+        include_profit_summary=True,
+        now=datetime(2026, 5, 1, 12, 0),
+    )
+
+    profit_summary = result["order_profit_summary"]
+    # ad_spend 总 80，已分摊 20 → 未分摊 60；profit = 100 - 10 - 5 - 3 - 20 - 60 = 2
+    assert profit_summary["ad_cost_usd"] == 20.0
+    assert profit_summary["unallocated_ad_spend_usd"] == 60.0
+    assert profit_summary["total_ad_spend_usd"] == 80.0
+    assert profit_summary["profit_with_estimate_usd"] == 2.0
+    # 同时保证利润 ≤ 销售额 − 总广告 spend，即不会出现"利润 > 销售额 − ad_spend"
+    revenue_minus_ad = (
+        result["summary"]["revenue_with_shipping"] - result["summary"]["ad_spend"]
+    )
+    assert profit_summary["profit_with_estimate_usd"] <= revenue_minus_ad + 1e-9
+
+
 def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date, site_code" in sql:
@@ -829,6 +901,8 @@ def test_realtime_current_business_day_product_filter_uses_realtime_campaign_sna
                     "ad_data_status": "ok",
                 }
             ]
+        if "GROUP BY ad_account_id" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"ad_account_id": "1861285821213497", "latest_at": snapshot_at}]
         if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
             return [
                 {
@@ -1464,12 +1538,18 @@ def test_realtime_order_profit_has_summary_and_pagination_controls(authed_client
         "realtimeProfitLogistics",
         "realtimeProfitFee",
         "realtimeProfitAd",
+        "realtimeProfitUnallocatedAd",
         "realtimeProfitTotal",
+        "realtimeProfitReconcile",
         "realtimeProfitPrev",
         "realtimeProfitPageInfo",
         "realtimeProfitNext",
     ):
         assert f'id="{element_id}"' in panel
+    # 对账提示 JS 必须实际写入 reconcile 元素，避免摆好坑位却没逻辑。
+    body = response.get_data(as_text=True)
+    assert "realtimeProfitReconcile" in body
+    assert "SUM(逐行利润)" in body
 
 
 def test_realtime_subtabs_fetch_current_range(authed_client_no_db):

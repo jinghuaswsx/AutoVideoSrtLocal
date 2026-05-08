@@ -1067,6 +1067,51 @@ def _snapshot_at_node(value: datetime) -> datetime:
     return value.replace(minute=minute, second=0, microsecond=0)
 
 
+def _sum_realtime_ad_spend_by_account(
+    business_date: date, snapshot_at: datetime
+) -> float:
+    """累加该业务日各 ad_account 各自的最新 snapshot spend（≤ 当前 tick）。
+
+    多账户场景下任一账户的实时同步落后（如 newjoyloo_bak 浏览器导出 timeout）会让
+    其最新 `snapshot_at` 不等于本轮 tick；如果只用 `snapshot_at=%s` 单一过滤就会让
+    落后账户整账户被静默丢弃，跟 2026-05-08 17:00 的事故同根。
+    锚点：docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 14 条。
+    """
+    latest_rows = query(
+        "SELECT ad_account_id, MAX(snapshot_at) AS latest_at "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at<=%s AND data_completeness='realtime_partial' "
+        "GROUP BY ad_account_id",
+        (business_date, snapshot_at),
+    ) or []
+    total = 0.0
+    for row in latest_rows:
+        latest_at = row.get("latest_at")
+        if not latest_at:
+            continue
+        ad_account_id = row.get("ad_account_id")
+        if ad_account_id is None:
+            agg = query_one(
+                "SELECT SUM(spend_usd) AS ad_spend_usd "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id IS NULL AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial'",
+                (business_date, latest_at),
+            )
+        else:
+            agg = query_one(
+                "SELECT SUM(spend_usd) AS ad_spend_usd "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial'",
+                (business_date, ad_account_id, latest_at),
+            )
+        if not agg:
+            continue
+        total += float(agg.get("ad_spend_usd") or 0)
+    return total
+
+
 def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
     business_date = _meta_business_date(snapshot_at)
     day_start = _meta_business_window_start(business_date)
@@ -1083,19 +1128,13 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " <= %s",
         (day_start, snapshot_at),
     ) or {}
-    ad_row = query_one(
-        "SELECT SUM(spend_usd) AS ad_spend_usd "
-        "FROM meta_ad_realtime_daily_campaign_metrics "
-        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial'",
-        (business_date, snapshot_at),
-    ) or {}
+    ad_spend = round(_sum_realtime_ad_spend_by_account(business_date, snapshot_at), 4)
     ad_run = query_one(
         "SELECT status FROM meta_ad_realtime_import_runs "
         "WHERE business_date=%s AND snapshot_at=%s "
         "ORDER BY id DESC LIMIT 1",
         (business_date, snapshot_at),
     ) or {}
-    ad_spend = round(float(ad_row.get("ad_spend_usd") or 0), 4)
     ad_status = "ok" if ad_run.get("status") == "success" else "pending_source"
     execute(
         "INSERT INTO roi_realtime_daily_snapshots "
