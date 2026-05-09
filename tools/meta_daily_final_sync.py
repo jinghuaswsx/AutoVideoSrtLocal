@@ -1083,18 +1083,30 @@ def _sync_account_via_xhr_api(
 def _refresh_final_roas_snapshot(target_date: date, source_run_id: int) -> int:
     day_start, day_end = _meta_business_window(target_date)
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    # ship_amount is duplicated per SKU row of the same package; dedupe
+    # to one ship value per package before summing. See identical pattern
+    # in tools/roi_hourly_sync.py::_insert_daily_snapshot.
     order_row = query_one(
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(quantity) AS units, "
         "SUM(COALESCE(line_amount, 0)) AS order_revenue_usd, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue_usd, "
         "MAX(" + order_time_expr + ") AS last_order_at "
         "FROM dianxiaomi_order_lines "
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s",
         (day_start, day_end),
     ) or {}
+    shipping_row = query_one(
+        "SELECT COALESCE(SUM(s.ship_per_pkg), 0) AS shipping_revenue_usd "
+        "FROM (SELECT dxm_package_id, MAX(COALESCE(ship_amount, 0)) AS ship_per_pkg "
+        "      FROM dianxiaomi_order_lines "
+        "      WHERE site_code IN ('newjoy', 'omurio') "
+        "      AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
+        "      GROUP BY dxm_package_id) s",
+        (day_start, day_end),
+    ) or {}
+    order_row["shipping_revenue_usd"] = shipping_row.get("shipping_revenue_usd") or 0
     ad_row = query_one(
         "SELECT SUM(spend_usd) AS ad_spend_usd "
         "FROM meta_ad_daily_campaign_metrics "

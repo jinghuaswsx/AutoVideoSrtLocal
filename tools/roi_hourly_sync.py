@@ -1056,13 +1056,13 @@ def _hour_ranges(window_start: datetime, window_end: datetime) -> list[tuple[dat
 
 def _upsert_order_hour(run_id: int, hour_start: datetime, hour_end: datetime) -> int:
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    # Same per-package shipping dedupe pattern as _insert_daily_snapshot.
     row = query_one(
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(quantity) AS units, "
         "SUM(COALESCE(line_amount, 0)) AS order_revenue_usd, "
         "SUM(COALESCE(line_amount, 0)) AS line_revenue_usd, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue_usd, "
         "MIN(" + order_time_expr + ") AS first_order_at, "
         "MAX(" + order_time_expr + ") AS last_order_at, "
         "MAX(updated_at) AS source_updated_at "
@@ -1071,6 +1071,16 @@ def _upsert_order_hour(run_id: int, hour_start: datetime, hour_end: datetime) ->
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s",
         (hour_start, hour_end),
     ) or {}
+    shipping_row = query_one(
+        "SELECT COALESCE(SUM(s.ship_per_pkg), 0) AS shipping_revenue_usd "
+        "FROM (SELECT dxm_package_id, MAX(COALESCE(ship_amount, 0)) AS ship_per_pkg "
+        "      FROM dianxiaomi_order_lines "
+        "      WHERE site_code IN ('newjoy', 'omurio') "
+        "      AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
+        "      GROUP BY dxm_package_id) s",
+        (hour_start, hour_end),
+    ) or {}
+    row["shipping_revenue_usd"] = shipping_row.get("shipping_revenue_usd") or 0
     execute(
         "INSERT INTO roi_hourly_order_facts "
         "(hour_start_at, hour_end_at, timezone, order_source, store_scope, "
@@ -1221,18 +1231,37 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
     business_date = _meta_business_date(snapshot_at)
     day_start = _meta_business_window_start(business_date)
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    # dianxiaomi_order_lines.ship_amount stores the package-level shipping
+    # value duplicated on every SKU row of that package. SUM(ship_amount)
+    # therefore double-counts the shipping for any multi-SKU order. The
+    # subquery picks one ship value per package (MAX is fine — every row
+    # of the package has the same value) before summing, matching how
+    # order_profit_lines.shipping_allocated_usd splits the package
+    # shipping per line so its SUM aligns. Without this dedupe the
+    # realtime dashboard's shipping_revenue and revenue_with_shipping
+    # disagreed with the order-profit / product-profit dashboards.
+    # Spec: docs/superpowers/specs/2026-05-09-realtime-dashboard-ad-spend-source-of-truth.md (shipping dedupe)
     order_row = query_one(
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(quantity) AS units, "
         "SUM(COALESCE(line_amount, 0)) AS order_revenue_usd, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue_usd, "
         "MAX(" + order_time_expr + ") AS last_order_at "
         "FROM dianxiaomi_order_lines "
         "WHERE site_code IN ('newjoy', 'omurio') "
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " <= %s",
         (day_start, snapshot_at),
     ) or {}
+    shipping_row = query_one(
+        "SELECT COALESCE(SUM(s.ship_per_pkg), 0) AS shipping_revenue_usd "
+        "FROM (SELECT dxm_package_id, MAX(COALESCE(ship_amount, 0)) AS ship_per_pkg "
+        "      FROM dianxiaomi_order_lines "
+        "      WHERE site_code IN ('newjoy', 'omurio') "
+        "      AND " + order_time_expr + " >= %s AND " + order_time_expr + " <= %s "
+        "      GROUP BY dxm_package_id) s",
+        (day_start, snapshot_at),
+    ) or {}
+    order_row["shipping_revenue_usd"] = shipping_row.get("shipping_revenue_usd") or 0
     ad_spend = round(_sum_realtime_ad_spend_by_account(business_date, snapshot_at), 4)
     ad_run = query_one(
         "SELECT status FROM meta_ad_realtime_import_runs "
