@@ -694,10 +694,11 @@ def _load_sync_account_totals(
     """
     totals: dict[tuple[date, str], Decimal] = {}
     daily_rows = query(
-        "SELECT business_date, ad_account_id, SUM(spend_usd) AS total "
+        "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
+        "ad_account_id, SUM(spend_usd) AS total "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE business_date BETWEEN %s AND %s "
-        "GROUP BY business_date, ad_account_id",
+        "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+        "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
         (date_from, date_to),
     )
     for row in daily_rows or []:

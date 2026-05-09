@@ -22,6 +22,7 @@ from appcore import meta_ad_manual_sync
 from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 from appcore.order_analytics import data_quality as dq
+from appcore.order_analytics import manual_ad_spend, order_profit_aggregation
 
 log = logging.getLogger(__name__)
 
@@ -1026,3 +1027,68 @@ def orphan_orders_data():
         return _json_response(error="invalid_pagination"), 400
     rows, total = oa.get_orphan_orders(limit=limit, offset=offset)
     return _json_response(_json_safe({"rows": rows, "total": total, "limit": limit, "offset": offset}))
+
+
+@bp.route("/order-analytics/manual-ad-spend/list", methods=["GET"])
+@login_required
+@permission_required("data_analytics")
+def manual_ad_spend_list():
+    """列出区间内每天每账户的人工录入金额 + sync 状态对比。"""
+    try:
+        date_from = date.fromisoformat((request.args.get("from") or "").strip())
+        date_to = date.fromisoformat((request.args.get("to") or "").strip())
+    except ValueError:
+        return _json_response(error="invalid_range", detail="from/to must be YYYY-MM-DD"), 400
+    if date_to < date_from:
+        return _json_response(error="invalid_range", detail="to must be >= from"), 400
+    if (date_to - date_from).days > 90:
+        return _json_response(error="range_too_large", detail="max 90 days"), 400
+
+    accounts = list(meta_ad_accounts.get_all_accounts())
+    manual_rows = manual_ad_spend.list_range(date_from, date_to)
+    sync_totals = order_profit_aggregation._load_sync_account_totals(date_from, date_to)
+
+    by_date: dict = {}
+    for row in manual_rows:
+        d = row["business_date"]
+        by_date.setdefault(d, {})[row["account_code"]] = row
+
+    out_dates = set(by_date)
+    for (d, _aid), total in sync_totals.items():
+        if total > 0:
+            out_dates.add(d)
+
+    rows = []
+    for d in sorted(out_dates, reverse=True):
+        entries = {}
+        for acc in accounts:
+            sync_spend = sync_totals.get((d, acc.account_id), Decimal("0"))
+            manual_row = by_date.get(d, {}).get(acc.code)
+            manual_val = float(manual_row["spend_usd"]) if manual_row else None
+            if sync_spend > 0:
+                effective = "sync"
+            elif manual_val is not None:
+                effective = "manual"
+            else:
+                effective = "none"
+            entries[acc.code] = {
+                "manual_spend_usd": manual_val,
+                "sync_spend_usd": float(sync_spend),
+                "effective": effective,
+                "updated_by": manual_row["updated_by"] if manual_row else None,
+                "updated_at": manual_row["updated_at"].isoformat() if manual_row else None,
+            }
+        sync_states = [entries[a.code]["sync_spend_usd"] > 0 for a in accounts]
+        has_manual = any(entries[a.code]["effective"] == "manual" for a in accounts)
+        if accounts and all(sync_states):
+            status = "sync"
+        elif has_manual:
+            status = "manual"
+        else:
+            status = "partial"
+        rows.append({"business_date": d.isoformat(), "entries": entries, "sync_status": status})
+
+    return _json_response(_json_safe({
+        "accounts": [a.to_dict() for a in accounts],
+        "rows": rows,
+    }))

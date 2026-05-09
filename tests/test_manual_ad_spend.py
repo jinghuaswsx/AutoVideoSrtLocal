@@ -128,3 +128,26 @@ def test_load_supplement_map_filters_by_range():
     )
     out = manual_ad_spend.load_supplement_map(date(2026, 5, 7), date(2026, 5, 8))
     assert out == {}
+
+
+def test_list_route_returns_accounts_and_rows(logged_in_client):
+    # Use whichever account code is configured first in live DB
+    from appcore import meta_ad_accounts as _maa
+    all_accounts = list(_maa.get_all_accounts())
+    assert all_accounts, "need at least one configured account"
+    acc = all_accounts[0]
+
+    manual_ad_spend.upsert_entries(
+        business_date=date(2026, 5, 8),
+        entries=[{"account_code": acc.code, "ad_account_id": acc.account_id, "spend_usd": "300"}],
+        updated_by=1,
+    )
+    resp = logged_in_client.get("/order-analytics/manual-ad-spend/list?from=2026-05-08&to=2026-05-08")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert "accounts" in body and "rows" in body
+    codes = [a["code"] for a in body["accounts"]]
+    assert acc.code in codes
+    assert any(r["business_date"] == "2026-05-08" for r in body["rows"])
+    row_entry = next(r for r in body["rows"] if r["business_date"] == "2026-05-08")["entries"][acc.code]
+    assert row_entry["manual_spend_usd"] == 300.0
