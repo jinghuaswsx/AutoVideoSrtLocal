@@ -261,6 +261,7 @@ def open_meta_ads_session(
         task_code="meta_ads_in_page_session",
         timeout_seconds=lock_timeout_seconds,
         retry_seconds=5,
+        disable_child_lock=True,
     ):
         with playwright_factory() as pw:
             browser = pw.chromium.connect_over_cdp(chosen_cdp)
@@ -276,6 +277,9 @@ def open_meta_ads_session(
                     page.wait_for_timeout(2000)
                 except Exception:  # noqa: BLE001
                     pass
+                # token harvester would re-acquire the same lock if its
+                # cache is stale; disable_child_lock above neuters that
+                # nested acquisition (see meta_ads_cdp.meta_ads_cdp_lock).
                 token = fetch_token()
                 yield MetaAdsSession(page=page, access_token=token)
             finally:

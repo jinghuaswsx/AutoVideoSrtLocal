@@ -226,6 +226,25 @@ def fake_lock(monkeypatch):
     return calls
 
 
+def test_open_session_passes_disable_child_lock_to_meta_ads_cdp_lock(fake_lock):
+    """Regression: token harvester re-acquires the same Meta Ads CDP lock
+    when its cache is stale. Without disable_child_lock=True the outer
+    session and the nested harvest deadlock (fcntl LOCK_EX on the same
+    file from the same process via two different fds blocks)."""
+    from appcore.meta_ads_in_page_fetch import open_meta_ads_session
+
+    page = _FakePage()
+    account = SimpleNamespace(account_id="111", business_id="222", code="x")
+    with open_meta_ads_session(
+        select_account=lambda: account,
+        playwright_factory=lambda: _FakeSyncPlaywrightCM(page),
+        token_provider=lambda: "tok",
+    ):
+        pass
+    assert len(fake_lock) == 1
+    assert fake_lock[0]["disable_child_lock"] is True
+
+
 def test_open_session_opens_page_harvests_token_and_yields(fake_lock):
     from appcore.meta_ads_in_page_fetch import open_meta_ads_session
 
