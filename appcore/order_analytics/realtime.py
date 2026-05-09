@@ -170,6 +170,7 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "unallocated_ad_spend_usd": 0.0,
         "total_ad_spend_usd": 0.0,
         "profit_with_estimate_usd": 0.0,
+        "profit_with_estimate_margin_pct": None,
     }
 
 
@@ -248,12 +249,22 @@ def _build_order_profit_summary(
         - summary["unallocated_ad_spend_usd"]
     )
     for key, value in list(summary.items()):
+        if value is None:
+            continue
         if key.endswith("_count") or key == "order_count":
             summary[key] = int(value)
         elif key.endswith("_ratio"):
             summary[key] = round(float(value), 4)
         else:
             summary[key] = round(float(value), 2)
+    total_revenue = summary["total_revenue_usd"]
+    if total_revenue > 0:
+        summary["profit_with_estimate_margin_pct"] = round(
+            summary["profit_with_estimate_usd"] / total_revenue * 100,
+            2,
+        )
+    else:
+        summary["profit_with_estimate_margin_pct"] = None
     return summary
 
 
@@ -301,12 +312,22 @@ def _build_order_profit_summary_from_status(
         summary["purchase_missing_order_ratio"] = round(summary["purchase_missing_order_count"] / order_count, 4)
         summary["logistics_missing_order_ratio"] = round(summary["logistics_missing_order_count"] / order_count, 4)
     for key, value in list(summary.items()):
+        if value is None:
+            continue
         if key.endswith("_count") or key == "order_count":
             summary[key] = int(value)
         elif key.endswith("_ratio"):
             summary[key] = round(float(value), 4)
         else:
             summary[key] = round(float(value), 2)
+    total_revenue = summary["total_revenue_usd"]
+    if total_revenue > 0:
+        summary["profit_with_estimate_margin_pct"] = round(
+            summary["profit_with_estimate_usd"] / total_revenue * 100,
+            2,
+        )
+    else:
+        summary["profit_with_estimate_margin_pct"] = None
     return summary
 
 
