@@ -80,3 +80,51 @@ def test_upsert_partial_entries_does_not_clear_others():
     rows = {r["account_code"]: r for r in manual_ad_spend.list_range(date(2026, 5, 8), date(2026, 5, 8))}
     assert rows["newjoyloo"]["spend_usd"] == Decimal("999.0000")
     assert rows["Omurio"]["spend_usd"] == Decimal("200.0000")
+
+
+def test_delete_entry_returns_true_when_existed():
+    manual_ad_spend.upsert_entries(
+        business_date=date(2026, 5, 8),
+        entries=[{"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "100"}],
+        updated_by=7,
+    )
+    deleted = manual_ad_spend.delete_entry(business_date=date(2026, 5, 8), account_code="newjoyloo")
+    assert deleted is True
+    assert manual_ad_spend.list_range(date(2026, 5, 8), date(2026, 5, 8)) == []
+
+
+def test_delete_entry_returns_false_when_absent():
+    deleted = manual_ad_spend.delete_entry(business_date=date(2026, 5, 8), account_code="ghost")
+    assert deleted is False
+
+
+def test_load_supplement_map_returns_keyed_by_date_and_account_id():
+    manual_ad_spend.upsert_entries(
+        business_date=date(2026, 5, 7),
+        entries=[
+            {"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "300"},
+        ],
+        updated_by=7,
+    )
+    manual_ad_spend.upsert_entries(
+        business_date=date(2026, 5, 8),
+        entries=[
+            {"account_code": "Omurio", "ad_account_id": "1253003326160754", "spend_usd": "200"},
+        ],
+        updated_by=7,
+    )
+    out = manual_ad_spend.load_supplement_map(date(2026, 5, 7), date(2026, 5, 8))
+    assert out == {
+        (date(2026, 5, 7), "1861285821213497"): Decimal("300.0000"),
+        (date(2026, 5, 8), "1253003326160754"): Decimal("200.0000"),
+    }
+
+
+def test_load_supplement_map_filters_by_range():
+    manual_ad_spend.upsert_entries(
+        business_date=date(2026, 5, 1),
+        entries=[{"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "100"}],
+        updated_by=7,
+    )
+    out = manual_ad_spend.load_supplement_map(date(2026, 5, 7), date(2026, 5, 8))
+    assert out == {}

@@ -60,3 +60,26 @@ def list_range(date_from: date, date_to: date) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute(sql, (date_from, date_to))
         return list(cur.fetchall())
+
+
+def delete_entry(*, business_date: date, account_code: str) -> bool:
+    """删除一条人工录入。返回是否真的删了一行。"""
+    sql = f"DELETE FROM {TABLE} WHERE business_date = %s AND account_code = %s"
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute(sql, (business_date, account_code))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def load_supplement_map(date_from: date, date_to: date) -> dict[tuple[date, str], Decimal]:
+    """供 order_profit_aggregation 调用：返回 {(business_date, ad_account_id): spend_usd}。"""
+    sql = f"""
+        SELECT business_date, ad_account_id, spend_usd
+        FROM {TABLE}
+        WHERE business_date BETWEEN %s AND %s
+    """
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute(sql, (date_from, date_to))
+        return {(row["business_date"], row["ad_account_id"]): row["spend_usd"] for row in cur.fetchall()}
