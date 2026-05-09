@@ -141,6 +141,13 @@ def test_compute_loads_orders_payments_and_upserts_snapshots(monkeypatch):
     assert calls["execute"][0][1][12] == 99
 
 
+def test_sku_actual_roas_uses_db_helpers_by_default():
+    source = (ROOT / "appcore" / "sku_actual_roas.py").read_text(encoding="utf-8")
+
+    assert "from appcore.db import execute, query" in source
+    assert "sys.modules[__package__]" not in source
+
+
 def test_get_latest_sku_actual_roas_returns_map(monkeypatch):
     from appcore import sku_actual_roas
 

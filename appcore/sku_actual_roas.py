@@ -1,28 +1,16 @@
 from __future__ import annotations
 
 import json
-import sys
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from appcore.db import execute, query
 from appcore.product_roas import get_configured_rmb_per_usd
 
 
 ESTIMATED_FEE_RATE = Decimal("0.07")
-
-
-def _facade():
-    return sys.modules[__package__]
-
-
-def query(*args, **kwargs):
-    return _facade().query(*args, **kwargs)
-
-
-def execute(*args, **kwargs):
-    return _facade().execute(*args, **kwargs)
 
 
 def calculate_window(
