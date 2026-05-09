@@ -89,6 +89,14 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - 定时巡检 `analytics_data_quality_inspection` 已登记到 [appcore/scheduled_tasks.py](appcore/scheduled_tasks.py)；新增类似巡检必须同步登记。
 - 改这条链路至少运行：`pytest tests/test_order_analytics_data_quality.py tests/test_order_profit_routes.py tests/test_product_profit_routes.py tests/test_order_analytics_true_roas.py tests/test_data_quality_frontend_assets.py -q`。
 
+## SKU 实际保本 ROAS（2026-05-10 起）
+
+- 设计：[docs/superpowers/specs/2026-05-10-sku-actual-breakeven-roas-design.md](docs/superpowers/specs/2026-05-10-sku-actual-breakeven-roas-design.md)。
+- 每天北京时间 00:00 由 [tools/sku_actual_roas_snapshot.py](tools/sku_actual_roas_snapshot.py) 计算 `D-31` 到 `D-2` 的滚动 30 天 SKU 实际保本 ROAS，写入 `sku_actual_breakeven_roas_snapshots`；素材管理 SKU 配对详情在“估算 ROAS”后展示“实际保本 ROAS”。
+- 手续费优先用 `shopify_payments_transactions` 真实 Payment fee；未命中时用 7% 估算，前端标签显示 `真实手续费`、`7%估算` 或 `部分真实`。
+- 任务定义已登记到 [appcore/scheduled_tasks.py](appcore/scheduled_tasks.py) 的 `sku_actual_breakeven_roas`，systemd timer/service 在 [deploy/server_browser/](deploy/server_browser/) 下的 `autovideosrt-sku-actual-roas.*`。
+- 改这条链路至少运行：`.venv/bin/python -m pytest tests/test_sku_actual_roas.py tests/test_sku_aggregates.py tests/test_media_products_listing_service.py tests/test_material_roas_frontend.py tests/test_appcore_scheduled_tasks.py -q`。
+
 ## 店小秘订单新鲜度看护（2026-05-09 起）
 
 - 设计：[docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md](docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md)。

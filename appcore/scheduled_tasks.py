@@ -59,8 +59,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "roi_hourly_sync": {
         "code": "roi_hourly_sync",
         "name": "店小秘订单与 ROAS 实时同步",
-        "description": "每 1 小时同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
-        "schedule": "每 1 小时（每小时 :02）",
+        "description": "每 20 分钟同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
+        "schedule": "每 20 分钟（每小时 :02/:22/:42）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
