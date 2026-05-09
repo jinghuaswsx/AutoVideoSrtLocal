@@ -11,7 +11,7 @@ tk = pytest.importorskip("tkinter")
 from tools.shopify_image_localizer import cancellation, gui
 
 
-def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
+def _make_app(monkeypatch: pytest.MonkeyPatch, *, cached_slug: str = "") -> gui.ShopifyImageLocalizerApp:
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_languages_async", lambda self: None)
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_domains_async", lambda self: None)
     monkeypatch.setattr(
@@ -23,6 +23,12 @@ def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
             "browser_user_data_dir": r"C:\chrome-shopify-image",
             "shopify_domain": "newjoyloo.com",
         },
+    )
+    # 隔离本地真实 cache：默认空（启动时未识别 → 显示「待登录」），测试可指定非空模拟「已识别」
+    monkeypatch.setattr(
+        gui.settings,
+        "cached_store_slug_for_domain",
+        lambda domain, root=None: cached_slug,
     )
     monkeypatch.setattr(gui.messagebox, "showinfo", lambda *args, **kwargs: None)
     monkeypatch.setattr(gui.messagebox, "showerror", lambda *args, **kwargs: None)
@@ -152,21 +158,30 @@ def test_gui_choose_domain_always_prompts_even_for_single_domain(monkeypatch: py
         app.root.destroy()
 
 
-def test_gui_login_status_label_starts_as_unlogged_red(monkeypatch: pytest.MonkeyPatch) -> None:
-    app = _make_app(monkeypatch)
+def test_gui_login_status_label_when_no_cached_slug_shows_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    """启动时如果本地 slug 缓存为空，显示橙色「待登录：{domain}」提示用户去登录。"""
+    app = _make_app(monkeypatch, cached_slug="")
     try:
-        assert app.current_login_status_var.get() == "未登录"
-        assert app.current_login_status_label["text"] == "未登录"
-        assert app.current_login_status_label["fg"] == "red"
+        assert app.current_login_status_var.get() == "待登录：newjoyloo.com"
+        assert app.current_login_status_label["fg"] == "#cc7a00"
         font_spec = app.current_login_status_label["font"]
-        # 字号约定调到 18pt（约为 TkDefaultFont 默认尺寸的两倍）
         assert "18" in str(font_spec)
     finally:
         app.root.destroy()
 
 
+def test_gui_login_status_label_when_cached_slug_present_shows_current_site(monkeypatch: pytest.MonkeyPatch) -> None:
+    """启动时如果本地已经缓存过 slug，直接显示黑色「当前网站：{domain}」，不再误导用户重新登录。"""
+    app = _make_app(monkeypatch, cached_slug="0ixug9-pv")
+    try:
+        assert app.current_login_status_var.get() == "当前网站：newjoyloo.com"
+        assert app.current_login_status_label["fg"] == "black"
+    finally:
+        app.root.destroy()
+
+
 def test_gui_login_status_label_updates_to_selected_domain_black(monkeypatch: pytest.MonkeyPatch) -> None:
-    app = _make_app(monkeypatch)
+    app = _make_app(monkeypatch, cached_slug="cached-slug")
     try:
         app._set_domain_items([{"domain": "newjoyloo.com"}, {"domain": "omurio.com"}])
         monkeypatch.setattr(app, "_choose_shopify_domain", lambda: "omurio.com")

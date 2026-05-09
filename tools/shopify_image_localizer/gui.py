@@ -84,7 +84,9 @@ class ShopifyImageLocalizerApp:
             font=("TkDefaultFont", 18, "bold"),
         )
         self.current_login_status_label.pack(anchor="w", pady=(0, 4))
-        self._update_login_status(None)
+        # 启动时根据当前 domain + 本地 slug 缓存决定显示——已有缓存直接显示「当前网站」，
+        # 用户不必再点「已登录」（仍可手动刷新）。
+        self._update_login_status(self.current_shopify_domain_var.get() or None)
 
         self.login_shopify_frame = tk.Frame(self.main_frame)
         self.login_shopify_frame.pack(fill="x", pady=(0, 10))
@@ -578,12 +580,25 @@ class ShopifyImageLocalizerApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _update_login_status(self, domain: str | None) -> None:
-        if domain:
+        """根据当前 domain + 本地 slug 缓存决定状态指示。
+        - domain 为空：红字「未登录」
+        - domain 有 slug 缓存：黑字「当前网站：{domain}」（启动时也会显示，无需再点已登录）
+        - domain 没 slug 缓存：橙黄「待登录：{domain}」（提示要点登录店铺 + 已登录）
+        用户随时可以再点「已登录」按钮刷新缓存（防止首次抓错）。"""
+        if not domain:
+            self.current_login_status_var.set("未登录")
+            self.current_login_status_label.configure(fg="red")
+            return
+        try:
+            cached_slug = settings.cached_store_slug_for_domain(domain)
+        except Exception:
+            cached_slug = ""
+        if cached_slug:
             self.current_login_status_var.set(f"当前网站：{domain}")
             self.current_login_status_label.configure(fg="black")
         else:
-            self.current_login_status_var.set("未登录")
-            self.current_login_status_label.configure(fg="red")
+            self.current_login_status_var.set(f"待登录：{domain}")
+            self.current_login_status_label.configure(fg="#cc7a00")
 
     def _refresh_login_button_text(self) -> None:
         domain = settings.normalize_domain(self.current_shopify_domain_var.get())
@@ -609,6 +624,8 @@ class ShopifyImageLocalizerApp:
             current = domains[0]
         self.current_shopify_domain_var.set(current)
         self._refresh_login_button_text()
+        # 域名列表 / current 变了之后同步刷新状态指示，让有缓存 slug 的 domain 显示「当前网站」
+        self._update_login_status(current or None)
         if fallback:
             self._append_log("域名列表加载失败，已使用默认域名 newjoyloo.com")
         else:
