@@ -219,3 +219,29 @@ def test_upsert_route_rejects_too_many_entries(logged_in_client):
         "entries": [{"account_code": code, "spend_usd": 1.0}] * 21,
     })
     assert resp.status_code == 400
+
+
+def test_delete_route_idempotent(logged_in_client):
+    code = _first_account_code(logged_in_client)
+    # First, look up the live ad_account_id for this code
+    list_resp = logged_in_client.get("/order-analytics/manual-ad-spend/list?from=2026-05-08&to=2026-05-08")
+    list_body = list_resp.get_json()
+    acct = next(a for a in list_body["accounts"] if a["code"] == code)
+    ad_account_id = acct["account_id"]
+
+    manual_ad_spend.upsert_entries(
+        business_date=date(2026, 5, 8),
+        entries=[{"account_code": code, "ad_account_id": ad_account_id, "spend_usd": "100"}],
+        updated_by=1,
+    )
+    resp1 = logged_in_client.delete(
+        f"/order-analytics/manual-ad-spend?business_date=2026-05-08&account_code={code}"
+    )
+    assert resp1.status_code == 200
+    assert resp1.get_json().get("deleted") is True
+    # second delete still 200, deleted=False
+    resp2 = logged_in_client.delete(
+        f"/order-analytics/manual-ad-spend?business_date=2026-05-08&account_code={code}"
+    )
+    assert resp2.status_code == 200
+    assert resp2.get_json().get("deleted") is False

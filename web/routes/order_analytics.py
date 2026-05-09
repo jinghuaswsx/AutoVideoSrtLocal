@@ -1157,3 +1157,25 @@ def manual_ad_spend_upsert():
                 "entries": [{"account_code": e["account_code"], "spend_usd": str(e["spend_usd"])} for e in cleaned]},
     )
     return _json_response({"ok": True, "written": written})
+
+
+@bp.route("/order-analytics/manual-ad-spend", methods=["DELETE"])
+@login_required
+@permission_required("data_analytics")
+def manual_ad_spend_delete():
+    raw_date = str(request.args.get("business_date") or "").strip()
+    code = str(request.args.get("account_code") or "").strip()
+    try:
+        business_date = date.fromisoformat(raw_date)
+    except ValueError:
+        return _json_response(error="invalid_date", detail="business_date must be YYYY-MM-DD"), 400
+    if not code:
+        return _json_response(error="invalid_account", detail="account_code required"), 400
+
+    deleted = manual_ad_spend.delete_entry(business_date=business_date, account_code=code)
+    _audit_order_analytics_action(
+        "order_analytics_manual_ad_spend_deleted",
+        target_type="manual_ad_spend",
+        detail={"business_date": business_date.isoformat(), "account_code": code, "deleted": deleted},
+    )
+    return _json_response({"ok": True, "deleted": deleted})
