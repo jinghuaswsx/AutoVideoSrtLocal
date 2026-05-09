@@ -152,6 +152,37 @@ def test_gui_choose_domain_always_prompts_even_for_single_domain(monkeypatch: py
         app.root.destroy()
 
 
+def test_gui_login_status_label_starts_as_unlogged(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        assert app.current_login_status_var.get() == "未登录"
+        assert app.current_login_status_label["text"] == "未登录"
+    finally:
+        app.root.destroy()
+
+
+def test_gui_login_status_label_updates_to_selected_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app._set_domain_items([{"domain": "newjoyloo.com"}, {"domain": "omurio.com"}])
+        monkeypatch.setattr(app, "_choose_shopify_domain", lambda: "omurio.com")
+
+        class FakeThread:
+            def __init__(self, *, target, args, daemon):
+                pass
+
+            def start(self):
+                return None
+
+        monkeypatch.setattr(gui.threading, "Thread", FakeThread)
+
+        app.open_shopify_login()
+
+        assert app.current_login_status_var.get() == "当前网站：omurio.com"
+    finally:
+        app.root.destroy()
+
+
 def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:

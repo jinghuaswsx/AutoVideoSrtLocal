@@ -114,3 +114,6 @@ fonts/*.otf
 
 # Shopify Image Localizer batch/run workspaces
 /*-rjc/
+
+# Shopify Image Localizer 桌面工具运行时配置（含 api_key，禁止入库）
+shopify_image_localizer_config.json

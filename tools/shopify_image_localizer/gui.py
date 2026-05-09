@@ -75,6 +75,16 @@ class ShopifyImageLocalizerApp:
         _ = prompt_on_start
 
     def _build_form(self) -> None:
+        # 整个界面最左上角的状态指示，登录前显示"未登录"，登录后显示当前选定的店铺域名
+        self.current_login_status_var = tk.StringVar(value="未登录")
+        self.current_login_status_label = tk.Label(
+            self.main_frame,
+            textvariable=self.current_login_status_var,
+            anchor="w",
+            fg="#555",
+        )
+        self.current_login_status_label.pack(anchor="w", pady=(0, 4))
+
         self.login_shopify_frame = tk.Frame(self.main_frame)
         self.login_shopify_frame.pack(fill="x", pady=(0, 10))
         self.login_shopify_button = tk.Button(
@@ -794,6 +804,7 @@ class ShopifyImageLocalizerApp:
             return
         self.current_shopify_domain_var.set(shopify_domain)
         self._refresh_login_button_text()
+        self.current_login_status_var.set(f"当前网站：{shopify_domain}")
         if not browser_dir:
             messagebox.showerror("错误", "高级设置里的 Chrome 用户目录不能为空")
             return
