@@ -168,3 +168,40 @@ def test_get_latest_sku_actual_roas_returns_map(monkeypatch):
     assert out["SKU-A"]["fee_source"] == "mixed"
     assert out["SKU-A"]["window_start"] == "2026-04-09"
     assert out["SKU-A"]["computed_at"] == "2026-05-10T00:00:08"
+
+
+def test_run_snapshot_records_scheduled_task_run(monkeypatch):
+    from tools import sku_actual_roas_snapshot
+
+    calls = []
+
+    monkeypatch.setattr(
+        sku_actual_roas_snapshot.scheduled_tasks,
+        "start_run",
+        lambda code: calls.append(("start", code)) or 99,
+    )
+
+    def fake_finish(run_id, *, status, summary=None, error_message=None):
+        calls.append(("finish", run_id, status, summary, error_message))
+
+    monkeypatch.setattr(sku_actual_roas_snapshot.scheduled_tasks, "finish_run", fake_finish)
+
+    def fake_compute(window_start, window_end, *, source_run_id=None):
+        assert window_start == date(2026, 4, 9)
+        assert window_end == date(2026, 5, 8)
+        assert source_run_id == 99
+        return {"skus": 2, "snapshots_written": 2}
+
+    monkeypatch.setattr(
+        sku_actual_roas_snapshot.sku_actual_roas,
+        "compute_sku_actual_breakeven_roas",
+        fake_compute,
+    )
+
+    summary = sku_actual_roas_snapshot.run_snapshot(run_date=date(2026, 5, 10))
+
+    assert summary["window_start"] == "2026-04-09"
+    assert summary["window_end"] == "2026-05-08"
+    assert summary["skus"] == 2
+    assert calls[0] == ("start", "sku_actual_breakeven_roas")
+    assert calls[1][0:3] == ("finish", 99, "success")
