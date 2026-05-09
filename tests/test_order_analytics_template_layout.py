@@ -44,3 +44,21 @@ def test_realtime_roas_trend_copy_matches_hourly_node_contract():
     assert "每 10 分钟" not in panel
     assert "每 20 分钟同步" in panel
     assert "走势图按广告系统日小时节点展示" in panel
+
+
+def test_realtime_mobile_tables_keep_shared_header_and_body_layout():
+    """移动端表格不能把 thead/tbody 拆成两张表，否则表头和数据列会错位。"""
+    template = _template_source()
+    panel = _realtime_panel_source()
+    campaign_start = panel.index('<div class="oar-subpanel" id="realtimeSubCampaigns">')
+    campaign_end = panel.index('<div class="oar-subpanel" id="realtimeSubTrend">', campaign_start)
+    campaign_panel = panel[campaign_start:campaign_end]
+
+    assert 'id="realtimeCampaignBody"' in campaign_panel
+    assert 'class="oa-table oar-compact-table oar-campaign-table"' in campaign_panel
+    assert "#panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll)" in template
+    assert "display: table-header-group;" in template
+    assert "display: table-row-group;" in template
+    assert "display: table-footer-group;" in template
+    assert ".oar-campaign-table th:first-child" in template
+    assert ".oar-campaign-table td:first-child" in template

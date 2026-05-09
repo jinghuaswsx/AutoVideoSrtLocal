@@ -309,6 +309,14 @@
 .oa-table.oar-compact-table th, .oa-table.oar-compact-table td {
   padding: 9px var(--space-3); vertical-align: top;
 }
+.oar-campaign-table th:first-child,
+.oar-campaign-table td:first-child {
+  width: 280px;
+  min-width: 280px;
+  max-width: 280px;
+  white-space: normal;
+  word-break: break-word;
+}
 .maa-input {
   width: 100%; min-width: 120px; height: 32px;
   padding: 0 var(--space-2);
@@ -1054,9 +1062,37 @@
   .oar-subtab { white-space: nowrap; flex: 0 0 auto; }
   /* 桌面表格在小屏走横滚（mobile.css 已兜底，但 .oa-table 用了 display:table，
    * 这里允许其包裹元素在主内容里横滚） */
+  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) {
+    display: table;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    overflow-x: visible;
+  }
+  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > thead {
+    display: table-header-group;
+    width: auto;
+    min-width: 0;
+  }
+  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > tbody {
+    display: table-row-group;
+    width: auto;
+    min-width: 0;
+  }
+  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > tfoot {
+    display: table-footer-group;
+    width: auto;
+    min-width: 0;
+  }
   .oa-table { font-size: 12px; min-width: 0; }
   .oa-table th, .oa-table td { padding: 8px 10px; }
   .oar-product-cell { min-width: 200px; max-width: 280px; }
+  .oar-campaign-table th:first-child,
+  .oar-campaign-table td:first-child {
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1487,7 +1523,7 @@
         <div class="oar-note">来自本机 ADS Power 90 导出的 Meta 实时快照，按消耗倒序</div>
       </div>
       <div class="oa-table-scroll">
-        <table class="oa-table oar-compact-table">
+        <table class="oa-table oar-compact-table oar-campaign-table">
           <thead>
             <tr>
               <th>广告计划</th>
