@@ -3,7 +3,13 @@ from datetime import date
 
 def _stub_data_quality(monkeypatch):
     """Patch data_quality.build_for_order_profit to a deterministic payload."""
-    def fake_build(*, date_from, date_to, allocated_ad_spend_usd=None):
+    def fake_build(
+        *,
+        date_from,
+        date_to,
+        allocated_ad_spend_usd=None,
+        unallocated_ad_spend_usd=None,
+    ):
         return {
             "status": "ok",
             "source_mode": "daily_final",
@@ -15,6 +21,7 @@ def _stub_data_quality(monkeypatch):
             "warnings": [],
             "errors": [],
             "_test_allocated": allocated_ad_spend_usd,
+            "_test_unallocated": unallocated_ad_spend_usd,
         }
 
     monkeypatch.setattr("web.routes.order_profit.dq.build_for_order_profit", fake_build)

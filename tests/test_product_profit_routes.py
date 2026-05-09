@@ -12,7 +12,14 @@ from datetime import date
 # /list.json
 # ---------------------------------------------------------------------------
 def _stub_pp_data_quality(monkeypatch):
-    def fake_build(*, date_from, date_to, allocated_ad_spend_usd=None):
+    def fake_build(
+        *,
+        date_from,
+        date_to,
+        allocated_ad_spend_usd=None,
+        unallocated_ad_spend_usd=None,
+        country=None,
+    ):
         return {
             "status": "ok",
             "source_mode": "daily_final",
@@ -24,6 +31,8 @@ def _stub_pp_data_quality(monkeypatch):
             "watermarks": {},
             "generated_at": "2026-05-08T18:30:00",
             "_test_allocated": allocated_ad_spend_usd,
+            "_test_unallocated": unallocated_ad_spend_usd,
+            "_test_country": country,
         }
 
     monkeypatch.setattr(

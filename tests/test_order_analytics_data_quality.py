@@ -124,6 +124,54 @@ def test_reconcile_ad_spend_ok_when_balances_match(monkeypatch):
     assert abs(check["diff"]) < 0.05
 
 
+def test_reconcile_ad_spend_can_use_page_unallocated_override(monkeypatch):
+    from appcore.order_analytics import data_quality as dq
+
+    def fake_query(sql, args=None):
+        return [{"source_total": 1500.00, "unallocated_total": 100.00}]
+
+    monkeypatch.setattr(dq, "query", fake_query)
+
+    check = dq.reconcile_ad_spend(
+        business_date_from=date(2026, 5, 7),
+        business_date_to=date(2026, 5, 7),
+        allocated_ad_spend_usd=1200.00,
+        unallocated_ad_spend_usd=300.00,
+    )
+
+    assert check["status"] == "ok"
+    assert check["expected"] == pytest.approx(1500.00)
+    assert check["actual"] == pytest.approx(1500.00)
+    assert check["message"] == "广告源表总额与已分摊+未分摊金额一致"
+
+
+def test_reconcile_ad_spend_uses_country_source_when_country_filtered(monkeypatch):
+    from appcore.order_analytics import data_quality as dq
+
+    captured = {}
+
+    def fake_query(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"source_total": 90.00, "unallocated_total": 15.00}]
+
+    monkeypatch.setattr(dq, "query", fake_query)
+
+    check = dq.reconcile_ad_spend(
+        business_date_from=date(2026, 5, 7),
+        business_date_to=date(2026, 5, 7),
+        allocated_ad_spend_usd=75.00,
+        country="vn",
+    )
+
+    assert "FROM meta_ad_daily_ad_metrics" in captured["sql"]
+    assert "market_country = %s" in captured["sql"]
+    assert captured["args"] == (date(2026, 5, 7), date(2026, 5, 7), "VN")
+    assert check["status"] == "ok"
+    assert check["expected"] == pytest.approx(90.00)
+    assert check["actual"] == pytest.approx(90.00)
+
+
 def test_reconcile_ad_spend_mismatch_when_diff_exceeds_threshold(monkeypatch):
     from appcore.order_analytics import data_quality as dq
 

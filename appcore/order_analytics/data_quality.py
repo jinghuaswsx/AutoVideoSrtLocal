@@ -22,6 +22,7 @@ from appcore.db import query, query_one
 
 from ._constants import META_ATTRIBUTION_TIMEZONE
 from ._helpers import _beijing_now, current_meta_business_date
+from .ad_market_country import is_single_market_country, normalize_market_country
 
 log = logging.getLogger(__name__)
 
@@ -205,9 +206,10 @@ def _fetch_meta_realtime_ads_watermark() -> dict:
 
 def _fetch_derived_profit_watermark() -> dict:
     row = query_one(
-        "SELECT MAX(business_date) AS latest_business_date, "
-        "       MAX(updated_at) AS latest_run_finished_at "
-        "FROM order_profit_lines"
+        "SELECT MAX(d.meta_business_date) AS latest_business_date, "
+        "       MAX(p.updated_at) AS latest_run_finished_at "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id"
     ) or {}
     return {
         "latest_business_date": _isoformat(row.get("latest_business_date")),
@@ -294,6 +296,8 @@ def reconcile_ad_spend(
     business_date_from: date,
     business_date_to: date,
     allocated_ad_spend_usd: float,
+    unallocated_ad_spend_usd: float | None = None,
+    country: str | None = None,
     tolerance_usd: float = AD_SPEND_RECONCILE_TOLERANCE_USD,
 ) -> dict:
     """校验：``源广告费 = 已分摊 + 未分摊``。
@@ -301,15 +305,27 @@ def reconcile_ad_spend(
     入参 ``allocated_ad_spend_usd`` 是调用方现场重算或从聚合接口拿到的
     "已分摊到订单/产品的广告费"。本函数自己负责取源表 + 未分摊金额。
     """
+    market_country = normalize_market_country(country)
     try:
-        rows = query(
-            "SELECT COALESCE(SUM(spend_usd), 0) AS source_total, "
-            "       COALESCE(SUM(CASE WHEN product_id IS NULL THEN spend_usd ELSE 0 END), 0) "
-            "         AS unallocated_total "
-            "FROM meta_ad_daily_campaign_metrics "
-            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s",
-            (business_date_from, business_date_to),
-        ) or []
+        if is_single_market_country(market_country):
+            rows = query(
+                "SELECT COALESCE(SUM(spend_usd), 0) AS source_total, "
+                "       COALESCE(SUM(CASE WHEN product_id IS NULL THEN spend_usd ELSE 0 END), 0) "
+                "         AS unallocated_total "
+                "FROM meta_ad_daily_ad_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+                "  AND market_country = %s",
+                (business_date_from, business_date_to, market_country),
+            ) or []
+        else:
+            rows = query(
+                "SELECT COALESCE(SUM(spend_usd), 0) AS source_total, "
+                "       COALESCE(SUM(CASE WHEN product_id IS NULL THEN spend_usd ELSE 0 END), 0) "
+                "         AS unallocated_total "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s",
+                (business_date_from, business_date_to),
+            ) or []
     except Exception as exc:  # noqa: BLE001
         log.warning("data_quality reconcile_ad_spend query failed: %s", exc)
         return {
@@ -323,7 +339,11 @@ def reconcile_ad_spend(
 
     row = (rows[0] if rows else {}) or {}
     source_total = float(row.get("source_total") or 0)
-    unallocated_total = float(row.get("unallocated_total") or 0)
+    unallocated_total = (
+        float(unallocated_ad_spend_usd)
+        if unallocated_ad_spend_usd is not None
+        else float(row.get("unallocated_total") or 0)
+    )
     allocated = float(allocated_ad_spend_usd or 0)
     actual = round(allocated + unallocated_total, 2)
     expected = round(source_total, 2)
@@ -383,8 +403,9 @@ def check_derived_profit_freshness(
         ) or {}
         derived_row = query_one(
             "SELECT MAX(updated_at) AS latest_run "
-            "FROM order_profit_lines "
-            "WHERE business_date BETWEEN %s AND %s",
+            "FROM order_profit_lines p "
+            "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+            "WHERE d.meta_business_date BETWEEN %s AND %s",
             (business_date_from, business_date_to),
         ) or {}
     except Exception as exc:  # noqa: BLE001
@@ -454,6 +475,7 @@ def build_for_order_profit(
     date_from: date,
     date_to: date,
     allocated_ad_spend_usd: float | None = None,
+    unallocated_ad_spend_usd: float | None = None,
 ) -> dict:
     """``/order-profit/api/*`` 的统一入口。"""
     checks: list[dict] = []
@@ -463,6 +485,7 @@ def build_for_order_profit(
                 business_date_from=date_from,
                 business_date_to=date_to,
                 allocated_ad_spend_usd=allocated_ad_spend_usd,
+                unallocated_ad_spend_usd=unallocated_ad_spend_usd,
             )
         )
     checks.append(
@@ -529,6 +552,8 @@ def build_for_product_profit(
     date_from: date,
     date_to: date,
     allocated_ad_spend_usd: float | None = None,
+    unallocated_ad_spend_usd: float | None = None,
+    country: str | None = None,
 ) -> dict:
     """``/order-analytics/product-profit/*`` 的统一入口。"""
     checks: list[dict] = []
@@ -538,6 +563,8 @@ def build_for_product_profit(
                 business_date_from=date_from,
                 business_date_to=date_to,
                 allocated_ad_spend_usd=allocated_ad_spend_usd,
+                unallocated_ad_spend_usd=unallocated_ad_spend_usd,
+                country=country,
             )
         )
     return build_data_quality(
@@ -609,8 +636,9 @@ def _query_allocated_ad_spend(date_from: date, date_to: date) -> float:
     try:
         row = query_one(
             "SELECT COALESCE(SUM(ad_cost_usd), 0) AS total "
-            "FROM order_profit_lines "
-            "WHERE business_date BETWEEN %s AND %s",
+            "FROM order_profit_lines p "
+            "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+            "WHERE d.meta_business_date BETWEEN %s AND %s",
             (date_from, date_to),
         ) or {}
         return float(row.get("total") or 0)

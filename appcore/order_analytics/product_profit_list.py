@@ -62,7 +62,7 @@ def _load_lines(date_from: date, date_to: date, country: str | None) -> list[dic
         "  dol.site_code, dol.quantity, dol.dxm_package_id "
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
-        "JOIN media_products mp ON mp.id = opl.product_id "
+        "LEFT JOIN media_products mp ON mp.id = opl.product_id "
         "WHERE dol.meta_business_date BETWEEN %s AND %s "
     )
     params: list[Any] = [date_from, date_to]
@@ -115,13 +115,40 @@ def _load_ad_spend(date_from: date, date_to: date, country: str | None = None) -
     return out
 
 
+def _load_unallocated_ad_spend(date_from: date, date_to: date, country: str | None = None) -> Decimal:
+    """日期范围内未匹配到 product_id 的广告 spend。
+
+    全国家口径读取 campaign 日终表；单国家口径读取 ad 层 market_country 表。
+    这部分不属于任何产品行，但属于窗口总利润，必须在 summary 中扣减。
+    """
+    market_country = normalize_market_country(country)
+    if is_single_market_country(market_country):
+        row = query_one(
+            "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
+            "FROM meta_ad_daily_ad_metrics "
+            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "  AND product_id IS NULL "
+            "  AND market_country = %s",
+            (date_from, date_to, market_country),
+        )
+    else:
+        row = query_one(
+            "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "  AND product_id IS NULL",
+            (date_from, date_to),
+        )
+    return Decimal(str((row or {}).get("spend") or 0))
+
+
 def _load_product_costs(product_ids: list[int]) -> dict[int, dict[str, Any]]:
     """加载产品成本字段（用于 cost_completeness 检查）。"""
     if not product_ids:
         return {}
     placeholders = ",".join(["%s"] * len(product_ids))
     rows = query(
-        f"SELECT id, purchase_price, packet_cost_actual, packet_cost_estimated "
+        f"SELECT id, product_code, name, purchase_price, packet_cost_actual, packet_cost_estimated "
         f"FROM media_products WHERE id IN ({placeholders})",
         tuple(product_ids),
     )
@@ -182,7 +209,9 @@ def generate_list(
         }
     """
     lines = _load_lines(date_from, date_to, country)
-    if not lines:
+    ad_spend = _load_ad_spend(date_from, date_to, country)
+    unallocated_ad = _load_unallocated_ad_spend(date_from, date_to, country)
+    if not lines and not ad_spend and unallocated_ad <= 0:
         return {
             "rows": [],
             "summary": {
@@ -190,12 +219,21 @@ def generate_list(
                 "total_orders": 0,
                 "total_revenue_usd": 0.0,
                 "total_profit_usd": 0.0,
+                "allocated_ad_spend_usd": 0.0,
+                "unallocated_ad_spend_usd": 0.0,
+                "total_ad_spend_usd": 0.0,
                 "overall_roas": None,
             },
         }
 
-    ad_spend = _load_ad_spend(date_from, date_to, country)
-    product_ids = list({int(line["product_id"]) for line in lines if line.get("product_id") is not None})
+    product_ids = sorted(
+        {
+            int(line["product_id"])
+            for line in lines
+            if line.get("product_id") is not None
+        }
+        | set(ad_spend.keys())
+    )
     product_costs = _load_product_costs(product_ids)
 
     # 按产品分组聚合
@@ -217,11 +255,19 @@ def generate_list(
     by_product: dict[int, dict[str, Any]] = defaultdict(_zero_bucket)
 
     for line in lines:
-        pid = int(line["product_id"])
+        raw_pid = line.get("product_id")
+        pid = int(raw_pid) if raw_pid is not None else 0
         bucket = by_product[pid]
         bucket["product_id"] = pid
-        bucket["product_code"] = line.get("product_code") or ""
-        bucket["name"] = line.get("name") or ""
+        if pid == 0:
+            bucket["product_code"] = "unmatched-order-product"
+            bucket["name"] = "未匹配产品订单"
+        else:
+            product_row = product_costs.get(pid, {})
+            bucket["product_code"] = (
+                line.get("product_code") or product_row.get("product_code") or ""
+            )
+            bucket["name"] = line.get("name") or product_row.get("name") or ""
         pkg_id = line.get("dxm_package_id")
         if pkg_id is not None:
             bucket["order_keys"].add(pkg_id)
@@ -231,6 +277,15 @@ def generate_list(
         bucket["shipping_cost"] += Decimal(str(line.get("shipping_cost_usd") or 0))
         bucket["return_reserve"] += Decimal(str(line.get("return_reserve_usd") or 0))
 
+    for pid in sorted(ad_spend.keys()):
+        if pid in by_product:
+            continue
+        product_row = product_costs.get(pid, {})
+        bucket = by_product[pid]
+        bucket["product_id"] = pid
+        bucket["product_code"] = product_row.get("product_code") or f"#{pid}"
+        bucket["name"] = product_row.get("name") or "无订单广告产品"
+
     # 转 rows（按 revenue 降序）
     rows: list[dict[str, Any]] = []
     total_orders = 0
@@ -239,7 +294,7 @@ def generate_list(
     total_ad = Decimal("0")
     for pid, b in sorted(by_product.items(), key=lambda kv: -kv[1]["revenue"]):
         revenue = b["revenue"]
-        ad_cost = ad_spend.get(pid, Decimal("0"))
+        ad_cost = ad_spend.get(pid, Decimal("0")) if pid else Decimal("0")
         profit = (
             revenue
             - b["shopify_fee"]
@@ -265,19 +320,30 @@ def generate_list(
             "roas": roas,
             "profit_usd": float(profit),
             "profit_pct": float(profit / revenue) if revenue > 0 else 0.0,
-            "cost_completeness": _completeness_label(product_costs.get(pid, {})),
+            "cost_completeness": (
+                "incomplete"
+                if pid == 0
+                else _completeness_label(product_costs.get(pid, {}))
+            ),
         })
         total_orders += order_count
         total_revenue += revenue
         total_profit += profit
         total_ad += ad_cost
 
+    total_source_ad = total_ad + unallocated_ad
+    total_profit_after_unallocated = total_profit - unallocated_ad
     summary = {
         "product_count": len(rows),
         "total_orders": total_orders,
         "total_revenue_usd": float(total_revenue),
-        "total_profit_usd": float(total_profit),
-        "overall_roas": float(total_revenue / total_ad) if total_ad > 0 else None,
+        "total_profit_usd": float(total_profit_after_unallocated),
+        "allocated_ad_spend_usd": float(total_ad),
+        "unallocated_ad_spend_usd": float(unallocated_ad),
+        "total_ad_spend_usd": float(total_source_ad),
+        "overall_roas": (
+            float(total_revenue / total_source_ad) if total_source_ad > 0 else None
+        ),
     }
     return {"rows": rows, "summary": summary}
 
@@ -328,6 +394,9 @@ def generate_list_xlsx(
         ("产品数", s["product_count"], fmt_int),
         ("订单数", s["total_orders"], fmt_int),
         ("收入(USD)", s["total_revenue_usd"], fmt_money),
+        ("已归属广告费(USD)", s.get("allocated_ad_spend_usd", 0), fmt_money),
+        ("未匹配广告费(USD)", s.get("unallocated_ad_spend_usd", 0), fmt_money),
+        ("总广告费(USD)", s.get("total_ad_spend_usd", 0), fmt_money),
         ("利润(USD)", s["total_profit_usd"], fmt_money),
         ("整体 ROAS", s["overall_roas"], fmt_money),
     ]

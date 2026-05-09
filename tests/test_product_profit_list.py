@@ -6,7 +6,14 @@ from decimal import Decimal
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from appcore.order_analytics import product_profit_list as ppl
+
+
+@pytest.fixture(autouse=True)
+def _stub_unallocated_ad_spend(monkeypatch):
+    monkeypatch.setattr(ppl, "_load_unallocated_ad_spend", lambda *args, **kwargs: Decimal("0"))
 
 
 def test_generate_list_empty_returns_empty_rows():
@@ -75,6 +82,70 @@ def test_generate_list_single_product_aggregates_columns():
     assert result["summary"]["product_count"] == 1
     assert result["summary"]["total_revenue_usd"] == 100.0
     assert result["summary"]["overall_roas"] == 100.0 / 16.0
+
+
+def test_generate_list_includes_unmatched_orders_ad_only_products_and_unallocated_ads():
+    """总利润口径覆盖整个窗口：有订单、未匹配订单、只有广告无订单、未匹配广告都要入账。"""
+    fake_lines = [
+        _line(
+            product_id=100,
+            product_code="ABC",
+            name="Test Product",
+            revenue="100",
+            shopify_fee="4",
+            purchase="20",
+            shipping="6",
+            return_reserve="1",
+            dxm_package_id="PKG-A",
+        ),
+        _line(
+            product_id=None,
+            product_code="",
+            name="",
+            revenue="30",
+            shopify_fee="1",
+            purchase="2",
+            shipping="3",
+            return_reserve="0.3",
+            dxm_package_id="PKG-UNMATCHED",
+        ),
+    ]
+    fake_ads = {100: Decimal("10.00"), 200: Decimal("5.00")}
+    fake_product_rows = {
+        100: {
+            "product_code": "ABC",
+            "name": "Test Product",
+            "purchase_price": Decimal("20.00"),
+            "packet_cost_actual": Decimal("6.00"),
+        },
+        200: {
+            "product_code": "ADONLY",
+            "name": "Ad Only Product",
+            "purchase_price": Decimal("0.00"),
+            "packet_cost_actual": Decimal("0.00"),
+        },
+    }
+    with patch.object(ppl, "_load_lines", return_value=fake_lines), \
+         patch.object(ppl, "_load_ad_spend", return_value=fake_ads), \
+         patch.object(ppl, "_load_product_costs", return_value=fake_product_rows), \
+         patch.object(ppl, "_load_unallocated_ad_spend", return_value=Decimal("4.00")):
+        result = ppl.generate_list(
+            date_from=date(2026, 5, 1), date_to=date(2026, 5, 7), country=None,
+        )
+
+    rows_by_id = {row["product_id"]: row for row in result["rows"]}
+    assert rows_by_id[100]["profit_usd"] == 59.0
+    assert rows_by_id[200]["order_count"] == 0
+    assert rows_by_id[200]["ad_cost_usd"] == 5.0
+    assert rows_by_id[200]["profit_usd"] == -5.0
+    assert rows_by_id[0]["product_code"] == "unmatched-order-product"
+    assert rows_by_id[0]["profit_usd"] == 23.7
+
+    assert result["summary"]["allocated_ad_spend_usd"] == 15.0
+    assert result["summary"]["unallocated_ad_spend_usd"] == 4.0
+    assert result["summary"]["total_ad_spend_usd"] == 19.0
+    assert result["summary"]["total_revenue_usd"] == 130.0
+    assert result["summary"]["total_profit_usd"] == 73.7
 
 
 def test_generate_list_country_filter_passes_country_to_loader():

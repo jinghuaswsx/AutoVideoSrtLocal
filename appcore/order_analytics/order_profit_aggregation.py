@@ -257,14 +257,14 @@ def _load_realtime_ad_snapshot_fallback(
             product_filter = " AND p.product_id = %s"
             unit_args.append(target_product_id)
         unit_rows = query(
-            "SELECT p.business_date AS business_date, p.product_id, "
+            "SELECT d.meta_business_date AS business_date, p.product_id, "
             "COALESCE(SUM(d.quantity), 0) AS units "
             "FROM order_profit_lines p "
             "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
-            f"WHERE p.business_date IN ({_sql_in(unit_dates)}) "
+            f"WHERE d.meta_business_date IN ({_sql_in(unit_dates)}) "
             "AND p.product_id IS NOT NULL "
             f"{product_filter} "
-            "GROUP BY p.business_date, p.product_id",
+            "GROUP BY d.meta_business_date, p.product_id",
             tuple(unit_args),
         )
         units_by_product: dict[tuple[date, int], int] = {}
@@ -322,11 +322,12 @@ def _load_realtime_ad_cost_adjustments(
         args.append(int(product_id))
     try:
         rows = query(
-            "SELECT d.dxm_package_id, p.business_date, p.status, p.product_id, "
+            "SELECT d.dxm_package_id, d.meta_business_date AS business_date, "
+            "p.status, p.product_id, "
             "d.quantity, p.ad_cost_usd "
             "FROM order_profit_lines p "
             "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
-            "WHERE p.business_date BETWEEN %s AND %s "
+            "WHERE d.meta_business_date BETWEEN %s AND %s "
             "AND p.product_id IS NOT NULL "
             f"{product_filter}",
             tuple(args),
@@ -397,7 +398,7 @@ def get_order_profit_list(
     sql = (
         "SELECT d.dxm_package_id, "
         "       MAX(d.order_paid_at) AS paid_at, "
-        "       MAX(p.business_date) AS business_date, "
+        "       MAX(d.meta_business_date) AS business_date, "
         "       MAX(d.buyer_country) AS buyer_country, "
         "       MAX(d.platform) AS platform, "
         "       MAX(d.site_code) AS site_code, "
@@ -415,7 +416,7 @@ def get_order_profit_list(
         "       SUM(p.profit_usd) AS profit_total "
         "FROM dianxiaomi_order_lines d "
         "INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE p.business_date BETWEEN %s AND %s "
+        "WHERE d.meta_business_date BETWEEN %s AND %s "
     )
     args: list[Any] = [date_from, date_to]
     if product_id:
@@ -437,7 +438,7 @@ def get_order_profit_list(
     args.extend([int(limit), int(offset)])
 
     rows = query(sql, tuple(args)) or []
-    if rows and any(float(r.get("ad_cost_total") or 0) == 0 for r in rows):
+    if rows:
         adjustments = _load_realtime_ad_cost_adjustments(
             date_from=date_from,
             date_to=date_to,
@@ -471,7 +472,7 @@ def get_order_profit_detail(dxm_package_id: str) -> dict[str, Any] | None:
     summary_rows = query(
         "SELECT d.dxm_package_id, "
         "       MAX(d.order_paid_at) AS paid_at, "
-        "       MAX(p.business_date) AS business_date, "
+        "       MAX(d.meta_business_date) AS business_date, "
         "       MAX(d.buyer_country) AS buyer_country, "
         "       MAX(d.platform) AS platform, "
         "       MAX(d.site_code) AS site_code, "
@@ -534,7 +535,7 @@ def get_order_profit_summary_for_window(
         "       SUM(p.profit_usd) AS profit_total "
         "FROM dianxiaomi_order_lines d "
         "INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE p.business_date BETWEEN %s AND %s"
+        "WHERE d.meta_business_date BETWEEN %s AND %s"
         f"{product_filter}",
         tuple(args),
     )
@@ -562,7 +563,7 @@ def get_order_profit_summary_for_window(
         "         END AS status_per_order "
         "  FROM dianxiaomi_order_lines d "
         "  INNER JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "  WHERE p.business_date BETWEEN %s AND %s"
+        "  WHERE d.meta_business_date BETWEEN %s AND %s"
         f"{product_filter} "
         "  GROUP BY d.dxm_package_id"
         ") sub",
@@ -714,7 +715,8 @@ def get_order_profit_status_summary(
         "              ELSE COALESCE(p.shipping_cost_usd, 0) END) "
         "           - COALESCE(p.return_reserve_usd, 0)) AS profit_with_estimate "
         "FROM order_profit_lines p "
-        "WHERE p.business_date BETWEEN %s AND %s "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        "WHERE d.meta_business_date BETWEEN %s AND %s "
         "GROUP BY status",
         (date_from, date_to),
     )
@@ -923,10 +925,11 @@ def get_order_profit_incomplete_products(
         "       MAX(m.name) AS product_name, "
         "       COUNT(*) AS line_count, "
         "       GROUP_CONCAT(DISTINCT p.missing_fields SEPARATOR '||') AS missing_fields_json, "
-        "       MAX(p.business_date) AS last_seen "
+        "       MAX(d.meta_business_date) AS last_seen "
         "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
         "LEFT JOIN media_products m ON m.id = p.product_id "
-        "WHERE p.business_date BETWEEN %s AND %s "
+        "WHERE d.meta_business_date BETWEEN %s AND %s "
         "  AND p.status = 'incomplete' "
         "  AND p.product_id IS NOT NULL "
         "GROUP BY p.product_id "
@@ -960,15 +963,17 @@ def list_order_profit_lines(
     offset: int,
 ) -> list[dict[str, Any]]:
     return query(
-        "SELECT id, dxm_order_line_id, product_id, business_date, paid_at, "
-        "       buyer_country, shopify_tier, "
-        "       line_amount_usd, shipping_allocated_usd, revenue_usd, "
-        "       shopify_fee_usd, ad_cost_usd, purchase_usd, "
-        "       shipping_cost_usd, return_reserve_usd, profit_usd, "
-        "       status, missing_fields "
-        "FROM order_profit_lines "
-        "WHERE business_date BETWEEN %s AND %s AND status=%s "
-        "ORDER BY id DESC LIMIT %s OFFSET %s",
+        "SELECT p.id, p.dxm_order_line_id, p.product_id, "
+        "       d.meta_business_date AS business_date, p.paid_at, "
+        "       p.buyer_country, p.shopify_tier, "
+        "       p.line_amount_usd, p.shipping_allocated_usd, p.revenue_usd, "
+        "       p.shopify_fee_usd, p.ad_cost_usd, p.purchase_usd, "
+        "       p.shipping_cost_usd, p.return_reserve_usd, p.profit_usd, "
+        "       p.status, p.missing_fields "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        "WHERE d.meta_business_date BETWEEN %s AND %s AND p.status=%s "
+        "ORDER BY p.id DESC LIMIT %s OFFSET %s",
         (date_from, date_to, status, int(limit), int(offset)),
     ) or []
 
@@ -980,13 +985,14 @@ def get_order_profit_loss_alerts(
     limit: int,
 ) -> dict[str, Any]:
     rows = query(
-        "SELECT product_id, business_date, buyer_country, "
-        "       revenue_usd, profit_usd, shopify_fee_usd, ad_cost_usd, "
-        "       purchase_usd, shipping_cost_usd "
-        "FROM order_profit_lines "
-        "WHERE business_date BETWEEN %s AND %s "
-        "  AND status='ok' AND profit_usd < 0 "
-        "ORDER BY profit_usd ASC LIMIT %s",
+        "SELECT p.product_id, d.meta_business_date AS business_date, p.buyer_country, "
+        "       p.revenue_usd, p.profit_usd, p.shopify_fee_usd, p.ad_cost_usd, "
+        "       p.purchase_usd, p.shipping_cost_usd "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        "WHERE d.meta_business_date BETWEEN %s AND %s "
+        "  AND p.status='ok' AND p.profit_usd < 0 "
+        "ORDER BY p.profit_usd ASC LIMIT %s",
         (date_from, date_to, int(limit)),
     ) or []
     total_loss = sum(float(r["profit_usd"] or 0) for r in rows)

@@ -104,6 +104,7 @@ def api_summary():
         date_from=date_from,
         date_to=date_to,
         allocated_ad_spend_usd=allocated,
+        unallocated_ad_spend_usd=payload.get("unallocated_ad_spend_usd"),
     )
     return order_profit_flask_response(
         build_order_profit_payload_response(payload)

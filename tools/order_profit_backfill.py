@@ -53,7 +53,7 @@ log = logging.getLogger(__name__)
 _LINE_QUERY = (
     "SELECT d.id AS dxm_order_line_id, d.product_id, d.quantity, "
     "       d.line_amount, d.order_amount, d.ship_amount, d.buyer_country, "
-    "       d.order_paid_at, d.paid_at, d.dxm_package_id, "
+    "       d.order_paid_at, d.paid_at, d.meta_business_date, d.dxm_package_id, "
     "       d.logistic_fee, "
     # 采购价：优先用订单上的 snapshot（订单付款时点冻结的值），
     # 没有就 fallback 到 media_products.purchase_price（当前值）。
@@ -63,7 +63,7 @@ _LINE_QUERY = (
     "       m.packet_cost_actual, m.packet_cost_estimated "
     "FROM dianxiaomi_order_lines d "
     "LEFT JOIN media_products m ON m.id = d.product_id "
-    "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s "
+    "WHERE d.meta_business_date BETWEEN %s AND %s "
     "ORDER BY d.id"
 )
 
@@ -114,7 +114,9 @@ def _process_line(
     return_reserve_rate: Decimal,
 ) -> dict:
     """单行核算。返回 calculate_line_profit 结果（含 status, profit_usd 等）。"""
-    business_date = line["order_paid_at"].date() if line.get("order_paid_at") else None
+    business_date = line.get("meta_business_date")
+    if business_date is None and line.get("order_paid_at"):
+        business_date = line["order_paid_at"].date()
     product_id = line.get("product_id")
     line_amount = float(line.get("line_amount") or 0)
     quantity = int(line.get("quantity") or 1)

@@ -87,30 +87,32 @@ def test_list_basic_query(monkeypatch):
     captured = {}
 
     def fake_query(sql, args=()):
-        captured["sql"] = sql
-        captured["args"] = args
-        return [
-            {
-                "dxm_package_id": "pkg1",
-                "paid_at": datetime(2026, 5, 4),
-                "business_date": date(2026, 5, 4),
-                "buyer_country": "US",
-                "platform": "shopify",
-                "site_code": "newjoy",
-                "line_count": 1,
-                "ok_count": 1,
-                "incomplete_count": 0,
-                "line_amount_total": 29.95,
-                "shipping_alloc_total": 6.99,
-                "revenue_total": 36.94,
-                "shopify_fee_total": 1.65,
-                "ad_cost_total": 5.0,
-                "purchase_total": 8.8,
-                "shipping_cost_total": 19.6,
-                "return_reserve_total": 0.37,
-                "profit_total": 1.52,
-            }
-        ]
+        if "GROUP BY d.dxm_package_id" in sql:
+            captured["sql"] = sql
+            captured["args"] = args
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "paid_at": datetime(2026, 5, 4),
+                    "business_date": date(2026, 5, 4),
+                    "buyer_country": "US",
+                    "platform": "shopify",
+                    "site_code": "newjoy",
+                    "line_count": 1,
+                    "ok_count": 1,
+                    "incomplete_count": 0,
+                    "line_amount_total": 29.95,
+                    "shipping_alloc_total": 6.99,
+                    "revenue_total": 36.94,
+                    "shopify_fee_total": 1.65,
+                    "ad_cost_total": 5.0,
+                    "purchase_total": 8.8,
+                    "shipping_cost_total": 19.6,
+                    "return_reserve_total": 0.37,
+                    "profit_total": 1.52,
+                }
+            ]
+        return []
 
     monkeypatch.setattr(oa, "query", fake_query)
 
@@ -119,7 +121,9 @@ def test_list_basic_query(monkeypatch):
     )
     assert len(result) == 1
     assert result[0]["status"] == "ok"
-    assert "p.business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "d.meta_business_date BETWEEN %s AND %s" in captured["sql"]
+    assert "MAX(d.meta_business_date) AS business_date" in captured["sql"]
+    assert "p.business_date BETWEEN %s AND %s" not in captured["sql"]
     assert "DATE(d.order_paid_at)" not in captured["sql"]
     assert "GROUP BY d.dxm_package_id" in captured["sql"]
     assert "ORDER BY paid_at DESC" in captured["sql"]
@@ -230,7 +234,7 @@ def test_list_uses_realtime_ad_snapshot_when_daily_metrics_missing(monkeypatch):
                     "spend_usd": 25.0,
                 }
             ]
-        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
             return [{"business_date": target, "product_id": 316, "units": 4}]
         if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
             return [
@@ -252,6 +256,58 @@ def test_list_uses_realtime_ad_snapshot_when_daily_metrics_missing(monkeypatch):
         lambda code: {"id": 316} if code == "newjoyloo-rjc" else None,
         raising=False,
     )
+
+    result = get_order_profit_list(date_from=target, date_to=target, limit=50, offset=0)
+
+    assert result[0]["ad_cost_total_usd"] == pytest.approx(12.5)
+    assert result[0]["profit_total_usd"] == pytest.approx(87.5)
+
+
+def test_list_recalculates_nonzero_cached_ad_cost_with_meta_business_date(monkeypatch):
+    target = date(2026, 5, 7)
+
+    def fake_query(sql, args=()):
+        if "GROUP BY d.dxm_package_id" in sql:
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "paid_at": datetime(2026, 5, 8, 12, 0),
+                    "business_date": target,
+                    "buyer_country": "DE",
+                    "platform": "shopify",
+                    "site_code": "newjoy",
+                    "line_count": 1,
+                    "ok_count": 1,
+                    "incomplete_count": 0,
+                    "line_amount_total": 100.0,
+                    "shipping_alloc_total": 0.0,
+                    "revenue_total": 100.0,
+                    "shopify_fee_total": 0.0,
+                    "ad_cost_total": 10.0,
+                    "purchase_total": 0.0,
+                    "shipping_cost_total": 0.0,
+                    "return_reserve_total": 0.0,
+                    "profit_total": 90.0,
+                }
+            ]
+        if "AS spend" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "product_id": 316, "spend": 25.0}]
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
+            return [{"business_date": target, "product_id": 316, "units": 4}]
+        if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
+            return [
+                {
+                    "dxm_package_id": "pkg1",
+                    "business_date": target,
+                    "status": "ok",
+                    "product_id": 316,
+                    "quantity": 2,
+                    "ad_cost_usd": 10.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
 
     result = get_order_profit_list(date_from=target, date_to=target, limit=50, offset=0)
 
@@ -410,11 +466,11 @@ def test_summary_window_filters_by_product_id(monkeypatch):
     )
 
     assert len(captured) == 2
-    assert "p.business_date BETWEEN %s AND %s" in captured[0][0]
+    assert "d.meta_business_date BETWEEN %s AND %s" in captured[0][0]
     assert "DATE(d.order_paid_at)" not in captured[0][0]
     assert "AND p.product_id = %s" in captured[0][0]
     assert captured[0][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
-    assert "p.business_date BETWEEN %s AND %s" in captured[1][0]
+    assert "d.meta_business_date BETWEEN %s AND %s" in captured[1][0]
     assert "DATE(d.order_paid_at)" not in captured[1][0]
     assert "AND p.product_id = %s" in captured[1][0]
     assert captured[1][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
@@ -512,6 +568,53 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
     assert captured["unallocated_args"] == (date(2026, 5, 1), date(2026, 5, 3))
 
 
+def test_status_summary_queries_order_lines_by_meta_business_date(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            captured["summary_sql"] = sql
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"unallocated_ad_spend_usd": 0.0}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    get_order_profit_status_summary(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 3),
+    )
+
+    assert "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id" in captured["summary_sql"]
+    assert "d.meta_business_date BETWEEN %s AND %s" in captured["summary_sql"]
+    assert "p.business_date BETWEEN %s AND %s" not in captured["summary_sql"]
+
+
+def test_realtime_ad_adjustment_units_use_meta_business_date(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return [{"business_date": date(2026, 5, 1), "product_id": 7, "spend": 10.0}]
+        if "SUM(d.quantity)" in sql:
+            captured["units_sql"] = sql
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    opa._load_realtime_ad_snapshot_fallback(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 1),
+    )
+
+    assert "d.meta_business_date AS business_date" in captured["units_sql"]
+    assert "d.meta_business_date IN" in captured["units_sql"]
+    assert "GROUP BY d.meta_business_date, p.product_id" in captured["units_sql"]
+    assert "GROUP BY p.business_date, p.product_id" not in captured["units_sql"]
+
+
 def test_status_summary_uses_realtime_ad_snapshot_for_missing_daily_metrics(monkeypatch):
     target = date(2026, 5, 7)
     snapshot_at = datetime(2026, 5, 8, 15, 40)
@@ -559,7 +662,7 @@ def test_status_summary_uses_realtime_ad_snapshot_for_missing_daily_metrics(monk
                     "spend_usd": 25.0,
                 }
             ]
-        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
             return [{"business_date": target, "product_id": 316, "units": 4}]
         if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
             return [
@@ -643,7 +746,7 @@ def test_status_summary_counts_realtime_matched_spend_without_units_as_unallocat
                     "spend_usd": 40.0,
                 },
             ]
-        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
             return [{"business_date": target, "product_id": 316, "units": 4}]
         if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
             return [
@@ -715,7 +818,7 @@ def test_status_summary_recalculates_ad_cost_from_daily_metrics_when_profit_line
             return [{"business_date": target, "n": 1}]
         if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
             raise AssertionError("daily metrics are available; realtime fallback is not needed")
-        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
             return [{"business_date": target, "product_id": 316, "units": 4}]
         if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
             return [
@@ -1034,7 +1137,7 @@ def test_realtime_ad_snapshot_fallback_picks_latest_per_account(monkeypatch):
                     }
                 ]
             raise AssertionError(f"unexpected ad_account_id={ad_account_id!r}")
-        if "SUM(d.quantity)" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
             return [
                 {"business_date": target, "product_id": 42, "units": 4},
             ]

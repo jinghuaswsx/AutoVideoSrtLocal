@@ -68,6 +68,22 @@ def _extract_allocated_ad_spend(payload: dict) -> float | None:
     """
     if not isinstance(payload, dict):
         return None
+    summary = payload.get("summary")
+    if isinstance(summary, dict):
+        value = summary.get("allocated_ad_spend_usd")
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    total = payload.get("total")
+    if isinstance(total, dict):
+        value = total.get("allocated_ad_spend_usd")
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
     candidates: list[float] = []
     for key in ("ad_spend_usd", "ad_cost_usd", "allocated_ad_spend_usd"):
         value = payload.get(key)
@@ -76,7 +92,6 @@ def _extract_allocated_ad_spend(payload: dict) -> float | None:
                 candidates.append(float(value))
             except (TypeError, ValueError):
                 continue
-    total = payload.get("total")
     if isinstance(total, dict):
         for key in ("ad_spend_usd", "ad_cost_usd"):
             value = total.get(key)
@@ -85,9 +100,8 @@ def _extract_allocated_ad_spend(payload: dict) -> float | None:
                     candidates.append(float(value))
                 except (TypeError, ValueError):
                     continue
-    summary = payload.get("summary")
     if isinstance(summary, dict):
-        for key in ("ad_spend_usd", "total_ad_spend_usd"):
+        for key in ("ad_spend_usd",):
             value = summary.get(key)
             if value is not None:
                 try:
@@ -95,6 +109,29 @@ def _extract_allocated_ad_spend(payload: dict) -> float | None:
                 except (TypeError, ValueError):
                     continue
     return max(candidates) if candidates else None
+
+
+def _extract_unallocated_ad_spend(payload: dict) -> float | None:
+    if not isinstance(payload, dict):
+        return None
+    for container_name in ("summary", "total"):
+        container = payload.get(container_name)
+        if not isinstance(container, dict):
+            continue
+        value = container.get("unallocated_ad_spend_usd")
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    value = payload.get("unallocated_ad_spend_usd")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_date(value: str | None, default: date) -> date:
@@ -336,6 +373,8 @@ def api_report_json():
             date_from=date_from,
             date_to=date_to,
             allocated_ad_spend_usd=_extract_allocated_ad_spend(payload),
+            unallocated_ad_spend_usd=_extract_unallocated_ad_spend(payload),
+            country=country,
         )
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(payload)
@@ -372,6 +411,8 @@ def api_list_json():
             date_from=date_from,
             date_to=date_to,
             allocated_ad_spend_usd=_extract_allocated_ad_spend(result),
+            unallocated_ad_spend_usd=_extract_unallocated_ad_spend(result),
+            country=country,
         )
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(result)
@@ -468,6 +509,8 @@ def api_ads_json():
             date_from=date_from,
             date_to=date_to,
             allocated_ad_spend_usd=_extract_allocated_ad_spend(report),
+            unallocated_ad_spend_usd=_extract_unallocated_ad_spend(report),
+            country=country,
         )
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(report)

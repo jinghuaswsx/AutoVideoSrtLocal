@@ -1637,6 +1637,10 @@
       + '<span class="ppd-summary-value">' + (summary.total_orders || 0).toLocaleString() + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总收入</span>'
       + '<span class="ppd-summary-value">' + money(summary.total_revenue_usd) + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">总广告费</span>'
+      + '<span class="ppd-summary-value">' + money(summary.total_ad_spend_usd) + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">未匹配广告</span>'
+      + '<span class="ppd-summary-value">' + money(summary.unallocated_ad_spend_usd) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总利润</span>'
       + '<span class="ppd-summary-value ' + profitCls + '">' + money(profitVal) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">整体 ROAS</span>'
@@ -1930,6 +1934,10 @@
       + '<span class="ppd-summary-value">' + (summary.total_orders || 0).toLocaleString() + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总收入</span>'
       + '<span class="ppd-summary-value">' + money(summary.total_revenue_usd) + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">总广告费</span>'
+      + '<span class="ppd-summary-value">' + money(summary.total_ad_spend_usd) + '</span></span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">未匹配广告</span>'
+      + '<span class="ppd-summary-value">' + money(summary.unallocated_ad_spend_usd) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总利润</span>'
       + '<span class="ppd-summary-value ' + profitCls + '">' + money(profitVal) + '</span></span>';
 
