@@ -1314,6 +1314,7 @@
         <div class="oa-stat-label">利润</div>
         <div class="oa-stat-value" id="realtimeProfit">$0.00</div>
         <div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div>
+        <div class="oa-stat-sub" id="realtimeProfitMargin">利润率 -</div>
       </div>
     </div>
     <div class="oar-summary-row oar-summary-row-time">
@@ -3576,6 +3577,22 @@
           profitSub.textContent = profitOrders > 0
             ? '利润口径 ' + fmtInt(profitOrders) + ' 单' + (estimatedOrders > 0 ? '，含估算' : '')
             : '暂无利润数据';
+        }
+        var profitMarginEl = document.getElementById('realtimeProfitMargin');
+        if (profitMarginEl) {
+          var topMarginPct = profitSummary.profit_with_estimate_margin_pct;
+          var topMarginIsNumber = (typeof topMarginPct === 'number') && isFinite(topMarginPct);
+          profitMarginEl.textContent = topMarginIsNumber
+            ? '利润率 ' + Number(topMarginPct).toFixed(2) + '%'
+            : '利润率 -';
+          profitMarginEl.classList.toggle(
+            'oar-profit-loss',
+            topMarginIsNumber && topMarginPct < 0
+          );
+          profitMarginEl.classList.toggle(
+            'oar-profit-ok',
+            topMarginIsNumber && topMarginPct >= 0
+          );
         }
         document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
         document.getElementById('realtimeOrderDataUpdatedAt').textContent = formatShortDateTime((data.freshness || {}).last_order_updated_at);

@@ -874,7 +874,9 @@ async function refreshSummary() {
   document.getElementById('opKnownProfit').textContent = fmtUSD(knownProfit);
   document.getElementById('opKnownProfitPct').textContent = fmtPctTag(knownProfit, knownRevenue);
   document.getElementById('opEstimatedProfit').textContent = fmtUSD(estimatedProfit);
-  document.getElementById('opEstimatedProfitPct').textContent = fmtPctTag(estimatedProfit, totalProfit);
+  // 分母 = totalRevenue：让「估算的利润率」与上方「总利润率」共享分母，可与「已核算利润率」直接相加 ≈ 总利润率。
+  // 锚点：docs/superpowers/specs/2026-05-10-realtime-dashboard-profit-margin.md
+  document.getElementById('opEstimatedProfitPct').textContent = fmtPctTag(estimatedProfit, totalRevenue);
   const marginText = overview.total_margin_pct == null ? '总利润率：-' : `总利润率：${overview.total_margin_pct}%`;
   const completeProfit = data.profit_with_estimate_usd ?? (knownProfit + (estimated.profit_usd || 0));
   document.getElementById('opTotalProfitFormula').textContent =

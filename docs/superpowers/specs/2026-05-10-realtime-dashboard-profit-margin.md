@@ -16,11 +16,15 @@
 **做什么**
 
 - `appcore/order_analytics/realtime.py` 的 `order_profit_summary` 数据结构新增字段 `profit_with_estimate_margin_pct`（百分比数值，2 位小数；`total_revenue_usd ≤ 0` 时为 `None`）。
-- 实时大盘 KPI 卡片「总利润额」下方新增一行小字「利润率 XX.XX%」；总营收 ≤ 0 或字段为 `None` 时显示「利润率 -」。
+- 实时大盘**两处**利润 KPI 都补利润率小字：
+  1. 顶层 KPI 网格「利润」卡（`#realtimeProfit`，约第 1314 行）—— 用户第一屏看到的核心 KPI；
+  2. 「订单盈亏」分摊小卡区里的「总利润额」（`#realtimeProfitTotal`，约第 1416 行）—— 二级 KPI。
+  两处都新增独立 sub 节点显示「利润率 XX.XX%」；总营收 ≤ 0 或字段为 `None` 时显示「利润率 -」。
+- 订单利润核算看板「总利润」KPI 卡内「估算的利润」pct chip（`web/templates/order_profit_dashboard.html` 第 877 行）原本分母是 `totalProfit`（语义为占比，与 `marginText` 与同卡内「已核算的利润」的「利润率」语义不一致）—— 调整分母为 `totalRevenue`，使三个数（已核算利润率 / 估算利润率 / 总利润率）都用同一总营收分母，加和约等于总利润率。
+  - **不改**「已核算的利润」pct chip（line 875，分母 `knownRevenue`）：保留「已核算口径下利润 / 已核算营收」语义；该口径在数据完整闭环内独立可读，与「估算的利润 / 总营收」非对称分母是 intentional——一个看完整闭环内 margin、一个看估算部分对总营收的边际贡献。
 
 **不做什么**
 
-- 不改订单利润核算看板（KPI 已有利润率）。
 - 不改产品盈亏看板（KPI / 国家维度 / 订单明细均已有 `profit_pct`）。
 - 不改任何明细表行，不新增列。
 - 不改 SQL 聚合、不改 API 路由、不改前端 tab 结构。
@@ -60,7 +64,15 @@
 
 ### 前端：`web/templates/order_analytics.html`
 
-KPI 卡「总利润额」当前由 `id="realtimeProfitTotal"` 单独渲染（约第 3756 行）。
+实时大盘有两处「利润」KPI，都需要利润率：
+
+1. **顶层 KPI 网格的「利润」卡**（约第 1313-1317 行）—— `id="realtimeProfit"` + `realtimeProfitSub`「利润口径 75 单」，由第 3565-3578 行 JS 渲染。这是页面打开第一屏看到的核心 KPI。
+2. **「订单盈亏」分摊小卡里的「总利润额」**（约第 1414-1418 行）—— `id="realtimeProfitTotal"` + `oar-profit-summary-note`，由 `renderRealtimeOrderProfitSummary` 渲染。
+
+补利润率：
+
+- 顶层 KPI：在 `realtimeProfitSub` 之下加一个独立 sub 节点 `realtimeProfitMargin`，文案「利润率 XX.XX%」；JS 在 `realtimeProfitSub` 渲染段之后追加 margin 渲染段，复用 `oar-profit-loss / oar-profit-ok` 配色。
+- 订单盈亏小卡：与顶层同款新增 `realtimeProfitTotalMargin` sub 节点，由 `renderRealtimeOrderProfitSummary` 渲染。
 
 1. 在该卡片节点内 `realtimeProfitTotal` 之后增加一个 `realtimeProfitTotalMargin` sub 元素（沿用既有 `*Note` / sub 文案 class，参考 `realtimeProfitTotalRevenueNote` 模式）；模板 HTML 由附近的 KPI 卡 markup 块插入。
 
