@@ -36,18 +36,16 @@ def build_shopify_localizer_domains_response(
     list_domains_fn: ListDomainsFn | None = None,
 ) -> dict:
     list_domains_fn = list_domains_fn or product_link_domains.list_domains
-    rows = list_domains_fn(include_disabled=False)
+    rows = list_domains_fn(include_disabled=True)
     items: list[dict] = []
     for row in rows or []:
-        if not row.get("enabled", True):
-            continue
         domain = str(row.get("domain") or "").strip().lower()
         if not domain:
             continue
         items.append({
             "id": int(row.get("id") or 0),
             "domain": domain,
-            "enabled": True,
+            "enabled": bool(row.get("enabled", True)),
         })
     return {"items": items}
 

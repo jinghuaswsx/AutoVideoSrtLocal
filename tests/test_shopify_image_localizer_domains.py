@@ -17,7 +17,7 @@ def test_domain_profile_dir_keeps_default_and_suffixes_other_domains() -> None:
             r"C:\chrome-shopify-image",
             " https://Omurio.com/ ",
         )
-        == r"C:\chrome-shopify-image_omurio.com"
+        == r"C:\chrome-shopify-image-omurio"
     )
 
 
@@ -63,15 +63,15 @@ def test_controller_login_uses_selected_domain_profile_and_store(monkeypatch) ->
             "shopify_domain": "omurio.com",
         }
     ]
-    assert killed_profiles == [r"C:\chrome-shopify-image_omurio.com"]
+    assert killed_profiles == [r"C:\chrome-shopify-image-omurio"]
     assert started_urls == [
         (
-            r"C:\chrome-shopify-image_omurio.com",
+            r"C:\chrome-shopify-image-omurio",
             ["https://admin.shopify.com/store/omurio/products"],
         )
     ]
     assert result["shopify_domain"] == "omurio.com"
-    assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image_omurio.com"
+    assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image-omurio"
     assert result["url"] == "https://admin.shopify.com/store/omurio/products"
 
 
@@ -98,9 +98,9 @@ def test_controller_target_uses_selected_domain_profile_and_store(monkeypatch) -
 
     assert opened == [
         (
-            r"C:\chrome-shopify-image_omurio.com",
+            r"C:\chrome-shopify-image-omurio",
             ["https://admin.shopify.com/store/omurio/apps/ez-product-image-translate/product/855"],
         )
     ]
     assert result["shopify_domain"] == "omurio.com"
-    assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image_omurio.com"
+    assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image-omurio"

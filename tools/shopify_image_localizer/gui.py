@@ -585,7 +585,7 @@ class ShopifyImageLocalizerApp:
         if fallback:
             self._append_log("域名列表加载失败，已使用默认域名 newjoyloo.com")
         else:
-            self._append_log(f"已加载 {len(domains)} 个启用域名：{', '.join(domains)}")
+            self._append_log(f"已加载 {len(domains)} 个域名：{', '.join(domains)}")
 
     def _load_domains_async(self) -> None:
         def worker() -> None:
@@ -597,7 +597,7 @@ class ShopifyImageLocalizerApp:
                 items = list(payload.get("items") or [])
                 self.root.after(0, self._set_domain_items, items, False)
             except Exception as exc:
-                self.root.after(0, self._append_log, f"加载启用域名失败：{exc}")
+                self.root.after(0, self._append_log, f"加载域名列表失败：{exc}")
                 self.root.after(0, self._set_domain_items, settings.default_domain_items(), True)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -606,9 +606,11 @@ class ShopifyImageLocalizerApp:
         items = self.domain_items or settings.default_domain_items()
         domains = [settings.normalize_domain(item.get("domain")) for item in items]
         current = settings.normalize_domain(self.current_shopify_domain_var.get())
-        if len(domains) <= 1:
-            return domains[0] if domains else current
+        if not domains:
+            return current
+        return self._prompt_shopify_domain_choice(domains, current)
 
+    def _prompt_shopify_domain_choice(self, domains: list[str], current: str) -> str:
         dialog = tk.Toplevel(self.root)
         dialog.title("选择 Shopify 店铺域名")
         dialog.transient(self.root)

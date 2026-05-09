@@ -67,7 +67,8 @@ def browser_user_data_dir_for_domain(base_dir: str, domain: str | None) -> str:
     normalized = normalize_domain(domain)
     if normalized == DEFAULT_SHOPIFY_DOMAIN:
         return base
-    return f"{base}_{normalized}"
+    suffix = normalized.split(".", 1)[0]
+    return f"{base}-{suffix}"
 
 
 def default_domain_items() -> list[dict[str, str]]:

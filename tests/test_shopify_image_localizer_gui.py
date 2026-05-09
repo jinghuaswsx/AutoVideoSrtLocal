@@ -131,6 +131,27 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         app.root.destroy()
 
 
+def test_gui_choose_domain_always_prompts_even_for_single_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app._set_domain_items([{"domain": "newjoyloo.com"}])
+
+        prompts: list[tuple[list[str], str]] = []
+
+        def fake_prompt(domains, current):
+            prompts.append((list(domains), current))
+            return "newjoyloo.com"
+
+        monkeypatch.setattr(app, "_prompt_shopify_domain_choice", fake_prompt)
+
+        chosen = app._choose_shopify_domain()
+
+        assert chosen == "newjoyloo.com"
+        assert prompts == [(["newjoyloo.com"], "newjoyloo.com")]
+    finally:
+        app.root.destroy()
+
+
 def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:

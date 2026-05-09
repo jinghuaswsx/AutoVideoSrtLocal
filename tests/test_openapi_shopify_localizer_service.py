@@ -114,21 +114,27 @@ def test_shopify_localizer_rejects_english_target_language():
     assert exc.value.status_code == 400
 
 
-def test_shopify_localizer_domains_response_returns_enabled_domains():
+def test_shopify_localizer_domains_response_returns_all_configured_domains():
     from web.services.openapi_shopify_localizer import build_shopify_localizer_domains_response
 
-    payload = build_shopify_localizer_domains_response(
-        list_domains_fn=lambda include_disabled=False: [
+    captured: dict = {}
+
+    def fake_list_domains(*, include_disabled: bool = False):
+        captured["include_disabled"] = include_disabled
+        return [
             {"id": 1, "domain": "newjoyloo.com", "enabled": True},
             {"id": 2, "domain": "omurio.com", "enabled": True},
             {"id": 3, "domain": "disabled.test", "enabled": False},
         ]
-    )
 
+    payload = build_shopify_localizer_domains_response(list_domains_fn=fake_list_domains)
+
+    assert captured["include_disabled"] is True
     assert payload == {
         "items": [
             {"id": 1, "domain": "newjoyloo.com", "enabled": True},
             {"id": 2, "domain": "omurio.com", "enabled": True},
+            {"id": 3, "domain": "disabled.test", "enabled": False},
         ]
     }
 
