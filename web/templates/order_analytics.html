@@ -1414,6 +1414,7 @@
           <div class="oar-profit-summary-item">
             <div class="oar-profit-summary-label">总利润额</div>
             <div class="oar-profit-summary-value" id="realtimeProfitTotal">$0.00</div>
+            <div class="oar-profit-summary-note" id="realtimeProfitTotalMargin">利润率 -</div>
             <div class="oar-profit-summary-note">含缺失成本估算 + 未分摊广告费</div>
           </div>
         </div>
@@ -3770,6 +3771,18 @@
     if (profitEl) {
       profitEl.classList.toggle('oar-profit-loss', profit < 0);
       profitEl.classList.toggle('oar-profit-ok', profit >= 0);
+    }
+
+    var marginPct = s.profit_with_estimate_margin_pct;
+    var marginIsNumber = (typeof marginPct === 'number') && isFinite(marginPct);
+    var marginText = marginIsNumber
+      ? '利润率 ' + Number(marginPct).toFixed(2) + '%'
+      : '利润率 -';
+    setRealtimeProfitText('realtimeProfitTotalMargin', marginText);
+    var marginEl = document.getElementById('realtimeProfitTotalMargin');
+    if (marginEl) {
+      marginEl.classList.toggle('oar-profit-loss', marginIsNumber && marginPct < 0);
+      marginEl.classList.toggle('oar-profit-ok', marginIsNumber && marginPct >= 0);
     }
 
     // 对账提示：逐行只扣已分摊广告费，未分摊在汇总卡里另算。
