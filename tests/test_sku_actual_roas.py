@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -91,3 +91,80 @@ def test_aggregate_rows_uses_7pct_when_payment_missing_and_nulls_unprofitable_ro
     assert row["fee_source"] == "estimated_7pct"
     assert row["shopify_fee_usd"] == pytest.approx(0.7)
     assert row["actual_breakeven_roas"] is None
+
+
+def test_compute_loads_orders_payments_and_upserts_snapshots(monkeypatch):
+    from appcore import sku_actual_roas
+
+    calls = {"execute": []}
+
+    def fake_query(sql, params=()):
+        if "FROM dianxiaomi_order_lines" in sql:
+            assert params == (date(2026, 4, 9), date(2026, 5, 8))
+            return [
+                {
+                    "dxm_package_id": "pkg-1",
+                    "extended_order_id": "#1001",
+                    "product_display_sku": "SKU-A",
+                    "quantity": 1,
+                    "line_amount": 20,
+                    "ship_amount": 4,
+                    "logistic_fee": 6,
+                    "purchase_price_cny": 35,
+                    "xmyc_unit_price": None,
+                    "product_purchase_price": None,
+                }
+            ]
+        if "FROM shopify_payments_transactions" in sql:
+            assert params == ("#1001",)
+            return [{"order_name": "#1001", "fee": 2.4}]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(sku_actual_roas, "query", fake_query)
+    monkeypatch.setattr(
+        sku_actual_roas,
+        "execute",
+        lambda sql, params: calls["execute"].append((sql, params)) or 1,
+    )
+
+    result = sku_actual_roas.compute_sku_actual_breakeven_roas(
+        date(2026, 4, 9),
+        date(2026, 5, 8),
+        rmb_per_usd=7,
+        source_run_id=99,
+    )
+
+    assert result["skus"] == 1
+    assert result["snapshots_written"] == 1
+    assert "ON DUPLICATE KEY UPDATE" in calls["execute"][0][0]
+    assert calls["execute"][0][1][0] == "SKU-A"
+    assert calls["execute"][0][1][12] == 99
+
+
+def test_get_latest_sku_actual_roas_returns_map(monkeypatch):
+    from appcore import sku_actual_roas
+
+    def fake_query(sql, params=()):
+        assert "MAX(computed_at)" in sql
+        assert params == ("SKU-A", "SKU-B")
+        return [
+            {
+                "sku": "SKU-A",
+                "window_start": date(2026, 4, 9),
+                "window_end": date(2026, 5, 8),
+                "orders_count": 2,
+                "units": 3,
+                "actual_breakeven_roas": 2.3456,
+                "fee_source": "mixed",
+                "computed_at": datetime(2026, 5, 10, 0, 0, 8),
+            }
+        ]
+
+    monkeypatch.setattr(sku_actual_roas, "query", fake_query)
+
+    out = sku_actual_roas.get_latest_sku_actual_roas(["SKU-A", "SKU-B"])
+
+    assert out["SKU-A"]["value"] == 2.3456
+    assert out["SKU-A"]["fee_source"] == "mixed"
+    assert out["SKU-A"]["window_start"] == "2026-04-09"
+    assert out["SKU-A"]["computed_at"] == "2026-05-10T00:00:08"

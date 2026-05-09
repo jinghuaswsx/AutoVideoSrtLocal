@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from collections import defaultdict
 from datetime import date, timedelta
@@ -166,5 +167,168 @@ def aggregate_sku_rows(
                 "real_fee_lines": counts["real"],
                 "estimated_fee_lines": counts["estimated"],
             },
+        }
+    return out
+
+
+def _load_order_rows(window_start: date, window_end: date) -> list[dict[str, Any]]:
+    return query(
+        """
+        SELECT d.dxm_package_id, d.extended_order_id, d.product_display_sku,
+               d.quantity, d.line_amount, d.ship_amount, d.logistic_fee,
+               d.purchase_price_cny,
+               xs.unit_price AS xmyc_unit_price,
+               m.purchase_price AS product_purchase_price
+        FROM dianxiaomi_order_lines d
+        LEFT JOIN xmyc_storage_skus xs ON xs.sku = d.product_display_sku
+        LEFT JOIN media_products m ON m.id = d.product_id
+        WHERE d.meta_business_date BETWEEN %s AND %s
+          AND d.product_display_sku IS NOT NULL
+          AND d.product_display_sku <> ''
+        """,
+        (window_start, window_end),
+    )
+
+
+def _load_real_fees_by_order(order_names: list[str]) -> dict[str, float]:
+    names = [name for name in dict.fromkeys(order_names) if name]
+    if not names:
+        return {}
+    placeholders = ",".join(["%s"] * len(names))
+    rows = query(
+        f"""
+        SELECT order_name, COALESCE(SUM(fee_usd), 0) AS fee
+        FROM shopify_payments_transactions
+        WHERE type='charge' AND order_name IN ({placeholders})
+        GROUP BY order_name
+        """,
+        tuple(names),
+    )
+    return {str(row["order_name"]): float(row.get("fee") or 0) for row in rows}
+
+
+def _upsert_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    window_start: date,
+    window_end: date,
+    source_run_id: int | None,
+) -> None:
+    execute(
+        """
+        INSERT INTO sku_actual_breakeven_roas_snapshots (
+          sku, window_start, window_end, orders_count, units,
+          revenue_usd, purchase_cost_usd, shipping_cost_usd, shopify_fee_usd,
+          fee_source, actual_breakeven_roas, summary_json, source_run_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          orders_count=VALUES(orders_count),
+          units=VALUES(units),
+          revenue_usd=VALUES(revenue_usd),
+          purchase_cost_usd=VALUES(purchase_cost_usd),
+          shipping_cost_usd=VALUES(shipping_cost_usd),
+          shopify_fee_usd=VALUES(shopify_fee_usd),
+          fee_source=VALUES(fee_source),
+          actual_breakeven_roas=VALUES(actual_breakeven_roas),
+          summary_json=VALUES(summary_json),
+          source_run_id=VALUES(source_run_id),
+          computed_at=NOW()
+        """,
+        (
+            snapshot["sku"],
+            window_start,
+            window_end,
+            snapshot["orders_count"],
+            snapshot["units"],
+            snapshot["revenue_usd"],
+            snapshot["purchase_cost_usd"],
+            snapshot["shipping_cost_usd"],
+            snapshot["shopify_fee_usd"],
+            snapshot["fee_source"],
+            snapshot["actual_breakeven_roas"],
+            json.dumps(snapshot.get("summary") or {}, ensure_ascii=False, default=str),
+            source_run_id,
+        ),
+    )
+
+
+def compute_sku_actual_breakeven_roas(
+    window_start: date,
+    window_end: date,
+    *,
+    rmb_per_usd: Any | None = None,
+    source_run_id: int | None = None,
+) -> dict[str, Any]:
+    rows = _load_order_rows(window_start, window_end)
+    order_names = [str(row.get("extended_order_id") or "").strip() for row in rows]
+    real_fees = _load_real_fees_by_order(order_names)
+    snapshots = aggregate_sku_rows(rows, real_fees, rmb_per_usd=rmb_per_usd)
+
+    written = 0
+    for snapshot in snapshots.values():
+        _upsert_snapshot(
+            snapshot,
+            window_start=window_start,
+            window_end=window_end,
+            source_run_id=source_run_id,
+        )
+        written += 1
+
+    return {
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "order_rows": len(rows),
+        "skus": len(snapshots),
+        "snapshots_written": written,
+        "source_run_id": source_run_id,
+    }
+
+
+def _date_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _datetime_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def get_latest_sku_actual_roas(skus: list[str]) -> dict[str, dict[str, Any]]:
+    unique_skus = [sku for sku in dict.fromkeys(str(s).strip() for s in skus) if sku]
+    if not unique_skus:
+        return {}
+    placeholders = ",".join(["%s"] * len(unique_skus))
+    rows = query(
+        f"""
+        SELECT s.sku, s.window_start, s.window_end, s.orders_count, s.units,
+               s.actual_breakeven_roas, s.fee_source, s.computed_at
+        FROM sku_actual_breakeven_roas_snapshots s
+        JOIN (
+          SELECT sku, MAX(computed_at) AS max_computed_at
+          FROM sku_actual_breakeven_roas_snapshots
+          WHERE sku IN ({placeholders})
+          GROUP BY sku
+        ) latest ON latest.sku = s.sku AND latest.max_computed_at = s.computed_at
+        """,
+        tuple(unique_skus),
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        value = row.get("actual_breakeven_roas")
+        out[str(row["sku"])] = {
+            "value": float(value) if value is not None else None,
+            "fee_source": row.get("fee_source"),
+            "window_start": _date_text(row.get("window_start")),
+            "window_end": _date_text(row.get("window_end")),
+            "orders_count": int(row.get("orders_count") or 0),
+            "units": int(row.get("units") or 0),
+            "computed_at": _datetime_text(row.get("computed_at")),
         }
     return out
