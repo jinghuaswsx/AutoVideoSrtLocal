@@ -125,18 +125,20 @@ def test_session_builds_admin_urls_for_selected_store_slug() -> None:
     )
 
 
-def test_controller_login_starts_cdp_chrome_at_admin_root_and_spawns_slug_watcher(
+def test_controller_login_starts_plain_chrome_at_admin_root_and_spawns_slug_watcher(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     saved_configs: list[dict] = []
-    cdp_calls: list[tuple] = []
+    killed_profiles: list[str] = []
+    started_urls: list[tuple] = []
     threads_started: list[tuple] = []
 
     monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: saved_configs.append(kwargs))
+    monkeypatch.setattr(controller.session, "kill_chrome_for_profile", lambda profile: killed_profiles.append(profile))
     monkeypatch.setattr(
-        controller.ez_cdp,
-        "ensure_cdp_chrome",
-        lambda profile, *, initial_url, port: (cdp_calls.append((profile, initial_url, port)) or True),
+        controller.session,
+        "start_chrome",
+        lambda profile, urls: started_urls.append((profile, urls)),
     )
 
     class FakeThread:
@@ -156,21 +158,45 @@ def test_controller_login_starts_cdp_chrome_at_admin_root_and_spawns_slug_watche
     )
 
     assert saved_configs[0]["shopify_domain"] == "omurio.com"
-    assert cdp_calls == [
-        (
-            r"C:\chrome-shopify-image-omurio",
-            controller.SHOPIFY_ADMIN_ROOT_URL,
-            controller.ez_cdp.DEFAULT_CDP_PORT,
-        )
-    ]
+    # 登录走普通 chrome（无 CDP），避免 admin.shopify.com 上 Cloudflare 把人机验证遮蔽
+    assert killed_profiles == [r"C:\chrome-shopify-image-omurio"]
+    assert started_urls == [(r"C:\chrome-shopify-image-omurio", ["https://admin.shopify.com/"])]
     assert len(threads_started) == 1
     assert threads_started[0][0] == "_watch_admin_url_for_store_slug"
     assert threads_started[0][1][0] == "omurio.com"
+    assert threads_started[0][1][1] == r"C:\chrome-shopify-image-omurio"
     assert threads_started[0][2] is True  # daemon
 
     assert result["shopify_domain"] == "omurio.com"
     assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image-omurio"
     assert result["url"] == "https://admin.shopify.com/"
+
+
+def test_read_latest_admin_store_slug_from_history(tmp_path) -> None:
+    """从模拟的 Chrome History SQLite 抽 admin.shopify.com/store/<slug>/ URL。"""
+    import sqlite3 as _sqlite
+
+    db_path = tmp_path / "History"
+    conn = _sqlite.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, last_visit_time INTEGER)"
+        )
+        conn.executemany(
+            "INSERT INTO urls(url, last_visit_time) VALUES (?, ?)",
+            [
+                ("https://example.com/abc", 100),
+                ("https://admin.shopify.com/store/old-slug/products", 200),
+                ("https://admin.shopify.com/store/7t1gn3-sv/orders", 300),
+                ("https://admin.shopify.com/", 250),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    slug = controller._read_latest_admin_store_slug_from_history(db_path)
+    assert slug == "7t1gn3-sv"
 
 
 def test_controller_target_uses_cached_store_slug(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

@@ -330,7 +330,8 @@ def test_gui_passes_shopify_language_name_from_api_item(monkeypatch: pytest.Monk
 
 def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
     saved_configs: list[dict] = []
-    cdp_calls: list[tuple] = []
+    killed_profiles: list[str] = []
+    started_urls: list[tuple] = []
 
     monkeypatch.setattr(
         gui.controller.settings,
@@ -338,9 +339,14 @@ def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.Monk
         lambda **kwargs: saved_configs.append(kwargs),
     )
     monkeypatch.setattr(
-        gui.controller.ez_cdp,
-        "ensure_cdp_chrome",
-        lambda profile, *, initial_url, port: cdp_calls.append((profile, initial_url, port)) or True,
+        gui.controller.session,
+        "kill_chrome_for_profile",
+        lambda profile: killed_profiles.append(profile),
+    )
+    monkeypatch.setattr(
+        gui.controller.session,
+        "start_chrome",
+        lambda profile, urls: started_urls.append((profile, urls)),
     )
 
     class FakeThread:
@@ -366,13 +372,8 @@ def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.Monk
             "shopify_domain": "newjoyloo.com",
         }
     ]
-    assert cdp_calls == [
-        (
-            r"C:\chrome-shopify-image",
-            "https://admin.shopify.com/",
-            gui.controller.ez_cdp.DEFAULT_CDP_PORT,
-        )
-    ]
+    assert killed_profiles == [r"C:\chrome-shopify-image"]
+    assert started_urls == [(r"C:\chrome-shopify-image", ["https://admin.shopify.com/"])]
     assert result == {
         "status": "opened",
         "target": "shopify_login",
