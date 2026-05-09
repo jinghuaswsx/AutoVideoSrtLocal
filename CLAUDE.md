@@ -136,7 +136,7 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 
 - 已知事故：2026-04-25 调整“停止”按钮后，`开始替换` 会卡在 EZ Product Image Translate 页面，EZ iframe/图片数据不加载；点击“停止”后页面马上加载。核心原因是把 EZ 页面等待循环里的 Playwright `page.wait_for_timeout(...)` 改成了普通 Python 侧的 `cancellation.cancellable_sleep(...)`，导致 Playwright/CDP 同步 API 没有持续刷新页面事件和 frame 列表，`_wait_plugin_frame` 长时间看不到 iframe。
 - 禁止回改：`tools/shopify_image_localizer/rpa/ez_cdp.py` 中凡是等待 EZ iframe、弹窗关闭、上传后 UI 刷新的地方，必须保留 Playwright 页面级等待（如 `page.wait_for_timeout(...)` 或 frame/page locator wait）。不要用 `time.sleep` 或 `cancellation.cancellable_sleep` 替代这些页面等待。需要支持停止时，只能在 Playwright 等待前后插入 `cancellation.throw_if_cancelled(...)`。
-- `登录shopify店铺` 按钮不要跳 Translate & Adapt 应用页，也不要跳具体商品的 EZ 页。它应固定打开 Shopify 产品列表页 `https://admin.shopify.com/store/0ixug9-pv/products`，只用于恢复/确认店铺登录状态，避免预先打开应用页干扰后续 EZ 工作流。
+- `登录shopify店铺` 按钮**只**打开 Shopify 主入口 `https://admin.shopify.com/`（不带 `/store/<slug>/`），由用户登录后人工选择目标店铺。后端用 `ez_cdp.ensure_cdp_chrome` 启动带 CDP 的 Chrome（端口 7777，登录后续 EZ 自动化复用同一实例），并在 daemon thread 里 `playwright.connect_over_cdp` 监听各 page.url。一旦匹配 `https://admin.shopify.com/store/<slug>/...` 就把 `(domain → slug)` 写入运行时配置 `shopify_image_localizer_config.json` 的 `shopify_domain_store_slugs`。后续 `settings.shopify_store_slug_for_domain(domain)` **优先**用缓存，缺失再回退内置 dict / 默认 slug。**不要**在登录按钮里硬编码任何具体 store slug 或直接跳应用页（EZ / TAA），会绕过 slug 自动捕获。
 - EZ 轮播图替换前必须判断每个 slot 是否已经有目标语言标签：语言名称来自 `run_product_cdp.LANGUAGE_LABELS`，例如 `de -> German`。如果 slot 已有目标语言标签，结果应为 `skipped`，不要点击 `Remove {language}`，不要删除后重新上传，避免浪费时间和引入失败。
 - 修改这条链路后至少运行：`pytest tests/test_shopify_image_localizer_batch_cdp.py tests/test_shopify_image_localizer_gui.py -q`，并执行 Shopify Image Localizer 的语法自检。
 

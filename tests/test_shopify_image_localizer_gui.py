@@ -328,10 +328,9 @@ def test_gui_passes_shopify_language_name_from_api_item(monkeypatch: pytest.Monk
         app.root.destroy()
 
 
-def test_controller_opens_products_page_for_login_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
-    killed_profiles: list[str] = []
-    started_urls: list[tuple] = []
+def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
     saved_configs: list[dict] = []
+    cdp_calls: list[tuple] = []
 
     monkeypatch.setattr(
         gui.controller.settings,
@@ -339,15 +338,19 @@ def test_controller_opens_products_page_for_login_shortcut(monkeypatch: pytest.M
         lambda **kwargs: saved_configs.append(kwargs),
     )
     monkeypatch.setattr(
-        gui.controller.session,
-        "kill_chrome_for_profile",
-        lambda browser_dir: killed_profiles.append(browser_dir),
+        gui.controller.ez_cdp,
+        "ensure_cdp_chrome",
+        lambda profile, *, initial_url, port: cdp_calls.append((profile, initial_url, port)) or True,
     )
-    monkeypatch.setattr(
-        gui.controller.session,
-        "start_chrome",
-        lambda browser_dir, urls: started_urls.append((browser_dir, urls)),
-    )
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            pass
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(gui.controller.threading, "Thread", FakeThread)
 
     result = gui.controller.open_shopify_login_page(
         base_url="https://example.test",
@@ -363,11 +366,11 @@ def test_controller_opens_products_page_for_login_shortcut(monkeypatch: pytest.M
             "shopify_domain": "newjoyloo.com",
         }
     ]
-    assert killed_profiles == [r"C:\chrome-shopify-image"]
-    assert started_urls == [
+    assert cdp_calls == [
         (
             r"C:\chrome-shopify-image",
-            ["https://admin.shopify.com/store/0ixug9-pv/products"],
+            "https://admin.shopify.com/",
+            gui.controller.ez_cdp.DEFAULT_CDP_PORT,
         )
     ]
     assert result == {
@@ -375,7 +378,7 @@ def test_controller_opens_products_page_for_login_shortcut(monkeypatch: pytest.M
         "target": "shopify_login",
         "shopify_domain": "newjoyloo.com",
         "browser_user_data_dir": r"C:\chrome-shopify-image",
-        "url": "https://admin.shopify.com/store/0ixug9-pv/products",
+        "url": "https://admin.shopify.com/",
     }
 
 

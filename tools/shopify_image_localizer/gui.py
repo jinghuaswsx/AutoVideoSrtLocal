@@ -841,6 +841,8 @@ class ShopifyImageLocalizerApp:
                 api_key=api_key,
                 browser_user_data_dir=browser_dir,
                 shopify_domain=shopify_domain,
+                status_cb=lambda message: self.root.after(0, self._append_log, message),
+                slug_detected_cb=lambda dom, slug: self.root.after(0, self._on_store_slug_detected, dom, slug),
             )
             self.root.after(0, self._render_login_open_result, result)
         except Exception as exc:
@@ -852,11 +854,17 @@ class ShopifyImageLocalizerApp:
 
     def _render_login_open_result(self, result: dict) -> None:
         self._clear_summary()
-        self._add_summary("已打开页面", "Shopify 产品列表页")
+        self._add_summary("已打开页面", "Shopify 主页（请在浏览器里登录后选择目标店铺）")
         self._add_summary("URL", result.get("url"))
-        self.status_var.set("已打开 Shopify 产品列表页")
-        self._append_log(f"已打开 Shopify 产品列表页，请在浏览器里手动登录店铺：{result.get('url')}")
-        self._progress_finish("已打开 Shopify 产品列表页")
+        self.status_var.set("已打开 Shopify 主页")
+        self._append_log(
+            "已打开 Shopify 主页（admin.shopify.com）。请在浏览器里登录账号、点选目标店铺，"
+            "程序会自动从跳转后的 URL 抓取店铺 slug 并缓存。"
+        )
+        self._progress_finish("已打开 Shopify 主页")
+
+    def _on_store_slug_detected(self, domain: str, slug: str) -> None:
+        self._append_log(f"已自动识别店铺 slug：{domain} → {slug}（已缓存到本地配置）")
 
     def _open_shopify_target_worker(
         self,

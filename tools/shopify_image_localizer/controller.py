@@ -3,12 +3,19 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import threading
+import time
 from pathlib import Path
 from typing import Callable
 
 from tools.shopify_image_localizer import api_client, cancellation, locales, settings, storage
 from tools.shopify_image_localizer.browser import session
-from tools.shopify_image_localizer.rpa import run_product_cdp
+from tools.shopify_image_localizer.rpa import ez_cdp, run_product_cdp
+
+
+SHOPIFY_ADMIN_ROOT_URL = "https://admin.shopify.com/"
+STORE_SLUG_DETECT_TIMEOUT_S = 600  # 用户登录 + 选店铺 + 跳转的最大等待时间（10 分钟）
+_STORE_SLUG_DETECT_INTERVAL_S = 1.5
 
 
 StatusCallback = Callable[[str], None]
@@ -390,7 +397,11 @@ def open_shopify_login_page(
     api_key: str,
     browser_user_data_dir: str,
     shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
+    status_cb: StatusCallback | None = None,
+    slug_detected_cb: Callable[[str, str], None] | None = None,
 ) -> dict:
+    """启动 Chrome（CDP 7777）打开 admin.shopify.com，让用户选店铺；后台监听 URL 抓真实 slug 缓存。"""
+    emit = status_cb or _noop
     normalized_domain = settings.normalize_domain(shopify_domain)
     effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
     settings.save_runtime_config(
@@ -399,13 +410,90 @@ def open_shopify_login_page(
         browser_user_data_dir=browser_user_data_dir,
         shopify_domain=normalized_domain,
     )
-    session.kill_chrome_for_profile(effective_browser_dir)
-    url = session.build_products_url(store_slug=settings.shopify_store_slug_for_domain(normalized_domain))
-    session.start_chrome(effective_browser_dir, [url])
+    started = ez_cdp.ensure_cdp_chrome(
+        effective_browser_dir,
+        initial_url=SHOPIFY_ADMIN_ROOT_URL,
+        port=ez_cdp.DEFAULT_CDP_PORT,
+    )
+    if not started:
+        # 复用已有 CDP Chrome 时再开一个 admin 根页 tab，避免落到上次跑 EZ 的 app 内嵌页
+        try:
+            session.open_urls_in_chrome(effective_browser_dir, [SHOPIFY_ADMIN_ROOT_URL])
+        except Exception:
+            pass
+    threading.Thread(
+        target=_watch_admin_url_for_store_slug,
+        args=(normalized_domain, slug_detected_cb, emit),
+        daemon=True,
+    ).start()
     return {
         "status": "opened",
         "target": "shopify_login",
         "shopify_domain": normalized_domain,
         "browser_user_data_dir": effective_browser_dir,
-        "url": url,
+        "url": SHOPIFY_ADMIN_ROOT_URL,
     }
+
+
+def _watch_admin_url_for_store_slug(
+    normalized_domain: str,
+    slug_detected_cb: Callable[[str, str], None] | None,
+    emit: StatusCallback,
+) -> None:
+    """轮询 CDP 上 admin.shopify.com 的 page url，跳到 /store/<slug>/ 时抓 slug 缓存。"""
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:
+        emit(f"店铺识别启动失败：{exc}")
+        return
+    deadline = time.time() + STORE_SLUG_DETECT_TIMEOUT_S
+    detected = ""
+    last_emit_url = ""
+    try:
+        ws_endpoint = ez_cdp._cdp_ws_endpoint(ez_cdp.DEFAULT_CDP_PORT)
+    except Exception as exc:
+        emit(f"无法连接 Chrome CDP：{exc}")
+        return
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.connect_over_cdp(ws_endpoint)
+            try:
+                while time.time() < deadline and not detected:
+                    candidate_urls: list[str] = []
+                    for ctx in browser.contexts:
+                        for page in ctx.pages:
+                            try:
+                                url = (page.url or "").strip()
+                            except Exception:
+                                continue
+                            if url:
+                                candidate_urls.append(url)
+                    for url in candidate_urls:
+                        slug = settings.extract_store_slug_from_admin_url(url)
+                        if slug:
+                            detected = slug
+                            break
+                    if detected:
+                        break
+                    # 提示用户当前停留的 URL（避免运营误以为程序卡住）
+                    if candidate_urls and candidate_urls[0] != last_emit_url:
+                        last_emit_url = candidate_urls[0]
+                    time.sleep(_STORE_SLUG_DETECT_INTERVAL_S)
+            finally:
+                with contextlib.suppress(Exception):
+                    browser.close()
+    except Exception as exc:
+        emit(f"店铺识别异常：{exc}")
+        return
+    if not detected:
+        emit(f"店铺识别超时（{STORE_SLUG_DETECT_TIMEOUT_S}s 内未跳转到 /store/<slug>/，请手动选择目标店铺）")
+        return
+    try:
+        settings.cache_store_slug_for_domain(normalized_domain, detected)
+    except Exception as exc:
+        emit(f"店铺 slug 缓存写入失败：{exc}")
+        return
+    emit(f"已识别 {normalized_domain} 的店铺 slug：{detected}")
+    if slug_detected_cb is not None:
+        with contextlib.suppress(Exception):
+            slug_detected_cb(normalized_domain, detected)

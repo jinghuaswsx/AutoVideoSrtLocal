@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 
@@ -13,9 +14,10 @@ DEFAULT_API_KEY = os.getenv("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "").strip()
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 DEFAULT_SHOPIFY_DOMAIN = "newjoyloo.com"
 DEFAULT_SHOPIFY_STORE_SLUG = "0ixug9-pv"
+# 历史已知 slug：作为缓存未命中时的 fallback。每个 domain 真实 slug 由首次登录后从浏览器
+# URL 自动捕获写入 shopify_domain_store_slugs（runtime config）。
 DEFAULT_SHOPIFY_STORE_SLUG_BY_DOMAIN = {
     DEFAULT_SHOPIFY_DOMAIN: DEFAULT_SHOPIFY_STORE_SLUG,
-    "omurio.com": "omurio",
 }
 CONFIG_FILENAME = "shopify_image_localizer_config.json"
 
@@ -23,6 +25,8 @@ _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
 _STORE_SLUG_RE = re.compile(r"[^a-z0-9-]+")
+_STORE_SLUG_VALID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_STORE_URL_RE = re.compile(r"^https?://admin\.shopify\.com/store/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:/|$)", re.IGNORECASE)
 
 
 def default_base_url(*, packaged: bool | None = None) -> str:
@@ -50,14 +54,75 @@ def normalize_domain(value: str | None, *, default: str = DEFAULT_SHOPIFY_DOMAIN
     return domain
 
 
-def shopify_store_slug_for_domain(domain: str | None) -> str:
+def _normalize_store_slug(value: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    return raw if _STORE_SLUG_VALID_RE.match(raw) else ""
+
+
+def extract_store_slug_from_admin_url(url: str | None) -> str:
+    """从 https://admin.shopify.com/store/<slug>/... 提取真实 slug。无法解析返回空串。"""
+    match = _STORE_URL_RE.match(str(url or "").strip())
+    if not match:
+        return ""
+    return match.group(1).lower()
+
+
+def _normalize_slug_map(raw: Any) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        domain = normalize_domain(key, default="")
+        slug = _normalize_store_slug(value)
+        if domain and slug:
+            out[domain] = slug
+    return out
+
+
+def cached_store_slug_for_domain(domain: str | None, root: str | Path | None = None) -> str:
+    """读 runtime config 里缓存的 store slug。无缓存返回空串。"""
     normalized = normalize_domain(domain)
+    cfg = load_runtime_config(root)
+    cached = cfg.get("shopify_domain_store_slugs") or {}
+    if isinstance(cached, dict):
+        return _normalize_store_slug(cached.get(normalized))
+    return ""
+
+
+def cache_store_slug_for_domain(domain: str, slug: str, root: str | Path | None = None) -> bool:
+    """把 (domain → slug) 写入 runtime config 的 shopify_domain_store_slugs。返回是否落盘。"""
+    normalized_domain = normalize_domain(domain)
+    normalized_slug = _normalize_store_slug(slug)
+    if not normalized_slug:
+        return False
+    cfg = load_runtime_config(root)
+    cached = dict(cfg.get("shopify_domain_store_slugs") or {})
+    if cached.get(normalized_domain) == normalized_slug:
+        return False
+    cached[normalized_domain] = normalized_slug
+    save_runtime_config(
+        base_url=cfg["base_url"],
+        api_key=cfg["api_key"],
+        browser_user_data_dir=cfg["browser_user_data_dir"],
+        shopify_domain=cfg.get("shopify_domain"),
+        store_slug_cache=cached,
+        root=root,
+    )
+    return True
+
+
+def shopify_store_slug_for_domain(domain: str | None, root: str | Path | None = None) -> str:
+    """优先用 runtime config 缓存的真实 slug；缺失时退到内置 dict / 默认 slug。"""
+    normalized = normalize_domain(domain)
+    cached = cached_store_slug_for_domain(normalized, root=root)
+    if cached:
+        return cached
     configured = DEFAULT_SHOPIFY_STORE_SLUG_BY_DOMAIN.get(normalized)
     if configured:
         return configured
-    first_label = normalized.split(".", 1)[0]
-    slug = _STORE_SLUG_RE.sub("-", first_label).strip("-")
-    return slug or DEFAULT_SHOPIFY_STORE_SLUG
+    return DEFAULT_SHOPIFY_STORE_SLUG
 
 
 def browser_user_data_dir_for_domain(base_dir: str, domain: str | None) -> str:
@@ -86,12 +151,13 @@ def config_path(root: str | Path | None = None) -> Path:
     return base / CONFIG_FILENAME
 
 
-def load_runtime_config(root: str | Path | None = None) -> dict[str, str]:
-    defaults = {
+def load_runtime_config(root: str | Path | None = None) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
         "base_url": DEFAULT_BASE_URL,
         "api_key": DEFAULT_API_KEY,
         "browser_user_data_dir": DEFAULT_BROWSER_USER_DATA_DIR,
         "shopify_domain": DEFAULT_SHOPIFY_DOMAIN,
+        "shopify_domain_store_slugs": {},
     }
     path = config_path(root)
     if not path.is_file():
@@ -108,7 +174,11 @@ def load_runtime_config(root: str | Path | None = None) -> dict[str, str]:
         "browser_user_data_dir": str(payload.get("browser_user_data_dir") or "").strip()
         or defaults["browser_user_data_dir"],
         "shopify_domain": normalize_domain(payload.get("shopify_domain"), default=defaults["shopify_domain"]),
+        "shopify_domain_store_slugs": _normalize_slug_map(payload.get("shopify_domain_store_slugs")),
     }
+
+
+_UNSET: Any = object()
 
 
 def save_runtime_config(
@@ -117,14 +187,21 @@ def save_runtime_config(
     api_key: str,
     browser_user_data_dir: str,
     shopify_domain: str | None = None,
+    store_slug_cache: Any = _UNSET,
     root: str | Path | None = None,
 ) -> Path:
+    """写入 runtime config。store_slug_cache 缺省（_UNSET）时保留磁盘上已有的 slug 缓存。"""
     path = config_path(root)
-    payload = {
+    if store_slug_cache is _UNSET:
+        existing_cache = load_runtime_config(root).get("shopify_domain_store_slugs") or {}
+    else:
+        existing_cache = store_slug_cache or {}
+    payload: dict[str, Any] = {
         "base_url": DEFAULT_BASE_URL,
         "api_key": api_key.strip(),
         "browser_user_data_dir": browser_user_data_dir.strip(),
         "shopify_domain": normalize_domain(shopify_domain),
+        "shopify_domain_store_slugs": _normalize_slug_map(existing_cache),
     }
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
