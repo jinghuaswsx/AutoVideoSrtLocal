@@ -75,15 +75,16 @@ class ShopifyImageLocalizerApp:
         _ = prompt_on_start
 
     def _build_form(self) -> None:
-        # 整个界面最左上角的状态指示，登录前显示"未登录"，登录后显示当前选定的店铺域名
-        self.current_login_status_var = tk.StringVar(value="未登录")
+        # 整个界面最左上角的状态指示：未登录显示红字，登录后显示当前域名（黑字）
+        self.current_login_status_var = tk.StringVar()
         self.current_login_status_label = tk.Label(
             self.main_frame,
             textvariable=self.current_login_status_var,
             anchor="w",
-            fg="#555",
+            font=("TkDefaultFont", 18, "bold"),
         )
         self.current_login_status_label.pack(anchor="w", pady=(0, 4))
+        self._update_login_status(None)
 
         self.login_shopify_frame = tk.Frame(self.main_frame)
         self.login_shopify_frame.pack(fill="x", pady=(0, 10))
@@ -568,6 +569,14 @@ class ShopifyImageLocalizerApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _update_login_status(self, domain: str | None) -> None:
+        if domain:
+            self.current_login_status_var.set(f"当前网站：{domain}")
+            self.current_login_status_label.configure(fg="black")
+        else:
+            self.current_login_status_var.set("未登录")
+            self.current_login_status_label.configure(fg="red")
+
     def _refresh_login_button_text(self) -> None:
         domain = settings.normalize_domain(self.current_shopify_domain_var.get())
         self.current_shopify_domain_var.set(domain)
@@ -804,7 +813,7 @@ class ShopifyImageLocalizerApp:
             return
         self.current_shopify_domain_var.set(shopify_domain)
         self._refresh_login_button_text()
-        self.current_login_status_var.set(f"当前网站：{shopify_domain}")
+        self._update_login_status(shopify_domain)
         if not browser_dir:
             messagebox.showerror("错误", "高级设置里的 Chrome 用户目录不能为空")
             return

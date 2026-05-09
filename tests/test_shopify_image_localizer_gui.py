@@ -152,16 +152,20 @@ def test_gui_choose_domain_always_prompts_even_for_single_domain(monkeypatch: py
         app.root.destroy()
 
 
-def test_gui_login_status_label_starts_as_unlogged(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gui_login_status_label_starts_as_unlogged_red(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:
         assert app.current_login_status_var.get() == "未登录"
         assert app.current_login_status_label["text"] == "未登录"
+        assert app.current_login_status_label["fg"] == "red"
+        font_spec = app.current_login_status_label["font"]
+        # 字号约定调到 18pt（约为 TkDefaultFont 默认尺寸的两倍）
+        assert "18" in str(font_spec)
     finally:
         app.root.destroy()
 
 
-def test_gui_login_status_label_updates_to_selected_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gui_login_status_label_updates_to_selected_domain_black(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:
         app._set_domain_items([{"domain": "newjoyloo.com"}, {"domain": "omurio.com"}])
@@ -179,6 +183,31 @@ def test_gui_login_status_label_updates_to_selected_domain(monkeypatch: pytest.M
         app.open_shopify_login()
 
         assert app.current_login_status_var.get() == "当前网站：omurio.com"
+        assert app.current_login_status_label["fg"] == "black"
+    finally:
+        app.root.destroy()
+
+
+def test_gui_choose_domain_prompts_again_after_already_logged_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """登录过以后再点登录店铺，仍然要弹选择对话框，让用户切换域名。"""
+    app = _make_app(monkeypatch)
+    try:
+        app._set_domain_items([{"domain": "newjoyloo.com"}, {"domain": "omurio.com"}])
+        # 模拟先前已选过 omurio.com
+        app.current_shopify_domain_var.set("omurio.com")
+
+        prompts: list[tuple[list[str], str]] = []
+
+        def fake_prompt(domains, current):
+            prompts.append((list(domains), current))
+            return "newjoyloo.com"
+
+        monkeypatch.setattr(app, "_prompt_shopify_domain_choice", fake_prompt)
+
+        chosen = app._choose_shopify_domain()
+
+        assert chosen == "newjoyloo.com"
+        assert prompts == [(["newjoyloo.com", "omurio.com"], "omurio.com")]
     finally:
         app.root.destroy()
 
