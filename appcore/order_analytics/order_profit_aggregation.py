@@ -413,6 +413,9 @@ def get_order_profit_list(
 
     返回：按 paid_at DESC 排序的订单列表
     """
+    from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+
+    ensure_open_day_profit_lines_fresh(date_from, date_to)
     sql = (
         "SELECT d.dxm_package_id, "
         "       MAX(d.order_paid_at) AS paid_at, "
@@ -538,6 +541,9 @@ def get_order_profit_summary_for_window(
     *, date_from: date, date_to: date, product_id: int | None = None
 ) -> dict[str, Any]:
     """订单级聚合：按时段统计订单数 + status 分布 + GMV / 利润总和。"""
+    from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+
+    ensure_open_day_profit_lines_fresh(date_from, date_to)
     args: list[Any] = [date_from, date_to]
     product_filter = ""
     if product_id:
@@ -680,6 +686,9 @@ def get_order_profit_status_summary(
     date_from: date,
     date_to: date,
 ) -> dict[str, Any]:
+    from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+
+    ensure_open_day_profit_lines_fresh(date_from, date_to)
     rows = query(
         "SELECT p.status AS status, COUNT(*) AS n, "
         "       SUM(p.revenue_usd) AS revenue, SUM(p.profit_usd) AS profit, "

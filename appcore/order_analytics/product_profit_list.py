@@ -282,6 +282,9 @@ def generate_list(
           }
         }
     """
+    from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+
+    ensure_open_day_profit_lines_fresh(date_from, date_to)
     lines = _load_lines(date_from, date_to, country)
     ad_spend = _load_ad_spend(date_from, date_to, country)
     unallocated_ad = _load_unallocated_ad_spend(date_from, date_to, country)
