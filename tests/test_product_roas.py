@@ -13,10 +13,10 @@ def test_calculates_estimated_and_actual_roas():
         standalone_price=60,
     )
 
-    assert result["estimated_roas"] == pytest.approx(60 / (54 - (30 / 6.83)))
-    assert result["actual_roas"] == pytest.approx(60 / (54 - (32 / 6.83)))
+    assert result["estimated_roas"] == pytest.approx(60 / (55.8 - (30 / 6.83)))
+    assert result["actual_roas"] == pytest.approx(60 / (55.8 - (32 / 6.83)))
     assert result["effective_basis"] == "actual"
-    assert result["effective_roas"] == pytest.approx(60 / (54 - (32 / 6.83)))
+    assert result["effective_roas"] == pytest.approx(60 / (55.8 - (32 / 6.83)))
     assert result["rmb_per_usd"] == 6.83
 
 
@@ -29,8 +29,8 @@ def test_calculates_roas_with_standalone_shipping_fee():
         standalone_shipping_fee=8,
     )
 
-    assert result["estimated_roas"] == pytest.approx(68 / (61.2 - (30 / 6.83)))
-    assert result["effective_roas"] == pytest.approx(68 / (61.2 - (30 / 6.83)))
+    assert result["estimated_roas"] == pytest.approx(68 / (63.24 - (30 / 6.83)))
+    assert result["effective_roas"] == pytest.approx(68 / (63.24 - (30 / 6.83)))
 
 
 def test_calculates_roas_with_custom_rmb_usd_rate():
@@ -42,7 +42,7 @@ def test_calculates_roas_with_custom_rmb_usd_rate():
         rmb_per_usd=5,
     )
 
-    assert result["estimated_roas"] == pytest.approx(60 / (54 - 6))
+    assert result["estimated_roas"] == pytest.approx(60 / (55.8 - 6))
     assert result["rmb_per_usd"] == 5
 
 
@@ -54,10 +54,10 @@ def test_uses_estimated_roas_when_actual_packet_cost_missing():
         standalone_price=60,
     )
 
-    assert result["estimated_roas"] == pytest.approx(60 / (54 - (30 / 6.83)))
+    assert result["estimated_roas"] == pytest.approx(60 / (55.8 - (30 / 6.83)))
     assert result["actual_roas"] is None
     assert result["effective_basis"] == "estimated"
-    assert result["effective_roas"] == pytest.approx(60 / (54 - (30 / 6.83)))
+    assert result["effective_roas"] == pytest.approx(60 / (55.8 - (30 / 6.83)))
 
 
 def test_returns_none_when_margin_cannot_break_even():
@@ -155,6 +155,6 @@ def test_serialize_product_includes_roas_fields_and_calculation():
     assert serialized["packet_cost_actual"] == 12.0
     assert serialized["standalone_price"] == 60.0
     assert serialized["standalone_shipping_fee"] == 8.0
-    assert serialized["roas_calculation"]["estimated_roas"] == pytest.approx(68 / (61.2 - (30 / 6.83)))
+    assert serialized["roas_calculation"]["estimated_roas"] == pytest.approx(68 / (63.24 - (30 / 6.83)))
     assert serialized["roas_calculation"]["effective_basis"] == "actual"
     assert serialized["roas_calculation"]["rmb_per_usd"] == 6.83

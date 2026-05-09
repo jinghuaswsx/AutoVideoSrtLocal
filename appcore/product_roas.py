@@ -7,7 +7,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-FEE_RATE = Decimal("0.10")
+FEE_RATE = Decimal("0.07")
 DEFAULT_RMB_PER_USD = Decimal("6.83")
 RMB_PER_USD_SETTING_KEY = "material_roas_rmb_per_usd"
 

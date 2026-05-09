@@ -16,7 +16,7 @@
     'standalone_shipping_fee',
   ];
   const DEBOUNCE_MS = 600;
-  const FEE_RATE = 0.1;
+  const FEE_RATE = 0.07;
 
   function numberOrNull(value) {
     if (value === null || value === undefined || value === '') return null;
