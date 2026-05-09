@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from flask import Blueprint, render_template, request, make_response
 from flask_login import current_user, login_required
-from web.auth import admin_required, permission_required
+from web.auth import permission_required
 from web.background import start_background_task
 from web.services.order_analytics_responses import (
     build_order_analytics_payload_response,
@@ -148,7 +148,7 @@ def _audit_order_analytics_action(
 
 @bp.route("/order-analytics")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def page():
     resp = make_response(render_template("order_analytics.html"))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -159,7 +159,7 @@ def page():
 
 @bp.route("/order-analytics/upload", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def upload():
     """接收 CSV 或 Excel 文件，解析后写入数据库并返回导入结果。"""
     f = request.files.get("file")
@@ -233,7 +233,7 @@ def upload():
 
 @bp.route("/order-analytics/ad-upload", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ad_upload():
     """接收 Meta 广告 CSV/Excel，按报表周期 upsert 到长期广告数据表。"""
     f = request.files.get("file")
@@ -309,7 +309,7 @@ def ad_upload():
 
 @bp.route("/order-analytics/stats")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def stats():
     """返回数据库统计概览。"""
     return _json_response(oa.get_import_stats())
@@ -317,7 +317,7 @@ def stats():
 
 @bp.route("/order-analytics/ad-stats")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ad_stats():
     """返回 Meta 广告长期数据统计概览。"""
     return _json_response(_json_safe(oa.get_meta_ad_stats()))
@@ -325,7 +325,7 @@ def ad_stats():
 
 @bp.route("/order-analytics/ad-periods")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ad_periods():
     """返回已导入的广告报表周期。"""
     return _json_response(_json_safe(oa.get_meta_ad_periods()))
@@ -333,7 +333,7 @@ def ad_periods():
 
 @bp.route("/order-analytics/ad-summary")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ad_summary():
     """返回所选广告报表周期的广告 × 订单关联分析。"""
     batch_id = request.args.get("batch_id", type=int)
@@ -355,7 +355,7 @@ def _coerce_ads_level_param() -> str | None:
 
 @bp.route("/order-analytics/ads/list")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ads_level_list():
     """List Campaign / Ad Set / Ad rows aggregated by code in a date range."""
     level = _coerce_ads_level_param()
@@ -381,7 +381,7 @@ def ads_level_list():
 
 @bp.route("/order-analytics/ads/search")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ads_level_search():
     """Per-tab autocomplete: match name LIKE %q% within one level."""
     level = _coerce_ads_level_param()
@@ -406,7 +406,7 @@ def ads_level_search():
 
 @bp.route("/order-analytics/ads/detail")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ads_level_detail():
     """Per-day detail for one Campaign / Ad Set / Ad code in a date range."""
     level = _coerce_ads_level_param()
@@ -432,7 +432,7 @@ def ads_level_detail():
 
 @bp.route("/order-analytics/meta-ad-accounts", methods=["GET"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def meta_ad_accounts_get():
     """返回数据分析模块的 Meta 广告账户配置。"""
     return _json_response(_json_safe({
@@ -443,7 +443,7 @@ def meta_ad_accounts_get():
 
 @bp.route("/order-analytics/meta-ad-accounts", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def meta_ad_accounts_save():
     """覆盖保存 Meta 广告账户配置。"""
     payload = request.get_json(silent=True) or {}
@@ -482,7 +482,7 @@ def _parse_manual_sync_date(payload: dict, key: str) -> date:
 
 @bp.route("/order-analytics/meta-ad-accounts/<account_code>/manual-sync", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def meta_ad_account_manual_sync_start(account_code: str):
     """启动单个 Meta 广告账户的手动按天同步。"""
     payload = request.get_json(silent=True) or {}
@@ -514,7 +514,7 @@ def meta_ad_account_manual_sync_start(account_code: str):
 
 @bp.route("/order-analytics/meta-ad-sync-jobs/<job_id>")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def meta_ad_account_manual_sync_status(job_id: str):
     """返回手动 Meta 广告账户同步 job 状态。"""
     job = meta_ad_manual_sync.get_job(job_id)
@@ -525,7 +525,7 @@ def meta_ad_account_manual_sync_status(job_id: str):
 
 @bp.route("/order-analytics/realtime-overview")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def realtime_overview():
     date_text = (request.args.get("date") or "").strip() or None
     start_date = (request.args.get("start_date") or "").strip() or None
@@ -571,7 +571,7 @@ def realtime_overview():
 
 @bp.route("/order-analytics/true-roas")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def true_roas():
     start_date = (request.args.get("start_date") or "").strip()
     end_date = (request.args.get("end_date") or "").strip()
@@ -588,7 +588,7 @@ def true_roas():
 
 @bp.route("/order-analytics/weekly-roas-report")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def weekly_roas_report():
     week_start_text = (request.args.get("week_start") or "").strip()
     try:
@@ -611,7 +611,7 @@ def weekly_roas_report():
 
 @bp.route("/order-analytics/dianxiaomi-orders")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def dianxiaomi_orders():
     start_date = (request.args.get("start_date") or "").strip()
     end_date = (request.args.get("end_date") or "").strip()
@@ -641,7 +641,7 @@ def dianxiaomi_orders():
 
 @bp.route("/order-analytics/country-dashboard")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def country_dashboard():
     period = (request.args.get("period") or "month").strip().lower()
     start_date = (request.args.get("start_date") or "").strip() or None
@@ -677,7 +677,7 @@ def country_dashboard():
 
 @bp.route("/order-analytics/dianxiaomi-import-batches")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def dianxiaomi_import_batches():
     """返回最近的店小秘订单明细导入批次。"""
     rows = oa.get_dianxiaomi_order_import_batches(
@@ -688,7 +688,7 @@ def dianxiaomi_import_batches():
 
 @bp.route("/order-analytics/dianxiaomi-import", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def dianxiaomi_import():
     """从店小秘订单接口抓取 NewJoy / omurio 订单明细。"""
     payload = request.get_json(silent=True) or {}
@@ -746,7 +746,7 @@ def dianxiaomi_import():
 
 @bp.route("/order-analytics/available-months")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def available_months():
     """返回有数据的年月列表。"""
     return _json_response(oa.get_available_months())
@@ -754,7 +754,7 @@ def available_months():
 
 @bp.route("/order-analytics/monthly")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def monthly():
     """月度汇总：按产品 × 国家。"""
     year = request.args.get("year", type=int)
@@ -776,7 +776,7 @@ def monthly():
 
 @bp.route("/order-analytics/product-country-detail")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def product_country_detail():
     """单产品在指定月份的国家×素材明细，供「查看素材详情」弹窗调用。"""
     product_id = request.args.get("product_id", type=int)
@@ -792,7 +792,7 @@ def product_country_detail():
 
 @bp.route("/order-analytics/daily")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def daily():
     """每日明细：按日期 × 产品 × 国家。"""
     year = request.args.get("year", type=int)
@@ -811,7 +811,7 @@ def daily():
 
 @bp.route("/order-analytics/weekly")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def weekly():
     """周汇总。"""
     year = request.args.get("year", type=int)
@@ -825,7 +825,7 @@ def weekly():
 
 @bp.route("/order-analytics/search")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def search():
     """按产品 ID 或标题搜索。"""
     q = (request.args.get("q") or "").strip()
@@ -836,7 +836,7 @@ def search():
 
 @bp.route("/order-analytics/refresh-titles", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def refresh_titles():
     """批量抓取产品网页标题。"""
     product_ids = request.json.get("product_ids") if request.is_json else None
@@ -855,7 +855,7 @@ def refresh_titles():
 
 @bp.route("/order-analytics/match", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def match():
     """执行产品匹配。"""
     affected = oa.match_orders_to_products()
@@ -869,7 +869,7 @@ def match():
 
 @bp.route("/order-analytics/ad-match", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ad_match():
     """重新执行广告系列到素材库产品的匹配。"""
     affected = oa.match_meta_ads_to_products()
@@ -883,7 +883,7 @@ def ad_match():
 
 @bp.route("/order-analytics/ad-match-manual", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def ad_match_manual():
     """人工把指定归一化广告系列名下所有未匹配行绑定到 media_products 产品。"""
     body = request.get_json(silent=True) or {}
@@ -936,7 +936,7 @@ def ad_match_manual():
 
 @bp.route("/order-analytics/dashboard")
 @login_required
-@admin_required
+@permission_required("data_analytics")
 def dashboard():
     """产品看板：每日产品级订单 + 广告 + ROAS + 环比。"""
     start_date = (request.args.get("start_date") or "").strip() or None

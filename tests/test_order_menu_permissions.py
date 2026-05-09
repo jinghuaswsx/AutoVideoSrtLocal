@@ -78,6 +78,23 @@ def test_order_profit_permission_grant_allows_user_page_access(monkeypatch):
     assert "order-profit" in response.get_data(as_text=True)
 
 
+def test_data_analytics_permission_grant_allows_user_page_access(monkeypatch):
+    client = _client_for_user(monkeypatch, permissions={"data_analytics": True})
+
+    response = client.get("/order-analytics")
+
+    assert response.status_code == 200
+    assert "order-analytics" in response.get_data(as_text=True)
+
+
+def test_data_analytics_without_permission_blocks_user_page_access(monkeypatch):
+    client = _client_for_user(monkeypatch, permissions={"data_analytics": False})
+
+    response = client.get("/order-analytics")
+
+    assert response.status_code == 403
+
+
 def test_orphan_orders_permission_grant_allows_user_page_access(monkeypatch):
     client = _client_for_user(monkeypatch, permissions={"orphan_orders": True})
 
