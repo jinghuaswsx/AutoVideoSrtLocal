@@ -29,6 +29,7 @@ def _serialize_product_skus(
     cost_inputs: dict | None = None,
     rmb_per_usd=None,
     xmyc_index: dict[str, dict] | None = None,
+    sku_actual_roas_index: dict[str, dict] | None = None,
 ) -> list[dict]:
     """xmyc_index 是 sku → {unit_price, goods_name, stock_available, ...} 字典。
     若给了 xmyc_index，每行的 dianxiaomi_sku 会去查一次 xmyc 采购价（RMB），
@@ -37,6 +38,7 @@ def _serialize_product_skus(
     for row in rows or []:
         dxm_sku = (row.get("dianxiaomi_sku") or "").strip()
         xmyc_info = (xmyc_index or {}).get(dxm_sku) if dxm_sku else None
+        actual_roas = (sku_actual_roas_index or {}).get(dxm_sku) if dxm_sku else None
         manual_unit_price = row.get("manual_unit_price_rmb")
         xmyc_unit_price = (
             manual_unit_price
@@ -78,6 +80,7 @@ def _serialize_product_skus(
             "xmyc_stock_available": (xmyc_info or {}).get("stock_available"),
             "xmyc_match_type": (xmyc_info or {}).get("match_type") or "",
             "xmyc_sku_code": (xmyc_info or {}).get("sku_code") or "",
+            "actual_breakeven_roas": actual_roas,
         }
 
         if cost_inputs is not None and row.get("shopify_price") is not None:
@@ -138,6 +141,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
                        roas_rmb_per_usd=None,
                        skus: list[dict] | None = None,
                        xmyc_index: dict[str, dict] | None = None,
+                       sku_actual_roas_index: dict[str, dict] | None = None,
                        include_product_link_domains: bool = False) -> dict:
     if covers is None:
         covers = medias.get_product_covers(p["id"])
@@ -182,6 +186,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
             },
             rmb_per_usd=roas_rmb_per_usd,
             xmyc_index=xmyc_index,
+            sku_actual_roas_index=sku_actual_roas_index,
         ),
         "user_id": int(p["user_id"]) if p.get("user_id") is not None else None,
         "owner_name": (p.get("owner_name") or "").strip(),
