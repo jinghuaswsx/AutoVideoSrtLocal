@@ -52,6 +52,11 @@ def test_finish_run_dispatches_feishu_alert_for_failed_run(monkeypatch):
     )
     monkeypatch.setattr(
         feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id: (True, 1),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
         "send_scheduled_task_failure",
         lambda row: sent.append(row),
     )
@@ -60,6 +65,111 @@ def test_finish_run_dispatches_feishu_alert_for_failed_run(monkeypatch):
 
     assert sent and sent[0]["id"] == 42
     assert sent[0]["summary"] == {"updated": 0}
+
+
+def test_finish_run_suppresses_feishu_failure_when_dedup_says_no(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "roi_hourly_sync",
+                "task_name": "ROI sync",
+                "status": "failed",
+                "summary_json": "{}",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id: (False, 3),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(7, status="failed", error_message="boom")
+
+    assert sent == []
+
+
+def test_finish_run_dispatches_recovery_alert_when_prior_failures(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "roi_hourly_sync",
+                "task_name": "ROI sync",
+                "status": "success",
+                "summary_json": "{}",
+                "started_at": "2026-05-09 18:00:00",
+                "finished_at": "2026-05-09 18:01:00",
+                "duration_seconds": 60,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "prior_consecutive_failures_before_run",
+        lambda task_code, *, current_run_id: 4,
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_recovery",
+        lambda row, *, prior_failures: sent.append((row["id"], prior_failures)),
+    )
+
+    scheduled_tasks.finish_run(80, status="success")
+
+    assert sent == [(80, 4)]
+
+
+def test_finish_run_does_not_dispatch_recovery_when_no_prior_failures(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "roi_hourly_sync",
+                "task_name": "ROI sync",
+                "status": "success",
+                "summary_json": "{}",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "prior_consecutive_failures_before_run",
+        lambda task_code, *, current_run_id: 0,
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_recovery",
+        lambda row, *, prior_failures: sent.append("called"),
+    )
+
+    scheduled_tasks.finish_run(81, status="success")
+
+    assert sent == []
 
 
 def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
@@ -79,6 +189,11 @@ def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
                 "summary_json": "{}",
             }
         ],
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id: (True, 1),
     )
 
     def fake_send(row):

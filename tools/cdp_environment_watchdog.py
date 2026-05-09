@@ -1,3 +1,7 @@
+"""Watch CDP visible browser environments AND shared automation locks.
+
+Docs-anchor: docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md
+"""
 from __future__ import annotations
 
 import argparse
@@ -30,6 +34,13 @@ class CdpEnvironment:
     novnc_url: str
 
 
+@dataclass(frozen=True)
+class BrowserLockTarget:
+    code: str
+    path: str
+    max_age_seconds: int
+
+
 ENVIRONMENTS: tuple[CdpEnvironment, ...] = (
     CdpEnvironment(
         code="DXM01-Meta",
@@ -51,6 +62,25 @@ ENVIRONMENTS: tuple[CdpEnvironment, ...] = (
         service="autovideosrt-dxm03-rjc-vnc.service",
         cdp_url="http://127.0.0.1:9225/json/version",
         novnc_url="http://127.0.0.1:6095/vnc.html",
+    ),
+)
+
+
+# Long-running browser tasks (roas_fields_backfill, sku_aggregates_backfill)
+# legitimately hold the shared lock for tens of minutes, so the threshold is
+# set well above their expected wall-clock; alerting earlier would only spam
+# Feishu. The meta-ads inner lock is per-tick and should release within ~10
+# minutes even with retries.
+BROWSER_LOCK_TARGETS: tuple[BrowserLockTarget, ...] = (
+    BrowserLockTarget(
+        code="runtime",
+        path="/data/autovideosrt/browser/runtime/automation.lock",
+        max_age_seconds=3600,
+    ),
+    BrowserLockTarget(
+        code="runtime-meta-ads",
+        path="/data/autovideosrt/browser/runtime-meta-ads/automation.lock",
+        max_age_seconds=900,
     ),
 )
 
@@ -131,6 +161,99 @@ def wait_for_environment(
     return last or check_environment(env, timeout_seconds=timeout_seconds)
 
 
+def _lsof_pids(lock_path: str) -> list[int]:
+    result = subprocess.run(
+        ["lsof", "-t", "--", lock_path],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    pids: list[int] = []
+    for line in (result.stdout or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            pids.append(int(line))
+        except ValueError:
+            continue
+    return pids
+
+
+def _ps_holder(pid: int) -> dict[str, Any] | None:
+    result = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "etimes=,args="],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    line = (result.stdout or "").strip()
+    if not line or result.returncode != 0:
+        return None
+    parts = line.split(None, 1)
+    if not parts:
+        return None
+    try:
+        etimes = int(parts[0])
+    except ValueError:
+        return None
+    cmd = parts[1].strip() if len(parts) > 1 else ""
+    return {"pid": pid, "age_seconds": etimes, "cmd": cmd[:200]}
+
+
+def check_browser_lock(target: BrowserLockTarget) -> dict[str, Any]:
+    issues: list[dict[str, Any]] = []
+    holders: list[dict[str, Any]] = []
+    if not Path(target.path).exists():
+        return {"code": target.code, "path": target.path, "ok": True, "holders": [], "issues": []}
+    pids = _lsof_pids(target.path)
+    for pid in pids:
+        holder = _ps_holder(pid)
+        if holder is None:
+            issues.append(
+                {
+                    "kind": "lock_orphan_pid",
+                    "pid": pid,
+                    "message": f"pid {pid} listed by lsof but ps reports no process",
+                }
+            )
+            continue
+        holders.append(holder)
+        if holder["age_seconds"] > target.max_age_seconds:
+            issues.append(
+                {
+                    "kind": "lock_held_too_long",
+                    "pid": pid,
+                    "age_seconds": holder["age_seconds"],
+                    "cmd": holder["cmd"],
+                    "message": (
+                        f"holder pid={pid} age={holder['age_seconds']}s "
+                        f"> max_age={target.max_age_seconds}s cmd={holder['cmd']}"
+                    ),
+                }
+            )
+    return {
+        "code": target.code,
+        "path": target.path,
+        "max_age_seconds": target.max_age_seconds,
+        "ok": not issues,
+        "holders": holders,
+        "issues": issues,
+    }
+
+
+def check_browser_locks(
+    targets: list[BrowserLockTarget] | None = None,
+) -> list[dict[str, Any]]:
+    return [check_browser_lock(target) for target in (targets or list(BROWSER_LOCK_TARGETS))]
+
+
 def _select_environments(values: list[str]) -> list[CdpEnvironment]:
     requested = {value.strip() for value in values if value.strip()}
     if not requested or "all" in requested:
@@ -145,16 +268,19 @@ def _select_environments(values: list[str]) -> list[CdpEnvironment]:
 def run_watchdog(
     *,
     environments: list[CdpEnvironment] | None = None,
+    lock_targets: list[BrowserLockTarget] | None = None,
     dry_run: bool = False,
     attempts: int = 12,
     delay_seconds: float = 2.0,
     timeout_seconds: float = 3.0,
 ) -> int:
     selected = environments or list(ENVIRONMENTS)
+    selected_locks = lock_targets if lock_targets is not None else list(BROWSER_LOCK_TARGETS)
     run_id = scheduled_tasks.start_run(TASK_CODE)
     summary: dict[str, Any] = {
         "dry_run": bool(dry_run),
         "environments": [],
+        "browser_locks": [],
     }
     try:
         had_outage = False
@@ -187,8 +313,21 @@ def run_watchdog(
             if not final["ok"]:
                 unrecovered.append(env.label)
 
+        for lock_report in check_browser_locks(selected_locks):
+            summary["browser_locks"].append(lock_report)
+
+        lock_failures: list[str] = []
+        for lock_report in summary["browser_locks"]:
+            if not lock_report["ok"]:
+                first_issue = lock_report["issues"][0]
+                lock_failures.append(
+                    f"{lock_report['code']}: {first_issue['message']}"
+                )
+
         if unrecovered:
             error_message = "CDP environment unavailable after restart: " + ", ".join(unrecovered)
+            if lock_failures:
+                error_message += "; browser lock issues: " + "; ".join(lock_failures)
             scheduled_tasks.finish_run(
                 run_id,
                 status="failed",
@@ -197,12 +336,17 @@ def run_watchdog(
             )
             print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
             return 2
-        if had_outage:
+        if had_outage or lock_failures:
+            parts: list[str] = []
+            if had_outage:
+                parts.append("CDP environment outage detected and recovered")
+            if lock_failures:
+                parts.append("browser lock issues: " + "; ".join(lock_failures))
             scheduled_tasks.finish_run(
                 run_id,
                 status="failed",
                 summary=summary,
-                error_message="CDP environment outage detected and recovered",
+                error_message="; ".join(parts),
             )
             print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
             return 0

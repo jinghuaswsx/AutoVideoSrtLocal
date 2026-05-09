@@ -52,7 +52,16 @@ def test_cdp_environment_watchdog_records_recovered_outage_as_failed_alert(monke
         lambda run_id, **kwargs: calls.append(("finish", run_id, kwargs)),
     )
 
-    assert mod.run_watchdog(environments=[env], attempts=1, delay_seconds=0, timeout_seconds=0.01) == 0
+    assert (
+        mod.run_watchdog(
+            environments=[env],
+            lock_targets=[],
+            attempts=1,
+            delay_seconds=0,
+            timeout_seconds=0.01,
+        )
+        == 0
+    )
     assert ("restart", "DXM03-RJC") in calls
     finish = [call for call in calls if call[0] == "finish"][0]
     assert finish[2]["status"] == "failed"
@@ -85,6 +94,111 @@ def test_cdp_environment_watchdog_returns_nonzero_when_restart_does_not_recover(
         lambda run_id, **kwargs: calls.append(SimpleNamespace(run_id=run_id, **kwargs)),
     )
 
-    assert mod.run_watchdog(environments=[env], attempts=1, delay_seconds=0, timeout_seconds=0.01) == 2
+    assert (
+        mod.run_watchdog(
+            environments=[env],
+            lock_targets=[],
+            attempts=1,
+            delay_seconds=0,
+            timeout_seconds=0.01,
+        )
+        == 2
+    )
     assert calls[0].status == "failed"
     assert "unavailable after restart" in calls[0].error_message
+
+
+def test_check_browser_lock_returns_ok_when_lock_file_missing(tmp_path):
+    from tools import cdp_environment_watchdog as mod
+
+    target = mod.BrowserLockTarget(
+        code="test",
+        path=str(tmp_path / "missing.lock"),
+        max_age_seconds=60,
+    )
+    report = mod.check_browser_lock(target)
+    assert report["ok"] is True
+    assert report["issues"] == []
+    assert report["holders"] == []
+
+
+def test_check_browser_lock_flags_holder_held_too_long(monkeypatch, tmp_path):
+    from tools import cdp_environment_watchdog as mod
+
+    lock_file = tmp_path / "automation.lock"
+    lock_file.touch()
+    target = mod.BrowserLockTarget(code="test", path=str(lock_file), max_age_seconds=60)
+
+    monkeypatch.setattr(mod, "_lsof_pids", lambda path: [4242])
+    monkeypatch.setattr(
+        mod,
+        "_ps_holder",
+        lambda pid: {"pid": pid, "age_seconds": 1800, "cmd": "python long_runner.py"},
+    )
+
+    report = mod.check_browser_lock(target)
+    assert report["ok"] is False
+    assert len(report["issues"]) == 1
+    assert report["issues"][0]["kind"] == "lock_held_too_long"
+    assert report["issues"][0]["pid"] == 4242
+    assert report["issues"][0]["age_seconds"] == 1800
+
+
+def test_check_browser_lock_flags_orphan_pid(monkeypatch, tmp_path):
+    from tools import cdp_environment_watchdog as mod
+
+    lock_file = tmp_path / "automation.lock"
+    lock_file.touch()
+    target = mod.BrowserLockTarget(code="test", path=str(lock_file), max_age_seconds=60)
+
+    monkeypatch.setattr(mod, "_lsof_pids", lambda path: [9999])
+    monkeypatch.setattr(mod, "_ps_holder", lambda pid: None)
+
+    report = mod.check_browser_lock(target)
+    assert report["ok"] is False
+    assert report["issues"][0]["kind"] == "lock_orphan_pid"
+    assert report["issues"][0]["pid"] == 9999
+
+
+def test_run_watchdog_marks_run_failed_when_lock_held_too_long(monkeypatch, tmp_path):
+    from tools import cdp_environment_watchdog as mod
+
+    lock_file = tmp_path / "automation.lock"
+    lock_file.touch()
+    target = mod.BrowserLockTarget(code="runtime", path=str(lock_file), max_age_seconds=60)
+
+    monkeypatch.setattr(mod, "_lsof_pids", lambda path: [123])
+    monkeypatch.setattr(
+        mod,
+        "_ps_holder",
+        lambda pid: {"pid": pid, "age_seconds": 7200, "cmd": "stuck"},
+    )
+
+    calls = []
+    monkeypatch.setattr(mod.scheduled_tasks, "start_run", lambda task_code: 99)
+    monkeypatch.setattr(
+        mod.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: calls.append(SimpleNamespace(run_id=run_id, **kwargs)),
+    )
+
+    rc = mod.run_watchdog(
+        environments=[],
+        lock_targets=[target],
+        attempts=1,
+        delay_seconds=0,
+        timeout_seconds=0.01,
+    )
+
+    assert rc == 0  # outage detected but recovered → exit 0
+    assert calls[0].status == "failed"
+    assert "browser lock issues" in calls[0].error_message
+    assert "lock_held_too_long" in calls[0].summary["browser_locks"][0]["issues"][0]["kind"]
+
+
+def test_browser_lock_targets_default_paths():
+    from tools import cdp_environment_watchdog as mod
+
+    by_code = {target.code: target for target in mod.BROWSER_LOCK_TARGETS}
+    assert by_code["runtime"].path == "/data/autovideosrt/browser/runtime/automation.lock"
+    assert by_code["runtime-meta-ads"].path == "/data/autovideosrt/browser/runtime-meta-ads/automation.lock"

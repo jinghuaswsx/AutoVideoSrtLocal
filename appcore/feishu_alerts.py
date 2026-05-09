@@ -15,10 +15,13 @@ log = logging.getLogger(__name__)
 TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 MESSAGE_URL = "https://open.feishu.cn/open-apis/im/v1/messages"
 
+# Docs-anchor: docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md
 SETTING_ENABLED = "feishu_alerts.enabled"
 SETTING_APP_ID = "feishu_alerts.app_id"
 SETTING_APP_SECRET = "feishu_alerts.app_secret"
 SETTING_CHAT_ID = "feishu_alerts.chat_id"
+SETTING_FAILURE_REPEAT_EVERY = "feishu_alerts.failure_repeat_every"
+DEFAULT_FAILURE_REPEAT_EVERY = 5
 
 REQUEST_TIMEOUT = 8
 ERROR_LIMIT = 900
@@ -211,6 +214,116 @@ def send_scheduled_task_failure(row: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - alert dispatch must not break run logging
         log.warning("feishu alert send failed unexpectedly", exc_info=True)
         return {"ok": False, "error": _clip(exc, 300)}
+
+
+def _failure_repeat_every() -> int:
+    raw = _setting(SETTING_FAILURE_REPEAT_EVERY)
+    if not raw:
+        return DEFAULT_FAILURE_REPEAT_EVERY
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_FAILURE_REPEAT_EVERY
+    return value if value >= 1 else DEFAULT_FAILURE_REPEAT_EVERY
+
+
+def _query_recent_run_statuses(task_code: str) -> list[dict[str, Any]]:
+    """Indirection so tests can monkeypatch a single hook without touching db."""
+    from appcore.db import query as _query
+
+    return _query(
+        "SELECT id, status FROM scheduled_task_runs "
+        "WHERE task_code=%s AND status IN ('success','failed') "
+        "ORDER BY id DESC LIMIT 100",
+        (task_code,),
+    ) or []
+
+
+def consecutive_failure_count(task_code: str, *, current_run_id: int | None) -> int:
+    """How many consecutive `failed` runs for ``task_code`` ending at the
+    given run, counting backwards until the first non-failed status.
+
+    Always >= 1 for a failed terminal run; 0 if ``task_code`` has no failed
+    runs at all (defensive — caller should only ask this for a freshly
+    failed run).
+    """
+    rows = _query_recent_run_statuses(task_code)
+    streak = 0
+    for row in rows:
+        if current_run_id is not None and int(row.get("id") or 0) > int(current_run_id):
+            continue
+        status = str(row.get("status") or "").strip()
+        if status == "failed":
+            streak += 1
+            continue
+        break
+    return streak
+
+
+def should_dispatch_failure(task_code: str, *, current_run_id: int | None) -> tuple[bool, int]:
+    streak = consecutive_failure_count(task_code, current_run_id=current_run_id)
+    if streak <= 0:
+        return False, streak
+    if streak == 1:
+        return True, streak
+    repeat = _failure_repeat_every()
+    return (streak % repeat == 0), streak
+
+
+def format_scheduled_task_recovery(row: dict[str, Any], *, prior_failures: int) -> str:
+    task_code = str(row.get("task_code") or "-")
+    task_name = str(row.get("task_name") or task_code)
+    duration = row.get("duration_seconds")
+    duration_text = "-" if duration in (None, "") else f"{duration}s"
+    return "\n".join(
+        [
+            "【AutoVideoSrt 恢复】定时任务转回成功",
+            f"任务：{task_name} ({task_code})",
+            f"运行ID：{row.get('id') or '-'}",
+            f"开始：{_format_time(row.get('started_at'))}",
+            f"结束：{_format_time(row.get('finished_at'))}",
+            f"耗时：{duration_text}",
+            f"此前连续失败次数：{prior_failures}",
+            f"查看：/scheduled-tasks?view=logs&task={task_code}",
+        ]
+    )
+
+
+def send_scheduled_task_recovery(
+    row: dict[str, Any], *, prior_failures: int
+) -> dict[str, Any]:
+    if prior_failures <= 0:
+        return {"ok": False, "skipped": True, "reason": "no_prior_failure"}
+    config = load_config()
+    if not config.enabled:
+        return {"ok": False, "skipped": True, "reason": "disabled"}
+    try:
+        return send_text_message(
+            format_scheduled_task_recovery(row, prior_failures=prior_failures),
+            config=config,
+        )
+    except FeishuAlertError as exc:
+        log.warning("feishu recovery alert send failed: %s", _clip(exc, 300))
+        return {"ok": False, "error": _clip(exc, 300)}
+    except Exception as exc:  # noqa: BLE001 - alert dispatch must not break run logging
+        log.warning("feishu recovery alert send failed unexpectedly", exc_info=True)
+        return {"ok": False, "error": _clip(exc, 300)}
+
+
+def prior_consecutive_failures_before_run(
+    task_code: str, *, current_run_id: int | None
+) -> int:
+    rows = _query_recent_run_statuses(task_code)
+    streak = 0
+    for row in rows:
+        if current_run_id is not None and int(row.get("id") or 0) >= int(current_run_id):
+            continue
+        status = str(row.get("status") or "").strip()
+        if status == "failed":
+            streak += 1
+            continue
+        break
+    return streak
 
 
 def send_test_alert(message: str | None = None) -> dict[str, Any]:

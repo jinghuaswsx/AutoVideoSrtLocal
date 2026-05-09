@@ -201,6 +201,17 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - watchdog 故意只看订单表水位、不读 `roi_hourly_sync_runs`：父任务整轮没跑或在锁等待中也能感知。任务在 `appcore/scheduled_tasks.py` 登记为 `dianxiaomi_order_freshness_watchdog`，systemd timer/service 在 [deploy/server_browser/](deploy/server_browser/) 同名文件，**必须**保留这条登记和文件命名一致性，新增类似「水位看护」类任务参考它的实现。
 - 改这条链路至少运行：`pytest tests/test_dianxiaomi_order_freshness_watchdog.py tests/test_appcore_scheduled_tasks.py -q`。
 
+## ROI hourly sync 浏览器锁与告警 SOP（2026-05-09 起）
+
+详细设计：[docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md](docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md)。承接上方「店小秘订单新鲜度看护」对 AUT-21 事故的兜底——这一节专攻锁与告警的根因层。
+
+- 外层共享锁 `/data/autovideosrt/browser/runtime/automation.lock` 由 [`deploy/server_browser/with_browser_lock.sh`](deploy/server_browser/with_browser_lock.sh) 持有，被 `roas-backfill` / `sku-aggregates` / `roi-realtime-sync` 等长跑共享；ROI tick 默认 fail-fast 时长 **300s**（drop-in [`deploy/server_browser/autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf`](deploy/server_browser/autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf)），超时即写一条 `scheduled_task_runs` failed 行，并把 lsof 出来的持有 PID + cmd + age 落到 `summary_json.holders`。
+- 内层 Meta Ads 锁 `/data/autovideosrt/browser/runtime-meta-ads/automation.lock` 由 [`appcore/meta_ads_cdp.meta_ads_cdp_lock`](appcore/meta_ads_cdp.py) 抢占；这是子进程层，独立于外层。
+- `tools/cdp_environment_watchdog.py` 每分钟一并跑 `check_browser_locks(BROWSER_LOCK_TARGETS)`：lsof 查持有 PID 与 `etimes`，超过 `max_age_seconds`（runtime 默认 3600s、runtime-meta-ads 默认 900s）写 failed 触发 Feishu。watchdog **不直接 kill** 持有进程，由人工决策。
+- Feishu 告警节流：`appcore/feishu_alerts.should_dispatch_failure` 在「首次 failed」「连续每 N 次 failed」（N 由 `system_settings.feishu_alerts.failure_repeat_every` 控制，默认 5）发，其余 fail 吞掉；`finish_run(status='success')` 在前一条 run 是 failed 时调 `send_scheduled_task_recovery` 推送恢复消息——三类拐点（首发、持续、恢复）覆盖完整。
+- 故障 SOP：看到「`roi_hourly_sync` 24h 没出 success」时 → `multica issue` 上报 + 看 `cdp_environment_watchdog` 最近 summary 里的 `browser_locks` → `lsof /data/autovideosrt/browser/runtime/automation.lock` 拿持有 PID → 决定 kill / 等待 → 必要时 `sudo systemctl start autovideosrt-roi-realtime-sync.timer autovideosrt-meta-daily-final-sync.timer autovideosrt-meta-daily-final-check.timer`（timer 偶尔会被人手 stop 漏 start，AUT-21 复盘）。
+- 改这条链路至少运行：`pytest tests/test_cdp_environment_watchdog.py tests/test_feishu_alerts.py tests/test_appcore_scheduled_tasks.py tests/test_meta_ads_cdp_lock.py -q`。
+
 ## 实时大盘店铺筛选（2026-05-09 起）
 
 详细设计：[docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md](docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md)，承接 [2026-05-02 实时大盘改版 spec](docs/superpowers/specs/2026-05-02-realtime-dashboard-redesign.md)。

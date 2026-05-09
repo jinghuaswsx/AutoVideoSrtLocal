@@ -134,7 +134,12 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "cdp_environment_watchdog": {
         "code": "cdp_environment_watchdog",
         "name": "CDP 环境监控",
-        "description": "每分钟检查 DXM01-Meta、DXM02-MK、DXM03-RJC 的 systemd、CDP 和 noVNC 可用性；异常时重启对应环境并通过本任务失败日志触发 admin 报警。",
+        "description": (
+            "每分钟检查 DXM01-Meta、DXM02-MK、DXM03-RJC 的 systemd、CDP 和 noVNC 可用性；"
+            "并兼盯 /data/autovideosrt/browser/runtime*/automation.lock 持有时长（spec: "
+            "docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md）。"
+            "异常时重启对应环境并通过本任务失败日志触发 admin 报警。"
+        ),
         "schedule": "每 1 分钟",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
@@ -804,6 +809,8 @@ def finish_run(
     )
     if status == "failed":
         _dispatch_failure_alert(int(run_id))
+    elif status == "success":
+        _dispatch_recovery_alert(int(run_id))
 
 
 def _scheduled_task_run_by_id(run_id: int) -> dict[str, Any] | None:
@@ -827,9 +834,39 @@ def _dispatch_failure_alert(run_id: int) -> None:
             return
         from appcore import feishu_alerts
 
+        task_code = str(row.get("task_code") or "")
+        should_send, streak = feishu_alerts.should_dispatch_failure(
+            task_code, current_run_id=run_id
+        )
+        if not should_send:
+            log.info(
+                "feishu failure alert suppressed (streak=%s) task_code=%s run_id=%s",
+                streak,
+                task_code,
+                run_id,
+            )
+            return
         feishu_alerts.send_scheduled_task_failure(row)
     except Exception:
         log.warning("failed to dispatch scheduled task failure alert", exc_info=True)
+
+
+def _dispatch_recovery_alert(run_id: int) -> None:
+    try:
+        row = _scheduled_task_run_by_id(run_id)
+        if not row:
+            return
+        from appcore import feishu_alerts
+
+        task_code = str(row.get("task_code") or "")
+        prior = feishu_alerts.prior_consecutive_failures_before_run(
+            task_code, current_run_id=run_id
+        )
+        if prior <= 0:
+            return
+        feishu_alerts.send_scheduled_task_recovery(row, prior_failures=prior)
+    except Exception:
+        log.warning("failed to dispatch scheduled task recovery alert", exc_info=True)
 
 
 def record_failure(
