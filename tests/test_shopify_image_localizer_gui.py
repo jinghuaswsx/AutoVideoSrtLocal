@@ -113,7 +113,7 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         opened: list[str] = []
         monkeypatch.setattr(app, "open_shopify_login", lambda: opened.append("login"))
 
-        assert "newjoyloo.com" in app.login_shopify_button["text"]
+        assert app.login_shopify_button["text"] == "登录店铺"
         assert int(app.login_shopify_button["width"]) >= int(app.start_button["width"]) * 2
         assert app.login_shopify_tip_label["fg"] == "red"
         assert (
@@ -163,7 +163,7 @@ def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.Mon
         )
 
         assert app.current_shopify_domain_var.get() == "newjoyloo.com"
-        assert "newjoyloo.com" in app.login_shopify_button["text"]
+        assert app.login_shopify_button["text"] == "登录店铺"
 
         monkeypatch.setattr(app, "_choose_shopify_domain", lambda: "omurio.com")
         thread_args = []
@@ -180,7 +180,7 @@ def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.Mon
         app.open_shopify_login()
 
         assert app.current_shopify_domain_var.get() == "omurio.com"
-        assert "omurio.com" in app.login_shopify_button["text"]
+        assert app.login_shopify_button["text"] == "登录店铺"
         assert thread_args[0][1] == (
             "http://172.30.254.14",
             "demo-key",

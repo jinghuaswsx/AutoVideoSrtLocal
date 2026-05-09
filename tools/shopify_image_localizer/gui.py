@@ -561,7 +561,7 @@ class ShopifyImageLocalizerApp:
     def _refresh_login_button_text(self) -> None:
         domain = settings.normalize_domain(self.current_shopify_domain_var.get())
         self.current_shopify_domain_var.set(domain)
-        self.login_shopify_button.configure(text=f"登录 {domain} 店铺")
+        self.login_shopify_button.configure(text="登录店铺")
 
     def _set_domain_items(self, items: list[dict], fallback: bool = False) -> None:
         normalized_items: list[dict] = []
@@ -614,7 +614,6 @@ class ShopifyImageLocalizerApp:
         dialog = tk.Toplevel(self.root)
         dialog.title("选择 Shopify 店铺域名")
         dialog.transient(self.root)
-        dialog.grab_set()
         dialog.resizable(False, False)
         selected_var = tk.StringVar(value=current if current in domains else domains[0])
         result = {"domain": ""}
@@ -640,8 +639,27 @@ class ShopifyImageLocalizerApp:
         tk.Button(button_frame, text="登录", command=confirm, width=10).pack(side="right", padx=(0, 8))
         dialog.bind("<Return>", lambda _event: confirm())
         dialog.bind("<Escape>", lambda _event: cancel())
+        self._center_dialog_over_root(dialog)
+        dialog.grab_set()
         self.root.wait_window(dialog)
         return result["domain"]
+
+    def _center_dialog_over_root(self, dialog: "tk.Toplevel") -> None:
+        # 让弹窗坐在主窗口的中心，避免 tk 默认把它丢到屏幕左上角 / 多显示器主屏。
+        try:
+            dialog.update_idletasks()
+            self.root.update_idletasks()
+            root_x = self.root.winfo_rootx()
+            root_y = self.root.winfo_rooty()
+            root_w = self.root.winfo_width()
+            root_h = self.root.winfo_height()
+            dlg_w = dialog.winfo_reqwidth()
+            dlg_h = dialog.winfo_reqheight()
+            x = max(root_x + (root_w - dlg_w) // 2, root_x)
+            y = max(root_y + (root_h - dlg_h) // 2, root_y)
+            dialog.geometry(f"+{x}+{y}")
+        except tk.TclError:
+            pass
 
     def _selected_lang_code(self, language_label: str) -> str:
         mapped = self.language_label_to_code.get(language_label)
