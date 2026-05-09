@@ -1,9 +1,8 @@
 [Unit]
-Description=Run AutoVideoSrt order-profit incremental sync every 20 minutes
+Description=Run AutoVideoSrt order-profit incremental sync every 20 minutes (aligned with roi-realtime-sync)
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=20min
+OnCalendar=*-*-* *:00,20,40:00
 Persistent=true
 Unit=autovideosrt-order-profit-incremental.service
 
