@@ -270,6 +270,7 @@ python -m tools.shopify_image_localizer.build_exe --version <ver>
 - 单店 / 局部店铺筛选时**必须**绕过 `roi_realtime_daily_snapshots` / `roi_daily_roas_nodes` 这两张 store_scope='newjoy,omurio' 的预聚合表，回落到明细路径。已通过 `_should_try_realtime_snapshot` 与 `site_filter_active` 短路；新增同类查询时务必带上同款判断。
 - 单店筛选下广告 / campaign 数据按 `meta_ad_accounts.site_account_map` 翻译为 `ad_account_id IN (...)` 限定；与 [产品盈亏广告费分摊](docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md) 复用同一映射，不要新增硬编码 `site_code -> account_id` 常量。
 - 改这条链路至少运行：`pytest tests/test_order_analytics_realtime_site_filter.py tests/test_order_analytics_true_roas.py tests/characterization/test_order_analytics_baseline.py -q`。
+- KPI「总利润额」下方利润率字段 `profit_with_estimate_margin_pct` 见 [docs/superpowers/specs/2026-05-10-realtime-dashboard-profit-margin.md](docs/superpowers/specs/2026-05-10-realtime-dashboard-profit-margin.md)。改 KPI 卡 markup / `renderRealtimeOrderProfitSummary` / `_build_order_profit_summary*` 这条链路时同步看该 spec；`_empty_order_profit_summary` 把该字段默认 `None`，所以 `_build_order_profit_summary*` 的 rounding 循环加了 `if value is None: continue` 守卫，不要回滚。
 
 ---
 
