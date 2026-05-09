@@ -19,7 +19,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "shopifyid",
         "name": "Shopify ID 获取",
         "description": "每天从店小秘 Shopify 在线商品库抓取 shopifyProductId，并回填 media_products.shopifyid。",
-        "schedule": "每天 12:11（与 ROI :02/:22/:42 错峰）",
+        "schedule": "每天 12:11（与 ROI :00/:20/:40 错峰）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-shopifyid-sync.timer",
@@ -59,8 +59,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "roi_hourly_sync": {
         "code": "roi_hourly_sync",
         "name": "店小秘订单与 ROAS 实时同步",
-        "description": "每 1 小时同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
-        "schedule": "每 1 小时（每小时 :02）",
+        "description": "每 20 分钟同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
+        "schedule": "每 20 分钟（每小时 :00/:20/:40）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
@@ -322,7 +322,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
             "结果写入 scheduled_task_runs.summary_json，供 /order-profit 等页面 data_quality "
             "复用。Docs-anchor: docs/analytics-data-quality-guardrails.md"
         ),
-        "schedule": "每小时整点（与 ROI :02/:22/:42 错峰）",
+        "schedule": "每小时整点（与 ROI :00/:20/:40 错峰）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer（待启用）",
         "source_ref": "autovideosrt-analytics-data-quality.timer",

@@ -802,6 +802,59 @@ def test_get_realtime_roas_overview_single_day_includes_order_profit_details(mon
     assert result["order_profit_details"] == []
 
 
+def test_get_realtime_roas_overview_current_day_ignores_future_roas_nodes(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            rows = [
+                {
+                    "node_hour": 8,
+                    "node_at": datetime(2026, 5, 10, 0, 20),
+                    "order_count": 12,
+                    "units": 18,
+                    "order_revenue_usd": 240.0,
+                    "shipping_revenue_usd": 20.0,
+                    "ad_spend_usd": 130.0,
+                    "true_roas": 2.0,
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                },
+                {
+                    "node_hour": 23,
+                    "node_at": datetime(2026, 5, 10, 15, 59),
+                    "order_count": 99,
+                    "units": 120,
+                    "order_revenue_usd": 3000.0,
+                    "shipping_revenue_usd": 99.0,
+                    "ad_spend_usd": 100.0,
+                    "true_roas": 30.99,
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                },
+            ]
+            if len(args) >= 2:
+                return [row for row in rows if row["node_at"] <= args[1]]
+            return rows
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return []
+        if "GROUP BY HOUR" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"ad_spend": 0, "meta_purchase_value": 0, "meta_purchases": 0, "last_ad_updated_at": None}]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-09",
+        now=datetime(2026, 5, 10, 1, 23),
+    )
+
+    assert result["roas_points"][8]["true_roas"] == 2.0
+    assert result["roas_points"][23]["true_roas"] is None
+
+
 def test_get_realtime_roas_overview_snapshot_includes_order_profit_details(monkeypatch):
     def profit_detail_row():
         return {

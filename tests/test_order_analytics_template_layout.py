@@ -36,3 +36,11 @@ def test_realtime_bj_hint_is_inserted_after_query_button():
     assert "var realtimeActions = anchor.parentElement.querySelector('.oar-realtime-actions');" in template
     assert "var insertAfter = realtimeActions || anchor;" in template
     assert "anchor.parentElement.insertBefore(hint, insertAfter.nextSibling);" in template
+
+
+def test_realtime_roas_trend_copy_matches_hourly_node_contract():
+    panel = _realtime_panel_source()
+
+    assert "每 10 分钟" not in panel
+    assert "每 20 分钟同步" in panel
+    assert "走势图按广告系统日小时节点展示" in panel
