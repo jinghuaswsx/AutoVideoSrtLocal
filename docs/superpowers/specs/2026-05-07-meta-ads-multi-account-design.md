@@ -294,3 +294,7 @@ DELETE FROM system_settings WHERE `key`='meta_ad_accounts';
 
 - 本文件
 - 修订条目：[CLAUDE.md](../../../CLAUDE.md) 新增"Meta 广告多账户同步"小节
+
+## 相关文档
+
+- [Meta 广告费人工录入兜底（2026-05-09）](2026-05-09-manual-daily-ad-spend-design.md) — sync 失败时的兜底入口

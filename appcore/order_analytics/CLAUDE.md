@@ -52,3 +52,14 @@ pytest tests/test_order_analytics_realtime_site_filter.py \
        tests/test_product_profit_report.py \
        tests/characterization/test_order_analytics_baseline.py -q
 ```
+
+## Meta 广告费人工录入兜底（2026-05-09 起）
+
+详细设计：`docs/superpowers/specs/2026-05-09-manual-daily-ad-spend-design.md`
+
+- 表 `meta_ad_manual_daily_spend`：admin 在「广告分析 → 人工录入」录入 `(business_date, account_code, ad_account_id, spend_usd)`；唯一键 `(business_date, account_code)`，upsert 写入。
+- 兜底语义：`order_profit_aggregation.get_order_profit_status_summary` 里对每个 `(business_date, ad_account_id)` 比 sync sum：sync sum 严格 `> 0` → 完全忽略本表；sync sum `== 0` 或无行 → 把本表 `spend_usd` 加进 `unallocated`。
+- **per-product 数据不变**：本表不下沉到产品级广告费分摊；产品看板 per-product「已分摊广告费」继续从 `meta_ad_daily_*` / `meta_ad_realtime_*` 来。
+- 改 `order_profit_aggregation` 时**不要删除 `_load_sync_account_totals` 与 `manual_ad_spend.load_supplement_map` 的调用**，否则 sync 失败时「总利润」KPI 会再次虚高。回归：`pytest tests/test_order_profit_aggregation.py -k supplement -q`。
+- 路由 `web/routes/order_analytics.py` 下 3 个 endpoint 用 `@login_required + @permission_required("data_analytics")`，与 `/order-analytics/meta-ad-accounts` 同款；CSRF 走 `layout.html` 的 meta 注入。
+- `_load_sync_account_totals` 对 `meta_ad_daily_campaign_metrics` 必须用 `COALESCE(meta_business_date, report_date)`（该表无 `business_date` 列），realtime 表则直接用 `business_date`。
