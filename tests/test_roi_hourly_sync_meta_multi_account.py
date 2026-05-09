@@ -48,6 +48,7 @@ def _account(
     enabled: bool = True,
     column_preset: str | None = None,
     sync_mode: str = "csv_export",
+    timezone: str = "America/Los_Angeles",
 ) -> MetaAdAccount:
     return MetaAdAccount(
         code=code,
@@ -59,6 +60,7 @@ def _account(
         label=code,
         column_preset=column_preset or "1658418688523178",
         sync_mode=sync_mode,
+        timezone=timezone,
     )
 
 
@@ -529,9 +531,11 @@ class _FakeSession:
     def __init__(self, rows_by_account: dict[str, list[dict]]):
         self.rows_by_account = rows_by_account
         self.calls: list[tuple[str, str]] = []
+        self.time_ranges: list[dict[str, str]] = []
 
     def fetch_insights(self, account_id, *, level, time_range, fields, **_):
         self.calls.append((account_id, level))
+        self.time_ranges.append(dict(time_range))
         return list(self.rows_by_account.get(account_id, []))
 
 
@@ -691,3 +695,72 @@ def test_sync_meta_realtime_daily_session_open_failure_marks_all_xhr_failed(
     # both xhr accounts get the session error attributed to them
     a_err = next(r for r in summary["account_results"] if r["code"] == "a")["error"]
     assert "lock timeout" in a_err
+
+
+# ---------- xhr_api time_range honors account.timezone ----------
+
+
+def test_xhr_time_range_uses_account_timezone_helper(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    """Realtime XHR path must build time_range via
+    meta_ad_accounts.account_xhr_time_range so each account hits Meta in
+    its own timezone — not a raw business_date string. Regression for
+    the 2026-05-09 newjoyloo_bak 'rows_imported=0 in PDT' incident."""
+    accounts = [
+        _account("newjoyloo_bak", "111", sync_mode="xhr_api", timezone="America/Los_Angeles"),
+        _account("bj_account",    "222", sync_mode="xhr_api", timezone="Asia/Shanghai"),
+    ]
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: accounts)
+    fake_session = _FakeSession({"111": [], "222": []})
+    _patch_session(monkeypatch, fake_session)
+    monkeypatch.setattr(
+        roi_hourly_sync, "_import_meta_realtime_api_rows",
+        lambda **kw: {"rows_imported": 0, "spend_usd": 0.0},
+    )
+
+    business_date = date(2026, 5, 9)
+    roi_hourly_sync._sync_meta_realtime_daily(
+        business_date, datetime(2026, 5, 9, 12, 20), meta_channel="browser",
+    )
+
+    # Each account must have received the helper-derived time_range.
+    pdt_expected = meta_ad_accounts.account_xhr_time_range(accounts[0], business_date)
+    bj_expected = meta_ad_accounts.account_xhr_time_range(accounts[1], business_date)
+    # Order of fetch_insights calls follows order of xhr_api accounts in
+    # the input list; FakeSession captures one entry per call.
+    assert fake_session.time_ranges == [pdt_expected, bj_expected]
+    # Sanity: the two timezones produce different ranges in this case
+    # (PDT and BJ both straddle two days but for different reasons —
+    # the helper still encodes per-tz semantics).
+    assert pdt_expected == {"since": "2026-05-09", "until": "2026-05-10"}
+    assert bj_expected == {"since": "2026-05-09", "until": "2026-05-10"}
+    # And, critically, neither equals the legacy single-day form that
+    # used to be sent to Meta:
+    legacy_form = {"since": "2026-05-09", "until": "2026-05-09"}
+    assert pdt_expected != legacy_form or bj_expected != legacy_form
+
+
+def test_xhr_time_range_pst_account_returns_single_day(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    """During PST (Feb), an LA-timezone account's BJ business window
+    aligns exactly with one PST natural day → since == until."""
+    pst_account = _account(
+        "pst_acct", "333", sync_mode="xhr_api", timezone="America/Los_Angeles"
+    )
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: [pst_account])
+    fake_session = _FakeSession({"333": []})
+    _patch_session(monkeypatch, fake_session)
+    monkeypatch.setattr(
+        roi_hourly_sync, "_import_meta_realtime_api_rows",
+        lambda **kw: {"rows_imported": 0, "spend_usd": 0.0},
+    )
+
+    roi_hourly_sync._sync_meta_realtime_daily(
+        date(2026, 2, 5), datetime(2026, 2, 5, 12, 20), meta_channel="browser",
+    )
+
+    assert fake_session.time_ranges == [
+        {"since": "2026-02-05", "until": "2026-02-05"},
+    ]

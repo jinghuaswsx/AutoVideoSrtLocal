@@ -23,8 +23,10 @@ levels / dates in one browser visit, with one CDP lock acquisition.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator, Literal
@@ -296,6 +298,115 @@ def _harvest_token_from_existing_page(
     return captured["token"]
 
 
+def _has_running_asyncio_loop() -> bool:
+    """Detect whether the current thread already runs an asyncio loop.
+
+    Playwright's ``sync_playwright()`` raises if the calling thread has
+    a running asyncio loop (the API explicitly forbids the mix). When
+    that happens we fall back to a worker-thread isolated session.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return loop is not None
+
+
+def _setup_session_in_thread(
+    *,
+    playwright_factory: Callable[[], Any],
+    chosen_cdp: str,
+    page_url: str,
+    page_load_timeout_ms: int,
+    harvest_wait_seconds: int,
+    token_ttl_minutes: int,
+    account_code: str,
+    token_provider: Callable[..., str] | None,
+    state: dict[str, Any],
+) -> str:
+    """Open Playwright + page, harvest or load token. Mutates ``state``
+    so the teardown helper can release the same handles. Returns the
+    access_token. Must run on the same thread that will subsequently
+    invoke ``page.evaluate`` for fetch_insights."""
+    pw_ctx = playwright_factory()
+    pw = pw_ctx.__enter__()
+    state["pw_ctx"] = pw_ctx
+    try:
+        browser = pw.chromium.connect_over_cdp(chosen_cdp)
+        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        page = ctx.new_page()
+        state["page"] = page
+
+        token: str | None = None
+        if token_provider is not None:
+            token = token_provider()
+        else:
+            cached = load_cached_token()
+            if cached and cached.is_fresh():
+                token = cached.access_token
+
+        if token is not None:
+            try:
+                page.goto(
+                    page_url,
+                    wait_until="domcontentloaded",
+                    timeout=page_load_timeout_ms,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("in-page session goto warning: %s", exc)
+            try:
+                page.wait_for_timeout(1000)
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            token = _harvest_token_from_existing_page(
+                page,
+                page_url=page_url,
+                page_load_timeout_ms=page_load_timeout_ms,
+                harvest_wait_seconds=harvest_wait_seconds,
+                account_code=account_code,
+                ttl_minutes=token_ttl_minutes,
+            )
+        return token
+    except Exception:
+        try:
+            pw_ctx.__exit__(None, None, None)
+        except Exception:  # noqa: BLE001
+            pass
+        state.pop("pw_ctx", None)
+        state.pop("page", None)
+        raise
+
+
+def _teardown_session_in_thread(state: dict[str, Any]) -> None:
+    page = state.get("page")
+    if page is not None:
+        try:
+            page.close()
+        except Exception:  # noqa: BLE001
+            pass
+    pw_ctx = state.get("pw_ctx")
+    if pw_ctx is not None:
+        try:
+            pw_ctx.__exit__(None, None, None)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _isolated_runner_factory(executor: ThreadPoolExecutor, state: dict[str, Any]):
+    """Build a ``MetaAdsSession.runner`` that marshals ``page.evaluate``
+    onto the executor's single worker thread, so callers can stay on the
+    main thread (where an asyncio loop may still be running)."""
+
+    def runner(_fetch_js: str, _initial_url: str, params: dict[str, Any]) -> Any:
+        page = state.get("page")
+        if page is None:
+            raise RuntimeError("isolated session has no live page")
+        return executor.submit(page.evaluate, _fetch_js, params).result()
+
+    return runner
+
+
 @contextmanager
 def open_meta_ads_session(
     *,
@@ -307,6 +418,7 @@ def open_meta_ads_session(
     select_account: Callable[[], Any] | None = None,
     playwright_factory: Callable[[], Any] | None = None,
     token_provider: Callable[..., str] | None = None,
+    force_isolated_thread: bool | None = None,
 ) -> Iterator[MetaAdsSession]:
     """Open one Ads Manager Playwright page and yield a reusable session.
 
@@ -323,6 +435,11 @@ def open_meta_ads_session(
       nesting ``sync_playwright`` which is unsupported.
 
     ``token_provider`` (test injection) bypasses the listener entirely.
+
+    ``force_isolated_thread`` (test injection) overrides the asyncio-loop
+    detection. ``True`` always runs Playwright on a worker thread;
+    ``False`` always runs in the current thread; ``None`` (production
+    default) picks based on ``_has_running_asyncio_loop()``.
     """
     chosen_cdp = cdp_url or DEFAULT_META_ADS_CDP_URL
     pick_account = select_account or _select_session_account
@@ -334,52 +451,97 @@ def open_meta_ads_session(
 
         playwright_factory = _sync_playwright
 
+    if force_isolated_thread is None:
+        use_isolated = _has_running_asyncio_loop()
+    else:
+        use_isolated = bool(force_isolated_thread)
+
     with meta_ads_cdp_lock(
         task_code="meta_ads_in_page_session",
         timeout_seconds=lock_timeout_seconds,
         retry_seconds=5,
         disable_child_lock=True,
     ):
-        with playwright_factory() as pw:
-            browser = pw.chromium.connect_over_cdp(chosen_cdp)
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.new_page()
+        if use_isolated:
+            log.info(
+                "open_meta_ads_session: running Playwright on a worker thread "
+                "(asyncio loop detected on caller thread)"
+            )
+            executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="meta-ads-session"
+            )
+            state: dict[str, Any] = {}
             try:
-                # Decide token source first, then navigate. We always
-                # need the page on the Ads Manager origin so that
-                # fetch_insights (credentials:'include') ships first-
-                # party cookies — but we only attach the am_tabular
-                # listener if we actually need to harvest.
-                token: str | None = None
-                if token_provider is not None:
-                    # Test-mode short-circuit
-                    token = token_provider()
-                else:
-                    cached = load_cached_token()
-                    if cached and cached.is_fresh():
-                        token = cached.access_token
-
-                if token is not None:
-                    try:
-                        page.goto(page_url, wait_until="domcontentloaded", timeout=page_load_timeout_ms)
-                    except Exception as exc:  # noqa: BLE001
-                        log.warning("in-page session goto warning: %s", exc)
-                    try:
-                        page.wait_for_timeout(1000)
-                    except Exception:  # noqa: BLE001
-                        pass
-                else:
-                    token = _harvest_token_from_existing_page(
-                        page,
-                        page_url=page_url,
-                        page_load_timeout_ms=page_load_timeout_ms,
-                        harvest_wait_seconds=harvest_wait_seconds,
-                        account_code=account.code,
-                        ttl_minutes=token_ttl_minutes,
-                    )
-                yield MetaAdsSession(page=page, access_token=token)
+                token = executor.submit(
+                    _setup_session_in_thread,
+                    playwright_factory=playwright_factory,
+                    chosen_cdp=chosen_cdp,
+                    page_url=page_url,
+                    page_load_timeout_ms=page_load_timeout_ms,
+                    harvest_wait_seconds=harvest_wait_seconds,
+                    token_ttl_minutes=token_ttl_minutes,
+                    account_code=account.code,
+                    token_provider=token_provider,
+                    state=state,
+                ).result()
+                page = state["page"]
+                yield MetaAdsSession(
+                    page=page,
+                    access_token=token,
+                    runner=_isolated_runner_factory(executor, state),
+                )
             finally:
                 try:
-                    page.close()
-                except Exception:  # noqa: BLE001
-                    pass
+                    executor.submit(_teardown_session_in_thread, state).result()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "isolated session teardown error: %s", exc
+                    )
+                executor.shutdown(wait=True)
+        else:
+            with playwright_factory() as pw:
+                browser = pw.chromium.connect_over_cdp(chosen_cdp)
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+                page = ctx.new_page()
+                try:
+                    # Decide token source first, then navigate. We always
+                    # need the page on the Ads Manager origin so that
+                    # fetch_insights (credentials:'include') ships first-
+                    # party cookies — but we only attach the am_tabular
+                    # listener if we actually need to harvest.
+                    token: str | None = None
+                    if token_provider is not None:
+                        token = token_provider()
+                    else:
+                        cached = load_cached_token()
+                        if cached and cached.is_fresh():
+                            token = cached.access_token
+
+                    if token is not None:
+                        try:
+                            page.goto(
+                                page_url,
+                                wait_until="domcontentloaded",
+                                timeout=page_load_timeout_ms,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            log.warning("in-page session goto warning: %s", exc)
+                        try:
+                            page.wait_for_timeout(1000)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    else:
+                        token = _harvest_token_from_existing_page(
+                            page,
+                            page_url=page_url,
+                            page_load_timeout_ms=page_load_timeout_ms,
+                            harvest_wait_seconds=harvest_wait_seconds,
+                            account_code=account.code,
+                            ttl_minutes=token_ttl_minutes,
+                        )
+                    yield MetaAdsSession(page=page, access_token=token)
+                finally:
+                    try:
+                        page.close()
+                    except Exception:  # noqa: BLE001
+                        pass

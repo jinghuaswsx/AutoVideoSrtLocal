@@ -21,7 +21,7 @@ from appcore import meta_login_autofill
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query_one
-from appcore.meta_ad_accounts import MetaAdAccount
+from appcore.meta_ad_accounts import MetaAdAccount, account_xhr_time_range
 from appcore.order_analytics.ad_market_country import extract_market_country_from_names
 from tools import roi_hourly_sync as realtime_sync
 
@@ -956,7 +956,7 @@ def _sync_account_via_xhr_api(
     them into the daily DB tables. Reuses ``aggregate_daily_entity_rows``
     so per-row product matching / market-country derivation is identical
     to the CSV path."""
-    time_range = {"since": target_date.isoformat(), "until": target_date.isoformat()}
+    time_range = account_xhr_time_range(account, target_date)
     campaign_rows = session.fetch_insights(
         account.account_id,
         level="campaign",

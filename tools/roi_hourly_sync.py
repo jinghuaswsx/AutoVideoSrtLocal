@@ -27,7 +27,7 @@ from appcore import meta_login_autofill
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query, query_one
-from appcore.meta_ad_accounts import MetaAdAccount
+from appcore.meta_ad_accounts import MetaAdAccount, account_xhr_time_range
 from appcore.meta_ads_cdp import DEFAULT_META_ADS_CDP_URL
 
 TIMEZONE = "Asia/Shanghai"
@@ -856,7 +856,7 @@ def _sync_meta_account_in_page_api(
     rows = session.fetch_insights(
         account.account_id,
         level="campaign",
-        time_range={"since": business_date.isoformat(), "until": business_date.isoformat()},
+        time_range=account_xhr_time_range(account, business_date),
         fields=META_INSIGHTS_FIELDS,
         time_increment="1",
         limit=META_MARKETING_API_LIMIT,

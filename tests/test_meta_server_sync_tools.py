@@ -768,3 +768,59 @@ def test_run_final_sync_xhr_api_session_failure_marks_xhr_failed_csv_runs_anyway
     assert csv_calls == ["c"]
     a_err = next(r for r in result["account_results"] if r["code"] == "a")["error"]
     assert "lock timeout" in a_err
+
+
+def test_run_final_sync_xhr_api_uses_account_timezone_for_time_range(monkeypatch, tmp_path):
+    """Daily final XHR path must build time_range via the shared
+    account_xhr_time_range helper (same as realtime). Regression for
+    the 2026-05-09 PDT misalignment incident — the daily path used to
+    pass target_date.isoformat() raw, ignoring account.timezone."""
+    from tools import meta_daily_final_sync
+    from appcore import meta_ad_accounts
+
+    pdt_acct = _xhr_account("newjoyloo", "111")
+    pdt_acct.timezone = "America/Los_Angeles"
+    bj_acct = _xhr_account("bj_acct", "222")
+    bj_acct.timezone = "Asia/Shanghai"
+    accounts = [pdt_acct, bj_acct]
+    finished: list[dict] = []
+    _patch_final_sync_lifecycle(monkeypatch, accounts=accounts, finished=finished)
+    monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
+
+    captured_time_ranges: list[dict[str, str]] = []
+
+    class CapturingSession:
+        def fetch_insights(self, account_id, *, level, time_range, fields, **_):
+            captured_time_ranges.append(dict(time_range))
+            return []  # no rows; we only care about time_range shape
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def fake_open():
+        yield CapturingSession()
+
+    monkeypatch.setattr(
+        "appcore.meta_ads_in_page_fetch.open_meta_ads_session",
+        lambda: fake_open(),
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_replace_campaign_daily_rows_from_api",
+        lambda rows, target_date, account: {"rows": 0, "matched": 0, "spend_usd": 0.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_replace_ad_daily_rows_from_api",
+        lambda rows, target_date, account: {"rows": 0, "matched": 0, "spend_usd": 0.0},
+    )
+
+    target_date = date(2026, 5, 8)
+    meta_daily_final_sync.run_final_sync(target_date, mode="run")
+
+    pdt_expected = meta_ad_accounts.account_xhr_time_range(pdt_acct, target_date)
+    bj_expected = meta_ad_accounts.account_xhr_time_range(bj_acct, target_date)
+    # 2 accounts × 2 levels (campaign, ad; adsets disabled by default)
+    assert captured_time_ranges[:2] == [pdt_expected, pdt_expected]
+    assert captured_time_ranges[2:] == [bj_expected, bj_expected]
+    # Sanity: the legacy raw-string form is gone.
+    legacy_form = {"since": "2026-05-08", "until": "2026-05-08"}
+    assert captured_time_ranges[0] != legacy_form  # PDT must straddle 2 days

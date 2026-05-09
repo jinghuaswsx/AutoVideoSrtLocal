@@ -336,3 +336,120 @@ def test_session_can_fetch_multiple_levels_in_one_visit(fake_lock):
     assert any("level=ad" in u for u in captured_urls)
     # exactly one CDP lock acquisition for all three fetches
     assert len(fake_lock) == 1
+
+
+# ---------- Isolated-thread fallback ----------
+
+
+class _RecordingPage(_FakePage):
+    """Tracks the thread that touched each method, to verify isolation."""
+
+    def __init__(self):
+        super().__init__()
+        import threading
+
+        self.evaluate_threads: list[int] = []
+        self.goto_threads: list[int] = []
+        self.close_threads: list[int] = []
+        self._threading = threading
+
+    def goto(self, url, **kwargs):
+        self.goto_threads.append(self._threading.get_ident())
+        super().goto(url, **kwargs)
+
+    def evaluate(self, js, params):
+        self.evaluate_threads.append(self._threading.get_ident())
+        return {"rows": [{"campaign_id": "iso"}], "pages": 1}
+
+    def close(self):
+        self.close_threads.append(self._threading.get_ident())
+        super().close()
+
+
+def test_open_session_uses_worker_thread_when_caller_has_running_loop(fake_lock):
+    """Regression: when an asyncio loop is already running on the caller
+    thread (e.g. some upstream Web/path-stub started ``asyncio.run`` and
+    invoked us inside it), Playwright sync_api raises 'sync API inside
+    asyncio loop'. The helper must marshal Playwright onto a worker
+    thread instead. We verify by forcing the isolated path and
+    asserting all page operations happened off the main thread."""
+    import threading
+    from appcore.meta_ads_in_page_fetch import open_meta_ads_session
+
+    page = _RecordingPage()
+    account = SimpleNamespace(account_id="111", business_id="222", code="x")
+    main_thread_id = threading.get_ident()
+
+    with open_meta_ads_session(
+        select_account=lambda: account,
+        playwright_factory=lambda: _FakeSyncPlaywrightCM(page),
+        token_provider=lambda: "tok-iso",
+        force_isolated_thread=True,
+    ) as session:
+        rows = session.fetch_insights(
+            "111",
+            level="campaign",
+            time_range={"since": "2026-05-09", "until": "2026-05-10"},
+            fields=("foo",),
+        )
+    assert rows == [{"campaign_id": "iso"}]
+    # goto + evaluate + close all happened on a single worker thread,
+    # never on the main thread (where the asyncio loop assertion would
+    # otherwise blow up sync_playwright).
+    assert page.goto_threads, "goto should have been called"
+    assert page.evaluate_threads, "evaluate should have been called"
+    assert page.close_threads, "close should have been called"
+    assert all(tid != main_thread_id for tid in page.goto_threads)
+    assert all(tid != main_thread_id for tid in page.evaluate_threads)
+    assert all(tid != main_thread_id for tid in page.close_threads)
+    worker_threads = (
+        set(page.goto_threads) | set(page.evaluate_threads) | set(page.close_threads)
+    )
+    assert len(worker_threads) == 1, (
+        "all Playwright operations must run on a single worker thread"
+    )
+
+
+def test_has_running_asyncio_loop_detects_async_caller():
+    """Sanity check for the helper that decides which path to take."""
+    import asyncio
+    from appcore.meta_ads_in_page_fetch import _has_running_asyncio_loop
+
+    assert _has_running_asyncio_loop() is False
+
+    async def probe() -> bool:
+        return _has_running_asyncio_loop()
+
+    assert asyncio.run(probe()) is True
+
+
+def test_open_session_auto_isolates_when_running_inside_asyncio_loop(fake_lock):
+    """End-to-end: from inside an asyncio coroutine, ``open_meta_ads_session``
+    auto-detects the loop and routes through the worker thread without
+    the caller passing ``force_isolated_thread``."""
+    import asyncio
+    import threading
+    from appcore.meta_ads_in_page_fetch import open_meta_ads_session
+
+    page = _RecordingPage()
+    account = SimpleNamespace(account_id="333", business_id="444", code="z")
+
+    async def driver():
+        main_thread_id = threading.get_ident()
+        # Even though we are inside an asyncio loop, this must succeed.
+        with open_meta_ads_session(
+            select_account=lambda: account,
+            playwright_factory=lambda: _FakeSyncPlaywrightCM(page),
+            token_provider=lambda: "tok-async",
+        ) as session:
+            session.fetch_insights(
+                "333",
+                level="campaign",
+                time_range={"since": "2026-05-09", "until": "2026-05-10"},
+                fields=("foo",),
+            )
+        return main_thread_id
+
+    main_id = asyncio.run(driver())
+    assert page.evaluate_threads, "evaluate should have run on the worker"
+    assert all(tid != main_id for tid in page.evaluate_threads)
