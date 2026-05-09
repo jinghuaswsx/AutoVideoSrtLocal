@@ -96,6 +96,15 @@ def test_medias_list_uses_two_column_grid_for_row_actions():
     assert "grid-template-columns:repeat(2, minmax(0, max-content));" in html
 
 
+def test_medias_listing_status_pill_keeps_text_horizontal():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert '<col style="width:80px">\n        <col style="width:88px">\n        <col style="width:56px">' in script
+    assert ".listing-status-cell { text-align:center; white-space:nowrap; }" in html
+    assert ".oc-listing-pill { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:44px; height:32px; padding:0 10px; border-radius:9999px; font-size:13px; font-weight:500; line-height:1.25; text-align:center; white-space:nowrap; }" in html
+
+
 def test_edit_video_material_cards_support_inline_filename_edit():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")

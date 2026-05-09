@@ -1381,7 +1381,7 @@
         <col style="width:80px">
         <col style="width:68px">
         <col style="width:120px">
-        <col style="width:64px">
+        <col style="width:80px">
         <col style="width:88px">
         <col style="width:56px">
         <col style="width:300px">
