@@ -185,7 +185,7 @@ def test_meta_daily_final_sync_account_code_can_select_disabled_legacy_account(m
 
     exports = []
 
-    def fake_export(target_date, export_dir, account):
+    def fake_export(target_date, export_dir, account, **_):
         exports.append(account.code)
         export_dir.mkdir(parents=True, exist_ok=True)
         campaign_path = export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"
@@ -243,7 +243,7 @@ def test_meta_daily_final_sync_can_import_adsets_when_requested(monkeypatch, tmp
     )
     monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
 
-    def fake_export(target_date, export_dir, account, *, include_adsets=False):
+    def fake_export(target_date, export_dir, account, *, include_adsets=False, **_):
         assert include_adsets is True
         export_dir.mkdir(parents=True, exist_ok=True)
         paths = {}
@@ -425,7 +425,7 @@ def test_meta_daily_final_sync_iterates_enabled_accounts(monkeypatch, tmp_path):
 
     exports = []
 
-    def fake_export(target_date, export_dir, account):
+    def fake_export(target_date, export_dir, account, **_):
         exports.append((account.code, export_dir))
         export_dir.mkdir(parents=True, exist_ok=True)
         campaign_path = export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"
@@ -498,7 +498,7 @@ def test_meta_daily_final_sync_marks_partial_account_failure_failed(monkeypatch,
     )
     monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
 
-    def fake_export(target_date, export_dir, account):
+    def fake_export(target_date, export_dir, account, **_):
         if account.code == "newjoyloo":
             raise RuntimeError("auth failed")
         export_dir.mkdir(parents=True, exist_ok=True)

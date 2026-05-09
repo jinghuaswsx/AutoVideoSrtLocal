@@ -827,11 +827,45 @@ def _scheduled_task_run_by_id(run_id: int) -> dict[str, Any] | None:
     return _normalize_row(rows[0]) if rows else None
 
 
+CONSECUTIVE_FAILURE_ALERT_THRESHOLD = 2
+
+
+def _consecutive_failure_streak(task_code: str, *, including_run_id: int) -> int:
+    """Number of consecutive ``status='failed'`` runs for ``task_code``
+    ending at ``including_run_id`` (inclusive). 1 = isolated failure,
+    2 = two-in-a-row, etc. Used to gate Feishu alerts so transient
+    single-failure noise does not page the channel; see
+    docs/superpowers/specs/2026-05-08-feishu-bot-alerts-design.md."""
+    code = (task_code or "").strip()
+    if not code:
+        return 0
+    rows = query(
+        "SELECT id, status FROM scheduled_task_runs "
+        "WHERE task_code=%s AND id<=%s "
+        "ORDER BY id DESC LIMIT %s",
+        (code, int(including_run_id), CONSECUTIVE_FAILURE_ALERT_THRESHOLD * 4),
+    )
+    streak = 0
+    for row in rows:
+        if str(row.get("status")) == "failed":
+            streak += 1
+            continue
+        break
+    return streak
+
+
 def _dispatch_failure_alert(run_id: int) -> None:
     try:
         row = _scheduled_task_run_by_id(run_id)
         if not row:
             return
+        streak = _consecutive_failure_streak(
+            str(row.get("task_code") or ""),
+            including_run_id=int(row.get("id") or run_id),
+        )
+        if streak < CONSECUTIVE_FAILURE_ALERT_THRESHOLD:
+            return
+        row["consecutive_failures"] = streak
         from appcore import feishu_alerts
 
         task_code = str(row.get("task_code") or "")

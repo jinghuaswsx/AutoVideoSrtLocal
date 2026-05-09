@@ -54,10 +54,20 @@
 
 触发点放在 `appcore.scheduled_tasks.finish_run()` 中：
 
-- 仅当 `status == "failed"` 时触发。
+- 仅当 `status == "failed"` 时考虑触发。
 - 触发时读取当前 run 行信息，补齐 `task_code`、`task_name`、`started_at`、`finished_at`、`duration_seconds`、`error_message`、`summary`、`output_file`。
 - 不在 `start_run()` 或 `record_failure()` 里重复触发；`record_failure()` 通过 `finish_run()` 统一发送。
 - 发送函数必须捕获自身异常，避免告警模块故障影响任务记录。
+
+### 连续失败阈值（2026-05-09 起）
+
+为避免单次瞬时失败（浏览器 timeout、临时锁竞争、auth 重试一轮就过）刷屏飞书群，告警在 `_dispatch_failure_alert` 里加了一道「连续 2 次同 task 失败才发」的门：
+
+- `appcore.scheduled_tasks._consecutive_failure_streak(task_code, including_run_id=...)` 倒着数同 `task_code` 的 `scheduled_task_runs.status`，遇到非 `failed` 立刻停。
+- streak < `CONSECUTIVE_FAILURE_ALERT_THRESHOLD`（默认 2）：跳过 Feishu，仅留 DB 失败记录与后台「定时任务的运行日志」红色提示。
+- streak >= 阈值：照常发飞书；`row["consecutive_failures"] = streak` 注入消息体，新增 `连续失败：N 次` 一行。
+
+设计依据 / 触发场景：[`docs/superpowers/specs/2026-05-09-meta-daily-final-permission-recovery.md`](2026-05-09-meta-daily-final-permission-recovery.md)。
 
 ## 消息内容
 
@@ -66,6 +76,7 @@
 ```text
 【AutoVideoSrt 告警】定时任务失败
 任务：<task_name> (<task_code>)
+连续失败：<N> 次               # 仅 streak >= 2 时出现，2026-05-09 起
 运行ID：<run_id>
 开始：<started_at>
 结束：<finished_at>
@@ -124,7 +135,8 @@ python3 -m tools.send_feishu_test_alert
 
 - 不新增飞书长连接事件接收进程。
 - 不处理飞书群消息命令。
-- 不做多群路由、告警级别订阅、静默时段或去重聚合。
+- 不做多群路由、告警级别订阅、静默时段。
+- ~~不做去重聚合~~：2026-05-09 起按「连续 2 次同 task 失败」门控，详见上方「连续失败阈值」段。
 - 不扫描系统 journal、Nginx log、Python log 文件。
 - 不把飞书凭据写入 `.env`、源码常量、文档、测试 fixture 或日志。
 

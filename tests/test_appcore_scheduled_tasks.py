@@ -27,7 +27,38 @@ def test_latest_failure_alert_only_returns_failed_latest_run(monkeypatch):
     assert scheduled_tasks.latest_failure_alert() is None
 
 
-def test_finish_run_dispatches_feishu_alert_for_failed_run(monkeypatch):
+def _failure_alert_query_mock(streak_history):
+    """Build a `query` side_effect that returns the row for
+    `_scheduled_task_run_by_id` and a controllable streak history for
+    `_consecutive_failure_streak`.
+
+    ``streak_history`` is a list of statuses ordered newest → oldest,
+    e.g. ``["failed", "failed"]`` for two-consecutive."""
+
+    def _mock(sql, params=()):
+        if "WHERE id = %s" in sql:
+            return [
+                {
+                    "id": params[0],
+                    "task_code": "shopifyid",
+                    "task_name": "Shopify ID 获取",
+                    "status": "failed",
+                    "started_at": "2026-05-08 10:00:00",
+                    "finished_at": "2026-05-08 10:00:02",
+                    "duration_seconds": 2,
+                    "summary_json": '{"updated": 0}',
+                    "error_message": "boom",
+                    "output_file": None,
+                }
+            ]
+        if "ORDER BY id DESC" in sql and "task_code=%s" in sql:
+            return [{"id": 100 - idx, "status": status} for idx, status in enumerate(streak_history)]
+        return []
+
+    return _mock
+
+
+def test_finish_run_dispatches_feishu_alert_after_two_consecutive_failures(monkeypatch):
     from appcore import feishu_alerts, scheduled_tasks
 
     sent = []
@@ -35,20 +66,7 @@ def test_finish_run_dispatches_feishu_alert_for_failed_run(monkeypatch):
     monkeypatch.setattr(
         scheduled_tasks,
         "query",
-        lambda sql, params=(): [
-            {
-                "id": params[0],
-                "task_code": "shopifyid",
-                "task_name": "Shopify ID 获取",
-                "status": "failed",
-                "started_at": "2026-05-08 10:00:00",
-                "finished_at": "2026-05-08 10:00:02",
-                "duration_seconds": 2,
-                "summary_json": '{"updated": 0}',
-                "error_message": "boom",
-                "output_file": None,
-            }
-        ],
+        _failure_alert_query_mock(["failed", "failed"]),
     )
     monkeypatch.setattr(
         feishu_alerts,
@@ -65,6 +83,50 @@ def test_finish_run_dispatches_feishu_alert_for_failed_run(monkeypatch):
 
     assert sent and sent[0]["id"] == 42
     assert sent[0]["summary"] == {"updated": 0}
+    assert sent[0]["consecutive_failures"] == 2
+
+
+def test_finish_run_suppresses_alert_for_isolated_failure(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        _failure_alert_query_mock(["failed", "success"]),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
+
+    assert sent == []
+
+
+def test_finish_run_resets_streak_on_intervening_success(monkeypatch):
+    """failed → success → failed: the latest failure is isolated."""
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        _failure_alert_query_mock(["failed", "success", "failed"]),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
+
+    assert sent == []
 
 
 def test_finish_run_suppresses_feishu_failure_when_dedup_says_no(monkeypatch):
@@ -180,15 +242,7 @@ def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
     monkeypatch.setattr(
         scheduled_tasks,
         "query",
-        lambda sql, params=(): [
-            {
-                "id": params[0],
-                "task_code": "shopifyid",
-                "task_name": "Shopify ID 获取",
-                "status": "failed",
-                "summary_json": "{}",
-            }
-        ],
+        _failure_alert_query_mock(["failed", "failed"]),
     )
     monkeypatch.setattr(
         feishu_alerts,
@@ -204,6 +258,44 @@ def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
     scheduled_tasks.finish_run(42, status="failed", error_message="boom")
 
     assert updates
+
+
+def test_format_scheduled_task_failure_renders_consecutive_count():
+    from appcore import feishu_alerts
+
+    text = feishu_alerts.format_scheduled_task_failure(
+        {
+            "id": 99,
+            "task_code": "meta_daily_final",
+            "task_name": "Meta 收盘日数据",
+            "status": "failed",
+            "duration_seconds": 12,
+            "error_message": "boom",
+            "consecutive_failures": 3,
+            "summary": {},
+        }
+    )
+
+    assert "连续失败：3 次" in text
+    assert "任务：Meta 收盘日数据" in text
+
+
+def test_format_scheduled_task_failure_omits_consecutive_for_single_failure():
+    from appcore import feishu_alerts
+
+    text = feishu_alerts.format_scheduled_task_failure(
+        {
+            "id": 1,
+            "task_code": "shopifyid",
+            "task_name": "Shopify ID 获取",
+            "status": "failed",
+            "duration_seconds": 5,
+            "error_message": "boom",
+            "summary": {},
+        }
+    )
+
+    assert "连续失败" not in text
 
 
 def test_normalize_row_decodes_summary_json():

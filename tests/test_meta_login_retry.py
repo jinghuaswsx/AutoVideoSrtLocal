@@ -59,7 +59,7 @@ def test_final_sync_autofills_and_retries_after_failed_auth(monkeypatch, tmp_pat
     account = _account()
     calls = {"export": 0, "autofill": 0}
 
-    def fake_export(target_date, export_dir, account_arg, *, include_adsets=False):
+    def fake_export(target_date, export_dir, account_arg, *, include_adsets=False, **_):
         calls["export"] += 1
         export_dir.mkdir(parents=True, exist_ok=True)
         campaign_path = export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"
@@ -112,7 +112,7 @@ def test_final_sync_autofill_retry_preserves_adset_level(monkeypatch, tmp_path):
     account = _account(code="newjoyloo_old", account_id="2110407576446225")
     calls = {"export": 0, "autofill": 0, "include_adsets": []}
 
-    def fake_export(target_date, export_dir, account_arg, *, include_adsets=False):
+    def fake_export(target_date, export_dir, account_arg, *, include_adsets=False, **_):
         calls["export"] += 1
         calls["include_adsets"].append(include_adsets)
         export_dir.mkdir(parents=True, exist_ok=True)

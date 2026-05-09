@@ -39,6 +39,78 @@ META_DAILY_FINAL_EXPORT_ROOT = Path(
 META_DAILY_FINAL_EXPORT_TIMEOUT_SECONDS = int(os.environ.get("META_DAILY_FINAL_EXPORT_TIMEOUT_SECONDS", "900"))
 META_AD_EXPORT_SCRIPT = REPO_ROOT / "scripts" / "run_meta_ads_backfill_range.py"
 
+# Anti-permission-trap conflict-relocation suffix — see
+# docs/superpowers/specs/2026-05-09-meta-daily-final-permission-recovery.md.
+EXPORT_DIR_CONFLICT_SUFFIX = ".conflicted"
+
+
+def _ensure_export_dir(path: Path, recovery_log: list[dict[str, Any]] | None = None) -> Path:
+    """Create ``path`` even when an ancestor was made by another user.
+
+    The export root is shared with manual / sudo invocations; if any ancestor
+    is owned by a different user without group-write, ``mkdir(parents=True)``
+    raises PermissionError. We recover once by renaming the offending
+    ancestor to ``<name>.conflicted-<ts>`` and retrying. A summary entry is
+    appended to ``recovery_log`` (when provided) so the run summary shows
+    that recovery happened. Persistent PermissionError is re-raised verbatim
+    so the run still fails loudly — silent fallbacks would hide a real
+    misconfiguration."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except PermissionError as exc:
+        blocker = _find_permission_blocker(path, exc)
+        if blocker is None:
+            raise
+        relocated = blocker.with_name(
+            f"{blocker.name}{EXPORT_DIR_CONFLICT_SUFFIX}-{_bj_now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        try:
+            blocker.rename(relocated)
+        except OSError as rename_exc:
+            raise PermissionError(
+                f"meta_daily_final export dir blocked by {blocker} (owner mismatch); "
+                f"automatic relocation to {relocated} failed: {rename_exc}"
+            ) from exc
+        if recovery_log is not None:
+            recovery_log.append({
+                "blocker": str(blocker),
+                "relocated_to": str(relocated),
+                "target_path": str(path),
+            })
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+
+def _find_permission_blocker(path: Path, exc: PermissionError) -> Path | None:
+    """Walk ``path`` upward and return the deepest existing ancestor that
+    cannot be written to. Returns None if no clear blocker is found, in
+    which case the original PermissionError must be re-raised."""
+    blocker_str = getattr(exc, "filename", None) or ""
+    candidate: Path | None = None
+    for ancestor in [path, *path.parents]:
+        if not ancestor.exists():
+            continue
+        if blocker_str and str(ancestor) == blocker_str:
+            candidate = ancestor
+            break
+        if not os.access(ancestor, os.W_OK):
+            candidate = ancestor
+            break
+    if candidate is None:
+        return None
+    try:
+        if candidate.resolve() == META_DAILY_FINAL_EXPORT_ROOT.resolve():
+            return None
+    except OSError:
+        return None
+    try:
+        if META_DAILY_FINAL_EXPORT_ROOT.resolve() not in candidate.resolve().parents:
+            return None
+    except OSError:
+        return None
+    return candidate
+
 
 def _bj_now() -> datetime:
     return datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None, microsecond=0)
@@ -124,8 +196,9 @@ def _run_meta_ads_export(
     account: MetaAdAccount,
     *,
     include_adsets: bool = False,
+    recovery_log: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    export_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_export_dir(export_dir, recovery_log)
     cmd = [
         sys.executable,
         str(META_AD_EXPORT_SCRIPT),
@@ -1093,6 +1166,7 @@ def run_final_sync(
     run_id = scheduled_tasks.start_run(TASK_CODE)
     started = time.time()
     export_dir = META_DAILY_FINAL_EXPORT_ROOT / target_date.isoformat() / _bj_now().strftime("%Y%m%d_%H%M%S")
+    export_dir_recovery: list[dict[str, Any]] = []
     summary: dict[str, Any] = {
         "target_date": target_date.isoformat(),
         "window_start_at": _meta_business_window(target_date)[0],
@@ -1103,6 +1177,7 @@ def run_final_sync(
         "account_results": [],
         "mode": mode,
         "export_dir": str(export_dir),
+        "export_dir_recovery": export_dir_recovery,
         "campaign_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
         "adset_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
         "ad_report": {"rows": 0, "matched": 0, "spend_usd": 0.0},
@@ -1206,9 +1281,20 @@ def run_final_sync(
         }
         try:
             if include_adsets:
-                export_report = _run_meta_ads_export(target_date, account_export_dir, account, include_adsets=True)
+                export_report = _run_meta_ads_export(
+                    target_date,
+                    account_export_dir,
+                    account,
+                    include_adsets=True,
+                    recovery_log=export_dir_recovery,
+                )
             else:
-                export_report = _run_meta_ads_export(target_date, account_export_dir, account)
+                export_report = _run_meta_ads_export(
+                    target_date,
+                    account_export_dir,
+                    account,
+                    recovery_log=export_dir_recovery,
+                )
             account_result["export_report"] = export_report
             rc = int(export_report.get("returncode") or 0)
             if rc != 0:
@@ -1228,6 +1314,7 @@ def run_final_sync(
                             account_export_dir,
                             account,
                             include_adsets=include_adsets,
+                            recovery_log=export_dir_recovery,
                         )
                         account_result["export_report"] = export_report
                         rc = int(export_report.get("returncode") or 0)

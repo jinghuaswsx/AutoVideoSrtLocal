@@ -180,6 +180,8 @@ def test_meta_daily_final_units_use_dxm01_meta_without_shared_lock_and_staggered
         assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" not in service
         assert "autovideosrt-dxm01-meta-vnc.service" in service
         assert "META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222" in service
+        # 02775 + setgid: see docs/superpowers/specs/2026-05-09-meta-daily-final-permission-recovery.md
+        assert "ExecStartPre=/usr/bin/install -d -o root -g root -m 02775 /opt/autovideosrt/output/meta_daily_final_exports" in service
 
     assert "--mode run" in sync_service
     assert "--mode check" in check_service

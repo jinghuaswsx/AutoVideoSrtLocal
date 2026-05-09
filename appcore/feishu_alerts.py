@@ -187,13 +187,18 @@ def format_scheduled_task_failure(row: dict[str, Any]) -> str:
     lines = [
         "【AutoVideoSrt 告警】定时任务失败",
         f"任务：{task_name} ({task_code})",
+    ]
+    consecutive = row.get("consecutive_failures")
+    if isinstance(consecutive, int) and consecutive >= 2:
+        lines.append(f"连续失败：{consecutive} 次")
+    lines.extend([
         f"运行ID：{row.get('id') or '-'}",
         f"开始：{_format_time(row.get('started_at'))}",
         f"结束：{_format_time(row.get('finished_at'))}",
         f"耗时：{duration_text}",
         f"错误：{_clip(row.get('error_message') or '未记录错误信息', ERROR_LIMIT)}",
         f"查看：/scheduled-tasks?view=logs&task={task_code}",
-    ]
+    ])
     summary = row.get("summary") or {}
     if summary:
         summary_text = json.dumps(summary, ensure_ascii=False, default=str)
