@@ -2,7 +2,7 @@
 
 ## 背景
 
-`tools/roi_hourly_sync.py` 调度（systemd timer `autovideosrt-roi-realtime-sync.timer`，每 20 分钟一次）原先**只同步一个 Meta 广告账户** `2110407576446225`（newjoyloo），账户 ID / business ID / CSV 文件名前缀 `newjoyloo` 全部硬编码或仅由环境变量控制。
+`tools/roi_hourly_sync.py` 调度（systemd timer `autovideosrt-roi-realtime-sync.timer`，每 1 小时一次；2026-05-09 前为每 20 分钟）原先**只同步一个 Meta 广告账户** `2110407576446225`（newjoyloo），账户 ID / business ID / CSV 文件名前缀 `newjoyloo` 全部硬编码或仅由环境变量控制。
 
 事件：
 - 2026-05-07 newjoyloo 旧账户 `2110407576446225` 被 Meta 封禁，最近的 CSV `已花费金额` 全为 0。
@@ -148,7 +148,7 @@ run_final_sync(target_date, mode)
 
 ### 旧户历史同步
 
-旧 `newjoyloo_old` 账户保持 `enabled=false`，避免每 20 分钟实时同步和每日收盘同步反复请求已封账户。但该账户仍完整保留 `account_id`、`business_id`、`csv_prefix`、`store_codes`，可用于人工补抓历史数据：
+旧 `newjoyloo_old` 账户保持 `enabled=false`，避免每小时实时同步和每日收盘同步反复请求已封账户。但该账户仍完整保留 `account_id`、`business_id`、`csv_prefix`、`store_codes`，可用于人工补抓历史数据：
 
 ```bash
 python tools/meta_daily_final_sync.py --date 2026-05-06 --mode run --account-code newjoyloo_old
@@ -258,7 +258,7 @@ WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s
    - 目的：覆盖旧 `newjoyloo=2110407576446225 enabled=false` 配置，确保下一轮 timer 使用新户 `1861285821213497`。
 3. 部署代码（按本机部署 SOP）。
 4. 服务重启后 systemd 启动器 apply 该 SQL。
-5. 等下一个 timer tick（最多 20 分钟），观察 `meta_ad_realtime_import_runs`：
+5. 等下一个 timer tick（最多 1 小时），观察 `meta_ad_realtime_import_runs`：
    - `ad_account_ids` 含 newjoyloo 新户 `1861285821213497` 和 Omurio `1253003326160754`。
    - `summary_json.account_results[*]` 各账户独立结果。
    - `newjoyloo_old` 为 `enabled=false`，不应出现在同步账户列表里，但产品盈亏历史分摊仍能通过 `enabled_only=false` 映射到旧户。
