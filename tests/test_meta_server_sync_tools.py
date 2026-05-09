@@ -561,3 +561,210 @@ def test_meta_daily_final_sync_check_fails_when_no_enabled_accounts(monkeypatch,
     assert result["status"] == "failed"
     assert result["error"] == "no enabled meta ad accounts configured"
     assert finished[-1]["status"] == "failed"
+
+
+# ---------- xhr_api channel for run_final_sync ----------
+# Spec: docs/superpowers/specs/2026-05-09-meta-ads-xhr-token-channel.md
+
+
+def _xhr_account(code: str, account_id: str):
+    return SimpleNamespace(
+        code=code,
+        account_id=account_id,
+        business_id=f"business-{account_id}",
+        csv_prefix=code,
+        label=code,
+        store_codes=(code.lower(),),
+        column_preset="1658418688523178",
+        sync_mode="xhr_api",
+    )
+
+
+def _csv_account(code: str, account_id: str):
+    acct = _final_account(code, account_id)
+    acct.sync_mode = "csv_export"
+    return acct
+
+
+def _patch_final_sync_lifecycle(monkeypatch, *, accounts: list, finished: list):
+    from tools import meta_daily_final_sync
+
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "meta_ad_accounts",
+        SimpleNamespace(
+            get_all_accounts=lambda: accounts,
+            get_enabled_accounts=lambda: accounts,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(meta_daily_final_sync.scheduled_tasks, "start_run", lambda task_code: 9101)
+    monkeypatch.setattr(
+        meta_daily_final_sync.scheduled_tasks,
+        "finish_run",
+        lambda run_id, status, summary, error_message=None, output_file=None: finished.append(
+            {"status": status, "summary": summary, "error": error_message}
+        ),
+    )
+    monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 1)
+
+
+def _patch_in_page_session(monkeypatch, *, fetch_results: dict[tuple[str, str], list[dict]], raise_on_open: Exception | None = None):
+    """Patch tools.meta_daily_final_sync's lazy import of open_meta_ads_session."""
+    from contextlib import contextmanager
+
+    class FakeSession:
+        def fetch_insights(self, account_id, *, level, time_range, fields, **_):
+            return list(fetch_results.get((account_id, level), []))
+
+    @contextmanager
+    def fake_open():
+        if raise_on_open:
+            raise raise_on_open
+        yield FakeSession()
+
+    monkeypatch.setattr(
+        "appcore.meta_ads_in_page_fetch.open_meta_ads_session",
+        lambda: fake_open(),
+    )
+
+
+def test_run_final_sync_xhr_api_pulls_three_levels_and_writes_via_api_replacers(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync
+
+    accounts = [_xhr_account("newjoyloo", "111")]
+    finished: list[dict] = []
+    _patch_final_sync_lifecycle(monkeypatch, accounts=accounts, finished=finished)
+    monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
+
+    fetch_results = {
+        ("111", "campaign"): [{"campaign_name": "c1", "spend": "10", "actions": [], "action_values": []}],
+        ("111", "ad"):       [{"ad_name": "a1", "spend": "10", "actions": [], "action_values": []}],
+    }
+    _patch_in_page_session(monkeypatch, fetch_results=fetch_results)
+
+    captured: dict[str, list] = {"campaign": [], "adset": [], "ad": []}
+
+    def stub_replace_campaign(rows, target_date, account):
+        captured["campaign"].append({"rows": rows, "account": account.code})
+        return {"rows": len(rows), "matched": len(rows), "spend_usd": 10.0}
+
+    def stub_replace_ad(rows, target_date, account):
+        captured["ad"].append({"rows": rows, "account": account.code})
+        return {"rows": len(rows), "matched": 0, "spend_usd": 10.0}
+
+    def stub_replace_adset(rows, target_date, account):
+        captured["adset"].append({"rows": rows, "account": account.code})
+        return {"rows": len(rows), "matched": 0, "spend_usd": 0.0}
+
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_campaign_daily_rows_from_api", stub_replace_campaign)
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_ad_daily_rows_from_api", stub_replace_ad)
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_adset_daily_rows_from_api", stub_replace_adset)
+    # CSV path must NOT be invoked
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_run_meta_ads_export",
+        lambda *args, **kwargs: pytest.fail("CSV export must not run for xhr_api accounts"),
+    )
+
+    result = meta_daily_final_sync.run_final_sync(date(2026, 5, 8), mode="run")
+
+    assert result["status"] == "success"
+    by_code = {r["code"]: r for r in result["account_results"]}
+    assert by_code["newjoyloo"]["channel"] == "xhr_api"
+    assert by_code["newjoyloo"]["raw_row_counts"]["campaign"] == 1
+    assert by_code["newjoyloo"]["raw_row_counts"]["ad"] == 1
+    assert len(captured["campaign"]) == 1
+    assert len(captured["ad"]) == 1
+    # adsets only when include_adsets=True (default off)
+    assert captured["adset"] == []
+
+
+def test_run_final_sync_mixed_sync_modes_route_to_their_channels(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync
+
+    accounts = [_xhr_account("newjoyloo", "111"), _csv_account("Omurio", "222")]
+    finished: list[dict] = []
+    _patch_final_sync_lifecycle(monkeypatch, accounts=accounts, finished=finished)
+    monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
+
+    fetch_results = {
+        ("111", "campaign"): [{"campaign_name": "c", "spend": "5", "actions": [], "action_values": []}],
+        ("111", "ad"):       [{"ad_name": "a", "spend": "5", "actions": [], "action_values": []}],
+    }
+    _patch_in_page_session(monkeypatch, fetch_results=fetch_results)
+
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_replace_campaign_daily_rows_from_api",
+        lambda rows, td, account: {"rows": len(rows), "matched": 0, "spend_usd": 5.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_replace_ad_daily_rows_from_api",
+        lambda rows, td, account: {"rows": len(rows), "matched": 0, "spend_usd": 5.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_replace_adset_daily_rows_from_api",
+        lambda rows, td, account: {"rows": 0, "matched": 0, "spend_usd": 0.0},
+    )
+
+    csv_calls: list[str] = []
+
+    def fake_csv_export(target_date, export_dir, account, **kwargs):
+        csv_calls.append(account.code)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        campaign_path = export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"
+        ad_path = export_dir / f"{account.csv_prefix}_ads_{target_date.isoformat()}.csv"
+        campaign_path.write_text("x" * 200, encoding="utf-8")
+        ad_path.write_text("y" * 200, encoding="utf-8")
+        return {"returncode": 0, "campaigns_path": str(campaign_path), "ads_path": str(ad_path)}
+
+    monkeypatch.setattr(meta_daily_final_sync, "_run_meta_ads_export", fake_csv_export)
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_replace_campaign_daily_rows",
+        lambda path, td, account: {"rows": 5, "matched": 1, "spend_usd": 100.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync, "_replace_ad_daily_rows",
+        lambda path, td, account: {"rows": 5, "matched": 1, "spend_usd": 100.0},
+    )
+
+    result = meta_daily_final_sync.run_final_sync(date(2026, 5, 8), mode="run")
+
+    by_code = {r["code"]: r for r in result["account_results"]}
+    assert by_code["newjoyloo"]["channel"] == "xhr_api"
+    assert by_code["Omurio"]["channel"] == "csv_export"
+    # CSV path was called only for Omurio, not for the xhr account
+    assert csv_calls == ["Omurio"]
+    assert result["status"] == "success"
+
+
+def test_run_final_sync_xhr_api_session_failure_marks_xhr_failed_csv_runs_anyway(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync
+
+    accounts = [_xhr_account("a", "111"), _xhr_account("b", "222"), _csv_account("c", "333")]
+    finished: list[dict] = []
+    _patch_final_sync_lifecycle(monkeypatch, accounts=accounts, finished=finished)
+    monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
+    _patch_in_page_session(monkeypatch, fetch_results={}, raise_on_open=RuntimeError("lock timeout 600s"))
+
+    csv_calls: list[str] = []
+
+    def fake_csv_export(target_date, export_dir, account, **kwargs):
+        csv_calls.append(account.code)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        campaign_path = export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"
+        ad_path = export_dir / f"{account.csv_prefix}_ads_{target_date.isoformat()}.csv"
+        campaign_path.write_text("x" * 200, encoding="utf-8")
+        ad_path.write_text("y" * 200, encoding="utf-8")
+        return {"returncode": 0, "campaigns_path": str(campaign_path), "ads_path": str(ad_path)}
+
+    monkeypatch.setattr(meta_daily_final_sync, "_run_meta_ads_export", fake_csv_export)
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_campaign_daily_rows", lambda *a, **kw: {"rows": 1, "matched": 0, "spend_usd": 9.0})
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_ad_daily_rows", lambda *a, **kw: {"rows": 1, "matched": 0, "spend_usd": 9.0})
+
+    result = meta_daily_final_sync.run_final_sync(date(2026, 5, 8), mode="run")
+
+    statuses = {r["code"]: r["status"] for r in result["account_results"]}
+    assert statuses == {"a": "failed", "b": "failed", "c": "success"}
+    assert csv_calls == ["c"]
+    a_err = next(r for r in result["account_results"] if r["code"] == "a")["error"]
+    assert "lock timeout" in a_err

@@ -598,6 +598,415 @@ def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAcco
     return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
 
 
+# --------------------------------------------------------------------------
+# xhr_api channel — bypass the CSV export, consume rows directly from the
+# Marketing API /insights endpoint via the in-page fetcher (PR 4 scope of
+# docs/superpowers/specs/2026-05-09-meta-ads-xhr-token-channel.md).
+# --------------------------------------------------------------------------
+
+# /insights field set for final daily collection. Includes the four
+# entity-name fields so a single fetch at one level returns enough
+# context to populate every DB column without a second join lookup.
+_API_FINAL_FIELDS_BASE = (
+    "account_id",
+    "account_name",
+    "account_currency",
+    "campaign_id",
+    "campaign_name",
+    "date_start",
+    "date_stop",
+    "spend",
+    "impressions",
+    "clicks",
+    "actions",
+    "action_values",
+)
+_API_FINAL_FIELDS_BY_LEVEL = {
+    "campaign": _API_FINAL_FIELDS_BASE,
+    "adset": _API_FINAL_FIELDS_BASE + ("adset_id", "adset_name"),
+    "ad": _API_FINAL_FIELDS_BASE + ("adset_id", "adset_name", "ad_id", "ad_name"),
+}
+
+
+def _common_metrics_from_api(row: dict[str, Any]) -> dict[str, Any]:
+    spend = round(realtime_sync._safe_report_number(row.get("spend")), 4)
+    purchase_value = round(
+        realtime_sync._extract_purchase_metric(row.get("action_values")), 4
+    )
+    result_count = int(round(realtime_sync._extract_purchase_metric(row.get("actions"))))
+    roas = (purchase_value / spend) if spend else None
+    return {
+        "result_count": result_count,
+        "result_metric": None,  # /insights doesn't expose a localized metric label
+        "spend_usd": spend,
+        "purchase_value_usd": purchase_value,
+        "roas_purchase": round(roas, 6) if roas else None,
+    }
+
+
+def _normalize_api_campaign_rows(
+    rows: list[dict[str, Any]],
+    target_date: date,
+    account: MetaAdAccount,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        campaign_name_raw = str(row.get("campaign_name") or row.get("campaign_id") or "").strip()
+        if not campaign_name_raw:
+            continue
+        campaign_name = _text(campaign_name_raw, 255)
+        report_start = _parse_optional_report_date(row.get("date_start"), target_date)
+        report_end = _parse_optional_report_date(row.get("date_stop"), target_date)
+        item = {
+            "ad_account_id": str(row.get("account_id") or account.account_id).strip().removeprefix("act_"),
+            "ad_account_name": (str(row.get("account_name") or "").strip() or None),
+            "report_date": target_date,
+            "report_start_date": report_start,
+            "report_end_date": report_end,
+            "campaign_name": campaign_name,
+            "normalized_campaign_code": campaign_name.lower(),
+            "product_code": _text(campaign_name_raw.lower(), 255) or None,
+            "market_country": extract_market_country_from_names(campaign_name=campaign_name_raw),
+            "raw": dict(row),
+        }
+        item.update(_common_metrics_from_api(row))
+        out.append(item)
+    return out
+
+
+def _normalize_api_ad_rows(
+    rows: list[dict[str, Any]],
+    target_date: date,
+    account: MetaAdAccount,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        ad_name_raw = str(row.get("ad_name") or row.get("ad_id") or "").strip()
+        if not ad_name_raw:
+            continue
+        adset_name_raw = str(row.get("adset_name") or "").strip()
+        campaign_name_raw = str(row.get("campaign_name") or "").strip()
+        ad_name = _text(ad_name_raw, 512)
+        report_start = _parse_optional_report_date(row.get("date_start"), target_date)
+        report_end = _parse_optional_report_date(row.get("date_stop"), target_date)
+        item = {
+            "ad_account_id": str(row.get("account_id") or account.account_id).strip().removeprefix("act_"),
+            "ad_account_name": (str(row.get("account_name") or "").strip() or None),
+            "report_date": target_date,
+            "report_start_date": report_start,
+            "report_end_date": report_end,
+            "ad_name": ad_name,
+            "normalized_ad_code": ad_name.lower(),
+            "product_code": _extract_product_code_from_ad_name(ad_name_raw),
+            "market_country": extract_market_country_from_names(
+                ad_name=ad_name_raw,
+                adset_name=adset_name_raw,
+                campaign_name=campaign_name_raw,
+            ),
+            "raw": dict(row),
+        }
+        item.update(_common_metrics_from_api(row))
+        out.append(item)
+    return out
+
+
+def _normalize_api_adset_rows(
+    rows: list[dict[str, Any]],
+    target_date: date,
+    account: MetaAdAccount,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        adset_name_raw = str(row.get("adset_name") or row.get("adset_id") or "").strip()
+        if not adset_name_raw:
+            continue
+        campaign_name_raw = str(row.get("campaign_name") or "").strip()
+        adset_name = _text(adset_name_raw, 512)
+        report_start = _parse_optional_report_date(row.get("date_start"), target_date)
+        report_end = _parse_optional_report_date(row.get("date_stop"), target_date)
+        item = {
+            "ad_account_id": str(row.get("account_id") or account.account_id).strip().removeprefix("act_"),
+            "ad_account_name": (str(row.get("account_name") or "").strip() or None),
+            "report_date": target_date,
+            "report_start_date": report_start,
+            "report_end_date": report_end,
+            "adset_name": adset_name,
+            "normalized_adset_code": adset_name.lower(),
+            "product_code": _extract_product_code_from_ad_name(adset_name_raw),
+            "market_country": extract_market_country_from_names(
+                adset_name=adset_name_raw,
+                campaign_name=campaign_name_raw,
+            ),
+            "raw": dict(row),
+        }
+        item.update(_common_metrics_from_api(row))
+        out.append(item)
+    return out
+
+
+def _insert_batch_for_api(target_date: date, raw_row_count: int, *, level: str, account: MetaAdAccount) -> int:
+    """Mirror of _insert_batch but synthesizes a batch row for the API
+    channel (no source CSV file)."""
+    synthetic_filename = f"xhr_api/{account.code}/{level}_{target_date.isoformat()}"
+    synthetic_sha = hashlib.sha256(
+        f"{synthetic_filename}|{raw_row_count}|{datetime.now().isoformat()}".encode("utf-8")
+    ).hexdigest()
+    return int(execute(
+        "INSERT INTO meta_ad_import_batches "
+        "(source_filename, file_sha256, import_frequency, report_start_date, report_end_date, raw_row_count) "
+        "VALUES (%s, %s, 'daily_final', %s, %s, %s)",
+        (synthetic_filename, synthetic_sha, target_date, target_date, raw_row_count),
+    ))
+
+
+def _replace_campaign_daily_rows_from_api(
+    api_rows: list[dict[str, Any]],
+    target_date: date,
+    account: MetaAdAccount,
+) -> dict[str, Any]:
+    rows = aggregate_daily_entity_rows(
+        _normalize_api_campaign_rows(api_rows, target_date, account),
+        entity_key="campaign_name",
+    )
+    batch_id = _insert_batch_for_api(target_date, len(rows), level="campaign", account=account)
+    window_start, window_end = _meta_business_window(target_date)
+    execute(
+        "DELETE FROM meta_ad_daily_campaign_metrics WHERE meta_business_date=%s AND ad_account_id=%s",
+        (target_date, account.account_id),
+    )
+    imported = 0
+    matched = 0
+    spend_total = 0.0
+    for row in rows:
+        product = _match_product(row.get("product_code"))
+        product_id = product.get("id") if product else None
+        matched_product_code = product.get("product_code") if product else None
+        if product_id:
+            matched += 1
+        execute(
+            "INSERT INTO meta_ad_daily_campaign_metrics "
+            "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
+            "campaign_name, normalized_campaign_code, product_code, matched_product_code, product_id, "
+            "market_country, result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
+            "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                batch_id,
+                row.get("ad_account_id") or account.account_id,
+                row.get("ad_account_name"),
+                row["report_date"],
+                row["report_start_date"],
+                row["report_end_date"],
+                row["campaign_name"],
+                row["normalized_campaign_code"],
+                row.get("product_code"),
+                matched_product_code,
+                product_id,
+                row.get("market_country"),
+                row.get("result_count") or 0,
+                row.get("result_metric"),
+                row.get("spend_usd") or 0,
+                row.get("purchase_value_usd") or 0,
+                row.get("roas_purchase"),
+                json.dumps(row.get("raw") or {}, ensure_ascii=False),
+                target_date,
+                window_start,
+                window_end,
+                TIMEZONE,
+            ),
+        )
+        imported += 1
+        spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
+    _finish_batch(batch_id, imported=imported, matched=matched)
+    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+
+
+def _replace_ad_daily_rows_from_api(
+    api_rows: list[dict[str, Any]],
+    target_date: date,
+    account: MetaAdAccount,
+) -> dict[str, Any]:
+    rows = aggregate_daily_entity_rows(
+        _normalize_api_ad_rows(api_rows, target_date, account),
+        entity_key="ad_name",
+    )
+    batch_id = _insert_batch_for_api(target_date, len(rows), level="ad", account=account)
+    window_start, window_end = _meta_business_window(target_date)
+    execute(
+        "DELETE FROM meta_ad_daily_ad_metrics WHERE meta_business_date=%s AND ad_account_id=%s",
+        (target_date, account.account_id),
+    )
+    imported = 0
+    matched = 0
+    spend_total = 0.0
+    for row in rows:
+        product = _match_product(row.get("product_code"))
+        product_id = product.get("id") if product else None
+        matched_product_code = product.get("product_code") if product else None
+        if product_id:
+            matched += 1
+        execute(
+            "INSERT INTO meta_ad_daily_ad_metrics "
+            "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
+            "ad_name, normalized_ad_code, product_code, matched_product_code, product_id, "
+            "market_country, result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
+            "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                batch_id,
+                row.get("ad_account_id") or account.account_id,
+                row.get("ad_account_name"),
+                row["report_date"],
+                row["report_start_date"],
+                row["report_end_date"],
+                row["ad_name"],
+                row["normalized_ad_code"],
+                row.get("product_code"),
+                matched_product_code,
+                product_id,
+                row.get("market_country"),
+                row.get("result_count") or 0,
+                row.get("result_metric"),
+                row.get("spend_usd") or 0,
+                row.get("purchase_value_usd") or 0,
+                row.get("roas_purchase"),
+                json.dumps(row.get("raw") or {}, ensure_ascii=False),
+                target_date,
+                window_start,
+                window_end,
+                TIMEZONE,
+            ),
+        )
+        imported += 1
+        spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
+    _finish_batch(batch_id, imported=imported, matched=matched)
+    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+
+
+def _replace_adset_daily_rows_from_api(
+    api_rows: list[dict[str, Any]],
+    target_date: date,
+    account: MetaAdAccount,
+) -> dict[str, Any]:
+    rows = aggregate_daily_entity_rows(
+        _normalize_api_adset_rows(api_rows, target_date, account),
+        entity_key="adset_name",
+    )
+    batch_id = _insert_batch_for_api(target_date, len(rows), level="adset", account=account)
+    window_start, window_end = _meta_business_window(target_date)
+    execute(
+        "DELETE FROM meta_ad_daily_adset_metrics WHERE meta_business_date=%s AND ad_account_id=%s",
+        (target_date, account.account_id),
+    )
+    imported = 0
+    matched = 0
+    spend_total = 0.0
+    for row in rows:
+        product = _match_product(row.get("product_code"))
+        product_id = product.get("id") if product else None
+        matched_product_code = product.get("product_code") if product else None
+        if product_id:
+            matched += 1
+        execute(
+            "INSERT INTO meta_ad_daily_adset_metrics "
+            "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
+            "adset_name, normalized_adset_code, product_code, matched_product_code, product_id, "
+            "market_country, result_count, result_metric, spend_usd, purchase_value_usd, roas_purchase, raw_json, "
+            "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                batch_id,
+                row.get("ad_account_id") or account.account_id,
+                row.get("ad_account_name"),
+                row["report_date"],
+                row["report_start_date"],
+                row["report_end_date"],
+                row["adset_name"],
+                row["normalized_adset_code"],
+                row.get("product_code"),
+                matched_product_code,
+                product_id,
+                row.get("market_country"),
+                row.get("result_count") or 0,
+                row.get("result_metric"),
+                row.get("spend_usd") or 0,
+                row.get("purchase_value_usd") or 0,
+                row.get("roas_purchase"),
+                json.dumps(row.get("raw") or {}, ensure_ascii=False),
+                target_date,
+                window_start,
+                window_end,
+                TIMEZONE,
+            ),
+        )
+        imported += 1
+        spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
+    _finish_batch(batch_id, imported=imported, matched=matched)
+    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+
+
+def _sync_account_via_xhr_api(
+    *,
+    target_date: date,
+    account: MetaAdAccount,
+    session: Any,
+    include_adsets: bool,
+) -> dict[str, Any]:
+    """Pull all 3 levels for one account from the in-page session, write
+    them into the daily DB tables. Reuses ``aggregate_daily_entity_rows``
+    so per-row product matching / market-country derivation is identical
+    to the CSV path."""
+    time_range = {"since": target_date.isoformat(), "until": target_date.isoformat()}
+    campaign_rows = session.fetch_insights(
+        account.account_id,
+        level="campaign",
+        time_range=time_range,
+        fields=_API_FINAL_FIELDS_BY_LEVEL["campaign"],
+        time_increment="1",
+        limit=realtime_sync.META_MARKETING_API_LIMIT,
+        max_pages=realtime_sync.META_MARKETING_API_MAX_PAGES,
+    )
+    adset_rows: list[dict[str, Any]] = []
+    if include_adsets:
+        adset_rows = session.fetch_insights(
+            account.account_id,
+            level="adset",
+            time_range=time_range,
+            fields=_API_FINAL_FIELDS_BY_LEVEL["adset"],
+            time_increment="1",
+            limit=realtime_sync.META_MARKETING_API_LIMIT,
+            max_pages=realtime_sync.META_MARKETING_API_MAX_PAGES,
+        )
+    ad_rows = session.fetch_insights(
+        account.account_id,
+        level="ad",
+        time_range=time_range,
+        fields=_API_FINAL_FIELDS_BY_LEVEL["ad"],
+        time_increment="1",
+        limit=realtime_sync.META_MARKETING_API_LIMIT,
+        max_pages=realtime_sync.META_MARKETING_API_MAX_PAGES,
+    )
+
+    campaign_report = _replace_campaign_daily_rows_from_api(campaign_rows, target_date, account)
+    adset_report = (
+        _replace_adset_daily_rows_from_api(adset_rows, target_date, account)
+        if include_adsets
+        else {"rows": 0, "matched": 0, "spend_usd": 0.0}
+    )
+    ad_report = _replace_ad_daily_rows_from_api(ad_rows, target_date, account)
+    return {
+        "channel": "xhr_api",
+        "campaign_report": campaign_report,
+        "adset_report": adset_report,
+        "ad_report": ad_report,
+        "raw_row_counts": {
+            "campaign": len(campaign_rows),
+            "adset": len(adset_rows),
+            "ad": len(ad_rows),
+        },
+    }
+
+
 def _refresh_final_roas_snapshot(target_date: date, source_run_id: int) -> int:
     day_start, day_end = _meta_business_window(target_date)
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
@@ -715,13 +1124,85 @@ def run_final_sync(
 
     success_count = 0
     errors: list[str] = []
-    for account in accounts:
+    xhr_accounts = [a for a in accounts if getattr(a, "sync_mode", "csv_export") == "xhr_api"]
+    csv_accounts = [a for a in accounts if getattr(a, "sync_mode", "csv_export") != "xhr_api"]
+
+    def _aggregate_account_result(account_result: dict[str, Any]) -> None:
+        nonlocal success_count
+        if account_result.get("status") == "success":
+            for key in ("rows", "matched"):
+                summary["campaign_report"][key] += int(account_result.get("campaign_report", {}).get(key) or 0)
+                summary["adset_report"][key] += int(account_result.get("adset_report", {}).get(key) or 0)
+                summary["ad_report"][key] += int(account_result.get("ad_report", {}).get(key) or 0)
+            summary["campaign_report"]["spend_usd"] = round(
+                float(summary["campaign_report"]["spend_usd"])
+                + float(account_result.get("campaign_report", {}).get("spend_usd") or 0),
+                4,
+            )
+            summary["adset_report"]["spend_usd"] = round(
+                float(summary["adset_report"]["spend_usd"])
+                + float(account_result.get("adset_report", {}).get("spend_usd") or 0),
+                4,
+            )
+            summary["ad_report"]["spend_usd"] = round(
+                float(summary["ad_report"]["spend_usd"])
+                + float(account_result.get("ad_report", {}).get("spend_usd") or 0),
+                4,
+            )
+            success_count += 1
+        elif account_result.get("error"):
+            errors.append(f"[{account_result.get('code')}] {account_result.get('error')}")
+        summary["account_results"].append(account_result)
+
+    # xhr_api channel: one shared in-page session for all xhr_api accounts.
+    # Session-level failure (lock timeout, browser dead, token harvest)
+    # is attributed to every xhr account.
+    if xhr_accounts:
+        try:
+            from appcore.meta_ads_in_page_fetch import open_meta_ads_session
+
+            with open_meta_ads_session() as session:
+                for account in xhr_accounts:
+                    account_result: dict[str, Any] = {
+                        "code": account.code,
+                        "label": account.label or account.code,
+                        "account_id": account.account_id,
+                        "store_codes": list(account.store_codes),
+                        "channel": "xhr_api",
+                    }
+                    try:
+                        report = _sync_account_via_xhr_api(
+                            target_date=target_date,
+                            account=account,
+                            session=session,
+                            include_adsets=include_adsets,
+                        )
+                        account_result.update(report)
+                        account_result["status"] = "success"
+                    except Exception as exc:
+                        account_result["status"] = "failed"
+                        account_result["error"] = str(exc)
+                    _aggregate_account_result(account_result)
+        except Exception as session_exc:
+            for account in xhr_accounts:
+                _aggregate_account_result({
+                    "code": account.code,
+                    "label": account.label or account.code,
+                    "account_id": account.account_id,
+                    "store_codes": list(account.store_codes),
+                    "channel": "xhr_api",
+                    "status": "failed",
+                    "error": f"session: {session_exc}",
+                })
+
+    for account in csv_accounts:
         account_export_dir = export_dir / account.code
         account_result: dict[str, Any] = {
             "code": account.code,
             "label": account.label or account.code,
             "account_id": account.account_id,
             "store_codes": list(account.store_codes),
+            "channel": "csv_export",
         }
         try:
             if include_adsets:
@@ -784,28 +1265,10 @@ def run_final_sync(
                 "adset_report": adset_report,
                 "ad_report": ad_report,
             })
-            for key in ("rows", "matched"):
-                summary["campaign_report"][key] += int(campaign_report.get(key) or 0)
-                summary["adset_report"][key] += int(adset_report.get(key) or 0)
-                summary["ad_report"][key] += int(ad_report.get(key) or 0)
-            summary["campaign_report"]["spend_usd"] = round(
-                float(summary["campaign_report"]["spend_usd"]) + float(campaign_report.get("spend_usd") or 0),
-                4,
-            )
-            summary["adset_report"]["spend_usd"] = round(
-                float(summary["adset_report"]["spend_usd"]) + float(adset_report.get("spend_usd") or 0),
-                4,
-            )
-            summary["ad_report"]["spend_usd"] = round(
-                float(summary["ad_report"]["spend_usd"]) + float(ad_report.get("spend_usd") or 0),
-                4,
-            )
-            success_count += 1
         except Exception as exc:
             account_result["status"] = "failed"
             account_result["error"] = str(exc)
-            errors.append(f"[{account.code}] {exc}")
-        summary["account_results"].append(account_result)
+        _aggregate_account_result(account_result)
 
     if success_count:
         summary["snapshot_id"] = _refresh_final_roas_snapshot(target_date, run_id)
