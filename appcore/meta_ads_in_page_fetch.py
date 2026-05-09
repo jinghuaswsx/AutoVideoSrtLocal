@@ -32,6 +32,15 @@ from urllib.parse import urlencode
 
 from appcore import meta_ads_xhr_token
 from appcore.meta_ads_cdp import DEFAULT_META_ADS_CDP_URL, meta_ads_cdp_lock
+from appcore.meta_ads_xhr_token import (
+    AM_TABULAR_URL_FRAGMENT,
+    DEFAULT_TOKEN_TTL_MINUTES,
+    HARVEST_TIMEOUT_SECONDS,
+    TokenHarvestError,
+    extract_access_token_from_url,
+    load_cached_token,
+    save_cached_token,
+)
 
 log = logging.getLogger(__name__)
 
@@ -229,12 +238,72 @@ def _select_session_account():
     return accounts[0]
 
 
+def _harvest_token_from_existing_page(
+    page: Any,
+    *,
+    page_url: str,
+    page_load_timeout_ms: int,
+    harvest_wait_seconds: int,
+    account_code: str,
+    ttl_minutes: int,
+) -> str:
+    """Capture access_token by listening for am_tabular requests on a
+    page we already opened. Reuses the host Playwright session so we
+    avoid the ``sync_playwright`` cannot be nested error that bites
+    when ``meta_ads_xhr_token.harvest_meta_ads_access_token`` opens
+    its own Playwright instance."""
+    captured: dict[str, str] = {}
+
+    def on_request(request) -> None:
+        try:
+            url = request.url
+        except Exception:  # noqa: BLE001
+            return
+        if AM_TABULAR_URL_FRAGMENT not in url:
+            return
+        token = extract_access_token_from_url(url)
+        if token and "token" not in captured:
+            captured["token"] = token
+
+    page.on("request", on_request)
+    try:
+        try:
+            page.goto(page_url, wait_until="domcontentloaded", timeout=page_load_timeout_ms)
+        except Exception as exc:  # noqa: BLE001 - listener may still fire on partial load
+            log.warning("in-page session goto warning: %s", exc)
+        deadline_ms = int(harvest_wait_seconds * 1000)
+        elapsed = 0
+        step = 200
+        while elapsed < deadline_ms and "token" not in captured:
+            page.wait_for_timeout(step)
+            elapsed += step
+    finally:
+        try:
+            page.remove_listener("request", on_request)
+        except Exception:  # noqa: BLE001
+            pass
+
+    if "token" not in captured:
+        raise TokenHarvestError(
+            f"timed out after {harvest_wait_seconds}s waiting for am_tabular request "
+            f"on {page_url}; check that DXM01-Meta is logged in"
+        )
+    save_cached_token(
+        captured["token"],
+        harvested_via_account=account_code,
+        ttl_minutes=ttl_minutes,
+    )
+    return captured["token"]
+
+
 @contextmanager
 def open_meta_ads_session(
     *,
     cdp_url: str | None = None,
     lock_timeout_seconds: int = 600,
     page_load_timeout_ms: int = 20000,
+    harvest_wait_seconds: int = HARVEST_TIMEOUT_SECONDS,
+    token_ttl_minutes: int = DEFAULT_TOKEN_TTL_MINUTES,
     select_account: Callable[[], Any] | None = None,
     playwright_factory: Callable[[], Any] | None = None,
     token_provider: Callable[..., str] | None = None,
@@ -244,6 +313,16 @@ def open_meta_ads_session(
     The CDP lock is held for the duration of the ``with`` block, so
     callers should fan out all fetches inside one block instead of
     opening a session per account.
+
+    Token strategy:
+    - Cache hit on ``system_settings.meta_xhr_token_cache`` → reuse it,
+      skip am_tabular listener entirely.
+    - Cache miss / expired → attach a request listener to the **same**
+      Playwright page we will use for fetch_insights, navigate it,
+      capture the access_token, save back to cache. This avoids
+      nesting ``sync_playwright`` which is unsupported.
+
+    ``token_provider`` (test injection) bypasses the listener entirely.
     """
     chosen_cdp = cdp_url or DEFAULT_META_ADS_CDP_URL
     pick_account = select_account or _select_session_account
@@ -254,8 +333,6 @@ def open_meta_ads_session(
         from playwright.sync_api import sync_playwright as _sync_playwright
 
         playwright_factory = _sync_playwright
-
-    fetch_token = token_provider or meta_ads_xhr_token.harvest_meta_ads_access_token
 
     with meta_ads_cdp_lock(
         task_code="meta_ads_in_page_session",
@@ -268,19 +345,38 @@ def open_meta_ads_session(
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.new_page()
             try:
-                try:
-                    page.goto(page_url, wait_until="domcontentloaded", timeout=page_load_timeout_ms)
-                except Exception as exc:  # noqa: BLE001 - we still need a token
-                    log.warning("in-page session goto warning: %s", exc)
-                # tiny settle so React has a chance to fire am_tabular before harvest
-                try:
-                    page.wait_for_timeout(2000)
-                except Exception:  # noqa: BLE001
-                    pass
-                # token harvester would re-acquire the same lock if its
-                # cache is stale; disable_child_lock above neuters that
-                # nested acquisition (see meta_ads_cdp.meta_ads_cdp_lock).
-                token = fetch_token()
+                # Decide token source first, then navigate. We always
+                # need the page on the Ads Manager origin so that
+                # fetch_insights (credentials:'include') ships first-
+                # party cookies — but we only attach the am_tabular
+                # listener if we actually need to harvest.
+                token: str | None = None
+                if token_provider is not None:
+                    # Test-mode short-circuit
+                    token = token_provider()
+                else:
+                    cached = load_cached_token()
+                    if cached and cached.is_fresh():
+                        token = cached.access_token
+
+                if token is not None:
+                    try:
+                        page.goto(page_url, wait_until="domcontentloaded", timeout=page_load_timeout_ms)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("in-page session goto warning: %s", exc)
+                    try:
+                        page.wait_for_timeout(1000)
+                    except Exception:  # noqa: BLE001
+                        pass
+                else:
+                    token = _harvest_token_from_existing_page(
+                        page,
+                        page_url=page_url,
+                        page_load_timeout_ms=page_load_timeout_ms,
+                        harvest_wait_seconds=harvest_wait_seconds,
+                        account_code=account.code,
+                        ttl_minutes=token_ttl_minutes,
+                    )
                 yield MetaAdsSession(page=page, access_token=token)
             finally:
                 try:
