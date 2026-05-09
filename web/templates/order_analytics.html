@@ -349,7 +349,33 @@
 .oar-product-search-row {
   display: flex;
   align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
   margin-top: var(--space-3);
+}
+.oar-site-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+.oar-site-filter-label {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+.oar-site-filter select {
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+.oar-site-filter select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
 }
 .oar-realtime-toolbar-row + .oar-note {
   margin-top: var(--space-3);
@@ -1226,6 +1252,15 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="realtimeProductSearchInput" placeholder="搜索产品 ID 或标题…">
         <div class="oa-search-results" id="realtimeProductSearchResults"></div>
+      </div>
+      <div class="oar-site-filter">
+        <label class="oar-site-filter-label" for="realtimeSiteFilter">店铺：</label>
+        <select id="realtimeSiteFilter" aria-label="店铺筛选">
+          <option value="">全部店铺</option>
+          {% for option in realtime_store_options or [] %}
+          <option value="{{ option.code }}">{{ option.label }}</option>
+          {% endfor %}
+        </select>
       </div>
     </div>
     <div class="oa-product-picker oar-product-picker" id="realtimeProductPicker" style="display:none;">
@@ -3333,6 +3368,7 @@
     range: 'today',
     productId: null,
     productLabel: '',
+    siteCode: '',
     profitPage: 1,
     profitPageSize: 100
   };
@@ -3371,6 +3407,14 @@
   var realtimeProductClear = document.getElementById('realtimeProductClear');
   if (realtimeProductClear) {
     realtimeProductClear.addEventListener('click', clearRealtimeProductFilter);
+  }
+  var realtimeSiteFilter = document.getElementById('realtimeSiteFilter');
+  if (realtimeSiteFilter) {
+    realtimeSiteFilter.addEventListener('change', function() {
+      realtimeState.siteCode = realtimeSiteFilter.value || '';
+      resetRealtimeProfitPage();
+      loadRealtimeOverview();
+    });
   }
   var realtimeProfitPrev = document.getElementById('realtimeProfitPrev');
   if (realtimeProfitPrev) {
@@ -3478,6 +3522,7 @@
     params.set('end_date', range.end);
     params.set('include_profit_summary', '1');
     if (realtimeState.productId) params.set('product_id', realtimeState.productId);
+    if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
     var url = '/order-analytics/realtime-overview?' + params.toString();
     fetch(url)
       .then(function(r) {
@@ -3567,6 +3612,7 @@
     params.set('page', realtimeState.profitPage || 1);
     params.set('page_size', realtimeState.profitPageSize || 100);
     if (realtimeState.productId) params.set('product_id', realtimeState.productId);
+    if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
     var url = '/order-analytics/realtime-overview?' + params.toString();
     fetch(url)
       .then(function(r) {

@@ -181,6 +181,16 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - **何时切 `xhr_api`**：CSV 导出弹窗连续 timeout（如 2026-05-08 newjoyloo_bak 600s timeout 事故）→ 在「广告账户」Tab 把对应账户切 `xhr_api`，下一轮 hourly cron 立刻恢复实时数据；导出弹窗修复后再切回 `csv_export`。**默认不要主动切**，因为 CSV 通道带的是 Meta 完整列模板（含购物转化价值 / ROAS - 购物等），`xhr_api` 通道的 `/insights` 字段集是 [`tools/roi_hourly_sync.py:META_INSIGHTS_FIELDS`](tools/roi_hourly_sync.py) 配置的子集（spend / impressions / clicks / actions / action_values），口径精简，扩展列要在 fields 里显式加。
 - 改这条链路至少运行 `pytest tests/test_roi_hourly_sync.py tests/test_roi_hourly_sync_meta_multi_account.py tests/test_meta_server_sync_tools.py tests/test_meta_ads_xhr_token.py tests/test_meta_ads_in_page_fetch.py tests/test_order_analytics_ads.py tests/test_product_profit_report.py tests/test_order_profit_aggregation.py tests/test_order_analytics_data_quality.py -q`。
 
+## 实时大盘店铺筛选（2026-05-09 起）
+
+详细设计：[docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md](docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md)，承接 [2026-05-02 实时大盘改版 spec](docs/superpowers/specs/2026-05-02-realtime-dashboard-redesign.md)。
+
+- `/order-analytics/realtime-overview` 接受可选 `site_code=newjoy|omurio`；不传 = 全部店铺。取值白名单来自 [appcore/meta_ad_accounts.AVAILABLE_STORE_CODES](appcore/meta_ad_accounts.py)，新增店铺要先在 meta_ad_accounts 配置后才能进 UI 选项。
+- 后端 [appcore/order_analytics/realtime.py](appcore/order_analytics/realtime.py) 走 `_normalize_site_codes` + `_site_codes_in_sql` 两个统一入口；不要在新代码里直接拼 `site_code IN ('newjoy', 'omurio')` 字面量。
+- 单店 / 局部店铺筛选时**必须**绕过 `roi_realtime_daily_snapshots` / `roi_daily_roas_nodes` 这两张 store_scope='newjoy,omurio' 的预聚合表，回落到明细路径。已通过 `_should_try_realtime_snapshot` 与 `site_filter_active` 短路；新增同类查询时务必带上同款判断。
+- 单店筛选下广告 / campaign 数据按 `meta_ad_accounts.site_account_map` 翻译为 `ad_account_id IN (...)` 限定；与 [产品盈亏广告费分摊](docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md) 复用同一映射，不要新增硬编码 `site_code -> account_id` 常量。
+- 改这条链路至少运行：`pytest tests/test_order_analytics_realtime_site_filter.py tests/test_order_analytics_true_roas.py tests/characterization/test_order_analytics_baseline.py -q`。
+
 ---
 
 # Frontend Design System — Ocean Blue Admin

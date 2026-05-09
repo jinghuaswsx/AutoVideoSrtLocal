@@ -29,6 +29,67 @@ ORDER_PROFIT_MAX_PAGE_SIZE = 100
 PURCHASE_MISSING_ESTIMATE_RATE = 0.10
 LOGISTICS_MISSING_ESTIMATE_RATE = 0.20
 
+# 实时大盘店铺筛选：默认双店，site_codes 取值必须命中此白名单。
+# 详细设计：docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md
+_DEFAULT_SITE_CODES: tuple[str, ...] = ("newjoy", "omurio")
+_ALLOWED_SITE_CODES: frozenset[str] = frozenset(_DEFAULT_SITE_CODES)
+_DEFAULT_STORE_SCOPE = ",".join(_DEFAULT_SITE_CODES)
+
+
+def _normalize_site_codes(site_codes: Any) -> tuple[str, ...]:
+    """归一化 site_codes：去重 / 小写 / 白名单过滤；空 / 非法 → 默认双店。"""
+    if site_codes is None:
+        return _DEFAULT_SITE_CODES
+    if isinstance(site_codes, str):
+        candidates: list[str] = [site_codes]
+    else:
+        try:
+            candidates = list(site_codes)
+        except TypeError:
+            return _DEFAULT_SITE_CODES
+    normalized: list[str] = []
+    for raw in candidates:
+        code = str(raw or "").strip().lower()
+        if code and code in _ALLOWED_SITE_CODES and code not in normalized:
+            normalized.append(code)
+    if not normalized:
+        return _DEFAULT_SITE_CODES
+    return tuple(normalized)
+
+
+def _site_codes_in_sql(site_codes: tuple[str, ...], column: str = "site_code") -> str:
+    """渲染 ``<column> IN ('newjoy', 'omurio')`` 片段。
+
+    ``site_codes`` 必须先经 ``_normalize_site_codes`` 校验，因此字面量拼接是安全的；
+    保留与历史 SQL 字符串一致（默认值场景下生成的 SQL 与改造前完全相同）。
+    """
+    quoted = ", ".join("'" + code + "'" for code in site_codes)
+    return f"{column} IN ({quoted}) "
+
+
+def _site_codes_use_default(site_codes: tuple[str, ...]) -> bool:
+    return tuple(sorted(site_codes)) == tuple(sorted(_DEFAULT_SITE_CODES))
+
+
+def _resolve_ad_account_ids_for_sites(site_codes: tuple[str, ...]) -> list[str] | None:
+    """单店 / 局部店铺筛选时，把 store_codes 翻译为 ad_account_id 列表。
+
+    全部店铺（默认 newjoy + omurio）时返回 ``None``，调用方据此跳过 ad_account_id 限定。
+    """
+    if _site_codes_use_default(site_codes):
+        return None
+    try:
+        from appcore import meta_ad_accounts
+    except ImportError:
+        return None
+    site_map = meta_ad_accounts.site_account_map(enabled_only=False)
+    account_ids: list[str] = []
+    for code in site_codes:
+        for account_id in site_map.get(code, ()):  # tuple
+            if account_id and account_id not in account_ids:
+                account_ids.append(account_id)
+    return account_ids
+
 
 # DB 入口走 module-level wrapper（与其他 sub-module 同样原理）。
 def _facade():
@@ -194,9 +255,11 @@ def _get_realtime_order_details(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
     product_sql, product_args = _product_filter_sql("product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
         "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -207,7 +270,7 @@ def _get_realtime_order_details(
         "GROUP_CONCAT(DISTINCT NULLIF(product_sku, '') ORDER BY product_sku SEPARATOR ' / ') AS skus, "
         "GROUP_CONCAT(DISTINCT NULLIF(product_name, '') ORDER BY product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(sites) +
         "AND meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
         + product_sql +
@@ -245,9 +308,11 @@ def _get_realtime_order_details_for_range(
     end: date,
     *,
     product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
     product_sql, product_args = _product_filter_sql("product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT meta_business_date, site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
         "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -258,7 +323,7 @@ def _get_realtime_order_details_for_range(
         "GROUP_CONCAT(DISTINCT NULLIF(product_sku, '') ORDER BY product_sku SEPARATOR ' / ') AS skus, "
         "GROUP_CONCAT(DISTINCT NULLIF(product_name, '') ORDER BY product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(sites) +
         "AND meta_business_date >= %s AND meta_business_date <= %s "
         + product_sql +
         "GROUP BY meta_business_date, site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
@@ -369,9 +434,11 @@ def _get_realtime_order_profit_details(
     product_id: int | None = None,
     page: int | None = None,
     page_size: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
     product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
     limit_sql = ""
     limit_args: list[Any] = []
     if page is not None or page_size is not None:
@@ -408,7 +475,7 @@ def _get_realtime_order_profit_details(
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE d.site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
         "AND d.meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
         + product_sql +
@@ -428,9 +495,11 @@ def _get_realtime_order_profit_details_for_range(
     product_id: int | None = None,
     page: int | None = None,
     page_size: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
     product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
     limit_sql = ""
     limit_args: list[Any] = []
     if page is not None or page_size is not None:
@@ -467,7 +536,7 @@ def _get_realtime_order_profit_details_for_range(
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE d.site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
         "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
         + product_sql +
         "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
@@ -652,13 +721,21 @@ def _get_realtime_campaign_details(
     snapshot_at: datetime | None,
     *,
     product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """实时大盘 campaign 明细：按 (business_date, ad_account_id) 各自取最新 snapshot
     再合并，避免落后账户整账户被静默丢弃（与 `_insert_daily_snapshot` 写入端、
     `_get_today_realtime_meta_totals` 读取兜底端共用同一口径）。
     锚点：docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 14 条。
+    单店筛选时按 site_codes → ad_account_id 集合限定，参考
+    docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md。
     """
     if not snapshot_at:
+        return []
+    sites = _normalize_site_codes(site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
+    if allowed_account_ids is not None and not allowed_account_ids:
+        # 单店筛选但没有匹配到任何 ad_account_id（例如新店未配 meta_ad_accounts）→ 空
         return []
     latest_rows = query(
         "SELECT ad_account_id, MAX(snapshot_at) AS latest_at "
@@ -673,6 +750,9 @@ def _get_realtime_campaign_details(
         if not latest_at:
             continue
         ad_account_id = row.get("ad_account_id")
+        if allowed_account_ids is not None:
+            if ad_account_id is None or str(ad_account_id) not in allowed_account_ids:
+                continue
         if ad_account_id is None:
             account_rows = query(
                 "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
@@ -703,9 +783,11 @@ def _get_realtime_order_summary(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
     product_sql, product_args = _product_filter_sql("product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
@@ -717,7 +799,7 @@ def _get_realtime_order_summary(
         "MAX(" + order_time_expr + ") AS last_order_at, "
         "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(sites) +
         "AND meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
         + product_sql,
@@ -745,7 +827,13 @@ def _should_try_realtime_snapshot(
     current_business_date: date,
     *,
     product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> bool:
+    # 单店 / 局部店铺筛选时不能复用 store_scope='newjoy,omurio' 的预聚合快照；
+    # 锚点：docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md
+    sites = _normalize_site_codes(site_codes)
+    if not _site_codes_use_default(sites):
+        return False
     if target >= current_business_date:
         return True
     if target != current_business_date - timedelta(days=1):
@@ -767,11 +855,13 @@ def _get_realtime_product_sales_stats(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
+    sites = _normalize_site_codes(site_codes)
     rows = get_dianxiaomi_product_sales_stats(
         target,
         target,
-        site_codes=["newjoy", "omurio"],
+        site_codes=list(sites),
         product_ids=[product_id] if product_id else None,
         data_until=data_until,
     )
@@ -790,9 +880,24 @@ def _get_realtime_product_sales_stats(
     ]
 
 
-def _get_daily_campaigns(target: date, *, product_id: int | None = None) -> list[dict[str, Any]]:
+def _get_daily_campaigns(
+    target: date,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
     """从 Meta 日级最终报表按 campaign 聚合，字段对齐实时表的 campaign_details。"""
     product_sql, product_args = _product_filter_sql("product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
+    account_sql = ""
+    account_args: list[Any] = []
+    if allowed_account_ids is not None:
+        if not allowed_account_ids:
+            return []
+        placeholders = ", ".join(["%s"] * len(allowed_account_ids))
+        account_sql = f"AND ad_account_id IN ({placeholders}) "
+        account_args = list(allowed_account_ids)
     rows = query(
         "SELECT ad_account_id, ad_account_name, campaign_name, normalized_campaign_code, "
         "SUM(result_count) AS result_count, "
@@ -800,10 +905,10 @@ def _get_daily_campaigns(target: date, *, product_id: int | None = None) -> list
         "SUM(purchase_value_usd) AS purchase_value "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE meta_business_date=%s "
-        + product_sql +
+        + product_sql + account_sql +
         "GROUP BY ad_account_id, ad_account_name, campaign_name, normalized_campaign_code "
         "ORDER BY spend DESC, campaign_name",
-        tuple([target] + product_args),
+        tuple([target] + product_args + account_args),
     )
     out: list[dict[str, Any]] = []
     for row in rows:
@@ -911,6 +1016,8 @@ def _get_realtime_order_updated_at(
     target: date,
     snapshot_at: datetime | None,
     source_run_id: Any | None = None,
+    *,
+    site_codes: tuple[str, ...] | None = None,
 ) -> datetime | None:
     if source_run_id:
         row = query(
@@ -926,10 +1033,11 @@ def _get_realtime_order_updated_at(
     if not snapshot_at:
         return None
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    sites = _normalize_site_codes(site_codes)
     row = query(
         "SELECT MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(sites) +
         "AND meta_business_date=%s AND " + order_time_expr + " <= %s",
         (target, snapshot_at),
     )
@@ -948,12 +1056,15 @@ def _build_realtime_overview_for_range(
     product_id: int | None = None,
     page: int = 1,
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
+    site_codes: tuple[str, ...] | None = None,
 ) -> dict:
     """Date range branch: summary by default, optionally with order details.
 
     Reuses the true ROAS summary aggregation by meta_business_date so historical
     date ranges do not depend on the current realtime business-day window.
     """
+    sites = _normalize_site_codes(site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
     product_sql, product_args = _product_filter_sql("product_id", product_id)
     order_rows = query(
         "SELECT meta_business_date, "
@@ -966,25 +1077,47 @@ def _build_realtime_overview_for_range(
         "MAX(COALESCE(order_paid_at, attribution_time_at, order_created_at)) AS last_order_at, "
         "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(sites) +
         "AND meta_business_date >= %s AND meta_business_date <= %s "
         + product_sql +
         "GROUP BY meta_business_date",
         tuple([start, end] + product_args),
     )
     ad_product_sql, ad_product_args = _product_filter_sql("product_id", product_id)
-    ad_rows = query(
-        "SELECT meta_business_date, "
-        "SUM(spend_usd) AS ad_spend, "
-        "SUM(purchase_value_usd) AS meta_purchase_value, "
-        "SUM(result_count) AS meta_purchases, "
-        "MAX(updated_at) AS last_ad_updated_at "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
-        + ad_product_sql +
-        "GROUP BY meta_business_date",
-        tuple([start, end] + ad_product_args),
-    )
+    ad_account_sql = ""
+    ad_account_args: list[Any] = []
+    if allowed_account_ids is not None:
+        if not allowed_account_ids:
+            ad_rows: list[dict[str, Any]] = []
+        else:
+            placeholders = ", ".join(["%s"] * len(allowed_account_ids))
+            ad_account_sql = f"AND ad_account_id IN ({placeholders}) "
+            ad_account_args = list(allowed_account_ids)
+            ad_rows = query(
+                "SELECT meta_business_date, "
+                "SUM(spend_usd) AS ad_spend, "
+                "SUM(purchase_value_usd) AS meta_purchase_value, "
+                "SUM(result_count) AS meta_purchases, "
+                "MAX(updated_at) AS last_ad_updated_at "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+                + ad_product_sql + ad_account_sql +
+                "GROUP BY meta_business_date",
+                tuple([start, end] + ad_product_args + ad_account_args),
+            )
+    else:
+        ad_rows = query(
+            "SELECT meta_business_date, "
+            "SUM(spend_usd) AS ad_spend, "
+            "SUM(purchase_value_usd) AS meta_purchase_value, "
+            "SUM(result_count) AS meta_purchases, "
+            "MAX(updated_at) AS last_ad_updated_at "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+            + ad_product_sql +
+            "GROUP BY meta_business_date",
+            tuple([start, end] + ad_product_args),
+        )
 
     summary = {
         "order_count": 0,
@@ -1039,6 +1172,7 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            site_codes=sites,
         )
         if include_profit else []
     )
@@ -1049,6 +1183,7 @@ def _build_realtime_overview_for_range(
             product_id=product_id,
             page=page,
             page_size=page_size,
+            site_codes=sites,
         )
         if include_details else []
     )
@@ -1066,7 +1201,7 @@ def _build_realtime_overview_for_range(
             "day_definition": "meta_ad_platform_business_day_range",
         },
         "scope": {
-            "stores": ["newjoy", "omurio"],
+            "stores": list(sites),
             "product_id": product_id,
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
@@ -1088,6 +1223,7 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            site_codes=sites,
         ) if include_details else [],
         "order_profit_details": order_profit_details,
         "order_profit_details_page": _order_profit_page_info(len(order_profit_all), page, page_size),
@@ -1099,7 +1235,7 @@ def _build_realtime_overview_for_range(
         "product_sales_stats": get_dianxiaomi_product_sales_stats(
             start,
             end,
-            site_codes=["newjoy", "omurio"],
+            site_codes=list(sites),
             product_ids=[product_id] if product_id else None,
         ) if include_details else [],
     }
@@ -1116,9 +1252,13 @@ def get_realtime_roas_overview(
     product_id: int | None = None,
     page: int = 1,
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
+    site_codes: list[str] | tuple[str, ...] | None = None,
 ) -> dict:
     now = (now or _beijing_now()).replace(microsecond=0)
     normalized_product_id = int(product_id) if product_id else None
+    normalized_site_codes = _normalize_site_codes(site_codes)
+    site_filter_active = not _site_codes_use_default(normalized_site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(normalized_site_codes)
     normalized_page = _normalize_positive_int(page, 1)
     normalized_page_size = _normalize_positive_int(
         page_size,
@@ -1142,6 +1282,7 @@ def get_realtime_roas_overview(
                 product_id=normalized_product_id,
                 page=normalized_page,
                 page_size=normalized_page_size,
+                site_codes=normalized_site_codes,
             )
         # start == end → 走单日分支，把 start_date 作为目标日
         date_text = start_date
@@ -1159,14 +1300,18 @@ def get_realtime_roas_overview(
         data_until = day_start
         complete_hour_until = day_start
 
-    roas_node_rows = query(
-        "SELECT node_hour, node_at, order_count, units, order_revenue_usd, "
-        "shipping_revenue_usd, ad_spend_usd, true_roas, order_data_status, ad_data_status "
-        "FROM roi_daily_roas_nodes "
-        "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
-        "ORDER BY node_hour",
-        (target,),
-    )
+    # 单店筛选下 roi_daily_roas_nodes 没有对应 store_scope 行 → 直接返回空 ROAS 节点列表
+    if site_filter_active:
+        roas_node_rows: list[dict[str, Any]] = []
+    else:
+        roas_node_rows = query(
+            "SELECT node_hour, node_at, order_count, units, order_revenue_usd, "
+            "shipping_revenue_usd, ad_spend_usd, true_roas, order_data_status, ad_data_status "
+            "FROM roi_daily_roas_nodes "
+            "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+            "ORDER BY node_hour",
+            (target,),
+        )
     roas_nodes_by_hour = {int(row["node_hour"]): row for row in roas_node_rows if row.get("node_hour") is not None}
     roas_points = [
         {
@@ -1190,10 +1335,12 @@ def get_realtime_roas_overview(
 
     # 历史日期默认走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
     # 刚过 16:00 时，上一 Meta 业务日可能已关闭但日终广告表尚未生成；此时用最后一个实时快照兜底。
+    # 单店 / 局部店铺筛选时不能复用 store_scope='newjoy,omurio' 的快照，必须回落到明细路径。
     should_try_snapshot = _should_try_realtime_snapshot(
         target,
         current_business_date,
         product_id=normalized_product_id,
+        site_codes=normalized_site_codes,
     )
     latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
@@ -1209,11 +1356,13 @@ def get_realtime_roas_overview(
                 target,
                 snapshot_at,
                 product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
             )
             campaign_details = _get_realtime_campaign_details(
                 target,
                 snapshot_at,
                 product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
             )
             ad_spend = round(sum(c["spend_usd"] for c in campaign_details), 2)
             meta_purchase_value = round(sum(c["purchase_value_usd"] for c in campaign_details), 2)
@@ -1223,12 +1372,14 @@ def get_realtime_roas_overview(
                 day_start,
                 snapshot_at,
                 product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
             )
             order_profit_all = _get_realtime_order_profit_details(
                 target,
                 day_start,
                 snapshot_at,
                 product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
             )
             order_profit_details = _get_realtime_order_profit_details(
                 target,
@@ -1237,13 +1388,20 @@ def get_realtime_roas_overview(
                 product_id=normalized_product_id,
                 page=normalized_page,
                 page_size=normalized_page_size,
+                site_codes=normalized_site_codes,
             )
             product_sales_stats = _get_realtime_product_sales_stats(
                 target,
                 snapshot_at,
                 product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
             )
-            last_order_updated_at = _get_realtime_order_updated_at(target, snapshot_at, snap.get("source_run_id"))
+            last_order_updated_at = _get_realtime_order_updated_at(
+                target,
+                snapshot_at,
+                snap.get("source_run_id"),
+                site_codes=normalized_site_codes,
+            )
             last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
             revenue_with_shipping = order_summary["revenue_with_shipping"]
             return {
@@ -1258,7 +1416,7 @@ def get_realtime_roas_overview(
                     "day_definition": "meta_ad_platform_business_day",
                 },
                 "scope": {
-                    "stores": ["newjoy", "omurio"],
+                    "stores": list(normalized_site_codes),
                     "product_id": normalized_product_id,
                     "ad_platforms": ["meta"],
                     "order_source": "dianxiaomi",
@@ -1314,12 +1472,14 @@ def get_realtime_roas_overview(
             day_start,
             snapshot_at,
             product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
         )
         order_profit_all = _get_realtime_order_profit_details(
             target,
             day_start,
             snapshot_at,
             product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
         )
         order_profit_details = _get_realtime_order_profit_details(
             target,
@@ -1328,14 +1488,25 @@ def get_realtime_roas_overview(
             product_id=normalized_product_id,
             page=normalized_page,
             page_size=normalized_page_size,
+            site_codes=normalized_site_codes,
         )
-        campaign_details = _get_realtime_campaign_details(target, snapshot_at)
+        campaign_details = _get_realtime_campaign_details(
+            target,
+            snapshot_at,
+            site_codes=normalized_site_codes,
+        )
         product_sales_stats = _get_realtime_product_sales_stats(
             target,
             snapshot_at,
             product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
         )
-        last_order_updated_at = _get_realtime_order_updated_at(target, snapshot_at, snap.get("source_run_id"))
+        last_order_updated_at = _get_realtime_order_updated_at(
+            target,
+            snapshot_at,
+            snap.get("source_run_id"),
+            site_codes=normalized_site_codes,
+        )
         last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
         return {
             "period": {
@@ -1349,7 +1520,7 @@ def get_realtime_roas_overview(
                 "day_definition": "meta_ad_platform_business_day",
             },
             "scope": {
-                "stores": ["newjoy", "omurio"],
+                "stores": list(normalized_site_codes),
                 "product_id": normalized_product_id,
                 "ad_platforms": ["meta"],
                 "order_source": "dianxiaomi",
@@ -1410,7 +1581,7 @@ def get_realtime_roas_overview(
         "MAX(" + order_time_expr + ") AS last_order_at, "
         "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE " + _site_codes_in_sql(normalized_site_codes) +
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
         + product_sql +
         "GROUP BY HOUR(" + order_time_expr + ") "
@@ -1418,16 +1589,36 @@ def get_realtime_roas_overview(
         tuple([day_start, day_end] + product_args),
     )
     ad_product_sql, ad_product_args = _product_filter_sql("product_id", normalized_product_id)
-    ad_rows = query(
-        "SELECT SUM(spend_usd) AS ad_spend, "
-        "SUM(purchase_value_usd) AS meta_purchase_value, "
-        "SUM(result_count) AS meta_purchases, "
-        "MAX(updated_at) AS last_ad_updated_at "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE meta_business_date = %s "
-        + ad_product_sql,
-        tuple([target] + ad_product_args),
-    )
+    ad_account_sql_live = ""
+    ad_account_args_live: list[Any] = []
+    if allowed_account_ids is not None:
+        if not allowed_account_ids:
+            ad_rows: list[dict[str, Any]] = []
+        else:
+            placeholders_live = ", ".join(["%s"] * len(allowed_account_ids))
+            ad_account_sql_live = f"AND ad_account_id IN ({placeholders_live}) "
+            ad_account_args_live = list(allowed_account_ids)
+            ad_rows = query(
+                "SELECT SUM(spend_usd) AS ad_spend, "
+                "SUM(purchase_value_usd) AS meta_purchase_value, "
+                "SUM(result_count) AS meta_purchases, "
+                "MAX(updated_at) AS last_ad_updated_at "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE meta_business_date = %s "
+                + ad_product_sql + ad_account_sql_live,
+                tuple([target] + ad_product_args + ad_account_args_live),
+            )
+    else:
+        ad_rows = query(
+            "SELECT SUM(spend_usd) AS ad_spend, "
+            "SUM(purchase_value_usd) AS meta_purchase_value, "
+            "SUM(result_count) AS meta_purchases, "
+            "MAX(updated_at) AS last_ad_updated_at "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE meta_business_date = %s "
+            + ad_product_sql,
+            tuple([target] + ad_product_args),
+        )
 
     orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
     ad = ad_rows[0] if ad_rows else {}
@@ -1483,6 +1674,7 @@ def get_realtime_roas_overview(
         day_start,
         data_until,
         product_id=normalized_product_id,
+        site_codes=normalized_site_codes,
     )
     order_profit_details = _get_realtime_order_profit_details(
         target,
@@ -1491,6 +1683,7 @@ def get_realtime_roas_overview(
         product_id=normalized_product_id,
         page=normalized_page,
         page_size=normalized_page_size,
+        site_codes=normalized_site_codes,
     )
     return {
         "period": {
@@ -1504,7 +1697,7 @@ def get_realtime_roas_overview(
             "day_definition": "meta_ad_platform_business_day",
         },
         "scope": {
-            "stores": ["newjoy", "omurio"],
+            "stores": list(normalized_site_codes),
             "product_id": normalized_product_id,
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
@@ -1526,6 +1719,7 @@ def get_realtime_roas_overview(
             day_start,
             data_until,
             product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
         ),
         "order_profit_details": order_profit_details,
         "order_profit_details_page": _order_profit_page_info(
@@ -1537,11 +1731,16 @@ def get_realtime_roas_overview(
             order_profit_all,
             total_ad_spend_usd=summary["ad_spend"],
         ),
-        "campaigns": _get_daily_campaigns(target, product_id=normalized_product_id),
+        "campaigns": _get_daily_campaigns(
+            target,
+            product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
+        ),
         "product_sales_stats": _get_realtime_product_sales_stats(
             target,
             data_until,
             product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
         ),
     }
 

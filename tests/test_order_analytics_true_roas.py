@@ -444,7 +444,7 @@ def test_get_realtime_roas_overview_range_can_return_profit_summary_without_deta
 
     profit_calls = []
 
-    def fake_profit_rows(start, end, *, product_id=None, page=None, page_size=None):
+    def fake_profit_rows(start, end, *, product_id=None, page=None, page_size=None, site_codes=None):
         profit_calls.append(
             {
                 "start": start,
@@ -531,7 +531,7 @@ def test_get_realtime_roas_overview_range_subtracts_unallocated_ad_spend(monkeyp
             ]
         return []
 
-    def fake_profit_rows(start, end, *, product_id=None, page=None, page_size=None):
+    def fake_profit_rows(start, end, *, product_id=None, page=None, page_size=None, site_codes=None):
         return [
             {
                 "total_revenue": 100.0,

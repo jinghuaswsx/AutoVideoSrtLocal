@@ -146,11 +146,33 @@ def _audit_order_analytics_action(
 
 # ── 页面路由 ──────────────────────────────────────────
 
+_REALTIME_STORE_LABELS = {
+    "newjoy": "Newjoy",
+    "omurio": "Omurio",
+}
+
+
+def _realtime_store_options() -> list[dict[str, str]]:
+    """实时大盘店铺筛选下拉选项；锚点：
+    docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md
+    """
+    return [
+        {
+            "code": code,
+            "label": _REALTIME_STORE_LABELS.get(code, code.title()),
+        }
+        for code in meta_ad_accounts.AVAILABLE_STORE_CODES
+    ]
+
+
 @bp.route("/order-analytics")
 @login_required
 @permission_required("data_analytics")
 def page():
-    resp = make_response(render_template("order_analytics.html"))
+    resp = make_response(render_template(
+        "order_analytics.html",
+        realtime_store_options=_realtime_store_options(),
+    ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
 
@@ -548,6 +570,17 @@ def realtime_overview():
         if product_id <= 0:
             return _json_response(error="invalid_param", detail="product_id must be a positive integer"), 400
         kwargs["product_id"] = product_id
+    site_code_text = (request.args.get("site_code") or "").strip().lower()
+    if site_code_text:
+        if site_code_text not in meta_ad_accounts.AVAILABLE_STORE_CODES:
+            return _json_response(
+                error="invalid_param",
+                detail=(
+                    "site_code must be one of "
+                    + ", ".join(meta_ad_accounts.AVAILABLE_STORE_CODES)
+                ),
+            ), 400
+        kwargs["site_codes"] = [site_code_text]
     if "page" in request.args:
         page = request.args.get("page", type=int)
         if not page or page <= 0:

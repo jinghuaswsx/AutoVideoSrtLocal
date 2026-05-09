@@ -89,6 +89,14 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - 定时巡检 `analytics_data_quality_inspection` 已登记到 [appcore/scheduled_tasks.py](appcore/scheduled_tasks.py)；新增类似巡检必须同步登记。
 - 改这条链路至少运行：`pytest tests/test_order_analytics_data_quality.py tests/test_order_profit_routes.py tests/test_product_profit_routes.py tests/test_order_analytics_true_roas.py tests/test_data_quality_frontend_assets.py -q`。
 
+## 实时大盘店铺筛选（2026-05-09 起）
+
+- 设计：[docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md](docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md)，承接 [2026-05-02 实时大盘改版 spec](docs/superpowers/specs/2026-05-02-realtime-dashboard-redesign.md)。
+- `/order-analytics/realtime-overview` 接受可选 `site_code=newjoy|omurio`；不传 = 全部店铺。取值白名单来自 [appcore/meta_ad_accounts.AVAILABLE_STORE_CODES](appcore/meta_ad_accounts.py)，不能随手扩展；新增店铺要先在 meta_ad_accounts 配置后才能进 UI 选项。
+- 后端 [appcore/order_analytics/realtime.py](appcore/order_analytics/realtime.py) 走 `_normalize_site_codes` + `_site_codes_in_sql` 两个统一入口；不要在新代码里直接拼 `site_code IN ('newjoy', 'omurio')` 字面量。
+- 单店 / 局部店铺筛选时 **必须** 绕过 `roi_realtime_daily_snapshots` / `roi_daily_roas_nodes` 这两张 store_scope='newjoy,omurio' 的预聚合表，回落到明细路径。已通过 `_should_try_realtime_snapshot` 与 `site_filter_active` 短路，新增同类查询时务必带上同款判断。
+- 改这条链路至少运行：`pytest tests/test_order_analytics_realtime_site_filter.py tests/test_order_analytics_true_roas.py tests/characterization/test_order_analytics_baseline.py -q`。
+
 ## Link Check Desktop Commands
 
 - 开发运行：`python -m link_check_desktop.main`
