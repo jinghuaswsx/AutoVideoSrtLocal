@@ -16,9 +16,11 @@ import logging
 import sys
 from collections import defaultdict
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 from urllib.parse import quote
 
+from . import manual_ad_spend
 from .meta_ads import resolve_ad_product_match
 
 logger = logging.getLogger(__name__)
@@ -681,6 +683,49 @@ def _sum_summary_int(summary: dict[str, dict[str, float | int]], key: str) -> in
     )
 
 
+def _load_sync_account_totals(
+    date_from: date, date_to: date,
+) -> dict[tuple[date, str], Decimal]:
+    """对每个 (business_date, ad_account_id) 算 sync ad spend 总和（含 product_id IS NULL 行）。
+
+    优先走 meta_ad_daily_campaign_metrics（收盘日表）；当账户当天无任何收盘日行时，
+    回退到 meta_ad_realtime_daily_campaign_metrics 的 latest snapshot per (date, account)
+    （遵守 CLAUDE.md "按 (business_date, ad_account_id) 取最新 snapshot" 反事故规则）。
+    """
+    totals: dict[tuple[date, str], Decimal] = {}
+    daily_rows = query(
+        "SELECT business_date, ad_account_id, SUM(spend_usd) AS total "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE business_date BETWEEN %s AND %s "
+        "GROUP BY business_date, ad_account_id",
+        (date_from, date_to),
+    )
+    for row in daily_rows or []:
+        key = (row["business_date"], str(row["ad_account_id"]))
+        totals[key] = Decimal(str(row["total"] or 0))
+
+    realtime_rows = query(
+        "SELECT m.business_date, m.ad_account_id, SUM(m.spend_usd) AS total "
+        "FROM meta_ad_realtime_daily_campaign_metrics m "
+        "INNER JOIN ("
+        "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS latest "
+        "  FROM meta_ad_realtime_daily_campaign_metrics "
+        "  WHERE business_date BETWEEN %s AND %s "
+        "  GROUP BY business_date, ad_account_id"
+        ") latest_snap "
+        "ON m.business_date = latest_snap.business_date "
+        "AND m.ad_account_id = latest_snap.ad_account_id "
+        "AND m.snapshot_at = latest_snap.latest "
+        "GROUP BY m.business_date, m.ad_account_id",
+        (date_from, date_to),
+    )
+    for row in realtime_rows or []:
+        key = (row["business_date"], str(row["ad_account_id"]))
+        if key not in totals:  # 仅当收盘日表无该账户行时回退
+            totals[key] = Decimal(str(row["total"] or 0))
+    return totals
+
+
 def get_order_profit_status_summary(
     *,
     date_from: date,
@@ -834,6 +879,15 @@ def get_order_profit_status_summary(
             ) - float(delta)
         unallocated += float(adjustments.get("unallocated_spend") or 0)
 
+    sync_totals = _load_sync_account_totals(date_from, date_to)
+    manual_map = manual_ad_spend.load_supplement_map(date_from, date_to)
+    manual_supplement = Decimal("0")
+    for (_biz_date, _ad_account_id), _manual_spend in manual_map.items():
+        sync_total = sync_totals.get((_biz_date, _ad_account_id), Decimal("0"))
+        if sync_total == 0:
+            manual_supplement += _manual_spend
+    unallocated = unallocated + float(manual_supplement)
+
     margin = (
         (summary["ok"]["profit"] / summary["ok"]["revenue"]) * 100
         if summary["ok"]["revenue"] > 0
@@ -906,6 +960,7 @@ def get_order_profit_status_summary(
         "date_to": date_to.isoformat(),
         "summary": summary,
         "unallocated_ad_spend_usd": unallocated,
+        "manual_unallocated_supplement_usd": manual_supplement,
         "margin_pct": round(margin, 2) if margin is not None else None,
         "total_revenue_usd": round(total_revenue, 2),
         "known_revenue_usd": round(summary["ok"]["revenue"], 2),

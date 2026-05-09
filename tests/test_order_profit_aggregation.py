@@ -527,6 +527,7 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
         raise AssertionError(f"unexpected query: {sql}")
 
     monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
 
     payload = get_order_profit_status_summary(
         date_from=date(2026, 5, 1),
@@ -580,6 +581,7 @@ def test_status_summary_queries_order_lines_by_meta_business_date(monkeypatch):
         return []
 
     monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
 
     get_order_profit_status_summary(
         date_from=date(2026, 5, 1),
@@ -684,6 +686,7 @@ def test_status_summary_uses_realtime_ad_snapshot_for_missing_daily_metrics(monk
         lambda code: {"id": 316} if code == "newjoyloo-rjc" else None,
         raising=False,
     )
+    monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
 
     payload = get_order_profit_status_summary(date_from=target, date_to=target)
 
@@ -770,6 +773,7 @@ def test_status_summary_counts_realtime_matched_spend_without_units_as_unallocat
 
     monkeypatch.setattr(oa, "query", fake_query)
     monkeypatch.setattr(opa, "resolve_ad_product_match", fake_match, raising=False)
+    monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
 
     payload = get_order_profit_status_summary(date_from=target, date_to=target)
 
@@ -834,6 +838,7 @@ def test_status_summary_recalculates_ad_cost_from_daily_metrics_when_profit_line
         return []
 
     monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
 
     payload = get_order_profit_status_summary(date_from=target, date_to=target)
 
@@ -996,6 +1001,7 @@ def test_status_summary_returns_complete_profit_with_missing_cost_estimates(monk
         raise AssertionError(f"unexpected query: {sql}")
 
     monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
 
     payload = get_order_profit_status_summary(
         date_from=date(2026, 5, 1),
@@ -1260,3 +1266,62 @@ def test_realtime_ad_snapshot_fallback_handles_legacy_null_account_id(monkeypatc
     result = opa._load_realtime_ad_snapshot_fallback(date_from=target, date_to=target)
 
     assert result["unallocated_spend"] == pytest.approx(50.0)
+
+
+# -------- manual_supplement in get_order_profit_status_summary --------
+
+from datetime import date as _date_5
+from decimal import Decimal as _Decimal_5
+
+from appcore.db import get_conn as _get_conn_5
+from appcore.order_analytics import manual_ad_spend as _manual_ad_spend_5
+
+
+@pytest.fixture
+def _seed_meta_accounts(monkeypatch):
+    """Stub get_all_accounts so the supplement loop sees deterministic accounts."""
+    from appcore import meta_ad_accounts as _meta_ad_accounts_5
+
+    fake = [
+        _meta_ad_accounts_5.MetaAdAccount(
+            code="newjoyloo", account_id="1861285821213497", business_id="b",
+            csv_prefix="newjoyloo", store_codes=("newjoy",), enabled=True, label="Newjoyloo",
+        ),
+        _meta_ad_accounts_5.MetaAdAccount(
+            code="Omurio", account_id="1253003326160754", business_id="b",
+            csv_prefix="Omurio", store_codes=("omurio",), enabled=True, label="Omurio",
+        ),
+    ]
+    monkeypatch.setattr(_meta_ad_accounts_5, "get_all_accounts", lambda: fake)
+
+
+@pytest.fixture(autouse=False)
+def _clean_manual_ad_spend():
+    conn = _get_conn_5()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM meta_ad_manual_daily_spend")
+        conn.commit()
+    yield
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM meta_ad_manual_daily_spend")
+        conn.commit()
+
+
+def test_supplement_skipped_when_sync_has_any_spend(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+    """sync sum > 0 时即使有 manual 行也不该叠加。"""
+    monkeypatch.setattr(
+        opa,
+        "_load_sync_account_totals",
+        lambda date_from, date_to: {
+            (_date_5(2026, 5, 8), "1861285821213497"): _Decimal_5("0.01"),
+        },
+    )
+    _manual_ad_spend_5.upsert_entries(
+        business_date=_date_5(2026, 5, 8),
+        entries=[{"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "300"}],
+        updated_by=1,
+    )
+    summary = opa.get_order_profit_status_summary(
+        date_from=_date_5(2026, 5, 8), date_to=_date_5(2026, 5, 8),
+    )
+    assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("0")
