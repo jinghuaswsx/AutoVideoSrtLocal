@@ -145,7 +145,22 @@ def _load_realtime_ad_snapshot_fallback(
     date_to: date,
     product_id: int | None = None,
 ) -> dict[str, Any]:
-    """Load live ad spend from daily metrics, with realtime snapshots as fallback."""
+    """Load live ad spend from daily metrics, with realtime snapshots as fallback.
+
+    Open BJ business days must always go through realtime fallback even
+    when ``meta_ad_daily_*`` contains rows for them — those rows would be
+    either (a) stale from a prior closed-day run that the cleanup
+    migration missed, or (b) partial data from a misuse of
+    ``run_final_sync`` before its day-closed guard landed. Without this,
+    one bad daily row blinds the realtime path and the order-profit
+    dashboard reports a fraction of the real day's spend.
+
+    Spec: docs/superpowers/specs/2026-05-09-realtime-dashboard-ad-spend-source-of-truth.md (layer 4)
+    """
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
+    closed_through = completed_meta_business_date()
+
     try:
         target_product_id = int(product_id) if product_id else None
         spend_by_product: dict[tuple[date, int], float] = defaultdict(float)
@@ -163,6 +178,9 @@ def _load_realtime_ad_snapshot_fallback(
         for row in daily_rows or []:
             business_date = _date_value(row.get("business_date"))
             if not business_date:
+                continue
+            if business_date > closed_through:
+                # Open BJ business day — never trust daily table for this date.
                 continue
             finalized_dates.add(business_date)
             product = row.get("product_id")

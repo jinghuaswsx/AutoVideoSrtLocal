@@ -1524,11 +1524,19 @@ def get_realtime_roas_overview(
         product_id=normalized_product_id,
         site_codes=normalized_site_codes,
     )
+    # Cap snapshot_at at "now" so a stale daily-final row (snapshot_at =
+    # day_end, i.e., next-day BJ 16:00) cannot eclipse the freshest
+    # realtime partial when target == current_business_date. For a
+    # historical day day_end < now, so the cap is permissive and the
+    # daily-final row still wins as before.
+    # Spec: docs/superpowers/specs/2026-05-09-realtime-dashboard-ad-spend-source-of-truth.md
+    snapshot_filter_until = now if target == current_business_date else day_end
     latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+        "AND snapshot_at <= %s "
         "ORDER BY snapshot_at DESC, id DESC LIMIT 1",
-        (target,),
+        (target, snapshot_filter_until),
     ) if should_try_snapshot else []
     if latest_snapshot:
         snap = latest_snapshot[0]

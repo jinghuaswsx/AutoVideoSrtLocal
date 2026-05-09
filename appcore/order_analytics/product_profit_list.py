@@ -74,6 +74,27 @@ def _load_lines(date_from: date, date_to: date, country: str | None) -> list[dic
     return query(sql, tuple(params))
 
 
+def _open_business_dates_in_range(date_from: date, date_to: date) -> list[date]:
+    """日期范围内尚未收盘的 BJ 业务日。Layer 4/5 用于决定何时改走 realtime 兜底。
+
+    Spec: docs/superpowers/specs/2026-05-09-realtime-dashboard-ad-spend-source-of-truth.md
+    """
+    from datetime import timedelta
+
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
+    closed_through = completed_meta_business_date()
+    out: list[date] = []
+    if not date_from or not date_to or date_from > date_to:
+        return out
+    cur = date_from
+    while cur <= date_to:
+        if cur > closed_through:
+            out.append(cur)
+        cur += timedelta(days=1)
+    return out
+
+
 def _load_ad_spend(date_from: date, date_to: date, country: str | None = None) -> dict[int, Decimal]:
     """每个产品在日期范围内归属的广告 spend 合计。
 
@@ -83,12 +104,52 @@ def _load_ad_spend(date_from: date, date_to: date, country: str | None = None) -
     单国家：使用 ad 层 ``market_country`` 过滤后的 spend。该字段来自广告命名解析，
     不是 Meta API country breakdown。
 
+    open BJ business day（today / 未收盘日）：Layer 5 防御兜底——daily 表里若有这天的
+    行也跳过（避免误把 partial 当 final），改用 realtime fallback。单国家口径下
+    realtime 表只有 campaign 层、缺 country 维度，open day 该口径返回空。
+
     返回：{product_id: total_spend_usd}。product_id IS NULL 的 campaign（未匹配）
     被丢弃——它们既不属于任何已知产品，也不该按 units 比例摊给其他产品。
     """
     market_country = normalize_market_country(country)
+    open_dates = _open_business_dates_in_range(date_from, date_to)
+    # daily 路径只读已收盘日；如果范围内有 open day，把 daily 上限收到 open day 前一天。
+    daily_rows: list[dict[str, Any]]
+    if open_dates:
+        from datetime import timedelta
+
+        daily_to = min(open_dates) - timedelta(days=1)
+        if daily_to < date_from:
+            daily_rows = []
+        else:
+            daily_rows = list(_query_daily_ad_spend(date_from, daily_to, market_country))
+    else:
+        daily_rows = list(_query_daily_ad_spend(date_from, date_to, market_country))
+    out: dict[int, Decimal] = {}
+    for r in daily_rows:
+        pid = r.get("product_id")
+        if pid is None:
+            continue
+        out[int(pid)] = out.get(int(pid), Decimal(0)) + Decimal(str(r["spend"] or 0))
+    if open_dates and not is_single_market_country(market_country):
+        # campaign-level realtime fallback for open days; country-filtered
+        # mode skipped because realtime table lacks the per-ad market_country
+        # column (see spec layer 5 limitations).
+        from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
+
+        rt = _load_realtime_ad_snapshot_fallback(
+            date_from=min(open_dates), date_to=max(open_dates),
+        )
+        for (_business_date, product_id), spend in rt.get("spend_by_product", {}).items():
+            out[int(product_id)] = out.get(int(product_id), Decimal(0)) + Decimal(str(spend))
+    return out
+
+
+def _query_daily_ad_spend(date_from: date, date_to: date, market_country: str | None):
+    """Existing daily-only ad-spend SQL, factored out so _load_ad_spend can
+    skip it for open BJ business days."""
     if is_single_market_country(market_country):
-        rows = query(
+        return query(
             "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
             "FROM meta_ad_daily_ad_metrics "
             "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
@@ -97,22 +158,14 @@ def _load_ad_spend(date_from: date, date_to: date, country: str | None = None) -
             "GROUP BY product_id",
             (date_from, date_to, market_country),
         )
-    else:
-        rows = query(
-            "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
-            "FROM meta_ad_daily_campaign_metrics "
-            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-            "  AND product_id IS NOT NULL "
-            "GROUP BY product_id",
-            (date_from, date_to),
-        )
-    out: dict[int, Decimal] = {}
-    for r in rows:
-        pid = r.get("product_id")
-        if pid is None:
-            continue
-        out[int(pid)] = Decimal(str(r["spend"] or 0))
-    return out
+    return query(
+        "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+        "  AND product_id IS NOT NULL "
+        "GROUP BY product_id",
+        (date_from, date_to),
+    )
 
 
 def _load_unallocated_ad_spend(date_from: date, date_to: date, country: str | None = None) -> Decimal:
@@ -120,26 +173,47 @@ def _load_unallocated_ad_spend(date_from: date, date_to: date, country: str | No
 
     全国家口径读取 campaign 日终表；单国家口径读取 ad 层 market_country 表。
     这部分不属于任何产品行，但属于窗口总利润，必须在 summary 中扣减。
+
+    open BJ business day：daily 表跳过该日，改用 realtime fallback 的
+    ``unallocated_spend`` 字段（来自未匹配 product 的 campaign 行）。单国家口径
+    open day 仍返回 0（与 _load_ad_spend 保持口径一致）。
     """
+    from datetime import timedelta
+
     market_country = normalize_market_country(country)
-    if is_single_market_country(market_country):
-        row = query_one(
-            "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
-            "FROM meta_ad_daily_ad_metrics "
-            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-            "  AND product_id IS NULL "
-            "  AND market_country = %s",
-            (date_from, date_to, market_country),
-        )
+    open_dates = _open_business_dates_in_range(date_from, date_to)
+    if open_dates:
+        daily_to = min(open_dates) - timedelta(days=1)
     else:
-        row = query_one(
-            "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
-            "FROM meta_ad_daily_campaign_metrics "
-            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-            "  AND product_id IS NULL",
-            (date_from, date_to),
+        daily_to = date_to
+    total = Decimal("0")
+    if daily_to >= date_from:
+        if is_single_market_country(market_country):
+            row = query_one(
+                "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
+                "FROM meta_ad_daily_ad_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+                "  AND product_id IS NULL "
+                "  AND market_country = %s",
+                (date_from, daily_to, market_country),
+            )
+        else:
+            row = query_one(
+                "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+                "  AND product_id IS NULL",
+                (date_from, daily_to),
+            )
+        total = Decimal(str((row or {}).get("spend") or 0))
+    if open_dates and not is_single_market_country(market_country):
+        from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
+
+        rt = _load_realtime_ad_snapshot_fallback(
+            date_from=min(open_dates), date_to=max(open_dates),
         )
-    return Decimal(str((row or {}).get("spend") or 0))
+        total += Decimal(str(rt.get("unallocated_spend") or 0))
+    return total
 
 
 def _load_product_costs(product_ids: list[int]) -> dict[int, dict[str, Any]]:

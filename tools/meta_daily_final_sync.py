@@ -1148,6 +1148,21 @@ def run_final_sync(
     account_codes: list[str] | tuple[str, ...] | None = None,
     include_adsets: bool = False,
 ) -> dict[str, Any]:
+    # Refuse to finalize a BJ business day that hasn't closed yet. Without
+    # this guard a caller can capture LA-partial spend for an open day,
+    # write it into meta_ad_daily_* + roi_realtime_daily_snapshots with
+    # snapshot_at = day_end (a future timestamp), and starve the realtime
+    # dashboard's "ORDER BY snapshot_at DESC" of the actual latest tick.
+    # Spec: docs/superpowers/specs/2026-05-09-realtime-dashboard-ad-spend-source-of-truth.md
+    closed_through = completed_meta_business_date()
+    if target_date > closed_through:
+        raise ValueError(
+            f"meta_daily_final cannot run for target_date={target_date.isoformat()}: "
+            f"BJ business day not yet closed (last fully closed = {closed_through.isoformat()}, "
+            f"current cutover hour BJ = {META_CUTOVER_HOUR_BJ}:00). "
+            f"Use the realtime channel (tools/roi_hourly_sync.py) for in-progress days."
+        )
+
     selected_account_codes = _normalize_account_codes(account_codes)
     try:
         accounts, selected_account_codes = _select_accounts(selected_account_codes)
