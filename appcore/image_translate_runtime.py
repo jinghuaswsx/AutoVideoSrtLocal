@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
-_BATCH_SIZE = 15  # 并行模式单批最大并发数
+_PARALLEL_POOL_SIZE = 10  # 并行模式并发池上限：池里最多 N 个 item 同时跑，跑完一个立即补一个
 _TEXT_DETECT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -250,19 +250,25 @@ class ImageTranslateRuntime:
             i for i, it in enumerate(items)
             if it["status"] not in {"done", "failed"}
         ]
-        for batch_start in range(0, len(pending_idxs), _BATCH_SIZE):
-            # Cancel between batches; items already in-flight inside this
-            # batch's ThreadPoolExecutor will finish their current attempt
-            # and the next batch will not start.
-            throw_if_cancel_requested("image_translate.batch")
-            batch = pending_idxs[batch_start: batch_start + _BATCH_SIZE]
-            with ThreadPoolExecutor(max_workers=_BATCH_SIZE) as pool:
-                futures = [
-                    pool.submit(self._process_one, task, task_id, idx)
-                    for idx in batch
-                ]
-                for fut in as_completed(futures):
-                    fut.result()
+        if not pending_idxs:
+            return
+        # 并发池：一次性 submit 全部 item，由 max_workers 限制实际并发；
+        # 池里最多 _PARALLEL_POOL_SIZE 个 item 同时跑，跑完一个立即接收下一个排队的，
+        # 不再「批内全完才进下一批」。
+        pool = ThreadPoolExecutor(max_workers=_PARALLEL_POOL_SIZE)
+        futures = [
+            pool.submit(self._process_one, task, task_id, idx)
+            for idx in pending_idxs
+        ]
+        try:
+            for fut in as_completed(futures):
+                # Cancel / 熔断：抛出后下面 finally 用 cancel_futures=True 关池，
+                # 已 grabbed slot 在跑的 item 跑完当前 attempt 后停下，
+                # 还在队列里没启动的 future 直接被 cancel 不再消耗上游。
+                throw_if_cancel_requested("image_translate.item")
+                fut.result()
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
 
     def _abort_remaining_items(self, task: dict, task_id: str, reason: str) -> None:
         for it in task["items"]:
