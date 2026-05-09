@@ -27,47 +27,62 @@ def test_latest_failure_alert_only_returns_failed_latest_run(monkeypatch):
     assert scheduled_tasks.latest_failure_alert() is None
 
 
-def _failure_alert_query_mock(streak_history):
-    """Build a `query` side_effect that returns the row for
-    `_scheduled_task_run_by_id` and a controllable streak history for
-    `_consecutive_failure_streak`.
-
-    ``streak_history`` is a list of statuses ordered newest → oldest,
-    e.g. ``["failed", "failed"]`` for two-consecutive."""
-
-    def _mock(sql, params=()):
-        if "WHERE id = %s" in sql:
-            return [
-                {
-                    "id": params[0],
-                    "task_code": "shopifyid",
-                    "task_name": "Shopify ID 获取",
-                    "status": "failed",
-                    "started_at": "2026-05-08 10:00:00",
-                    "finished_at": "2026-05-08 10:00:02",
-                    "duration_seconds": 2,
-                    "summary_json": '{"updated": 0}',
-                    "error_message": "boom",
-                    "output_file": None,
-                }
-            ]
-        if "ORDER BY id DESC" in sql and "task_code=%s" in sql:
-            return [{"id": 100 - idx, "status": status} for idx, status in enumerate(streak_history)]
-        return []
-
-    return _mock
+def _failure_run_row_mock(sql, params=()):
+    """Mock for `_scheduled_task_run_by_id` query. Streak / dedup decisions
+    are mocked via `feishu_alerts.should_dispatch_failure` directly."""
+    if "WHERE id = %s" in sql:
+        return [
+            {
+                "id": params[0],
+                "task_code": "shopifyid",
+                "task_name": "Shopify ID 获取",
+                "status": "failed",
+                "started_at": "2026-05-08 10:00:00",
+                "finished_at": "2026-05-08 10:00:02",
+                "duration_seconds": 2,
+                "summary_json": '{"updated": 0}',
+                "error_message": "boom",
+                "output_file": None,
+            }
+        ]
+    return []
 
 
-def test_finish_run_dispatches_feishu_alert_after_two_consecutive_failures(monkeypatch):
+def test_finish_run_injects_consecutive_failures_when_streak_ge_2(monkeypatch):
+    """When AUT-21's dedup decides to send AND streak >= 2, the failure
+    row must carry `consecutive_failures` so feishu_alerts renders the
+    `连续失败：N 次` line. See:
+    docs/superpowers/specs/2026-05-09-meta-daily-final-permission-recovery.md"""
     from appcore import feishu_alerts, scheduled_tasks
 
     sent = []
     monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _failure_run_row_mock)
     monkeypatch.setattr(
-        scheduled_tasks,
-        "query",
-        _failure_alert_query_mock(["failed", "failed"]),
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id: (True, 5),
     )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
+
+    assert sent and sent[0]["id"] == 42
+    assert sent[0]["consecutive_failures"] == 5
+
+
+def test_finish_run_omits_consecutive_failures_for_first_failure(monkeypatch):
+    """Streak == 1 (first failure under AUT-21 dedup) → still send, but
+    do NOT inject `consecutive_failures` so the message stays clean."""
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _failure_run_row_mock)
     monkeypatch.setattr(
         feishu_alerts,
         "should_dispatch_failure",
@@ -82,51 +97,7 @@ def test_finish_run_dispatches_feishu_alert_after_two_consecutive_failures(monke
     scheduled_tasks.finish_run(42, status="failed", error_message="boom")
 
     assert sent and sent[0]["id"] == 42
-    assert sent[0]["summary"] == {"updated": 0}
-    assert sent[0]["consecutive_failures"] == 2
-
-
-def test_finish_run_suppresses_alert_for_isolated_failure(monkeypatch):
-    from appcore import feishu_alerts, scheduled_tasks
-
-    sent = []
-    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
-    monkeypatch.setattr(
-        scheduled_tasks,
-        "query",
-        _failure_alert_query_mock(["failed", "success"]),
-    )
-    monkeypatch.setattr(
-        feishu_alerts,
-        "send_scheduled_task_failure",
-        lambda row: sent.append(row),
-    )
-
-    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
-
-    assert sent == []
-
-
-def test_finish_run_resets_streak_on_intervening_success(monkeypatch):
-    """failed → success → failed: the latest failure is isolated."""
-    from appcore import feishu_alerts, scheduled_tasks
-
-    sent = []
-    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
-    monkeypatch.setattr(
-        scheduled_tasks,
-        "query",
-        _failure_alert_query_mock(["failed", "success", "failed"]),
-    )
-    monkeypatch.setattr(
-        feishu_alerts,
-        "send_scheduled_task_failure",
-        lambda row: sent.append(row),
-    )
-
-    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
-
-    assert sent == []
+    assert "consecutive_failures" not in sent[0]
 
 
 def test_finish_run_suppresses_feishu_failure_when_dedup_says_no(monkeypatch):
@@ -239,11 +210,7 @@ def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
 
     updates = []
     monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: updates.append(a) or 1)
-    monkeypatch.setattr(
-        scheduled_tasks,
-        "query",
-        _failure_alert_query_mock(["failed", "failed"]),
-    )
+    monkeypatch.setattr(scheduled_tasks, "query", _failure_run_row_mock)
     monkeypatch.setattr(
         feishu_alerts,
         "should_dispatch_failure",

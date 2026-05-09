@@ -7,7 +7,8 @@
 - `CLAUDE.md` 「Meta 广告多账户同步（2026-05-07 起）」段：定义了 `output/meta_daily_final_exports/<date>/<ts>/<account.code>/` 目录布局。
 - `CLAUDE.md` 「本机部署到线上的标准流程（Claude Code agent 必读）」段：`/opt/autovideosrt/` 属 `root`，agent 写需 sudo，构成跨用户写入同一 export 目录的前提。
 - `docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md`：多账户 export 子目录布局来源。
-- `docs/superpowers/specs/2026-05-08-feishu-bot-alerts-design.md`：失败告警链路；本 spec 顺带把它改成「连续 2 次失败才告警」。
+- `docs/superpowers/specs/2026-05-08-feishu-bot-alerts-design.md`：失败告警接入点（`finish_run` → `_dispatch_failure_alert`）。
+- `docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md`：告警节流 / 恢复消息（`should_dispatch_failure` + `_dispatch_recovery_alert`）由 AUT-21 已落地；本 spec 不再重复定义节流策略，仅复用其入口并在 streak ≥ 2 时注入 `consecutive_failures` 字段。
 - `appcore/scheduled_tasks.py:_dispatch_failure_alert`：现有告警入口。
 - `tools/meta_daily_final_sync.py:_run_meta_ads_export`：受影响的 mkdir 现场。
 - `deploy/server_browser/autovideosrt-meta-daily-final-sync.service` / `-check.service`：systemd 入口。
@@ -64,16 +65,17 @@ ExecStartPre=/usr/bin/install -d -o root -g root -m 02775 /opt/autovideosrt/outp
 
 `02775` 含 setgid，即便后续有非 root 进程在此目录建子目录，子目录组主仍为 `root`，模式继承组写权限，避免新增 user 又踩同款坑。两个 unit 都跑 `User=root, Group=root`，预创建只是 idempotent 校正。
 
-### 3. 告警阈值改为「连续 2 次同 task 失败」
+### 3. 告警 row 上注入 `consecutive_failures`
 
-`appcore/scheduled_tasks._dispatch_failure_alert` 现在调 `_consecutive_failure_streak(task_code, including_run_id=...)` 计算「截至当前 run 倒着数，连续 `failed` 的 run 数」：
+`appcore/scheduled_tasks._dispatch_failure_alert` 在确认要发飞书后，如果 AUT-21 的 `should_dispatch_failure` 返回 streak ≥ 2，就把 `row["consecutive_failures"] = streak` 写回再调 `feishu_alerts.send_scheduled_task_failure(row)`。`format_scheduled_task_failure` 在 row 含该字段时多渲染一行 `连续失败：N 次`，方便事故定位。
 
-- streak < 2：跳过 Feishu，仅留 DB 失败记录。
-- streak >= 2：照常调 `feishu_alerts.send_scheduled_task_failure(row)`，并在 row 里塞 `consecutive_failures=streak`，飞书消息体增加一行 `连续失败：N 次`。
+实际去重 / 节流策略继续沿用 [2026-05-09-roi-hourly-sync-lock-recovery.md](2026-05-09-roi-hourly-sync-lock-recovery.md)：
 
-这与 [2026-05-08-feishu-bot-alerts-design.md](2026-05-08-feishu-bot-alerts-design.md) 旧「## 非目标」中的「不做去重聚合」**冲突**：本 spec 覆盖该非目标，让告警信噪比可控（瞬时事故重试一次成功就别打扰飞书群）；旧 spec 的「## 非目标」段同步更新。
+- 首次 failed → 立即发。
+- 连续 failed 之后每 N 次（`system_settings.feishu_alerts.failure_repeat_every`，默认 5）发一次。
+- failed → success 由 `_dispatch_recovery_alert` 推送恢复消息（含此前连续失败次数）。
 
-阈值常量 `appcore.scheduled_tasks.CONSECUTIVE_FAILURE_ALERT_THRESHOLD = 2`，未来调整时只改这一处。
+本 spec 不引入新的阈值常量，也不与 AUT-21 的非目标冲突——只是在已有 row 上多带一个字段。
 
 ## 验收
 
@@ -82,10 +84,10 @@ ExecStartPre=/usr/bin/install -d -o root -g root -m 02775 /opt/autovideosrt/outp
 | `_ensure_export_dir(<新路径>)` | 直接 mkdir 成功，不走 fallback |
 | `<date>/` 已被 root-only 子目录占据，service 跑 `_ensure_export_dir(<date>/<ts>/<code>)` | 把 `<date>` 改名为 `<date>.conflicted-<bj_ts>`，重新 mkdir 干净链路；`recovery_log` 追加一条 |
 | 重命名同样无权限 | 抛 PermissionError，错误信息含 blocker 路径，run 标 failed |
-| 单次 daily_final 失败（streak=1） | 不发飞书 |
-| 连续 2 次 daily_final 失败（streak=2） | 飞书消息含「连续失败：2 次」 |
-| 连续 3 次（streak=3） | 飞书消息含「连续失败：3 次」 |
-| failed → success → failed | streak=1，第二次失败不告警（streak 被 success 打断） |
+| 首次 daily_final 失败（streak=1） | 飞书发出，无 `连续失败：N 次` 行（沿用 AUT-21 策略） |
+| 连续 2 次 daily_final 失败（streak=2） | AUT-21 节流可能跳过本次发送；若发，消息含「连续失败：2 次」 |
+| 连续 5 次（streak=5） | 飞书发出，消息含「连续失败：5 次」 |
+| failed → success | `_dispatch_recovery_alert` 发恢复消息（AUT-21） |
 
 ## 测试
 
@@ -97,9 +99,9 @@ ExecStartPre=/usr/bin/install -d -o root -g root -m 02775 /opt/autovideosrt/outp
 
 扩展 `tests/test_appcore_scheduled_tasks.py`：
 
-- 单次失败 streak=1 → 不调 `send_scheduled_task_failure`。
-- 2 次连续失败 → 调一次，且 `row["consecutive_failures"] == 2`。
-- failed → success → failed → 第二次失败 streak=1，不调。
+- streak ≥ 2 时（AUT-21 dedup 决定发送）→ row 含 `consecutive_failures=streak`。
+- streak == 1（首次失败）→ row 仍发送，但不含 `consecutive_failures` 字段。
+- AUT-21 dedup 决定不发 → 不调 `send_scheduled_task_failure`（已由 AUT-21 自带 case 覆盖，这里不重复）。
 
 扩展 `tests/test_server_browser_runtime.py::test_meta_daily_final_units_use_dxm01_meta_without_shared_lock_and_staggered_timers`：断言两个 unit 都含 `ExecStartPre=/usr/bin/install -d` 行。
 

@@ -59,15 +59,13 @@
 - 不在 `start_run()` 或 `record_failure()` 里重复触发；`record_failure()` 通过 `finish_run()` 统一发送。
 - 发送函数必须捕获自身异常，避免告警模块故障影响任务记录。
 
-### 连续失败阈值（2026-05-09 起）
+### 节流 / 去重 / 恢复（2026-05-09 起）
 
-为避免单次瞬时失败（浏览器 timeout、临时锁竞争、auth 重试一轮就过）刷屏飞书群，告警在 `_dispatch_failure_alert` 里加了一道「连续 2 次同 task 失败才发」的门：
+为避免单次瞬时失败刷屏飞书群，节流策略由 [`docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md`](2026-05-09-roi-hourly-sync-lock-recovery.md) 引入并落地：
 
-- `appcore.scheduled_tasks._consecutive_failure_streak(task_code, including_run_id=...)` 倒着数同 `task_code` 的 `scheduled_task_runs.status`，遇到非 `failed` 立刻停。
-- streak < `CONSECUTIVE_FAILURE_ALERT_THRESHOLD`（默认 2）：跳过 Feishu，仅留 DB 失败记录与后台「定时任务的运行日志」红色提示。
-- streak >= 阈值：照常发飞书；`row["consecutive_failures"] = streak` 注入消息体，新增 `连续失败：N 次` 一行。
-
-设计依据 / 触发场景：[`docs/superpowers/specs/2026-05-09-meta-daily-final-permission-recovery.md`](2026-05-09-meta-daily-final-permission-recovery.md)。
+- `appcore.feishu_alerts.should_dispatch_failure(task_code, current_run_id)` 决策当次是否发送：首次 failed 立即发，之后按 `system_settings.feishu_alerts.failure_repeat_every`（默认 5）周期性提醒，其余抑制。
+- `_dispatch_recovery_alert` 在 failed → success 拐点推送恢复消息，附带此前连续失败次数。
+- `appcore.scheduled_tasks._dispatch_failure_alert` 在调度发送时若 streak ≥ 2，会把 `row["consecutive_failures"] = streak` 写回，使消息体多一行 `连续失败：N 次`（[`docs/superpowers/specs/2026-05-09-meta-daily-final-permission-recovery.md`](2026-05-09-meta-daily-final-permission-recovery.md)）。
 
 ## 消息内容
 
@@ -76,7 +74,7 @@
 ```text
 【AutoVideoSrt 告警】定时任务失败
 任务：<task_name> (<task_code>)
-连续失败：<N> 次               # 仅 streak >= 2 时出现，2026-05-09 起
+连续失败：<N> 次               # 仅 streak >= 2 且决定发送时出现，2026-05-09 起
 运行ID：<run_id>
 开始：<started_at>
 结束：<finished_at>
@@ -136,7 +134,7 @@ python3 -m tools.send_feishu_test_alert
 - 不新增飞书长连接事件接收进程。
 - 不处理飞书群消息命令。
 - 不做多群路由、告警级别订阅、静默时段。
-- ~~不做去重聚合~~：2026-05-09 起按「连续 2 次同 task 失败」门控，详见上方「连续失败阈值」段。
+- ~~不做去重聚合~~：2026-05-09 起按「首次 failed 立即发 + 之后每 N 次发 + failed→success 发恢复」节流，详见上方「节流 / 去重 / 恢复」段。
 - 不扫描系统 journal、Nginx log、Python log 文件。
 - 不把飞书凭据写入 `.env`、源码常量、文档、测试 fixture 或日志。
 
