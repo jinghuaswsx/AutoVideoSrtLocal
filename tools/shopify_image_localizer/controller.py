@@ -4,8 +4,6 @@ import argparse
 import contextlib
 import io
 import sqlite3
-import threading
-import time
 from pathlib import Path
 from typing import Callable
 
@@ -15,8 +13,6 @@ from tools.shopify_image_localizer.rpa import run_product_cdp
 
 
 SHOPIFY_ADMIN_ROOT_URL = "https://admin.shopify.com/"
-STORE_SLUG_DETECT_TIMEOUT_S = 600  # 用户登录 + 选店铺 + 跳转的最大等待时间（10 分钟）
-_STORE_SLUG_DETECT_INTERVAL_S = 2.0
 
 
 StatusCallback = Callable[[str], None]
@@ -398,12 +394,10 @@ def open_shopify_login_page(
     api_key: str,
     browser_user_data_dir: str,
     shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
-    status_cb: StatusCallback | None = None,
-    slug_detected_cb: Callable[[str, str], None] | None = None,
 ) -> dict:
-    """启动普通 Chrome（无 CDP，避免 Cloudflare 反 bot 拦截 admin.shopify.com 登录）打开主入口；
-    后台轮询 Chrome 的 History SQLite 抓真实 store slug 缓存。"""
-    emit = status_cb or _noop
+    """启动普通 Chrome（无 CDP，避免 Cloudflare 反 bot 拦截 admin.shopify.com 登录）打开主入口。
+    用户在浏览器里登录 + 手动选择店铺后，由 GUI 单独按「已登录」按钮调用
+    confirm_shopify_login_capture_slug 抓 slug。"""
     normalized_domain = settings.normalize_domain(shopify_domain)
     effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
     settings.save_runtime_config(
@@ -414,11 +408,6 @@ def open_shopify_login_page(
     )
     session.kill_chrome_for_profile(effective_browser_dir)
     session.start_chrome(effective_browser_dir, [SHOPIFY_ADMIN_ROOT_URL])
-    threading.Thread(
-        target=_watch_admin_url_for_store_slug,
-        args=(normalized_domain, effective_browser_dir, slug_detected_cb, emit),
-        daemon=True,
-    ).start()
     return {
         "status": "opened",
         "target": "shopify_login",
@@ -428,65 +417,72 @@ def open_shopify_login_page(
     }
 
 
-def _read_latest_admin_store_slug_from_history(history_db_path: Path) -> str:
-    """以 read-only/immutable 模式打开 Chrome History SQLite，抽出最近一次访问的 admin.shopify.com/store/<slug>/ URL。
-    Chrome 仍在运行时也能读（immutable=1 跳过 file lock）；返回提取到的 slug，否则空串。"""
+def _read_latest_admin_store_url(history_db_path: Path) -> tuple[str, int]:
+    """以 read-only/immutable 模式打开 Chrome History SQLite，返回最近一次访问的
+    admin.shopify.com/store/<slug>/... URL 及其 last_visit_time（chrome 在跑也能读）。"""
     if not history_db_path.is_file():
-        return ""
-    uri = f"file:{history_db_path.as_posix()}?mode=ro&immutable=1"
+        return "", 0
+    # Path.as_uri() 在 Windows 上返回 file:///C:/... 形式，sqlite3 才能正确解析
+    uri = f"{history_db_path.as_uri()}?mode=ro&immutable=1"
     try:
         conn = sqlite3.connect(uri, uri=True, timeout=2)
     except Exception:
-        return ""
+        return "", 0
     try:
         cur = conn.execute(
-            "SELECT url FROM urls "
+            "SELECT url, last_visit_time FROM urls "
             "WHERE url LIKE 'https://admin.shopify.com/store/%' "
-            "ORDER BY last_visit_time DESC LIMIT 32"
+            "ORDER BY last_visit_time DESC LIMIT 1"
         )
-        for (url,) in cur.fetchall():
-            slug = settings.extract_store_slug_from_admin_url(url)
-            if slug:
-                return slug
+        row = cur.fetchone()
+        if not row:
+            return "", 0
+        url, ts = row
+        return str(url or ""), int(ts or 0)
     except Exception:
-        return ""
+        return "", 0
     finally:
         with contextlib.suppress(Exception):
             conn.close()
-    return ""
 
 
-def _watch_admin_url_for_store_slug(
-    normalized_domain: str,
-    effective_browser_dir: str,
-    slug_detected_cb: Callable[[str, str], None] | None,
-    emit: StatusCallback,
-) -> None:
-    """每 ~2s 读 Chrome History SQLite，找最近的 admin.shopify.com/store/<slug>/ URL 抓 slug 缓存。"""
+def confirm_shopify_login_capture_slug(
+    *,
+    browser_user_data_dir: str,
+    shopify_domain: str,
+) -> dict:
+    """用户在浏览器中登录并停在目标店铺主页后调用：从 Chrome History 抓最新一条
+    admin.shopify.com/store/<slug>/ URL（即用户当前停留的店铺主页），提取 slug 写
+    (domain → slug) 缓存。这是显式按钮触发，避免后台 thread 时机太早抓到旧 URL。"""
+    normalized_domain = settings.normalize_domain(shopify_domain)
+    effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
     history_paths = [
         Path(effective_browser_dir) / "Default" / "History",
-        Path(effective_browser_dir) / "History",  # 极少见的 layout 兜底
+        Path(effective_browser_dir) / "History",
     ]
-    deadline = time.time() + STORE_SLUG_DETECT_TIMEOUT_S
-    detected = ""
-    while time.time() < deadline and not detected:
-        for path in history_paths:
-            slug = _read_latest_admin_store_slug_from_history(path)
-            if slug:
-                detected = slug
-                break
-        if detected:
-            break
-        time.sleep(_STORE_SLUG_DETECT_INTERVAL_S)
-    if not detected:
-        emit(f"店铺识别超时（{STORE_SLUG_DETECT_TIMEOUT_S}s 内未跳转到 /store/<slug>/，请手动选择目标店铺）")
-        return
-    try:
-        settings.cache_store_slug_for_domain(normalized_domain, detected)
-    except Exception as exc:
-        emit(f"店铺 slug 缓存写入失败：{exc}")
-        return
-    emit(f"已识别 {normalized_domain} 的店铺 slug：{detected}")
-    if slug_detected_cb is not None:
-        with contextlib.suppress(Exception):
-            slug_detected_cb(normalized_domain, detected)
+    best_url, best_ts = "", 0
+    for path in history_paths:
+        url, ts = _read_latest_admin_store_url(path)
+        if ts > best_ts:
+            best_url, best_ts = url, ts
+    slug = settings.extract_store_slug_from_admin_url(best_url) if best_url else ""
+    if not slug:
+        return {
+            "status": "not_found",
+            "shopify_domain": normalized_domain,
+            "browser_user_data_dir": effective_browser_dir,
+            "url": best_url,
+            "slug": "",
+            "message": (
+                "未在 Chrome 历史中找到 admin.shopify.com/store/<slug>/ 形式的 URL；"
+                "请确认浏览器已登录并停留在目标店铺主页，再点一次「已登录」。"
+            ),
+        }
+    settings.cache_store_slug_for_domain(normalized_domain, slug)
+    return {
+        "status": "captured",
+        "shopify_domain": normalized_domain,
+        "browser_user_data_dir": effective_browser_dir,
+        "url": best_url,
+        "slug": slug,
+    }

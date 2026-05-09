@@ -125,13 +125,13 @@ def test_session_builds_admin_urls_for_selected_store_slug() -> None:
     )
 
 
-def test_controller_login_starts_plain_chrome_at_admin_root_and_spawns_slug_watcher(
+def test_controller_login_starts_plain_chrome_at_admin_root_no_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """登录按钮只启动普通 chrome 打开 admin 主入口，不再启 daemon thread 自动抓 slug。"""
     saved_configs: list[dict] = []
     killed_profiles: list[str] = []
     started_urls: list[tuple] = []
-    threads_started: list[tuple] = []
 
     monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: saved_configs.append(kwargs))
     monkeypatch.setattr(controller.session, "kill_chrome_for_profile", lambda profile: killed_profiles.append(profile))
@@ -141,15 +141,6 @@ def test_controller_login_starts_plain_chrome_at_admin_root_and_spawns_slug_watc
         lambda profile, urls: started_urls.append((profile, urls)),
     )
 
-    class FakeThread:
-        def __init__(self, *, target, args, daemon):
-            threads_started.append((getattr(target, "__name__", str(target)), args, daemon))
-
-        def start(self):
-            return None
-
-    monkeypatch.setattr(controller.threading, "Thread", FakeThread)
-
     result = controller.open_shopify_login_page(
         base_url="http://172.30.254.14",
         api_key="demo-key",
@@ -158,45 +149,82 @@ def test_controller_login_starts_plain_chrome_at_admin_root_and_spawns_slug_watc
     )
 
     assert saved_configs[0]["shopify_domain"] == "omurio.com"
-    # 登录走普通 chrome（无 CDP），避免 admin.shopify.com 上 Cloudflare 把人机验证遮蔽
     assert killed_profiles == [r"C:\chrome-shopify-image-omurio"]
     assert started_urls == [(r"C:\chrome-shopify-image-omurio", ["https://admin.shopify.com/"])]
-    assert len(threads_started) == 1
-    assert threads_started[0][0] == "_watch_admin_url_for_store_slug"
-    assert threads_started[0][1][0] == "omurio.com"
-    assert threads_started[0][1][1] == r"C:\chrome-shopify-image-omurio"
-    assert threads_started[0][2] is True  # daemon
-
     assert result["shopify_domain"] == "omurio.com"
     assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image-omurio"
     assert result["url"] == "https://admin.shopify.com/"
 
 
-def test_read_latest_admin_store_slug_from_history(tmp_path) -> None:
-    """从模拟的 Chrome History SQLite 抽 admin.shopify.com/store/<slug>/ URL。"""
+def test_confirm_shopify_login_capture_slug_from_history(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """「已登录」按钮触发：从 Chrome History 抽最新 admin store URL，写入缓存。"""
     import sqlite3 as _sqlite
 
-    db_path = tmp_path / "History"
-    conn = _sqlite.connect(db_path)
+    profile_dir = tmp_path / "profile-omurio"
+    (profile_dir / "Default").mkdir(parents=True)
+    history_path = profile_dir / "Default" / "History"
+    conn = _sqlite.connect(history_path)
     try:
-        conn.execute(
-            "CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, last_visit_time INTEGER)"
-        )
+        conn.execute("CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, last_visit_time INTEGER)")
         conn.executemany(
             "INSERT INTO urls(url, last_visit_time) VALUES (?, ?)",
             [
-                ("https://example.com/abc", 100),
                 ("https://admin.shopify.com/store/old-slug/products", 200),
-                ("https://admin.shopify.com/store/7t1gn3-sv/orders", 300),
-                ("https://admin.shopify.com/", 250),
+                ("https://admin.shopify.com/store/7t1gn3-sv?country=US", 300),
+                ("https://example.com/abc", 999_999),
             ],
         )
         conn.commit()
     finally:
         conn.close()
 
-    slug = controller._read_latest_admin_store_slug_from_history(db_path)
-    assert slug == "7t1gn3-sv"
+    monkeypatch.setattr(
+        controller.settings,
+        "browser_user_data_dir_for_domain",
+        lambda base_dir, domain: str(profile_dir),
+    )
+    monkeypatch.setattr(controller.settings, "_runtime_root", lambda: tmp_path)
+    # 先把 config 写到 tmp_path
+    settings.save_runtime_config(
+        base_url="http://172.30.254.14",
+        api_key="demo-key",
+        browser_user_data_dir=str(profile_dir),
+        shopify_domain="omurio.com",
+        root=tmp_path,
+    )
+
+    result = controller.confirm_shopify_login_capture_slug(
+        browser_user_data_dir=str(profile_dir),
+        shopify_domain="omurio.com",
+    )
+
+    assert result["status"] == "captured"
+    assert result["slug"] == "7t1gn3-sv"
+    assert "7t1gn3-sv" in result["url"]
+    assert settings.cached_store_slug_for_domain("omurio.com", root=tmp_path) == "7t1gn3-sv"
+
+
+def test_confirm_shopify_login_capture_slug_returns_not_found_when_history_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    profile_dir = tmp_path / "empty-profile"
+    profile_dir.mkdir()  # 没有 History 文件
+
+    monkeypatch.setattr(
+        controller.settings,
+        "browser_user_data_dir_for_domain",
+        lambda base_dir, domain: str(profile_dir),
+    )
+    monkeypatch.setattr(controller.settings, "_runtime_root", lambda: tmp_path)
+
+    result = controller.confirm_shopify_login_capture_slug(
+        browser_user_data_dir=str(profile_dir),
+        shopify_domain="omurio.com",
+    )
+
+    assert result["status"] == "not_found"
+    assert result["slug"] == ""
+    assert "未在" in result["message"]
 
 
 def test_controller_target_uses_cached_store_slug(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

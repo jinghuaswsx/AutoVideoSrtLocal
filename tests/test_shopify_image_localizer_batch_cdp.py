@@ -449,7 +449,7 @@ def test_run_uses_confirmed_visual_carousel_fallback_when_deterministic_pairing_
     replaced_pairs: list[tuple[int, str]] = []
     confirmed_pairs: list[dict] = []
 
-    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda: {"browser_user_data_dir": "C:/chrome"})
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda root=None: {"browser_user_data_dir": "C:/chrome", "shopify_domain_store_slugs": {}})
     monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
     monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
     monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, downloaded))
@@ -543,7 +543,7 @@ def test_run_uses_confirmed_visual_detail_fallback_when_plan_has_missing_src(mon
     confirmed_pairs: list[dict] = []
     captured_forced: list[dict] = []
 
-    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda: {"browser_user_data_dir": "C:/chrome"})
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda root=None: {"browser_user_data_dir": "C:/chrome", "shopify_domain_store_slugs": {}})
     monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
     monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
     monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, downloaded))
@@ -645,7 +645,7 @@ def test_run_skips_detail_visual_fallback_for_non_auto_replace_targets(monkeypat
     }
     captured_forced: list[dict] = []
 
-    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda: {"browser_user_data_dir": "C:/chrome"})
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda root=None: {"browser_user_data_dir": "C:/chrome", "shopify_domain_store_slugs": {}})
     monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
     monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
     monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, []))
@@ -997,7 +997,7 @@ def test_fetch_bootstrap_ready_passes_shopify_product_id_override(monkeypatch):
     monkeypatch.setattr(
         run_product_cdp.settings,
         "load_runtime_config",
-        lambda: {"base_url": "http://172.30.254.14", "api_key": "demo-key"},
+        lambda root=None: {"base_url": "http://172.30.254.14", "api_key": "demo-key", "shopify_domain_store_slugs": {}},
     )
 
     def fake_fetch_bootstrap(base_url, api_key, product_code, lang, **kwargs):

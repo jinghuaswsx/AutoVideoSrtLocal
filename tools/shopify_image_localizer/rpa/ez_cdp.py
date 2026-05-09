@@ -546,7 +546,7 @@ def replace_many(
                     )
                 if not pending_pairs and selected_pairs:
                     _log(f"[轮播图] 全部 {len(selected_pairs)} 个位置已有 {language}，跳过上传")
-                for slot_idx, path in pending_pairs:
+                for idx, (slot_idx, path) in enumerate(pending_pairs):
                     cancellation.throw_if_cancelled(cancel_token)
                     _log(f"[轮播图][位置 {slot_idx}] 已入队 路径={path}")
                     try:
@@ -576,6 +576,10 @@ def replace_many(
                             "path": path,
                             "error": str(exc),
                         })
+                    # 节流：避免 Shopify CDN 短时间大量上传被限流（10054 远程主机强迫关闭连接）。
+                    # 与 taa_cdp 详情图同款 2 秒节流，最后一个位置不需要等。
+                    if idx < len(pending_pairs) - 1:
+                        cancellation.cancellable_sleep(cancel_token, 2.0)
             finally:
                 try:
                     _run_step("[轮播图]", "关闭 EZ 自动化页面", page.close)

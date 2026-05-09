@@ -26,7 +26,10 @@ _DOMAIN_RE = re.compile(
 )
 _STORE_SLUG_RE = re.compile(r"[^a-z0-9-]+")
 _STORE_SLUG_VALID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-_STORE_URL_RE = re.compile(r"^https?://admin\.shopify\.com/store/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:/|$)", re.IGNORECASE)
+_STORE_URL_RE = re.compile(
+    r"^https?://admin\.shopify\.com/store/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?=[/?#]|$)",
+    re.IGNORECASE,
+)
 
 
 def default_base_url(*, packaged: bool | None = None) -> str:

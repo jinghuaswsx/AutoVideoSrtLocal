@@ -97,6 +97,14 @@ class ShopifyImageLocalizerApp:
         )
         self.login_shopify_button.pack(side="left")
         self._refresh_login_button_text()
+        self.confirm_login_button = tk.Button(
+            self.login_shopify_frame,
+            text="已登录",
+            command=lambda: self.confirm_shopify_login(),
+            width=10,
+            height=2,
+        )
+        self.confirm_login_button.pack(side="left", padx=(8, 0))
         self._login_shopify_tip_full_text = "第一次用或者店铺登录掉线，先点左侧按钮"
         self.login_shopify_tip_label = tk.Label(
             self.login_shopify_frame,
@@ -841,8 +849,6 @@ class ShopifyImageLocalizerApp:
                 api_key=api_key,
                 browser_user_data_dir=browser_dir,
                 shopify_domain=shopify_domain,
-                status_cb=lambda message: self.root.after(0, self._append_log, message),
-                slug_detected_cb=lambda dom, slug: self.root.after(0, self._on_store_slug_detected, dom, slug),
             )
             self.root.after(0, self._render_login_open_result, result)
         except Exception as exc:
@@ -859,12 +865,47 @@ class ShopifyImageLocalizerApp:
         self.status_var.set("已打开 Shopify 主页")
         self._append_log(
             "已打开 Shopify 主页（admin.shopify.com）。请在浏览器里登录账号、点选目标店铺，"
-            "程序会自动从跳转后的 URL 抓取店铺 slug 并缓存。"
+            "登录到对应店铺主页后，回到本程序点「已登录」按钮，程序会从浏览器历史抓取真实 slug 并缓存。"
         )
         self._progress_finish("已打开 Shopify 主页")
 
-    def _on_store_slug_detected(self, domain: str, slug: str) -> None:
-        self._append_log(f"已自动识别店铺 slug：{domain} → {slug}（已缓存到本地配置）")
+    def confirm_shopify_login(self) -> None:
+        browser_dir = self.browser_user_data_dir_var.get().strip()
+        shopify_domain = settings.normalize_domain(self.current_shopify_domain_var.get())
+        if not browser_dir:
+            messagebox.showerror("错误", "高级设置里的 Chrome 用户目录不能为空")
+            return
+        self._append_log(f"已登录确认：从浏览器历史抓取 {shopify_domain} 的店铺 slug")
+        threading.Thread(
+            target=self._confirm_shopify_login_worker,
+            args=(browser_dir, shopify_domain),
+            daemon=True,
+        ).start()
+
+    def _confirm_shopify_login_worker(self, browser_dir: str, shopify_domain: str) -> None:
+        try:
+            result = controller.confirm_shopify_login_capture_slug(
+                browser_user_data_dir=browser_dir,
+                shopify_domain=shopify_domain,
+            )
+            self.root.after(0, self._render_confirm_login_result, result)
+        except Exception as exc:
+            self.root.after(0, self._append_log, f"确认登录失败：{exc}")
+            self.root.after(0, messagebox.showerror, "确认登录失败", str(exc))
+
+    def _render_confirm_login_result(self, result: dict) -> None:
+        status = (result or {}).get("status")
+        domain = (result or {}).get("shopify_domain") or ""
+        slug = (result or {}).get("slug") or ""
+        url = (result or {}).get("url") or ""
+        if status == "captured":
+            self._append_log(f"已识别店铺 slug：{domain} → {slug}（来源 URL：{url}），已缓存到本地配置")
+            self._update_login_status(domain)
+            messagebox.showinfo("已登录", f"已识别 {domain} 的店铺 slug：{slug}\n\n来源 URL：{url}")
+        else:
+            message = (result or {}).get("message") or "未识别到店铺 slug"
+            self._append_log(f"识别失败：{message}（最近 admin URL：{url or '(无)'}）")
+            messagebox.showwarning("未识别到店铺 slug", message)
 
     def _open_shopify_target_worker(
         self,

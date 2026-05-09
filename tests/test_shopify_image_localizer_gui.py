@@ -349,15 +349,6 @@ def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.Monk
         lambda profile, urls: started_urls.append((profile, urls)),
     )
 
-    class FakeThread:
-        def __init__(self, *, target, args, daemon):
-            pass
-
-        def start(self):
-            return None
-
-    monkeypatch.setattr(gui.controller.threading, "Thread", FakeThread)
-
     result = gui.controller.open_shopify_login_page(
         base_url="https://example.test",
         api_key="demo-key",
