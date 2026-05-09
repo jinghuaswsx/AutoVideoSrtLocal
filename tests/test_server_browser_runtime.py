@@ -195,8 +195,8 @@ def test_browser_automation_timers_are_staggered_to_reduce_lock_contention():
 
     assert "OnCalendar=*-*-* 12:11:00" in shopify
     assert "OnCalendar=*-*-* 12:10:00" not in shopify
-    assert "OnCalendar=*:02/20" in roi
-    assert "OnCalendar=*:00/20" not in roi
+    assert "OnCalendar=*-*-* *:00,20,40:00" in roi
+    assert "OnCalendar=*:02/20" not in roi
 
 
 def test_server_browser_installers_make_lock_script_executable():

@@ -30,8 +30,7 @@ install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-shopifyid-sync.servi
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-xmyc-storage-sync.service" /etc/systemd/system/autovideosrt-xmyc-storage-sync.service
 
 # Docs-anchor: docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md
-install -d -m 755 /etc/systemd/system/autovideosrt-roi-realtime-sync.service.d
-install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf" /etc/systemd/system/autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf
+rm -f /etc/systemd/system/autovideosrt-roi-realtime-sync.service.d/10-browser-lock.conf
 
 systemctl daemon-reload
 systemctl disable --now autovideosrt-browser.service autovideosrt-mk-browser.service autovideosrt-rjc-vnc.service >/dev/null 2>&1 || true

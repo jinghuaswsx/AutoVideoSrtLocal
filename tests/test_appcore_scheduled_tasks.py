@@ -308,8 +308,8 @@ def test_task_definitions_include_server_and_app_timers():
 
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
-    assert definitions["shopifyid"]["schedule"] == "每天 12:11（与 ROI :02/:22/:42 错峰）"
-    assert definitions["roi_hourly_sync"]["schedule"] == "每 20 分钟（每小时 :02/:22/:42）"
+    assert definitions["shopifyid"]["schedule"] == "每天 12:11（与 ROI :00/:20/:40 错峰）"
+    assert definitions["roi_hourly_sync"]["schedule"] == "每 20 分钟（每小时 :00/:20/:40）"
     assert definitions["shopifyid"]["source_ref"] == "autovideosrt-shopifyid-sync.timer"
     assert definitions["roi_hourly_sync"]["source_ref"] == "autovideosrt-roi-realtime-sync.timer"
     assert "autovideosrt-meta-daily-final-sync.timer" in definitions["meta_daily_final"]["source_ref"]

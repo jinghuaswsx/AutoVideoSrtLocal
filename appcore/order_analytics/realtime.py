@@ -1538,8 +1538,9 @@ def get_realtime_roas_overview(
             "shipping_revenue_usd, ad_spend_usd, true_roas, order_data_status, ad_data_status "
             "FROM roi_daily_roas_nodes "
             "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+            "AND node_at <= %s "
             "ORDER BY node_hour",
-            (target,),
+            (target, data_until),
         )
     roas_nodes_by_hour = {int(row["node_hour"]): row for row in roas_node_rows if row.get("node_hour") is not None}
     roas_points = [

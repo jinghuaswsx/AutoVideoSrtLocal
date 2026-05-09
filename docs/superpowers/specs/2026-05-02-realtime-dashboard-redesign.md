@@ -84,6 +84,8 @@
 
 子 tab 的请求逻辑：始终用「当前广告系统日」（即不传 `date` 参数，让后端走默认逻辑）独立请求一次 `/realtime-overview`，复用其中的 `order_details` / `campaigns` / `roas_points` 字段。
 
+2026-05-10 hotfix：ROAS 走势使用 `roi_daily_roas_nodes` 的小时节点。同步可以每 20 分钟写一次快照，但节点表唯一键是 `(business_date, node_hour, store_scope, ad_platform_scope)`，同一广告系统小时内只保留最新累计节点。当前广告系统日读取走势时必须限制 `node_at <= period.data_until_at`，不能把未来小时（例如当日尚未到达的 23 点）连到图上；历史日可以展示完整 0-23 点。
+
 ### 后端 API
 
 **接口**：`GET /order-analytics/realtime-overview`
