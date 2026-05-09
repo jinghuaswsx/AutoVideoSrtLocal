@@ -15,6 +15,5 @@ CREATE TABLE IF NOT EXISTS meta_ad_manual_daily_spend (
   updated_by    INT NULL,
   updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_date_account (business_date, account_code),
-  KEY idx_date (business_date)
+  UNIQUE KEY uniq_date_account (business_date, account_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
