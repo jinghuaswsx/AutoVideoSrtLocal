@@ -94,6 +94,14 @@ def test_build_product_update_response_updates_fields_copywriting_and_evaluation
         schedule_material_evaluation_fn=lambda pid, **kwargs: captured["evaluations"].append(
             (pid, kwargs)
         ),
+        # ad_supported_langs precheck: stub the link-availability sources so
+        # this transformation-focused test isn't gated on DB state.
+        list_enabled_domain_rows_fn=lambda product, lang: [
+            {"domain": "example.test", "url": f"https://example.test/{lang}"}
+        ],
+        list_link_availability_fn=lambda pid, lang: [
+            {"domain": "example.test", "ok": True, "http_status": 200, "checked_at": "t"}
+        ],
     )
 
     assert result.status_code == 200

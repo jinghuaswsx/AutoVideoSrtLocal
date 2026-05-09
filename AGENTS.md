@@ -111,6 +111,13 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - 聚焦测试：`pytest tests/test_appcore_medias_link_check_bootstrap.py tests/test_link_check_bootstrap_routes.py tests/test_link_check_gemini.py tests/test_link_check_same_image.py tests/test_link_check_desktop_storage.py tests/test_link_check_desktop_bootstrap_api.py tests/test_link_check_desktop_controller.py tests/test_link_check_desktop_gui.py -q`
 - 打包：`pyinstaller link_check_desktop/packaging/link_check_desktop.spec`
 
+## 顶部国家勾选前置校验（2026-05-09 起）
+
+- 设计：[docs/superpowers/specs/2026-05-09-product-edit-ad-supported-langs-precheck-design.md](docs/superpowers/specs/2026-05-09-product-edit-ad-supported-langs-precheck-design.md)
+- 「编辑产品素材」弹窗顶部 `ad_supported_langs` 复选框勾选时必须满足"该 lang 下启用域名 ≥ 1 且全部 `media_product_link_availability.ok=1`"。前端 [`web/static/medias.js`](web/static/medias.js) `edSetupAdLangCheckboxGuard` 在 click capture 阶段拦截，自动跑 `POST /medias/api/products/<pid>/link-availability/<lang>`；任一失败保持未勾选 + 弹 `edAdLangPrecheckMask`。取消勾选不触发校验。
+- 后端 [`web/services/media_product_mutations.py`](web/services/media_product_mutations.py) `build_product_update_response` 仅对新增 lang（`new_set - old_set`）做同款校验，老 lang 即使链接已坏也放行；任一不通过 `422 {"error":"ad_supported_langs_precheck_failed","issues":[...]}`。
+- 改这条链路至少运行：`pytest tests/test_media_product_mutations_ad_lang_precheck.py tests/test_media_product_mutations_service.py tests/test_appcore_link_availability.py tests/test_medias_link_availability_routes.py -q`。
+
 ## 产品链接管理弹窗（2026-05-09 起）
 
 详细设计：[docs/superpowers/specs/2026-05-09-product-link-management-modal.md](docs/superpowers/specs/2026-05-09-product-link-management-modal.md)

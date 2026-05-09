@@ -3500,11 +3500,163 @@
     }
     box.innerHTML = langs.map(l => {
       const checked = selectedSet.has(l.code) ? 'checked' : '';
-      return `<label class="oc-lang-checkbox">`
+      return `<label class="oc-lang-checkbox" data-lang="${escapeHtml(l.code)}">`
            + `<input type="checkbox" name="ad_supported_langs" value="${escapeHtml(l.code)}" ${checked}/>`
            + `<span>${escapeHtml(langDisplayName(l.code))}</span>`
            + `</label>`;
     }).join('');
+    edSetupAdLangCheckboxGuard();
+  }
+
+  // ---- Top-of-modal "国家勾选前置校验" (spec: 2026-05-09-product-edit-ad-supported-langs-precheck-design.md)
+  // 勾选某 lang 的 ad_supported_langs 复选框前，先并发探测该产品该 lang 下全部
+  // 启用域名的 HTTP 可用性；任一失败则保持未勾选并弹失败 modal。
+  function edSetupAdLangCheckboxGuard() {
+    const box = $('edAdSupportedLangsBox');
+    if (!box || box.dataset.adLangGuardWired === '1') return;
+    box.addEventListener('click', edHandleAdLangCheckboxClick, true);
+    box.dataset.adLangGuardWired = '1';
+  }
+
+  async function edHandleAdLangCheckboxClick(ev) {
+    const input = ev.target && ev.target.closest && ev.target.closest('input[name="ad_supported_langs"]');
+    if (!input) return;
+    // Uncheck path: always allow (intent = revoke ad support, no check needed).
+    if (input.checked) {
+      // Browser hasn't toggled yet; input.checked is still pre-click state.
+      // We only intercept transition unchecked → checked.
+      return;
+    }
+    const lang = String(input.value || '').trim().toLowerCase();
+    if (!lang) return;
+    const product = (edState.productData && edState.productData.product) || null;
+    if (!product || !product.id) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const labelEl = input.closest('label');
+    if (input.disabled) return;
+    input.disabled = true;
+    if (labelEl) labelEl.classList.add('is-loading');
+    const stateRef = (edState.adLangPrecheck = edState.adLangPrecheck || { lang: '', kind: '', issues: [], pending: false });
+    stateRef.pending = true;
+
+    try {
+      const data = await edRunAdLangPrecheck(product.id, lang);
+      const items = Array.isArray(data && data.items) ? data.items : [];
+      if (!items.length) {
+        // No enabled domains.
+        edOpenAdLangPrecheckModal({ lang, kind: 'empty', issues: [] });
+        return;
+      }
+      const failing = items.filter(it => !it.ok);
+      if (failing.length === 0) {
+        // All ok → really check the box.
+        input.checked = true;
+        if (labelEl) labelEl.classList.add('just-checked');
+        if (labelEl) setTimeout(() => labelEl.classList.remove('just-checked'), 600);
+        return;
+      }
+      const issues = failing.map(it => ({
+        domain: it.domain || '',
+        url: it.link_url || '',
+        http_status: it.http_status,
+        error: it.error || (it.http_status ? `http ${it.http_status}` : 'unavailable'),
+      }));
+      edOpenAdLangPrecheckModal({ lang, kind: 'failed', issues });
+    } catch (err) {
+      const msg = (err && err.message) || String(err);
+      edToastError('链接可用性检测失败：' + msg);
+    } finally {
+      input.disabled = false;
+      if (labelEl) labelEl.classList.remove('is-loading');
+      stateRef.pending = false;
+    }
+  }
+
+  async function edRunAdLangPrecheck(pid, lang) {
+    return await fetchJSON(
+      `/medias/api/products/${encodeURIComponent(pid)}/link-availability/${encodeURIComponent(lang)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) },
+    );
+  }
+
+  function edOpenAdLangPrecheckModal({ lang, kind, issues }) {
+    const mask = $('edAdLangPrecheckMask');
+    if (!mask) return;
+    edState.adLangPrecheck = { lang, kind, issues: issues || [], pending: false };
+    const title = $('edAdLangPrecheckTitle');
+    const hint = $('edAdLangPrecheckHint');
+    const list = $('edAdLangPrecheckList');
+    const langName = langDisplayName(lang) || lang;
+    if (title) title.textContent = `国家勾选校验失败 — ${langName} (${lang})`;
+    if (hint) {
+      hint.textContent = (kind === 'empty')
+        ? `该语种当前未启用任何域名，无法勾选该国家。请先去【产品链接管理】启用至少一个域名。`
+        : `以下域名的链接不满足"全部检测通过 + 可正常访问"的要求，无法勾选该国家：`;
+    }
+    if (list) {
+      if (kind === 'empty' || !(issues || []).length) {
+        list.innerHTML = '<div class="oc-ad-lang-precheck-empty">无具体失败项</div>';
+      } else {
+        list.innerHTML = (issues || []).map(it => {
+          const status = it.http_status ? `HTTP ${escapeHtml(String(it.http_status))}` : '—';
+          const err = escapeHtml(it.error || '');
+          const url = escapeHtml(it.url || '');
+          const domain = escapeHtml(it.domain || '');
+          return `<div class="oc-ad-lang-precheck-row">`
+               + `<div class="domain">${domain}</div>`
+               + `<div class="badge danger">${status}</div>`
+               + `<div class="reason">${err}</div>`
+               + (url ? `<div class="url">${url}</div>` : '')
+               + `</div>`;
+        }).join('');
+      }
+    }
+    mask.hidden = false;
+  }
+
+  function edCloseAdLangPrecheckModal() {
+    const mask = $('edAdLangPrecheckMask');
+    if (mask) mask.hidden = true;
+  }
+
+  function edJumpFromPrecheckToProductLinks() {
+    const lang = edState.adLangPrecheck && edState.adLangPrecheck.lang;
+    edCloseAdLangPrecheckModal();
+    if (!lang) return;
+    if (edState.activeLang !== lang) {
+      edState.activeLang = lang;
+      edRenderLangTabs();
+      edRenderActiveLangView();
+    }
+    if (typeof edOpenProductLinksModal === 'function') {
+      edOpenProductLinksModal();
+    }
+  }
+
+  function edHandleSaveErrorAdLangPrecheck(err) {
+    const issues = (err && err.issues) || [];
+    if (!Array.isArray(issues) || !issues.length) {
+      alert('保存失败：勾选的国家未通过链接前置校验，请处理后重试。');
+      return;
+    }
+    const lines = issues.map(it => {
+      const lang = it.lang || '';
+      const langName = langDisplayName(lang) || lang;
+      if (it.reason === 'no_enabled_domains') {
+        return `- ${langName} (${lang}): 该语种未启用任何域名`;
+      }
+      const domains = (it.domains || []).map(d => `${d.domain || ''} — ${d.reason || ''}`).join('； ');
+      return `- ${langName} (${lang}): ${domains || '链接不可访问'}`;
+    });
+    alert('保存失败：以下国家不满足前置条件\n' + lines.join('\n') + '\n请处理后重试。');
+  }
+
+  function edToastError(msg) {
+    // Simple alert tail — keeps consistent with existing UX (others also use alert).
+    alert(msg);
   }
 
   function edCanonicalCopyField(label) {
@@ -6124,6 +6276,10 @@
       edHide();
       loadList();
     } catch (e) {
+      if (e && e.error === 'ad_supported_langs_precheck_failed') {
+        edHandleSaveErrorAdLangPrecheck(e);
+        return;
+      }
       const msg = (e.message || '').toString();
       if (msg.includes('mk_id_conflict') || msg.includes('明空 ID 已被其他产品占用')) {
         alert('明空 ID 已被其他产品占用');
@@ -6328,6 +6484,14 @@
     $('edProductLinksRecheckAllBtn') && $('edProductLinksRecheckAllBtn').addEventListener('click', () => edFetchProductLinkAvailability(true));
     $('edProductLinksMask') && $('edProductLinksMask').addEventListener('click', (e) => {
       if (e.target.id === 'edProductLinksMask') edCloseProductLinksModal();
+    });
+
+    // 顶部国家勾选前置校验失败弹窗（spec: 2026-05-09-product-edit-ad-supported-langs-precheck-design.md）
+    $('edAdLangPrecheckClose') && $('edAdLangPrecheckClose').addEventListener('click', edCloseAdLangPrecheckModal);
+    $('edAdLangPrecheckCancelBtn') && $('edAdLangPrecheckCancelBtn').addEventListener('click', edCloseAdLangPrecheckModal);
+    $('edAdLangPrecheckJumpBtn') && $('edAdLangPrecheckJumpBtn').addEventListener('click', edJumpFromPrecheckToProductLinks);
+    $('edAdLangPrecheckMask') && $('edAdLangPrecheckMask').addEventListener('click', (e) => {
+      if (e.target.id === 'edAdLangPrecheckMask') edCloseAdLangPrecheckModal();
     });
 
     // 商品详情图：从商品链接一键下载（后台任务 + 进度弹窗）

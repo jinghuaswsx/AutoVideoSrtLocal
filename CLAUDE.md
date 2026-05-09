@@ -193,6 +193,15 @@ python -m tools.shopify_image_localizer.build_exe --version <ver>
 - `_enabled_domain_rows` 已把默认域名排到首位 → `resolve_product_page_url_rows` / `first_product_page_url` 自动用默认域名。素材管理「编辑产品素材」弹窗的产品链接输入框 placeholder + 自动填充也走该域名（`web/static/medias.js` 的 `DEFAULT_LINK_DOMAIN` 现在是可变变量，由 `_serialize_product` 注入的 `default_link_domain` 字段覆盖）。
 - 改这条链路至少运行：`pytest tests/test_product_link_domains.py tests/test_settings_product_domains.py tests/test_db_migration_product_link_domains.py -q`。
 
+## 顶部国家勾选前置校验（2026-05-09 起）
+
+详细设计：[docs/superpowers/specs/2026-05-09-product-edit-ad-supported-langs-precheck-design.md](docs/superpowers/specs/2026-05-09-product-edit-ad-supported-langs-precheck-design.md)
+
+- 「编辑产品素材」弹窗顶部 `ad_supported_langs` 复选框（`edAdSupportedLangsBox`）勾选时必须满足：该语种下启用域名 ≥ 1 且全部 `media_product_link_availability.ok=1`。复选框的 click 在 capture 阶段被 [`web/static/medias.js`](web/static/medias.js) 的 `edSetupAdLangCheckboxGuard` 拦截，自动 `POST /medias/api/products/<pid>/link-availability/<lang>` 并发探测；任一失败保持未勾选 + 弹 `edAdLangPrecheckMask` 弹窗，提供"去产品链接管理"快捷跳转（切 `activeLang` + 打开 `edProductLinksMask`）。
+- 取消勾选 (`unchecked`) **不**触发校验，直接放行；空启用域名也按"失败"路径阻断，但弹窗文案改为"请先去产品链接管理启用至少一个域名"。
+- 后端 [`web/services/media_product_mutations.py`](web/services/media_product_mutations.py) 的 `build_product_update_response` 在 `update_product_fn` 之前对**新增** lang 集合（`new_set - old_set`）跑同一规则；任一不通过返回 `422 {"error":"ad_supported_langs_precheck_failed","issues":[...]}`，前端在 `edSave` 异常路径里捕获并展示结构化错误。**只校验本次新增 lang**，不校验已勾选的老 lang，避免老产品因为后续链接挂掉无法保存。
+- 改这条链路至少运行：`pytest tests/test_media_product_mutations_ad_lang_precheck.py tests/test_media_product_mutations_service.py tests/test_appcore_link_availability.py tests/test_medias_link_availability_routes.py -q`。
+
 ## 产品链接管理弹窗（2026-05-09 起）
 
 详细设计：[docs/superpowers/specs/2026-05-09-product-link-management-modal.md](docs/superpowers/specs/2026-05-09-product-link-management-modal.md)
