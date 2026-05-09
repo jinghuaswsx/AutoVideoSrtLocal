@@ -963,6 +963,32 @@ def _get_realtime_campaign_details(
     )
 
 
+def _get_realtime_ad_summary_from_campaigns(
+    target: date,
+    snapshot_at: datetime | None,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> dict[str, Any] | None:
+    campaign_details = _get_realtime_campaign_details(
+        target,
+        snapshot_at,
+        product_id=product_id,
+        site_codes=site_codes,
+    )
+    if not campaign_details:
+        return None
+    return {
+        "ad_spend": round(sum(row["spend_usd"] for row in campaign_details), 2),
+        "meta_purchase_value": round(
+            sum(row["purchase_value_usd"] for row in campaign_details),
+            2,
+        ),
+        "meta_purchases": sum(row["result_count"] for row in campaign_details),
+        "campaigns": campaign_details,
+    }
+
+
 def _get_realtime_order_summary(
     target: date,
     data_until: datetime,
@@ -1800,12 +1826,30 @@ def get_realtime_roas_overview(
         "ORDER BY hour",
         tuple([day_start, day_end] + product_args),
     )
+    realtime_ad_summary = None
+    if site_filter_active and target >= current_business_date:
+        realtime_ad_summary = _get_realtime_ad_summary_from_campaigns(
+            target,
+            data_until,
+            product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
+        )
+
     ad_product_sql, ad_product_args = _product_filter_sql("product_id", normalized_product_id)
     ad_account_sql_live = ""
     ad_account_args_live: list[Any] = []
-    if allowed_account_ids is not None:
+    if realtime_ad_summary is not None:
+        ad_rows: list[dict[str, Any]] = [{
+            "ad_spend": realtime_ad_summary["ad_spend"],
+            "meta_purchase_value": realtime_ad_summary["meta_purchase_value"],
+            "meta_purchases": realtime_ad_summary["meta_purchases"],
+            "last_ad_updated_at": _get_realtime_ad_updated_at(target, data_until),
+        }]
+        ad_source = "meta_ad_realtime_daily_campaign_metrics"
+        ad_granularity = "campaign_realtime_snapshot"
+    elif allowed_account_ids is not None:
         if not allowed_account_ids:
-            ad_rows: list[dict[str, Any]] = []
+            ad_rows = []
         else:
             placeholders_live = ", ".join(["%s"] * len(allowed_account_ids))
             ad_account_sql_live = f"AND ad_account_id IN ({placeholders_live}) "
@@ -1820,6 +1864,8 @@ def get_realtime_roas_overview(
                 + ad_product_sql + ad_account_sql_live,
                 tuple([target] + ad_product_args + ad_account_args_live),
             )
+        ad_source = "meta_ad_daily_campaign_metrics"
+        ad_granularity = "daily"
     else:
         ad_rows = query(
             "SELECT SUM(spend_usd) AS ad_spend, "
@@ -1831,6 +1877,8 @@ def get_realtime_roas_overview(
             + ad_product_sql,
             tuple([target] + ad_product_args),
         )
+        ad_source = "meta_ad_daily_campaign_metrics"
+        ad_granularity = "daily"
 
     orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
     ad = ad_rows[0] if ad_rows else {}
@@ -1913,8 +1961,8 @@ def get_realtime_roas_overview(
             "product_id": normalized_product_id,
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
-            "ad_source": "meta_ad_daily_campaign_metrics",
-            "ad_granularity": "daily",
+            "ad_source": ad_source,
+            "ad_granularity": ad_granularity,
             "hourly_ad_ready": False,
         },
         "freshness": {
@@ -1943,10 +1991,14 @@ def get_realtime_roas_overview(
             order_profit_all,
             total_ad_spend_usd=summary["ad_spend"],
         ),
-        "campaigns": _get_daily_campaigns(
-            target,
-            product_id=normalized_product_id,
-            site_codes=normalized_site_codes,
+        "campaigns": (
+            realtime_ad_summary["campaigns"]
+            if realtime_ad_summary is not None
+            else _get_daily_campaigns(
+                target,
+                product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
+            )
         ),
         "product_sales_stats": _get_realtime_product_sales_stats(
             target,

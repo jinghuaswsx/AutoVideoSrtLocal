@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from appcore import order_analytics as oa
 from appcore.order_analytics import realtime as realtime_oa
@@ -106,6 +106,59 @@ def test_single_site_filter_limits_ads_account_id(monkeypatch):
     assert ads_calls, "expected ads query to fire on live-calc path"
     assert any("ad_account_id IN" in sql for sql, _ in ads_calls)
     assert any("99999" in tuple(args) for _, args in ads_calls)
+
+
+def test_single_site_open_day_uses_realtime_ads_when_daily_final_missing(monkeypatch):
+    """单店筛选的 open day 必须读实时表，而不是日终表空值。"""
+    calls: list[tuple[str, tuple]] = []
+    target = date(2026, 5, 9)
+    latest_at = datetime(2026, 5, 10, 0, 40)
+
+    def fake_query(sql, args=()):
+        calls.append((sql, args))
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "MAX(snapshot_at) AS latest_at" in sql
+        ):
+            return [{"ad_account_id": "1253003326160754", "latest_at": latest_at}]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "campaign_id, campaign_name" in sql
+        ):
+            return [{
+                "ad_account_id": "1253003326160754",
+                "ad_account_name": "Omurio",
+                "campaign_id": "cmp_1",
+                "campaign_name": "Omurio spend",
+                "normalized_campaign_code": "omurio-spend",
+                "result_count": 0,
+                "spend_usd": 64.77,
+                "purchase_value_usd": 0,
+                "impressions": 1000,
+                "clicks": 12,
+            }]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    _stub_meta_ad_accounts(monkeypatch, {"omurio": ("1253003326160754",)})
+    monkeypatch.setattr(realtime_oa, "_get_realtime_order_details", lambda *a, **kw: [])
+    monkeypatch.setattr(realtime_oa, "_get_realtime_order_profit_details", lambda *a, **kw: [])
+    monkeypatch.setattr(realtime_oa, "_get_realtime_product_sales_stats", lambda *a, **kw: [])
+    monkeypatch.setattr(realtime_oa, "_get_daily_campaigns", lambda *a, **kw: [])
+
+    result = oa.get_realtime_roas_overview(
+        target.isoformat(),
+        now=datetime(2026, 5, 10, 0, 56),
+        site_codes=["omurio"],
+    )
+
+    assert result["scope"]["stores"] == ["omurio"]
+    assert result["scope"]["ad_source"] == "meta_ad_realtime_daily_campaign_metrics"
+    assert result["summary"]["ad_spend"] == 64.77
+    assert any(
+        "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+        for sql, _ in calls
+    )
 
 
 def test_invalid_site_code_falls_back_to_default(monkeypatch):
