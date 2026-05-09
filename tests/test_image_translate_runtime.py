@@ -730,11 +730,11 @@ def test_parallel_runs_all_items_and_is_faster_than_sequential(tmp_path):
         assert it["status"] == "done", (it["idx"], it)
 
 
-def test_parallel_pool_rolls_at_size_10(tmp_path):
-    """池大小 10 的滚动语义：30 个 item、每张 sleep 0.1s。
-    前 10 个 item 并发启动（池一次性吞下 max_workers=10），
-    第 11 个在第一个完成后立刻补进池（约 0.1s 后），
-    第 21 个再滚一圈（约 0.2s 后）。不再「批内全完才下一批」。"""
+def test_parallel_pool_rolls_at_size_15(tmp_path):
+    """池大小 15 的滚动语义：30 个 item、每张 sleep 0.1s。
+    前 15 个 item 并发启动（池一次性吞下 max_workers=15），
+    第 16 个在第一个完成后立刻补进池（约 0.1s 后）。
+    不再「批内全完才下一批」。"""
     import time as _time
     import threading
     from appcore import image_translate_runtime as rt
@@ -765,12 +765,10 @@ def test_parallel_pool_rolls_at_size_10(tmp_path):
 
     starts.sort()
     assert len(starts) == 30
-    # 前 10 个被池一次性吞下，启动时间几乎同时
-    assert starts[9] - starts[0] < 0.05, f"first 10 spread: {starts[9]-starts[0]:.3f}s"
-    # 第 11 个等池里某个 slot 空出（≈ 一个 item 0.1s）
-    assert starts[10] - starts[0] >= 0.08, f"11th wait: {starts[10]-starts[0]:.3f}s"
-    # 第 21 个再滚一圈
-    assert starts[20] - starts[0] >= 0.18, f"21st wait: {starts[20]-starts[0]:.3f}s"
+    # 前 15 个被池一次性吞下，启动时间几乎同时
+    assert starts[14] - starts[0] < 0.05, f"first 15 spread: {starts[14]-starts[0]:.3f}s"
+    # 第 16 个等池里某个 slot 空出（≈ 一个 item 0.1s）
+    assert starts[15] - starts[0] >= 0.08, f"16th wait: {starts[15]-starts[0]:.3f}s"
     for it in task["items"]:
         assert it["status"] == "done"
 

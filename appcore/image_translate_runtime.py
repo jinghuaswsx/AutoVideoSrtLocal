@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
-_PARALLEL_POOL_SIZE = 10  # 并行模式并发池上限：池里最多 N 个 item 同时跑，跑完一个立即补一个
+_PARALLEL_POOL_SIZE = 15  # 并行模式并发池上限：池里最多 N 个 item 同时跑，跑完一个立即补一个
 _TEXT_DETECT_SCHEMA = {
     "type": "object",
     "properties": {
