@@ -1510,6 +1510,23 @@
     const basisLabel = calc.effective_basis === 'actual' ? '实际' : '预估';
     return `<span class="${cls}">${num.toFixed(2)}<span class="muted" style="font-size:11px;"> ${basisLabel}</span></span>`;
   }
+  function fmtActualBreakevenRoas(snapshot) {
+    if (!snapshot || snapshot.value === null || snapshot.value === undefined) return '<span class="muted">—</span>';
+    const num = Number(snapshot.value);
+    if (!isFinite(num)) return '<span class="muted">—</span>';
+    const cls = num <= 1.5 ? 'roas-good' : (num <= 3 ? '' : 'roas-bad');
+    const sourceLabel = snapshot.fee_source === 'real'
+      ? '真实手续费'
+      : (snapshot.fee_source === 'mixed' ? '部分真实' : '7%估算');
+    const windowText = snapshot.window_start && snapshot.window_end
+      ? `${snapshot.window_start}–${snapshot.window_end}`
+      : '';
+    const ordersText = snapshot.orders_count !== null && snapshot.orders_count !== undefined
+      ? `${snapshot.orders_count}单`
+      : '';
+    const title = [windowText, ordersText].filter(Boolean).join(' · ');
+    return `<span class="${cls}" title="${escapeHtml(title)}">${num.toFixed(2)}<span class="muted" style="font-size:11px;"> ${sourceLabel}</span></span>`;
+  }
   function editValue(value) {
     return value === null || value === undefined ? '' : String(value);
   }
@@ -1561,6 +1578,7 @@
       <td>${skuNumberInput('manual_unit_price_rmb', purchaseValue, 'mono')}</td>
       <td title="${escapeHtml(goodsName)}">${skuInput('manual_goods_name', goodsName)}</td>
       <td class="mono">${fmtRoas(s.roas_calculation)}</td>
+      <td class="mono">${fmtActualBreakevenRoas(s.actual_breakeven_roas)}</td>
       <td class="sku-actions">${manualBadge}<button type="button" class="oc-btn sm primary" data-save-sku-row="${escapeHtml(s.id)}">${icon('check', 12)}<span>保存</span></button></td>
     </tr>`;
   }
@@ -1576,6 +1594,7 @@
       <td class="mono">${skuInput('dianxiaomi_sku_code', '', 'mono')}</td>
       <td>${skuNumberInput('manual_unit_price_rmb', '', 'mono')}</td>
       <td>${skuInput('manual_goods_name', '')}</td>
+      <td class="mono"><span class="muted">-</span></td>
       <td class="mono"><span class="muted">-</span></td>
       <td class="sku-actions"><span class="oc-sku-manual-badge">新增</span><button type="button" class="oc-btn sm primary" data-create-sku-row>${icon('check', 12)}<span>保存</span></button><button type="button" class="oc-btn sm ghost" data-cancel-new-sku-row>取消</button></td>
     </tr>`;

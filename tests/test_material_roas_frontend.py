@@ -71,13 +71,27 @@ def test_sku_detail_modal_fills_main_area_with_room_for_codes():
     assert "flex:1 1 auto" in body_css
     assert "flex:1 1 auto" in table_wrap_css
     assert "max-height:none" in table_wrap_css
-    assert "min-width:1780px" in table_css
+    assert "min-width:1940px" in table_css
 
     assert '<th style="width:210px;">Shopify SKU</th>' in html
     assert '<th style="width:210px;">店小秘 SKU</th>' in html
     assert '<th style="width:210px;">店小秘商品 SKU</th>' in html
     assert '<th style="width:140px;">ERP 编码</th>' in html
     assert '<th style="width:260px;">ERP / xmyc 商品名</th>' in html
+
+
+def test_sku_detail_modal_renders_actual_breakeven_roas_after_estimated_roas():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert '<th style="width:120px;">估算 ROAS</th>' in html
+    assert '<th style="width:160px;">实际保本 ROAS</th>' in html
+    assert html.index("估算 ROAS") < html.index("实际保本 ROAS")
+    assert "fmtActualBreakevenRoas" in js
+    assert "s.actual_breakeven_roas" in js
+    assert "真实手续费" in js
+    assert "7%估算" in js
+    assert "部分真实" in js
 
 
 def test_medias_html_has_parcel_cost_suggest_button():
