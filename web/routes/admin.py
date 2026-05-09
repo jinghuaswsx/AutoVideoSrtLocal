@@ -279,6 +279,17 @@ def _handle_product_link_domains_post() -> None:
         product_link_domains.delete_domain(domain_id)
         flash("域名已删除")
         return
+    if action == "set_default":
+        try:
+            domain_id = int((request.form.get("default_domain_id") or 0) or 0)
+        except (TypeError, ValueError):
+            domain_id = 0
+        if domain_id <= 0:
+            flash("默认域名 id 不正确", "error")
+            return
+        product_link_domains.set_default_domain(domain_id)
+        flash("默认域名已切换")
+        return
 
     enabled_ids = _parse_int_list(request.form.getlist("enabled_domain_ids"))
     product_link_domains.set_global_enabled_domain_ids(enabled_ids)

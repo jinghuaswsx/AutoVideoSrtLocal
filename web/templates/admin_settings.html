@@ -89,6 +89,8 @@
 .settings-domain-btn.danger { border-color:#fecaca; background:#fef2f2; color:#b91c1c; }
 .settings-domain-btn:hover { background:#eef6ff; color:#175bc6; }
 .settings-domain-btn.primary:hover { background:#175bc6; color:#fff; }
+.settings-domain-default-badge { display:inline-flex; align-items:center; height:24px; padding:0 10px; border-radius:9999px; background:var(--primary-color,#3b82f6); color:#fff; font-size:12px; font-weight:600; letter-spacing:0.02em; }
+.settings-domain-default-badge.is-disabled { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
 .settings-domain-empty { padding:14px; border:1px dashed var(--border-main,#e5e7eb); border-radius:12px; color:#64748b; background:#f8fbff; font-size:13px; }
 @media (max-width: 768px) {
   .settings-card { padding:20px; }
@@ -137,6 +139,7 @@
         <tr>
           <th style="width:64px">启用</th>
           <th>域名</th>
+          <th style="width:140px">默认</th>
           <th style="width:120px">排序</th>
           <th style="width:96px;text-align:right">操作</th>
         </tr>
@@ -149,6 +152,19 @@
                    {% if row.enabled %}checked{% endif %}>
           </td>
           <td><span class="settings-domain-name">{{ row.domain }}</span></td>
+          <td>
+            {% if row.is_default %}
+              {% if row.enabled %}
+                <span class="settings-domain-default-badge">默认</span>
+              {% else %}
+                <span class="settings-domain-default-badge is-disabled">默认（已停用）</span>
+              {% endif %}
+            {% else %}
+              <button class="settings-domain-btn" type="submit"
+                      name="default_domain_id" value="{{ row.id }}"
+                      onclick="this.form.domain_action.value='set_default'">设为默认</button>
+            {% endif %}
+          </td>
           <td class="settings-domain-name">{{ row.sort_order }}</td>
           <td>
             <div class="settings-domain-actions">

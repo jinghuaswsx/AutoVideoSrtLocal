@@ -4003,7 +4003,16 @@
   }
 
   // --- 产品链接（按 activeLang）---
-  const DEFAULT_LINK_DOMAIN = 'newjoyloo.com';
+  // Default domain is the one flagged is_default=1 in media_link_domains; the
+  // server passes it through `product.default_link_domain`. Falls back to
+  // 'newjoyloo.com' only when the API payload omits it (e.g. older response).
+  const DEFAULT_LINK_DOMAIN_FALLBACK = 'newjoyloo.com';
+
+  function edDefaultLinkDomain() {
+    const product = (edState.productData && edState.productData.product) || {};
+    const candidate = String(product.default_link_domain || '').trim().toLowerCase();
+    return candidate || DEFAULT_LINK_DOMAIN_FALLBACK;
+  }
 
   function edDomainFromUrl(url) {
     try {
@@ -4037,7 +4046,8 @@
     if (typeof value === 'object') {
       const normalizedDomain = String(domain || '').trim().toLowerCase();
       if (normalizedDomain && value[normalizedDomain]) return value[normalizedDomain];
-      if (value[DEFAULT_LINK_DOMAIN]) return value[DEFAULT_LINK_DOMAIN];
+      const defaultDomain = edDefaultLinkDomain();
+      if (value[defaultDomain]) return value[defaultDomain];
       const first = Object.values(value).find((url) => typeof url === 'string' && url.trim());
       return first || '';
     }
@@ -4055,7 +4065,7 @@
       seen.add(domain);
       out.push({ domain });
     });
-    if (!out.length) out.push({ domain: DEFAULT_LINK_DOMAIN });
+    if (!out.length) out.push({ domain: edDefaultLinkDomain() });
     return out;
   }
 
@@ -4074,13 +4084,14 @@
 
   function _defaultProductUrlForDomain(lang, code, domain) {
     if (!code) return '';
-    const normalizedDomain = String(domain || DEFAULT_LINK_DOMAIN).trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*$/, '').toLowerCase() || DEFAULT_LINK_DOMAIN;
+    const fallback = edDefaultLinkDomain();
+    const normalizedDomain = String(domain || fallback).trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/.*$/, '').toLowerCase() || fallback;
     if (lang === 'en') return `https://${normalizedDomain}/products/${code}`;
     return `https://${normalizedDomain}/${lang}/products/${code}`;
   }
 
   function _defaultProductUrl(lang, code) {
-    return _defaultProductUrlForDomain(lang, code, DEFAULT_LINK_DOMAIN);
+    return _defaultProductUrlForDomain(lang, code, edDefaultLinkDomain());
   }
 
   function edRenderProductUrl(lang) {
@@ -4088,7 +4099,7 @@
     const hint = $('edProductUrlHint');
     if (!input) return;
     const code = ($('edCode').value || '').trim();
-    const override = edLocalizedLinkValue(lang, DEFAULT_LINK_DOMAIN);
+    const override = edLocalizedLinkValue(lang, edDefaultLinkDomain());
     const def = _defaultProductUrl(lang, code);
     input.value = override || def || '';
     input.placeholder = def || '留空则用默认模板';
@@ -4106,7 +4117,8 @@
     const lang = edState.activeLang;
     const code = ($('edCode').value || '').trim();
     const val = (input.value || '').trim();
-    const domain = edDomainFromUrl(val) || DEFAULT_LINK_DOMAIN;
+    const defaultDomain = edDefaultLinkDomain();
+    const domain = edDomainFromUrl(val) || defaultDomain;
     const def = _defaultProductUrlForDomain(lang, code, domain);
     if (!edState.productData.product.localized_links) {
       edState.productData.product.localized_links = {};
@@ -4117,10 +4129,10 @@
       if (!val || val === def) delete current[domain];
       else current[domain] = val;
       if (!Object.keys(current).length) delete links[lang];
-    } else if (domain && domain !== DEFAULT_LINK_DOMAIN) {
+    } else if (domain && domain !== defaultDomain) {
       const next = {};
       if (typeof current === 'string' && current.trim()) {
-        const currentDomain = edDomainFromUrl(current) || DEFAULT_LINK_DOMAIN;
+        const currentDomain = edDomainFromUrl(current) || defaultDomain;
         next[currentDomain] = current;
       }
       if (val && val !== def) next[domain] = val;
@@ -4297,7 +4309,7 @@
       const current = input ? (input.value || '').trim() : '';
       if (current) return current;
     }
-    return edLocalizedLinkValue(lang, DEFAULT_LINK_DOMAIN) || _defaultProductUrl(lang, code) || '';
+    return edLocalizedLinkValue(lang, edDefaultLinkDomain()) || _defaultProductUrl(lang, code) || '';
   }
 
   function copyText(text) {
@@ -4459,7 +4471,7 @@
     const statusMap = edShopifyImageStatusMap();
     const normalizedDomain = edNormalizeDomainValue(domain || '');
     const key = edStatusKey(lang, normalizedDomain);
-    const raw = statusMap[key] || (normalizedDomain === DEFAULT_LINK_DOMAIN ? statusMap[lang] : {}) || {};
+    const raw = statusMap[key] || (normalizedDomain === edDefaultLinkDomain() ? statusMap[lang] : {}) || {};
     return {
       replace_status: raw.replace_status || 'none',
       link_status: raw.link_status || 'unknown',

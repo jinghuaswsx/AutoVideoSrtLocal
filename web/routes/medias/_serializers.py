@@ -161,6 +161,10 @@ def _serialize_product(p: dict, items_count: int | None = None,
             pass
     link_check_tasks = medias.parse_link_check_tasks_json(p.get("link_check_tasks_json"))
     shopify_image_status = shopify_image_tasks.parse_status_map(p.get("shopify_image_status_json"))
+    try:
+        default_link_domain = product_link_domains.get_default_domain()
+    except Exception:
+        default_link_domain = ""
     return {
         "id": p["id"],
         "name": p["name"],
@@ -198,6 +202,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "cover_thumbnail_url": cover_url,
         "lang_coverage": lang_coverage or {},
         "localized_links": localized_links,
+        "default_link_domain": default_link_domain,
         "product_link_domains": _serialize_product_link_domains(p) if include_product_link_domains else [],
         "link_check_tasks": link_check_tasks,
         "shopify_image_status": shopify_image_status,

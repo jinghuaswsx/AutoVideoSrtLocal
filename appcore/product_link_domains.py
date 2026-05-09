@@ -129,6 +129,19 @@ def _fallback_domain_rows() -> list[dict[str, Any]]:
     return [{"id": 0, "domain": DEFAULT_LINK_DOMAINS[0], "effective_enabled": True}]
 
 
+def _sort_with_default_first(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return rows
+    default_first: list[dict[str, Any]] = []
+    rest: list[dict[str, Any]] = []
+    for row in rows:
+        if bool(row.get("is_default")):
+            default_first.append(row)
+        else:
+            rest.append(row)
+    return default_first + rest
+
+
 def _enabled_domain_rows(product_id: int) -> list[dict[str, Any]]:
     if not product_id:
         return _fallback_domain_rows()
@@ -143,7 +156,7 @@ def _enabled_domain_rows(product_id: int) -> list[dict[str, Any]]:
         except ValueError:
             continue
         normalized_rows.append({**dict(row), "domain": domain})
-    return normalized_rows
+    return _sort_with_default_first(normalized_rows)
 
 
 def resolve_product_page_url_rows(product: dict | None, lang: str) -> list[dict[str, str]]:
@@ -189,7 +202,7 @@ def first_product_page_url(product: dict | None, lang: str) -> str:
 def list_domains(*, include_disabled: bool = True) -> list[dict[str, Any]]:
     where = "" if include_disabled else "WHERE enabled=1"
     rows = _query(
-        f"SELECT id, domain, enabled, sort_order, created_at, updated_at "
+        f"SELECT id, domain, enabled, is_default, sort_order, created_at, updated_at "
         f"FROM media_link_domains {where} "
         "ORDER BY sort_order ASC, id ASC",
         (),
@@ -200,10 +213,56 @@ def list_domains(*, include_disabled: bool = True) -> list[dict[str, Any]]:
             "id": int(row.get("id") or 0),
             "domain": normalize_domain(str(row.get("domain") or "")),
             "enabled": bool(row.get("enabled")),
+            "is_default": bool(row.get("is_default")),
             "sort_order": int(row.get("sort_order") or 0),
         }
         for row in rows
     ]
+
+
+def get_default_domain() -> str:
+    """Return the configured default domain, or the hardcoded fallback when none is set.
+
+    Single source of truth for "which domain should the asset edit page use by default".
+    Callers should never hardcode `DEFAULT_LINK_DOMAINS[0]` themselves; route through
+    this helper so swapping the default in the admin UI flows through immediately.
+    """
+    try:
+        rows = _query(
+            "SELECT domain FROM media_link_domains WHERE is_default=1 ORDER BY sort_order ASC, id ASC LIMIT 1",
+            (),
+        ) or []
+    except Exception:
+        rows = []
+    for row in rows:
+        try:
+            return normalize_domain(str(row.get("domain") or ""))
+        except ValueError:
+            continue
+    return DEFAULT_LINK_DOMAINS[0]
+
+
+def set_default_domain(domain_id: int) -> None:
+    """Mark a single row as the canonical default and ensure it is enabled.
+
+    Atomically clears `is_default` on every other row, then sets `is_default=1`
+    + `enabled=1` on the target. A non-positive id is treated as "clear default".
+    """
+    try:
+        target_id = int(domain_id)
+    except (TypeError, ValueError):
+        target_id = 0
+    if target_id <= 0:
+        _execute("UPDATE media_link_domains SET is_default=0", ())
+        return
+    _execute(
+        "UPDATE media_link_domains SET is_default=0 WHERE id<>%s",
+        (target_id,),
+    )
+    _execute(
+        "UPDATE media_link_domains SET is_default=1, enabled=1 WHERE id=%s",
+        (target_id,),
+    )
 
 
 def upsert_domain(domain: str, *, enabled: bool = True) -> int:

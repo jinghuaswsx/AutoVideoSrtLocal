@@ -148,6 +148,15 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - `detail_extra` 占位符位置：[_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 的 `{% block content %}` 内、`{% include "_task_workbench.html" %}` 之后、`{% endif %}` 之前。内容由此自然落进 `<main class="main-content">`。新增第四个 detail_mode（比如 av_sync 之外的）时，沿用同一 block。
 - 自检：改动 [multi_translate_detail.html](web/templates/multi_translate_detail.html) / [omni_translate_detail.html](web/templates/omni_translate_detail.html) / [ja_translate_detail.html](web/templates/ja_translate_detail.html) / [_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 后，至少运行 `pytest tests/test_multi_translate_routes.py tests/test_omni_translate_routes.py tests/test_runtime_multi_asr_normalize.py -q`；如有 asr-normalize-card 渲染路径，再用 Playwright 或 devtools 确认 `document.querySelector('section.asr-normalize-card').parentElement` 链路上能找到 `<main class="main-content">`，且其 `getBoundingClientRect()` 横向 bbox 在 main 的 left/right 内（不会贴 viewport 右沿）。
 
+## 产品链接默认域名（2026-05-09 起）
+
+详细设计：[docs/superpowers/specs/2026-05-09-product-link-default-domain.md](docs/superpowers/specs/2026-05-09-product-link-default-domain.md)
+
+- `media_link_domains.is_default` 是「默认域名」唯一来源；通过域名管理页 `/admin/settings?tab=domains` 的「设为默认 / 默认」列切换。`product_link_domains.set_default_domain(domain_id)` 单事务清旧默认 + 写新默认 + 强制启用，不要绕开它直接 `UPDATE media_link_domains SET is_default=1`。
+- 取默认域名走 `product_link_domains.get_default_domain()`；DB 没显式默认时自动回退到 `DEFAULT_LINK_DOMAINS[0]`（兜底硬编码 `newjoyloo.com`），**禁止**让调用方各自硬编码。
+- `_enabled_domain_rows` 已把默认域名排到首位 → `resolve_product_page_url_rows` / `first_product_page_url` 自动用默认域名。素材管理「编辑产品素材」弹窗的产品链接输入框 placeholder + 自动填充也走该域名（`web/static/medias.js` 的 `DEFAULT_LINK_DOMAIN` 现在是可变变量，由 `_serialize_product` 注入的 `default_link_domain` 字段覆盖）。
+- 改这条链路至少运行：`pytest tests/test_product_link_domains.py tests/test_settings_product_domains.py tests/test_db_migration_product_link_domains.py -q`。
+
 ## 产品链接管理弹窗（2026-05-09 起）
 
 详细设计：[docs/superpowers/specs/2026-05-09-product-link-management-modal.md](docs/superpowers/specs/2026-05-09-product-link-management-modal.md)
