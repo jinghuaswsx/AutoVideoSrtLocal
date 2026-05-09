@@ -1090,6 +1090,7 @@ def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) 
         items=items,
         medias_context=medias_context,
         concurrency_mode="parallel",
+        channel=_safe_get_image_translate_channel(),
     )
     runner_dispatch.start_image_translate_runner(child_task_id, user_id)
     return child_task_id, "image_translate", "running"
@@ -1145,6 +1146,7 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
         items=items,
         medias_context=medias_context,
         concurrency_mode="parallel",
+        channel=_safe_get_image_translate_channel(),
     )
     runner_dispatch.start_image_translate_runner(child_task_id, user_id)
     return child_task_id, "image_translate", "running"
@@ -1273,6 +1275,17 @@ def _pick_existing_path(candidates: list[str]) -> str:
         if candidate and os.path.isfile(candidate):
             return candidate
     return ""
+
+
+def _safe_get_image_translate_channel() -> str:
+    """读全局图片翻译通道；DB 偶发失败时静默回退到空字符串，
+    保证 bulk task 创建不会因为这个非关键字段中断（同 _default_image_translate_model_id 思路）。"""
+    from appcore import image_translate_settings as its
+
+    try:
+        return its.get_channel()
+    except Exception:
+        return ""
 
 
 def _default_image_translate_model_id(_user_id: int | None) -> str:

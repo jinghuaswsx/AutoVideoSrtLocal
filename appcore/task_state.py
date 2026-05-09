@@ -596,7 +596,8 @@ def create_image_translate(task_id: str, task_dir: str, *,
                             product_name: str = "",
                             project_name: str = "",
                             medias_context: dict | None = None,
-                            concurrency_mode: str = IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE) -> dict:
+                            concurrency_mode: str = IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
+                            channel: str = "") -> dict:
     """创建图片翻译任务的初始状态。product_name/project_name 作为存档标识写入 state。"""
     if len(items) > IMAGE_TRANSLATE_MAX_ITEMS:
         raise ValueError(f"too many image translate items (max {IMAGE_TRANSLATE_MAX_ITEMS})")
@@ -649,6 +650,9 @@ def create_image_translate(task_id: str, task_dir: str, *,
             if concurrency_mode in {"sequential", "parallel"}
             else IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
         ),
+        # 通道字段：决定运行时是否启用 APIMART 异步 task_id 复用 / 服务重启恢复路径
+        # （见 appcore/image_translate_runtime.py 的 _generate_with_apimart_recovery）。
+        "channel": (channel or "").strip().lower(),
         "error": "",
         "_user_id": user_id,
     }

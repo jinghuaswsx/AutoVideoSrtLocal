@@ -685,6 +685,51 @@ def test_create_image_translate_stores_concurrency_mode():
         ts._tasks.pop("t-cm-2", None)
 
 
+def test_create_image_translate_stores_channel():
+    """task_state.create_image_translate 接受 channel 并写入 state；缺省为空字符串。
+
+    channel 字段决定运行时是否启用 APIMART 异步 task_id 复用 / 服务重启恢复路径
+    （见 appcore/image_translate_runtime.py 的 _generate_with_apimart_recovery）。
+    """
+    from appcore import task_state as ts
+    from unittest.mock import patch
+
+    with patch.object(ts, "_db_upsert"):
+        # 默认 channel=""
+        t_default = ts.create_image_translate(
+            "t-ch-default", "/tmp/x",
+            user_id=1, preset="cover", target_language="de",
+            target_language_name="德语", model_id="gemini-x",
+            prompt="p", items=[],
+        )
+        assert t_default["channel"] == ""
+
+        # 显式 apimart
+        t_apimart = ts.create_image_translate(
+            "t-ch-apimart", "/tmp/x",
+            user_id=1, preset="cover", target_language="de",
+            target_language_name="德语", model_id="gpt-image-2",
+            prompt="p", items=[],
+            channel="apimart",
+        )
+        assert t_apimart["channel"] == "apimart"
+
+        # 大写 / 前后空格归一化为小写无空格
+        t_norm = ts.create_image_translate(
+            "t-ch-norm", "/tmp/x",
+            user_id=1, preset="cover", target_language="de",
+            target_language_name="德语", model_id="gemini-x",
+            prompt="p", items=[],
+            channel="  APIMART  ",
+        )
+        assert t_norm["channel"] == "apimart"
+
+    with ts._lock:
+        ts._tasks.pop("t-ch-default", None)
+        ts._tasks.pop("t-ch-apimart", None)
+        ts._tasks.pop("t-ch-norm", None)
+
+
 def test_create_image_translate_rejects_over_1000_items():
     from appcore import task_state as ts
     from unittest.mock import patch

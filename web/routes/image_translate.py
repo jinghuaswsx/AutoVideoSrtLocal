@@ -473,6 +473,7 @@ def api_upload_complete():
         product_name=product_name,
         project_name=project_name,
         concurrency_mode=mode_raw,
+        channel=channel,
     )
     with _upload_guard:
         _upload_reservations.pop(task_id, None)
