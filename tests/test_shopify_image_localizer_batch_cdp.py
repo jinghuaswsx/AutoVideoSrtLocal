@@ -1355,6 +1355,10 @@ def test_ez_replace_slot_logs_timed_steps_and_waits_between_actions(monkeypatch,
         def __init__(self, selector: str):
             self.selector = selector
 
+        @property
+        def first(self):
+            return self
+
         def count(self):
             return 1
 

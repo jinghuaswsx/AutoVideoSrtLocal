@@ -190,14 +190,46 @@ def _modal_hash(frame) -> str | None:
     return match.group(1).lower() if match else None
 
 
+_SAVE_BUTTON_CANDIDATES = (
+    'button:has-text("Save")',
+    'button:has-text("Upload")',
+    'button:has-text("Apply")',
+    'button:has-text("Confirm")',
+    'button:has-text("Submit")',
+    'button:has-text("保存")',
+    'button:has-text("上传")',
+    'button:has-text("应用")',
+    'button:has-text("确认")',
+    'button:has-text("确定")',
+)
+
+
 def _click_save_and_wait(frame) -> dict:
-    frame.locator('button:has-text("Save")').click(timeout=5000)
+    """点确认/上传按钮提交 EZ 弹窗。
+    不同店铺 / freshify 版本的按钮文字可能是 Save / Upload / Apply / Confirm / 上传 等，
+    依次尝试，命中第一个 visible 的就 click，避免 newjoyloo 用 Save 而 omurio 用 Upload 时漏点。"""
+    last_err: Exception | None = None
+    matched: str | None = None
+    for selector in _SAVE_BUTTON_CANDIDATES:
+        try:
+            loc = frame.locator(selector).first
+            loc.wait_for(state="visible", timeout=2000)
+            loc.click(timeout=2000)
+            matched = selector
+            break
+        except Exception as exc:  # PlaywrightTimeoutError 或元素不可见
+            last_err = exc
+            continue
+    if matched is None:
+        raise RuntimeError(
+            f"未在弹窗里找到 Save/Upload/Apply/Confirm/确认 等提交按钮：{last_err}"
+        )
     try:
         frame.locator("[role=dialog]").wait_for(state="detached", timeout=15000)
-        return {"dialog_closed": True}
+        return {"dialog_closed": True, "matched_selector": matched}
     except PlaywrightTimeoutError:
         frame.page.wait_for_timeout(2500)
-        return {"dialog_closed": False, "fallback_wait_ms": 2500}
+        return {"dialog_closed": False, "fallback_wait_ms": 2500, "matched_selector": matched}
 
 
 def _click_cancel(frame) -> bool:
