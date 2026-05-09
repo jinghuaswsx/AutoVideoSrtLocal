@@ -320,6 +320,20 @@ def test_task_definitions_include_server_and_app_timers():
     assert definitions["tts_convergence_stats"]["source_type"] == "cron"
 
 
+def test_task_definitions_include_sku_actual_breakeven_roas():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["sku_actual_breakeven_roas"]
+    assert task["schedule"] == "每天 00:00（北京时间）"
+    assert task["source_type"] == "systemd"
+    assert task["source_ref"] == "autovideosrt-sku-actual-roas.timer"
+    assert task["runner"] == "tools/sku_actual_roas_snapshot.py"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-10-sku-actual-breakeven-roas-design.md" in task["description"]
+
+
 def test_task_definitions_expose_control_strategy_and_log_source():
     from appcore import scheduled_tasks
 

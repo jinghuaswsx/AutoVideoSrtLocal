@@ -7,7 +7,7 @@ from typing import Any
 
 from flask import jsonify
 
-from appcore import medias, product_roas
+from appcore import medias, product_roas, sku_actual_roas
 
 
 DEFAULT_PAGE_SIZE = 20
@@ -45,6 +45,7 @@ def build_products_list_response(
     get_product_covers_batch_fn=None,
     list_product_skus_batch_fn=None,
     list_xmyc_unit_prices_fn=None,
+    get_latest_sku_actual_roas_fn=None,
     get_configured_rmb_per_usd_fn=None,
     serialize_product_fn: SerializeProductFn | None = None,
 ) -> dict:
@@ -65,6 +66,9 @@ def build_products_list_response(
     )
     list_product_skus_batch_fn = list_product_skus_batch_fn or medias.list_product_skus_batch
     list_xmyc_unit_prices_fn = list_xmyc_unit_prices_fn or medias.list_xmyc_unit_prices
+    get_latest_sku_actual_roas_fn = (
+        get_latest_sku_actual_roas_fn or sku_actual_roas.get_latest_sku_actual_roas
+    )
     get_configured_rmb_per_usd_fn = (
         get_configured_rmb_per_usd_fn or product_roas.get_configured_rmb_per_usd
     )
@@ -106,6 +110,7 @@ def build_products_list_response(
         if (sku.get("dianxiaomi_sku") or "").strip()
     })
     xmyc_index = list_xmyc_unit_prices_fn(all_dxm_skus)
+    sku_actual_roas_index = get_latest_sku_actual_roas_fn(all_dxm_skus)
     roas_rmb_per_usd = get_configured_rmb_per_usd_fn()
     serialize_product_fn = serialize_product_fn or _default_serialize_product
 
@@ -121,6 +126,7 @@ def build_products_list_response(
             roas_rmb_per_usd=roas_rmb_per_usd,
             skus=skus_map.get(row["id"], []),
             xmyc_index=xmyc_index,
+            sku_actual_roas_index=sku_actual_roas_index,
         )
         for row in rows
     ]

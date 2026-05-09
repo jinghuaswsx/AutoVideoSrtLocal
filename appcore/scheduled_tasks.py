@@ -59,8 +59,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "roi_hourly_sync": {
         "code": "roi_hourly_sync",
         "name": "店小秘订单与 ROAS 实时同步",
-        "description": "每 1 小时同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
-        "schedule": "每 1 小时（每小时 :02）",
+        "description": "每 20 分钟同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
+        "schedule": "每 20 分钟（每小时 :02/:22/:42）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
@@ -104,6 +104,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-auto-update-packet-costs.timer",
         "runner": "tools/auto_update_packet_costs.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
+    "sku_actual_breakeven_roas": {
+        "code": "sku_actual_breakeven_roas",
+        "name": "SKU 实际保本 ROAS 快照",
+        "description": (
+            "每天北京时间 00:00 计算两天前结束的滚动 30 天订单窗口，"
+            "按 ERP SKU 固化实际保本 ROAS；手续费优先用 Shopify Payment 真实值，"
+            "缺失时按 7% 估算。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-10-sku-actual-breakeven-roas-design.md"
+        ),
+        "schedule": "每天 00:00（北京时间）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-sku-actual-roas.timer",
+        "runner": "tools/sku_actual_roas_snapshot.py",
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },

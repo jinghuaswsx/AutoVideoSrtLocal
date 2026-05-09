@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_products_list_flask_response_returns_payload(authed_client_no_db):
     from web.services.media_products_listing import products_list_flask_response
@@ -38,6 +44,10 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
             "sku-b": {"unit_price": 2},
         }
 
+    def get_latest_sku_actual_roas(skus):
+        calls["actual_roas_skus"] = list(skus)
+        return {"sku-a": {"value": 2.1}}
+
     payload = build_products_list_response(
         {
             "keyword": "  box cutter  ",
@@ -58,6 +68,7 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
             2: [{"dianxiaomi_sku": "sku-a"}, {"dianxiaomi_sku": "sku-b"}],
         },
         list_xmyc_unit_prices_fn=list_xmyc_unit_prices,
+        get_latest_sku_actual_roas_fn=get_latest_sku_actual_roas,
         get_configured_rmb_per_usd_fn=lambda: 7.1,
         serialize_product_fn=serialize_product,
     )
@@ -71,6 +82,7 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
         "roas_status": "complete",
     }
     assert calls["xmyc_skus"] == ["sku-a", "sku-b"]
+    assert calls["actual_roas_skus"] == ["sku-a", "sku-b"]
     assert payload == {
         "items": [
             {
@@ -94,6 +106,7 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
     }
     assert serialized[0][3]["raw_sources_count"] == 3
     assert serialized[0][3]["roas_rmb_per_usd"] == 7.1
+    assert serialized[0][3]["sku_actual_roas_index"] == {"sku-a": {"value": 2.1}}
     assert serialized[1][3]["lang_coverage"] == {"de": 1}
 
 
@@ -127,3 +140,22 @@ def test_build_products_list_response_defaults_invalid_filters():
     assert captured["xmyc_match"] == "all"
     assert captured["roas_status"] == "all"
     assert payload == {"items": [], "total": 0, "page": 1, "page_size": 20}
+
+
+def test_serialize_product_skus_includes_actual_roas_snapshot():
+    spec = importlib.util.spec_from_file_location(
+        "medias_serializers_under_test",
+        ROOT / "web" / "routes" / "medias" / "_serializers.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    rows = [{"id": 1, "dianxiaomi_sku": "SKU-A"}]
+
+    out = module._serialize_product_skus(
+        rows,
+        sku_actual_roas_index={"SKU-A": {"value": 2.1, "fee_source": "real"}},
+    )
+
+    assert out[0]["actual_breakeven_roas"] == {"value": 2.1, "fee_source": "real"}
