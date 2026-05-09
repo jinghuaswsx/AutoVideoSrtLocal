@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -39,7 +40,8 @@ def _write_runtime_config(repo_root: Path, dist_root: Path) -> None:
     )
 
 
-def _write_portable_launcher(dist_root: Path) -> Path:
+def _write_portable_launcher(dist_root: Path, release_version: str) -> Path:
+    exe_basename = f"{_exe_name_for_version(release_version)}.exe"
     launcher_path = dist_root / PORTABLE_LAUNCHER_NAME
     launcher_path.write_text(
         "\n".join(
@@ -47,12 +49,12 @@ def _write_portable_launcher(dist_root: Path) -> Path:
                 "@echo off",
                 "setlocal",
                 "cd /d %~dp0",
-                "if not exist \"%~dp0ShopifyImageLocalizer.exe\" (",
-                "    echo [ShopifyImageLocalizer] missing ShopifyImageLocalizer.exe",
+                f"if not exist \"%~dp0{exe_basename}\" (",
+                f"    echo [ShopifyImageLocalizer] missing {exe_basename}",
                 "    pause",
                 "    exit /b 1",
                 ")",
-                "\"%~dp0ShopifyImageLocalizer.exe\"",
+                f"\"%~dp0{exe_basename}\"",
                 "set \"EXIT_CODE=%ERRORLEVEL%\"",
                 "if not \"%EXIT_CODE%\"==\"0\" (",
                 "    echo [ShopifyImageLocalizer] desktop client exited with code %EXIT_CODE%",
@@ -74,6 +76,13 @@ def _normalize_release_version(release_version: str) -> str:
     if any(ch in normalized for ch in ('/', "\\", ":", "*", "?", '"', "<", ">", "|")):
         raise ValueError(f"release version contains invalid filename characters: {release_version!r}")
     return normalized
+
+
+def _exe_name_for_version(release_version: str) -> str:
+    """exe 文件名带版本号，规则同 spec：把 . / 等替换成 _，得到 ShopifyImageLocalizer_3_3.exe。"""
+    normalized = _normalize_release_version(release_version)
+    suffix = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_")
+    return f"{APP_NAME}_{suffix}" if suffix else APP_NAME
 
 
 def _release_dist_name(release_version: str) -> str:
@@ -160,6 +169,8 @@ def main(argv: list[str] | None = None) -> None:
     _prepare_build_dist_root(build_work_root)
 
     env = dict(os.environ)
+    # spec 读这个 env var 决定 EXE.name，从而生成 ShopifyImageLocalizer_<major>_<minor>.exe
+    env["SHOPIFY_LOCALIZER_RELEASE_VERSION"] = _normalize_release_version(release_version)
     subprocess.run(
         [
             str(python_exe),
@@ -180,7 +191,7 @@ def main(argv: list[str] | None = None) -> None:
 
     _publish_release(build_dist_root, release_root)
     _write_runtime_config(repo_root, release_root)
-    _write_portable_launcher(release_root)
+    _write_portable_launcher(release_root, release_version)
     _write_release_version(release_root, release_version)
     _build_portable_zip(release_root, archive_path)
     shutil.rmtree(build_dist_root)
