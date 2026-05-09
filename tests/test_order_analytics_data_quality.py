@@ -250,6 +250,30 @@ def test_check_derived_profit_freshness_ok_when_derived_newer(monkeypatch):
     assert check["status"] == "ok"
 
 
+def test_check_derived_profit_freshness_qualifies_profit_updated_at(monkeypatch):
+    from appcore.order_analytics import data_quality as dq
+
+    captured_sql = []
+
+    def fake_query_one(sql, args=None):
+        captured_sql.append(sql)
+        if "meta_ad_daily_campaign_metrics" in sql:
+            return {"latest_finished": datetime(2026, 5, 8, 17, 10)}
+        if "order_profit_lines" in sql:
+            return {"latest_run": datetime(2026, 5, 8, 18, 30)}
+        return None
+
+    monkeypatch.setattr(dq, "query_one", fake_query_one)
+
+    dq.check_derived_profit_freshness(
+        business_date_from=date(2026, 5, 7),
+        business_date_to=date(2026, 5, 7),
+    )
+
+    derived_sql = next(sql for sql in captured_sql if "order_profit_lines p" in sql)
+    assert "MAX(p.updated_at) AS latest_run" in derived_sql
+
+
 def test_fetch_watermarks_returns_all_keys(monkeypatch):
     from appcore.order_analytics import data_quality as dq
 

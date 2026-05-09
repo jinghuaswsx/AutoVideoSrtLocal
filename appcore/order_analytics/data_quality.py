@@ -402,7 +402,7 @@ def check_derived_profit_freshness(
             (business_date_from, business_date_to),
         ) or {}
         derived_row = query_one(
-            "SELECT MAX(updated_at) AS latest_run "
+            "SELECT MAX(p.updated_at) AS latest_run "
             "FROM order_profit_lines p "
             "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
             "WHERE d.meta_business_date BETWEEN %s AND %s",

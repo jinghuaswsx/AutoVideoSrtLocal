@@ -362,7 +362,7 @@ def test_get_realtime_roas_overview_aggregates_date_range(monkeypatch):
     """范围分支：start_date != end_date 时复用 true_roas 的逐日聚合，只回 summary+freshness+period。"""
 
     def fake_query(sql, args=()):
-        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
             return [
                 {
                     "meta_business_date": oa._parse_meta_date("2026-04-29"),
@@ -415,9 +415,59 @@ def test_get_realtime_roas_overview_aggregates_date_range(monkeypatch):
     assert result["period"]["day_definition"] == "meta_ad_platform_business_day_range"
 
 
+def test_realtime_range_summary_uses_canonical_profit_revenue(monkeypatch):
+    """历史范围实时大盘收入必须与订单利润核算共用 order_profit_lines 口径。"""
+
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines d" in sql and "LEFT JOIN order_profit_lines p" in sql and "GROUP BY d.meta_business_date" in sql:
+            assert "COALESCE(p.line_amount_usd, d.line_amount, 0)" in sql
+            assert "COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)" in sql
+            assert args == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-30"),
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 1,
+                    "order_revenue": 236175.27,
+                    "line_revenue": 236175.27,
+                    "shipping_revenue": 72383.13,
+                    "last_order_at": None,
+                    "last_order_updated_at": None,
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-30"),
+                    "ad_spend": 194528.80,
+                    "meta_purchase_value": 289969.53,
+                    "meta_purchases": 10299,
+                    "last_ad_updated_at": None,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-04-01",
+        end_date="2026-04-30",
+        now=datetime(2026, 5, 1, 12, 0),
+    )
+
+    assert result["summary"]["order_revenue"] == 236175.27
+    assert result["summary"]["shipping_revenue"] == 72383.13
+    assert result["summary"]["revenue_with_shipping"] == 308558.4
+
+
 def test_get_realtime_roas_overview_range_includes_empty_order_profit_details(monkeypatch):
     def fake_query(sql, args=()):
-        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+        if (
+            "FROM dianxiaomi_order_lines d" in sql
+            and "GROUP BY d.meta_business_date" in sql
+            and "profit_line_count" not in sql
+        ):
             return []
         if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
             return []
@@ -436,7 +486,11 @@ def test_get_realtime_roas_overview_range_includes_empty_order_profit_details(mo
 
 def test_get_realtime_roas_overview_range_can_return_profit_summary_without_details(monkeypatch):
     def fake_query(sql, args=()):
-        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+        if (
+            "FROM dianxiaomi_order_lines d" in sql
+            and "GROUP BY d.meta_business_date" in sql
+            and "profit_line_count" not in sql
+        ):
             return []
         if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
             return []
@@ -505,7 +559,7 @@ def test_get_realtime_roas_overview_range_can_return_profit_summary_without_deta
 def test_get_realtime_roas_overview_range_subtracts_unallocated_ad_spend(monkeypatch):
     """range 模式：summary.ad_spend 大于已分摊 → 利润扣未分摊。"""
     def fake_query(sql, args=()):
-        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
             return [
                 {
                     "meta_business_date": oa._parse_meta_date("2026-04-29"),
@@ -576,8 +630,12 @@ def test_get_realtime_roas_overview_range_subtracts_unallocated_ad_spend(monkeyp
 
 def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
     def fake_query(sql, args=()):
-        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date, site_code" in sql:
-            assert args == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+        if (
+            "FROM dianxiaomi_order_lines d" in sql
+            and "GROUP BY d.meta_business_date, d.site_code" in sql
+            and "profit_line_count" not in sql
+        ):
+            assert args[:2] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
             return [
                 {
                     "meta_business_date": oa._parse_meta_date("2026-04-30"),
@@ -598,7 +656,7 @@ def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
                     "product_names": "Range Product",
                 }
             ]
-        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
             return []
         if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
             return []
@@ -623,11 +681,15 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
     profit_query_args = []
 
     def fake_query(sql, args=()):
-        if "FROM dianxiaomi_order_lines" in sql and "GROUP BY meta_business_date" in sql:
+        if (
+            "FROM dianxiaomi_order_lines d" in sql
+            and "GROUP BY d.meta_business_date" in sql
+            and "profit_line_count" not in sql
+        ):
             return []
         if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
             return []
-        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
+        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql and "profit_line_count" in sql:
             assert "d.meta_business_date >= %s AND d.meta_business_date <= %s" in sql
             assert args[:2] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
             if len(args) == 4:
@@ -653,8 +715,11 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
                     "shipping_revenue": 10.0,
                     "total_revenue": 110.0,
                     "refund_amount_usd": 12.0,
+                    "return_reserve_usd": 1.1,
                     "purchase_cost": 30.0,
+                    "purchase_estimate": 0.0,
                     "logistics_cost": 8.0,
+                    "logistics_estimate": 0.0,
                     "ad_cost": 11.0,
                     "stored_shopify_fee_total": 5.8,
                     "skus": "SKU-DE",
@@ -675,7 +740,7 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
     detail = result["order_profit_details"][0]
     assert detail["dxm_package_id"] == "PKG-PROFIT-RANGE"
     assert detail["business_hour"] == 23
-    assert detail["order_profit_usd"] == 43.2
+    assert detail["order_profit_usd"] == 54.1
     assert result["order_profit_details_page"] == {"page": 1, "page_size": 100, "total": 1, "pages": 1}
     assert len(profit_query_args) == 2
 
@@ -757,8 +822,11 @@ def test_get_realtime_roas_overview_snapshot_includes_order_profit_details(monke
             "shipping_revenue": 10.0,
             "total_revenue": 110.0,
             "refund_amount_usd": 12.0,
+            "return_reserve_usd": 1.1,
             "purchase_cost": 30.0,
+            "purchase_estimate": 0.0,
             "logistics_cost": 8.0,
+            "logistics_estimate": 0.0,
             "ad_cost": 11.0,
             "stored_shopify_fee_total": 5.75,
             "skus": "SKU-A / SKU-B",
@@ -810,7 +878,7 @@ def test_get_realtime_roas_overview_snapshot_includes_order_profit_details(monke
 
     detail = result["order_profit_details"][0]
     assert detail["dxm_package_id"] == "PKG-DE"
-    assert detail["order_profit_usd"] == 43.2
+    assert detail["order_profit_usd"] == 54.15
     assert detail["refund_status"] == "partial_refund"
 
 
@@ -930,8 +998,8 @@ def test_realtime_current_business_day_product_filter_uses_realtime_campaign_sna
                     "clicks": 30,
                 },
             ]
-        if "SUM(COALESCE(line_amount, 0)) AS order_revenue" in sql and "FROM dianxiaomi_order_lines" in sql:
-            assert "meta_business_date=%s" in sql
+        if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql and "FROM dianxiaomi_order_lines d" in sql:
+            assert "d.meta_business_date=%s" in sql
             assert args[0] == target
             assert args[1] == snapshot_at
             assert args[2] == 42
@@ -1076,8 +1144,11 @@ def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monke
                     "shipping_revenue": 5.0,
                     "total_revenue": 55.0,
                     "refund_amount_usd": 0.0,
+                    "return_reserve_usd": 0.55,
                     "purchase_cost": 10.0,
+                    "purchase_estimate": 0.0,
                     "logistics_cost": 5.0,
+                    "logistics_estimate": 0.0,
                     "ad_cost": 2.0,
                     "stored_shopify_fee_total": 1.68,
                     "skus": "SKU-US",
@@ -1114,7 +1185,7 @@ def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monke
 
     detail = result["order_profit_details"][0]
     assert detail["dxm_package_id"] == "PKG-US"
-    assert detail["order_profit_usd"] == -18.68
+    assert detail["order_profit_usd"] == 35.77
     assert detail["refund_status"] == "full_refund"
 
 

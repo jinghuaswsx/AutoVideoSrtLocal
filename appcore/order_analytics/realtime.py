@@ -22,13 +22,30 @@ from ._helpers import (
 )
 from .dianxiaomi import compute_meta_business_window_bj, get_dianxiaomi_product_sales_stats
 from .meta_ads import resolve_ad_product_match
-from .order_profit_aggregation import _load_realtime_ad_cost_adjustments
+from .order_profit_aggregation import (
+    _load_realtime_ad_cost_adjustments,
+    get_order_profit_status_summary,
+)
 from .shopify_fee import split_shopify_fee_for_order
 
 ORDER_PROFIT_PAGE_SIZE = 100
 ORDER_PROFIT_MAX_PAGE_SIZE = 100
 PURCHASE_MISSING_ESTIMATE_RATE = 0.10
 LOGISTICS_MISSING_ESTIMATE_RATE = 0.20
+_CANONICAL_REVENUE_SQL = (
+    "COALESCE(p.revenue_usd, COALESCE(d.line_amount, 0) + COALESCE(d.ship_amount, 0))"
+)
+_PURCHASE_MISSING_CONDITION_SQL = (
+    "p.id IS NULL OR (COALESCE(p.status, '') <> 'ok' AND ("
+    "CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%purchase_price%%' "
+    "OR COALESCE(p.purchase_usd, 0) = 0))"
+)
+_LOGISTICS_MISSING_CONDITION_SQL = (
+    "p.id IS NULL OR (COALESCE(p.status, '') <> 'ok' AND ("
+    "CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%shipping_cost%%' "
+    "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%packet_cost%%' "
+    "OR COALESCE(p.shipping_cost_usd, 0) = 0))"
+)
 
 # 实时大盘店铺筛选：默认双店，site_codes 取值必须命中此白名单。
 # 详细设计：docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md
@@ -136,6 +153,8 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "order_count": 0,
         "total_revenue_usd": 0.0,
         "refund_deduction_usd": 0.0,
+        "return_reserve_usd": 0.0,
+        "profit_deduction_usd": 0.0,
         "purchase_cost_usd": 0.0,
         "purchase_estimate_usd": 0.0,
         "purchase_cost_with_estimate_usd": 0.0,
@@ -166,6 +185,8 @@ def _build_order_profit_summary(
     for row in rows or []:
         total_revenue = _money(row.get("total_revenue"))
         refund = _money(row.get("refund_deduction_usd"))
+        return_reserve = _money(row.get("return_reserve_usd"))
+        profit_deduction = _money(row.get("profit_deduction_usd", refund))
         purchase_cost = _money(row.get("purchase_cost_usd"))
         purchase_estimate = _money(row.get("purchase_estimate_usd"))
         logistics_cost = _money(row.get("logistics_cost_usd"))
@@ -175,6 +196,8 @@ def _build_order_profit_summary(
 
         summary["total_revenue_usd"] += total_revenue
         summary["refund_deduction_usd"] += refund
+        summary["return_reserve_usd"] += return_reserve
+        summary["profit_deduction_usd"] += profit_deduction
         summary["purchase_cost_usd"] += purchase_cost
         summary["purchase_estimate_usd"] += purchase_estimate
         summary["logistics_cost_usd"] += logistics_cost
@@ -217,13 +240,66 @@ def _build_order_profit_summary(
 
     summary["profit_with_estimate_usd"] = (
         summary["total_revenue_usd"]
-        - summary["refund_deduction_usd"]
+        - summary["profit_deduction_usd"]
         - summary["purchase_cost_with_estimate_usd"]
         - summary["logistics_cost_with_estimate_usd"]
         - summary["shopify_fee_total_usd"]
         - summary["ad_cost_usd"]
         - summary["unallocated_ad_spend_usd"]
     )
+    for key, value in list(summary.items()):
+        if key.endswith("_count") or key == "order_count":
+            summary[key] = int(value)
+        elif key.endswith("_ratio"):
+            summary[key] = round(float(value), 4)
+        else:
+            summary[key] = round(float(value), 2)
+    return summary
+
+
+def _build_order_profit_summary_from_status(
+    status_summary: dict[str, Any] | None,
+    *,
+    order_count: int,
+) -> dict[str, Any] | None:
+    """Adapt order-profit report status summary to realtime overview shape."""
+    if not status_summary:
+        return None
+    overview = status_summary.get("overview") or {}
+    if int(overview.get("line_count") or 0) <= 0:
+        return None
+    buckets = status_summary.get("summary") or {}
+    ok = buckets.get("ok") or {}
+    incomplete = buckets.get("incomplete") or {}
+
+    def total(key: str) -> float:
+        return float(ok.get(key) or 0) + float(incomplete.get(key) or 0)
+
+    summary = _empty_order_profit_summary()
+    summary.update({
+        "order_count": int(order_count),
+        "total_revenue_usd": float(status_summary.get("total_revenue_usd") or 0),
+        "refund_deduction_usd": 0.0,
+        "return_reserve_usd": total("return_reserve"),
+        "profit_deduction_usd": total("return_reserve"),
+        "purchase_cost_usd": total("purchase_actual"),
+        "purchase_estimate_usd": total("purchase_estimate"),
+        "purchase_cost_with_estimate_usd": float(status_summary.get("purchase_cost_with_estimate_usd") or 0),
+        "logistics_cost_usd": total("shipping_cost_actual"),
+        "logistics_estimate_usd": total("shipping_cost_estimate"),
+        "logistics_cost_with_estimate_usd": float(status_summary.get("shipping_cost_with_estimate_usd") or 0),
+        "shopify_fee_total_usd": total("shopify_fee"),
+        "ad_cost_usd": total("ad_cost"),
+        "unallocated_ad_spend_usd": float(status_summary.get("unallocated_ad_spend_usd") or 0),
+        "profit_with_estimate_usd": float(overview.get("total_profit_usd") or 0),
+    })
+    summary["total_ad_spend_usd"] = summary["ad_cost_usd"] + summary["unallocated_ad_spend_usd"]
+    estimate = status_summary.get("estimated") or {}
+    summary["purchase_missing_order_count"] = int(estimate.get("lines") or 0)
+    summary["logistics_missing_order_count"] = int(estimate.get("lines") or 0)
+    if order_count > 0:
+        summary["purchase_missing_order_ratio"] = round(summary["purchase_missing_order_count"] / order_count, 4)
+        summary["logistics_missing_order_ratio"] = round(summary["logistics_missing_order_count"] / order_count, 4)
     for key, value in list(summary.items()):
         if key.endswith("_count") or key == "order_count":
             summary[key] = int(value)
@@ -258,26 +334,27 @@ def _get_realtime_order_details(
     product_id: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
-    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
-    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
     sites = _normalize_site_codes(site_codes)
     rows = query(
-        "SELECT site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
-        "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
-        "COUNT(*) AS line_count, SUM(COALESCE(quantity, 0)) AS units, "
-        "SUM(COALESCE(line_amount, 0)) AS product_revenue, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
-        "SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS total_revenue, "
-        "GROUP_CONCAT(DISTINCT NULLIF(product_sku, '') ORDER BY product_sku SEPARATOR ' / ') AS skus, "
-        "GROUP_CONCAT(DISTINCT NULLIF(product_name, '') ORDER BY product_name SEPARATOR ' / ') AS product_names "
-        "FROM dianxiaomi_order_lines "
-        "WHERE " + _site_codes_in_sql(sites) +
-        "AND meta_business_date=%s "
+        "SELECT d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
+        "COUNT(*) AS line_count, SUM(COALESCE(d.quantity, 0)) AS units, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS product_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+        "SUM(" + _CANONICAL_REVENUE_SQL + ") AS total_revenue, "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "FROM dianxiaomi_order_lines d "
+        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
         + product_sql +
-        "GROUP BY site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
-        "buyer_country, buyer_country_name, " + order_time_expr + " "
-        "ORDER BY order_time DESC, dxm_package_id DESC",
+        "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
+        "ORDER BY order_time DESC, d.dxm_package_id DESC",
         tuple([target, data_until] + product_args),
     )
     details: list[dict[str, Any]] = []
@@ -311,25 +388,26 @@ def _get_realtime_order_details_for_range(
     product_id: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
-    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
-    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
     sites = _normalize_site_codes(site_codes)
     rows = query(
-        "SELECT meta_business_date, site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
-        "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
-        "COUNT(*) AS line_count, SUM(COALESCE(quantity, 0)) AS units, "
-        "SUM(COALESCE(line_amount, 0)) AS product_revenue, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
-        "SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS total_revenue, "
-        "GROUP_CONCAT(DISTINCT NULLIF(product_sku, '') ORDER BY product_sku SEPARATOR ' / ') AS skus, "
-        "GROUP_CONCAT(DISTINCT NULLIF(product_name, '') ORDER BY product_name SEPARATOR ' / ') AS product_names "
-        "FROM dianxiaomi_order_lines "
-        "WHERE " + _site_codes_in_sql(sites) +
-        "AND meta_business_date >= %s AND meta_business_date <= %s "
+        "SELECT d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
+        "COUNT(*) AS line_count, SUM(COALESCE(d.quantity, 0)) AS units, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS product_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+        "SUM(" + _CANONICAL_REVENUE_SQL + ") AS total_revenue, "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "FROM dianxiaomi_order_lines d "
+        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
         + product_sql +
-        "GROUP BY meta_business_date, site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
-        "buyer_country, buyer_country_name, " + order_time_expr + " "
-        "ORDER BY order_time DESC, dxm_package_id DESC",
+        "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
+        "ORDER BY order_time DESC, d.dxm_package_id DESC",
         tuple([start, end] + product_args),
     )
     details: list[dict[str, Any]] = []
@@ -459,19 +537,19 @@ def _get_realtime_order_profit_details(
         "SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS profit_ok_count, "
         "SUM(CASE WHEN p.id IS NULL OR COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
         "SUM(COALESCE(d.quantity, 0)) AS units, "
-        "SUM(COALESCE(d.line_amount, 0)) AS product_revenue, "
-        "SUM(COALESCE(d.ship_amount, 0)) AS shipping_revenue, "
-        "SUM(COALESCE(d.line_amount, 0)) + SUM(COALESCE(d.ship_amount, 0)) AS total_revenue, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS product_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+        "SUM(" + _CANONICAL_REVENUE_SQL + ") AS total_revenue, "
         "MAX(COALESCE(d.refund_amount_usd, 0)) AS refund_amount_usd, "
-        "SUM(COALESCE(p.purchase_usd, 0)) AS purchase_cost, "
-        "SUM(COALESCE(p.shipping_cost_usd, 0)) AS logistics_cost, "
+        "SUM(COALESCE(p.return_reserve_usd, 0)) AS return_reserve_usd, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 0 ELSE COALESCE(p.purchase_usd, 0) END) AS purchase_cost, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.10 ELSE 0 END) AS purchase_estimate, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 0 ELSE COALESCE(p.shipping_cost_usd, 0) END) AS logistics_cost, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.20 ELSE 0 END) AS logistics_estimate, "
         "SUM(COALESCE(p.ad_cost_usd, 0)) AS ad_cost, "
         "SUM(COALESCE(p.shopify_fee_usd, 0)) AS stored_shopify_fee_total, "
-        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%purchase_price%%' "
-        "THEN 1 ELSE 0 END) AS purchase_missing_count, "
-        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%shipping_cost%%' "
-        "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%packet_cost%%' "
-        "THEN 1 ELSE 0 END) AS logistics_missing_count, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines d "
@@ -527,19 +605,19 @@ def _get_realtime_order_profit_details_for_range(
         "SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS profit_ok_count, "
         "SUM(CASE WHEN p.id IS NULL OR COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
         "SUM(COALESCE(d.quantity, 0)) AS units, "
-        "SUM(COALESCE(d.line_amount, 0)) AS product_revenue, "
-        "SUM(COALESCE(d.ship_amount, 0)) AS shipping_revenue, "
-        "SUM(COALESCE(d.line_amount, 0)) + SUM(COALESCE(d.ship_amount, 0)) AS total_revenue, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS product_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+        "SUM(" + _CANONICAL_REVENUE_SQL + ") AS total_revenue, "
         "MAX(COALESCE(d.refund_amount_usd, 0)) AS refund_amount_usd, "
-        "SUM(COALESCE(p.purchase_usd, 0)) AS purchase_cost, "
-        "SUM(COALESCE(p.shipping_cost_usd, 0)) AS logistics_cost, "
+        "SUM(COALESCE(p.return_reserve_usd, 0)) AS return_reserve_usd, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 0 ELSE COALESCE(p.purchase_usd, 0) END) AS purchase_cost, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.10 ELSE 0 END) AS purchase_estimate, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 0 ELSE COALESCE(p.shipping_cost_usd, 0) END) AS logistics_cost, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.20 ELSE 0 END) AS logistics_estimate, "
         "SUM(COALESCE(p.ad_cost_usd, 0)) AS ad_cost, "
         "SUM(COALESCE(p.shopify_fee_usd, 0)) AS stored_shopify_fee_total, "
-        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%purchase_price%%' "
-        "THEN 1 ELSE 0 END) AS purchase_missing_count, "
-        "SUM(CASE WHEN p.id IS NULL OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%shipping_cost%%' "
-        "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%packet_cost%%' "
-        "THEN 1 ELSE 0 END) AS logistics_missing_count, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
         "FROM dianxiaomi_order_lines d "
@@ -588,8 +666,6 @@ def _apply_realtime_ad_cost_adjustments(
     """
     if not details:
         return
-    if not any((row.get("ad_cost_usd") or 0) == 0 for row in details):
-        return
     try:
         adjustments = _load_realtime_ad_cost_adjustments(
             date_from=date_from,
@@ -619,6 +695,23 @@ def _apply_realtime_ad_cost_adjustments(
             )
 
 
+def _allocate_shopify_fee_components(
+    total: float,
+    computed_fee: dict[str, Any],
+) -> tuple[float, float, float]:
+    computed_total = _money(computed_fee.get("shopify_fee_total_usd"))
+    if total <= 0:
+        return 0.0, 0.0, 0.0
+    if computed_total <= 0:
+        return total, 0.0, 0.0
+    platform_raw = _money(computed_fee.get("shopify_platform_fee_usd"))
+    international_raw = _money(computed_fee.get("international_card_fee_usd"))
+    platform = round(total * platform_raw / computed_total, 2)
+    international = round(total * international_raw / computed_total, 2)
+    conversion = round(total - platform - international, 2)
+    return platform, international, conversion
+
+
 def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: datetime) -> list[dict[str, Any]]:
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -630,31 +723,38 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
         product_revenue = _money(row.get("product_revenue"))
         shipping_revenue = _money(row.get("shipping_revenue"))
         total_revenue = _money(row.get("total_revenue"))
+        has_profit_lines = profit_line_count > 0
         refund_deduction = _resolve_refund_deduction(
             total_revenue=total_revenue,
             refund_amount_usd=row.get("refund_amount_usd"),
             order_state=row.get("order_state"),
         )
+        return_reserve = _money(row.get("return_reserve_usd"))
+        profit_deduction = return_reserve if has_profit_lines else refund_deduction
         purchase_cost = _money(row.get("purchase_cost"))
+        purchase_estimate = _money(row.get("purchase_estimate"))
         logistics_cost = _money(row.get("logistics_cost"))
+        logistics_estimate = _money(row.get("logistics_estimate"))
         ad_cost = _money(row.get("ad_cost"))
         stored_shopify_fee_total = _money(row.get("stored_shopify_fee_total"))
         shopify_fee = split_shopify_fee_for_order(
             amount=total_revenue,
             buyer_country=row.get("buyer_country"),
         )
-        shopify_platform_fee = _money(shopify_fee.get("shopify_platform_fee_usd"))
-        international_card_fee = _money(shopify_fee.get("international_card_fee_usd"))
-        currency_conversion_fee = _money(shopify_fee.get("currency_conversion_fee_usd"))
-        shopify_fee_total = _money(shopify_fee.get("shopify_fee_total_usd"))
+        shopify_fee_total = (
+            stored_shopify_fee_total
+            if has_profit_lines
+            else _money(shopify_fee.get("shopify_fee_total_usd"))
+        )
+        shopify_platform_fee, international_card_fee, currency_conversion_fee = (
+            _allocate_shopify_fee_components(shopify_fee_total, shopify_fee)
+        )
         order_profit = round(
             total_revenue
-            - refund_deduction
+            - profit_deduction
             - purchase_cost
             - logistics_cost
-            - shopify_platform_fee
-            - international_card_fee
-            - currency_conversion_fee
+            - shopify_fee_total
             - ad_cost,
             2,
         )
@@ -673,18 +773,18 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             logistics_missing_count > 0
             or (profit_status != "ok" and logistics_cost <= 0)
         )
-        purchase_estimate = round(total_revenue * PURCHASE_MISSING_ESTIMATE_RATE, 2) if purchase_cost_missing else 0.0
-        logistics_estimate = round(total_revenue * LOGISTICS_MISSING_ESTIMATE_RATE, 2) if logistics_cost_missing else 0.0
+        if row.get("purchase_estimate") is None and purchase_cost_missing:
+            purchase_estimate = round(total_revenue * PURCHASE_MISSING_ESTIMATE_RATE, 2)
+        if row.get("logistics_estimate") is None and logistics_cost_missing:
+            logistics_estimate = round(total_revenue * LOGISTICS_MISSING_ESTIMATE_RATE, 2)
         order_profit_with_estimate = round(
             total_revenue
-            - refund_deduction
+            - profit_deduction
             - purchase_cost
             - purchase_estimate
             - logistics_cost
             - logistics_estimate
-            - shopify_platform_fee
-            - international_card_fee
-            - currency_conversion_fee
+            - shopify_fee_total
             - ad_cost,
             2,
         )
@@ -711,6 +811,8 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "shipping_revenue": shipping_revenue,
             "total_revenue": total_revenue,
             "refund_deduction_usd": refund_deduction,
+            "return_reserve_usd": return_reserve,
+            "profit_deduction_usd": profit_deduction,
             "purchase_cost_usd": purchase_cost,
             "purchase_cost_missing": purchase_cost_missing,
             "purchase_estimate_usd": purchase_estimate,
@@ -847,22 +949,23 @@ def _get_realtime_order_summary(
     product_id: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
-    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
     sites = _normalize_site_codes(site_codes)
     rows = query(
-        "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SELECT COUNT(DISTINCT d.dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
-        "SUM(quantity) AS units, "
-        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
-        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "SUM(COALESCE(d.quantity, 0)) AS units, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
         "MIN(" + order_time_expr + ") AS first_order_at, "
         "MAX(" + order_time_expr + ") AS last_order_at, "
-        "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
-        "FROM dianxiaomi_order_lines "
-        "WHERE " + _site_codes_in_sql(sites) +
-        "AND meta_business_date=%s "
+        "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
+        "FROM dianxiaomi_order_lines d "
+        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
         + product_sql,
         tuple([target, data_until] + product_args),
@@ -1127,22 +1230,23 @@ def _build_realtime_overview_for_range(
     """
     sites = _normalize_site_codes(site_codes)
     allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
-    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
     order_rows = query(
-        "SELECT meta_business_date, "
-        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SELECT d.meta_business_date, "
+        "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
-        "SUM(quantity) AS units, "
-        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
-        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
-        "MAX(COALESCE(order_paid_at, attribution_time_at, order_created_at)) AS last_order_at, "
-        "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
-        "FROM dianxiaomi_order_lines "
-        "WHERE " + _site_codes_in_sql(sites) +
-        "AND meta_business_date >= %s AND meta_business_date <= %s "
+        "SUM(COALESCE(d.quantity, 0)) AS units, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+        "MAX(COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)) AS last_order_at, "
+        "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
+        "FROM dianxiaomi_order_lines d "
+        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
         + product_sql +
-        "GROUP BY meta_business_date",
+        "GROUP BY d.meta_business_date",
         tuple([start, end] + product_args),
     )
     ad_product_sql, ad_product_args = _product_filter_sql("product_id", product_id)
@@ -1249,6 +1353,25 @@ def _build_realtime_overview_for_range(
         )
         if include_details else []
     )
+    profit_summary = _build_order_profit_summary(
+        order_profit_all,
+        total_ad_spend_usd=summary["ad_spend"],
+    )
+    if include_profit and product_id is None and _site_codes_use_default(sites):
+        try:
+            status_profit_summary = get_order_profit_status_summary(
+                date_from=start,
+                date_to=end,
+            )
+        except Exception:
+            status_profit_summary = None
+        profit_summary = (
+            _build_order_profit_summary_from_status(
+                status_profit_summary,
+                order_count=len(order_profit_all),
+            )
+            or profit_summary
+        )
 
     return {
         "period": {
@@ -1289,10 +1412,7 @@ def _build_realtime_overview_for_range(
         ) if include_details else [],
         "order_profit_details": order_profit_details,
         "order_profit_details_page": _order_profit_page_info(len(order_profit_all), page, page_size),
-        "order_profit_summary": _build_order_profit_summary(
-            order_profit_all,
-            total_ad_spend_usd=summary["ad_spend"],
-        ),
+        "order_profit_summary": profit_summary,
         "campaigns": [],
         "product_sales_stats": get_dianxiaomi_product_sales_stats(
             start,
@@ -1629,21 +1749,22 @@ def get_realtime_roas_overview(
             "product_sales_stats": product_sales_stats,
         }
 
-    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
-    product_sql, product_args = _product_filter_sql("product_id", normalized_product_id)
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", normalized_product_id)
     order_rows = query(
         "SELECT HOUR(" + order_time_expr + ") AS hour, "
-        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
-        "SUM(quantity) AS units, "
-        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
-        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
-        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "SUM(COALESCE(d.quantity, 0)) AS units, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
         "MIN(" + order_time_expr + ") AS first_order_at, "
         "MAX(" + order_time_expr + ") AS last_order_at, "
-        "MAX(COALESCE(imported_at, updated_at, created_at)) AS last_order_updated_at "
-        "FROM dianxiaomi_order_lines "
-        "WHERE " + _site_codes_in_sql(normalized_site_codes) +
+        "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
+        "FROM dianxiaomi_order_lines d "
+        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "WHERE " + _site_codes_in_sql(normalized_site_codes, "d.site_code") +
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
         + product_sql +
         "GROUP BY HOUR(" + order_time_expr + ") "

@@ -76,6 +76,8 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
 
     def fake_query(sql, args=()):
         calls.append((sql, args))
+        if "SELECT d.site_code" not in sql:
+            return []
         assert "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql
         assert "MAX(COALESCE(d.refund_amount_usd, 0)) AS refund_amount_usd" in sql
         assert args == (target, data_until)
@@ -98,8 +100,11 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
                 "shipping_revenue": 10.0,
                 "total_revenue": 110.0,
                 "refund_amount_usd": 12.0,
+                "return_reserve_usd": 1.1,
                 "purchase_cost": 30.0,
+                "purchase_estimate": 0.0,
                 "logistics_cost": 8.0,
+                "logistics_estimate": 0.0,
                 "ad_cost": 11.0,
                 "stored_shopify_fee_total": 5.75,
                 "skus": "SKU-A / SKU-B",
@@ -123,8 +128,11 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
                 "shipping_revenue": 5.0,
                 "total_revenue": 55.0,
                 "refund_amount_usd": 0.0,
+                "return_reserve_usd": 0.55,
                 "purchase_cost": 10.0,
+                "purchase_estimate": 0.0,
                 "logistics_cost": 5.0,
+                "logistics_estimate": 0.0,
                 "ad_cost": 2.0,
                 "stored_shopify_fee_total": 1.68,
                 "skus": "SKU-US",
@@ -136,16 +144,17 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
 
     details = _get_realtime_order_profit_details(target, day_start, data_until)
 
-    assert len(calls) == 1
+    assert any("SELECT d.site_code" in sql for sql, _args in calls)
     de_order = details[0]
-    assert de_order["shopify_platform_fee_usd"] == 3.05
-    assert de_order["international_card_fee_usd"] == 1.1
-    assert de_order["currency_conversion_fee_usd"] == 1.65
-    assert de_order["shopify_fee_total_usd"] == 5.8
+    assert de_order["shopify_platform_fee_usd"] == 3.02
+    assert de_order["international_card_fee_usd"] == 1.09
+    assert de_order["currency_conversion_fee_usd"] == 1.64
+    assert de_order["shopify_fee_total_usd"] == 5.75
     assert de_order["stored_shopify_fee_total_usd"] == 5.75
     assert de_order["refund_deduction_usd"] == 12.0
+    assert de_order["return_reserve_usd"] == 1.1
     assert de_order["ad_cost_usd"] == 11.0
-    assert de_order["order_profit_usd"] == 43.2
+    assert de_order["order_profit_usd"] == 54.15
     assert de_order["profit_status"] == "ok"
     assert de_order["refund_status"] == "partial_refund"
     assert de_order["status_label"] == "完整 / 部分退款"
@@ -156,7 +165,52 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
     assert us_order["refund_deduction_usd"] == 55.0
     assert us_order["refund_status"] == "full_refund"
     assert us_order["profit_status"] == "ok"
-    assert us_order["order_profit_usd"] == -18.68
+    assert us_order["order_profit_usd"] == 35.77
+
+
+def test_format_order_profit_rows_uses_canonical_profit_fields():
+    row = {
+        "site_code": "newjoy",
+        "dxm_package_id": "PKG-CANONICAL",
+        "dxm_order_id": "DXM-CANONICAL",
+        "package_number": "PN-CANONICAL",
+        "order_state": "paid",
+        "buyer_country": "DE",
+        "buyer_country_name": "Germany",
+        "order_time": datetime(2026, 4, 30, 10, 30),
+        "line_count": 2,
+        "profit_line_count": 2,
+        "profit_ok_count": 1,
+        "profit_incomplete_count": 1,
+        "purchase_missing_count": 1,
+        "logistics_missing_count": 1,
+        "units": 2,
+        "product_revenue": 236.17,
+        "shipping_revenue": 72.38,
+        "total_revenue": 308.55,
+        "refund_amount_usd": 20.0,
+        "return_reserve_usd": 3.09,
+        "purchase_cost": 27.44,
+        "purchase_estimate": 6.79,
+        "logistics_cost": 53.78,
+        "logistics_estimate": 3.64,
+        "ad_cost": 190.04,
+        "stored_shopify_fee_total": 15.89,
+        "skus": "SKU-C",
+        "product_names": "Canonical Product",
+    }
+
+    detail = _format_realtime_order_profit_rows([row], datetime(2026, 4, 29, 16, 0))[0]
+
+    assert detail["total_revenue"] == 308.55
+    assert detail["refund_deduction_usd"] == 20.0
+    assert detail["return_reserve_usd"] == 3.09
+    assert detail["purchase_cost_usd"] == 27.44
+    assert detail["purchase_estimate_usd"] == 6.79
+    assert detail["logistics_cost_usd"] == 53.78
+    assert detail["logistics_estimate_usd"] == 3.64
+    assert detail["shopify_fee_total_usd"] == 15.89
+    assert detail["order_profit_with_estimate_usd"] == 7.88
 
 
 def test_get_realtime_order_profit_details_marks_missing_profit_lines_incomplete(monkeypatch):
@@ -261,10 +315,13 @@ def test_get_realtime_order_profit_details_applies_realtime_ad_cost_adjustments(
                     "shipping_revenue": 0.0,
                     "total_revenue": 100.0,
                     "refund_amount_usd": 0.0,
+                    "return_reserve_usd": 1.0,
                     "purchase_cost": 20.0,
+                    "purchase_estimate": 0.0,
                     "logistics_cost": 5.0,
+                    "logistics_estimate": 0.0,
                     "ad_cost": 0.0,  # 日终未到，stored 仍是 0
-                    "stored_shopify_fee_total": 0.0,
+                    "stored_shopify_fee_total": 5.6,
                     "skus": "SKU-RT",
                     "product_names": "Realtime Product",
                 },
@@ -283,9 +340,9 @@ def test_get_realtime_order_profit_details_applies_realtime_ad_cost_adjustments(
                     "spend_usd": 40.0,
                 }
             ]
-        if "FROM order_profit_lines p" in sql and "JOIN dianxiaomi_order_lines d" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+        if "FROM order_profit_lines p" in sql and "JOIN dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
             return [{"business_date": target, "product_id": 99, "units": 2}]
-        if "FROM order_profit_lines p" in sql and "JOIN dianxiaomi_order_lines d" in sql and "WHERE p.business_date BETWEEN" in sql:
+        if "FROM order_profit_lines p" in sql and "JOIN dianxiaomi_order_lines d" in sql and "WHERE d.meta_business_date BETWEEN" in sql:
             # 一个 line，quantity=2，stored ad_cost=0 → realtime_cost = 40 * 2/2 = 40 → delta=40
             return [
                 {
