@@ -521,6 +521,30 @@ def test_data_analysis_page_has_meta_ad_accounts_tab(authed_client_no_db):
     assert "同步进度" in body
 
 
+def test_meta_ad_accounts_tab_renders_timezone_column_and_datalist(authed_client_no_db):
+    """AUT-28: 「广告账户」Tab 暴露 timezone 字段。
+
+    Docs-anchor: docs/superpowers/specs/2026-05-09-meta-ads-account-timezone-and-async-fix.md
+    «UI 接入（AUT-28）» 节。
+    """
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert ">时区<" in body
+    assert 'id="metaAdAccountTimezoneOptions"' in body
+    for tz in (
+        "America/Los_Angeles",
+        "America/New_York",
+        "Asia/Shanghai",
+        "Europe/London",
+        "UTC",
+    ):
+        assert f'value="{tz}"' in body
+    assert 'data-maa-field="timezone"' in body
+    assert 'list="metaAdAccountTimezoneOptions"' in body
+
+
 def test_meta_ad_accounts_api_reads_accounts(authed_client_no_db, monkeypatch):
     from web.routes import order_analytics as routes
 
@@ -603,6 +627,99 @@ def test_meta_ad_accounts_api_saves_accounts(authed_client_no_db, monkeypatch):
     assert response.status_code == 200
     assert saved["accounts"][0]["store_codes"] == ["omurio"]
     assert response.get_json()["ok"] is True
+
+
+def test_meta_ad_accounts_api_round_trips_timezone(authed_client_no_db, monkeypatch):
+    """AUT-28: GET 透出 timezone，POST 把 timezone 字段原样喂给 set_accounts。
+
+    Docs-anchor: docs/superpowers/specs/2026-05-09-meta-ads-account-timezone-and-async-fix.md
+    """
+    from web.routes import order_analytics as routes
+
+    saved = {}
+
+    def fake_set_accounts(accounts):
+        saved["accounts"] = accounts
+
+    account_dict = {
+        "code": "newjoyloo_bak",
+        "label": "Newjoyloo Bak",
+        "account_id": "1861285821213497",
+        "business_id": "476723373113063",
+        "csv_prefix": "newjoyloo",
+        "store_codes": ["newjoy"],
+        "enabled": True,
+        "note": "",
+        "sync_mode": "xhr_api",
+        "timezone": "Asia/Shanghai",
+    }
+    account = SimpleNamespace(to_dict=lambda: dict(account_dict))
+    monkeypatch.setattr(
+        routes,
+        "meta_ad_accounts",
+        SimpleNamespace(
+            AVAILABLE_STORE_CODES=("newjoy", "omurio"),
+            get_all_accounts=lambda: [account],
+            set_accounts=fake_set_accounts,
+        ),
+        raising=False,
+    )
+
+    get_response = authed_client_no_db.get("/order-analytics/meta-ad-accounts")
+    assert get_response.status_code == 200
+    assert get_response.get_json()["accounts"][0]["timezone"] == "Asia/Shanghai"
+
+    post_response = authed_client_no_db.post(
+        "/order-analytics/meta-ad-accounts",
+        json={"accounts": [dict(account_dict, timezone="America/New_York")]},
+    )
+    assert post_response.status_code == 200
+    assert saved["accounts"][0]["timezone"] == "America/New_York"
+
+
+def test_meta_ad_accounts_api_rejects_invalid_timezone(authed_client_no_db, monkeypatch):
+    """AUT-28: 非法 IANA 字符串由 _coerce_timezone 拒绝，路由把 ValueError 翻译成 400。"""
+    from web.routes import order_analytics as routes
+
+    def fake_set_accounts(accounts):
+        raise ValueError(
+            "invalid timezone for account 'x': timezone must be a valid IANA name "
+            "(e.g. America/Los_Angeles), got 'Foo/Bar'"
+        )
+
+    monkeypatch.setattr(
+        routes,
+        "meta_ad_accounts",
+        SimpleNamespace(
+            AVAILABLE_STORE_CODES=("newjoy", "omurio"),
+            set_accounts=fake_set_accounts,
+            get_all_accounts=lambda: [],
+        ),
+        raising=False,
+    )
+
+    response = authed_client_no_db.post(
+        "/order-analytics/meta-ad-accounts",
+        json={
+            "accounts": [
+                {
+                    "code": "x",
+                    "label": "X",
+                    "account_id": "1",
+                    "business_id": "2",
+                    "csv_prefix": "x",
+                    "store_codes": ["newjoy"],
+                    "enabled": True,
+                    "timezone": "Foo/Bar",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["error"] == "invalid_account"
+    assert "Foo/Bar" in payload["detail"]
 
 
 def test_meta_ad_account_manual_sync_api_starts_job(authed_client_no_db, monkeypatch):

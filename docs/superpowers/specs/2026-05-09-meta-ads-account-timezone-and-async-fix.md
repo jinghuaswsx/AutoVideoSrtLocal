@@ -65,7 +65,7 @@ class MetaAdAccount:
 - 缺省值：`America/Los_Angeles`。Meta US 账户最常见的默认时区，覆盖 newjoyloo / newjoyloo_bak / Omurio 三户。
 - 取值：任意合法 IANA 时区字符串（`Asia/Shanghai`、`America/New_York`、`UTC` 等）。`_coerce_account` 在写入前用 `zoneinfo.ZoneInfo(value)` 校验；非法值降级到默认值并打 warning。
 - `system_settings.meta_ad_accounts` JSON 列表里每条 account 多一个 `timezone` 字段；老配置无 `timezone` 字段时默认到 `America/Los_Angeles`，零迁移。
-- UI（「广告账户」Tab）后续 PR 接入下拉选择；本 PR 只落字段 + 后端逻辑。
+- UI（「广告账户」Tab）下拉入口见下面「UI 接入（AUT-28）」节；2026-05-09 后端 PR（AUT-23）+ UI PR（AUT-28）合并后默认线上即可用 UI 维护。
 
 ### `_account_xhr_time_range(account, business_date)` 共享 helper
 
@@ -119,6 +119,23 @@ def open_meta_ads_session(...):
 
 锁仍然在 `meta_ads_cdp_lock(task_code="meta_ads_in_page_session", ...)` 外层；线程隔离只发生在锁内部（拿到锁后才起工人线程跑 sync_playwright）。锁文件 `/data/autovideosrt/browser/runtime-meta-ads/automation.lock` 不变，与 [AUT-21](mention://issue/61856106-f124-4e60-8f4b-85fec835aa71) 锁治理解耦。
 
+### UI 接入（AUT-28，2026-05-09）
+
+承接本 spec「数据模型变更」节末的 UI 占位。Issue 锚点：[AUT-28](mention://issue/b60a139e-4dd3-44ac-8fe5-83eb08d58e71)。
+
+「数据分析 → 广告账户」Tab（[`web/templates/order_analytics.html`](../../../web/templates/order_analytics.html) 内 `panelAdAccounts` section）每行账户配置在「同步方式」与「备注」之间新增**时区**列：
+
+- 列展示：渲染当前 `account.timezone` 字段；老配置缺字段时由后端 `MetaAdAccount.timezone` 默认值兜底（`America/Los_Angeles`），UI 直接展示该默认。
+- 编辑入口：`<input list="metaAdAccountTimezoneOptions" data-maa-field="timezone">`。`<datalist>` 在 panel 一开就渲染，候选 ID `metaAdAccountTimezoneOptions`，包含至少 5 项 `America/Los_Angeles` / `America/New_York` / `Asia/Shanghai` / `Europe/London` / `UTC`。`<datalist>` 的语义是「下拉建议而非强制选项」，用户可以从下拉里挑也可以手动输入任意 IANA 字符串（如 `Australia/Sydney` / `Africa/Lagos`）；非法值在保存阶段由后端 `_coerce_timezone` 抛 `ValueError`，前端把 4xx 响应里的 `detail` 渲染到 `metaAdAccountsStatus`。
+- Tooltip 文案：`Meta 后台账户配置时区。XHR 通道按这个时区构造 /insights 的 time_range；CSV 通道由 Ads Manager 渲染时自带，无需关心。` 文案放在列头 `<th title=...>` 上。
+- 保存路径：复用既有 `POST /order-analytics/meta-ad-accounts`。前端 `collectMetaAdAccountFromRow` 把 `timezone` 字段塞进 payload；后端 `meta_ad_accounts.set_accounts(...)` 已经在写入前调用 `_coerce_timezone` 校验（AUT-23 落地）。
+- 新增账户 (`addMetaAdAccountRow`)：默认 `timezone = "America/Los_Angeles"`，与 `MetaAdAccount.timezone` 缺省值一致。
+
+不在本期做：
+
+- 不在前端实现 IANA 校验；坚持「Source of truth = `_coerce_timezone`」原则，前端只做形如「输入框 + datalist」的 affordance。
+- 不动「同步方式」「列模板」既有列；不重排表头顺序。
+
 ## 测试
 
 新增：
@@ -158,7 +175,6 @@ pytest tests/test_meta_ads_account_timezone.py \
 ## 不在本期做的事
 
 - 不重写 `meta_ads_in_page_fetch` 为 `async_api`（变更面太大，会破现有测试 fixture）。
-- 不在本 PR 加 UI 时区下拉；CLAUDE.md 文案 + JSON 字段先就位，UI 下个 PR。
 - 不动 `_meta_business_date` / BJ 16:00 cutover 计算，不改 DB schema。
 - 不重做 runtime-meta-ads 锁治理（与 [AUT-21](mention://issue/61856106-f124-4e60-8f4b-85fec835aa71) 同源，单独处理）。
 - 不动 CSV 通道（保持「dashboard 渲染时区 = 账户时区」隐式正确性）。
