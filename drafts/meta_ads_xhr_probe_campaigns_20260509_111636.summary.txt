@@ -1,0 +1,31 @@
+target_url=https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=1861285821213497&business_id=476723373113063&global_scope_id=476723373113063&attribution_windows=default&column_preset=1658418688523178&date=2026-05-09_2026-05-09&insights_date=2026-05-09_2026-05-09&insights_selected_metrics=cpm
+level=campaigns
+captured_responses=208
+unique_paths=25
+
+top paths by total response bytes:
+    11793515B  x 12  text/html; charset="utf-8"                /relay/bootload/
+     3573381B  x  1  text/html; charset="utf-8"                /adsmanager/manage/campaigns
+     3474065B  x 15  text/javascript; charset=utf-8            /ajax/bootloader-endpoint/
+     1056246B  x 54  text/html; charset="utf-8"                /api/graphql/
+      152274B  x  5  application/json; charset=UTF-8           /
+      129121B  x  6  application/x-javascript; charset=utf-8   /ads/growth/aymt/load_client_side_tips/
+       98099B  x  1  application/x-javascript; charset=utf-8   /business/navigation/
+       69230B  x  1  application/x-javascript; charset=utf-8   /business/navigation/notifications/
+       45106B  x  1  application/x-javascript; charset=utf-8   /ads/help_tray/ajax/help_content/
+       44298B  x 19  application/json; charset=UTF-8           /v22.0/act_1861285821213497/am_tabular
+        7050B  x 75  application/x-javascript; charset=utf-8   /ajax/bz
+        2486B  x  1  application/json; charset=UTF-8           /v22.0/act_1861285821213497/lightads
+        2485B  x  1  application/json; charset=UTF-8           /v22.0/act_1861285821213497/light_adsets
+        1276B  x  2  application/json; charset=UTF-8           /v22.0/act_1861285821213497/light_campaigns
+         518B  x  1  application/x-javascript; charset=utf-8   /ads/bi/user_ad_publish_challenge_peer_approval/
+         277B  x  1  application/x-javascript; charset=utf-8   /ads/bi/user_ad_publish_challenge_info/
+         257B  x  2  application/json; charset=UTF-8           /v22.0/act_1861285821213497
+         230B  x  2  application/json; charset=UTF-8           /v22.0/act_1861285821213497/ads_guidance_qe_exposure
+         188B  x  2  application/x-javascript; charset=utf-8   /ads/growth/aymt/log/impression/
+         133B  x  1  application/json; charset=UTF-8           /v22.0/
+         118B  x  1  application/json; charset=UTF-8           /v22.0/act_1861285821213497/adlabels
+          94B  x  1  application/x-javascript; charset=utf-8   /ajax/qm/
+          91B  x  1  application/json; charset=UTF-8           /v22.0/476723373113063/ad_custom_derived_metrics
+          90B  x  1  application/json; charset=UTF-8           /v22.0/act_1861285821213497/editing_proposals
+          11B  x  1  application/json; charset=utf-8           /v22.0/act_1861285821213497/column_suggestions

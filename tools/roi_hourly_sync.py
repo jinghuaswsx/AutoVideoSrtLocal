@@ -840,6 +840,49 @@ def _sync_meta_account_api(
     return result
 
 
+def _sync_meta_account_in_page_api(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    account: MetaAdAccount,
+    session: Any,
+) -> dict[str, Any]:
+    """Realtime sync for one account via the in-page Marketing API channel.
+
+    Reuses an already-open ``MetaAdsSession`` so multiple accounts in the
+    same run share a single browser visit and CDP lock acquisition.
+    """
+    rows = session.fetch_insights(
+        account.account_id,
+        level="campaign",
+        time_range={"since": business_date.isoformat(), "until": business_date.isoformat()},
+        fields=META_INSIGHTS_FIELDS,
+        time_increment="1",
+        limit=META_MARKETING_API_LIMIT,
+        max_pages=META_MARKETING_API_MAX_PAGES,
+    )
+    result: dict[str, Any] = {
+        "api_report": {
+            "business_date": business_date,
+            "snapshot_at": snapshot_at,
+            "account_id": account.account_id,
+            "request_count": 1,
+            "row_count": len(rows),
+            "channel": "xhr_api",
+        },
+    }
+    import_report = _import_meta_realtime_api_rows(
+        run_id=run_id,
+        business_date=business_date,
+        snapshot_at=snapshot_at,
+        rows=rows,
+        account=account,
+    )
+    result.update(import_report)
+    return result
+
+
 def _sync_meta_realtime_daily(
     business_date,
     snapshot_at: datetime,
@@ -894,10 +937,76 @@ def _sync_meta_realtime_daily(
 
     success_count = 0
     errors: list[str] = []
-    for account in enabled_accounts:
-        account_result: dict[str, Any] = {
+    xhr_accounts = [a for a in enabled_accounts if a.sync_mode == "xhr_api"]
+    legacy_accounts = [a for a in enabled_accounts if a.sync_mode != "xhr_api"]
+
+    def _record(account_result: dict[str, Any], *, error_label: str | None = None) -> None:
+        nonlocal success_count
+        if account_result.get("status") == "success":
+            success_count += 1
+        elif error_label:
+            errors.append(error_label)
+        summary["account_results"].append(account_result)
+        summary["rows_imported"] += int(account_result.get("rows_imported") or 0)
+        summary["spend_usd"] = round(
+            float(summary["spend_usd"]) + float(account_result.get("spend_usd") or 0),
+            4,
+        )
+
+    # In-page Marketing API channel: open one session, fan out to all
+    # xhr_api accounts, release the lock, then fall through to the legacy
+    # CSV / app-token loop. Session-level failure (lock timeout, browser
+    # dead, token harvest fail) is attributed to every xhr_api account
+    # so per-account observability stays consistent.
+    if xhr_accounts:
+        try:
+            from appcore.meta_ads_in_page_fetch import open_meta_ads_session
+
+            with open_meta_ads_session() as session:
+                for account in xhr_accounts:
+                    account_result = {
+                        "code": account.code,
+                        "account_id": account.account_id,
+                        "channel": "xhr_api",
+                        "rows_imported": 0,
+                        "spend_usd": 0.0,
+                    }
+                    try:
+                        report = _sync_meta_account_in_page_api(
+                            run_id=run_id,
+                            business_date=business_date,
+                            snapshot_at=snapshot_at,
+                            account=account,
+                            session=session,
+                        )
+                        account_result.update(report)
+                        account_result["status"] = "success"
+                    except Exception as exc:
+                        account_result["status"] = "failed"
+                        account_result["error"] = str(exc)
+                        _record(account_result, error_label=f"[{account.code}] {exc}")
+                        continue
+                    _record(account_result)
+        except Exception as session_exc:
+            for account in xhr_accounts:
+                _record(
+                    {
+                        "code": account.code,
+                        "account_id": account.account_id,
+                        "channel": "xhr_api",
+                        "rows_imported": 0,
+                        "spend_usd": 0.0,
+                        "status": "failed",
+                        "error": f"session: {session_exc}",
+                    },
+                    error_label=f"[{account.code}] session: {session_exc}",
+                )
+
+    for account in legacy_accounts:
+        account_result = {
             "code": account.code,
             "account_id": account.account_id,
+            "channel": "api" if channel == "api" else "csv_export",
             "rows_imported": 0,
             "spend_usd": 0.0,
         }
@@ -918,17 +1027,11 @@ def _sync_meta_realtime_daily(
                 )
             account_result.update(report)
             account_result["status"] = "success"
-            success_count += 1
+            _record(account_result)
         except Exception as exc:
             account_result["status"] = "failed"
             account_result["error"] = str(exc)
-            errors.append(f"[{account.code}] {exc}")
-        summary["account_results"].append(account_result)
-        summary["rows_imported"] += int(account_result.get("rows_imported") or 0)
-        summary["spend_usd"] = round(
-            float(summary["spend_usd"]) + float(account_result.get("spend_usd") or 0),
-            4,
-        )
+            _record(account_result, error_label=f"[{account.code}] {exc}")
 
     if success_count > 0:
         run_status = "success"

@@ -24,6 +24,12 @@ DEFAULT_NEWJOYLOO_BUSINESS_ID = "476723373113063"
 # 详细背景见 docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
 LEGACY_COLUMN_PRESET = "1658418688523178"
 
+# sync_mode 枚举：csv_export 走 Ads Manager CSV 导出（现有），
+# xhr_api 走页面内 Marketing API 抓取（in-page fetch channel，2026-05-09 新增）。
+# 详见 docs/superpowers/specs/2026-05-09-meta-ads-xhr-token-channel.md
+AVAILABLE_SYNC_MODES = ("csv_export", "xhr_api")
+DEFAULT_SYNC_MODE = "csv_export"
+
 
 @dataclass(frozen=True)
 class MetaAdAccount:
@@ -36,6 +42,7 @@ class MetaAdAccount:
     label: str = ""
     note: str = ""
     column_preset: str = LEGACY_COLUMN_PRESET
+    sync_mode: str = DEFAULT_SYNC_MODE
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +55,7 @@ class MetaAdAccount:
             "enabled": self.enabled,
             "note": self.note,
             "column_preset": self.column_preset,
+            "sync_mode": self.sync_mode,
         }
 
 
@@ -78,6 +86,17 @@ def _normalize_store_codes(raw: object, *, code: str = "") -> tuple[str, ...]:
     return ()
 
 
+def _coerce_sync_mode(raw: object) -> str:
+    value = str(raw or "").strip().lower()
+    if not value:
+        return DEFAULT_SYNC_MODE
+    if value not in AVAILABLE_SYNC_MODES:
+        raise ValueError(
+            f"sync_mode must be one of {AVAILABLE_SYNC_MODES}, got {value!r}"
+        )
+    return value
+
+
 def _coerce_account(raw: dict) -> MetaAdAccount | None:
     if not isinstance(raw, dict):
         return None
@@ -86,6 +105,11 @@ def _coerce_account(raw: dict) -> MetaAdAccount | None:
     business_id = str(raw.get("business_id") or "").strip()
     csv_prefix = str(raw.get("csv_prefix") or code).strip()
     store_codes = _normalize_store_codes(raw.get("store_codes"), code=code)
+    try:
+        sync_mode = _coerce_sync_mode(raw.get("sync_mode"))
+    except ValueError as exc:
+        log.warning("meta_ad_accounts: invalid sync_mode for %r: %s", code, exc)
+        return None
     if not code or not account_id or not business_id or not csv_prefix or not store_codes:
         log.warning("meta_ad_accounts: skipping invalid entry %r", raw)
         return None
@@ -100,6 +124,7 @@ def _coerce_account(raw: dict) -> MetaAdAccount | None:
         label=str(raw.get("label") or "").strip(),
         note=str(raw.get("note") or "").strip(),
         column_preset=column_preset,
+        sync_mode=sync_mode,
     )
 
 
@@ -174,6 +199,13 @@ def set_accounts(accounts: list[dict]) -> None:
     coerced = []
     seen_codes: set[str] = set()
     for item in accounts:
+        if isinstance(item, dict) and "sync_mode" in item:
+            try:
+                _coerce_sync_mode(item.get("sync_mode"))
+            except ValueError as exc:
+                raise ValueError(
+                    f"invalid sync_mode for account {item.get('code')!r}: {exc}"
+                ) from exc
         account = _coerce_account(item)
         if account is None:
             raise ValueError(f"invalid meta ad account entry: {item!r}")

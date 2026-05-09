@@ -1,0 +1,4 @@
+# Probe outputs may contain sensitive session data (e.g., user
+# access_token in URL query strings). Keep raw dumps local; only
+# the .summary.txt aggregates and probe scripts go into git.
+*.jsonl

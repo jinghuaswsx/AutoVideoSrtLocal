@@ -2793,12 +2793,13 @@
             <th>Business ID</th>
             <th>CSV 前缀</th>
             <th title="Meta UI 内列模板 ID（账户内自建后复制 column_preset URL 参数）">列模板</th>
+            <th>同步方式</th>
             <th>备注</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="metaAdAccountsBody">
-          <tr><td colspan="10" class="oad-loading">加载中...</td></tr>
+          <tr><td colspan="11" class="oad-loading">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -4331,7 +4332,7 @@
 
   function loadMetaAdAccounts() {
     var body = document.getElementById('metaAdAccountsBody');
-    if (body) body.innerHTML = '<tr><td colspan="9" class="oad-loading">加载中...</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="11" class="oad-loading">加载中...</td></tr>';
     setMetaAdAccountsStatus('加载中...', false);
     fetch('/order-analytics/meta-ad-accounts', { cache: 'no-store' })
       .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
@@ -4343,7 +4344,7 @@
         setMetaAdAccountsStatus('共 ' + metaAdAccountsState.accounts.length + ' 个账户', false);
       })
       .catch(function(err) {
-        if (body) body.innerHTML = '<tr><td colspan="9" class="oad-error">加载失败：' + escapeHtml(err.message || String(err)) + '</td></tr>';
+        if (body) body.innerHTML = '<tr><td colspan="11" class="oad-error">加载失败：' + escapeHtml(err.message || String(err)) + '</td></tr>';
         setMetaAdAccountsStatus('加载失败', true);
       });
   }
@@ -4362,13 +4363,14 @@
     var body = document.getElementById('metaAdAccountsBody');
     if (!body) return;
     if (!metaAdAccountsState.accounts.length) {
-      body.innerHTML = '<tr><td colspan="10" class="oad-empty">暂无广告账户配置</td></tr>';
+      body.innerHTML = '<tr><td colspan="11" class="oad-empty">暂无广告账户配置</td></tr>';
       return;
     }
     body.innerHTML = '';
     metaAdAccountsState.accounts.forEach(function(account, idx) {
       var tr = document.createElement('tr');
       tr.dataset.index = String(idx);
+      var syncMode = account.sync_mode || 'csv_export';
       tr.innerHTML =
         '<td><input type="checkbox" class="maa-enabled" data-maa-field="enabled"' + (account.enabled ? ' checked' : '') + '></td>' +
         '<td><div class="maa-store-list">' + metaAdAccountStoreInputs(account) + '</div></td>' +
@@ -4378,6 +4380,10 @@
         '<td><input class="maa-input maa-input-mono" data-maa-field="business_id" value="' + escapeHtml(account.business_id || '') + '" aria-label="Business ID"></td>' +
         '<td><input class="maa-input maa-input-mono" data-maa-field="csv_prefix" value="' + escapeHtml(account.csv_prefix || '') + '" aria-label="CSV 前缀"></td>' +
         '<td><input class="maa-input maa-input-mono" data-maa-field="column_preset" value="' + escapeHtml(account.column_preset || '') + '" aria-label="列模板 ID" placeholder="Meta UI 列模板 ID"></td>' +
+        '<td><select class="maa-input" data-maa-field="sync_mode" aria-label="同步方式">' +
+          '<option value="csv_export"' + (syncMode === 'csv_export' ? ' selected' : '') + '>CSV 导出</option>' +
+          '<option value="xhr_api"' + (syncMode === 'xhr_api' ? ' selected' : '') + '>页面接口拦截</option>' +
+        '</select></td>' +
         '<td><input class="maa-input" data-maa-field="note" value="' + escapeHtml(account.note || '') + '" aria-label="备注"></td>' +
         '<td><div class="maa-action-stack">' +
           '<button type="button" class="oad-btn-ghost" data-maa-sync>同步</button>' +
@@ -4408,6 +4414,7 @@
       store_codes: [],
       enabled: true,
       note: '',
+      sync_mode: 'csv_export',
     });
     renderMetaAdAccounts();
     setMetaAdAccountsStatus('有未保存更改', false);
@@ -4427,6 +4434,7 @@
       business_id: value('business_id'),
       csv_prefix: value('csv_prefix'),
       column_preset: value('column_preset'),
+      sync_mode: value('sync_mode') || 'csv_export',
       note: value('note'),
     };
   }

@@ -47,6 +47,7 @@ def _account(
     *,
     enabled: bool = True,
     column_preset: str | None = None,
+    sync_mode: str = "csv_export",
 ) -> MetaAdAccount:
     return MetaAdAccount(
         code=code,
@@ -57,6 +58,7 @@ def _account(
         enabled=enabled,
         label=code,
         column_preset=column_preset or "1658418688523178",
+        sync_mode=sync_mode,
     )
 
 
@@ -454,3 +456,238 @@ def test_sum_realtime_ad_spend_ignores_accounts_without_latest_snapshot(monkeypa
 
     total = roi_hourly_sync._sum_realtime_ad_spend_by_account(business_date, tick_at)
     assert total == pytest.approx(300.0)
+
+
+# ---------- sync_mode field round-trip ----------
+# Spec: docs/superpowers/specs/2026-05-09-meta-ads-xhr-token-channel.md
+
+
+def test_account_sync_mode_defaults_to_csv_export_when_setting_omits_field(monkeypatch):
+    payload = json.dumps([
+        {"code": "a", "account_id": "1", "business_id": "10", "csv_prefix": "a", "store_codes": ["newjoy"], "enabled": True},
+    ])
+    monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
+    accounts = meta_ad_accounts.get_all_accounts()
+    assert accounts[0].sync_mode == "csv_export"
+    # round-trip through to_dict for UI consumption
+    assert accounts[0].to_dict()["sync_mode"] == "csv_export"
+
+
+def test_account_sync_mode_xhr_api_round_trips(monkeypatch):
+    payload = json.dumps([
+        {"code": "a", "account_id": "1", "business_id": "10", "csv_prefix": "a", "store_codes": ["newjoy"], "enabled": True, "sync_mode": "xhr_api"},
+    ])
+    monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
+    accounts = meta_ad_accounts.get_all_accounts()
+    assert accounts[0].sync_mode == "xhr_api"
+
+
+def test_account_sync_mode_invalid_value_drops_entry_in_lenient_read(monkeypatch):
+    payload = json.dumps([
+        {"code": "good", "account_id": "1", "business_id": "10", "csv_prefix": "good", "store_codes": ["newjoy"]},
+        {"code": "bad",  "account_id": "2", "business_id": "20", "csv_prefix": "bad",  "store_codes": ["omurio"], "sync_mode": "telepathy"},
+    ])
+    monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
+    accounts = meta_ad_accounts.get_all_accounts()
+    # The bad entry is dropped, the good one survives — same forgiving
+    # semantics we already use for missing required fields.
+    assert [a.code for a in accounts] == ["good"]
+
+
+def test_set_accounts_rejects_invalid_sync_mode_with_specific_error(monkeypatch):
+    written: dict = {}
+    monkeypatch.setattr(
+        meta_ad_accounts.system_settings,
+        "set_setting",
+        lambda key, value: written.setdefault("payload", value),
+    )
+    with pytest.raises(ValueError, match="sync_mode"):
+        meta_ad_accounts.set_accounts([
+            {"code": "x", "account_id": "1", "business_id": "10", "csv_prefix": "x", "store_codes": ["newjoy"], "sync_mode": "telepathy"},
+        ])
+    assert "payload" not in written  # nothing persisted on validation failure
+
+
+def test_set_accounts_round_trips_sync_mode(monkeypatch):
+    written: dict = {}
+    monkeypatch.setattr(
+        meta_ad_accounts.system_settings,
+        "set_setting",
+        lambda key, value: written.setdefault("payload", value),
+    )
+    meta_ad_accounts.set_accounts([
+        {"code": "x", "account_id": "1", "business_id": "10", "csv_prefix": "x", "store_codes": ["newjoy"], "sync_mode": "xhr_api"},
+    ])
+    persisted = json.loads(written["payload"])
+    assert persisted[0]["sync_mode"] == "xhr_api"
+
+
+# ---------- xhr_api channel orchestration ----------
+
+
+class _FakeSession:
+    def __init__(self, rows_by_account: dict[str, list[dict]]):
+        self.rows_by_account = rows_by_account
+        self.calls: list[tuple[str, str]] = []
+
+    def fetch_insights(self, account_id, *, level, time_range, fields, **_):
+        self.calls.append((account_id, level))
+        return list(self.rows_by_account.get(account_id, []))
+
+
+def _patch_session(monkeypatch, session, *, raise_on_open: Exception | None = None):
+    """Patch the lazy import in roi_hourly_sync so the orchestrator uses fakes."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def fake_open():
+        if raise_on_open:
+            raise raise_on_open
+        yield session
+
+    # Module-level lazy import inside _sync_meta_realtime_daily; we patch
+    # the source module so the import sees the fake.
+    monkeypatch.setattr(
+        "appcore.meta_ads_in_page_fetch.open_meta_ads_session",
+        lambda: fake_open(),
+    )
+
+
+def test_sync_meta_realtime_daily_uses_xhr_session_for_xhr_api_account(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    accounts = [_account("newjoyloo", "111", sync_mode="xhr_api")]
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: accounts)
+
+    fake_session = _FakeSession({"111": [{"campaign_id": "c1", "spend": "10.5"}, {"campaign_id": "c2", "spend": "5.0"}]})
+    _patch_session(monkeypatch, fake_session)
+
+    captured: list[dict] = []
+
+    def fake_import(*, run_id, business_date, snapshot_at, rows, account):
+        captured.append({"account": account.code, "rows": rows})
+        return {"rows_imported": len(rows), "spend_usd": sum(float(r["spend"]) for r in rows)}
+
+    monkeypatch.setattr(roi_hourly_sync, "_import_meta_realtime_api_rows", fake_import)
+    # csv path must NOT be used
+    monkeypatch.setattr(roi_hourly_sync, "_sync_meta_account_browser", lambda **kw: pytest.fail("csv path should not run"))
+
+    summary = roi_hourly_sync._sync_meta_realtime_daily(
+        date(2026, 5, 9),
+        datetime(2026, 5, 9, 12, 20),
+        meta_channel="browser",  # process default; account-level overrides
+    )
+
+    assert fake_session.calls == [("111", "campaign")]
+    assert [c["account"] for c in captured] == ["newjoyloo"]
+    assert summary["status"] == "success"
+    assert summary["rows_imported"] == 2
+    assert summary["spend_usd"] == 15.5
+    result = next(r for r in summary["account_results"] if r["code"] == "newjoyloo")
+    assert result["channel"] == "xhr_api"
+
+
+def test_sync_meta_realtime_daily_mixed_sync_modes_each_use_their_own_path(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    accounts = [
+        _account("newjoyloo", "111", sync_mode="xhr_api"),
+        _account("Omurio",    "222", sync_mode="csv_export"),
+    ]
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: accounts)
+
+    fake_session = _FakeSession({"111": [{"campaign_id": "c1", "spend": "7.0"}]})
+    _patch_session(monkeypatch, fake_session)
+    monkeypatch.setattr(
+        roi_hourly_sync, "_import_meta_realtime_api_rows",
+        lambda **kw: {"rows_imported": 1, "spend_usd": 7.0},
+    )
+
+    csv_calls: list[str] = []
+
+    def fake_browser(*, run_id, business_date, snapshot_at, account):
+        csv_calls.append(account.code)
+        return {"rows_imported": 4, "spend_usd": 100.0}
+
+    monkeypatch.setattr(roi_hourly_sync, "_sync_meta_account_browser", fake_browser)
+
+    summary = roi_hourly_sync._sync_meta_realtime_daily(
+        date(2026, 5, 9), datetime(2026, 5, 9, 12, 20), meta_channel="browser",
+    )
+
+    # xhr_api went via session
+    assert fake_session.calls == [("111", "campaign")]
+    # csv_export went via subprocess export
+    assert csv_calls == ["Omurio"]
+    assert summary["status"] == "success"
+    assert summary["rows_imported"] == 5
+    assert summary["spend_usd"] == 107.0
+    by_code = {r["code"]: r for r in summary["account_results"]}
+    assert by_code["newjoyloo"]["channel"] == "xhr_api"
+    assert by_code["Omurio"]["channel"] == "csv_export"
+
+
+def test_sync_meta_realtime_daily_isolates_xhr_per_account_failure(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    accounts = [
+        _account("a", "111", sync_mode="xhr_api"),
+        _account("b", "222", sync_mode="xhr_api"),
+    ]
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: accounts)
+
+    class FlakySession:
+        calls: list[tuple[str, str]] = []
+        def fetch_insights(self, account_id, *, level, **kw):
+            self.calls.append((account_id, level))
+            if account_id == "111":
+                raise RuntimeError("OAuth code 1 for account 111")
+            return [{"campaign_id": "ok", "spend": "3.0"}]
+
+    _patch_session(monkeypatch, FlakySession())
+    monkeypatch.setattr(
+        roi_hourly_sync, "_import_meta_realtime_api_rows",
+        lambda **kw: {"rows_imported": 1, "spend_usd": 3.0},
+    )
+
+    summary = roi_hourly_sync._sync_meta_realtime_daily(
+        date(2026, 5, 9), datetime(2026, 5, 9, 12, 20), meta_channel="browser",
+    )
+
+    statuses = {r["code"]: r["status"] for r in summary["account_results"]}
+    assert statuses == {"a": "failed", "b": "success"}
+    assert summary["status"] == "success"  # at least one account succeeded
+    assert summary["spend_usd"] == 3.0
+
+
+def test_sync_meta_realtime_daily_session_open_failure_marks_all_xhr_failed(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    """Lock timeout, browser dead, token harvest fail → session can't even open."""
+    accounts = [
+        _account("a", "111", sync_mode="xhr_api"),
+        _account("b", "222", sync_mode="xhr_api"),
+        _account("c", "333", sync_mode="csv_export"),  # csv path must keep running
+    ]
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: accounts)
+    _patch_session(monkeypatch, None, raise_on_open=RuntimeError("lock timeout 600s"))
+
+    csv_calls: list[str] = []
+
+    def fake_browser(**kw):
+        csv_calls.append(kw["account"].code)
+        return {"rows_imported": 2, "spend_usd": 50.0}
+
+    monkeypatch.setattr(roi_hourly_sync, "_sync_meta_account_browser", fake_browser)
+
+    summary = roi_hourly_sync._sync_meta_realtime_daily(
+        date(2026, 5, 9), datetime(2026, 5, 9, 12, 20), meta_channel="browser",
+    )
+
+    statuses = {r["code"]: r["status"] for r in summary["account_results"]}
+    assert statuses == {"a": "failed", "b": "failed", "c": "success"}
+    # csv-mode account was not blocked by xhr session failure
+    assert csv_calls == ["c"]
+    # both xhr accounts get the session error attributed to them
+    a_err = next(r for r in summary["account_results"] if r["code"] == "a")["error"]
+    assert "lock timeout" in a_err
