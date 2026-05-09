@@ -191,23 +191,39 @@ def _modal_hash(frame) -> str | None:
 
 
 _SAVE_BUTTON_CANDIDATES = (
+    # freshify 当前版本（含 omurio）实际按钮文字是 "Upgrade"——必须放最前面，避免命中
+    # 其它弹窗里同存的 Save / Upload 按钮（已知事故 2026-05-09 v3.8）。
+    'button:has-text("Upgrade")',
     'button:has-text("Save")',
     'button:has-text("Upload")',
+    'button:has-text("Update")',
     'button:has-text("Apply")',
     'button:has-text("Confirm")',
     'button:has-text("Submit")',
+    'button:has-text("升级")',
     'button:has-text("保存")',
     'button:has-text("上传")',
+    'button:has-text("更新")',
     'button:has-text("应用")',
     'button:has-text("确认")',
     'button:has-text("确定")',
 )
 
 
+_CANCEL_SIBLING_SUBMIT_SELECTOR = (
+    'xpath=//button[contains(., "Cancel") or contains(., "取消")]'
+    '/following-sibling::button[1]'
+)
+
+
 def _click_save_and_wait(frame) -> dict:
     """点确认/上传按钮提交 EZ 弹窗。
-    不同店铺 / freshify 版本的按钮文字可能是 Save / Upload / Apply / Confirm / 上传 等，
-    依次尝试，命中第一个 visible 的就 click，避免 newjoyloo 用 Save 而 omurio 用 Upload 时漏点。"""
+
+    优先按文本候选匹配（覆盖 Upgrade / Save / Upload 等已知 freshify 版本）。
+    全部都没命中时，走结构 fallback：定位 "Cancel" 按钮 + 取它**右边的下一个 button 兄弟**——
+    EZ 弹窗布局始终是 `Cancel | <提交>`，这条 fallback 与按钮文字解耦，应对未来文字变体（已知事故
+    2026-05-09 v3.8 漏掉 "Upgrade"，2026-05-09 用户反馈："找 Cancel 右边的按钮"）。
+    """
     last_err: Exception | None = None
     matched: str | None = None
     for selector in _SAVE_BUTTON_CANDIDATES:
@@ -221,9 +237,17 @@ def _click_save_and_wait(frame) -> dict:
             last_err = exc
             continue
     if matched is None:
-        raise RuntimeError(
-            f"未在弹窗里找到 Save/Upload/Apply/Confirm/确认 等提交按钮：{last_err}"
-        )
+        # 文本候选全部 miss → 用 Cancel 右兄弟做结构兜底
+        try:
+            sibling = frame.locator(_CANCEL_SIBLING_SUBMIT_SELECTOR).first
+            sibling.wait_for(state="visible", timeout=2000)
+            sibling.click(timeout=2000)
+            matched = _CANCEL_SIBLING_SUBMIT_SELECTOR
+        except Exception as exc:
+            raise RuntimeError(
+                "未在弹窗里找到提交按钮（候选文本全部 miss，Cancel 右兄弟兜底也失败）："
+                f"text_err={last_err} sibling_err={exc}"
+            )
     try:
         frame.locator("[role=dialog]").wait_for(state="detached", timeout=15000)
         return {"dialog_closed": True, "matched_selector": matched}
