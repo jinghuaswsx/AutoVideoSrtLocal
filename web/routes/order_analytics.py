@@ -6,6 +6,8 @@ import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
+from zoneinfo import ZoneInfo
+
 from flask import Blueprint, render_template, request, make_response
 from flask_login import current_user, login_required
 from web.auth import permission_required
@@ -25,6 +27,13 @@ from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics import manual_ad_spend, order_profit_aggregation
 
 log = logging.getLogger(__name__)
+
+_CST = ZoneInfo("Asia/Shanghai")
+
+
+def _today_in_cst() -> date:
+    return datetime.now(_CST).date()
+
 
 bp = Blueprint("order_analytics", __name__)
 
@@ -1092,3 +1101,59 @@ def manual_ad_spend_list():
         "accounts": [a.to_dict() for a in accounts],
         "rows": rows,
     }))
+
+
+_MAX_ENTRIES_PER_REQUEST = 20
+_MAX_SPEND = Decimal("1e8")
+
+
+@bp.route("/order-analytics/manual-ad-spend", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def manual_ad_spend_upsert():
+    payload = request.get_json(silent=True) or {}
+    raw_date = str(payload.get("business_date") or "").strip()
+    try:
+        business_date = date.fromisoformat(raw_date)
+    except ValueError:
+        return _json_response(error="invalid_date", detail="business_date must be YYYY-MM-DD"), 400
+    if business_date > _today_in_cst():
+        return _json_response(error="invalid_date", detail="business_date cannot be in the future"), 400
+
+    entries_raw = payload.get("entries")
+    if not isinstance(entries_raw, list) or not entries_raw:
+        return _json_response(error="invalid_payload", detail="entries must be a non-empty list"), 400
+    if len(entries_raw) > _MAX_ENTRIES_PER_REQUEST:
+        return _json_response(error="too_many_entries", detail=f"max {_MAX_ENTRIES_PER_REQUEST}"), 400
+
+    accounts_by_code = {a.code: a for a in meta_ad_accounts.get_all_accounts()}
+    cleaned: list[dict] = []
+    for entry in entries_raw:
+        if not isinstance(entry, dict):
+            return _json_response(error="invalid_entry", detail="entry must be an object"), 400
+        code = str(entry.get("account_code") or "").strip()
+        if code not in accounts_by_code:
+            return _json_response(error="invalid_account", detail=f"unknown account_code: {code}"), 400
+        try:
+            spend = Decimal(str(entry.get("spend_usd")))
+        except Exception:
+            return _json_response(error="invalid_spend", detail="spend_usd must be a number"), 400
+        if spend < 0 or spend > _MAX_SPEND:
+            return _json_response(error="invalid_spend", detail="spend_usd out of range [0, 1e8]"), 400
+        spend = spend.quantize(Decimal("0.0001"))
+        cleaned.append({
+            "account_code": code,
+            "ad_account_id": accounts_by_code[code].account_id,
+            "spend_usd": spend,
+        })
+
+    written = manual_ad_spend.upsert_entries(
+        business_date=business_date, entries=cleaned, updated_by=current_user.id,
+    )
+    _audit_order_analytics_action(
+        "order_analytics_manual_ad_spend_upserted",
+        target_type="manual_ad_spend",
+        detail={"business_date": business_date.isoformat(),
+                "entries": [{"account_code": e["account_code"], "spend_usd": str(e["spend_usd"])} for e in cleaned]},
+    )
+    return _json_response({"ok": True, "written": written})

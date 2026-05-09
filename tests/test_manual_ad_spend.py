@@ -151,3 +151,71 @@ def test_list_route_returns_accounts_and_rows(logged_in_client):
     assert any(r["business_date"] == "2026-05-08" for r in body["rows"])
     row_entry = next(r for r in body["rows"] if r["business_date"] == "2026-05-08")["entries"][acc.code]
     assert row_entry["manual_spend_usd"] == 300.0
+
+
+import json as _json
+
+
+def _post(client, body: dict):
+    return client.post(
+        "/order-analytics/manual-ad-spend",
+        data=_json.dumps(body),
+        content_type="application/json",
+    )
+
+
+def _first_account_code(client) -> str:
+    """Pick first enabled account code from live config (test-config dependent)."""
+    resp = client.get("/order-analytics/manual-ad-spend/list?from=2026-05-08&to=2026-05-08")
+    body = resp.get_json()
+    enabled = [a["code"] for a in body["accounts"] if a.get("enabled", True)]
+    assert enabled, "live config has no enabled meta ad accounts; cannot run test"
+    return enabled[0]
+
+
+def test_upsert_route_happy_path(logged_in_client):
+    code = _first_account_code(logged_in_client)
+    resp = _post(logged_in_client, {
+        "business_date": "2026-05-08",
+        "entries": [{"account_code": code, "spend_usd": 300.0}],
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    rows = manual_ad_spend.list_range(date(2026, 5, 8), date(2026, 5, 8))
+    assert any(r["account_code"] == code for r in rows)
+
+
+def test_upsert_route_rejects_future_date(logged_in_client, monkeypatch):
+    code = _first_account_code(logged_in_client)
+    from web.routes import order_analytics as routes_oa
+    monkeypatch.setattr(routes_oa, "_today_in_cst", lambda: date(2026, 5, 9))
+    resp = _post(logged_in_client, {
+        "business_date": "2026-05-10",
+        "entries": [{"account_code": code, "spend_usd": 100.0}],
+    })
+    assert resp.status_code == 400
+
+
+def test_upsert_route_rejects_unknown_account_code(logged_in_client):
+    resp = _post(logged_in_client, {
+        "business_date": "2026-05-08",
+        "entries": [{"account_code": "ghost-not-real", "spend_usd": 100.0}],
+    })
+    assert resp.status_code == 400
+
+
+def test_upsert_route_rejects_negative_spend(logged_in_client):
+    code = _first_account_code(logged_in_client)
+    resp = _post(logged_in_client, {
+        "business_date": "2026-05-08",
+        "entries": [{"account_code": code, "spend_usd": -1.0}],
+    })
+    assert resp.status_code == 400
+
+
+def test_upsert_route_rejects_too_many_entries(logged_in_client):
+    code = _first_account_code(logged_in_client)
+    resp = _post(logged_in_client, {
+        "business_date": "2026-05-08",
+        "entries": [{"account_code": code, "spend_usd": 1.0}] * 21,
+    })
+    assert resp.status_code == 400
