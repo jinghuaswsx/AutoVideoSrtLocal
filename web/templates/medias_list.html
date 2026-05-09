@@ -998,6 +998,106 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   gap:var(--oc-sp-2);
   flex-wrap:wrap;
 }
+
+/* 产品链接管理弹窗（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md） */
+.oc-product-links-entry {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-3);
+  flex-wrap:wrap;
+  margin-top:var(--oc-sp-2);
+}
+.oc-product-links-modal {
+  width:min(960px, calc(100vw - 48px));
+  max-height:min(88vh, 880px);
+}
+.oc-product-links-modal-body {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-4);
+  padding:var(--oc-sp-5);
+}
+.oc-product-links-summary {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-2);
+  padding:var(--oc-sp-3) var(--oc-sp-4);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+}
+.oc-product-links-actions {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-3);
+  flex-wrap:wrap;
+}
+.oc-product-links-list {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-3);
+}
+.oc-product-links-row {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-2);
+  padding:var(--oc-sp-3) var(--oc-sp-4);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg);
+}
+.oc-product-links-row-head {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-2);
+  flex-wrap:wrap;
+}
+.oc-product-links-row-url {
+  font-size:12px;
+  font-family:"JetBrains Mono","Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  word-break:break-all;
+}
+.oc-product-links-url-link {
+  color:var(--oc-accent);
+  text-decoration:none;
+}
+.oc-product-links-url-link:hover {
+  text-decoration:underline;
+}
+.oc-product-links-shopify {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-2);
+  flex-wrap:wrap;
+  padding-top:var(--oc-sp-2);
+  border-top:1px dashed var(--oc-border);
+}
+.oc-product-links-shopify-label {
+  font-size:11px;
+  font-weight:600;
+  color:var(--oc-fg-muted);
+  letter-spacing:0.04em;
+}
+.oc-product-links-row-actions {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-2);
+  flex-wrap:wrap;
+}
+.oc-product-links-empty {
+  padding:var(--oc-sp-5);
+  text-align:center;
+  color:var(--oc-fg-muted);
+  font-size:13px;
+  border:1px dashed var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+}
+.oc-product-links-empty-error {
+  color:var(--oc-danger-fg);
+  border-color:var(--oc-danger);
+  background:var(--oc-danger-bg);
+}
 .oc-link-check-modal {
   width:min(1080px, calc(100vw - 48px));
   max-height:min(88vh, 920px);

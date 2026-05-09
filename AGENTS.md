@@ -95,6 +95,15 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - 聚焦测试：`pytest tests/test_appcore_medias_link_check_bootstrap.py tests/test_link_check_bootstrap_routes.py tests/test_link_check_gemini.py tests/test_link_check_same_image.py tests/test_link_check_desktop_storage.py tests/test_link_check_desktop_bootstrap_api.py tests/test_link_check_desktop_controller.py tests/test_link_check_desktop_gui.py -q`
 - 打包：`pyinstaller link_check_desktop/packaging/link_check_desktop.spec`
 
+## 产品链接管理弹窗（2026-05-09 起）
+
+详细设计：[docs/superpowers/specs/2026-05-09-product-link-management-modal.md](docs/superpowers/specs/2026-05-09-product-link-management-modal.md)
+
+- 素材管理「编辑产品素材」弹窗里，「产品链接」一行下面有 `产品链接管理` 按钮（所有语种 tab 都有）。点开 `edProductLinksMask` 弹窗，按行展示该产品当前启用的每个域名的 URL + HTTP 可用性 + Shopify 换图状态 + 行内操作按钮。
+- 非英语 tab 下原本的 `edShopifyImageStatus` 内联面板**已废弃渲染**（链接多了之后视觉拥挤）；所有 Shopify 图片确认 / 重新排队换图 / 标记不可用按钮都搬进了新弹窗的对应行。回滚就是把 `edRenderShopifyImageStatus` 里 early return 拿掉。
+- HTTP 可用性探测走新模块 [`appcore/link_availability.py`](appcore/link_availability.py)：HEAD-first（405 时 GET 兜底）+ stdlib `urllib.request` + 5s 超时 + 跟最多 5 次重定向 + 8 路并发；结果 upsert 到新表 `media_product_link_availability`，每 (product_id, lang, domain) 一行最新结果。**与既有 `查看结果`（`edLinkCheckMask` + `appcore/link_check_fetcher.py`）的图片分析重链路完全解耦**——不要混用。
+- 路由：`GET/POST /medias/api/products/<pid>/link-availability/<lang>`，POST 可带 `{"domain": "..."}` 单域名探测；服务层 builder 在 [`web/services/media_link_check.py`](web/services/media_link_check.py)。改这条链路至少跑 `pytest tests/test_appcore_link_availability.py tests/test_medias_link_availability_routes.py tests/test_db_migration_media_product_link_availability.py -q`。
+
 ## Shopify Image Localizer Commands
 
 - 开发运行：`python -m tools.shopify_image_localizer.main`

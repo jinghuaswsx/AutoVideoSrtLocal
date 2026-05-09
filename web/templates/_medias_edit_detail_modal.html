@@ -54,6 +54,19 @@
             <div id="edLinkCheckSummary" class="oc-link-check-summary" hidden></div>
             <div id="edShopifyImageStatus" class="oc-link-check-summary" hidden></div>
           </div>
+          <!-- 入口：产品链接管理弹窗（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md） -->
+          <div class="oc-product-links-entry">
+            <button type="button" class="oc-btn ghost sm" id="edProductLinksOpenBtn">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5.5 8.5 8.5 5.5"></path>
+                <path d="M6 3.5h2a3 3 0 0 1 0 6H7"></path>
+                <path d="M8 10.5H6a3 3 0 0 1 0-6h1"></path>
+              </svg>
+              <span>产品链接管理</span>
+            </button>
+            <span class="oc-hint">查看启用域名 + HTTP 可用性 + Shopify 换图状态</span>
+          </div>
         </div>
       </section>
 
@@ -351,6 +364,40 @@
           </div>
           <div class="oc-modal-foot" style="justify-content:flex-end;">
             <button class="oc-btn primary" id="edFromUrlDoneBtn" disabled>关闭（下载完成后可关）</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 产品链接管理弹窗（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md） -->
+      <div class="oc-modal-mask oc" id="edProductLinksMask" hidden>
+        <div class="oc-modal oc-product-links-modal" role="dialog" aria-modal="true" aria-labelledby="edProductLinksTitle">
+          <div class="oc-modal-head">
+            <h3 id="edProductLinksTitle">产品链接管理</h3>
+            <button class="oc-icon-btn" id="edProductLinksClose" title="关闭" aria-label="关闭">
+              <svg width="16" height="16"><use href="#ic-close"/></svg>
+            </button>
+          </div>
+          <div class="oc-modal-body oc-product-links-modal-body">
+            <div class="oc-product-links-summary">
+              <div id="edProductLinksLangHint" class="oc-hint"></div>
+              <div class="oc-product-links-actions">
+                <button type="button" class="oc-btn primary sm" id="edProductLinksRecheckAllBtn">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                       stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M11.5 7a4.5 4.5 0 1 1-1.32-3.18"></path>
+                    <path d="M11.5 2.5v3h-3"></path>
+                  </svg>
+                  <span>全部重新检查可用性</span>
+                </button>
+                <span id="edProductLinksLastChecked" class="oc-hint"></span>
+              </div>
+            </div>
+            <div id="edProductLinksList" class="oc-product-links-list">
+              <div class="oc-product-links-empty">加载中…</div>
+            </div>
+          </div>
+          <div class="oc-modal-foot">
+            <button class="oc-btn primary" id="edProductLinksDoneBtn">关闭</button>
           </div>
         </div>
       </div>

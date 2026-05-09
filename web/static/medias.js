@@ -3413,6 +3413,8 @@
     linkCheckModalDomain: '',
     linkCheckDetailTask: null,
     linkCheckDetailError: '',
+    // 产品链接管理弹窗状态（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md）
+    productLinksModal: { open: false, lang: '', items: [], loading: false, error: '', lastChecked: '' },
   };
 
   function edShow() { $('edMask').hidden = false; }
@@ -3426,6 +3428,7 @@
       return;
     }
     edCloseLinkCheckModal();
+    edCloseProductLinksModal();
     edStopLinkCheckPoll();
     $('edMask').hidden = true;
     if ($('edFromUrlMask')) $('edFromUrlMask').hidden = true;
@@ -4516,15 +4519,16 @@
   }
 
   function edRenderShopifyImageStatus(lang) {
+    // The inline status panel under "产品链接" was retired in favor of the
+    // unified "产品链接管理" modal (spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md).
+    // Keep the function so callers continue to work, but always hide the box.
     const box = $('edShopifyImageStatus');
-    if (!box) return;
-    if (!lang || lang === 'en') {
+    if (box) {
       box.hidden = true;
       box.innerHTML = '';
-      return;
     }
-
-    box.hidden = false;
+    return;
+    // eslint-disable-next-line no-unreachable
     const statuses = edShopifyImageStatusesForLang(lang);
     box.innerHTML = statuses.map((status) => {
       const summary = status.result_summary || {};
@@ -5104,6 +5108,260 @@
     })();
   }
 
+  // ============================================================
+  // 产品链接管理弹窗（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md）
+  // ============================================================
+
+  function edProductLinksHttpBadgeKind(item) {
+    if (!item || item.http_status == null) return 'info';
+    const status = Number(item.http_status);
+    if (status >= 200 && status < 300) return 'success';
+    if (status >= 300 && status < 400) return 'info';
+    if (status >= 400 && status < 500) return 'danger';
+    if (status >= 500) return 'danger';
+    return 'info';
+  }
+
+  function edProductLinksHttpBadgeLabel(item) {
+    if (!item) return '未检测';
+    if (item.error === 'timeout') return '超时';
+    if (item.http_status == null) return item.checked_at ? '检测失败' : '未检测';
+    return `HTTP ${item.http_status}`;
+  }
+
+  function edProductLinksOkBadge(item) {
+    if (!item || item.checked_at === '') return edLinkCheckBadge('未检测', 'info');
+    if (item.ok) return edLinkCheckBadge('链接正常', 'success');
+    if (item.error === 'timeout') return edLinkCheckBadge('请求超时', 'warning');
+    if (item.http_status === 404) return edLinkCheckBadge('链接失联（404）', 'danger');
+    if (item.http_status === 403) return edLinkCheckBadge('访问被拒（403）', 'danger');
+    if (item.http_status && item.http_status >= 500) return edLinkCheckBadge('服务异常', 'danger');
+    return edLinkCheckBadge(item.error || '链接异常', 'danger');
+  }
+
+  function edProductLinksRenderShopifyRow(lang, item) {
+    if (!lang || lang === 'en') return '';
+    const status = edShopifyImageStatusForLang(lang, item.domain);
+    const replaceLabel = SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status;
+    const linkLabel = SHOPIFY_IMAGE_LINK_LABELS[status.link_status] || status.link_status;
+    const replaceBadge = edLinkCheckBadge(replaceLabel, edShopifyImageBadgeKind(status));
+    const linkBadge = edLinkCheckBadge(linkLabel, edShopifyImageBadgeKind(status));
+    const updatedAt = status.updated_at ? `<span class="oc-link-check-meta">更新 ${escapeHtml(fmtDate(status.updated_at))}</span>` : '';
+    return `
+      <div class="oc-product-links-shopify">
+        <span class="oc-product-links-shopify-label">Shopify</span>
+        ${replaceBadge}
+        ${linkBadge}
+        ${updatedAt}
+      </div>`;
+  }
+
+  function edProductLinksRowActions(lang, item) {
+    const domainAttr = `data-domain="${escapeHtml(item.domain)}"`;
+    const buttons = [];
+    buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="copy" ${domainAttr}>复制链接</button>`);
+    buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="recheck-one" ${domainAttr}>重新检查可用性</button>`);
+    if (lang && lang !== 'en') {
+      const status = edShopifyImageStatusForLang(lang, item.domain);
+      if (status.replace_status !== 'confirmed' || status.link_status !== 'normal') {
+        buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
+      }
+      buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-requeue" data-lang="${escapeHtml(lang)}" ${domainAttr}>重新排队换图</button>`);
+      if (status.link_status !== 'unavailable') {
+        buttons.push(`<button type="button" class="oc-btn text sm" data-product-links-action="shopify-unavailable" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记链接不可用</button>`);
+      }
+    }
+    return `<div class="oc-product-links-row-actions">${buttons.join('')}</div>`;
+  }
+
+  function edProductLinksRowHtml(lang, item) {
+    const url = item.link_url || '';
+    const safeUrl = escapeHtml(url);
+    const safeUrlAttr = escapeHtml(safeExternalHref(url) || url);
+    const checkedAt = item.checked_at ? fmtDate(item.checked_at) : '';
+    const stale = item.stale ? edLinkCheckBadge('域名已停用', 'warning') : '';
+    return `
+      <div class="oc-product-links-row" data-domain="${escapeHtml(item.domain)}">
+        <div class="oc-product-links-row-head">
+          ${edLinkCheckBadge(item.domain || '未知域名', 'info')}
+          ${edProductLinksOkBadge(item)}
+          ${edLinkCheckBadge(edProductLinksHttpBadgeLabel(item), edProductLinksHttpBadgeKind(item))}
+          ${stale}
+          ${checkedAt ? `<span class="oc-link-check-meta">探测于 ${escapeHtml(checkedAt)}</span>` : '<span class="oc-link-check-meta">尚未探测</span>'}
+        </div>
+        <div class="oc-product-links-row-url">
+          <a class="oc-product-links-url-link" href="${safeUrlAttr}" target="_blank" rel="noopener">${safeUrl || '<空>'}</a>
+        </div>
+        ${edProductLinksRenderShopifyRow(lang, item)}
+        ${edProductLinksRowActions(lang, item)}
+      </div>`;
+  }
+
+  function edRenderProductLinksModal() {
+    const list = $('edProductLinksList');
+    const langHint = $('edProductLinksLangHint');
+    const lastChecked = $('edProductLinksLastChecked');
+    const recheckBtn = $('edProductLinksRecheckAllBtn');
+    const titleEl = $('edProductLinksTitle');
+    if (!list) return;
+
+    const state = edState.productLinksModal;
+    const lang = state.lang || edState.activeLang;
+    const langName = langDisplayName(lang);
+    const product = (edState.productData && edState.productData.product) || {};
+
+    if (titleEl) {
+      const productLabel = product.name || product.product_code || '产品';
+      titleEl.textContent = `产品链接管理 — ${productLabel} · ${langName}`;
+    }
+
+    if (langHint) {
+      if (lang === 'en') {
+        langHint.textContent = `当前展示「${langName}」tab 下该产品已启用的全部域名 · 英语为源语言，仅检测链接可访问性。`;
+      } else {
+        langHint.textContent = `当前展示「${langName}」tab 下该产品已启用的全部域名，可逐项或批量重新检测，并管理 Shopify 换图状态。`;
+      }
+    }
+
+    if (recheckBtn) {
+      recheckBtn.disabled = !!state.loading;
+      recheckBtn.textContent = state.loading ? '检测中…' : '全部重新检查可用性';
+    }
+
+    if (lastChecked) {
+      lastChecked.textContent = state.lastChecked ? `最近探测：${fmtDate(state.lastChecked)}` : '';
+    }
+
+    if (state.error) {
+      list.innerHTML = `<div class="oc-product-links-empty oc-product-links-empty-error">${escapeHtml(state.error)}</div>`;
+      return;
+    }
+
+    if (state.loading && (!state.items || !state.items.length)) {
+      list.innerHTML = '<div class="oc-product-links-empty">加载中…</div>';
+      return;
+    }
+
+    if (!state.items || !state.items.length) {
+      list.innerHTML = '<div class="oc-product-links-empty">该产品当前没有启用任何域名。前往「域名管理」启用至少一个域名后再来。</div>';
+      return;
+    }
+
+    list.innerHTML = state.items.map((item) => edProductLinksRowHtml(lang, item)).join('');
+    list.querySelectorAll('[data-product-links-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        edHandleProductLinksAction(btn.dataset.productLinksAction, btn.dataset.domain || '', btn.dataset.lang || '');
+      });
+    });
+  }
+
+  async function edFetchProductLinkAvailability(force) {
+    const product = (edState.productData && edState.productData.product) || null;
+    const pid = product && product.id;
+    const state = edState.productLinksModal;
+    if (!pid || !state.lang) return;
+
+    state.loading = true;
+    state.error = '';
+    edRenderProductLinksModal();
+    try {
+      const url = `/medias/api/products/${pid}/link-availability/${encodeURIComponent(state.lang)}`;
+      const data = force
+        ? await fetchJSON(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        : await fetchJSON(url);
+      state.items = Array.isArray(data && data.items) ? data.items : [];
+      state.lastChecked = state.items.reduce((acc, item) => {
+        if (!item.checked_at) return acc;
+        return !acc || item.checked_at > acc ? item.checked_at : acc;
+      }, '');
+    } catch (err) {
+      state.error = '产品链接可用性检查失败：' + (err && err.message ? err.message : err);
+    } finally {
+      state.loading = false;
+      edRenderProductLinksModal();
+    }
+  }
+
+  async function edRunSingleAvailability(domain) {
+    const product = (edState.productData && edState.productData.product) || null;
+    const pid = product && product.id;
+    const state = edState.productLinksModal;
+    if (!pid || !state.lang || !domain) return;
+
+    state.loading = true;
+    state.error = '';
+    edRenderProductLinksModal();
+    try {
+      const url = `/medias/api/products/${pid}/link-availability/${encodeURIComponent(state.lang)}`;
+      const data = await fetchJSON(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain }),
+      });
+      state.items = Array.isArray(data && data.items) ? data.items : state.items;
+      state.lastChecked = state.items.reduce((acc, item) => {
+        if (!item.checked_at) return acc;
+        return !acc || item.checked_at > acc ? item.checked_at : acc;
+      }, '');
+    } catch (err) {
+      state.error = '产品链接可用性检查失败：' + (err && err.message ? err.message : err);
+    } finally {
+      state.loading = false;
+      edRenderProductLinksModal();
+    }
+  }
+
+  function edOpenProductLinksModal() {
+    const product = (edState.productData && edState.productData.product) || null;
+    if (!product || !product.id) return;
+    const state = edState.productLinksModal;
+    state.open = true;
+    state.lang = edState.activeLang;
+    state.error = '';
+    state.items = [];
+    state.lastChecked = '';
+    if ($('edProductLinksMask')) $('edProductLinksMask').hidden = false;
+    edRenderProductLinksModal();
+    edFetchProductLinkAvailability(false);
+  }
+
+  function edCloseProductLinksModal() {
+    edState.productLinksModal.open = false;
+    if ($('edProductLinksMask')) $('edProductLinksMask').hidden = true;
+  }
+
+  async function edHandleProductLinksAction(action, domain, langArg) {
+    const lang = langArg || edState.productLinksModal.lang || edState.activeLang;
+    if (action === 'recheck-one') {
+      return edRunSingleAvailability(domain);
+    }
+    if (action === 'copy') {
+      const item = (edState.productLinksModal.items || []).find((it) => it.domain === domain);
+      const url = item && item.link_url;
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (__) {}
+        document.body.removeChild(ta);
+      }
+      return;
+    }
+    const shopifyAction = action.startsWith('shopify-') ? action.slice('shopify-'.length) : '';
+    if (!shopifyAction) return;
+    if (lang === 'en') return;
+    try {
+      await edApplyShopifyImageAction(shopifyAction, lang, domain);
+      await edFetchProductLinkAvailability(false);
+    } catch (err) {
+      alert('图片换图状态更新失败：' + (err && err.message ? err.message : err));
+    }
+  }
+
   async function edRenderActiveLangView() {
     const lang = edState.activeLang;
     // 更新语种标签提示
@@ -5121,6 +5379,12 @@
     const activeLinkDomain = edActiveLinkCheckDomain(lang);
     edRenderLinkCheckSummary(edGetLinkCheckTask(lang, activeLinkDomain));
     edRenderShopifyImageStatus(lang);
+    if (edState.productLinksModal.open && edState.productLinksModal.lang !== lang) {
+      edState.productLinksModal.lang = lang;
+      edState.productLinksModal.items = [];
+      edState.productLinksModal.lastChecked = '';
+      edFetchProductLinkAvailability(false);
+    }
     if (edGetLinkCheckTask(lang, activeLinkDomain)) {
       edPollLinkCheck(lang, activeLinkDomain);
     } else {
@@ -6044,6 +6308,14 @@
     });
     $('edLinkCheckMask') && $('edLinkCheckMask').addEventListener('click', (e) => {
       if (e.target.id === 'edLinkCheckMask') edCloseLinkCheckModal();
+    });
+
+    $('edProductLinksOpenBtn') && $('edProductLinksOpenBtn').addEventListener('click', edOpenProductLinksModal);
+    $('edProductLinksClose') && $('edProductLinksClose').addEventListener('click', edCloseProductLinksModal);
+    $('edProductLinksDoneBtn') && $('edProductLinksDoneBtn').addEventListener('click', edCloseProductLinksModal);
+    $('edProductLinksRecheckAllBtn') && $('edProductLinksRecheckAllBtn').addEventListener('click', () => edFetchProductLinkAvailability(true));
+    $('edProductLinksMask') && $('edProductLinksMask').addEventListener('click', (e) => {
+      if (e.target.id === 'edProductLinksMask') edCloseProductLinksModal();
     });
 
     // 商品详情图：从商品链接一键下载（后台任务 + 进度弹窗）

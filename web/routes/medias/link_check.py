@@ -5,6 +5,8 @@ from flask_login import current_user, login_required
 
 from appcore import medias
 from web.services.media_link_check import (
+    build_product_link_availability_get_response,
+    build_product_link_availability_run_response,
     build_product_link_check_create_response,
     build_product_link_check_detail_response,
     build_product_link_check_summary_response,
@@ -80,5 +82,32 @@ def api_product_link_check_detail(pid: int, lang: str):
         store_obj=routes.store,
         serialize_task_fn=routes._serialize_link_check_task,
         domain=request.args.get("domain"),
+    )
+    return routes._media_link_check_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/link-availability/<lang>", methods=["GET"])
+@login_required
+def api_product_link_availability_get(pid: int, lang: str):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    result = build_product_link_availability_get_response(product=p, lang=lang)
+    return routes._media_link_check_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/link-availability/<lang>", methods=["POST"])
+@login_required
+def api_product_link_availability_run(pid: int, lang: str):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    result = build_product_link_availability_run_response(
+        product=p,
+        lang=lang,
+        body=body,
     )
     return routes._media_link_check_flask_response(result)

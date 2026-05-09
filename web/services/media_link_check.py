@@ -10,7 +10,7 @@ import uuid
 
 from flask import jsonify
 
-from appcore import medias, product_link_domains
+from appcore import link_availability, medias, product_link_domains
 
 
 @dataclass(frozen=True)
@@ -230,3 +230,124 @@ def build_product_link_check_detail_response(
     if not task or task.get("_user_id") != user_id or task.get("type") != "link_check":
         return MediaLinkCheckResponse({"error": "task not found"}, 404)
     return MediaLinkCheckResponse(serialize_task_fn(task), 200)
+
+
+def _availability_payload(
+    product: dict,
+    lang: str,
+    items: list[dict],
+) -> dict[str, Any]:
+    return {
+        "product_id": int(product.get("id") or 0),
+        "lang": lang,
+        "items": items,
+    }
+
+
+def _resolve_lang_or_error(lang: str) -> tuple[str, MediaLinkCheckResponse | None]:
+    lang_code = (lang or "").strip().lower()
+    if not lang_code or not medias.is_valid_language(lang_code):
+        return "", MediaLinkCheckResponse({"error": f"不支持的语言: {lang}"}, 400)
+    return lang_code, None
+
+
+def build_product_link_availability_get_response(
+    *,
+    product: dict,
+    lang: str,
+    list_results_fn: Callable[[int, str], list[dict]] | None = None,
+) -> MediaLinkCheckResponse:
+    lang_code, err = _resolve_lang_or_error(lang)
+    if err is not None:
+        return err
+
+    list_fn = list_results_fn or link_availability.list_results
+    rows = product_link_domains.resolve_product_page_url_rows(product, lang_code)
+    by_domain = {row["domain"]: row for row in rows}
+
+    cached = list_fn(int(product.get("id") or 0), lang_code) or []
+    cached_by_domain = {item["domain"]: item for item in cached}
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        cached_item = cached_by_domain.get(row["domain"])
+        if cached_item:
+            # Update link_url to current resolved value if it has changed.
+            cached_item["link_url"] = row["url"]
+            items.append(cached_item)
+        else:
+            items.append({
+                "product_id": int(product.get("id") or 0),
+                "lang": lang_code,
+                "domain": row["domain"],
+                "link_url": row["url"],
+                "http_status": None,
+                "ok": False,
+                "error": None,
+                "elapsed_ms": None,
+                "checked_at": "",
+            })
+
+    # Surface any persisted rows whose domain is no longer enabled, so the
+    # user can see stale leftovers (and they remain queryable for audits).
+    for cached_item in cached:
+        if cached_item["domain"] not in by_domain:
+            items.append({**cached_item, "stale": True})
+
+    return MediaLinkCheckResponse(_availability_payload(product, lang_code, items), 200)
+
+
+def build_product_link_availability_run_response(
+    *,
+    product: dict,
+    lang: str,
+    body: dict | None,
+    probe_and_record_fn: Callable[..., list[dict]] | None = None,
+    list_results_fn: Callable[[int, str], list[dict]] | None = None,
+) -> MediaLinkCheckResponse:
+    lang_code, err = _resolve_lang_or_error(lang)
+    if err is not None:
+        return err
+
+    probe_fn = probe_and_record_fn or link_availability.probe_and_record
+    list_fn = list_results_fn or link_availability.list_results
+
+    body = body if isinstance(body, dict) else {}
+    only_domain = (body.get("domain") or "").strip().lower()
+
+    rows = product_link_domains.resolve_product_page_url_rows(product, lang_code)
+    if only_domain:
+        try:
+            normalized = product_link_domains.normalize_domain(only_domain)
+        except ValueError:
+            return MediaLinkCheckResponse({"error": "invalid domain"}, 400)
+        rows = [row for row in rows if row["domain"] == normalized]
+        if not rows:
+            return MediaLinkCheckResponse(
+                {"error": "domain not enabled for product"}, 404
+            )
+
+    targets = [{"domain": row["domain"], "url": row["url"]} for row in rows]
+    if not targets:
+        return MediaLinkCheckResponse(
+            _availability_payload(product, lang_code, []), 200
+        )
+
+    probed = probe_fn(
+        product_id=int(product.get("id") or 0),
+        lang=lang_code,
+        rows=targets,
+    )
+
+    # If a single domain was probed, merge with the cached list for the rest.
+    if only_domain:
+        cached = list_fn(int(product.get("id") or 0), lang_code) or []
+        by_domain = {item["domain"]: item for item in cached}
+        for item in probed:
+            by_domain[item["domain"]] = item
+        merged = [by_domain[row["domain"]] for row in product_link_domains.resolve_product_page_url_rows(product, lang_code) if row["domain"] in by_domain]
+        return MediaLinkCheckResponse(
+            _availability_payload(product, lang_code, merged), 200
+        )
+
+    return MediaLinkCheckResponse(_availability_payload(product, lang_code, probed), 200)

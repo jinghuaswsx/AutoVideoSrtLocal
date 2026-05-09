@@ -148,6 +148,16 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - `detail_extra` 占位符位置：[_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 的 `{% block content %}` 内、`{% include "_task_workbench.html" %}` 之后、`{% endif %}` 之前。内容由此自然落进 `<main class="main-content">`。新增第四个 detail_mode（比如 av_sync 之外的）时，沿用同一 block。
 - 自检：改动 [multi_translate_detail.html](web/templates/multi_translate_detail.html) / [omni_translate_detail.html](web/templates/omni_translate_detail.html) / [ja_translate_detail.html](web/templates/ja_translate_detail.html) / [_translate_detail_shell.html](web/templates/_translate_detail_shell.html) 后，至少运行 `pytest tests/test_multi_translate_routes.py tests/test_omni_translate_routes.py tests/test_runtime_multi_asr_normalize.py -q`；如有 asr-normalize-card 渲染路径，再用 Playwright 或 devtools 确认 `document.querySelector('section.asr-normalize-card').parentElement` 链路上能找到 `<main class="main-content">`，且其 `getBoundingClientRect()` 横向 bbox 在 main 的 left/right 内（不会贴 viewport 右沿）。
 
+## 产品链接管理弹窗（2026-05-09 起）
+
+详细设计：[docs/superpowers/specs/2026-05-09-product-link-management-modal.md](docs/superpowers/specs/2026-05-09-product-link-management-modal.md)
+
+- 素材管理「编辑产品素材」弹窗里，「产品链接」一行下面新增 `产品链接管理` 按钮（所有语种 tab 都渲染）。点开 `edProductLinksMask` 弹窗，按行展示该产品当前启用的每个域名的 URL + HTTP 可用性 badge（HTTP 200 / 404 / 403 / timeout） + Shopify 换图状态 + 行内操作按钮（`复制链接` / `重新检查可用性` / 非英语下加 `确认图片正常` `重新排队换图` `标记链接不可用`）。
+- 非英语 tab 下原本铺在「产品链接」输入框下方的 `edShopifyImageStatus` 内联面板**已废弃渲染**。`edRenderShopifyImageStatus` 现在 early return + 始终 hidden；`shopify_image_status` 数据结构和 `edApplyShopifyImageAction` 业务逻辑保持不变，只是渲染入口集中到了新弹窗。回滚：删除 `edRenderShopifyImageStatus` 顶部的 early return。
+- HTTP 可用性探测走新模块 [`appcore/link_availability.py`](appcore/link_availability.py)，stdlib `urllib.request` HEAD-first（405/501 时 GET 兜底）+ 5s 超时 + 跟最多 5 次重定向 + 8 路并发；结果 upsert 到新表 `media_product_link_availability`，每 (product_id, lang, domain) 一行最新结果。**这条链路与既有 `查看结果`（`edLinkCheckMask` + [`appcore/link_check_fetcher.py`](appcore/link_check_fetcher.py) 的图片分析 + locale 判断）完全解耦**——前者是秒级 HTTP 探测，后者是分钟级图片分析。不要在新弹窗里调用 `link_check` 接口；不要把 `link_availability` 探测结果当作图片分析结果来用。
+- 路由：`GET/POST /medias/api/products/<pid>/link-availability/<lang>`（`@login_required`，沿用 `_can_access_product` 守卫）。POST 可带 `{"domain": "..."}` 单域名探测，缺省并行探测全部启用域名。服务层 builder 在 [`web/services/media_link_check.py`](web/services/media_link_check.py) 的 `build_product_link_availability_get_response` / `build_product_link_availability_run_response`。
+- 改这条链路至少运行：`pytest tests/test_appcore_link_availability.py tests/test_medias_link_availability_routes.py tests/test_db_migration_media_product_link_availability.py tests/test_media_link_check_service.py -q`。
+
 ## Meta 广告多账户同步（2026-05-07 起）
 
 详细设计：[docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md](docs/superpowers/specs/2026-05-07-meta-ads-multi-account-design.md)
