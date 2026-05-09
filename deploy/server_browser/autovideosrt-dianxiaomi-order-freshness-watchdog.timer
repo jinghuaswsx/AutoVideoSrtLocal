@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AutoVideoSrt dianxiaomi order freshness watchdog every minute
+
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=60
+AccuracySec=5
+Persistent=true
+Unit=autovideosrt-dianxiaomi-order-freshness-watchdog.service
+
+[Install]
+WantedBy=timers.target

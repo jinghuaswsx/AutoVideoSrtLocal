@@ -1,0 +1,16 @@
+[Unit]
+Description=AutoVideoSrt dianxiaomi order freshness watchdog
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/dianxiaomi_order_freshness_watchdog.py
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=60

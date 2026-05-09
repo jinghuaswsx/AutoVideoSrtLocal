@@ -21,6 +21,8 @@ install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-dxm02-mk-vnc.service
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-dxm03-rjc-vnc.service" /etc/systemd/system/autovideosrt-dxm03-rjc-vnc.service
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-cdp-environment-watchdog.service" /etc/systemd/system/autovideosrt-cdp-environment-watchdog.service
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-cdp-environment-watchdog.timer" /etc/systemd/system/autovideosrt-cdp-environment-watchdog.timer
+install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-dianxiaomi-order-freshness-watchdog.service" /etc/systemd/system/autovideosrt-dianxiaomi-order-freshness-watchdog.service
+install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-dianxiaomi-order-freshness-watchdog.timer" /etc/systemd/system/autovideosrt-dianxiaomi-order-freshness-watchdog.timer
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-roi-realtime-sync.service" /etc/systemd/system/autovideosrt-roi-realtime-sync.service
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-meta-daily-final-sync.service" /etc/systemd/system/autovideosrt-meta-daily-final-sync.service
 install -m 644 "$APP_DIR/deploy/server_browser/autovideosrt-meta-daily-final-check.service" /etc/systemd/system/autovideosrt-meta-daily-final-check.service
@@ -33,4 +35,5 @@ systemctl daemon-reload
 systemctl disable --now autovideosrt-browser.service autovideosrt-mk-browser.service autovideosrt-rjc-vnc.service >/dev/null 2>&1 || true
 systemctl enable --now autovideosrt-dxm01-meta-vnc.service autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service
 systemctl enable --now autovideosrt-cdp-environment-watchdog.timer
-systemctl list-timers autovideosrt-cdp-environment-watchdog.timer --no-pager
+systemctl enable --now autovideosrt-dianxiaomi-order-freshness-watchdog.timer
+systemctl list-timers autovideosrt-cdp-environment-watchdog.timer autovideosrt-dianxiaomi-order-freshness-watchdog.timer --no-pager

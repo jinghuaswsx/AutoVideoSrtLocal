@@ -89,6 +89,14 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - 定时巡检 `analytics_data_quality_inspection` 已登记到 [appcore/scheduled_tasks.py](appcore/scheduled_tasks.py)；新增类似巡检必须同步登记。
 - 改这条链路至少运行：`pytest tests/test_order_analytics_data_quality.py tests/test_order_profit_routes.py tests/test_product_profit_routes.py tests/test_order_analytics_true_roas.py tests/test_data_quality_frontend_assets.py -q`。
 
+## 店小秘订单新鲜度看护（2026-05-09 起）
+
+- 设计：[docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md](docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md)。
+- 店小秘订单同步是 `roi_hourly_sync` 的子任务（`dianxiaomi_order_import`），父任务任何故障都会让 `dianxiaomi_order_lines` 静默不入库。`tools/dianxiaomi_order_freshness_watchdog.py` 每分钟读 `MAX(updated_at)`，超过 `--max-stale-minutes`（默认 120）就把 `scheduled_task_runs` 标 `failed` → 触发既有 `feishu_alerts.send_scheduled_task_failure` 飞书告警；`--cooldown-minutes`（默认 60）防止持续故障刷屏。
+- 任务定义已登记到 [appcore/scheduled_tasks.py](appcore/scheduled_tasks.py) 的 `dianxiaomi_order_freshness_watchdog`，systemd timer/service 在 [deploy/server_browser/](deploy/server_browser/) 同名文件；新增类似「水位看护」类任务参考它的实现，**必须**同时登记到这里。
+- watchdog 不读 `roi_hourly_sync_runs`、不依赖父任务 run 落盘，故意只看订单表水位——这样父任务整轮没跑或在锁等待中也能感知。
+- 改这条链路至少运行：`pytest tests/test_dianxiaomi_order_freshness_watchdog.py tests/test_appcore_scheduled_tasks.py -q`。
+
 ## 实时大盘店铺筛选（2026-05-09 起）
 
 - 设计：[docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md](docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md)，承接 [2026-05-02 实时大盘改版 spec](docs/superpowers/specs/2026-05-02-realtime-dashboard-redesign.md)。

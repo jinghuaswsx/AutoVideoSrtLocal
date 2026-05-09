@@ -192,6 +192,15 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 - **何时切 `xhr_api`**：CSV 导出弹窗连续 timeout（如 2026-05-08 newjoyloo_bak 600s timeout 事故）→ 在「广告账户」Tab 把对应账户切 `xhr_api`，下一轮 hourly cron 立刻恢复实时数据；导出弹窗修复后再切回 `csv_export`。**默认不要主动切**，因为 CSV 通道带的是 Meta 完整列模板（含购物转化价值 / ROAS - 购物等），`xhr_api` 通道的 `/insights` 字段集是 [`tools/roi_hourly_sync.py:META_INSIGHTS_FIELDS`](tools/roi_hourly_sync.py) 配置的子集（spend / impressions / clicks / actions / action_values），口径精简，扩展列要在 fields 里显式加。
 - 改这条链路至少运行 `pytest tests/test_roi_hourly_sync.py tests/test_roi_hourly_sync_meta_multi_account.py tests/test_meta_server_sync_tools.py tests/test_meta_ads_xhr_token.py tests/test_meta_ads_in_page_fetch.py tests/test_order_analytics_ads.py tests/test_product_profit_report.py tests/test_order_profit_aggregation.py tests/test_order_analytics_data_quality.py -q`。
 
+## 店小秘订单新鲜度看护（2026-05-09 起）
+
+详细设计：[docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md](docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md)。
+
+- 店小秘订单同步以子任务 `dianxiaomi_order_import` 跑在 `roi_hourly_sync` 内部（[appcore/scheduled_tasks.py](appcore/scheduled_tasks.py)）。父任务任何故障——CDP 锁 901s timeout（AUT-21）、CSV 导出阻塞、整轮 abort——都会让 `dianxiaomi_order_lines` 静默不入库；既有 `_dispatch_failure_alert` 只覆盖父任务最终 `failed` 落盘的情形。
+- 兜底任务 [tools/dianxiaomi_order_freshness_watchdog.py](tools/dianxiaomi_order_freshness_watchdog.py) 每分钟读 `MAX(updated_at)`，停摆超 `--max-stale-minutes`（默认 120）即把 `scheduled_task_runs` 标 `failed` → 复用 `feishu_alerts.send_scheduled_task_failure` 推送飞书；`--cooldown-minutes`（默认 60）防止持续故障刷屏。
+- watchdog 故意只看订单表水位、不读 `roi_hourly_sync_runs`：父任务整轮没跑或在锁等待中也能感知。任务在 `appcore/scheduled_tasks.py` 登记为 `dianxiaomi_order_freshness_watchdog`，systemd timer/service 在 [deploy/server_browser/](deploy/server_browser/) 同名文件，**必须**保留这条登记和文件命名一致性，新增类似「水位看护」类任务参考它的实现。
+- 改这条链路至少运行：`pytest tests/test_dianxiaomi_order_freshness_watchdog.py tests/test_appcore_scheduled_tasks.py -q`。
+
 ## 实时大盘店铺筛选（2026-05-09 起）
 
 详细设计：[docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md](docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md)，承接 [2026-05-02 实时大盘改版 spec](docs/superpowers/specs/2026-05-02-realtime-dashboard-redesign.md)。

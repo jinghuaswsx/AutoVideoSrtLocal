@@ -143,6 +143,22 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },
+    "dianxiaomi_order_freshness_watchdog": {
+        "code": "dianxiaomi_order_freshness_watchdog",
+        "name": "店小秘订单新鲜度看护",
+        "description": (
+            "每分钟读 dianxiaomi_order_lines 的 MAX(updated_at)；停摆超过阈值（默认 120 分钟）"
+            "时把本任务标 failed 触发飞书告警，cooldown 内不重复告警。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md"
+        ),
+        "schedule": "每 1 分钟",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-dianxiaomi-order-freshness-watchdog.timer",
+        "runner": "tools/dianxiaomi_order_freshness_watchdog.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
     "product_cover_backfill_tick": {
         "code": "product_cover_backfill_tick",
         "name": "商品组图回填",
