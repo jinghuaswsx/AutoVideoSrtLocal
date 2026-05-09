@@ -145,6 +145,8 @@ def _run_meta_ads_export(
         account.business_id,
         "--csv-prefix",
         account.csv_prefix,
+        "--column-preset",
+        account.column_preset,
         "--cdp-url",
         META_AD_EXPORT_CDP_URL,
     ]

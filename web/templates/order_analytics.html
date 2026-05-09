@@ -1574,6 +1574,21 @@
                     background: var(--bg-card); border-color: var(--border-strong);
                     color: var(--accent); }
   .oad-row-action:hover { background: var(--accent-subtle); border-color: var(--accent); color: var(--accent); }
+  .oa-warning-banner {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--warning-bg);
+    color: var(--warning-fg);
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+  }
+  .oa-fallback-badge {
+    color: var(--warning);
+    font-weight: 600;
+    cursor: help;
+    margin-left: 2px;
+  }
 </style>
 
 <div id="dashboardToolbar" class="oad-toolbar">
@@ -2664,6 +2679,7 @@
         </div>
         <button type="button" class="oad-btn-primary" data-ads-list-refresh="{{ level }}">刷新</button>
       </div>
+      <div class="oa-warning-banner" data-ads-list-quality="{{ level }}" hidden></div>
       <div class="oa-table-wrap">
         <div class="oa-table-scroll">
           <table class="oa-table" data-ads-list-table="{{ level }}">
@@ -2719,6 +2735,7 @@
         </div>
         <button type="button" class="oad-btn-primary" data-ads-detail-refresh="{{ level }}">刷新</button>
       </div>
+      <div class="oa-warning-banner" data-ads-detail-quality="{{ level }}" hidden></div>
       <div class="oa-table-wrap">
         <div class="oa-table-scroll">
           <table class="oa-table">
@@ -2775,12 +2792,13 @@
             <th>Account ID</th>
             <th>Business ID</th>
             <th>CSV 前缀</th>
+            <th title="Meta UI 内列模板 ID（账户内自建后复制 column_preset URL 参数）">列模板</th>
             <th>备注</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="metaAdAccountsBody">
-          <tr><td colspan="9" class="oad-loading">加载中...</td></tr>
+          <tr><td colspan="10" class="oad-loading">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -4344,7 +4362,7 @@
     var body = document.getElementById('metaAdAccountsBody');
     if (!body) return;
     if (!metaAdAccountsState.accounts.length) {
-      body.innerHTML = '<tr><td colspan="9" class="oad-empty">暂无广告账户配置</td></tr>';
+      body.innerHTML = '<tr><td colspan="10" class="oad-empty">暂无广告账户配置</td></tr>';
       return;
     }
     body.innerHTML = '';
@@ -4359,6 +4377,7 @@
         '<td><input class="maa-input maa-input-mono" data-maa-field="account_id" value="' + escapeHtml(account.account_id || '') + '" aria-label="Account ID"></td>' +
         '<td><input class="maa-input maa-input-mono" data-maa-field="business_id" value="' + escapeHtml(account.business_id || '') + '" aria-label="Business ID"></td>' +
         '<td><input class="maa-input maa-input-mono" data-maa-field="csv_prefix" value="' + escapeHtml(account.csv_prefix || '') + '" aria-label="CSV 前缀"></td>' +
+        '<td><input class="maa-input maa-input-mono" data-maa-field="column_preset" value="' + escapeHtml(account.column_preset || '') + '" aria-label="列模板 ID" placeholder="Meta UI 列模板 ID"></td>' +
         '<td><input class="maa-input" data-maa-field="note" value="' + escapeHtml(account.note || '') + '" aria-label="备注"></td>' +
         '<td><div class="maa-action-stack">' +
           '<button type="button" class="oad-btn-ghost" data-maa-sync>同步</button>' +
@@ -4385,6 +4404,7 @@
       account_id: '',
       business_id: '',
       csv_prefix: '',
+      column_preset: '',
       store_codes: [],
       enabled: true,
       note: '',
@@ -4406,6 +4426,7 @@
       account_id: value('account_id'),
       business_id: value('business_id'),
       csv_prefix: value('csv_prefix'),
+      column_preset: value('column_preset'),
       note: value('note'),
     };
   }
@@ -5799,21 +5820,54 @@
       });
   }
 
+  function adsFallbackBadge(source) {
+    if (source !== 'order_fallback') return '';
+    return ' <sup class="oa-fallback-badge"' +
+      ' title="Meta CSV 缺购买列；该数值按订单营收 × spend 占比兜底（spec: 2026-05-09-ads-purchase-value-order-fallback-design.md）">*</sup>';
+  }
+
+  function adsRenderDataQuality(level, dq, mode) {
+    var selector = mode === 'detail'
+      ? '[data-ads-detail-quality="' + level + '"]'
+      : '[data-ads-list-quality="' + level + '"]';
+    var bar = document.querySelector(selector);
+    if (!bar) return;
+    if (!dq || dq.status === 'ok') {
+      bar.hidden = true;
+      bar.textContent = '';
+      return;
+    }
+    if (dq.status === 'fallback_used') {
+      var pv = (dq.purchase_value || {});
+      bar.hidden = false;
+      bar.className = 'oa-warning-banner';
+      bar.textContent = '本表 ' + (pv.fallback_row_count || 0) +
+        ' 条「购买金额」按订单口径兜底（共 $' +
+        (pv.fallback_revenue_total_usd || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) +
+        '）；带 * 的单元格表示兜底值，已按 spend 占比分摊产品当期营收。';
+      return;
+    }
+    bar.hidden = true;
+    bar.textContent = '';
+  }
+
   function adsRenderList(level, payload) {
     var data = (payload && payload.data) || payload || {};
     var rows = data.rows || [];
     var body = document.querySelector('[data-ads-list-body="' + level + '"]');
     if (!body) return;
+    adsRenderDataQuality(level, data.data_quality);
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="7" class="oad-loading">该日期范围内暂无 ' + adsLevelLabels[level] + ' 数据。</td></tr>';
     } else {
       var html = '';
       rows.forEach(function(r) {
+        var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
         html += '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '">';
         html += '<td>' + escHtml(r.name || r.code || '—') + '</td>';
         html += '<td>' + escHtml(r.ad_account_name || r.ad_account_id || '—') + '</td>';
         html += '<td class="oa-table-num">' + adsFmtMoney(r.spend_usd) + '</td>';
-        html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + '</td>';
+        html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + fallbackBadge + '</td>';
         html += '<td class="oa-table-num">' + adsFmtRoas(r.roas_purchase) + '</td>';
         html += '<td class="oa-table-num">' + adsFmtInt(r.result_count) + '</td>';
         html += '<td class="oa-table-num">' + adsFmtInt(r.day_count) + '</td>';
@@ -5886,6 +5940,7 @@
   function adsRenderDetail(level, payload) {
     var data = (payload && payload.data) || payload || {};
     var rows = data.rows || [];
+    adsRenderDataQuality(level, data.data_quality, 'detail');
     var body = document.querySelector('[data-ads-detail-body="' + level + '"]');
     if (body) {
       if (!rows.length) {
@@ -5893,11 +5948,12 @@
       } else {
         var html = '';
         rows.forEach(function(r) {
+          var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
           html += '<tr>';
           html += '<td>' + escHtml(r.date || '') + (r.is_realtime ? '<span class="oa-rt-badge">实时</span>' : '') + '</td>';
           html += '<td class="oa-table-num">' + adsFmtMoney(r.spend_usd) + '</td>';
           html += '<td class="oa-table-num oa-budget-placeholder" title="未采集">—</td>';
-          html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + '</td>';
+          html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + fallbackBadge + '</td>';
           html += '<td class="oa-table-num">' + adsFmtRoas(r.roas_purchase) + '</td>';
           html += '<td class="oa-table-num">' + adsFmtInt(r.result_count) + '</td>';
           html += '<td class="oa-table-num">' + (r.cpc_usd != null ? adsFmtMoney(r.cpc_usd) : '—') + '</td>';

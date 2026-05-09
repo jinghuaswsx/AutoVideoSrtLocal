@@ -23,6 +23,12 @@ ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "1861285821213497")
 BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063")
 CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", DEFAULT_META_ADS_CDP_URL)
 DEFAULT_CSV_PREFIX = "newjoyloo"
+# 默认 column preset 沿用旧户 2110407576446225 在 Meta UI 里手工存的列模板（含购物
+# 转化价值 / ROAS - 购物 / 加入购物车次数 等）。新增账户时必须在该账户下另建
+# 同款 preset，并把 ID 配到 system_settings.meta_ad_accounts[*].column_preset，
+# 否则导出会落到一组裸列、缺购买相关字段。
+# Docs-anchor: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
+DEFAULT_COLUMN_PRESET = "1658418688523178"
 LEVELS = {
     "campaigns": ("campaigns", "campaigns"),
     "adsets": ("adsets", "adsets"),
@@ -36,12 +42,20 @@ def parse_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
-def build_url(level: str, day: date, *, account_id: str = ACCOUNT_ID, business_id: str = BUSINESS_ID) -> str:
+def build_url(
+    level: str,
+    day: date,
+    *,
+    account_id: str = ACCOUNT_ID,
+    business_id: str = BUSINESS_ID,
+    column_preset: str = DEFAULT_COLUMN_PRESET,
+) -> str:
     ds = day.isoformat()
+    preset = (column_preset or DEFAULT_COLUMN_PRESET).strip() or DEFAULT_COLUMN_PRESET
     return (
         f"https://adsmanager.facebook.com/adsmanager/manage/{level}?"
         f"act={account_id}&business_id={business_id}&global_scope_id={business_id}"
-        f"&attribution_windows=default&column_preset=1658418688523178"
+        f"&attribution_windows=default&column_preset={preset}"
         f"&date={ds}_{ds}&insights_date={ds}_{ds}&insights_selected_metrics=cpm"
     )
 
@@ -142,6 +156,7 @@ def export_one(
     account_id: str = ACCOUNT_ID,
     business_id: str = BUSINESS_ID,
     csv_prefix: str = DEFAULT_CSV_PREFIX,
+    column_preset: str = DEFAULT_COLUMN_PRESET,
 ) -> bool:
     target = out_dir / f"{csv_prefix}_{label}_{day.isoformat()}.csv"
     if target.exists() and target.stat().st_size > 100:
@@ -152,7 +167,13 @@ def export_one(
         try:
             print("OPEN", label, day.isoformat(), "attempt", attempt, flush=True)
             page.goto(
-                build_url(level, day, account_id=account_id, business_id=business_id),
+                build_url(
+                    level,
+                    day,
+                    account_id=account_id,
+                    business_id=business_id,
+                    column_preset=column_preset,
+                ),
                 wait_until="domcontentloaded",
                 timeout=60000,
             )
@@ -189,6 +210,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--account-id", default=ACCOUNT_ID)
     parser.add_argument("--business-id", default=BUSINESS_ID)
     parser.add_argument("--csv-prefix", default=DEFAULT_CSV_PREFIX)
+    parser.add_argument(
+        "--column-preset",
+        default=DEFAULT_COLUMN_PRESET,
+        help=(
+            "Meta Ads Manager 列模板 ID（账户内 UI 手工创建后复制 column_preset URL 参数）。"
+            "缺省走旧户预设；新增账户时必须为该账户独立配置以保证 CSV 含购买列。"
+        ),
+    )
     parser.add_argument("--cdp-url", default=CDP_URL)
     parser.add_argument(
         "--levels",
@@ -247,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
                             account_id=args.account_id,
                             business_id=args.business_id,
                             csv_prefix=args.csv_prefix,
+                            column_preset=args.column_preset,
                         )
                         if result == AUTH_FAILED:
                             failures.append((day.isoformat(), f"{label}:auth"))

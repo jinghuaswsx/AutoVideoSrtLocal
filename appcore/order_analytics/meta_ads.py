@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from ._constants import (
@@ -541,6 +541,258 @@ def get_meta_ad_summary(
     }
 
 
+# ── 购买金额按订单口径兜底（spec: 2026-05-09-ads-purchase-value-order-fallback-design.md） ──
+
+PURCHASE_SOURCE_META = "meta"
+PURCHASE_SOURCE_ORDER_FALLBACK = "order_fallback"
+
+
+def _fetch_product_revenue_for_window(
+    *,
+    store_codes: tuple[str, ...],
+    product_codes: list[str],
+    window_start: "datetime",
+    window_end: "datetime",
+) -> dict[str, float]:
+    """Single-SQL revenue lookup for (site_code IN store_codes, product_code IN product_codes)
+    over [window_start, window_end). Returns {product_code_lower: revenue_usd}.
+    """
+    if not store_codes or not product_codes:
+        return {}
+    site_placeholders = ",".join(["%s"] * len(store_codes))
+    product_placeholders = ",".join(["%s"] * len(product_codes))
+    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    rows = query(
+        f"SELECT LOWER(product_code) AS product_code_lc, "
+        f"SUM(COALESCE(line_amount, 0)) AS revenue "
+        f"FROM dianxiaomi_order_lines "
+        f"WHERE site_code IN ({site_placeholders}) "
+        f"AND LOWER(product_code) IN ({product_placeholders}) "
+        f"AND {order_time_expr} >= %s AND {order_time_expr} < %s "
+        f"GROUP BY LOWER(product_code)",
+        tuple(store_codes)
+        + tuple(p.lower() for p in product_codes)
+        + (window_start, window_end),
+    ) or []
+    return {
+        (row.get("product_code_lc") or "").strip().lower(): float(row.get("revenue") or 0)
+        for row in rows
+    }
+
+
+def _fetch_per_account_product_totals(
+    *,
+    table: str,
+    start_date: date,
+    end_date: date,
+) -> list[dict]:
+    """Return per-(ad_account_id, matched_product_code) spend / purchase totals for the
+    date range. Used by the fallback to identify broken groups AND to compute pool
+    aggregates across accounts that share a store.
+    """
+    rows = query(
+        f"SELECT ad_account_id, LOWER(matched_product_code) AS product_code, "
+        f"SUM(spend_usd) AS group_spend, SUM(purchase_value_usd) AS group_purchase "
+        f"FROM {table} "
+        f"WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        f"AND matched_product_code IS NOT NULL AND matched_product_code <> '' "
+        f"GROUP BY ad_account_id, LOWER(matched_product_code)",
+        (start_date, end_date),
+    ) or []
+    out = []
+    for row in rows:
+        account_id = str(row.get("ad_account_id") or "").strip().removeprefix("act_")
+        product = (row.get("product_code") or "").strip().lower()
+        if not account_id or not product:
+            continue
+        out.append({
+            "account_id": account_id,
+            "product_code": product,
+            "group_spend": float(row.get("group_spend") or 0),
+            "group_purchase": float(row.get("group_purchase") or 0),
+        })
+    return out
+
+
+def fill_purchase_value_from_orders(
+    rows: list[dict],
+    *,
+    level: str,
+    start_date: date,
+    end_date: date,
+    accounts_loader=None,
+) -> dict:
+    """对 ``meta_ad_daily_<level>_metrics`` 中 ``(ad_account_id, matched_product_code)`` 整组
+    满足 ``SUM(purchase_value_usd) == 0 & SUM(spend_usd) > 0`` 的视图行，按订单口径兜底回填
+    ``purchase_value_usd``。就地修改 ``rows``，返回兜底统计：
+
+        {"fallback_row_count": int, "fallback_revenue_total_usd": float}
+
+    每行最终都带 ``purchase_value_source = "meta" | "order_fallback"``，命中兜底的行
+    ``purchase_value_usd`` 与 ``roas_purchase``（如果原 row 上有）一并重算。
+
+    **跨账户共享 store 时按 pool 分摊**：当多个广告账户绑定同一个 store_code（例如 newjoy
+    店同时有 newjoyloo_old 与 newjoyloo_bak），订单营收是这些账户共享的；本算法先把
+    ``order_revenue - 同 pool 其它账户已被 Meta 报告的购买金额`` 作为「剩余可分摊额」，
+    再按 broken 账户在 pool 内的 spend 占比拿走相应份额。这样可避免单账户拿走 100%
+    revenue 而忽略已 Meta 上报的部分。
+
+    Docs-anchor: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
+    """
+    for row in rows:
+        row.setdefault("purchase_value_source", PURCHASE_SOURCE_META)
+
+    cfg = _LEVEL_CONFIG.get((level or "").strip().lower())
+    if not cfg:
+        return {"fallback_row_count": 0, "fallback_revenue_total_usd": 0.0}
+
+    per_account_totals = _fetch_per_account_product_totals(
+        table=cfg["table"],
+        start_date=start_date,
+        end_date=end_date,
+    )
+    # 索引 1：`(account_id, product) -> {group_spend, group_purchase}`。
+    totals_by_pair: dict[tuple[str, str], dict] = {}
+    for entry in per_account_totals:
+        totals_by_pair[(entry["account_id"], entry["product_code"])] = entry
+
+    # 识别 broken groups：spend>0 且 purchase==0 → 进入兜底候选。
+    broken_groups: dict[tuple[str, str], float] = {}
+    for key, entry in totals_by_pair.items():
+        if entry["group_spend"] > 0 and entry["group_purchase"] == 0:
+            broken_groups[key] = entry["group_spend"]
+
+    if not broken_groups:
+        return {"fallback_row_count": 0, "fallback_revenue_total_usd": 0.0}
+
+    if accounts_loader is None:
+        from appcore import meta_ad_accounts
+
+        accounts_loader = meta_ad_accounts.get_all_accounts
+    accounts = accounts_loader() or []
+    account_store_codes: dict[str, tuple[str, ...]] = {}
+    store_to_accounts: dict[str, list[str]] = {}
+    for account in accounts:
+        account_id = str(account.account_id).strip().removeprefix("act_")
+        store_codes = tuple(account.store_codes)
+        account_store_codes[account_id] = store_codes
+        for store in store_codes:
+            store_to_accounts.setdefault(store, []).append(account_id)
+
+    window_start, _ = compute_meta_business_window_bj(start_date)
+    _, window_end = compute_meta_business_window_bj(end_date)
+
+    # 索引 2：`(store_code, product) -> order_revenue_usd`（按 store 拆开，因为不同 store
+    # 的 dianxiaomi_order_lines 营收池是独立的）。
+    needed_store_products: dict[str, set[str]] = {}
+    for (account_id, product) in broken_groups.keys():
+        for store in account_store_codes.get(account_id, ()):
+            needed_store_products.setdefault(store, set()).add(product)
+
+    revenue_by_store_product: dict[tuple[str, str], float] = {}
+    for store, products in needed_store_products.items():
+        rev_map = _fetch_product_revenue_for_window(
+            store_codes=(store,),
+            product_codes=list(products),
+            window_start=window_start,
+            window_end=window_end,
+        )
+        for product, revenue in rev_map.items():
+            revenue_by_store_product[(store, product)] = revenue
+
+    # 对每个 broken pair 计算「有效兜底总额」 derived_total =
+    # 该账户对应的每个 store 各自的 (剩余 revenue × 该账户在 pool 中的 spend 占比)。
+    derived_total_by_pair: dict[tuple[str, str], float] = {}
+    pool_spend_by_pair: dict[tuple[str, str], float] = {}
+    for (account_id, product) in broken_groups.keys():
+        broken_spend = broken_groups[(account_id, product)]
+        derived_for_pair = 0.0
+        # 跨 store 累加（多 store 账户少见，但要兼容）。
+        stores_for_account = account_store_codes.get(account_id, ())
+        # 单 store 的简单情形：直接套公式
+        for store in stores_for_account:
+            pool_account_ids = store_to_accounts.get(store, [])
+            pool_spend = sum(
+                totals_by_pair.get((acc, product), {}).get("group_spend", 0.0)
+                for acc in pool_account_ids
+            )
+            pool_meta_purchase = sum(
+                totals_by_pair.get((acc, product), {}).get("group_purchase", 0.0)
+                for acc in pool_account_ids
+            )
+            if pool_spend <= 0:
+                continue
+            order_revenue = revenue_by_store_product.get((store, product), 0.0)
+            remaining_revenue = max(0.0, order_revenue - pool_meta_purchase)
+            if remaining_revenue <= 0:
+                continue
+            # 单 store 时账户份额 = 该账户 spend / pool_spend；
+            # 多 store 时按账户在每个 store 的 spend 占比累加（这里近似用账户总 spend / pool_spend）。
+            account_share = broken_spend / pool_spend
+            derived_for_pair += remaining_revenue * account_share
+        derived_total_by_pair[(account_id, product)] = derived_for_pair
+        pool_spend_by_pair[(account_id, product)] = broken_spend  # 用作下面单行 spend 占比分母
+
+    fallback_row_count = 0
+    fallback_revenue_total_usd = 0.0
+
+    for row in rows:
+        product = (row.get("matched_product_code") or "").strip().lower()
+        account_id = str(row.get("ad_account_id") or "").strip().removeprefix("act_")
+        if not product or not account_id:
+            continue
+        key = (account_id, product)
+        if key not in broken_groups:
+            continue
+        derived_total = derived_total_by_pair.get(key, 0.0)
+        if derived_total <= 0:
+            continue
+        broken_account_total_spend = pool_spend_by_pair.get(key, 0.0)
+        if broken_account_total_spend <= 0:
+            continue
+        spend_val = float(row.get("spend_usd") or 0)
+        if spend_val <= 0:
+            continue
+        # 把 derived_total 按当行 spend / broken_account_total_spend 拆分到当前 row。
+        derived = round(derived_total * (spend_val / broken_account_total_spend), 4)
+        row["purchase_value_usd"] = _money(derived)
+        row["purchase_value_source"] = PURCHASE_SOURCE_ORDER_FALLBACK
+        if "roas_purchase" in row:
+            row["roas_purchase"] = _roas(derived, spend_val)
+        fallback_row_count += 1
+        fallback_revenue_total_usd += derived
+
+    return {
+        "fallback_row_count": fallback_row_count,
+        "fallback_revenue_total_usd": round(fallback_revenue_total_usd, 4),
+    }
+
+
+def _ads_purchase_data_quality(fallback_stats: dict) -> dict:
+    """Build a small data_quality block describing whether order-fallback was applied to
+    Meta-purchase numbers in this response. Front-end shows a banner when status is
+    ``fallback_used``.
+    """
+    fallback_row_count = int(fallback_stats.get("fallback_row_count") or 0)
+    fallback_revenue_total_usd = float(
+        fallback_stats.get("fallback_revenue_total_usd") or 0
+    )
+    if fallback_row_count <= 0:
+        return {"status": "ok", "purchase_value": {"fallback_row_count": 0}}
+    return {
+        "status": "fallback_used",
+        "purchase_value": {
+            "fallback_row_count": fallback_row_count,
+            "fallback_revenue_total_usd": _money(fallback_revenue_total_usd),
+            "note": (
+                "Meta CSV 缺购买列（账户级 column_preset 未配置），"
+                "购买金额按 dianxiaomi_order_lines 站内同产品营收 × 该行 spend 占比兜底；"
+                "源 column_preset 修复后会自动回到 Meta 真值。"
+            ),
+        },
+    }
+
+
 # ── 三层级（Campaign / Ad Set / Ad）查询：list / search / detail ──────
 # Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md
 
@@ -737,9 +989,16 @@ def get_ads_level_list(
     code_col = cfg["code_col"]
     name_col = cfg["name_col"]
 
+    # 按 (code, ad_account_id) 分组：同一个 normalized_*_code 在多个广告户复用时（例：
+    # Omurio 与 newjoyloo_old 同名 ad），各自单独成行，避免 MAX(ad_account_id) 把 Omurio 的消耗
+    # 错误地挂到旧户名下，导致按订单兜底时找不到正确的广告账户对应的 store_codes。
+    # Spec: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
     total_row = query_one(
-        f"SELECT COUNT(DISTINCT {code_col}) AS total FROM {table} "
-        "WHERE meta_business_date >= %s AND meta_business_date <= %s",
+        f"SELECT COUNT(*) AS total FROM ("
+        f"SELECT 1 FROM {table} "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        f"GROUP BY {code_col}, ad_account_id"
+        ") AS t",
         (start, end),
     )
     total = int((total_row or {}).get("total") or 0)
@@ -747,14 +1006,15 @@ def get_ads_level_list(
     offset = (page - 1) * page_size
     rows = query(
         f"SELECT {code_col} AS code, MAX({name_col}) AS name, "
-        "MAX(ad_account_id) AS ad_account_id, MAX(ad_account_name) AS ad_account_name, "
+        "ad_account_id, MAX(ad_account_name) AS ad_account_name, "
+        "MAX(matched_product_code) AS matched_product_code, "
         "SUM(spend_usd) AS spend_usd, SUM(purchase_value_usd) AS purchase_value_usd, "
         "SUM(result_count) AS result_count, "
         "COUNT(DISTINCT meta_business_date) AS day_count, "
         "(SUM(purchase_value_usd) / NULLIF(SUM(spend_usd), 0)) AS roas_purchase "
         f"FROM {table} "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
-        f"GROUP BY {code_col} "
+        f"GROUP BY {code_col}, ad_account_id "
         f"ORDER BY {sort_expr} {sort_dir_norm} "
         "LIMIT %s OFFSET %s",
         (start, end, page_size, offset),
@@ -769,12 +1029,20 @@ def get_ads_level_list(
             "name": row.get("name"),
             "ad_account_id": row.get("ad_account_id"),
             "ad_account_name": row.get("ad_account_name"),
+            "matched_product_code": row.get("matched_product_code"),
             "spend_usd": _money(spend),
             "purchase_value_usd": _money(purchase),
             "roas_purchase": _roas(purchase, spend),
             "result_count": int(row.get("result_count") or 0),
             "day_count": int(row.get("day_count") or 0),
         })
+
+    fallback_stats = _facade().fill_purchase_value_from_orders(
+        out,
+        level=level,
+        start_date=start,
+        end_date=end,
+    )
 
     return {
         "level": level,
@@ -784,6 +1052,7 @@ def get_ads_level_list(
         "page_size": page_size,
         "total": total,
         "has_more": (page * page_size) < total,
+        "data_quality": _ads_purchase_data_quality(fallback_stats),
     }
 
 
@@ -882,7 +1151,7 @@ def get_ads_level_detail(
 
     raw_rows = query(
         f"SELECT meta_business_date, {name_col} AS name, "
-        "ad_account_id, ad_account_name, "
+        "ad_account_id, ad_account_name, matched_product_code, "
         "spend_usd, purchase_value_usd, result_count, raw_json "
         f"FROM {table} "
         f"WHERE {code_col} = %s "
@@ -900,6 +1169,7 @@ def get_ads_level_detail(
     name_seen = None
     account_id_seen = None
     account_name_seen = None
+    matched_product_seen = None
     for row in raw_rows or []:
         d = row.get("meta_business_date")
         if not d:
@@ -908,6 +1178,7 @@ def get_ads_level_detail(
         name_seen = name_seen or row.get("name")
         account_id_seen = account_id_seen or row.get("ad_account_id")
         account_name_seen = account_name_seen or row.get("ad_account_name")
+        matched_product_seen = matched_product_seen or row.get("matched_product_code")
 
     if realtime_row and not name_seen:
         name_seen = realtime_row.get("campaign_name")
@@ -963,6 +1234,8 @@ def get_ads_level_detail(
         out_rows.append({
             "date": d.isoformat(),
             "is_realtime": False,
+            "ad_account_id": account_id_seen,
+            "matched_product_code": matched_product_seen,
             "spend_usd": _money(spend),
             "purchase_value_usd": _money(purchase),
             "roas_purchase": _roas(purchase, spend),
@@ -976,6 +1249,16 @@ def get_ads_level_detail(
             "initiate_checkout_count": int(merged_raw["initiate_checkout_count"]) if merged_raw["initiate_checkout_count"] is not None else None,
             "video_avg_play_time": _money(merged_raw["video_avg_play_time"]) if merged_raw["video_avg_play_time"] is not None else None,
         })
+
+    # 兜底：仅对历史日（非 realtime）应用，因为实时表 ad/adset 级没有数据，
+    # 且 realtime row 直接来自 meta_ad_realtime_daily_campaign_metrics，不归本兜底覆盖。
+    fallback_targets = [r for r in out_rows if not r.get("is_realtime")]
+    fallback_stats = _facade().fill_purchase_value_from_orders(
+        fallback_targets,
+        level=level,
+        start_date=start,
+        end_date=end,
+    )
 
     total_spend = sum(r.get("spend_usd") or 0 for r in out_rows)
     total_purchase = sum(r.get("purchase_value_usd") or 0 for r in out_rows)
@@ -997,4 +1280,5 @@ def get_ads_level_detail(
             "day_count": len(out_rows),
         },
         "supports_realtime": supports_realtime,
+        "data_quality": _ads_purchase_data_quality(fallback_stats),
     }

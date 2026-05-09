@@ -41,7 +41,13 @@ def stub_meta_run_lifecycle(monkeypatch):
     return started, finished
 
 
-def _account(code: str, account_id: str, *, enabled: bool = True) -> MetaAdAccount:
+def _account(
+    code: str,
+    account_id: str,
+    *,
+    enabled: bool = True,
+    column_preset: str | None = None,
+) -> MetaAdAccount:
     return MetaAdAccount(
         code=code,
         account_id=account_id,
@@ -50,6 +56,7 @@ def _account(code: str, account_id: str, *, enabled: bool = True) -> MetaAdAccou
         store_codes=(code.lower(),),
         enabled=enabled,
         label=code,
+        column_preset=column_preset or "1658418688523178",
     )
 
 
@@ -139,6 +146,69 @@ def test_meta_ad_accounts_seed_switches_newjoyloo_to_new_account_and_keeps_old_d
     assert f'"account_id":"{NEWJOYLOO_OLD_ACCOUNT_ID}"' in seed
     assert '"enabled":true,"note":"2026-05-07 旧户被封后启用的新广告户"' in seed
     assert '"enabled":false,"note":"2026-05-07 被 Meta 封禁，保留历史广告费分摊"' in seed
+
+
+def test_get_all_accounts_uses_account_specific_column_preset_when_provided(monkeypatch):
+    """每个账户必须能携带自己的 Meta 列模板 ID（spec: 2026-05-09-ads-purchase-value-order-fallback）。"""
+    payload = json.dumps([
+        {
+            "code": "Omurio",
+            "account_id": "111",
+            "business_id": "222",
+            "csv_prefix": "Omurio",
+            "store_codes": ["omurio"],
+            "enabled": True,
+            "column_preset": "omurio_preset_abc",
+        },
+        {
+            "code": "newjoyloo",
+            "account_id": "333",
+            "business_id": "444",
+            "csv_prefix": "newjoyloo",
+            "store_codes": ["newjoy"],
+            "enabled": True,
+            # 不写 column_preset，回退到默认旧户模板
+        },
+    ])
+    monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
+
+    accounts = meta_ad_accounts.get_all_accounts()
+    by_code = {a.code: a for a in accounts}
+    assert by_code["Omurio"].column_preset == "omurio_preset_abc"
+    # 默认值兼容历史配置
+    assert by_code["newjoyloo"].column_preset == meta_ad_accounts.LEGACY_COLUMN_PRESET == "1658418688523178"
+
+
+def test_get_all_accounts_falls_back_to_legacy_preset_when_blank(monkeypatch):
+    payload = json.dumps([
+        {
+            "code": "x",
+            "account_id": "1",
+            "business_id": "2",
+            "csv_prefix": "x",
+            "store_codes": ["newjoy"],
+            "enabled": True,
+            "column_preset": "   ",  # 空白等价于不配置
+        },
+    ])
+    monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
+    accounts = meta_ad_accounts.get_all_accounts()
+    assert accounts[0].column_preset == "1658418688523178"
+
+
+def test_meta_ad_account_to_dict_round_trips_column_preset():
+    account = MetaAdAccount(
+        code="x",
+        account_id="1",
+        business_id="2",
+        csv_prefix="x",
+        store_codes=("newjoy",),
+        enabled=True,
+        label="X",
+        column_preset="custom_preset",
+    )
+    d = account.to_dict()
+    assert d["column_preset"] == "custom_preset"
 
 
 def test_get_all_accounts_drops_invalid_and_duplicate_entries(monkeypatch):
@@ -307,7 +377,7 @@ def test_run_meta_ads_manager_export_uses_account_csv_prefix_and_subdir(monkeypa
 
     monkeypatch.setattr(roi_hourly_sync.subprocess, "run", fake_subprocess_run)
 
-    account = _account("Omurio", "1253003326160754")
+    account = _account("Omurio", "1253003326160754", column_preset="omurio_preset_xyz")
     report = roi_hourly_sync._run_meta_ads_manager_export(
         date(2026, 5, 7),
         datetime(2026, 5, 7, 12, 20),
@@ -318,6 +388,8 @@ def test_run_meta_ads_manager_export_uses_account_csv_prefix_and_subdir(monkeypa
     assert captured["cmd"][captured["cmd"].index("--account-id") + 1] == "1253003326160754"
     assert "--csv-prefix" in captured["cmd"]
     assert captured["cmd"][captured["cmd"].index("--csv-prefix") + 1] == "Omurio"
+    assert "--column-preset" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("--column-preset") + 1] == "omurio_preset_xyz"
     # 导出目录按账户分子目录隔离，避免不同账户互相覆盖。
     assert report["export_dir"].endswith("/Omurio")
     assert report["campaigns_path"].endswith("Omurio_campaigns_2026-05-07.csv")

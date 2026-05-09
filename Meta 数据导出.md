@@ -86,7 +86,7 @@ ORDER BY report_date;
 - 广告系列 URL 层级：`/adsmanager/manage/campaigns`
 - 广告素材 URL 层级：`/adsmanager/manage/ads`
 - 日期参数：`date=YYYY-MM-DD_YYYY-MM-DD`
-- 列配置：`column_preset=1658418688523178`
+- 列配置：`column_preset=1658418688523178`（**仅旧户 2110407576446225 可用**；新增账户时必须在该账户 Meta Ads Manager UI 内自建同款 preset，复制 ID 到 `system_settings.meta_ad_accounts[*].column_preset`，详见 `docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md`）
 
 建议每个日期窗口至少 60 秒，每 7 天额外休息 3 到 4 分钟。更保守可以把 `--min-day-seconds` 改成 `300`。
 

@@ -36,6 +36,9 @@ ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "1861285821213497").str
 BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063").strip()
 CSV_PREFIX = os.environ.get("META_AD_EXPORT_CSV_PREFIX", "newjoyloo").strip() or "newjoyloo"
 ACCOUNT_NAME = os.environ.get("META_AD_EXPORT_ACCOUNT_NAME", "Newjoyloo").strip() or "Newjoyloo"
+# 该值必须与对应账户 Meta UI 内手工存的列模板一致，否则导出 CSV 会缺购买相关列。
+# Docs-anchor: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
+COLUMN_PRESET = os.environ.get("META_AD_EXPORT_COLUMN_PRESET", "1658418688523178").strip() or "1658418688523178"
 SERVER_HOST = "172.30.254.14"
 SERVER_USER = "root"
 SERVER_APP_DIR = "/opt/autovideosrt"
@@ -72,7 +75,7 @@ def _ads_manager_url(day) -> str:
     return (
         f"https://adsmanager.facebook.com/adsmanager/manage/campaigns?"
         f"act={ACCOUNT_ID}&business_id={BUSINESS_ID}&global_scope_id={BUSINESS_ID}"
-        f"&attribution_windows=default&column_preset=1658418688523178"
+        f"&attribution_windows=default&column_preset={COLUMN_PRESET}"
         f"&date={ds}_{ds}&insights_date={ds}_{ds}&insights_selected_metrics=cpm"
     )
 

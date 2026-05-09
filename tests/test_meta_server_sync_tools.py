@@ -19,6 +19,65 @@ def test_meta_daily_final_business_date_uses_16_bj_cutover():
     )
 
 
+def test_run_meta_ads_export_passes_per_account_column_preset(monkeypatch, tmp_path):
+    """spec: 2026-05-09-ads-purchase-value-order-fallback — 列模板按账户传递。"""
+    from tools import meta_daily_final_sync
+
+    captured = {}
+
+    class _Completed:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _Completed()
+
+    monkeypatch.setattr(meta_daily_final_sync.subprocess, "run", fake_run)
+    account = _final_account("Omurio", "1253003326160754", column_preset="omurio_preset_xyz")
+    report = meta_daily_final_sync._run_meta_ads_export(date(2026, 5, 7), tmp_path, account)
+    cmd = captured["cmd"]
+    assert "--column-preset" in cmd
+    assert cmd[cmd.index("--column-preset") + 1] == "omurio_preset_xyz"
+    # 默认账户回落到旧户预设。
+    fallback_account = _final_account("newjoyloo", "1861285821213497")
+    meta_daily_final_sync._run_meta_ads_export(date(2026, 5, 7), tmp_path, fallback_account)
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--column-preset") + 1] == "1658418688523178"
+
+
+def test_run_meta_ads_backfill_build_url_uses_per_account_column_preset():
+    """build_url 必须接受调用方传入的 column_preset 而不是硬编码。"""
+    from datetime import date as _date
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_test_backfill_module",
+        Path(__file__).resolve().parents[1] / "scripts" / "run_meta_ads_backfill_range.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    url = module.build_url(
+        "campaigns",
+        _date(2026, 5, 7),
+        account_id="111",
+        business_id="222",
+        column_preset="custom_preset_999",
+    )
+    assert "column_preset=custom_preset_999" in url
+    # 缺省回落
+    url_default = module.build_url(
+        "campaigns",
+        _date(2026, 5, 7),
+        account_id="111",
+        business_id="222",
+    )
+    assert "column_preset=1658418688523178" in url_default
+
+
 def test_roi_meta_realtime_channel_aliases():
     from tools import roi_hourly_sync
 
@@ -83,7 +142,7 @@ def test_import_meta_realtime_export_passes_account_context(monkeypatch, tmp_pat
     assert '"status": "success"' in capsys.readouterr().out
 
 
-def _final_account(code: str, account_id: str):
+def _final_account(code: str, account_id: str, *, column_preset: str = "1658418688523178"):
     return SimpleNamespace(
         code=code,
         account_id=account_id,
@@ -91,6 +150,7 @@ def _final_account(code: str, account_id: str):
         csv_prefix=code,
         label=code,
         store_codes=(code.lower(),),
+        column_preset=column_preset,
     )
 
 

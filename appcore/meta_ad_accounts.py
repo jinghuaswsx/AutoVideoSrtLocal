@@ -19,6 +19,11 @@ DEFAULT_NEWJOYLOO_ACCOUNT_ID = "1861285821213497"
 LEGACY_NEWJOYLOO_ACCOUNT_ID = "2110407576446225"
 DEFAULT_NEWJOYLOO_BUSINESS_ID = "476723373113063"
 
+# 旧户 2110407576446225 的 column preset（含购物转化价值 / ROAS - 购物 等完整列）。
+# 该 preset 仅在旧户账号下可见，新账户没有这条 preset 时 Meta 会回退到一组裸列。
+# 详细背景见 docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
+LEGACY_COLUMN_PRESET = "1658418688523178"
+
 
 @dataclass(frozen=True)
 class MetaAdAccount:
@@ -30,6 +35,7 @@ class MetaAdAccount:
     enabled: bool
     label: str = ""
     note: str = ""
+    column_preset: str = LEGACY_COLUMN_PRESET
 
     def to_dict(self) -> dict:
         return {
@@ -41,6 +47,7 @@ class MetaAdAccount:
             "store_codes": list(self.store_codes),
             "enabled": self.enabled,
             "note": self.note,
+            "column_preset": self.column_preset,
         }
 
 
@@ -82,6 +89,7 @@ def _coerce_account(raw: dict) -> MetaAdAccount | None:
     if not code or not account_id or not business_id or not csv_prefix or not store_codes:
         log.warning("meta_ad_accounts: skipping invalid entry %r", raw)
         return None
+    column_preset = str(raw.get("column_preset") or "").strip() or LEGACY_COLUMN_PRESET
     return MetaAdAccount(
         code=code,
         account_id=account_id,
@@ -91,6 +99,7 @@ def _coerce_account(raw: dict) -> MetaAdAccount | None:
         enabled=bool(raw.get("enabled", True)),
         label=str(raw.get("label") or "").strip(),
         note=str(raw.get("note") or "").strip(),
+        column_preset=column_preset,
     )
 
 

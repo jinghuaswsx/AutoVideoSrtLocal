@@ -915,18 +915,22 @@ def test_get_ads_level_list_rejects_invalid_level():
 
 
 def test_get_ads_level_list_aggregates_per_code(monkeypatch):
-    captured = {}
+    captured: list[dict] = []
 
     def fake_query_one(sql, args=()):
         return {"total": 2}
 
     def fake_query(sql, args=()):
-        captured["sql"] = sql
-        captured["args"] = args
+        captured.append({"sql": sql, "args": args})
+        # broken-groups probe (spec 2026-05-09) returns nothing — old-account rows
+        # have non-zero purchase, so no fallback is triggered.
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return []
         return [
             {
                 "code": "abc-rjc", "name": "Glow Set",
                 "ad_account_id": "1234", "ad_account_name": "newjoyloo",
+                "matched_product_code": "abc-rjc",
                 "spend_usd": 1000.0, "purchase_value_usd": 2000.0,
                 "result_count": 50, "day_count": 7,
                 "roas_purchase": 2.0,
@@ -941,9 +945,14 @@ def test_get_ads_level_list_aggregates_per_code(monkeypatch):
     assert result["period"]["end_date"] == "2026-04-14"
     assert result["rows"][0]["code"] == "abc-rjc"
     assert result["rows"][0]["roas_purchase"] == 2.0
+    assert result["rows"][0]["purchase_value_source"] == "meta"
     assert result["total"] == 2
-    assert "FROM meta_ad_daily_campaign_metrics" in captured["sql"]
-    assert "GROUP BY normalized_campaign_code" in captured["sql"]
+    main_sql = next(
+        c["sql"] for c in captured if "GROUP BY normalized_campaign_code, ad_account_id" in c["sql"]
+    )
+    assert "FROM meta_ad_daily_campaign_metrics" in main_sql
+    # Spec 2026-05-09: 没有兜底命中 → status 仍为 ok。
+    assert result["data_quality"]["status"] == "ok"
 
 
 def test_search_ads_by_level_rejects_empty_q():
@@ -1125,6 +1134,449 @@ def test_parse_raw_json_field_passthrough_for_flat_dict():
     flat = {"link_clicks": 99}
     parsed = oa.meta_ads._parse_raw_json_field(flat)
     assert parsed == flat
+
+
+# ── 购买金额按订单口径兜底（spec: 2026-05-09-ads-purchase-value-order-fallback-design.md） ──
+
+class _FakeAccount:
+    def __init__(self, account_id: str, store_codes: tuple[str, ...]):
+        self.account_id = account_id
+        self.store_codes = store_codes
+
+
+def _capture_calls(handlers):
+    """Build a fake `query` that dispatches based on SQL substring keys; records calls."""
+    calls = []
+
+    def fake_query(sql, args=()):
+        calls.append({"sql": sql, "args": args})
+        for needle, response in handlers.items():
+            if needle in sql:
+                if callable(response):
+                    return response(sql, args)
+                return response
+        return []
+
+    return fake_query, calls
+
+
+def test_fill_purchase_value_from_orders_no_broken_groups_returns_zero(monkeypatch):
+    rows = [{
+        "ad_account_id": "old_account",
+        "matched_product_code": "abc-rjc",
+        "spend_usd": 1000.0,
+        "purchase_value_usd": 1500.0,
+        "roas_purchase": 1.5,
+    }]
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return []  # no broken groups
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    stats = oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [],
+    )
+    assert stats["fallback_row_count"] == 0
+    assert rows[0]["purchase_value_usd"] == 1500.0
+    assert rows[0]["purchase_value_source"] == "meta"
+
+
+def test_fill_purchase_value_from_orders_allocates_revenue_proportional_to_spend(monkeypatch):
+    """Omurio (account 1253...) 一共 2 条 ad，全部 purchase=0；订单表里 product 当期营收 1000，
+    应当按 spend 比例分摊：spend 600 → 600；spend 400 → 400。"""
+    rows = [
+        {
+            "code": "ad-a",
+            "ad_account_id": "1253003326160754",
+            "matched_product_code": "fully-automatic-water-blaster",
+            "spend_usd": 600.0,
+            "purchase_value_usd": 0.0,
+            "roas_purchase": 0.0,
+        },
+        {
+            "code": "ad-b",
+            "ad_account_id": "1253003326160754",
+            "matched_product_code": "fully-automatic-water-blaster",
+            "spend_usd": 400.0,
+            "purchase_value_usd": 0.0,
+            "roas_purchase": 0.0,
+        },
+    ]
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return [{
+                "ad_account_id": "1253003326160754",
+                "product_code": "fully-automatic-water-blaster",
+                "group_spend": 1000.0,
+                "group_purchase": 0.0,
+            }]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return [{
+                "product_code_lc": "fully-automatic-water-blaster",
+                "revenue": 1000.0,
+            }]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    stats = oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [_FakeAccount("1253003326160754", ("omurio",))],
+    )
+    assert stats["fallback_row_count"] == 2
+    assert stats["fallback_revenue_total_usd"] == 1000.0
+    assert rows[0]["purchase_value_usd"] == 600.0
+    assert rows[0]["roas_purchase"] == 1.0  # 600 / 600
+    assert rows[0]["purchase_value_source"] == "order_fallback"
+    assert rows[1]["purchase_value_usd"] == 400.0
+    assert rows[1]["roas_purchase"] == 1.0  # 400 / 400
+    assert rows[1]["purchase_value_source"] == "order_fallback"
+
+
+def test_fill_purchase_value_pool_aware_subtracts_other_accounts_meta_purchase(monkeypatch):
+    """同一 store 下两个账户：A=正常(spend $1000, Meta purchase $1100)、B=broken(spend $200)；
+    订单营收 $1100。剩余可分摊 = max(0, 1100 - 1100) = 0 → broken 账户拿到 $0。
+
+    避免在「老户已经全额或超额上报」的产品上重复给 broken 账户算购买金额。
+    """
+    rows = [{
+        "code": "ad-broken",
+        "ad_account_id": "B_BROKEN",
+        "matched_product_code": "shared-product",
+        "spend_usd": 200.0,
+        "purchase_value_usd": 0.0,
+        "roas_purchase": 0.0,
+    }]
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return [
+                {
+                    "ad_account_id": "A_NORMAL", "product_code": "shared-product",
+                    "group_spend": 1000.0, "group_purchase": 1100.0,
+                },
+                {
+                    "ad_account_id": "B_BROKEN", "product_code": "shared-product",
+                    "group_spend": 200.0, "group_purchase": 0.0,
+                },
+            ]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return [{"product_code_lc": "shared-product", "revenue": 1100.0}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    stats = oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [
+            _FakeAccount("A_NORMAL", ("newjoy",)),
+            _FakeAccount("B_BROKEN", ("newjoy",)),
+        ],
+    )
+    assert stats["fallback_row_count"] == 0
+    assert rows[0]["purchase_value_usd"] == 0.0
+
+
+def test_fill_purchase_value_pool_aware_distributes_remaining_revenue(monkeypatch):
+    """同一 store 下两个账户：A=正常(spend $1000, Meta purchase $400)、B=broken(spend $200)；
+    订单营收 $1000。剩余 = $1000 - $400 = $600；broken 在 pool 中的占比 = 200/1200 ≈ 16.67%；
+    derived = 600 × 200/1200 = $100。
+    """
+    rows = [{
+        "code": "ad-broken",
+        "ad_account_id": "B_BROKEN",
+        "matched_product_code": "shared-product",
+        "spend_usd": 200.0,
+        "purchase_value_usd": 0.0,
+        "roas_purchase": 0.0,
+    }]
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return [
+                {
+                    "ad_account_id": "A_NORMAL", "product_code": "shared-product",
+                    "group_spend": 1000.0, "group_purchase": 400.0,
+                },
+                {
+                    "ad_account_id": "B_BROKEN", "product_code": "shared-product",
+                    "group_spend": 200.0, "group_purchase": 0.0,
+                },
+            ]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return [{"product_code_lc": "shared-product", "revenue": 1000.0}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    stats = oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [
+            _FakeAccount("A_NORMAL", ("newjoy",)),
+            _FakeAccount("B_BROKEN", ("newjoy",)),
+        ],
+    )
+    assert stats["fallback_row_count"] == 1
+    assert rows[0]["purchase_value_usd"] == 100.0
+    assert rows[0]["purchase_value_source"] == "order_fallback"
+
+
+def test_fill_purchase_value_from_orders_skips_groups_with_meta_purchase(monkeypatch):
+    """老户里某个 ad row 真零转化（同 product 其它 ad 有转化）→ 不应被覆盖。"""
+    rows = [
+        {
+            "code": "ad-zero",
+            "ad_account_id": "old_account",
+            "matched_product_code": "glow-rjc",
+            "spend_usd": 100.0,
+            "purchase_value_usd": 0.0,  # 真零，但同组其它行有转化
+            "roas_purchase": 0.0,
+        },
+    ]
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return []  # 这个 group 不进 broken_groups（因为同 product 其它 ad 有转化）
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    stats = oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [_FakeAccount("old_account", ("newjoy",))],
+    )
+    assert stats["fallback_row_count"] == 0
+    assert rows[0]["purchase_value_usd"] == 0.0
+    assert rows[0]["purchase_value_source"] == "meta"
+
+
+def test_fill_purchase_value_from_orders_skips_unknown_account(monkeypatch):
+    rows = [{
+        "code": "ad-x",
+        "ad_account_id": "unknown_account_999",
+        "matched_product_code": "abc",
+        "spend_usd": 100.0,
+        "purchase_value_usd": 0.0,
+        "roas_purchase": 0.0,
+    }]
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return [{
+                "ad_account_id": "unknown_account_999",
+                "product_code": "abc",
+                "group_spend": 100.0,
+                "group_purchase": 0.0,
+            }]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    stats = oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [_FakeAccount("known_other", ("newjoy",))],
+    )
+    # account_id 不在 accounts loader 中 → 跳过；保持原值。
+    assert stats["fallback_row_count"] == 0
+    assert rows[0]["purchase_value_usd"] == 0.0
+
+
+def test_fill_purchase_value_from_orders_skips_when_no_matched_product_code(monkeypatch):
+    rows = [{
+        "code": "ad-x",
+        "ad_account_id": "1253003326160754",
+        "matched_product_code": None,
+        "spend_usd": 100.0,
+        "purchase_value_usd": 0.0,
+        "roas_purchase": 0.0,
+    }]
+
+    def fake_query(sql, args=()):
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    stats = oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [_FakeAccount("1253003326160754", ("omurio",))],
+    )
+    assert stats["fallback_row_count"] == 0
+    assert rows[0]["purchase_value_usd"] == 0.0
+    assert rows[0]["purchase_value_source"] == "meta"
+
+
+def test_fill_purchase_value_uses_account_store_codes_in_revenue_query(monkeypatch):
+    """订单营收查询必须按账户绑定的 store_codes 过滤，不能写死。"""
+    rows = [{
+        "code": "ad-x",
+        "ad_account_id": "1253003326160754",
+        "matched_product_code": "abc",
+        "spend_usd": 100.0,
+        "purchase_value_usd": 0.0,
+        "roas_purchase": 0.0,
+    }]
+
+    revenue_args_seen = {}
+
+    def fake_query(sql, args=()):
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return [{
+                "ad_account_id": "1253003326160754",
+                "product_code": "abc",
+                "group_spend": 100.0,
+                "group_purchase": 0.0,
+            }]
+        if "FROM dianxiaomi_order_lines" in sql:
+            revenue_args_seen["sql"] = sql
+            revenue_args_seen["args"] = args
+            return [{"product_code_lc": "abc", "revenue": 200.0}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    oa.fill_purchase_value_from_orders(
+        rows,
+        level="ad",
+        start_date=__import__("datetime").date(2026, 4, 25),
+        end_date=__import__("datetime").date(2026, 5, 7),
+        accounts_loader=lambda: [_FakeAccount("1253003326160754", ("omurio",))],
+    )
+    args = revenue_args_seen["args"]
+    # 第一个绑定参数 = store_codes 元素 → "omurio"
+    assert "omurio" in args
+    # 不允许把 newjoy 当做 omurio 账户的兜底来源
+    assert "newjoy" not in args
+
+
+def test_get_ads_level_list_data_quality_signals_fallback_used(monkeypatch):
+    """端到端：list 层 Omurio 整组缺购买金额时，data_quality.status = 'fallback_used'。"""
+    fake_query, _ = _capture_calls({
+        "GROUP BY normalized_ad_code, ad_account_id": [
+            {
+                "code": "fully-automatic-water-blaster(2026.03.31).mp4",
+                "name": "Water Blaster Ad",
+                "ad_account_id": "1253003326160754",
+                "ad_account_name": "Omurio",
+                "matched_product_code": "fully-automatic-water-blaster",
+                "spend_usd": 1000.0, "purchase_value_usd": 0.0,
+                "result_count": 0, "day_count": 5,
+                "roas_purchase": None,
+            },
+        ],
+        "GROUP BY ad_account_id, LOWER(matched_product_code)": [{
+            "ad_account_id": "1253003326160754",
+            "product_code": "fully-automatic-water-blaster",
+            "group_spend": 1000.0,
+            "group_purchase": 0.0,
+        }],
+        "FROM dianxiaomi_order_lines": [{
+            "product_code_lc": "fully-automatic-water-blaster",
+            "revenue": 800.0,
+        }],
+    })
+
+    def fake_query_one(sql, args=()):
+        return {"total": 1}
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    real_fallback = oa.fill_purchase_value_from_orders
+    monkeypatch.setattr(
+        oa,
+        "fill_purchase_value_from_orders",
+        lambda rows, **kwargs: real_fallback(
+            rows,
+            **{**kwargs, "accounts_loader": lambda: [_FakeAccount("1253003326160754", ("omurio",))]},
+        ),
+    )
+
+    result = oa.get_ads_level_list("ad", start_date="2026-04-25", end_date="2026-05-07")
+    assert result["data_quality"]["status"] == "fallback_used"
+    assert result["data_quality"]["purchase_value"]["fallback_row_count"] == 1
+    assert result["data_quality"]["purchase_value"]["fallback_revenue_total_usd"] == 800.0
+    assert result["rows"][0]["purchase_value_usd"] == 800.0
+    assert result["rows"][0]["purchase_value_source"] == "order_fallback"
+
+
+def test_get_ads_level_detail_applies_order_fallback_to_historical_days(monkeypatch):
+    """详情页历史天数（非 realtime）也应套用兜底；realtime today 走 Meta 实时表，不动。"""
+    today = oa.current_meta_business_date()
+    yesterday = today - __import__("datetime").timedelta(days=1)
+
+    daily_rows = [
+        {
+            "meta_business_date": yesterday,
+            "name": "Water Blaster Ad",
+            "ad_account_id": "1253003326160754",
+            "ad_account_name": "Omurio",
+            "matched_product_code": "fully-automatic-water-blaster",
+            "spend_usd": 200.0,
+            "purchase_value_usd": 0.0,
+            "result_count": 0,
+            "raw_json": "{}",
+        },
+    ]
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_ad_metrics" in sql and "matched_product_code" not in sql.split("FROM")[0]:
+            # legacy fall-through: not in current spec
+            return []
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return [{
+                "ad_account_id": "1253003326160754",
+                "product_code": "fully-automatic-water-blaster",
+                "group_spend": 200.0,
+                "group_purchase": 0.0,
+            }]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return [{"product_code_lc": "fully-automatic-water-blaster", "revenue": 250.0}]
+        if "FROM meta_ad_daily_ad_metrics" in sql:
+            return daily_rows
+        return []
+
+    def fake_query_one(sql, args=()):
+        return None
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    real_fallback = oa.fill_purchase_value_from_orders
+    monkeypatch.setattr(
+        oa,
+        "fill_purchase_value_from_orders",
+        lambda rows, **kwargs: real_fallback(
+            rows,
+            **{**kwargs, "accounts_loader": lambda: [_FakeAccount("1253003326160754", ("omurio",))]},
+        ),
+    )
+
+    result = oa.get_ads_level_detail("ad", code="water-blaster",
+                                      start_date=yesterday.isoformat(),
+                                      end_date=yesterday.isoformat())
+    yesterday_row = next(r for r in result["rows"] if r["date"] == yesterday.isoformat())
+    assert yesterday_row["purchase_value_usd"] == 250.0
+    assert yesterday_row["purchase_value_source"] == "order_fallback"
+    assert result["data_quality"]["status"] == "fallback_used"
 
 
 def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeypatch):
