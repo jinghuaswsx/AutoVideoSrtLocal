@@ -6280,6 +6280,145 @@
     document.addEventListener('DOMContentLoaded', initAdsLevelTabs);
   }
 })();
+
+  // ──────────────────────────────────────────────────────
+  // 广告分析 → 人工录入：列表加载与渲染
+  // Docs-anchor: docs/superpowers/specs/2026-05-09-manual-daily-ad-spend-design.md#ui
+  // ──────────────────────────────────────────────────────
+  (function() {
+    var amsCachedAccounts = [];
+
+    function amsTodayCST() {
+      var now = new Date();
+      var cst = new Date(now.getTime() + (now.getTimezoneOffset() + 8 * 60) * 60000);
+      return cst.toISOString().slice(0, 10);
+    }
+    function amsDefaultFrom() {
+      var d = new Date();
+      d.setDate(d.getDate() - 13);
+      var cst = new Date(d.getTime() + (d.getTimezoneOffset() + 8 * 60) * 60000);
+      return cst.toISOString().slice(0, 10);
+    }
+    function amsFmtUsd(n) {
+      if (n === null || n === undefined) return '—';
+      return '$' + Number(n).toFixed(2);
+    }
+    function amsStatusBadge(status) {
+      var map = {
+        sync:    { cls: 'ams-status-sync',    label: '●sync' },
+        partial: { cls: 'ams-status-partial', label: '●部分sync' },
+        manual:  { cls: 'ams-status-manual',  label: '○手动兜底' }
+      };
+      var x = map[status] || { cls: '', label: status };
+      return '<span class="' + x.cls + '">' + x.label + '</span>';
+    }
+
+    function amsLoadList() {
+      var fromEl = document.getElementById('amsListFrom');
+      var toEl = document.getElementById('amsListTo');
+      if (!fromEl || !toEl) return;
+      if (!fromEl.value) fromEl.value = amsDefaultFrom();
+      if (!toEl.value) toEl.value = amsTodayCST();
+      var from = fromEl.value;
+      var to = toEl.value;
+
+      fetch('/order-analytics/manual-ad-spend/list?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to), {
+        credentials: 'same-origin'
+      }).then(function(resp) {
+        if (!resp.ok) {
+          console.error('manual-ad-spend list failed', resp.status);
+          throw new Error('list_failed');
+        }
+        return resp.json();
+      }).then(function(body) {
+        amsCachedAccounts = (body && body.accounts) || [];
+        var headRow = document.getElementById('amsTheadRow');
+        if (!headRow) return;
+        // Remove previously injected account columns
+        Array.prototype.slice.call(headRow.querySelectorAll('th.ams-acct-col')).forEach(function(el) {
+          el.parentNode.removeChild(el);
+        });
+        // Insert account columns before the "Sync 状态" cell (currently at index 1 after the date cell)
+        var refTh = headRow.children[1];
+        amsCachedAccounts.forEach(function(acc) {
+          var th = document.createElement('th');
+          th.className = 'ams-acct-col';
+          th.textContent = (acc.label || acc.code) + (acc.enabled === false ? ' (停用)' : '');
+          headRow.insertBefore(th, refTh);
+        });
+
+        var tbody = document.getElementById('amsTbody');
+        var emptyEl = document.getElementById('amsEmpty');
+        tbody.innerHTML = '';
+        var rows = (body && body.rows) || [];
+        if (!rows.length) {
+          if (emptyEl) emptyEl.style.display = '';
+          return;
+        }
+        if (emptyEl) emptyEl.style.display = 'none';
+        rows.forEach(function(row) {
+          var tr = document.createElement('tr');
+          tr.dataset.businessDate = row.business_date;
+          var html = '<td>' + row.business_date + '</td>';
+          amsCachedAccounts.forEach(function(acc) {
+            var e = (row.entries && row.entries[acc.code]) || {};
+            var display;
+            if (e.effective === 'sync') {
+              display = amsFmtUsd(e.sync_spend_usd) + ' (sync)';
+            } else if (e.effective === 'manual') {
+              display = amsFmtUsd(e.manual_spend_usd) + ' ✏';
+            } else {
+              display = '—';
+            }
+            html += '<td class="ams-acct-col">' + display + '</td>';
+          });
+          html += '<td>' + amsStatusBadge(row.sync_status) + '</td>';
+          var anyManualAcct = amsCachedAccounts.find(function(a) {
+            return row.entries && row.entries[a.code] && row.entries[a.code].effective === 'manual';
+          });
+          var updatedBy = anyManualAcct ? (row.entries[anyManualAcct.code].updated_by || '—') : '—';
+          html += '<td>' + updatedBy + '</td>';
+          html += '<td>'
+            + '<button type="button" class="ams-edit" data-date="' + row.business_date + '">编辑</button>'
+            + (anyManualAcct ? ' <button type="button" class="ams-delete" data-date="' + row.business_date + '">删除</button>' : '')
+            + '</td>';
+          tr.innerHTML = html;
+          tbody.appendChild(tr);
+        });
+      }).catch(function(err) {
+        console.error('amsLoadList error', err);
+        var tbody = document.getElementById('amsTbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="oad-loading">加载失败</td></tr>';
+      });
+    }
+
+    // Expose for Task 12
+    window.__amsLoadList = amsLoadList;
+    window.__amsAccounts = function() { return amsCachedAccounts; };
+
+    // Wire DOM
+    function amsInit() {
+      var fromEl = document.getElementById('amsListFrom');
+      var toEl = document.getElementById('amsListTo');
+      if (fromEl && !fromEl.value) fromEl.value = amsDefaultFrom();
+      if (toEl && !toEl.value) toEl.value = amsTodayCST();
+      var refreshBtn = document.getElementById('amsRefresh');
+      if (refreshBtn) refreshBtn.addEventListener('click', amsLoadList);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', amsInit);
+    } else {
+      amsInit();
+    }
+
+    // Trigger load when sub-tab becomes active
+    document.addEventListener('click', function(ev) {
+      var btn = ev.target.closest && ev.target.closest('[data-ads-subtab="manual-input"]');
+      if (btn && btn.tagName === 'BUTTON') {
+        setTimeout(amsLoadList, 50);
+      }
+    });
+  })();
 </script>
 
 <!-- ═══════ 产品盈亏报表 / Payments 导入对话框 ═══════ -->
