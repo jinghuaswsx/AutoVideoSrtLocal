@@ -1325,3 +1325,70 @@ def test_supplement_skipped_when_sync_has_any_spend(_seed_meta_accounts, _clean_
         date_from=_date_5(2026, 5, 8), date_to=_date_5(2026, 5, 8),
     )
     assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("0")
+
+
+def test_supplement_added_when_sync_sum_is_zero(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+    """该账户该天 sync 完全无数据时，manual 值进 unallocated。"""
+    monkeypatch.setattr(
+        opa,
+        "_load_sync_account_totals",
+        lambda date_from, date_to: {},  # sync 完全无行
+    )
+    _manual_ad_spend_5.upsert_entries(
+        business_date=_date_5(2026, 5, 8),
+        entries=[
+            {"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "300"},
+            {"account_code": "Omurio",    "ad_account_id": "1253003326160754", "spend_usd": "200"},
+        ],
+        updated_by=1,
+    )
+    summary = opa.get_order_profit_status_summary(
+        date_from=_date_5(2026, 5, 8), date_to=_date_5(2026, 5, 8),
+    )
+    assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("500.0000")
+
+
+def test_supplement_per_account_only_when_that_account_sync_zero(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+    """混合：一个账户 sync > 0 → 不叠加；另一个 sync = 0 → 叠加该账户 manual。"""
+    monkeypatch.setattr(
+        opa,
+        "_load_sync_account_totals",
+        lambda date_from, date_to: {
+            (_date_5(2026, 5, 8), "1253003326160754"): _Decimal_5("204.12"),  # Omurio sync > 0
+            # newjoyloo 不在 map 里 → 视为 0
+        },
+    )
+    _manual_ad_spend_5.upsert_entries(
+        business_date=_date_5(2026, 5, 8),
+        entries=[
+            {"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "300"},
+            {"account_code": "Omurio",    "ad_account_id": "1253003326160754", "spend_usd": "999"},
+        ],
+        updated_by=1,
+    )
+    summary = opa.get_order_profit_status_summary(
+        date_from=_date_5(2026, 5, 8), date_to=_date_5(2026, 5, 8),
+    )
+    assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("300.0000")
+
+
+def test_supplement_filtered_by_query_range(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+    """只在 [date_from, date_to] 内的 manual 行参与。"""
+    monkeypatch.setattr(
+        opa,
+        "_load_sync_account_totals", lambda date_from, date_to: {}
+    )
+    _manual_ad_spend_5.upsert_entries(
+        business_date=_date_5(2026, 5, 1),
+        entries=[{"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "9999"}],
+        updated_by=1,
+    )
+    _manual_ad_spend_5.upsert_entries(
+        business_date=_date_5(2026, 5, 8),
+        entries=[{"account_code": "newjoyloo", "ad_account_id": "1861285821213497", "spend_usd": "300"}],
+        updated_by=1,
+    )
+    summary = opa.get_order_profit_status_summary(
+        date_from=_date_5(2026, 5, 8), date_to=_date_5(2026, 5, 8),
+    )
+    assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("300.0000")
