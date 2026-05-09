@@ -104,7 +104,7 @@ total_profit      = confirmed_profit + estimated_profit - unallocated_final
 
 ## API
 
-新增 3 个路由，挂在已有 `web/routes/order_analytics.py` blueprint（`/order-analytics/` 前缀）下。所有路由 `@login_required + @admin_required`，CSRF 通过 `layout.html` 的 meta 注入自动加 `X-CSRFToken` 头。
+新增 3 个路由，挂在已有 `web/routes/order_analytics.py` blueprint（`/order-analytics/` 前缀）下。所有路由 `@login_required + @permission_required("data_analytics")`（与现有 `meta_ad_accounts_save` 等同模块路由保持一致），CSRF 通过 `layout.html` 的 meta 注入自动加 `X-CSRFToken` 头。
 
 ### GET `/order-analytics/manual-ad-spend/list`
 
@@ -274,7 +274,7 @@ DAO 层只做 SQL，不做权限/审计/校验（那些在路由层）。所有 
 - `delete_entry` 存在/不存在两条路径
 - `load_supplement_map` 区间过滤、返回 `(date, ad_account_id)` 键
 - 路由层：
-  - 非 admin 调 POST/DELETE → 403
+  - 无 `data_analytics` 权限的用户调 POST/DELETE → 403
   - 缺 CSRF token → 400
   - `business_date > today` → 400
   - `spend_usd < 0` 或 `> 1e8` → 400
