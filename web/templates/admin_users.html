@@ -2,6 +2,10 @@
 {% block title %}用户管理 — AutoVideoSrt{% endblock %}
 {% block page_title %}用户管理{% endblock %}
 {% block extra_style %}
+:root {
+  --accent: oklch(56% 0.16 230);
+  --accent-hover: oklch(50% 0.17 230);
+}
 .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .table-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
