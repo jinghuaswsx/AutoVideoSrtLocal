@@ -230,6 +230,90 @@ def test_get_realtime_order_profit_details_supports_product_filter_and_paginatio
     assert captured["args"] == (target, data_until, 42, 100, 100)
 
 
+def test_get_realtime_order_profit_details_applies_realtime_ad_cost_adjustments(monkeypatch):
+    """日终广告表未到、order_profit_lines.ad_cost_usd=0 时，看板「订单盈亏明细」
+    需要落到 meta_ad_realtime_daily_campaign_metrics 兜底分摊。"""
+    target = date(2026, 5, 9)
+    day_start = datetime(2026, 5, 8, 16, 0)
+    data_until = datetime(2026, 5, 9, 12, 0)
+
+    sql_calls: list[str] = []
+
+    def fake_query(sql, args=()):
+        sql_calls.append(sql)
+        if "FROM dianxiaomi_order_lines d" in sql and "AND d.meta_business_date=%s" in sql:
+            return [
+                {
+                    "site_code": "newjoy",
+                    "dxm_package_id": "PKG-RT",
+                    "dxm_order_id": "DXM-RT",
+                    "package_number": "PN-RT",
+                    "order_state": "paid",
+                    "buyer_country": "US",
+                    "buyer_country_name": "United States",
+                    "order_time": datetime(2026, 5, 9, 11, 0),
+                    "line_count": 1,
+                    "profit_line_count": 1,
+                    "profit_ok_count": 1,
+                    "profit_incomplete_count": 0,
+                    "units": 2,
+                    "product_revenue": 100.0,
+                    "shipping_revenue": 0.0,
+                    "total_revenue": 100.0,
+                    "refund_amount_usd": 0.0,
+                    "purchase_cost": 20.0,
+                    "logistics_cost": 5.0,
+                    "ad_cost": 0.0,  # 日终未到，stored 仍是 0
+                    "stored_shopify_fee_total": 0.0,
+                    "skus": "SKU-RT",
+                    "product_names": "Realtime Product",
+                },
+            ]
+        # _load_realtime_ad_snapshot_fallback inside _load_realtime_ad_cost_adjustments
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return []
+        if "MAX(snapshot_at)" in sql and "GROUP BY business_date, ad_account_id" in sql:
+            return [{"business_date": target, "ad_account_id": "ACC", "snapshot_at": datetime(2026, 5, 9, 11, 0)}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "ad_account_id=%s" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "campaign-x",
+                    "normalized_campaign_code": "campaign-x",
+                    "spend_usd": 40.0,
+                }
+            ]
+        if "FROM order_profit_lines p" in sql and "JOIN dianxiaomi_order_lines d" in sql and "GROUP BY p.business_date, p.product_id" in sql:
+            return [{"business_date": target, "product_id": 99, "units": 2}]
+        if "FROM order_profit_lines p" in sql and "JOIN dianxiaomi_order_lines d" in sql and "WHERE p.business_date BETWEEN" in sql:
+            # 一个 line，quantity=2，stored ad_cost=0 → realtime_cost = 40 * 2/2 = 40 → delta=40
+            return [
+                {
+                    "dxm_package_id": "PKG-RT",
+                    "business_date": target,
+                    "status": "ok",
+                    "product_id": 99,
+                    "quantity": 2,
+                    "ad_cost_usd": 0.0,
+                }
+            ]
+        return []
+
+    from appcore.order_analytics import order_profit_aggregation as opa
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "resolve_ad_product_match", lambda code: {"id": 99}, raising=False)
+
+    details = _get_realtime_order_profit_details(target, day_start, data_until)
+
+    assert len(details) == 1
+    rt = details[0]
+    # 兜底应用后：ad_cost_usd 从 0 抬到 40，order_profit 同步降 40
+    assert rt["ad_cost_usd"] == 40.0
+    # 订单利润 = 100 - 0(refund) - 20(purchase) - 5(logistics) - shopify_fee - 40(ad)
+    # shopify_fee for US 100$ ≈ 5.6 USD by split_shopify_fee_for_order; 行内计算 → 利润 < 35
+    assert rt["order_profit_usd"] < 35.0
+
+
 def test_format_order_profit_rows_marks_missing_cost_estimates():
     row = {
         "site_code": "newjoy",

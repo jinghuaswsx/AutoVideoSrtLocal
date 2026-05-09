@@ -49,9 +49,18 @@
 - 多账户场景下任意一个账户的实时同步落后（如 newjoyloo_bak 浏览器导出 timeout）时，`/order-analytics → 实时大盘`显示的「广告消耗费用」与「真实 ROAS 看板」、`/order-profit` 看板之间任意两个最多偏差为该账户最近一轮 tick 的 spend，不能整账户读到 0。
 - `/order-analytics → 实时大盘 → 订单盈亏明细`表内某行 `订单利润` 求和加上同表透出的「未分摊广告费」要等于汇总卡的「总利润额」（容差 ≤ 0.01 美元，仅由四舍五入造成）。
 
+## 实施补丁
+
+### AUT-29 兜底（2026-05-09）
+
+- 实施前：[appcore/order_analytics/realtime.py](../../../appcore/order_analytics/realtime.py) 的 `_get_realtime_order_profit_details` / `_get_realtime_order_profit_details_for_range` 直接 `SUM(p.ad_cost_usd)`，未应用 `_load_realtime_ad_cost_adjustments` 的 package 兜底；当业务日 `meta_ad_daily_campaign_metrics` 还没生成、`order_profit_lines.ad_cost_usd=0` 时，`/order-analytics → 实时大盘 → 订单盈亏明细` 逐行 `ad_cost_usd` 与 `order_profit_summary.ad_cost_usd` 都恒为 0，与本 spec 第 11/12 条不符。
+- 实施后：两个 detail-getter 都在 `_format_realtime_order_profit_rows` 之后调一遍新的 `_apply_realtime_ad_cost_adjustments`，按 package id 加上 `_load_realtime_ad_cost_adjustments().package_deltas[pkg]`，并把 `order_profit_usd` / `order_profit_with_estimate_usd` 同步下调；与 [appcore/order_analytics/order_profit_aggregation.py](../../../appcore/order_analytics/order_profit_aggregation.py) 的 `get_order_profit_list` 同款 helper 路径，保证两个口径共用同一份兜底来源。
+- 回归测试：[tests/test_order_analytics_realtime_profit_details.py](../../../tests/test_order_analytics_realtime_profit_details.py) 增加 `test_get_realtime_order_profit_details_applies_realtime_ad_cost_adjustments`；既有 18 个 case + 新增 1 case 全绿。
+
 ## Docs-anchor
 
 - 本文件
 - 相关设计：`docs/superpowers/specs/2026-05-02-realtime-dashboard-redesign.md`
 - 相关设计：`docs/superpowers/specs/2026-05-07-product-profit-dashboard-tabs-redesign-design.md`
 - 相关设计：`docs/superpowers/specs/2026-05-07-order-profit-detail-tab-design.md`
+- 相关设计：`docs/superpowers/specs/2026-05-09-meta-ads-account-timezone-and-async-fix.md`（AUT-23 修复，realtime 数据源从 0 恢复）

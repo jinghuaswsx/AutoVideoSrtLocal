@@ -22,6 +22,7 @@ from ._helpers import (
 )
 from .dianxiaomi import compute_meta_business_window_bj, get_dianxiaomi_product_sales_stats
 from .meta_ads import resolve_ad_product_match
+from .order_profit_aggregation import _load_realtime_ad_cost_adjustments
 from .shopify_fee import split_shopify_fee_for_order
 
 ORDER_PROFIT_PAGE_SIZE = 100
@@ -485,7 +486,14 @@ def _get_realtime_order_profit_details(
         + limit_sql,
         tuple([target, data_until] + product_args + limit_args),
     )
-    return _format_realtime_order_profit_rows(rows, day_start)
+    details = _format_realtime_order_profit_rows(rows, day_start)
+    _apply_realtime_ad_cost_adjustments(
+        details,
+        date_from=target,
+        date_to=target,
+        product_id=product_id,
+    )
+    return details
 
 
 def _get_realtime_order_profit_details_for_range(
@@ -554,7 +562,61 @@ def _get_realtime_order_profit_details_for_range(
         for detail in _format_realtime_order_profit_rows([row], day_start):
             detail["meta_business_date"] = business_date
             details.append(detail)
+    _apply_realtime_ad_cost_adjustments(
+        details,
+        date_from=start,
+        date_to=end,
+        product_id=product_id,
+    )
     return details
+
+
+def _apply_realtime_ad_cost_adjustments(
+    details: list[dict[str, Any]],
+    *,
+    date_from: date,
+    date_to: date,
+    product_id: int | None,
+) -> None:
+    """实时大盘 ad_cost_usd 兜底：当 order_profit_lines.ad_cost_usd 还没回填，
+    用 meta_ad_realtime_daily_campaign_metrics × units 比例就地补上 per-package delta。
+
+    与 ``order_profit_aggregation.get_order_profit_list`` 同款，保证：
+      - 「订单盈亏明细」逐行 `ad_cost_usd` 反映当下已知的实时分摊；
+      - 汇总 `order_profit_summary.ad_cost_usd` 不再因为日终未结而恒为 0。
+    锚点：docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 11/12 条。
+    """
+    if not details:
+        return
+    if not any((row.get("ad_cost_usd") or 0) == 0 for row in details):
+        return
+    try:
+        adjustments = _load_realtime_ad_cost_adjustments(
+            date_from=date_from,
+            date_to=date_to,
+            product_id=product_id,
+        )
+    except Exception:
+        return
+    package_deltas = adjustments.get("package_deltas") or {}
+    if not package_deltas:
+        return
+    for row in details:
+        package_id = str(row.get("dxm_package_id") or "")
+        if not package_id:
+            continue
+        delta = float(package_deltas.get(package_id) or 0.0)
+        if not delta:
+            continue
+        row["ad_cost_usd"] = round(float(row.get("ad_cost_usd") or 0.0) + delta, 4)
+        if row.get("order_profit_usd") is not None:
+            row["order_profit_usd"] = round(
+                float(row.get("order_profit_usd") or 0.0) - delta, 2
+            )
+        if row.get("order_profit_with_estimate_usd") is not None:
+            row["order_profit_with_estimate_usd"] = round(
+                float(row.get("order_profit_with_estimate_usd") or 0.0) - delta, 2
+            )
 
 
 def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: datetime) -> list[dict[str, Any]]:
