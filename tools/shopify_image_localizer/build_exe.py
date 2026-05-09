@@ -17,8 +17,13 @@ from tools.shopify_image_localizer import settings, version
 APP_NAME = "ShopifyImageLocalizer"
 PORTABLE_LAUNCHER_NAME = "run_shopify_image_localizer.bat"
 RELEASE_VERSION_FILENAME = "release_version.txt"
-DEFAULT_OUTPUT_ROOT = Path(r"G:\ShopifyRelease")
+DEFAULT_OUTPUT_ROOT_WINDOWS = Path(r"G:\ShopifyRelease")
+DEFAULT_OUTPUT_ROOT_POSIX = Path.home() / "shopify-builds"
 BUILD_WORK_DIR_NAME = "_build"
+
+
+def _default_output_root() -> Path:
+    return DEFAULT_OUTPUT_ROOT_WINDOWS if os.name == "nt" else DEFAULT_OUTPUT_ROOT_POSIX
 
 
 def _resolve_build_python(repo_root: Path) -> Path:
@@ -144,10 +149,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=version.RELEASE_VERSION,
         help=f"release version suffix, default: {version.RELEASE_VERSION}",
     )
+    default_output_root = _default_output_root()
     parser.add_argument(
         "--output-root",
-        default=str(DEFAULT_OUTPUT_ROOT),
-        help=f"release/build output root, default: {DEFAULT_OUTPUT_ROOT}",
+        default=str(default_output_root),
+        help=f"release/build output root, default: {default_output_root}",
     )
     return parser.parse_args(argv)
 

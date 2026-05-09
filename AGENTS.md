@@ -124,10 +124,17 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 
 - 开发运行：`python -m tools.shopify_image_localizer.main`
 - 语法自检：`@'import py_compile; [py_compile.compile(path, doraise=True) for path in [r"tools/shopify_image_localizer/main.py", r"tools/shopify_image_localizer/gui.py", r"tools/shopify_image_localizer/controller.py", r"tools/shopify_image_localizer/browser/orchestrator.py"]] ; print("ok")'@ | python -`
-- 打包发布：`python -m tools.shopify_image_localizer.build_exe --version 1.0`。产物固定使用版本号后缀：目录 `dist/ShopifyImageLocalizer-1.0`，绿色包 `dist/ShopifyImageLocalizer-portable-1.0.zip`；同版本目录或 zip 已存在时脚本会报错退出，不要覆盖旧版本。后续发布 `2.0` 时改用 `--version 2.0`，必须保持 `1.0` 原样不动。
-- 发布到素材管理页时，绿色包放服务器 `/opt/autovideosrt/web/static/downloads/tools/`，下载 URL 形如 `/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip`。
-- 素材管理页的“下载自动换图工具”按钮、当前版本号、发布时间必须读取数据库 `system_settings` 中 `shopify_image_localizer_release` 的 JSON，不要硬编码到前端模板。JSON 字段：`version`、`released_at`、`release_note`、`download_url`、`filename`。
-- 每次发布新版本的固定顺序：先打包生成对应版本 zip；上传到服务器下载目录；写入/更新 `shopify_image_localizer_release` 数据库配置；再发布 Web 代码并做 HTTP 可达性检查。
+
+### 打包发布（2026-05-09 起：Linux 服务器自助路径）
+
+详细设计：[docs/superpowers/specs/2026-05-09-shopify-image-localizer-linux-wine-build-design.md](docs/superpowers/specs/2026-05-09-shopify-image-localizer-linux-wine-build-design.md)
+
+- **路径 A — Linux 服务器（默认）**：在 prod server `cjh` 用户下跑 `bash scripts/build_shopify_image_localizer_wine.sh --version <ver> [--release-note "..."]`。helper 串完 build EXE → `sudo cp` 到 `/opt/autovideosrt/web/static/downloads/tools/` → 写 `system_settings.shopify_image_localizer_release` JSON → curl 探测可达。失败立刻停下不绕过；不重启服务、不 commit / push。
+- **路径 B — Windows 开发机（fallback）**：`python -m tools.shopify_image_localizer.build_exe --version <ver>`，产物默认落 `G:\ShopifyRelease\ShopifyImageLocalizer-portable-<ver>.zip`，之后手工 `scp` + UI 改 release JSON。
+- 同版本 zip / 目录已存在时打包脚本会直接报错退出，**不要覆盖旧版本**；要发新版只能升 `--version`。`tools/shopify_image_localizer/version.py` 中 `RELEASE_VERSION` 同步往前推。
+- 发布到素材管理页时，绿色包放服务器 `/opt/autovideosrt/web/static/downloads/tools/`，下载 URL 形如 `/static/downloads/tools/ShopifyImageLocalizer-portable-<ver>.zip`。
+- 素材管理页的「下载自动换图工具」按钮、当前版本号、发布时间必须读取数据库 `system_settings` 中 `shopify_image_localizer_release` 的 JSON，不要硬编码到前端模板。JSON 字段：`version`、`released_at`、`release_note`、`download_url`、`filename`。
+- **路径 A 已知坑（必读）**：Wine 必须 ≥ 11.0（Ubuntu repo 的 9.0 缺 `ucrtbase.crealf`）；Windows Python 必须 ≥ 3.12.10（3.12.7 自带的 Tcl 8.6.13 会让 EXE 跑起来撞 `_tkinter.TclError`）；不要拿 `wine ./ShopifyImageLocalizer.exe` 当 smoke——会撞 init.tcl 但不影响真 Windows，EXE 健康度交给 Windows 真机验收。
 
 ### Shopify Image Localizer EZ/CDP 回归防护
 

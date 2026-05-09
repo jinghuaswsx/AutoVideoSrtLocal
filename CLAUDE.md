@@ -127,10 +127,44 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 
 ## Shopify Image Localizer 发布打包
 
-- 打包发布：`python -m tools.shopify_image_localizer.build_exe --version 1.0`。产物固定使用版本号后缀：目录 `dist/ShopifyImageLocalizer-1.0`，绿色包 `dist/ShopifyImageLocalizer-portable-1.0.zip`；同版本目录或 zip 已存在时脚本会报错退出，不要覆盖旧版本。后续发布 `2.0` 时改用 `--version 2.0`，必须保持 `1.0` 原样不动。
-- 发布到素材管理页时，绿色包放服务器 `/opt/autovideosrt/web/static/downloads/tools/`，下载 URL 形如 `/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip`。
-- 素材管理页的“下载自动换图工具”按钮、当前版本号、发布时间必须读取数据库 `system_settings` 中 `shopify_image_localizer_release` 的 JSON，不要硬编码到前端模板。JSON 字段：`version`、`released_at`、`release_note`、`download_url`、`filename`。
-- 每次发布新版本的固定顺序：先打包生成对应版本 zip；上传到服务器下载目录；写入/更新 `shopify_image_localizer_release` 数据库配置；再发布 Web 代码并做 HTTP 可达性检查。
+详细设计：[docs/superpowers/specs/2026-05-09-shopify-image-localizer-linux-wine-build-design.md](docs/superpowers/specs/2026-05-09-shopify-image-localizer-linux-wine-build-design.md)
+
+- 同版本目录或 zip 已存在时打包脚本会报错退出，**不要覆盖旧版本**；要发新版只能升 `--version`。`tools/shopify_image_localizer/version.py` 中 `RELEASE_VERSION` 同步往前推。
+- 发布到素材管理页时，绿色包放服务器 `/opt/autovideosrt/web/static/downloads/tools/`，下载 URL 形如 `/static/downloads/tools/ShopifyImageLocalizer-portable-<ver>.zip`。
+- 素材管理页的「下载自动换图工具」按钮、当前版本号、发布时间必须读取数据库 `system_settings` 中 `shopify_image_localizer_release` 的 JSON，不要硬编码到前端模板。JSON 字段：`version`、`released_at`、`release_note`、`download_url`、`filename`。
+
+### 路径 A — Linux 服务器自助打包（默认，2026-05-09 起）
+
+prod server（`172.30.254.14`，本机）已经按 spec "首次环境初始化" 装好 Wine 11.0 + Windows Python 3.12.10 + PyInstaller，prefix 在 `/home/cjh/wine-shopify-build/`。**新版发布只跑一条命令**：
+
+```bash
+bash scripts/build_shopify_image_localizer_wine.sh --version <ver> [--release-note "..."]
+```
+
+Helper 串完：build EXE + 打 zip → `sudo cp` 到 `/opt/autovideosrt/web/static/downloads/tools/` → 调 `appcore.shopify_image_localizer_release.set_release_info(...)` 写 DB → `curl` 探测 web 静态可达。**不重启服务**，**不 commit / push**。
+
+约束：
+
+- helper 失败立刻停下打印现状；任何一步报错都不要手工绕过去（zip 重名 / DB 写失败 / HTTP 404 都意味着环境出问题）。
+- helper 不传任何业务凭据进 Wine 子进程；build 是离线打包。
+- 要回滚：在素材管理页改 `system_settings.shopify_image_localizer_release` 指回老版本即可，老 zip 一直保留在下载目录。
+
+### 路径 B — Windows 开发机（fallback）
+
+只有路径 A 装不动 / 失效时才走。在 admin 的 Windows 机器：
+
+```bash
+python -m tools.shopify_image_localizer.build_exe --version <ver>
+```
+
+产物默认落 `G:\ShopifyRelease\ShopifyImageLocalizer-portable-<ver>.zip`；之后手工 `scp` 到服务器下载目录、UI 改 release JSON。
+
+### 已知坑（必读）
+
+- **Wine 必须 ≥ 11.0**：Ubuntu repo 自带的 9.0 `ucrtbase.dll` 缺 `crealf`，numpy import 就挂。装 WineHQ 官方 stable。
+- **Windows Python 必须 ≥ 3.12.10**：3.12.7 自带 Tcl 8.6.13，PyInstaller bundle 后跑 EXE 撞 `_tkinter.TclError: Can't find a usable init.tcl`；3.12.10 升 Tcl 8.6.15 才行。
+- **不要 `wine ./ShopifyImageLocalizer.exe` 当 smoke**：Wine + PyInstaller `runw.exe` GUI bootloader + Xvfb 这条路径会撞 init.tcl 报错，跟产物在真 Windows 上是否能跑无关。EXE 健康度交给 Windows 真机验收。
+- **不要在 wine 9.0 上 `winetricks vcrun2022`**：踩过坑，SHA256 mismatch 即便 `--unattended` 也只能 silent install，且 Wine 会优先加载 builtin ucrtbase，crealf 报错没解。直接装 Wine 11 最直接。
 
 ## Shopify Image Localizer EZ/CDP 回归防护
 
