@@ -20,8 +20,8 @@ Shopify Payments 数据存在延迟：业务通常每周或每月导入一次 Pa
 ## 目标
 
 1. 在素材管理 SKU 配对详情中，于“估算 ROAS”后新增一列“实际保本 ROAS”。
-2. 每天北京时间 0:00 计算一次，不在页面打开时实时聚合订单。
-3. 每次计算使用滚动 30 个已稳定业务日：运行日为 D 时，统计 `D-31` 到 `D-2`，含首尾。
+2. 每天北京时间 1:00 计算一次，不在页面打开时实时聚合订单。
+3. 每次计算使用滚动 30 个已稳定业务日：运行日为 D 时，统计 `D-32` 到 `D-3`，含首尾。
 4. 有窗口内订单数据的 SKU 显示实际保本 ROAS；没有订单数据的 SKU 显示横杠。
 5. 手续费来源显示为一个标签：`真实手续费`、`7%估算` 或 `部分真实`。
 6. Shopify Payments 数据后到时，允许重算并把手续费来源从 `7%估算` 更新为 `真实手续费` 或 `部分真实`。
@@ -56,20 +56,20 @@ Shopify Payments 数据存在延迟：业务通常每周或每月导入一次 Pa
 
 ## 计算窗口
 
-每日 0:00 北京时间触发。
+每日 1:00 北京时间触发。
 
 运行日为 `D` 时：
 
 ```text
-window_start = D - 31 days
-window_end   = D - 2 days
+window_start = D - 32 days
+window_end   = D - 3 days
 ```
 
-示例：2026-05-10 00:00 运行，统计 2026-04-09 到 2026-05-08。
+示例：2026-05-10 01:00 运行，统计 2026-04-08 到 2026-05-07。
 
 原因：
 
-- 店小秘订单和物流费用有同步延迟，排除最近 2 天可降低未完备数据污染。
+- 店小秘订单和物流费用有同步延迟，排除最近 3 天可降低未完备数据污染。
 - 单日样本对 SKU 保本阈值波动太大，滚动 30 天更适合做投放参考。
 
 ## 数据模型
@@ -142,7 +142,7 @@ get_latest_sku_actual_roas(skus: list[str]) -> dict[str, dict]
 - `deploy/server_browser/autovideosrt-sku-actual-roas.service`
 - `deploy/server_browser/autovideosrt-sku-actual-roas.timer`
 
-触发时间：每天北京时间 00:00。
+触发时间：每天北京时间 01:00。
 
 新增任务定义：
 
@@ -155,7 +155,7 @@ get_latest_sku_actual_roas(skus: list[str]) -> dict[str, dict]
 ```text
 --date YYYY-MM-DD              # 指定运行日 D，默认北京时间今天
 --window-days 30               # 默认 30
---settlement-delay-days 2      # 默认 2
+--settlement-delay-days 3      # 默认 3
 --dry-run
 ```
 
@@ -197,7 +197,7 @@ get_latest_sku_actual_roas(skus: list[str]) -> dict[str, dict]
     "window_start": "2026-04-09",
     "window_end": "2026-05-08",
     "orders_count": 12,
-    "computed_at": "2026-05-10T00:00:08"
+    "computed_at": "2026-05-10T01:00:08"
   }
 }
 ```
@@ -209,7 +209,7 @@ get_latest_sku_actual_roas(skus: list[str]) -> dict[str, dict]
 后端测试：
 
 - `tests/test_sku_actual_roas.py`
-  - 滚动窗口计算边界：D-31 到 D-2。
+  - 滚动窗口计算边界：D-32 到 D-3。
   - 真实 Payment 命中时使用真实 fee。
   - Payment 缺失时使用 7% 估算。
   - 混合窗口标记 `mixed`。
@@ -250,7 +250,7 @@ pytest tests/test_sku_actual_roas.py tests/test_sku_aggregates.py tests/test_med
 1. 素材管理 SKU 配对详情中，“估算 ROAS”后出现“实际保本 ROAS”列。
 2. 有最近 30 个已稳定业务日订单的 SKU 显示数值和手续费来源标签。
 3. 无订单数据或不可保本的 SKU 显示横杠。
-4. 每天 0:00 北京时间可由 systemd timer 触发快照计算。
+4. 每天 1:00 北京时间可由 systemd timer 触发快照计算。
 5. Payment 导入后重算窗口时，同 SKU 快照可从 `7%估算` 更新为 `真实手续费` 或 `部分真实`。
 6. `appcore/scheduled_tasks.py` 中能看到该任务定义。
 7. 聚焦测试全部通过。

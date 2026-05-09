@@ -44,7 +44,7 @@
 ## 主题指引（按需读对应文档，不要内联进本文件）
 - LLM 调用：`docs/superpowers/plans/2026-04-19-llm-call-unification.md`；新业务在 `appcore/llm_use_cases.py` 注册 use case
 - 数据分析数据质量护栏：`docs/analytics-data-quality-guardrails.md`；所有 `/order-profit/*` 等 JSON 顶层带 `data_quality`，逻辑集中在 `appcore/order_analytics/data_quality.py`
-- SKU 实际保本 ROAS：`docs/superpowers/specs/2026-05-10-sku-actual-breakeven-roas-design.md`；每天 00:00 由 `tools/sku_actual_roas_snapshot.py` 计算 `D-31` 到 `D-2`，快照表 `sku_actual_breakeven_roas_snapshots`
+- SKU 实际保本 ROAS：`docs/superpowers/specs/2026-05-10-sku-actual-breakeven-roas-design.md`；每天 01:00 由 `tools/sku_actual_roas_snapshot.py` 计算 `D-32` 到 `D-3`，快照表 `sku_actual_breakeven_roas_snapshots`
 - Meta 多账户广告：`2026-05-07-meta-ads-multi-account-design.md` 起串读补丁 — `2026-05-09-ads-purchase-value-order-fallback-design.md` / `2026-05-09-meta-ads-xhr-token-channel.md` / `2026-05-09-meta-ads-account-timezone-and-async-fix.md` / `2026-05-09-meta-daily-final-permission-recovery.md`
 - TTS 变速短路：`2026-05-04-tts-speedup-shortcut-design.md`（multi-translate `[0.9v,1.1v]` 落点直接 ElevenLabs speed 重生成 → atempo 兜底，任何分支都不再后续 rewrite）
 - 实时大盘 / 业务日对齐：`docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md` + `2026-05-09-realtime-dashboard-store-filter.md` + `2026-05-10-realtime-dashboard-profit-margin.md`

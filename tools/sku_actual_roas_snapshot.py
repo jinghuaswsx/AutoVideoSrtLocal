@@ -37,7 +37,7 @@ def run_snapshot(
     *,
     run_date: date | None = None,
     window_days: int = 30,
-    settlement_delay_days: int = 2,
+    settlement_delay_days: int = 3,
     rmb_per_usd: Any | None = None,
 ) -> dict[str, Any]:
     effective_run_date = run_date or _today_beijing()
@@ -94,7 +94,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Run date in YYYY-MM-DD. Defaults to today in Asia/Shanghai.",
     )
     parser.add_argument("--window-days", type=int, default=30)
-    parser.add_argument("--settlement-delay-days", type=int, default=2)
+    parser.add_argument("--settlement-delay-days", type=int, default=3)
     parser.add_argument("--rmb-per-usd", type=str, default=None)
     return parser
 

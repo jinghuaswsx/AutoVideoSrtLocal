@@ -326,7 +326,7 @@ def test_task_definitions_include_sku_actual_breakeven_roas():
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
     task = definitions["sku_actual_breakeven_roas"]
-    assert task["schedule"] == "每天 00:00（北京时间）"
+    assert task["schedule"] == "每天 01:00（北京时间）"
     assert task["source_type"] == "systemd"
     assert task["source_ref"] == "autovideosrt-sku-actual-roas.timer"
     assert task["runner"] == "tools/sku_actual_roas_snapshot.py"

@@ -111,12 +111,12 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "sku_actual_breakeven_roas",
         "name": "SKU 实际保本 ROAS 快照",
         "description": (
-            "每天北京时间 00:00 计算两天前结束的滚动 30 天订单窗口，"
+            "每天北京时间 01:00 计算三天前结束的滚动 30 天订单窗口，"
             "按 ERP SKU 固化实际保本 ROAS；手续费优先用 Shopify Payment 真实值，"
             "缺失时按 7% 估算。Docs-anchor: "
             "docs/superpowers/specs/2026-05-10-sku-actual-breakeven-roas-design.md"
         ),
-        "schedule": "每天 00:00（北京时间）",
+        "schedule": "每天 01:00（北京时间）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-sku-actual-roas.timer",

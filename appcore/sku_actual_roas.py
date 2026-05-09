@@ -17,7 +17,7 @@ def calculate_window(
     run_date: date,
     *,
     window_days: int = 30,
-    settlement_delay_days: int = 2,
+    settlement_delay_days: int = 3,
 ) -> tuple[date, date]:
     window_end = run_date - timedelta(days=int(settlement_delay_days))
     window_start = window_end - timedelta(days=int(window_days) - 1)

@@ -22,8 +22,8 @@ def test_calculate_window_uses_rolling_30_stable_days():
     from appcore import sku_actual_roas
 
     assert sku_actual_roas.calculate_window(date(2026, 5, 10)) == (
-        date(2026, 4, 9),
-        date(2026, 5, 8),
+        date(2026, 4, 8),
+        date(2026, 5, 7),
     )
 
 
@@ -194,8 +194,8 @@ def test_run_snapshot_records_scheduled_task_run(monkeypatch):
     monkeypatch.setattr(sku_actual_roas_snapshot.scheduled_tasks, "finish_run", fake_finish)
 
     def fake_compute(window_start, window_end, *, source_run_id=None):
-        assert window_start == date(2026, 4, 9)
-        assert window_end == date(2026, 5, 8)
+        assert window_start == date(2026, 4, 8)
+        assert window_end == date(2026, 5, 7)
         assert source_run_id == 99
         return {"skus": 2, "snapshots_written": 2}
 
@@ -207,8 +207,14 @@ def test_run_snapshot_records_scheduled_task_run(monkeypatch):
 
     summary = sku_actual_roas_snapshot.run_snapshot(run_date=date(2026, 5, 10))
 
-    assert summary["window_start"] == "2026-04-09"
-    assert summary["window_end"] == "2026-05-08"
+    assert summary["window_start"] == "2026-04-08"
+    assert summary["window_end"] == "2026-05-07"
     assert summary["skus"] == 2
     assert calls[0] == ("start", "sku_actual_breakeven_roas")
     assert calls[1][0:3] == ("finish", 99, "success")
+
+
+def test_systemd_timer_runs_sku_actual_roas_at_1am():
+    timer = (ROOT / "deploy" / "server_browser" / "autovideosrt-sku-actual-roas.timer").read_text(encoding="utf-8")
+
+    assert "OnCalendar=*-*-* 01:00:00" in timer

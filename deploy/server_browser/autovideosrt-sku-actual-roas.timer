@@ -2,7 +2,7 @@
 Description=Run AutoVideoSrt SKU actual breakeven ROAS snapshot daily
 
 [Timer]
-OnCalendar=*-*-* 00:00:00
+OnCalendar=*-*-* 01:00:00
 Persistent=true
 Unit=autovideosrt-sku-actual-roas.service
 
