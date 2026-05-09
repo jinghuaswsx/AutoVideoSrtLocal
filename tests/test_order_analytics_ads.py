@@ -713,6 +713,27 @@ def test_analytics_range_controls_match_country_dashboard(authed_client_no_db):
     assert '/order-analytics/ad-summary?start_date=' in body
 
 
+def test_ads_default_date_range_uses_march_first_of_current_year(authed_client_no_db):
+    """广告分析默认日期范围统一为「最近一次 3 月 1 日 → 今天」。
+
+    Docs-anchor: docs/superpowers/specs/2026-05-09-ads-analytics-default-date-range.md
+    """
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "function adsDefaultStartIso()" in body
+    assert "if (d.getMonth() < 2) year -= 1;" in body
+    assert "return year + '-03-01';" in body
+    assert "setInputValue('adStartDate', adsDefaultStartIso());" in body
+    assert "setInputValue('adEndDate', formatDateInput(window.orderAnalyticsMetaCalendar.today()));" in body
+    assert "startListEl.value = adsDefaultStartIso();" in body
+    assert "startDetailEl.value = adsDefaultStartIso();" in body
+    assert ".value || adsDefaultStartIso();" in body
+    assert "setAdRange('today', true);" not in body
+    assert "adsDaysAgoIso" not in body
+
+
 def test_order_analytics_range_presets_use_shared_meta_calendar(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
