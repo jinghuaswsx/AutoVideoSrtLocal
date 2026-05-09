@@ -2622,6 +2622,17 @@
   .oa-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
   .ads-level-toolbar { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap;
     padding: var(--space-3) 0; }
+  .oa-modal { border: 1px solid var(--border); border-radius: 8px; padding: 0; max-width: 480px; }
+  .oa-modal::backdrop { background: rgba(0,0,0,0.4); }
+  .oa-modal-form { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); min-width: 360px; }
+  .oa-modal-title { margin: 0 0 var(--space-2) 0; font-size: 16px; font-weight: 600; }
+  .oa-modal-field { display: flex; flex-direction: column; gap: var(--space-2); }
+  .oa-modal-actions { display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-3); }
+  .ams-acct-field { display: block; margin: var(--space-3) 0; }
+  .ams-acct-field input { width: 140px; }
+  .ams-status-sync { color: var(--success); }
+  .ams-status-partial { color: var(--warning); }
+  .ams-status-manual { color: var(--danger); }
 </style>
 <div class="oa-panel" id="panelAds">
   <nav class="oa-subtabs" id="adsSubtabs" role="tablist" aria-label="广告分析子 Tab">
@@ -2629,6 +2640,7 @@
     <button type="button" class="oa-subtab-btn" data-ads-subtab="campaign" aria-pressed="false">Campaign</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="adset" aria-pressed="false">Ad Set</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="ad" aria-pressed="false">Ad</button>
+    <button type="button" class="oa-subtab-btn" data-ads-subtab="manual-input" aria-pressed="false">人工录入</button>
   </nav>
 
   <!-- 概览 sub-panel：保留原有「按产品汇总」内容 -->
@@ -2802,6 +2814,57 @@
     </div>
   </div>
   {% endfor %}
+
+  <!-- 人工录入 sub-panel：admin 维护每天每账户的总广告费，sync 失败时兜底 KPI -->
+  <!-- Docs-anchor: docs/superpowers/specs/2026-05-09-manual-daily-ad-spend-design.md -->
+  <div class="oa-subpanel" data-subpanel="manual-input">
+    <div class="oad-toolbar">
+      <div class="oad-toolbar-row">
+        <div class="oad-date-range-field" role="group" aria-label="人工录入日期范围">
+          <input type="date" id="amsListFrom" aria-label="开始日期">
+          <span class="oad-date-range-sep">至</span>
+          <input type="date" id="amsListTo" aria-label="结束日期">
+        </div>
+        <button type="button" class="oad-btn-primary" id="amsRefresh">刷新</button>
+        <button type="button" class="oad-btn-primary" id="amsAdd">+ 新增 / 编辑</button>
+      </div>
+    </div>
+    <div class="oa-table-wrap">
+      <div class="oa-table-scroll">
+        <table class="oa-table" id="amsTable">
+          <thead>
+            <tr id="amsTheadRow">
+              <th>业务日</th>
+              <!-- account columns injected by JS -->
+              <th>Sync 状态</th>
+              <th>更新人</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="amsTbody">
+            <tr><td colspan="4" class="oad-loading">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div id="amsEmpty" class="oa-empty" style="display:none;">
+      <div>区间内无数据。</div>
+    </div>
+  </div>
+
+  <dialog id="amsModal" class="oa-modal">
+    <form id="amsForm" method="dialog" class="oa-modal-form">
+      <h3 class="oa-modal-title">录入广告费 (USD)</h3>
+      <label class="oa-modal-field">业务日
+        <input type="date" id="amsModalDate" required>
+      </label>
+      <div id="amsModalFields"></div>
+      <div class="oa-modal-actions">
+        <button type="button" id="amsModalCancel" class="btn btn-default">取消</button>
+        <button type="submit" id="amsModalSave" class="oad-btn-primary">保存</button>
+      </div>
+    </form>
+  </dialog>
 </div>
 
 <!-- ═══════ Tab: 广告账户 ═══════ -->
