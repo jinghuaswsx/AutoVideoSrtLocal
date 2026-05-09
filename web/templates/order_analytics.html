@@ -6418,6 +6418,175 @@
         setTimeout(amsLoadList, 50);
       }
     });
+
+    // ──────────────────────────────────────────────────────
+    // 人工录入：modal 编辑 + 保存 + 删除
+    // ──────────────────────────────────────────────────────
+    var amsCsrfToken = (function() {
+      var m = document.querySelector('meta[name="csrf-token"]');
+      return m ? m.content : '';
+    })();
+
+    function amsReadRowManualValues(forDate) {
+      // Read manual-flagged cells from the existing rendered row to prefill modal.
+      // Returns {account_code: numericValue} for cells whose text contains the ✏ marker.
+      var out = {};
+      if (!forDate) return out;
+      var tr = document.querySelector('#amsTbody tr[data-business-date="' + forDate + '"]');
+      if (!tr) return out;
+      var accounts = window.__amsAccounts ? window.__amsAccounts() : [];
+      accounts.forEach(function(acc, idx) {
+        var cell = tr.children[1 + idx];
+        if (!cell) return;
+        var text = (cell.textContent || '').trim();
+        if (text.indexOf('✏') === -1) return;
+        // Strip "$" and any trailing whitespace + ✏
+        var match = text.match(/\$?([0-9.,-]+)/);
+        if (match) {
+          var num = parseFloat(match[1].replace(/,/g, ''));
+          if (isFinite(num)) out[acc.code] = num;
+        }
+      });
+      return out;
+    }
+
+    function amsOpenModal(forDate) {
+      var accounts = window.__amsAccounts ? window.__amsAccounts() : [];
+      var fieldsEl = document.getElementById('amsModalFields');
+      var dateEl = document.getElementById('amsModalDate');
+      var modal = document.getElementById('amsModal');
+      if (!fieldsEl || !dateEl || !modal) return;
+
+      var prefill = amsReadRowManualValues(forDate);
+      fieldsEl.innerHTML = '';
+      accounts.forEach(function(acc) {
+        var wrap = document.createElement('label');
+        wrap.className = 'ams-acct-field';
+        var status = (acc.enabled === false) ? ' (已停用)' : '';
+        var prefillVal = (prefill[acc.code] !== undefined) ? String(prefill[acc.code]) : '';
+        wrap.innerHTML = (acc.label || acc.code) + ' (' + acc.account_id + ')' + status + '<br>'
+          + '$ <input type="number" step="0.01" min="0" data-acct-code="' + acc.code + '" '
+          + 'value="' + prefillVal + '" placeholder="留空=不录">';
+        fieldsEl.appendChild(wrap);
+      });
+      dateEl.value = forDate || (new Date().toISOString().slice(0, 10));
+      if (typeof modal.showModal === 'function') {
+        modal.showModal();
+      } else {
+        // <dialog> fallback for browsers without native support
+        modal.setAttribute('open', '');
+      }
+    }
+
+    function amsCloseModal() {
+      var modal = document.getElementById('amsModal');
+      if (!modal) return;
+      if (typeof modal.close === 'function') {
+        modal.close();
+      } else {
+        modal.removeAttribute('open');
+      }
+    }
+
+    function amsSaveModal(ev) {
+      ev.preventDefault();
+      var dateEl = document.getElementById('amsModalDate');
+      var fieldsEl = document.getElementById('amsModalFields');
+      if (!dateEl || !fieldsEl) return;
+      var business_date = dateEl.value;
+      if (!business_date) return;
+
+      var inputs = Array.prototype.slice.call(fieldsEl.querySelectorAll('input[data-acct-code]'));
+      var entries = inputs
+        .filter(function(inp) { return inp.value !== ''; })
+        .map(function(inp) {
+          return { account_code: inp.dataset.acctCode, spend_usd: parseFloat(inp.value) };
+        });
+      if (!entries.length) {
+        amsCloseModal();
+        return;
+      }
+
+      fetch('/order-analytics/manual-ad-spend', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': amsCsrfToken
+        },
+        body: JSON.stringify({ business_date: business_date, entries: entries })
+      }).then(function(resp) {
+        if (!resp.ok) {
+          return resp.json().catch(function() { return {}; }).then(function(body) {
+            alert('保存失败: ' + (body.detail || body.error || resp.status));
+            throw new Error('save_failed');
+          });
+        }
+        amsCloseModal();
+        if (window.__amsLoadList) window.__amsLoadList();
+      }).catch(function(err) {
+        if (String(err && err.message) !== 'save_failed') console.error(err);
+      });
+    }
+
+    function amsDeleteEntry(business_date, account_code) {
+      if (!confirm('确认删除 ' + business_date + ' / ' + account_code + ' 的人工录入？')) return Promise.resolve();
+      var url = '/order-analytics/manual-ad-spend?business_date=' + encodeURIComponent(business_date)
+              + '&account_code=' + encodeURIComponent(account_code);
+      return fetch(url, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'X-CSRFToken': amsCsrfToken }
+      }).then(function(resp) {
+        if (!resp.ok) {
+          alert('删除失败: ' + resp.status);
+          throw new Error('delete_failed');
+        }
+      });
+    }
+
+    // Wire modal + table action buttons
+    function amsWireModal() {
+      var addBtn = document.getElementById('amsAdd');
+      if (addBtn) addBtn.addEventListener('click', function() { amsOpenModal(null); });
+      var form = document.getElementById('amsForm');
+      if (form) form.addEventListener('submit', amsSaveModal);
+      var cancelBtn = document.getElementById('amsModalCancel');
+      if (cancelBtn) cancelBtn.addEventListener('click', amsCloseModal);
+      var tbody = document.getElementById('amsTbody');
+      if (tbody) {
+        tbody.addEventListener('click', function(ev) {
+          var editBtn = ev.target.closest('.ams-edit');
+          if (editBtn) {
+            amsOpenModal(editBtn.dataset.date);
+            return;
+          }
+          var delBtn = ev.target.closest('.ams-delete');
+          if (delBtn) {
+            var date = delBtn.dataset.date;
+            var tr = delBtn.closest('tr');
+            var accounts = window.__amsAccounts ? window.__amsAccounts() : [];
+            // Sequentially delete every account that has a manual marker on this row
+            var pending = Promise.resolve();
+            accounts.forEach(function(acc, idx) {
+              var cell = tr.children[1 + idx];
+              if (!cell) return;
+              var text = (cell.textContent || '').trim();
+              if (text.indexOf('✏') === -1) return;
+              pending = pending.then(function() { return amsDeleteEntry(date, acc.code); });
+            });
+            pending.then(function() {
+              if (window.__amsLoadList) window.__amsLoadList();
+            }).catch(function() { /* already alerted */ });
+          }
+        });
+      }
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', amsWireModal);
+    } else {
+      amsWireModal();
+    }
   })();
 </script>
 
