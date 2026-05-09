@@ -193,16 +193,25 @@ def save_runtime_config(
     store_slug_cache: Any = _UNSET,
     root: str | Path | None = None,
 ) -> Path:
-    """写入 runtime config。store_slug_cache 缺省（_UNSET）时保留磁盘上已有的 slug 缓存。"""
+    """写入 runtime config。
+    - store_slug_cache 缺省（_UNSET）时保留磁盘上已有的 slug 缓存。
+    - api_key / browser_user_data_dir 传入空字符串时**保留**磁盘已有值，避免 GUI 内存里这两个字段被
+      意外清空（init 时序、用户误操作等）后通过 save 把 portable 内嵌的凭据擦掉。
+    """
     path = config_path(root)
+    existing_cfg = load_runtime_config(root)
     if store_slug_cache is _UNSET:
-        existing_cache = load_runtime_config(root).get("shopify_domain_store_slugs") or {}
+        existing_cache = existing_cfg.get("shopify_domain_store_slugs") or {}
     else:
         existing_cache = store_slug_cache or {}
+    api_key_clean = (api_key or "").strip() or (existing_cfg.get("api_key") or "").strip()
+    browser_dir_clean = (browser_user_data_dir or "").strip() or (
+        existing_cfg.get("browser_user_data_dir") or ""
+    ).strip()
     payload: dict[str, Any] = {
         "base_url": DEFAULT_BASE_URL,
-        "api_key": api_key.strip(),
-        "browser_user_data_dir": browser_user_data_dir.strip(),
+        "api_key": api_key_clean,
+        "browser_user_data_dir": browser_dir_clean,
         "shopify_domain": normalize_domain(shopify_domain),
         "shopify_domain_store_slugs": _normalize_slug_map(existing_cache),
     }

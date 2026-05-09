@@ -73,6 +73,34 @@ def test_runtime_config_save_load_roundtrip_keeps_store_slug_cache(tmp_path) -> 
     assert cfg2["shopify_domain_store_slugs"] == {"omurio.com": "abc-xyz"}
 
 
+def test_save_runtime_config_keeps_existing_credentials_on_empty_input(tmp_path) -> None:
+    """空 api_key / 空 browser_user_data_dir 不应该擦掉磁盘已有凭据（避免 portable 凭据被无意清空）。"""
+    settings.save_runtime_config(
+        base_url="http://x",
+        api_key="real-30-char-api-key-aaaaaaaa",
+        browser_user_data_dir=r"C:\chrome-shopify-image",
+        shopify_domain="newjoyloo.com",
+        root=tmp_path,
+    )
+    cfg_before = settings.load_runtime_config(tmp_path)
+    assert cfg_before["api_key"] == "real-30-char-api-key-aaaaaaaa"
+    assert cfg_before["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+
+    # 调用方传空字符串（GUI 输入框被意外清空 / 初始化时序异常）→ 磁盘旧值应保留
+    settings.save_runtime_config(
+        base_url="http://x",
+        api_key="",
+        browser_user_data_dir="",
+        shopify_domain="omurio.com",
+        root=tmp_path,
+    )
+    cfg_after = settings.load_runtime_config(tmp_path)
+    assert cfg_after["api_key"] == "real-30-char-api-key-aaaaaaaa"
+    assert cfg_after["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+    # shopify_domain 仍然按调用方传入更新（这里语义没变）
+    assert cfg_after["shopify_domain"] == "omurio.com"
+
+
 def test_cache_store_slug_for_domain_writes_and_reads(tmp_path) -> None:
     # 初始化 config 文件
     settings.save_runtime_config(
