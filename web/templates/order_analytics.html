@@ -1096,26 +1096,26 @@
   .oar-subtabs { gap: 4px; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
   .oar-subtabs::-webkit-scrollbar { display: none; }
   .oar-subtab { white-space: nowrap; flex: 0 0 auto; }
-  /* 桌面表格在小屏走横滚（mobile.css 已兜底，但 .oa-table 用了 display:table，
-   * 这里允许其包裹元素在主内容里横滚） */
-  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) {
+  /* 数据分析页表格已由 .oa-table-scroll 承担横滚；覆盖 mobile.css
+   * 对 thead/tbody 的拆表兜底，避免表头和数据列分别计算宽度。 */
+  .oa-table-scroll table.oa-table:not(.mobile-no-scroll) {
     display: table;
     width: max-content;
     min-width: 100%;
     max-width: none;
     overflow-x: visible;
   }
-  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > thead {
+  .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > thead {
     display: table-header-group;
     width: auto;
     min-width: 0;
   }
-  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > tbody {
+  .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > tbody {
     display: table-row-group;
     width: auto;
     min-width: 0;
   }
-  #panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > tfoot {
+  .oa-table-scroll table.oa-table:not(.mobile-no-scroll) > tfoot {
     display: table-footer-group;
     width: auto;
     min-width: 0;

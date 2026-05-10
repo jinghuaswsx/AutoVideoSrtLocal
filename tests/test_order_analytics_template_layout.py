@@ -15,6 +15,13 @@ def _realtime_panel_source() -> str:
     return template[panel_start:panel_end]
 
 
+def _ads_panel_source() -> str:
+    template = _template_source()
+    panel_start = template.index('<div class="oa-panel" id="panelAds">')
+    panel_end = template.index("<!-- ═══════ Tab: 广告账户 ═══════ -->", panel_start)
+    return template[panel_start:panel_end]
+
+
 def test_realtime_query_button_is_in_date_toolbar_target_area():
     """查询按钮应紧跟自定义日期范围，产品搜索不占用日期工具栏目标位。"""
     panel = _realtime_panel_source()
@@ -46,22 +53,27 @@ def test_realtime_roas_trend_copy_matches_hourly_node_contract():
     assert "走势图按广告系统日小时节点展示" in panel
 
 
-def test_realtime_mobile_tables_keep_shared_header_and_body_layout():
+def test_order_analytics_mobile_tables_keep_shared_header_and_body_layout():
     """移动端表格不能把 thead/tbody 拆成两张表，否则表头和数据列会错位。"""
     template = _template_source()
     panel = _realtime_panel_source()
+    ads_panel = _ads_panel_source()
     campaign_start = panel.index('<div class="oar-subpanel" id="realtimeSubCampaigns">')
     campaign_end = panel.index('<div class="oar-subpanel" id="realtimeSubTrend">', campaign_start)
     campaign_panel = panel[campaign_start:campaign_end]
 
     assert 'id="realtimeCampaignBody"' in campaign_panel
     assert 'class="oa-table oar-compact-table oar-campaign-table"' in campaign_panel
-    assert "#panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll)" in template
+    assert "\n  .oa-table-scroll table.oa-table:not(.mobile-no-scroll)" in template
+    assert "#panelRealtime .oa-table-scroll table.oa-table:not(.mobile-no-scroll)" not in template
     assert "display: table-header-group;" in template
     assert "display: table-row-group;" in template
     assert "display: table-footer-group;" in template
     assert ".oar-campaign-table th:first-child" in template
     assert ".oar-campaign-table td:first-child" in template
+    assert 'id="adTable"' in ads_panel
+    assert 'data-ads-list-table="{{ level }}"' in ads_panel
+    assert 'id="amsTable"' in ads_panel
 
 
 def test_product_profit_actions_move_into_mobile_content_top():
