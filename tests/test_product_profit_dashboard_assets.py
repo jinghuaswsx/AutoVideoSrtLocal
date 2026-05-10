@@ -118,3 +118,18 @@ def test_product_profit_has_product_country_analysis_tab_matrix():
     assert "销售额" in TEMPLATE
     assert "ROAS" in TEMPLATE
     assert "by_country" in TEMPLATE
+
+
+def test_product_profit_mobile_tables_keep_shared_header_and_body_layout():
+    """移动端表格不能把 thead/tbody 拆成两张表，否则表头和数据列会错位。"""
+    expected_snippets = [
+        "docs/superpowers/specs/2026-05-10-product-profit-mobile-table-alignment.md",
+        ".ppd-table-wrap table.ppd-table:not(.mobile-no-scroll)",
+        "display: table-header-group;",
+        "display: table-row-group;",
+        "display: table-footer-group;",
+        "overflow-x: auto;",
+        "white-space: nowrap;",
+    ]
+    for snippet in expected_snippets:
+        assert snippet in TEMPLATE, f"missing mobile table layout override: {snippet}"

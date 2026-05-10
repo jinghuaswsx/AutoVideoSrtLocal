@@ -710,6 +710,47 @@
   .ppd-orders-head { flex-direction: column; align-items: stretch; }
   .ppd-orders-head input[type="search"] { width: 100%; }
   .ppd-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  /* Docs-anchor: docs/superpowers/specs/2026-05-10-product-profit-mobile-table-alignment.md
+   * 产品盈亏看板表格已由 .ppd-table-wrap 承担横滚；覆盖 mobile.css
+   * 对 thead/tbody 的拆表兜底，避免表头和数据列分别计算宽度。 */
+  .ppd-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) {
+    display: table;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    overflow-x: visible;
+  }
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) > thead {
+    display: table-header-group;
+    width: auto;
+    min-width: 0;
+  }
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) > tbody {
+    display: table-row-group;
+    width: auto;
+    min-width: 0;
+  }
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) > tfoot {
+    display: table-footer-group;
+    width: auto;
+    min-width: 0;
+  }
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) th,
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) td {
+    white-space: nowrap;
+  }
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) th:first-child,
+  .ppd-table-wrap table.ppd-table:not(.mobile-no-scroll) td:first-child {
+    width: 220px;
+    min-width: 220px;
+    max-width: 260px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .ppd-table { font-size: 12px; }
 }
 </style>
