@@ -449,7 +449,8 @@
       font-weight: 700;
       color: var(--text-main);
       text-decoration: none;
-      flex-shrink: 0;
+      flex-shrink: 1;
+      min-width: 0;
     }
     .topbar-mobile-brand-icon {
       width: 28px;
@@ -461,6 +462,13 @@
       justify-content: center;
       font-size: 14px;
       color: #fff;
+      flex: 0 0 28px;
+    }
+    .topbar-mobile-brand-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     @media (max-width: 768px) {
       body { display: block; }
@@ -709,8 +717,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
       </button>
       <a class="topbar-mobile-brand" href="{{ url_for('projects.root') }}" aria-label="首页">
-        <span class="topbar-mobile-brand-icon">🎬</span>
-        <span>AutoVideoSrt</span>
+        <span class="topbar-mobile-brand-icon" data-mobile-brand-icon>🎬</span>
+        <span class="topbar-mobile-brand-text" data-mobile-brand-text>AutoVideoSrt</span>
       </a>
       <span class="topbar-title">{% block page_title %}{% endblock %}</span>
       {% block topbar_actions %}{% endblock %}
@@ -798,6 +806,32 @@
       } else if (mq.addListener) {
         mq.addListener(syncDesktop);
       }
+    })();
+
+    // ── Mobile header module label ──
+    (function syncMobileModuleBrand() {
+      var brand = document.querySelector('.topbar-mobile-brand');
+      if (!brand) return;
+      var iconEl = brand.querySelector('[data-mobile-brand-icon]');
+      var textEl = brand.querySelector('[data-mobile-brand-text]');
+      var activeLink = document.querySelector('.sidebar-nav a.active');
+      if (!iconEl || !textEl || !activeLink) return;
+
+      var iconSource = activeLink.querySelector('.nav-icon');
+      var icon = iconSource ? iconSource.textContent.trim() : '';
+      var labelSource = activeLink.cloneNode(true);
+      labelSource.querySelectorAll('.nav-icon, .sidebar-group-caret').forEach(function(node) {
+        node.remove();
+      });
+      var label = labelSource.textContent.replace(/\s+/g, ' ').trim();
+      var href = activeLink.getAttribute('href');
+
+      if (icon) iconEl.textContent = icon;
+      if (label) {
+        textEl.textContent = label;
+        brand.setAttribute('aria-label', label);
+      }
+      if (href) brand.setAttribute('href', href);
     })();
 
     const themeBtn = document.getElementById('themeToggleBtn');
