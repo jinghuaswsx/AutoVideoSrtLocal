@@ -1178,6 +1178,7 @@
   color: #fff;
 }
 .ppr-btn svg { flex-shrink: 0; }
+.ppr-mobile-actions { display: none; }
 
 .ppr-dialog {
   border: none;
@@ -1268,19 +1269,46 @@
 .ppr-dialog-result.is-ok { color: #166534; background: #dcfce7; }
 
 @media (max-width: 768px) {
-  .ppr-actions {
-    flex-basis: 100%;
-    order: 99;
-    margin: 6px 0 0;
-    justify-content: flex-end;
+  /* Docs-anchor: docs/superpowers/specs/2026-05-10-data-analysis-mobile-actions-placement.md */
+  .topbar .ppr-actions { display: none; }
+  .ppr-mobile-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin: 0 0 var(--space-3);
   }
-  .ppr-btn span { display: none; }
-  .ppr-btn { padding: 0 10px; }
+  .ppr-mobile-actions .ppr-btn {
+    justify-content: center;
+    width: 100%;
+    height: 40px;
+    padding: 0 10px;
+  }
 }
 {% endblock %}
 
 {% block content %}
 <div class="oa-error" id="errorBox"></div>
+
+<!-- Docs-anchor: docs/superpowers/specs/2026-05-10-data-analysis-mobile-actions-placement.md -->
+<div class="ppr-mobile-actions" aria-label="数据分析移动端操作">
+  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-import" title="导入 Shopify Payments CSV">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    <span>Payments 导入</span>
+  </button>
+  <button type="button" class="ppr-btn ppr-btn-ghost" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 3v18h18"/>
+      <rect x="7" y="13" width="3" height="5"/>
+      <rect x="12" y="9" width="3" height="9"/>
+      <rect x="17" y="5" width="3" height="13"/>
+    </svg>
+    <span>盈亏报表</span>
+  </button>
+</div>
 
 {% include "_data_quality_bar.html" %}
 

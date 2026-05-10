@@ -62,3 +62,24 @@ def test_realtime_mobile_tables_keep_shared_header_and_body_layout():
     assert "display: table-footer-group;" in template
     assert ".oar-campaign-table th:first-child" in template
     assert ".oar-campaign-table td:first-child" in template
+
+
+def test_product_profit_actions_move_into_mobile_content_top():
+    """移动端业务按钮应进入页面内容区顶部，不挤在全局顶栏最上方。"""
+    template = _template_source()
+
+    content_start = template.index("{% block content %}")
+    mobile_actions_start = template.index('class="ppr-mobile-actions"', content_start)
+    data_quality_start = template.index('{% include "_data_quality_bar.html" %}', content_start)
+    mobile_actions = template[mobile_actions_start:data_quality_start]
+
+    assert "docs/superpowers/specs/2026-05-10-data-analysis-mobile-actions-placement.md" in template
+    assert mobile_actions_start < data_quality_start
+    assert 'data-ppr="open-import"' in mobile_actions
+    assert 'data-ppr="open-report"' in mobile_actions
+    assert "Payments 导入" in mobile_actions
+    assert "盈亏报表" in mobile_actions
+    assert ".ppr-mobile-actions { display: none; }" in template
+    assert ".topbar .ppr-actions { display: none; }" in template
+    assert "display: grid;" in template
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in template
