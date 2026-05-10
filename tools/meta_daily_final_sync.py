@@ -364,14 +364,15 @@ def _common_metrics(row: dict[str, Any]) -> dict[str, Any]:
         ("已花费金额 (USD)", "花费金额 (USD)", "Amount spent (USD)", "Amount spent", "Spend"),
         (("amount", "spent"), ("花费",), ("spend",)),
     )), 4)
-    purchase_value = round(_num(_pick(
-        row,
-        ("购物转化价值", "购买转化价值", "Website purchases conversion value", "Purchase conversion value"),
-        (("purchase", "value"), ("购物", "价值"), ("购买", "价值")),
-    )), 4)
+    purchase_value = realtime_sync._meta_purchase_value_from_row(row)
     roas = _num(_pick(
         row,
-        ("广告花费回报 (ROAS) - 购物", "Purchase ROAS (return on ad spend)", "ROAS"),
+        (
+            "广告花费回报 (ROAS) - 购物",
+            "成效广告花费回报",
+            "Purchase ROAS (return on ad spend)",
+            "ROAS",
+        ),
         (("roas",), ("回报",)),
     ))
     return {

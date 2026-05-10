@@ -327,6 +327,10 @@
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring);
 }
 .maa-input-mono { min-width: 150px; font-family: var(--font-mono); font-size: var(--text-xs); }
+.maa-preset-cell {
+  min-width: 230px; display: grid; grid-template-columns: 88px minmax(150px, 1fr); gap: var(--space-2);
+}
+.maa-preset-cell .maa-input-mono { min-width: 150px; }
 .maa-store-list {
   min-width: 140px; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
 }
@@ -3024,6 +3028,11 @@
     <option value="Europe/London">
     <option value="UTC">
   </datalist>
+  <datalist id="metaAdColumnPresetChoices">
+    <option value="1680560372975676" label="111 · newjoyloo">
+    <option value="1645951873103193" label="1111 · Omurio">
+    <option value="1658418688523178" label="1111 · newjoyloo_old">
+  </datalist>
 </section>
 {% endblock %}
 
@@ -4647,7 +4656,16 @@
   // ── 广告分析 ──────────────────────────────────────
   var adsInited = false;
   var metaAdAccountsInited = false;
-  var metaAdAccountsState = { accounts: [], stores: ['newjoy', 'omurio'] };
+  var META_AD_COLUMN_PRESET_FALLBACK_CHOICES = [
+    { label: '111', value: '1680560372975676', recommended_account_codes: ['newjoyloo'], note: 'newjoyloo / newjoyloo_bak' },
+    { label: '1111', value: '1645951873103193', recommended_account_codes: ['Omurio'], note: 'Omurio' },
+    { label: '1111', value: '1658418688523178', recommended_account_codes: ['newjoyloo_old'], note: 'newjoyloo_old' },
+  ];
+  var metaAdAccountsState = {
+    accounts: [],
+    stores: ['newjoy', 'omurio'],
+    columnPresetChoices: META_AD_COLUMN_PRESET_FALLBACK_CHOICES,
+  };
   var metaAdSyncState = { account: null, jobId: '', pollTimer: null };
 
   function initMetaAdAccounts() {
@@ -4678,6 +4696,7 @@
       .then(function(res) {
         if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '加载失败');
         metaAdAccountsState.stores = res.body.available_store_codes || ['newjoy', 'omurio'];
+        metaAdAccountsState.columnPresetChoices = res.body.column_preset_choices || META_AD_COLUMN_PRESET_FALLBACK_CHOICES;
         metaAdAccountsState.accounts = res.body.accounts || [];
         renderMetaAdAccounts();
         setMetaAdAccountsStatus('共 ' + metaAdAccountsState.accounts.length + ' 个账户', false);
@@ -4698,6 +4717,39 @@
     }).join('');
   }
 
+  function metaAdColumnPresetLabel(choice) {
+    var codes = choice.recommended_account_codes || [];
+    var suffix = codes.length ? ' · ' + codes.join('/') : '';
+    return String(choice.label || choice.value || '') + suffix;
+  }
+
+  function metaAdColumnPresetSelectOptions(currentValue) {
+    var selectedKnown = false;
+    var html = (metaAdAccountsState.columnPresetChoices || []).map(function(choice) {
+      var value = String(choice.value || '');
+      var selected = value && value === currentValue ? ' selected' : '';
+      if (selected) selectedKnown = true;
+      return '<option value="' + escapeHtml(value) + '"' + selected + '>' +
+        escapeHtml(metaAdColumnPresetLabel(choice)) + '</option>';
+    }).join('');
+    html += '<option value="__custom__"' + (!selectedKnown ? ' selected' : '') + '>自定义</option>';
+    return html;
+  }
+
+  function syncColumnPresetChoice(row) {
+    var input = row.querySelector('[data-maa-field="column_preset"]');
+    var select = row.querySelector('[data-maa-field="column_preset_choice"]');
+    if (!input || !select) return;
+    var matched = false;
+    Array.from(select.options).forEach(function(option) {
+      if (option.value && option.value !== '__custom__' && option.value === input.value.trim()) {
+        option.selected = true;
+        matched = true;
+      }
+    });
+    if (!matched) select.value = '__custom__';
+  }
+
   function renderMetaAdAccounts() {
     var body = document.getElementById('metaAdAccountsBody');
     if (!body) return;
@@ -4711,6 +4763,7 @@
       tr.dataset.index = String(idx);
       var syncMode = account.sync_mode || 'csv_export';
       var timezone = account.timezone || 'America/Los_Angeles';
+      var columnPreset = account.column_preset || '';
       tr.innerHTML =
         '<td><input type="checkbox" class="maa-enabled" data-maa-field="enabled"' + (account.enabled ? ' checked' : '') + '></td>' +
         '<td><div class="maa-store-list">' + metaAdAccountStoreInputs(account) + '</div></td>' +
@@ -4719,7 +4772,12 @@
         '<td><input class="maa-input maa-input-mono" data-maa-field="account_id" value="' + escapeHtml(account.account_id || '') + '" aria-label="Account ID"></td>' +
         '<td><input class="maa-input maa-input-mono" data-maa-field="business_id" value="' + escapeHtml(account.business_id || '') + '" aria-label="Business ID"></td>' +
         '<td><input class="maa-input maa-input-mono" data-maa-field="csv_prefix" value="' + escapeHtml(account.csv_prefix || '') + '" aria-label="CSV 前缀"></td>' +
-        '<td><input class="maa-input maa-input-mono" data-maa-field="column_preset" value="' + escapeHtml(account.column_preset || '') + '" aria-label="列模板 ID" placeholder="Meta UI 列模板 ID"></td>' +
+        '<td><div class="maa-preset-cell">' +
+          '<select class="maa-input" data-maa-field="column_preset_choice" aria-label="列模板展示">' +
+            metaAdColumnPresetSelectOptions(columnPreset) +
+          '</select>' +
+          '<input class="maa-input maa-input-mono" data-maa-field="column_preset" list="metaAdColumnPresetChoices" value="' + escapeHtml(columnPreset) + '" aria-label="列模板 URL 参数" placeholder="column_preset 参数">' +
+        '</div></td>' +
         '<td><select class="maa-input" data-maa-field="sync_mode" aria-label="同步方式">' +
           '<option value="csv_export"' + (syncMode === 'csv_export' ? ' selected' : '') + '>CSV 导出</option>' +
           '<option value="xhr_api"' + (syncMode === 'xhr_api' ? ' selected' : '') + '>页面接口拦截</option>' +
@@ -4730,6 +4788,20 @@
           '<button type="button" class="oad-btn-ghost" data-maa-sync>同步</button>' +
           '<button type="button" class="oad-btn-ghost" data-maa-remove>删除</button>' +
         '</div></td>';
+      var presetSelect = tr.querySelector('[data-maa-field="column_preset_choice"]');
+      var presetInput = tr.querySelector('[data-maa-field="column_preset"]');
+      if (presetSelect && presetInput) {
+        presetSelect.addEventListener('change', function() {
+          if (presetSelect.value && presetSelect.value !== '__custom__') {
+            presetInput.value = presetSelect.value;
+          }
+          setMetaAdAccountsStatus('有未保存更改', false);
+        });
+        presetInput.addEventListener('input', function() {
+          syncColumnPresetChoice(tr);
+          setMetaAdAccountsStatus('有未保存更改', false);
+        });
+      }
       var syncBtn = tr.querySelector('[data-maa-sync]');
       if (syncBtn) syncBtn.addEventListener('click', function() {
         openMetaAdSyncModal(collectMetaAdAccountFromRow(tr));
@@ -4803,6 +4875,7 @@
       .then(function(res) {
         if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '保存失败');
         metaAdAccountsState.stores = res.body.available_store_codes || metaAdAccountsState.stores;
+        metaAdAccountsState.columnPresetChoices = res.body.column_preset_choices || metaAdAccountsState.columnPresetChoices;
         metaAdAccountsState.accounts = res.body.accounts || accounts;
         renderMetaAdAccounts();
         setMetaAdAccountsStatus('已保存', false);

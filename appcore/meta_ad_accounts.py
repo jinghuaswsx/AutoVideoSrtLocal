@@ -19,12 +19,40 @@ SETTING_KEY = "meta_ad_accounts"
 AVAILABLE_STORE_CODES = ("newjoy", "omurio")
 DEFAULT_NEWJOYLOO_ACCOUNT_ID = "1861285821213497"
 LEGACY_NEWJOYLOO_ACCOUNT_ID = "2110407576446225"
+OMURIO_ACCOUNT_ID = "1253003326160754"
 DEFAULT_NEWJOYLOO_BUSINESS_ID = "476723373113063"
 
 # 旧户 2110407576446225 的 column preset（含购物转化价值 / ROAS - 购物 等完整列）。
 # 该 preset 仅在旧户账号下可见，新账户没有这条 preset 时 Meta 会回退到一组裸列。
 # 详细背景见 docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
 LEGACY_COLUMN_PRESET = "1658418688523178"
+NEWJOYLOO_COLUMN_PRESET = "1680560372975676"
+OMURIO_COLUMN_PRESET = "1645951873103193"
+
+# 这些是当前 Meta UI 中可见的列模板展示名与真实 URL 参数。同步链路只使用
+# column_preset 参数；UI 展示名只用于广告账户管理页给运营识别。
+# Docs-anchor:
+# docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
+COLUMN_PRESET_CHOICES = (
+    {
+        "label": "111",
+        "value": NEWJOYLOO_COLUMN_PRESET,
+        "recommended_account_codes": ["newjoyloo"],
+        "note": "newjoyloo / newjoyloo_bak",
+    },
+    {
+        "label": "1111",
+        "value": OMURIO_COLUMN_PRESET,
+        "recommended_account_codes": ["Omurio"],
+        "note": "Omurio",
+    },
+    {
+        "label": "1111",
+        "value": LEGACY_COLUMN_PRESET,
+        "recommended_account_codes": ["newjoyloo_old"],
+        "note": "newjoyloo_old",
+    },
+)
 
 # sync_mode 枚举：csv_export 走 Ads Manager CSV 导出（现有），
 # xhr_api 走页面内 Marketing API 抓取（in-page fetch channel，2026-05-09 新增）。
@@ -68,9 +96,62 @@ class MetaAdAccount:
             "enabled": self.enabled,
             "note": self.note,
             "column_preset": self.column_preset,
+            "column_preset_label": column_preset_label(self.column_preset),
             "sync_mode": self.sync_mode,
             "timezone": self.timezone,
         }
+
+
+def column_preset_choices() -> list[dict[str, object]]:
+    return [dict(choice) for choice in COLUMN_PRESET_CHOICES]
+
+
+def column_preset_label(column_preset: str | None) -> str:
+    value = str(column_preset or "").strip()
+    if not value:
+        return ""
+    for choice in COLUMN_PRESET_CHOICES:
+        if choice["value"] == value:
+            return str(choice["label"])
+    return "自定义"
+
+
+def default_column_preset_for_account(code: str, account_id: str) -> str:
+    normalized_code = str(code or "").strip().lower()
+    normalized_account_id = str(account_id or "").strip().removeprefix("act_")
+    if normalized_account_id == DEFAULT_NEWJOYLOO_ACCOUNT_ID or normalized_code in {
+        "newjoyloo",
+        "newjoyloo_bak",
+    }:
+        return NEWJOYLOO_COLUMN_PRESET
+    if normalized_account_id == OMURIO_ACCOUNT_ID or normalized_code == "omurio":
+        return OMURIO_COLUMN_PRESET
+    if normalized_account_id == LEGACY_NEWJOYLOO_ACCOUNT_ID or normalized_code == "newjoyloo_old":
+        return LEGACY_COLUMN_PRESET
+    return LEGACY_COLUMN_PRESET
+
+
+def _coerce_column_preset(raw: object, *, code: str, account_id: str) -> str:
+    value = str(raw or "").strip()
+    default = default_column_preset_for_account(code, account_id)
+    if not value:
+        return default
+
+    normalized_value = value.strip()
+    normalized_upper = normalized_value.upper()
+    normalized_account_id = str(account_id or "").strip().removeprefix("act_")
+
+    # These are UI labels or built-in naked-performance presets, not usable
+    # per-account URL preset IDs for CSV sync.
+    if normalized_upper == "PERFORMANCE" or normalized_value in {"111", "1111"}:
+        return default
+
+    # The legacy preset only works in the old account. If it was persisted into
+    # a new account config, treat it as a stale fallback and use that account's
+    # current default instead.
+    if normalized_value == LEGACY_COLUMN_PRESET and normalized_account_id != LEGACY_NEWJOYLOO_ACCOUNT_ID:
+        return default
+    return normalized_value
 
 
 def _normalize_store_codes(raw: object, *, code: str = "") -> tuple[str, ...]:
@@ -157,7 +238,11 @@ def _coerce_account(raw: dict) -> MetaAdAccount | None:
     if not code or not account_id or not business_id or not csv_prefix or not store_codes:
         log.warning("meta_ad_accounts: skipping invalid entry %r", raw)
         return None
-    column_preset = str(raw.get("column_preset") or "").strip() or LEGACY_COLUMN_PRESET
+    column_preset = _coerce_column_preset(
+        raw.get("column_preset"),
+        code=code,
+        account_id=account_id,
+    )
     return MetaAdAccount(
         code=code,
         account_id=account_id,
@@ -193,6 +278,7 @@ def _env_default_account() -> MetaAdAccount | None:
         store_codes=("newjoy",),
         enabled=True,
         label="Newjoyloo",
+        column_preset=default_column_preset_for_account("newjoyloo", account_id),
     )
 
 

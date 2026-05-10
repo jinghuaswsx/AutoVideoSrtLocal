@@ -86,7 +86,8 @@ ORDER BY report_date;
 - 广告系列 URL 层级：`/adsmanager/manage/campaigns`
 - 广告素材 URL 层级：`/adsmanager/manage/ads`
 - 日期参数：`date=YYYY-MM-DD_YYYY-MM-DD`
-- 列配置：`column_preset=1658418688523178`（**仅旧户 2110407576446225 可用**；新增账户时必须在该账户 Meta Ads Manager UI 内自建同款 preset，复制 ID 到 `system_settings.meta_ad_accounts[*].column_preset`，详见 `docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md`）
+- 列配置：按广告账户读取 `system_settings.meta_ad_accounts[*].column_preset`。当前默认映射：newjoyloo `111` → `1680560372975676`；Omurio `1111` → `1645951873103193`；newjoyloo_old `1111` → `1658418688523178`。注意 `111` / `1111` 是 Meta UI 展示名，同步脚本必须使用真实 `column_preset` URL 参数，详见 `docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md`。
+- 导出后表头必须包含 Meta 成效价值/ROAS 类列（如 `购物转化价值` + `广告花费回报 (ROAS) - 购物`，或 `成效价值` + `成效广告花费回报`）。如果回落到默认「表现」裸列，脚本应失败，不允许继续入库。
 
 建议每个日期窗口至少 60 秒，每 7 天额外休息 3 到 4 分钟。更保守可以把 `--min-day-seconds` 改成 `300`。
 

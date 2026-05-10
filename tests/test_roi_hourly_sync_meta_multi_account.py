@@ -171,7 +171,7 @@ def test_get_all_accounts_uses_account_specific_column_preset_when_provided(monk
             "csv_prefix": "newjoyloo",
             "store_codes": ["newjoy"],
             "enabled": True,
-            # 不写 column_preset，回退到默认旧户模板
+            # 不写 column_preset，按当前账户默认映射走 newjoyloo 的 111 模板
         },
     ])
     monkeypatch.setattr(meta_ad_accounts.system_settings, "get_setting", lambda key: payload)
@@ -179,8 +179,8 @@ def test_get_all_accounts_uses_account_specific_column_preset_when_provided(monk
     accounts = meta_ad_accounts.get_all_accounts()
     by_code = {a.code: a for a in accounts}
     assert by_code["Omurio"].column_preset == "omurio_preset_abc"
-    # 默认值兼容历史配置
-    assert by_code["newjoyloo"].column_preset == meta_ad_accounts.LEGACY_COLUMN_PRESET == "1658418688523178"
+    # Docs-anchor: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
+    assert by_code["newjoyloo"].column_preset == meta_ad_accounts.NEWJOYLOO_COLUMN_PRESET == "1680560372975676"
 
 
 def test_get_all_accounts_falls_back_to_legacy_preset_when_blank(monkeypatch):

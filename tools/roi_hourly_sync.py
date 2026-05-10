@@ -248,6 +248,24 @@ def _pick_value(row: dict[str, Any], exact: tuple[str, ...], contains: tuple[tup
     return None
 
 
+META_PURCHASE_VALUE_COLUMNS = (
+    "购物转化价值",
+    "购买转化价值",
+    "成效价值",
+    "Website purchases conversion value",
+    "Purchase conversion value",
+    "Result value",
+    "Results value",
+)
+META_PURCHASE_VALUE_CONTAINS = (
+    ("purchase", "value"),
+    ("购物", "价值"),
+    ("购买", "价值"),
+    ("成效", "价值"),
+    ("result", "value"),
+)
+
+
 def _safe_report_number(value: Any) -> float:
     if value is None:
         return 0.0
@@ -258,6 +276,14 @@ def _safe_report_number(value: Any) -> float:
         return float(cleaned)
     except ValueError:
         return 0.0
+
+
+def _meta_purchase_value_from_row(row: dict[str, Any]) -> float:
+    return round(_safe_report_number(_pick_value(
+        row,
+        META_PURCHASE_VALUE_COLUMNS,
+        META_PURCHASE_VALUE_CONTAINS,
+    )), 4)
 
 
 def _revenue_with_shipping(order_revenue: float, shipping_revenue: float) -> float:
@@ -580,11 +606,7 @@ def _import_meta_realtime_campaign_rows_legacy(
             ("成效", "Results"),
             (("result",), ("成效",)),
         ))))
-        purchase_value = round(_safe_report_number(_pick_value(
-            row,
-            ("购物转化价值", "购买转化价值", "Website purchases conversion value", "Purchase conversion value"),
-            (("purchase", "value"), ("购物", "价值"), ("购买", "价值")),
-        )), 4)
+        purchase_value = _meta_purchase_value_from_row(row)
         impressions = int(round(_safe_report_number(_pick_value(
             row,
             ("展示次数", "Impressions"),
@@ -680,11 +702,7 @@ def _import_meta_realtime_campaign_rows(
             ("成效", "Results"),
             (("result",), ("成效",)),
         ))))
-        purchase_value = round(_safe_report_number(_pick_value(
-            row,
-            ("购物转化价值", "购买转化价值", "Website purchases conversion value", "Purchase conversion value"),
-            (("purchase", "value"), ("购物", "价值"), ("购买", "价值")),
-        )), 4)
+        purchase_value = _meta_purchase_value_from_row(row)
         impressions = int(round(_safe_report_number(_pick_value(
             row,
             ("展示次数", "Impressions"),

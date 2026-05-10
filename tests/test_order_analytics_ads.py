@@ -545,6 +545,20 @@ def test_meta_ad_accounts_tab_renders_timezone_column_and_datalist(authed_client
     assert 'list="metaAdAccountTimezoneOptions"' in body
 
 
+def test_meta_ad_accounts_tab_renders_column_preset_choices(authed_client_no_db):
+    """Docs-anchor: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md."""
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert ">列模板<" in body
+    assert 'id="metaAdColumnPresetChoices"' in body
+    assert 'data-maa-field="column_preset_choice"' in body
+    assert "1680560372975676" in body
+    assert "1645951873103193" in body
+    assert "1658418688523178" in body
+
+
 def test_meta_ad_accounts_api_reads_accounts(authed_client_no_db, monkeypatch):
     from web.routes import order_analytics as routes
 
@@ -573,6 +587,9 @@ def test_meta_ad_accounts_api_reads_accounts(authed_client_no_db, monkeypatch):
         "meta_ad_accounts",
         SimpleNamespace(
             AVAILABLE_STORE_CODES=("newjoy", "omurio"),
+            column_preset_choices=lambda: [
+                {"label": "111", "value": "1680560372975676", "recommended_account_codes": ["newjoyloo"]},
+            ],
             get_all_accounts=lambda: [account],
         ),
         raising=False,
@@ -583,6 +600,7 @@ def test_meta_ad_accounts_api_reads_accounts(authed_client_no_db, monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["available_store_codes"] == ["newjoy", "omurio"]
+    assert payload["column_preset_choices"][0]["value"] == "1680560372975676"
     assert payload["accounts"][0]["code"] == "Omurio"
     assert payload["accounts"][0]["store_codes"] == ["omurio"]
 

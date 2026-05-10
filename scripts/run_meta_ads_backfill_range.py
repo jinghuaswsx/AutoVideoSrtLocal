@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import os
 import sys
 import time
@@ -36,6 +37,77 @@ LEVELS = {
 }
 AUTH_FAILED = "auth_failed"
 DOWNLOAD_URL_PATTERN = "*download_report*"
+META_VALUE_COLUMNS = (
+    "购物转化价值",
+    "购买转化价值",
+    "成效价值",
+    "Website purchases conversion value",
+    "Purchase conversion value",
+    "Result value",
+    "Results value",
+)
+META_ROAS_COLUMNS = (
+    "广告花费回报 (ROAS) - 购物",
+    "成效广告花费回报",
+    "Purchase ROAS (return on ad spend)",
+    "ROAS",
+)
+
+
+class ExportColumnValidationError(RuntimeError):
+    pass
+
+
+def _read_csv_header(path: Path) -> list[str]:
+    with path.open("r", encoding="utf-8-sig", newline="") as file_obj:
+        try:
+            return [str(item or "").strip() for item in next(csv.reader(file_obj))]
+        except StopIteration:
+            return []
+
+
+def validate_export_csv_has_meta_performance_columns(path: Path) -> dict[str, object]:
+    header = _read_csv_header(path)
+    header_set = {item for item in header if item}
+    missing: list[str] = []
+    if not any(column in header_set for column in META_VALUE_COLUMNS):
+        missing.append("meta_value")
+    if not any(column in header_set for column in META_ROAS_COLUMNS):
+        missing.append("meta_roas")
+    return {
+        "ok": not missing,
+        "missing": missing,
+        "columns": header,
+        "column_count": len(header),
+    }
+
+
+def validate_export_csv_or_raise(
+    path: Path,
+    *,
+    account_id: str,
+    level: str,
+    day: date | str,
+    column_preset: str,
+) -> dict[str, object]:
+    report = validate_export_csv_has_meta_performance_columns(path)
+    if report["ok"]:
+        return report
+    raise ExportColumnValidationError(
+        "Meta export CSV missing required Meta value/ROAS columns; "
+        f"account_id={account_id} level={level} day={day} "
+        f"column_preset={column_preset!r} missing={','.join(report['missing'])} "
+        f"columns={report['columns']} file={path}"
+    )
+
+
+def _quarantine_invalid_export(path: Path) -> Path | None:
+    if not path.exists():
+        return None
+    invalid = path.with_name(path.name + ".invalid_columns")
+    invalid.unlink(missing_ok=True)
+    path.replace(invalid)
+    return invalid
 
 
 def parse_date(value: str) -> date:
@@ -160,8 +232,34 @@ def export_one(
 ) -> bool:
     target = out_dir / f"{csv_prefix}_{label}_{day.isoformat()}.csv"
     if target.exists() and target.stat().st_size > 100:
-        print("SKIP existing", target.name, target.stat().st_size, flush=True)
-        return True
+        try:
+            report = validate_export_csv_or_raise(
+                target,
+                account_id=account_id,
+                level=label,
+                day=day,
+                column_preset=column_preset,
+            )
+        except ExportColumnValidationError as exc:
+            invalid = _quarantine_invalid_export(target)
+            print(
+                "INVALID_EXISTING_COLUMNS",
+                target.name,
+                "moved_to",
+                invalid.name if invalid else "",
+                str(exc)[:300],
+                flush=True,
+            )
+        else:
+            print(
+                "SKIP existing",
+                target.name,
+                target.stat().st_size,
+                "columns",
+                report["column_count"],
+                flush=True,
+            )
+            return True
 
     for attempt in range(1, 4):
         try:
@@ -183,7 +281,18 @@ def export_one(
                 return AUTH_FAILED
             button = _export_button(page)
             _click_export_and_save(page, button, target)
-            print("SAVED", target.name, target.stat().st_size, flush=True)
+            try:
+                report = validate_export_csv_or_raise(
+                    target,
+                    account_id=account_id,
+                    level=label,
+                    day=day,
+                    column_preset=column_preset,
+                )
+            except ExportColumnValidationError:
+                _quarantine_invalid_export(target)
+                raise
+            print("SAVED", target.name, target.stat().st_size, "columns", report["column_count"], flush=True)
             return True
         except Exception as exc:  # noqa: BLE001 - backfill should keep moving after transient UI errors.
             print(

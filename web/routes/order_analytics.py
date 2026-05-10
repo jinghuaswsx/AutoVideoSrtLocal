@@ -467,8 +467,10 @@ def ads_level_detail():
 @permission_required("data_analytics")
 def meta_ad_accounts_get():
     """返回数据分析模块的 Meta 广告账户配置。"""
+    preset_choices_loader = getattr(meta_ad_accounts, "column_preset_choices", lambda: [])
     return _json_response(_json_safe({
         "available_store_codes": list(meta_ad_accounts.AVAILABLE_STORE_CODES),
+        "column_preset_choices": preset_choices_loader(),
         "accounts": [account.to_dict() for account in meta_ad_accounts.get_all_accounts()],
     }))
 
@@ -497,9 +499,11 @@ def meta_ad_accounts_save():
         target_type="meta_ad_accounts",
         detail={"account_count": len(accounts)},
     )
+    preset_choices_loader = getattr(meta_ad_accounts, "column_preset_choices", lambda: [])
     return _json_response({
         "ok": True,
         "available_store_codes": list(meta_ad_accounts.AVAILABLE_STORE_CODES),
+        "column_preset_choices": preset_choices_loader(),
         "accounts": [account.to_dict() for account in meta_ad_accounts.get_all_accounts()],
     })
 
