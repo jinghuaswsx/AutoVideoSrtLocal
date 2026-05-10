@@ -629,6 +629,44 @@ def _patch_in_page_session(monkeypatch, *, fetch_results: dict[tuple[str, str], 
     )
 
 
+def test_xhr_daily_final_api_rows_keep_only_target_report_date():
+    """Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md"""
+    from tools import meta_daily_final_sync
+
+    target_date = date(2026, 5, 8)
+    account = _xhr_account("newjoyloo_bak", "111")
+
+    campaign_rows = meta_daily_final_sync._normalize_api_campaign_rows(
+        [
+            {"campaign_name": "keep-campaign", "date_start": "2026-05-08", "date_stop": "2026-05-08", "spend": "10"},
+            {"campaign_name": "drop-next-campaign", "date_start": "2026-05-09", "date_stop": "2026-05-09", "spend": "20"},
+            {"campaign_name": "drop-cross-campaign", "date_start": "2026-05-08", "date_stop": "2026-05-09", "spend": "30"},
+        ],
+        target_date,
+        account,
+    )
+    ad_rows = meta_daily_final_sync._normalize_api_ad_rows(
+        [
+            {"campaign_name": "c", "ad_name": "keep-ad", "date_start": "2026-05-08", "date_stop": "2026-05-08", "spend": "10"},
+            {"campaign_name": "c", "ad_name": "drop-next-ad", "date_start": "2026-05-09", "date_stop": "2026-05-09", "spend": "20"},
+        ],
+        target_date,
+        account,
+    )
+    adset_rows = meta_daily_final_sync._normalize_api_adset_rows(
+        [
+            {"campaign_name": "c", "adset_name": "keep-adset", "date_start": "2026-05-08", "date_stop": "2026-05-08", "spend": "10"},
+            {"campaign_name": "c", "adset_name": "drop-next-adset", "date_start": "2026-05-09", "date_stop": "2026-05-09", "spend": "20"},
+        ],
+        target_date,
+        account,
+    )
+
+    assert [row["campaign_name"] for row in campaign_rows] == ["keep-campaign"]
+    assert [row["ad_name"] for row in ad_rows] == ["keep-ad"]
+    assert [row["adset_name"] for row in adset_rows] == ["keep-adset"]
+
+
 def test_run_final_sync_xhr_api_pulls_three_levels_and_writes_via_api_replacers(monkeypatch, tmp_path):
     from tools import meta_daily_final_sync
 

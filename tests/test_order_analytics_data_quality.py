@@ -209,6 +209,63 @@ def test_reconcile_ad_spend_no_source_emits_warning(monkeypatch):
     assert check["status"] in ("warning", "ok")
 
 
+def test_check_meta_ad_day_uniqueness_flags_cross_business_day_duplicates(monkeypatch):
+    from appcore.order_analytics import data_quality as dq
+
+    calls = []
+
+    def fake_query_one(sql, args=None):
+        calls.append((sql, args))
+        if "meta_ad_daily_campaign_metrics" in sql:
+            return {"duplicate_groups": 2, "affected_spend": 1210.44}
+        if "meta_ad_daily_ad_metrics" in sql:
+            return {"duplicate_groups": 0, "affected_spend": 0}
+        return {}
+
+    monkeypatch.setattr(dq, "query_one", fake_query_one)
+
+    check = dq.check_meta_ad_day_uniqueness(
+        business_date_from=date(2026, 5, 1),
+        business_date_to=date(2026, 5, 9),
+    )
+
+    assert check["code"] == "meta_ad_day_uniqueness"
+    assert check["status"] == "mismatch"
+    assert check["duplicate_groups"] == 2
+    assert check["affected_spend_usd"] == pytest.approx(1210.44)
+    assert "每个广告自然日只能保留一份" in check["message"]
+    assert calls[0][1] == (date(2026, 5, 1), date(2026, 5, 9))
+    assert "$.merged_rows" in calls[0][0]
+
+
+def test_build_for_product_profit_includes_meta_ad_day_uniqueness(monkeypatch):
+    from appcore.order_analytics import data_quality as dq
+
+    monkeypatch.setattr(dq, "fetch_watermarks", lambda: {})
+    monkeypatch.setattr(dq, "resolve_source_mode", lambda **kwargs: dq.SOURCE_MODE_DAILY_FINAL)
+    monkeypatch.setattr(
+        dq,
+        "reconcile_ad_spend",
+        lambda **kwargs: {"code": "ad_spend_reconciled", "status": "ok"},
+    )
+    monkeypatch.setattr(
+        dq,
+        "check_meta_ad_day_uniqueness",
+        lambda **kwargs: {"code": "meta_ad_day_uniqueness", "status": "mismatch"},
+    )
+
+    payload = dq.build_for_product_profit(
+        date_from=date(2026, 5, 1),
+        date_to=date(2026, 5, 9),
+        allocated_ad_spend_usd=100,
+    )
+
+    assert payload["status"] == "mismatch"
+    assert any(
+        check["code"] == "meta_ad_day_uniqueness" for check in payload["checks"]
+    )
+
+
 def test_check_derived_profit_freshness_stale_when_source_newer(monkeypatch):
     from appcore.order_analytics import data_quality as dq
 

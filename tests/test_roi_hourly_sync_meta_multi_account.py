@@ -591,6 +591,55 @@ def test_sync_meta_realtime_daily_uses_xhr_session_for_xhr_api_account(
     assert result["channel"] == "xhr_api"
 
 
+def test_import_meta_realtime_api_rows_keep_only_business_date(
+    monkeypatch, disable_appcore_db_writes
+):
+    """Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md"""
+    account = _account("newjoyloo_bak", "111", sync_mode="xhr_api")
+    inserted: list[dict] = []
+
+    def fake_insert(**kwargs):
+        inserted.append(kwargs)
+
+    monkeypatch.setattr(
+        roi_hourly_sync, "_insert_meta_realtime_campaign_metric", fake_insert
+    )
+
+    result = roi_hourly_sync._import_meta_realtime_api_rows(
+        run_id=9001,
+        business_date=date(2026, 5, 9),
+        snapshot_at=datetime(2026, 5, 10, 13, 20),
+        account=account,
+        rows=[
+            {
+                "campaign_id": "keep",
+                "campaign_name": "keep-campaign",
+                "date_start": "2026-05-09",
+                "date_stop": "2026-05-09",
+                "spend": "10",
+            },
+            {
+                "campaign_id": "drop-next",
+                "campaign_name": "drop-next-campaign",
+                "date_start": "2026-05-10",
+                "date_stop": "2026-05-10",
+                "spend": "20",
+            },
+            {
+                "campaign_id": "drop-cross",
+                "campaign_name": "drop-cross-campaign",
+                "date_start": "2026-05-09",
+                "date_stop": "2026-05-10",
+                "spend": "30",
+            },
+        ],
+    )
+
+    assert [row["campaign_id"] for row in inserted] == ["keep"]
+    assert result["rows_imported"] == 1
+    assert result["spend_usd"] == 10.0
+
+
 def test_sync_meta_realtime_daily_mixed_sync_modes_each_use_their_own_path(
     monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
 ):

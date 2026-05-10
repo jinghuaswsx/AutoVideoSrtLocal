@@ -149,6 +149,22 @@ def _parse_optional_report_date(value: Any, fallback: date) -> date:
     return fallback
 
 
+def _target_api_report_dates(row: dict[str, Any], target_date: date) -> tuple[date, date] | None:
+    """Return parsed API row dates only when the row belongs to target_date.
+
+    Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md
+    """
+    raw_start = str(row.get("date_start") or "").strip()
+    raw_stop = str(row.get("date_stop") or "").strip()
+    report_start = _parse_optional_report_date(raw_start, target_date)
+    report_end = _parse_optional_report_date(raw_stop, target_date)
+    if raw_start and report_start != target_date:
+        return None
+    if raw_stop and report_end != target_date:
+        return None
+    return report_start, report_end
+
+
 def _json_default(value: Any) -> str:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
@@ -728,8 +744,10 @@ def _normalize_api_campaign_rows(
         if not campaign_name_raw:
             continue
         campaign_name = _text(campaign_name_raw, 255)
-        report_start = _parse_optional_report_date(row.get("date_start"), target_date)
-        report_end = _parse_optional_report_date(row.get("date_stop"), target_date)
+        report_dates = _target_api_report_dates(row, target_date)
+        if report_dates is None:
+            continue
+        report_start, report_end = report_dates
         item = {
             "ad_account_id": str(row.get("account_id") or account.account_id).strip().removeprefix("act_"),
             "ad_account_name": (str(row.get("account_name") or "").strip() or None),
@@ -760,8 +778,10 @@ def _normalize_api_ad_rows(
         adset_name_raw = str(row.get("adset_name") or "").strip()
         campaign_name_raw = str(row.get("campaign_name") or "").strip()
         ad_name = _text(ad_name_raw, 512)
-        report_start = _parse_optional_report_date(row.get("date_start"), target_date)
-        report_end = _parse_optional_report_date(row.get("date_stop"), target_date)
+        report_dates = _target_api_report_dates(row, target_date)
+        if report_dates is None:
+            continue
+        report_start, report_end = report_dates
         item = {
             "ad_account_id": str(row.get("account_id") or account.account_id).strip().removeprefix("act_"),
             "ad_account_name": (str(row.get("account_name") or "").strip() or None),
@@ -795,8 +815,10 @@ def _normalize_api_adset_rows(
             continue
         campaign_name_raw = str(row.get("campaign_name") or "").strip()
         adset_name = _text(adset_name_raw, 512)
-        report_start = _parse_optional_report_date(row.get("date_start"), target_date)
-        report_end = _parse_optional_report_date(row.get("date_stop"), target_date)
+        report_dates = _target_api_report_dates(row, target_date)
+        if report_dates is None:
+            continue
+        report_start, report_end = report_dates
         item = {
             "ad_account_id": str(row.get("account_id") or account.account_id).strip().removeprefix("act_"),
             "ad_account_name": (str(row.get("account_name") or "").strip() or None),

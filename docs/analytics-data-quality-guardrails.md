@@ -1,6 +1,6 @@
 # 数据分析看板数据质量护栏实施指令
 
-最后更新：2026-05-08（首版实施落地）
+最后更新：2026-05-10（新增 Meta 广告自然日唯一性校验）
 
 实施状态：v1 已落地。后端模块 `appcore/order_analytics/data_quality.py`、
 共享前端组件 `web/templates/_data_quality_bar.html`、定时巡检任务
@@ -57,13 +57,22 @@
 
    差额超过容忍阈值时，API 不能返回 `ok`。
 
-4. **时间范围必须显式。**
+4. **Meta 广告自然日不能重复入账。**
+   `meta_ad_daily_campaign_metrics` / `meta_ad_daily_ad_metrics` 必须满足：
+   同一个 `ad_account_id + report_start_date + campaign/ad` 不能跨多个
+   `meta_business_date` 出现，也不能把 `date_start != target_date` 的 XHR
+   行合并进目标业务日。若检测到 `raw_json.merged_rows > 1`、跨业务日重复
+   或 `report_start_date` 错挂，`data_quality.status` 必须降级为 `mismatch`。
+   具体修复锚点见
+   `docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md`。
+
+5. **时间范围必须显式。**
    所有页面显示的日期都按 Meta 业务日口径，即北京时间 16:00 切日。前端显示自然时间时，必须同时展示业务日范围。
 
-5. **水位必须可见。**
+6. **水位必须可见。**
    前端至少展示订单数据水位、广告数据水位、利润/产品盈亏计算水位，以及本页使用的数据源模式。
 
-6. **异常比错误数字更可接受。**
+7. **异常比错误数字更可接受。**
    如果无法证明数据正确，页面应显示 warning/error，而不是给用户一个看起来正常的数字。
 
 ## API 契约
@@ -104,6 +113,13 @@
         "actual": 1443.75,
         "diff": 0.0,
         "message": "广告源表总额与已分摊+未分摊金额一致"
+      },
+      {
+        "code": "meta_ad_day_uniqueness",
+        "status": "ok",
+        "duplicate_groups": 0,
+        "affected_spend_usd": 0.0,
+        "message": "Meta 广告自然日未发现跨业务日重复"
       }
     ],
     "warnings": [],

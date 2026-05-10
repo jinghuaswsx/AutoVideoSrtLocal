@@ -103,6 +103,34 @@ def _json_default(value: Any) -> str:
     return str(value)
 
 
+def _parse_api_report_date(value: Any):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _api_row_belongs_to_business_date(row: dict[str, Any], business_date) -> bool:
+    """Guard XHR rows so one Meta ad day is not stored under multiple days.
+
+    Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md
+    """
+    raw_start = str(row.get("date_start") or "").strip()
+    raw_stop = str(row.get("date_stop") or "").strip()
+    if not raw_start and not raw_stop:
+        return True
+    report_start = _parse_api_report_date(raw_start)
+    report_stop = _parse_api_report_date(raw_stop)
+    if raw_start and report_start != business_date:
+        return False
+    if raw_stop and report_stop != business_date:
+        return False
+    return True
+
+
 def _start_run(window_start: datetime, window_end: datetime, lookback_hours: int) -> int:
     return int(execute(
         "INSERT INTO roi_hourly_sync_runs "
@@ -713,6 +741,8 @@ def _import_meta_realtime_api_rows(
     spend_total = 0.0
     currencies: set[str] = set()
     for row in rows:
+        if not _api_row_belongs_to_business_date(row, business_date):
+            continue
         campaign_name_raw = str(row.get("campaign_name") or row.get("campaign_id") or "").strip()
         if not campaign_name_raw:
             continue

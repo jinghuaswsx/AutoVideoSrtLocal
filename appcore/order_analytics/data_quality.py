@@ -382,6 +382,101 @@ def reconcile_ad_spend(
     }
 
 
+def _query_meta_ad_day_uniqueness(
+    table_name: str,
+    entity_column: str,
+    *,
+    date_from: date,
+    date_to: date,
+) -> dict:
+    return query_one(
+        "SELECT COUNT(*) AS duplicate_groups, "
+        "       COALESCE(SUM(affected_spend), 0) AS affected_spend "
+        "FROM ("
+        f"  SELECT ad_account_id, report_start_date, {entity_column} AS entity_name, "
+        "         COUNT(DISTINCT COALESCE(meta_business_date, report_date)) AS business_dates, "
+        "         COALESCE(SUM(spend_usd), 0) AS affected_spend, "
+        "         SUM(CASE WHEN report_start_date IS NOT NULL "
+        "                   AND report_start_date <> COALESCE(meta_business_date, report_date) "
+        "                   AND COALESCE(spend_usd, 0) > 0 "
+        "                  THEN 1 ELSE 0 END) AS off_target_rows, "
+        "         SUM(CASE WHEN COALESCE("
+        "                    CAST(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.merged_rows')) AS UNSIGNED), "
+        "                    1"
+        "                  ) > 1 "
+        "                  THEN 1 ELSE 0 END) AS merged_row_groups "
+        f"  FROM {table_name} "
+        "  WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+        f"  GROUP BY ad_account_id, report_start_date, {entity_column} "
+        "  HAVING affected_spend > 0 "
+        "     AND (business_dates > 1 OR off_target_rows > 0 OR merged_row_groups > 0)"
+        ") bad",
+        (date_from, date_to),
+    ) or {}
+
+
+def check_meta_ad_day_uniqueness(
+    *,
+    business_date_from: date,
+    business_date_to: date,
+) -> dict:
+    """检查 Meta daily 表是否把同一广告自然日写进多个业务日。
+
+    Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md
+    """
+    try:
+        campaign_row = _query_meta_ad_day_uniqueness(
+            "meta_ad_daily_campaign_metrics",
+            "campaign_name",
+            date_from=business_date_from,
+            date_to=business_date_to,
+        )
+        ad_row = _query_meta_ad_day_uniqueness(
+            "meta_ad_daily_ad_metrics",
+            "ad_name",
+            date_from=business_date_from,
+            date_to=business_date_to,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("data_quality meta ad day uniqueness query failed: %s", exc)
+        return {
+            "code": "meta_ad_day_uniqueness",
+            "status": STATUS_WARNING,
+            "message": f"Meta 广告自然日唯一性查询失败：{exc}",
+        }
+
+    campaign_groups = int(campaign_row.get("duplicate_groups") or 0)
+    ad_groups = int(ad_row.get("duplicate_groups") or 0)
+    affected_spend = round(
+        float(campaign_row.get("affected_spend") or 0)
+        + float(ad_row.get("affected_spend") or 0),
+        2,
+    )
+    duplicate_groups = campaign_groups + ad_groups
+
+    if duplicate_groups <= 0:
+        return {
+            "code": "meta_ad_day_uniqueness",
+            "status": STATUS_OK,
+            "duplicate_groups": 0,
+            "affected_spend_usd": 0.0,
+            "message": "Meta 广告自然日未发现跨业务日重复",
+        }
+
+    return {
+        "code": "meta_ad_day_uniqueness",
+        "status": STATUS_MISMATCH,
+        "duplicate_groups": duplicate_groups,
+        "campaign_duplicate_groups": campaign_groups,
+        "ad_duplicate_groups": ad_groups,
+        "affected_spend_usd": affected_spend,
+        "message": (
+            "Meta 广告日表存在跨业务日重复或错挂：每个广告自然日只能保留一份，"
+            f"受影响分组 {duplicate_groups} 个，涉及广告费约 {affected_spend:.2f}"
+        ),
+    }
+
+
 # ── 派生数据新鲜度 ──────────────────────────────────────────
 
 def check_derived_profit_freshness(
@@ -489,6 +584,12 @@ def build_for_order_profit(
             )
         )
     checks.append(
+        check_meta_ad_day_uniqueness(
+            business_date_from=date_from,
+            business_date_to=date_to,
+        )
+    )
+    checks.append(
         check_derived_profit_freshness(
             business_date_from=date_from,
             business_date_to=date_to,
@@ -538,6 +639,12 @@ def build_for_realtime_overview(
             "status": STATUS_WARNING,
             "message": "日终广告表暂未生成，使用实时快照兜底",
         })
+    checks.append(
+        check_meta_ad_day_uniqueness(
+            business_date_from=business_date,
+            business_date_to=business_date,
+        )
+    )
     return build_data_quality(
         business_date_from=business_date,
         business_date_to=business_date,
@@ -567,6 +674,12 @@ def build_for_product_profit(
                 country=country,
             )
         )
+    checks.append(
+        check_meta_ad_day_uniqueness(
+            business_date_from=date_from,
+            business_date_to=date_to,
+        )
+    )
     return build_data_quality(
         business_date_from=date_from,
         business_date_to=date_to,
@@ -606,6 +719,10 @@ def run_recent_inspection(*, lookback_days: int = 7, today: date | None = None) 
                 business_date_from=target,
                 business_date_to=target,
             )
+            uniqueness = check_meta_ad_day_uniqueness(
+                business_date_from=target,
+                business_date_to=target,
+            )
         except Exception as exc:  # noqa: BLE001
             log.warning("data_quality inspection %s failed: %s", target, exc)
             days.append({
@@ -615,13 +732,17 @@ def run_recent_inspection(*, lookback_days: int = 7, today: date | None = None) 
             })
             overall_status = STATUS_ERROR
             continue
-        worst = _worst_status([recon.get("status"), freshness.get("status")])
+        worst = _worst_status([
+            recon.get("status"),
+            freshness.get("status"),
+            uniqueness.get("status"),
+        ])
         if _STATUS_RANK.get(worst, 0) > _STATUS_RANK.get(overall_status, 0):
             overall_status = worst
         days.append({
             "business_date": target.isoformat(),
             "status": worst,
-            "checks": [recon, freshness],
+            "checks": [recon, freshness, uniqueness],
         })
 
     return {
