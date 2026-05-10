@@ -170,6 +170,28 @@ def _target_api_report_dates(row: dict[str, Any], target_date: date) -> tuple[da
     return report_start, report_end
 
 
+_CSV_REPORT_START_KEYS = ("报告开始日期", "Reporting starts", "Report start date")
+_CSV_REPORT_END_KEYS = ("报告结束日期", "Reporting ends", "Report end date")
+
+
+def _target_csv_report_dates(row: dict[str, Any], target_date: date) -> tuple[date, date] | None:
+    """Return CSV report dates only when the exported row belongs to target_date.
+
+    Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md
+    """
+    raw_start_value = _pick(row, _CSV_REPORT_START_KEYS)
+    raw_end_value = _pick(row, _CSV_REPORT_END_KEYS)
+    raw_start = str(raw_start_value or "").strip()
+    raw_end = str(raw_end_value or "").strip()
+    report_start = _parse_optional_report_date(raw_start, target_date)
+    report_end = _parse_optional_report_date(raw_end, target_date)
+    if raw_start and report_start != target_date:
+        return None
+    if raw_end and report_end != target_date:
+        return None
+    return report_start, report_end
+
+
 def _json_default(value: Any) -> str:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
@@ -371,8 +393,10 @@ def _normalize_campaign_rows(path: Path, target_date: date, account: MetaAdAccou
         ) or "").strip()
         if not campaign_name_raw:
             continue
-        report_start = _parse_optional_report_date(_pick(row, ("报告开始日期", "Reporting starts", "Report start date")), target_date)
-        report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
+        report_dates = _target_csv_report_dates(row, target_date)
+        if report_dates is None:
+            continue
+        report_start, report_end = report_dates
         campaign_name = _text(campaign_name_raw, 255)
         item = {
             "ad_account_id": _account_id(row, account),
@@ -411,8 +435,10 @@ def _normalize_ad_rows(path: Path, target_date: date, account: MetaAdAccount) ->
             ("广告系列名称", "Campaign name", "Campaign Name"),
             (("广告系列", "名称"), ("campaign", "name")),
         ) or "").strip()
-        report_start = _parse_optional_report_date(_pick(row, ("报告开始日期", "Reporting starts", "Report start date")), target_date)
-        report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
+        report_dates = _target_csv_report_dates(row, target_date)
+        if report_dates is None:
+            continue
+        report_start, report_end = report_dates
         ad_name = _text(ad_name_raw, 512)
         item = {
             "ad_account_id": _account_id(row, account),
@@ -450,8 +476,10 @@ def _normalize_adset_rows(path: Path, target_date: date, account: MetaAdAccount)
             ("广告系列名称", "Campaign name", "Campaign Name"),
             (("广告系列", "名称"), ("campaign", "name")),
         ) or "").strip()
-        report_start = _parse_optional_report_date(_pick(row, ("报告开始日期", "Reporting starts", "Report start date")), target_date)
-        report_end = _parse_optional_report_date(_pick(row, ("报告结束日期", "Reporting ends", "Report end date")), target_date)
+        report_dates = _target_csv_report_dates(row, target_date)
+        if report_dates is None:
+            continue
+        report_start, report_end = report_dates
         adset_name = _text(adset_name_raw, 512)
         item = {
             "ad_account_id": _account_id(row, account),
@@ -1195,6 +1223,28 @@ def _refresh_final_roas_snapshot(target_date: date, source_run_id: int) -> int:
     return snapshot_id
 
 
+def _recompute_order_profit_after_final_sync(target_date: date, source_run_id: int) -> dict[str, Any]:
+    """Rebuild derived order-profit lines after final ad spend changes.
+
+    Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md
+    """
+    from tools.order_profit_backfill import backfill
+
+    result = backfill(target_date, target_date, dry_run=False)
+    totals = result.get("totals") or {}
+    return {
+        "status": "success",
+        "target_date": target_date.isoformat(),
+        "source_run_id": source_run_id,
+        "profit_run_id": result.get("run_id"),
+        "lines_total": int(totals.get("lines_total") or 0),
+        "lines_ok": int(totals.get("lines_ok") or 0),
+        "lines_incomplete": int(totals.get("lines_incomplete") or 0),
+        "lines_error": int(totals.get("lines_error") or 0),
+        "unallocated_ad_spend_usd": float(totals.get("unallocated_ad_spend_usd") or 0),
+    }
+
+
 def run_final_sync(
     target_date: date,
     *,
@@ -1430,6 +1480,18 @@ def run_final_sync(
         summary["snapshot_id"] = _refresh_final_roas_snapshot(target_date, run_id)
     status = "success" if success_count == len(accounts) else "failed"
     error_message = "; ".join(errors) if errors else None
+    if status == "success":
+        try:
+            summary["profit_backfill"] = _recompute_order_profit_after_final_sync(target_date, run_id)
+        except Exception as exc:
+            summary["profit_backfill"] = {
+                "status": "failed",
+                "target_date": target_date.isoformat(),
+                "source_run_id": run_id,
+                "error": str(exc),
+            }
+            status = "failed"
+            error_message = f"[order_profit_backfill] {exc}"
     summary["duration_seconds"] = round(time.time() - started, 2)
     summary["status"] = status
     summary["run_id"] = run_id

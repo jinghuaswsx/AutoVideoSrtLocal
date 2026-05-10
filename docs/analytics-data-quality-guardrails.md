@@ -61,8 +61,9 @@
    `meta_ad_daily_campaign_metrics` / `meta_ad_daily_ad_metrics` 必须满足：
    同一个 `ad_account_id + report_start_date + campaign/ad` 不能跨多个
    `meta_business_date` 出现，也不能把 `date_start != target_date` 的 XHR
-   行合并进目标业务日。若检测到 `raw_json.merged_rows > 1`、跨业务日重复
-   或 `report_start_date` 错挂，`data_quality.status` 必须降级为 `mismatch`。
+   行合并进目标业务日。若检测到跨业务日重复或 `report_start_date` 错挂，
+   `data_quality.status` 必须降级为 `mismatch`。`raw_json.merged_rows > 1`
+   只能作为排查上下文；同一业务日同名广告的合法合并不能单独触发 mismatch。
    具体修复锚点见
    `docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md`。
 
@@ -174,6 +175,7 @@
    ```
 
 6. 如果 `order_profit_lines.ad_cost_usd` 与现场重算结果不一致，`data_quality` 必须说明派生字段 stale，但页面仍应展示现场重算结果。
+7. Meta daily-final 成功重写某个已收盘业务日后，必须立即重算该业务日的 `order_profit_lines`；如果重算失败，该次 daily-final 不能静默成功，否则订单利润核算会保留旧广告分摊。
 
 ### 实时大盘必须实现的校验
 

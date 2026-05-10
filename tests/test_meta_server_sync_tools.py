@@ -206,6 +206,11 @@ def test_meta_daily_final_sync_account_code_can_select_disabled_legacy_account(m
         lambda path, target_date, account: {"rows": 3, "matched": 1, "spend_usd": 0.0},
     )
     monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 57)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_recompute_order_profit_after_final_sync",
+        lambda target_date, source_run_id: {"status": "success", "lines_total": 0},
+    )
 
     result = meta_daily_final_sync.run_final_sync(
         date(2026, 5, 6),
@@ -271,6 +276,11 @@ def test_meta_daily_final_sync_can_import_adsets_when_requested(monkeypatch, tmp
         lambda path, target_date, account: {"rows": 5, "matched": 0, "spend_usd": 0.0},
     )
     monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 58)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_recompute_order_profit_after_final_sync",
+        lambda target_date, source_run_id: {"status": "success", "lines_total": 0},
+    )
 
     result = meta_daily_final_sync.run_final_sync(
         date(2026, 1, 1),
@@ -455,6 +465,11 @@ def test_meta_daily_final_sync_iterates_enabled_accounts(monkeypatch, tmp_path):
         lambda path, target_date, account: ad_replaces.append((path.name, account.account_id)) or {"rows": 4, "matched": 1, "spend_usd": 0.0},
     )
     monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 55)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_recompute_order_profit_after_final_sync",
+        lambda target_date, source_run_id: {"status": "success", "lines_total": 0},
+    )
 
     result = meta_daily_final_sync.run_final_sync(date(2026, 5, 6), mode="run")
 
@@ -607,6 +622,11 @@ def _patch_final_sync_lifecycle(monkeypatch, *, accounts: list, finished: list):
         ),
     )
     monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 1)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_recompute_order_profit_after_final_sync",
+        lambda target_date, source_run_id: {"status": "success", "lines_total": 0},
+    )
 
 
 def _patch_in_page_session(monkeypatch, *, fetch_results: dict[tuple[str, str], list[dict]], raise_on_open: Exception | None = None):
@@ -665,6 +685,45 @@ def test_xhr_daily_final_api_rows_keep_only_target_report_date():
     assert [row["campaign_name"] for row in campaign_rows] == ["keep-campaign"]
     assert [row["ad_name"] for row in ad_rows] == ["keep-ad"]
     assert [row["adset_name"] for row in adset_rows] == ["keep-adset"]
+
+
+def test_csv_daily_final_rows_keep_only_target_report_date(tmp_path):
+    """Docs-anchor: docs/superpowers/specs/2026-05-10-meta-ads-one-row-per-ad-day.md"""
+    from tools import meta_daily_final_sync
+
+    target_date = date(2026, 5, 8)
+    account = _csv_account("Omurio", "222")
+
+    campaign_csv = tmp_path / "campaigns.csv"
+    campaign_csv.write_text(
+        "Reporting starts,Reporting ends,Campaign name,Amount spent (USD)\n"
+        "2026-05-08,2026-05-08,keep-campaign,10\n"
+        "2026-05-09,2026-05-09,drop-next-campaign,20\n"
+        "2026-05-08,2026-05-09,drop-cross-campaign,30\n",
+        encoding="utf-8",
+    )
+    adset_csv = tmp_path / "adsets.csv"
+    adset_csv.write_text(
+        "Reporting starts,Reporting ends,Ad set name,Amount spent (USD)\n"
+        "2026-05-08,2026-05-08,keep-adset,10\n"
+        "2026-05-09,2026-05-09,drop-next-adset,20\n",
+        encoding="utf-8",
+    )
+    ad_csv = tmp_path / "ads.csv"
+    ad_csv.write_text(
+        "Reporting starts,Reporting ends,Ad name,Amount spent (USD)\n"
+        "2026-05-08,2026-05-08,keep-ad,10\n"
+        "2026-05-09,2026-05-09,drop-next-ad,20\n",
+        encoding="utf-8",
+    )
+
+    campaign_rows = meta_daily_final_sync._normalize_campaign_rows(campaign_csv, target_date, account)
+    adset_rows = meta_daily_final_sync._normalize_adset_rows(adset_csv, target_date, account)
+    ad_rows = meta_daily_final_sync._normalize_ad_rows(ad_csv, target_date, account)
+
+    assert [row["campaign_name"] for row in campaign_rows] == ["keep-campaign"]
+    assert [row["adset_name"] for row in adset_rows] == ["keep-adset"]
+    assert [row["ad_name"] for row in ad_rows] == ["keep-ad"]
 
 
 def test_run_final_sync_xhr_api_pulls_three_levels_and_writes_via_api_replacers(monkeypatch, tmp_path):
@@ -922,3 +981,47 @@ def test_run_final_sync_xhr_api_uses_account_timezone_for_time_range(monkeypatch
     # Sanity: the legacy raw-string form is gone.
     legacy_form = {"since": "2026-05-08", "until": "2026-05-08"}
     assert captured_time_ranges[0] != legacy_form  # PDT must straddle 2 days
+
+
+def test_run_final_sync_success_recomputes_order_profit(monkeypatch, tmp_path):
+    """Docs-anchor: docs/analytics-data-quality-guardrails.md"""
+    from tools import meta_daily_final_sync
+
+    accounts = [_csv_account("Omurio", "222")]
+    finished: list[dict] = []
+    _patch_final_sync_lifecycle(monkeypatch, accounts=accounts, finished=finished)
+    monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
+
+    def fake_csv_export(target_date, export_dir, account, **kwargs):
+        export_dir.mkdir(parents=True, exist_ok=True)
+        campaign_path = export_dir / f"{account.csv_prefix}_campaigns_{target_date.isoformat()}.csv"
+        ad_path = export_dir / f"{account.csv_prefix}_ads_{target_date.isoformat()}.csv"
+        campaign_path.write_text("x" * 200, encoding="utf-8")
+        ad_path.write_text("y" * 200, encoding="utf-8")
+        return {"returncode": 0, "campaigns_path": str(campaign_path), "ads_path": str(ad_path)}
+
+    recomputed: list[tuple[date, int]] = []
+    monkeypatch.setattr(meta_daily_final_sync, "_run_meta_ads_export", fake_csv_export)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_replace_campaign_daily_rows",
+        lambda *args, **kwargs: {"rows": 1, "matched": 1, "spend_usd": 12.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_replace_ad_daily_rows",
+        lambda *args, **kwargs: {"rows": 1, "matched": 1, "spend_usd": 12.0},
+    )
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_recompute_order_profit_after_final_sync",
+        lambda target_date, source_run_id: recomputed.append((target_date, source_run_id))
+        or {"status": "success", "lines_total": 3},
+        raising=False,
+    )
+
+    result = meta_daily_final_sync.run_final_sync(date(2026, 5, 8), mode="run")
+
+    assert result["status"] == "success"
+    assert recomputed == [(date(2026, 5, 8), 9101)]
+    assert result["profit_backfill"]["lines_total"] == 3

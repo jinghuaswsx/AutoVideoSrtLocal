@@ -17,7 +17,7 @@
 实际实现中：
 
 - `tools/meta_daily_final_sync.py` 的 XHR daily-final path 会把 API 返回的每行都归入调用方传入的 `target_date`。
-- `aggregate_daily_entity_rows(...)` 按 `ad_account_id + report_date + entity` 聚合，而 `report_date` 固定为 `target_date`，没有把 `date_start` 纳入去重键。
+- `aggregate_daily_entity_rows(...)` 按 `ad_account_id + report_date + entity` 聚合，而 `report_date` 固定为 `target_date`，没有把 `date_start` / CSV `Reporting starts` 纳入过滤条件。
 - realtime XHR path 也把所有返回行写到同一个 `business_date + snapshot_at` 下，唯一键没有包含 `date_start`。
 
 因此只要 Meta 返回 `date_start=D` 和 `date_start=D+1` 两组行，系统就会把不属于目标日的行混入目标业务日，后续订单利润核算、实时大盘、产品盈亏看板都会读到偏高广告费。
@@ -26,9 +26,12 @@
 
 1. 每个广告账户、每个 Meta 广告自然日、每个 campaign/ad/adset 只保留一份数据。
 2. XHR daily-final 只接受 `date_start == target_date` 的 API 行；`date_stop` 缺失时不阻断，但有值且不等于 `target_date` 时丢弃。
-3. XHR realtime 只接受 `date_start == business_date` 的 API 行；缺少 `date_start` 的旧 CSV/browser 行不受影响。
-4. 保留 `account_xhr_time_range(...)` 作为请求覆盖范围，避免刚过切日时取不到行；但入库前必须按 API 行自己的 `date_start/date_stop` 做目标日过滤。
-5. 订单利润核算、实时大盘、产品盈亏看板继续共享同一广告来源表；修复发生在同步入口，避免三个消费侧各自补丁。
+3. CSV daily-final 只接受 `Reporting starts == target_date` 且 `Reporting ends == target_date` 的行；缺少报告日期字段时保留，兼容旧导出。
+4. XHR realtime 只接受 `date_start == business_date` 的 API 行；缺少 `date_start` 的旧 CSV/browser 行不受影响。
+5. 保留 `account_xhr_time_range(...)` 作为请求覆盖范围，避免刚过切日时取不到行；但入库前必须按 API 行自己的 `date_start/date_stop` 做目标日过滤。
+6. daily-final 成功写入目标日所有选中账户后，必须立即重算同一业务日的 `order_profit_lines`，避免广告源表已刷新但订单利润仍保留旧分摊。
+7. `data_quality` 的自然日唯一性只检查跨业务日重复与报告日错挂；`raw_json.merged_rows > 1` 只有在跨日/错挂时才是脏数据信号。同一业务日同名广告的合法合并不能单独降级为 mismatch。
+8. 订单利润核算、实时大盘、产品盈亏看板继续共享同一广告来源表；修复发生在同步入口，避免三个消费侧各自补丁。
 
 ## 非目标
 
@@ -39,8 +42,10 @@
 ## 验收
 
 - daily-final XHR 对同一个 target date 收到 `date_start=target_date` 和 `date_start=target_date+1` 两组 campaign/ad/adset 行时，只写入 target date 那组。
+- daily-final CSV 对同一个 target date 收到 `Reporting starts=target_date` 和 `Reporting starts=target_date+1` 两组 campaign/ad/adset 行时，只写入 target date 那组。
 - realtime XHR 对同一个 business date 收到多天 rows 时，只把 target date 那组写入 `meta_ad_realtime_daily_campaign_metrics`。
 - 同一 `ad_account_id + report_start_date + campaign/ad` 不再跨多个 `meta_business_date` 出现正数 spend。
+- daily-final 成功后，对应业务日的 `order_profit_lines.updated_at` 必须晚于该日 Meta daily import 水位；若重算失败，daily-final run 不能静默成功。
 - 三个前端入口读取到的广告费总额来自同一套去重后数据：
   - 订单利润核算
   - 数据分析实时大盘

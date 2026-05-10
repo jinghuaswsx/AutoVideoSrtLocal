@@ -235,7 +235,29 @@ def test_check_meta_ad_day_uniqueness_flags_cross_business_day_duplicates(monkey
     assert check["affected_spend_usd"] == pytest.approx(1210.44)
     assert "每个广告自然日只能保留一份" in check["message"]
     assert calls[0][1] == (date(2026, 5, 1), date(2026, 5, 9))
-    assert "$.merged_rows" in calls[0][0]
+    assert "$.merged_rows" not in calls[0][0]
+
+
+def test_check_meta_ad_day_uniqueness_does_not_flag_same_day_merged_rows(monkeypatch):
+    """同日同名实体合并是合法去重，不能当成跨业务日脏数据。"""
+    from appcore.order_analytics import data_quality as dq
+
+    captured_sql = []
+
+    def fake_query_one(sql, args=None):
+        captured_sql.append(sql)
+        return {"duplicate_groups": 0, "affected_spend": 0}
+
+    monkeypatch.setattr(dq, "query_one", fake_query_one)
+
+    check = dq.check_meta_ad_day_uniqueness(
+        business_date_from=date(2026, 5, 1),
+        business_date_to=date(2026, 5, 9),
+    )
+
+    assert check["status"] == "ok"
+    assert all("$.merged_rows" not in sql for sql in captured_sql)
+    assert all("business_dates > 1 OR off_target_rows > 0" in sql for sql in captured_sql)
 
 
 def test_build_for_product_profit_includes_meta_ad_day_uniqueness(monkeypatch):
