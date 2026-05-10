@@ -513,6 +513,28 @@
   border-radius: var(--radius-md);
   background: var(--bg-subtle);
 }
+.oar-profit-summary-item.is-clickable {
+  cursor: pointer;
+  transition: border-color var(--duration) var(--ease), background-color var(--duration) var(--ease);
+}
+.oar-profit-summary-item.is-clickable:hover,
+.oar-profit-summary-item.is-clickable:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  outline: none;
+}
+.oar-profit-summary-item.is-active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+.oar-profit-summary-item[aria-disabled="true"] {
+  cursor: default;
+}
+.oar-profit-summary-item[aria-disabled="true"]:hover,
+.oar-profit-summary-item[aria-disabled="true"]:focus-visible {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+}
 .oar-profit-summary-label {
   font-size: var(--text-xs);
   color: var(--fg-muted);
@@ -535,6 +557,20 @@
 }
 .oar-profit-summary-note.is-warning {
   color: var(--warning-fg);
+}
+.oar-campaign-filter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+.oar-campaign-filter[hidden] {
+  display: none;
+}
+.oar-campaign-filter-text {
+  color: var(--warning-fg);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 .oar-pagination {
   display: flex;
@@ -1443,7 +1479,14 @@
             <div class="oar-profit-summary-value" id="realtimeProfitAd">$0.00</div>
             <div class="oar-profit-summary-note">按订单分摊</div>
           </div>
-          <div class="oar-profit-summary-item">
+          <div
+            class="oar-profit-summary-item is-clickable"
+            id="realtimeProfitUnallocatedAdCard"
+            data-realtime-campaign-filter="unallocated"
+            role="button"
+            tabindex="0"
+            aria-disabled="true"
+            aria-label="查看未分摊广告费对应广告计划">
             <div class="oar-profit-summary-label">未分摊广告费</div>
             <div class="oar-profit-summary-value" id="realtimeProfitUnallocatedAd">$0.00</div>
             <div class="oar-profit-summary-note" id="realtimeProfitUnallocatedAdNote">未匹配 product 或当天无可分摊订单</div>
@@ -1520,8 +1563,12 @@
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">广告计划实时数据</div>
-        <div class="oar-note">来自本机 ADS Power 90 导出的 Meta 实时快照，按消耗倒序</div>
+        <div class="oar-campaign-filter" id="realtimeCampaignFilterBar" hidden>
+          <span class="oar-campaign-filter-text" id="realtimeCampaignFilterText">仅显示未分摊广告费计划</span>
+          <button type="button" class="btn btn-default btn-sm" id="realtimeCampaignFilterClear">显示全部</button>
+        </div>
       </div>
+      <div class="oar-note" style="padding: 0 20px 12px;">来自本机 ADS Power 90 导出的 Meta 实时快照，按消耗倒序</div>
       <div class="oa-table-scroll">
         <table class="oa-table oar-compact-table oar-campaign-table">
           <thead>
@@ -1534,6 +1581,7 @@
               <th>平台 ROAS</th>
               <th>展示</th>
               <th>点击</th>
+              <th>分摊状态</th>
               <th>计划 ID</th>
             </tr>
           </thead>
@@ -3479,9 +3527,12 @@
     productLabel: '',
     siteCode: '',
     profitPage: 1,
-    profitPageSize: 100
+    profitPageSize: 100,
+    campaignFilter: '',
+    unallocatedAd: 0
   };
   var realtimeProductSearchTimer = null;
+  var realtimeLastCampaignRows = [];
 
   var realtimeRefresh = document.getElementById('realtimeRefresh');
   if (realtimeRefresh) {
@@ -3540,14 +3591,23 @@
       loadRealtimeSubTabs();
     });
   }
+  var realtimeUnallocatedAdCard = document.getElementById('realtimeProfitUnallocatedAdCard');
+  if (realtimeUnallocatedAdCard) {
+    realtimeUnallocatedAdCard.addEventListener('click', showRealtimeUnallocatedCampaigns);
+    realtimeUnallocatedAdCard.addEventListener('keydown', function(evt) {
+      if (evt.key === 'Enter' || evt.key === ' ') {
+        evt.preventDefault();
+        showRealtimeUnallocatedCampaigns();
+      }
+    });
+  }
+  var realtimeCampaignFilterClear = document.getElementById('realtimeCampaignFilterClear');
+  if (realtimeCampaignFilterClear) {
+    realtimeCampaignFilterClear.addEventListener('click', clearRealtimeCampaignFilter);
+  }
   document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
-        item.classList.toggle('is-active', item === btn);
-      });
-      document.querySelectorAll('.oar-subpanel').forEach(function(panel) {
-        panel.classList.toggle('is-active', panel.id === 'realtimeSub' + capitalize(btn.dataset.realtimeSubtab));
-      });
+      setRealtimeSubtab(btn.dataset.realtimeSubtab);
     });
   });
   setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
@@ -3567,6 +3627,31 @@
 
   function resetRealtimeProfitPage() {
     realtimeState.profitPage = 1;
+  }
+
+  function setRealtimeSubtab(name) {
+    document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
+      item.classList.toggle('is-active', item.dataset.realtimeSubtab === name);
+    });
+    document.querySelectorAll('.oar-subpanel').forEach(function(panel) {
+      panel.classList.toggle('is-active', panel.id === 'realtimeSub' + capitalize(name));
+    });
+  }
+
+  function showRealtimeUnallocatedCampaigns() {
+    var card = document.getElementById('realtimeProfitUnallocatedAdCard');
+    if (card && card.getAttribute('aria-disabled') === 'true') return;
+    realtimeState.campaignFilter = 'unallocated';
+    if (card) card.classList.add('is-active');
+    setRealtimeSubtab('campaigns');
+    renderRealtimeCampaigns(realtimeLastCampaignRows);
+  }
+
+  function clearRealtimeCampaignFilter() {
+    realtimeState.campaignFilter = '';
+    var card = document.getElementById('realtimeProfitUnallocatedAdCard');
+    if (card) card.classList.remove('is-active');
+    renderRealtimeCampaigns(realtimeLastCampaignRows);
   }
 
   function setRealtimeRange(range, skipLoad) {
@@ -3716,7 +3801,7 @@
     if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
     if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
     if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
-    if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
+    if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
     renderRealtimeOrderProfitSummary(null);
     renderRealtimeOrderProfitPagination(null);
     var range;
@@ -3727,7 +3812,7 @@
       if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
       if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
       if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
-      if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
+      if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
       return;
     }
     var params = new URLSearchParams();
@@ -3754,7 +3839,8 @@
         renderRealtimeOrderProfitPagination(data.order_profit_details_page || {});
         renderRealtimeOrderProfitDetails(data.order_profit_details || []);
         renderRealtimeProductSales(data.product_sales_stats || []);
-        renderRealtimeCampaigns(data.campaigns || []);
+        realtimeLastCampaignRows = data.campaigns || [];
+        renderRealtimeCampaigns(realtimeLastCampaignRows);
         hourlyBody.innerHTML = '';
         var rows = data.hourly || [];
         if (!rows.length && (data.snapshots || []).length) {
@@ -3798,7 +3884,7 @@
         if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
         if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
-        if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
+        if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
         renderRealtimeOrderProfitSummary(null);
         renderRealtimeOrderProfitPagination(null);
       });
@@ -3857,6 +3943,7 @@
 
     var unallocatedAd = Number(s.unallocated_ad_spend_usd || 0);
     var totalAdSpend = Number(s.total_ad_spend_usd || 0);
+    realtimeState.unallocatedAd = Number.isFinite(unallocatedAd) ? unallocatedAd : 0;
     setRealtimeProfitText('realtimeProfitTotalRevenue', fmtMoney(s.total_revenue_usd));
     setRealtimeProfitText('realtimeProfitPurchase', fmtMoney(purchaseCost));
     setRealtimeProfitText('realtimeProfitLogistics', fmtMoney(logisticsCost));
@@ -3870,6 +3957,12 @@
         : '未匹配 product 或当天无可分摊订单',
       unallocatedAd > 0
     );
+    var unallocatedCard = document.getElementById('realtimeProfitUnallocatedAdCard');
+    if (unallocatedCard) {
+      var canOpenCampaigns = unallocatedAd > 0;
+      unallocatedCard.setAttribute('aria-disabled', canOpenCampaigns ? 'false' : 'true');
+      unallocatedCard.classList.toggle('is-active', canOpenCampaigns && realtimeState.campaignFilter === 'unallocated');
+    }
     setRealtimeProfitText('realtimeProfitTotal', fmtMoney(profit));
     setRealtimeProfitText('realtimeProfitTotalRevenueNote', '订单 ' + fmtInt(orderCount) + ' 单');
     setRealtimeProfitNote(
@@ -3999,11 +4092,43 @@
     }
   }
 
+  function formatCampaignAllocationStatus(row) {
+    if (!row || !row.allocation_status) return '-';
+    if (row.allocation_status === 'allocated') return '已分摊';
+    if (row.allocation_reason === 'unmatched_product') return '未匹配 product';
+    if (row.allocation_reason === 'matched_no_units') return '当天无可分摊订单';
+    if (row.allocation_status === 'unallocated') return '未分摊';
+    return '-';
+  }
+
+  function renderRealtimeCampaignFilterBar(totalRows, visibleRows) {
+    var bar = document.getElementById('realtimeCampaignFilterBar');
+    var text = document.getElementById('realtimeCampaignFilterText');
+    if (!bar) return;
+    var isFiltering = realtimeState.campaignFilter === 'unallocated';
+    bar.hidden = !isFiltering;
+    if (text && isFiltering) {
+      var spend = (realtimeLastCampaignRows || []).reduce(function(total, row) {
+        if (!row || row.allocation_status !== 'unallocated') return total;
+        return total + Number(row.unallocated_spend_usd || row.spend_usd || 0);
+      }, 0);
+      text.textContent = '未分摊广告费计划 ' + fmtInt(visibleRows) + ' / ' + fmtInt(totalRows) + ' · ' + fmtMoney(spend);
+    }
+  }
+
   function renderRealtimeCampaigns(rows) {
     var body = document.getElementById('realtimeCampaignBody');
     if (!body) return;
+    rows = rows || [];
+    var visibleRows = rows;
+    if (realtimeState.campaignFilter === 'unallocated') {
+      visibleRows = rows.filter(function(row) {
+        return row && row.allocation_status === 'unallocated';
+      });
+    }
+    renderRealtimeCampaignFilterBar(rows.length, visibleRows.length);
     body.innerHTML = '';
-    (rows || []).forEach(function(row) {
+    visibleRows.forEach(function(row) {
       var tr = document.createElement('tr');
       addTextCell(tr, row.campaign_name || row.normalized_campaign_code || '-', 'oar-product-cell');
       addTextCell(tr, row.ad_account_name || row.ad_account_id || '-');
@@ -4013,11 +4138,14 @@
       addTextCell(tr, fmtRoasValue(row.platform_roas));
       addTextCell(tr, fmtInt(row.impressions || 0));
       addTextCell(tr, fmtInt(row.clicks || 0));
+      addTextCell(tr, formatCampaignAllocationStatus(row), 'oar-status-cell');
       addTextCell(tr, row.campaign_id || '-', 'oar-id-cell');
       body.appendChild(tr);
     });
     if (!body.children.length) {
-      body.innerHTML = '<tr><td colspan="9">暂无广告计划数据</td></tr>';
+      body.innerHTML = realtimeState.campaignFilter === 'unallocated'
+        ? '<tr><td colspan="10">暂无未分摊广告费计划</td></tr>'
+        : '<tr><td colspan="10">暂无广告计划数据</td></tr>';
     }
   }
 

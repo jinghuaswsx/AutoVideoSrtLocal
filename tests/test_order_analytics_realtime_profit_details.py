@@ -598,3 +598,155 @@ def test_get_realtime_campaign_details_returns_empty_when_no_snapshot(monkeypatc
 
     monkeypatch.setattr(oa, "query", fake_query)
     assert _get_realtime_campaign_details(date(2026, 5, 8), None) == []
+
+
+def test_annotate_campaign_allocation_marks_unmatched_product(monkeypatch):
+    from appcore.order_analytics import realtime as realtime_oa
+
+    monkeypatch.setattr(realtime_oa, "resolve_ad_product_match", lambda code: None)
+    monkeypatch.setattr(oa, "query", lambda *a, **kw: [])
+
+    campaigns = [{
+        "campaign_name": "unknown-campaign",
+        "normalized_campaign_code": "unknown-campaign",
+        "spend_usd": 12.34,
+    }]
+    result = realtime_oa._annotate_campaign_allocation(
+        campaigns,
+        date(2026, 5, 9),
+        date(2026, 5, 9),
+    )
+
+    row = result["campaigns"][0]
+    assert row["allocation_status"] == "unallocated"
+    assert row["allocation_reason"] == "unmatched_product"
+    assert row["unallocated_spend_usd"] == 12.34
+    assert result["unallocated_campaigns"] == [row]
+    assert result["unallocated_campaign_summary"] == {"count": 1, "spend_usd": 12.34}
+
+
+def test_annotate_campaign_allocation_marks_matched_product_without_units(monkeypatch):
+    from appcore.order_analytics import realtime as realtime_oa
+
+    monkeypatch.setattr(
+        realtime_oa,
+        "resolve_ad_product_match",
+        lambda code: {
+            "id": 427,
+            "product_code": "fully-automatic-water-blaster-rjc",
+            "name": "ARP9电动水枪",
+        },
+    )
+    monkeypatch.setattr(oa, "query", lambda *a, **kw: [])
+
+    campaigns = [{
+        "campaign_name": "fully-automatic-water-blaster",
+        "normalized_campaign_code": "fully-automatic-water-blaster",
+        "spend_usd": 79.07,
+    }]
+    result = realtime_oa._annotate_campaign_allocation(
+        campaigns,
+        date(2026, 5, 9),
+        date(2026, 5, 9),
+    )
+
+    row = result["campaigns"][0]
+    assert row["allocation_status"] == "unallocated"
+    assert row["allocation_reason"] == "matched_no_units"
+    assert row["matched_product_id"] == 427
+    assert row["matched_product_code"] == "fully-automatic-water-blaster-rjc"
+    assert row["matched_product_name"] == "ARP9电动水枪"
+    assert row["unallocated_spend_usd"] == 79.07
+    assert result["unallocated_campaigns"] == [row]
+
+
+def test_annotate_campaign_allocation_marks_allocated_when_units_exist(monkeypatch):
+    from appcore.order_analytics import realtime as realtime_oa
+
+    monkeypatch.setattr(
+        realtime_oa,
+        "resolve_ad_product_match",
+        lambda code: {
+            "id": 316,
+            "product_code": "sonic-lens-refresher-rjc",
+            "name": "隐形眼镜清洗器",
+        },
+    )
+
+    def fake_query(sql, args=()):
+        assert "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id" in sql
+        return [{"business_date": date(2026, 5, 9), "product_id": 316, "units": 26}]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    campaigns = [{
+        "campaign_name": "sonic-lens-refresher-rjc",
+        "normalized_campaign_code": "sonic-lens-refresher-rjc",
+        "spend_usd": 221.41,
+    }]
+    result = realtime_oa._annotate_campaign_allocation(
+        campaigns,
+        date(2026, 5, 9),
+        date(2026, 5, 9),
+    )
+
+    row = result["campaigns"][0]
+    assert row["allocation_status"] == "allocated"
+    assert row["allocation_reason"] == "allocated"
+    assert row["matched_product_id"] == 316
+    assert row["unallocated_spend_usd"] == 0.0
+    assert result["unallocated_campaigns"] == []
+    assert result["unallocated_campaign_summary"] == {"count": 0, "spend_usd": 0.0}
+
+
+def test_realtime_overview_exposes_unallocated_campaigns(monkeypatch):
+    from appcore.order_analytics import realtime as realtime_oa
+
+    target = date(2026, 5, 9)
+    snapshot_at = datetime(2026, 5, 10, 2, 0)
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [{
+                "id": 879,
+                "snapshot_at": snapshot_at,
+                "source_run_id": 740,
+                "order_count": 0,
+                "line_count": 0,
+                "units": 0,
+                "order_revenue_usd": 0.0,
+                "shipping_revenue_usd": 0.0,
+                "ad_spend_usd": 12.34,
+                "last_order_at": None,
+                "order_data_status": "ok",
+                "ad_data_status": "ok",
+            }]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "GROUP BY ad_account_id" in sql:
+            return [{"ad_account_id": "act_a", "latest_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "ad_account_id=%s" in sql:
+            return [{
+                "ad_account_id": "act_a",
+                "ad_account_name": "Account A",
+                "campaign_id": "camp_1",
+                "campaign_name": "unknown-campaign",
+                "normalized_campaign_code": "unknown-campaign",
+                "result_count": 0,
+                "spend_usd": 12.34,
+                "purchase_value_usd": 0.0,
+                "impressions": 0,
+                "clicks": 0,
+            }]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(realtime_oa, "resolve_ad_product_match", lambda code: None)
+    monkeypatch.setattr(realtime_oa, "get_dianxiaomi_product_sales_stats", lambda *a, **kw: [])
+
+    result = oa.get_realtime_roas_overview("2026-05-09", now=datetime(2026, 5, 10, 2, 5))
+
+    assert result["unallocated_campaign_summary"] == {"count": 1, "spend_usd": 12.34}
+    assert len(result["unallocated_campaigns"]) == 1
+    assert result["unallocated_campaigns"][0]["allocation_reason"] == "unmatched_product"
+    assert result["campaigns"][0]["allocation_status"] == "unallocated"

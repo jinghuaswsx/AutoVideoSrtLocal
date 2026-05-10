@@ -6,6 +6,7 @@
 - 实时大盘改版：`docs/superpowers/specs/2026-05-02-realtime-dashboard-redesign.md`
 - 业务日对齐：`docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md`
 - 实时大盘店铺筛选：`docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md`
+- 未分摊广告费 campaign 跳转：`docs/superpowers/specs/2026-05-10-realtime-unallocated-campaign-navigation.md`
 - 数据质量护栏：`docs/analytics-data-quality-guardrails.md`
 
 ## 实时大盘业务日 + 广告费分摊（硬规则）

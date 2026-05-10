@@ -21,7 +21,7 @@ from ._helpers import (
     _roas,
 )
 from .dianxiaomi import compute_meta_business_window_bj, get_dianxiaomi_product_sales_stats
-from .meta_ads import resolve_ad_product_match
+from .meta_ads import product_code_candidates_for_ad_campaign
 from .order_profit_aggregation import (
     _load_realtime_ad_cost_adjustments,
     get_order_profit_status_summary,
@@ -128,6 +128,35 @@ def execute(*args, **kwargs):
 
 def get_conn(*args, **kwargs):
     return _facade().get_conn(*args, **kwargs)
+
+
+def resolve_ad_product_match(campaign_name: str) -> dict[str, Any] | None:
+    """Realtime-local campaign product resolver using this module's DB facade."""
+    for code in product_code_candidates_for_ad_campaign(campaign_name):
+        rows = query(
+            "SELECT id, product_code, name FROM media_products "
+            "WHERE product_code=%s AND deleted_at IS NULL "
+            "LIMIT 1",
+            (code,),
+        )
+        if rows:
+            return dict(rows[0])
+
+    normalized = (campaign_name or "").strip().lower()
+    if not normalized:
+        return None
+    rows = query(
+        "SELECT o.product_id AS id, o.product_code, m.name "
+        "FROM campaign_product_overrides o "
+        "LEFT JOIN media_products m ON m.id = o.product_id AND m.deleted_at IS NULL "
+        "WHERE o.normalized_campaign_code = %s "
+        "LIMIT 1",
+        (normalized,),
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    return {"id": row["id"], "product_code": row.get("product_code"), "name": row.get("name")}
 
 
 def _normalize_positive_int(value: Any, default: int, *, max_value: int | None = None) -> int:
@@ -901,6 +930,153 @@ def _format_realtime_campaign_details(rows: list[dict[str, Any]]) -> list[dict[s
     return campaigns
 
 
+def _campaign_code(row: dict[str, Any]) -> str:
+    return str(
+        row.get("normalized_campaign_code") or row.get("campaign_name") or ""
+    ).strip().lower()
+
+
+def _date_key(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _business_dates_between(date_from: date, date_to: date) -> list[date]:
+    if date_to < date_from:
+        return []
+    days: list[date] = []
+    current = date_from
+    while current <= date_to:
+        days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _load_profit_units_for_products(
+    date_from: date,
+    date_to: date,
+    product_ids: set[int],
+) -> dict[tuple[date, int], int]:
+    dates = _business_dates_between(date_from, date_to)
+    if not dates or not product_ids:
+        return {}
+    product_list = sorted(product_ids)
+    date_placeholders = ", ".join(["%s"] * len(dates))
+    product_placeholders = ", ".join(["%s"] * len(product_list))
+    rows = query(
+        "SELECT d.meta_business_date AS business_date, p.product_id, "
+        "COALESCE(SUM(d.quantity), 0) AS units "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        f"WHERE d.meta_business_date IN ({date_placeholders}) "
+        f"AND p.product_id IN ({product_placeholders}) "
+        "GROUP BY d.meta_business_date, p.product_id",
+        tuple(dates + product_list),
+    )
+    units: dict[tuple[date, int], int] = {}
+    for row in rows or []:
+        business_date = _date_key(row.get("business_date"))
+        product_id = row.get("product_id")
+        if business_date and product_id is not None:
+            units[(business_date, int(product_id))] = int(row.get("units") or 0)
+    return units
+
+
+def _empty_campaign_allocation(campaigns: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    return {
+        "campaigns": campaigns or [],
+        "unallocated_campaigns": [],
+        "unallocated_campaign_summary": {"count": 0, "spend_usd": 0.0},
+    }
+
+
+def _annotate_campaign_allocation(
+    campaigns: list[dict[str, Any]],
+    date_from: date,
+    date_to: date,
+) -> dict[str, Any]:
+    """Mark campaign rows that contribute to realtime unallocated ad spend.
+
+    The units lookup intentionally uses ``order_profit_lines`` joined to
+    ``dianxiaomi_order_lines`` so this view follows the same profit-line
+    allocation boundary as ``order_profit_summary.ad_cost_usd``.
+    Spec: docs/superpowers/specs/2026-05-10-realtime-unallocated-campaign-navigation.md
+    """
+    if not campaigns:
+        return _empty_campaign_allocation([])
+
+    annotated: list[dict[str, Any]] = []
+    match_cache: dict[str, dict[str, Any] | None] = {}
+    product_ids: set[int] = set()
+    for row in campaigns:
+        item = dict(row)
+        code = _campaign_code(item)
+        match: dict[str, Any] | None = None
+        if code:
+            if code not in match_cache:
+                match_cache[code] = resolve_ad_product_match(code)
+            match = match_cache[code]
+        if match and match.get("id") is not None:
+            product_id = int(match["id"])
+            item["matched_product_id"] = product_id
+            item["matched_product_code"] = match.get("product_code")
+            item["matched_product_name"] = match.get("name") or match.get("product_name")
+            product_ids.add(product_id)
+        else:
+            item["matched_product_id"] = None
+            item["matched_product_code"] = None
+            item["matched_product_name"] = None
+        annotated.append(item)
+
+    units_by_product = _load_profit_units_for_products(date_from, date_to, product_ids)
+    dates = _business_dates_between(date_from, date_to)
+    unallocated_campaigns: list[dict[str, Any]] = []
+    for item in annotated:
+        spend = _money(item.get("spend_usd"))
+        product_id = item.get("matched_product_id")
+        if product_id is None:
+            item["allocation_status"] = "unallocated"
+            item["allocation_reason"] = "unmatched_product"
+            item["unallocated_spend_usd"] = spend
+        else:
+            units = sum(
+                int(units_by_product.get((business_date, int(product_id))) or 0)
+                for business_date in dates
+            )
+            item["matched_profit_units"] = units
+            if units <= 0:
+                item["allocation_status"] = "unallocated"
+                item["allocation_reason"] = "matched_no_units"
+                item["unallocated_spend_usd"] = spend
+            else:
+                item["allocation_status"] = "allocated"
+                item["allocation_reason"] = "allocated"
+                item["unallocated_spend_usd"] = 0.0
+        if item["allocation_status"] == "unallocated" and item["unallocated_spend_usd"] > 0:
+            unallocated_campaigns.append(item)
+
+    unallocated_spend = round(
+        sum(float(row.get("unallocated_spend_usd") or 0) for row in unallocated_campaigns),
+        2,
+    )
+    return {
+        "campaigns": annotated,
+        "unallocated_campaigns": unallocated_campaigns,
+        "unallocated_campaign_summary": {
+            "count": len(unallocated_campaigns),
+            "spend_usd": unallocated_spend,
+        },
+    }
+
+
 def _get_realtime_campaign_details(
     target: date,
     snapshot_at: datetime | None,
@@ -1461,6 +1637,8 @@ def _build_realtime_overview_for_range(
         "order_profit_details_page": _order_profit_page_info(len(order_profit_all), page, page_size),
         "order_profit_summary": profit_summary,
         "campaigns": [],
+        "unallocated_campaigns": [],
+        "unallocated_campaign_summary": {"count": 0, "spend_usd": 0.0},
         "product_sales_stats": get_dianxiaomi_product_sales_stats(
             start,
             end,
@@ -1602,6 +1780,12 @@ def get_realtime_roas_overview(
                 product_id=normalized_product_id,
                 site_codes=normalized_site_codes,
             )
+            campaign_allocation = _annotate_campaign_allocation(
+                campaign_details,
+                target,
+                target,
+            )
+            campaign_details = campaign_allocation["campaigns"]
             ad_spend = round(sum(c["spend_usd"] for c in campaign_details), 2)
             meta_purchase_value = round(sum(c["purchase_value_usd"] for c in campaign_details), 2)
             meta_purchases = sum(c["result_count"] for c in campaign_details)
@@ -1699,6 +1883,8 @@ def get_realtime_roas_overview(
                     total_ad_spend_usd=ad_spend,
                 ),
                 "campaigns": campaign_details,
+                "unallocated_campaigns": campaign_allocation["unallocated_campaigns"],
+                "unallocated_campaign_summary": campaign_allocation["unallocated_campaign_summary"],
                 "product_sales_stats": product_sales_stats,
             }
         order_revenue = _money(snap.get("order_revenue_usd"))
@@ -1733,6 +1919,12 @@ def get_realtime_roas_overview(
             snapshot_at,
             site_codes=normalized_site_codes,
         )
+        campaign_allocation = _annotate_campaign_allocation(
+            campaign_details,
+            target,
+            target,
+        )
+        campaign_details = campaign_allocation["campaigns"]
         product_sales_stats = _get_realtime_product_sales_stats(
             target,
             snapshot_at,
@@ -1802,6 +1994,8 @@ def get_realtime_roas_overview(
                 total_ad_spend_usd=ad_spend,
             ),
             "campaigns": campaign_details,
+            "unallocated_campaigns": campaign_allocation["unallocated_campaigns"],
+            "unallocated_campaign_summary": campaign_allocation["unallocated_campaign_summary"],
             "product_sales_stats": product_sales_stats,
         }
 
@@ -1946,6 +2140,21 @@ def get_realtime_roas_overview(
         page_size=normalized_page_size,
         site_codes=normalized_site_codes,
     )
+    campaign_details = (
+        realtime_ad_summary["campaigns"]
+        if realtime_ad_summary is not None
+        else _get_daily_campaigns(
+            target,
+            product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
+        )
+    )
+    campaign_allocation = _annotate_campaign_allocation(
+        campaign_details,
+        target,
+        target,
+    )
+    campaign_details = campaign_allocation["campaigns"]
     return {
         "period": {
             "date": target,
@@ -1992,15 +2201,9 @@ def get_realtime_roas_overview(
             order_profit_all,
             total_ad_spend_usd=summary["ad_spend"],
         ),
-        "campaigns": (
-            realtime_ad_summary["campaigns"]
-            if realtime_ad_summary is not None
-            else _get_daily_campaigns(
-                target,
-                product_id=normalized_product_id,
-                site_codes=normalized_site_codes,
-            )
-        ),
+        "campaigns": campaign_details,
+        "unallocated_campaigns": campaign_allocation["unallocated_campaigns"],
+        "unallocated_campaign_summary": campaign_allocation["unallocated_campaign_summary"],
         "product_sales_stats": _get_realtime_product_sales_stats(
             target,
             data_until,

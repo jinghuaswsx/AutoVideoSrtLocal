@@ -1676,6 +1676,31 @@ def test_realtime_order_profit_has_summary_and_pagination_controls(authed_client
     assert "SUM(逐行利润)" in body
 
 
+def test_realtime_unallocated_ad_card_is_clickable_and_campaign_filter_is_wired(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    assert 'id="realtimeProfitUnallocatedAdCard"' in panel
+    assert 'data-realtime-campaign-filter="unallocated"' in panel
+    assert "function showRealtimeUnallocatedCampaigns()" in body
+    assert "setRealtimeSubtab('campaigns')" in body
+    assert "realtimeState.campaignFilter = 'unallocated'" in body
+    assert "renderRealtimeCampaigns(realtimeLastCampaignRows)" in body
+
+
+def test_realtime_campaign_table_has_allocation_status_column(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    assert "<th>分摊状态</th>" in panel
+    assert "function formatCampaignAllocationStatus(row)" in body
+    assert "formatCampaignAllocationStatus(row)" in body
+
+
 def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert response.status_code == 200
