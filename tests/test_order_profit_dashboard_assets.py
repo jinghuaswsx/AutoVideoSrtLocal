@@ -124,3 +124,17 @@ def test_order_profit_dashboard_renders_three_summary_cards():
     ]
     for snippet in expected_bindings:
         assert snippet in TEMPLATE, f"missing binding: {snippet}"
+
+
+def test_order_profit_mobile_tables_keep_shared_header_and_body_layout():
+    """移动端表格不能把 thead/tbody 拆成两张表，否则表头和数据列会错位。"""
+    expected_snippets = [
+        ".op-section table.op-table:not(.mobile-no-scroll)",
+        "display: table-header-group;",
+        "display: table-row-group;",
+        "display: table-footer-group;",
+        "overflow-x: auto;",
+        "white-space: nowrap;",
+    ]
+    for snippet in expected_snippets:
+        assert snippet in TEMPLATE, f"missing mobile table layout override: {snippet}"
