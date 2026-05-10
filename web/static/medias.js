@@ -6322,8 +6322,8 @@
     if (kwInput && window.MEDIAS_LIST_INITIAL_QUERY && !kwInput.value) {
       kwInput.value = String(window.MEDIAS_LIST_INITIAL_QUERY || '');
     }
-    if (searchBtn && kwInput) {
-      searchBtn.addEventListener('click', () => runSearchNow({ syncUrl: true }));
+    if (searchBtn) searchBtn.addEventListener('click', () => runSearchNow({ syncUrl: true }));
+    if (kwInput) {
       kwInput.addEventListener('input', scheduleLiveSearch);
       kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow({ syncUrl: true }); } });
     }

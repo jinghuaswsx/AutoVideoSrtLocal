@@ -153,3 +153,28 @@ def test_medias_list_html_has_filter_dropdowns():
     assert "filterRoasStatus" in js
     assert "xmyc_match" in js
     assert "roas_status" in js
+
+
+def test_medias_toolbar_compacts_actions_and_filters():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    js = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    action_start = html.index('<div class="oc-header-action-buttons">')
+    action_end = html.index("</div>", action_start)
+    action_block = html[action_start:action_end]
+    assert 'id="createBtn"' in action_block
+    assert "oc-tool-download-btn" in action_block
+
+    assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr));" in html
+    assert 'id="searchBtn"' not in html
+    assert "<span>搜索</span>" not in html[html.index("<!-- Toolbar -->"):html.index("<!-- List -->")]
+
+    events_start = js.index("const searchBtn = $('searchBtn');")
+    events_end = js.index("const filterXmyc", events_start)
+    events_block = js[events_start:events_end]
+    assert "if (searchBtn) searchBtn.addEventListener('click', () => runSearchNow({ syncUrl: true }));" in events_block
+    assert "kwInput.addEventListener('input', scheduleLiveSearch);" in events_block
+    assert "if (searchBtn && kwInput)" not in events_block
