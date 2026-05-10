@@ -169,6 +169,10 @@ def test_medias_toolbar_compacts_actions_and_filters():
     assert "oc-tool-download-btn" in action_block
 
     assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr));" in html
+    mobile_start = html.index("@media (max-width: 760px)")
+    mobile_end = html.index("/* ────────── Buttons", mobile_start)
+    mobile_block = html[mobile_start:mobile_end]
+    assert ".oc-header-actions { width:100%; min-width:0; align-items:stretch; flex:0 0 auto; }" in mobile_block
     assert 'id="searchBtn"' not in html
     assert "<span>搜索</span>" not in html[html.index("<!-- Toolbar -->"):html.index("<!-- List -->")]
 
