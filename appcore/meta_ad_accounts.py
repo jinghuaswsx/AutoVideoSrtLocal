@@ -334,3 +334,52 @@ def account_xhr_time_range(
         until_date = end_local.date()
 
     return {"since": since_date.isoformat(), "until": until_date.isoformat()}
+
+
+def account_xhr_report_date(account: "MetaAdAccount", business_date: date) -> date:
+    """Return the account-local report date that belongs to ``business_date``.
+
+    ``account_xhr_time_range`` can intentionally straddle multiple account
+    calendar days. Meta returns one row per account calendar day when
+    ``time_increment=1`` is used, so importers must only write the first
+    account-local report day into the current BJ business date.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-10-meta-xhr-report-date-filter-design.md
+    """
+    return date.fromisoformat(account_xhr_time_range(account, business_date)["since"])
+
+
+def _parse_xhr_row_report_date(value: object) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def filter_xhr_insight_rows_to_report_date(
+    rows: list[dict], report_date: date
+) -> list[dict]:
+    """Keep only XHR insight rows for ``report_date``.
+
+    Production requests include ``date_start`` and ``date_stop``. Rows missing
+    both fields are kept for backward compatibility with older tests and any
+    unexpected Meta payload that omits date fields.
+    """
+    filtered: list[dict] = []
+    for row in rows:
+        row_dates = [
+            parsed
+            for parsed in (
+                _parse_xhr_row_report_date(row.get("date_start")),
+                _parse_xhr_row_report_date(row.get("date_stop")),
+            )
+            if parsed is not None
+        ]
+        if row_dates and any(item != report_date for item in row_dates):
+            continue
+        filtered.append(row)
+    return filtered

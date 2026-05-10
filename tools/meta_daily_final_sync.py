@@ -21,7 +21,12 @@ from appcore import meta_login_autofill
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query_one
-from appcore.meta_ad_accounts import MetaAdAccount, account_xhr_time_range
+from appcore.meta_ad_accounts import (
+    MetaAdAccount,
+    account_xhr_report_date,
+    account_xhr_time_range,
+    filter_xhr_insight_rows_to_report_date,
+)
 from appcore.order_analytics.ad_market_country import extract_market_country_from_names
 from tools import roi_hourly_sync as realtime_sync
 
@@ -1052,7 +1057,8 @@ def _sync_account_via_xhr_api(
     so per-row product matching / market-country derivation is identical
     to the CSV path."""
     time_range = account_xhr_time_range(account, target_date)
-    campaign_rows = session.fetch_insights(
+    report_date = account_xhr_report_date(account, target_date)
+    campaign_raw_rows = session.fetch_insights(
         account.account_id,
         level="campaign",
         time_range=time_range,
@@ -1061,9 +1067,10 @@ def _sync_account_via_xhr_api(
         limit=realtime_sync.META_MARKETING_API_LIMIT,
         max_pages=realtime_sync.META_MARKETING_API_MAX_PAGES,
     )
-    adset_rows: list[dict[str, Any]] = []
+    campaign_rows = filter_xhr_insight_rows_to_report_date(campaign_raw_rows, report_date)
+    adset_raw_rows: list[dict[str, Any]] = []
     if include_adsets:
-        adset_rows = session.fetch_insights(
+        adset_raw_rows = session.fetch_insights(
             account.account_id,
             level="adset",
             time_range=time_range,
@@ -1072,7 +1079,8 @@ def _sync_account_via_xhr_api(
             limit=realtime_sync.META_MARKETING_API_LIMIT,
             max_pages=realtime_sync.META_MARKETING_API_MAX_PAGES,
         )
-    ad_rows = session.fetch_insights(
+    adset_rows = filter_xhr_insight_rows_to_report_date(adset_raw_rows, report_date)
+    ad_raw_rows = session.fetch_insights(
         account.account_id,
         level="ad",
         time_range=time_range,
@@ -1081,6 +1089,7 @@ def _sync_account_via_xhr_api(
         limit=realtime_sync.META_MARKETING_API_LIMIT,
         max_pages=realtime_sync.META_MARKETING_API_MAX_PAGES,
     )
+    ad_rows = filter_xhr_insight_rows_to_report_date(ad_raw_rows, report_date)
 
     campaign_report = _replace_campaign_daily_rows_from_api(campaign_rows, target_date, account)
     adset_report = (
@@ -1094,10 +1103,21 @@ def _sync_account_via_xhr_api(
         "campaign_report": campaign_report,
         "adset_report": adset_report,
         "ad_report": ad_report,
+        "report_date": report_date.isoformat(),
         "raw_row_counts": {
+            "campaign": len(campaign_raw_rows),
+            "adset": len(adset_raw_rows),
+            "ad": len(ad_raw_rows),
+        },
+        "filtered_row_counts": {
             "campaign": len(campaign_rows),
             "adset": len(adset_rows),
             "ad": len(ad_rows),
+        },
+        "dropped_row_counts": {
+            "campaign": len(campaign_raw_rows) - len(campaign_rows),
+            "adset": len(adset_raw_rows) - len(adset_rows),
+            "ad": len(ad_raw_rows) - len(ad_rows),
         },
     }
 

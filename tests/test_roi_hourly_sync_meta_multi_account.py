@@ -640,6 +640,51 @@ def test_import_meta_realtime_api_rows_keep_only_business_date(
     assert result["spend_usd"] == 10.0
 
 
+def test_sync_meta_realtime_daily_xhr_filters_rows_to_account_report_date(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    """Docs-anchor:
+    docs/superpowers/specs/2026-05-10-meta-xhr-report-date-filter-design.md
+
+    A PDT XHR request can return D and D+1 account-day rows. Realtime
+    import for business_date D must not merge the D+1 row into D.
+    """
+    accounts = [
+        _account("newjoyloo", "111", sync_mode="xhr_api", timezone="America/Los_Angeles"),
+    ]
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: accounts)
+    fake_session = _FakeSession({
+        "111": [
+            {"campaign_id": "keep", "date_start": "2026-05-09", "date_stop": "2026-05-09", "spend": "7.0"},
+            {"campaign_id": "drop", "date_start": "2026-05-10", "date_stop": "2026-05-10", "spend": "99.0"},
+        ],
+    })
+    _patch_session(monkeypatch, fake_session)
+
+    captured: list[list[dict]] = []
+
+    def fake_import(*, run_id, business_date, snapshot_at, rows, account):
+        captured.append(rows)
+        return {"rows_imported": len(rows), "spend_usd": sum(float(r["spend"]) for r in rows)}
+
+    monkeypatch.setattr(roi_hourly_sync, "_import_meta_realtime_api_rows", fake_import)
+    monkeypatch.setattr(roi_hourly_sync, "_sync_meta_account_browser", lambda **kw: pytest.fail("csv path should not run"))
+
+    summary = roi_hourly_sync._sync_meta_realtime_daily(
+        date(2026, 5, 9),
+        datetime(2026, 5, 9, 12, 20),
+        meta_channel="browser",
+    )
+
+    assert [row["campaign_id"] for row in captured[0]] == ["keep"]
+    assert summary["rows_imported"] == 1
+    assert summary["spend_usd"] == 7.0
+    result = next(r for r in summary["account_results"] if r["code"] == "newjoyloo")
+    assert result["api_report"]["raw_row_count"] == 2
+    assert result["api_report"]["row_count"] == 1
+    assert result["api_report"]["filtered_out_rows"] == 1
+
+
 def test_sync_meta_realtime_daily_mixed_sync_modes_each_use_their_own_path(
     monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
 ):

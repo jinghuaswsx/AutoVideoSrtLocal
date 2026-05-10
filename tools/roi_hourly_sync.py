@@ -27,7 +27,12 @@ from appcore import meta_login_autofill
 from appcore import order_analytics as oa
 from appcore import scheduled_tasks
 from appcore.db import execute, query, query_one
-from appcore.meta_ad_accounts import MetaAdAccount, account_xhr_time_range
+from appcore.meta_ad_accounts import (
+    MetaAdAccount,
+    account_xhr_report_date,
+    account_xhr_time_range,
+    filter_xhr_insight_rows_to_report_date,
+)
 from appcore.meta_ads_cdp import DEFAULT_META_ADS_CDP_URL
 
 TIMEZONE = "Asia/Shanghai"
@@ -883,7 +888,7 @@ def _sync_meta_account_in_page_api(
     Reuses an already-open ``MetaAdsSession`` so multiple accounts in the
     same run share a single browser visit and CDP lock acquisition.
     """
-    rows = session.fetch_insights(
+    raw_rows = session.fetch_insights(
         account.account_id,
         level="campaign",
         time_range=account_xhr_time_range(account, business_date),
@@ -892,13 +897,18 @@ def _sync_meta_account_in_page_api(
         limit=META_MARKETING_API_LIMIT,
         max_pages=META_MARKETING_API_MAX_PAGES,
     )
+    report_date = account_xhr_report_date(account, business_date)
+    rows = filter_xhr_insight_rows_to_report_date(raw_rows, report_date)
     result: dict[str, Any] = {
         "api_report": {
             "business_date": business_date,
             "snapshot_at": snapshot_at,
             "account_id": account.account_id,
             "request_count": 1,
+            "raw_row_count": len(raw_rows),
             "row_count": len(rows),
+            "filtered_out_rows": len(raw_rows) - len(rows),
+            "report_date": report_date.isoformat(),
             "channel": "xhr_api",
         },
     }

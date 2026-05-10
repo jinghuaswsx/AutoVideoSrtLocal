@@ -717,6 +717,66 @@ def test_run_final_sync_xhr_api_pulls_three_levels_and_writes_via_api_replacers(
     assert captured["adset"] == []
 
 
+def test_run_final_sync_xhr_api_filters_rows_to_account_report_date(monkeypatch, tmp_path):
+    """Docs-anchor:
+    docs/superpowers/specs/2026-05-10-meta-xhr-report-date-filter-design.md
+
+    PDT accounts fetch a straddling time_range (D..D+1), but daily-final
+    must only write the account report day D. The D+1 row belongs to the
+    next report day and must not be merged into business_date D.
+    """
+    from tools import meta_daily_final_sync
+
+    accounts = [_xhr_account("newjoyloo", "111")]
+    accounts[0].timezone = "America/Los_Angeles"
+    finished: list[dict] = []
+    _patch_final_sync_lifecycle(monkeypatch, accounts=accounts, finished=finished)
+    monkeypatch.setattr(meta_daily_final_sync, "META_DAILY_FINAL_EXPORT_ROOT", tmp_path)
+
+    fetch_results = {
+        ("111", "campaign"): [
+            {"campaign_name": "keep-c", "date_start": "2026-05-08", "date_stop": "2026-05-08", "spend": "10"},
+            {"campaign_name": "drop-c", "date_start": "2026-05-09", "date_stop": "2026-05-09", "spend": "99"},
+        ],
+        ("111", "adset"): [
+            {"adset_name": "keep-s", "date_start": "2026-05-08", "date_stop": "2026-05-08", "spend": "10"},
+            {"adset_name": "drop-s", "date_start": "2026-05-09", "date_stop": "2026-05-09", "spend": "99"},
+        ],
+        ("111", "ad"): [
+            {"ad_name": "keep-a", "date_start": "2026-05-08", "date_stop": "2026-05-08", "spend": "10"},
+            {"ad_name": "drop-a", "date_start": "2026-05-09", "date_stop": "2026-05-09", "spend": "99"},
+        ],
+    }
+    _patch_in_page_session(monkeypatch, fetch_results=fetch_results)
+
+    captured: dict[str, list[list[dict]]] = {"campaign": [], "adset": [], "ad": []}
+
+    def stub_replace(level):
+        def _replace(rows, target_date, account):
+            captured[level].append(rows)
+            return {
+                "rows": len(rows),
+                "matched": 0,
+                "spend_usd": sum(float(row.get("spend") or 0) for row in rows),
+            }
+        return _replace
+
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_campaign_daily_rows_from_api", stub_replace("campaign"))
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_adset_daily_rows_from_api", stub_replace("adset"))
+    monkeypatch.setattr(meta_daily_final_sync, "_replace_ad_daily_rows_from_api", stub_replace("ad"))
+
+    result = meta_daily_final_sync.run_final_sync(date(2026, 5, 8), mode="run", include_adsets=True)
+
+    assert result["status"] == "success"
+    assert [row["campaign_name"] for row in captured["campaign"][0]] == ["keep-c"]
+    assert [row["adset_name"] for row in captured["adset"][0]] == ["keep-s"]
+    assert [row["ad_name"] for row in captured["ad"][0]] == ["keep-a"]
+    account_result = result["account_results"][0]
+    assert account_result["raw_row_counts"] == {"campaign": 2, "adset": 2, "ad": 2}
+    assert account_result["filtered_row_counts"] == {"campaign": 1, "adset": 1, "ad": 1}
+    assert account_result["dropped_row_counts"] == {"campaign": 1, "adset": 1, "ad": 1}
+
+
 def test_run_final_sync_mixed_sync_modes_route_to_their_channels(monkeypatch, tmp_path):
     from tools import meta_daily_final_sync
 
