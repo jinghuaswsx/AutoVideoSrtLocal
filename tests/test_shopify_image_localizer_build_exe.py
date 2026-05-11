@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import zipfile
 
 import pytest
@@ -13,8 +14,13 @@ def test_shopify_build_release_paths_are_versioned(tmp_path):
     assert build_exe._release_dist_root(tmp_path, "v2.0").name == "ShopifyImageLocalizer-2.0"
 
 
-def test_shopify_build_defaults_to_clean_release_root():
-    assert build_exe.DEFAULT_OUTPUT_ROOT == build_exe.Path(r"G:\ShopifyRelease")
+def test_shopify_build_default_output_root_matches_platform():
+    expected = (
+        build_exe.DEFAULT_OUTPUT_ROOT_WINDOWS
+        if build_exe.os.name == "nt"
+        else build_exe.DEFAULT_OUTPUT_ROOT_POSIX
+    )
+    assert build_exe._default_output_root() == expected
 
 
 def test_shopify_build_portable_zip_keeps_versioned_folder(tmp_path):
@@ -42,3 +48,52 @@ def test_shopify_build_rejects_existing_release_artifacts(tmp_path):
 
     with pytest.raises(FileExistsError, match="will not be overwritten"):
         build_exe._ensure_release_targets_available(release_root, archive_path)
+
+
+def test_shopify_build_rejects_generated_runtime_config_without_api_key(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    repo_root = tmp_path / "repo"
+    dist_root = tmp_path / "dist"
+    repo_root.mkdir()
+    dist_root.mkdir()
+    monkeypatch.setattr(build_exe.settings, "DEFAULT_API_KEY", "")
+
+    with pytest.raises(ValueError, match="SHOPIFY_IMAGE_LOCALIZER_API_KEY"):
+        build_exe._write_runtime_config(repo_root, dist_root)
+
+
+def test_shopify_build_rejects_empty_source_runtime_config(tmp_path):
+    repo_root = tmp_path / "repo"
+    dist_root = tmp_path / "dist"
+    repo_root.mkdir()
+    dist_root.mkdir()
+    build_exe.settings.config_path(repo_root).write_text(
+        json.dumps(
+            {
+                "base_url": "http://172.30.254.14",
+                "api_key": "",
+                "browser_user_data_dir": r"C:\chrome-shopify-image",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="api_key"):
+        build_exe._write_runtime_config(repo_root, dist_root)
+
+
+def test_shopify_build_writes_runtime_and_default_configs(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    repo_root = tmp_path / "repo"
+    dist_root = tmp_path / "dist"
+    repo_root.mkdir()
+    dist_root.mkdir()
+    monkeypatch.setattr(build_exe.settings, "DEFAULT_API_KEY", "packaged-openapi-key")
+
+    build_exe._write_runtime_config(repo_root, dist_root)
+
+    runtime_payload = json.loads(build_exe.settings.config_path(dist_root).read_text(encoding="utf-8"))
+    default_payload = json.loads(build_exe.settings.default_config_path(dist_root).read_text(encoding="utf-8"))
+    assert runtime_payload["api_key"] == "packaged-openapi-key"
+    assert runtime_payload["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+    assert default_payload == runtime_payload

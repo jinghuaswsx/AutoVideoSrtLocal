@@ -25,6 +25,7 @@ WINEPREFIX_DEFAULT="/home/cjh/wine-shopify-build"
 WINE_PYTHON_DEFAULT='C:\Python312\python.exe'
 DOWNLOADS_DIR="/opt/autovideosrt/web/static/downloads/tools"
 PROD_BASE_URL="http://127.0.0.1"
+PROD_ENV_FILE="/opt/autovideosrt/.env"
 
 VERSION=""
 RELEASE_NOTE=""
@@ -49,6 +50,29 @@ USAGE
 err() { printf '\033[31m[error]\033[0m %s\n' "$*" >&2; }
 info() { printf '\033[36m[info ]\033[0m %s\n' "$*"; }
 ok()  { printf '\033[32m[ok   ]\033[0m %s\n' "$*"; }
+
+read_env_key() {
+  local env_file="$1"
+  python3 - "$env_file" <<'PY'
+import sys
+path = sys.argv[1]
+wanted = ("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "OPENAPI_MEDIA_API_KEY")
+values = {}
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key in wanted:
+                values[key] = value.strip().strip('"').strip("'")
+except FileNotFoundError:
+    pass
+print(values.get("SHOPIFY_IMAGE_LOCALIZER_API_KEY") or values.get("OPENAPI_MEDIA_API_KEY") or "")
+PY
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -76,6 +100,16 @@ command -v xvfb-run >/dev/null 2>&1 || { err "xvfb-run 未安装。sudo apt inst
 command -v sudo >/dev/null 2>&1 || { err "sudo 未安装"; exit 1; }
 command -v curl >/dev/null 2>&1 || { err "curl 未安装"; exit 1; }
 command -v python3 >/dev/null 2>&1 || { err "python3 未安装（DB 写入步骤需要本机 python）"; exit 1; }
+
+if [[ -z "${SHOPIFY_IMAGE_LOCALIZER_API_KEY:-}" ]]; then
+  SHOPIFY_IMAGE_LOCALIZER_API_KEY="$(read_env_key "$PROD_ENV_FILE")"
+  export SHOPIFY_IMAGE_LOCALIZER_API_KEY
+fi
+if [[ -z "${SHOPIFY_IMAGE_LOCALIZER_API_KEY:-}" ]]; then
+  err "缺少 Shopify Image Localizer OpenAPI key。设置 SHOPIFY_IMAGE_LOCALIZER_API_KEY，或在 $PROD_ENV_FILE 配置 OPENAPI_MEDIA_API_KEY。"
+  exit 1
+fi
+ok "OpenAPI key 已注入打包环境（不打印值）"
 
 WINE_VERSION="$(wine --version 2>&1 | head -1 || true)"
 case "$WINE_VERSION" in
@@ -145,6 +179,32 @@ if (( ZIP_SIZE_MB < 50 )); then
   err "zip 大小异常（${ZIP_SIZE_MB} MB），预期 ~100+ MB；可能依赖打包不全。"
   exit 1
 fi
+
+info "校验 zip 内运行配置..."
+python3 - "$PORTABLE_ZIP" <<'PY'
+import json
+import sys
+import zipfile
+
+zip_path = sys.argv[1]
+required_suffixes = (
+    "shopify_image_localizer_config.json",
+    "shopify_image_localizer_default_config.json",
+)
+required_fields = ("api_key", "browser_user_data_dir")
+with zipfile.ZipFile(zip_path) as archive:
+    names = archive.namelist()
+    for suffix in required_suffixes:
+        matches = [name for name in names if name.endswith(suffix)]
+        if not matches:
+            raise SystemExit(f"missing {suffix} in zip")
+        payload = json.loads(archive.read(matches[0]).decode("utf-8"))
+        missing = [field for field in required_fields if not str(payload.get(field) or "").strip()]
+        if missing:
+            raise SystemExit(f"{suffix} missing required field(s): {', '.join(missing)}")
+print("runtime config ok")
+PY
+ok "zip 运行配置已校验"
 
 # 4. sudo cp 到下载目录
 info "拷贝到下载目录: $TARGET_ZIP"

@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 
 PRODUCTION_BASE_URL = "http://172.30.254.14"
-DEFAULT_API_KEY = os.getenv("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "autovideosrt-materials-openapi").strip()
+DEFAULT_API_KEY = os.getenv("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "").strip()
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 DEFAULT_SHOPIFY_DOMAIN = "newjoyloo.com"
 DEFAULT_SHOPIFY_STORE_SLUG = "0ixug9-pv"
@@ -20,6 +20,7 @@ DEFAULT_SHOPIFY_STORE_SLUG_BY_DOMAIN = {
     DEFAULT_SHOPIFY_DOMAIN: DEFAULT_SHOPIFY_STORE_SLUG,
 }
 CONFIG_FILENAME = "shopify_image_localizer_config.json"
+DEFAULT_CONFIG_FILENAME = "shopify_image_localizer_default_config.json"
 
 _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
@@ -154,6 +155,28 @@ def config_path(root: str | Path | None = None) -> Path:
     return base / CONFIG_FILENAME
 
 
+def default_config_path(root: str | Path | None = None) -> Path:
+    base = Path(root) if root is not None else _runtime_root()
+    return base / DEFAULT_CONFIG_FILENAME
+
+
+def _read_config_payload(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_runtime_config_payload(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def load_runtime_config(root: str | Path | None = None) -> dict[str, Any]:
     defaults: dict[str, Any] = {
         "base_url": DEFAULT_BASE_URL,
@@ -163,35 +186,51 @@ def load_runtime_config(root: str | Path | None = None) -> dict[str, Any]:
         "shopify_domain_store_slugs": {},
     }
     path = config_path(root)
-    if not path.is_file():
+    default_path = default_config_path(root)
+    if not path.is_file() and not default_path.is_file():
         return dict(defaults)
 
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return dict(defaults)
+    payload = _read_config_payload(path)
+    default_payload = _read_config_payload(default_path)
 
     api_key_from_file = str(payload.get("api_key") or "").strip()
     browser_dir_from_file = str(payload.get("browser_user_data_dir") or "").strip()
+    api_key_from_default = str(default_payload.get("api_key") or "").strip()
+    browser_dir_from_default = str(default_payload.get("browser_user_data_dir") or "").strip()
+    default_slug_map = _normalize_slug_map(default_payload.get("shopify_domain_store_slugs"))
+    runtime_slug_map = _normalize_slug_map(payload.get("shopify_domain_store_slugs"))
 
     result = {
         "base_url": defaults["base_url"],
-        "api_key": api_key_from_file or defaults["api_key"],
-        "browser_user_data_dir": browser_dir_from_file or defaults["browser_user_data_dir"],
-        "shopify_domain": normalize_domain(payload.get("shopify_domain"), default=defaults["shopify_domain"]),
-        "shopify_domain_store_slugs": _normalize_slug_map(payload.get("shopify_domain_store_slugs")),
+        "api_key": api_key_from_file or api_key_from_default or defaults["api_key"],
+        "browser_user_data_dir": browser_dir_from_file
+        or browser_dir_from_default
+        or defaults["browser_user_data_dir"],
+        "shopify_domain": normalize_domain(
+            payload.get("shopify_domain") or default_payload.get("shopify_domain"),
+            default=defaults["shopify_domain"],
+        ),
+        "shopify_domain_store_slugs": {**default_slug_map, **runtime_slug_map},
     }
 
-    # 如果配置文件里有字段缺失或为空，自动写回修复后的配置
-    if (not api_key_from_file or not browser_dir_from_file) and path.is_file():
+    # 如果旧 runtime config 里有字段缺失或为空，直接写回补全后的配置。
+    # 不走 save_runtime_config()，避免 load/save 相互递归。
+    if (
+        path.is_file()
+        and (not api_key_from_file or not browser_dir_from_file)
+        and result["api_key"]
+        and result["browser_user_data_dir"]
+    ):
         try:
-            save_runtime_config(
-                base_url=result["base_url"],
-                api_key=result["api_key"],
-                browser_user_data_dir=result["browser_user_data_dir"],
-                shopify_domain=result["shopify_domain"],
-                store_slug_cache=result["shopify_domain_store_slugs"],
-                root=root,
+            _write_runtime_config_payload(
+                path,
+                {
+                    "base_url": DEFAULT_BASE_URL,
+                    "api_key": result["api_key"],
+                    "browser_user_data_dir": result["browser_user_data_dir"],
+                    "shopify_domain": result["shopify_domain"],
+                    "shopify_domain_store_slugs": result["shopify_domain_store_slugs"],
+                },
             )
         except Exception:
             pass
@@ -233,8 +272,5 @@ def save_runtime_config(
         "shopify_domain": normalize_domain(shopify_domain),
         "shopify_domain_store_slugs": _normalize_slug_map(existing_cache),
     }
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_runtime_config_payload(path, payload)
     return path

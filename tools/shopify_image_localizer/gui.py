@@ -23,9 +23,13 @@ FALLBACK_LANGUAGES = [
 class ShopifyImageLocalizerApp:
     def __init__(self, *, prompt_on_start: bool = True) -> None:
         runtime_config = settings.load_runtime_config()
-        # 确保配置文件存在，包含默认的 API Key 和 Chrome 目录
+        # 确保配置文件存在；只有拿到非空凭据时才写，避免开发环境生成空 key 配置后污染打包。
         config_path = settings.config_path()
-        if not config_path.is_file():
+        if (
+            not config_path.is_file()
+            and str(runtime_config.get("api_key") or "").strip()
+            and str(runtime_config.get("browser_user_data_dir") or "").strip()
+        ):
             settings.save_runtime_config(
                 base_url=runtime_config["base_url"],
                 api_key=runtime_config["api_key"],

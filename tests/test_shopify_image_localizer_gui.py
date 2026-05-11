@@ -11,18 +11,24 @@ tk = pytest.importorskip("tkinter")
 from tools.shopify_image_localizer import cancellation, gui
 
 
-def _make_app(monkeypatch: pytest.MonkeyPatch, *, cached_slug: str = "") -> gui.ShopifyImageLocalizerApp:
+def _make_app(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    cached_slug: str = "",
+    runtime_config: dict | None = None,
+) -> gui.ShopifyImageLocalizerApp:
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_languages_async", lambda self: None)
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_domains_async", lambda self: None)
+    runtime_config = runtime_config or {
+        "base_url": "http://172.30.254.14",
+        "api_key": "demo-key",
+        "browser_user_data_dir": r"C:\chrome-shopify-image",
+        "shopify_domain": "newjoyloo.com",
+    }
     monkeypatch.setattr(
         gui.settings,
         "load_runtime_config",
-        lambda: {
-            "base_url": "http://172.30.254.14",
-            "api_key": "demo-key",
-            "browser_user_data_dir": r"C:\chrome-shopify-image",
-            "shopify_domain": "newjoyloo.com",
-        },
+        lambda: runtime_config,
     )
     # 隔离本地真实 cache：默认空（启动时未识别 → 显示「待登录」），测试可指定非空模拟「已识别」
     monkeypatch.setattr(
@@ -109,6 +115,29 @@ def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest
         assert captured_token[0].is_cancelled()
         assert stopped.wait(2)
         assert app.stop_button["state"] == "disabled"
+    finally:
+        app.root.destroy()
+
+
+def test_gui_does_not_persist_empty_runtime_credentials_on_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    saves: list[dict] = []
+    monkeypatch.setattr(gui.settings, "config_path", lambda: tmp_path / "shopify_image_localizer_config.json")
+    monkeypatch.setattr(gui.settings, "save_runtime_config", lambda **kwargs: saves.append(kwargs))
+
+    app = _make_app(
+        monkeypatch,
+        runtime_config={
+            "base_url": "http://172.30.254.14",
+            "api_key": "",
+            "browser_user_data_dir": "",
+            "shopify_domain": "newjoyloo.com",
+        },
+    )
+    try:
+        assert saves == []
     finally:
         app.root.destroy()
 

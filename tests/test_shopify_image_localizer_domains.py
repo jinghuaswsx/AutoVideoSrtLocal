@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from tools.shopify_image_localizer import controller, settings
@@ -99,6 +101,49 @@ def test_save_runtime_config_keeps_existing_credentials_on_empty_input(tmp_path)
     assert cfg_after["browser_user_data_dir"] == r"C:\chrome-shopify-image"
     # shopify_domain 仍然按调用方传入更新（这里语义没变）
     assert cfg_after["shopify_domain"] == "omurio.com"
+
+
+def test_load_runtime_config_repairs_empty_runtime_credentials_from_default_config(tmp_path) -> None:
+    """旧发布包留下空 runtime config 时，新版应从发布默认配置补回必填凭据并写回。"""
+    settings.default_config_path(tmp_path).write_text(
+        json.dumps(
+            {
+                "base_url": "http://172.30.254.14",
+                "api_key": "packaged-openapi-key",
+                "browser_user_data_dir": r"C:\chrome-shopify-image",
+                "shopify_domain": "newjoyloo.com",
+                "shopify_domain_store_slugs": {"newjoyloo.com": "0ixug9-pv"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings.config_path(tmp_path).write_text(
+        json.dumps(
+            {
+                "base_url": "http://172.30.254.14",
+                "api_key": "",
+                "browser_user_data_dir": "",
+                "shopify_domain": "omurio.com",
+                "shopify_domain_store_slugs": {"omurio.com": "7t1gn3-sv"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = settings.load_runtime_config(tmp_path)
+
+    assert cfg["api_key"] == "packaged-openapi-key"
+    assert cfg["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+    assert cfg["shopify_domain"] == "omurio.com"
+    assert cfg["shopify_domain_store_slugs"] == {
+        "newjoyloo.com": "0ixug9-pv",
+        "omurio.com": "7t1gn3-sv",
+    }
+
+    repaired = json.loads(settings.config_path(tmp_path).read_text(encoding="utf-8"))
+    assert repaired["api_key"] == "packaged-openapi-key"
+    assert repaired["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+    assert repaired["shopify_domain"] == "omurio.com"
 
 
 def test_cache_store_slug_for_domain_writes_and_reads(tmp_path) -> None:

@@ -62,25 +62,11 @@ helper 串完：build EXE + zip → `sudo cp` 到 `/opt/autovideosrt/web/static/
 ### 前端展示
 素材管理「下载自动换图工具」按钮、版本号、发布时间必须读 `system_settings.shopify_image_localizer_release` JSON（字段：`version` / `released_at` / `release_note` / `download_url` / `filename`），**不要**硬编码到模板。回滚：UI 改这条 JSON 指回老版 zip 即可，老 zip 一直保留在下载目录。
 
-## 默认配置不能为空（2026-05-11 事故修复）
+## 默认配置不能为空（2026-05-11）
 
-**现象**：用户下载新版本后点击「开始替换」，报错「高级设置里的 OpenAPI Key 和 Chrome 用户目录不能为空」。
+详细锚点：`docs/superpowers/specs/2026-05-11-shopify-image-localizer-runtime-config-release-guard.md`
 
-**根因**：
-- `settings.py` 里 `DEFAULT_API_KEY` 之前默认是空字符串（从环境变量读，缺省为 ""）
-- `build_exe.py` 构建时如果源仓库根目录下 `shopify_image_localizer_config.json` 不存在，会用空 API Key 生成默认配置
-- GUI 启动时读取到空的 API Key，点击开始时直接报错
-
-**修复方案**：
-1. `DEFAULT_API_KEY` 默认值改为 `"autovideosrt-materials-openapi"`（不要从环境变量读缺省为空）
-2. `load_runtime_config()` 读取配置时，如果发现文件里 `api_key` 或 `browser_user_data_dir` 为空，自动用默认值补全并写回文件
-3. GUI 启动时如果没有配置文件，自动保存一份带默认值的
-
-**相关文件**：
-- `tools/shopify_image_localizer/settings.py`：`DEFAULT_API_KEY`、`load_runtime_config()`
-- `tools/shopify_image_localizer/gui.py`：`__init__` 初始化配置
-- `tools/shopify_image_localizer/build_exe.py`：`_write_runtime_config()` 用 `settings.save_runtime_config()` 生成默认配置
-
-**禁止回改**：
-- **不要**把 `DEFAULT_API_KEY` 改回空字符串默认值
-- **不要**删除 `load_runtime_config()` 里自动修复并写回配置的逻辑
+- v3.18 事故：发布包内 `shopify_image_localizer_config.json` 的 `api_key` 为空，点击「开始替换」报「高级设置里的 OpenAPI Key 和 Chrome 用户目录不能为空」。
+- 禁止把生产 OpenAPI key 写进源码 / 文档；`DEFAULT_API_KEY` 只能来自 `SHOPIFY_IMAGE_LOCALIZER_API_KEY`。
+- 发布包必须同时带 runtime config 和 `shopify_image_localizer_default_config.json`；两份配置的 `api_key` / `browser_user_data_dir` 为空时 build/helper 必须失败。
+- 运行时若用户保留旧空 runtime config，`load_runtime_config()` 从 default config 补值并直接写回 runtime config；不要通过 `save_runtime_config()` 自修复，避免递归。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -20,6 +21,7 @@ RELEASE_VERSION_FILENAME = "release_version.txt"
 DEFAULT_OUTPUT_ROOT_WINDOWS = Path(r"G:\ShopifyRelease")
 DEFAULT_OUTPUT_ROOT_POSIX = Path.home() / "shopify-builds"
 BUILD_WORK_DIR_NAME = "_build"
+REQUIRED_RUNTIME_CONFIG_FIELDS = ("api_key", "browser_user_data_dir")
 
 
 def _default_output_root() -> Path:
@@ -30,19 +32,49 @@ def _resolve_build_python(repo_root: Path) -> Path:
     return Path(sys.executable)
 
 
+def _validate_runtime_config_file(path: Path) -> None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"runtime config missing: {path}") from exc
+    except Exception as exc:
+        raise ValueError(f"runtime config is not valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"runtime config must be a JSON object: {path}")
+    missing = [
+        field
+        for field in REQUIRED_RUNTIME_CONFIG_FIELDS
+        if not str(payload.get(field) or "").strip()
+    ]
+    if missing:
+        hint = (
+            "Set SHOPIFY_IMAGE_LOCALIZER_API_KEY before packaging, or provide a valid "
+            f"{settings.CONFIG_FILENAME} in the repository root."
+        )
+        raise ValueError(f"{path.name} missing required field(s): {', '.join(missing)}. {hint}")
+
+
 def _write_runtime_config(repo_root: Path, dist_root: Path) -> None:
     source_config = settings.config_path(repo_root)
-    target_config = dist_root / settings.CONFIG_FILENAME
+    target_config = settings.config_path(dist_root)
+    default_config = settings.default_config_path(dist_root)
     if source_config.is_file():
         shutil.copy2(source_config, target_config)
-        return
+    else:
+        if not settings.DEFAULT_API_KEY:
+            raise ValueError(
+                "SHOPIFY_IMAGE_LOCALIZER_API_KEY must be set before packaging Shopify Image Localizer."
+            )
+        settings.save_runtime_config(
+            base_url=settings.default_base_url(packaged=True),
+            api_key=settings.DEFAULT_API_KEY,
+            browser_user_data_dir=settings.DEFAULT_BROWSER_USER_DATA_DIR,
+            root=dist_root,
+        )
 
-    settings.save_runtime_config(
-        base_url=settings.default_base_url(packaged=True),
-        api_key=settings.DEFAULT_API_KEY,
-        browser_user_data_dir=settings.DEFAULT_BROWSER_USER_DATA_DIR,
-        root=dist_root,
-    )
+    _validate_runtime_config_file(target_config)
+    shutil.copy2(target_config, default_config)
+    _validate_runtime_config_file(default_config)
 
 
 def _write_portable_launcher(dist_root: Path, release_version: str) -> Path:
