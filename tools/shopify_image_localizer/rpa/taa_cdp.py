@@ -995,6 +995,8 @@ def replace_detail_images(
     reload_error = ""
     if verify_reload:
         cancellation.throw_if_cancelled(cancel_token)
+        print("详情图：等待 3 秒让 TAA 保存生效，避免 reload 校验触发 502")
+        cancellation.cancellable_sleep(cancel_token, 3.0)
         try:
             with TaaSession(
                 product_id=product_id,
