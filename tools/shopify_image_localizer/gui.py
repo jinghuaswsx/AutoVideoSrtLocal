@@ -1313,29 +1313,21 @@ class ShopifyImageLocalizerApp:
 
                     self.root.after(0, add_lang_summary)
 
-                    # 每个语言跑完后，关闭浏览器再继续下一个（如果不是最后一个）
+                    # 每个语言之间短暂等待，让浏览器和 CDP 连接自然恢复
+                    # 不要杀浏览器——频繁杀开会导致 Playwright asyncio 状态混乱
                     if idx < len(language_labels):
-                        def kill_browser():
-                            self._append_log(f"[{idx}/{len(language_labels)}] 正在关闭浏览器，准备处理下一个语言...")
-
-                        self.root.after(0, kill_browser)
-                        effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_dir, shopify_domain)
-                        session.kill_chrome_for_profile(effective_browser_dir, wait_s=8.0)
-                        # 额外等待确保完全关闭
                         import time
-                        time.sleep(2.0)
+                        time.sleep(3.0)
 
                 except Exception as exc:
                     results.append({"language": lang_label, "error": str(exc), "success": False})
                     failed_count += 1
                     self.root.after(0, lambda: self._append_log(f"{lang_label} 执行失败: {exc}"))
                     # 继续下一个语言,不中断整个批量任务
-                    # 即使失败也关闭浏览器
+                    # 失败后也等待一下让浏览器稳定
                     if idx < len(language_labels):
-                        effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_dir, shopify_domain)
-                        session.kill_chrome_for_profile(effective_browser_dir, wait_s=8.0)
                         import time
-                        time.sleep(2.0)
+                        time.sleep(3.0)
 
             # 批量任务完成
             def finish_batch():
