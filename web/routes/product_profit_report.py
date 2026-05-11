@@ -14,6 +14,7 @@ from flask_login import login_required
 
 from web.auth import permission_required
 
+from appcore import meta_ad_accounts
 from appcore import medias
 from appcore.order_analytics import current_meta_business_date
 from appcore.order_analytics import data_quality as dq
@@ -141,6 +142,19 @@ def _parse_date(value: str | None, default: date) -> date:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return default
+
+
+def _parse_site_code(value: str | None) -> tuple[str | None, str | None]:
+    """Return (site_code, error). Empty/all means all stores.
+
+    Docs-anchor: docs/superpowers/specs/2026-05-11-product-profit-order-roas-store-filter.md
+    """
+    normalized = (value or "").strip().lower()
+    if not normalized or normalized == "all":
+        return None, None
+    if normalized not in meta_ad_accounts.AVAILABLE_STORE_CODES:
+        return None, "invalid site_code"
+    return normalized, None
 
 
 def _primary_country_for_lang(lang: str) -> str | None:
@@ -300,17 +314,27 @@ def api_download_xlsx():
         )
 
     country = (request.args.get("country") or "").strip() or None
+    site_code, site_error = _parse_site_code(request.args.get("site_code"))
+    if site_error:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response(site_error, 400)
+        )
     report = ppr.generate_report(
         product_id=product_id,
         date_from=date_from,
         date_to=date_to,
         country=country,
+        site_code=site_code,
     )
     xlsx_bytes = ppr.generate_xlsx(report)
 
     code = report["total"].get("product_code") or f"product-{product_id}"
     country_part = f"_{country.upper()}" if country and country.lower() != "all" else ""
-    filename = f"profit_{code}{country_part}_{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    site_part = f"_{site_code}" if site_code else ""
+    filename = (
+        f"profit_{code}{country_part}{site_part}_"
+        f"{date_from.isoformat()}_{date_to.isoformat()}.xlsx"
+    )
 
     return send_file(
         io.BytesIO(xlsx_bytes),
@@ -345,11 +369,17 @@ def api_report_json():
         )
 
     country = (request.args.get("country") or "").strip() or None
+    site_code, site_error = _parse_site_code(request.args.get("site_code"))
+    if site_error:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response(site_error, 400)
+        )
     report = ppr.generate_report(
         product_id=product_id,
         date_from=date_from,
         date_to=date_to,
         country=country,
+        site_code=site_code,
     )
 
     # JSON 友好：日期/datetime 转字符串

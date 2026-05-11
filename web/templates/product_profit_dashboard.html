@@ -265,7 +265,7 @@
 /* 2. 总账卡片 */
 .ppd-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
 }
 .ppd-stat-card {
@@ -778,6 +778,14 @@
              aria-controls="ppd-product-modal"
              placeholder="加载中…" autocomplete="off" spellcheck="false">
     </label>
+    <label data-filter-control="site">
+      <span>店铺</span>
+      <select id="ppd-site-select">
+        <option value="">全部店铺</option>
+        <option value="newjoy">newjoyloo</option>
+        <option value="omurio">Omurio</option>
+      </select>
+    </label>
     <label data-filter-control="country">
       <span>国家 <small style="color: var(--text-user-badge); font-weight: normal; font-size: 11px">订单 + 广告命名市场</small></span>
       <select id="ppd-country-select">
@@ -873,6 +881,11 @@
             <div class="ppd-stat-label">广告费（修正）</div>
             <div class="ppd-stat-value" id="stat-ad">--</div>
             <div class="ppd-stat-sub" id="stat-ad-sub">按 product_id 广告归属汇总</div>
+          </div>
+          <div class="ppd-stat-card">
+            <div class="ppd-stat-label">ROAS</div>
+            <div class="ppd-stat-value" id="stat-roas">--</div>
+            <div class="ppd-stat-sub" id="stat-roas-sub">收入 / 广告费</div>
           </div>
           <div class="ppd-stat-card">
             <div class="ppd-stat-label">采购+物流+手续费</div>
@@ -1178,6 +1191,7 @@
   var productResultsMeta = $('ppd-product-results-meta');
   var productResultsEmpty = $('ppd-product-results-empty');
   var productModalClose = $('ppd-product-modal-close');
+  var siteSelect = $('ppd-site-select');
   var countrySelect = $('ppd-country-select');
   var countryPillsEl = $('ppd-country-pills');
   var dateFromInput = $('ppd-from');
@@ -1250,7 +1264,7 @@
 
   var TAB_FILTER_CONTROLS = {
     list: ['country', 'from', 'to', 'reload'],
-    orders: ['product', 'country', 'from', 'to', 'reload', 'orders-download'],
+    orders: ['product', 'site', 'country', 'from', 'to', 'reload', 'orders-download'],
     country: ['product', 'from', 'to', 'reload'],
     ads: ['product', 'country', 'from', 'to', 'reload'],
   };
@@ -1402,6 +1416,7 @@
       var url = new URL(window.location.href);
       // modal 选择器：保存解析后的 product_id（可能是 '0' / 数字字符串 / ''）
       url.searchParams.set('product_id', getSelectedProductId() || '');
+      url.searchParams.set('site_code', siteSelect.value || '');
       url.searchParams.set('country', countrySelect.value || '');
       url.searchParams.set('date_from', dateFromInput.value || '');
       url.searchParams.set('date_to', dateToInput.value || '');
@@ -1586,6 +1601,12 @@
     var s = '$' + num(v, 2);
     return s;
   }
+  function formatRoas(v) {
+    if (v === null || v === undefined) return '--';
+    var n = Number(v);
+    if (!isFinite(n)) return '--';
+    return n.toFixed(2);
+  }
   function profitClass(v) {
     if (v === null || v === undefined || v === 0) return '';
     return v > 0 ? 'is-positive' : 'is-negative';
@@ -1743,6 +1764,7 @@
   // ── Tab ② 主查询入口（Task 6: renamed from runQuery → loadOrdersTab）──────
   function loadOrdersTab() {
     var pid = getSelectedProductId();
+    var site = (siteSelect.value || '').trim();
     var country = (countrySelect.value || '').trim();
     var df = dateFromInput.value;
     var dt = dateToInput.value;
@@ -1786,12 +1808,14 @@
       + '&date_from=' + encodeURIComponent(df)
       + '&date_to=' + encodeURIComponent(dt);
     if (selectedCountry) downloadBtn.href += '&country=' + encodeURIComponent(selectedCountry);
+    if (site) downloadBtn.href += '&site_code=' + encodeURIComponent(site);
 
     var url = '/order-analytics/product-profit/report.json?'
       + 'product_id=' + encodeURIComponent(pid)
       + '&date_from=' + encodeURIComponent(df)
       + '&date_to=' + encodeURIComponent(dt);
     if (selectedCountry) url += '&country=' + encodeURIComponent(selectedCountry);
+    if (site) url += '&site_code=' + encodeURIComponent(site);
 
     fetch(url, { credentials: 'same-origin' })
       .then(function(r) {
@@ -2585,6 +2609,10 @@
     $('stat-ad-sub').textContent = unallocatedAd > 0
       ? ('含无订单日期 ' + money(unallocatedAd))
       : '按 product_id 广告归属汇总';
+    $('stat-roas').textContent = formatRoas(t.roas);
+    $('stat-roas-sub').textContent = Number(t.ad_cost_usd || 0) > 0
+      ? '收入 / 广告费'
+      : '广告费为 0';
     var others = (Number(t.purchase_usd) || 0) + (Number(t.shipping_cost_usd) || 0) + (Number(t.shopify_fee_usd) || 0);
     $('stat-other').textContent = money(others);
     $('stat-fee-source').textContent = '真实 fee 覆盖率 ' + (t.real_fee_coverage_pct || 0) + '%';
@@ -2620,6 +2648,7 @@
         + '<div class="ppd-site-grid">'
         + '<div><span>收入</span><span>' + money(s.revenue_usd) + '</span></div>'
         + '<div><span>广告费</span><span>' + money(s.ad_cost_usd) + '</span></div>'
+        + '<div><span>ROAS</span><span>' + formatRoas(s.roas) + '</span></div>'
         + '<div><span>采购</span><span>' + money(s.purchase_usd) + '</span></div>'
         + '<div><span>物流</span><span>' + money(s.shipping_cost_usd) + '</span></div>'
         + '<div><span>手续费</span><span>' + money(s.shopify_fee_usd) + '</span></div>'
@@ -2884,6 +2913,10 @@
     var active = currentActiveTab();
     if (window.switchTab) window.switchTab(active);
   });
+  siteSelect.addEventListener('change', function() {
+    var active = currentActiveTab();
+    if (window.switchTab) window.switchTab(active);
+  });
   // 日期 change：仅同步 URL，不触发 reload（保留原有"改完点查询"的体验）
   dateFromInput.addEventListener('change', syncUrlState);
   dateToInput.addEventListener('change', syncUrlState);
@@ -2915,6 +2948,10 @@
     if (wantFrom) dateFromInput.value = wantFrom;
     var wantTo = urlParams.get('date_to');
     if (wantTo) dateToInput.value = wantTo;
+    var wantSite = urlParams.get('site_code');
+    if (wantSite === 'newjoy' || wantSite === 'omurio') {
+      siteSelect.value = wantSite;
+    }
 
     var initialTab = urlParams.get('tab') || 'list';
     if (window.switchTab) window.switchTab(initialTab);

@@ -30,6 +30,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from appcore import meta_ad_accounts
+
 from .ad_market_country import is_single_market_country, normalize_market_country
 from .shopify_fee import calculate_shopify_fee, infer_presentment_currency_from_country
 
@@ -61,6 +63,31 @@ def _site_full(site_code: str | None) -> str:
     return SITE_FULL_NAME.get(site_code, site_code)
 
 
+def _normalize_site_code(site_code: str | None) -> str | None:
+    """Normalize the product-profit store filter.
+
+    Docs-anchor: docs/superpowers/specs/2026-05-11-product-profit-order-roas-store-filter.md
+    """
+    value = str(site_code or "").strip().lower()
+    if not value or value == "all":
+        return None
+    if value in meta_ad_accounts.AVAILABLE_STORE_CODES:
+        return value
+    return None
+
+
+def _ad_account_ids_for_site(site_code: str | None) -> list[str] | None:
+    normalized = _normalize_site_code(site_code)
+    if not normalized:
+        return None
+    site_map = meta_ad_accounts.site_account_map(enabled_only=False)
+    out: list[str] = []
+    for account_id in site_map.get(normalized, ()):
+        if account_id and account_id not in out:
+            out.append(account_id)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 产品下拉
 # ---------------------------------------------------------------------------
@@ -86,6 +113,7 @@ def _load_order_lines(
     date_from: date,
     date_to: date,
     country: str | None = None,
+    site_code: str | None = None,
 ) -> list[dict[str, Any]]:
     """加载产品在指定日期范围内的所有 SKU 行，含订单基础字段 + 现成核算字段。"""
     sql = (
@@ -110,6 +138,10 @@ def _load_order_lines(
     if normalized_country:
         sql += "  AND opl.buyer_country = %s "
         params.append(normalized_country)
+    normalized_site = _normalize_site_code(site_code)
+    if normalized_site:
+        sql += "  AND dol.site_code = %s "
+        params.append(normalized_site)
     sql += "ORDER BY dol.meta_business_date ASC, opl.dxm_order_line_id ASC"
     return query(sql, tuple(params))
 
@@ -119,6 +151,7 @@ def _load_site_daily_units(
     date_from: date,
     date_to: date,
     country: str | None = None,
+    site_code: str | None = None,
 ) -> dict[tuple[date, str], int]:
     """加载每天 × 每站点的产品总 units。
 
@@ -139,6 +172,10 @@ def _load_site_daily_units(
     if normalized_country:
         sql += "  AND opl.buyer_country = %s "
         params.append(normalized_country)
+    normalized_site = _normalize_site_code(site_code)
+    if normalized_site:
+        sql += "  AND dol.site_code = %s "
+        params.append(normalized_site)
     sql += "GROUP BY dol.meta_business_date, dol.site_code"
     rows = query(sql, tuple(params))
     out: dict[tuple[date, str], int] = {}
@@ -154,6 +191,7 @@ def _load_account_daily_spend(
     date_from: date,
     date_to: date,
     country: str | None = None,
+    site_code: str | None = None,
 ) -> dict[tuple[date, str], float]:
     """每天 × 每账户对该产品的广告 spend。
 
@@ -161,6 +199,15 @@ def _load_account_daily_spend(
     business_date 合计 product_id 维度 spend，与产品列表 Tab 保持一致。
     """
     market_country = normalize_market_country(country)
+    account_ids = _ad_account_ids_for_site(site_code)
+    if _normalize_site_code(site_code) and not account_ids:
+        return {}
+    account_sql = ""
+    account_params: list[Any] = []
+    if account_ids:
+        placeholders = ",".join(["%s"] * len(account_ids))
+        account_sql = f"  AND ad_account_id IN ({placeholders}) "
+        account_params.extend(account_ids)
     if is_single_market_country(market_country):
         rows = query(
             "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
@@ -169,8 +216,9 @@ def _load_account_daily_spend(
             "WHERE product_id = %s "
             "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
             "  AND market_country = %s "
+            f"{account_sql}"
             "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
-            (product_id, date_from, date_to, market_country),
+            (product_id, date_from, date_to, market_country, *account_params),
         )
     else:
         rows = query(
@@ -179,8 +227,9 @@ def _load_account_daily_spend(
             "FROM meta_ad_daily_campaign_metrics "
             "WHERE product_id = %s "
             "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            f"{account_sql}"
             "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
-            (product_id, date_from, date_to),
+            (product_id, date_from, date_to, *account_params),
         )
     out: dict[tuple[date, str], float] = {}
     for r in rows:
@@ -396,11 +445,19 @@ def generate_report(
     date_from: date,
     date_to: date,
     country: str | None = None,
+    site_code: str | None = None,
 ) -> dict[str, Any]:
     """返回完整报表字典：{orders, daily, by_country, by_site, total, meta}。"""
-    lines = _load_order_lines(product_id, date_from, date_to, country)
-    site_units = _load_site_daily_units(product_id, date_from, date_to, country)
-    account_spend = _load_account_daily_spend(product_id, date_from, date_to, country)
+    normalized_site = _normalize_site_code(site_code)
+    lines = _load_order_lines(
+        product_id, date_from, date_to, country=country, site_code=normalized_site,
+    )
+    site_units = _load_site_daily_units(
+        product_id, date_from, date_to, country=country, site_code=normalized_site,
+    )
+    account_spend = _load_account_daily_spend(
+        product_id, date_from, date_to, country=country, site_code=normalized_site,
+    )
 
     extended_ids = list({(line.get("extended_order_id") or "") for line in lines if line.get("extended_order_id")})
     real_fees = _load_real_fees(extended_ids)
@@ -514,6 +571,10 @@ def generate_report(
             "purchase_usd": round(a["purchase"], 2),
             "shipping_cost_usd": round(a["shipping_cost"], 2),
             "profit_usd": round(a["profit"], 2),
+            "roas": (
+                float(a["revenue"] / a["ad_cost"])
+                if a["ad_cost"] > 0 else None
+            ),
         })
 
     # === 总账 ===
@@ -570,6 +631,10 @@ def generate_report(
         "return_reserve_usd": total_return,
         "profit_usd": total_profit,
         "profit_pct": round(100 * total_profit / total_revenue, 2) if total_revenue else None,
+        "roas": (
+            round(total_revenue / total_ad, 4)
+            if total_ad > 0 else None
+        ),
         "real_fee_coverage_pct": round(
             100 * sum(1 for o in orders if o["shopify_fee_source"] == "real") / max(len(orders), 1),
             1,
@@ -591,6 +656,7 @@ def generate_report(
         "meta": {
             "generated_at": datetime.now(),
             "country": normalize_market_country(country),
+            "site_code": normalized_site,
             "ad_attribution_basis": (
                 "product_id_market_country_ad_daily_units"
                 if is_single_market_country(country)
@@ -729,12 +795,14 @@ def generate_xlsx(report: dict[str, Any]) -> bytes:
     rows_total = [
         ("产品", f"{total.get('product_code') or ''} ({total.get('product_name') or ''})"),
         ("时间范围", f"{total.get('date_from')} ~ {total.get('date_to')}"),
+        ("店铺筛选", (report.get("meta") or {}).get("site_code") or "全部"),
         ("订单数", total.get("orders", 0)),
         ("SKU 行数", total.get("lines", 0)),
         ("总件数", total.get("units", 0)),
         ("总收入 (USD)", total.get("revenue_usd", 0)),
         ("Shopify 手续费", total.get("shopify_fee_usd", 0)),
         ("广告费（修正）", total.get("ad_cost_usd", 0)),
+        ("ROAS", total.get("roas")),
         ("采购成本", total.get("purchase_usd", 0)),
         ("物流成本", total.get("shipping_cost_usd", 0)),
         ("退货占用", total.get("return_reserve_usd", 0)),
@@ -760,7 +828,7 @@ def generate_xlsx(report: dict[str, Any]) -> bytes:
         site_cols = [
             ("site", "站点"), ("orders", "订单"), ("units", "件数"),
             ("revenue_usd", "收入"), ("shopify_fee_usd", "手续费"),
-            ("ad_cost_usd", "广告费"), ("profit_usd", "利润"),
+            ("ad_cost_usd", "广告费"), ("roas", "ROAS"), ("profit_usd", "利润"),
         ]
         for col_idx, (_, label) in enumerate(site_cols):
             sh.write(start_row + 1, col_idx, label, fmt_header)
