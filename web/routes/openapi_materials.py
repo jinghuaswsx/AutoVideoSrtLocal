@@ -84,8 +84,7 @@ def _api_key_valid(required_scope: str = "materials:read") -> bool:
 
 @shopify_localizer_bp.route("/languages", methods=["GET"])
 def shopify_localizer_languages():
-    if not _api_key_valid():
-        return _openapi_error_response("invalid api key", 401)
+    # 公开语言列表，桌面工具启动时无 api key 也能拉到，避免首次配置前 fallback 到默认5语言。
     return _openapi_payload_response({"items": medias.list_shopify_localizer_languages()})
 
 
