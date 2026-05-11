@@ -1403,9 +1403,7 @@ class ShopifyImageLocalizerApp:
         first_workspace = None
         first_download_dir = None
 
-        # 批量开始前清理一次旧 Chrome，确保干净的起点
         effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_dir, shopify_domain)
-        session.kill_chrome_for_profile(effective_browser_dir)
         import time
 
         try:
@@ -1414,6 +1412,10 @@ class ShopifyImageLocalizerApp:
                 if cancel_token.is_cancelled():
                     self.root.after(0, lambda: self._append_log("批量任务已由用户取消"))
                     break
+
+                # 每个语言开始前清理旧 Chrome，避免上一个语言崩溃后
+                # Chrome/CDP 处于损坏状态导致后续语言全部失败。
+                session.kill_chrome_for_profile(effective_browser_dir)
 
                 lang_code = self._selected_lang_code(lang_label)
                 shop_locale = self._selected_shop_locale(lang_label)
@@ -1485,7 +1487,15 @@ class ShopifyImageLocalizerApp:
                 except Exception as exc:
                     results.append({"language": lang_label, "error": str(exc), "success": False})
                     failed_count += 1
-                    self.root.after(0, lambda: self._append_log(f"{lang_label} 执行失败: {exc}"))
+                    import traceback as _tb
+                    detail = f"{lang_label} 执行失败: {exc}\n{_tb.format_exc()}"
+                    self.root.after(0, lambda d=detail: self._append_log(d))
+                    # 同时写入工作区日志方便排查
+                    try:
+                        ws = storage.create_workspace(product_code, lang_code)
+                        storage.append_log(ws.log_path, detail)
+                    except Exception:
+                        pass
                     # 继续下一个语言,不中断整个批量任务
                     if idx < len(language_labels):
                         time.sleep(5.0)

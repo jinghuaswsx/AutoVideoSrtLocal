@@ -31,6 +31,7 @@ hiddenimports = sorted(set(
         "websocket._ssl_compat",
         "websocket._url",
         "websocket._utils",
+        "tools.shopify_image_localizer.domain_image_mapping",
     ]
 ))
 datas = collect_data_files("playwright")
