@@ -132,14 +132,16 @@ class ShopifyImageLocalizerApp:
         self.product_code_entry.pack(fill="x", pady=(4, 10))
         self.product_code_entry.focus_set()
 
-        # 语言选择区域:两列布局
+        # 语言选择区域:两列布局，各占50%
         language_row = tk.Frame(self.main_frame)
         language_row.pack(fill="x", pady=(4, 10))
+        language_row.grid_columnconfigure(0, weight=1)
+        language_row.grid_columnconfigure(1, weight=1)
 
-        # 左侧:单个语言选择
+        # 左侧:单个语言选择（占50%）
         left_col = tk.Frame(language_row)
-        left_col.pack(side="left", fill="both", expand=True)
-        tk.Label(left_col, text="语言").pack(anchor="w")
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        tk.Label(left_col, text="语言", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
         self.language_box = ttk.Combobox(
             left_col,
             textvariable=self.language_var,
@@ -148,20 +150,21 @@ class ShopifyImageLocalizerApp:
         )
         self.language_box.pack(fill="x", pady=(4, 0))
 
-        # 右侧:批量选择按钮和已选语言显示
+        # 右侧:批量选择按钮和已选语言显示（占50%）
         right_col = tk.Frame(language_row)
-        right_col.pack(side="left", fill="y", padx=(12, 0))
-        tk.Label(right_col, text="").pack(anchor="w")  # 占位对齐标题
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        # 空标签对齐高度
+        tk.Label(right_col, text="", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
         batch_btn_frame = tk.Frame(right_col)
         batch_btn_frame.pack(fill="both", expand=True, pady=(4, 0))
         self.batch_select_btn = tk.Button(
             batch_btn_frame,
             text="批量选择语言",
             command=self._open_batch_language_dialog,
-            width=16,
+            font=("TkDefaultFont", 18, "bold"),
             height=2,
         )
-        self.batch_select_btn.pack(side="left")
+        self.batch_select_btn.pack(side="left", fill="y")
 
         # 批量选择的语言显示区域
         self.batch_languages_frame = tk.Frame(batch_btn_frame)
@@ -605,26 +608,15 @@ class ShopifyImageLocalizerApp:
         if not self.batch_languages:
             return
 
-        # 显示已选择的语言标签
-        container = tk.Frame(self.batch_languages_frame)
-        container.pack(fill="both", expand=True)
-
-        tk.Label(container, text="已选：", anchor="w").pack(side="left")
-
-        # 用标签显示每个已选语言,可点击删除
-        for idx, lang_label in enumerate(self.batch_languages):
-            tag_frame = tk.Frame(container, bd=1, relief="solid", padx=4, pady=2)
-            tag_frame.pack(side="left", padx=(0, 4))
-            tk.Label(tag_frame, text=lang_label).pack(side="left")
-            tk.Button(
-                tag_frame,
-                text="×",
-                command=lambda l=lang_label: self._remove_batch_language(l),
-                bd=0,
-                padx=2,
-                pady=0,
-                fg="#757575",
-            ).pack(side="left", padx=(2, 0))
+        # 用||分隔显示已选择的语言
+        display_text = " || ".join(self.batch_languages)
+        tk.Label(
+            self.batch_languages_frame,
+            text=display_text,
+            anchor="w",
+            justify="left",
+            wraplength=400,
+        ).pack(fill="both", expand=True)
 
     def _remove_batch_language(self, lang_label: str) -> None:
         """从批量选择中移除一个语言"""
@@ -677,7 +669,7 @@ class ShopifyImageLocalizerApp:
             cb = tk.Checkbutton(checkbox_frame, text=lang_label, variable=var, anchor="w")
             cb.pack(fill="x", padx=4, pady=2)
 
-        # 全选/取消全选按钮
+        # 全选/全不选按钮放右边
         btn_frame_top = tk.Frame(dialog)
         btn_frame_top.pack(fill="x", padx=16, pady=(0, 8))
 
@@ -689,8 +681,11 @@ class ShopifyImageLocalizerApp:
             for var in check_vars.values():
                 var.set(False)
 
-        tk.Button(btn_frame_top, text="全选", command=select_all, width=10).pack(side="left")
-        tk.Button(btn_frame_top, text="取消全选", command=select_none, width=10).pack(side="left", padx=(8, 0))
+        # 按钮放右边
+        btn_frame_right = tk.Frame(btn_frame_top)
+        btn_frame_right.pack(side="right")
+        tk.Button(btn_frame_right, text="全选", command=select_all, width=10).pack(side="top", pady=(0, 4))
+        tk.Button(btn_frame_right, text="全不选", command=select_none, width=10).pack(side="top")
 
         # 底部按钮
         btn_frame = tk.Frame(dialog)
@@ -706,7 +701,7 @@ class ShopifyImageLocalizerApp:
             dialog.destroy()
 
         tk.Button(btn_frame, text="取消", command=cancel, width=12).pack(side="right")
-        tk.Button(btn_frame, text="确定", command=confirm, width=12, bg="#1976d2", fg="white").pack(side="right", padx=(0, 8))
+        tk.Button(btn_frame, text="确认选择", command=confirm, width=12, bg="#1976d2", fg="white").pack(side="right", padx=(0, 8))
 
         self.root.wait_window(dialog)
 
