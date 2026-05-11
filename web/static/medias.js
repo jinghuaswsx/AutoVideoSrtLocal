@@ -1507,7 +1507,7 @@
     const num = Number(calc.effective_roas);
     if (!isFinite(num)) return '<span class="muted">—</span>';
     const cls = num <= 1.5 ? 'roas-good' : (num <= 3 ? '' : 'roas-bad');
-    const basisLabel = calc.effective_basis === 'actual' ? '实际' : '预估';
+    const basisLabel = calc.effective_basis === 'actual' ? '小包实费' : '小包预估';
     return `<span class="${cls}">${num.toFixed(2)}<span class="muted" style="font-size:11px;"> ${basisLabel}</span></span>`;
   }
   function fmtActualBreakevenRoas(snapshot) {
@@ -1516,8 +1516,8 @@
     if (!isFinite(num)) return '<span class="muted">—</span>';
     const cls = num <= 1.5 ? 'roas-good' : (num <= 3 ? '' : 'roas-bad');
     const sourceLabel = snapshot.fee_source === 'real'
-      ? '真实手续费'
-      : (snapshot.fee_source === 'mixed' ? '部分真实' : '7%估算');
+      ? '手续费真实'
+      : (snapshot.fee_source === 'mixed' ? '手续费部分真实' : '手续费7%估算');
     const windowText = snapshot.window_start && snapshot.window_end
       ? `${snapshot.window_start}–${snapshot.window_end}`
       : '';
@@ -1612,7 +1612,7 @@
     document.getElementById('skuDetailShopifyTitle').textContent = product.shopify_title || '—';
     document.getElementById('skuDetailShopifyId').textContent = product.shopifyid || '—';
     const note = document.getElementById('skuDetailCostNote');
-    note.textContent = '保本 ROAS 算法：variant 级 Shopify 售价 + 人工采购价 / xmyc 采购价（如有）/ 否则产品级采购价 + 产品级小包成本 + 用户支付运费。基线显示为「实际」=actual 小包成本到位；「预估」=只有 estimated。';
+    note.textContent = '估算保本 ROAS：variant 级 Shopify 售价 + 人工采购价 / xmyc 采购价（如有）/ 否则产品级采购价 + 产品级小包成本 + 用户支付运费；后缀「小包实费/小包预估」只表示小包成本来源。订单保本 ROAS：最近稳定订单快照，后缀表示 Shopify Payments 手续费来源。';
 
     const skus = Array.isArray(product.skus) ? product.skus : [];
     const tbody = document.getElementById('skuDetailRows');

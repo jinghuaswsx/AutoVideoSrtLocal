@@ -371,7 +371,8 @@ def ad_summary():
     batch_id = request.args.get("batch_id", type=int)
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
-    return _json_response(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
+    q = (request.args.get("q") or "").strip() or None
+    return _json_response(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date, q=q)))
 
 
 # ── 三级 tab：Campaign / Ad Set / Ad ────────────────────
@@ -402,6 +403,7 @@ def ads_level_list():
             page_size=request.args.get("page_size", default=50, type=int) or 50,
             sort_by=(request.args.get("sort_by") or "spend_usd").strip(),
             sort_dir=(request.args.get("sort_dir") or "desc").strip(),
+            q=(request.args.get("q") or "").strip() or None,
         )
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400

@@ -90,9 +90,23 @@ def test_product_profit_tabs_are_pills_above_tab_specific_filters():
     assert "border-radius: 999px;" in TEMPLATE
     assert 'data-filter-control="product"' in TEMPLATE
     assert 'data-filter-control="country"' in TEMPLATE
+    assert 'data-filter-control="site"' in TEMPLATE
     assert 'data-filter-control="orders-download"' in TEMPLATE
     assert "function setFilterControlsForTab(tabName)" in TEMPLATE
+    assert "orders: ['product', 'site', 'country', 'from', 'to', 'reload', 'orders-download']" in TEMPLATE
     assert "product-country: ['product', 'from', 'to', 'reload']" in TEMPLATE
+
+
+def test_product_profit_orders_tab_has_store_filter_and_roas_card():
+    assert 'id="ppd-site-select"' in TEMPLATE
+    assert '<option value="">全部店铺</option>' in TEMPLATE
+    assert '<option value="newjoy">newjoyloo</option>' in TEMPLATE
+    assert '<option value="omurio">Omurio</option>' in TEMPLATE
+    assert 'id="stat-roas"' in TEMPLATE
+    assert 'id="stat-roas-sub"' in TEMPLATE
+    assert "function formatRoas" in TEMPLATE
+    assert "url.searchParams.set('site_code', siteSelect.value || '')" in TEMPLATE
+    assert "site_code=' + encodeURIComponent(site)" in TEMPLATE
 
 
 def test_product_profit_dashboard_defaults_to_meta_business_date():

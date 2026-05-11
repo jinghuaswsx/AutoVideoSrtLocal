@@ -428,6 +428,7 @@ def get_meta_ad_summary(
     batch_id: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    q: str | None = None,
 ) -> dict:
     report_start, report_end, resolved_batch_id = _resolve_meta_ad_period(batch_id, start_date, end_date)
     if not report_start or not report_end:
@@ -436,6 +437,39 @@ def get_meta_ad_summary(
         raise ValueError("end_date must be greater than or equal to start_date")
 
     use_daily_metrics = not batch_id and bool(start_date and end_date)
+    q_clean = (q or "").strip()
+    search_args: tuple[str, ...] = ()
+    daily_search_clause = ""
+    batch_search_clause = ""
+    daily_unmatched_search_clause = ""
+    batch_unmatched_search_clause = ""
+    if q_clean:
+        pattern = f"%{q_clean}%"
+        search_args = (pattern, pattern, pattern, pattern, pattern)
+        daily_search_clause = (
+            "AND (LOWER(m.campaign_name) LIKE LOWER(%s) "
+            "OR LOWER(m.normalized_campaign_code) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(m.matched_product_code, m.product_code, '')) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(mp.name, '')) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(mp.product_code, '')) LIKE LOWER(%s)) "
+        )
+        batch_search_clause = (
+            "AND (LOWER(m.campaign_name) LIKE LOWER(%s) "
+            "OR LOWER(m.normalized_campaign_code) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(m.matched_product_code, '')) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(mp.name, '')) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(mp.product_code, '')) LIKE LOWER(%s)) "
+        )
+        daily_unmatched_search_clause = (
+            "AND (LOWER(campaign_name) LIKE LOWER(%s) "
+            "OR LOWER(normalized_campaign_code) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(matched_product_code, product_code, '')) LIKE LOWER(%s)) "
+        )
+        batch_unmatched_search_clause = (
+            "AND (LOWER(campaign_name) LIKE LOWER(%s) "
+            "OR LOWER(normalized_campaign_code) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(matched_product_code, '')) LIKE LOWER(%s)) "
+        )
     if use_daily_metrics:
         metric_rows = query(
             "SELECT MIN(m.id) AS id, m.product_id, mp.name AS product_name, "
@@ -447,10 +481,11 @@ def get_meta_ad_summary(
             "FROM meta_ad_daily_campaign_metrics m "
             "LEFT JOIN media_products mp ON mp.id = m.product_id "
             "WHERE m.meta_business_date >= %s AND m.meta_business_date <= %s "
+            f"{daily_search_clause}"
             "GROUP BY m.product_id, mp.name, mp.product_code, "
             "COALESCE(m.matched_product_code, m.product_code), m.campaign_name "
             "ORDER BY spend_usd DESC",
-            (report_start, report_end),
+            (report_start, report_end) + search_args,
         )
     else:
         metric_rows = query(
@@ -461,8 +496,9 @@ def get_meta_ad_summary(
             "FROM meta_ad_campaign_metrics m "
             "LEFT JOIN media_products mp ON mp.id = m.product_id "
             "WHERE m.report_start_date=%s AND m.report_end_date=%s "
+            f"{batch_search_clause}"
             "ORDER BY m.spend_usd DESC",
-            (report_start, report_end),
+            (report_start, report_end) + search_args,
         )
     rows = _aggregate_meta_ad_summary_rows(metric_rows)
 
@@ -517,17 +553,19 @@ def get_meta_ad_summary(
             "SUM(purchase_value_usd) AS purchase_value_usd "
             "FROM meta_ad_daily_campaign_metrics "
             "WHERE meta_business_date >= %s AND meta_business_date <= %s AND product_id IS NULL "
+            f"{daily_unmatched_search_clause}"
             "GROUP BY campaign_name, normalized_campaign_code "
             "ORDER BY spend_usd DESC",
-            (report_start, report_end),
+            (report_start, report_end) + search_args[:3],
         )
     else:
         unmatched = query(
             "SELECT id, campaign_name, normalized_campaign_code, spend_usd, result_count, purchase_value_usd "
             "FROM meta_ad_campaign_metrics "
             "WHERE report_start_date=%s AND report_end_date=%s AND product_id IS NULL "
+            f"{batch_unmatched_search_clause}"
             "ORDER BY spend_usd DESC",
-            (report_start, report_end),
+            (report_start, report_end) + search_args[:3],
         )
     return {
         "period": {
@@ -975,6 +1013,7 @@ def get_ads_level_list(
     page_size: int = 50,
     sort_by: str = "spend_usd",
     sort_dir: str = "desc",
+    q: str | None = None,
 ) -> dict:
     """List Campaign / Ad Set / Ad rows aggregated by code within a date range."""
     cfg = _resolve_ads_level(level)
@@ -988,6 +1027,17 @@ def get_ads_level_list(
     table = cfg["table"]
     code_col = cfg["code_col"]
     name_col = cfg["name_col"]
+    q_clean = (q or "").strip()
+    search_clause = ""
+    search_args: tuple[str, ...] = ()
+    if q_clean:
+        pattern = f"%{q_clean}%"
+        search_clause = (
+            f"AND (LOWER({name_col}) LIKE LOWER(%s) "
+            f"OR LOWER({code_col}) LIKE LOWER(%s) "
+            "OR LOWER(COALESCE(matched_product_code, '')) LIKE LOWER(%s)) "
+        )
+        search_args = (pattern, pattern, pattern)
 
     # 按 (code, ad_account_id) 分组：同一个 normalized_*_code 在多个广告户复用时（例：
     # Omurio 与 newjoyloo_old 同名 ad），各自单独成行，避免 MAX(ad_account_id) 把 Omurio 的消耗
@@ -997,9 +1047,10 @@ def get_ads_level_list(
         f"SELECT COUNT(*) AS total FROM ("
         f"SELECT 1 FROM {table} "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        f"{search_clause}"
         f"GROUP BY {code_col}, ad_account_id"
         ") AS t",
-        (start, end),
+        (start, end) + search_args,
     )
     total = int((total_row or {}).get("total") or 0)
 
@@ -1014,10 +1065,11 @@ def get_ads_level_list(
         "(SUM(purchase_value_usd) / NULLIF(SUM(spend_usd), 0)) AS roas_purchase "
         f"FROM {table} "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        f"{search_clause}"
         f"GROUP BY {code_col}, ad_account_id "
         f"ORDER BY {sort_expr} {sort_dir_norm} "
         "LIMIT %s OFFSET %s",
-        (start, end, page_size, offset),
+        (start, end) + search_args + (page_size, offset),
     )
 
     out: list[dict] = []

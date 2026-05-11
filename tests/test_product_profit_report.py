@@ -223,6 +223,22 @@ def test_load_order_lines_with_country_filters_buyer_country(monkeypatch):
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "DE")
 
 
+def test_load_order_lines_with_site_code_filters_store(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_order_lines(427, date(2026, 5, 1), date(2026, 5, 7), site_code="newjoy")
+
+    assert "dol.site_code = %s" in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "newjoy")
+
+
 def test_load_site_daily_units_uses_meta_business_date(monkeypatch):
     captured = {}
 
@@ -260,6 +276,22 @@ def test_load_site_daily_units_with_country_filters_buyer_country(monkeypatch):
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "FR")
 
 
+def test_load_site_daily_units_with_site_code_filters_store(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+
+    ppr._load_site_daily_units(427, date(2026, 5, 1), date(2026, 5, 7), site_code="omurio")
+
+    assert "dol.site_code = %s" in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "omurio")
+
+
 def test_load_account_daily_spend_uses_meta_business_date_with_report_date_fallback(monkeypatch):
     captured = {}
 
@@ -295,6 +327,137 @@ def test_load_account_daily_spend_with_country_uses_ad_level_market_country(monk
     assert "FROM meta_ad_daily_campaign_metrics" not in captured["sql"]
     assert "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id" in captured["sql"]
     assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "DE")
+
+
+def test_load_account_daily_spend_with_site_code_filters_ad_accounts(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(ppr, "query", fake_query)
+    monkeypatch.setattr(
+        "appcore.meta_ad_accounts.site_account_map",
+        lambda enabled_only=False: {"newjoy": ("111", "222")},
+    )
+
+    ppr._load_account_daily_spend(
+        427,
+        date(2026, 5, 1),
+        date(2026, 5, 7),
+        site_code="newjoy",
+    )
+
+    assert "ad_account_id IN (%s,%s)" in captured["sql"]
+    assert captured["params"] == (427, date(2026, 5, 1), date(2026, 5, 7), "111", "222")
+
+
+def test_generate_report_passes_site_code_to_loaders_and_returns_roas(monkeypatch):
+    d = date(2026, 5, 8)
+    calls = {}
+    line = {
+        "dxm_order_line_id": 1, "business_date": d, "paid_at": datetime(2026, 5, 8, 10),
+        "buyer_country": "US", "line_amount_usd": 100.0, "shipping_allocated_usd": 0.0,
+        "revenue_usd": 100.0, "shopify_fee_usd": 0.0, "purchase_usd": 0.0,
+        "shipping_cost_usd": 0.0, "return_reserve_usd": 0.0, "profit_old_usd": 100.0,
+        "shopify_tier": "A", "status": "ok",
+        "dxm_package_id": "P1", "extended_order_id": "#1001", "site_code": "newjoy",
+        "product_sku": "SKU-A", "product_display_sku": "SKU-A", "product_name": "ARP9",
+        "quantity": 1, "unit_price": 100.0, "line_amount_native": 100.0,
+        "order_amount_native": 100.0, "order_currency": "USD", "platform": "Shopify",
+    }
+
+    def fake_load_order_lines(product_id, date_from, date_to, country=None, site_code=None):
+        calls["order_site_code"] = site_code
+        return [line]
+
+    def fake_load_site_units(product_id, date_from, date_to, country=None, site_code=None):
+        calls["units_site_code"] = site_code
+        return {(d, "newjoy"): 1}
+
+    def fake_load_account_spend(product_id, date_from, date_to, country=None, site_code=None):
+        calls["spend_site_code"] = site_code
+        return {(d, "111"): 25.0}
+
+    monkeypatch.setattr(ppr, "_load_order_lines", fake_load_order_lines)
+    monkeypatch.setattr(ppr, "_load_site_daily_units", fake_load_site_units)
+    monkeypatch.setattr(ppr, "_load_account_daily_spend", fake_load_account_spend)
+    monkeypatch.setattr(ppr, "_load_real_fees", lambda extended_ids: {})
+    monkeypatch.setattr(
+        ppr,
+        "query_one",
+        lambda sql, params=None: {
+            "id": 427,
+            "product_code": "fully-automatic-water-blaster-rjc",
+            "name": "ARP9 电动水枪",
+        },
+    )
+
+    report = ppr.generate_report(
+        product_id=427,
+        date_from=d,
+        date_to=d,
+        site_code="newjoy",
+    )
+
+    assert calls == {
+        "order_site_code": "newjoy",
+        "units_site_code": "newjoy",
+        "spend_site_code": "newjoy",
+    }
+    assert report["total"]["roas"] == pytest.approx(4.0)
+    assert report["by_site"][0]["roas"] == pytest.approx(4.0)
+    assert report["meta"]["site_code"] == "newjoy"
+
+
+def test_product_profit_report_json_passes_valid_site_code(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_generate_report(*, product_id, date_from, date_to, country=None, site_code=None):
+        captured["site_code"] = site_code
+        return {
+            "orders": [],
+            "daily": [],
+            "by_country": [],
+            "by_site": [],
+            "total": {
+                "product_id": product_id,
+                "date_from": date_from,
+                "date_to": date_to,
+                "revenue_usd": 0.0,
+                "ad_cost_usd": 0.0,
+                "allocated_ad_spend_usd": 0.0,
+                "unallocated_ad_spend_usd": 0.0,
+                "roas": None,
+            },
+            "meta": {},
+        }
+
+    monkeypatch.setattr("web.routes.product_profit_report.ppr.generate_report", fake_generate_report)
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.dq.build_for_product_profit",
+        lambda **kwargs: {"status": "ok"},
+    )
+
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/report.json?"
+        "product_id=427&date_from=2026-05-01&date_to=2026-05-08&site_code=newjoy"
+    )
+
+    assert resp.status_code == 200
+    assert captured["site_code"] == "newjoy"
+
+
+def test_product_profit_report_json_rejects_invalid_site_code(authed_client_no_db):
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/report.json?"
+        "product_id=427&date_from=2026-05-01&date_to=2026-05-08&site_code=bad"
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid site_code"
 
 
 def test_generate_report_total_ad_matches_product_attributed_spend(monkeypatch):

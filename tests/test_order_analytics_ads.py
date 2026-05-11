@@ -435,6 +435,51 @@ def test_get_meta_ad_summary_uses_daily_metrics_for_explicit_range(monkeypatch):
     assert all("meta_ad_campaign_metrics" not in sql for sql, _args in queries)
 
 
+def test_get_meta_ad_summary_filters_by_search_query(monkeypatch):
+    report_start = oa._parse_meta_date("2026-04-01")
+    report_end = oa._parse_meta_date("2026-05-03")
+    queries = []
+
+    monkeypatch.setattr(
+        oa,
+        "query_one",
+        lambda sql, args=(): (_ for _ in ()).throw(AssertionError("batch lookup should not run")),
+    )
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        if "FROM meta_ad_daily_campaign_metrics m" in sql and "LEFT JOIN media_products" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "product_id IS NULL" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    summary = oa.get_meta_ad_summary(
+        start_date="2026-04-01",
+        end_date="2026-05-03",
+        q="water-blaster",
+    )
+
+    assert summary["rows"] == []
+    main_sql, main_args = queries[0]
+    assert "LOWER(m.campaign_name) LIKE LOWER(%s)" in main_sql
+    assert "LOWER(m.normalized_campaign_code) LIKE LOWER(%s)" in main_sql
+    assert "LOWER(COALESCE(m.matched_product_code, m.product_code, '')) LIKE LOWER(%s)" in main_sql
+    assert "LOWER(COALESCE(mp.name, '')) LIKE LOWER(%s)" in main_sql
+    assert "LOWER(COALESCE(mp.product_code, '')) LIKE LOWER(%s)" in main_sql
+    assert main_args == (
+        report_start,
+        report_end,
+        "%water-blaster%",
+        "%water-blaster%",
+        "%water-blaster%",
+        "%water-blaster%",
+        "%water-blaster%",
+    )
+
+
 def test_get_meta_ad_summary_merges_dianxiaomi_order_metrics(monkeypatch):
     report_start = oa._parse_meta_date("2026-04-01")
     report_end = oa._parse_meta_date("2026-04-18")
@@ -869,6 +914,30 @@ def test_ads_default_date_range_uses_march_first_of_current_year(authed_client_n
     assert "adsDaysAgoIso" not in body
 
 
+def test_ads_level_search_queries_bottom_list_without_dropdown(authed_client_no_db):
+    """广告分析四个子 Tab 搜索框应直接查询底部列表，不再渲染下拉结果。
+
+    Docs-anchor: docs/superpowers/specs/2026-05-11-ads-analytics-inline-search-list.md
+    """
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-ads-search-input="campaign"' in body
+    assert 'data-ads-search-input="adset"' in body
+    assert 'data-ads-search-input="ad"' in body
+    assert 'id="adOverviewSearchInput"' in body
+    assert 'data-ads-search-results' not in body
+    assert 'id="adRefresh">查询</button>' in body
+    assert 'data-ads-list-refresh="campaign">查询</button>' in body
+    assert 'data-ads-list-refresh="adset">查询</button>' in body
+    assert 'data-ads-list-refresh="ad">查询</button>' in body
+    assert "/order-analytics/ads/search" not in body
+    assert "overviewQuery = overviewSearchInput ? overviewSearchInput.value.trim() : '';" in body
+    assert "query = searchInput.value.trim();" in body
+    assert "'&q=' + encodeURIComponent(query)" in body
+
+
 def test_order_analytics_range_presets_use_shared_meta_calendar(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
@@ -1111,6 +1180,35 @@ def test_get_ads_level_list_aggregates_per_code(monkeypatch):
     assert result["data_quality"]["status"] == "ok"
 
 
+def test_get_ads_level_list_filters_by_search_query(monkeypatch):
+    captured: list[dict] = []
+
+    def fake_query_one(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return {"total": 0}
+
+    def fake_query(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_ads_level_list(
+        "ad",
+        start_date="2026-04-01",
+        end_date="2026-05-03",
+        q="water-blaster",
+    )
+
+    assert result["rows"] == []
+    main_sql = next(c["sql"] for c in captured if "FROM meta_ad_daily_ad_metrics" in c["sql"])
+    assert "LOWER(ad_name) LIKE LOWER(%s)" in main_sql
+    assert "LOWER(normalized_ad_code) LIKE LOWER(%s)" in main_sql
+    assert "LOWER(COALESCE(matched_product_code, '')) LIKE LOWER(%s)" in main_sql
+    assert "%water-blaster%" in captured[0]["args"]
+
+
 def test_search_ads_by_level_rejects_empty_q():
     import pytest
 
@@ -1237,6 +1335,32 @@ def test_ads_detail_route_400_for_missing_code(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics/ads/detail?level=campaign")
     assert response.status_code == 400
     assert b"code is required" in response.data
+
+
+def test_ad_summary_route_passes_search_query_to_data_layer(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_summary(batch_id=None, start_date=None, end_date=None, q=None):
+        captured.update({
+            "batch_id": batch_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "q": q,
+        })
+        return {"period": None, "rows": [], "unmatched": []}
+
+    monkeypatch.setattr(oa, "get_meta_ad_summary", fake_summary)
+    response = authed_client_no_db.get(
+        "/order-analytics/ad-summary?start_date=2026-04-01&end_date=2026-05-03&q=water-blaster"
+    )
+
+    assert response.status_code == 200, response.data
+    assert captured == {
+        "batch_id": None,
+        "start_date": "2026-04-01",
+        "end_date": "2026-05-03",
+        "q": "water-blaster",
+    }
 
 
 def test_get_ads_level_detail_parses_nested_raw_json(monkeypatch):
@@ -1738,11 +1862,11 @@ def test_get_ads_level_detail_applies_order_fallback_to_historical_days(monkeypa
 def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeypatch):
     captured = {}
 
-    def fake_list(level, start_date, end_date, page, page_size, sort_by, sort_dir):
+    def fake_list(level, start_date, end_date, page, page_size, sort_by, sort_dir, q):
         captured.update({
             "level": level, "start_date": start_date, "end_date": end_date,
             "page": page, "page_size": page_size,
-            "sort_by": sort_by, "sort_dir": sort_dir,
+            "sort_by": sort_by, "sort_dir": sort_dir, "q": q,
         })
         return {"level": level, "rows": [], "total": 0, "page": page, "page_size": page_size, "has_more": False}
 
@@ -1750,7 +1874,7 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
     response = authed_client_no_db.get(
         "/order-analytics/ads/list?level=campaign"
         "&start_date=2026-04-01&end_date=2026-04-14"
-        "&page=2&page_size=25&sort_by=roas_purchase&sort_dir=asc"
+        "&page=2&page_size=25&sort_by=roas_purchase&sort_dir=asc&q=water-blaster"
     )
     assert response.status_code == 200, response.data
     assert captured["level"] == "campaign"
@@ -1760,3 +1884,4 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
     assert captured["page_size"] == 25
     assert captured["sort_by"] == "roas_purchase"
     assert captured["sort_dir"] == "asc"
+    assert captured["q"] == "water-blaster"

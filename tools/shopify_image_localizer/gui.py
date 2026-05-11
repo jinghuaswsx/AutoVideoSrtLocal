@@ -636,8 +636,8 @@ class ShopifyImageLocalizerApp:
         dialog = tk.Toplevel(self.root)
         dialog.title("批量选择语言")
         dialog.transient(self.root)
-        dialog.geometry("520x480")
-        dialog.minsize(420, 360)
+        dialog.geometry("520x560")
+        dialog.minsize(420, 440)
         dialog.grab_set()
         self._center_dialog_over_root(dialog)
 
@@ -650,6 +650,40 @@ class ShopifyImageLocalizerApp:
         )
         header.pack(fill="x", padx=16, pady=(14, 8))
 
+        # 顶部按钮区域
+        btn_frame_top = tk.Frame(dialog)
+        btn_frame_top.pack(fill="x", padx=16, pady=(0, 8))
+
+        # 先创建check_vars字典
+        check_vars: dict[str, tk.BooleanVar] = {}
+
+        # 按钮放右边，按顺序：确认选择 → 取消 → 全选 → 全不选
+        btn_frame_right = tk.Frame(btn_frame_top)
+        btn_frame_right.pack(side="right")
+
+        # 先定义好确认和取消的函数，后面再绑定
+        result = {"confirmed": False}
+
+        def confirm():
+            result["confirmed"] = True
+            dialog.destroy()
+
+        def cancel():
+            dialog.destroy()
+
+        def select_all():
+            for var in check_vars.values():
+                var.set(True)
+
+        def select_none():
+            for var in check_vars.values():
+                var.set(False)
+
+        tk.Button(btn_frame_right, text="确认选择", command=confirm, width=10, bg="#1976d2", fg="white").pack(side="top", pady=(0, 4))
+        tk.Button(btn_frame_right, text="取消", command=cancel, width=10).pack(side="top", pady=(0, 4))
+        tk.Button(btn_frame_right, text="全选", command=select_all, width=10).pack(side="top", pady=(0, 4))
+        tk.Button(btn_frame_right, text="全不选", command=select_none, width=10).pack(side="top")
+
         # 滚动区域放复选框
         canvas = tk.Canvas(dialog, highlightthickness=0)
         scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
@@ -661,47 +695,12 @@ class ShopifyImageLocalizerApp:
         scrollbar.pack(side="right", fill="y", padx=(0, 16), pady=(0, 12))
 
         # 为每个语言创建复选框
-        check_vars: dict[str, tk.BooleanVar] = {}
         for item in self.language_items:
             lang_label = self._language_label(item)
             var = tk.BooleanVar(value=lang_label in self.batch_languages)
             check_vars[lang_label] = var
             cb = tk.Checkbutton(checkbox_frame, text=lang_label, variable=var, anchor="w")
             cb.pack(fill="x", padx=4, pady=2)
-
-        # 全选/全不选按钮放右边
-        btn_frame_top = tk.Frame(dialog)
-        btn_frame_top.pack(fill="x", padx=16, pady=(0, 8))
-
-        def select_all():
-            for var in check_vars.values():
-                var.set(True)
-
-        def select_none():
-            for var in check_vars.values():
-                var.set(False)
-
-        # 按钮放右边
-        btn_frame_right = tk.Frame(btn_frame_top)
-        btn_frame_right.pack(side="right")
-        tk.Button(btn_frame_right, text="全选", command=select_all, width=10).pack(side="top", pady=(0, 4))
-        tk.Button(btn_frame_right, text="全不选", command=select_none, width=10).pack(side="top")
-
-        # 底部按钮
-        btn_frame = tk.Frame(dialog)
-        btn_frame.pack(fill="x", padx=16, pady=(0, 14))
-
-        result = {"confirmed": False}
-
-        def confirm():
-            result["confirmed"] = True
-            dialog.destroy()
-
-        def cancel():
-            dialog.destroy()
-
-        tk.Button(btn_frame, text="取消", command=cancel, width=12).pack(side="right")
-        tk.Button(btn_frame, text="确认选择", command=confirm, width=12, bg="#1976d2", fg="white").pack(side="right", padx=(0, 8))
 
         self.root.wait_window(dialog)
 
