@@ -62,6 +62,7 @@ def get_conn(*args, **kwargs):
 class DianxiaomiProductScope:
     by_shopify_id: dict[str, dict[str, Any]]
     by_handle: dict[str, dict[str, Any]]
+    by_domain_shopify_id: dict[tuple[str, str], dict[str, Any]]
     excluded_shopify_ids: set[str]
     excluded_handles: set[str]
     requested_site_codes: set[str]
@@ -173,8 +174,35 @@ def build_dianxiaomi_product_scope(site_codes: list[str]) -> DianxiaomiProductSc
                 by_shopify_id[shopifyid] = product
             if handle:
                 by_handle[handle] = product
+    # 查询 per-domain Shopify product ID 缓存，构建域名感知映射
+    by_domain_shopify_id: dict[tuple[str, str], dict[str, Any]] = {}
+    domain_rows = query(
+        "SELECT mps.product_id, mps.domain, mps.shopify_product_id, "
+        "mp.product_code, mp.id "
+        "FROM media_product_shopify_ids mps "
+        "JOIN media_products mp ON mp.id = mps.product_id "
+        "WHERE mp.deleted_at IS NULL"
+    )
+    for row in domain_rows:
+        domain = str(row.get("domain") or "").strip().lower()
+        spid = str(row.get("shopify_product_id") or "").strip()
+        if not domain or not spid:
+            continue
+        product_code = str(row.get("product_code") or "").strip()
+        site_code = _infer_dianxiaomi_site_code_from_text(domain, requested)
+        if site_code == "smartgearx":
+            excluded_shopify_ids.add(spid)
+            continue
+        product = {
+            "product_id": row.get("id"),
+            "product_code": product_code,
+            "site_code": site_code if site_code in requested else None,
+            "shopifyid": spid,
+        }
+        by_domain_shopify_id[(domain, spid)] = product
     return DianxiaomiProductScope(
         by_shopify_id=by_shopify_id,
+        by_domain_shopify_id=by_domain_shopify_id,
         by_handle=by_handle,
         excluded_shopify_ids=excluded_shopify_ids,
         excluded_handles=excluded_handles,
@@ -215,6 +243,13 @@ def _resolve_dianxiaomi_line_product(
         resolved["site_code"] = site_code
         return resolved
 
+    # 优先按域名匹配 per-domain shopify ID
+    if site_code and site_code in scope.requested_site_codes:
+        for domain in _DIANXIAOMI_SITE_DOMAINS.get(site_code, (site_code,)):
+            product = scope.by_domain_shopify_id.get((domain, shopify_product_id))
+            if product:
+                return product
+    # 回退到旧版单字段 shopifyid
     product = scope.by_shopify_id.get(shopify_product_id)
     if product:
         return resolve_site(product)
