@@ -119,14 +119,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 30px;
-  padding: 0 var(--space-3);
+  height: 36px;
+  padding: 0 var(--space-4);
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: var(--text-sm);
+  font-size: calc(var(--text-sm) * 1.5);
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
@@ -292,17 +292,43 @@
 
 /* ── 实时大盘子 tab 控件 ─────────────────────── */
 .oar-subtabs {
-  display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap;
+  display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap;
   margin: var(--space-5) 0 var(--space-4);
-  border-bottom: 1px solid var(--border);
 }
 .oar-subtab {
-  height: 34px; padding: 0 var(--space-4); border: 0; background: transparent;
-  color: var(--fg-muted); cursor: pointer; border-bottom: 2px solid transparent;
-  font-size: var(--text-sm); font-weight: 600; margin-bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 68px; padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: calc(var(--text-sm) * 2);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+  margin-bottom: 0;
 }
-.oar-subtab:hover { color: var(--fg); }
-.oar-subtab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.oar-subtab:hover {
+  background: var(--bg-card);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.oar-subtab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.oar-subtab.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: var(--shadow-xs);
+}
 .oar-subpanel { display: none; }
 .oar-subpanel.is-active { display: block; }
 .oa-table.oar-compact-table { font-size: var(--text-sm); }
