@@ -11,13 +11,13 @@
 .oc-header .subtitle { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; color:var(--oc-fg-muted); }
 .oc-header .count { display:inline-flex; align-items:center; padding:2px 10px; border-radius:var(--oc-r-full,9999px); background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; font-variant-numeric:tabular-nums; }
 .oc-header-actions { display:flex; flex-direction:column; align-items:flex-end; gap:var(--oc-sp-2); flex:1 1 420px; min-width:320px; }
-.oc-header-action-buttons { display:flex; align-items:center; justify-content:flex-end; gap:var(--oc-sp-3); flex-wrap:nowrap; }
+.oc-header-action-buttons { display:flex; align-items:flex-start; justify-content:flex-end; gap:var(--oc-sp-3); flex-wrap:nowrap; }
 .oc-header-action-buttons > .oc-btn { height:34px; padding:0 18px; font-weight:600; }
-.oc-tool-download-group { display:flex; flex-direction:column; align-items:flex-start; gap:var(--oc-sp-1); }
+.oc-tool-download-group { display:flex; flex-direction:column; align-items:center; gap:var(--oc-sp-1); }
 .oc-tool-download-btn { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:34px; padding:0 18px; border-radius:9999px; background:var(--oc-accent); color:#fff; border:1px solid var(--oc-accent); font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap; transition:background var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
 .oc-tool-download-btn:hover { background:var(--oc-accent-hover); border-color:var(--oc-accent-hover); color:#fff; box-shadow:var(--oc-shadow-sm); }
 .oc-tool-download-btn:focus-visible { outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring); }
-.oc-tool-download-meta { display:flex; flex-direction:column; align-items:flex-start; gap:2px; color:var(--oc-fg-muted); font-size:12px; line-height:1.45; width:100%; }
+.oc-tool-download-meta { display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--oc-fg-muted); font-size:12px; line-height:1.45; }
 .oc-tool-download-meta span { white-space:nowrap; }
 @media (max-width: 760px) {
   .oc-header { flex-direction:column; align-items:stretch; }
@@ -848,6 +848,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-edit-form .oc-inline-field-full .oc-link-check-inline {
   grid-column:2 / 3;
 }
+.oc-edit-form .oc-inline-field-full .oc-product-url-split {
+  grid-column:2 / 3;
+}
 .oc-modal-edit .oc-modal-head {
   align-items:center;
   gap:var(--oc-sp-4);
@@ -1010,13 +1013,35 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   flex-wrap:wrap;
 }
 
+/* 产品链接行：左 50% URL 输入 + 右 50% 产品链接管理（同排） */
+.oc-product-url-split {
+  display:flex;
+  gap:var(--oc-sp-3);
+  align-items:flex-start;
+}
+.oc-product-url-left {
+  flex:1;
+  min-width:0;
+}
+.oc-product-url-right {
+  flex:1;
+  min-width:0;
+  display:flex;
+  align-items:center;
+}
+
 /* 产品链接管理弹窗（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md） */
 .oc-product-links-entry {
   display:flex;
   align-items:center;
-  gap:var(--oc-sp-3);
-  flex-wrap:wrap;
-  margin-top:var(--oc-sp-2);
+  gap:var(--oc-sp-2);
+  flex-wrap:nowrap;
+  min-width:0;
+}
+.oc-product-links-entry .oc-hint {
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 .oc-product-links-modal {
   width:min(960px, calc(100vw - 48px));
@@ -1385,8 +1410,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   }
   .oc-edit-form .oc-inline-field-full .oc-inline-label,
   .oc-edit-form .oc-inline-field-full .oc-url-row,
-  .oc-edit-form .oc-inline-field-full .oc-link-check-inline {
+  .oc-edit-form .oc-inline-field-full .oc-link-check-inline,
+  .oc-edit-form .oc-inline-field-full .oc-product-url-split {
     grid-column:auto;
+  }
+  .oc-product-url-split {
+    flex-direction:column;
   }
   .oc-modal-head-main {
     flex-direction:column;
