@@ -275,6 +275,42 @@ def run_worker_once(
     return {"status": "completed", "task": task, "result": result}
 
 
+def _save_resolved_shopify_id(
+    *,
+    base_url: str,
+    api_key: str,
+    product_code: str,
+    domain: str,
+    shopify_product_id: str,
+) -> None:
+    """将实时解析到的 Shopify product ID 异步存档到服务端 per-domain 缓存。"""
+    try:
+        api_client.save_shopify_product_id(
+            base_url,
+            api_key,
+            product_code=product_code,
+            domain=domain,
+            shopify_product_id=shopify_product_id,
+        )
+    except Exception:
+        pass
+
+
+def _fetch_storefront_id(
+    product_code: str,
+    domain: str,
+) -> str:
+    """从 Storefront API 实时获取 Shopify product ID。失败返回空串。"""
+    try:
+        product = run_product_cdp.fetch_storefront_product(
+            product_code,
+            store_domain=domain,
+        )
+        return str(product.get("id") or "").strip()
+    except Exception:
+        return ""
+
+
 def resolve_shopify_product_id(
     *,
     base_url: str,
@@ -284,6 +320,14 @@ def resolve_shopify_product_id(
     shopify_product_id: str = "",
     shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
 ) -> str:
+    """解析 Shopify product ID。
+
+    优先级：
+    1. 用户手动填写 → 直接使用
+    2. 目标域名 Storefront API → 实时抓取（权威），成功则存档到服务端
+    3. 服务端 per-domain 缓存 → 兜底
+    4. 全部失败 → 报错
+    """
     manual_id = str(shopify_product_id or "").strip()
     if manual_id:
         return manual_id
@@ -291,40 +335,37 @@ def resolve_shopify_product_id(
     normalized_product_code = str(product_code or "").strip().lower()
     normalized_lang = str(lang or "").strip().lower()
     normalized_domain = settings.normalize_domain(shopify_domain)
-    resolved = ""
-    if normalized_domain != settings.DEFAULT_SHOPIFY_DOMAIN:
-        try:
-            product = run_product_cdp.fetch_storefront_product(
-                normalized_product_code,
-                store_domain=normalized_domain,
-            )
-            resolved = str(product.get("id") or "").strip()
-        except Exception:
-            resolved = ""
-        if resolved:
-            return resolved
+
+    # Step 1: 目标域名 Storefront API 实时抓取
+    resolved = _fetch_storefront_id(normalized_product_code, normalized_domain)
+    if resolved:
+        _save_resolved_shopify_id(
+            base_url=base_url,
+            api_key=api_key,
+            product_code=normalized_product_code,
+            domain=normalized_domain,
+            shopify_product_id=resolved,
+        )
+        return resolved
+
+    # Step 2: 服务端 per-domain 缓存（带 domain 参数查 media_product_shopify_ids）
     try:
         payload = api_client.fetch_bootstrap(
             base_url,
             api_key,
             normalized_product_code,
             normalized_lang,
+            domain=normalized_domain,
         )
         product = payload.get("product") or {}
-        resolved = str(product.get("shopify_product_id") or "").strip()
+        cached = str(product.get("shopify_product_id") or "").strip()
+        if cached:
+            return cached
     except api_client.ApiError as exc:
         if exc.status_code != 409:
             raise
 
-    if not resolved:
-        product = run_product_cdp.fetch_storefront_product(
-            normalized_product_code,
-            store_domain=normalized_domain,
-        )
-        resolved = str(product.get("id") or "").strip()
-    if not resolved:
-        raise RuntimeError("未能从服务端 bootstrap 返回中解析到 Shopify ID，请手动填写 Shopify ID 后再打开。")
-    return resolved
+    raise RuntimeError("未能解析 Shopify ID，请手动填写 Shopify ID 后再打开。")
 
 
 def build_shopify_target_url(
