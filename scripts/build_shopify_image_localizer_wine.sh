@@ -214,7 +214,7 @@ ok "已上传"
 
 # 5. 写 system_settings.shopify_image_localizer_release
 DOWNLOAD_URL="/static/downloads/tools/${ZIP_FILENAME}"
-RELEASED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+RELEASED_AT="$(TZ=Asia/Shanghai date +'%m%d-%H%M%S')"
 
 info "写入 DB system_settings.shopify_image_localizer_release"
 RELEASE_NOTE_ENV="$RELEASE_NOTE" \
@@ -266,7 +266,7 @@ cat <<RESULT
   本地 zip：       $PORTABLE_ZIP
   线上 zip：       $TARGET_ZIP
   下载 URL：       ${PROD_BASE_URL}${DOWNLOAD_URL}
-  released_at：    $RELEASED_AT
+  released_at：    $RELEASED_AT（北京时间）
   release_note：   ${RELEASE_NOTE:-（空）}
 
 下一步：

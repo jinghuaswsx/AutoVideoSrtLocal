@@ -23,11 +23,52 @@ def test_release_info_reads_valid_json(monkeypatch):
     assert info == {
         "version": "1.0",
         "released_at": "2026-04-25 14:34",
-        "released_at_display": "0425-1434",
+        "released_at_display": "0425-143400",
         "release_note": "Shopify Image Localizer desktop tool 1.0",
         "download_url": "/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip",
         "filename": "ShopifyImageLocalizer-portable-1.0.zip",
     }
+
+
+def test_release_info_converts_utc_iso_z_to_beijing_compact_display(monkeypatch):
+    from appcore import shopify_image_localizer_release as release
+
+    monkeypatch.setattr(
+        release.system_settings,
+        "get_setting",
+        lambda key: json.dumps(
+            {
+                "version": "3.33",
+                "released_at": "2026-05-11T13:13:02Z",
+                "download_url": "/static/downloads/tools/ShopifyImageLocalizer-portable-3.33.zip",
+                "filename": "ShopifyImageLocalizer-portable-3.33.zip",
+            }
+        ),
+    )
+
+    info = release.get_release_info()
+
+    assert info["released_at_display"] == "0511-211302"
+
+
+def test_release_info_keeps_beijing_compact_display(monkeypatch):
+    from appcore import shopify_image_localizer_release as release
+
+    monkeypatch.setattr(
+        release.system_settings,
+        "get_setting",
+        lambda key: json.dumps(
+            {
+                "version": "3.34",
+                "released_at": "0511-211530",
+                "download_url": "/static/downloads/tools/ShopifyImageLocalizer-portable-3.34.zip",
+            }
+        ),
+    )
+
+    info = release.get_release_info()
+
+    assert info["released_at_display"] == "0511-211530"
 
 
 def test_release_info_ignores_invalid_json(monkeypatch):
@@ -70,7 +111,7 @@ def test_medias_page_shows_release_download_from_db(authed_client_no_db, monkeyp
         lambda: {
             "version": "1.0",
             "released_at": "2026-04-25 14:34",
-            "released_at_display": "0425-1434",
+            "released_at_display": "0425-143400",
             "download_url": "/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip",
             "release_note": "Shopify Image Localizer desktop tool 1.0",
             "filename": "ShopifyImageLocalizer-portable-1.0.zip",
@@ -84,4 +125,4 @@ def test_medias_page_shows_release_download_from_db(authed_client_no_db, monkeyp
     assert "下载自动换图工具" in body
     assert "/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip" in body
     assert "版本号：1.0" in body
-    assert "时间：0425-1434" in body
+    assert "时间：0425-143400" in body

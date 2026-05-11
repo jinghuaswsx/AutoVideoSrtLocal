@@ -63,7 +63,7 @@ def _default_output_root() -> Path:
 2. 校验 `--version <ver>` 不为空、且服务器下载目录里没同名 zip（避免覆盖旧版）。
 3. 在 Wine 下跑 `python -m tools.shopify_image_localizer.build_exe --version <ver>` 出 zip。
 4. `sudo cp` zip 到 `/opt/autovideosrt/web/static/downloads/tools/ShopifyImageLocalizer-portable-<ver>.zip`，`chmod 644`。
-5. 跑一段嵌入式 Python，调 `appcore.shopify_image_localizer_release.set_release_info(version=..., released_at=now_utc, download_url=..., release_note=..., filename=...)` 写 DB（`release_note` 由 `--release-note` 显式指定或留空）。
+5. 跑一段嵌入式 Python，调 `appcore.shopify_image_localizer_release.set_release_info(version=..., released_at=beijing_compact_time, download_url=..., release_note=..., filename=...)` 写 DB（`release_note` 由 `--release-note` 显式指定或留空）。`released_at` 的展示格式固定为北京时间 `MMDD-HHMMSS`，例如 `0511-211302`；不要写 UTC ISO 字符串到前端展示字段。
 6. `curl --range 0-99` 探测 `http://127.0.0.1/static/downloads/tools/<zip>` 应回 HTTP 200/206，校验 web 静态层能读到。
 7. 全程 `set -euo pipefail`，任何一步失败就停下并把现状打印出来。
 
@@ -73,6 +73,14 @@ def _default_output_root() -> Path:
 - **不 git push、不 commit**——helper 只管 build + 上线静态产物 + 写 DB 配置。代码修改流程跟 helper 解耦。
 - **不传 token / 凭据 / 环境变量给 Wine 子进程**——build 是离线打包，不需要业务凭据。
 - helper 的失败回滚：拷 zip 失败 / DB 写入失败时，**不**自动删 zip（保留供人工排查），但不写 DB → web 前端继续指向旧版本。
+
+### 发布时间格式
+
+素材管理页「下载自动换图工具」的时间必须展示为北京时间 `MMDD-HHMMSS`：
+
+- 新发布：helper 直接以 `Asia/Shanghai` 生成 `released_at`，写入 `system_settings.shopify_image_localizer_release`。
+- 历史兼容：`appcore.shopify_image_localizer_release.get_release_info()` 若读到旧的 UTC ISO（如 `2026-05-11T13:13:02Z`），必须转换成北京时间展示值 `0511-211302`。
+- 模板继续优先展示 `released_at_display`，兜底才展示原始 `released_at`。
 
 ### CLAUDE.md / AGENTS.md 更新
 

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from appcore import settings as system_settings
 
@@ -15,18 +17,33 @@ _RELEASED_AT_FORMATS = (
     "%Y-%m-%dT%H:%M:%S",
     "%Y-%m-%dT%H:%M",
 )
+_BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+_COMPACT_BEIJING_RE = re.compile(r"^\d{4}-\d{6}$")
 
 
 def _format_released_at_display(raw: str) -> str:
-    if not raw:
+    value = str(raw or "").strip()
+    if not value:
         return ""
+    if _COMPACT_BEIJING_RE.fullmatch(value):
+        return value
+
+    iso_value = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        dt = datetime.fromisoformat(iso_value)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(_BEIJING_TZ)
+        return dt.strftime("%m%d-%H%M%S")
+    except ValueError:
+        pass
+
     for fmt in _RELEASED_AT_FORMATS:
         try:
-            dt = datetime.strptime(raw.strip(), fmt)
-            return dt.strftime("%m%d-%H%M")
+            dt = datetime.strptime(value, fmt)
+            return dt.strftime("%m%d-%H%M%S")
         except ValueError:
             continue
-    return raw.strip()
+    return value
 
 
 def get_release_info() -> dict[str, str]:
