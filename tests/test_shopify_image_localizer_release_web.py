@@ -23,6 +23,7 @@ def test_release_info_reads_valid_json(monkeypatch):
     assert info == {
         "version": "1.0",
         "released_at": "2026-04-25 14:34",
+        "released_at_display": "0425-1434",
         "release_note": "Shopify Image Localizer desktop tool 1.0",
         "download_url": "/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip",
         "filename": "ShopifyImageLocalizer-portable-1.0.zip",
@@ -69,6 +70,7 @@ def test_medias_page_shows_release_download_from_db(authed_client_no_db, monkeyp
         lambda: {
             "version": "1.0",
             "released_at": "2026-04-25 14:34",
+            "released_at_display": "0425-1434",
             "download_url": "/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip",
             "release_note": "Shopify Image Localizer desktop tool 1.0",
             "filename": "ShopifyImageLocalizer-portable-1.0.zip",
@@ -81,5 +83,5 @@ def test_medias_page_shows_release_download_from_db(authed_client_no_db, monkeyp
     body = response.get_data(as_text=True)
     assert "下载自动换图工具" in body
     assert "/static/downloads/tools/ShopifyImageLocalizer-portable-1.0.zip" in body
-    assert "当前版本号：1.0" in body
-    assert "发布时间：2026-04-25 14:34" in body
+    assert "版本号：1.0" in body
+    assert "时间：0425-1434" in body

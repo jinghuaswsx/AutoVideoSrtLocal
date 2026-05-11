@@ -13,17 +13,19 @@
 .oc-header-actions { display:flex; flex-direction:column; align-items:flex-end; gap:var(--oc-sp-2); flex:1 1 420px; min-width:320px; }
 .oc-header-action-buttons { display:flex; align-items:center; justify-content:flex-end; gap:var(--oc-sp-3); flex-wrap:nowrap; }
 .oc-header-action-buttons > .oc-btn { height:34px; padding:0 18px; font-weight:600; }
+.oc-tool-download-group { display:flex; flex-direction:column; align-items:flex-start; gap:var(--oc-sp-1); }
 .oc-tool-download-btn { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:34px; padding:0 18px; border-radius:9999px; background:var(--oc-accent); color:#fff; border:1px solid var(--oc-accent); font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap; transition:background var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
 .oc-tool-download-btn:hover { background:var(--oc-accent-hover); border-color:var(--oc-accent-hover); color:#fff; box-shadow:var(--oc-shadow-sm); }
 .oc-tool-download-btn:focus-visible { outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring); }
-.oc-tool-download-meta { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px var(--oc-sp-3); color:var(--oc-fg-muted); font-size:12px; line-height:1.45; }
+.oc-tool-download-meta { display:flex; flex-direction:column; align-items:flex-start; gap:2px; color:var(--oc-fg-muted); font-size:12px; line-height:1.45; width:100%; }
 .oc-tool-download-meta span { white-space:nowrap; }
 @media (max-width: 760px) {
   .oc-header { flex-direction:column; align-items:stretch; }
   .oc-header-actions { width:100%; min-width:0; align-items:stretch; flex:0 0 auto; }
   .oc-header-action-buttons { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--oc-sp-2); }
   .oc-header-action-buttons > .oc-btn,
-  .oc-header-action-buttons > .oc-tool-download-btn { width:100%; justify-content:center; padding:0 10px; }
+  .oc-header-action-buttons > .oc-tool-download-group { width:100%; }
+  .oc-header-action-buttons > .oc-tool-download-group > .oc-tool-download-btn { width:100%; justify-content:center; padding:0 10px; }
   .oc-tool-download-meta { display:none; }
 }
 
@@ -2232,23 +2234,24 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
     {% set tool_release = shopify_image_localizer_release or {} %}
     <div class="oc-header-actions">
       <div class="oc-header-action-buttons">
+        {% if tool_release.download_url %}
+        <div class="oc-tool-download-group">
+          <a class="oc-tool-download-btn" href="{{ tool_release.download_url }}" download
+             title="版本号：{{ tool_release.version or '—' }}；时间：{{ tool_release.released_at_display or tool_release.released_at or '—' }}">
+            <svg width="15" height="15"><use href="#ic-download"/></svg>
+            <span>下载自动换图工具</span>
+          </a>
+          <div class="oc-tool-download-meta">
+            <span>版本号：{{ tool_release.version or "—" }}</span>
+            <span>时间：{{ tool_release.released_at_display or tool_release.released_at or "—" }}</span>
+          </div>
+        </div>
+        {% endif %}
         <button class="oc-btn primary" id="createBtn">
           <svg width="16" height="16"><use href="#ic-plus"/></svg>
           <span>添加产品素材</span>
         </button>
-        {% if tool_release.download_url %}
-        <a class="oc-tool-download-btn" href="{{ tool_release.download_url }}" download title="当前版本号：{{ tool_release.version or '—' }}；发布时间：{{ tool_release.released_at or '—' }}">
-          <svg width="15" height="15"><use href="#ic-download"/></svg>
-          <span>下载自动换图工具</span>
-        </a>
-        {% endif %}
       </div>
-      {% if tool_release.download_url %}
-      <div class="oc-tool-download-meta">
-        <span>当前版本号：{{ tool_release.version or "—" }}</span>
-        <span>发布时间：{{ tool_release.released_at or "—" }}</span>
-      </div>
-      {% endif %}
     </div>
   </header>
 
