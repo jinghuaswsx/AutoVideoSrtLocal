@@ -4336,7 +4336,7 @@
       var labelText = String(lastPoint.hour).padStart(2, '0') + ':00 ROAS ' + fmtRoasValue(lastPoint.true_roas);
       lastLabel =
         '<g class="roas-last-label">' +
-        '<rect x="' + (lx + 10) + '" y="' + (ly - 14) + '" width="' + (labelText.length * 8 + 12) + '" height="20" rx="4" fill="var(--bg-elevated)" stroke="var(--border-strong)"/>' +
+        '<rect x="' + (lx + 10) + '" y="' + (ly - 14) + '" width="' + (labelText.length * 8 + 12) + '" height="20" rx="4" fill="var(--bg-card)" stroke="var(--border-strong)"/>' +
         '<text x="' + (lx + 16) + '" y="' + (ly) + '" fill="var(--fg)" font-size="12" text-anchor="start" dominant-baseline="middle">' + escapeHtml(labelText) + '</text>' +
         '</g>';
     }
@@ -4349,7 +4349,7 @@
       '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
       dots + labels + lastLabel +
       '</svg>' +
-      '<div id="roasTooltip" style="position:absolute;pointer-events:none;display:none;background:var(--bg-elevated);border:1px solid var(--border-strong);padding:6px 10px;border-radius:6px;font-size:12px;box-shadow:var(--shadow-md);z-index:10;"></div>' +
+      '<div id="roasTooltip" style="position:absolute;pointer-events:none;display:none;background:var(--bg-card);border:1px solid var(--border-strong);padding:6px 10px;border-radius:6px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:10;"></div>' +
       '</div>';
     var tooltip = document.getElementById('roasTooltip');
     var svg = el.querySelector('svg');
