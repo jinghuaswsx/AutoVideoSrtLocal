@@ -5346,7 +5346,6 @@
   function edProductLinksRowActions(lang, item) {
     const domainAttr = `data-domain="${escapeHtml(item.domain)}"`;
     const buttons = [];
-    buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="copy" ${domainAttr}>复制链接</button>`);
     buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="recheck-one" ${domainAttr}>重新检查可用性</button>`);
     if (lang && lang !== 'en') {
       const status = edShopifyImageStatusForLang(lang, item.domain);
@@ -5378,6 +5377,9 @@
         </div>
         <div class="oc-product-links-row-url">
           <a class="oc-product-links-url-link" href="${safeUrlAttr}" target="_blank" rel="noopener">${safeUrl || '<空>'}</a>
+          <button type="button" class="oc-btn ghost sm oc-product-links-copy-url" data-product-links-action="copy" data-domain="${escapeHtml(item.domain)}" title="复制链接">
+            <svg width="14" height="14"><use href="#ic-copy"/></svg>
+          </button>
         </div>
         ${edProductLinksRenderShopifyRow(lang, item)}
         ${edProductLinksRowActions(lang, item)}

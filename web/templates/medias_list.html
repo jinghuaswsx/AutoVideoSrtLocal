@@ -1089,6 +1089,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   flex-wrap:wrap;
 }
 .oc-product-links-row-url {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-2);
   font-size:12px;
   font-family:"JetBrains Mono","Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   word-break:break-all;
@@ -1099,6 +1102,17 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-product-links-url-link:hover {
   text-decoration:underline;
+}
+.oc-product-links-copy-url {
+  flex-shrink:0;
+  color:var(--oc-fg-muted);
+  padding:2px;
+  min-width:22px;
+  height:22px;
+}
+.oc-product-links-copy-url:hover {
+  color:var(--oc-accent);
+  background:var(--oc-bg-subtle);
 }
 .oc-product-links-shopify {
   display:flex;
