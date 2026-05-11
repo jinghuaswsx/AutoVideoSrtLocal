@@ -5165,7 +5165,7 @@
     adsInited = true;
     // Docs-anchor: docs/superpowers/specs/2026-05-09-ads-analytics-default-date-range.md
     setInputValue('adStartDate', adsDefaultStartIso());
-    setInputValue('adEndDate', formatDateInput(window.orderAnalyticsMetaCalendar.today()));
+    setInputValue('adEndDate', adsDefaultEndIso());
     adRangeState.range = '';
     syncAdRangeSelection();
     document.querySelectorAll('[data-ad-range]').forEach(function(btn) {
@@ -6210,6 +6210,14 @@
     if (d.getMonth() < 2) year -= 1;
     return year + '-03-01';
   }
+  function adsDefaultEndIso() {
+    var d = window.orderAnalyticsMetaCalendar
+      ? window.orderAnalyticsMetaCalendar.today()
+      : new Date();
+    var year = d.getFullYear();
+    if (d.getMonth() < 4) year -= 1;
+    return year + '-05-03';
+  }
   function adsFmtMoney(v) {
     if (v === null || v === undefined || v === '') return '—';
     var n = Number(v);
@@ -6270,14 +6278,14 @@
     var startDetailEl = document.querySelector('[data-ads-detail-start="' + level + '"]');
     var endDetailEl = document.querySelector('[data-ads-detail-end="' + level + '"]');
     if (startListEl && !startListEl.value) startListEl.value = adsDefaultStartIso();
-    if (endListEl && !endListEl.value) endListEl.value = adsTodayIso();
+    if (endListEl && !endListEl.value) endListEl.value = adsDefaultEndIso();
     if (startDetailEl && !startDetailEl.value) startDetailEl.value = adsDefaultStartIso();
-    if (endDetailEl && !endDetailEl.value) endDetailEl.value = adsTodayIso();
+    if (endDetailEl && !endDetailEl.value) endDetailEl.value = adsDefaultEndIso();
   }
 
   function adsLoadList(level) {
     var start = (document.querySelector('[data-ads-list-start="' + level + '"]') || {}).value || adsDefaultStartIso();
-    var end = (document.querySelector('[data-ads-list-end="' + level + '"]') || {}).value || adsTodayIso();
+    var end = (document.querySelector('[data-ads-list-end="' + level + '"]') || {}).value || adsDefaultEndIso();
     var page = adsLevelState[level].listPage || 1;
     var url = '/order-analytics/ads/list?level=' + encodeURIComponent(level) +
               '&start_date=' + encodeURIComponent(start) +
@@ -6396,7 +6404,7 @@
     var code = adsLevelState[level].code;
     if (!code) return;
     var start = (document.querySelector('[data-ads-detail-start="' + level + '"]') || {}).value || adsDefaultStartIso();
-    var end = (document.querySelector('[data-ads-detail-end="' + level + '"]') || {}).value || adsTodayIso();
+    var end = (document.querySelector('[data-ads-detail-end="' + level + '"]') || {}).value || adsDefaultEndIso();
     var url = '/order-analytics/ads/detail?level=' + encodeURIComponent(level) +
               '&code=' + encodeURIComponent(code) +
               '&start_date=' + encodeURIComponent(start) +
