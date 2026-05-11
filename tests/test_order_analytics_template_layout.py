@@ -76,6 +76,18 @@ def test_order_analytics_mobile_tables_keep_shared_header_and_body_layout():
     assert 'id="amsTable"' in ads_panel
 
 
+def test_ads_ad_tab_name_column_exposes_copy_ad_name_button():
+    """Ad 子 Tab 的广告名列必须提供复制当前行广告名的按钮。"""
+    template = _template_source()
+
+    assert 'data-ads-copy-name="' in template
+    assert "复制广告名" in template
+    assert "function adsCopyText" in template
+    assert "ev.stopPropagation();" in template
+    assert "if (level === 'ad')" in template
+    assert 'data-ads-copy-name="' not in template[: template.index("function adsRenderList")]
+
+
 def test_product_profit_actions_move_into_mobile_content_top():
     """移动端业务按钮应进入页面内容区顶部，不挤在全局顶栏最上方。"""
     template = _template_source()

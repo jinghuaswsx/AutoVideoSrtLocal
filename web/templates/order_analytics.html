@@ -2730,6 +2730,19 @@
   .oa-breadcrumb button:hover { background: var(--bg-muted); }
   .oa-row-clickable { cursor: pointer; }
   .oa-row-clickable:hover { background: var(--bg-subtle); }
+  .ads-name-cell { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  .ads-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ads-copy-name-btn {
+    flex-shrink: 0; height: 24px; padding: 0 var(--space-2);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    background: var(--bg); color: var(--fg-muted); cursor: pointer;
+    font-size: var(--text-xs);
+    transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+  }
+  .ads-copy-name-btn:hover { background: var(--bg-muted); color: var(--fg); }
+  .ads-copy-name-btn.is-copied {
+    background: var(--success-bg); border-color: var(--success-bg); color: var(--success-fg);
+  }
   .oa-budget-placeholder { color: var(--fg-subtle); }
   .oa-pagination { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) 0;
     font-size: var(--text-sm); color: var(--fg-muted); }
@@ -6308,6 +6321,43 @@
       ' title="Meta CSV 缺购买列；该数值按订单营收 × spend 占比兜底（spec: 2026-05-09-ads-purchase-value-order-fallback-design.md）">*</sup>';
   }
 
+  function adsCopyText(text) {
+    var value = String(text || '');
+    if (!value) return Promise.reject(new Error('empty'));
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(value);
+    }
+    return new Promise(function(resolve, reject) {
+      var input = document.createElement('textarea');
+      input.value = value;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.top = '-1000px';
+      input.style.left = '-1000px';
+      document.body.appendChild(input);
+      input.focus();
+      input.select();
+      try {
+        if (document.execCommand('copy')) resolve();
+        else reject(new Error('copy_failed'));
+      } catch (err) {
+        reject(err);
+      } finally {
+        document.body.removeChild(input);
+      }
+    });
+  }
+
+  function adsSetCopyButtonState(btn, label, className) {
+    var original = btn.dataset.adsCopyLabel || '复制广告名';
+    btn.textContent = label;
+    if (className) btn.classList.add(className);
+    window.setTimeout(function() {
+      btn.textContent = original;
+      if (className) btn.classList.remove(className);
+    }, 1200);
+  }
+
   function adsRenderDataQuality(level, dq, mode) {
     var selector = mode === 'detail'
       ? '[data-ads-detail-quality="' + level + '"]'
@@ -6346,7 +6396,14 @@
       rows.forEach(function(r) {
         var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
         html += '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '">';
-        html += '<td>' + escHtml(r.name || r.code || '—') + '</td>';
+        if (level === 'ad') {
+          var adName = r.name || r.code || '';
+          html += '<td><div class="ads-name-cell"><span class="ads-name-text">' + escHtml(adName || '—') + '</span>' +
+            '<button type="button" class="ads-copy-name-btn" data-ads-copy-name="' + escHtml(adName) + '" data-ads-copy-label="复制广告名" title="复制广告名">复制广告名</button>' +
+            '</div></td>';
+        } else {
+          html += '<td>' + escHtml(r.name || r.code || '—') + '</td>';
+        }
         html += '<td>' + escHtml(r.ad_account_name || r.ad_account_id || '—') + '</td>';
         html += '<td class="oa-table-num">' + adsFmtMoney(r.spend_usd) + '</td>';
         html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + fallbackBadge + '</td>';
@@ -6356,8 +6413,18 @@
         html += '</tr>';
       });
       body.innerHTML = html;
+      body.querySelectorAll('[data-ads-copy-name]').forEach(function(btn) {
+        btn.addEventListener('click', function(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          adsCopyText(btn.dataset.adsCopyName || '')
+            .then(function() { adsSetCopyButtonState(btn, '已复制', 'is-copied'); })
+            .catch(function() { adsSetCopyButtonState(btn, '复制失败', ''); });
+        });
+      });
       body.querySelectorAll('[data-ads-row]').forEach(function(tr) {
-        tr.addEventListener('click', function() {
+        tr.addEventListener('click', function(ev) {
+          if (ev.target && ev.target.closest && ev.target.closest('[data-ads-copy-name]')) return;
           adsOpenDetail(level, tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow);
         });
       });
