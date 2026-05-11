@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 
 PRODUCTION_BASE_URL = "http://172.30.254.14"
-DEFAULT_API_KEY = os.getenv("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "").strip()
+DEFAULT_API_KEY = os.getenv("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "autovideosrt-materials-openapi").strip()
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 DEFAULT_SHOPIFY_DOMAIN = "newjoyloo.com"
 DEFAULT_SHOPIFY_STORE_SLUG = "0ixug9-pv"
@@ -171,14 +171,32 @@ def load_runtime_config(root: str | Path | None = None) -> dict[str, Any]:
     except Exception:
         return dict(defaults)
 
-    return {
+    api_key_from_file = str(payload.get("api_key") or "").strip()
+    browser_dir_from_file = str(payload.get("browser_user_data_dir") or "").strip()
+
+    result = {
         "base_url": defaults["base_url"],
-        "api_key": str(payload.get("api_key") or "").strip() or defaults["api_key"],
-        "browser_user_data_dir": str(payload.get("browser_user_data_dir") or "").strip()
-        or defaults["browser_user_data_dir"],
+        "api_key": api_key_from_file or defaults["api_key"],
+        "browser_user_data_dir": browser_dir_from_file or defaults["browser_user_data_dir"],
         "shopify_domain": normalize_domain(payload.get("shopify_domain"), default=defaults["shopify_domain"]),
         "shopify_domain_store_slugs": _normalize_slug_map(payload.get("shopify_domain_store_slugs")),
     }
+
+    # 如果配置文件里有字段缺失或为空，自动写回修复后的配置
+    if (not api_key_from_file or not browser_dir_from_file) and path.is_file():
+        try:
+            save_runtime_config(
+                base_url=result["base_url"],
+                api_key=result["api_key"],
+                browser_user_data_dir=result["browser_user_data_dir"],
+                shopify_domain=result["shopify_domain"],
+                store_slug_cache=result["shopify_domain_store_slugs"],
+                root=root,
+            )
+        except Exception:
+            pass
+
+    return result
 
 
 _UNSET: Any = object()

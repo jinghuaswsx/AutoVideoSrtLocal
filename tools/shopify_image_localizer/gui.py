@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import font as tkfont, messagebox, ttk
 
 from tools.shopify_image_localizer import api_client, cancellation, controller, settings, storage, version
+from tools.shopify_image_localizer.browser import session
 
 
 FALLBACK_LANGUAGES = [
@@ -22,6 +23,15 @@ FALLBACK_LANGUAGES = [
 class ShopifyImageLocalizerApp:
     def __init__(self, *, prompt_on_start: bool = True) -> None:
         runtime_config = settings.load_runtime_config()
+        # 确保配置文件存在，包含默认的 API Key 和 Chrome 目录
+        config_path = settings.config_path()
+        if not config_path.is_file():
+            settings.save_runtime_config(
+                base_url=runtime_config["base_url"],
+                api_key=runtime_config["api_key"],
+                browser_user_data_dir=runtime_config["browser_user_data_dir"],
+                shopify_domain=runtime_config.get("shopify_domain"),
+            )
 
         self.root = tk.Tk()
         self.root.title(f"Shopify 图片本地化替换 v{version.RELEASE_VERSION}")
@@ -132,43 +142,33 @@ class ShopifyImageLocalizerApp:
         self.product_code_entry.pack(fill="x", pady=(4, 10))
         self.product_code_entry.focus_set()
 
-        # 语言选择区域:两列布局，各占50%
+        # 语言选择区域:垂直布局
         language_row = tk.Frame(self.main_frame)
         language_row.pack(fill="x", pady=(4, 10))
-        language_row.grid_columnconfigure(0, weight=1)
-        language_row.grid_columnconfigure(1, weight=1)
 
-        # 左侧:单个语言选择（占50%）
-        left_col = tk.Frame(language_row)
-        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        tk.Label(left_col, text="语言", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
+        # 单个语言选择
+        tk.Label(language_row, text="语言", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
         self.language_box = ttk.Combobox(
-            left_col,
+            language_row,
             textvariable=self.language_var,
             state="readonly",
             values=[],
         )
         self.language_box.pack(fill="x", pady=(4, 0))
 
-        # 右侧:批量选择按钮和已选语言显示（占50%）
-        right_col = tk.Frame(language_row)
-        right_col.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        # 空标签对齐高度
-        tk.Label(right_col, text="", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
-        batch_btn_frame = tk.Frame(right_col)
-        batch_btn_frame.pack(fill="both", expand=True, pady=(4, 0))
+        # 批量选择按钮
         self.batch_select_btn = tk.Button(
-            batch_btn_frame,
+            language_row,
             text="批量选择语言",
             command=self._open_batch_language_dialog,
             font=("TkDefaultFont", 18, "bold"),
             height=2,
         )
-        self.batch_select_btn.pack(side="left", fill="y")
+        self.batch_select_btn.pack(fill="x", pady=(8, 0))
 
         # 批量选择的语言显示区域
-        self.batch_languages_frame = tk.Frame(batch_btn_frame)
-        self.batch_languages_frame.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        self.batch_languages_frame = tk.Frame(language_row)
+        self.batch_languages_frame.pack(fill="x", pady=(4, 0))
 
         tk.Label(self.main_frame, text="Shopify ID（可选）").pack(anchor="w")
         self.shopify_product_id_entry = tk.Entry(
@@ -608,15 +608,33 @@ class ShopifyImageLocalizerApp:
         if not self.batch_languages:
             return
 
-        # 用||分隔显示已选择的语言
+        # 用||分隔显示已选择的语言，单行显示，横向滚动
         display_text = " || ".join(self.batch_languages)
+
+        # 创建 Canvas + Scrollbar 支持横向滚动
+        canvas = tk.Canvas(self.batch_languages_frame, highlightthickness=0, height=26)
+        scrollbar = ttk.Scrollbar(self.batch_languages_frame, orient="horizontal", command=canvas.xview)
+        content_frame = tk.Frame(canvas)
+
+        # 配置滚动
+        content_frame.bind(
+            "<Configure>",
+            lambda _event: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        canvas.configure(xscrollcommand=scrollbar.set)
+
+        # 创建 Label 显示文本
         tk.Label(
-            self.batch_languages_frame,
+            content_frame,
             text=display_text,
             anchor="w",
             justify="left",
-            wraplength=400,
-        ).pack(fill="both", expand=True)
+        ).pack(anchor="w", fill="y")
+
+        # 布局
+        canvas.pack(side="top", fill="both", expand=True)
+        scrollbar.pack(side="top", fill="x")
 
     def _remove_batch_language(self, lang_label: str) -> None:
         """从批量选择中移除一个语言"""
@@ -679,10 +697,10 @@ class ShopifyImageLocalizerApp:
             for var in check_vars.values():
                 var.set(False)
 
-        tk.Button(btn_frame_right, text="确认选择", command=confirm, width=10, bg="#1976d2", fg="white").pack(side="top", pady=(0, 4))
-        tk.Button(btn_frame_right, text="取消", command=cancel, width=10).pack(side="top", pady=(0, 4))
-        tk.Button(btn_frame_right, text="全选", command=select_all, width=10).pack(side="top", pady=(0, 4))
-        tk.Button(btn_frame_right, text="全不选", command=select_none, width=10).pack(side="top")
+        tk.Button(btn_frame_right, text="确认选择", command=confirm, width=10, bg="#1976d2", fg="white").pack(side="left", padx=(0, 4))
+        tk.Button(btn_frame_right, text="全选", command=select_all, width=10).pack(side="left", padx=(0, 4))
+        tk.Button(btn_frame_right, text="全不选", command=select_none, width=10).pack(side="left", padx=(0, 4))
+        tk.Button(btn_frame_right, text="取消", command=cancel, width=10).pack(side="left")
 
         # 滚动区域放复选框
         canvas = tk.Canvas(dialog, highlightthickness=0)
@@ -1291,11 +1309,29 @@ class ShopifyImageLocalizerApp:
 
                     self.root.after(0, add_lang_summary)
 
+                    # 每个语言跑完后，关闭浏览器再继续下一个（如果不是最后一个）
+                    if idx < len(language_labels):
+                        def kill_browser():
+                            self._append_log(f"[{idx}/{len(language_labels)}] 正在关闭浏览器，准备处理下一个语言...")
+
+                        self.root.after(0, kill_browser)
+                        effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_dir, shopify_domain)
+                        session.kill_chrome_for_profile(effective_browser_dir, wait_s=8.0)
+                        # 额外等待确保完全关闭
+                        import time
+                        time.sleep(2.0)
+
                 except Exception as exc:
                     results.append({"language": lang_label, "error": str(exc), "success": False})
                     failed_count += 1
                     self.root.after(0, lambda: self._append_log(f"{lang_label} 执行失败: {exc}"))
                     # 继续下一个语言,不中断整个批量任务
+                    # 即使失败也关闭浏览器
+                    if idx < len(language_labels):
+                        effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_dir, shopify_domain)
+                        session.kill_chrome_for_profile(effective_browser_dir, wait_s=8.0)
+                        import time
+                        time.sleep(2.0)
 
             # 批量任务完成
             def finish_batch():
