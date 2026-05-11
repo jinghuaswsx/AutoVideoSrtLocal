@@ -25,7 +25,7 @@
     </svg>
     <span>Payments 导入</span>
   </button>
-  <button type="button" class="ppr-btn ppr-btn-ghost" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
+  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M3 3v18h18"/>
       <rect x="7" y="13" width="3" height="5"/>
@@ -1147,7 +1147,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
+  margin-left: 100px;
   margin-right: 12px;
 }
 .ppr-btn {
@@ -1188,10 +1188,19 @@
   border: none;
   border-radius: 12px;
   padding: 0;
-  width: min(520px, 92vw);
+  width: min(520px, calc(100vw - 220px - 80px));
+  max-height: 60vh;
   box-shadow: 0 12px 24px -4px rgba(15, 23, 42, .12), 0 4px 8px -2px rgba(15, 23, 42, .08);
   background: var(--bg-card);
   color: var(--text-main);
+  /* 在右侧 main-wrap 区域居中 */
+  position: fixed;
+  top: 20vh;
+  left: calc(110px + 50vw);
+  transform: translateX(-50%);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
 }
 .ppr-dialog::backdrop { background: rgba(15, 23, 42, .35); }
 .ppr-dialog-head {
@@ -1217,6 +1226,9 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 .ppr-dialog-body label {
   display: flex;
@@ -1287,6 +1299,10 @@
     height: 40px;
     padding: 0 10px;
   }
+  .ppr-dialog {
+    left: 50vw;
+    width: min(520px, 92vw);
+  }
 }
 {% endblock %}
 
@@ -1303,7 +1319,7 @@
     </svg>
     <span>Payments 导入</span>
   </button>
-  <button type="button" class="ppr-btn ppr-btn-ghost" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
+  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M3 3v18h18"/>
       <rect x="7" y="13" width="3" height="5"/>
@@ -6960,6 +6976,14 @@
           <option value="">加载中…</option>
         </select>
       </label>
+      <label>
+        <span>店铺归属</span>
+        <select name="site_code" id="ppr-site-code">
+          <option value="">全部</option>
+          <option value="newjoy">newjoyloo</option>
+          <option value="omurio">Omurio</option>
+        </select>
+      </label>
       <div class="ppr-dialog-row">
         <label>
           <span>开始日期</span>
@@ -6998,6 +7022,7 @@
   var productSelect = document.getElementById('ppr-product-select');
   var dateFromInput = document.getElementById('ppr-date-from');
   var dateToInput = document.getElementById('ppr-date-to');
+  var siteCodeSelect = document.getElementById('ppr-site-code');
 
   // 默认日期：最近 30 天
   function setDefaultDates() {
@@ -7138,10 +7163,12 @@
     resReport.textContent = '正在生成报表… 浏览器开始下载即可关闭对话框';
     resReport.style.display = 'block';
 
+    var sc = siteCodeSelect.value;
     var url = '/order-analytics/product-profit/report.xlsx?'
       + 'product_id=' + encodeURIComponent(pid)
       + '&date_from=' + encodeURIComponent(df)
-      + '&date_to=' + encodeURIComponent(dt);
+      + '&date_to=' + encodeURIComponent(dt)
+      + (sc ? '&site_code=' + encodeURIComponent(sc) : '');
 
     // 用 anchor 触发下载（保留 cookie 鉴权）
     var a = document.createElement('a');
