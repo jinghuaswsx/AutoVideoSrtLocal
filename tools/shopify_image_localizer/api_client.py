@@ -59,12 +59,16 @@ def fetch_bootstrap(
     lang: str,
     *,
     shopify_product_id: str = "",
+    domain: str = "",
     timeout: int = 30,
 ) -> dict[str, Any]:
     payload = {"product_code": product_code, "lang": lang}
     normalized_shopify_product_id = str(shopify_product_id or "").strip()
     if normalized_shopify_product_id:
         payload["shopify_product_id"] = normalized_shopify_product_id
+    normalized_domain = str(domain or "").strip().lower()
+    if normalized_domain:
+        payload["domain"] = normalized_domain
 
     response = requests.post(
         f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/bootstrap",
@@ -76,6 +80,31 @@ def fetch_bootstrap(
     if response.status_code >= 400:
         raise ApiError(response.status_code, payload)
     return payload
+
+
+def save_shopify_product_id(
+    base_url: str,
+    api_key: str,
+    *,
+    product_code: str,
+    domain: str,
+    shopify_product_id: str,
+    timeout: int = 15,
+) -> bool:
+    response = requests.post(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/shopify-id",
+        headers={"X-API-Key": api_key},
+        json={
+            "product_code": str(product_code or "").strip().lower(),
+            "domain": str(domain or "").strip().lower(),
+            "shopify_product_id": str(shopify_product_id or "").strip(),
+        },
+        timeout=timeout,
+    )
+    if response.status_code >= 400:
+        return False
+    payload = _json_payload(response)
+    return bool(payload.get("saved"))
 
 
 def claim_task(

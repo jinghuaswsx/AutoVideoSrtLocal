@@ -11,7 +11,7 @@ from web.services.openapi_materials_serializers import media_download_url, seria
 
 IsValidLanguageFn = Callable[[str], bool]
 GetProductByCodeFn = Callable[[str], dict | None]
-ResolveShopifyProductIdFn = Callable[[int], str | None]
+ResolveShopifyProductIdFn = Callable[[int, str | None], str | None]
 ListReferenceImagesFn = Callable[[int, str], list[dict]]
 GetLanguageNameFn = Callable[[str], str]
 MediaDownloadUrlFn = Callable[[str | None], str | None]
@@ -90,6 +90,7 @@ def build_shopify_localizer_bootstrap_response(
     body = body or {}
     product_code = str(body.get("product_code") or "").strip().lower()
     lang = str(body.get("lang") or "").strip().lower()
+    domain = str(body.get("domain") or "").strip().lower()
     if not product_code or not lang:
         raise ShopifyLocalizerBootstrapError("missing product_code or lang", 400)
 
@@ -114,7 +115,13 @@ def build_shopify_localizer_bootstrap_response(
         raise ShopifyLocalizerBootstrapError("product not found", 404)
 
     shopify_product_id_override = str(body.get("shopify_product_id") or "").strip()
-    shopify_product_id = shopify_product_id_override or resolve_shopify_product_id_fn(int(product["id"]))
+    shopify_product_id = shopify_product_id_override or resolve_shopify_product_id_fn(int(product["id"]), domain or None)
+    # 如果客户端提供了 shopify_product_id 和 domain，保存到 per-domain 缓存
+    if shopify_product_id_override and domain and shopify_product_id_override.isdigit():
+        try:
+            medias.save_shopify_product_id_for_domain(int(product["id"]), domain, shopify_product_id_override)
+        except Exception:
+            pass
     if not shopify_product_id:
         raise ShopifyLocalizerBootstrapError(
             "shopify_product_id_missing",

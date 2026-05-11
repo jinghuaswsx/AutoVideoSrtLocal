@@ -119,6 +119,34 @@ def shopify_localizer_bootstrap():
     return _openapi_payload_response(payload)
 
 
+@shopify_localizer_bp.route("/shopify-id", methods=["POST"])
+def shopify_localizer_save_shopify_id():
+    if not _api_key_valid():
+        return _openapi_error_response("invalid api key", 401)
+
+    body = request.get_json(silent=True) or {}
+    product_code = str(body.get("product_code") or "").strip().lower()
+    domain = str(body.get("domain") or "").strip().lower()
+    shopify_product_id = str(body.get("shopify_product_id") or "").strip()
+    if not product_code or not domain or not shopify_product_id:
+        return _openapi_error_response("missing product_code, domain or shopify_product_id", 400)
+    if not shopify_product_id.isdigit():
+        return _openapi_error_response("shopify_product_id must be numeric", 400)
+
+    product = medias.get_product_by_code(product_code)
+    if not product:
+        return _openapi_error_response("product not found", 404)
+
+    saved = medias.save_shopify_product_id_for_domain(int(product["id"]), domain, shopify_product_id)
+    return _openapi_payload_response({
+        "ok": True,
+        "saved": saved,
+        "product_id": int(product["id"]),
+        "domain": domain,
+        "shopify_product_id": shopify_product_id,
+    })
+
+
 @shopify_localizer_bp.route("/tasks/claim", methods=["POST"])
 def shopify_localizer_task_claim():
     if not _api_key_valid():

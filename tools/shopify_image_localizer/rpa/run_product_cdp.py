@@ -563,6 +563,7 @@ def fetch_bootstrap_ready(
     lang: str,
     timeout_s: int,
     shopify_product_id: str = "",
+    domain: str = "",
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict[str, Any]:
     cfg = settings.load_runtime_config()
@@ -579,6 +580,7 @@ def fetch_bootstrap_ready(
                 product_code,
                 lang,
                 shopify_product_id=shopify_product_id,
+                domain=domain,
             )
             localized_count = len(payload.get("localized_images") or [])
             if localized_count > 0:
@@ -808,6 +810,7 @@ def run(
         lang=args.lang,
         timeout_s=args.bootstrap_timeout_s,
         shopify_product_id=product_id,
+        domain=args.store_domain,
         cancel_token=cancel_token,
     )
     workspace, downloaded = download_localized(

@@ -180,13 +180,22 @@ class ShopifyImageLocalizerApp:
             textvariable=self.shopify_product_id_var,
             width=80,
         )
-        self.shopify_product_id_entry.pack(fill="x", pady=(4, 6))
+        self.shopify_product_id_entry.pack(fill="x", pady=(4, 2))
+
+        self.resolved_shopify_id_label = tk.Label(
+            self.main_frame,
+            text="",
+            justify="left",
+            fg="#228B22",
+            font=("TkDefaultFont", 12, "bold"),
+        )
+        self.resolved_shopify_id_label.pack(anchor="w", pady=(0, 4))
 
         self.tip_label = tk.Label(
             self.main_frame,
             text=(
-                "Shopify ID 留空时会自动从线上商品页识别；填写后会优先使用该值，"
-                "并随 bootstrap 请求一起发送，绕过服务端未填写 Shopify ID 的阻塞。"
+                "Shopify ID 留空时自动从线上商品页实时获取，并回存到服务器；"
+                "填写后会优先使用该值。"
             ),
             justify="left",
             fg="#555",
@@ -1455,6 +1464,9 @@ class ShopifyImageLocalizerApp:
         value = str(product_id or "").strip()
         if value:
             self.shopify_product_id_var.set(value)
+            self.resolved_shopify_id_label.configure(
+                text=f"当前使用: {value}"
+            )
 
     def _confirm_visual_pairs_threadsafe(self, pairs: list[dict]) -> bool:
         done = threading.Event()

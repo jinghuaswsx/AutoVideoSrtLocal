@@ -63,7 +63,7 @@ def test_evaluate_candidate_requires_material_and_shopify_id(monkeypatch):
         lambda pid: {"id": pid, "product_code": "demo-rjc"},
     )
     monkeypatch.setattr(sit.medias, "is_valid_language", lambda lang: lang == "it")
-    monkeypatch.setattr(sit.medias, "resolve_shopify_product_id", lambda pid: "855")
+    monkeypatch.setattr(sit.medias, "resolve_shopify_product_id", lambda pid, domain=None: "855")
     monkeypatch.setattr(
         sit.medias,
         "list_shopify_localizer_images",
@@ -121,7 +121,7 @@ def test_evaluate_candidate_returns_all_enabled_domain_link_urls(monkeypatch):
         lambda pid: {"id": pid, "product_code": "demo-rjc"},
     )
     monkeypatch.setattr(sit.medias, "is_valid_language", lambda lang: lang == "it")
-    monkeypatch.setattr(sit.medias, "resolve_shopify_product_id", lambda pid: "855")
+    monkeypatch.setattr(sit.medias, "resolve_shopify_product_id", lambda pid, domain=None: "855")
     monkeypatch.setattr(
         sit.medias,
         "list_shopify_localizer_images",

@@ -245,7 +245,7 @@ def _enrich_task_link_urls(task: dict | None) -> dict | None:
     return enriched
 
 
-def evaluate_candidate(product_id: int, lang: str) -> dict[str, Any]:
+def evaluate_candidate(product_id: int, lang: str, domain: str | None = None) -> dict[str, Any]:
     normalized_lang = (lang or "").strip().lower()
     product = medias.get_product(product_id)
     if not product:
@@ -259,7 +259,7 @@ def evaluate_candidate(product_id: int, lang: str) -> dict[str, Any]:
     if confirmed:
         return {"ready": False, "block_code": "already_confirmed", "product": product}
 
-    shopify_product_id = medias.resolve_shopify_product_id(int(product_id))
+    shopify_product_id = medias.resolve_shopify_product_id(int(product_id), domain)
     if not shopify_product_id:
         return {
             "ready": False,

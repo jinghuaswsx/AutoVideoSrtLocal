@@ -389,7 +389,44 @@ def list_reference_images_for_lang(product_id: int, lang: str) -> list[dict]:
         })
     return images
 
-def resolve_shopify_product_id(product_id: int) -> str | None:
+def get_shopify_product_id_for_domain(product_id: int, domain: str) -> str | None:
+    """读取某产品在某域名下缓存的 Shopify product ID。无缓存返回 None。"""
+    row = query_one(
+        "SELECT shopify_product_id FROM media_product_shopify_ids "
+        "WHERE product_id=%s AND domain=%s ORDER BY updated_at DESC LIMIT 1",
+        (int(product_id), str(domain or "").strip().lower()),
+    )
+    return str(row.get("shopify_product_id") or "").strip() or None
+
+
+def save_shopify_product_id_for_domain(product_id: int, domain: str, shopify_product_id: str) -> bool:
+    """写入/更新某产品在某域名下的 Shopify product ID 缓存。返回是否产生写入。"""
+    pid = int(product_id)
+    normalized_domain = str(domain or "").strip().lower()
+    normalized_id = str(shopify_product_id or "").strip()
+    if not pid or not normalized_domain or not normalized_id or not normalized_id.isdigit():
+        return False
+    existing = get_shopify_product_id_for_domain(pid, normalized_domain)
+    if existing == normalized_id:
+        return False
+    execute(
+        "INSERT INTO media_product_shopify_ids (product_id, domain, shopify_product_id) "
+        "VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE shopify_product_id=VALUES(shopify_product_id)",
+        (pid, normalized_domain, normalized_id),
+    )
+    return True
+
+
+def resolve_shopify_product_id(product_id: int, domain: str | None = None) -> str | None:
+    """解析 Shopify product ID。
+
+    1. 优先查 per-domain 缓存表
+    2. 回退到 media_products.shopifyid 旧字段（仅默认域名时）
+    """
+    if domain:
+        cached = get_shopify_product_id_for_domain(product_id, domain)
+        if cached:
+            return cached
     product = get_product(product_id) or {}
     direct_value = str(product.get("shopifyid") or "").strip()
     return direct_value or None
