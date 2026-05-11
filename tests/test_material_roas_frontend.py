@@ -80,6 +80,25 @@ def test_sku_detail_modal_fills_main_area_with_room_for_codes():
     assert '<th style="width:260px;">ERP / xmyc 商品名</th>' in html
 
 
+def test_sku_detail_mobile_table_keeps_shared_header_and_body_layout():
+    """移动端不能让 SKU 表头和数据各自计算列宽，否则列名会错位。"""
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    expected_snippets = [
+        "docs/superpowers/specs/2026-05-11-sku-detail-mobile-table-alignment.md",
+        ".oc-sku-detail-table-wrap table.oc-sku-detail-table:not(.mobile-no-scroll)",
+        "display:table;",
+        "width:max-content;",
+        "min-width:1940px;",
+        "display:table-header-group;",
+        "display:table-row-group;",
+        "display:table-footer-group;",
+        "overflow-x:auto;",
+    ]
+    for snippet in expected_snippets:
+        assert snippet in html, f"missing SKU mobile table layout override: {snippet}"
+
+
 def test_sku_detail_modal_renders_actual_breakeven_roas_after_estimated_roas():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
