@@ -239,6 +239,13 @@ class ShopifyImageLocalizerApp:
             width=14,
         )
         self.open_detail_button.pack(side="left", padx=(8, 0))
+        self.mapping_button = tk.Button(
+            self.action_frame,
+            text="映射管理",
+            command=self.open_mapping_management,
+            width=12,
+        )
+        self.mapping_button.pack(side="left", padx=(8, 0))
         self.open_download_button = tk.Button(
             self.action_frame,
             text="打开下载目录",
@@ -522,6 +529,7 @@ class ShopifyImageLocalizerApp:
         self.login_shopify_button.configure(state=state)
         self.open_ez_button.configure(state=state)
         self.open_detail_button.configure(state=state)
+        self.mapping_button.configure(state=state)
         self.product_code_entry.configure(state=state)
         self.shopify_product_id_entry.configure(state=state)
         self.language_box.configure(state="disabled" if running else "readonly")
@@ -986,6 +994,138 @@ class ShopifyImageLocalizerApp:
                 ),
                 daemon=True,
             ).start()
+
+    def open_mapping_management(self) -> None:
+        product_code = self.product_code_var.get().strip().lower()
+        if not product_code:
+            messagebox.showerror("错误", "请先输入商品 ID")
+            return
+
+        shopify_domain = settings.normalize_domain(self.current_shopify_domain_var.get())
+        self.current_shopify_domain_var.set(shopify_domain)
+        self._set_running_state(True)
+        self._progress_start(f"正在生成图片映射：{product_code} / {shopify_domain}")
+        self.status_var.set("正在生成图片映射")
+        self._append_log(f"开始生成图片映射：product_code={product_code}, domain={shopify_domain}")
+        threading.Thread(
+            target=self._preview_mapping_worker,
+            args=(product_code, shopify_domain),
+            daemon=True,
+        ).start()
+
+    def _preview_mapping_worker(self, product_code: str, shopify_domain: str) -> None:
+        try:
+            result = controller.preview_domain_image_mapping(
+                product_code=product_code,
+                shopify_domain=shopify_domain,
+            )
+            self.root.after(0, self._render_mapping_preview_result, result)
+        except Exception as exc:
+            self.root.after(0, self.status_var.set, "图片映射生成失败")
+            self.root.after(0, self._append_log, f"图片映射生成失败：{exc}")
+            self.root.after(0, messagebox.showerror, "图片映射生成失败", str(exc))
+        finally:
+            self.root.after(0, self._set_running_state, False)
+
+    def _render_mapping_preview_result(self, result: dict) -> None:
+        summary = result.get("summary") or {}
+        self._clear_summary()
+        self._add_summary("商品 ID", result.get("product_code"))
+        self._add_summary("默认域名", result.get("canonical_domain"))
+        self._add_summary("当前域名", result.get("target_domain"))
+        if result.get("canonical_product_id"):
+            self._add_summary("默认 Shopify ID", result.get("canonical_product_id"))
+        if result.get("target_product_id"):
+            self._add_summary("当前 Shopify ID", result.get("target_product_id"))
+        self._add_summary(
+            "轮播图映射",
+            f"{summary.get('carousel_mapped_count', 0)} 个，"
+            f"低置信度 {summary.get('carousel_low_confidence_count', 0)} 个",
+        )
+        self._add_summary(
+            "详情图映射",
+            f"{summary.get('detail_mapped_count', 0)} 个，"
+            f"低置信度 {summary.get('detail_low_confidence_count', 0)} 个",
+        )
+
+        if result.get("status") == "default_domain":
+            status_text = "默认域名无需跨域图片映射"
+        else:
+            status_text = "图片映射已生成"
+        self.status_var.set(status_text)
+        self._append_log(
+            f"{status_text}：轮播图 {summary.get('carousel_mapped_count', 0)} 个，"
+            f"详情图 {summary.get('detail_mapped_count', 0)} 个"
+        )
+        self._progress_finish(status_text)
+        self._show_mapping_management_dialog(result)
+
+    def _mapping_report_text(self, result: dict) -> str:
+        summary = result.get("summary") or {}
+        lines = [
+            f"商品 ID：{result.get('product_code') or '-'}",
+            f"默认域名：{result.get('canonical_domain') or '-'}",
+            f"当前域名：{result.get('target_domain') or '-'}",
+        ]
+        if result.get("canonical_product_id"):
+            lines.append(f"默认 Shopify ID：{result.get('canonical_product_id')}")
+        if result.get("target_product_id"):
+            lines.append(f"当前 Shopify ID：{result.get('target_product_id')}")
+        message = str(result.get("message") or "").strip()
+        if message:
+            lines.extend(["", message])
+        lines.extend([
+            "",
+            f"轮播图映射：{summary.get('carousel_mapped_count', 0)} 个",
+            f"轮播图低置信度：{summary.get('carousel_low_confidence_count', 0)} 个",
+            f"详情图映射：{summary.get('detail_mapped_count', 0)} 个",
+            f"详情图低置信度：{summary.get('detail_low_confidence_count', 0)} 个",
+        ])
+
+        def append_aliases(title: str, rows: list[dict]) -> None:
+            lines.extend(["", title])
+            if not rows:
+                lines.append("无")
+                return
+            for row in rows:
+                lines.append(
+                    f"- 当前位置 {int(row.get('target_index') or 0) + 1} → "
+                    f"默认 source_index {row.get('canonical_index')}，"
+                    f"{row.get('match_method')} / {row.get('confidence')}"
+                )
+                lines.append(f"  当前图：{row.get('target_src') or '-'}")
+                lines.append(f"  默认图：{row.get('canonical_src') or '-'}")
+
+        append_aliases("轮播图低置信度项", list(summary.get("carousel_low_confidence") or []))
+        append_aliases("详情图低置信度项", list(summary.get("detail_low_confidence") or []))
+        return "\n".join(lines)
+
+    def _show_mapping_management_dialog(self, result: dict) -> None:
+        dialog = tk.Toplevel(self.root)
+        dialog.title("图片映射管理")
+        dialog.geometry("780x560")
+        dialog.minsize(640, 420)
+        dialog.transient(self.root)
+
+        frame = tk.Frame(dialog, padx=16, pady=14)
+        frame.pack(fill="both", expand=True)
+        title = "图片映射管理"
+        tk.Label(frame, text=title, anchor="w", font=("TkDefaultFont", 13, "bold")).pack(fill="x")
+
+        text_frame = tk.Frame(frame)
+        text_frame.pack(fill="both", expand=True, pady=(10, 12))
+        report = tk.Text(text_frame, wrap="word", height=22)
+        scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=report.yview)
+        report.configure(yscrollcommand=scrollbar.set)
+        report.insert("1.0", self._mapping_report_text(result))
+        report.configure(state="disabled")
+        report.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        button_frame = tk.Frame(frame)
+        button_frame.pack(fill="x")
+        tk.Button(button_frame, text="关闭", command=dialog.destroy, width=10).pack(side="right")
+        self._center_dialog_over_root(dialog)
 
     def open_shopify_target(self, target: str) -> None:
         product_code = self.product_code_var.get().strip().lower()
@@ -1455,6 +1595,15 @@ class ShopifyImageLocalizerApp:
                 "前台检查",
                 f"图片 {storefront.get('image_count', 0)}，"
                 f"旧非 Shopify 图 {storefront.get('old_non_shopify_count', 0)}",
+            )
+
+        mapping = result.get("domain_image_mapping") or {}
+        if mapping.get("target_domain") and mapping.get("target_domain") != mapping.get("canonical_domain"):
+            self._add_summary(
+                "图片映射",
+                f"轮播 {mapping.get('carousel_mapped_count', 0)}，"
+                f"详情 {mapping.get('detail_mapped_count', 0)}，"
+                f"低置信度 {mapping.get('carousel_low_confidence_count', 0) + mapping.get('detail_low_confidence_count', 0)}",
             )
 
         # 清空当前运行语言

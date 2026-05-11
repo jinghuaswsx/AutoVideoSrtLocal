@@ -166,6 +166,21 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         app.root.destroy()
 
 
+def test_gui_mapping_button_tracks_running_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        assert app.mapping_button["text"] == "映射管理"
+        assert app.mapping_button["state"] == "normal"
+
+        app._set_running_state(True)
+        assert app.mapping_button["state"] == "disabled"
+
+        app._set_running_state(False)
+        assert app.mapping_button["state"] == "normal"
+    finally:
+        app.root.destroy()
+
+
 def test_gui_choose_domain_always_prompts_even_for_single_domain(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:

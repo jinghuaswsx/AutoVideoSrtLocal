@@ -719,7 +719,7 @@ def plan_body_html_replacements(
                     if source_index is None:
                         key = source_name_key(src)
                         source_index = (source_index_by_token or {}).get(key or "")
-                if token:
+                if token and candidates_by_token.get(token):
                     candidate = choose_localized_image(
                         src,
                         candidates_by_token,
@@ -732,6 +732,12 @@ def plan_body_html_replacements(
                         source_index,
                     )
                     match_method = "source_index"
+                elif token:
+                    candidate = choose_localized_image(
+                        src,
+                        candidates_by_token,
+                        source_index_by_token=source_index_by_token,
+                    )
                 else:
                     raise ValueError(f"image src has no source token or source index mapping: {src}")
         except ValueError as exc:

@@ -21,7 +21,7 @@ from appcore.payment_screenshot_filter import is_payment_screenshot
 from link_check_desktop.image_compare import find_best_reference, run_binary_quick_check
 from playwright.sync_api import sync_playwright
 
-from tools.shopify_image_localizer import api_client, cancellation, downloader, locales, settings, storage
+from tools.shopify_image_localizer import api_client, cancellation, domain_image_mapping, downloader, locales, settings, storage
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
@@ -94,6 +94,7 @@ def _choose_carousel_candidate(
     src: str,
     candidates_by_token: dict[str, list[dict[str, Any]]],
     candidates_by_source_index: dict[int, list[dict[str, Any]]] | None = None,
+    domain_mapping: domain_image_mapping.DomainImageMapping | None = None,
 ) -> dict[str, Any] | None:
     token = ez_cdp.md5_token(src)
     if token:
@@ -109,7 +110,26 @@ def _choose_carousel_candidate(
                 return no_index[0]
             options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
             raise ValueError(f"ambiguous carousel source for slot {slot_idx} token {token}: {options}")
-    source_index_candidates = (candidates_by_source_index or {}).get(slot_idx) or []
+        canonical_token = (
+            domain_mapping.carousel_canonical_token_for(src)
+            if domain_mapping is not None else ""
+        )
+        if canonical_token and canonical_token != token:
+            candidates = candidates_by_token.get(canonical_token) or []
+            if candidates:
+                mapped_index = domain_mapping.carousel_source_index_for(src, slot_idx) if domain_mapping else None
+                exact = [row for row in candidates if row.get("source_index") == mapped_index]
+                if exact:
+                    return exact[0]
+                if len(candidates) == 1:
+                    return candidates[0]
+    source_index = (
+        domain_mapping.carousel_source_index_for(src, slot_idx)
+        if domain_mapping is not None else None
+    )
+    if source_index is None:
+        source_index = slot_idx
+    source_index_candidates = (candidates_by_source_index or {}).get(source_index) or []
     if not source_index_candidates:
         return None
     src_key = taa_cdp.source_name_key(src)
@@ -123,7 +143,12 @@ def _choose_carousel_candidate(
     raise ValueError(f"ambiguous carousel source for slot {slot_idx}: {options}")
 
 
-def pair_carousel_images(localized_images: list[dict], product_images: list[dict] | list[str]) -> list[tuple[int, str]]:
+def pair_carousel_images(
+    localized_images: list[dict],
+    product_images: list[dict] | list[str],
+    *,
+    domain_mapping: domain_image_mapping.DomainImageMapping | None = None,
+) -> list[tuple[int, str]]:
     candidates_by_token = _localized_by_token(localized_images)
     candidates_by_source_index = _localized_by_source_index(localized_images)
     pairs: list[tuple[int, str]] = []
@@ -135,7 +160,13 @@ def pair_carousel_images(localized_images: list[dict], product_images: list[dict
         src = _normalize_src(src)
         if not src or src.lower().split("?", 1)[0].endswith(".gif"):
             continue
-        candidate = _choose_carousel_candidate(idx, src, candidates_by_token, candidates_by_source_index)
+        candidate = _choose_carousel_candidate(
+            idx,
+            src,
+            candidates_by_token,
+            candidates_by_source_index,
+            domain_mapping=domain_mapping,
+        )
         if candidate is None:
             continue
         pairs.append((idx, str(candidate["local_path"])))
@@ -805,6 +836,42 @@ def run(
     if str(target_product.get("id") or "") and str(target_product.get("id")) != product_id:
         raise RuntimeError(f"source/target product id mismatch: {product_id} vs {target_product.get('id')}")
 
+    mapping = domain_image_mapping.DomainImageMapping(
+        target_domain=args.store_domain,
+        canonical_domain=settings.DEFAULT_SHOPIFY_DOMAIN,
+    )
+    if settings.normalize_domain(args.store_domain) != settings.DEFAULT_SHOPIFY_DOMAIN:
+        try:
+            canonical_source_product = fetch_storefront_product(
+                args.product_code,
+                store_domain=settings.DEFAULT_SHOPIFY_DOMAIN,
+            )
+            try:
+                canonical_target_product = fetch_storefront_product(
+                    args.product_code,
+                    locale=args.shop_locale,
+                    store_domain=settings.DEFAULT_SHOPIFY_DOMAIN,
+                )
+            except Exception:
+                canonical_target_product = canonical_source_product
+            mapping = domain_image_mapping.build_domain_image_mapping(
+                canonical_product=canonical_source_product,
+                target_product=source_product,
+                canonical_detail_product=canonical_target_product,
+                target_detail_product=target_product,
+                canonical_domain=settings.DEFAULT_SHOPIFY_DOMAIN,
+                target_domain=args.store_domain,
+            )
+            mapping_summary = domain_image_mapping.summarize_domain_image_mapping(mapping)
+            print(
+                "多域名图片映射："
+                f"{args.store_domain} → {settings.DEFAULT_SHOPIFY_DOMAIN}，"
+                f"轮播 {mapping_summary['carousel_mapped_count']}，"
+                f"详情 {mapping_summary['detail_mapped_count']}"
+            )
+        except Exception as exc:
+            print(f"多域名图片映射：自动建立失败，将使用既有匹配/视觉兜底：{exc}")
+
     bootstrap = fetch_bootstrap_ready(
         product_code=args.product_code,
         lang=args.lang,
@@ -835,6 +902,7 @@ def run(
         "carousel": None,
         "detail": None,
         "storefront": None,
+        "domain_image_mapping": domain_image_mapping.summarize_domain_image_mapping(mapping),
     }
 
     product_images = product_image_sources(source_product)
@@ -847,7 +915,7 @@ def run(
             label="轮播图",
         )
         print("轮播图：正在按文件名/哈希比对位置与本地化图片")
-        pairs = pair_carousel_images(downloaded, product_images)
+        pairs = pair_carousel_images(downloaded, product_images, domain_mapping=mapping)
         print(f"轮播图：文件名匹配完成，共 {len(pairs)} 对")
         eligible_indices = [
             idx
@@ -956,6 +1024,11 @@ def run(
                 bootstrap.get("reference_images") or [],
                 carousel_image_count=len(product_images),
             )
+        if mapping.detail_source_index_by_key:
+            source_index_map = {
+                **source_index_map,
+                **mapping.detail_source_index_by_key,
+            }
         print(f"详情图：使用源图序号映射 {source_index_map}")
         _preload_chrome_tab_to_url(
             user_data_dir=browser_user_data_dir,

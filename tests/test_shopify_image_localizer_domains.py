@@ -340,3 +340,55 @@ def test_controller_target_uses_cached_store_slug(monkeypatch: pytest.MonkeyPatc
     ]
     assert result["shopify_domain"] == "omurio.com"
     assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image-omurio"
+
+
+def test_controller_preview_domain_image_mapping_fetches_default_and_target_products(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    canonical_product = {
+        "id": 8558985150637,
+        "images": [
+            "https://cdn.shopify.com/s/files/1/default/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg?v=1",
+        ],
+        "description": (
+            '<p><img src="https://cdn.shopify.com/s/files/1/default/files/'
+            'cccccccccccccccccccccccccccccccc.jpg?v=1"></p>'
+        ),
+    }
+    target_product = {
+        "id": 9163928862932,
+        "images": [
+            "https://cdn.shopify.com/s/files/1/target/files/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg?v=2",
+        ],
+        "description": (
+            '<p><img src="https://cdn.shopify.com/s/files/1/target/files/'
+            'dddddddddddddddddddddddddddddddd.jpg?v=2"></p>'
+        ),
+    }
+
+    def fake_fetch(product_code: str, *, store_domain: str, locale: str = "", timeout_s: int = 20) -> dict:
+        calls.append((product_code, store_domain))
+        if store_domain == settings.DEFAULT_SHOPIFY_DOMAIN:
+            return canonical_product
+        return target_product
+
+    monkeypatch.setattr(controller.run_product_cdp, "fetch_storefront_product", fake_fetch)
+
+    result = controller.preview_domain_image_mapping(
+        product_code="Baseball-Cap-Organizer-RJC",
+        shopify_domain="omurio.com",
+    )
+
+    assert calls == [
+        ("baseball-cap-organizer-rjc", settings.DEFAULT_SHOPIFY_DOMAIN),
+        ("baseball-cap-organizer-rjc", "omurio.com"),
+    ]
+    assert result["status"] == "mapped"
+    assert result["product_code"] == "baseball-cap-organizer-rjc"
+    assert result["canonical_product_id"] == "8558985150637"
+    assert result["target_product_id"] == "9163928862932"
+    assert result["summary"]["carousel_mapped_count"] == 1
+    assert result["summary"]["detail_mapped_count"] == 1
+    assert result["summary"]["carousel_low_confidence_count"] == 1

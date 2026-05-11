@@ -7,7 +7,14 @@ import sqlite3
 from pathlib import Path
 from typing import Callable
 
-from tools.shopify_image_localizer import api_client, cancellation, locales, settings, storage
+from tools.shopify_image_localizer import (
+    api_client,
+    cancellation,
+    domain_image_mapping,
+    locales,
+    settings,
+    storage,
+)
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
@@ -366,6 +373,64 @@ def resolve_shopify_product_id(
             raise
 
     raise RuntimeError("未能解析 Shopify ID，请手动填写 Shopify ID 后再打开。")
+
+
+def preview_domain_image_mapping(
+    *,
+    product_code: str,
+    shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
+) -> dict:
+    """生成当前域名相对默认域名的图片映射预览。
+
+    这是桌面端“映射管理”的只读入口：非默认域名只建立 alias，不下载、
+    不翻译、不保存第二份图片。
+    """
+    normalized_product_code = str(product_code or "").strip().lower()
+    if not normalized_product_code:
+        raise RuntimeError("商品 ID 不能为空")
+
+    target_domain = settings.normalize_domain(shopify_domain)
+    canonical_domain = settings.DEFAULT_SHOPIFY_DOMAIN
+    if target_domain == canonical_domain:
+        return {
+            "status": "default_domain",
+            "product_code": normalized_product_code,
+            "canonical_domain": canonical_domain,
+            "target_domain": target_domain,
+            "message": "默认域名无需跨域图片映射",
+            "summary": domain_image_mapping.summarize_domain_image_mapping(
+                domain_image_mapping.DomainImageMapping(
+                    canonical_domain=canonical_domain,
+                    target_domain=target_domain,
+                )
+            ),
+        }
+
+    canonical_product = run_product_cdp.fetch_storefront_product(
+        normalized_product_code,
+        store_domain=canonical_domain,
+    )
+    target_product = run_product_cdp.fetch_storefront_product(
+        normalized_product_code,
+        store_domain=target_domain,
+    )
+    mapping = domain_image_mapping.build_domain_image_mapping(
+        canonical_product=canonical_product,
+        target_product=target_product,
+        canonical_detail_product=canonical_product,
+        target_detail_product=target_product,
+        canonical_domain=canonical_domain,
+        target_domain=target_domain,
+    )
+    return {
+        "status": "mapped",
+        "product_code": normalized_product_code,
+        "canonical_domain": canonical_domain,
+        "target_domain": target_domain,
+        "canonical_product_id": str(canonical_product.get("id") or "").strip(),
+        "target_product_id": str(target_product.get("id") or "").strip(),
+        "summary": domain_image_mapping.summarize_domain_image_mapping(mapping),
+    }
 
 
 def build_shopify_target_url(
