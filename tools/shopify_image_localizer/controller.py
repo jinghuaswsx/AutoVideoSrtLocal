@@ -75,7 +75,7 @@ def _build_batch_args(
         store_domain=normalized_domain,
         store_slug=settings.shopify_store_slug_for_domain(normalized_domain),
         browser_user_data_dir=str(browser_user_data_dir or "").strip(),
-        bootstrap_timeout_s=300,
+        bootstrap_timeout_s=600,
         port=run_product_cdp.ez_cdp.DEFAULT_CDP_PORT,
         carousel_limit=0,
         skip_carousel=False,

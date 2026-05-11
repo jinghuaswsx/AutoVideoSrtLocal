@@ -1288,23 +1288,40 @@ class ShopifyImageLocalizerApp:
                 self.root.after(0, update_status)
 
                 try:
-                    # 运行单个语言任务（跳过杀浏览器，由批量外层统一管理生命周期）
-                    result = controller.run_shopify_localizer(
-                        base_url=base_url,
-                        api_key=api_key,
-                        browser_user_data_dir=browser_dir,
-                        product_code=product_code,
-                        lang=lang_code,
-                        shop_locale=shop_locale,
-                        shopify_product_id=shopify_product_id,
-                        shopify_domain=shopify_domain,
-                        shopify_language_name=shopify_language_name,
-                        cancel_token=cancel_token,
-                        skip_kill_chrome=True,
-                        status_cb=lambda msg, lang=lang_label, idx=idx, total=len(language_labels):
-                            self.root.after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
-                        shopify_product_id_cb=lambda pid: self.root.after(0, self._handle_shopify_product_id, pid),
-                    )
+                    # 每个语言跑在独立线程里：Playwright sync API 会在当前
+                    # 线程设置 asyncio._running_loop 且从不清理，导致后续
+                    # 语言在同一线程调用 sync_playwright() 时报 "Sync API
+                    # inside the asyncio loop"。新线程天然隔离该状态。
+                    result_container: dict = {}
+                    error_container: dict = {}
+
+                    def run_language() -> None:
+                        try:
+                            result_container["value"] = controller.run_shopify_localizer(
+                                base_url=base_url,
+                                api_key=api_key,
+                                browser_user_data_dir=browser_dir,
+                                product_code=product_code,
+                                lang=lang_code,
+                                shop_locale=shop_locale,
+                                shopify_product_id=shopify_product_id,
+                                shopify_domain=shopify_domain,
+                                shopify_language_name=shopify_language_name,
+                                cancel_token=cancel_token,
+                                skip_kill_chrome=True,
+                                status_cb=lambda msg, lang=lang_label, idx=idx, total=len(language_labels):
+                                    self.root.after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
+                                shopify_product_id_cb=lambda pid: self.root.after(0, self._handle_shopify_product_id, pid),
+                            )
+                        except Exception as exc:
+                            error_container["value"] = exc
+
+                    lang_thread = threading.Thread(target=run_language, daemon=True)
+                    lang_thread.start()
+                    lang_thread.join()
+                    if "value" in error_container:
+                        raise error_container["value"]
+                    result = result_container["value"]
                     results.append({"language": lang_label, "result": result, "success": True})
                     success_count += 1
 
