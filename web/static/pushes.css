@@ -613,6 +613,7 @@
 .ready-ok  { color: var(--oc-success-fg); }
 .ready-bad { color: var(--oc-danger-fg); }
 .ready-sep { color: var(--oc-fg-subtle); margin: 0 2px; }
+.ready-row-domain { display: flex; flex-wrap: wrap; margin-top: 4px; }
 
 /* ---------- 状态徽章 ---------- */
 .badge {

@@ -336,8 +336,11 @@ def compute_readiness(item: dict, product: dict) -> dict:
         product,
         lang,
     )
+    shopify_image_domain_details = shopify_image_tasks.domain_statuses_for_push(
+        product, lang,
+    )
 
-    return {
+    result = {
         "is_listed": is_listed,
         "has_object": has_object,
         "has_cover": has_cover,
@@ -347,6 +350,9 @@ def compute_readiness(item: dict, product: dict) -> dict:
         "shopify_image_confirmed": shopify_image_confirmed,
         "shopify_image_reason": shopify_image_reason,
     }
+    if shopify_image_domain_details:
+        result["shopify_image_domain_details"] = shopify_image_domain_details
+    return result
 
 
 def is_ready(readiness: dict) -> bool:

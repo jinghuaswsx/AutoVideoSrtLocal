@@ -476,6 +476,63 @@ def heartbeat_task(task_id: int, worker_id: str, lock_seconds: int = 900) -> int
     )
 
 
+def domain_statuses_for_push(product: dict | None, lang: str) -> list[dict[str, Any]]:
+    """返回产品各启用域名的图片确认状态和原因，供推送列表按域标色。
+
+    非英文且 product 有启用域名时返回列表，否则返回空列表。
+    每条含 domain / confirmed / reason。
+    """
+    normalized_lang = (lang or "en").strip().lower() or "en"
+    if normalized_lang == "en":
+        return []
+
+    status_map = parse_status_map((product or {}).get("shopify_image_status_json"))
+    link_rows = resolve_link_urls(product or {}, normalized_lang)
+    if not link_rows:
+        return []
+    # 只处理有具体域名的行
+    link_rows = [r for r in link_rows if r.get("domain")]
+
+    result: list[dict[str, Any]] = []
+    for row in link_rows:
+        domain = row.get("domain") or ""
+        status = status_for_lang(
+            status_map,
+            normalized_lang,
+            domain or None,
+            fallback_legacy=(domain == product_link_domains.DEFAULT_LINK_DOMAINS[0]),
+        )
+        is_ok = (
+            status["replace_status"] == REPLACE_CONFIRMED
+            and status["link_status"] == LINK_NORMAL
+        )
+
+        reason = ""
+        if not is_ok:
+            ls = status["link_status"]
+            rs = status["replace_status"]
+            if ls == LINK_UNAVAILABLE:
+                reason = "链接不可用"
+            elif rs == REPLACE_FAILED:
+                reason = "替换失败"
+            elif rs == REPLACE_AUTO_DONE:
+                reason = "等待确认"
+            elif rs == REPLACE_RUNNING:
+                reason = "正在替换"
+            elif rs == REPLACE_PENDING:
+                reason = "已排队"
+            else:
+                reason = "未完成"
+
+        result.append({
+            "domain": domain,
+            "confirmed": bool(is_ok),
+            "reason": reason,
+        })
+
+    return result
+
+
 def is_confirmed_for_push(product: dict | None, lang: str) -> tuple[bool, str]:
     normalized_lang = (lang or "en").strip().lower() or "en"
     if normalized_lang == "en":

@@ -300,7 +300,17 @@
       const ok = readiness[key];
       return `<span class="ready-item ${ok ? 'ready-ok' : 'ready-bad'}">${label}</span>`;
     });
-    return `<div class="ready-row">${parts.join('<span class="ready-sep">|</span>')}</div>`;
+    let html = `<div class="ready-row">${parts.join('<span class="ready-sep">|</span>')}</div>`;
+    if (readiness.shopify_image_domain_details && readiness.shopify_image_domain_details.length > 0) {
+      const domainParts = readiness.shopify_image_domain_details.map(d => {
+        if (d.confirmed) {
+          return `<span class="ready-item ready-ok">${escapeHtml(d.domain)} ✓</span>`;
+        }
+        return `<span class="ready-item ready-bad">${escapeHtml(d.domain)} ❌</span>`;
+      });
+      html += `<div class="ready-row ready-row-domain">${domainParts.join('<span class="ready-sep">|</span>')}</div>`;
+    }
+    return html;
   }
 
   function renderStatusBadge(status) {
