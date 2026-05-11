@@ -11,13 +11,6 @@ from tools.shopify_image_localizer import api_client, cancellation, controller, 
 from tools.shopify_image_localizer.browser import session
 
 
-FALLBACK_LANGUAGES = [
-    {"code": "it", "label": "意大利语", "shopify_language_name": "Italian"},
-    {"code": "es", "label": "西班牙语", "shopify_language_name": "Spanish"},
-    {"code": "ja", "label": "日语", "shopify_language_name": "Japanese"},
-    {"code": "de", "label": "德语", "shopify_language_name": "German"},
-    {"code": "fr", "label": "法语", "shopify_language_name": "French"},
-]
 
 
 class ShopifyImageLocalizerApp:
@@ -597,8 +590,8 @@ class ShopifyImageLocalizerApp:
         elif not labels or self.batch_languages:
             self.language_var.set("")
         if fallback:
-            self.status_var.set("线上语言列表加载失败，已使用内置常用语言")
-            self._append_log("线上语言列表加载失败，已使用内置常用语言")
+            self.status_var.set("语言列表加载失败，请检查 API Key 和网络连接")
+            self._append_log("语言列表加载失败，请检查 API Key 和网络连接")
         else:
             self.status_var.set("语言列表已加载，可以开始替换")
             self._append_log(f"已加载 {len(labels)} 个语言选项")
@@ -746,8 +739,8 @@ class ShopifyImageLocalizerApp:
                 items = list(payload.get("items") or [])
                 self.root.after(0, self._set_language_items, items, False)
             except Exception as exc:
-                self.root.after(0, self._append_log, f"加载线上语言列表失败：{exc}")
-                self.root.after(0, self._set_language_items, FALLBACK_LANGUAGES, True)
+                self.root.after(0, self._append_log, f"加载线上语言列表失败：{exc}，请检查 API Key 和网络连接")
+                self.root.after(0, self._set_language_items, [], True)
 
         threading.Thread(target=worker, daemon=True).start()
 
