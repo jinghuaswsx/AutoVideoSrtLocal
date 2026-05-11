@@ -1261,6 +1261,11 @@ class ShopifyImageLocalizerApp:
         first_workspace = None
         first_download_dir = None
 
+        # 批量开始前清理一次旧 Chrome，确保干净的起点
+        effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_dir, shopify_domain)
+        session.kill_chrome_for_profile(effective_browser_dir)
+        import time
+
         try:
             for idx, lang_label in enumerate(language_labels, start=1):
                 # 检查是否已取消
@@ -1281,7 +1286,7 @@ class ShopifyImageLocalizerApp:
                 self.root.after(0, update_status)
 
                 try:
-                    # 运行单个语言任务
+                    # 运行单个语言任务（跳过杀浏览器，由批量外层统一管理生命周期）
                     result = controller.run_shopify_localizer(
                         base_url=base_url,
                         api_key=api_key,
@@ -1293,6 +1298,7 @@ class ShopifyImageLocalizerApp:
                         shopify_domain=shopify_domain,
                         shopify_language_name=shopify_language_name,
                         cancel_token=cancel_token,
+                        skip_kill_chrome=True,
                         status_cb=lambda msg, lang=lang_label, idx=idx, total=len(language_labels):
                             self.root.after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
                         shopify_product_id_cb=lambda pid: self.root.after(0, self._handle_shopify_product_id, pid),
@@ -1313,21 +1319,17 @@ class ShopifyImageLocalizerApp:
 
                     self.root.after(0, add_lang_summary)
 
-                    # 每个语言之间短暂等待，让浏览器和 CDP 连接自然恢复
-                    # 不要杀浏览器——频繁杀开会导致 Playwright asyncio 状态混乱
+                    # 每个语言之间暂停 5 秒，通过新开 tab 解决切换问题
                     if idx < len(language_labels):
-                        import time
-                        time.sleep(3.0)
+                        time.sleep(5.0)
 
                 except Exception as exc:
                     results.append({"language": lang_label, "error": str(exc), "success": False})
                     failed_count += 1
                     self.root.after(0, lambda: self._append_log(f"{lang_label} 执行失败: {exc}"))
                     # 继续下一个语言,不中断整个批量任务
-                    # 失败后也等待一下让浏览器稳定
                     if idx < len(language_labels):
-                        import time
-                        time.sleep(3.0)
+                        time.sleep(5.0)
 
             # 批量任务完成
             def finish_batch():

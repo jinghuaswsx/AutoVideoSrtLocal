@@ -104,6 +104,7 @@ def run_shopify_localizer(
     shopify_product_id_cb: ShopifyProductIdCallback | None = None,
     visual_pair_confirm_cb: VisualPairConfirmCallback | None = None,
     cancel_token: cancellation.CancellationToken | None = None,
+    skip_kill_chrome: bool = False,
 ) -> dict:
     reporter = status_cb or _noop
     cancellation.throw_if_cancelled(cancel_token)
@@ -122,8 +123,11 @@ def run_shopify_localizer(
         browser_user_data_dir=browser_user_data_dir,
         shopify_domain=normalized_domain,
     )
-    emit("正在清理旧 Chrome 浏览器进程")
-    session.kill_chrome_for_profile(effective_browser_dir)
+    if skip_kill_chrome:
+        emit("跳过清理浏览器进程（由调用方统一管理生命周期）")
+    else:
+        emit("正在清理旧 Chrome 浏览器进程")
+        session.kill_chrome_for_profile(effective_browser_dir)
 
     args = _build_batch_args(
         product_code=product_code,
