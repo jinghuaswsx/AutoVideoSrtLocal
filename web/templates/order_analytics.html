@@ -6206,6 +6206,7 @@
   // ──────────────────────────────────────────────────────
   var ADS_LEVELS = ['campaign', 'adset', 'ad'];
   var adsLevelLabels = { campaign: 'Campaign', adset: 'Ad Set', ad: 'Ad' };
+  var adsCopyLabels = { campaign: '复制Campaign名', adset: '复制Ad Set名', ad: '复制广告名' };
   var adsLevelInited = false;
   var adsLevelState = {
     campaign: { mode: 'list', code: null, name: null, listPage: 1, listSearchTimer: null, activeIdx: -1, searchRows: [] },
@@ -6396,10 +6397,11 @@
       rows.forEach(function(r) {
         var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
         html += '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '">';
-        if (level === 'ad') {
-          var adName = r.name || r.code || '';
-          html += '<td><div class="ads-name-cell"><span class="ads-name-text">' + escHtml(adName || '—') + '</span>' +
-            '<button type="button" class="ads-copy-name-btn" data-ads-copy-name="' + escHtml(adName) + '" data-ads-copy-label="复制广告名" title="复制广告名">复制广告名</button>' +
+        var copyLabel = adsCopyLabels[level];
+        if (copyLabel) {
+          var levelName = r.name || r.code || '';
+          html += '<td><div class="ads-name-cell"><span class="ads-name-text">' + escHtml(levelName || '—') + '</span>' +
+            '<button type="button" class="ads-copy-name-btn" data-ads-copy-name="' + escHtml(levelName) + '" data-ads-copy-label="' + escHtml(copyLabel) + '" title="' + escHtml(copyLabel) + '">' + escHtml(copyLabel) + '</button>' +
             '</div></td>';
         } else {
           html += '<td>' + escHtml(r.name || r.code || '—') + '</td>';

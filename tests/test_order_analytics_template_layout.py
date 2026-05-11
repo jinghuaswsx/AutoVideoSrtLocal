@@ -76,15 +76,20 @@ def test_order_analytics_mobile_tables_keep_shared_header_and_body_layout():
     assert 'id="amsTable"' in ads_panel
 
 
-def test_ads_ad_tab_name_column_exposes_copy_ad_name_button():
-    """Ad 子 Tab 的广告名列必须提供复制当前行广告名的按钮。"""
+def test_ads_level_name_columns_expose_copy_buttons():
+    """Campaign / Ad Set / Ad 子 Tab 的名称列都必须提供复制当前行名称的按钮。"""
     template = _template_source()
 
     assert 'data-ads-copy-name="' in template
+    assert "adsCopyLabels" in template
+    assert "复制Campaign名" in template
+    assert "复制Ad Set名" in template
     assert "复制广告名" in template
     assert "function adsCopyText" in template
     assert "ev.stopPropagation();" in template
-    assert "if (level === 'ad')" in template
+    assert "var copyLabel = adsCopyLabels[level];" in template
+    assert "if (copyLabel)" in template
+    assert "if (level === 'ad')" not in template
     assert 'data-ads-copy-name="' not in template[: template.index("function adsRenderList")]
 
 
