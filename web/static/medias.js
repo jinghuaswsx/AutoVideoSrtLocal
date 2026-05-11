@@ -6462,6 +6462,14 @@
         edCloseLinkCheckModal();
         return;
       }
+      if ($('edAdLangPrecheckMask') && !$('edAdLangPrecheckMask').hidden) {
+        edCloseAdLangPrecheckModal();
+        return;
+      }
+      if ($('edProductLinksMask') && !$('edProductLinksMask').hidden) {
+        edCloseProductLinksModal();
+        return;
+      }
       if (!isProductDetailPage() && !$('edMask').hidden) edHide();
     });
 
