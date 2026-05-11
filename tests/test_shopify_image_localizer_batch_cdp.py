@@ -890,6 +890,89 @@ def test_plan_body_html_replacements_ignores_extra_server_candidates_not_in_html
     assert plan["skipped_missing"] == []
 
 
+def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkeypatch, tmp_path):
+    token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    original_src = f"https://cdn.example.com/from_url_en_10_{token}.jpg"
+    cdn_src = f"https://cdn.shopify.com/s/files/1/0000/files/from_url_en_10_{token}.png?v=1"
+    image_path = tmp_path / f"loc_from_url_en_10_{token}.png"
+    image_path.write_bytes(b"image")
+    html_before = f'<section><img src="{original_src}"></section>'
+    calls = []
+
+    class SuccessfulTaa:
+        def __init__(self):
+            self.html = html_before
+
+        def __enter__(self):
+            calls.append("enter-success")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            calls.append("exit-success")
+
+        def current_body_html(self):
+            calls.append("current_body_html")
+            return self.html
+
+        def upload_image(self, local_path):
+            calls.append(("upload", Path(local_path).name))
+            return cdn_src
+
+        def close_modal(self):
+            calls.append("close_modal")
+
+        def set_body_html(self, html):
+            calls.append("set_body_html")
+            self.html = html
+            return {"ok": True}
+
+        def click_save(self):
+            calls.append("click_save")
+            return []
+
+    class RefusedReloadTaa:
+        def __enter__(self):
+            calls.append("enter-reload")
+            raise ConnectionRefusedError(10061, "connection refused")
+
+        def __exit__(self, exc_type, exc, tb):
+            calls.append("exit-reload")
+
+    sessions = [SuccessfulTaa(), RefusedReloadTaa()]
+
+    def fake_taa_session(**_kwargs):
+        return sessions.pop(0)
+
+    monkeypatch.setattr(taa_cdp, "TaaSession", fake_taa_session)
+
+    result = taa_cdp.replace_detail_images(
+        product_id="9163927912660",
+        shop_locale="de",
+        user_data_dir="C:/chrome-shopify-image-omurio",
+        localized_images=[{"filename": image_path.name, "local_path": str(image_path)}],
+        replace_shopify_cdn=True,
+        verify_reload=True,
+    )
+
+    assert result["status"] == "done"
+    assert result["replacement_count"] == 1
+    assert result["verify"]["expected_new_urls_present"] == 1
+    assert result["verify"]["expected_total"] == 1
+    assert result["verify"]["reload_checked"] is False
+    assert "connection refused" in result["verify"]["reload_error"]
+    assert calls == [
+        "enter-success",
+        "current_body_html",
+        ("upload", image_path.name),
+        "close_modal",
+        "set_body_html",
+        "click_save",
+        "current_body_html",
+        "exit-success",
+        "enter-reload",
+    ]
+
+
 def test_taa_toolbar_detection_supports_chinese_shopify_admin_labels():
     assert "插入图片" in taa_cdp.INSERT_IMAGE_BUTTON_LABELS
     assert "保存" in taa_cdp.SAVE_BUTTON_LABELS

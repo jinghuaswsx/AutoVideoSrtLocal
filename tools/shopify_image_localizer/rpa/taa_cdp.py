@@ -991,17 +991,26 @@ def replace_detail_images(
             readback_html = html_before
 
     verify_html = readback_html
+    reload_checked = False
+    reload_error = ""
     if verify_reload:
         cancellation.throw_if_cancelled(cancel_token)
-        with TaaSession(
-            product_id=product_id,
-            shop_locale=shop_locale,
-            user_data_dir=user_data_dir,
-            store_slug=store_slug,
-            port=port,
-            cancel_token=cancel_token,
-        ) as taa:
-            verify_html = taa.current_body_html()
+        try:
+            with TaaSession(
+                product_id=product_id,
+                shop_locale=shop_locale,
+                user_data_dir=user_data_dir,
+                store_slug=store_slug,
+                port=port,
+                cancel_token=cancel_token,
+            ) as taa:
+                verify_html = taa.current_body_html()
+                reload_checked = True
+        except cancellation.OperationCancelled:
+            raise
+        except Exception as exc:
+            reload_error = str(exc)
+            print(f"详情图：reload 校验失败，保留当前会话读回结果：{reload_error}")
 
     expected_urls = [row["new"] for row in uploaded_replacements]
     return {
@@ -1038,6 +1047,8 @@ def replace_detail_images(
                 1 for src in extract_image_srcs(verify_html)
                 if "cdn.shopify.com/s/files/" not in src
             ),
+            "reload_checked": reload_checked,
+            "reload_error": reload_error,
             "html": verify_html,
         },
     }

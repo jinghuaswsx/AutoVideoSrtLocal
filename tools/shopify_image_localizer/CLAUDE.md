@@ -29,6 +29,11 @@ Shopify Image Localizer：自动换图工具（GUI + Playwright/CDP 在 EZ Produ
 EZ 替换前必须判断每个 slot 是否已经有目标语言标签（语言名称来自 `run_product_cdp.LANGUAGE_LABELS`，例如 `de -> German`）：
 - 已有目标语言标签 → 结果 `skipped`，**不要**点击 `Remove {language}`、不删除重传，避免浪费时间和引入失败。
 
+## TAA reload 校验降级（2026-05-11）
+
+- 详情图成功口径以 TAA 当前会话上传、保存、读回 HTML 为准；保存后额外 reload 校验只作诊断。
+- 若 reload 校验重连 `127.0.0.1:7777` 遇到 `WinError 10061` / connection refused，记录 `verify.reload_error`，**不要**把已保存成功的任务判失败。
+
 ## Wine 打包发布
 
 详细设计：`docs/superpowers/specs/2026-05-09-shopify-image-localizer-linux-wine-build-design.md`
