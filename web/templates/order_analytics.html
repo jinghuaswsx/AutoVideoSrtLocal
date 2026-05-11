@@ -1193,9 +1193,13 @@
   box-shadow: 0 12px 24px -4px rgba(15, 23, 42, .12), 0 4px 8px -2px rgba(15, 23, 42, .08);
   background: var(--bg-card);
   color: var(--text-main);
-  /* 在右侧 main-wrap 区域居中（margin-left 偏移半 sidebar 宽） */
-  margin-top: 20vh;
-  margin-left: 110px;
+  /* 约束在右侧 main-wrap 区域内，水平居中 */
+  position: fixed;
+  top: 20vh;
+  bottom: auto;
+  left: 220px;
+  right: 0;
+  margin: 0 auto;
 }
 .ppr-dialog[open] {
   display: flex;
@@ -1299,7 +1303,7 @@
     padding: 0 10px;
   }
   .ppr-dialog {
-    margin-left: 0;
+    left: 0;
     width: min(520px, 92vw);
   }
 }
