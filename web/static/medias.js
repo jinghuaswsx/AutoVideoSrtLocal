@@ -3538,7 +3538,12 @@
   }
 
   async function edHandleAdLangCheckboxClick(ev) {
-    const input = ev.target && ev.target.closest && ev.target.closest('input[name="ad_supported_langs"]');
+    // .closest('input') works when directly clicking the checkbox, but label
+    // text clicks land on a <span> sibling — <input> is not an ancestor of
+    // <span>. Find the enclosing <label[data-lang]> first, then the input.
+    var labelEl = ev.target && ev.target.closest && ev.target.closest('label[data-lang]');
+    if (!labelEl) return;
+    const input = labelEl.querySelector('input[name="ad_supported_langs"]');
     if (!input) return;
     // Uncheck path: always allow (intent = revoke ad support, no check needed).
     if (input.checked) {
@@ -3554,7 +3559,6 @@
     ev.preventDefault();
     ev.stopPropagation();
 
-    const labelEl = input.closest('label');
     if (input.disabled) return;
     input.disabled = true;
     if (labelEl) labelEl.classList.add('is-loading');
