@@ -61,3 +61,7 @@ Shopify Image Localizer V3.10 在处理 `omurio.com` 商品详情图时，日志
 pytest tests/test_shopify_image_localizer_batch_cdp.py -q
 python -c 'import py_compile; [py_compile.compile(p, doraise=True) for p in ["tools/shopify_image_localizer/main.py","tools/shopify_image_localizer/gui.py","tools/shopify_image_localizer/controller.py","tools/shopify_image_localizer/browser/orchestrator.py","tools/shopify_image_localizer/rpa/taa_cdp.py"]]; print("ok")'
 ```
+
+## 发布
+
+- 2026-05-11：将该修复纳入 Shopify Image Localizer `3.18` 发布包。
