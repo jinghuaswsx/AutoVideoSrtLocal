@@ -98,6 +98,7 @@ def test_run_import_dry_run_uses_fetchers_and_does_not_write(monkeypatch):
     scope = mod.oa.DianxiaomiProductScope(
         by_shopify_id={"111": {"product_id": 1, "product_code": "demo", "site_code": "newjoy", "shopifyid": "111"}},
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy"},
@@ -136,6 +137,7 @@ def test_run_import_scans_state_per_day_by_pay_time(monkeypatch):
     scope = mod.oa.DianxiaomiProductScope(
         by_shopify_id={"111": {"product_id": 1, "product_code": "demo", "site_code": "newjoy", "shopifyid": "111"}},
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy"},
@@ -188,6 +190,7 @@ def test_run_import_by_recent_scan_filters_locally_by_payment_time(monkeypatch):
     scope = mod.oa.DianxiaomiProductScope(
         by_shopify_id={"111": {"product_id": 1, "product_code": "demo", "site_code": "newjoy", "shopifyid": "111"}},
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy"},

@@ -98,6 +98,7 @@ def test_normalize_dianxiaomi_order_lines_keeps_requested_sites_and_amounts():
             }
         },
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy", "omurio"},
@@ -165,6 +166,7 @@ def test_normalize_dianxiaomi_order_parses_millisecond_timestamps():
             }
         },
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy"},
@@ -188,6 +190,7 @@ def test_normalize_dianxiaomi_order_keeps_requested_site_from_order_line_url():
     scope = oa.DianxiaomiProductScope(
         by_shopify_id={},
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy", "omurio"},
@@ -223,6 +226,7 @@ def test_normalize_dianxiaomi_order_matches_local_product_code_handle():
                 "shopifyid": "8552296546477",
             }
         },
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy", "omurio"},
@@ -252,6 +256,7 @@ def test_normalize_dianxiaomi_order_skips_smartgearx_scope():
     scope = oa.DianxiaomiProductScope(
         by_shopify_id={},
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids={"333"},
         excluded_handles=set(),
         requested_site_codes={"newjoy", "omurio"},
@@ -361,3 +366,121 @@ def test_upsert_dianxiaomi_order_lines_serializes_json(monkeypatch):
     assert "meta_business_date" in captured["sql"]
     assert any('"id": "9001"' in str(arg) for arg in captured["args"])
     assert captured["committed"] is True
+
+
+def test_resolve_dianxiaomi_line_product_prefers_per_domain_shopify_id():
+    """当同一个 product_code 在两个域名有不同 shopify ID 时，按订单域名匹配正确产品。"""
+    scope = oa.DianxiaomiProductScope(
+        by_shopify_id={
+            "8552296546477": {
+                "product_id": 1,
+                "product_code": "shared-handle-rjc",
+                "site_code": "newjoy",
+                "shopifyid": "8552296546477",
+            }
+        },
+        by_handle={},
+        by_domain_shopify_id={
+            ("newjoyloo.com", "8552296546477"): {
+                "product_id": 1,
+                "product_code": "shared-handle-rjc",
+                "site_code": "newjoy",
+                "shopifyid": "8552296546477",
+            },
+            ("omurio.com", "999888777666"): {
+                "product_id": 2,
+                "product_code": "shared-handle-rjc",
+                "site_code": "omurio",
+                "shopifyid": "999888777666",
+            },
+        },
+        excluded_shopify_ids=set(),
+        excluded_handles=set(),
+        requested_site_codes={"newjoy", "omurio"},
+    )
+
+    # 订单来自 omurio.com，应匹配 omurio per-domain ID
+    product = oa._resolve_dianxiaomi_line_product(
+        {
+            "productId": "999888777666",
+            "productUrl": "https://omurio.com/products/shared-handle",
+        },
+        "999888777666",
+        scope,
+    )
+
+    assert product is not None
+    assert product["product_id"] == 2
+    assert product["site_code"] == "omurio"
+    assert product["shopifyid"] == "999888777666"
+
+
+def test_resolve_dianxiaomi_line_product_falls_back_to_legacy_shopify_id():
+    """无 per-domain 匹配时回退到旧版 by_shopify_id 匹配。"""
+    scope = oa.DianxiaomiProductScope(
+        by_shopify_id={
+            "111222333": {
+                "product_id": 3,
+                "product_code": "legacy-only-rjc",
+                "site_code": None,
+                "shopifyid": "111222333",
+            }
+        },
+        by_handle={},
+        by_domain_shopify_id={},
+        excluded_shopify_ids=set(),
+        excluded_handles=set(),
+        requested_site_codes={"newjoy", "omurio"},
+    )
+
+    product = oa._resolve_dianxiaomi_line_product(
+        {"productId": "111222333", "productUrl": "https://newjoyloo.com/products/legacy-only"},
+        "111222333",
+        scope,
+    )
+
+    assert product is not None
+    assert product["product_id"] == 3
+    assert product["site_code"] == "newjoy"  # resolve_site 从订单 URL 推断
+
+
+def test_build_dianxiaomi_product_scope_includes_per_domain_ids(monkeypatch):
+    """build 阶段同时查询 media_product_shopify_ids 构建 by_domain_shopify_id。"""
+    monkeypatch.setattr(
+        oa,
+        "query",
+        lambda sql, args=(): (
+            [
+                {
+                    "id": 1,
+                    "product_code": "shared-handle-rjc",
+                    "shopifyid": "8552296546477",
+                    "product_link": "https://newjoyloo.com/products/shared-handle",
+                    "localized_links_json": "{}",
+                },
+            ]
+            if "media_products " in sql and "media_product_shopify_ids" not in sql
+            else [
+                {
+                    "id": 1,
+                    "product_code": "shared-handle-rjc",
+                    "domain": "newjoyloo.com",
+                    "shopify_product_id": "8552296546477",
+                },
+                {
+                    "id": 2,
+                    "product_code": "shared-handle-rjc",
+                    "domain": "omurio.com",
+                    "shopify_product_id": "999888777666",
+                },
+            ]
+        ),
+    )
+
+    scope = oa.build_dianxiaomi_product_scope(["newjoy", "omurio"])
+
+    assert ("newjoyloo.com", "8552296546477") in scope.by_domain_shopify_id
+    assert ("omurio.com", "999888777666") in scope.by_domain_shopify_id
+    assert scope.by_domain_shopify_id[("omurio.com", "999888777666")]["site_code"] == "omurio"
+    # 旧版 by_shopify_id 不受影响
+    assert "8552296546477" in scope.by_shopify_id

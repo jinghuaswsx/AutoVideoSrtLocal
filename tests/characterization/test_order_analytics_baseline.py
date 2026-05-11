@@ -270,6 +270,7 @@ def test_dianxiaomi_product_scope_dataclass_shape():
     scope = oa.DianxiaomiProductScope(
         by_shopify_id={},
         by_handle={},
+        by_domain_shopify_id={},
         excluded_shopify_ids=set(),
         excluded_handles=set(),
         requested_site_codes={"newjoy"},
