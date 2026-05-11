@@ -61,6 +61,9 @@ class ShopifyImageLocalizerApp:
         self._progress_current_iid: str | None = None
         self._progress_tick_after_id: str | None = None
         self._progress_running: bool = False
+        # 批量语言选择
+        self.batch_languages: list[str] = []  # 已选择的批量语言标签列表
+        self.current_running_language: str = ""  # 当前正在运行的语言
 
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -81,7 +84,9 @@ class ShopifyImageLocalizerApp:
             self.main_frame,
             textvariable=self.current_login_status_var,
             anchor="w",
-            font=("TkDefaultFont", 18, "bold"),
+            font=("TkDefaultFont", 14, "bold"),
+            wraplength=900,
+            justify="left",
         )
         self.current_login_status_label.pack(anchor="w", pady=(0, 4))
         # 启动时根据当前 domain + 本地 slug 缓存决定显示——已有缓存直接显示「当前网站」，
@@ -127,14 +132,40 @@ class ShopifyImageLocalizerApp:
         self.product_code_entry.pack(fill="x", pady=(4, 10))
         self.product_code_entry.focus_set()
 
-        tk.Label(self.main_frame, text="语言").pack(anchor="w")
+        # 语言选择区域:两列布局
+        language_row = tk.Frame(self.main_frame)
+        language_row.pack(fill="x", pady=(4, 10))
+
+        # 左侧:单个语言选择
+        left_col = tk.Frame(language_row)
+        left_col.pack(side="left", fill="both", expand=True)
+        tk.Label(left_col, text="语言").pack(anchor="w")
         self.language_box = ttk.Combobox(
-            self.main_frame,
+            left_col,
             textvariable=self.language_var,
             state="readonly",
             values=[],
         )
-        self.language_box.pack(fill="x", pady=(4, 10))
+        self.language_box.pack(fill="x", pady=(4, 0))
+
+        # 右侧:批量选择按钮和已选语言显示
+        right_col = tk.Frame(language_row)
+        right_col.pack(side="left", fill="y", padx=(12, 0))
+        tk.Label(right_col, text="").pack(anchor="w")  # 占位对齐标题
+        batch_btn_frame = tk.Frame(right_col)
+        batch_btn_frame.pack(fill="both", expand=True, pady=(4, 0))
+        self.batch_select_btn = tk.Button(
+            batch_btn_frame,
+            text="批量选择语言",
+            command=self._open_batch_language_dialog,
+            width=16,
+            height=2,
+        )
+        self.batch_select_btn.pack(side="left")
+
+        # 批量选择的语言显示区域
+        self.batch_languages_frame = tk.Frame(batch_btn_frame)
+        self.batch_languages_frame.pack(side="left", fill="both", expand=True, padx=(8, 0))
 
         tk.Label(self.main_frame, text="Shopify ID（可选）").pack(anchor="w")
         self.shopify_product_id_entry = tk.Entry(
@@ -485,6 +516,7 @@ class ShopifyImageLocalizerApp:
         self.product_code_entry.configure(state=state)
         self.shopify_product_id_entry.configure(state=state)
         self.language_box.configure(state="disabled" if running else "readonly")
+        self.batch_select_btn.configure(state=state)
         if not running:
             self._progress_finish()
 
@@ -553,9 +585,9 @@ class ShopifyImageLocalizerApp:
         self.language_label_to_shop_locale = shop_locale_mapping
         self.language_label_to_shopify_name = shopify_name_mapping
         self.language_box.configure(values=labels)
-        if labels:
+        if labels and not self.batch_languages:
             self.language_box.current(0)
-        else:
+        elif not labels or self.batch_languages:
             self.language_var.set("")
         if fallback:
             self.status_var.set("线上语言列表加载失败，已使用内置常用语言")
@@ -563,6 +595,130 @@ class ShopifyImageLocalizerApp:
         else:
             self.status_var.set("语言列表已加载，可以开始替换")
             self._append_log(f"已加载 {len(labels)} 个语言选项")
+
+    def _update_batch_languages_display(self) -> None:
+        """更新已选择的批量语言显示区域"""
+        # 清空现有显示
+        for widget in self.batch_languages_frame.winfo_children():
+            widget.destroy()
+
+        if not self.batch_languages:
+            return
+
+        # 显示已选择的语言标签
+        container = tk.Frame(self.batch_languages_frame)
+        container.pack(fill="both", expand=True)
+
+        tk.Label(container, text="已选：", anchor="w").pack(side="left")
+
+        # 用标签显示每个已选语言,可点击删除
+        for idx, lang_label in enumerate(self.batch_languages):
+            tag_frame = tk.Frame(container, bd=1, relief="solid", padx=4, pady=2)
+            tag_frame.pack(side="left", padx=(0, 4))
+            tk.Label(tag_frame, text=lang_label).pack(side="left")
+            tk.Button(
+                tag_frame,
+                text="×",
+                command=lambda l=lang_label: self._remove_batch_language(l),
+                bd=0,
+                padx=2,
+                pady=0,
+                fg="#757575",
+            ).pack(side="left", padx=(2, 0))
+
+    def _remove_batch_language(self, lang_label: str) -> None:
+        """从批量选择中移除一个语言"""
+        if lang_label in self.batch_languages:
+            self.batch_languages.remove(lang_label)
+            self._update_batch_languages_display()
+            # 如果批量选择为空,恢复单个语言选择
+            if not self.batch_languages and self.language_items:
+                self.language_box.current(0)
+
+    def _open_batch_language_dialog(self) -> None:
+        """打开批量语言选择弹窗"""
+        if not self.language_items:
+            messagebox.showinfo("提示", "语言列表尚未加载完成，请稍候再试")
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("批量选择语言")
+        dialog.transient(self.root)
+        dialog.geometry("520x480")
+        dialog.minsize(420, 360)
+        dialog.grab_set()
+        self._center_dialog_over_root(dialog)
+
+        # 弹窗内容
+        header = tk.Label(
+            dialog,
+            text="请选择需要批量替换的语言（可多选）",
+            anchor="w",
+            font=("TkDefaultFont", 11, "bold"),
+        )
+        header.pack(fill="x", padx=16, pady=(14, 8))
+
+        # 滚动区域放复选框
+        canvas = tk.Canvas(dialog, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
+        checkbox_frame = tk.Frame(canvas)
+        checkbox_frame.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=checkbox_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=(0, 12))
+        scrollbar.pack(side="right", fill="y", padx=(0, 16), pady=(0, 12))
+
+        # 为每个语言创建复选框
+        check_vars: dict[str, tk.BooleanVar] = {}
+        for item in self.language_items:
+            lang_label = self._language_label(item)
+            var = tk.BooleanVar(value=lang_label in self.batch_languages)
+            check_vars[lang_label] = var
+            cb = tk.Checkbutton(checkbox_frame, text=lang_label, variable=var, anchor="w")
+            cb.pack(fill="x", padx=4, pady=2)
+
+        # 全选/取消全选按钮
+        btn_frame_top = tk.Frame(dialog)
+        btn_frame_top.pack(fill="x", padx=16, pady=(0, 8))
+
+        def select_all():
+            for var in check_vars.values():
+                var.set(True)
+
+        def select_none():
+            for var in check_vars.values():
+                var.set(False)
+
+        tk.Button(btn_frame_top, text="全选", command=select_all, width=10).pack(side="left")
+        tk.Button(btn_frame_top, text="取消全选", command=select_none, width=10).pack(side="left", padx=(8, 0))
+
+        # 底部按钮
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(fill="x", padx=16, pady=(0, 14))
+
+        result = {"confirmed": False}
+
+        def confirm():
+            result["confirmed"] = True
+            dialog.destroy()
+
+        def cancel():
+            dialog.destroy()
+
+        tk.Button(btn_frame, text="取消", command=cancel, width=12).pack(side="right")
+        tk.Button(btn_frame, text="确定", command=confirm, width=12, bg="#1976d2", fg="white").pack(side="right", padx=(0, 8))
+
+        self.root.wait_window(dialog)
+
+        if result["confirmed"]:
+            # 更新批量语言选择
+            self.batch_languages = [label for label, var in check_vars.items() if var.get()]
+            self._update_batch_languages_display()
+            # 如果有批量选择,清空单个语言选择
+            if self.batch_languages:
+                self.language_var.set("")
+            elif self.language_items:
+                self.language_box.current(0)
 
     def _load_languages_async(self) -> None:
         def worker() -> None:
@@ -593,12 +749,17 @@ class ShopifyImageLocalizerApp:
             cached_slug = settings.cached_store_slug_for_domain(domain)
         except Exception:
             cached_slug = ""
+
+        status_parts = []
+        status_parts.append(f"当前网站：{domain}")
         if cached_slug:
-            self.current_login_status_var.set(f"当前网站：{domain}")
-            self.current_login_status_label.configure(fg="black")
-        else:
-            self.current_login_status_var.set(f"待登录：{domain}")
-            self.current_login_status_label.configure(fg="#cc7a00")
+            status_parts.append(f"当前网站shopify编码：{cached_slug}")
+        if self.current_running_language:
+            status_parts.append(f"当前替换语言：{self.current_running_language}")
+
+        full_text = "  ".join(status_parts)
+        self.current_login_status_var.set(full_text)
+        self.current_login_status_label.configure(fg="black" if cached_slug else "#cc7a00")
 
     def _refresh_login_button_text(self) -> None:
         domain = settings.normalize_domain(self.current_shopify_domain_var.get())
@@ -726,16 +887,13 @@ class ShopifyImageLocalizerApp:
         if not product_code:
             messagebox.showerror("错误", "请先输入商品 ID")
             return
-        if not language_label:
-            messagebox.showerror("错误", "请先选择语言")
+        if not language_label and not self.batch_languages:
+            messagebox.showerror("错误", "请先选择语言或批量选择语言")
             return
         if shopify_product_id and not shopify_product_id.isdigit():
             messagebox.showerror("错误", "Shopify ID 只能填写数字；不确定时可以留空")
             return
 
-        lang_code = self._selected_lang_code(language_label)
-        shop_locale = self._selected_shop_locale(language_label)
-        shopify_language_name = self._selected_shopify_language_name(language_label)
         base_url = settings.DEFAULT_BASE_URL
         self.base_url_var.set(base_url)
         api_key = self.api_key_var.get().strip()
@@ -749,35 +907,67 @@ class ShopifyImageLocalizerApp:
         self._current_cancel_token = cancel_token
         self._set_running_state(True, stoppable=True)
         self._clear_summary()
-        self._progress_start(
-            f"任务已启动：{product_code} / {lang_code}"
-        )
-        workspace = storage.create_workspace(product_code, lang_code)
-        self._workspace_root = str(workspace.root)
-        self._download_dir = str(workspace.source_localized_dir)
-        self.open_workspace_button.configure(state="normal")
-        self.open_download_button.configure(state="normal")
-        self.status_var.set("任务已启动")
-        self._append_log(
-            f"开始任务：product_code={product_code}, lang={lang_code}, "
-            f"shopify_id={shopify_product_id or '自动识别'}"
-        )
-        threading.Thread(
-            target=self._run,
-            args=(
-                base_url,
-                api_key,
-                browser_dir,
-                product_code,
-                lang_code,
-                shop_locale,
-                shopify_product_id,
-                shopify_domain,
-                shopify_language_name,
-                cancel_token,
-            ),
-            daemon=True,
-        ).start()
+
+        # 判断是单个语言还是批量语言
+        if self.batch_languages:
+            # 批量模式
+            lang_codes = [self._selected_lang_code(lbl) for lbl in self.batch_languages]
+            self._progress_start(
+                f"批量任务已启动：{product_code} / {len(self.batch_languages)} 个语言"
+            )
+            self.status_var.set("批量任务已启动")
+            self._append_log(
+                f"开始批量任务：product_code={product_code}, languages={', '.join(lang_codes)}, "
+                f"shopify_id={shopify_product_id or '自动识别'}"
+            )
+            threading.Thread(
+                target=self._run_batch,
+                args=(
+                    base_url,
+                    api_key,
+                    browser_dir,
+                    product_code,
+                    self.batch_languages.copy(),
+                    shopify_product_id,
+                    shopify_domain,
+                    cancel_token,
+                ),
+                daemon=True,
+            ).start()
+        else:
+            # 单个语言模式
+            lang_code = self._selected_lang_code(language_label)
+            shop_locale = self._selected_shop_locale(language_label)
+            shopify_language_name = self._selected_shopify_language_name(language_label)
+            self._progress_start(
+                f"任务已启动：{product_code} / {lang_code}"
+            )
+            workspace = storage.create_workspace(product_code, lang_code)
+            self._workspace_root = str(workspace.root)
+            self._download_dir = str(workspace.source_localized_dir)
+            self.open_workspace_button.configure(state="normal")
+            self.open_download_button.configure(state="normal")
+            self.status_var.set("任务已启动")
+            self._append_log(
+                f"开始任务：product_code={product_code}, lang={lang_code}, "
+                f"shopify_id={shopify_product_id or '自动识别'}"
+            )
+            threading.Thread(
+                target=self._run,
+                args=(
+                    base_url,
+                    api_key,
+                    browser_dir,
+                    product_code,
+                    lang_code,
+                    shop_locale,
+                    shopify_product_id,
+                    shopify_domain,
+                    shopify_language_name,
+                    cancel_token,
+                ),
+                daemon=True,
+            ).start()
 
     def open_shopify_target(self, target: str) -> None:
         product_code = self.product_code_var.get().strip().lower()
@@ -982,7 +1172,23 @@ class ShopifyImageLocalizerApp:
         shopify_language_name: str,
         cancel_token: cancellation.CancellationToken,
     ) -> None:
+        # 找到对应的语言标签用于显示
+        lang_label = ""
+        for lbl, code in self.language_label_to_code.items():
+            if code == lang_code:
+                lang_label = lbl
+                break
+        if not lang_label:
+            lang_label = lang_code
+
         try:
+            # 设置当前运行语言
+            def set_running():
+                self.current_running_language = lang_label
+                self._update_login_status(shopify_domain)
+
+            self.root.after(0, set_running)
+
             result = controller.run_shopify_localizer(
                 base_url=base_url,
                 api_key=api_key,
@@ -1014,9 +1220,136 @@ class ShopifyImageLocalizerApp:
         finally:
             self._current_cancel_token = None
             self.root.after(0, self._set_running_state, False)
+            # 确保清空当前运行语言
+            def clear_running():
+                self.current_running_language = ""
+                self._update_login_status(shopify_domain)
+
+            self.root.after(0, clear_running)
+
+    def _run_batch(
+        self,
+        base_url: str,
+        api_key: str,
+        browser_dir: str,
+        product_code: str,
+        language_labels: list[str],
+        shopify_product_id: str,
+        shopify_domain: str,
+        cancel_token: cancellation.CancellationToken,
+    ) -> None:
+        """批量运行多个语言的替换任务"""
+        results = []
+        success_count = 0
+        failed_count = 0
+        first_workspace = None
+        first_download_dir = None
+
+        try:
+            for idx, lang_label in enumerate(language_labels, start=1):
+                # 检查是否已取消
+                if cancel_token.is_cancelled():
+                    self.root.after(0, lambda: self._append_log("批量任务已由用户取消"))
+                    break
+
+                lang_code = self._selected_lang_code(lang_label)
+                shop_locale = self._selected_shop_locale(lang_label)
+                shopify_language_name = self._selected_shopify_language_name(lang_label)
+
+                # 更新当前运行语言显示
+                def update_status(lang=lang_label, idx=idx, total=len(language_labels)):
+                    self.current_running_language = lang
+                    self._update_login_status(shopify_domain)
+                    self._progress_record_step(f"[{idx}/{total}] 开始处理语言: {lang}")
+
+                self.root.after(0, update_status)
+
+                try:
+                    # 运行单个语言任务
+                    result = controller.run_shopify_localizer(
+                        base_url=base_url,
+                        api_key=api_key,
+                        browser_user_data_dir=browser_dir,
+                        product_code=product_code,
+                        lang=lang_code,
+                        shop_locale=shop_locale,
+                        shopify_product_id=shopify_product_id,
+                        shopify_domain=shopify_domain,
+                        shopify_language_name=shopify_language_name,
+                        cancel_token=cancel_token,
+                        status_cb=lambda msg, lang=lang_label, idx=idx, total=len(language_labels):
+                            self.root.after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
+                        shopify_product_id_cb=lambda pid: self.root.after(0, self._handle_shopify_product_id, pid),
+                    )
+                    results.append({"language": lang_label, "result": result, "success": True})
+                    success_count += 1
+
+                    # 记录第一个任务的工作区
+                    if first_workspace is None:
+                        first_workspace = result.get("workspace_root") or result.get("workspace")
+                        first_download_dir = result.get("download_dir") or ""
+                        if not first_download_dir and first_workspace:
+                            first_download_dir = str(storage.create_workspace(product_code, lang_code).source_localized_dir)
+
+                    # 更新摘要信息
+                    def add_lang_summary(lang=lang_label, res=result):
+                        self._add_summary(f"{lang} 状态", "成功")
+
+                    self.root.after(0, add_lang_summary)
+
+                except Exception as exc:
+                    results.append({"language": lang_label, "error": str(exc), "success": False})
+                    failed_count += 1
+                    self.root.after(0, lambda: self._append_log(f"{lang_label} 执行失败: {exc}"))
+                    # 继续下一个语言,不中断整个批量任务
+
+            # 批量任务完成
+            def finish_batch():
+                self.current_running_language = ""
+                self._update_login_status(shopify_domain)
+
+                if first_workspace:
+                    self._workspace_root = first_workspace
+                    self.open_workspace_button.configure(state="normal")
+                if first_download_dir:
+                    self._download_dir = first_download_dir
+                    self.open_download_button.configure(state="normal")
+
+                self._add_summary("批量任务状态", f"完成: 成功 {success_count}, 失败 {failed_count}")
+                self._add_summary("成功语言", ", ".join([r["language"] for r in results if r["success"]]))
+                if failed_count > 0:
+                    self._add_summary("失败语言", ", ".join([r["language"] for r in results if not r["success"]]))
+
+                self.status_var.set("批量任务完成")
+                self._append_log("================ 批量任务结束 ================")
+                self._append_log(f"总计: {len(language_labels)} 个语言, 成功 {success_count}, 失败 {failed_count}")
+                self._progress_finish("批量任务完成")
+                messagebox.showinfo(
+                    "批量任务结束",
+                    f"执行完成:\n成功: {success_count}\n失败: {failed_count}",
+                    parent=self.root,
+                )
+
+            self.root.after(0, finish_batch)
+
+        except cancellation.OperationCancelled:
+            self.root.after(0, self._render_cancelled)
+        except Exception as exc:
+            self.root.after(0, lambda: self._append_log(f"批量任务异常: {exc}"))
+        finally:
+            self._current_cancel_token = None
+            self.root.after(0, lambda: self._set_running_state(False))
+            # 清空当前运行语言
+            def clear_running():
+                self.current_running_language = ""
+                self._update_login_status(shopify_domain)
+
+            self.root.after(0, clear_running)
 
     def _render_cancelled(self) -> None:
         self.status_var.set("已停止")
+        self.current_running_language = ""
+        self._update_login_status(self.current_shopify_domain_var.get())
         self._append_log("================ 任务已结束（用户取消）— 详情请看运行摘要 ================")
         self._add_summary("任务状态", "已停止")
         self._progress_finish("任务已停止")
@@ -1076,6 +1409,10 @@ class ShopifyImageLocalizerApp:
                 f"图片 {storefront.get('image_count', 0)}，"
                 f"旧非 Shopify 图 {storefront.get('old_non_shopify_count', 0)}",
             )
+
+        # 清空当前运行语言
+        self.current_running_language = ""
+        self._update_login_status(self.current_shopify_domain_var.get())
 
         self.status_var.set("执行完成")
         self._append_log("================ 任务已结束（执行完成）— 详情请看运行摘要 ================")
