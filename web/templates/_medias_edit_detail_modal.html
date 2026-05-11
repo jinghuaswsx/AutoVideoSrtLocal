@@ -43,29 +43,35 @@
         </div>
         <div class="oc-field oc-inline-field oc-inline-field-full" style="margin-top:var(--oc-sp-2)">
           <label class="oc-label oc-inline-label" for="edProductUrl">产品链接：</label>
-          <div class="oc-url-row oc-link-check-row">
-            <input id="edProductUrl" class="oc-input" type="url"
-                   placeholder="留空则用默认模板"
-                   autocomplete="off">
-            <button type="button" class="oc-btn ghost sm" id="edCopyProductUrlBtn">复制</button>
-            <button type="button" class="oc-btn text sm" id="edLinkCheckViewBtn" hidden>查看结果</button>
-          </div>
-          <div class="oc-link-check-inline">
-            <div id="edLinkCheckSummary" class="oc-link-check-summary" hidden></div>
-            <div id="edShopifyImageStatus" class="oc-link-check-summary" hidden></div>
-          </div>
-          <!-- 入口：产品链接管理弹窗（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md） -->
-          <div class="oc-product-links-entry">
-            <button type="button" class="oc-btn ghost sm" id="edProductLinksOpenBtn">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M5.5 8.5 8.5 5.5"></path>
-                <path d="M6 3.5h2a3 3 0 0 1 0 6H7"></path>
-                <path d="M8 10.5H6a3 3 0 0 1 0-6h1"></path>
-              </svg>
-              <span>产品链接管理</span>
-            </button>
-            <span class="oc-hint">查看启用域名 + HTTP 可用性 + Shopify 换图状态</span>
+          <div class="oc-product-url-split">
+            <div class="oc-product-url-left">
+              <div class="oc-url-row oc-link-check-row">
+                <input id="edProductUrl" class="oc-input" type="url"
+                       placeholder="留空则用默认模板"
+                       autocomplete="off">
+                <button type="button" class="oc-btn ghost sm" id="edCopyProductUrlBtn">复制</button>
+                <button type="button" class="oc-btn text sm" id="edLinkCheckViewBtn" hidden>查看结果</button>
+              </div>
+              <div class="oc-link-check-inline">
+                <div id="edLinkCheckSummary" class="oc-link-check-summary" hidden></div>
+                <div id="edShopifyImageStatus" class="oc-link-check-summary" hidden></div>
+              </div>
+            </div>
+            <div class="oc-product-url-right">
+              <!-- 入口：产品链接管理弹窗（spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md） -->
+              <div class="oc-product-links-entry">
+                <button type="button" class="oc-btn ghost sm" id="edProductLinksOpenBtn">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                       stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5.5 8.5 8.5 5.5"></path>
+                    <path d="M6 3.5h2a3 3 0 0 1 0 6H7"></path>
+                    <path d="M8 10.5H6a3 3 0 0 1 0-6h1"></path>
+                  </svg>
+                  <span>产品链接管理</span>
+                </button>
+                <span class="oc-hint" title="查看启用域名 + HTTP 可用性 + Shopify 换图状态">查看启用域名 + HTTP 可用性 + Shopify 换图状态</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
