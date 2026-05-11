@@ -99,18 +99,20 @@ def test_sku_detail_mobile_table_keeps_shared_header_and_body_layout():
         assert snippet in html, f"missing SKU mobile table layout override: {snippet}"
 
 
-def test_sku_detail_modal_renders_actual_breakeven_roas_after_estimated_roas():
+def test_sku_detail_modal_renders_order_breakeven_roas_after_estimated_breakeven_roas():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert '<th style="width:120px;">估算 ROAS</th>' in html
-    assert '<th style="width:160px;">实际保本 ROAS</th>' in html
-    assert html.index("估算 ROAS") < html.index("实际保本 ROAS")
+    assert '<th style="width:120px;">估算保本 ROAS</th>' in html
+    assert '<th style="width:160px;">订单保本 ROAS</th>' in html
+    assert html.index("估算保本 ROAS") < html.index("订单保本 ROAS")
     assert "fmtActualBreakevenRoas" in js
     assert "s.actual_breakeven_roas" in js
-    assert "真实手续费" in js
-    assert "7%估算" in js
-    assert "部分真实" in js
+    assert "小包实费" in js
+    assert "小包预估" in js
+    assert "手续费真实" in js
+    assert "手续费7%估算" in js
+    assert "手续费部分真实" in js
 
 
 def test_medias_html_has_parcel_cost_suggest_button():
