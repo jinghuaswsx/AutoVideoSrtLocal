@@ -57,6 +57,7 @@ def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
             "items": [
                 {
                     "video_id": "v1",
+                    "primary_item_id": "i1",
                     "primary_item_pic_url": None,
                     "video_raw_json": json.dumps(
                         {
@@ -86,6 +87,7 @@ def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
     assert item["primary_item_name"] == "Gloves"
     assert item["primary_item_price_min"] == 3.76
     assert item["primary_item_sold_count"] == 538
+    assert item["primary_item_url"] == "https://www.tiktok.com/shop/pdp/i1"
     assert "video_raw_json" not in item
 
 

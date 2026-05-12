@@ -17,24 +17,28 @@
 .tabcut-view-tab.active { border-color:#0f766e; background:#ecfdf5; color:#0f766e; }
 .tabcut-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 12px; color:#64748b; font-size:13px; }
 .tabcut-results { border:1px solid #d8dee8; border-radius:8px; background:#eef2f7; overflow:hidden; }
-.tabcut-video-grid { display:grid; grid-template-columns:repeat(4, minmax(210px, 1fr)); gap:22px; padding:24px; }
-.tabcut-video-card { min-width:0; padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+.tabcut-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; padding:24px; }
+.tabcut-video-card { display:grid; grid-template-columns:90px minmax(0, 1fr); grid-template-areas:"author author" "cover body" "product product"; gap:10px 12px; min-width:0; padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04); }
 .tabcut-video-author { display:grid; grid-template-columns:22px minmax(0, max-content) minmax(0, 1fr); align-items:center; gap:6px; min-width:0; height:24px; }
 .tabcut-avatar, .tabcut-avatar-fallback { width:18px; height:18px; border-radius:50%; object-fit:cover; background:#cbd5e1; }
 .tabcut-avatar-fallback { display:block; }
 .tabcut-author-name { min-width:0; max-width:92px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; font-weight:800; color:#334155; }
 .tabcut-tags { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#94a3b8; font-size:10px; }
-.tabcut-video-cover-link { display:block; margin-top:10px; border-radius:6px; overflow:hidden; text-decoration:none; }
-.tabcut-video-cover { display:block; width:100%; height:300px; border-radius:6px; object-fit:cover; background:#dbe3ee; }
-.tabcut-cover-placeholder { display:flex; align-items:center; justify-content:center; width:100%; height:300px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; color:#94a3b8; font-size:12px; }
+.tabcut-video-author { grid-area:author; }
+.tabcut-video-cover-link { grid-area:cover; display:block; width:90px; height:160px; border-radius:6px; overflow:hidden; text-decoration:none; }
+.tabcut-video-cover { display:block; width:90px; height:160px; border-radius:6px; object-fit:cover; background:#dbe3ee; }
+.tabcut-cover-placeholder { display:flex; align-items:center; justify-content:center; width:90px; height:160px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; color:#94a3b8; font-size:12px; }
 .tabcut-cover-frame { position:relative; display:block; }
 .tabcut-video-badges { position:absolute; left:8px; bottom:8px; display:flex; gap:4px; align-items:center; }
 .tabcut-video-badge { min-width:28px; height:18px; padding:0 5px; border-radius:3px; background:rgba(220,38,38,.74); color:#fff; font-size:11px; font-weight:800; line-height:18px; text-align:center; }
-.tabcut-publish { margin-top:10px; color:#334155; font-size:12px; }
+.tabcut-video-main { grid-area:body; min-width:0; display:flex; flex-direction:column; justify-content:space-between; }
+.tabcut-publish { color:#334155; font-size:12px; }
 .tabcut-stats { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin-top:10px; }
 .tabcut-stat-label { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#94a3b8; font-size:11px; }
 .tabcut-stat-value { margin-top:3px; color:#1f2937; font-size:16px; font-weight:800; font-variant-numeric:tabular-nums; }
-.tabcut-product-mini { display:grid; grid-template-columns:48px minmax(0, 1fr); gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #edf2f7; min-height:58px; }
+.tabcut-product-mini { grid-area:product; display:grid; grid-template-columns:48px minmax(0, 1fr); gap:8px; padding-top:10px; border-top:1px solid #edf2f7; min-height:58px; }
+.tabcut-product-mini, .tabcut-product-link { color:inherit; text-decoration:none; }
+.tabcut-product-mini:hover .tabcut-product-title, .tabcut-product-link:hover { color:#0f766e; text-decoration:underline; }
 .tabcut-product-mini img, .tabcut-product-img-empty { width:48px; height:48px; border-radius:6px; object-fit:cover; background:#f1f5f9; border:1px solid #e2e8f0; }
 .tabcut-product-title { min-width:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; color:#334155; font-size:12px; line-height:1.25; }
 .tabcut-product-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:#475569; font-size:10px; font-weight:700; }
@@ -49,17 +53,13 @@
 .tabcut-cover { width:54px; height:54px; border-radius:6px; object-fit:cover; background:#eef2f7; }
 .tabcut-pager { display:flex; gap:8px; justify-content:center; padding:12px; }
 .tabcut-empty { padding:36px; text-align:center; color:#64748b; }
-@media (max-width: 1280px) {
-  .tabcut-video-grid { grid-template-columns:repeat(3, minmax(210px, 1fr)); }
-}
 @media (max-width: 980px) {
   .tabcut-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); }
   .tabcut-actions { grid-column:1 / -1; }
-  .tabcut-video-grid { grid-template-columns:repeat(2, minmax(190px, 1fr)); padding:16px; }
+  .tabcut-video-grid { padding:16px; }
 }
 @media (max-width: 640px) {
   .tabcut-video-grid { grid-template-columns:1fr; }
-  .tabcut-video-cover, .tabcut-cover-placeholder { height:auto; aspect-ratio:9/16; }
 }
 {% endblock %}
 
@@ -173,6 +173,12 @@ function videoHref(row) {
   if (author && row.video_id) return `https://www.tiktok.com/@${encodeURIComponent(author)}/video/${encodeURIComponent(row.video_id)}`;
   return "";
 }
+function productHref(row) {
+  const explicit = row.primary_item_url || row.item_url || row.product_url || row.shop_product_url || row.tiktok_product_url;
+  if (explicit) return explicit;
+  const itemId = row.primary_item_id || row.item_id;
+  return itemId ? `https://www.tiktok.com/shop/pdp/${encodeURIComponent(itemId)}` : "";
+}
 function renderAvatar(row) {
   return row.author_avatar_url
     ? `<img class="tabcut-avatar" src="${esc(row.author_avatar_url)}" loading="lazy" alt="">`
@@ -198,14 +204,16 @@ function renderProductMini(row) {
   const symbol = row.currency_symbol || "$";
   const price = Number(row.primary_item_price_min || row.primary_item_price_max || 0);
   const sold = row.primary_item_sold_count || row.goods_sold_count_7d || row.item_sold_count;
-  return `
-    <div class="tabcut-product-mini">
+  const href = productHref(row);
+  const inner = `
       ${image}
       <div>
         <div class="tabcut-product-title">${esc(title)}</div>
         <div class="tabcut-product-meta"><span>${price ? `${esc(symbol)} ${price.toLocaleString(undefined, {maximumFractionDigits: 2})}` : ""}</span><span>销量:${fmtCompact(sold)}</span></div>
-      </div>
-    </div>`;
+      </div>`;
+  return href
+    ? `<a class="tabcut-product-mini" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="Open TikTok product">${inner}</a>`
+    : `<div class="tabcut-product-mini">${inner}</div>`;
 }
 function renderVideoCard(row) {
   return `
@@ -216,12 +224,14 @@ function renderVideoCard(row) {
         <span class="tabcut-tags">${renderTags(row)}</span>
       </div>
       ${renderVideoCover(row)}
-      <div class="tabcut-publish">发布时间：${esc(formatDateTime(row.create_time))}</div>
-      <div class="tabcut-stats">
-        <div><div class="tabcut-stat-label">月播放量</div><div class="tabcut-stat-value">${fmtCompact(row.play_count)}</div></div>
-        <div><div class="tabcut-stat-label">月获赞数</div><div class="tabcut-stat-value">${fmtCompact(row.like_count)}</div></div>
-        <div><div class="tabcut-stat-label">月分享数</div><div class="tabcut-stat-value">${fmtCompact(row.share_count)}</div></div>
-        <div><div class="tabcut-stat-label">月评论数</div><div class="tabcut-stat-value">${fmtCompact(row.comment_count)}</div></div>
+      <div class="tabcut-video-main">
+        <div class="tabcut-publish">发布时间：${esc(formatDateTime(row.create_time))}</div>
+        <div class="tabcut-stats">
+          <div><div class="tabcut-stat-label">月播放量</div><div class="tabcut-stat-value">${fmtCompact(row.play_count)}</div></div>
+          <div><div class="tabcut-stat-label">月获赞数</div><div class="tabcut-stat-value">${fmtCompact(row.like_count)}</div></div>
+          <div><div class="tabcut-stat-label">月分享数</div><div class="tabcut-stat-value">${fmtCompact(row.share_count)}</div></div>
+          <div><div class="tabcut-stat-label">月评论数</div><div class="tabcut-stat-value">${fmtCompact(row.comment_count)}</div></div>
+        </div>
       </div>
       ${renderProductMini(row)}
     </article>`;
@@ -272,8 +282,8 @@ function renderTabcut(data) {
     qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
       <tr>
         <td>${(data.page - 1) * data.page_size + idx + 1}</td>
-        <td>${row.item_pic_url ? `<img class="tabcut-cover" src="${esc(row.item_pic_url)}" loading="lazy" alt="">` : ""}</td>
-        <td class="tabcut-name"><strong>${esc(row.item_name)}</strong><div class="tabcut-muted">${esc(row.item_id)}</div></td>
+        <td>${row.item_pic_url ? `<a href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><img class="tabcut-cover" src="${esc(row.item_pic_url)}" loading="lazy" alt=""></a>` : ""}</td>
+        <td class="tabcut-name"><a class="tabcut-product-link" href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><strong>${esc(row.item_name)}</strong></a><div class="tabcut-muted">${esc(row.item_id)}</div></td>
         <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
         <td class="tabcut-num">${fmtInt(row.sold_count_7d || row.sold_count_period)}</td>
         <td class="tabcut-num">${fmtMoney(row.gmv_7d || row.gmv_period)}</td>

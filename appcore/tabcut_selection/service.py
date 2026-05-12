@@ -36,6 +36,8 @@ def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
             _fill_missing(item, "primary_item_sold_count", raw_item.get("soldCount"))
             _fill_missing(item, "currency_symbol", raw_item.get("currencySymbol") or "$")
             _fill_missing(item, "price_currency", raw_item.get("priceCurrency"))
+            _fill_missing(item, "primary_item_url", _raw_item_url(raw_item))
+        _fill_missing(item, "primary_item_url", _tiktok_product_url(item.get("primary_item_id")))
         items.append(item)
     hydrated["items"] = items
     return hydrated
@@ -76,6 +78,21 @@ def _first_raw_item(raw: Mapping[str, Any]) -> Mapping[str, Any] | None:
     if isinstance(items, list) and items and isinstance(items[0], Mapping):
         return items[0]
     return None
+
+
+def _raw_item_url(raw_item: Mapping[str, Any]) -> str | None:
+    for key in ("itemUrl", "productUrl", "tkItemUrl", "shopProductUrl", "shop_product_url", "tiktokProductUrl"):
+        value = str(raw_item.get(key) or "").strip()
+        if value.startswith(("http://", "https://")):
+            return value
+    return None
+
+
+def _tiktok_product_url(item_id: Any) -> str | None:
+    text = str(item_id or "").strip()
+    if not text:
+        return None
+    return f"https://www.tiktok.com/shop/pdp/{text}"
 
 
 def build_admin_required_response() -> TabcutResponse:
