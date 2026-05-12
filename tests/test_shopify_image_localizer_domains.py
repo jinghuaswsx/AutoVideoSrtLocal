@@ -198,6 +198,43 @@ def test_session_builds_admin_urls_for_selected_store_slug() -> None:
     )
 
 
+def test_windows_chrome_probe_hides_powershell_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict] = []
+
+    class Result:
+        stdout = r'"C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=C:\chrome-shopify-image'
+
+    def fake_run(*_args, **kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(session.os, "name", "nt")
+    monkeypatch.setattr(session.subprocess, "run", fake_run)
+
+    assert session.is_chrome_running_for_profile(r"C:\chrome-shopify-image") is True
+
+    assert calls
+    assert calls[0]["creationflags"] & 0x08000000
+    assert calls[0].get("startupinfo") is not None
+
+
+def test_windows_chrome_kill_hides_powershell_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict] = []
+
+    def fake_run(*_args, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(session.os, "name", "nt")
+    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    monkeypatch.setattr(session, "is_chrome_running_for_profile", lambda _profile: False)
+
+    session.kill_chrome_for_profile(r"C:\chrome-shopify-image")
+
+    assert calls
+    assert calls[0]["creationflags"] & 0x08000000
+    assert calls[0].get("startupinfo") is not None
+
+
 def test_controller_login_starts_plain_chrome_at_admin_root_no_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
