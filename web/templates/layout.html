@@ -526,6 +526,11 @@
       or request.path.startswith('/browser-monitor')
       or request.endpoint == 'projects.sentence_translate_page'
       or request.endpoint == 'projects.av_sync_page'
+      or request.path.startswith('/order-analytics/orphan-orders')
+      or request.path.startswith('/tools')
+      or request.path.startswith('/productivity-stats')
+      or request.path.startswith('/admin/security-audit')
+      or request.path.startswith('/admin/tts-speedup-evaluations')
     %}
     <a class="sidebar-brand" href="{{ url_for('projects.root') }}">
       <div class="sidebar-brand-icon">🎬</div>
@@ -555,11 +560,6 @@
       {% if has_permission('product_profit') %}
       <a href="/product-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/product-profit') %}class="active"{% endif %}>
         <span class="nav-icon">📈</span> 产品盈亏看板
-      </a>
-      {% endif %}
-      {% if has_permission('orphan_orders') %}
-      <a href="/order-analytics/orphan-orders" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics/orphan-orders') %}class="active"{% endif %}>
-        <span class="nav-icon">🕵</span> 未建档订单
       </a>
       {% endif %}
       {% if has_permission('multi_translate') %}
@@ -592,9 +592,6 @@
         <span class="nav-icon">📋</span> 任务中心
       </a>
       {% endif %}
-      <a href="{{ url_for('tools.index') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/tools') %}class="active"{% endif %}>
-        <span class="nav-icon">∑</span> 小工具
-      </a>
       {% if has_permission('raw_video_pool') %}
       <a href="/raw-video-pool/" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/raw-video-pool/') %}class="active"{% endif %}>
         <span class="nav-icon">🎬</span> 原始素材任务库
@@ -639,24 +636,9 @@
         <span class="nav-icon">🎬</span> 视频翻译传统
       </a>
       {% endif %}
-      {% if has_permission('productivity_stats') %}
-      <a href="/productivity-stats/" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/productivity-stats/') %}class="active"{% endif %}>
-        <span class="nav-icon">📈</span> 员工产能报表
-      </a>
-      {% endif %}
       {% if has_permission('scheduled_tasks') %}
       <a href="{{ url_for('scheduled_tasks.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/scheduled-tasks') %}class="active"{% endif %}>
         <span class="nav-icon">⏱</span> 定时任务
-      </a>
-      {% endif %}
-      {% if current_user.is_superadmin %}
-      <a href="{{ url_for('security_audit.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/security-audit') %}class="active"{% endif %}>
-        <span class="nav-icon">SA</span> 系统安全审计
-      </a>
-      {% endif %}
-      {% if current_user.is_authenticated and current_user.is_admin %}
-      <a href="{{ url_for('tts_speedup_eval.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/tts-speedup-evaluations') %}class="active"{% endif %}>
-        <span class="nav-icon">⚡</span> TTS 变速评估
       </a>
       {% endif %}
       {% if has_permission('lab') %}
@@ -695,6 +677,29 @@
           <a href="{{ url_for('projects.av_sync_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.av_sync_page' or request.endpoint == 'projects.sentence_translate_page' %}class="active"{% endif %}>
             <span class="nav-icon">🎧</span> 视频翻译音画同步
           </a>
+          {% if has_permission('orphan_orders') %}
+          <a href="/order-analytics/orphan-orders" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics/orphan-orders') %}class="active"{% endif %}>
+            <span class="nav-icon">🕵</span> 未建档订单
+          </a>
+          {% endif %}
+          <a href="{{ url_for('tools.index') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/tools') %}class="active"{% endif %}>
+            <span class="nav-icon">∑</span> 小工具
+          </a>
+          {% if has_permission('productivity_stats') %}
+          <a href="/productivity-stats/" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/productivity-stats/') %}class="active"{% endif %}>
+            <span class="nav-icon">📈</span> 员工产能报表
+          </a>
+          {% endif %}
+          {% if current_user.is_superadmin %}
+          <a href="{{ url_for('security_audit.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/security-audit') %}class="active"{% endif %}>
+            <span class="nav-icon">SA</span> 系统安全审计
+          </a>
+          {% endif %}
+          {% if current_user.is_authenticated and current_user.is_admin %}
+          <a href="{{ url_for('tts_speedup_eval.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/tts-speedup-evaluations') %}class="active"{% endif %}>
+            <span class="nav-icon">⚡</span> TTS 变速评估
+          </a>
+          {% endif %}
         </div>
       </details>
       {% endif %}
