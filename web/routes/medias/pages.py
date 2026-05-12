@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required
 
@@ -28,6 +30,11 @@ def _media_page_flask_response(payload: dict, status_code: int = 200):
     return _media_page_flask_response_impl(payload, status_code)
 
 
+def _requested_initial_lang() -> str:
+    lang = (request.args.get("lang") or "").strip().lower()
+    return lang if re.fullmatch(r"[a-z0-9-]{1,16}", lang) else ""
+
+
 @bp.route("/")
 @login_required
 def index():
@@ -52,6 +59,7 @@ def product_detail_page(product_code: str):
             medias_product_id=int(product["id"]),
             medias_product_code=code,
             medias_product_name=product.get("name") or code,
+            medias_initial_lang=_requested_initial_lang(),
             initial_query=code,
         ),
     )
