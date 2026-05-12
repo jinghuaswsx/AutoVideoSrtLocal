@@ -8,9 +8,9 @@
     <h2>新建图片翻译任务</h2>
 
     <div class="it-backend-hint">
-      <span>当前通道</span>
+      <span>系统默认</span>
       <span class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
-      <span class="hint" style="margin-left:auto;color:var(--fg-subtle,#9ca3af)">全局配置，可在「系统设置 → 全局配置」修改</span>
+      <span class="hint" style="margin-left:auto;color:var(--fg-subtle,#9ca3af)">新任务默认取这里；下方选择只影响本次任务</span>
     </div>
 
     <div class="form-row it-product-name-row">
@@ -35,6 +35,22 @@
       <div id="itLanguagePills" class="it-pill-group" role="radiogroup"></div>
       <div id="itLanguageEmpty" hidden></div>
       <input type="hidden" id="itLanguage" value="">
+    </div>
+
+    <div class="form-row">
+      <label>大模型供应商 <span class="required">*</span></label>
+      <div id="itChannelPills" class="it-pill-group" role="radiogroup">
+        {% for channel in image_translate_channels %}
+        <button type="button"
+                class="it-pill {{ 'is-active' if channel.id == image_translate_default_channel }}"
+                data-value="{{ channel.id }}"
+                role="radio"
+                aria-checked="{{ 'true' if channel.id == image_translate_default_channel else 'false' }}">
+          {{ channel.name }}
+        </button>
+        {% endfor %}
+      </div>
+      <input type="hidden" id="itChannel" value="{{ image_translate_default_channel }}">
     </div>
 
     <div class="form-row">

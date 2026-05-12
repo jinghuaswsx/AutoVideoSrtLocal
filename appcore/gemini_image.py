@@ -94,6 +94,11 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
         ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
     ],
+    "cloud_adc": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+        ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
+    ],
     "openrouter": [
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
@@ -250,6 +255,8 @@ def _channel_provider(channel: str) -> str:
         return "openrouter"
     if channel == "cloud":
         return "gemini_vertex"
+    if channel == "cloud_adc":
+        return "gemini_vertex_adc"
     if channel == "apimart":
         return "apimart"
     return "gemini_aistudio"
@@ -457,19 +464,31 @@ def _resolve_openrouter_image_credentials() -> tuple[str, str]:
 
 
 def _resolve_gemini_image_credentials(channel: str) -> tuple[str, str, str, str | None]:
-    """aistudio / cloud 通道的凭据。返回 (api_key, project, location, model_id)。
+    """aistudio / cloud / cloud_adc 通道的凭据。返回 (api_key, project, location, model_id)。
 
     cloud 允许 api_key 或 extra_config.project 至少一项非空；aistudio 必须 api_key 非空。
+    cloud_adc 只使用服务器 ADC，必须配置 extra_config.project。
     """
-    provider_code = "gemini_cloud_image" if channel == "cloud" else "gemini_aistudio_image"
+    if channel == "cloud":
+        provider_code = "gemini_cloud_image"
+    elif channel == "cloud_adc":
+        provider_code = "gemini_vertex_adc_image"
+    else:
+        provider_code = "gemini_aistudio_image"
     try:
         cfg = require_provider_config(provider_code)
     except ProviderConfigError as exc:
         raise GeminiImageError(str(exc)) from exc
     api_key = (cfg.api_key or "").strip()
     extra = cfg.extra_config or {}
-    project = (extra.get("project") or "").strip() if channel == "cloud" else ""
-    location = (extra.get("location") or "global").strip() if channel == "cloud" else ""
+    project = (extra.get("project") or "").strip() if channel in {"cloud", "cloud_adc"} else ""
+    location = (extra.get("location") or "global").strip() if channel in {"cloud", "cloud_adc"} else ""
+    if channel == "cloud_adc":
+        if not project:
+            raise GeminiImageError(
+                f"缺少供应商配置 {provider_code}.extra_config.project，请在 /settings 填写。"
+            )
+        return "", project, location or "global", (cfg.model_id or None)
     if channel == "cloud" and not (api_key or project):
         raise GeminiImageError(
             f"缺少供应商配置 {provider_code}.api_key 或 extra_config.project，请在 /settings 填写。"
@@ -836,12 +855,13 @@ def generate_image(
     user_id: int | None = None,
     project_id: str | None = None,
     service: str = "image_translate.generate",
+    channel: str | None = None,
     apimart_size: str | None = None,
     apimart_resolution: str | None = None,
     on_apimart_submitted: Callable[[str], None] | None = None,
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
-    channel = _resolve_channel()
+    channel = normalize_image_channel(channel) if channel else _resolve_channel()
     # 历史任务若保存了 OpenAI Image 2 虚拟 model_id，即使管理员关了开关也要保持原模型运行
     if channel == "openrouter" and is_openrouter_openai_image2_model(model):
         model_id = (model or "").strip()
@@ -923,7 +943,8 @@ def generate_image(
                     model_id = db_model
                 image_bytes, mime, resp = _generate_via_genai(
                     prompt, source_image, source_mime, model_id,
-                    backend=channel, api_key=api_key,
+                    backend="cloud" if channel == "cloud_adc" else channel,
+                    api_key=api_key,
                     project=project, location=location,
                 )
                 meta = getattr(resp, "usage_metadata", None)

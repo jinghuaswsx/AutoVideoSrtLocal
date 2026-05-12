@@ -16,10 +16,12 @@
     var productNameEl = document.getElementById("itProductName");
     var presetEl = document.getElementById("itPreset");
     var langEl = document.getElementById("itLanguage");
+    var channelEl = document.getElementById("itChannel");
     var modelEl = document.getElementById("itModel");
     var presetPills = document.getElementById("itPresetPills");
     var langPills = document.getElementById("itLanguagePills");
     var langEmpty = document.getElementById("itLanguageEmpty");
+    var channelPills = document.getElementById("itChannelPills");
     var modelPills = document.getElementById("itModelPills");
     var concurrencyEl = document.getElementById("itConcurrencyMode");
     var concurrencyPills = document.getElementById("itConcurrencyPills");
@@ -118,11 +120,19 @@
     }
 
     function loadModels(){
-      return fetch("/api/image-translate/models",{credentials:"same-origin"})
+      var url = "/api/image-translate/models";
+      if (channelEl && channelEl.value) {
+        url += "?channel=" + encodeURIComponent(channelEl.value);
+      }
+      return fetch(url,{credentials:"same-origin"})
         .then(function(r){return r.json();})
         .then(function(d){
           var items = (d.items || []).map(function(m){ return {value: m.id, label: m.name}; });
           renderPills(modelPills, items);
+          if (d.channel && channelEl) {
+            channelEl.value = d.channel;
+            setPillActive(channelPills, d.channel);
+          }
           if (items.length) {
             var defaultId = (d.default_model_id || "").trim();
             var picked = defaultId && items.some(function(i){return i.value === defaultId;}) ? defaultId : items[0].value;
@@ -134,6 +144,8 @@
 
     bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); });
     setPillActive(presetPills, presetEl.value || "cover");
+    bindPillGroup(channelPills, channelEl, function(){ loadModels(); });
+    setPillActive(channelPills, channelEl.value || "");
     bindPillGroup(concurrencyPills, concurrencyEl, null);
 
     fileInput.onchange = function(){
@@ -207,6 +219,7 @@
             product_name: productName,
             preset: presetEl.value,
             target_language: langEl.value,
+            "channel": channelEl.value,
             model_id: modelEl.value,
             prompt: promptEl.value,
             concurrency_mode: concurrencyEl.value,
@@ -308,6 +321,9 @@
       if (source === "copied_source") {
         return {label: "结果来源：复制原图", tone: "copy"};
       }
+      if (source === "banana_regenerate") {
+        return {label: "结果来源：banana重新生成", tone: "translate"};
+      }
       if (source === "image_translate" || (it.status === "done" && it.dst_tos_key)) {
         return {label: "结果来源：图片翻译", tone: "translate"};
       }
@@ -379,6 +395,16 @@
         retryBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
         retryBtn.onclick = (function(i){ return function(){ retry(i); }; })(it.idx);
         actions.appendChild(retryBtn);
+        if (it.status === "done") {
+          var bananaBtn = document.createElement("button");
+          bananaBtn.className = "btn it-retry-item it-banana-retry-item";
+          bananaBtn.type = "button";
+          bananaBtn.textContent = "banana重新生成";
+          bananaBtn.disabled = isRunning;
+          bananaBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "使用 Google ADC 的 Nano Banana 2 重新生成";
+          bananaBtn.onclick = (function(i){ return function(){ bananaRetry(i); }; })(it.idx);
+          actions.appendChild(bananaBtn);
+        }
         row.appendChild(actions);
         listEl.appendChild(row);
       });
@@ -451,6 +477,16 @@
         .then(parseJsonResponse)
         .then(function(res){
           if (!res.ok) { alert(res.body && res.body.error || "重试失败"); return; }
+          refresh();
+        })
+        .catch(function(){ alert("网络错误，稍后再试"); });
+    }
+
+    function bananaRetry(idx){
+      fetch("/api/image-translate/"+taskId+"/banana-retry/"+idx,{method:"POST",credentials:"same-origin"})
+        .then(parseJsonResponse)
+        .then(function(res){
+          if (!res.ok) { alert(res.body && res.body.error || "banana重新生成失败"); return; }
           refresh();
         })
         .catch(function(){ alert("网络错误，稍后再试"); });

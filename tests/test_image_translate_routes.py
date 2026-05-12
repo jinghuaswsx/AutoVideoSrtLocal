@@ -71,6 +71,33 @@ def test_models_endpoint_uses_global_default_model_for_current_channel(authed_cl
     assert resp.get_json()["default_model_id"] == "gemini-3-pro-image-preview"
 
 
+def test_models_endpoint_allows_single_task_channel_override(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    monkeypatch.setattr(r.its, "get_channel", lambda: "aistudio")
+    monkeypatch.setattr(
+        r.its,
+        "get_default_model",
+        lambda channel: {
+            "aistudio": "gemini-3.1-flash-image-preview",
+            "doubao": "doubao-seedream-5-0-260128",
+        }[channel],
+    )
+
+    resp = authed_client_no_db.get("/api/image-translate/models?channel=doubao")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["channel"] == "doubao"
+    assert data["default_channel"] == "aistudio"
+    assert data["default_model_id"] == "doubao-seedream-5-0-260128"
+    assert data["items"] == [{
+        "id": "doubao-seedream-5-0-260128",
+        "name": "Seedream 5.0（豆包）",
+    }]
+    assert any(channel["id"] == "doubao" for channel in data["channels"])
+
+
 def test_medias_default_image_model_is_flash_when_no_user_preference(authed_client_no_db, monkeypatch):
     """从英语版一键翻译：用户没有保存偏好时，默认模型应是 Nano Banana 2（快速）。"""
     from web.routes import medias as r
@@ -236,6 +263,63 @@ def test_upload_complete_accepts_openai_image2_when_enabled(authed_client_no_db,
     assert mem[b["task_id"]]["model_id"] == "openai/gpt-5.4-image-2:mid"
 
 
+def test_upload_complete_uses_requested_single_task_channel(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    mem = _patch_task_state(monkeypatch)
+    monkeypatch.setattr(r.its, "get_channel", lambda: "aistudio")
+
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1,
+        "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "channel": "doubao",
+        "model_id": "doubao-seedream-5-0-260128",
+        "prompt": "x",
+        "product_name": "demo",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+
+    assert resp.status_code == 201
+    assert mem[b["task_id"]]["channel"] == "doubao"
+    assert mem[b["task_id"]]["model_id"] == "doubao-seedream-5-0-260128"
+
+
+def test_upload_complete_rejects_model_outside_requested_channel(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    monkeypatch.setattr(r.its, "get_channel", lambda: "aistudio")
+
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1,
+        "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "channel": "doubao",
+        "model_id": "gemini-3.1-flash-image-preview",
+        "prompt": "x",
+        "product_name": "demo",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "unsupported model"
+
+
 def test_medias_default_image_model_uses_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
@@ -281,13 +365,13 @@ def test_models_endpoint_returns_doubao_models_for_doubao_channel(authed_client_
     resp = authed_client_no_db.get("/api/image-translate/models")
 
     assert resp.status_code == 200
-    assert resp.get_json() == {
-        "items": [{
-            "id": "doubao-seedream-5-0-260128",
-            "name": "Seedream 5.0（豆包）",
-        }],
-        "default_model_id": "doubao-seedream-5-0-260128",
-    }
+    data = resp.get_json()
+    assert data["items"] == [{
+        "id": "doubao-seedream-5-0-260128",
+        "name": "Seedream 5.0（豆包）",
+    }]
+    assert data["default_model_id"] == "doubao-seedream-5-0-260128"
+    assert data["channel"] == "doubao"
 
 
 def test_medias_default_image_model_uses_seedream_for_doubao_channel(authed_client_no_db, monkeypatch):
@@ -1117,6 +1201,10 @@ def test_retry_item_allows_done_status_and_deletes_old_dst(authed_client_no_db, 
     from web import store
     task = store.get(tid)
     task["items"][0]["dst_tos_key"] = "artifacts/image_translate/1/tid/out_0.png"
+    task["items"][0]["provider_task_id"] = "apimart-task-old"
+    task["items"][0]["provider_task_submitted_at"] = 123.0
+    task["items"][0]["apimart_task_id"] = "legacy-apimart-task-old"
+    task["items"][0]["apimart_submitted_at"] = 456.0
     deleted: list[str] = []
     monkeypatch.setattr(r.local_media_storage, "delete", lambda k: deleted.append(k))
     monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
@@ -1125,7 +1213,41 @@ def test_retry_item_allows_done_status_and_deletes_old_dst(authed_client_no_db, 
     assert resp.status_code == 202
     assert task["items"][0]["status"] == "pending"
     assert task["items"][0]["dst_tos_key"] == ""
+    assert task["items"][0]["provider_task_id"] == ""
+    assert task["items"][0]["provider_task_submitted_at"] == 0.0
+    assert task["items"][0]["apimart_task_id"] == ""
+    assert task["items"][0]["apimart_submitted_at"] == 0.0
     assert deleted == ["artifacts/image_translate/1/tid/out_0.png"]
+
+
+def test_banana_retry_item_sets_adc_override_and_deletes_old_dst(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    from web import store
+    task = store.get(tid)
+    item = task["items"][0]
+    item["dst_tos_key"] = "artifacts/image_translate/1/tid/out_0.png"
+    item["provider_task_id"] = "apimart-task-old"
+    item["provider_task_submitted_at"] = 123.0
+    deleted: list[str] = []
+    started: list[tuple[str, int]] = []
+    monkeypatch.setattr(r.local_media_storage, "delete", lambda k: deleted.append(k))
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+    monkeypatch.setattr(r, "_start_runner", lambda tid_, uid: started.append((tid_, uid)) or True)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/banana-retry/0")
+
+    assert resp.status_code == 202
+    assert item["status"] == "pending"
+    assert item["dst_tos_key"] == ""
+    assert item["provider_task_id"] == ""
+    assert item["provider_task_submitted_at"] == 0.0
+    assert item["generation_channel_override"] == "cloud_adc"
+    assert item["generation_model_override"] == "gemini-3.1-flash-image-preview"
+    assert item["generation_override_label"] == "banana重新生成"
+    assert deleted == ["artifacts/image_translate/1/tid/out_0.png"]
+    assert started
 
 
 def test_retry_item_allows_zombie_running(authed_client_no_db, monkeypatch):

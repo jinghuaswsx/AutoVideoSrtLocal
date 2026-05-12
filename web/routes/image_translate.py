@@ -18,15 +18,25 @@ from appcore import image_translate_settings as its
 _BACKEND_LABELS = {
     "aistudio":   "Google AI Studio",
     "cloud":      "Google Cloud (Vertex AI)",
+    "cloud_adc":  "Google Vertex AI (ADC)",
     "openrouter": "OpenRouter",
     "doubao":     "豆包 ARK（Seedream）",
 }
 
 
-def _backend_badge() -> dict:
+def _channel_label(channel: str) -> str:
+    key = (channel or "").strip().lower()
+    return its.CHANNEL_LABELS.get(key) or _BACKEND_LABELS.get(key, key or "unknown")
+
+
+def _backend_badge(channel: str | None = None) -> dict:
     """读 system_settings 里的全局通道；DB 异常时回落 aistudio，避免页面 500。"""
-    key = _safe_image_translate_channel()
-    return {"key": key, "label": _BACKEND_LABELS.get(key, key or "unknown")}
+    key = (channel or "").strip().lower()
+    if key not in its.CHANNELS:
+        key = _safe_image_translate_channel()
+    return {"key": key, "label": _channel_label(key)}
+
+
 from web import store
 from web.services import image_translate_runner
 from web.services.image_translate import (
@@ -45,6 +55,9 @@ _MAX_ITEMS = task_state.IMAGE_TRANSLATE_MAX_ITEMS
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 _PRODUCT_NAME_MAX_LEN = 60
 _PROJECT_NAME_ILLEGAL = set('\\/:*?"<>|\t\r\n')
+_BANANA_RETRY_CHANNEL = "cloud_adc"
+_BANANA_RETRY_MODEL = "gemini-3.1-flash-image-preview"
+_BANANA_RETRY_LABEL = "banana重新生成"
 
 
 def _safe_image_translate_channel() -> str:
@@ -61,6 +74,17 @@ def _safe_image_translate_default_model(channel: str) -> str:
         from appcore.gemini_image import coerce_image_model
 
         return coerce_image_model("", channel=channel)
+
+
+def _image_translate_channels_payload() -> list[dict]:
+    return [{"id": code, "name": _channel_label(code)} for code in its.CHANNELS]
+
+
+def _requested_image_translate_channel(value: str | None) -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return _safe_image_translate_channel()
+    return raw if raw in its.CHANNELS else ""
 
 
 def _sanitize_product_name(value: str) -> str:
@@ -218,6 +242,13 @@ def _reset_item_processing_state(item: dict) -> None:
     item["attempts"] = 0
     item["error"] = ""
     item["dst_tos_key"] = ""
+    item["provider_task_id"] = ""
+    item["provider_task_submitted_at"] = 0.0
+    item["apimart_task_id"] = ""
+    item["apimart_submitted_at"] = 0.0
+    item["generation_channel_override"] = ""
+    item["generation_model_override"] = ""
+    item["generation_override_label"] = ""
     item["text_detect_status"] = "pending"
     item["text_detect_has_text"] = None
     item["text_detect_reason"] = ""
@@ -244,6 +275,9 @@ def _reserve_local_source_upload(*, user_id: int, task_id: str, idx: int, object
 
 def _state_payload(task: dict) -> dict:
     concurrency_mode = _normalize_concurrency_mode(task.get("concurrency_mode"))
+    channel = (task.get("channel") or "").strip().lower()
+    if channel not in its.CHANNELS:
+        channel = _safe_image_translate_channel()
     return {
         "id": task.get("id"),
         "type": "image_translate",
@@ -251,6 +285,8 @@ def _state_payload(task: dict) -> dict:
         "preset": task.get("preset") or "",
         "target_language": task.get("target_language") or "",
         "target_language_name": task.get("target_language_name") or "",
+        "channel": channel,
+        "channel_label": _channel_label(channel),
         "model_id": task.get("model_id") or "",
         "prompt": task.get("prompt") or "",
         "product_name": task.get("product_name") or "",
@@ -269,12 +305,20 @@ def _state_payload(task: dict) -> dict:
 @bp.route("/api/image-translate/models", methods=["GET"])
 @login_required
 def api_models():
-    channel = _safe_image_translate_channel()
+    default_channel = _safe_image_translate_channel()
+    channel = _requested_image_translate_channel(request.args.get("channel"))
+    if not channel:
+        return image_translate_flask_response(
+            build_image_translate_error_response("unsupported channel", 400)
+        )
     return image_translate_flask_response(
         build_image_translate_payload_response(
             {
                 "items": [{"id": mid, "name": label} for mid, label in list_image_models(channel)],
                 "default_model_id": _safe_image_translate_default_model(channel),
+                "channel": channel,
+                "default_channel": default_channel,
+                "channels": _image_translate_channels_payload(),
             }
         )
     )
@@ -379,7 +423,11 @@ def api_upload_complete():
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported target language", 400)
         )
-    channel = _safe_image_translate_channel()
+    channel = _requested_image_translate_channel(body.get("channel"))
+    if not channel:
+        return image_translate_flask_response(
+            build_image_translate_error_response("unsupported channel", 400)
+        )
     if not is_valid_image_model(model_id, channel=channel):
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported model", 400)
@@ -570,6 +618,50 @@ def api_retry_item(task_id: str, idx: int):
     )
 
 
+@bp.route("/api/image-translate/<task_id>/banana-retry/<int:idx>", methods=["POST"])
+@login_required
+def api_banana_retry_item(task_id: str, idx: int):
+    task = _get_retryable_task(task_id)
+    item = _get_item(task, idx)
+    if not item:
+        abort(404)
+    if image_translate_runner.is_running(task_id):
+        return image_translate_flask_response(
+            build_image_translate_error_response("任务正在跑，等跑完再重试", 409)
+        )
+    old_dst = (item.get("dst_tos_key") or "").strip()
+    if old_dst:
+        _delete_artifact_object(old_dst)
+    _reset_item_processing_state(item)
+    item["generation_channel_override"] = _BANANA_RETRY_CHANNEL
+    item["generation_model_override"] = _BANANA_RETRY_MODEL
+    item["generation_override_label"] = _BANANA_RETRY_LABEL
+    total = len(task["items"])
+    done = sum(1 for it in task["items"] if it["status"] == "done")
+    failed = sum(1 for it in task["items"] if it["status"] == "failed")
+    task["progress"] = {"total": total, "done": done, "failed": failed, "running": 0}
+    task["status"] = "queued"
+    store.update(
+        task_id,
+        items=task["items"],
+        progress=task["progress"],
+        status="queued",
+    )
+    _start_runner(task_id, _task_runner_user_id(task))
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {
+                "task_id": task_id,
+                "idx": idx,
+                "status": "queued",
+                "channel": _BANANA_RETRY_CHANNEL,
+                "model_id": _BANANA_RETRY_MODEL,
+            },
+            status_code=202,
+        )
+    )
+
+
 @bp.route("/api/image-translate/<task_id>/retry-failed", methods=["POST"])
 @login_required
 def api_retry_failed(task_id: str):
@@ -746,6 +838,9 @@ def page_list():
         preset_label = "封面图翻译" if preset == "cover" else ("产品详情图翻译" if preset == "detail" else "")
         raw_status = row.get("status") or state.get("status") or ""
         concurrency_mode = _normalize_concurrency_mode(state.get("concurrency_mode"))
+        channel = (state.get("channel") or "").strip().lower()
+        if channel not in its.CHANNELS:
+            channel = _safe_image_translate_channel()
         history.append({
             "id": row["id"],
             "created_at": row.get("created_at"),
@@ -757,16 +852,21 @@ def page_list():
             "target_language_name": state.get("target_language_name") or "",
             "project_name": state.get("project_name") or "",
             "product_name": state.get("product_name") or "",
+            "channel": channel,
+            "channel_label": _channel_label(channel),
             "model_id": state.get("model_id") or "",
             "concurrency_mode": concurrency_mode,
             "concurrency_mode_label": _concurrency_mode_label(concurrency_mode),
             "total": len(items),
             "done": done,
         })
+    default_channel = _safe_image_translate_channel()
     return render_template(
         "image_translate_list.html",
         history=history,
-        gemini_backend=_backend_badge(),
+        gemini_backend=_backend_badge(default_channel),
+        image_translate_channels=_image_translate_channels_payload(),
+        image_translate_default_channel=default_channel,
     )
 
 
@@ -778,7 +878,7 @@ def page_detail(task_id: str):
         "image_translate_detail.html",
         task_id=task_id,
         state=_state_payload(task),
-        gemini_backend=_backend_badge(),
+        gemini_backend=_backend_badge(task.get("channel")),
     )
 
 

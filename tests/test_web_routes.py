@@ -3423,12 +3423,32 @@ def test_image_translate_templates_show_concurrency_mode_pills():
     assert ".it-mode-pill" in styles
 
 
+def test_image_translate_list_template_has_task_channel_controls():
+    root = Path(__file__).resolve().parents[1]
+    list_template = (root / "web" / "templates" / "image_translate_list.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+
+    assert 'id="itChannelPills"' in list_template
+    assert 'id="itChannel"' in list_template
+    assert "image_translate_channels" in list_template
+    assert '"channel": channelEl.value' in scripts
+    assert "channel=\" + encodeURIComponent(channelEl.value)" in scripts
+
+
 def test_image_translate_retry_fetch_handles_non_json_errors():
     root = Path(__file__).resolve().parents[1]
     scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
 
     assert "parseJsonResponse" in scripts
     assert ".catch(function(){ return {}; })" in scripts
+
+
+def test_image_translate_detail_script_has_banana_regenerate_action():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+
+    assert "banana重新生成" in scripts
+    assert "/banana-retry/" in scripts
 
 
 def test_medias_edit_modal_contains_detail_image_translation_controls():
