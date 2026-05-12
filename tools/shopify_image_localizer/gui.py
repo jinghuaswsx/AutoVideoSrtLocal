@@ -144,14 +144,17 @@ class ShopifyImageLocalizerApp:
             height=2,
         )
         self.confirm_login_button.pack(side="left", padx=(8, 0))
-        self._login_shopify_tip_full_text = "第一次用或者店铺登录掉线，先点左侧按钮"
+        self._login_shopify_tip_full_text = (
+            "第一步： 点击登录店铺，登录后选择对应网站\n"
+            "第二步： 确保也进入对应网站后，点已登录，必须点已登录"
+        )
         self.login_shopify_tip_label = tk.Label(
             self.login_shopify_frame,
             text=self._login_shopify_tip_full_text,
             justify="left",
             anchor="w",
             fg="red",
-            font=("TkDefaultFont", 27, "bold"),
+            font=("TkDefaultFont", 14, "bold"),
         )
         self.login_shopify_tip_label.pack(side="left", fill="x", expand=True, padx=(12, 0))
         self.login_shopify_tip_label.bind(
@@ -400,7 +403,7 @@ class ShopifyImageLocalizerApp:
         if avail <= 1:
             return
         font = tkfont.Font(font=label.cget("font"))
-        if font.measure(full) <= avail:
+        if max(font.measure(line) for line in full.splitlines()) <= avail:
             if label.cget("text") != full:
                 label.configure(text=full)
             return

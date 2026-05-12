@@ -156,8 +156,11 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         assert app.login_shopify_tip_label["fg"] == "red"
         assert (
             app.login_shopify_tip_label["text"]
-            == "第一次用或者店铺登录掉线，先点左侧按钮"
+            == "第一步： 点击登录店铺，登录后选择对应网站\n"
+            "第二步： 确保也进入对应网站后，点已登录，必须点已登录"
         )
+        tip_font = gui.tkfont.Font(font=app.login_shopify_tip_label["font"])
+        assert tip_font.cget("size") == 14
 
         packed_widgets = app.main_frame.pack_slaves()
         assert packed_widgets.index(app.login_shopify_frame) < packed_widgets.index(app.product_code_entry)
