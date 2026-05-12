@@ -9,6 +9,14 @@
     return window.MEDIAS_PRODUCT_DETAIL || null;
   }
 
+  function productDetailInitialLang() {
+    const cfg = productDetailConfig() || {};
+    const lang = String(cfg.initialLang || '').trim().toLowerCase();
+    if (!lang) return '';
+    if (LANGUAGES.length && !LANGUAGES.some((item) => item && item.code === lang)) return '';
+    return lang;
+  }
+
   function isProductDetailPage() {
     const cfg = productDetailConfig();
     return !!(cfg && cfg.productId);
@@ -4099,7 +4107,7 @@
       edCloseLinkCheckModal();
       const data = await fetchJSON('/medias/api/products/' + pid);
       edSetProductData(data);
-      edState.activeLang = 'en';
+      edState.activeLang = productDetailInitialLang() || 'en';
       edState.linkCheckDetailTask = null;
       edState.linkCheckDetailError = '';
       $('edName').value = data.product.name || '';
