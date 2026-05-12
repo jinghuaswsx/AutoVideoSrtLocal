@@ -15,7 +15,30 @@
 .tabcut-view-tabs { display:flex; gap:8px; margin-bottom:12px; }
 .tabcut-view-tab { height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; font-weight:700; cursor:pointer; }
 .tabcut-view-tab.active { border-color:#0f766e; background:#ecfdf5; color:#0f766e; }
-.tabcut-table-wrap { overflow-x:auto; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
+.tabcut-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 12px; color:#64748b; font-size:13px; }
+.tabcut-results { border:1px solid #d8dee8; border-radius:8px; background:#eef2f7; overflow:hidden; }
+.tabcut-video-grid { display:grid; grid-template-columns:repeat(4, minmax(210px, 1fr)); gap:22px; padding:24px; }
+.tabcut-video-card { min-width:0; padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+.tabcut-video-author { display:grid; grid-template-columns:22px minmax(0, max-content) minmax(0, 1fr); align-items:center; gap:6px; min-width:0; height:24px; }
+.tabcut-avatar, .tabcut-avatar-fallback { width:18px; height:18px; border-radius:50%; object-fit:cover; background:#cbd5e1; }
+.tabcut-avatar-fallback { display:block; }
+.tabcut-author-name { min-width:0; max-width:92px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; font-weight:800; color:#334155; }
+.tabcut-tags { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#94a3b8; font-size:10px; }
+.tabcut-video-cover-link { display:block; margin-top:10px; border-radius:6px; overflow:hidden; text-decoration:none; }
+.tabcut-video-cover { display:block; width:100%; aspect-ratio:9/16; border-radius:6px; object-fit:cover; background:#dbe3ee; }
+.tabcut-cover-placeholder { display:flex; align-items:center; justify-content:center; width:100%; aspect-ratio:9/16; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; color:#94a3b8; font-size:12px; }
+.tabcut-cover-frame { position:relative; display:block; }
+.tabcut-video-badges { position:absolute; left:8px; bottom:8px; display:flex; gap:4px; align-items:center; }
+.tabcut-video-badge { min-width:28px; height:18px; padding:0 5px; border-radius:3px; background:rgba(220,38,38,.74); color:#fff; font-size:11px; font-weight:800; line-height:18px; text-align:center; }
+.tabcut-publish { margin-top:10px; color:#334155; font-size:12px; }
+.tabcut-stats { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin-top:10px; }
+.tabcut-stat-label { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#94a3b8; font-size:11px; }
+.tabcut-stat-value { margin-top:3px; color:#1f2937; font-size:16px; font-weight:800; font-variant-numeric:tabular-nums; }
+.tabcut-product-mini { display:grid; grid-template-columns:48px minmax(0, 1fr); gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #edf2f7; min-height:58px; }
+.tabcut-product-mini img, .tabcut-product-img-empty { width:48px; height:48px; border-radius:6px; object-fit:cover; background:#f1f5f9; border:1px solid #e2e8f0; }
+.tabcut-product-title { min-width:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; color:#334155; font-size:12px; line-height:1.25; }
+.tabcut-product-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:#475569; font-size:10px; font-weight:700; }
+.tabcut-table-wrap { overflow-x:auto; background:#fff; }
 .tabcut-table { width:100%; min-width:1180px; border-collapse:collapse; font-size:13px; }
 .tabcut-table th { position:sticky; top:0; padding:10px; border-bottom:1px solid #d8dee8; background:#f8fafc; color:#64748b; text-align:left; white-space:nowrap; }
 .tabcut-table td { padding:10px; border-bottom:1px solid #edf2f7; vertical-align:top; }
@@ -24,12 +47,18 @@
 .tabcut-num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .tabcut-muted { color:#64748b; }
 .tabcut-cover { width:54px; height:54px; border-radius:6px; object-fit:cover; background:#eef2f7; }
-.tabcut-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 12px; color:#64748b; font-size:13px; }
 .tabcut-pager { display:flex; gap:8px; justify-content:center; padding:12px; }
 .tabcut-empty { padding:36px; text-align:center; color:#64748b; }
+@media (max-width: 1280px) {
+  .tabcut-video-grid { grid-template-columns:repeat(3, minmax(210px, 1fr)); }
+}
 @media (max-width: 980px) {
   .tabcut-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); }
   .tabcut-actions { grid-column:1 / -1; }
+  .tabcut-video-grid { grid-template-columns:repeat(2, minmax(190px, 1fr)); padding:16px; }
+}
+@media (max-width: 640px) {
+  .tabcut-video-grid { grid-template-columns:1fr; }
 }
 {% endblock %}
 
@@ -92,11 +121,14 @@
     <button class="tabcut-btn secondary" type="button" onclick="refreshTabcut()">Refresh</button>
   </div>
 
-  <div class="tabcut-table-wrap">
-    <table class="tabcut-table">
-      <thead id="tabcutHead"></thead>
-      <tbody id="tabcutBody"><tr><td class="tabcut-empty">Loading...</td></tr></tbody>
-    </table>
+  <div class="tabcut-results">
+    <div id="tabcutVideoGrid" class="tabcut-video-grid"></div>
+    <div class="tabcut-table-wrap" id="tabcutTableWrap" hidden>
+      <table class="tabcut-table">
+        <thead id="tabcutHead"></thead>
+        <tbody id="tabcutBody"><tr><td class="tabcut-empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
   </div>
   <div class="tabcut-pager" id="tabcutPager"></div>
 </div>
@@ -108,7 +140,91 @@ let tabcutPage = 1;
 function qs(id) { return document.getElementById(id); }
 function fmtInt(v) { const n = Number(v || 0); return n ? n.toLocaleString() : ""; }
 function fmtMoney(v) { const n = Number(v || 0); return n ? "$" + n.toLocaleString(undefined, {maximumFractionDigits: 0}) : ""; }
+function fmtCompact(v) {
+  const n = Number(v || 0);
+  if (!n) return "0";
+  if (Math.abs(n) >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toLocaleString();
+}
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function durationText(ms) {
+  const n = Number(ms || 0);
+  if (!n) return "";
+  const seconds = n > 1000 ? Math.round(n / 1000) : Math.round(n);
+  return `${seconds}s`;
+}
+function formatDateTime(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const match = text.match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  if (match) return `${match[1]} ${match[2]}`;
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) {
+    const pad = n => String(n).padStart(2, "0");
+    return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  }
+  return text;
+}
+function videoHref(row) {
+  if (row.tk_video_url) return row.tk_video_url;
+  const author = String(row.author_name || "").replace(/^@/, "").trim();
+  if (author && row.video_id) return `https://www.tiktok.com/@${encodeURIComponent(author)}/video/${encodeURIComponent(row.video_id)}`;
+  return "";
+}
+function renderAvatar(row) {
+  return row.author_avatar_url
+    ? `<img class="tabcut-avatar" src="${esc(row.author_avatar_url)}" loading="lazy" alt="">`
+    : `<span class="tabcut-avatar-fallback"></span>`;
+}
+function renderTags(row) {
+  const tags = Array.isArray(row.hashtags) ? row.hashtags : [];
+  return tags.map(tag => `#${esc(tag)}`).join(" ");
+}
+function renderVideoCover(row) {
+  const cover = row.video_cover_url || row.primary_item_pic_url || "";
+  const duration = durationText(row.video_duration_ms);
+  const inner = cover
+    ? `<img class="tabcut-video-cover" src="${esc(cover)}" loading="lazy" alt="">`
+    : `<span class="tabcut-cover-placeholder">No cover</span>`;
+  const frame = `<span class="tabcut-cover-frame">${inner}<span class="tabcut-video-badges"><span class="tabcut-video-badge">美国</span>${duration ? `<span class="tabcut-video-badge">${esc(duration)}</span>` : ""}</span></span>`;
+  const href = videoHref(row);
+  return href ? `<a class="tabcut-video-cover-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${frame}</a>` : `<span class="tabcut-video-cover-link">${frame}</span>`;
+}
+function renderProductMini(row) {
+  const image = row.primary_item_pic_url ? `<img src="${esc(row.primary_item_pic_url)}" loading="lazy" alt="">` : `<span class="tabcut-product-img-empty"></span>`;
+  const title = row.primary_item_name || row.primary_item_id || "";
+  const symbol = row.currency_symbol || "$";
+  const price = Number(row.primary_item_price_min || row.primary_item_price_max || 0);
+  const sold = row.primary_item_sold_count || row.goods_sold_count_7d || row.item_sold_count;
+  return `
+    <div class="tabcut-product-mini">
+      ${image}
+      <div>
+        <div class="tabcut-product-title">${esc(title)}</div>
+        <div class="tabcut-product-meta"><span>${price ? `${esc(symbol)} ${price.toLocaleString(undefined, {maximumFractionDigits: 2})}` : ""}</span><span>销量:${fmtCompact(sold)}</span></div>
+      </div>
+    </div>`;
+}
+function renderVideoCard(row) {
+  return `
+    <article class="tabcut-video-card">
+      <div class="tabcut-video-author">
+        ${renderAvatar(row)}
+        <span class="tabcut-author-name">${esc(row.author_name || "")}</span>
+        <span class="tabcut-tags">${renderTags(row)}</span>
+      </div>
+      ${renderVideoCover(row)}
+      <div class="tabcut-publish">发布时间：${esc(formatDateTime(row.create_time))}</div>
+      <div class="tabcut-stats">
+        <div><div class="tabcut-stat-label">月播放量</div><div class="tabcut-stat-value">${fmtCompact(row.play_count)}</div></div>
+        <div><div class="tabcut-stat-label">月获赞数</div><div class="tabcut-stat-value">${fmtCompact(row.like_count)}</div></div>
+        <div><div class="tabcut-stat-label">月分享数</div><div class="tabcut-stat-value">${fmtCompact(row.share_count)}</div></div>
+        <div><div class="tabcut-stat-label">月评论数</div><div class="tabcut-stat-value">${fmtCompact(row.comment_count)}</div></div>
+      </div>
+      ${renderProductMini(row)}
+    </article>`;
+}
 
 function setTabcutView(view) {
   tabcutView = view;
@@ -132,6 +248,8 @@ async function loadTabcut(page) {
   const resp = await fetch(`${endpoint}?${paramsFor(page).toString()}`);
   const data = await resp.json();
   if (!resp.ok) {
+    qs("tabcutVideoGrid").innerHTML = "";
+    qs("tabcutTableWrap").hidden = false;
     qs("tabcutBody").innerHTML = `<tr><td class="tabcut-empty">${esc(data.error || "Load failed")}</td></tr>`;
     qs("tabcutStatus").textContent = "Load failed";
     return;
@@ -143,25 +261,17 @@ function renderTabcut(data) {
   const rows = data.items || [];
   qs("tabcutStatus").textContent = `${fmtInt(data.total)} rows`;
   if (tabcutView === "videos") {
-    qs("tabcutHead").innerHTML = "<tr><th>#</th><th>Video</th><th>Product</th><th class='tabcut-num'>Score</th><th class='tabcut-num'>Plays</th><th class='tabcut-num'>Video Sales</th><th class='tabcut-num'>Product Sales</th><th class='tabcut-num'>GMV</th><th>Category</th></tr>";
-    qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
-      <tr>
-        <td>${(data.page - 1) * data.page_size + idx + 1}</td>
-        <td class="tabcut-name"><strong>${esc(row.video_id)}</strong><div class="tabcut-muted">${esc(row.primary_item_id || "")}</div></td>
-        <td class="tabcut-name">${esc(row.primary_item_id || "")}</td>
-        <td class="tabcut-num">${Number(row.score || 0).toFixed(1)}</td>
-        <td class="tabcut-num">${fmtInt(row.play_count)}</td>
-        <td class="tabcut-num">${fmtInt(row.item_sold_count)}</td>
-        <td class="tabcut-num">${fmtInt(row.goods_sold_count_7d)}</td>
-        <td class="tabcut-num">${fmtMoney(row.goods_gmv_7d)}</td>
-        <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
-      </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='9'>No data</td></tr>";
+    qs("tabcutTableWrap").hidden = true;
+    qs("tabcutVideoGrid").hidden = false;
+    qs("tabcutVideoGrid").innerHTML = rows.length ? rows.map(renderVideoCard).join("") : "<div class='tabcut-empty'>No data</div>";
   } else {
+    qs("tabcutVideoGrid").hidden = true;
+    qs("tabcutTableWrap").hidden = false;
     qs("tabcutHead").innerHTML = "<tr><th>#</th><th></th><th>Product</th><th>Category</th><th class='tabcut-num'>Sales</th><th class='tabcut-num'>GMV</th><th class='tabcut-num'>Total Sales</th><th class='tabcut-num'>Total GMV</th><th class='tabcut-num'>Videos</th></tr>";
     qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
       <tr>
         <td>${(data.page - 1) * data.page_size + idx + 1}</td>
-        <td>${row.item_pic_url ? `<img class="tabcut-cover" src="${esc(row.item_pic_url)}" alt="">` : ""}</td>
+        <td>${row.item_pic_url ? `<img class="tabcut-cover" src="${esc(row.item_pic_url)}" loading="lazy" alt="">` : ""}</td>
         <td class="tabcut-name"><strong>${esc(row.item_name)}</strong><div class="tabcut-muted">${esc(row.item_id)}</div></td>
         <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
         <td class="tabcut-num">${fmtInt(row.sold_count_7d || row.sold_count_period)}</td>

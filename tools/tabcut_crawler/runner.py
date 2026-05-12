@@ -34,8 +34,8 @@ def recent_biz_dates(days: int = 7, *, today: date | None = None) -> list[str]:
 
 def build_recent7_plan(biz_dates: list[str]) -> list[CrawlSource]:
     plan = [
-        CrawlSource("video_7d_play", 5, lambda page: video_ranking_url(sort=10, page_no=page, rank_day=7), "video"),
-        CrawlSource("video_7d_sales", 5, lambda page: video_ranking_url(sort=60, page_no=page, rank_day=7), "video"),
+        CrawlSource("video_30d_play", 5, lambda page: video_ranking_url(sort=10, page_no=page, rank_day=30), "video"),
+        CrawlSource("video_30d_sales", 5, lambda page: video_ranking_url(sort=60, page_no=page, rank_day=30), "video"),
     ]
     for biz_date in biz_dates:
         plan.append(

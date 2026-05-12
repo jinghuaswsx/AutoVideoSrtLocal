@@ -10,14 +10,14 @@ QueryFn = Callable[[str, list[Any]], list[dict]]
 ExecuteFn = Callable[[str, list[Any]], Any]
 
 VIDEO_SORTS = {
-    "score": "score",
-    "play_count": "play_count",
-    "item_sold_count": "item_sold_count",
-    "video_split_sold_count": "video_split_sold_count",
-    "video_split_gmv": "video_split_gmv",
-    "goods_sold_count_7d": "goods_sold_count_7d",
-    "goods_gmv_7d": "goods_gmv_7d",
-    "goods_growth_rate_7d": "goods_growth_rate_7d",
+    "score": "c.score",
+    "play_count": "c.play_count",
+    "item_sold_count": "c.item_sold_count",
+    "video_split_sold_count": "c.video_split_sold_count",
+    "video_split_gmv": "c.video_split_gmv",
+    "goods_sold_count_7d": "c.goods_sold_count_7d",
+    "goods_gmv_7d": "c.goods_gmv_7d",
+    "goods_growth_rate_7d": "c.goods_growth_rate_7d",
 }
 
 GOODS_SORTS = {
@@ -61,14 +61,14 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 50, 10, 200)
     offset = (page - 1) * page_size
-    sort_column = VIDEO_SORTS.get(str(args.get("sort") or "score"), "score")
-    where = ["region = %s"]
+    sort_column = VIDEO_SORTS.get(str(args.get("sort") or "score"), "c.score")
+    where = ["c.region = %s"]
     params: list[Any] = [str(args.get("region") or "US")]
 
     for arg_name, column in [
-        ("category_l1", "category_l1_name"),
-        ("category_l2", "category_l2_name"),
-        ("category_l3", "category_l3_name"),
+        ("category_l1", "c.category_l1_name"),
+        ("category_l2", "c.category_l2_name"),
+        ("category_l3", "c.category_l3_name"),
     ]:
         value = _text_arg(args, arg_name)
         if value:
@@ -77,12 +77,12 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
 
     min_video_sales = _int_arg(args, "min_video_sales", 0, 0, 10**12)
     if min_video_sales:
-        where.append("item_sold_count >= %s")
+        where.append("c.item_sold_count >= %s")
         params.append(min_video_sales)
 
     for arg_name, column in [
-        ("min_goods_sales_7d", "goods_sold_count_7d"),
-        ("min_total_sales", "goods_sold_count_total"),
+        ("min_goods_sales_7d", "c.goods_sold_count_7d"),
+        ("min_total_sales", "c.goods_sold_count_total"),
     ]:
         value = _int_arg(args, arg_name, 0, 0, 10**12)
         if value:
@@ -90,8 +90,8 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
             params.append(value)
 
     for arg_name, column in [
-        ("min_goods_gmv_7d", "goods_gmv_7d"),
-        ("min_video_gmv", "video_split_gmv"),
+        ("min_goods_gmv_7d", "c.goods_gmv_7d"),
+        ("min_video_gmv", "c.video_split_gmv"),
     ]:
         value = _float_arg(args, arg_name)
         if value is not None:
@@ -100,15 +100,46 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
 
     where_sql = " AND ".join(where)
     count_rows = query_fn(
-        f"SELECT COUNT(*) AS cnt FROM tabcut_video_candidates WHERE {where_sql}",
+        f"SELECT COUNT(*) AS cnt FROM tabcut_video_candidates c WHERE {where_sql}",
         list(params),
     )
     rows = query_fn(
         f"""
-        SELECT *
-        FROM tabcut_video_candidates
+        SELECT c.id, c.biz_date, c.region, c.video_id, c.primary_item_id,
+               c.score, c.score_parts_json, COALESCE(vs.play_count, c.play_count) AS play_count,
+               vs.like_count, vs.share_count, vs.comment_count,
+               c.item_sold_count, c.video_split_sold_count, c.video_split_gmv,
+               c.goods_sold_count_7d, c.goods_gmv_7d,
+               c.goods_sold_count_total, c.goods_gmv_total, c.goods_growth_rate_7d,
+               c.category_l1_name, c.category_l2_name, c.category_l3_name,
+               c.candidate_json, c.crawled_at,
+               v.video_cover_url, v.tk_video_url, v.video_desc, v.author_name,
+               v.author_avatar_url, v.video_duration_ms, v.create_time,
+               v.raw_json AS video_raw_json,
+               g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
+               gs.price_min AS primary_item_price_min,
+               gs.price_max AS primary_item_price_max,
+               COALESCE(gs.sold_count_7d, gs.sold_count_period) AS primary_item_sold_count
+        FROM tabcut_video_candidates c
+        LEFT JOIN (
+            SELECT biz_date, region, video_id,
+                   MAX(play_count) AS play_count,
+                   MAX(like_count) AS like_count,
+                   MAX(share_count) AS share_count,
+                   MAX(comment_count) AS comment_count
+            FROM tabcut_video_snapshots
+            GROUP BY biz_date, region, video_id
+        ) vs ON vs.biz_date = c.biz_date
+            AND vs.region = c.region
+            AND vs.video_id = c.video_id
+        LEFT JOIN tabcut_videos v ON v.video_id = c.video_id
+        LEFT JOIN tabcut_goods g ON g.item_id = c.primary_item_id
+        LEFT JOIN tabcut_goods_snapshots gs
+               ON gs.biz_date = c.biz_date
+              AND gs.region = c.region
+              AND gs.item_id = c.primary_item_id
         WHERE {where_sql}
-        ORDER BY {sort_column} DESC, video_id ASC
+        ORDER BY {sort_column} DESC, c.video_id ASC
         LIMIT %s OFFSET %s
         """,
         list(params) + [page_size, offset],
