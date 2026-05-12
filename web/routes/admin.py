@@ -35,18 +35,20 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 def _render_users_page(error=None, status: int = 200):
     all_users = list_users()
-    # 为模板序列化 permissions JSON
+    # 为模板准备权限对象；模板侧用 tojson 注入 JS 参数，避免 inline handler 注入。
     import json as _json
     for u in all_users:
         raw = u.get("permissions")
-        if raw is None:
-            u["permissions_json"] = "{}"
-        elif isinstance(raw, dict):
-            u["permissions_json"] = _json.dumps(raw, ensure_ascii=False)
+        if isinstance(raw, dict):
+            u["permissions_payload"] = raw
         elif isinstance(raw, str):
-            u["permissions_json"] = raw
+            try:
+                parsed = _json.loads(raw)
+            except Exception:
+                parsed = {}
+            u["permissions_payload"] = parsed if isinstance(parsed, dict) else {}
         else:
-            u["permissions_json"] = _json.dumps(raw) if raw else "{}"
+            u["permissions_payload"] = {}
     return render_template("admin_users.html", users=all_users, error=error,
                            role_labels=ROLE_LABELS, current_user_id=current_user.id,
                            perm_groups=grouped_permissions(),

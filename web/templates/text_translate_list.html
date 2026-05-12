@@ -51,7 +51,7 @@
     <span class="tt-item-status {{ r.status }}">
       {% if r.status == 'done' %}已完成{% elif r.status == 'created' %}待翻译{% else %}{{ r.status }}{% endif %}
     </span>
-    <button class="tt-item-delete" onclick="deleteItem(event, '{{ r.id }}')" title="删除">🗑</button>
+    <button class="tt-item-delete" onclick='deleteItem(event, {{ r.id | tojson }})' title="删除">🗑</button>
   </a>
   {% endfor %}
 </div>

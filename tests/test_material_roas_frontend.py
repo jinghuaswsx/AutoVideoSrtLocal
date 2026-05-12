@@ -344,7 +344,7 @@ def test_modal_head_contains_open_in_page_pill_button():
     assert 'id="roasOpenInPage"' in html
     assert 'class="oc-btn pill ghost"' in html or 'class="oc-btn ghost pill"' in html
     assert 'target="_blank"' in html
-    assert 'rel="noopener"' in html
+    assert 'rel="noopener noreferrer"' in html
     assert "在新页面打开" in html
 
 

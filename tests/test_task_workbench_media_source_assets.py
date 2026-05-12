@@ -38,3 +38,19 @@ def test_task_workbench_duration_round_audio_sources_are_sanitized():
     assert 'src="${escapeAttr(postUrl)}"' in speedup_block
     assert 'src="${preUrl}"' not in speedup_block
     assert 'src="${postUrl}"' not in speedup_block
+
+
+def test_task_workbench_voice_list_avoids_inline_handlers_for_api_fields():
+    voice_block = SCRIPT[
+        SCRIPT.index("function renderVoiceList"):
+        SCRIPT.index("function selectVoice")
+    ]
+
+    assert 'const voiceId = String(voice.id == null ? "" : voice.id);' in voice_block
+    assert 'const gender = voice.gender === "female" ? "female" : "male";' in voice_block
+    assert 'data-voice-id="${escapeHtml(voiceId)}"' in voice_block
+    assert 'data-preview-url="${escapeHtml(previewUrl)}"' in voice_block
+    assert 'list.querySelectorAll(".voice-item").forEach' in voice_block
+    assert 'list.querySelectorAll(".voice-play-btn[data-preview-url]").forEach' in voice_block
+    assert 'onclick="selectVoice(${voice.id})"' not in voice_block
+    assert 'onclick="playVoicePreview(event,' not in voice_block

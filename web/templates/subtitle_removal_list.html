@@ -176,7 +176,7 @@
         var showDownload = (status === "done") && it.provider_result_url;
         var actions = '<a class="btn btn-secondary" href="' + escapeHtml(it.detail_url) + '">查看</a>';
         if (showDownload) {
-          actions += '<a class="btn btn-primary" href="' + escapeHtml(it.download_url) + '" target="_blank">下载</a>';
+          actions += '<a class="btn btn-primary" href="' + escapeHtml(it.download_url) + '" target="_blank" rel="noopener noreferrer">下载</a>';
         }
         var elapsedLabel = fmtElapsed(it.elapsed_seconds);
         return (

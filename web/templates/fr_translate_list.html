@@ -130,9 +130,9 @@
         {% endif %}
       </div>
     </a>
-    <button class="card-menu-btn" onclick="toggleMenu(event,'menu-{{ p.id }}')">⋯</button>
+    <button class="card-menu-btn" onclick='toggleMenu(event, "menu-" + {{ p.id | tojson }})'>⋯</button>
     <div class="card-menu" id="menu-{{ p.id }}">
-      <button class="danger" onclick="deleteTask(event,'{{ p.id }}')">删除</button>
+      <button class="danger" onclick='deleteTask(event, {{ p.id | tojson }})'>删除</button>
     </div>
   </div>
   {% endfor %}
@@ -156,9 +156,9 @@
         </div>
       </div>
     </a>
-    <button class="list-menu-btn" onclick="toggleMenu(event,'lmenu-{{ p.id }}')">⋯</button>
+    <button class="list-menu-btn" onclick='toggleMenu(event, "lmenu-" + {{ p.id | tojson }})'>⋯</button>
     <div class="card-menu" id="lmenu-{{ p.id }}">
-      <button class="danger" onclick="deleteTask(event,'{{ p.id }}')">删除</button>
+      <button class="danger" onclick='deleteTask(event, {{ p.id | tojson }})'>删除</button>
     </div>
   </div>
   {% endfor %}

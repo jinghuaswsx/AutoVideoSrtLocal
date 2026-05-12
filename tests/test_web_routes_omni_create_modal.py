@@ -89,6 +89,11 @@ def test_javascript_loads_presets_on_modal_open(omni_list_html):
     assert "/api/omni-presets/default" in omni_list_html
 
 
+def test_preset_loading_error_message_is_escaped(omni_list_html):
+    assert "能力点加载失败：' + _escapeHtml(err.message || err)" in omni_list_html
+    assert "能力点加载失败：' + (err.message || err)" not in omni_list_html
+
+
 def test_javascript_implements_dependency_locks(omni_list_html):
     """互斥/依赖联动逻辑在前端"""
     # 函数名 + 关键约束都在脚本里

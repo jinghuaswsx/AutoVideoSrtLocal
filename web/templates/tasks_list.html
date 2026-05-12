@@ -246,7 +246,7 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
         <select id="tcCreateItem" class="tc-input" style="width:100%;">
           ${items.length ? itemOpts : '<option value="">该产品下还没有英文 item</option>'}
         </select>
-        ${items.length ? '' : '<div style="color:var(--tc-danger-fg); font-size:12px; margin-top:4px;"><a href="/medias/" target="_blank">先去素材管理上传英文原片</a></div>'}
+        ${items.length ? '' : '<div style="color:var(--tc-danger-fg); font-size:12px; margin-top:4px;"><a href="/medias/" target="_blank" rel="noopener noreferrer">先去素材管理上传英文原片</a></div>'}
       </div>
       <div style="margin-bottom:12px;">
         <label>翻译员：${isOldProduct ? '<span style="color:var(--tc-fg-muted); font-size:12px;">(老品自动沿用产品负责人)</span>' : ''}</label>

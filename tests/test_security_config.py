@@ -108,6 +108,32 @@ class TestInternalCookieApiCsrfGuard:
         assert response.status_code == 400
         assert response.get_json()["error"] == "csrf_required"
 
+    @pytest.mark.parametrize(
+        ("method", "path", "kwargs"),
+        [
+            ("post", "/order-profit/api/manual_match", {"json": {}}),
+            (
+                "delete",
+                "/order-analytics/product-profit/ads/manual-match/1",
+                {},
+            ),
+        ],
+    )
+    def test_cookie_profit_apis_reject_unsafe_request_without_ajax_or_csrf_header(
+        self,
+        monkeypatch,
+        method,
+        path,
+        kwargs,
+    ):
+        app = self._create_app(monkeypatch)
+        client = app.test_client()
+
+        response = getattr(client, method)(path, **kwargs)
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "csrf_required"
+
     def test_cookie_json_api_allows_ajax_header_to_reach_auth_layer(
         self,
         monkeypatch,

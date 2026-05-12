@@ -293,6 +293,7 @@
 
     const list = bubble.querySelector('[data-bt-bubble-list]');
     list.innerHTML = Array.from(activeTasks.entries()).map(([tid, t]) => {
+      const taskId = String(tid || "");
       const p = t.progress || { total: 0, done: 0, skipped: 0 };
       const d = (p.done || 0) + (p.skipped || 0);
       const bar = barOf(d, p.total);
@@ -300,9 +301,9 @@
                          t.status === 'done' ? ' <span style="color:oklch(38% 0.09 165)">✓ 完成</span>' : '';
       return `
         <div class="bt-bubble-task">
-          <div class="bt-bubble-task__name">📦 ${escapeHtml(t.productName || '任务 ' + tid.slice(0, 8))}${statusBadge}</div>
+          <div class="bt-bubble-task__name">📦 ${escapeHtml(t.productName || '任务 ' + taskId.slice(0, 8))}${statusBadge}</div>
           <div class="bt-bubble-task__progress">${bar} ${d}/${p.total || 0}</div>
-          <a class="bt-bubble-task__link" href="/tasks/${tid}">查看详情 →</a>
+          <a class="bt-bubble-task__link" href="/tasks/${encodeURIComponent(taskId)}">查看详情 →</a>
         </div>
       `;
     }).join('');

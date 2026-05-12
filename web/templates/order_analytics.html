@@ -6682,7 +6682,7 @@
         partial: { cls: 'ams-status-partial', label: '●部分sync' },
         manual:  { cls: 'ams-status-manual',  label: '○手动兜底' }
       };
-      var x = map[status] || { cls: '', label: status };
+      var x = map[status] || { cls: '', label: escHtml(status) };
       return '<span class="' + x.cls + '">' + x.label + '</span>';
     }
 
@@ -6732,7 +6732,9 @@
         rows.forEach(function(row) {
           var tr = document.createElement('tr');
           tr.dataset.businessDate = row.business_date;
-          var html = '<td>' + row.business_date + '</td>';
+          var businessDateHtml = escHtml(row.business_date);
+          var businessDateAttr = escHtml(row.business_date);
+          var html = '<td>' + businessDateHtml + '</td>';
           amsCachedAccounts.forEach(function(acc) {
             var e = (row.entries && row.entries[acc.code]) || {};
             var display;
@@ -6750,10 +6752,11 @@
             return row.entries && row.entries[a.code] && row.entries[a.code].effective === 'manual';
           });
           var updatedBy = anyManualAcct ? (row.entries[anyManualAcct.code].updated_by || '—') : '—';
-          html += '<td>' + updatedBy + '</td>';
+          var updatedByHtml = escHtml(updatedBy);
+          html += '<td>' + updatedByHtml + '</td>';
           html += '<td>'
-            + '<button type="button" class="ams-edit" data-date="' + row.business_date + '">编辑</button>'
-            + (anyManualAcct ? ' <button type="button" class="ams-delete" data-date="' + row.business_date + '">删除</button>' : '')
+            + '<button type="button" class="ams-edit" data-date="' + businessDateAttr + '">编辑</button>'
+            + (anyManualAcct ? ' <button type="button" class="ams-delete" data-date="' + businessDateAttr + '">删除</button>' : '')
             + '</td>';
           tr.innerHTML = html;
           tbody.appendChild(tr);
@@ -6837,9 +6840,13 @@
         wrap.className = 'ams-acct-field';
         var status = (acc.enabled === false) ? ' (已停用)' : '';
         var prefillVal = (prefill[acc.code] !== undefined) ? String(prefill[acc.code]) : '';
-        wrap.innerHTML = (acc.label || acc.code) + ' (' + acc.account_id + ')' + status + '<br>'
-          + '$ <input type="number" step="0.01" min="0" data-acct-code="' + acc.code + '" '
-          + 'value="' + prefillVal + '" placeholder="留空=不录">';
+        var accountLabelHtml = escHtml(acc.label || acc.code || '');
+        var accountIdHtml = escHtml(acc.account_id || '');
+        var accountCodeAttr = escHtml(acc.code || '');
+        var prefillAttr = escHtml(prefillVal);
+        wrap.innerHTML = accountLabelHtml + ' (' + accountIdHtml + ')' + status + '<br>'
+          + '$ <input type="number" step="0.01" min="0" data-acct-code="' + accountCodeAttr + '" '
+          + 'value="' + prefillAttr + '" placeholder="留空=不录">';
         fieldsEl.appendChild(wrap);
       });
       dateEl.value = forDate || (new Date().toISOString().slice(0, 10));

@@ -113,9 +113,9 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
       <td>{{ u.created_at }}</td>
       <td style="display:flex;gap:6px;align-items:center;">
         {% if u.role != 'superadmin' %}
-        <button class="btn-perm" onclick="openPermModal({{ u.id }}, '{{ u.username }}', '{{ u.role }}', {{ u.permissions_json | default('{}') }})">权限配置</button>
+        <button class="btn-perm" onclick='openPermModal({{ u.id | tojson }}, {{ u.username | tojson }}, {{ u.role | tojson }}, {{ u.permissions_payload | tojson }})'>权限配置</button>
         {% else %}
-        <button class="btn-perm" onclick="openPermModal({{ u.id }}, '{{ u.username }}', 'superadmin', {})" title="超管权限不可修改">权限配置</button>
+        <button class="btn-perm" onclick='openPermModal({{ u.id | tojson }}, {{ u.username | tojson }}, "superadmin", {})' title="超管权限不可修改">权限配置</button>
         {% endif %}
         <form method="post" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

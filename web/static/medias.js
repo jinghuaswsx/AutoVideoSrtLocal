@@ -4387,7 +4387,7 @@
             <div class="oc-hint">更新时间：${updatedAt || '-'}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
-            <a class="oc-btn ghost sm" href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener">查看详情</a>
+            <a class="oc-btn ghost sm" href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer">查看详情</a>
             <button type="button" class="oc-btn ghost sm" data-retranslate-lang="${escapeHtml(edState.activeLang)}">重新翻译</button>
           </div>
         </div>
@@ -5009,11 +5009,11 @@
       const appliedLabel = escapeHtml(edDetailTranslateApplyLabel(appliedTask.apply_status || 'applied'));
       const appliedRawTaskId = String(appliedTask.task_id || '');
       const detailUrl = safeInternalHref(appliedTask.detail_url, appliedRawTaskId ? `/image-translate/${encodeURIComponent(appliedRawTaskId)}` : '#');
-      html = `当前 ${escapeHtml(langName)} 详情图已由英语版一键翻译回填（${appliedLabel}）。<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener">查看关联任务</a>`;
+      html = `当前 ${escapeHtml(langName)} 详情图已由英语版一键翻译回填（${appliedLabel}）。<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer">查看关联任务</a>`;
     } else if (latest) {
       const latestRawTaskId = String(latest.task_id || '');
       const detailUrl = safeInternalHref(latest.detail_url, latestRawTaskId ? `/image-translate/${encodeURIComponent(latestRawTaskId)}` : '#');
-      html = `最近一次翻译任务：${escapeHtml(edDetailTranslateStatusLabel(latest.status))} / ${escapeHtml(edDetailTranslateApplyLabel(latest.apply_status))}。<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener">查看任务详情</a>`;
+      html = `最近一次翻译任务：${escapeHtml(edDetailTranslateStatusLabel(latest.status))} / ${escapeHtml(edDetailTranslateApplyLabel(latest.apply_status))}。<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer">查看任务详情</a>`;
     } else {
       html = `当前 ${escapeHtml(langName)} 还没有执行过从英语版一键翻译。`;
     }
@@ -5376,7 +5376,7 @@
           ${checkedAt ? `<span class="oc-link-check-meta">探测于 ${escapeHtml(checkedAt)}</span>` : '<span class="oc-link-check-meta">尚未探测</span>'}
         </div>
         <div class="oc-product-links-row-url">
-          <a class="oc-product-links-url-link" href="${safeUrlAttr}" target="_blank" rel="noopener">${safeUrl || '<空>'}</a>
+          <a class="oc-product-links-url-link" href="${safeUrlAttr}" target="_blank" rel="noopener noreferrer">${safeUrl || '<空>'}</a>
           <button type="button" class="oc-btn ghost sm oc-product-links-copy-url" data-product-links-action="copy" data-domain="${escapeHtml(item.domain)}" title="复制链接">
             <svg width="14" height="14"><use href="#ic-copy"/></svg>
           </button>
@@ -7643,9 +7643,9 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw_ids, target_langs }),
       });
-      const taskId = data.task_id;
+      const taskId = String(data.task_id || '');
       closeTranslateDialog();
-      window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer');
+      window.open(`/tasks/${encodeURIComponent(taskId)}`, '_blank', 'noopener,noreferrer');
     } catch (err) {
       alert(`提交失败：${err.message || err}`);
       translateSubmit.textContent = '提交翻译';

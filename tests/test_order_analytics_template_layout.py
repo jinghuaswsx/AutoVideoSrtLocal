@@ -112,3 +112,21 @@ def test_product_profit_actions_move_into_mobile_content_top():
     assert ".topbar .ppr-actions { display: none; }" in template
     assert "display: grid;" in template
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in template
+
+
+def test_manual_ad_spend_rendering_escapes_server_controlled_values():
+    """Manual ad spend rows include DB/config values; they must not be injected as raw HTML."""
+    template = _template_source()
+
+    manual_block = template[template.index("function amsStatusBadge"): template.index("function amsSaveModal")]
+
+    assert "label: escHtml(status)" in manual_block
+    assert "var businessDateHtml = escHtml(row.business_date);" in manual_block
+    assert "var businessDateAttr = escHtml(row.business_date);" in manual_block
+    assert "var updatedByHtml = escHtml(updatedBy);" in manual_block
+    assert "var accountLabelHtml = escHtml(acc.label || acc.code || '');" in manual_block
+    assert "var accountIdHtml = escHtml(acc.account_id || '');" in manual_block
+    assert "var accountCodeAttr = escHtml(acc.code || '');" in manual_block
+    assert "var prefillAttr = escHtml(prefillVal);" in manual_block
+    assert "var html = '<td>' + row.business_date + '</td>';" not in manual_block
+    assert "wrap.innerHTML = (acc.label || acc.code)" not in manual_block

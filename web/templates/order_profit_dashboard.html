@@ -1144,7 +1144,7 @@ async function refreshCompleteness() {
     const editLink = `/medias?edit_product_id=${encodeURIComponent(p.product_id)}`;
     const productCell = p.completeness.ok
       ? productText
-      : `<a href="${editLink}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">${productText} ↗</a>`;
+      : `<a href="${editLink}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;">${productText} ↗</a>`;
     return `<tr class="op-completeness-row">
       <td>${productCell}</td>
       <td>${status}</td>

@@ -112,6 +112,8 @@ _COOKIE_API_CSRF_GUARDED_BLUEPRINTS = {
     "image_translate",
     "link_check",
     "order_analytics",
+    "order_profit",
+    "product_profit_report",
     "mk_import",
     "raw_video_pool",
     "new_product_review",

@@ -64,26 +64,32 @@
     emptyBox.classList.toggle('hidden', rows.length > 0);
     rowsBox.innerHTML = rows.map(r => {
       const p = r.progress || {};
-      const d = (p.done || 0) + (p.skipped || 0);
+      const taskId = String(r.id || "");
+      const productId = r.product_id == null || r.product_id === "" ? "—" : r.product_id;
+      const targetLangs = Array.isArray(r.target_langs) ? r.target_langs : [];
+      const status = String(r.status || "");
+      const d = Number(p.done || 0) + Number(p.skipped || 0);
+      const total = Number(p.total || 0);
+      const cost = r.cost_actual == null ? 0 : r.cost_actual;
       return `<tr>
-        <td><code>${r.id.slice(0, 8)}</code></td>
-        <td>#${r.product_id || '—'}</td>
-        <td>${(r.target_langs || []).map(flag).join(' ')}</td>
+        <td><code>${esc(taskId.slice(0, 8))}</code></td>
+        <td>#${esc(productId)}</td>
+        <td>${targetLangs.map(flag).join(' ')}</td>
         <td>${esc(r.initiator && r.initiator.user_name || '—')}</td>
         <td>${esc(r.created_at || '—')}</td>
-        <td>${statusBadge(r.status)}</td>
-        <td style="font-family:monospace">${d}/${p.total || 0}</td>
-        <td>${r.status === 'done' ? `¥${r.cost_actual || 0}` : '完成后生成'}</td>
-        <td><a href="/tasks/${r.id}" class="bt-btn bt-btn--ghost" style="height:26px;padding:0 12px;font-size:12px">详情</a></td>
+        <td>${statusBadge(status)}</td>
+        <td style="font-family:monospace">${esc(d)}/${esc(total)}</td>
+        <td>${status === 'done' ? `¥${esc(cost)}` : '完成后生成'}</td>
+        <td><a href="/tasks/${encodeURIComponent(taskId)}" class="bt-btn bt-btn--ghost" style="height:26px;padding:0 12px;font-size:12px">详情</a></td>
       </tr>`;
     }).join('');
   }
 
-  function flag(c) { return { de:'🇩🇪', fr:'🇫🇷', es:'🇪🇸', it:'🇮🇹', ja:'🇯🇵', pt:'🇵🇹' }[c] || c; }
+  function flag(c) { return { de:'🇩🇪', fr:'🇫🇷', es:'🇪🇸', it:'🇮🇹', ja:'🇯🇵', pt:'🇵🇹' }[c] || esc(c); }
   function statusBadge(s) {
     const color = { running:'#0369a1', done:'#047857', error:'#b91c1c', paused:'#64748b', cancelled:'#64748b', planning:'#64748b' }[s] || '#64748b';
     const label = { running:'运行中', done:'✓ 完成', error:'❌ 失败', paused:'已暂停', cancelled:'已取消', planning:'待启动' }[s] || s;
-    return `<span style="color:${color};font-weight:500">${label}</span>`;
+    return `<span style="color:${color};font-weight:500">${esc(label)}</span>`;
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 

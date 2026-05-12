@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 
@@ -92,3 +93,14 @@ def test_user_permissions_update_delegates_and_audits(monkeypatch):
     assert calls[0]["action"] == "admin_user_permissions_updated"
     assert calls[0]["target_type"] == "user"
     assert calls[0]["target_id"] == 9
+
+
+def test_admin_users_permission_button_uses_json_encoded_arguments():
+    template = (Path(__file__).resolve().parents[1] / "web" / "templates" / "admin_users.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "{{ u.username | tojson }}" in template
+    assert "{{ u.role | tojson }}" in template
+    assert "{{ u.permissions_payload | tojson }}" in template
+    assert "openPermModal({{ u.id }}, '{{ u.username }}'" not in template

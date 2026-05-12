@@ -77,7 +77,7 @@
         <tr style="border-bottom: 1px solid var(--border);">
           <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; color: var(--fg-muted);">{{ r.created_at }}</td>
           <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs);">
-            <a href="/multi-translate/{{ r.task_id }}" target="_blank" style="color: var(--accent);">{{ r.task_id[:12] if r.task_id else '-' }}...</a>
+            <a href="/multi-translate/{{ r.task_id }}" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">{{ r.task_id[:12] if r.task_id else '-' }}...</a>
           </td>
           <td style="padding: 8px 12px; font-size: var(--text-sm); color: var(--fg);">{{ r.language }}</td>
           <td style="padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs);">{{ "%.4f"|format(r.speed_ratio|float) }}</td>

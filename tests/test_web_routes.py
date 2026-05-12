@@ -379,6 +379,7 @@ def test_task_and_order_window_open_calls_use_noopener_and_encoded_params():
     root = Path(__file__).resolve().parents[1]
     tasks_template = (root / "web" / "templates" / "tasks_list.html").read_text(encoding="utf-8")
     order_template = (root / "web" / "templates" / "order_analytics.html").read_text(encoding="utf-8")
+    medias_js = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
     assert "new URLSearchParams({" in tasks_template
     assert "window.open(url, '_blank', 'noopener,noreferrer');" in tasks_template
@@ -387,6 +388,9 @@ def test_task_and_order_window_open_calls_use_noopener_and_encoded_params():
     assert "window.open('/raw-video-pool/', '_blank');" not in tasks_template
     assert "window.open('/medias?product_id=' + encodeURIComponent(pid || ''), '_blank', 'noopener,noreferrer');" in order_template
     assert "window.open('/medias?product_id=' + pid, '_blank');" not in order_template
+    assert "const taskId = String(data.task_id || '');" in medias_js
+    assert "window.open(`/tasks/${encodeURIComponent(taskId)}`, '_blank', 'noopener,noreferrer');" in medias_js
+    assert "window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer');" not in medias_js
 
 
 def test_copywriting_download_window_open_uses_noopener_and_encoded_task_id():
@@ -394,6 +398,55 @@ def test_copywriting_download_window_open_uses_noopener_and_encoded_task_id():
 
     assert 'window.open("/api/copywriting/" + encodeURIComponent(TASK_ID || "") + "/download/copy", "_blank", "noopener,noreferrer");' in scripts
     assert 'window.open("/api/copywriting/" + TASK_ID + "/download/copy");' not in scripts
+
+
+def test_project_rename_buttons_json_encode_inline_handler_arguments():
+    safe_call = "openRename({{ p.id | tojson }}, {{ (p.display_name or (p.original_filename or '')[:10]) | tojson }})"
+    unsafe_call = "openRename('{{ p.id }}','{{ (p.display_name or (p.original_filename or '')[:10])|e }}')"
+
+    for template_path in (
+        Path("web/templates/copywriting_list.html"),
+        Path("web/templates/projects.html"),
+    ):
+        source = template_path.read_text(encoding="utf-8")
+        assert source.count(safe_call) == 2
+        assert unsafe_call not in source
+
+
+def test_list_action_buttons_json_encode_inline_ids():
+    unsafe_snippets = (
+        "toggleMenu(event,'menu-{{ p.id }}')",
+        "toggleMenu(event,'lmenu-{{ p.id }}')",
+        "deleteTask(event,'{{ p.id }}')",
+        "deleteItem(event, '{{ r.id }}')",
+    )
+
+    for template_path in (
+        Path("web/templates/copywriting_list.html"),
+        Path("web/templates/projects.html"),
+        Path("web/templates/de_translate_list.html"),
+        Path("web/templates/fr_translate_list.html"),
+        Path("web/templates/ja_translate_list.html"),
+        Path("web/templates/multi_translate_list.html"),
+        Path("web/templates/omni_translate_list.html"),
+        Path("web/templates/text_translate_list.html"),
+    ):
+        source = template_path.read_text(encoding="utf-8")
+        for snippet in unsafe_snippets:
+            assert snippet not in source
+
+
+def test_bulk_translate_list_escapes_dynamic_rows_and_encodes_detail_links():
+    source = Path("web/templates/bulk_translate_list.html").read_text(encoding="utf-8")
+
+    assert 'const taskId = String(r.id || "");' in source
+    assert "${esc(taskId.slice(0, 8))}" in source
+    assert 'href="/tasks/${encodeURIComponent(taskId)}"' in source
+    assert "}[c] || esc(c);" in source
+    assert "return `<span style=\"color:${color};font-weight:500\">${esc(label)}</span>`;" in source
+    assert "<td><code>${r.id.slice(0, 8)}</code></td>" not in source
+    assert 'href="/tasks/${r.id}"' not in source
+    assert "}[c] || c;" not in source
 
 
 def test_subtitle_removal_upload_panel_hides_local_vsr_backend_column():
@@ -3307,7 +3360,7 @@ def test_medias_scripts_wire_raw_source_translate_dialog():
     assert 'controls playsinline preload="metadata"' in medias_js
     assert "function rawSourceLangDisplayName(lang)" in medias_js
     assert "const name = escapeHtml(rawSourceLangDisplayName(lang));" in medias_js
-    assert "window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer')" in medias_js
+    assert "window.open(`/tasks/${encodeURIComponent(taskId)}`, '_blank', 'noopener,noreferrer')" in medias_js
     assert "window.location.href = `/tasks/${taskId}`" not in medias_js
 
 
@@ -3433,7 +3486,7 @@ def test_medias_scripts_wire_material_link_check_flow():
     assert 'function edOpenLocalizedProductUrl()' not in medias_js
     assert "window.open(url, '_blank', 'noopener')" not in medias_js
     assert 'function edStartLinkCheck()' in medias_js
-    assert 'function edPollLinkCheck(lang)' in medias_js
+    assert 'function edPollLinkCheck(lang, domain)' in medias_js
     assert 'function edOpenLinkCheckModal()' in medias_js
     assert 'function edRenderLinkCheckSummary(task)' in medias_js
     assert '/medias/api/products/${pid}/link-check' in medias_js

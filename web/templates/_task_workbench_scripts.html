@@ -143,17 +143,28 @@
       list.innerHTML = '<div class="voice-list-empty">暂无音色，点击右上角导入</div>';
       return;
     }
-    list.innerHTML = _voicesCache.map(voice => `
-      <div class="voice-item ${_selectedVoiceId == voice.id ? 'selected' : ''}"
-           data-voice-id="${voice.id}" onclick="selectVoice(${voice.id})">
+    list.innerHTML = _voicesCache.map(voice => {
+      const voiceId = String(voice.id == null ? "" : voice.id);
+      const gender = voice.gender === "female" ? "female" : "male";
+      const previewUrl = safeMediaSrc(voice.preview_url);
+      return `
+      <div class="voice-item ${_selectedVoiceId == voiceId ? 'selected' : ''}"
+           data-voice-id="${escapeHtml(voiceId)}">
         <div class="voice-item-info">
           <div class="voice-item-name">${escapeHtml(voice.name)}</div>
           <div class="voice-item-desc">${escapeHtml(voice.description || '')}</div>
         </div>
-        <span class="voice-item-gender ${voice.gender}">${voice.gender === 'female' ? '女声' : '男声'}</span>
-        <button class="voice-play-btn ${voice.preview_url ? '' : 'disabled'}" ${voice.preview_url ? `onclick="playVoicePreview(event, '${escapeJs(voice.preview_url)}', this)"` : 'disabled'} title="试听">&#9654;</button>
+        <span class="voice-item-gender ${gender}">${gender === 'female' ? '女声' : '男声'}</span>
+        <button class="voice-play-btn ${previewUrl ? '' : 'disabled'}" ${previewUrl ? `data-preview-url="${escapeHtml(previewUrl)}"` : 'disabled'} title="试听">&#9654;</button>
       </div>
-    `).join("");
+    `;
+    }).join("");
+    list.querySelectorAll(".voice-item").forEach(item => {
+      item.addEventListener("click", () => selectVoice(item.dataset.voiceId));
+    });
+    list.querySelectorAll(".voice-play-btn[data-preview-url]").forEach(btn => {
+      btn.addEventListener("click", event => playVoicePreview(event, btn.dataset.previewUrl, btn));
+    });
   }
 
   function selectVoice(voiceId) {
@@ -2973,7 +2984,7 @@
       evalSection = `
         <div class="tts-speedup-summary">
           AI 评估已生成（eval_id=${r.speedup_eval_id}），完整评分见
-          <a href="/admin/tts-speedup-evaluations/?task_id=${encodeURIComponent(tid)}" target="_blank">跨任务评估页</a>。
+          <a href="/admin/tts-speedup-evaluations/?task_id=${encodeURIComponent(tid)}" target="_blank" rel="noopener noreferrer">跨任务评估页</a>。
           <button class="tts-speedup-retry-btn" data-eval-id="${r.speedup_eval_id}">重新评估</button>
         </div>`;
     } else {

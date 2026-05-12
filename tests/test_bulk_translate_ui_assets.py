@@ -11,3 +11,10 @@ def test_bulk_translate_estimate_errors_are_escaped_before_inner_html():
 
     assert 'box.innerHTML = `<span class="bt-warn">预估失败: ${err.error || resp.status}</span>`;' not in SCRIPT
     assert 'box.innerHTML = `<span class="bt-warn">网络错误: ${e.message}</span>`;' not in SCRIPT
+
+
+def test_bulk_translate_bubble_task_links_encode_task_ids():
+    assert 'const taskId = String(tid || "");' in SCRIPT
+    assert 'href="/tasks/${encodeURIComponent(taskId)}"' in SCRIPT
+    assert "taskId.slice(0, 8)" in SCRIPT
+    assert 'href="/tasks/${tid}"' not in SCRIPT
