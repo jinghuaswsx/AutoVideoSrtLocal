@@ -308,6 +308,9 @@
       if (source === "copied_source") {
         return {label: "结果来源：复制原图", tone: "copy"};
       }
+      if (source === "banana_regenerate") {
+        return {label: "结果来源：banana重新生成", tone: "translate"};
+      }
       if (source === "image_translate" || (it.status === "done" && it.dst_tos_key)) {
         return {label: "结果来源：图片翻译", tone: "translate"};
       }
@@ -379,6 +382,16 @@
         retryBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
         retryBtn.onclick = (function(i){ return function(){ retry(i); }; })(it.idx);
         actions.appendChild(retryBtn);
+        if (it.status === "done") {
+          var bananaBtn = document.createElement("button");
+          bananaBtn.className = "btn it-retry-item it-banana-retry-item";
+          bananaBtn.type = "button";
+          bananaBtn.textContent = "banana重新生成";
+          bananaBtn.disabled = isRunning;
+          bananaBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "使用 Google ADC 的 Nano Banana 2 重新生成";
+          bananaBtn.onclick = (function(i){ return function(){ bananaRetry(i); }; })(it.idx);
+          actions.appendChild(bananaBtn);
+        }
         row.appendChild(actions);
         listEl.appendChild(row);
       });
@@ -451,6 +464,16 @@
         .then(parseJsonResponse)
         .then(function(res){
           if (!res.ok) { alert(res.body && res.body.error || "重试失败"); return; }
+          refresh();
+        })
+        .catch(function(){ alert("网络错误，稍后再试"); });
+    }
+
+    function bananaRetry(idx){
+      fetch("/api/image-translate/"+taskId+"/banana-retry/"+idx,{method:"POST",credentials:"same-origin"})
+        .then(parseJsonResponse)
+        .then(function(res){
+          if (!res.ok) { alert(res.body && res.body.error || "banana重新生成失败"); return; }
           refresh();
         })
         .catch(function(){ alert("网络错误，稍后再试"); });

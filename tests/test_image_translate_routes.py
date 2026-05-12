@@ -1117,6 +1117,10 @@ def test_retry_item_allows_done_status_and_deletes_old_dst(authed_client_no_db, 
     from web import store
     task = store.get(tid)
     task["items"][0]["dst_tos_key"] = "artifacts/image_translate/1/tid/out_0.png"
+    task["items"][0]["provider_task_id"] = "apimart-task-old"
+    task["items"][0]["provider_task_submitted_at"] = 123.0
+    task["items"][0]["apimart_task_id"] = "legacy-apimart-task-old"
+    task["items"][0]["apimart_submitted_at"] = 456.0
     deleted: list[str] = []
     monkeypatch.setattr(r.local_media_storage, "delete", lambda k: deleted.append(k))
     monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
@@ -1125,7 +1129,41 @@ def test_retry_item_allows_done_status_and_deletes_old_dst(authed_client_no_db, 
     assert resp.status_code == 202
     assert task["items"][0]["status"] == "pending"
     assert task["items"][0]["dst_tos_key"] == ""
+    assert task["items"][0]["provider_task_id"] == ""
+    assert task["items"][0]["provider_task_submitted_at"] == 0.0
+    assert task["items"][0]["apimart_task_id"] == ""
+    assert task["items"][0]["apimart_submitted_at"] == 0.0
     assert deleted == ["artifacts/image_translate/1/tid/out_0.png"]
+
+
+def test_banana_retry_item_sets_adc_override_and_deletes_old_dst(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    from web import store
+    task = store.get(tid)
+    item = task["items"][0]
+    item["dst_tos_key"] = "artifacts/image_translate/1/tid/out_0.png"
+    item["provider_task_id"] = "apimart-task-old"
+    item["provider_task_submitted_at"] = 123.0
+    deleted: list[str] = []
+    started: list[tuple[str, int]] = []
+    monkeypatch.setattr(r.local_media_storage, "delete", lambda k: deleted.append(k))
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+    monkeypatch.setattr(r, "_start_runner", lambda tid_, uid: started.append((tid_, uid)) or True)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/banana-retry/0")
+
+    assert resp.status_code == 202
+    assert item["status"] == "pending"
+    assert item["dst_tos_key"] == ""
+    assert item["provider_task_id"] == ""
+    assert item["provider_task_submitted_at"] == 0.0
+    assert item["generation_channel_override"] == "cloud_adc"
+    assert item["generation_model_override"] == "gemini-3.1-flash-image-preview"
+    assert item["generation_override_label"] == "banana重新生成"
+    assert deleted == ["artifacts/image_translate/1/tid/out_0.png"]
+    assert started
 
 
 def test_retry_item_allows_zombie_running(authed_client_no_db, monkeypatch):

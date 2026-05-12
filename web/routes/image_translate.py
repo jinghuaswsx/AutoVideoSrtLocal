@@ -18,6 +18,7 @@ from appcore import image_translate_settings as its
 _BACKEND_LABELS = {
     "aistudio":   "Google AI Studio",
     "cloud":      "Google Cloud (Vertex AI)",
+    "cloud_adc":  "Google Vertex AI (ADC)",
     "openrouter": "OpenRouter",
     "doubao":     "豆包 ARK（Seedream）",
 }
@@ -45,6 +46,9 @@ _MAX_ITEMS = task_state.IMAGE_TRANSLATE_MAX_ITEMS
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 _PRODUCT_NAME_MAX_LEN = 60
 _PROJECT_NAME_ILLEGAL = set('\\/:*?"<>|\t\r\n')
+_BANANA_RETRY_CHANNEL = "cloud_adc"
+_BANANA_RETRY_MODEL = "gemini-3.1-flash-image-preview"
+_BANANA_RETRY_LABEL = "banana重新生成"
 
 
 def _safe_image_translate_channel() -> str:
@@ -218,6 +222,13 @@ def _reset_item_processing_state(item: dict) -> None:
     item["attempts"] = 0
     item["error"] = ""
     item["dst_tos_key"] = ""
+    item["provider_task_id"] = ""
+    item["provider_task_submitted_at"] = 0.0
+    item["apimart_task_id"] = ""
+    item["apimart_submitted_at"] = 0.0
+    item["generation_channel_override"] = ""
+    item["generation_model_override"] = ""
+    item["generation_override_label"] = ""
     item["text_detect_status"] = "pending"
     item["text_detect_has_text"] = None
     item["text_detect_reason"] = ""
@@ -565,6 +576,50 @@ def api_retry_item(task_id: str, idx: int):
     return image_translate_flask_response(
         build_image_translate_payload_response(
             {"task_id": task_id, "idx": idx, "status": "queued"},
+            status_code=202,
+        )
+    )
+
+
+@bp.route("/api/image-translate/<task_id>/banana-retry/<int:idx>", methods=["POST"])
+@login_required
+def api_banana_retry_item(task_id: str, idx: int):
+    task = _get_retryable_task(task_id)
+    item = _get_item(task, idx)
+    if not item:
+        abort(404)
+    if image_translate_runner.is_running(task_id):
+        return image_translate_flask_response(
+            build_image_translate_error_response("任务正在跑，等跑完再重试", 409)
+        )
+    old_dst = (item.get("dst_tos_key") or "").strip()
+    if old_dst:
+        _delete_artifact_object(old_dst)
+    _reset_item_processing_state(item)
+    item["generation_channel_override"] = _BANANA_RETRY_CHANNEL
+    item["generation_model_override"] = _BANANA_RETRY_MODEL
+    item["generation_override_label"] = _BANANA_RETRY_LABEL
+    total = len(task["items"])
+    done = sum(1 for it in task["items"] if it["status"] == "done")
+    failed = sum(1 for it in task["items"] if it["status"] == "failed")
+    task["progress"] = {"total": total, "done": done, "failed": failed, "running": 0}
+    task["status"] = "queued"
+    store.update(
+        task_id,
+        items=task["items"],
+        progress=task["progress"],
+        status="queued",
+    )
+    _start_runner(task_id, _task_runner_user_id(task))
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {
+                "task_id": task_id,
+                "idx": idx,
+                "status": "queued",
+                "channel": _BANANA_RETRY_CHANNEL,
+                "model_id": _BANANA_RETRY_MODEL,
+            },
             status_code=202,
         )
     )

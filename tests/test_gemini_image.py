@@ -103,6 +103,51 @@ def test_generate_image_cloud_channel_uses_vertex_backend():
     }
 
 
+def test_generate_image_cloud_adc_override_uses_vertex_adc_backend():
+    from appcore import gemini_image
+
+    client = MagicMock()
+    client.models.generate_content.return_value = _fake_response(b"PNG", "image/png")
+    recorded = {}
+
+    def fake_get(api_key, *, backend="aistudio", project="", location=""):
+        recorded["api_key"] = api_key
+        recorded["backend"] = backend
+        recorded["project"] = project
+        recorded["location"] = location
+        return client
+
+    def fake_resolve(channel):
+        recorded["credential_channel"] = channel
+        return "", "adc-project", "global", None
+
+    with patch.object(gemini_image, "_get_image_client", side_effect=fake_get), \
+         patch.object(gemini_image, "_resolve_gemini_image_credentials", side_effect=fake_resolve), \
+         patch.object(gemini_image, "_resolve_channel", return_value="apimart"), \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
+        out, mime = gemini_image.generate_image(
+            prompt="translate",
+            source_image=b"RAW",
+            source_mime="image/jpeg",
+            model="gemini-3.1-flash-image-preview",
+            channel_override="cloud_adc",
+            user_id=3,
+            project_id="img-1",
+        )
+
+    assert out == b"PNG"
+    assert mime == "image/png"
+    assert recorded == {
+        "credential_channel": "cloud_adc",
+        "api_key": "",
+        "backend": "cloud",
+        "project": "adc-project",
+        "location": "global",
+    }
+    assert m_log.call_args.kwargs["provider"] == "gemini_vertex_adc"
+    assert m_log.call_args.kwargs["extra"]["channel"] == "cloud_adc"
+
+
 def test_generate_image_cloud_channel_errors_without_key():
     from appcore import gemini_image
 

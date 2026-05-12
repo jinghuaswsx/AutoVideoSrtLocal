@@ -390,7 +390,11 @@ class ImageTranslateRuntime:
                     dst_ext = self._ext_from_mime(out_mime) or ".png"
                     dst_key = self._build_dst_key(task, idx, dst_ext)
                     local_media_storage.write_bytes(dst_key, out_bytes)
-                    result_source = "image_translate"
+                    result_source = (
+                        "banana_regenerate"
+                        if (item.get("generation_override_label") or "").strip()
+                        else "image_translate"
+                    )
                 else:
                     dst_ext = self._ext_from_key(item["src_tos_key"]) or self._ext_from_mime(mime) or ".jpg"
                     dst_key = self._build_dst_key(task, idx, dst_ext)
@@ -484,7 +488,16 @@ class ImageTranslateRuntime:
         - If there is no task snapshot, call generate_image and persist the new
           provider_task_id via on_apimart_submitted.
         """
-        channel = (task.get("channel") or "").strip()
+        channel = (
+            item.get("generation_channel_override")
+            or task.get("channel")
+            or ""
+        ).strip().lower()
+        model_id = (
+            item.get("generation_model_override")
+            or task.get("model_id")
+            or ""
+        ).strip()
 
         if channel == "apimart":
             existing_task_id = (
@@ -550,13 +563,14 @@ class ImageTranslateRuntime:
             prompt=task["prompt"],
             source_image=src_bytes,
             source_mime=mime,
-            model=task["model_id"],
+            model=model_id,
             user_id=task.get("_user_id"),
             project_id=task_id,
             service="image_translate.generate",
             apimart_size=apimart_size,
             apimart_resolution=apimart_resolution,
             on_apimart_submitted=on_submitted,
+            channel_override=channel or None,
         )
 
     def _download_source_image(self, task: dict, item: dict, local_path: str) -> str:
