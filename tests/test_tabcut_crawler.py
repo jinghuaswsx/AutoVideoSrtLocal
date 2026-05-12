@@ -55,13 +55,23 @@ def test_throttled_client_waits_between_requests():
     assert sleeps == [2.0]
 
 
-def test_recent7_plan_collects_video_rankday30_and_seven_goods_days():
-    dates = ["20260511", "20260510", "20260509", "20260508", "20260507", "20260506", "20260505"]
+def test_recent_plan_collects_daily_weekly_monthly_video_rankings_at_1000_each():
+    dates = [f"202605{day:02d}" for day in range(11, 0, -1)]
 
     plan = runner.build_recent7_plan(dates)
 
-    assert plan[0].source == "video_30d_play"
-    assert "rankDay=30" in plan[0].url_for_page(1)
+    video_sources = [item for item in plan if item.kind == "video"]
+    assert [item.source for item in video_sources] == [
+        "video_1d_play",
+        "video_1d_sales",
+        "video_7d_play",
+        "video_7d_sales",
+        "video_30d_play",
+        "video_30d_sales",
+    ]
+    for rank_day in (1, 7, 30):
+        rank_sources = [item for item in video_sources if f"rankDay={rank_day}" in item.url_for_page(1)]
+        assert len(rank_sources) == 2
+        assert all(item.pages * item.page_size >= 1000 for item in rank_sources)
     goods_sources = [item.source for item in plan if item.source.startswith("goods_daily_")]
     assert goods_sources == [f"goods_daily_{date}" for date in dates]
-    assert all(item.pages == 5 for item in plan)

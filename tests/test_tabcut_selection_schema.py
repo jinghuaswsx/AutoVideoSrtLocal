@@ -44,5 +44,5 @@ def test_tabcut_deploy_units_use_cjh_and_daily_8am_timer():
 
     assert "User=cjh" in service
     assert "WorkingDirectory=/opt/autovideosrt" in service
-    assert "python -m tools.tabcut_crawler.main --days 7" in service
+    assert "python -m tools.tabcut_crawler.main --days 30" in service
     assert "OnCalendar=*-*-* 08:00:00" in timer

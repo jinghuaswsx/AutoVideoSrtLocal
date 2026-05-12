@@ -5,14 +5,14 @@ import json
 import os
 from pathlib import Path
 
-from .runner import collect_recent7
+from .runner import DEFAULT_DAYS, collect_recent7
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Collect Tabcut US recent-7-day selection data.")
+    parser = argparse.ArgumentParser(description="Collect Tabcut US recent selection data.")
     parser.add_argument("--cdp-url", default=os.environ.get("TABCUT_CDP_URL", "http://127.0.0.1:9227"))
     parser.add_argument("--output-dir", default=os.environ.get("TABCUT_OUTPUT_DIR"))
-    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--days", type=int, default=DEFAULT_DAYS)
     parser.add_argument("--min-interval-seconds", type=float, default=3.3)
     parser.add_argument("--no-persist", action="store_true", help="Collect files only; do not write database tables.")
     parser.add_argument("--target-date", default=None, help="Compatibility option; recent7 uses yesterday as latest biz date.")

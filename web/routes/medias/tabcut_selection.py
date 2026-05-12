@@ -47,7 +47,7 @@ def api_tabcut_selection_refresh():
     return _json_response(service.build_tabcut_refresh_response(body, runner_fn=_start_refresh))
 
 
-def _start_refresh(*, biz_date: str | None, target_date: str | None, days: int = 7) -> dict:
+def _start_refresh(*, biz_date: str | None, target_date: str | None, days: int = 30) -> dict:
     start_background_task(
         collect_recent7,
         output_dir=Path("data") / "tabcut" / "manual-refresh",

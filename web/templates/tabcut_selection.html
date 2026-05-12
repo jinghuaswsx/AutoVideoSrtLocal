@@ -6,7 +6,7 @@
 .tabcut-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid #d8dee8; border-radius:999px; background:#f6f8fb; }
 .tabcut-tab-link { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
 .tabcut-tab-link.active { background:#0f766e; color:#fff; }
-.tabcut-toolbar { display:grid; grid-template-columns:repeat(6, minmax(120px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
+.tabcut-toolbar { display:grid; grid-template-columns:repeat(8, minmax(118px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
 .tabcut-field label { display:block; margin-bottom:5px; color:#64748b; font-size:12px; font-weight:700; }
 .tabcut-input, .tabcut-select { width:100%; height:34px; padding:0 9px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1f2937; font-size:14px; }
 .tabcut-actions { display:flex; gap:8px; }
@@ -18,29 +18,28 @@
 .tabcut-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 12px; color:#64748b; font-size:13px; }
 .tabcut-results { border:1px solid #d8dee8; border-radius:8px; background:#eef2f7; overflow:hidden; }
 .tabcut-video-grid[hidden], .tabcut-table-wrap[hidden] { display:none !important; }
-.tabcut-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; padding:24px; }
-.tabcut-video-card { display:grid; grid-template-columns:90px minmax(0, 1fr); grid-template-areas:"author author" "cover body" "product product"; gap:10px 12px; min-width:0; padding:12px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+.tabcut-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 320px)); justify-content:center; align-items:start; gap:28px; padding:32px 28px; }
+.tabcut-video-card { display:grid; grid-template-rows:auto; gap:10px; min-width:0; padding:14px 16px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04); }
 .tabcut-video-author { display:grid; grid-template-columns:22px minmax(0, max-content) minmax(0, 1fr); align-items:center; gap:6px; min-width:0; height:24px; }
 .tabcut-avatar, .tabcut-avatar-fallback { width:18px; height:18px; border-radius:50%; object-fit:cover; background:#cbd5e1; }
 .tabcut-avatar-fallback { display:block; }
-.tabcut-author-name { min-width:0; max-width:92px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; font-weight:800; color:#334155; }
+.tabcut-author-name { min-width:0; max-width:118px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; font-weight:800; color:#334155; }
 .tabcut-tags { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#94a3b8; font-size:10px; }
-.tabcut-video-author { grid-area:author; }
-.tabcut-video-cover-link { grid-area:cover; display:block; width:90px; height:160px; border-radius:6px; overflow:hidden; text-decoration:none; }
-.tabcut-video-cover { display:block; width:90px; height:160px; border-radius:6px; object-fit:cover; background:#dbe3ee; }
-.tabcut-cover-placeholder { display:flex; align-items:center; justify-content:center; width:90px; height:160px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; color:#94a3b8; font-size:12px; }
-.tabcut-cover-frame { position:relative; display:block; }
+.tabcut-video-cover-link { display:block; width:100%; aspect-ratio:4 / 5; border-radius:6px; overflow:hidden; text-decoration:none; }
+.tabcut-video-cover { display:block; width:100%; height:100%; border-radius:6px; object-fit:cover; background:#dbe3ee; }
+.tabcut-cover-placeholder { display:flex; align-items:center; justify-content:center; width:100%; height:100%; border:1px solid #e2e8f0; border-radius:6px; background:#cfcfcf; color:#475569; font-size:18px; }
+.tabcut-cover-frame { position:relative; display:block; width:100%; height:100%; }
 .tabcut-video-badges { position:absolute; left:8px; bottom:8px; display:flex; gap:4px; align-items:center; }
 .tabcut-video-badge { min-width:28px; height:18px; padding:0 5px; border-radius:3px; background:rgba(220,38,38,.74); color:#fff; font-size:11px; font-weight:800; line-height:18px; text-align:center; }
-.tabcut-video-main { grid-area:body; min-width:0; display:flex; flex-direction:column; justify-content:space-between; }
-.tabcut-publish { color:#334155; font-size:12px; }
-.tabcut-stats { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin-top:10px; }
+.tabcut-video-main { min-width:0; }
+.tabcut-publish { color:#334155; font-size:13px; }
+.tabcut-stats { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin-top:12px; }
 .tabcut-stat-label { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#94a3b8; font-size:11px; }
 .tabcut-stat-value { margin-top:3px; color:#1f2937; font-size:16px; font-weight:800; font-variant-numeric:tabular-nums; }
-.tabcut-product-mini { grid-area:product; display:grid; grid-template-columns:48px minmax(0, 1fr); gap:8px; padding-top:10px; border-top:1px solid #edf2f7; min-height:58px; }
+.tabcut-product-mini { display:grid; grid-template-columns:58px minmax(0, 1fr); gap:10px; padding-top:8px; min-height:66px; }
 .tabcut-product-mini, .tabcut-product-link { color:inherit; text-decoration:none; }
 .tabcut-product-mini:hover .tabcut-product-title, .tabcut-product-link:hover { color:#0f766e; text-decoration:underline; }
-.tabcut-product-mini img, .tabcut-product-img-empty { width:48px; height:48px; border-radius:6px; object-fit:cover; background:#f1f5f9; border:1px solid #e2e8f0; }
+.tabcut-product-mini img, .tabcut-product-img-empty { width:58px; height:58px; border-radius:6px; object-fit:cover; background:#f1f5f9; border:1px solid #e2e8f0; }
 .tabcut-product-title { min-width:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; color:#334155; font-size:12px; line-height:1.25; }
 .tabcut-product-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:#475569; font-size:10px; font-weight:700; }
 .tabcut-table-wrap { overflow-x:auto; background:#fff; }
@@ -76,6 +75,14 @@
     <div class="tabcut-field">
       <label for="categoryL1">Category</label>
       <input class="tabcut-input" id="categoryL1" placeholder="All">
+    </div>
+    <div class="tabcut-field">
+      <label for="publishDateFrom">发布日期起</label>
+      <input class="tabcut-input" id="publishDateFrom" type="date">
+    </div>
+    <div class="tabcut-field">
+      <label for="publishDateTo">发布日期止</label>
+      <input class="tabcut-input" id="publishDateTo" type="date">
     </div>
     <div class="tabcut-field">
       <label for="minVideoSales">Video Sales</label>
@@ -194,7 +201,7 @@ function renderVideoCover(row) {
   const duration = durationText(row.video_duration_ms);
   const inner = cover
     ? `<img class="tabcut-video-cover" src="${esc(cover)}" loading="lazy" alt="">`
-    : `<span class="tabcut-cover-placeholder">No cover</span>`;
+    : `<span class="tabcut-cover-placeholder">No Image Available</span>`;
   const frame = `<span class="tabcut-cover-frame">${inner}<span class="tabcut-video-badges"><span class="tabcut-video-badge">美国</span>${duration ? `<span class="tabcut-video-badge">${esc(duration)}</span>` : ""}</span></span>`;
   const href = videoHref(row);
   return href ? `<a class="tabcut-video-cover-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${frame}</a>` : `<span class="tabcut-video-cover-link">${frame}</span>`;
@@ -228,10 +235,10 @@ function renderVideoCard(row) {
       <div class="tabcut-video-main">
         <div class="tabcut-publish">发布时间：${esc(formatDateTime(row.create_time))}</div>
         <div class="tabcut-stats">
-          <div><div class="tabcut-stat-label">月播放量</div><div class="tabcut-stat-value">${fmtCompact(row.play_count)}</div></div>
-          <div><div class="tabcut-stat-label">月获赞数</div><div class="tabcut-stat-value">${fmtCompact(row.like_count)}</div></div>
-          <div><div class="tabcut-stat-label">月分享数</div><div class="tabcut-stat-value">${fmtCompact(row.share_count)}</div></div>
-          <div><div class="tabcut-stat-label">月评论数</div><div class="tabcut-stat-value">${fmtCompact(row.comment_count)}</div></div>
+          <div><div class="tabcut-stat-label">播放量</div><div class="tabcut-stat-value">${fmtCompact(row.play_count)}</div></div>
+          <div><div class="tabcut-stat-label">获赞数</div><div class="tabcut-stat-value">${fmtCompact(row.like_count)}</div></div>
+          <div><div class="tabcut-stat-label">分享数</div><div class="tabcut-stat-value">${fmtCompact(row.share_count)}</div></div>
+          <div><div class="tabcut-stat-label">评论数</div><div class="tabcut-stat-value">${fmtCompact(row.comment_count)}</div></div>
         </div>
       </div>
       ${renderProductMini(row)}
@@ -241,12 +248,22 @@ function renderVideoCard(row) {
 function setTabcutView(view) {
   tabcutView = view;
   document.querySelectorAll(".tabcut-view-tab").forEach(btn => btn.classList.toggle("active", btn.dataset.view === view));
+  updateDateFilterState();
   loadTabcut(1);
+}
+
+function updateDateFilterState() {
+  const disabled = tabcutView !== "videos";
+  ["publishDateFrom", "publishDateTo"].forEach(id => {
+    qs(id).disabled = disabled;
+  });
 }
 
 function paramsFor(page) {
   const params = new URLSearchParams({ page, page_size: qs("pageSize").value, sort: qs("sortBy").value });
   if (qs("categoryL1").value.trim()) params.set("category_l1", qs("categoryL1").value.trim());
+  if (tabcutView === "videos" && qs("publishDateFrom").value) params.set("publish_date_from", qs("publishDateFrom").value);
+  if (tabcutView === "videos" && qs("publishDateTo").value) params.set("publish_date_to", qs("publishDateTo").value);
   if (qs("minVideoSales").value) params.set("min_video_sales", qs("minVideoSales").value);
   if (qs("minGoodsSales").value) params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value);
   if (qs("minGmv").value) params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", qs("minGmv").value);
@@ -305,7 +322,7 @@ function renderPager(data) {
 }
 
 function resetTabcut() {
-  ["categoryL1", "minVideoSales", "minGoodsSales", "minGmv"].forEach(id => qs(id).value = "");
+  ["categoryL1", "publishDateFrom", "publishDateTo", "minVideoSales", "minGoodsSales", "minGmv"].forEach(id => qs(id).value = "");
   qs("sortBy").value = "play_count";
   loadTabcut(1);
 }
@@ -313,9 +330,10 @@ function resetTabcut() {
 async function refreshTabcut() {
   qs("tabcutStatus").textContent = "Queued";
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
-  await fetch("/medias/api/tabcut-selection/refresh", { method:"POST", headers:{ "Content-Type":"application/json", "X-CSRFToken":csrf }, body:JSON.stringify({ days:7 }) });
+  await fetch("/medias/api/tabcut-selection/refresh", { method:"POST", headers:{ "Content-Type":"application/json", "X-CSRFToken":csrf }, body:JSON.stringify({ days:30 }) });
 }
 
+updateDateFilterState();
 loadTabcut(1);
 </script>
 {% endblock %}

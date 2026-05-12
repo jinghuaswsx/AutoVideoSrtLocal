@@ -16,6 +16,13 @@ from .client import TabcutApiClient, goods_ranking_url, video_ranking_url
 
 
 BEIJING = ZoneInfo("Asia/Shanghai")
+DEFAULT_DAYS = 30
+VIDEO_PAGE_SIZE = 100
+VIDEO_PAGES_PER_SOURCE = 10
+GOODS_PAGE_SIZE = 100
+GOODS_PAGES_PER_DAY = 5
+VIDEO_RANK_DAYS = (1, 7, 30)
+VIDEO_SORTS = ((10, "play"), (60, "sales"))
 
 
 @dataclass(frozen=True)
@@ -25,26 +32,46 @@ class CrawlSource:
     url_for_page: Callable[[int], str]
     kind: str
     biz_date: str | None = None
+    page_size: int = 100
 
 
-def recent_biz_dates(days: int = 7, *, today: date | None = None) -> list[str]:
+def recent_biz_dates(days: int = DEFAULT_DAYS, *, today: date | None = None) -> list[str]:
     today = today or datetime.now(BEIJING).date()
     return [(today - timedelta(days=offset)).strftime("%Y%m%d") for offset in range(1, days + 1)]
 
 
 def build_recent7_plan(biz_dates: list[str]) -> list[CrawlSource]:
-    plan = [
-        CrawlSource("video_30d_play", 5, lambda page: video_ranking_url(sort=10, page_no=page, rank_day=30), "video"),
-        CrawlSource("video_30d_sales", 5, lambda page: video_ranking_url(sort=60, page_no=page, rank_day=30), "video"),
-    ]
+    plan = []
+    for rank_day in VIDEO_RANK_DAYS:
+        rank_label = f"{rank_day}d"
+        for sort, sort_label in VIDEO_SORTS:
+            plan.append(
+                CrawlSource(
+                    f"video_{rank_label}_{sort_label}",
+                    VIDEO_PAGES_PER_SOURCE,
+                    lambda page, sort=sort, rank_day=rank_day: video_ranking_url(
+                        sort=sort,
+                        page_no=page,
+                        rank_day=rank_day,
+                        page_size=VIDEO_PAGE_SIZE,
+                    ),
+                    "video",
+                    page_size=VIDEO_PAGE_SIZE,
+                )
+            )
     for biz_date in biz_dates:
         plan.append(
             CrawlSource(
                 f"goods_daily_{biz_date}",
-                5,
-                lambda page, biz_date=biz_date: goods_ranking_url(biz_date=biz_date, page_no=page),
+                GOODS_PAGES_PER_DAY,
+                lambda page, biz_date=biz_date: goods_ranking_url(
+                    biz_date=biz_date,
+                    page_no=page,
+                    page_size=GOODS_PAGE_SIZE,
+                ),
                 "goods",
                 biz_date=biz_date,
+                page_size=GOODS_PAGE_SIZE,
             )
         )
     return plan
@@ -54,13 +81,13 @@ def collect_recent7(
     *,
     cdp_url: str = "http://127.0.0.1:9227",
     output_dir: str | Path | None = None,
-    days: int = 7,
+    days: int = DEFAULT_DAYS,
     persist: bool = True,
     min_interval_seconds: float = 3.3,
 ) -> dict[str, Any]:
     biz_dates = recent_biz_dates(days)
     latest_biz_date = _ymd_to_iso(biz_dates[0])
-    output_path = Path(output_dir or Path("data") / "tabcut" / f"recent7-{datetime.now(BEIJING):%Y%m%d-%H%M%S}")
+    output_path = Path(output_dir or Path("data") / "tabcut" / f"recent{days}-{datetime.now(BEIJING):%Y%m%d-%H%M%S}")
     output_path.mkdir(parents=True, exist_ok=True)
     api = TabcutApiClient(cdp_url=cdp_url, min_interval_seconds=min_interval_seconds)
     datasets: dict[str, dict[str, Any]] = {}

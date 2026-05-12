@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from typing import Any, Callable, Mapping
 
@@ -57,6 +58,16 @@ def _text_arg(args: Mapping[str, Any], name: str) -> str | None:
     return value or None
 
 
+def _date_arg(args: Mapping[str, Any], name: str) -> str | None:
+    value = _text_arg(args, name)
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return None
+
+
 def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 50, 10, 200)
@@ -74,6 +85,16 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
         if value:
             where.append(f"{column} = %s")
             params.append(value)
+
+    publish_date_from = _date_arg(args, "publish_date_from")
+    if publish_date_from:
+        where.append("v.create_time >= %s")
+        params.append(publish_date_from)
+
+    publish_date_to = _date_arg(args, "publish_date_to")
+    if publish_date_to:
+        where.append("v.create_time < DATE_ADD(%s, INTERVAL 1 DAY)")
+        params.append(publish_date_to)
 
     min_video_sales = _int_arg(args, "min_video_sales", 0, 0, 10**12)
     if min_video_sales:
@@ -100,7 +121,12 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
 
     where_sql = " AND ".join(where)
     count_rows = query_fn(
-        f"SELECT COUNT(*) AS cnt FROM tabcut_video_candidates c WHERE {where_sql}",
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM tabcut_video_candidates c
+        LEFT JOIN tabcut_videos v ON v.video_id = c.video_id
+        WHERE {where_sql}
+        """,
         list(params),
     )
     rows = query_fn(

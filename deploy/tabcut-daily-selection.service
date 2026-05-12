@@ -11,7 +11,7 @@ WorkingDirectory=/opt/autovideosrt
 Environment=PYTHONUNBUFFERED=1
 Environment=TABCUT_CDP_URL=http://127.0.0.1:9227
 Environment=TABCUT_REGION=US
-ExecStart=/opt/autovideosrt/venv/bin/python -m tools.tabcut_crawler.main --days 7
+ExecStart=/opt/autovideosrt/venv/bin/python -m tools.tabcut_crawler.main --days 30
 
 [Install]
 WantedBy=multi-user.target
