@@ -103,6 +103,29 @@ def test_list_video_candidates_rejects_unknown_source_rank():
     assert "DROP TABLE" not in calls[-1][0]
 
 
+def test_list_category_options_returns_distinct_l1_names():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [
+            {"value": "Beauty", "label": "Beauty", "video_count": 12, "goods_count": 7},
+            {"value": "Food", "label": "Food", "video_count": 3, "goods_count": 9},
+        ]
+
+    result = store.list_category_options(query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert result == [
+        {"value": "Beauty", "label": "Beauty", "video_count": 12, "goods_count": 7},
+        {"value": "Food", "label": "Food", "video_count": 3, "goods_count": 9},
+    ]
+    assert "tabcut_video_candidates" in sql
+    assert "tabcut_goods" in sql
+    assert "category_l1_name" in sql
+    assert params == ["US", "US"]
+
+
 def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
     monkeypatch.setattr(
         store,

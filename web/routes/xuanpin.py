@@ -101,6 +101,12 @@ def api_tabcut_goods():
     return _tabcut_routes().api_tabcut_selection_goods()
 
 
+@bp.route("/api/tabcut/categories", methods=["GET"])
+@login_required
+def api_tabcut_categories():
+    return _tabcut_routes().api_tabcut_selection_categories()
+
+
 @bp.route("/api/tabcut/refresh", methods=["POST"])
 @login_required
 def api_tabcut_refresh():

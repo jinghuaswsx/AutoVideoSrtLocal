@@ -259,6 +259,55 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
     }
 
 
+def list_category_options(
+    args: Mapping[str, Any] | None = None,
+    *,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    args = args or {}
+    region = str(args.get("region") or "US")
+    rows = query_fn(
+        """
+        SELECT category_l1_name AS value,
+               category_l1_name AS label,
+               SUM(video_count) AS video_count,
+               SUM(goods_count) AS goods_count
+        FROM (
+            SELECT c.category_l1_name,
+                   COUNT(DISTINCT c.video_id) AS video_count,
+                   0 AS goods_count
+            FROM tabcut_video_candidates c
+            WHERE c.region = %s
+              AND c.category_l1_name IS NOT NULL
+              AND c.category_l1_name <> ''
+            GROUP BY c.category_l1_name
+            UNION ALL
+            SELECT g.category_l1_name,
+                   0 AS video_count,
+                   COUNT(DISTINCT g.item_id) AS goods_count
+            FROM tabcut_goods g
+            WHERE g.region = %s
+              AND g.category_l1_name IS NOT NULL
+              AND g.category_l1_name <> ''
+            GROUP BY g.category_l1_name
+        ) category_sources
+        GROUP BY category_l1_name
+        ORDER BY category_l1_name ASC
+        """,
+        [region, region],
+    )
+    return [
+        {
+            "value": str(row.get("value") or ""),
+            "label": str(row.get("label") or row.get("value") or ""),
+            "video_count": int(row.get("video_count") or 0),
+            "goods_count": int(row.get("goods_count") or 0),
+        }
+        for row in rows
+        if row.get("value")
+    ]
+
+
 def upsert_video(video: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:
     params = [
         video.get("video_id"),

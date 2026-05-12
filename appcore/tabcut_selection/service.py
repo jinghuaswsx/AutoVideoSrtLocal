@@ -21,6 +21,10 @@ def build_goods_response(args: Mapping[str, Any]) -> TabcutResponse:
     return TabcutResponse(store.list_goods(args))
 
 
+def build_category_options_response(args: Mapping[str, Any]) -> TabcutResponse:
+    return TabcutResponse({"items": store.list_category_options(args)})
+
+
 def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
     hydrated = dict(payload)
     items = []

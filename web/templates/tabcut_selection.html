@@ -76,7 +76,9 @@
   <section class="tabcut-toolbar">
     <div class="tabcut-field">
       <label for="categoryL1">Category</label>
-      <input class="tabcut-input" id="categoryL1" placeholder="All">
+      <select class="tabcut-select" id="categoryL1">
+        <option value="">All</option>
+      </select>
     </div>
     <div class="tabcut-field">
       <label for="publishDateFrom">发布日期起</label>
@@ -340,6 +342,26 @@ function resetTabcut() {
   loadTabcut(1);
 }
 
+async function loadCategoryOptions() {
+  const select = qs("categoryL1");
+  if (!select) return;
+  const selected = select.value;
+  try {
+    const resp = await fetch("/xuanpin/api/tabcut/categories");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    select.innerHTML = '<option value="">All</option>' + items.map(item => {
+      const value = item.value || item.label || "";
+      const label = item.label || item.value || "";
+      return value ? `<option value="${esc(value)}">${esc(label)}</option>` : "";
+    }).join("");
+    if (selected && Array.from(select.options).some(option => option.value === selected)) {
+      select.value = selected;
+    }
+  } catch (_) {}
+}
+
 async function refreshTabcut() {
   qs("tabcutStatus").textContent = "Queued";
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
@@ -347,6 +369,6 @@ async function refreshTabcut() {
 }
 
 updateDateFilterState();
-loadTabcut(1);
+loadCategoryOptions().finally(() => loadTabcut(1));
 </script>
 {% endblock %}

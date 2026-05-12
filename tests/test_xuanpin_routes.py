@@ -65,6 +65,8 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert 'href="/xuanpin/tabcut"' in body
     assert "/xuanpin/api/tabcut/videos" in body
     assert "/xuanpin/api/tabcut/goods" in body
+    assert "/xuanpin/api/tabcut/categories" in body
+    assert '<select class="tabcut-select" id="categoryL1">' in body
     assert "tabcut-video-grid" in body
 
 
@@ -132,6 +134,20 @@ def test_xuanpin_tabcut_api_alias_delegates(authed_client_no_db, monkeypatch):
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"video_id": "v1"}]
+
+
+def test_xuanpin_tabcut_categories_api_alias_delegates(authed_client_no_db, monkeypatch):
+    from appcore.tabcut_selection.service import TabcutResponse
+
+    monkeypatch.setattr(
+        "appcore.tabcut_selection.service.build_category_options_response",
+        lambda args: TabcutResponse({"items": [{"value": "Beauty", "label": "Beauty"}]}),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/tabcut/categories")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"value": "Beauty", "label": "Beauty"}]
 
 
 def test_xuanpin_new_product_api_alias_delegates(authed_client_no_db, monkeypatch):
