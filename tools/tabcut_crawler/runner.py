@@ -9,6 +9,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from appcore.tabcut_selection import store
+from appcore.tabcut_selection.categories import TARGET_GOODS_CATEGORIES
 from appcore.tabcut_selection.models import normalize_goods_row, normalize_video_row
 from appcore.tabcut_selection.scoring import score_candidate
 
@@ -26,8 +27,8 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 DEFAULT_DAYS = 30
 VIDEO_PAGE_SIZE = 100
 VIDEO_PAGES_PER_SOURCE = 10
-GOODS_PAGE_SIZE = 100
-GOODS_PAGES_PER_DAY = 5
+GOODS_PAGE_SIZE = 50
+GOODS_PAGES_PER_DAY = 1
 VIDEO_RANK_DAYS = (1, 7, 30)
 VIDEO_SORTS = ((10, "play"), (60, "sales"))
 
@@ -40,6 +41,9 @@ class CrawlSource:
     kind: str
     biz_date: str | None = None
     page_size: int = 100
+    category_id: str | None = None
+    category_label: str | None = None
+    category_name: str | None = None
 
 
 def recent_biz_dates(days: int = DEFAULT_DAYS, *, today: date | None = None) -> list[str]:
@@ -67,20 +71,25 @@ def build_recent7_plan(biz_dates: list[str]) -> list[CrawlSource]:
                 )
             )
     for biz_date in biz_dates:
-        plan.append(
-            CrawlSource(
-                f"goods_daily_{biz_date}",
-                GOODS_PAGES_PER_DAY,
-                lambda page, biz_date=biz_date: goods_ranking_url(
+        for category in TARGET_GOODS_CATEGORIES:
+            plan.append(
+                CrawlSource(
+                    category.source,
+                    GOODS_PAGES_PER_DAY,
+                    lambda page, biz_date=biz_date, category_id=category.id: goods_ranking_url(
+                        biz_date=biz_date,
+                        page_no=page,
+                        page_size=GOODS_PAGE_SIZE,
+                        category_id=category_id,
+                    ),
+                    "goods",
                     biz_date=biz_date,
-                    page_no=page,
                     page_size=GOODS_PAGE_SIZE,
-                ),
-                "goods",
-                biz_date=biz_date,
-                page_size=GOODS_PAGE_SIZE,
+                    category_id=category.id,
+                    category_label=category.label,
+                    category_name=category.name,
+                )
             )
-        )
     return plan
 
 
@@ -103,13 +112,23 @@ def collect_recent7(
     for source in build_recent7_plan(biz_dates):
         items: list[dict[str, Any]] = []
         pages: list[dict[str, Any]] = []
+        dataset_key = f"{source.source}_{source.biz_date}" if source.biz_date else source.source
         for page_no in range(1, source.pages + 1):
             page_items, total = api.fetch_items(source.url_for_page(page_no))
             request_count += 1
             pages.append({"pageNo": page_no, "count": len(page_items), "total": total})
             items.extend(page_items)
-            _write_json(output_path / f"{source.source}.json", {"source": source.source, "pages": pages, "items": items})
-        datasets[source.source] = {"source": source.source, "kind": source.kind, "biz_date": source.biz_date, "pages": pages, "items": items}
+            _write_json(output_path / f"{dataset_key}.json", {"source": source.source, "pages": pages, "items": items})
+        datasets[dataset_key] = {
+            "source": source.source,
+            "kind": source.kind,
+            "biz_date": source.biz_date,
+            "category_id": source.category_id,
+            "category_label": source.category_label,
+            "category_name": source.category_name,
+            "pages": pages,
+            "items": items,
+        }
 
     normalized = _normalize_datasets(datasets, latest_biz_date=latest_biz_date)
     _write_json(output_path / "tabcut_us_recent7_snapshot.json", {"datasets": datasets, "normalized": normalized})
@@ -246,7 +265,8 @@ def _normalize_datasets(datasets: dict[str, dict[str, Any]], *, latest_biz_date:
     videos: list[dict[str, Any]] = []
     goods: list[dict[str, Any]] = []
     goods_by_item: dict[str, dict[str, Any]] = {}
-    for source, dataset in datasets.items():
+    for dataset in datasets.values():
+        source = str(dataset["source"])
         if dataset["kind"] == "video":
             for row in dataset["items"]:
                 normalized = normalize_video_row(row, source_sort=source)
@@ -257,6 +277,9 @@ def _normalize_datasets(datasets: dict[str, dict[str, Any]], *, latest_biz_date:
             for row in dataset["items"]:
                 normalized = normalize_goods_row(row, source=source)
                 normalized["biz_date"] = biz_date
+                normalized["source_category_id"] = dataset.get("category_id")
+                normalized["source_category_label"] = dataset.get("category_label")
+                normalized["source_category_name"] = dataset.get("category_name")
                 goods.append(normalized)
                 item_id = normalized.get("item_id")
                 if item_id:

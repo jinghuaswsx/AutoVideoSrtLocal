@@ -1,3 +1,5 @@
+from urllib.parse import unquote
+
 from tools.tabcut_crawler import client, runner
 
 
@@ -73,8 +75,37 @@ def test_recent_plan_collects_daily_weekly_monthly_video_rankings_at_1000_each()
         rank_sources = [item for item in video_sources if f"rankDay={rank_day}" in item.url_for_page(1)]
         assert len(rank_sources) == 2
         assert all(item.pages * item.page_size >= 1000 for item in rank_sources)
-    goods_sources = [item.source for item in plan if item.source.startswith("goods_daily_")]
-    assert goods_sources == [f"goods_daily_{date}" for date in dates]
+    goods_sources = [item for item in plan if item.kind == "goods"]
+    assert len(goods_sources) == len(dates) * len(runner.TARGET_GOODS_CATEGORIES)
+    assert {item.source for item in goods_sources} == {
+        "goods_cat_11",
+        "goods_cat_12",
+        "goods_cat_13",
+        "goods_cat_16",
+        "goods_cat_20",
+        "goods_cat_21",
+        "goods_cat_25",
+        "goods_cat_26",
+        "goods_cat_27",
+    }
+    assert all(item.pages == 1 for item in goods_sources)
+    assert all(item.page_size == 50 for item in goods_sources)
+    assert '"categoryId": "11"' in unquote(goods_sources[0].url_for_page(1)).replace("+", " ")
+
+
+def test_goods_ranking_url_accepts_category_id_for_top50_category_page():
+    url = client.goods_ranking_url(
+        biz_date="20260511",
+        category_id=25,
+        page_no=1,
+        page_size=50,
+    )
+    decoded = unquote(url).replace("+", " ")
+
+    assert '"bizDate": "20260511"' in decoded
+    assert '"categoryId": "25"' in decoded
+    assert '"pageNo": 1' in decoded
+    assert '"pageSize": 50' in decoded
 
 
 def test_analysis_video_search_payload_uses_page_size_100_and_filters():

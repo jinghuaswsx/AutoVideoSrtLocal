@@ -126,6 +126,45 @@ def test_list_category_options_returns_distinct_l1_names():
     assert params == ["US", "US"]
 
 
+def test_list_goods_filters_by_snapshot_date_source_category_and_sales():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_goods(
+        {
+            "biz_date": "2026-05-11",
+            "source_category": "25",
+            "min_sales_7d": "50",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "s.biz_date = %s" in data_sql
+    assert "s.source = %s" in data_sql
+    assert "COALESCE(s.sold_count_7d, s.sold_count_period) >= %s" in data_sql
+    assert data_params[:4] == ["US", "2026-05-11", "goods_cat_25", 50]
+
+
+def test_build_goods_response_hydrates_source_category_label(monkeypatch):
+    monkeypatch.setattr(
+        store,
+        "list_goods",
+        lambda args: {
+            "items": [{"item_id": "i1", "source": "goods_cat_25"}],
+            "total": 1,
+        },
+    )
+
+    result = service.build_goods_response({})
+
+    assert result.payload["items"][0]["source_category_label"] == "五金工具"
+    assert result.payload["items"][0]["source_category_name"] == "Tools & Hardware"
+
+
 def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
     monkeypatch.setattr(
         store,

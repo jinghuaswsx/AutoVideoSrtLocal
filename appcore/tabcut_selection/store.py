@@ -5,6 +5,7 @@ import json
 from typing import Any, Callable, Mapping
 
 from appcore.db import execute, query
+from appcore.tabcut_selection.categories import goods_category_source
 
 
 QueryFn = Callable[[str, list[Any]], list[dict]]
@@ -208,6 +209,16 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
     sort_column = GOODS_SORTS.get(str(args.get("sort") or "sold_count_7d"), "s.sold_count_7d")
     where = ["s.region = %s"]
     params: list[Any] = [str(args.get("region") or "US")]
+
+    biz_date = _date_arg(args, "biz_date")
+    if biz_date:
+        where.append("s.biz_date = %s")
+        params.append(biz_date)
+
+    source_category = goods_category_source(_text_arg(args, "source_category"))
+    if source_category:
+        where.append("s.source = %s")
+        params.append(source_category)
 
     for arg_name, column in [
         ("category_l1", "g.category_l1_name"),
