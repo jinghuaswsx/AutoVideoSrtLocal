@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from web.services.media_detail_translation import apply_detail_translate_task
 
 
@@ -170,7 +172,21 @@ def test_build_detail_translate_tasks_response_validates_queries_and_projects_ro
         {
             "id": "img-1",
             "created_at": None,
-            "state_json": '{"preset":"detail","status":"done","medias_context":{"entry":"medias_edit_detail","product_id":123,"target_lang":"de","apply_status":"applied"}}',
+            "state_json": json.dumps({
+                "preset": "detail",
+                "status": "done",
+                "progress": {"total": 2, "done": 2, "failed": 0, "running": 0},
+                "items": [
+                    {"idx": 0, "status": "done", "dst_tos_key": "artifacts/image_translate/t/out_0.png"},
+                    {"idx": 1, "status": "done", "dst_tos_key": "artifacts/image_translate/t/out_1.png"},
+                ],
+                "medias_context": {
+                    "entry": "medias_edit_detail",
+                    "product_id": 123,
+                    "target_lang": "de",
+                    "apply_status": "applied",
+                },
+            }),
         },
         {
             "id": "img-2",
@@ -192,6 +208,8 @@ def test_build_detail_translate_tasks_response_validates_queries_and_projects_ro
     assert outcome.payload is not None
     assert [item["task_id"] for item in outcome.payload["items"]] == ["img-1"]
     assert outcome.payload["items"][0]["detail_url"] == "/image-translate/img-1"
+    assert outcome.payload["items"][0]["reapply_available"] is True
+    assert outcome.payload["items"][0]["reapply_done_count"] == 2
     assert calls == [
         (
             "SELECT id, created_at, state_json "

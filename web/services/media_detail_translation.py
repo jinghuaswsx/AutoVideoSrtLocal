@@ -231,6 +231,7 @@ def project_detail_translate_task_rows(
         progress = state.get("progress") or {}
         if not isinstance(progress, MappingABC):
             progress = {}
+        reapply_meta = _detail_translate_reapply_meta(state)
         task_id = str(row["id"])
         items.append({
             "task_id": task_id,
@@ -239,6 +240,10 @@ def project_detail_translate_task_rows(
             "applied_detail_image_ids": list(ctx.get("applied_detail_image_ids") or []),
             "last_apply_error": ctx.get("last_apply_error") or "",
             "progress": dict(progress),
+            "reapply_available": reapply_meta["available"],
+            "reapply_done_count": reapply_meta["done_count"],
+            "reapply_failed_count": reapply_meta["failed_count"],
+            "reapply_pending_count": reapply_meta["pending_count"],
             "detail_url": f"/image-translate/{task_id}",
             "created_at": _isoformat_or_none(row.get("created_at")),
         })
@@ -358,6 +363,35 @@ def _load_state(value: object) -> object:
         return json.loads(value or "{}")
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
+
+
+def _detail_translate_reapply_meta(state: Mapping[str, object]) -> dict:
+    items = state.get("items") or []
+    if not isinstance(items, Sequence) or isinstance(items, (str, bytes, bytearray)):
+        items = []
+    done_count = 0
+    failed_count = 0
+    pending_count = 0
+    for item in items:
+        if not isinstance(item, MappingABC):
+            continue
+        status = str(item.get("status") or "").strip().lower()
+        if status == "done":
+            if str(item.get("dst_tos_key") or "").strip():
+                done_count += 1
+            else:
+                pending_count += 1
+        elif status == "failed":
+            failed_count += 1
+        else:
+            pending_count += 1
+    task_status = str(state.get("status") or "").strip().lower()
+    return {
+        "available": task_status in {"done", "error"} and done_count > 0 and pending_count == 0,
+        "done_count": done_count,
+        "failed_count": failed_count,
+        "pending_count": pending_count,
+    }
 
 
 def _optional_int(value: object) -> int | None:

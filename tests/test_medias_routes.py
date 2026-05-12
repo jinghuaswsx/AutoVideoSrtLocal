@@ -912,6 +912,10 @@ def test_detail_image_translate_tasks_filters_current_product_and_lang(authed_cl
                     "status": "done",
                     "preset": "detail",
                     "progress": {"total": 2, "done": 2, "failed": 0, "running": 0},
+                    "items": [
+                        {"idx": 0, "status": "done", "dst_tos_key": "artifacts/image_translate/t/out_0.png"},
+                        {"idx": 1, "status": "done", "dst_tos_key": "artifacts/image_translate/t/out_1.png"},
+                    ],
                     "medias_context": {
                         "entry": "medias_edit_detail",
                         "product_id": 123,
@@ -946,6 +950,8 @@ def test_detail_image_translate_tasks_filters_current_product_and_lang(authed_cl
     assert len(data["items"]) == 1
     assert data["items"][0]["task_id"] == "img-1"
     assert data["items"][0]["apply_status"] == "applied"
+    assert data["items"][0]["reapply_available"] is True
+    assert data["items"][0]["reapply_done_count"] == 2
     assert data["items"][0]["detail_url"] == "/image-translate/img-1"
 
 

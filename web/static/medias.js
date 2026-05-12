@@ -4341,6 +4341,29 @@
     }
   }
 
+  function edDetailTranslateCanReapply(task) {
+    if (!task) return false;
+    if (task.reapply_available === true) return true;
+    const status = String(task.status || '').toLowerCase();
+    const progress = task.progress || {};
+    const doneCount = Number(task.reapply_done_count ?? progress.done ?? 0);
+    const pendingCount = Number(task.reapply_pending_count ?? progress.running ?? 0);
+    return (status === 'done' || status === 'error') && doneCount > 0 && pendingCount === 0;
+  }
+
+  function edDetailTranslateReapplyButton(task, lang, label) {
+    if (!edDetailTranslateCanReapply(task)) return '';
+    const progress = task.progress || {};
+    const doneCount = Number(task.reapply_done_count ?? progress.done ?? 0);
+    const failedCount = Number(task.reapply_failed_count ?? progress.failed ?? 0);
+    const totalCount = Number(progress.total || (doneCount + failedCount));
+    const taskId = String(task.task_id || '');
+    const text = label || (failedCount > 0
+      ? `重新回填（${doneCount}/${totalCount}，忽略 ${failedCount} 张失败）`
+      : `重新回填（${doneCount}/${totalCount}）`);
+    return `<button type="button" class="oc-btn primary sm" data-apply-translate-task="${escapeHtml(taskId)}" data-apply-translate-lang="${escapeHtml(lang)}">${escapeHtml(text)}</button>`;
+  }
+
   async function edLoadDetailTranslateTasks(pid, lang) {
     if (!pid || !lang || lang === 'en') {
       edState.detailTranslateTasks[lang] = [];
@@ -4375,6 +4398,8 @@
       const applyStatus = escapeHtml(edDetailTranslateApplyLabel(task.apply_status));
       const updatedAt = escapeHtml(fmtDate(task.updated_at || task.created_at || ''));
       const progressText = `${progress.done || 0}/${progress.total || 0}`;
+      const reapplyAvailable = task.reapply_available === true || edDetailTranslateCanReapply(task);
+      const reapplyButton = reapplyAvailable ? edDetailTranslateReapplyButton(task, edState.activeLang, '重新回填') : '';
       return `
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--oc-border);border-radius:10px;background:var(--oc-bg-subtle);margin-top:8px;">
           <div style="display:grid;gap:4px;min-width:0;">
@@ -4387,6 +4412,7 @@
             <div class="oc-hint">更新时间：${updatedAt || '-'}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+            ${reapplyButton}
             <a class="oc-btn ghost sm" href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer">查看详情</a>
             <button type="button" class="oc-btn ghost sm" data-retranslate-lang="${escapeHtml(edState.activeLang)}">重新翻译</button>
           </div>
@@ -5004,6 +5030,7 @@
       ? (tasks.find(task => String(task.task_id || '') === appliedTaskId) || { task_id: appliedTaskId, detail_url: `/image-translate/${encodeURIComponent(appliedTaskId)}` })
       : null;
     const latest = tasks[0] || null;
+    const statusReapplyTask = appliedTask || latest;
     let html = '';
     if (appliedTask) {
       const appliedLabel = escapeHtml(edDetailTranslateApplyLabel(appliedTask.apply_status || 'applied'));
@@ -5018,28 +5045,8 @@
       html = `当前 ${escapeHtml(langName)} 还没有执行过从英语版一键翻译。`;
     }
 
-    // 当最近一次任务已结束但尚未回填，且存在成功项时，显示"手动回填已成功项"按钮。
-    // 仅以 latest 为目标，避免误把过期任务的图覆盖上来。
-    const candidate = latest && !appliedTask ? latest : null;
-    if (candidate) {
-      const applyStatus = String(candidate.apply_status || '').toLowerCase();
-      const status_ = String(candidate.status || '').toLowerCase();
-      const progress = candidate.progress || {};
-      const doneCount = Number(progress.done || 0);
-      const totalCount = Number(progress.total || 0);
-      const failedCount = Number(progress.failed || 0);
-      const canApply =
-        (status_ === 'done' || status_ === 'error')
-        && applyStatus !== 'applied'
-        && applyStatus !== 'applied_partial'
-        && doneCount > 0;
-      if (canApply) {
-        const btnLabel = failedCount > 0
-          ? `手动回填已成功项（${doneCount}/${totalCount}，忽略 ${failedCount} 张失败）`
-          : `手动回填已成功项（${doneCount}/${totalCount}）`;
-        html += ` <button type="button" class="oc-btn primary sm" data-apply-translate-task="${escapeHtml(candidate.task_id)}" data-apply-translate-lang="${escapeHtml(lang)}">${escapeHtml(btnLabel)}</button>`;
-      }
-    }
+    const statusReapplyButton = edDetailTranslateReapplyButton(statusReapplyTask, lang);
+    if (statusReapplyButton) html += ' ' + statusReapplyButton;
 
     status.hidden = false;
     status.innerHTML = html;
@@ -5155,6 +5162,31 @@
         link.hidden = true;
         link.removeAttribute('href');
       }
+    }
+  }
+
+  async function edApplyDetailTranslateTask(btn) {
+    const taskId = btn && btn.getAttribute('data-apply-translate-task') || '';
+    const lang = (btn && btn.getAttribute('data-apply-translate-lang') || edState.activeLang || '').trim().toLowerCase();
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    if (!pid || !taskId || !lang) return;
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '回填中...';
+    try {
+      const data = await fetchJSON(
+        `/medias/api/products/${pid}/detail-images/${encodeURIComponent(lang)}/apply-translate-task/${encodeURIComponent(taskId)}`,
+        { method: 'POST' },
+      );
+      const msg = data.skipped_failed > 0
+        ? `已回填 ${data.applied} 张（忽略 ${data.skipped_failed} 张失败）`
+        : `已回填 ${data.applied} 张`;
+      alert(msg);
+      await edRefreshDetailImagesPanel(lang);
+    } catch (err) {
+      alert('重新回填失败：' + (err && err.message ? err.message : err));
+      btn.disabled = false;
+      btn.textContent = orig;
     }
   }
 
@@ -6780,37 +6812,23 @@
       });
     });
     $('edDetailTranslateHistory') && $('edDetailTranslateHistory').addEventListener('click', (e) => {
-      const btn = e.target && e.target.closest('[data-retranslate-lang]');
-      if (!btn) return;
-      edStartDetailTranslate(btn.getAttribute('data-retranslate-lang') || edState.activeLang).catch((err) => {
+      const btn = e.target && e.target.closest('[data-apply-translate-task]');
+      if (btn) {
+        edApplyDetailTranslateTask(btn).catch((err) => {
+          console.error('[detail-images] reapply translate task failed:', err);
+        });
+        return;
+      }
+      const retranslateBtn = e.target && e.target.closest('[data-retranslate-lang]');
+      if (!retranslateBtn) return;
+      edStartDetailTranslate(retranslateBtn.getAttribute('data-retranslate-lang') || edState.activeLang).catch((err) => {
         console.error('[detail-images] retranslate failed:', err);
       });
     });
     $('edDetailTranslateStatus') && $('edDetailTranslateStatus').addEventListener('click', async (e) => {
       const btn = e.target && e.target.closest('[data-apply-translate-task]');
       if (!btn) return;
-      const taskId = btn.getAttribute('data-apply-translate-task') || '';
-      const lang = (btn.getAttribute('data-apply-translate-lang') || edState.activeLang || '').trim().toLowerCase();
-      const pid = edState.productData && edState.productData.product && edState.productData.product.id;
-      if (!pid || !taskId || !lang) return;
-      const orig = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = '回填中...';
-      try {
-        const data = await fetchJSON(
-          `/medias/api/products/${pid}/detail-images/${encodeURIComponent(lang)}/apply-translate-task/${encodeURIComponent(taskId)}`,
-          { method: 'POST' },
-        );
-        const msg = data.skipped_failed > 0
-          ? `已回填 ${data.applied} 张（忽略 ${data.skipped_failed} 张失败）`
-          : `已回填 ${data.applied} 张`;
-        alert(msg);
-        await edRefreshDetailImagesPanel(lang);
-      } catch (err) {
-        alert('手动回填失败：' + (err && err.message ? err.message : err));
-        btn.disabled = false;
-        btn.textContent = orig;
-      }
+      await edApplyDetailTranslateTask(btn);
     });
 
     $('edCwAddBtn').addEventListener('click', () => {
