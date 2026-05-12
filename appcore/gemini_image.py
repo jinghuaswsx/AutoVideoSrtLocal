@@ -836,12 +836,13 @@ def generate_image(
     user_id: int | None = None,
     project_id: str | None = None,
     service: str = "image_translate.generate",
+    channel: str | None = None,
     apimart_size: str | None = None,
     apimart_resolution: str | None = None,
     on_apimart_submitted: Callable[[str], None] | None = None,
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
-    channel = _resolve_channel()
+    channel = normalize_image_channel(channel) if channel else _resolve_channel()
     # 历史任务若保存了 OpenAI Image 2 虚拟 model_id，即使管理员关了开关也要保持原模型运行
     if channel == "openrouter" and is_openrouter_openai_image2_model(model):
         model_id = (model or "").strip()
