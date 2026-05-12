@@ -241,6 +241,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "tabcut_daily_selection": {
+        "code": "tabcut_daily_selection",
+        "name": "Tabcut US 选品日快照",
+        "description": (
+            "每天北京时间 08:00 使用服务器 cjh 桌面 Chrome 的 Tabcut 旗舰版登录态，"
+            "采集美国站近 7 天 Top 视频和近 7 个日榜 Top500 商品快照，写入 TABCUT 选品模块。"
+            "请求间隔不低于 3 秒。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-12-tabcut-crawler-design.md"
+        ),
+        "schedule": "每天 08:00（北京时间），采集 US 最近 7 天数据",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "tabcut-daily-selection.timer",
+        "runner": "tools/tabcut_crawler/main.py",
+        "deployment": "生产服务器 cjh 用户桌面 Chrome profile",
+        "log_table": "scheduled_task_runs",
+    },
     "active_task_pre_restart_check": {
         "code": "active_task_pre_restart_check",
         "name": "Active task pre-restart check",

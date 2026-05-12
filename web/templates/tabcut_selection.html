@@ -1,0 +1,199 @@
+{% extends "layout.html" %}
+{% block title %}TABCUT Selection - AutoVideoSrt{% endblock %}
+{% block page_title %}TABCUT Selection{% endblock %}
+{% block extra_style %}
+.tabcut-page { color:#1f2937; }
+.tabcut-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid #d8dee8; border-radius:999px; background:#f6f8fb; }
+.tabcut-tab-link { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
+.tabcut-tab-link.active { background:#0f766e; color:#fff; }
+.tabcut-toolbar { display:grid; grid-template-columns:repeat(6, minmax(120px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
+.tabcut-field label { display:block; margin-bottom:5px; color:#64748b; font-size:12px; font-weight:700; }
+.tabcut-input, .tabcut-select { width:100%; height:34px; padding:0 9px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1f2937; font-size:14px; }
+.tabcut-actions { display:flex; gap:8px; }
+.tabcut-btn { height:34px; padding:0 14px; border:1px solid #0f766e; border-radius:6px; background:#0f766e; color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+.tabcut-btn.secondary { border-color:#cbd5e1; background:#fff; color:#334155; }
+.tabcut-view-tabs { display:flex; gap:8px; margin-bottom:12px; }
+.tabcut-view-tab { height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; font-weight:700; cursor:pointer; }
+.tabcut-view-tab.active { border-color:#0f766e; background:#ecfdf5; color:#0f766e; }
+.tabcut-table-wrap { overflow-x:auto; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
+.tabcut-table { width:100%; min-width:1180px; border-collapse:collapse; font-size:13px; }
+.tabcut-table th { position:sticky; top:0; padding:10px; border-bottom:1px solid #d8dee8; background:#f8fafc; color:#64748b; text-align:left; white-space:nowrap; }
+.tabcut-table td { padding:10px; border-bottom:1px solid #edf2f7; vertical-align:top; }
+.tabcut-table tr:hover td { background:#f8fafc; }
+.tabcut-name { max-width:360px; line-height:1.35; word-break:break-word; }
+.tabcut-num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.tabcut-muted { color:#64748b; }
+.tabcut-cover { width:54px; height:54px; border-radius:6px; object-fit:cover; background:#eef2f7; }
+.tabcut-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 12px; color:#64748b; font-size:13px; }
+.tabcut-pager { display:flex; gap:8px; justify-content:center; padding:12px; }
+.tabcut-empty { padding:36px; text-align:center; color:#64748b; }
+@media (max-width: 980px) {
+  .tabcut-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); }
+  .tabcut-actions { grid-column:1 / -1; }
+}
+{% endblock %}
+
+{% block content %}
+<div class="tabcut-page">
+  <nav class="tabcut-tabs" aria-label="Selection center tabs">
+    <a class="tabcut-tab-link" href="/medias/mk-selection">明空选品</a>
+    <a class="tabcut-tab-link" href="/new-product-review/">新品选择</a>
+    <a class="tabcut-tab-link active" href="/medias/tabcut-selection">TABCUT</a>
+  </nav>
+
+  <section class="tabcut-toolbar">
+    <div class="tabcut-field">
+      <label for="categoryL1">Category</label>
+      <input class="tabcut-input" id="categoryL1" placeholder="All">
+    </div>
+    <div class="tabcut-field">
+      <label for="minVideoSales">Video Sales</label>
+      <input class="tabcut-input" id="minVideoSales" type="number" min="0" placeholder="0">
+    </div>
+    <div class="tabcut-field">
+      <label for="minGoodsSales">Product Sales</label>
+      <input class="tabcut-input" id="minGoodsSales" type="number" min="0" placeholder="0">
+    </div>
+    <div class="tabcut-field">
+      <label for="minGmv">GMV</label>
+      <input class="tabcut-input" id="minGmv" type="number" min="0" step="0.01" placeholder="0">
+    </div>
+    <div class="tabcut-field">
+      <label for="sortBy">Sort</label>
+      <select class="tabcut-select" id="sortBy">
+        <option value="score">Score</option>
+        <option value="play_count">Plays</option>
+        <option value="item_sold_count">Video Sales</option>
+        <option value="goods_sold_count_7d">Product Sales</option>
+        <option value="goods_gmv_7d">GMV</option>
+      </select>
+    </div>
+    <div class="tabcut-field">
+      <label for="pageSize">Rows</label>
+      <select class="tabcut-select" id="pageSize">
+        <option>50</option>
+        <option>100</option>
+        <option>200</option>
+      </select>
+    </div>
+    <div class="tabcut-actions">
+      <button class="tabcut-btn" type="button" onclick="loadTabcut(1)">Search</button>
+      <button class="tabcut-btn secondary" type="button" onclick="resetTabcut()">Reset</button>
+    </div>
+  </section>
+
+  <div class="tabcut-view-tabs">
+    <button class="tabcut-view-tab active" type="button" data-view="videos" onclick="setTabcutView('videos')">Videos</button>
+    <button class="tabcut-view-tab" type="button" data-view="goods" onclick="setTabcutView('goods')">Products</button>
+  </div>
+
+  <div class="tabcut-status">
+    <span id="tabcutStatus">Ready</span>
+    <button class="tabcut-btn secondary" type="button" onclick="refreshTabcut()">Refresh</button>
+  </div>
+
+  <div class="tabcut-table-wrap">
+    <table class="tabcut-table">
+      <thead id="tabcutHead"></thead>
+      <tbody id="tabcutBody"><tr><td class="tabcut-empty">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="tabcut-pager" id="tabcutPager"></div>
+</div>
+
+<script>
+let tabcutView = "videos";
+let tabcutPage = 1;
+
+function qs(id) { return document.getElementById(id); }
+function fmtInt(v) { const n = Number(v || 0); return n ? n.toLocaleString() : ""; }
+function fmtMoney(v) { const n = Number(v || 0); return n ? "$" + n.toLocaleString(undefined, {maximumFractionDigits: 0}) : ""; }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function setTabcutView(view) {
+  tabcutView = view;
+  document.querySelectorAll(".tabcut-view-tab").forEach(btn => btn.classList.toggle("active", btn.dataset.view === view));
+  loadTabcut(1);
+}
+
+function paramsFor(page) {
+  const params = new URLSearchParams({ page, page_size: qs("pageSize").value, sort: qs("sortBy").value });
+  if (qs("categoryL1").value.trim()) params.set("category_l1", qs("categoryL1").value.trim());
+  if (qs("minVideoSales").value) params.set("min_video_sales", qs("minVideoSales").value);
+  if (qs("minGoodsSales").value) params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value);
+  if (qs("minGmv").value) params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", qs("minGmv").value);
+  return params;
+}
+
+async function loadTabcut(page) {
+  tabcutPage = page;
+  qs("tabcutStatus").textContent = "Loading...";
+  const endpoint = tabcutView === "videos" ? "/medias/api/tabcut-selection/videos" : "/medias/api/tabcut-selection/goods";
+  const resp = await fetch(`${endpoint}?${paramsFor(page).toString()}`);
+  const data = await resp.json();
+  if (!resp.ok) {
+    qs("tabcutBody").innerHTML = `<tr><td class="tabcut-empty">${esc(data.error || "Load failed")}</td></tr>`;
+    qs("tabcutStatus").textContent = "Load failed";
+    return;
+  }
+  renderTabcut(data);
+}
+
+function renderTabcut(data) {
+  const rows = data.items || [];
+  qs("tabcutStatus").textContent = `${fmtInt(data.total)} rows`;
+  if (tabcutView === "videos") {
+    qs("tabcutHead").innerHTML = "<tr><th>#</th><th>Video</th><th>Product</th><th class='tabcut-num'>Score</th><th class='tabcut-num'>Plays</th><th class='tabcut-num'>Video Sales</th><th class='tabcut-num'>Product Sales</th><th class='tabcut-num'>GMV</th><th>Category</th></tr>";
+    qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
+      <tr>
+        <td>${(data.page - 1) * data.page_size + idx + 1}</td>
+        <td class="tabcut-name"><strong>${esc(row.video_id)}</strong><div class="tabcut-muted">${esc(row.primary_item_id || "")}</div></td>
+        <td class="tabcut-name">${esc(row.primary_item_id || "")}</td>
+        <td class="tabcut-num">${Number(row.score || 0).toFixed(1)}</td>
+        <td class="tabcut-num">${fmtInt(row.play_count)}</td>
+        <td class="tabcut-num">${fmtInt(row.item_sold_count)}</td>
+        <td class="tabcut-num">${fmtInt(row.goods_sold_count_7d)}</td>
+        <td class="tabcut-num">${fmtMoney(row.goods_gmv_7d)}</td>
+        <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
+      </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='9'>No data</td></tr>";
+  } else {
+    qs("tabcutHead").innerHTML = "<tr><th>#</th><th></th><th>Product</th><th>Category</th><th class='tabcut-num'>Sales</th><th class='tabcut-num'>GMV</th><th class='tabcut-num'>Total Sales</th><th class='tabcut-num'>Total GMV</th><th class='tabcut-num'>Videos</th></tr>";
+    qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
+      <tr>
+        <td>${(data.page - 1) * data.page_size + idx + 1}</td>
+        <td>${row.item_pic_url ? `<img class="tabcut-cover" src="${esc(row.item_pic_url)}" alt="">` : ""}</td>
+        <td class="tabcut-name"><strong>${esc(row.item_name)}</strong><div class="tabcut-muted">${esc(row.item_id)}</div></td>
+        <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
+        <td class="tabcut-num">${fmtInt(row.sold_count_7d || row.sold_count_period)}</td>
+        <td class="tabcut-num">${fmtMoney(row.gmv_7d || row.gmv_period)}</td>
+        <td class="tabcut-num">${fmtInt(row.sold_count_total)}</td>
+        <td class="tabcut-num">${fmtMoney(row.gmv_total)}</td>
+        <td class="tabcut-num">${fmtInt(row.related_video_count)}</td>
+      </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='9'>No data</td></tr>";
+  }
+  renderPager(data);
+}
+
+function renderPager(data) {
+  const totalPages = Math.max(1, Math.ceil((data.total || 0) / data.page_size));
+  qs("tabcutPager").innerHTML = `
+    <button class="tabcut-btn secondary" ${data.page <= 1 ? "disabled" : ""} onclick="loadTabcut(${data.page - 1})">Prev</button>
+    <span class="tabcut-muted">${data.page} / ${totalPages}</span>
+    <button class="tabcut-btn secondary" ${data.page >= totalPages ? "disabled" : ""} onclick="loadTabcut(${data.page + 1})">Next</button>`;
+}
+
+function resetTabcut() {
+  ["categoryL1", "minVideoSales", "minGoodsSales", "minGmv"].forEach(id => qs(id).value = "");
+  qs("sortBy").value = "score";
+  loadTabcut(1);
+}
+
+async function refreshTabcut() {
+  qs("tabcutStatus").textContent = "Queued";
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  await fetch("/medias/api/tabcut-selection/refresh", { method:"POST", headers:{ "Content-Type":"application/json", "X-CSRFToken":csrf }, body:JSON.stringify({ days:7 }) });
+}
+
+loadTabcut(1);
+</script>
+{% endblock %}

@@ -1,0 +1,451 @@
+from __future__ import annotations
+
+import json
+from typing import Any, Callable, Mapping
+
+from appcore.db import execute, query
+
+
+QueryFn = Callable[[str, list[Any]], list[dict]]
+ExecuteFn = Callable[[str, list[Any]], Any]
+
+VIDEO_SORTS = {
+    "score": "score",
+    "play_count": "play_count",
+    "item_sold_count": "item_sold_count",
+    "video_split_sold_count": "video_split_sold_count",
+    "video_split_gmv": "video_split_gmv",
+    "goods_sold_count_7d": "goods_sold_count_7d",
+    "goods_gmv_7d": "goods_gmv_7d",
+    "goods_growth_rate_7d": "goods_growth_rate_7d",
+}
+
+GOODS_SORTS = {
+    "sold_count_7d": "COALESCE(s.sold_count_7d, s.sold_count_period)",
+    "gmv_7d": "COALESCE(s.gmv_7d, s.gmv_period)",
+    "sold_count_total": "s.sold_count_total",
+    "gmv_total": "s.gmv_total",
+    "sold_growth_rate_7d": "s.sold_growth_rate_7d",
+    "related_video_count": "s.related_video_count",
+}
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value or {}, ensure_ascii=False, default=str)
+
+
+def _int_arg(args: Mapping[str, Any], name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(args.get(name) or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _float_arg(args: Mapping[str, Any], name: str) -> float | None:
+    raw = args.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _text_arg(args: Mapping[str, Any], name: str) -> str | None:
+    value = str(args.get(name) or "").strip()
+    return value or None
+
+
+def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
+    page = _int_arg(args, "page", 1, 1, 10000)
+    page_size = _int_arg(args, "page_size", 50, 10, 200)
+    offset = (page - 1) * page_size
+    sort_column = VIDEO_SORTS.get(str(args.get("sort") or "score"), "score")
+    where = ["region = %s"]
+    params: list[Any] = [str(args.get("region") or "US")]
+
+    for arg_name, column in [
+        ("category_l1", "category_l1_name"),
+        ("category_l2", "category_l2_name"),
+        ("category_l3", "category_l3_name"),
+    ]:
+        value = _text_arg(args, arg_name)
+        if value:
+            where.append(f"{column} = %s")
+            params.append(value)
+
+    min_video_sales = _int_arg(args, "min_video_sales", 0, 0, 10**12)
+    if min_video_sales:
+        where.append("item_sold_count >= %s")
+        params.append(min_video_sales)
+
+    for arg_name, column in [
+        ("min_goods_sales_7d", "goods_sold_count_7d"),
+        ("min_total_sales", "goods_sold_count_total"),
+    ]:
+        value = _int_arg(args, arg_name, 0, 0, 10**12)
+        if value:
+            where.append(f"{column} >= %s")
+            params.append(value)
+
+    for arg_name, column in [
+        ("min_goods_gmv_7d", "goods_gmv_7d"),
+        ("min_video_gmv", "video_split_gmv"),
+    ]:
+        value = _float_arg(args, arg_name)
+        if value is not None:
+            where.append(f"{column} >= %s")
+            params.append(value)
+
+    where_sql = " AND ".join(where)
+    count_rows = query_fn(
+        f"SELECT COUNT(*) AS cnt FROM tabcut_video_candidates WHERE {where_sql}",
+        list(params),
+    )
+    rows = query_fn(
+        f"""
+        SELECT *
+        FROM tabcut_video_candidates
+        WHERE {where_sql}
+        ORDER BY {sort_column} DESC, video_id ASC
+        LIMIT %s OFFSET %s
+        """,
+        list(params) + [page_size, offset],
+    )
+    return {
+        "items": rows,
+        "total": int(count_rows[0]["cnt"] if count_rows else 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
+    page = _int_arg(args, "page", 1, 1, 10000)
+    page_size = _int_arg(args, "page_size", 50, 10, 200)
+    offset = (page - 1) * page_size
+    sort_column = GOODS_SORTS.get(str(args.get("sort") or "sold_count_7d"), "s.sold_count_7d")
+    where = ["s.region = %s"]
+    params: list[Any] = [str(args.get("region") or "US")]
+
+    for arg_name, column in [
+        ("category_l1", "g.category_l1_name"),
+        ("category_l2", "g.category_l2_name"),
+        ("category_l3", "g.category_l3_name"),
+    ]:
+        value = _text_arg(args, arg_name)
+        if value:
+            where.append(f"{column} = %s")
+            params.append(value)
+
+    min_sales = _int_arg(args, "min_sales_7d", 0, 0, 10**12)
+    if min_sales:
+        where.append("COALESCE(s.sold_count_7d, s.sold_count_period) >= %s")
+        params.append(min_sales)
+
+    min_gmv = _float_arg(args, "min_gmv_7d")
+    if min_gmv is not None:
+        where.append("COALESCE(s.gmv_7d, s.gmv_period) >= %s")
+        params.append(min_gmv)
+
+    where_sql = " AND ".join(where)
+    count_rows = query_fn(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM tabcut_goods_snapshots s
+        JOIN tabcut_goods g ON g.item_id = s.item_id
+        WHERE {where_sql}
+        """,
+        list(params),
+    )
+    rows = query_fn(
+        f"""
+        SELECT s.*, g.item_name, g.item_pic_url, g.category_l1_name, g.category_l2_name,
+               g.category_l3_name, g.seller_name, g.seller_type
+        FROM tabcut_goods_snapshots s
+        JOIN tabcut_goods g ON g.item_id = s.item_id
+        WHERE {where_sql}
+        ORDER BY {sort_column} DESC, s.item_id ASC
+        LIMIT %s OFFSET %s
+        """,
+        list(params) + [page_size, offset],
+    )
+    return {
+        "items": rows,
+        "total": int(count_rows[0]["cnt"] if count_rows else 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+def upsert_video(video: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:
+    params = [
+        video.get("video_id"),
+        video.get("region") or "US",
+        video.get("author_name"),
+        video.get("author_avatar_url"),
+        video.get("video_cover_url"),
+        video.get("tk_video_url"),
+        video.get("video_desc"),
+        video.get("video_duration_ms"),
+        video.get("create_time"),
+        video.get("primary_item_id"),
+        video.get("primary_item_name"),
+        _json(video.get("raw")),
+    ]
+    return execute_fn(
+        """
+        INSERT INTO tabcut_videos (
+            video_id, region, author_name, author_avatar_url, video_cover_url,
+            tk_video_url, video_desc, video_duration_ms, create_time,
+            primary_item_id, primary_item_name, raw_json
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            region=VALUES(region),
+            author_name=VALUES(author_name),
+            author_avatar_url=VALUES(author_avatar_url),
+            video_cover_url=VALUES(video_cover_url),
+            tk_video_url=VALUES(tk_video_url),
+            video_desc=VALUES(video_desc),
+            video_duration_ms=VALUES(video_duration_ms),
+            create_time=VALUES(create_time),
+            primary_item_id=VALUES(primary_item_id),
+            primary_item_name=VALUES(primary_item_name),
+            raw_json=VALUES(raw_json),
+            last_seen_at=CURRENT_TIMESTAMP
+        """,
+        params,
+    )
+
+
+def upsert_video_snapshot(video: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:
+    params = [
+        video.get("biz_date"),
+        video.get("region") or "US",
+        video.get("video_id"),
+        video.get("source_sort") or "unknown",
+        video.get("rank_position"),
+        video.get("play_count"),
+        video.get("like_count"),
+        video.get("share_count"),
+        video.get("comment_count"),
+        video.get("item_sold_count"),
+        video.get("video_split_sold_count"),
+        video.get("video_split_gmv"),
+        video.get("related_item_id"),
+        video.get("related_item_name"),
+        _json(video.get("raw")),
+    ]
+    return execute_fn(
+        """
+        INSERT INTO tabcut_video_snapshots (
+            biz_date, region, video_id, source_sort, rank_position,
+            play_count, like_count, share_count, comment_count, item_sold_count,
+            video_split_sold_count, video_split_gmv, related_item_id,
+            related_item_name, snapshot_json
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            rank_position=VALUES(rank_position),
+            play_count=VALUES(play_count),
+            like_count=VALUES(like_count),
+            share_count=VALUES(share_count),
+            comment_count=VALUES(comment_count),
+            item_sold_count=VALUES(item_sold_count),
+            video_split_sold_count=VALUES(video_split_sold_count),
+            video_split_gmv=VALUES(video_split_gmv),
+            related_item_id=VALUES(related_item_id),
+            related_item_name=VALUES(related_item_name),
+            snapshot_json=VALUES(snapshot_json),
+            crawled_at=CURRENT_TIMESTAMP
+        """,
+        params,
+    )
+
+
+def upsert_goods(goods: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:
+    params = [
+        goods.get("item_id"),
+        goods.get("region") or "US",
+        goods.get("item_name"),
+        goods.get("item_pic_url"),
+        goods.get("category_id"),
+        goods.get("category_name"),
+        goods.get("category_l1_id"),
+        goods.get("category_l1_name"),
+        goods.get("category_l2_id"),
+        goods.get("category_l2_name"),
+        goods.get("category_l3_id"),
+        goods.get("category_l3_name"),
+        goods.get("seller_id"),
+        goods.get("seller_name"),
+        goods.get("seller_type"),
+        _json(goods.get("raw")),
+    ]
+    return execute_fn(
+        """
+        INSERT INTO tabcut_goods (
+            item_id, region, item_name, item_pic_url, category_id, category_name,
+            category_l1_id, category_l1_name, category_l2_id, category_l2_name,
+            category_l3_id, category_l3_name, seller_id, seller_name, seller_type,
+            raw_json
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            region=VALUES(region),
+            item_name=VALUES(item_name),
+            item_pic_url=VALUES(item_pic_url),
+            category_id=VALUES(category_id),
+            category_name=VALUES(category_name),
+            category_l1_id=VALUES(category_l1_id),
+            category_l1_name=VALUES(category_l1_name),
+            category_l2_id=VALUES(category_l2_id),
+            category_l2_name=VALUES(category_l2_name),
+            category_l3_id=VALUES(category_l3_id),
+            category_l3_name=VALUES(category_l3_name),
+            seller_id=VALUES(seller_id),
+            seller_name=VALUES(seller_name),
+            seller_type=VALUES(seller_type),
+            raw_json=VALUES(raw_json),
+            last_seen_at=CURRENT_TIMESTAMP
+        """,
+        params,
+    )
+
+
+def upsert_goods_snapshot(goods: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:
+    params = [
+        goods.get("biz_date"),
+        goods.get("region") or "US",
+        goods.get("item_id"),
+        goods.get("source") or "goods_ranking",
+        goods.get("rank_position"),
+        goods.get("price_min"),
+        goods.get("price_max"),
+        goods.get("commission_rate"),
+        goods.get("sold_count_1d"),
+        goods.get("sold_count_7d"),
+        goods.get("sold_count_30d"),
+        goods.get("sold_count_total"),
+        goods.get("sold_count_period"),
+        goods.get("sold_growth_rate_1d"),
+        goods.get("sold_growth_rate_7d"),
+        goods.get("sold_growth_rate_30d"),
+        goods.get("sold_growth_rate_period"),
+        goods.get("gmv_1d"),
+        goods.get("gmv_7d"),
+        goods.get("gmv_30d"),
+        goods.get("gmv_total"),
+        goods.get("gmv_period"),
+        goods.get("related_video_count"),
+        goods.get("related_creator_count"),
+        goods.get("related_live_count"),
+        goods.get("discover_time"),
+        _json(goods.get("raw")),
+    ]
+    return execute_fn(
+        """
+        INSERT INTO tabcut_goods_snapshots (
+            biz_date, region, item_id, source, rank_position, price_min, price_max,
+            commission_rate, sold_count_1d, sold_count_7d, sold_count_30d,
+            sold_count_total, sold_count_period, sold_growth_rate_1d,
+            sold_growth_rate_7d, sold_growth_rate_30d, sold_growth_rate_period,
+            gmv_1d, gmv_7d, gmv_30d, gmv_total, gmv_period,
+            related_video_count, related_creator_count, related_live_count,
+            discover_time, snapshot_json
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s
+        )
+        ON DUPLICATE KEY UPDATE
+            rank_position=VALUES(rank_position),
+            price_min=VALUES(price_min),
+            price_max=VALUES(price_max),
+            commission_rate=VALUES(commission_rate),
+            sold_count_1d=VALUES(sold_count_1d),
+            sold_count_7d=VALUES(sold_count_7d),
+            sold_count_30d=VALUES(sold_count_30d),
+            sold_count_total=VALUES(sold_count_total),
+            sold_count_period=VALUES(sold_count_period),
+            sold_growth_rate_1d=VALUES(sold_growth_rate_1d),
+            sold_growth_rate_7d=VALUES(sold_growth_rate_7d),
+            sold_growth_rate_30d=VALUES(sold_growth_rate_30d),
+            sold_growth_rate_period=VALUES(sold_growth_rate_period),
+            gmv_1d=VALUES(gmv_1d),
+            gmv_7d=VALUES(gmv_7d),
+            gmv_30d=VALUES(gmv_30d),
+            gmv_total=VALUES(gmv_total),
+            gmv_period=VALUES(gmv_period),
+            related_video_count=VALUES(related_video_count),
+            related_creator_count=VALUES(related_creator_count),
+            related_live_count=VALUES(related_live_count),
+            discover_time=VALUES(discover_time),
+            snapshot_json=VALUES(snapshot_json),
+            crawled_at=CURRENT_TIMESTAMP
+        """,
+        params,
+    )
+
+
+def upsert_video_candidate(candidate: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:
+    params = [
+        candidate.get("biz_date"),
+        candidate.get("region") or "US",
+        candidate.get("video_id"),
+        candidate.get("primary_item_id"),
+        candidate.get("score") or 0,
+        _json(candidate.get("score_parts")),
+        candidate.get("play_count"),
+        candidate.get("item_sold_count"),
+        candidate.get("video_split_sold_count"),
+        candidate.get("video_split_gmv"),
+        candidate.get("goods_sold_count_7d"),
+        candidate.get("goods_gmv_7d"),
+        candidate.get("goods_sold_count_total"),
+        candidate.get("goods_gmv_total"),
+        candidate.get("goods_growth_rate_7d"),
+        candidate.get("category_l1_name"),
+        candidate.get("category_l2_name"),
+        candidate.get("category_l3_name"),
+        _json(candidate.get("candidate_json")),
+    ]
+    return execute_fn(
+        """
+        INSERT INTO tabcut_video_candidates (
+            biz_date, region, video_id, primary_item_id, score, score_parts_json,
+            play_count, item_sold_count, video_split_sold_count, video_split_gmv,
+            goods_sold_count_7d, goods_gmv_7d, goods_sold_count_total, goods_gmv_total,
+            goods_growth_rate_7d, category_l1_name, category_l2_name, category_l3_name,
+            candidate_json
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s
+        )
+        ON DUPLICATE KEY UPDATE
+            primary_item_id=VALUES(primary_item_id),
+            score=VALUES(score),
+            score_parts_json=VALUES(score_parts_json),
+            play_count=VALUES(play_count),
+            item_sold_count=VALUES(item_sold_count),
+            video_split_sold_count=VALUES(video_split_sold_count),
+            video_split_gmv=VALUES(video_split_gmv),
+            goods_sold_count_7d=VALUES(goods_sold_count_7d),
+            goods_gmv_7d=VALUES(goods_gmv_7d),
+            goods_sold_count_total=VALUES(goods_sold_count_total),
+            goods_gmv_total=VALUES(goods_gmv_total),
+            goods_growth_rate_7d=VALUES(goods_growth_rate_7d),
+            category_l1_name=VALUES(category_l1_name),
+            category_l2_name=VALUES(category_l2_name),
+            category_l3_name=VALUES(category_l3_name),
+            candidate_json=VALUES(candidate_json),
+            crawled_at=CURRENT_TIMESTAMP
+        """,
+        params,
+    )

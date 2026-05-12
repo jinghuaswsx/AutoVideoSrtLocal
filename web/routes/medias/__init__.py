@@ -236,6 +236,7 @@ from . import items as _items
 from . import covers as _covers
 from . import detail_images as _detail_images
 from . import mk_selection as _mk_selection
+from . import tabcut_selection as _tabcut_selection
 from . import media_upload as _media_upload
 
 from ._helpers import _can_access_product, _material_evaluation_message, _schedule_material_evaluation
@@ -272,6 +273,9 @@ _build_private_media_object_proxy_response = _media_upload._build_private_media_
 _build_public_media_object_proxy_response = _media_upload._build_public_media_object_proxy_response
 api_mk_selection = _mk_selection.api_mk_selection
 api_mk_selection_refresh = _mk_selection.api_mk_selection_refresh
+api_tabcut_selection_videos = _tabcut_selection.api_tabcut_selection_videos
+api_tabcut_selection_goods = _tabcut_selection.api_tabcut_selection_goods
+api_tabcut_selection_refresh = _tabcut_selection.api_tabcut_selection_refresh
 api_mk_media_proxy = _mk_selection.api_mk_media_proxy
 api_mk_video_proxy = _mk_selection.api_mk_video_proxy
 api_mk_detail_proxy = _mk_selection.api_mk_detail_proxy
@@ -377,6 +381,7 @@ translation_tasks_page = _pages.translation_tasks_page
 api_list_active_users = _pages.api_list_active_users
 api_list_languages = _pages.api_list_languages
 mk_selection_page = _pages.mk_selection_page
+tabcut_selection_page = _pages.tabcut_selection_page
 
 _normalize_mk_copywriting_query = _products._normalize_mk_copywriting_query
 _mk_product_link_tail = _products._mk_product_link_tail

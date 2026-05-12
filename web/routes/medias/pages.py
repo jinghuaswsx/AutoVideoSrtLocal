@@ -91,3 +91,11 @@ def mk_selection_page():
     if not _routes_module()._is_admin():
         abort(403)
     return render_template("mk_selection.html")
+
+
+@bp.route("/tabcut-selection")
+@login_required
+def tabcut_selection_page():
+    if not _routes_module()._is_admin():
+        abort(403)
+    return render_template("tabcut_selection.html")

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt Tabcut daily US selection crawler at 08:00 Beijing time
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+Unit=tabcut-daily-selection.service
+
+[Install]
+WantedBy=timers.target

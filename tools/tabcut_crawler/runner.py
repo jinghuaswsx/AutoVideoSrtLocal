@@ -1,0 +1,208 @@
+from __future__ import annotations
+
+import csv
+import json
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Callable
+from zoneinfo import ZoneInfo
+
+from appcore.tabcut_selection import store
+from appcore.tabcut_selection.models import normalize_goods_row, normalize_video_row
+from appcore.tabcut_selection.scoring import score_candidate
+
+from .client import TabcutApiClient, goods_ranking_url, video_ranking_url
+
+
+BEIJING = ZoneInfo("Asia/Shanghai")
+
+
+@dataclass(frozen=True)
+class CrawlSource:
+    source: str
+    pages: int
+    url_for_page: Callable[[int], str]
+    kind: str
+    biz_date: str | None = None
+
+
+def recent_biz_dates(days: int = 7, *, today: date | None = None) -> list[str]:
+    today = today or datetime.now(BEIJING).date()
+    return [(today - timedelta(days=offset)).strftime("%Y%m%d") for offset in range(1, days + 1)]
+
+
+def build_recent7_plan(biz_dates: list[str]) -> list[CrawlSource]:
+    plan = [
+        CrawlSource("video_7d_play", 5, lambda page: video_ranking_url(sort=10, page_no=page, rank_day=7), "video"),
+        CrawlSource("video_7d_sales", 5, lambda page: video_ranking_url(sort=60, page_no=page, rank_day=7), "video"),
+    ]
+    for biz_date in biz_dates:
+        plan.append(
+            CrawlSource(
+                f"goods_daily_{biz_date}",
+                5,
+                lambda page, biz_date=biz_date: goods_ranking_url(biz_date=biz_date, page_no=page),
+                "goods",
+                biz_date=biz_date,
+            )
+        )
+    return plan
+
+
+def collect_recent7(
+    *,
+    cdp_url: str = "http://127.0.0.1:9227",
+    output_dir: str | Path | None = None,
+    days: int = 7,
+    persist: bool = True,
+    min_interval_seconds: float = 3.3,
+) -> dict[str, Any]:
+    biz_dates = recent_biz_dates(days)
+    latest_biz_date = _ymd_to_iso(biz_dates[0])
+    output_path = Path(output_dir or Path("data") / "tabcut" / f"recent7-{datetime.now(BEIJING):%Y%m%d-%H%M%S}")
+    output_path.mkdir(parents=True, exist_ok=True)
+    api = TabcutApiClient(cdp_url=cdp_url, min_interval_seconds=min_interval_seconds)
+    datasets: dict[str, dict[str, Any]] = {}
+    request_count = 0
+
+    for source in build_recent7_plan(biz_dates):
+        items: list[dict[str, Any]] = []
+        pages: list[dict[str, Any]] = []
+        for page_no in range(1, source.pages + 1):
+            page_items, total = api.fetch_items(source.url_for_page(page_no))
+            request_count += 1
+            pages.append({"pageNo": page_no, "count": len(page_items), "total": total})
+            items.extend(page_items)
+            _write_json(output_path / f"{source.source}.json", {"source": source.source, "pages": pages, "items": items})
+        datasets[source.source] = {"source": source.source, "kind": source.kind, "biz_date": source.biz_date, "pages": pages, "items": items}
+
+    normalized = _normalize_datasets(datasets, latest_biz_date=latest_biz_date)
+    _write_json(output_path / "tabcut_us_recent7_snapshot.json", {"datasets": datasets, "normalized": normalized})
+    _write_csv(output_path / "videos_top_recent7.csv", normalized["videos"])
+    _write_csv(output_path / "products_daily_recent7.csv", normalized["goods"])
+    _write_csv(output_path / "video_candidates_recent7.csv", normalized["candidates"])
+
+    if persist:
+        _persist_normalized(normalized)
+
+    summary = {
+        "ok": True,
+        "output_dir": str(output_path),
+        "biz_dates": biz_dates,
+        "request_count": request_count,
+        "video_count": len(normalized["videos"]),
+        "goods_count": len(normalized["goods"]),
+        "candidate_count": len(normalized["candidates"]),
+    }
+    _write_json(output_path / "manifest.json", summary)
+    return summary
+
+
+def _normalize_datasets(datasets: dict[str, dict[str, Any]], *, latest_biz_date: str) -> dict[str, list[dict[str, Any]]]:
+    videos: list[dict[str, Any]] = []
+    goods: list[dict[str, Any]] = []
+    goods_by_item: dict[str, dict[str, Any]] = {}
+    for source, dataset in datasets.items():
+        if dataset["kind"] == "video":
+            for row in dataset["items"]:
+                normalized = normalize_video_row(row, source_sort=source)
+                normalized["biz_date"] = latest_biz_date
+                videos.append(normalized)
+        elif dataset["kind"] == "goods":
+            biz_date = _ymd_to_iso(str(dataset["biz_date"]))
+            for row in dataset["items"]:
+                normalized = normalize_goods_row(row, source=source)
+                normalized["biz_date"] = biz_date
+                goods.append(normalized)
+                item_id = normalized.get("item_id")
+                if item_id:
+                    aggregate = goods_by_item.setdefault(item_id, dict(normalized, appeared_days=0, sold_count_7d_sum=0, gmv_7d_sum=0))
+                    aggregate["appeared_days"] += 1
+                    aggregate["sold_count_7d_sum"] += int(normalized.get("sold_count_period") or 0)
+                    aggregate["gmv_7d_sum"] += float(normalized.get("gmv_period") or 0)
+                    if (normalized.get("rank_position") or 999999) < (aggregate.get("rank_position") or 999999):
+                        aggregate.update(normalized)
+
+    candidates = _build_candidates(videos, goods_by_item, latest_biz_date=latest_biz_date)
+    return {"videos": videos, "goods": goods, "candidates": candidates}
+
+
+def _build_candidates(
+    videos: list[dict[str, Any]],
+    goods_by_item: dict[str, dict[str, Any]],
+    *,
+    latest_biz_date: str,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for video in videos:
+        video_id = str(video.get("video_id") or "")
+        if not video_id or video_id in seen:
+            continue
+        seen.add(video_id)
+        item_id = str(video.get("primary_item_id") or "")
+        goods = goods_by_item.get(item_id, {})
+        metrics = {
+            **video,
+            "goods_sold_count_7d": goods.get("sold_count_7d_sum"),
+            "goods_gmv_7d": goods.get("gmv_7d_sum"),
+            "goods_sold_count_total": goods.get("sold_count_total"),
+            "goods_gmv_total": goods.get("gmv_total"),
+            "goods_growth_rate_7d": goods.get("sold_growth_rate_period"),
+        }
+        scored = score_candidate(metrics)
+        candidate = {
+            "biz_date": latest_biz_date,
+            "region": "US",
+            "video_id": video_id,
+            "primary_item_id": item_id or None,
+            "score": scored["score"],
+            "score_parts": scored["parts"],
+            "play_count": video.get("play_count"),
+            "item_sold_count": video.get("item_sold_count"),
+            "video_split_sold_count": video.get("video_split_sold_count"),
+            "video_split_gmv": video.get("video_split_gmv"),
+            "goods_sold_count_7d": goods.get("sold_count_7d_sum"),
+            "goods_gmv_7d": goods.get("gmv_7d_sum"),
+            "goods_sold_count_total": goods.get("sold_count_total"),
+            "goods_gmv_total": goods.get("gmv_total"),
+            "goods_growth_rate_7d": goods.get("sold_growth_rate_period"),
+            "category_l1_name": goods.get("category_l1_name"),
+            "category_l2_name": goods.get("category_l2_name"),
+            "category_l3_name": goods.get("category_l3_name"),
+            "candidate_json": {"video": video, "goods": goods},
+        }
+        candidates.append(candidate)
+    return sorted(candidates, key=lambda row: float(row.get("score") or 0), reverse=True)
+
+
+def _persist_normalized(normalized: dict[str, list[dict[str, Any]]]) -> None:
+    for video in normalized["videos"]:
+        store.upsert_video(video)
+        store.upsert_video_snapshot(video)
+    for goods in normalized["goods"]:
+        store.upsert_goods(goods)
+        store.upsert_goods_snapshot(goods)
+    for candidate in normalized["candidates"]:
+        store.upsert_video_candidate(candidate)
+
+
+def _ymd_to_iso(value: str) -> str:
+    return f"{value[:4]}-{value[4:6]}-{value[6:8]}"
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
+
+
+def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    fieldnames = sorted({key for row in rows for key in row.keys() if key != "raw"})
+    with path.open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
