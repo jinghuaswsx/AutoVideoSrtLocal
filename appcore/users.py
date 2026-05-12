@@ -22,6 +22,14 @@ def check_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
+def update_password(user_id: int, password: str) -> None:
+    pw_hash = hash_password(password)
+    execute(
+        "UPDATE users SET password_hash = %s WHERE id = %s",
+        (pw_hash, user_id),
+    )
+
+
 def create_user(username: str, password: str, role: str = "user") -> int:
     if not is_valid_role(role):
         raise ValueError(f"invalid role: {role}")

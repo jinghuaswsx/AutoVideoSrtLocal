@@ -35,6 +35,7 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 .perm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1000; align-items: center; justify-content: center; }
 .perm-overlay.open { display: flex; }
 .perm-modal { background: #fff; border-radius: 14px; width: 620px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.15); }
+.password-modal { width: 420px; }
 .perm-modal-header { padding: 20px 24px 12px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; }
 .perm-modal-header h2 { font-size: 16px; font-weight: 700; color: #111827; margin: 0; }
 .perm-modal-body { padding: 16px 24px; overflow-y: auto; flex: 1; }
@@ -48,6 +49,8 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 .perm-role-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6; }
 .perm-role-row label { font-size: 13px; font-weight: 600; color: #374151; margin: 0; }
 .perm-role-row select { width: 160px; }
+.password-field { margin-bottom: 14px; }
+.password-error { display: none; color: #ef4444; font-size: 12px; margin-top: 6px; }
 .btn-reset-defaults { padding: 4px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; cursor: pointer; }
 .btn-reset-defaults:hover { background: #f3f4f6; }
 .btn-save { padding: 8px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--accent); color: #fff; border: none; cursor: pointer; }
@@ -124,6 +127,7 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
           <input type="hidden" name="active" value="{{ '0' if u.is_active else '1' }}">
           <button class="btn btn-ghost btn-sm" type="submit" {% if u.role == 'superadmin' %}disabled title="不能禁用超管"{% endif %}>{{ '禁用' if u.is_active else '启用' }}</button>
         </form>
+        <button class="btn-perm" type="button" onclick='openPasswordModal({{ u.id | tojson }}, {{ u.username | tojson }})'>编辑</button>
       </td>
     </tr>
     {% endfor %}
@@ -158,11 +162,37 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
   </div>
 </div>
 
+<!-- Password Modal -->
+<div class="perm-overlay" id="passwordOverlay" onclick="if(event.target===this)closePasswordModal()">
+  <div class="perm-modal password-modal">
+    <div class="perm-modal-header">
+      <h2 id="passwordModalTitle">修改密码</h2>
+      <button class="close-btn" type="button" onclick="closePasswordModal()">&times;</button>
+    </div>
+    <div class="perm-modal-body">
+      <div class="password-field">
+        <label for="passwordNew">新密码</label>
+        <input type="password" id="passwordNew" autocomplete="new-password">
+      </div>
+      <div class="password-field">
+        <label for="passwordConfirm">确认密码</label>
+        <input type="password" id="passwordConfirm" autocomplete="new-password">
+        <div class="password-error" id="passwordError"></div>
+      </div>
+    </div>
+    <div class="perm-modal-footer">
+      <button class="btn-cancel" type="button" onclick="closePasswordModal()">取消</button>
+      <button class="btn-save" type="button" onclick="savePassword()">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const PERM_GROUPS = {{ perm_groups | tojson }};
 const ROLE_DEFAULTS = {{ role_defaults | tojson }};
 let currentUserId = null;
 let isSuperadmin = false;
+let passwordUserId = null;
 
 function openPermModal(userId, username, role, perms) {
   currentUserId = userId;
@@ -250,6 +280,50 @@ async function savePermissions() {
   if (!resp2.ok) { const e = await resp2.json(); alert(e.error || '权限更新失败'); return; }
 
   closePermModal();
+  location.reload();
+}
+
+function openPasswordModal(userId, username) {
+  passwordUserId = userId;
+  document.getElementById('passwordModalTitle').textContent = '修改密码 - ' + username;
+  document.getElementById('passwordNew').value = '';
+  document.getElementById('passwordConfirm').value = '';
+  setPasswordError('');
+  document.getElementById('passwordOverlay').classList.add('open');
+  document.getElementById('passwordNew').focus();
+}
+
+function closePasswordModal() {
+  document.getElementById('passwordOverlay').classList.remove('open');
+  passwordUserId = null;
+  setPasswordError('');
+}
+
+function setPasswordError(message) {
+  const el = document.getElementById('passwordError');
+  el.textContent = message;
+  el.style.display = message ? 'block' : 'none';
+}
+
+async function savePassword() {
+  if (!passwordUserId) return;
+  const password = document.getElementById('passwordNew').value.trim();
+  const confirm = document.getElementById('passwordConfirm').value.trim();
+  if (!password) { setPasswordError('密码不能为空'); return; }
+  if (password !== confirm) { setPasswordError('两次输入的密码不一致'); return; }
+
+  const resp = await fetch('/admin/api/users/' + passwordUserId + '/password', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content},
+    body: JSON.stringify({password: password})
+  });
+  if (!resp.ok) {
+    const e = await resp.json();
+    setPasswordError(e.error || '密码更新失败');
+    return;
+  }
+
+  closePasswordModal();
   location.reload();
 }
 </script>

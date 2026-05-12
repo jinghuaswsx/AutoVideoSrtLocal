@@ -11,7 +11,7 @@ from web.services.admin import (
 )
 from appcore.users import (
     list_users, create_user, set_active, get_by_username,
-    update_role, update_permissions, reset_permissions_to_role_default,
+    update_role, update_password, update_permissions, reset_permissions_to_role_default,
 )
 from appcore.permissions import (
     ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN,
@@ -204,6 +204,28 @@ def api_update_user_role(user_id: int):
             role_label=ROLE_LABELS.get(new_role, new_role),
         )
     )
+
+
+@bp.route("/api/users/<int:user_id>/password", methods=["PUT"])
+@login_required
+@superadmin_required
+def api_update_user_password(user_id: int):
+    from appcore.users import get_by_id
+    user = get_by_id(user_id)
+    if not user:
+        return admin_flask_response(build_admin_error_response("用户不存在", 404))
+    body = request.get_json(silent=True) or {}
+    password = (body.get("password") or "").strip()
+    if not password:
+        return admin_flask_response(build_admin_error_response("密码不能为空", 400))
+    update_password(user_id, password)
+    _audit_admin_action(
+        "admin_user_password_updated",
+        target_type="user",
+        target_id=user_id,
+        target_label=user.get("username"),
+    )
+    return admin_flask_response(build_admin_ok_response())
 
 
 @bp.route("/api/users/<int:user_id>/permissions", methods=["PUT"])
