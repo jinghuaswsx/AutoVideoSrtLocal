@@ -218,6 +218,9 @@ mkdir -p "$XDG_RUNTIME_DIR"
 
 # 把 Linux 路径 $OUTPUT_ROOT 翻译成 Wine Z: 风格的 Windows 路径
 WIN_OUTPUT_ROOT="Z:$(printf '%s' "$OUTPUT_ROOT" | sed 's|/|\\|g')"
+WIN_REPO_ROOT="Z:$(printf '%s' "$REPO_ROOT" | sed 's|/|\\|g')"
+WIN_GIT_DIR="Z:$(printf '%s' "$GIT_DIR" | sed 's|/|\\|g')"
+WIN_GIT_COMMON_DIR="Z:$(printf '%s' "$GIT_COMMON_DIR" | sed 's|/|\\|g')"
 
 cd "$REPO_ROOT"
 xvfb-run --auto-servernum env \
@@ -225,6 +228,13 @@ xvfb-run --auto-servernum env \
   WINEARCH=win64 \
   WINEDEBUG=-all \
   XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  SHOPIFY_LOCALIZER_GIT_TOP="$WIN_REPO_ROOT" \
+  SHOPIFY_LOCALIZER_GIT_BRANCH="$GIT_BRANCH" \
+  SHOPIFY_LOCALIZER_GIT_DIR="$WIN_GIT_DIR" \
+  SHOPIFY_LOCALIZER_GIT_COMMON_DIR="$WIN_GIT_COMMON_DIR" \
+  SHOPIFY_LOCALIZER_GIT_STATUS="" \
+  SHOPIFY_LOCALIZER_GIT_HEAD="$HEAD_COMMIT" \
+  SHOPIFY_LOCALIZER_GIT_ORIGIN_MASTER="$ORIGIN_MASTER_COMMIT" \
   wine "$WINE_PYTHON" -m tools.shopify_image_localizer.build_exe \
     --release-standard-read \
     --version "$VERSION" \

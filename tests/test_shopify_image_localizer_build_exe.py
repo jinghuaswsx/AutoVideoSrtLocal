@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import zipfile
 
 import pytest
@@ -110,6 +111,33 @@ def test_shopify_build_release_preflight_accepts_clean_current_master(
         return responses[args]
 
     monkeypatch.setattr(build_exe, "_git_output", fake_git_output)
+
+    build_exe._validate_release_preflight(
+        tmp_path,
+        release_version=build_exe.version.RELEASE_VERSION,
+        release_standard_read=True,
+    )
+
+
+def test_shopify_build_release_preflight_accepts_verified_env_when_git_is_missing(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    standard = tmp_path / build_exe.RELEASE_STANDARD_RELATIVE_PATH
+    standard.parent.mkdir(parents=True)
+    standard.write_text("standard", encoding="utf-8")
+    git_dir = tmp_path / ".git"
+
+    def missing_git(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(subprocess, "check_output", missing_git)
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_TOP", str(tmp_path))
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_BRANCH", "master")
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_DIR", str(git_dir))
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_COMMON_DIR", str(git_dir))
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_STATUS", "")
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_HEAD", "abc123")
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_ORIGIN_MASTER", "abc123")
 
     build_exe._validate_release_preflight(
         tmp_path,

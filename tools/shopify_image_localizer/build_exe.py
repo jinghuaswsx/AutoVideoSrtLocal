@@ -54,12 +54,37 @@ def _resolve_build_python(repo_root: Path) -> Path:
 
 
 def _git_output(repo_root: Path, *args: str) -> str:
-    return subprocess.check_output(
-        ["git", *args],
-        cwd=repo_root,
-        text=True,
-        stderr=subprocess.STDOUT,
-    ).strip()
+    try:
+        return subprocess.check_output(
+            ["git", *args],
+            cwd=repo_root,
+            text=True,
+            stderr=subprocess.STDOUT,
+        ).strip()
+    except FileNotFoundError:
+        fallback = _git_output_from_verified_env(*args)
+        if fallback is None:
+            raise
+        return fallback
+
+
+def _git_output_from_verified_env(*args: str) -> str | None:
+    env_keys = {
+        ("rev-parse", "--show-toplevel"): "SHOPIFY_LOCALIZER_GIT_TOP",
+        ("rev-parse", "--abbrev-ref", "HEAD"): "SHOPIFY_LOCALIZER_GIT_BRANCH",
+        ("rev-parse", "--git-dir"): "SHOPIFY_LOCALIZER_GIT_DIR",
+        ("rev-parse", "--git-common-dir"): "SHOPIFY_LOCALIZER_GIT_COMMON_DIR",
+        ("status", "--porcelain", "--untracked-files=no"): "SHOPIFY_LOCALIZER_GIT_STATUS",
+        ("rev-parse", "HEAD"): "SHOPIFY_LOCALIZER_GIT_HEAD",
+        ("rev-parse", "origin/master"): "SHOPIFY_LOCALIZER_GIT_ORIGIN_MASTER",
+    }
+    key = env_keys.get(tuple(args))
+    if key is None:
+        return None
+    value = os.environ.get(key)
+    if value is None:
+        return None
+    return value.strip()
 
 
 def _resolve_git_path(repo_root: Path, raw_path: str) -> Path:
