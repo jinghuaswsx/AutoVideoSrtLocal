@@ -233,6 +233,21 @@ def test_visible_dxm_environment_services_and_watchdog_ports():
     assert "OnUnitActiveSec=60" in timer
 
 
+def test_visible_dxm_runner_installs_novnc_paste_bridge():
+    runner = _read("deploy/server_browser/run_visible_dxm_env.sh")
+    bridge = _read("deploy/server_browser/novnc_paste_bridge.js")
+
+    assert "NOVNC_RUNTIME_WEB_DIR" in runner
+    assert "prepare_novnc_web_dir" in runner
+    assert "novnc_paste_bridge.js" in runner
+    assert '--web="$NOVNC_RUNTIME_WEB_DIR"' in runner
+    assert "clipboardPasteFrom" in bridge
+    assert "paste" in bridge
+    assert "noVNC_keyboardinput" in bridge
+    assert "ControlLeft" in bridge
+    assert "KeyV" in bridge
+
+
 def test_cdp_environment_installer_installs_tabcut_runtime():
     installer = _read("deploy/server_browser/install_cdp_environment_watchdog_timer.sh")
 
