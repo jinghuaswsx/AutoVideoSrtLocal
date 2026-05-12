@@ -296,6 +296,32 @@ def test_generate_image_doubao_channel_uses_seedream_without_reusing_doubao_llm(
     assert m_log.call_args.kwargs["provider"] == "doubao"
 
 
+def test_generate_image_explicit_channel_overrides_global_channel():
+    from appcore import gemini_image
+
+    with patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
+         patch.object(
+             gemini_image, "_resolve_seedream_credentials",
+             return_value=("SEEDREAM-KEY", "https://ark.example.com"),
+         ), \
+         patch.object(
+             gemini_image, "_generate_via_seedream",
+             return_value=(b"PNG-SEEDREAM", "image/png", {"data": [{"b64_json": "x"}]}),
+         ) as generate_seedream, \
+         patch.object(gemini_image.ai_billing, "log_request"):
+        out, mime = gemini_image.generate_image(
+            prompt="translate",
+            source_image=b"RAW",
+            source_mime="image/jpeg",
+            model="doubao-seedream-5-0-260128",
+            channel="doubao",
+        )
+
+    assert out == b"PNG-SEEDREAM"
+    assert mime == "image/png"
+    generate_seedream.assert_called_once()
+
+
 def test_generate_via_seedream_maps_429_to_retryable():
     from appcore import gemini_image
 

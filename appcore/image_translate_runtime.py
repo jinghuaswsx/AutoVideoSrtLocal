@@ -554,6 +554,7 @@ class ImageTranslateRuntime:
             user_id=task.get("_user_id"),
             project_id=task_id,
             service="image_translate.generate",
+            channel=channel or None,
             apimart_size=apimart_size,
             apimart_resolution=apimart_resolution,
             on_apimart_submitted=on_submitted,
