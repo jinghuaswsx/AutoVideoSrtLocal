@@ -294,6 +294,7 @@
     var zipBtn = document.getElementById("itZipDownload");
     var delBtn = document.getElementById("itDelete");
     var retryUnfinishedBtn = document.getElementById("itRetryUnfinished");
+    var backfillImagesBtn = document.getElementById("itBackfillImages");
 
     function textDetectBadge(it){
       var status = it.text_detect_status || "pending";
@@ -438,6 +439,15 @@
         retryUnfinishedBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
         retryUnfinishedBtn.textContent = isInterrupted ? "恢复中断的任务" : "重试未完成的图片";
       }
+      if (backfillImagesBtn) {
+        var ctx = (state && state.medias_context) || {};
+        var showBackfill = (ctx.entry || "") === "medias_edit_detail";
+        backfillImagesBtn.hidden = !showBackfill;
+        backfillImagesBtn.disabled = state.is_running === true;
+        backfillImagesBtn.title = state.is_running === true
+          ? "任务正在跑，等跑完再回填"
+          : "成功项回填结果图，失败项先使用原图再回填";
+      }
     }
 
     function describeMediasApplyStatus(ctx){
@@ -510,6 +520,34 @@
           refresh();
         })
         .catch(function(){ alert("网络错误，稍后再试"); });
+    }
+
+    if (backfillImagesBtn) {
+      backfillImagesBtn.onclick = function(){
+        if (!confirm("将把成功图片回填到商品详情图；失败或未完成图片会先使用原图作为结果图再回填。确定继续吗？")) return;
+        backfillImagesBtn.disabled = true;
+        var original = backfillImagesBtn.textContent;
+        backfillImagesBtn.textContent = "回填中...";
+        fetch("/api/image-translate/"+taskId+"/backfill-images",{method:"POST",credentials:"same-origin"})
+          .then(parseJsonResponse)
+          .then(function(res){
+            if (!res.ok) {
+              alert(res.body && res.body.error || "回填失败");
+              backfillImagesBtn.disabled = false;
+              backfillImagesBtn.textContent = original;
+              return;
+            }
+            var body = res.body || {};
+            alert("回填完成：" + (body.applied || 0) + " 张，原图兜底 " + (body.fallback_source_count || 0) + " 张");
+            backfillImagesBtn.textContent = original;
+            refresh();
+          })
+          .catch(function(){
+            alert("网络错误，稍后再试");
+            backfillImagesBtn.disabled = false;
+            backfillImagesBtn.textContent = original;
+          });
+      };
     }
 
     if (retryUnfinishedBtn) {

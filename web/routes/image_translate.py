@@ -270,6 +270,26 @@ def _copy_source_to_result(task: dict, item: dict) -> str:
     return dst_key
 
 
+def _mark_item_as_copied_source_result(task: dict, item: dict) -> str:
+    old_dst = (item.get("dst_tos_key") or "").strip()
+    dst_key = _copy_source_to_result(task, item)
+    if old_dst and old_dst != dst_key:
+        _delete_artifact_object(old_dst)
+    item["status"] = "done"
+    item["attempts"] = 0
+    item["error"] = ""
+    item["dst_tos_key"] = dst_key
+    item["provider_task_id"] = ""
+    item["provider_task_submitted_at"] = 0.0
+    item["apimart_task_id"] = ""
+    item["apimart_submitted_at"] = 0.0
+    item["generation_channel_override"] = ""
+    item["generation_model_override"] = ""
+    item["generation_override_label"] = ""
+    item["result_source"] = "copied_source"
+    return dst_key
+
+
 def _update_task_progress_from_items(task: dict) -> None:
     items = task.get("items") or []
     task["progress"] = {
@@ -737,28 +757,12 @@ def api_use_source_item(task_id: str, idx: int):
         return image_translate_flask_response(
             build_image_translate_error_response("任务正在跑，等跑完再使用原图", 409)
         )
-    old_dst = (item.get("dst_tos_key") or "").strip()
     try:
-        dst_key = _copy_source_to_result(task, item)
+        dst_key = _mark_item_as_copied_source_result(task, item)
     except FileNotFoundError:
         return image_translate_flask_response(
             build_image_translate_error_response("source image not found", 404)
         )
-    if old_dst and old_dst != dst_key:
-        _delete_artifact_object(old_dst)
-
-    item["status"] = "done"
-    item["attempts"] = 0
-    item["error"] = ""
-    item["dst_tos_key"] = dst_key
-    item["provider_task_id"] = ""
-    item["provider_task_submitted_at"] = 0.0
-    item["apimart_task_id"] = ""
-    item["apimart_submitted_at"] = 0.0
-    item["generation_channel_override"] = ""
-    item["generation_model_override"] = ""
-    item["generation_override_label"] = ""
-    item["result_source"] = "copied_source"
     _update_task_progress_from_items(task)
 
     update_payload = {
@@ -785,6 +789,90 @@ def api_use_source_item(task_id: str, idx: int):
                 "status": "done",
                 "dst_tos_key": dst_key,
                 "result_source": "copied_source",
+            }
+        )
+    )
+
+
+@bp.route("/api/image-translate/<task_id>/backfill-images", methods=["POST"])
+@login_required
+def api_backfill_images(task_id: str):
+    task = _get_retryable_task(task_id)
+    ctx = dict(task.get("medias_context") or {})
+    if ctx.get("entry") != "medias_edit_detail":
+        return image_translate_flask_response(
+            build_image_translate_error_response("not a detail image translate task", 400)
+        )
+    if image_translate_runner.is_running(task_id):
+        return image_translate_flask_response(
+            build_image_translate_error_response("任务正在跑，等跑完再回填", 409)
+        )
+    items = task.get("items") or []
+    if not items:
+        return image_translate_flask_response(
+            build_image_translate_error_response("no image items to backfill", 409)
+        )
+
+    fallback_count = 0
+    try:
+        for item in items:
+            if item.get("status") == "done" and (item.get("dst_tos_key") or "").strip():
+                continue
+            _mark_item_as_copied_source_result(task, item)
+            fallback_count += 1
+    except FileNotFoundError as exc:
+        return image_translate_flask_response(
+            build_image_translate_error_response(str(exc) or "source image not found", 404)
+        )
+
+    _update_task_progress_from_items(task)
+    task["status"] = "done"
+    task.setdefault("steps", {})["process"] = "done"
+    task["error"] = ""
+
+    try:
+        from appcore.image_translate_runtime import apply_translated_detail_images_from_task
+
+        applied = apply_translated_detail_images_from_task(
+            task,
+            allow_partial=False,
+            user_id=_task_runner_user_id(task),
+        )
+    except Exception as exc:
+        ctx["apply_status"] = "apply_error"
+        ctx["last_apply_error"] = str(exc)
+        task["medias_context"] = ctx
+        store.update(
+            task_id,
+            items=items,
+            progress=task["progress"],
+            status="done",
+            steps=task.get("steps", {}),
+            error="",
+            medias_context=task.get("medias_context") or {},
+        )
+        return image_translate_flask_response(
+            build_image_translate_error_response(str(exc) or "backfill failed", 409)
+        )
+
+    store.update(
+        task_id,
+        items=items,
+        progress=task["progress"],
+        status="done",
+        steps=task.get("steps", {}),
+        error="",
+        medias_context=task.get("medias_context") or {},
+    )
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {
+                "task_id": task_id,
+                "status": "done",
+                "fallback_source_count": fallback_count,
+                "applied": len(applied.get("applied_ids") or []),
+                "apply_status": applied.get("apply_status") or "",
+                "applied_detail_image_ids": list(applied.get("applied_ids") or []),
             }
         )
     )

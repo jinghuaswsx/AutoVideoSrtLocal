@@ -49,7 +49,10 @@
 
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px">
-      <h2 style="margin:0">进度</h2>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0">进度</h2>
+        <button id="itBackfillImages" class="btn btn-primary" type="button" hidden>回填图片</button>
+      </div>
       <button id="itRetryUnfinished" class="btn btn-primary it-retry-main" type="button" hidden>重试未完成的图片</button>
     </div>
     <div id="itProgress" class="it-progress">
