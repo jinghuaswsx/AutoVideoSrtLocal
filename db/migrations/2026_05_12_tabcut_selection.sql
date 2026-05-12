@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS tabcut_goods (
   raw_json JSON NULL,
   first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  KEY idx_tabcut_goods_region_category (region, category_l1_name, category_l2_name, category_l3_name),
+  KEY idx_tabcut_goods_region_category (region, category_l1_name(120), category_l2_name(120), category_l3_name(120)),
   KEY idx_tabcut_goods_seller (seller_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
