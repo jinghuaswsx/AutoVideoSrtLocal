@@ -147,3 +147,17 @@ def test_medias_js_wires_shopify_image_actions():
     assert "/shopify-image/${encodeURIComponent(lang)}/confirm" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/unavailable" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/requeue" in js
+
+
+def test_product_links_modal_always_renders_shopify_action_buttons():
+    js = open("web/static/medias.js", encoding="utf-8").read()
+    row_actions = js[
+        js.index("function edProductLinksRowActions"):
+        js.index("function edProductLinksRowHtml")
+    ]
+
+    assert 'data-product-links-action="shopify-confirm"' in row_actions
+    assert 'data-product-links-action="shopify-requeue"' in row_actions
+    assert 'data-product-links-action="shopify-unavailable"' in row_actions
+    assert "status.replace_status !== 'confirmed'" not in row_actions
+    assert "status.link_status !== 'unavailable'" not in row_actions
