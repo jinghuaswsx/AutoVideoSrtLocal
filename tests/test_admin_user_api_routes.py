@@ -95,6 +95,72 @@ def test_user_permissions_update_delegates_and_audits(monkeypatch):
     assert calls[0]["target_id"] == 9
 
 
+def test_user_password_update_delegates_and_audits(monkeypatch):
+    from web.routes import admin as route_mod
+
+    update_calls = []
+    audit_calls = []
+    monkeypatch.setattr(
+        "appcore.users.get_by_id",
+        lambda uid: {
+            "id": uid,
+            "username": "worker",
+            "role": "user",
+            "is_active": 1,
+        },
+    )
+    monkeypatch.setattr(
+        route_mod,
+        "update_password",
+        lambda user_id, password: update_calls.append((user_id, password)),
+    )
+    monkeypatch.setattr(
+        route_mod,
+        "system_audit",
+        SimpleNamespace(record_from_request=lambda **kwargs: audit_calls.append(kwargs)),
+        raising=False,
+    )
+
+    resp = _superadmin_client(monkeypatch).put(
+        "/admin/api/users/9/password",
+        json={"password": "new-secret"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert update_calls == [(9, "new-secret")]
+    assert audit_calls[0]["action"] == "admin_user_password_updated"
+    assert audit_calls[0]["target_type"] == "user"
+    assert audit_calls[0]["target_id"] == 9
+    assert audit_calls[0]["target_label"] == "worker"
+
+
+def test_user_password_update_rejects_blank_password(monkeypatch):
+    update_calls = []
+
+    monkeypatch.setattr(
+        "appcore.users.get_by_id",
+        lambda uid: {
+            "id": uid,
+            "username": "worker",
+            "role": "user",
+            "is_active": 1,
+        },
+    )
+    from web.routes import admin as route_mod
+
+    monkeypatch.setattr(route_mod, "update_password", lambda *args: update_calls.append(args))
+
+    resp = _superadmin_client(monkeypatch).put(
+        "/admin/api/users/9/password",
+        json={"password": "   "},
+    )
+
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+    assert update_calls == []
+
+
 def test_admin_users_permission_button_uses_json_encoded_arguments():
     template = (Path(__file__).resolve().parents[1] / "web" / "templates" / "admin_users.html").read_text(
         encoding="utf-8"
@@ -104,3 +170,13 @@ def test_admin_users_permission_button_uses_json_encoded_arguments():
     assert "{{ u.role | tojson }}" in template
     assert "{{ u.permissions_payload | tojson }}" in template
     assert "openPermModal({{ u.id }}, '{{ u.username }}'" not in template
+
+
+def test_admin_users_password_button_uses_json_encoded_arguments():
+    template = (Path(__file__).resolve().parents[1] / "web" / "templates" / "admin_users.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "openPasswordModal({{ u.id | tojson }}, {{ u.username | tojson }})" in template
+    assert "openPasswordModal({{ u.id }}, '{{ u.username }}')" not in template
+    assert "/admin/api/users/' + passwordUserId + '/password" in template
