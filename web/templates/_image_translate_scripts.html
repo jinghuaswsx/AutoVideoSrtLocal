@@ -395,7 +395,7 @@
         retryBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
         retryBtn.onclick = (function(i){ return function(){ retry(i); }; })(it.idx);
         actions.appendChild(retryBtn);
-        if (it.status === "done") {
+        if (it.status === "done" || it.status === "failed") {
           var bananaBtn = document.createElement("button");
           bananaBtn.className = "btn it-retry-item it-banana-retry-item";
           bananaBtn.type = "button";
@@ -404,6 +404,16 @@
           bananaBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "使用 Google ADC 的 Nano Banana 2 重新生成";
           bananaBtn.onclick = (function(i){ return function(){ bananaRetry(i); }; })(it.idx);
           actions.appendChild(bananaBtn);
+        }
+        if (it.status === "done" || it.status === "failed") {
+          var sourceBtn = document.createElement("button");
+          sourceBtn.className = "btn it-retry-item it-use-source-item";
+          sourceBtn.type = "button";
+          sourceBtn.textContent = "使用原图";
+          sourceBtn.disabled = isRunning;
+          sourceBtn.title = isRunning ? "任务正在跑，等跑完再使用原图" : "直接复制原图为结果图";
+          sourceBtn.onclick = (function(i){ return function(){ useSource(i); }; })(it.idx);
+          actions.appendChild(sourceBtn);
         }
         row.appendChild(actions);
         listEl.appendChild(row);
@@ -487,6 +497,16 @@
         .then(parseJsonResponse)
         .then(function(res){
           if (!res.ok) { alert(res.body && res.body.error || "banana重新生成失败"); return; }
+          refresh();
+        })
+        .catch(function(){ alert("网络错误，稍后再试"); });
+    }
+
+    function useSource(idx){
+      fetch("/api/image-translate/"+taskId+"/use-source/"+idx,{method:"POST",credentials:"same-origin"})
+        .then(parseJsonResponse)
+        .then(function(res){
+          if (!res.ok) { alert(res.body && res.body.error || "使用原图失败"); return; }
           refresh();
         })
         .catch(function(){ alert("网络错误，稍后再试"); });

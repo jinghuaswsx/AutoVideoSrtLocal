@@ -237,6 +237,70 @@ def _delete_artifact_object(object_key: str | None) -> None:
         pass
 
 
+def _result_object_key_for_item(task: dict, item: dict) -> str:
+    src_key = (item.get("src_tos_key") or "").strip()
+    filename = (item.get("filename") or "").strip()
+    ext = os.path.splitext(src_key)[1] or os.path.splitext(filename)[1] or ".jpg"
+    ext = ext.lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        ext = ".jpg"
+    uid = task.get("_user_id") or getattr(current_user, "id", 0) or 0
+    return f"artifacts/image_translate/{uid}/{task['id']}/out_{int(item['idx'])}{ext}"
+
+
+def _copy_source_to_result(task: dict, item: dict) -> str:
+    src_key = (item.get("src_tos_key") or "").strip()
+    if not src_key:
+        raise FileNotFoundError("source image missing")
+    suffix = os.path.splitext(src_key)[1] or os.path.splitext(item.get("filename") or "")[1] or ".jpg"
+    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="it_source_result_")
+    os.close(fd)
+    try:
+        local_media_storage.download_to(src_key, tmp_path)
+        with open(tmp_path, "rb") as f:
+            raw = f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    dst_key = _result_object_key_for_item(task, item)
+    local_media_storage.write_bytes(dst_key, raw)
+    return dst_key
+
+
+def _update_task_progress_from_items(task: dict) -> None:
+    items = task.get("items") or []
+    task["progress"] = {
+        "total": len(items),
+        "done": sum(1 for it in items if it.get("status") == "done"),
+        "failed": sum(1 for it in items if it.get("status") == "failed"),
+        "running": sum(1 for it in items if it.get("status") == "running"),
+    }
+
+
+def _auto_apply_if_all_done(task: dict) -> None:
+    items = task.get("items") or []
+    if not items or any((it.get("status") or "") != "done" for it in items):
+        return
+    ctx = dict(task.get("medias_context") or {})
+    if not ctx.get("auto_apply_detail_images"):
+        return
+    try:
+        from appcore.image_translate_runtime import apply_translated_detail_images_from_task
+
+        apply_translated_detail_images_from_task(
+            task,
+            allow_partial=False,
+            user_id=_task_runner_user_id(task),
+        )
+    except Exception as exc:
+        ctx["apply_status"] = "apply_error"
+        ctx["last_apply_error"] = str(exc)
+        task["medias_context"] = ctx
+
+
 def _reset_item_processing_state(item: dict) -> None:
     item["status"] = "pending"
     item["attempts"] = 0
@@ -658,6 +722,70 @@ def api_banana_retry_item(task_id: str, idx: int):
                 "model_id": _BANANA_RETRY_MODEL,
             },
             status_code=202,
+        )
+    )
+
+
+@bp.route("/api/image-translate/<task_id>/use-source/<int:idx>", methods=["POST"])
+@login_required
+def api_use_source_item(task_id: str, idx: int):
+    task = _get_retryable_task(task_id)
+    item = _get_item(task, idx)
+    if not item:
+        abort(404)
+    if image_translate_runner.is_running(task_id):
+        return image_translate_flask_response(
+            build_image_translate_error_response("任务正在跑，等跑完再使用原图", 409)
+        )
+    old_dst = (item.get("dst_tos_key") or "").strip()
+    try:
+        dst_key = _copy_source_to_result(task, item)
+    except FileNotFoundError:
+        return image_translate_flask_response(
+            build_image_translate_error_response("source image not found", 404)
+        )
+    if old_dst and old_dst != dst_key:
+        _delete_artifact_object(old_dst)
+
+    item["status"] = "done"
+    item["attempts"] = 0
+    item["error"] = ""
+    item["dst_tos_key"] = dst_key
+    item["provider_task_id"] = ""
+    item["provider_task_submitted_at"] = 0.0
+    item["apimart_task_id"] = ""
+    item["apimart_submitted_at"] = 0.0
+    item["generation_channel_override"] = ""
+    item["generation_model_override"] = ""
+    item["generation_override_label"] = ""
+    item["result_source"] = "copied_source"
+    _update_task_progress_from_items(task)
+
+    update_payload = {
+        "items": task.get("items") or [],
+        "progress": task["progress"],
+    }
+    if task["progress"]["done"] == task["progress"]["total"]:
+        task["status"] = "done"
+        task.setdefault("steps", {})["process"] = "done"
+        task["error"] = ""
+        _auto_apply_if_all_done(task)
+        update_payload.update({
+            "status": "done",
+            "steps": task.get("steps", {}),
+            "error": "",
+            "medias_context": task.get("medias_context") or {},
+        })
+    store.update(task_id, **update_payload)
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {
+                "task_id": task_id,
+                "idx": idx,
+                "status": "done",
+                "dst_tos_key": dst_key,
+                "result_source": "copied_source",
+            }
         )
     )
 
