@@ -47,6 +47,16 @@ def test_normalize_goods_row_extracts_gmv_and_categories():
     assert row["price_max"] == 4.5
 
 
+def test_normalize_counts_clamps_negative_values():
+    video = normalize_video_row({"videoId": "v1", "commentCount": -12, "playCount": -1})
+    goods = normalize_goods_row({"itemId": "i1", "soldCount7d": -5, "relatedVideoCount": -3})
+
+    assert video["comment_count"] == 0
+    assert video["play_count"] == 0
+    assert goods["sold_count_7d"] == 0
+    assert goods["related_video_count"] == 0
+
+
 def test_score_candidate_prefers_sales_and_revenue_with_explainable_parts():
     score = score_candidate(
         {

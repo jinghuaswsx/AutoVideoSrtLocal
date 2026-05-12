@@ -13,6 +13,13 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
+def _nonnegative_int_or_none(value: Any) -> int | None:
+    number = _int_or_none(value)
+    if number is None:
+        return None
+    return max(number, 0)
+
+
 def _float_or_none(value: Any) -> float | None:
     if value in (None, ""):
         return None
@@ -83,18 +90,18 @@ def normalize_video_row(row: dict[str, Any], *, source_sort: str | None = None) 
         "video_cover_url": _text(row.get("videoCoverUrl")),
         "tk_video_url": _text(row.get("tkVideoUrl")),
         "video_desc": _text(row.get("videoDesc")),
-        "video_duration_ms": _int_or_none(row.get("videoDuration")),
+        "video_duration_ms": _nonnegative_int_or_none(row.get("videoDuration")),
         "create_time": _parse_datetime(row.get("createTime")),
         "primary_item_id": _text(primary.get("itemId") or row.get("itemId")),
         "primary_item_name": _text(primary.get("itemName") or row.get("itemName")),
         "source_sort": source_sort,
-        "rank_position": _int_or_none(row.get("rank")),
-        "play_count": _int_or_none(row.get("playCount") or row.get("playCountTotal")),
-        "like_count": _int_or_none(row.get("likeCount") or row.get("likeCountTotal")),
-        "share_count": _int_or_none(row.get("shareCount") or row.get("shareCountTotal")),
-        "comment_count": _int_or_none(row.get("commentCount") or row.get("commentCountTotal")),
-        "item_sold_count": _int_or_none(row.get("itemSoldCount")),
-        "video_split_sold_count": _int_or_none(row.get("videoSplitSoldCount")),
+        "rank_position": _nonnegative_int_or_none(row.get("rank")),
+        "play_count": _nonnegative_int_or_none(row.get("playCount") or row.get("playCountTotal")),
+        "like_count": _nonnegative_int_or_none(row.get("likeCount") or row.get("likeCountTotal")),
+        "share_count": _nonnegative_int_or_none(row.get("shareCount") or row.get("shareCountTotal")),
+        "comment_count": _nonnegative_int_or_none(row.get("commentCount") or row.get("commentCountTotal")),
+        "item_sold_count": _nonnegative_int_or_none(row.get("itemSoldCount")),
+        "video_split_sold_count": _nonnegative_int_or_none(row.get("videoSplitSoldCount")),
         "video_split_gmv": _first_local_amount({"gmv": row.get("videoSplitGmv")}, "gmv"),
         "related_item_id": _text(primary.get("itemId") or row.get("itemId")),
         "related_item_name": _text(primary.get("itemName") or row.get("itemName")),
@@ -124,15 +131,15 @@ def normalize_goods_row(row: dict[str, Any], *, source: str | None = None) -> di
         "seller_name": _text(row.get("sellerName")),
         "seller_type": _text(row.get("sellerType")),
         "source": source,
-        "rank_position": _int_or_none(row.get("rank")),
+        "rank_position": _nonnegative_int_or_none(row.get("rank")),
         "price_min": price_min,
         "price_max": price_max,
         "commission_rate": _float_or_none(row.get("commissionRate")),
-        "sold_count_1d": _int_or_none(row.get("soldCount1d")),
-        "sold_count_7d": _int_or_none(row.get("soldCount7d")),
-        "sold_count_30d": _int_or_none(row.get("soldCount30d")),
-        "sold_count_total": _int_or_none(row.get("soldCountTotal") or sold_info.get("total")),
-        "sold_count_period": _int_or_none(row.get("soldCountPeriod") or sold_info.get("periodCurrent")),
+        "sold_count_1d": _nonnegative_int_or_none(row.get("soldCount1d")),
+        "sold_count_7d": _nonnegative_int_or_none(row.get("soldCount7d")),
+        "sold_count_30d": _nonnegative_int_or_none(row.get("soldCount30d")),
+        "sold_count_total": _nonnegative_int_or_none(row.get("soldCountTotal") or sold_info.get("total")),
+        "sold_count_period": _nonnegative_int_or_none(row.get("soldCountPeriod") or sold_info.get("periodCurrent")),
         "sold_growth_rate_1d": _float_or_none(row.get("soldGrowthRate1d")),
         "sold_growth_rate_7d": _float_or_none(row.get("soldGrowthRate7d")),
         "sold_growth_rate_30d": _float_or_none(row.get("soldGrowthRate30d")),
@@ -142,9 +149,9 @@ def normalize_goods_row(row: dict[str, Any], *, source: str | None = None) -> di
         "gmv_30d": _first_local_amount(gmv, "period30d"),
         "gmv_total": _first_local_amount(gmv, "total"),
         "gmv_period": _first_local_amount(gmv, "periodCurrent"),
-        "related_video_count": _int_or_none(row.get("relatedVideoCount") or (row.get("relatedVideoInfo") or {}).get("period90d")),
-        "related_creator_count": _int_or_none(row.get("relatedCreatorCount") or (row.get("relatedCreatorInfo") or {}).get("period90d")),
-        "related_live_count": _int_or_none((row.get("relatedLiveInfo") or {}).get("period90d")),
+        "related_video_count": _nonnegative_int_or_none(row.get("relatedVideoCount") or (row.get("relatedVideoInfo") or {}).get("period90d")),
+        "related_creator_count": _nonnegative_int_or_none(row.get("relatedCreatorCount") or (row.get("relatedCreatorInfo") or {}).get("period90d")),
+        "related_live_count": _nonnegative_int_or_none((row.get("relatedLiveInfo") or {}).get("period90d")),
         "discover_time": _parse_datetime(row.get("discoverTime")),
         "raw": _safe_raw(row),
     }

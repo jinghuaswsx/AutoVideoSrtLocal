@@ -145,6 +145,6 @@ CREATE TABLE IF NOT EXISTS tabcut_video_candidates (
   crawled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_tabcut_video_candidate (biz_date, region, video_id),
   KEY idx_tabcut_video_candidates_score (biz_date, region, score),
-  KEY idx_tabcut_video_candidates_category (biz_date, region, category_l1_name, category_l2_name, category_l3_name),
+  KEY idx_tabcut_video_candidates_category (biz_date, region, category_l1_name(120), category_l2_name(120), category_l3_name(120)),
   KEY idx_tabcut_video_candidates_sales (biz_date, region, item_sold_count, goods_sold_count_7d, goods_gmv_7d)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
