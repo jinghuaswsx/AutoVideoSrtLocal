@@ -24,6 +24,22 @@ BUILD_WORK_DIR_NAME = "_build"
 REQUIRED_RUNTIME_CONFIG_FIELDS = ("api_key", "browser_user_data_dir")
 
 
+def _read_runtime_config_file(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"runtime config missing: {path}") from exc
+    except Exception as exc:
+        raise ValueError(f"runtime config is not valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"runtime config must be a JSON object: {path}")
+    return payload
+
+
+def _write_runtime_config_file(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _default_output_root() -> Path:
     return DEFAULT_OUTPUT_ROOT_WINDOWS if os.name == "nt" else DEFAULT_OUTPUT_ROOT_POSIX
 
@@ -33,14 +49,7 @@ def _resolve_build_python(repo_root: Path) -> Path:
 
 
 def _validate_runtime_config_file(path: Path) -> None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ValueError(f"runtime config missing: {path}") from exc
-    except Exception as exc:
-        raise ValueError(f"runtime config is not valid JSON: {path}") from exc
-    if not isinstance(payload, dict):
-        raise ValueError(f"runtime config must be a JSON object: {path}")
+    payload = _read_runtime_config_file(path)
     missing = [
         field
         for field in REQUIRED_RUNTIME_CONFIG_FIELDS
@@ -59,7 +68,15 @@ def _write_runtime_config(repo_root: Path, dist_root: Path) -> None:
     target_config = settings.config_path(dist_root)
     default_config = settings.default_config_path(dist_root)
     if source_config.is_file():
-        shutil.copy2(source_config, target_config)
+        payload = _read_runtime_config_file(source_config)
+        if settings.DEFAULT_API_KEY:
+            payload["api_key"] = settings.DEFAULT_API_KEY
+        payload.setdefault("base_url", settings.default_base_url(packaged=True))
+        payload.setdefault("browser_user_data_dir", settings.DEFAULT_BROWSER_USER_DATA_DIR)
+        payload.setdefault("shopify_domain", settings.DEFAULT_SHOPIFY_DOMAIN)
+        if not isinstance(payload.get("shopify_domain_store_slugs"), dict):
+            payload["shopify_domain_store_slugs"] = {}
+        _write_runtime_config_file(target_config, payload)
     else:
         if not settings.DEFAULT_API_KEY:
             raise ValueError(

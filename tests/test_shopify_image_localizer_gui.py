@@ -551,6 +551,30 @@ def test_gui_starts_with_empty_product_code(monkeypatch: pytest.MonkeyPatch) -> 
         app.root.destroy()
 
 
+def test_gui_batch_language_button_is_compact_with_selection_text_on_right(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        button_pack = app.batch_select_btn.pack_info()
+        languages_pack = app.batch_languages_frame.pack_info()
+
+        assert button_pack.get("side") == "left"
+        assert button_pack.get("fill") in (None, "", "none")
+        assert languages_pack.get("side") == "left"
+        assert languages_pack.get("fill") == "x"
+        assert bool(int(languages_pack.get("expand", 0))) is True
+
+        app.batch_languages = ["德语 (DE/de)", "法语 (FR/fr)"]
+        app._update_batch_languages_display()
+
+        children = app.batch_languages_frame.winfo_children()
+        assert len(children) == 1
+        assert children[0]["text"] == "德语 (DE/de) || 法语 (FR/fr)"
+    finally:
+        app.root.destroy()
+
+
 def test_gui_backfills_shopify_id_from_running_task_callback(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:

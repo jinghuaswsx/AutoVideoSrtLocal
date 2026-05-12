@@ -178,19 +178,22 @@ class ShopifyImageLocalizerApp:
         )
         self.language_box.pack(fill="x", pady=(4, 0))
 
+        self.batch_language_controls_frame = tk.Frame(language_row)
+        self.batch_language_controls_frame.pack(fill="x", pady=(8, 0), anchor="w")
+
         # 批量选择按钮
         self.batch_select_btn = tk.Button(
-            language_row,
+            self.batch_language_controls_frame,
             text="批量选择语言",
             command=self._open_batch_language_dialog,
             font=("TkDefaultFont", 18, "bold"),
             height=2,
         )
-        self.batch_select_btn.pack(fill="x", pady=(8, 0))
+        self.batch_select_btn.pack(side="left", anchor="w")
 
         # 批量选择的语言显示区域
-        self.batch_languages_frame = tk.Frame(language_row)
-        self.batch_languages_frame.pack(fill="x", pady=(4, 0))
+        self.batch_languages_frame = tk.Frame(self.batch_language_controls_frame)
+        self.batch_languages_frame.pack(side="left", fill="x", expand=True, padx=(12, 0))
 
         tk.Label(self.main_frame, text="Shopify ID（可选）").pack(anchor="w")
         self.shopify_product_id_entry = tk.Entry(
@@ -650,30 +653,12 @@ class ShopifyImageLocalizerApp:
         # 用||分隔显示已选择的语言，单行显示，横向滚动
         display_text = " || ".join(self.batch_languages)
 
-        # 创建 Canvas + Scrollbar 支持横向滚动
-        canvas = tk.Canvas(self.batch_languages_frame, highlightthickness=0, height=26)
-        scrollbar = ttk.Scrollbar(self.batch_languages_frame, orient="horizontal", command=canvas.xview)
-        content_frame = tk.Frame(canvas)
-
-        # 配置滚动
-        content_frame.bind(
-            "<Configure>",
-            lambda _event: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        canvas.create_window((0, 0), window=content_frame, anchor="nw")
-        canvas.configure(xscrollcommand=scrollbar.set)
-
-        # 创建 Label 显示文本
         tk.Label(
-            content_frame,
+            self.batch_languages_frame,
             text=display_text,
             anchor="w",
             justify="left",
-        ).pack(anchor="w", fill="y")
-
-        # 布局
-        canvas.pack(side="top", fill="both", expand=True)
-        scrollbar.pack(side="top", fill="x")
+        ).pack(side="left", fill="x", expand=True)
 
     def _remove_batch_language(self, lang_label: str) -> None:
         """从批量选择中移除一个语言"""

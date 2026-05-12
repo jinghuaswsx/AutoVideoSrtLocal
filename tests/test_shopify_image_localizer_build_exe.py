@@ -63,11 +63,14 @@ def test_shopify_build_rejects_generated_runtime_config_without_api_key(
         build_exe._write_runtime_config(repo_root, dist_root)
 
 
-def test_shopify_build_rejects_empty_source_runtime_config(tmp_path):
+def test_shopify_build_rejects_empty_source_runtime_config(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
     repo_root = tmp_path / "repo"
     dist_root = tmp_path / "dist"
     repo_root.mkdir()
     dist_root.mkdir()
+    monkeypatch.setattr(build_exe.settings, "DEFAULT_API_KEY", "")
     build_exe.settings.config_path(repo_root).write_text(
         json.dumps(
             {
@@ -81,6 +84,33 @@ def test_shopify_build_rejects_empty_source_runtime_config(tmp_path):
 
     with pytest.raises(ValueError, match="api_key"):
         build_exe._write_runtime_config(repo_root, dist_root)
+
+
+def test_shopify_build_prefers_env_api_key_over_source_config(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    repo_root = tmp_path / "repo"
+    dist_root = tmp_path / "dist"
+    repo_root.mkdir()
+    dist_root.mkdir()
+    monkeypatch.setattr(build_exe.settings, "DEFAULT_API_KEY", "fresh-env-openapi-key")
+    build_exe.settings.config_path(repo_root).write_text(
+        json.dumps(
+            {
+                "base_url": "http://172.30.254.14",
+                "api_key": "stale-source-openapi-key",
+                "browser_user_data_dir": r"C:\chrome-shopify-image",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    build_exe._write_runtime_config(repo_root, dist_root)
+
+    runtime_payload = json.loads(build_exe.settings.config_path(dist_root).read_text(encoding="utf-8"))
+    default_payload = json.loads(build_exe.settings.default_config_path(dist_root).read_text(encoding="utf-8"))
+    assert runtime_payload["api_key"] == "fresh-env-openapi-key"
+    assert default_payload == runtime_payload
 
 
 def test_shopify_build_writes_runtime_and_default_configs(tmp_path, monkeypatch: pytest.MonkeyPatch):
