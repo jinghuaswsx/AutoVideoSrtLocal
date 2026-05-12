@@ -1,0 +1,19 @@
+[Unit]
+Description=AutoVideoSrt Tabcut daily US selection crawler
+After=network-online.target autovideosrt-tabcut-vnc.service
+Wants=network-online.target autovideosrt-tabcut-vnc.service
+
+[Service]
+Type=oneshot
+User=cjh
+Group=cjh
+WorkingDirectory=/opt/autovideosrt
+Environment=PATH=/opt/autovideosrt/venv/bin:/usr/bin:/usr/local/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=TABCUT_CDP_URL=http://127.0.0.1:9227
+Environment=TABCUT_OUTPUT_DIR=/data/autovideosrt/tabcut/daily
+EnvironmentFile=-/etc/default/autovideosrt-tabcut-daily-selection
+ExecStart=/opt/autovideosrt/venv/bin/python -m tools.tabcut_crawler.main --mode recent7 --days 30
+
+[Install]
+WantedBy=multi-user.target
