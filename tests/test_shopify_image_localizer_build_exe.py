@@ -86,6 +86,29 @@ def test_shopify_build_rejects_empty_source_runtime_config(
         build_exe._write_runtime_config(repo_root, dist_root)
 
 
+def test_shopify_build_rejects_demo_source_runtime_config(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    repo_root = tmp_path / "repo"
+    dist_root = tmp_path / "dist"
+    repo_root.mkdir()
+    dist_root.mkdir()
+    monkeypatch.setattr(build_exe.settings, "DEFAULT_API_KEY", "")
+    build_exe.settings.config_path(repo_root).write_text(
+        json.dumps(
+            {
+                "base_url": "http://172.30.254.14",
+                "api_key": "demo-key",
+                "browser_user_data_dir": r"C:\chrome-shopify-image",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="demo-key"):
+        build_exe._write_runtime_config(repo_root, dist_root)
+
+
 def test_shopify_build_prefers_env_api_key_over_source_config(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ):

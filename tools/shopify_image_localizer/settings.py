@@ -164,7 +164,7 @@ def _read_config_payload(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}

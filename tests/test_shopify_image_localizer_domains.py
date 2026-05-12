@@ -8,8 +8,8 @@ from tools.shopify_image_localizer import controller, settings, version
 from tools.shopify_image_localizer.browser import session
 
 
-def test_shopify_image_localizer_release_version_is_4_5() -> None:
-    assert version.RELEASE_VERSION == "4.5"
+def test_shopify_image_localizer_release_version_is_4_6() -> None:
+    assert version.RELEASE_VERSION == "4.6"
 
 
 def test_domain_profile_dir_keeps_default_and_suffixes_other_domains() -> None:
@@ -148,6 +148,42 @@ def test_load_runtime_config_repairs_empty_runtime_credentials_from_default_conf
     assert repaired["api_key"] == "packaged-openapi-key"
     assert repaired["browser_user_data_dir"] == r"C:\chrome-shopify-image"
     assert repaired["shopify_domain"] == "omurio.com"
+
+
+def test_load_runtime_config_accepts_utf8_bom_config_files(tmp_path) -> None:
+    """发布后人工修 JSON 时常见 UTF-8 BOM；exe 必须仍能读到 key，不能退回空配置。"""
+    settings.default_config_path(tmp_path).write_text(
+        "\ufeff"
+        + json.dumps(
+            {
+                "base_url": "http://172.30.254.14",
+                "api_key": "packaged-openapi-key",
+                "browser_user_data_dir": r"C:\chrome-shopify-image",
+                "shopify_domain": "newjoyloo.com",
+                "shopify_domain_store_slugs": {"newjoyloo.com": "0ixug9-pv"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings.config_path(tmp_path).write_text(
+        "\ufeff"
+        + json.dumps(
+            {
+                "base_url": "http://172.30.254.14",
+                "api_key": "",
+                "browser_user_data_dir": "",
+                "shopify_domain": "omurio.com",
+                "shopify_domain_store_slugs": {"omurio.com": "7t1gn3-sv"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = settings.load_runtime_config(tmp_path)
+
+    assert cfg["api_key"] == "packaged-openapi-key"
+    assert cfg["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+    assert cfg["shopify_domain_store_slugs"]["omurio.com"] == "7t1gn3-sv"
 
 
 def test_cache_store_slug_for_domain_writes_and_reads(tmp_path) -> None:

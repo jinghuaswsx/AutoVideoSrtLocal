@@ -15,7 +15,7 @@
 ## 模块级 CLAUDE.md（只在进入对应目录时加载）
 - `web/templates/CLAUDE.md` — Jinja 模板继承防呆 + asr-normalize-card 事故
 - `web/static/CLAUDE.md` — Ocean Blue 设计系统 + CSRF + medias.js 弹窗约束
-- `tools/shopify_image_localizer/CLAUDE.md` — EZ/CDP 等待规则 + Wine 打包 + 登录按钮 + 配置门禁
+- `tools/shopify_image_localizer/CLAUDE.md` — EZ/CDP 等待规则 + 登录按钮 + EXE 发布/API key/BOM 配置门禁
 - `appcore/order_analytics/CLAUDE.md` — 实时大盘业务日对齐 + 店铺筛选 + 广告费分摊
 
 ## 任务结束自检

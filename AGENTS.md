@@ -1,5 +1,4 @@
 # AutoVideoSrtLocal
-
 视频翻译 + 电商运营数据分析的内部一体化工具。Web 端 Flask + Playwright/CDP 自动化 + 多 provider LLM 编排。本文件是 agent-agnostic 主指南，CLAUDE.md / GEMINI.md 都从这里 import。
 
 ## Stack
@@ -50,10 +49,8 @@
 - 实时大盘 / 业务日对齐：`docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md` + `2026-05-09-realtime-dashboard-store-filter.md` + `2026-05-10-realtime-dashboard-profit-margin.md`
 - 店小秘 watchdog / ROI 锁告警：`docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md` + `2026-05-09-roi-hourly-sync-lock-recovery.md`
 - 产品链接体系：3 份 `2026-05-09-product-link-*.md`; 顶部国家勾选前置校验 `docs/superpowers/specs/2026-05-09-product-edit-ad-supported-langs-precheck-design.md`
-- Shopify Image Localizer：见 [tools/shopify_image_localizer/CLAUDE.md](tools/shopify_image_localizer/CLAUDE.md)；发布配置门禁见 `2026-05-11-shopify-image-localizer-runtime-config-release-guard.md`
-- 翻译详情页 Jinja 防呆 / 模板继承：见 [web/templates/CLAUDE.md](web/templates/CLAUDE.md)
-- 设计系统 / 静态资源 / CSRF：见 [web/static/CLAUDE.md](web/static/CLAUDE.md)
-- 订单 / 广告分析模块：见 [appcore/order_analytics/CLAUDE.md](appcore/order_analytics/CLAUDE.md)
+- Shopify Image Localizer：发布/打包/API key/BOM/CDP 门禁必须先读 [tools/shopify_image_localizer/CLAUDE.md](tools/shopify_image_localizer/CLAUDE.md)；配置门禁见 `2026-05-11-shopify-image-localizer-runtime-config-release-guard.md`
+- 模板/静态资源/订单分析：见 [web/templates/CLAUDE.md](web/templates/CLAUDE.md)、[web/static/CLAUDE.md](web/static/CLAUDE.md)、[appcore/order_analytics/CLAUDE.md](appcore/order_analytics/CLAUDE.md)
 
 ## 发布（Windows 开发机直连 root；Ubuntu 服务器本地目录操作）
 ```bash
@@ -76,8 +73,7 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 验收：`active` + HTTP 200/302；404/500/000 = 失败。
 
 ## Don't
-- 不在主工作目录改代码（除非明确 hotfix）
-- 不调 `deploy/publish.sh`、不用 SSH 跳板、不 `gh auth login`
+- 不在主工作目录改代码（除非明确 hotfix）；不调 `deploy/publish.sh`、不用 SSH 跳板、不 `gh auth login`
 - 不在 Playwright `wait_for_*` 处替换为 `time.sleep` / `cancellable_sleep`（EZ/CDP 等待事故）
 - 不 `{% include base_with_extends %}` 后追加 raw HTML（Jinja 继承事故）
 - 不直接 `UPDATE meta_ad_accounts` 绕过服务层；不硬编码 `site_code -> ad_account_id`

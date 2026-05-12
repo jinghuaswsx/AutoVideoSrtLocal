@@ -22,11 +22,14 @@ DEFAULT_OUTPUT_ROOT_WINDOWS = Path(r"G:\ShopifyRelease")
 DEFAULT_OUTPUT_ROOT_POSIX = Path.home() / "shopify-builds"
 BUILD_WORK_DIR_NAME = "_build"
 REQUIRED_RUNTIME_CONFIG_FIELDS = ("api_key", "browser_user_data_dir")
+FORBIDDEN_RUNTIME_CONFIG_VALUES = {
+    "api_key": {"demo-key", "changeme", "change-me", "your-api-key"},
+}
 
 
 def _read_runtime_config_file(path: Path) -> dict:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError as exc:
         raise ValueError(f"runtime config missing: {path}") from exc
     except Exception as exc:
@@ -61,6 +64,16 @@ def _validate_runtime_config_file(path: Path) -> None:
             f"{settings.CONFIG_FILENAME} in the repository root."
         )
         raise ValueError(f"{path.name} missing required field(s): {', '.join(missing)}. {hint}")
+    forbidden = [
+        f"{field}={str(payload.get(field) or '').strip()!r}"
+        for field, values in FORBIDDEN_RUNTIME_CONFIG_VALUES.items()
+        if str(payload.get(field) or "").strip().lower() in values
+    ]
+    if forbidden:
+        raise ValueError(
+            f"{path.name} contains forbidden placeholder value(s): {', '.join(forbidden)}; "
+            "fetch the live openapi_materials api_key from the server before packaging."
+        )
 
 
 def _write_runtime_config(repo_root: Path, dist_root: Path) -> None:
