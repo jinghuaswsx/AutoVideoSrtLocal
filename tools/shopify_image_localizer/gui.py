@@ -68,6 +68,8 @@ class ShopifyImageLocalizerApp:
         self._progress_current_iid: str | None = None
         self._progress_tick_after_id: str | None = None
         self._progress_running: bool = False
+        self._main_thread = threading.current_thread()
+        self._tk_mainloop_started = False
         # 批量语言选择
         self.batch_languages: list[str] = []  # 已选择的批量语言标签列表
         self.current_running_language: str = ""  # 当前正在运行的语言
@@ -80,9 +82,32 @@ class ShopifyImageLocalizerApp:
         self._build_log()
 
         self._append_log("程序已启动，正在加载线上语言列表")
+        self.root.after(0, self._mark_tk_mainloop_started)
         self._load_languages_async()
         self._load_domains_async()
         _ = prompt_on_start
+
+    def _mark_tk_mainloop_started(self) -> None:
+        self._tk_mainloop_started = True
+
+    def _ui_after(self, delay_ms: int, callback, *args):
+        if threading.current_thread() is not self._main_thread and not self._tk_mainloop_started:
+            self._call_ui_inline_if_possible(callback, *args)
+            return None
+        try:
+            return self.root.after(delay_ms, callback, *args)
+        except RuntimeError as exc:
+            if "main thread is not in main loop" not in str(exc):
+                raise
+            self._call_ui_inline_if_possible(callback, *args)
+            return None
+
+    def _call_ui_inline_if_possible(self, callback, *args) -> None:
+        try:
+            callback(*args)
+        except RuntimeError as exc:
+            if "main thread is not in main loop" not in str(exc):
+                raise
 
     def _build_form(self) -> None:
         # 整个界面最左上角的状态指示：未登录显示红字，登录后显示当前域名（黑字）
@@ -754,10 +779,10 @@ class ShopifyImageLocalizerApp:
                     self.api_key_var.get().strip(),
                 )
                 items = list(payload.get("items") or [])
-                self.root.after(0, self._set_language_items, items, False)
+                self._ui_after(0, self._set_language_items, items, False)
             except Exception as exc:
-                self.root.after(0, self._append_log, f"加载线上语言列表失败：{exc}，请检查 API Key 和网络连接")
-                self.root.after(0, self._set_language_items, [], True)
+                self._ui_after(0, self._append_log, f"加载线上语言列表失败：{exc}，请检查 API Key 和网络连接")
+                self._ui_after(0, self._set_language_items, [], True)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -826,10 +851,10 @@ class ShopifyImageLocalizerApp:
                     self.api_key_var.get().strip(),
                 )
                 items = list(payload.get("items") or [])
-                self.root.after(0, self._set_domain_items, items, False)
+                self._ui_after(0, self._set_domain_items, items, False)
             except Exception as exc:
-                self.root.after(0, self._append_log, f"加载域名列表失败：{exc}")
-                self.root.after(0, self._set_domain_items, settings.default_domain_items(), True)
+                self._ui_after(0, self._append_log, f"加载域名列表失败：{exc}")
+                self._ui_after(0, self._set_domain_items, settings.default_domain_items(), True)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1019,13 +1044,13 @@ class ShopifyImageLocalizerApp:
                 product_code=product_code,
                 shopify_domain=shopify_domain,
             )
-            self.root.after(0, self._render_mapping_preview_result, result)
+            self._ui_after(0, self._render_mapping_preview_result, result)
         except Exception as exc:
-            self.root.after(0, self.status_var.set, "图片映射生成失败")
-            self.root.after(0, self._append_log, f"图片映射生成失败：{exc}")
-            self.root.after(0, messagebox.showerror, "图片映射生成失败", str(exc))
+            self._ui_after(0, self.status_var.set, "图片映射生成失败")
+            self._ui_after(0, self._append_log, f"图片映射生成失败：{exc}")
+            self._ui_after(0, messagebox.showerror, "图片映射生成失败", str(exc))
         finally:
-            self.root.after(0, self._set_running_state, False)
+            self._ui_after(0, self._set_running_state, False)
 
     def _render_mapping_preview_result(self, result: dict) -> None:
         summary = result.get("summary") or {}
@@ -1215,13 +1240,13 @@ class ShopifyImageLocalizerApp:
                 browser_user_data_dir=browser_dir,
                 shopify_domain=shopify_domain,
             )
-            self.root.after(0, self._render_login_open_result, result)
+            self._ui_after(0, self._render_login_open_result, result)
         except Exception as exc:
-            self.root.after(0, self.status_var.set, "打开 Shopify 登录页失败")
-            self.root.after(0, self._append_log, f"打开 Shopify 登录页失败：{exc}")
-            self.root.after(0, messagebox.showerror, "打开 Shopify 登录页失败", str(exc))
+            self._ui_after(0, self.status_var.set, "打开 Shopify 登录页失败")
+            self._ui_after(0, self._append_log, f"打开 Shopify 登录页失败：{exc}")
+            self._ui_after(0, messagebox.showerror, "打开 Shopify 登录页失败", str(exc))
         finally:
-            self.root.after(0, self._set_running_state, False)
+            self._ui_after(0, self._set_running_state, False)
 
     def _render_login_open_result(self, result: dict) -> None:
         self._clear_summary()
@@ -1253,10 +1278,10 @@ class ShopifyImageLocalizerApp:
                 browser_user_data_dir=browser_dir,
                 shopify_domain=shopify_domain,
             )
-            self.root.after(0, self._render_confirm_login_result, result)
+            self._ui_after(0, self._render_confirm_login_result, result)
         except Exception as exc:
-            self.root.after(0, self._append_log, f"确认登录失败：{exc}")
-            self.root.after(0, messagebox.showerror, "确认登录失败", str(exc))
+            self._ui_after(0, self._append_log, f"确认登录失败：{exc}")
+            self._ui_after(0, messagebox.showerror, "确认登录失败", str(exc))
 
     def _render_confirm_login_result(self, result: dict) -> None:
         status = (result or {}).get("status")
@@ -1296,13 +1321,13 @@ class ShopifyImageLocalizerApp:
                 shopify_product_id=shopify_product_id,
                 shopify_domain=shopify_domain,
             )
-            self.root.after(0, self._render_open_result, result, product_code)
+            self._ui_after(0, self._render_open_result, result, product_code)
         except Exception as exc:
-            self.root.after(0, self.status_var.set, "打开页面失败")
-            self.root.after(0, self._append_log, f"打开页面失败：{exc}")
-            self.root.after(0, messagebox.showerror, "打开页面失败", str(exc))
+            self._ui_after(0, self.status_var.set, "打开页面失败")
+            self._ui_after(0, self._append_log, f"打开页面失败：{exc}")
+            self._ui_after(0, messagebox.showerror, "打开页面失败", str(exc))
         finally:
-            self.root.after(0, self._set_running_state, False)
+            self._ui_after(0, self._set_running_state, False)
 
     def _render_open_result(self, result: dict, product_code: str) -> None:
         target_name = "EZ 页面" if result.get("target") == "ez" else "详情页"
@@ -1345,7 +1370,7 @@ class ShopifyImageLocalizerApp:
                 self.current_running_language = lang_label
                 self._update_login_status(shopify_domain)
 
-            self.root.after(0, set_running)
+            self._ui_after(0, set_running)
 
             result = controller.run_shopify_localizer(
                 base_url=base_url,
@@ -1358,32 +1383,32 @@ class ShopifyImageLocalizerApp:
                 shopify_domain=shopify_domain,
                 shopify_language_name=shopify_language_name,
                 cancel_token=cancel_token,
-                status_cb=lambda message: self.root.after(0, self._handle_status, message),
-                shopify_product_id_cb=lambda product_id: self.root.after(
+                status_cb=lambda message: self._ui_after(0, self._handle_status, message),
+                shopify_product_id_cb=lambda product_id: self._ui_after(
                     0,
                     self._handle_shopify_product_id,
                     product_id,
                 ),
                 visual_pair_confirm_cb=self._confirm_visual_pairs_threadsafe,
             )
-            self.root.after(0, self._render_result, result)
+            self._ui_after(0, self._render_result, result)
         except cancellation.OperationCancelled:
-            self.root.after(0, self._render_cancelled)
+            self._ui_after(0, self._render_cancelled)
         except Exception as exc:
-            self.root.after(0, self.status_var.set, "执行失败")
-            self.root.after(0, self._append_log, f"================ 任务已结束（执行失败）— 详情请看运行摘要 ================")
-            self.root.after(0, self._append_log, f"失败原因：{exc}")
-            self.root.after(0, self._add_summary, "任务状态", f"执行失败：{exc}")
-            self.root.after(0, messagebox.showerror, "任务失败", f"执行失败：{exc}\n\n详情请看运行摘要")
+            self._ui_after(0, self.status_var.set, "执行失败")
+            self._ui_after(0, self._append_log, f"================ 任务已结束（执行失败）— 详情请看运行摘要 ================")
+            self._ui_after(0, self._append_log, f"失败原因：{exc}")
+            self._ui_after(0, self._add_summary, "任务状态", f"执行失败：{exc}")
+            self._ui_after(0, messagebox.showerror, "任务失败", f"执行失败：{exc}\n\n详情请看运行摘要")
         finally:
             self._current_cancel_token = None
-            self.root.after(0, self._set_running_state, False)
+            self._ui_after(0, self._set_running_state, False)
             # 确保清空当前运行语言
             def clear_running():
                 self.current_running_language = ""
                 self._update_login_status(shopify_domain)
 
-            self.root.after(0, clear_running)
+            self._ui_after(0, clear_running)
 
     def _run_batch(
         self,
@@ -1410,7 +1435,7 @@ class ShopifyImageLocalizerApp:
             for idx, lang_label in enumerate(language_labels, start=1):
                 # 检查是否已取消
                 if cancel_token.is_cancelled():
-                    self.root.after(0, lambda: self._append_log("批量任务已由用户取消"))
+                    self._ui_after(0, lambda: self._append_log("批量任务已由用户取消"))
                     break
 
                 # 每个语言开始前清理旧 Chrome，避免上一个语言崩溃后
@@ -1427,7 +1452,7 @@ class ShopifyImageLocalizerApp:
                     self._update_login_status(shopify_domain)
                     self._progress_record_step(f"[{idx}/{total}] 开始处理语言: {lang}")
 
-                self.root.after(0, update_status)
+                self._ui_after(0, update_status)
 
                 try:
                     # 每个语言跑在独立线程里：Playwright sync API 会在当前
@@ -1452,8 +1477,8 @@ class ShopifyImageLocalizerApp:
                                 cancel_token=cancel_token,
                                 skip_kill_chrome=True,
                                 status_cb=lambda msg, lang=lang_label, idx=idx, total=len(language_labels):
-                                    self.root.after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
-                                shopify_product_id_cb=lambda pid: self.root.after(0, self._handle_shopify_product_id, pid),
+                                    self._ui_after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
+                                shopify_product_id_cb=lambda pid: self._ui_after(0, self._handle_shopify_product_id, pid),
                             )
                         except Exception as exc:
                             error_container["value"] = exc
@@ -1478,7 +1503,7 @@ class ShopifyImageLocalizerApp:
                     def add_lang_summary(lang=lang_label, res=result):
                         self._add_summary(f"{lang} 状态", "成功")
 
-                    self.root.after(0, add_lang_summary)
+                    self._ui_after(0, add_lang_summary)
 
                     # 每个语言之间暂停 5 秒，通过新开 tab 解决切换问题
                     if idx < len(language_labels):
@@ -1489,7 +1514,7 @@ class ShopifyImageLocalizerApp:
                     failed_count += 1
                     import traceback as _tb
                     detail = f"{lang_label} 执行失败: {exc}\n{_tb.format_exc()}"
-                    self.root.after(0, lambda d=detail: self._append_log(d))
+                    self._ui_after(0, lambda d=detail: self._append_log(d))
                     # 同时写入工作区日志方便排查
                     try:
                         ws = storage.create_workspace(product_code, lang_code)
@@ -1527,21 +1552,21 @@ class ShopifyImageLocalizerApp:
                     parent=self.root,
                 )
 
-            self.root.after(0, finish_batch)
+            self._ui_after(0, finish_batch)
 
         except cancellation.OperationCancelled:
-            self.root.after(0, self._render_cancelled)
+            self._ui_after(0, self._render_cancelled)
         except Exception as exc:
-            self.root.after(0, lambda: self._append_log(f"批量任务异常: {exc}"))
+            self._ui_after(0, lambda: self._append_log(f"批量任务异常: {exc}"))
         finally:
             self._current_cancel_token = None
-            self.root.after(0, lambda: self._set_running_state(False))
+            self._ui_after(0, lambda: self._set_running_state(False))
             # 清空当前运行语言
             def clear_running():
                 self.current_running_language = ""
                 self._update_login_status(shopify_domain)
 
-            self.root.after(0, clear_running)
+            self._ui_after(0, clear_running)
 
     def _render_cancelled(self) -> None:
         self.status_var.set("已停止")
@@ -1652,7 +1677,7 @@ class ShopifyImageLocalizerApp:
             finally:
                 done.set()
 
-        self.root.after(0, ask)
+        self._ui_after(0, ask)
         while not done.wait(0.1):
             token = self._current_cancel_token
             if token is not None and token.is_cancelled():

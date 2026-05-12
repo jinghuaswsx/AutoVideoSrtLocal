@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import builtins
+import importlib
 from types import SimpleNamespace
+import sys
 import threading
 import time
 
@@ -485,6 +488,67 @@ def test_main_cleans_existing_shopify_browser_before_gui(monkeypatch: pytest.Mon
         ("kill", r"C:\chrome-shopify-image"),
         ("mainloop",),
     ]
+
+
+def test_main_imports_and_starts_when_psutil_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    module_name = "tools.shopify_image_localizer.main"
+    original_main_module = sys.modules.pop(module_name, None)
+    original_psutil_module = sys.modules.pop("psutil", None)
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "psutil":
+            raise ModuleNotFoundError("No module named 'psutil'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    try:
+        app_main = importlib.import_module(module_name)
+    finally:
+        if original_psutil_module is not None:
+            sys.modules["psutil"] = original_psutil_module
+
+    calls: list[tuple] = []
+
+    class FakeRoot:
+        def mainloop(self) -> None:
+            calls.append(("mainloop",))
+
+    class FakeApp:
+        root = FakeRoot()
+
+    monkeypatch.setattr(
+        app_main,
+        "settings",
+        SimpleNamespace(load_runtime_config=lambda: {"browser_user_data_dir": r"C:\chrome-shopify-image"}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        app_main,
+        "session",
+        SimpleNamespace(kill_chrome_for_profile=lambda browser_dir: calls.append(("kill", browser_dir))),
+        raising=False,
+    )
+    monkeypatch.setattr(app_main, "ShopifyImageLocalizerApp", lambda: FakeApp())
+
+    app_main.main()
+
+    assert calls == [
+        ("kill", r"C:\chrome-shopify-image"),
+        ("mainloop",),
+    ]
+
+    sys.modules.pop(module_name, None)
+    if original_main_module is not None:
+        sys.modules[module_name] = original_main_module
+
+
+def test_gui_starts_with_empty_product_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        assert app.product_code_var.get() == ""
+    finally:
+        app.root.destroy()
 
 
 def test_gui_backfills_shopify_id_from_running_task_callback(monkeypatch: pytest.MonkeyPatch) -> None:

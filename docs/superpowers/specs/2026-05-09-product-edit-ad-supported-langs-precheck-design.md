@@ -266,7 +266,7 @@ function edHandleSaveErrorAdLangPrecheck(payload) // 收到 422 时弹 toast
 - 未登录 PUT /api/products/<pid> → 302
 - 登录后传新增 lang + mock service 返回 issues → 422 + 正确 JSON
 
-### 6.3 前端冒烟（dev server 5090，prod .env，admin/709709@）
+### 6.3 前端冒烟（dev server 5090，prod .env，测试管理员账号见 testuser.md）
 
 1. 进任一商品「编辑产品素材」弹窗
 2. 找一个未勾选国家 + 已启用域名 + 全部 ok → 点击勾选成功

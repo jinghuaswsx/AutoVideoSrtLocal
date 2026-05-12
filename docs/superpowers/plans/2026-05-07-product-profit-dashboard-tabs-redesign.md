@@ -1175,7 +1175,7 @@ switchTab(initialTab);
 cd g:/Code/AutoVideoSrtLocal-product-profit-tabs
 python -m web.app  # 假设这是 dev server 启动方式；按仓库实际命令调
 # 浏览器访问 http://127.0.0.1:5000/product-profit
-# 用 admin / 709709@ 登录，确认 4 个 Tab 按钮可切换、URL ?tab= 同步
+# 用测试管理员账号登录（凭据见 testuser.md），确认 4 个 Tab 按钮可切换、URL ?tab= 同步
 ```
 
 ### Step 5.5: Commit
