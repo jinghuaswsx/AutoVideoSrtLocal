@@ -24,7 +24,7 @@ def test_mk_selection_source_does_not_embed_jwt_fallback():
 
 
 def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
-    response = authed_client_no_db.get("/medias/mk-selection")
+    response = authed_client_no_db.get("/xuanpin/mk")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -36,8 +36,8 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert "店小秘近7天销量 Top300" in body
     assert '<h1 class="title">选品中心</h1>' not in body
     assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in body
-    assert '<a class="oc-page-tab active" href="/medias/mk-selection" role="tab" aria-selected="true">明空选品</a>' in body
-    assert '<a class="oc-page-tab" href="/new-product-review/" role="tab" aria-selected="false">新品选择</a>' in body
+    assert '<a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>' in body
+    assert '<a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in body
     assert "明控选品" not in body
 
 
@@ -50,15 +50,15 @@ def test_selection_center_tabs_and_heading_on_related_pages():
     assert "店小秘近7天销量 Top300" in mk_template
     assert '<h1 class="title">选品中心</h1>' not in mk_template
     assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in mk_template
-    assert '<a class="oc-page-tab active" href="/medias/mk-selection" role="tab" aria-selected="true">明空选品</a>' in mk_template
-    assert '<a class="oc-page-tab" href="/new-product-review/" role="tab" aria-selected="false">新品选择</a>' in mk_template
+    assert '<a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>' in mk_template
+    assert '<a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in mk_template
     assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in npr_template
     assert '<span class="selection-center-title">选品中心</span>' in npr_template
     assert "明空入库新品 AI 评估矩阵" in npr_template
     assert '<h1 class="title">选品中心</h1>' not in npr_template
     assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in npr_template
-    assert '<a class="oc-page-tab" href="/medias/mk-selection" role="tab" aria-selected="false">明空选品</a>' in npr_template
-    assert '<a class="oc-page-tab active" href="/new-product-review/" role="tab" aria-selected="true">新品选择</a>' in npr_template
+    assert '<a class="oc-page-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>' in npr_template
+    assert '<a class="oc-page-tab active" href="/xuanpin/new-products" role="tab" aria-selected="true">新品选择</a>' in npr_template
     assert "明控选品" not in mk_template
     assert "明控选品" not in npr_template
     assert "新品审核" not in mk_template
@@ -107,7 +107,7 @@ def test_mk_selection_video_cards_include_local_video_preview():
     assert "mk-video-source" in template
     assert "data-mk-video-src" in template
     assert "activateMkVideoTab" in template
-    assert "/medias/api/mk-video?path=" in template
+    assert "/xuanpin/api/mk-video?path=" in template
     assert "controls" in template
     assert "loading=\"lazy\"" in template
 

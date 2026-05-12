@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import medias, new_product_review, users
@@ -39,9 +39,7 @@ def _list_translators() -> list[dict]:
 
 # ---- Task 18: GET / 渲染页面 ----
 
-@new_product_review_bp.route("/", methods=["GET"])
-@login_required
-def index():
+def _render_index_page():
     if not _is_admin():
         return new_product_review_flask_response(
             build_new_product_review_admin_required_response()
@@ -63,6 +61,12 @@ def index():
         translators=translators,
         active_tab="new_product_review",
     )
+
+
+@new_product_review_bp.route("/", methods=["GET"])
+@login_required
+def index():
+    return redirect(url_for("xuanpin.new_products_page"))
 
 
 # ---- Task 19: GET /api/list ----

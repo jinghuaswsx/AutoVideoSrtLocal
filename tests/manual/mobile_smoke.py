@@ -31,7 +31,7 @@ from playwright.sync_api import sync_playwright
 PAGES = [
     ("login", "/login", False),                     # 第三个字段：是否需要登录
     ("medias", "/medias/", True),
-    ("mk_selection", "/medias/mk-selection", True),
+    ("mk_selection", "/xuanpin/mk", True),
     ("pushes", "/pushes", True),
     ("order_analytics", "/order-analytics", True),
     ("multi_translate", "/multi-translate", True),

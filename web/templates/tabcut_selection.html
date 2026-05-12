@@ -66,9 +66,9 @@
 {% block content %}
 <div class="tabcut-page">
   <nav class="tabcut-tabs" aria-label="Selection center tabs">
-    <a class="tabcut-tab-link" href="/medias/mk-selection">明空选品</a>
-    <a class="tabcut-tab-link" href="/new-product-review/">新品选择</a>
-    <a class="tabcut-tab-link active" href="/medias/tabcut-selection">TABCUT</a>
+    <a class="tabcut-tab-link" href="/xuanpin/mk">明空选品</a>
+    <a class="tabcut-tab-link" href="/xuanpin/new-products">新品选择</a>
+    <a class="tabcut-tab-link active" href="/xuanpin/tabcut">TABCUT</a>
   </nav>
 
   <section class="tabcut-toolbar">
@@ -273,7 +273,7 @@ function paramsFor(page) {
 async function loadTabcut(page) {
   tabcutPage = page;
   qs("tabcutStatus").textContent = "Loading...";
-  const endpoint = tabcutView === "videos" ? "/medias/api/tabcut-selection/videos" : "/medias/api/tabcut-selection/goods";
+  const endpoint = tabcutView === "videos" ? "/xuanpin/api/tabcut/videos" : "/xuanpin/api/tabcut/goods";
   const resp = await fetch(`${endpoint}?${paramsFor(page).toString()}`);
   const data = await resp.json();
   if (!resp.ok) {
@@ -330,7 +330,7 @@ function resetTabcut() {
 async function refreshTabcut() {
   qs("tabcutStatus").textContent = "Queued";
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
-  await fetch("/medias/api/tabcut-selection/refresh", { method:"POST", headers:{ "Content-Type":"application/json", "X-CSRFToken":csrf }, body:JSON.stringify({ days:30 }) });
+  await fetch("/xuanpin/api/tabcut/refresh", { method:"POST", headers:{ "Content-Type":"application/json", "X-CSRFToken":csrf }, body:JSON.stringify({ days:30 }) });
 }
 
 updateDateFilterState();

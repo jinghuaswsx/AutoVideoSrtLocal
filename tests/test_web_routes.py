@@ -3512,7 +3512,7 @@ def test_mk_selection_template_proxies_wedev_media_assets():
     ).read_text(encoding="utf-8")
 
     assert "function normalizeMkMediaPath" in template
-    assert "/medias/api/mk-media?path=" in template
+    assert "/xuanpin/api/mk-media?path=" in template
     assert "/medias/media-objects/" not in template
 
 

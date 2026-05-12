@@ -1,10 +1,10 @@
 def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
-    resp = authed_client_no_db.get("/medias/tabcut-selection")
+    resp = authed_client_no_db.get("/xuanpin/tabcut")
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "TABCUT" in body
-    assert "/medias/api/tabcut-selection/videos" in body
+    assert "/xuanpin/api/tabcut/videos" in body
     assert "tabcut-video-grid" in body
     assert "publishDateFrom" in body
     assert "tabcut-video-cover-link" in body

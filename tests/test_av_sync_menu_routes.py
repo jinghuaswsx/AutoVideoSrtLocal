@@ -66,7 +66,7 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
     title_translate_idx = nav_html.index('href="/title-translate"')
     image_translate_idx = nav_html.index('href="/image-translate"')
     subtitle_removal_idx = nav_html.index('href="/subtitle-removal"')
-    mk_selection_idx = nav_html.index('href="/medias/mk-selection"')
+    mk_selection_idx = nav_html.index('href="/xuanpin/mk"')
 
     assert medias_idx < pushes_idx < order_analytics_idx
     assert order_analytics_idx < multi_translate_idx < title_translate_idx
