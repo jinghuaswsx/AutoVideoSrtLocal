@@ -145,8 +145,8 @@ class ShopifyImageLocalizerApp:
         )
         self.confirm_login_button.pack(side="left", padx=(8, 0))
         self._login_shopify_tip_full_text = (
-            "第一步： 点击登录店铺，登录后选择对应网站\n"
-            "第二步： 确保也进入对应网站后，点已登录，必须点已登录"
+            "第一步： 点击登录店铺，选择对应网站\n"
+            "第二步： 进入对应网站，点 已登录 按钮"
         )
         self.login_shopify_tip_label = tk.Label(
             self.login_shopify_frame,
@@ -403,7 +403,7 @@ class ShopifyImageLocalizerApp:
         if avail <= 1:
             return
         font = tkfont.Font(font=label.cget("font"))
-        if max(font.measure(line) for line in full.splitlines()) <= avail:
+        if font.measure(full) <= avail:
             if label.cget("text") != full:
                 label.configure(text=full)
             return
@@ -1244,7 +1244,7 @@ class ShopifyImageLocalizerApp:
         self.status_var.set("已打开 Shopify 主页")
         self._append_log(
             "已打开 Shopify 主页（admin.shopify.com）。请在浏览器里登录账号、点选目标店铺，"
-            "登录到对应店铺主页后，回到本程序点「已登录」按钮，程序会从浏览器历史抓取真实 slug 并缓存。"
+            "登录到对应店铺主页后，回到本程序点「已登录」按钮，程序会从当前浏览器标签页读取真实 slug 并缓存。"
         )
         self._progress_finish("已打开 Shopify 主页")
 
@@ -1254,7 +1254,7 @@ class ShopifyImageLocalizerApp:
         if not browser_dir:
             messagebox.showerror("错误", "高级设置里的 Chrome 用户目录不能为空")
             return
-        self._append_log(f"已登录确认：从浏览器历史抓取 {shopify_domain} 的店铺 slug")
+        self._append_log(f"已登录确认：从当前浏览器标签页读取 {shopify_domain} 的店铺 slug")
         threading.Thread(
             target=self._confirm_shopify_login_worker,
             args=(browser_dir, shopify_domain),
@@ -1283,8 +1283,91 @@ class ShopifyImageLocalizerApp:
             messagebox.showinfo("已登录", f"已识别 {domain} 的店铺 slug：{slug}\n\n来源 URL：{url}")
         else:
             message = (result or {}).get("message") or "未识别到店铺 slug"
-            self._append_log(f"识别失败：{message}（最近 admin URL：{url or '(无)'}）")
-            messagebox.showwarning("未识别到店铺 slug", message)
+            self._append_log(f"识别失败：{message}（当前浏览器 URL：{url or '(无)'}）")
+            self._show_manual_login_url_dialog(result or {})
+
+    def _show_manual_login_url_dialog(self, result: dict) -> None:
+        domain = settings.normalize_domain(
+            (result or {}).get("shopify_domain") or self.current_shopify_domain_var.get()
+        )
+        browser_dir = str(
+            self.browser_user_data_dir_var.get().strip()
+            or (result or {}).get("browser_user_data_dir")
+        )
+        message = str((result or {}).get("message") or "未识别到店铺 slug")
+        current_url = str((result or {}).get("url") or "").strip()
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("未识别到店铺 slug")
+        dialog.transient(self.root)
+        dialog.minsize(560, 250)
+
+        frame = tk.Frame(dialog, padx=18, pady=16)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(
+            frame,
+            text=message,
+            anchor="w",
+            justify="left",
+            wraplength=620,
+        ).pack(fill="x", anchor="w", pady=(0, 10))
+
+        tk.Label(
+            frame,
+            text="请把当前浏览器地址栏里的 Shopify 后台 URL 粘贴到这里：",
+            anchor="w",
+        ).pack(fill="x", anchor="w")
+
+        url_var = tk.StringVar(value=current_url)
+        url_entry = tk.Entry(frame, textvariable=url_var, width=90)
+        url_entry.pack(fill="x", pady=(6, 8))
+        url_entry.focus_set()
+        url_entry.selection_range(0, "end")
+
+        status_var = tk.StringVar(value="")
+        tk.Label(
+            frame,
+            textvariable=status_var,
+            anchor="w",
+            justify="left",
+            fg="#c62828",
+            wraplength=620,
+        ).pack(fill="x", anchor="w", pady=(0, 10))
+
+        button_frame = tk.Frame(frame)
+        button_frame.pack(fill="x")
+
+        def cancel() -> None:
+            dialog.destroy()
+
+        def save_manual_url() -> None:
+            manual_url = url_var.get().strip()
+            manual_result = controller.confirm_shopify_login_capture_slug_from_url(
+                browser_user_data_dir=browser_dir,
+                shopify_domain=domain,
+                admin_url=manual_url,
+            )
+            if manual_result.get("status") == "captured":
+                dialog.destroy()
+                self._render_confirm_login_result(manual_result)
+                return
+            status_var.set(manual_result.get("message") or "URL 无法识别，请检查后再保存。")
+
+        tk.Button(button_frame, text="取消", command=cancel, width=10).pack(side="right")
+        tk.Button(
+            button_frame,
+            text="保存 URL",
+            command=save_manual_url,
+            width=12,
+            bg="#1976d2",
+            fg="white",
+        ).pack(side="right", padx=(0, 8))
+
+        dialog.bind("<Return>", lambda _event: save_manual_url())
+        dialog.bind("<Escape>", lambda _event: cancel())
+        self._center_dialog_over_root(dialog)
+        dialog.grab_set()
 
     def _open_shopify_target_worker(
         self,
@@ -1416,8 +1499,9 @@ class ShopifyImageLocalizerApp:
         failed_count = 0
         first_workspace = None
         first_download_dir = None
-
         effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_dir, shopify_domain)
+        restart_browser_before_next_language = False
+
         import time
 
         try:
@@ -1427,9 +1511,10 @@ class ShopifyImageLocalizerApp:
                     self._ui_after(0, lambda: self._append_log("批量任务已由用户取消"))
                     break
 
-                # 每个语言开始前清理旧 Chrome，避免上一个语言崩溃后
-                # Chrome/CDP 处于损坏状态导致后续语言全部失败。
-                session.kill_chrome_for_profile(effective_browser_dir)
+                if restart_browser_before_next_language:
+                    self._ui_after(0, lambda: self._append_log("上一语言执行异常，正在重启浏览器后继续下一语言"))
+                    session.kill_chrome_for_profile(effective_browser_dir)
+                    restart_browser_before_next_language = False
 
                 lang_code = self._selected_lang_code(lang_label)
                 shop_locale = self._selected_shop_locale(lang_label)
@@ -1510,6 +1595,7 @@ class ShopifyImageLocalizerApp:
                         storage.append_log(ws.log_path, detail)
                     except Exception:
                         pass
+                    restart_browser_before_next_language = idx < len(language_labels)
                     # 继续下一个语言,不中断整个批量任务
                     if idx < len(language_labels):
                         time.sleep(5.0)

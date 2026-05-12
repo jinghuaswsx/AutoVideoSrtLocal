@@ -50,6 +50,33 @@ def _make_app(
     return app
 
 
+def test_login_slug_failure_opens_manual_url_dialog_instead_of_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _make_app(monkeypatch)
+    shown: list[dict] = []
+    warnings: list[tuple] = []
+    monkeypatch.setattr(app, "_show_manual_login_url_dialog", lambda result: shown.append(result))
+    monkeypatch.setattr(gui.messagebox, "showwarning", lambda *args, **kwargs: warnings.append(args))
+    try:
+        result = {
+            "status": "not_found",
+            "shopify_domain": "omurio.com",
+            "browser_user_data_dir": r"C:\chrome-shopify-image-omurio",
+            "url": "",
+            "slug": "",
+            "source": "extension_not_connected",
+            "message": "未从当前 Chrome 浏览器标签页读取到 Shopify 店铺 URL。",
+        }
+
+        app._render_confirm_login_result(result)
+
+        assert shown == [result]
+        assert warnings == []
+    finally:
+        app.root.destroy()
+
+
 def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:
@@ -156,11 +183,10 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         assert app.login_shopify_tip_label["fg"] == "red"
         assert (
             app.login_shopify_tip_label["text"]
-            == "第一步： 点击登录店铺，登录后选择对应网站\n"
-            "第二步： 确保也进入对应网站后，点已登录，必须点已登录"
+            == "第一步： 点击登录店铺，选择对应网站\n"
+            "第二步： 进入对应网站，点 已登录 按钮"
         )
-        tip_font = gui.tkfont.Font(font=app.login_shopify_tip_label["font"])
-        assert tip_font.cget("size") == 14
+        assert "14" in str(app.login_shopify_tip_label["font"])
 
         packed_widgets = app.main_frame.pack_slaves()
         assert packed_widgets.index(app.login_shopify_frame) < packed_widgets.index(app.product_code_entry)
@@ -457,10 +483,118 @@ def test_gui_single_language_selection_takes_priority_over_batch(
         app.root.destroy()
 
 
+def test_gui_batch_reuses_one_browser_without_per_language_restart(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        calls: list[dict] = []
+        killed_profiles: list[str] = []
+
+        monkeypatch.setattr(gui.session, "kill_chrome_for_profile", lambda profile: killed_profiles.append(profile))
+        monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+        monkeypatch.setattr(
+            gui.storage,
+            "create_workspace",
+            lambda product_code, lang: SimpleNamespace(
+                root=rf"C:\work\{product_code}\{lang}",
+                source_localized_dir=rf"C:\work\{product_code}\{lang}\source\localized",
+            ),
+        )
+
+        def fake_run_shopify_localizer(**kwargs):
+            calls.append(kwargs)
+            return {
+                "product_code": kwargs["product_code"],
+                "lang": kwargs["lang"],
+                "shopify_product_id": kwargs["shopify_product_id"],
+                "workspace_root": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}",
+                "download_dir": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\source\localized",
+                "manifest_path": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\shopify_batch_result.json",
+            }
+
+        monkeypatch.setattr(gui.controller, "run_shopify_localizer", fake_run_shopify_localizer)
+        app._set_language_items(
+            [
+                {"code": "de", "label": "German", "shop_locale": "de", "shopify_language_name": "German"},
+                {"code": "fr", "label": "French", "shop_locale": "fr", "shopify_language_name": "French"},
+            ]
+        )
+
+        app._run_batch(
+            base_url="http://172.30.254.14",
+            api_key="demo-key",
+            browser_dir=r"C:\chrome-shopify-image",
+            product_code="sonic-lens-refresher-rjc",
+            language_labels=["German (de)", "French (fr)"],
+            shopify_product_id="8559391932589",
+            shopify_domain="newjoyloo.com",
+            cancel_token=cancellation.CancellationToken(),
+        )
+
+        assert [call["lang"] for call in calls] == ["de", "fr"]
+        assert all(call["skip_kill_chrome"] is True for call in calls)
+        assert killed_profiles == []
+    finally:
+        app.root.destroy()
+
+
+def test_gui_batch_restarts_browser_once_after_language_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        calls: list[str] = []
+        killed_profiles: list[str] = []
+
+        monkeypatch.setattr(gui.session, "kill_chrome_for_profile", lambda profile: killed_profiles.append(profile))
+        monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+        monkeypatch.setattr(
+            gui.storage,
+            "create_workspace",
+            lambda product_code, lang: SimpleNamespace(
+                root=rf"C:\work\{product_code}\{lang}",
+                source_localized_dir=rf"C:\work\{product_code}\{lang}\source\localized",
+            ),
+        )
+
+        def fake_run_shopify_localizer(**kwargs):
+            calls.append(kwargs["lang"])
+            if kwargs["lang"] == "de":
+                raise RuntimeError("browser page lost")
+            return {
+                "product_code": kwargs["product_code"],
+                "lang": kwargs["lang"],
+                "shopify_product_id": kwargs["shopify_product_id"],
+                "workspace_root": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}",
+                "download_dir": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\source\localized",
+                "manifest_path": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\shopify_batch_result.json",
+            }
+
+        monkeypatch.setattr(gui.controller, "run_shopify_localizer", fake_run_shopify_localizer)
+        app._set_language_items(
+            [
+                {"code": "de", "label": "German", "shop_locale": "de", "shopify_language_name": "German"},
+                {"code": "fr", "label": "French", "shop_locale": "fr", "shopify_language_name": "French"},
+            ]
+        )
+
+        app._run_batch(
+            base_url="http://172.30.254.14",
+            api_key="demo-key",
+            browser_dir=r"C:\chrome-shopify-image",
+            product_code="sonic-lens-refresher-rjc",
+            language_labels=["German (de)", "French (fr)"],
+            shopify_product_id="8559391932589",
+            shopify_domain="newjoyloo.com",
+            cancel_token=cancellation.CancellationToken(),
+        )
+
+        assert calls == ["de", "fr"]
+        assert killed_profiles == [r"C:\chrome-shopify-image"]
+    finally:
+        app.root.destroy()
+
+
 def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
     saved_configs: list[dict] = []
-    killed_profiles: list[str] = []
-    started_urls: list[tuple] = []
+    managed_urls: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
         gui.controller.settings,
@@ -468,14 +602,14 @@ def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.Monk
         lambda **kwargs: saved_configs.append(kwargs),
     )
     monkeypatch.setattr(
-        gui.controller.session,
-        "kill_chrome_for_profile",
-        lambda profile: killed_profiles.append(profile),
+        gui.controller.ez_cdp,
+        "open_managed_tab",
+        lambda *, user_data_dir, target_url, **kwargs: managed_urls.append((user_data_dir, target_url)),
     )
     monkeypatch.setattr(
         gui.controller.session,
-        "start_chrome",
-        lambda profile, urls: started_urls.append((profile, urls)),
+        "kill_chrome_for_profile",
+        lambda profile: (_ for _ in ()).throw(AssertionError(f"unexpected kill: {profile}")),
     )
 
     result = gui.controller.open_shopify_login_page(
@@ -492,8 +626,7 @@ def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.Monk
             "shopify_domain": "newjoyloo.com",
         }
     ]
-    assert killed_profiles == [r"C:\chrome-shopify-image"]
-    assert started_urls == [(r"C:\chrome-shopify-image", ["https://admin.shopify.com/"])]
+    assert managed_urls == [(r"C:\chrome-shopify-image", "https://admin.shopify.com/")]
     assert result == {
         "status": "opened",
         "target": "shopify_login",
@@ -523,7 +656,7 @@ def test_gui_backfills_shopify_id_from_open_result(monkeypatch: pytest.MonkeyPat
         app.root.destroy()
 
 
-def test_main_cleans_existing_shopify_browser_before_gui(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_ensures_google_first_cdp_browser_before_gui(monkeypatch: pytest.MonkeyPatch) -> None:
     from tools.shopify_image_localizer import main as app_main
 
     calls: list[tuple] = []
@@ -543,8 +676,8 @@ def test_main_cleans_existing_shopify_browser_before_gui(monkeypatch: pytest.Mon
     )
     monkeypatch.setattr(
         app_main,
-        "session",
-        SimpleNamespace(kill_chrome_for_profile=lambda browser_dir: calls.append(("kill", browser_dir))),
+        "ez_cdp",
+        SimpleNamespace(ensure_cdp_chrome=lambda browser_dir: calls.append(("ensure", browser_dir))),
         raising=False,
     )
     monkeypatch.setattr(app_main, "ShopifyImageLocalizerApp", lambda: FakeApp())
@@ -552,7 +685,7 @@ def test_main_cleans_existing_shopify_browser_before_gui(monkeypatch: pytest.Mon
     app_main.main()
 
     assert calls == [
-        ("kill", r"C:\chrome-shopify-image"),
+        ("ensure", r"C:\chrome-shopify-image"),
         ("mainloop",),
     ]
 
@@ -592,8 +725,8 @@ def test_main_imports_and_starts_when_psutil_is_missing(monkeypatch: pytest.Monk
     )
     monkeypatch.setattr(
         app_main,
-        "session",
-        SimpleNamespace(kill_chrome_for_profile=lambda browser_dir: calls.append(("kill", browser_dir))),
+        "ez_cdp",
+        SimpleNamespace(ensure_cdp_chrome=lambda browser_dir: calls.append(("ensure", browser_dir))),
         raising=False,
     )
     monkeypatch.setattr(app_main, "ShopifyImageLocalizerApp", lambda: FakeApp())
@@ -601,7 +734,7 @@ def test_main_imports_and_starts_when_psutil_is_missing(monkeypatch: pytest.Monk
     app_main.main()
 
     assert calls == [
-        ("kill", r"C:\chrome-shopify-image"),
+        ("ensure", r"C:\chrome-shopify-image"),
         ("mainloop",),
     ]
 

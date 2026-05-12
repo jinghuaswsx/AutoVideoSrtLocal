@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 
 import pytest
@@ -842,7 +843,7 @@ def test_plan_body_html_replacements_skips_payment_screenshot_before_matching():
     assert plan["skipped_missing"] == []
 
 
-def test_apply_uploaded_replacements_preserves_display_width():
+def test_apply_uploaded_replacements_preserves_display_size():
     html = (
         '<p><img alt="demo" src="https://old.example.com/a.jpg" '
         'style="max-width: 100%; height: auto;"></p>'
@@ -855,9 +856,102 @@ def test_apply_uploaded_replacements_preserves_display_width():
     )
 
     assert 'src="https://cdn.shopify.com/a.jpg"' in updated
+    assert 'width="420"' in updated
+    assert 'height="315"' in updated
     assert "width: 420px" in updated
-    assert "max-width: 100%" in updated
-    assert "height: auto" in updated
+    assert "height: 315px" in updated
+    assert "max-width: 420px" in updated
+    assert "height: auto" not in updated
+
+
+def test_apply_uploaded_replacements_overrides_conflicting_display_size():
+    html = (
+        '<p><img alt="demo" src="https://old.example.com/a.jpg" '
+        'width="100" height="80" style="width: 100px; max-width: 100%; height: auto;"></p>'
+    )
+
+    updated = taa_cdp.apply_uploaded_replacements(
+        html,
+        [{"old": "https://old.example.com/a.jpg", "new": "https://cdn.shopify.com/a.jpg"}],
+        display_size_by_src={"https://old.example.com/a.jpg": {"width": 420, "height": 315}},
+    )
+
+    assert 'src="https://cdn.shopify.com/a.jpg"' in updated
+    assert 'width="420"' in updated
+    assert 'height="315"' in updated
+    assert 'width="100"' not in updated
+    assert 'height="80"' not in updated
+    assert "width: 420px" in updated
+    assert "height: 315px" in updated
+    assert "max-width: 420px" in updated
+    assert "height: auto" not in updated
+
+
+def test_fetch_storefront_display_sizes_indexes_html_src_when_current_src_differs(monkeypatch):
+    calls: list[tuple] = []
+    html_src = "https://cdn.example.com/images/original-detail.jpg?v=1"
+    current_src = "https://cdn.example.com/images/original-detail_720x.jpg?v=1"
+
+    class FakePage:
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", url))
+
+        def wait_for_timeout(self, timeout):
+            calls.append(("wait", timeout))
+
+        def evaluate(self, _script):
+            return [
+                {
+                    "src": current_src,
+                    "htmlSrc": html_src,
+                    "width": 420,
+                    "height": 315,
+                    "naturalWidth": 840,
+                    "naturalHeight": 630,
+                }
+            ]
+
+        def close(self):
+            calls.append(("page_close",))
+
+    class FakeContext:
+        def new_page(self):
+            return FakePage()
+
+    class FakeBrowser:
+        contexts = [FakeContext()]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(run_product_cdp.ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(run_product_cdp.ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(run_product_cdp, "sync_playwright", lambda: FakePlaywright())
+
+    sizes = run_product_cdp.fetch_storefront_image_display_sizes(
+        product_code="reflective-dog-harness-set-rjc",
+        locale="de",
+        store_domain="omurio.com",
+        user_data_dir=r"C:\chrome-shopify-image",
+        port=7777,
+    )
+
+    assert sizes[current_src]["width"] == 420
+    assert sizes[html_src]["height"] == 315
 
 
 def test_plan_body_html_replacements_re_replaces_same_filename_when_replace_shopify_cdn_true():
@@ -1032,6 +1126,30 @@ def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkey
         "exit-success",
         "enter-reload",
     ]
+
+
+def test_raw_cdp_collect_events_returns_after_quiet_window() -> None:
+    class FakeWs:
+        def __init__(self) -> None:
+            self.recv_count = 0
+
+        def settimeout(self, _timeout: float) -> None:
+            return None
+
+        def recv(self) -> str:
+            self.recv_count += 1
+            if self.recv_count == 1:
+                return '{"method":"Network.responseReceived","params":{"response":{"status":200}}}'
+            raise TimeoutError("quiet")
+
+    client = object.__new__(taa_cdp.RawCdpClient)
+    client._ws = FakeWs()
+
+    started = time.perf_counter()
+    events = client.collect_events(timeout_s=35, quiet_timeout_s=0.02)
+
+    assert events == [{"method": "Network.responseReceived", "params": {"response": {"status": 200}}}]
+    assert time.perf_counter() - started < 1
 
 
 def test_taa_toolbar_detection_supports_chinese_shopify_admin_labels():
@@ -1237,7 +1355,8 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     assert captured_args[0].replace_shopify_cdn is True
     assert captured_args[0].no_preserve_detail_size is False
     assert saved_config[0]["base_url"] == "http://172.30.254.14"
-    assert browser_cleanups == [r"C:\chrome-shopify-image"]
+    assert browser_cleanups == []
+    assert any("复用现有浏览器会话" in message for message in statuses)
     assert any("开始连续替换流程" in message for message in statuses)
 
 
@@ -1442,6 +1561,197 @@ def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypat
     assert "[轮播图] 整体完成：请求=2 成功=1 跳过=1 失败=0" in output
 
 
+def test_preload_opens_business_page_after_google_first_tab(monkeypatch):
+    calls: list[tuple] = []
+
+    class FakePage:
+        def __init__(self, name: str, url: str):
+            self.name = name
+            self.url = url
+
+        def bring_to_front(self):
+            calls.append(("front", self.name))
+
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", self.name, url))
+            self.url = url
+
+        def close(self):
+            calls.append(("close", self.name))
+
+    class FakeContext:
+        def __init__(self):
+            self.pages = [FakePage("google", "https://www.google.com")]
+
+        def new_page(self):
+            page = FakePage("business", "about:blank")
+            self.pages.append(page)
+            calls.append(("new_page", page.name))
+            return page
+
+    fake_context = FakeContext()
+
+    class FakeBrowser:
+        contexts = [fake_context]
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    target_url = "https://admin.shopify.com/store/0ixug9-pv/apps/translate-and-adapt/localize/product?id=855"
+    monkeypatch.setattr(run_product_cdp.ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(run_product_cdp.ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(run_product_cdp, "sync_playwright", lambda: FakePlaywright())
+
+    run_product_cdp._preload_chrome_tab_to_url(
+        user_data_dir=r"C:\chrome-shopify-image",
+        port=7777,
+        target_url=target_url,
+        label="详情图",
+    )
+
+    assert ("goto", "google", target_url) not in calls
+    assert ("new_page", "business") in calls
+    assert ("goto", "business", target_url) in calls
+    assert fake_context.pages[0].url == "https://www.google.com"
+
+
+def test_prune_browser_tabs_keeps_google_first_and_target_under_limit():
+    class FakePage:
+        def __init__(self, name: str):
+            self.name = name
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeContext:
+        def __init__(self):
+            self.pages = [FakePage(f"tab-{idx}") for idx in range(25)]
+
+    context = FakeContext()
+    target = context.pages[10]
+
+    ez_cdp.prune_browser_tabs(context, keep_pages=(target,), max_tabs=20)
+
+    open_pages = [page for page in context.pages if not page.closed]
+    assert context.pages[0] in open_pages
+    assert target in open_pages
+    assert len(open_pages) <= 20
+
+
+def test_google_home_tab_is_restored_when_first_tab_was_closed_or_reused():
+    calls: list[tuple] = []
+
+    class FakePage:
+        def __init__(self, url: str):
+            self.url = url
+
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", self.url, url))
+            self.url = url
+
+    class FakeContext:
+        def __init__(self):
+            self.pages = [FakePage("https://admin.shopify.com/store/old/apps/ez-product-image-translate/product/1")]
+
+        def new_page(self):
+            raise AssertionError("first tab should be restored in place")
+
+    context = FakeContext()
+
+    ez_cdp.ensure_google_home_tab(context)
+
+    assert context.pages[0].url == "https://www.google.com"
+    assert calls == [
+        (
+            "goto",
+            "https://admin.shopify.com/store/old/apps/ez-product-image-translate/product/1",
+            "https://www.google.com",
+        )
+    ]
+
+
+def test_open_managed_tab_uses_business_tab_and_applies_tab_limit(monkeypatch):
+    calls: list[tuple] = []
+
+    class FakePage:
+        def __init__(self, name: str, url: str):
+            self.name = name
+            self.url = url
+            self.closed = False
+
+        def bring_to_front(self):
+            calls.append(("front", self.name))
+
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", self.name, url))
+            self.url = url
+
+        def close(self):
+            self.closed = True
+            calls.append(("close", self.name))
+
+    class FakeContext:
+        def __init__(self):
+            self.pages = [FakePage("google", "https://www.google.com")]
+            self.pages.extend(FakePage(f"old-{idx}", f"https://example.test/{idx}") for idx in range(22))
+
+        def new_page(self):
+            page = FakePage("business", "about:blank")
+            self.pages.append(page)
+            calls.append(("new_page", page.name))
+            return page
+
+    fake_context = FakeContext()
+
+    class FakeBrowser:
+        contexts = [fake_context]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    target_url = "https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/855"
+    monkeypatch.setattr(ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(ez_cdp, "sync_playwright", lambda: FakePlaywright())
+
+    ez_cdp.open_managed_tab(
+        user_data_dir=r"C:\chrome-shopify-image",
+        target_url=target_url,
+    )
+
+    open_pages = [page for page in fake_context.pages if not page.closed]
+    assert fake_context.pages[0].url == "https://www.google.com"
+    assert ("goto", "google", target_url) not in calls
+    assert ("goto", "business", target_url) in calls
+    assert len(open_pages) <= 20
+
+
 def test_ez_replace_slot_does_not_remove_existing_language_marker(monkeypatch):
     from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -1589,6 +1899,10 @@ def test_ensure_cdp_chrome_clears_profile_browser_before_starting_port(monkeypat
     assert calls.index(("kill", r"C:\chrome-shopify-image")) < next(
         idx for idx, call in enumerate(calls) if call[0] == "popen"
     )
+    popen_args = next(call[1] for call in calls if call[0] == "popen")
+    urls = [arg for arg in popen_args if str(arg).startswith("http")]
+    assert urls[0] == "https://www.google.com"
+    assert urls[1] == "https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589"
 
 
 def test_ensure_cdp_chrome_restarts_alive_port_owned_by_other_profile(monkeypatch):
@@ -1630,6 +1944,45 @@ def test_ensure_cdp_chrome_restarts_alive_port_owned_by_other_profile(monkeypatc
     assert calls.index(("kill_profile", r"C:\chrome-shopify-image")) < next(
         idx for idx, call in enumerate(calls) if call[0] == "popen"
     )
+
+
+def test_ez_cdp_port_profile_probe_hides_powershell_window(monkeypatch):
+    calls: list[dict] = []
+
+    class Result:
+        stdout = (
+            r'"C:\Program Files\Google\Chrome\Application\chrome.exe" '
+            r"--remote-debugging-port=7777 --user-data-dir=C:\chrome-shopify-image"
+        )
+
+    def fake_run(*_args, **kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(ez_cdp.os, "name", "nt")
+    monkeypatch.setattr(ez_cdp.subprocess, "run", fake_run)
+
+    assert ez_cdp._cdp_port_matches_profile(7777, r"C:\chrome-shopify-image") is True
+
+    assert calls
+    assert calls[0]["creationflags"] & 0x08000000
+    assert calls[0].get("startupinfo") is not None
+
+
+def test_ez_cdp_kill_port_hides_powershell_window(monkeypatch):
+    calls: list[dict] = []
+
+    def fake_run(*_args, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(ez_cdp.os, "name", "nt")
+    monkeypatch.setattr(ez_cdp.subprocess, "run", fake_run)
+
+    ez_cdp._kill_cdp_chrome_for_port(7777)
+
+    assert calls
+    assert calls[0]["creationflags"] & 0x08000000
+    assert calls[0].get("startupinfo") is not None
 
 
 def test_wait_plugin_frame_pumps_playwright_page_events(monkeypatch):

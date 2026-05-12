@@ -250,13 +250,16 @@ class RawCdpClient:
             events.append(data)
         raise TimeoutError(method)
 
-    def collect_events(self, *, timeout_s: int) -> list[dict[str, Any]]:
+    def collect_events(self, *, timeout_s: int, quiet_timeout_s: float = 4.0) -> list[dict[str, Any]]:
         deadline = time.time() + timeout_s
+        quiet_deadline = time.time() + max(0.5, float(quiet_timeout_s or 0))
         events: list[dict[str, Any]] = []
-        while time.time() < deadline:
+        while time.time() < deadline and time.time() < quiet_deadline:
             try:
-                self._ws.settimeout(max(0.5, min(3, deadline - time.time())))
+                now = time.time()
+                self._ws.settimeout(max(0.5, min(3, deadline - now, quiet_deadline - now)))
                 events.append(json.loads(self._ws.recv()))
+                quiet_deadline = time.time() + max(0.5, float(quiet_timeout_s or 0))
             except Exception:
                 continue
         return events
@@ -306,16 +309,13 @@ class TaaSession:
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(self.port))
         context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-        # 复用 _preload_chrome_tab_to_url 已经打开的 TAA tab，避免再 new_page 开重复窗口
-        existing_taa = [p for p in (getattr(context, "pages", None) or []) if "translate-and-adapt" in (getattr(p, "url", "") or "")]
-        if existing_taa:
-            self._page = existing_taa[0]
-            try:
-                self._page.bring_to_front()
-            except Exception:
-                pass
-        else:
-            self._page = context.new_page()
+        ez_cdp.ensure_google_home_tab(context)
+        self._page = ez_cdp.select_or_create_business_page(context, self.outer_url)
+        ez_cdp.prune_browser_tabs(context, keep_pages=(self._page,))
+        try:
+            self._page.bring_to_front()
+        except Exception:
+            pass
         cancellation.throw_if_cancelled(self.cancel_token)
         self._page.goto(self.outer_url, wait_until="domcontentloaded", timeout=30000)
         cancellation.throw_if_cancelled(self.cancel_token)
@@ -421,7 +421,9 @@ class TaaSession:
             raise RuntimeError(f"failed to click Save: {json.dumps(result, ensure_ascii=False)}")
         if self.cdp is None:
             return []
-        events = self.cdp.collect_events(timeout_s=35)
+        print("详情图：已点击保存，等待 Shopify 保存响应（最多 35 秒；网络安静 4 秒即继续）")
+        events = self.cdp.collect_events(timeout_s=35, quiet_timeout_s=4.0)
+        print(f"详情图：保存响应收集完成，共 {len(events)} 条 CDP 事件")
         cancellation.throw_if_cancelled(self.cancel_token)
         return summarize_store_localization_events(events)
 
@@ -831,23 +833,57 @@ def _set_or_append_style(tag: str, declarations: dict[str, str]) -> str:
     return f'{tag[:insert_at]} style="{style_value}"{tag[insert_at:]}'
 
 
+def _set_or_append_attr(tag: str, attr: str, value: str) -> str:
+    attr_pattern = re.compile(rf"(\s{re.escape(attr)}\s*=\s*)(['\"])(.*?)\2", re.I | re.S)
+    if attr_pattern.search(tag):
+        return attr_pattern.sub(lambda match: f"{match.group(1)}{match.group(2)}{value}{match.group(2)}", tag, count=1)
+    unquoted_pattern = re.compile(rf"(\s{re.escape(attr)}\s*=\s*)([^\s>]+)", re.I | re.S)
+    if unquoted_pattern.search(tag):
+        return unquoted_pattern.sub(lambda match: f'{match.group(1)}"{value}"', tag, count=1)
+    insert_at = tag.rfind(">")
+    if insert_at < 0:
+        return tag
+    prefix = tag[:insert_at]
+    suffix = tag[insert_at:]
+    if prefix.rstrip().endswith("/"):
+        slash_at = prefix.rfind("/")
+        return f'{prefix[:slash_at].rstrip()} {attr}="{value}"{prefix[slash_at:]}{suffix}'
+    return f'{prefix} {attr}="{value}"{suffix}'
+
+
+def _positive_pixel(value: Any) -> int:
+    try:
+        pixel = int(round(float(value or 0)))
+    except (TypeError, ValueError):
+        return 0
+    return pixel if pixel > 0 else 0
+
+
 def _apply_display_size_to_img_tag(tag: str, size: dict[str, Any] | None) -> str:
     if not size:
         return tag
-    try:
-        width = int(round(float(size.get("width") or 0)))
-    except (TypeError, ValueError):
-        width = 0
-    if width <= 0:
+    width = _positive_pixel(size.get("width"))
+    height = _positive_pixel(size.get("height"))
+    if width <= 0 and height <= 0:
         return tag
-    return _set_or_append_style(
-        tag,
-        {
+    declarations: dict[str, str] = {}
+    if width > 0:
+        tag = _set_or_append_attr(tag, "width", str(width))
+        declarations.update({
             "width": f"{width}px",
-            "max-width": "100%",
-            "height": "auto",
-        },
-    )
+            "min-width": f"{width}px",
+            "max-width": f"{width}px",
+        })
+    if height > 0:
+        tag = _set_or_append_attr(tag, "height", str(height))
+        declarations.update({
+            "height": f"{height}px",
+            "min-height": f"{height}px",
+            "max-height": f"{height}px",
+        })
+    elif width > 0:
+        declarations["height"] = "auto"
+    return _set_or_append_style(tag, declarations)
 
 
 def _replace_img_src_preserving_tag(
@@ -1004,6 +1040,7 @@ def replace_detail_images(
         print("详情图：等待 3 秒让 TAA 保存生效，避免 reload 校验触发 502")
         cancellation.cancellable_sleep(cancel_token, 3.0)
         try:
+            print("详情图：开始 reload 校验，重新打开 TAA 读取保存后的详情 HTML")
             with TaaSession(
                 product_id=product_id,
                 shop_locale=shop_locale,
@@ -1014,6 +1051,7 @@ def replace_detail_images(
             ) as taa:
                 verify_html = taa.current_body_html()
                 reload_checked = True
+                print("详情图：reload 校验完成，已读取保存后的详情 HTML")
         except cancellation.OperationCancelled:
             raise
         except Exception as exc:

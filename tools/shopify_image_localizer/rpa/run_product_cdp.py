@@ -760,6 +760,8 @@ def fetch_storefront_image_display_sizes(
                     const rect = img.getBoundingClientRect();
                     return {
                         src: img.currentSrc || img.src || '',
+                        absoluteSrc: img.src || '',
+                        htmlSrc: img.getAttribute('src') || '',
                         width: Math.round(rect.width || 0),
                         height: Math.round(rect.height || 0),
                         naturalWidth: img.naturalWidth || 0,
@@ -768,9 +770,12 @@ def fetch_storefront_image_display_sizes(
                 })"""
             )
             for row in rows or []:
-                src = _normalize_src(str(row.get("src") or ""))
-                if src and int(row.get("width") or 0) > 0:
-                    sizes[src] = row
+                if int(row.get("width") or 0) <= 0:
+                    continue
+                for raw_src in (row.get("src"), row.get("absoluteSrc"), row.get("htmlSrc")):
+                    src = _normalize_src(str(raw_src or ""))
+                    if src:
+                        sizes[src] = row
         finally:
             try:
                 page.close()
@@ -797,8 +802,9 @@ def _preload_chrome_tab_to_url(
         with sync_playwright() as playwright:
             browser = playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(port))
             context = browser.contexts[0] if browser.contexts else browser.new_context()
-            pages = list(context.pages)
-            page = pages[0] if pages else context.new_page()
+            ez_cdp.ensure_google_home_tab(context)
+            page = ez_cdp.select_or_create_business_page(context, target_url)
+            ez_cdp.prune_browser_tabs(context, keep_pages=(page,))
             try:
                 page.bring_to_front()
             except Exception:
@@ -1126,11 +1132,17 @@ def run(
             key: value for key, value in detail_result.get("verify", {}).items() if key != "html"
         }
         expected_urls = [row["new"] for row in detail_result.get("replacements") or [] if row.get("new")]
+        print("详情图：开始校验前台商品页，确认详情 HTML 已同步到店铺页面")
         result["storefront"] = verify_storefront_body(
             args.product_code,
             locale=args.shop_locale,
             expected_urls=expected_urls,
             store_domain=args.store_domain,
+        )
+        print(
+            "详情图：前台商品页校验完成 "
+            f"expected={result['storefront'].get('expected_present')}/"
+            f"{result['storefront'].get('expected_total')}"
         )
         cancellation.throw_if_cancelled(cancel_token)
 
