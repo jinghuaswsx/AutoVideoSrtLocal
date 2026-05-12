@@ -74,8 +74,21 @@
 
   <section class="tabcut-toolbar">
     <div class="tabcut-field">
-      <label for="categoryL1">Category</label>
+      <label for="categoryL1">类目关键词</label>
       <input class="tabcut-input" id="categoryL1" placeholder="All">
+    </div>
+    <div class="tabcut-field">
+      <label for="sourceCategory">商品榜类目</label>
+      <select class="tabcut-select" id="sourceCategory">
+        <option value="">全部框选类目</option>
+        {% for category in tabcut_goods_categories %}
+        <option value="{{ category.id }}">{{ category.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="tabcut-field">
+      <label for="goodsBizDate">商品榜日期</label>
+      <input class="tabcut-input" id="goodsBizDate" type="date">
     </div>
     <div class="tabcut-field">
       <label for="publishDateFrom">发布日期起</label>
@@ -86,11 +99,11 @@
       <input class="tabcut-input" id="publishDateTo" type="date">
     </div>
     <div class="tabcut-field">
-      <label for="minVideoSales">Video Sales</label>
+      <label for="minVideoSales">视频销量</label>
       <input class="tabcut-input" id="minVideoSales" type="number" min="0" placeholder="0">
     </div>
     <div class="tabcut-field">
-      <label for="minGoodsSales">Product Sales</label>
+      <label for="minGoodsSales">商品销量</label>
       <input class="tabcut-input" id="minGoodsSales" type="number" min="0" placeholder="0">
     </div>
     <div class="tabcut-field">
@@ -116,14 +129,14 @@
       </select>
     </div>
     <div class="tabcut-actions">
-      <button class="tabcut-btn" type="button" onclick="loadTabcut(1)">Search</button>
-      <button class="tabcut-btn secondary" type="button" onclick="resetTabcut()">Reset</button>
+      <button class="tabcut-btn" type="button" onclick="loadTabcut(1)">筛选</button>
+      <button class="tabcut-btn secondary" type="button" onclick="resetTabcut()">重置</button>
     </div>
   </section>
 
   <div class="tabcut-view-tabs">
-    <button class="tabcut-view-tab active" type="button" data-view="videos" onclick="setTabcutView('videos')">Videos</button>
-    <button class="tabcut-view-tab" type="button" data-view="goods" onclick="setTabcutView('goods')">Products</button>
+    <button class="tabcut-view-tab active" type="button" data-view="videos" onclick="setTabcutView('videos')">视频榜</button>
+    <button class="tabcut-view-tab" type="button" data-view="goods" onclick="setTabcutView('goods')">商品榜</button>
   </div>
 
   <div class="tabcut-status">
@@ -258,11 +271,17 @@ function updateDateFilterState() {
   ["publishDateFrom", "publishDateTo"].forEach(id => {
     qs(id).disabled = disabled;
   });
+  const goodsDisabled = tabcutView !== "goods";
+  ["goodsBizDate", "sourceCategory"].forEach(id => {
+    qs(id).disabled = goodsDisabled;
+  });
 }
 
 function paramsFor(page) {
   const params = new URLSearchParams({ page, page_size: qs("pageSize").value, sort: qs("sortBy").value });
   if (qs("categoryL1").value.trim()) params.set("category_l1", qs("categoryL1").value.trim());
+  if (tabcutView === "goods" && qs("sourceCategory").value) params.set("source_category", qs("sourceCategory").value);
+  if (tabcutView === "goods" && qs("goodsBizDate").value) params.set("biz_date", qs("goodsBizDate").value);
   if (tabcutView === "videos" && qs("publishDateFrom").value) params.set("publish_date_from", qs("publishDateFrom").value);
   if (tabcutView === "videos" && qs("publishDateTo").value) params.set("publish_date_to", qs("publishDateTo").value);
   if (qs("minVideoSales").value) params.set("min_video_sales", qs("minVideoSales").value);
@@ -297,19 +316,20 @@ function renderTabcut(data) {
   } else {
     qs("tabcutVideoGrid").hidden = true;
     qs("tabcutTableWrap").hidden = false;
-    qs("tabcutHead").innerHTML = "<tr><th>#</th><th></th><th>Product</th><th>Category</th><th class='tabcut-num'>Sales</th><th class='tabcut-num'>GMV</th><th class='tabcut-num'>Total Sales</th><th class='tabcut-num'>Total GMV</th><th class='tabcut-num'>Videos</th></tr>";
+    qs("tabcutHead").innerHTML = "<tr><th>#</th><th></th><th>商品</th><th>数据日期</th><th>采集类目</th><th>原始类目</th><th class='tabcut-num'>销量</th><th class='tabcut-num'>GMV</th><th class='tabcut-num'>总销量</th><th class='tabcut-num'>关联视频</th></tr>";
     qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
       <tr>
         <td>${(data.page - 1) * data.page_size + idx + 1}</td>
         <td>${row.item_pic_url ? `<a href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><img class="tabcut-cover" src="${esc(row.item_pic_url)}" loading="lazy" alt=""></a>` : ""}</td>
         <td class="tabcut-name"><a class="tabcut-product-link" href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><strong>${esc(row.item_name)}</strong></a><div class="tabcut-muted">${esc(row.item_id)}</div></td>
+        <td>${esc(row.biz_date || "")}</td>
+        <td>${esc(row.source_category_label || "")}</td>
         <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
         <td class="tabcut-num">${fmtInt(row.sold_count_7d || row.sold_count_period)}</td>
         <td class="tabcut-num">${fmtMoney(row.gmv_7d || row.gmv_period)}</td>
         <td class="tabcut-num">${fmtInt(row.sold_count_total)}</td>
-        <td class="tabcut-num">${fmtMoney(row.gmv_total)}</td>
         <td class="tabcut-num">${fmtInt(row.related_video_count)}</td>
-      </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='9'>No data</td></tr>";
+      </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='10'>No data</td></tr>";
   }
   renderPager(data);
 }
@@ -323,7 +343,7 @@ function renderPager(data) {
 }
 
 function resetTabcut() {
-  ["categoryL1", "publishDateFrom", "publishDateTo", "minVideoSales", "minGoodsSales", "minGmv"].forEach(id => qs(id).value = "");
+  ["categoryL1", "sourceCategory", "goodsBizDate", "publishDateFrom", "publishDateTo", "minVideoSales", "minGoodsSales", "minGmv"].forEach(id => qs(id).value = "");
   qs("sortBy").value = "play_count";
   loadTabcut(1);
 }

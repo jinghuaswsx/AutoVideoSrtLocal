@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from .categories import goods_category_for_source
 from . import store
 
 
@@ -18,7 +19,7 @@ def build_videos_response(args: Mapping[str, Any]) -> TabcutResponse:
 
 
 def build_goods_response(args: Mapping[str, Any]) -> TabcutResponse:
-    return TabcutResponse(store.list_goods(args))
+    return TabcutResponse(_hydrate_goods_items(store.list_goods(args)))
 
 
 def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
@@ -38,6 +39,21 @@ def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
             _fill_missing(item, "price_currency", raw_item.get("priceCurrency"))
             _fill_missing(item, "primary_item_url", _raw_item_url(raw_item))
         _fill_missing(item, "primary_item_url", _tiktok_product_url(item.get("primary_item_id")))
+        items.append(item)
+    hydrated["items"] = items
+    return hydrated
+
+
+def _hydrate_goods_items(payload: dict[str, Any]) -> dict[str, Any]:
+    hydrated = dict(payload)
+    items = []
+    for row in payload.get("items") or []:
+        item = dict(row)
+        category = goods_category_for_source(item.get("source"))
+        if category:
+            item["source_category_id"] = category.id
+            item["source_category_label"] = category.label
+            item["source_category_name"] = category.name
         items.append(item)
     hydrated["items"] = items
     return hydrated

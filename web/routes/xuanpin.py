@@ -3,6 +3,8 @@ from __future__ import annotations
 from flask import Blueprint, abort, redirect, render_template, url_for
 from flask_login import current_user, login_required
 
+from appcore.tabcut_selection.categories import goods_category_options
+
 
 bp = Blueprint("xuanpin", __name__, url_prefix="/xuanpin")
 
@@ -50,7 +52,7 @@ def mk_selection_page():
 def tabcut_selection_page():
     if not _is_admin():
         abort(403)
-    return render_template("tabcut_selection.html")
+    return render_template("tabcut_selection.html", tabcut_goods_categories=goods_category_options())
 
 
 @bp.route("/new-products", methods=["GET"])

@@ -88,7 +88,13 @@ def trpc_url(name: str, payload: dict[str, Any]) -> str:
     return f"https://www.tabcut.com/api/trpc/{name}?input={urlencode({'': json.dumps(payload, ensure_ascii=False)})[1:]}"
 
 
-def goods_ranking_url(*, biz_date: str, page_no: int, page_size: int = 100) -> str:
+def goods_ranking_url(
+    *,
+    biz_date: str,
+    page_no: int,
+    page_size: int = 100,
+    category_id: str | int = "0",
+) -> str:
     return trpc_url(
         "ranking.goods.rankingData",
         {
@@ -96,7 +102,7 @@ def goods_ranking_url(*, biz_date: str, page_no: int, page_size: int = 100) -> s
             "bizDate": biz_date,
             "rankType": 1,
             "orderType": "1",
-            "categoryId": "0",
+            "categoryId": str(category_id),
             "pageNo": page_no,
             "pageSize": page_size,
         },
