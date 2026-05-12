@@ -32,9 +32,9 @@ def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
         if raw_item:
             _fill_missing(item, "primary_item_pic_url", raw_item.get("itemCoverUrl"))
             _fill_missing(item, "primary_item_name", raw_item.get("itemName"))
-            _fill_missing(item, "primary_item_price_min", raw_item.get("skuPrice"))
-            _fill_missing(item, "primary_item_sold_count", raw_item.get("soldCount"))
-            _fill_missing(item, "currency_symbol", raw_item.get("currencySymbol") or "$")
+            _fill_missing(item, "primary_item_price_min", _raw_item_price(raw_item))
+            _fill_missing(item, "primary_item_sold_count", raw_item.get("soldCount") or raw_item.get("itemSoldCountTotal"))
+            _fill_missing(item, "currency_symbol", _raw_item_currency(raw_item))
             _fill_missing(item, "price_currency", raw_item.get("priceCurrency"))
             _fill_missing(item, "primary_item_url", _raw_item_url(raw_item))
         _fill_missing(item, "primary_item_url", _tiktok_product_url(item.get("primary_item_id")))
@@ -77,6 +77,8 @@ def _first_raw_item(raw: Mapping[str, Any]) -> Mapping[str, Any] | None:
     items = raw.get("itemList")
     if isinstance(items, list) and items and isinstance(items[0], Mapping):
         return items[0]
+    if raw.get("itemId") or raw.get("itemName"):
+        return raw
     return None
 
 
@@ -86,6 +88,24 @@ def _raw_item_url(raw_item: Mapping[str, Any]) -> str | None:
         if value.startswith(("http://", "https://")):
             return value
     return None
+
+
+def _raw_item_price(raw_item: Mapping[str, Any]) -> Any:
+    if raw_item.get("skuPrice") not in (None, ""):
+        return raw_item.get("skuPrice")
+    value = raw_item.get("priceAmount")
+    if isinstance(value, Mapping):
+        return value.get("local") or value.get("region")
+    return value
+
+
+def _raw_item_currency(raw_item: Mapping[str, Any]) -> Any:
+    if raw_item.get("currencySymbol"):
+        return raw_item.get("currencySymbol")
+    value = raw_item.get("currencySymbolInfo")
+    if isinstance(value, Mapping):
+        return value.get("local") or value.get("region")
+    return "$"
 
 
 def _tiktok_product_url(item_id: Any) -> str | None:

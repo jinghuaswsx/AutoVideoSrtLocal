@@ -103,6 +103,28 @@ def goods_ranking_url(*, biz_date: str, page_no: int, page_size: int = 100) -> s
     )
 
 
+def analysis_video_search_payload(
+    *,
+    page_no: int,
+    page_size: int = 100,
+    region: str = "US",
+    sort_field: str = "video_sold_count",
+    video_create_time_begin: str,
+    video_create_time_end: str,
+    item_video_flag: str = "1",
+) -> dict[str, Any]:
+    return {
+        "pageNo": int(page_no),
+        "pageSize": str(page_size),
+        "region": region,
+        "sortField": sort_field,
+        "videoCreateTimeBegin": video_create_time_begin,
+        "videoCreateTimeEnd": video_create_time_end,
+        "itemVideoFlag": str(item_video_flag),
+        "categoryQuery": {"lv1List": [], "lv2List": [], "lv3List": []},
+    }
+
+
 class TabcutApiClient:
     def __init__(
         self,

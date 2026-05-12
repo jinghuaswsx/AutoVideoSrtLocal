@@ -75,3 +75,84 @@ def test_recent_plan_collects_daily_weekly_monthly_video_rankings_at_1000_each()
         assert all(item.pages * item.page_size >= 1000 for item in rank_sources)
     goods_sources = [item.source for item in plan if item.source.startswith("goods_daily_")]
     assert goods_sources == [f"goods_daily_{date}" for date in dates]
+
+
+def test_analysis_video_search_payload_uses_page_size_100_and_filters():
+    payload = client.analysis_video_search_payload(
+        page_no=2,
+        page_size=100,
+        video_create_time_begin="2026-04-12 00:00:00",
+        video_create_time_end="2026-05-11 23:59:59",
+    )
+
+    assert payload == {
+        "pageNo": 2,
+        "pageSize": "100",
+        "region": "US",
+        "sortField": "video_sold_count",
+        "videoCreateTimeBegin": "2026-04-12 00:00:00",
+        "videoCreateTimeEnd": "2026-05-11 23:59:59",
+        "itemVideoFlag": "1",
+        "categoryQuery": {"lv1List": [], "lv2List": [], "lv3List": []},
+    }
+
+
+def test_normalize_goods_row_supports_analysis_video_search_item_fields():
+    row = {
+        "itemId": "i1",
+        "itemName": "Demo product",
+        "itemCoverUrl": "https://cdn.example/item.webp",
+        "itemSoldCount7d": 123,
+        "itemSoldCount30d": 456,
+        "itemSoldCountTotal": 789,
+        "priceAmount": {"local": 19.99, "region": 19.99},
+        "itemTkLv1Name": "Beauty",
+        "itemTkLv2Name": "Skin Care",
+        "itemTkLv3Name": "Serum",
+    }
+
+    normalized = runner.normalize_goods_row(row, source="analysis_video_search")
+
+    assert normalized["item_id"] == "i1"
+    assert normalized["item_pic_url"] == "https://cdn.example/item.webp"
+    assert normalized["sold_count_7d"] == 123
+    assert normalized["sold_count_30d"] == 456
+    assert normalized["sold_count_total"] == 789
+    assert normalized["price_min"] == 19.99
+    assert normalized["price_max"] == 19.99
+    assert normalized["category_l1_name"] == "Beauty"
+    assert normalized["category_l2_name"] == "Skin Care"
+    assert normalized["category_l3_name"] == "Serum"
+
+
+def test_analysis_video_search_normalizes_videos_goods_and_candidates():
+    items = [
+        {
+            "videoId": "v1",
+            "videoCoverUrl": "https://cdn.example/v1.webp",
+            "tkVideoUrl": "https://www.tiktok.com/@demo/video/v1",
+            "playCountTotal": 100000,
+            "likeCountTotal": 1000,
+            "shareCountTotal": 500,
+            "commentCountTotal": 100,
+            "videoSplitSoldCount": 333,
+            "videoSplitGmv": {"local": 9999},
+            "itemId": "i1",
+            "itemName": "Demo product",
+            "itemCoverUrl": "https://cdn.example/i1.webp",
+            "itemSoldCountTotal": 8888,
+            "priceAmount": {"local": 12.34},
+        }
+    ]
+
+    normalized = runner._normalize_analysis_video_search_items(
+        items,
+        biz_date="2026-05-11",
+        source="analysis_video_search_video_sold_count",
+    )
+
+    assert normalized["videos"][0]["video_id"] == "v1"
+    assert normalized["goods"][0]["item_id"] == "i1"
+    assert normalized["candidates"][0]["video_id"] == "v1"
+    assert normalized["candidates"][0]["primary_item_id"] == "i1"
+    assert normalized["candidates"][0]["goods_sold_count_total"] == 8888

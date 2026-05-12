@@ -144,3 +144,36 @@ def test_build_tabcut_refresh_response_delegates_to_runner():
     assert result.status_code == 202
     assert result.payload["ok"] is True
     assert seen == [{"biz_date": "2026-05-11", "target_date": None, "days": 30}]
+
+
+def test_hydrate_video_items_uses_analysis_video_search_root_item_fields():
+    payload = {
+        "items": [
+            {
+                "video_id": "v1",
+                "primary_item_id": "i1",
+                "primary_item_pic_url": None,
+                "video_raw_json": json.dumps(
+                    {
+                        "itemId": "i1",
+                        "itemName": "Demo product",
+                        "itemCoverUrl": "https://cdn.example/item.webp",
+                        "priceAmount": {"local": 19.99},
+                        "currencySymbolInfo": {"local": "$"},
+                        "itemSoldCountTotal": 1234,
+                    }
+                ),
+            }
+        ],
+        "total": 1,
+    }
+
+    hydrated = service._hydrate_video_items(payload)
+
+    item = hydrated["items"][0]
+    assert item["primary_item_name"] == "Demo product"
+    assert item["primary_item_pic_url"] == "https://cdn.example/item.webp"
+    assert item["primary_item_price_min"] == 19.99
+    assert item["currency_symbol"] == "$"
+    assert item["primary_item_sold_count"] == 1234
+    assert item["primary_item_url"] == "https://www.tiktok.com/shop/pdp/i1"

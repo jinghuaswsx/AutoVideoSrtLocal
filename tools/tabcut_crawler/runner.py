@@ -12,7 +12,14 @@ from appcore.tabcut_selection import store
 from appcore.tabcut_selection.models import normalize_goods_row, normalize_video_row
 from appcore.tabcut_selection.scoring import score_candidate
 
-from .client import TabcutApiClient, goods_ranking_url, video_ranking_url
+from .client import (
+    TabcutApiClient,
+    analysis_video_search_payload,
+    extract_items,
+    extract_total,
+    goods_ranking_url,
+    video_ranking_url,
+)
 
 
 BEIJING = ZoneInfo("Asia/Shanghai")
@@ -126,6 +133,97 @@ def collect_recent7(
     return summary
 
 
+def collect_analysis_video_search(
+    *,
+    cdp_url: str = "http://127.0.0.1:9227",
+    output_dir: str | Path | None = None,
+    video_create_time_begin: str,
+    video_create_time_end: str,
+    pages: int = 20,
+    page_size: int = 100,
+    persist: bool = True,
+    min_interval_seconds: float = 3.3,
+    sort_field: str = "video_sold_count",
+) -> dict[str, Any]:
+    source = f"analysis_video_search_{sort_field}"
+    biz_date = video_create_time_end[:10]
+    output_path = Path(output_dir or Path("data") / "tabcut" / f"analysis-video-search-{datetime.now(BEIJING):%Y%m%d-%H%M%S}")
+    output_path.mkdir(parents=True, exist_ok=True)
+    api = TabcutApiClient(cdp_url=cdp_url, min_interval_seconds=min_interval_seconds)
+
+    items: list[dict[str, Any]] = []
+    page_summaries: list[dict[str, Any]] = []
+    total = 0
+    for page_no in range(1, max(1, pages) + 1):
+        payload = analysis_video_search_payload(
+            page_no=page_no,
+            page_size=page_size,
+            sort_field=sort_field,
+            video_create_time_begin=video_create_time_begin,
+            video_create_time_end=video_create_time_end,
+        )
+        response = api.request_json(
+            "POST",
+            "https://www.tabcut.com/api/analysis/video-search/videoListV2",
+            json_body=payload,
+        )
+        page_items = extract_items(response)
+        total = extract_total(response, total or len(page_items))
+        page_summaries.append({"pageNo": page_no, "count": len(page_items), "total": total})
+        items.extend(page_items)
+        _write_json(output_path / f"{source}.json", {"source": source, "pages": page_summaries, "items": items})
+
+    normalized = _normalize_analysis_video_search_items(items, biz_date=biz_date, source=source)
+    snapshot = {
+        "source": source,
+        "video_create_time_begin": video_create_time_begin,
+        "video_create_time_end": video_create_time_end,
+        "pages": page_summaries,
+        "total": total,
+        "items": items,
+        "normalized": normalized,
+    }
+    _write_json(output_path / "tabcut_analysis_video_search_snapshot.json", snapshot)
+    _write_csv(output_path / "analysis_video_search_videos.csv", normalized["videos"])
+    _write_csv(output_path / "analysis_video_search_goods.csv", normalized["goods"])
+    _write_csv(output_path / "analysis_video_search_candidates.csv", normalized["candidates"])
+
+    if persist:
+        _persist_analysis_video_search(normalized)
+
+    summary = {
+        "ok": True,
+        "output_dir": str(output_path),
+        "source": source,
+        "request_count": len(page_summaries),
+        "total": total,
+        "raw_item_count": len(items),
+        "video_count": len(normalized["videos"]),
+        "goods_count": len(normalized["goods"]),
+        "candidate_count": len(normalized["candidates"]),
+        "video_create_time_begin": video_create_time_begin,
+        "video_create_time_end": video_create_time_end,
+    }
+    _write_json(output_path / "manifest.json", summary)
+    return summary
+
+
+def import_analysis_video_search_output(output_dir: str | Path) -> dict[str, Any]:
+    output_path = Path(output_dir)
+    snapshot = json.loads((output_path / "tabcut_analysis_video_search_snapshot.json").read_text(encoding="utf-8"))
+    normalized = snapshot["normalized"]
+    _persist_analysis_video_search(normalized)
+    summary = {
+        "ok": True,
+        "output_dir": str(output_path),
+        "video_count": len(normalized.get("videos") or []),
+        "goods_count": len(normalized.get("goods") or []),
+        "candidate_count": len(normalized.get("candidates") or []),
+    }
+    _write_json(output_path / "import_manifest.json", summary)
+    return summary
+
+
 def _normalize_datasets(datasets: dict[str, dict[str, Any]], *, latest_biz_date: str) -> dict[str, list[dict[str, Any]]]:
     videos: list[dict[str, Any]] = []
     goods: list[dict[str, Any]] = []
@@ -204,6 +302,38 @@ def _build_candidates(
     return sorted(candidates, key=lambda row: float(row.get("score") or 0), reverse=True)
 
 
+def _normalize_analysis_video_search_items(
+    items: list[dict[str, Any]],
+    *,
+    biz_date: str,
+    source: str,
+) -> dict[str, list[dict[str, Any]]]:
+    videos: list[dict[str, Any]] = []
+    goods: list[dict[str, Any]] = []
+    goods_by_item: dict[str, dict[str, Any]] = {}
+    seen_goods: set[str] = set()
+    for index, row in enumerate(items, start=1):
+        video = normalize_video_row(row, source_sort=source)
+        video["biz_date"] = biz_date
+        video["rank_position"] = video.get("rank_position") or index
+        videos.append(video)
+
+        item_id = str(row.get("itemId") or "").strip()
+        if item_id and item_id not in seen_goods:
+            seen_goods.add(item_id)
+            normalized_goods = normalize_goods_row(row, source=source)
+            normalized_goods["biz_date"] = biz_date
+            goods.append(normalized_goods)
+            goods_by_item[item_id] = {
+                **normalized_goods,
+                "sold_count_7d_sum": normalized_goods.get("sold_count_7d"),
+                "gmv_7d_sum": normalized_goods.get("gmv_7d"),
+            }
+
+    candidates = _build_candidates(videos, goods_by_item, latest_biz_date=biz_date)
+    return {"videos": videos, "goods": goods, "candidates": candidates}
+
+
 def _persist_normalized(normalized: dict[str, list[dict[str, Any]]]) -> None:
     for video in normalized["videos"]:
         store.upsert_video(video)
@@ -211,6 +341,16 @@ def _persist_normalized(normalized: dict[str, list[dict[str, Any]]]) -> None:
     for goods in normalized["goods"]:
         store.upsert_goods(goods)
         store.upsert_goods_snapshot(goods)
+    for candidate in normalized["candidates"]:
+        store.upsert_video_candidate(candidate)
+
+
+def _persist_analysis_video_search(normalized: dict[str, list[dict[str, Any]]]) -> None:
+    for video in normalized["videos"]:
+        store.upsert_video(video)
+        store.upsert_video_snapshot(video)
+    for goods in normalized["goods"]:
+        store.upsert_goods(goods)
     for candidate in normalized["candidates"]:
         store.upsert_video_candidate(candidate)
 

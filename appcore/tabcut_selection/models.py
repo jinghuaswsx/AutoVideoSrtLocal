@@ -100,7 +100,7 @@ def normalize_video_row(row: dict[str, Any], *, source_sort: str | None = None) 
         "like_count": _nonnegative_int_or_none(row.get("likeCount") or row.get("likeCountTotal")),
         "share_count": _nonnegative_int_or_none(row.get("shareCount") or row.get("shareCountTotal")),
         "comment_count": _nonnegative_int_or_none(row.get("commentCount") or row.get("commentCountTotal")),
-        "item_sold_count": _nonnegative_int_or_none(row.get("itemSoldCount")),
+        "item_sold_count": _nonnegative_int_or_none(row.get("itemSoldCount") or row.get("videoSplitSoldCount")),
         "video_split_sold_count": _nonnegative_int_or_none(row.get("videoSplitSoldCount")),
         "video_split_gmv": _first_local_amount({"gmv": row.get("videoSplitGmv")}, "gmv"),
         "related_item_id": _text(primary.get("itemId") or row.get("itemId")),
@@ -111,6 +111,9 @@ def normalize_video_row(row: dict[str, Any], *, source_sort: str | None = None) 
 
 def normalize_goods_row(row: dict[str, Any], *, source: str | None = None) -> dict[str, Any]:
     price_min, price_max = _price_bounds(row.get("priceList"))
+    if price_min is None and price_max is None:
+        price = _first_local_amount({"price": row.get("priceAmount")}, "price")
+        price_min, price_max = price, price
     gmv = row.get("gmvInfo") if isinstance(row.get("gmvInfo"), dict) else {}
     sold_info = row.get("soldCountInfo") if isinstance(row.get("soldCountInfo"), dict) else {}
 
@@ -122,11 +125,11 @@ def normalize_goods_row(row: dict[str, Any], *, source: str | None = None) -> di
         "category_id": _text(row.get("categoryId")),
         "category_name": _text(row.get("categoryName")),
         "category_l1_id": _text(row.get("categoryLv1Id")),
-        "category_l1_name": _text(row.get("categoryLv1Name") or row.get("categoryName")),
+        "category_l1_name": _text(row.get("categoryLv1Name") or row.get("itemTkLv1Name") or row.get("categoryName")),
         "category_l2_id": _text(row.get("categoryLv2Id")),
-        "category_l2_name": _text(row.get("categoryLv2Name")),
+        "category_l2_name": _text(row.get("categoryLv2Name") or row.get("itemTkLv2Name")),
         "category_l3_id": _text(row.get("categoryLv3Id")),
-        "category_l3_name": _text(row.get("categoryLv3Name")),
+        "category_l3_name": _text(row.get("categoryLv3Name") or row.get("itemTkLv3Name")),
         "seller_id": _text(row.get("sellerId")),
         "seller_name": _text(row.get("sellerName")),
         "seller_type": _text(row.get("sellerType")),
@@ -135,10 +138,10 @@ def normalize_goods_row(row: dict[str, Any], *, source: str | None = None) -> di
         "price_min": price_min,
         "price_max": price_max,
         "commission_rate": _float_or_none(row.get("commissionRate")),
-        "sold_count_1d": _nonnegative_int_or_none(row.get("soldCount1d")),
-        "sold_count_7d": _nonnegative_int_or_none(row.get("soldCount7d")),
-        "sold_count_30d": _nonnegative_int_or_none(row.get("soldCount30d")),
-        "sold_count_total": _nonnegative_int_or_none(row.get("soldCountTotal") or sold_info.get("total")),
+        "sold_count_1d": _nonnegative_int_or_none(row.get("soldCount1d") or row.get("itemSoldCount1d")),
+        "sold_count_7d": _nonnegative_int_or_none(row.get("soldCount7d") or row.get("itemSoldCount7d")),
+        "sold_count_30d": _nonnegative_int_or_none(row.get("soldCount30d") or row.get("itemSoldCount30d")),
+        "sold_count_total": _nonnegative_int_or_none(row.get("soldCountTotal") or row.get("itemSoldCountTotal") or sold_info.get("total")),
         "sold_count_period": _nonnegative_int_or_none(row.get("soldCountPeriod") or sold_info.get("periodCurrent")),
         "sold_growth_rate_1d": _float_or_none(row.get("soldGrowthRate1d")),
         "sold_growth_rate_7d": _float_or_none(row.get("soldGrowthRate7d")),
