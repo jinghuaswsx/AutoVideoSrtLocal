@@ -34,7 +34,7 @@
 - **主工作目录零污染**：除非用户当条消息明确说「马上 hotfix」，否则只能在 `git worktree add` 隔离目录里改代码。
 - **`master` 只 hotfix**：常规需求 / 重构 / 跨模块改动一律走 worktree。
 - **文档驱动代码**：改代码前必须先有文档锚点（本文件 / spec / 模块级 `CLAUDE.md`）。无锚点 = 无授权。
-- **本机即生产**：`/opt/autovideosrt` 是 root 拥有，cjh 已配免密 sudo。**禁用** `deploy/publish.sh`、SSH 跳板、`gh auth login`。
+- **本机即生产**：`/opt/autovideosrt` 是 root 拥有；用户明确「发测试 / 上线」时，Windows 开发机可直接 `ssh root@172.30.254.14`，Ubuntu 服务器上只操作 `/opt/autovideosrt-test` / `/opt/autovideosrt`。禁用 SSH 跳板、`gh auth login`。
 - **服务重启需明示**：用户没说「发测试 / 上线」就别 `systemctl restart`；默认验证去 `http://172.30.254.14:8080/` 测试环境。
 - **DB 凭据走 `infra_credentials`**：不要只改 `.env`；UI `/settings?tab=infrastructure` 是首选。
 - **定时任务一律登记**：APScheduler / systemd timer / crontab / 后台轮询，全部同步到 `appcore/scheduled_tasks.py` + Web 后台「定时任务」模块。
@@ -55,25 +55,29 @@
 - 设计系统 / 静态资源 / CSRF：见 [web/static/CLAUDE.md](web/static/CLAUDE.md)
 - 订单 / 广告分析模块：见 [appcore/order_analytics/CLAUDE.md](appcore/order_analytics/CLAUDE.md)
 
-## 发布（本机自主闭环；测试发布同款，把 `-test` 加上、目录换 `/opt/autovideosrt-test`、端口 8080）
+## 发布（Windows 开发机直连 root；Ubuntu 服务器本地目录操作）
 ```bash
 git push origin HEAD:master
-sudo bash -c '
+ssh -i C:/Users/admin/.ssh/CC.pem root@172.30.254.14 '
 set -e
+cd /opt/autovideosrt-test && git pull origin master --ff-only
+systemctl restart autovideosrt-test && sleep 3
+systemctl is-active autovideosrt-test
+curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/
 cd /opt/autovideosrt && git pull origin master --ff-only
 if ! cmp -s deploy/autovideosrt.service /etc/systemd/system/autovideosrt.service; then
   cp deploy/autovideosrt.service /etc/systemd/system/ && systemctl daemon-reload
 fi
 systemctl restart autovideosrt && sleep 3
 systemctl is-active autovideosrt
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://127.0.0.1/
+curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 '
 ```
 验收：`active` + HTTP 200/302；404/500/000 = 失败。
 
 ## Don't
 - 不在主工作目录改代码（除非明确 hotfix）
-- 不调 `deploy/publish.sh`、不 `ssh root@...`、不 `gh auth login`
+- 不调 `deploy/publish.sh`、不用 SSH 跳板、不 `gh auth login`
 - 不在 Playwright `wait_for_*` 处替换为 `time.sleep` / `cancellable_sleep`（EZ/CDP 等待事故）
 - 不 `{% include base_with_extends %}` 后追加 raw HTML（Jinja 继承事故）
 - 不直接 `UPDATE meta_ad_accounts` 绕过服务层；不硬编码 `site_code -> ad_account_id`
