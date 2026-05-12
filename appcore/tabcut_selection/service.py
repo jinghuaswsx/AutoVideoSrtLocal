@@ -99,7 +99,7 @@ def build_admin_required_response() -> TabcutResponse:
     return TabcutResponse({"error": "admin required"}, 403)
 
 
-def _default_refresh_runner(*, biz_date: str | None, target_date: str | None, days: int = 7) -> dict[str, Any]:
+def _default_refresh_runner(*, biz_date: str | None, target_date: str | None, days: int = 30) -> dict[str, Any]:
     return {
         "ok": False,
         "message": "refresh runner is not configured in this process",
@@ -118,8 +118,8 @@ def build_tabcut_refresh_response(
     biz_date = str(payload.get("biz_date") or "").strip() or None
     target_date = str(payload.get("target_date") or "").strip() or None
     try:
-        days = int(payload.get("days") or 7)
+        days = int(payload.get("days") or 30)
     except (TypeError, ValueError):
-        days = 7
+        days = 30
     result = runner_fn(biz_date=biz_date, target_date=target_date, days=max(1, min(days, 30)))
     return TabcutResponse({"ok": bool(result.get("ok")), "result": result}, 202)

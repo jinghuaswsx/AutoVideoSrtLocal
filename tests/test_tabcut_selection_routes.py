@@ -6,7 +6,9 @@ def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
     assert "TABCUT" in body
     assert "/medias/api/tabcut-selection/videos" in body
     assert "tabcut-video-grid" in body
-    assert "月播放量" in body
+    assert "publishDateFrom" in body
+    assert "tabcut-video-cover-link" in body
+    assert "发布时间" in body
 
 
 def test_tabcut_selection_videos_api_delegates(monkeypatch, authed_client_no_db):

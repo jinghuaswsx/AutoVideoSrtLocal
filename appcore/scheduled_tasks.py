@@ -246,11 +246,12 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Tabcut US 选品日快照",
         "description": (
             "每天北京时间 08:00 使用服务器 cjh 桌面 Chrome 的 Tabcut 旗舰版登录态，"
-            "采集美国站近 7 天 Top 视频和近 7 个日榜 Top500 商品快照，写入 TABCUT 选品模块。"
+            "采集美国站近 30 天商品快照，并抓取视频日榜、周榜、月榜播放量/销量榜，"
+            "每个视频榜单至少 1000 条原始数据，写入 TABCUT 选品模块。"
             "请求间隔不低于 3 秒。Docs-anchor: "
             "docs/superpowers/specs/2026-05-12-tabcut-crawler-design.md"
         ),
-        "schedule": "每天 08:00（北京时间），采集 US 最近 7 天数据",
+        "schedule": "每天 08:00（北京时间），采集 US 最近 30 天数据",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "tabcut-daily-selection.timer",

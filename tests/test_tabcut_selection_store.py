@@ -49,6 +49,27 @@ def test_list_video_candidates_rejects_unknown_sort():
     assert "DROP TABLE" not in calls[-1][0]
 
 
+def test_list_video_candidates_filters_by_video_publish_date_range():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates(
+        {
+            "publish_date_from": "2026-04-13",
+            "publish_date_to": "2026-05-12",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "v.create_time >= %s" in data_sql
+    assert "v.create_time < DATE_ADD(%s, INTERVAL 1 DAY)" in data_sql
+    assert data_params[:3] == ["US", "2026-04-13", "2026-05-12"]
+
+
 def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
     monkeypatch.setattr(
         store,
@@ -122,4 +143,4 @@ def test_build_tabcut_refresh_response_delegates_to_runner():
 
     assert result.status_code == 202
     assert result.payload["ok"] is True
-    assert seen == [{"biz_date": "2026-05-11", "target_date": None, "days": 7}]
+    assert seen == [{"biz_date": "2026-05-11", "target_date": None, "days": 30}]
