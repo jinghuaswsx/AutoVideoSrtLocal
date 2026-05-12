@@ -4,8 +4,12 @@ import json
 
 import pytest
 
-from tools.shopify_image_localizer import controller, settings
+from tools.shopify_image_localizer import controller, settings, version
 from tools.shopify_image_localizer.browser import session
+
+
+def test_shopify_image_localizer_release_version_is_4_5() -> None:
+    assert version.RELEASE_VERSION == "4.5"
 
 
 def test_domain_profile_dir_keeps_default_and_suffixes_other_domains() -> None:
