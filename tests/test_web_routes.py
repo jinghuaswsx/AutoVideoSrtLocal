@@ -3443,6 +3443,14 @@ def test_medias_edit_modal_contains_detail_image_translation_controls():
     assert "ch.dataset.mode === 'parallel'" in scripts
     assert "detail-image-translate-tasks" in scripts
     assert "detail-images/translate-from-en" in scripts
+    history_block = scripts.split("function edRenderDetailTranslateHistory", 1)[1].split("const LINK_CHECK_STATUS_LABELS", 1)[0]
+    assert "reapply_available" in history_block
+    assert "edDetailTranslateReapplyButton(task" in history_block
+    assert "data-apply-translate-task" in scripts
+    assert "重新回填" in history_block
+    events_section = scripts.split("// ---------- Events ----------", 1)[1]
+    history_events = events_section.split("$('edDetailTranslateHistory')", 1)[1].split("$('edDetailTranslateStatus')", 1)[0]
+    assert "edApplyDetailTranslateTask(btn)" in history_events
 
 
 def test_medias_edit_modal_contains_detail_image_zip_download_button():
