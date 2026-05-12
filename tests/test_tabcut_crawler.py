@@ -97,6 +97,11 @@ def test_analysis_video_search_payload_uses_page_size_100_and_filters():
     }
 
 
+def test_analysis_video_search_source_name_fits_snapshot_column():
+    assert runner._analysis_video_search_source("video_sold_count") == "analysis_video_sold_count"
+    assert len(runner._analysis_video_search_source("video_sold_count")) <= 32
+
+
 def test_normalize_goods_row_supports_analysis_video_search_item_fields():
     row = {
         "itemId": "i1",

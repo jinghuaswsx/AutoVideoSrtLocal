@@ -145,7 +145,7 @@ def collect_analysis_video_search(
     min_interval_seconds: float = 3.3,
     sort_field: str = "video_sold_count",
 ) -> dict[str, Any]:
-    source = f"analysis_video_search_{sort_field}"
+    source = _analysis_video_search_source(sort_field)
     biz_date = video_create_time_end[:10]
     output_path = Path(output_dir or Path("data") / "tabcut" / f"analysis-video-search-{datetime.now(BEIJING):%Y%m%d-%H%M%S}")
     output_path.mkdir(parents=True, exist_ok=True)
@@ -212,6 +212,7 @@ def import_analysis_video_search_output(output_dir: str | Path) -> dict[str, Any
     output_path = Path(output_dir)
     snapshot = json.loads((output_path / "tabcut_analysis_video_search_snapshot.json").read_text(encoding="utf-8"))
     normalized = snapshot["normalized"]
+    _coerce_analysis_video_search_sources(normalized)
     _persist_analysis_video_search(normalized)
     summary = {
         "ok": True,
@@ -222,6 +223,23 @@ def import_analysis_video_search_output(output_dir: str | Path) -> dict[str, Any
     }
     _write_json(output_path / "import_manifest.json", summary)
     return summary
+
+
+def _analysis_video_search_source(sort_field: str) -> str:
+    if sort_field.startswith("video_"):
+        source = f"analysis_{sort_field}"
+    else:
+        source = f"analysis_video_{sort_field}"
+    return source[:32]
+
+
+def _coerce_analysis_video_search_sources(normalized: dict[str, list[dict[str, Any]]]) -> None:
+    for video in normalized.get("videos") or []:
+        source = str(video.get("source_sort") or "")
+        if source == "analysis_video_search_video_sold_count":
+            video["source_sort"] = _analysis_video_search_source("video_sold_count")
+        elif len(source) > 32:
+            video["source_sort"] = source[:32]
 
 
 def _normalize_datasets(datasets: dict[str, dict[str, Any]], *, latest_biz_date: str) -> dict[str, list[dict[str, Any]]]:
