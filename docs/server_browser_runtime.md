@@ -25,9 +25,11 @@
 - `127.0.0.1:9223`：DXM02-MK，明空选品店小秘 Chromium CDP
 - `127.0.0.1:9224`：小秘云仓 (xmyc.com) Chromium CDP
 - `127.0.0.1:9225`：DXM03-RJC，荣锦成店小秘订单、SKU、Shopify ID 同步 Chromium CDP
+- `127.0.0.1:9227`：TABCUT，Tabcut 选品采集 Chromium CDP
 - `0.0.0.0:6092`：DXM01-Meta noVNC web 入口
 - `0.0.0.0:6093`：DXM02-MK noVNC web 入口
 - `0.0.0.0:6095`：DXM03-RJC noVNC web 入口
+- `0.0.0.0:6097`：TABCUT noVNC web 入口
 - `0.0.0.0:6082`：noVNC web 入口（websockify → `[::1]:5900` 上的 cjh:0 桌面 x11vnc）
 
 CDP 端口仅监听本机；noVNC 监听 `0.0.0.0:6082` 以便内网浏览器直接访问 cjh 桌面（LocalServer 无公网接口）。后续若需要暴露到公网，必须在 noVNC 之前加 token 鉴权。
@@ -38,6 +40,7 @@ CDP 端口仅监听本机；noVNC 监听 `0.0.0.0:6082` 以便内网浏览器直
 - `/data/autovideosrt/browser/profiles/mk-selection`（owner：cjh）—— 明空选品
 - `/data/autovideosrt/browser/profiles/rjc-dianxiaomi`（owner：cjh）—— DXM03-RJC，荣锦成店小秘订单 / SKU / Shopify ID
 - `/data/autovideosrt/browser/profiles/xmyc-storage`（owner：cjh）—— 小秘云仓
+- `/data/autovideosrt/browser/profiles/tabcut`（owner：cjh）—— TABCUT，Tabcut 选品采集
 
 ## 安装
 
@@ -69,7 +72,7 @@ bash deploy/server_browser/install_novnc.sh
    ```
    会直接连进 cjh 桌面，看到三个 Chromium 窗口（店小秘列表 / 明空选品 / 小秘云仓）。
 2. **向日葵远程桌面**：直接进 cjh 桌面（如果 `runsunloginclient.service` 起着）。
-3. **浏览器监控四宫格**：登录 Web 后打开 `/browser-monitor`，或从左侧“实验室”→“浏览器监控”进入。页面会同时加载 DXM01-Meta、DXM02-MK、DXM03-RJC 三个 noVNC 窗口，并在第四格展示 `cdp_environment_watchdog` 最近状态。
+3. **浏览器监控四宫格**：登录 Web 后打开 `/browser-monitor`，或从左侧“实验室”→“浏览器监控”进入。页面会同时加载 DXM01-Meta、DXM02-MK、DXM03-RJC、TABCUT 四个 noVNC 窗口，并在顶部显示压缩后的 `cdp_environment_watchdog` 最近状态。
 
 需要纯 CDP 访问的本地脚本：
 
@@ -85,7 +88,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_mk_server_browser
 - `autovideosrt-dxm01-meta-vnc.service`：DXM01-Meta 可视化浏览器（CDP 9222 / noVNC 6092）
 - `autovideosrt-dxm02-mk-vnc.service`：DXM02-MK 可视化浏览器（CDP 9223 / noVNC 6093）
 - `autovideosrt-dxm03-rjc-vnc.service`：DXM03-RJC 可视化浏览器（CDP 9225 / noVNC 6095）
-- `autovideosrt-cdp-environment-watchdog.timer`：每分钟检查 DXM01/02/03 的 systemd、CDP、noVNC，并在异常时重启和写后台报警
+- `autovideosrt-tabcut-vnc.service`：TABCUT 可视化浏览器（CDP 9227 / noVNC 6097）
+- `autovideosrt-cdp-environment-watchdog.timer`：每分钟检查 DXM01/02/03、TABCUT 的 systemd、CDP、noVNC，并在异常时重启和写后台报警
 - `autovideosrt-xmyc-browser.service`：小秘云仓独立浏览器（CDP 9224）
 - `autovideosrt-novnc.service`：noVNC web 代理（websockify 0.0.0.0:6082 → [::1]:5900）
 
@@ -111,6 +115,7 @@ http://127.0.0.1:9222    # DXM01-Meta
 http://127.0.0.1:9223    # DXM02-MK
 http://127.0.0.1:9224    # 小秘云仓 profile
 http://127.0.0.1:9225    # DXM03-RJC
+http://127.0.0.1:9227    # TABCUT
 ```
 
 并使用对应 profile 浏览器上下文，就可以复用同一套登录态。

@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 
-def test_cdp_environment_watchdog_defines_three_visible_environments():
+def test_cdp_environment_watchdog_defines_visible_environments():
     from tools import cdp_environment_watchdog as mod
 
     by_code = {env.code: env for env in mod.ENVIRONMENTS}
@@ -14,6 +14,9 @@ def test_cdp_environment_watchdog_defines_three_visible_environments():
     assert by_code["DXM03-RJC"].service == "autovideosrt-dxm03-rjc-vnc.service"
     assert by_code["DXM03-RJC"].cdp_url == "http://127.0.0.1:9225/json/version"
     assert by_code["DXM03-RJC"].novnc_url == "http://127.0.0.1:6095/vnc.html"
+    assert by_code["TABCUT"].service == "autovideosrt-tabcut-vnc.service"
+    assert by_code["TABCUT"].cdp_url == "http://127.0.0.1:9227/json/version"
+    assert by_code["TABCUT"].novnc_url == "http://127.0.0.1:6097/vnc.html"
 
 
 def test_cdp_environment_watchdog_records_recovered_outage_as_failed_alert(monkeypatch):

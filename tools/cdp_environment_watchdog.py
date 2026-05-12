@@ -63,6 +63,13 @@ ENVIRONMENTS: tuple[CdpEnvironment, ...] = (
         cdp_url="http://127.0.0.1:9225/json/version",
         novnc_url="http://127.0.0.1:6095/vnc.html",
     ),
+    CdpEnvironment(
+        code="TABCUT",
+        label="TABCUT",
+        service="autovideosrt-tabcut-vnc.service",
+        cdp_url="http://127.0.0.1:9227/json/version",
+        novnc_url="http://127.0.0.1:6097/vnc.html",
+    ),
 )
 
 
@@ -274,7 +281,7 @@ def run_watchdog(
     delay_seconds: float = 2.0,
     timeout_seconds: float = 3.0,
 ) -> int:
-    selected = environments or list(ENVIRONMENTS)
+    selected = list(ENVIRONMENTS) if environments is None else environments
     selected_locks = lock_targets if lock_targets is not None else list(BROWSER_LOCK_TARGETS)
     run_id = scheduled_tasks.start_run(TASK_CODE)
     summary: dict[str, Any] = {
@@ -370,7 +377,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--env",
         action="append",
         default=[],
-        help="Environment code to check. Repeatable. Use all for DXM01-Meta/DXM02-MK/DXM03-RJC.",
+        help="Environment code to check. Repeatable. Use all for DXM01-Meta/DXM02-MK/DXM03-RJC/TABCUT.",
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--attempts", type=int, default=12)

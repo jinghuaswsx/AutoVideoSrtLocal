@@ -152,7 +152,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "cdp_environment_watchdog",
         "name": "CDP 环境监控",
         "description": (
-            "每分钟检查 DXM01-Meta、DXM02-MK、DXM03-RJC 的 systemd、CDP 和 noVNC 可用性；"
+            "每分钟检查 DXM01-Meta、DXM02-MK、DXM03-RJC、TABCUT 的 systemd、CDP 和 noVNC 可用性；"
             "并兼盯 /data/autovideosrt/browser/runtime*/automation.lock 持有时长（spec: "
             "docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md）。"
             "异常时重启对应环境并通过本任务失败日志触发 admin 报警。"

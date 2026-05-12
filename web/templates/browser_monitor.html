@@ -11,9 +11,9 @@
 }
 
 .browser-monitor-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) auto;
+  align-items: start;
   gap: var(--space-5, 20px);
   margin-bottom: var(--space-4, 16px);
 }
@@ -36,6 +36,7 @@
 .browser-monitor-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2, 8px);
   flex-wrap: wrap;
 }
@@ -140,35 +141,49 @@
   box-shadow: inset 0 0 0 2px var(--accent-ring, rgba(37, 99, 235, .22));
 }
 
-.browser-monitor-status-card {
-  padding: var(--space-5, 20px);
+.browser-monitor-status-strip {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-card);
+}
+
+.browser-monitor-status-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  margin-bottom: 8px;
 }
 
 .browser-monitor-status-title {
-  margin: 0 0 var(--space-2, 8px);
+  margin: 0;
   color: var(--text-main);
-  font-size: var(--text-lg, 18px);
+  font-size: var(--text-sm, 13px);
   font-weight: 800;
   line-height: 1.3;
 }
 
 .browser-monitor-latest {
-  margin: 0 0 var(--space-4, 16px);
+  margin: 0;
   color: var(--fg-muted, #64748b);
-  font-size: var(--text-sm, 13px);
-  line-height: 1.55;
+  font-size: var(--text-xs, 12px);
+  line-height: 1.4;
 }
 
 .browser-monitor-status-list {
   display: grid;
-  gap: var(--space-3, 12px);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .browser-monitor-status-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-3, 12px);
-  padding: var(--space-3, 12px);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 9px;
   border: 1px solid var(--border-main);
   border-radius: var(--radius-md, 8px);
   background: var(--bg, #fbfdff);
@@ -183,22 +198,21 @@
   align-items: center;
   gap: var(--space-2, 8px);
   flex-wrap: wrap;
-  margin-bottom: 4px;
 }
 
 .browser-monitor-status-name {
   color: var(--text-main);
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-xs, 12px);
   font-weight: 800;
 }
 
 .browser-monitor-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: var(--radius-md, 8px);
-  font-size: var(--text-xs, 12px);
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius, 6px);
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -218,15 +232,12 @@
 }
 
 .browser-monitor-status-detail {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--fg-muted, #64748b);
-  font-size: var(--text-xs, 12px);
-  line-height: 1.45;
-  word-break: break-word;
-}
-
-.browser-monitor-status-actions {
-  display: flex;
-  align-items: flex-start;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .browser-monitor-single-link {
@@ -251,6 +262,18 @@
 }
 
 @media (max-width: 1100px) {
+  .browser-monitor-head {
+    grid-template-columns: 1fr;
+  }
+
+  .browser-monitor-actions {
+    justify-content: flex-start;
+  }
+
+  .browser-monitor-status-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .browser-monitor-grid {
     grid-template-columns: 1fr;
   }
@@ -265,15 +288,7 @@
 }
 
 @media (max-width: 720px) {
-  .browser-monitor-head {
-    display: block;
-  }
-
-  .browser-monitor-actions {
-    margin-top: var(--space-3, 12px);
-  }
-
-  .browser-monitor-status-item {
+  .browser-monitor-status-list {
     grid-template-columns: 1fr;
   }
 }
@@ -284,8 +299,35 @@
   <div class="browser-monitor-head">
     <div>
       <h1 class="browser-monitor-title">浏览器监控</h1>
-      <p class="browser-monitor-sub">DXM01-Meta、DXM02-MK、DXM03-RJC 可视化浏览器窗口</p>
+      <p class="browser-monitor-sub">DXM01-Meta、DXM02-MK、DXM03-RJC、TABCUT 可视化浏览器窗口</p>
     </div>
+    <section class="browser-monitor-status-strip" aria-label="环境状态">
+      <div class="browser-monitor-status-strip-head">
+        <h2 class="browser-monitor-status-title">环境状态</h2>
+        <p class="browser-monitor-latest">
+          最近检查：
+          {% if latest_run %}
+            {{ latest_run.started_at }} / {{ latest_run.status }}
+          {% else %}
+            状态暂不可用
+          {% endif %}
+        </p>
+      </div>
+      <div class="browser-monitor-status-list">
+        {% for env in environments %}
+          {% set item_status = status_by_env[env.code] %}
+          <div class="browser-monitor-status-item" title="{{ item_status.detail }}">
+            <div class="browser-monitor-status-main">
+              <div class="browser-monitor-status-row">
+                <span class="browser-monitor-status-name">{{ env.label }}</span>
+                <span class="browser-monitor-badge {{ item_status.class }}">{{ item_status.label }}</span>
+              </div>
+              <div class="browser-monitor-status-detail">{{ item_status.detail }}</div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
     <div class="browser-monitor-actions">
       <button class="browser-monitor-btn" type="button" onclick="reloadBrowserWall()">刷新画面</button>
       <a class="browser-monitor-link" href="{{ url_for('scheduled_tasks.page', view='logs', task='cdp_environment_watchdog') }}" target="_blank" rel="noopener noreferrer">查看监控日志</a>
@@ -323,34 +365,6 @@
     </article>
     {% endfor %}
 
-    <article class="browser-monitor-card browser-monitor-status-card">
-      <h2 class="browser-monitor-status-title">环境状态</h2>
-      <p class="browser-monitor-latest">
-        最近检查：
-        {% if latest_run %}
-          {{ latest_run.started_at }} / {{ latest_run.status }}
-        {% else %}
-          状态暂不可用
-        {% endif %}
-      </p>
-      <div class="browser-monitor-status-list">
-        {% for env in environments %}
-          {% set item_status = status_by_env[env.code] %}
-          <div class="browser-monitor-status-item">
-            <div class="browser-monitor-status-main">
-              <div class="browser-monitor-status-row">
-                <span class="browser-monitor-status-name">{{ env.label }}</span>
-                <span class="browser-monitor-badge {{ item_status.class }}">{{ item_status.label }}</span>
-              </div>
-              <div class="browser-monitor-status-detail">{{ item_status.detail }}</div>
-            </div>
-            <div class="browser-monitor-status-actions">
-              <a class="browser-monitor-single-link" href="{{ env.novnc_url }}" target="_blank" rel="noopener noreferrer">单独打开</a>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    </article>
   </div>
 </section>
 

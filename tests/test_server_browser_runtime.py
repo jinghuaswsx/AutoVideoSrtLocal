@@ -212,6 +212,7 @@ def test_visible_dxm_environment_services_and_watchdog_ports():
     dxm01 = _read("deploy/server_browser/autovideosrt-dxm01-meta-vnc.service")
     dxm02 = _read("deploy/server_browser/autovideosrt-dxm02-mk-vnc.service")
     dxm03 = _read("deploy/server_browser/autovideosrt-dxm03-rjc-vnc.service")
+    tabcut = _read("deploy/server_browser/autovideosrt-tabcut-vnc.service")
     watchdog = _read("deploy/server_browser/autovideosrt-cdp-environment-watchdog.service")
     timer = _read("deploy/server_browser/autovideosrt-cdp-environment-watchdog.timer")
 
@@ -223,5 +224,19 @@ def test_visible_dxm_environment_services_and_watchdog_ports():
     assert "DXM_CDP_PORT=9223" in dxm02
     assert "DXM_NOVNC_PORT=6095" in dxm03
     assert "DXM_CDP_PORT=9225" in dxm03
+    assert "DXM_NAME=TABCUT" in tabcut
+    assert "DXM_PROFILE_DIR=/data/autovideosrt/browser/profiles/tabcut" in tabcut
+    assert "DXM_NOVNC_PORT=6097" in tabcut
+    assert "DXM_CDP_PORT=9227" in tabcut
+    assert "https://www.tabcut.com/zh-CN/workbench" in tabcut
     assert "tools/cdp_environment_watchdog.py --env all" in watchdog
     assert "OnUnitActiveSec=60" in timer
+
+
+def test_cdp_environment_installer_installs_tabcut_runtime():
+    installer = _read("deploy/server_browser/install_cdp_environment_watchdog_timer.sh")
+
+    assert "/data/autovideosrt/browser/profiles/tabcut" in installer
+    assert "/data/autovideosrt/browser/runtime-tabcut" in installer
+    assert "/data/autovideosrt/browser/logs/tabcut" in installer
+    assert "autovideosrt-tabcut-vnc.service" in installer
