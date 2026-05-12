@@ -419,6 +419,22 @@ def test_controller_target_uses_cached_store_slug(monkeypatch: pytest.MonkeyPatc
     assert result["browser_user_data_dir"] == r"C:\chrome-shopify-image-omurio"
 
 
+def test_controller_rejects_non_shopify_admin_target_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        controller.session,
+        "build_ez_url",
+        lambda product_id, **_kwargs: f"https://ez/{product_id}",
+    )
+
+    with pytest.raises(RuntimeError, match="admin.shopify.com"):
+        controller.build_shopify_target_url(
+            target="ez",
+            shopify_product_id="8560000000000",
+            lang="de",
+            shopify_domain="newjoyloo.com",
+        )
+
+
 def test_controller_preview_domain_image_mapping_fetches_default_and_target_products(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

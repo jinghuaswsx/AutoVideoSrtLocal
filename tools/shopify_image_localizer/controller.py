@@ -6,6 +6,7 @@ import io
 import sqlite3
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 from tools.shopify_image_localizer import (
     api_client,
@@ -446,10 +447,15 @@ def build_shopify_target_url(
         raise RuntimeError("Shopify ID 不能为空")
     store_slug = settings.shopify_store_slug_for_domain(shopify_domain)
     if normalized_target == "ez":
-        return session.build_ez_url(product_id, store_slug=store_slug)
-    if normalized_target == "detail":
-        return session.build_translate_url(product_id, str(lang or "").strip(), store_slug=store_slug)
-    raise ValueError(f"unsupported Shopify target: {target}")
+        url = session.build_ez_url(product_id, store_slug=store_slug)
+    elif normalized_target == "detail":
+        url = session.build_translate_url(product_id, str(lang or "").strip(), store_slug=store_slug)
+    else:
+        raise ValueError(f"unsupported Shopify target: {target}")
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "admin.shopify.com" or not parsed.path.startswith("/store/"):
+        raise RuntimeError(f"生成的 Shopify 管理后台 URL 非法，必须是 admin.shopify.com/store 页面，已阻止打开：{url}")
+    return url
 
 
 def open_shopify_target(

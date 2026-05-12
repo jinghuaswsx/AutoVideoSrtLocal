@@ -18,6 +18,8 @@ from tools.shopify_image_localizer import settings, version
 APP_NAME = "ShopifyImageLocalizer"
 PORTABLE_LAUNCHER_NAME = "run_shopify_image_localizer.bat"
 RELEASE_VERSION_FILENAME = "release_version.txt"
+RELEASE_MANIFEST_FILENAME = "release_manifest.json"
+RELEASE_STANDARD_RELATIVE_PATH = Path("docs/shopify-image-localizer-exe-release-standard.md")
 DEFAULT_OUTPUT_ROOT_WINDOWS = Path(r"G:\ShopifyRelease")
 DEFAULT_OUTPUT_ROOT_POSIX = Path.home() / "shopify-builds"
 BUILD_WORK_DIR_NAME = "_build"
@@ -49,6 +51,77 @@ def _default_output_root() -> Path:
 
 def _resolve_build_python(repo_root: Path) -> Path:
     return Path(sys.executable)
+
+
+def _git_output(repo_root: Path, *args: str) -> str:
+    return subprocess.check_output(
+        ["git", *args],
+        cwd=repo_root,
+        text=True,
+        stderr=subprocess.STDOUT,
+    ).strip()
+
+
+def _resolve_git_path(repo_root: Path, raw_path: str) -> Path:
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = repo_root / path
+    return path.resolve()
+
+
+def _validate_release_preflight(
+    repo_root: Path,
+    *,
+    release_version: str,
+    release_standard_read: bool,
+) -> None:
+    standard_path = repo_root / RELEASE_STANDARD_RELATIVE_PATH
+    if not release_standard_read:
+        raise RuntimeError(
+            "Shopify Image Localizer release standard was not acknowledged. "
+            f"Read {RELEASE_STANDARD_RELATIVE_PATH} and pass --release-standard-read."
+        )
+    if not standard_path.is_file():
+        raise RuntimeError(f"release standard document is missing: {standard_path}")
+
+    repo_root = repo_root.resolve()
+    git_top = Path(_git_output(repo_root, "rev-parse", "--show-toplevel")).resolve()
+    if git_top != repo_root:
+        raise RuntimeError(f"build must run from repository root {git_top}, got {repo_root}")
+
+    branch = _git_output(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
+    if branch != "master":
+        raise RuntimeError(f"Shopify Image Localizer EXE must be packaged from master, got {branch!r}.")
+
+    git_dir = _resolve_git_path(repo_root, _git_output(repo_root, "rev-parse", "--git-dir"))
+    git_common_dir = _resolve_git_path(repo_root, _git_output(repo_root, "rev-parse", "--git-common-dir"))
+    if git_dir != git_common_dir:
+        raise RuntimeError(
+            "Shopify Image Localizer EXE must not be packaged from a git worktree. "
+            f"git-dir={git_dir}; git-common-dir={git_common_dir}."
+        )
+
+    status = _git_output(repo_root, "status", "--porcelain", "--untracked-files=no")
+    if status:
+        raise RuntimeError(
+            "Shopify Image Localizer EXE must be packaged from a clean tracked working tree. "
+            "Commit or discard tracked changes first."
+        )
+
+    head = _git_output(repo_root, "rev-parse", "HEAD")
+    origin_master = _git_output(repo_root, "rev-parse", "origin/master")
+    if head != origin_master:
+        raise RuntimeError(
+            "Shopify Image Localizer EXE must be packaged from the latest origin/master. "
+            f"HEAD={head}; origin/master={origin_master}."
+        )
+
+    normalized_release_version = _normalize_release_version(release_version)
+    if _normalize_release_version(version.RELEASE_VERSION) != normalized_release_version:
+        raise RuntimeError(
+            "tools/shopify_image_localizer/version.py must match --version before packaging. "
+            f"version.py={version.RELEASE_VERSION!r}; --version={normalized_release_version!r}."
+        )
 
 
 def _validate_runtime_config_file(path: Path) -> None:
@@ -171,6 +244,21 @@ def _write_release_version(dist_root: Path, release_version: str) -> Path:
     return version_path
 
 
+def _write_release_manifest(dist_root: Path, repo_root: Path, release_version: str) -> Path:
+    manifest_path = dist_root / RELEASE_MANIFEST_FILENAME
+    payload = {
+        "app": APP_NAME,
+        "release_version": _normalize_release_version(release_version),
+        "code_release_version": version.RELEASE_VERSION,
+        "source_branch": _git_output(repo_root, "rev-parse", "--abbrev-ref", "HEAD"),
+        "source_commit": _git_output(repo_root, "rev-parse", "HEAD"),
+        "origin_master_commit": _git_output(repo_root, "rev-parse", "origin/master"),
+        "release_standard": str(RELEASE_STANDARD_RELATIVE_PATH).replace("\\", "/"),
+    }
+    manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest_path
+
+
 def _build_portable_zip(dist_root: Path, archive_path: Path) -> Path:
     if archive_path.exists():
         raise FileExistsError(f"release archive already exists: {archive_path}")
@@ -217,6 +305,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=str(default_output_root),
         help=f"release/build output root, default: {default_output_root}",
     )
+    parser.add_argument(
+        "--release-standard-read",
+        action="store_true",
+        help=(
+            "confirm docs/shopify-image-localizer-exe-release-standard.md was read; "
+            "required for packaging"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -224,6 +320,11 @@ def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     release_version = _normalize_release_version(args.version)
     repo_root = Path(__file__).resolve().parents[2]
+    _validate_release_preflight(
+        repo_root,
+        release_version=release_version,
+        release_standard_read=args.release_standard_read,
+    )
     output_root = Path(args.output_root).resolve()
     spec_path = repo_root / "tools" / "shopify_image_localizer" / "packaging" / "shopify_image_localizer.spec"
     python_exe = _resolve_build_python(repo_root)
@@ -261,6 +362,7 @@ def main(argv: list[str] | None = None) -> None:
     _write_runtime_config(repo_root, release_root)
     _write_portable_launcher(release_root, release_version)
     _write_release_version(release_root, release_version)
+    _write_release_manifest(release_root, repo_root, release_version)
     _build_portable_zip(release_root, archive_path)
     shutil.rmtree(build_dist_root)
 
