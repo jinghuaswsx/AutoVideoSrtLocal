@@ -243,7 +243,10 @@ def test_visible_dxm_runner_installs_novnc_paste_bridge():
     assert '--web="$NOVNC_RUNTIME_WEB_DIR"' in runner
     assert "clipboardPasteFrom" in bridge
     assert "paste" in bridge
+    assert "noVNC_windows_clipboard_sink" in bridge
     assert "noVNC_keyboardinput" in bridge
+    assert "keydown" in bridge
+    assert "stopImmediatePropagation" in bridge
     assert "ControlLeft" in bridge
     assert "KeyV" in bridge
 
