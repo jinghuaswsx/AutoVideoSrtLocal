@@ -172,6 +172,23 @@ def _nt_creation_flags() -> int:
     return 0x00000008 | 0x00000200
 
 
+def _hidden_subprocess_kwargs() -> dict[str, object]:
+    if os.name != "nt":
+        return {}
+    kwargs: dict[str, object] = {
+        # CREATE_NO_WINDOW: keep helper PowerShell probes invisible in the GUI build.
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+    }
+    try:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        kwargs["startupinfo"] = startupinfo
+    except Exception:
+        pass
+    return kwargs
+
+
 def is_chrome_running_for_profile(user_data_dir: str) -> bool:
     """简单检测：`user-data-dir` 对应的 Chrome 主进程是否在跑。"""
     if os.name != "nt":
@@ -193,6 +210,7 @@ def is_chrome_running_for_profile(user_data_dir: str) -> bool:
             capture_output=True,
             text=True,
             timeout=6,
+            **_hidden_subprocess_kwargs(),
         )
     except Exception:
         return False
@@ -431,6 +449,7 @@ def kill_chrome_for_profile(user_data_dir: str, *, wait_s: float = 5.0) -> None:
             ],
             capture_output=True,
             timeout=8,
+            **_hidden_subprocess_kwargs(),
         )
     except Exception:
         pass
