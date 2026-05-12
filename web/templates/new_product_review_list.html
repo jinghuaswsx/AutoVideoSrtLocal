@@ -125,8 +125,9 @@
 
   {# Page Tab 切换栏 #}
   <div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">
-    <a class="oc-page-tab" href="/medias/mk-selection" role="tab" aria-selected="false">明空选品</a>
-    <a class="oc-page-tab active" href="/new-product-review/" role="tab" aria-selected="true">新品选择</a>
+    <a class="oc-page-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>
+    <a class="oc-page-tab active" href="/xuanpin/new-products" role="tab" aria-selected="true">新品选择</a>
+    <a class="oc-page-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>
   </div>
 
   <div class="oc-header oc-header--actions">
@@ -414,7 +415,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="npr-spinner"></span> 评估中…';
 
-    fetch('/new-product-review/api/' + productId + '/evaluate', {
+    fetch('/xuanpin/api/new-products/' + productId + '/evaluate', {
       method: 'POST',
       credentials: 'same-origin',
     })
@@ -493,7 +494,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="npr-spinner"></span> 处理中…';
 
-    fetch('/new-product-review/api/' + _currentProductId + '/decide', {
+    fetch('/xuanpin/api/new-products/' + _currentProductId + '/decide', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -543,7 +544,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="npr-spinner"></span> 处理中…';
 
-    fetch('/new-product-review/api/' + _currentProductId + '/reject', {
+    fetch('/xuanpin/api/new-products/' + _currentProductId + '/reject', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -572,7 +573,7 @@
   // Load & re-render table (Task 28)
   // =============================================
   window.nprLoadData = function() {
-    fetch('/new-product-review/api/list', { credentials: 'same-origin' })
+    fetch('/xuanpin/api/new-products/list', { credentials: 'same-origin' })
     .then(r => r.json())
     .then(data => {
       renderTable(data.products, data.languages);

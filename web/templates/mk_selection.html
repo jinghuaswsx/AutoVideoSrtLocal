@@ -118,9 +118,9 @@
 {% block content %}
 <div class="oc">
   <div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">
-    <a class="oc-page-tab active" href="/medias/mk-selection" role="tab" aria-selected="true">明空选品</a>
-    <a class="oc-page-tab" href="/new-product-review/" role="tab" aria-selected="false">新品选择</a>
-    <a class="oc-page-tab" href="/medias/tabcut-selection" role="tab" aria-selected="false">TABCUT</a>
+    <a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>
+    <a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>
+    <a class="oc-page-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>
   </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
@@ -167,7 +167,7 @@
 </div>
 
 <script>
-const MK_PROXY = "/medias/api/mk-detail";
+const MK_PROXY = "/xuanpin/api/mk-detail";
 let currentPage = 1;
 const PAGE_SIZE = 50;
 
@@ -218,7 +218,7 @@ function fmtMkSpendText(raw, parsed) {
 async function loadData(page) {
   currentPage = page;
   const kw = document.getElementById('searchInput').value.trim();
-  const url = `/medias/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+  const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
 
   const resp = await fetch(url);
   const data = await resp.json();
@@ -342,9 +342,9 @@ async function openDetail(mkId, mkName) {
       const spends = parseSpends(v.spends);
       const heat = heatLevel(spends);
       const coverPath = normalizeMkMediaPath(v.image_path);
-      const coverUrl = coverPath ? '/medias/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
+      const coverUrl = coverPath ? '/xuanpin/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
       const videoPath = normalizeMkMediaPath(v.path);
-      const videoUrl = videoPath ? '/medias/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
+      const videoUrl = videoPath ? '/xuanpin/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
       const videoName = escapeHtml(v.name || '未命名素材');
       const safeCoverUrl = escapeHtml(coverUrl);
       const safeVideoUrl = escapeHtml(videoUrl);

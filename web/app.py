@@ -89,6 +89,7 @@ from web.routes.browser_monitor import bp as browser_monitor_bp
 from web.routes.mk_import import bp as mk_import_bp
 from web.routes.raw_video_pool import bp as raw_video_pool_bp
 from web.routes.new_product_review import new_product_review_bp
+from web.routes.xuanpin import bp as xuanpin_bp
 from web.routes.productivity_stats import bp as productivity_stats_bp
 from web.routes.tools import bp as tools_bp
 from web.routes.admin_runtime import bp as admin_runtime_bp
@@ -117,6 +118,7 @@ _COOKIE_API_CSRF_GUARDED_BLUEPRINTS = {
     "mk_import",
     "raw_video_pool",
     "new_product_review",
+    "xuanpin",
 }
 
 
@@ -327,6 +329,8 @@ def create_app() -> Flask:
     app.register_blueprint(new_product_review_bp)
     # new-product-review 蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
     csrf.exempt(new_product_review_bp)
+    app.register_blueprint(xuanpin_bp)
+    csrf.exempt(xuanpin_bp)
     app.register_blueprint(productivity_stats_bp)
     app.register_blueprint(tools_bp)
     app.register_blueprint(admin_runtime_bp)

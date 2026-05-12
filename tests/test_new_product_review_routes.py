@@ -50,7 +50,7 @@ def _patch_list_deps(monkeypatch):
 def test_get_index_admin_only(authed_user_client_no_db, monkeypatch):
     """普通用户访问 GET / → 403。"""
     _patch_list_deps(monkeypatch)
-    resp = authed_user_client_no_db.get("/new-product-review/")
+    resp = authed_user_client_no_db.get("/xuanpin/new-products")
     assert resp.status_code == 403
 
 
@@ -61,7 +61,7 @@ def test_get_index_admin_ok(authed_client_no_db, monkeypatch):
         "web.routes.new_product_review.render_template",
         lambda template, **ctx: f"<html>新品审核 rendered={template}</html>",
     )
-    resp = authed_client_no_db.get("/new-product-review/")
+    resp = authed_client_no_db.get("/xuanpin/new-products")
     assert resp.status_code == 200
     assert b"\xe6\x96\xb0\xe5\x93\x81\xe5\xae\xa1\xe6\xa0\xb8" in resp.data  # "新品审核" UTF-8
 
@@ -77,12 +77,21 @@ def test_get_index_renders_template(authed_client_no_db, monkeypatch):
         return "<html>ok</html>"
 
     monkeypatch.setattr("web.routes.new_product_review.render_template", fake_render)
-    resp = authed_client_no_db.get("/new-product-review/")
+    resp = authed_client_no_db.get("/xuanpin/new-products")
     assert resp.status_code == 200
     assert called["template"] == "new_product_review_list.html"
     assert "products" in called["ctx"]
     assert "languages" in called["ctx"]
     assert "translators" in called["ctx"]
+
+
+def test_legacy_index_redirects_to_xuanpin(authed_client_no_db, monkeypatch):
+    _patch_list_deps(monkeypatch)
+
+    resp = authed_client_no_db.get("/new-product-review/")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/xuanpin/new-products")
 
 
 def test_get_list_returns_json(authed_client_no_db, monkeypatch):
@@ -101,7 +110,7 @@ def test_get_list_returns_json(authed_client_no_db, monkeypatch):
 def test_get_index_includes_page_scripts(authed_client_no_db, monkeypatch):
     _patch_list_deps(monkeypatch)
 
-    resp = authed_client_no_db.get("/new-product-review/")
+    resp = authed_client_no_db.get("/xuanpin/new-products")
 
     assert resp.status_code == 200
     body = resp.data.decode("utf-8")
@@ -112,7 +121,7 @@ def test_get_index_includes_page_scripts(authed_client_no_db, monkeypatch):
 def test_new_product_review_dynamic_table_escapes_api_fields(authed_client_no_db, monkeypatch):
     _patch_list_deps(monkeypatch)
 
-    resp = authed_client_no_db.get("/new-product-review/")
+    resp = authed_client_no_db.get("/xuanpin/new-products")
 
     assert resp.status_code == 200
     body = resp.data.decode("utf-8")

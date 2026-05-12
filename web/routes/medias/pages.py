@@ -88,14 +88,10 @@ def api_list_languages():
 @bp.route("/mk-selection")
 @login_required
 def mk_selection_page():
-    if not _routes_module()._is_admin():
-        abort(403)
-    return render_template("mk_selection.html")
+    return redirect(url_for("xuanpin.mk_selection_page"))
 
 
 @bp.route("/tabcut-selection")
 @login_required
 def tabcut_selection_page():
-    if not _routes_module()._is_admin():
-        abort(403)
-    return render_template("tabcut_selection.html")
+    return redirect(url_for("xuanpin.tabcut_selection_page"))
