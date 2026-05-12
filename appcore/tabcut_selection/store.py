@@ -30,6 +30,12 @@ GOODS_SORTS = {
     "related_video_count": "s.related_video_count",
 }
 
+SOURCE_RANKS = {
+    "1d": ("video_1d_play", "video_1d_sales"),
+    "7d": ("video_7d_play", "video_7d_sales"),
+    "30d": ("video_30d_play", "video_30d_sales"),
+}
+
 
 def _json(value: Any) -> str:
     return json.dumps(value or {}, ensure_ascii=False, default=str)
@@ -95,6 +101,23 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
     if publish_date_to:
         where.append("v.create_time < DATE_ADD(%s, INTERVAL 1 DAY)")
         params.append(publish_date_to)
+
+    source_rank_values = SOURCE_RANKS.get(str(args.get("source_rank") or ""))
+    if source_rank_values:
+        placeholders = ", ".join(["%s"] * len(source_rank_values))
+        where.append(
+            f"""
+            EXISTS (
+                SELECT 1
+                FROM tabcut_video_snapshots source_vs
+                WHERE source_vs.biz_date = c.biz_date
+                  AND source_vs.region = c.region
+                  AND source_vs.video_id = c.video_id
+                  AND source_vs.source_sort IN ({placeholders})
+            )
+            """
+        )
+        params.extend(source_rank_values)
 
     min_video_sales = _int_arg(args, "min_video_sales", 0, 0, 10**12)
     if min_video_sales:

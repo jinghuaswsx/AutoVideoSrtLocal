@@ -70,6 +70,39 @@ def test_list_video_candidates_filters_by_video_publish_date_range():
     assert data_params[:3] == ["US", "2026-04-13", "2026-05-12"]
 
 
+def test_list_video_candidates_filters_by_source_rank():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({"source_rank": "7d"}, query_fn=fake_query)
+
+    count_sql, count_params = calls[0]
+    data_sql, data_params = calls[-1]
+    assert "EXISTS (" in count_sql
+    assert "tabcut_video_snapshots source_vs" in count_sql
+    assert "source_vs.source_sort IN (%s, %s)" in count_sql
+    assert "video_7d_play" in count_params
+    assert "video_7d_sales" in count_params
+    assert "source_vs.source_sort IN (%s, %s)" in data_sql
+    assert data_params[:3] == ["US", "video_7d_play", "video_7d_sales"]
+
+
+def test_list_video_candidates_rejects_unknown_source_rank():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({"source_rank": "7d; DROP TABLE tabcut_videos"}, query_fn=fake_query)
+
+    assert "source_vs.source_sort" not in calls[-1][0]
+    assert "DROP TABLE" not in calls[-1][0]
+
+
 def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
     monkeypatch.setattr(
         store,

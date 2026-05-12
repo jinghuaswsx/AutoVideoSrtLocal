@@ -6,7 +6,7 @@
 .tabcut-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid #d8dee8; border-radius:999px; background:#f6f8fb; }
 .tabcut-tab-link { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
 .tabcut-tab-link.active { background:#0f766e; color:#fff; }
-.tabcut-toolbar { display:grid; grid-template-columns:repeat(8, minmax(118px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
+.tabcut-toolbar { display:grid; grid-template-columns:repeat(9, minmax(118px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
 .tabcut-field label { display:block; margin-bottom:5px; color:#64748b; font-size:12px; font-weight:700; }
 .tabcut-input, .tabcut-select { width:100%; height:34px; padding:0 9px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1f2937; font-size:14px; }
 .tabcut-actions { display:flex; gap:8px; }
@@ -84,6 +84,15 @@
     <div class="tabcut-field">
       <label for="publishDateTo">发布日期止</label>
       <input class="tabcut-input" id="publishDateTo" type="date">
+    </div>
+    <div class="tabcut-field">
+      <label for="sourceRank">数据来源</label>
+      <select class="tabcut-select" id="sourceRank">
+        <option value="">全部榜单</option>
+        <option value="1d">日榜</option>
+        <option value="7d">周榜</option>
+        <option value="30d">月榜</option>
+      </select>
     </div>
     <div class="tabcut-field">
       <label for="minVideoSales">Video Sales</label>
@@ -255,7 +264,7 @@ function setTabcutView(view) {
 
 function updateDateFilterState() {
   const disabled = tabcutView !== "videos";
-  ["publishDateFrom", "publishDateTo"].forEach(id => {
+  ["publishDateFrom", "publishDateTo", "sourceRank"].forEach(id => {
     qs(id).disabled = disabled;
   });
 }
@@ -263,6 +272,7 @@ function updateDateFilterState() {
 function paramsFor(page) {
   const params = new URLSearchParams({ page, page_size: qs("pageSize").value, sort: qs("sortBy").value });
   if (qs("categoryL1").value.trim()) params.set("category_l1", qs("categoryL1").value.trim());
+  if (tabcutView === "videos" && qs("sourceRank").value) params.set("source_rank", qs("sourceRank").value);
   if (tabcutView === "videos" && qs("publishDateFrom").value) params.set("publish_date_from", qs("publishDateFrom").value);
   if (tabcutView === "videos" && qs("publishDateTo").value) params.set("publish_date_to", qs("publishDateTo").value);
   if (qs("minVideoSales").value) params.set("min_video_sales", qs("minVideoSales").value);
@@ -324,6 +334,7 @@ function renderPager(data) {
 
 function resetTabcut() {
   ["categoryL1", "publishDateFrom", "publishDateTo", "minVideoSales", "minGoodsSales", "minGmv"].forEach(id => qs(id).value = "");
+  qs("sourceRank").value = "";
   qs("sortBy").value = "play_count";
   loadTabcut(1);
 }
