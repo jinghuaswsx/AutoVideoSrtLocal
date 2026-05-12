@@ -390,6 +390,70 @@ def test_gui_passes_shopify_language_name_from_api_item(monkeypatch: pytest.Monk
         app.root.destroy()
 
 
+def test_gui_single_language_selection_takes_priority_over_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        calls: list[dict] = []
+        done = threading.Event()
+
+        monkeypatch.setattr(gui.session, "kill_chrome_for_profile", lambda _profile: None)
+        monkeypatch.setattr(
+            gui.storage,
+            "create_workspace",
+            lambda product_code, lang: SimpleNamespace(
+                root=rf"C:\work\{product_code}\{lang}",
+                source_localized_dir=rf"C:\work\{product_code}\{lang}\source\localized",
+            ),
+        )
+
+        def fake_run_shopify_localizer(**kwargs):
+            calls.append(kwargs)
+            done.set()
+            return {
+                "product_code": kwargs["product_code"],
+                "lang": kwargs["lang"],
+                "shopify_product_id": kwargs["shopify_product_id"],
+                "workspace_root": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}",
+                "download_dir": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\source\localized",
+                "manifest_path": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\shopify_batch_result.json",
+            }
+
+        monkeypatch.setattr(gui.controller, "run_shopify_localizer", fake_run_shopify_localizer)
+
+        app._set_language_items(
+            [
+                {
+                    "code": "de",
+                    "label": "German",
+                    "shop_locale": "de",
+                    "shopify_language_name": "German",
+                },
+                {
+                    "code": "fr",
+                    "label": "French",
+                    "shop_locale": "fr",
+                    "shopify_language_name": "French",
+                },
+            ]
+        )
+        app.batch_languages = ["French (fr)"]
+        app._update_batch_languages_display()
+        app.language_var.set("German (de)")
+        app.product_code_var.set("sonic-lens-refresher-rjc")
+        app.shopify_product_id_var.set("8559391932589")
+
+        app.start_run()
+
+        assert done.wait(2)
+        assert [call["lang"] for call in calls] == ["de"]
+        assert calls[0]["shop_locale"] == "de"
+        assert calls[0]["shopify_language_name"] == "German"
+    finally:
+        app.root.destroy()
+
+
 def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
     saved_configs: list[dict] = []
     killed_profiles: list[str] = []

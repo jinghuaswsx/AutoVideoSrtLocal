@@ -944,8 +944,9 @@ class ShopifyImageLocalizerApp:
         self._set_running_state(True, stoppable=True)
         self._clear_summary()
 
-        # 判断是单个语言还是批量语言
-        if self.batch_languages:
+        # 单选语言有值时以单选为准；只有单选为空时才使用批量语言。
+        use_batch_languages = not language_label and bool(self.batch_languages)
+        if use_batch_languages:
             # 批量模式
             lang_codes = [self._selected_lang_code(lbl) for lbl in self.batch_languages]
             self._progress_start(
