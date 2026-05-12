@@ -93,6 +93,72 @@ def _cdp_ws_endpoint(port: int = DEFAULT_CDP_PORT) -> str:
     return endpoint
 
 
+def _normalize_path_token(value: str) -> str:
+    return str(value or "").strip().strip("\"'").replace("\\", "/").rstrip("/").lower()
+
+
+def _commandline_uses_profile(command_line: str, user_data_dir: str) -> bool:
+    target = _normalize_path_token(user_data_dir)
+    if not target:
+        return False
+    pattern = r"--user-data-dir(?:=|\s+)(\"[^\"]+\"|'[^']+'|\S+)"
+    for match in re.finditer(pattern, str(command_line or "")):
+        if _normalize_path_token(match.group(1)) == target:
+            return True
+    return False
+
+
+def _cdp_port_matches_profile(port: int, user_data_dir: str) -> bool:
+    if os.name != "nt":
+        return True
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                (
+                    "Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | "
+                    "Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '--type=' -and "
+                    f"$_.CommandLine -match 'remote-debugging-port={int(port)}' }} | "
+                    "ForEach-Object { $_.CommandLine }"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=6,
+        )
+    except Exception:
+        return False
+    return any(
+        _commandline_uses_profile(line, user_data_dir)
+        for line in (result.stdout or "").splitlines()
+    )
+
+
+def _kill_cdp_chrome_for_port(port: int) -> None:
+    if os.name != "nt":
+        return
+    try:
+        subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                (
+                    "Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | "
+                    "Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '--type=' -and "
+                    f"$_.CommandLine -match 'remote-debugging-port={int(port)}' }} | "
+                    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+                ),
+            ],
+            capture_output=True,
+            timeout=8,
+        )
+    except Exception:
+        pass
+
+
 def _chrome_exe() -> str:
     found = session.find_chrome_executable()
     if found:
@@ -118,7 +184,13 @@ def ensure_cdp_chrome(
     is reused. No Playwright launch flags are used.
     """
     if _cdp_alive(port):
-        return False
+        if _cdp_port_matches_profile(port, user_data_dir):
+            return False
+        _kill_cdp_chrome_for_port(port)
+        deadline = time.time() + 5
+        while time.time() < deadline and _cdp_alive(port):
+            cancellation.throw_if_cancelled(cancel_token)
+            cancellation.cancellable_sleep(cancel_token, 0.25)
     session.kill_chrome_for_profile(user_data_dir)
     if proxy_server is None:
         proxy_server = session.detect_system_proxy()

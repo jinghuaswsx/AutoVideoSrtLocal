@@ -1591,6 +1591,47 @@ def test_ensure_cdp_chrome_clears_profile_browser_before_starting_port(monkeypat
     )
 
 
+def test_ensure_cdp_chrome_restarts_alive_port_owned_by_other_profile(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+    alive_results = [True, False, True]
+
+    def fake_cdp_alive(port):
+        calls.append(("alive", port))
+        return alive_results.pop(0)
+
+    monkeypatch.setattr(ez_cdp, "_cdp_alive", fake_cdp_alive)
+    monkeypatch.setattr(ez_cdp, "_cdp_port_matches_profile", lambda port, profile: False)
+    monkeypatch.setattr(ez_cdp, "_kill_cdp_chrome_for_port", lambda port: calls.append(("kill_port", port)))
+    monkeypatch.setattr(ez_cdp, "_chrome_exe", lambda: "chrome.exe")
+    monkeypatch.setattr(ez_cdp.session, "detect_system_proxy", lambda: None)
+    monkeypatch.setattr(
+        ez_cdp.session,
+        "kill_chrome_for_profile",
+        lambda user_data_dir: calls.append(("kill_profile", user_data_dir)),
+    )
+    monkeypatch.setattr(
+        ez_cdp.subprocess,
+        "Popen",
+        lambda args, **kwargs: calls.append(("popen", args)) or object(),
+    )
+
+    started = ez_cdp.ensure_cdp_chrome(
+        r"C:\chrome-shopify-image",
+        "https://admin.shopify.com/store/7tlgn3-sv/apps/ez-product-image-translate/product/9163940102356",
+        port=7777,
+        startup_timeout_s=1,
+    )
+
+    assert started is True
+    assert ("kill_port", 7777) in calls
+    assert calls.index(("kill_port", 7777)) < calls.index(("kill_profile", r"C:\chrome-shopify-image"))
+    assert calls.index(("kill_profile", r"C:\chrome-shopify-image")) < next(
+        idx for idx, call in enumerate(calls) if call[0] == "popen"
+    )
+
+
 def test_wait_plugin_frame_pumps_playwright_page_events(monkeypatch):
     from tools.shopify_image_localizer.rpa import ez_cdp
 
