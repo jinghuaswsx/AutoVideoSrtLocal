@@ -5380,14 +5380,9 @@
     const buttons = [];
     buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="recheck-one" ${domainAttr}>重新检查可用性</button>`);
     if (lang && lang !== 'en') {
-      const status = edShopifyImageStatusForLang(lang, item.domain);
-      if (status.replace_status !== 'confirmed' || status.link_status !== 'normal') {
-        buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
-      }
+      buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
       buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-requeue" data-lang="${escapeHtml(lang)}" ${domainAttr}>重新排队换图</button>`);
-      if (status.link_status !== 'unavailable') {
-        buttons.push(`<button type="button" class="oc-btn text sm" data-product-links-action="shopify-unavailable" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记链接不可用</button>`);
-      }
+      buttons.push(`<button type="button" class="oc-btn text sm" data-product-links-action="shopify-unavailable" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记链接不可用</button>`);
     }
     return `<div class="oc-product-links-row-actions">${buttons.join('')}</div>`;
   }
