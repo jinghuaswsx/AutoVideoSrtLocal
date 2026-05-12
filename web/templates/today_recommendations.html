@@ -1,0 +1,195 @@
+{% extends "layout.html" %}
+{% block title %}选品中心 - 今日推荐{% endblock %}
+{% block page_title %}
+<span class="selection-center-title">选品中心</span>
+<span class="selection-center-title-note">今日推荐 <span class="tr-count">{{ recommendations|length }}</span></span>
+{% endblock %}
+{% block extra_style %}
+:root {
+  --tr-bg:#f8fafc; --tr-panel:#fff; --tr-line:#dbe3ef; --tr-line-strong:#c6d3e1;
+  --tr-text:#1f2937; --tr-muted:#64748b; --tr-subtle:#94a3b8;
+  --tr-accent:#0f766e; --tr-accent-dark:#0b5f59; --tr-soft:#ecfdf5;
+  --tr-danger:#b42318; --tr-danger-bg:#fff1f0; --tr-radius:8px;
+}
+.tr-page { color:var(--tr-text); }
+.tr-tabs { display:inline-flex; align-items:center; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--tr-line); border-radius:999px; background:#f6f8fb; }
+.tr-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
+.tr-tab.active { background:var(--tr-accent); color:#fff; }
+.tr-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; padding:12px 14px; border:1px solid var(--tr-line); border-radius:var(--tr-radius); background:var(--tr-panel); }
+.tr-toolbar-left, .tr-toolbar-right { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.tr-meta { color:var(--tr-muted); font-size:13px; }
+.tr-select { height:34px; min-width:160px; padding:0 9px; border:1px solid var(--tr-line-strong); border-radius:6px; background:#fff; color:var(--tr-text); }
+.tr-btn { height:34px; padding:0 13px; border:1px solid var(--tr-accent); border-radius:6px; background:var(--tr-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+.tr-btn:hover { background:var(--tr-accent-dark); }
+.tr-btn.secondary { border-color:var(--tr-line-strong); background:#fff; color:#334155; }
+.tr-btn.secondary:hover { background:#f1f5f9; }
+.tr-btn:disabled { opacity:.55; cursor:not-allowed; }
+.tr-table-wrap { overflow-x:auto; border:1px solid var(--tr-line); border-radius:var(--tr-radius); background:#fff; }
+.tr-table { width:100%; min-width:1180px; border-collapse:collapse; font-size:13px; }
+.tr-table th { position:sticky; top:0; z-index:1; padding:10px; border-bottom:1px solid var(--tr-line); background:#f8fafc; color:var(--tr-muted); text-align:left; white-space:nowrap; }
+.tr-table td { padding:10px; border-bottom:1px solid #edf2f7; vertical-align:top; }
+.tr-table tr:hover td { background:#f8fafc; }
+.tr-check { width:18px; height:18px; accent-color:var(--tr-accent); }
+.tr-cover { width:54px; height:72px; border-radius:6px; object-fit:cover; background:#eef2f7; border:1px solid #e2e8f0; }
+.tr-cover-empty { display:flex; align-items:center; justify-content:center; width:54px; height:72px; border-radius:6px; background:#f1f5f9; color:var(--tr-subtle); font-size:11px; border:1px solid #e2e8f0; }
+.tr-product { max-width:280px; line-height:1.35; word-break:break-word; }
+.tr-product a { color:var(--tr-text); text-decoration:none; font-weight:700; }
+.tr-product a:hover { color:var(--tr-accent); text-decoration:underline; }
+.tr-mini { margin-top:4px; color:var(--tr-subtle); font-size:11px; }
+.tr-num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.tr-video { max-width:260px; line-height:1.35; word-break:break-word; }
+.tr-countries { display:flex; flex-wrap:wrap; gap:4px; max-width:160px; }
+.tr-country { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:999px; background:var(--tr-soft); color:var(--tr-accent-dark); font-size:12px; font-weight:700; }
+.tr-reason { max-width:340px; color:#475569; line-height:1.45; }
+.tr-status { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:999px; background:#eef2f7; color:#475569; font-size:12px; font-weight:700; white-space:nowrap; }
+.tr-status.adopt_failed { background:var(--tr-danger-bg); color:var(--tr-danger); }
+.tr-empty { padding:42px 18px; text-align:center; color:var(--tr-muted); }
+.tr-toast { position:fixed; right:24px; bottom:24px; z-index:9999; max-width:360px; padding:10px 14px; border-radius:8px; background:#022c22; color:#fff; box-shadow:0 8px 24px rgba(15,23,42,.18); font-size:13px; display:none; }
+@media (max-width:760px) {
+  .tr-toolbar { align-items:flex-start; }
+  .tr-toolbar-left, .tr-toolbar-right { width:100%; }
+  .tr-select { flex:1; min-width:0; }
+}
+{% endblock %}
+{% block content %}
+<div class="tr-page">
+  <nav class="tr-tabs" aria-label="选品中心类型">
+    <a class="tr-tab" href="/xuanpin/mk">明空选品</a>
+    <a class="tr-tab active" href="/xuanpin/today-recommendations">今日推荐</a>
+    <a class="tr-tab" href="/xuanpin/new-products">新品选择</a>
+    <a class="tr-tab" href="/xuanpin/tabcut">TABCUT</a>
+  </nav>
+
+  <section class="tr-toolbar">
+    <div class="tr-toolbar-left">
+      {% if run_summary %}
+      <span class="tr-meta">推荐日 {{ run_summary.recommendation_date or '--' }}</span>
+      <span class="tr-meta">榜单 {{ run_summary.ranking_snapshot_date or '--' }}</span>
+      <span class="tr-meta">状态 {{ run_summary.status or '--' }}</span>
+      {% else %}
+      <span class="tr-meta">暂无生成记录</span>
+      {% endif %}
+    </div>
+    <div class="tr-toolbar-right">
+      <select id="trTranslator" class="tr-select" aria-label="翻译员">
+        {% for t in translators %}
+        <option value="{{ t.id }}">{{ t.username or t.display_name or t.id }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="tr-btn secondary" onclick="trReload()">刷新</button>
+      <button type="button" class="tr-btn" id="trAdoptBtn" onclick="trAdoptSelected()">加入任务中心</button>
+    </div>
+  </section>
+
+  <div class="tr-table-wrap">
+    <table class="tr-table">
+      <thead>
+        <tr>
+          <th style="width:42px"><input class="tr-check" type="checkbox" onchange="trToggleAll(this)"></th>
+          <th style="width:56px">产品</th>
+          <th>产品信息</th>
+          <th class="tr-num">榜单</th>
+          <th class="tr-num">销量</th>
+          <th class="tr-num">订单</th>
+          <th>素材</th>
+          <th class="tr-num">消耗</th>
+          <th>国家</th>
+          <th>判断</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody id="trTbody">
+        {% for r in recommendations %}
+        <tr data-id="{{ r.id }}">
+          <td><input class="tr-check tr-row-check" type="checkbox" value="{{ r.id }}"></td>
+          <td>
+            {% if r.video_image_path %}
+            <img class="tr-cover" src="/xuanpin/api/mk-media?path={{ r.video_image_path|urlencode }}" alt="" loading="lazy">
+            {% else %}
+            <div class="tr-cover-empty">素材</div>
+            {% endif %}
+          </td>
+          <td>
+            <div class="tr-product">
+              {% if r.product_url %}<a href="{{ r.product_url }}" target="_blank" rel="noopener noreferrer">{{ r.product_name }}</a>{% else %}<strong>{{ r.product_name }}</strong>{% endif %}
+              <div class="tr-mini">推荐 #{{ r.product_recommendation_rank }} · {{ r.mk_product_name or r.product_handle or r.product_key }}</div>
+            </div>
+          </td>
+          <td class="tr-num">#{{ r.rank_position or '-' }}</td>
+          <td class="tr-num">{{ r.sales_count or 0 }}</td>
+          <td class="tr-num">{{ r.order_count or 0 }}</td>
+          <td>
+            <div class="tr-video">
+              {% if r.video_path %}
+              <a href="/xuanpin/api/mk-video?path={{ r.video_path|urlencode }}" target="_blank" rel="noopener noreferrer">{{ r.video_name or '未命名素材' }}</a>
+              {% else %}
+              {{ r.video_name or '未命名素材' }}
+              {% endif %}
+              <div class="tr-mini">素材 #{{ r.material_rank }} · 广告 {{ r.video_ads_count or 0 }}</div>
+            </div>
+          </td>
+          <td class="tr-num">{{ "%.0f"|format(r.video_spends or 0) }}</td>
+          <td>
+            <div class="tr-countries">
+              {% for c in r.recommended_countries %}
+              <span class="tr-country">{{ c|upper }}</span>
+              {% endfor %}
+            </div>
+          </td>
+          <td><div class="tr-reason">{{ r.ai_reason or '-' }}</div></td>
+          <td><span class="tr-status {{ r.status }}">{{ r.status }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11"><div class="tr-empty">暂无今日推荐</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div id="trToast" class="tr-toast"></div>
+<script>
+function trToast(msg) {
+  const el = document.getElementById('trToast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(window.__trToastTimer);
+  window.__trToastTimer = setTimeout(() => { el.style.display = 'none'; }, 3200);
+}
+function trSelectedIds() {
+  return Array.from(document.querySelectorAll('.tr-row-check:checked')).map(el => parseInt(el.value, 10)).filter(Boolean);
+}
+function trToggleAll(box) {
+  document.querySelectorAll('.tr-row-check').forEach(el => { el.checked = box.checked; });
+}
+async function trReload() {
+  const resp = await fetch('/xuanpin/api/today-recommendations/list');
+  if (!resp.ok) { trToast('刷新失败'); return; }
+  window.location.reload();
+}
+async function trAdoptSelected() {
+  const ids = trSelectedIds();
+  if (!ids.length) { trToast('请选择推荐素材'); return; }
+  const translatorId = parseInt(document.getElementById('trTranslator').value, 10);
+  if (!translatorId) { trToast('请选择翻译员'); return; }
+  const btn = document.getElementById('trAdoptBtn');
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/xuanpin/api/today-recommendations/adopt', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({recommendation_ids: ids, translator_id: translatorId})
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '加入失败');
+    const adopted = (data.adopted || []).length;
+    const failed = (data.failed || []).length;
+    trToast(`已加入 ${adopted} 条，失败 ${failed} 条`);
+    setTimeout(() => window.location.reload(), 900);
+  } catch (err) {
+    trToast(err.message || '加入失败');
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+{% endblock %}

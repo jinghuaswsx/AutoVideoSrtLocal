@@ -103,7 +103,7 @@ def _build_mk_video_proxy_response(media_path: str, guessed_type: str):
 def api_mk_selection():
     if not _is_admin():
         return _routes()._mk_admin_required_response()
-    """返回店小秘 Top300 + 明空消耗数据，按 90 天消耗降序。"""
+    """返回店小秘 Top1000 + 明空消耗数据，按 90 天消耗降序。"""
     result = _routes()._build_mk_selection_response(request.args)
     return _routes()._build_mk_json_flask_response(result)
 

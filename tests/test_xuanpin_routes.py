@@ -50,6 +50,7 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'href="/xuanpin/mk"' in body
+    assert 'href="/xuanpin/today-recommendations"' in body
     assert 'href="/xuanpin/new-products"' in body
     assert 'href="/xuanpin/tabcut"' in body
     assert "/xuanpin/api/mk-selection" in body
@@ -61,6 +62,7 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'href="/xuanpin/mk"' in body
+    assert 'href="/xuanpin/today-recommendations"' in body
     assert 'href="/xuanpin/new-products"' in body
     assert 'href="/xuanpin/tabcut"' in body
     assert "/xuanpin/api/tabcut/videos" in body
@@ -79,8 +81,61 @@ def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'href="/xuanpin/mk"' in body
+    assert 'href="/xuanpin/today-recommendations"' in body
     assert 'href="/xuanpin/new-products"' in body
     assert "/xuanpin/api/new-products/list" in body
+
+
+def test_xuanpin_today_recommendations_page_uses_tab_and_api(
+    authed_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "appcore.today_recommendations.list_recommendations",
+        lambda **kw: [
+            {
+                "id": 1,
+                "product_name": "Test Product",
+                "product_url": "https://example.com/products/test",
+                "product_recommendation_rank": 1,
+                "material_rank": 1,
+                "rank_position": 5,
+                "sales_count": 10,
+                "order_count": 9,
+                "mk_product_name": "Test MK",
+                "product_handle": "test",
+                "product_key": "test",
+                "video_image_path": "",
+                "video_path": "videos/test.mp4",
+                "video_name": "test.mp4",
+                "video_spends": 100,
+                "video_ads_count": 2,
+                "recommended_countries": ["de", "fr"],
+                "ai_reason": "good fit",
+                "status": "pending",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "appcore.today_recommendations.latest_run_summary",
+        lambda: {
+            "recommendation_date": "2026-05-12",
+            "ranking_snapshot_date": "2026-05-11",
+            "status": "success",
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.users.list_translators",
+        lambda: [{"id": 10, "username": "Alice"}],
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/today-recommendations")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'href="/xuanpin/today-recommendations"' in body
+    assert "/xuanpin/api/today-recommendations/adopt" in body
+    assert "Test Product" in body
 
 
 def test_legacy_selection_pages_redirect_to_xuanpin(authed_client_no_db):
@@ -150,3 +205,26 @@ def test_xuanpin_new_product_api_alias_delegates(authed_client_no_db, monkeypatc
 
     assert resp.status_code == 200
     assert resp.get_json()["product_id"] == 1
+
+
+def test_xuanpin_today_recommendations_api_aliases(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "appcore.today_recommendations.list_recommendations",
+        lambda **kw: [{"id": 1, "status": "pending"}],
+    )
+    monkeypatch.setattr("appcore.today_recommendations.latest_run_summary", lambda: {"status": "success"})
+    monkeypatch.setattr(
+        "appcore.today_recommendations.adopt_recommendations",
+        lambda **kw: {"adopted": [{"id": 1}], "skipped": [], "failed": []},
+    )
+
+    list_resp = authed_client_no_db.get("/xuanpin/api/today-recommendations/list")
+    adopt_resp = authed_client_no_db.post(
+        "/xuanpin/api/today-recommendations/adopt",
+        json={"recommendation_ids": [1], "translator_id": 10},
+    )
+
+    assert list_resp.status_code == 200
+    assert list_resp.get_json()["items"] == [{"id": 1, "status": "pending"}]
+    assert adopt_resp.status_code == 200
+    assert adopt_resp.get_json()["adopted"] == [{"id": 1}]

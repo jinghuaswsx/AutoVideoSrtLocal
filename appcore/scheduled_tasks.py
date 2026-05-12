@@ -124,6 +124,24 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },
+    "dianxiaomi_listing_ranking_sync": {
+        "code": "dianxiaomi_listing_ranking_sync",
+        "name": "店小秘 Listing 销量 Top1000",
+        "description": (
+            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 天；每一天都按单日 "
+            "beginDate=endDate 锁定榜单，按 paidProductCount 倒序采集 Listing 销量前 1000 名，"
+            "写入 dianxiaomi_rankings；"
+            "回补模式从 2026-04-23 起把不足 1000 条的日期视为缺失。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-12-dianxiaomi-listing-ranking-sync.md"
+        ),
+        "schedule": "每天 12:40（北京时间，刷新最近 7 天最新榜单）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-dianxiaomi-listing-ranking-sync.timer",
+        "runner": "tools/dianxiaomi_listing_ranking_sync.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
     "meta_realtime_import": {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",

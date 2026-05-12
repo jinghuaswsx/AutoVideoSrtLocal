@@ -365,6 +365,16 @@ USE_CASES: dict[str, UseCase] = {
         "gemini_vertex_adc",
         "tokens",
     ),
+    "xuanpin.today_recommendations": _uc(
+        "xuanpin.today_recommendations",
+        "material",
+        "Xuanpin Today Recommendations",
+        "Rank Top500 Dianxiaomi products and Mingkong materials into a daily recommendation shortlist",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
+        "tokens",
+    ),
     "push_quality.check": _uc(
         "push_quality.check",
         "material",

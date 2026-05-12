@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt Dianxiaomi Listing Ranking Top1000 sync every day
+
+[Timer]
+OnCalendar=*-*-* 12:40:00
+Persistent=true
+Unit=autovideosrt-dianxiaomi-listing-ranking-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, abort, redirect, render_template, url_for
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 
@@ -31,6 +31,12 @@ def _new_product_routes():
     return routes
 
 
+def _today_recommendations():
+    from appcore import today_recommendations as service
+
+    return service
+
+
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
@@ -57,6 +63,22 @@ def tabcut_selection_page():
 @login_required
 def new_products_page():
     return _new_product_routes()._render_index_page()
+
+
+@bp.route("/today-recommendations", methods=["GET"])
+@login_required
+def today_recommendations_page():
+    if not _is_admin():
+        abort(403)
+    from appcore.users import list_translators
+
+    service = _today_recommendations()
+    return render_template(
+        "today_recommendations.html",
+        recommendations=service.list_recommendations(limit=100),
+        run_summary=service.latest_run_summary(),
+        translators=list_translators(),
+    )
 
 
 @bp.route("/api/mk-selection", methods=["GET"])
@@ -129,3 +151,43 @@ def api_new_products_decide(product_id: int):
 @login_required
 def api_new_products_reject(product_id: int):
     return _new_product_routes().api_reject(product_id)
+
+
+@bp.route("/api/today-recommendations/list", methods=["GET"])
+@login_required
+def api_today_recommendations_list():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    include_adopted = (request.args.get("include_adopted") or "").strip() in {"1", "true", "yes"}
+    recommendation_date = (request.args.get("date") or "").strip() or None
+    service = _today_recommendations()
+    return jsonify({
+        "items": service.list_recommendations(
+            recommendation_date=recommendation_date,
+            include_adopted=include_adopted,
+            limit=200 if include_adopted else 100,
+        ),
+        "run_summary": service.latest_run_summary(),
+    })
+
+
+@bp.route("/api/today-recommendations/adopt", methods=["POST"])
+@login_required
+def api_today_recommendations_adopt():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    try:
+        recommendation_ids = [int(item) for item in payload.get("recommendation_ids") or []]
+        translator_id = int(payload.get("translator_id") or 0)
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": f"invalid payload: {exc}"}), 400
+    try:
+        result = _today_recommendations().adopt_recommendations(
+            recommendation_ids=recommendation_ids,
+            translator_id=translator_id,
+            actor_user_id=int(current_user.id),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)

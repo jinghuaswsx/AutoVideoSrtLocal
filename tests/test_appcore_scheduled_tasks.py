@@ -334,6 +334,20 @@ def test_task_definitions_include_sku_actual_breakeven_roas():
     assert "2026-05-10-sku-actual-breakeven-roas-design.md" in task["description"]
 
 
+def test_task_definitions_include_dianxiaomi_listing_ranking_sync():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["dianxiaomi_listing_ranking_sync"]
+    assert task["schedule"] == "每天 12:40（北京时间，刷新最近 7 天最新榜单）"
+    assert task["source_type"] == "systemd"
+    assert task["source_ref"] == "autovideosrt-dianxiaomi-listing-ranking-sync.timer"
+    assert task["runner"] == "tools/dianxiaomi_listing_ranking_sync.py"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-12-dianxiaomi-listing-ranking-sync.md" in task["description"]
+
+
 def test_task_definitions_expose_control_strategy_and_log_source():
     from appcore import scheduled_tasks
 

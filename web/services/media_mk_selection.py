@@ -15,6 +15,7 @@ from flask import Response, jsonify, send_file
 
 _MK_CREDENTIALS_MISSING_ERROR = "明空凭据未配置，请先在设置页同步 wedev 凭据"
 _DEFAULT_MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
+_DEFAULT_MK_SELECTION_SNAPSHOT = "2026-04-23"
 
 
 class MkCredentialsMissingError(RuntimeError):
@@ -121,13 +122,33 @@ def _parse_bounded_int(
     return value
 
 
+def _resolve_mk_selection_snapshot(
+    args: Mapping[str, str],
+    *,
+    db_query_fn: Callable[[str, list], list[dict]],
+) -> str:
+    explicit_snapshot = (args.get("snapshot") or "").strip()
+    if explicit_snapshot:
+        return explicit_snapshot
+    try:
+        rows = db_query_fn(
+            "SELECT MAX(snapshot_date) AS snapshot_date FROM dianxiaomi_rankings",
+            [],
+        )
+    except Exception:
+        return _DEFAULT_MK_SELECTION_SNAPSHOT
+    value = rows[0].get("snapshot_date") if rows else None
+    if not value:
+        return _DEFAULT_MK_SELECTION_SNAPSHOT
+    return str(value)[:10]
+
+
 def build_mk_selection_response(
     args: Mapping[str, str],
     *,
     ranking_columns_fn: Callable[[], Sequence[str] | set[str]],
     db_query_fn: Callable[[str, list], list[dict]],
 ) -> MkSelectionResponse:
-    snapshot = (args.get("snapshot") or "2026-04-23").strip()
     keyword = (args.get("keyword") or "").strip()
     try:
         page_num = _parse_bounded_int(args, "page", default=1, minimum=1)
@@ -141,6 +162,7 @@ def build_mk_selection_response(
             400,
         )
     offset = (page_num - 1) * page_size
+    snapshot = _resolve_mk_selection_snapshot(args, db_query_fn=db_query_fn)
 
     ranking_columns = ranking_columns_fn()
     has_mk_product_id = "mk_product_id" in ranking_columns

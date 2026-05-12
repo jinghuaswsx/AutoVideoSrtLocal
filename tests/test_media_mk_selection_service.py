@@ -98,6 +98,9 @@ def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_c
 
     def fake_db_query(sql, args=()):
         calls.append((sql, list(args)))
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            assert args == []
+            return [{"snapshot_date": "2026-04-23"}]
         if "SELECT COUNT(*) AS cnt" in sql:
             assert "mk_product_name" not in sql
             assert args == ["2026-04-23", "%tooth%"]
@@ -126,7 +129,47 @@ def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_c
         "page": 1,
         "page_size": 50,
     }
-    assert len(calls) == 2
+    assert len(calls) == 3
+
+
+def test_build_mk_selection_response_defaults_to_latest_snapshot():
+    from web.services.media_mk_selection import build_mk_selection_response
+
+    def fake_ranking_columns():
+        return {
+            "id",
+            "product_id",
+            "product_name",
+            "product_url",
+            "store",
+            "sales_count",
+            "order_count",
+            "revenue_main",
+            "revenue_split",
+            "media_product_id",
+            "snapshot_date",
+            "rank_position",
+        }
+
+    def fake_db_query(sql, args=()):
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            return [{"snapshot_date": "2026-05-11"}]
+        if "SELECT COUNT(*) AS cnt" in sql:
+            assert args == ["2026-05-11"]
+            return [{"cnt": 0}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            assert args == ["2026-05-11", 50, 0]
+            return []
+        raise AssertionError(sql)
+
+    result = build_mk_selection_response(
+        {},
+        ranking_columns_fn=fake_ranking_columns,
+        db_query_fn=fake_db_query,
+    )
+
+    assert result.status_code == 200
+    assert result.payload["total"] == 0
 
 
 def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query():
