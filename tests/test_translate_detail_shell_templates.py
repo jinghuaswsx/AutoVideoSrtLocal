@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -77,6 +78,31 @@ def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
 
     assert "{% if detail_mode in ('multi', 'ja', 'av_sync') %}" in shared
     assert "voice_selector_multi.js" in shared
+
+
+def test_voice_selector_launch_button_is_full_width_and_prominent():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_voice_selector_multi.html").read_text(encoding="utf-8")
+
+    footer = re.search(r"\.vs-footer\s*\{(?P<body>.*?)\}", template, re.S)
+    button = re.search(r"\.vs-launch-btn\s*\{(?P<body>.*?)\}", template, re.S)
+    assert footer
+    assert button
+    assert 'id="vs-launch-btn" class="vs-launch-btn"' in template
+
+    footer_css = re.sub(r"\s+", "", footer.group("body"))
+    button_css = re.sub(r"\s+", "", button.group("body"))
+
+    assert "align-items:stretch;" in footer_css
+    assert "width:100%;" in button_css
+    assert "min-width:0;" in button_css
+    assert "min-height:72px;" in button_css
+    assert "font-size:24px;" in button_css
+    assert "font-weight:800;" in button_css
+    assert "display:inline-flex;" in button_css
+    assert "align-items:center;" in button_css
+    assert "justify-content:center;" in button_css
+    assert "box-sizing:border-box;" in button_css
 
 
 def test_asr_normalize_card_moves_after_asr_without_reordering_other_cards():

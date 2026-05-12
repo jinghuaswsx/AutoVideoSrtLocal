@@ -380,16 +380,17 @@
   .vs-footer {
     margin-top: 16px; padding-top: 16px;
     border-top: 1px solid var(--border-main);
-    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 12px;
   }
   #vs-selection-text {
     width: 100%; text-align: center;
     font-size: 13px; color: var(--text-user-badge);
   }
   .vs-launch-btn {
-    /* 关键主按钮：30% 宽、胶囊形、比原来高 1.5 倍、居中、醒目 */
-    width: 30%; min-width: 200px;
-    padding: 16px 24px; font-size: 16px; font-weight: 700;
+    /* 关键主按钮：全宽填满操作行，字号与高度按 1.5 倍放大 */
+    width: 100%; min-width: 0; min-height: 72px;
+    box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+    padding: 24px 28px; font-size: 24px; font-weight: 800;
     background: oklch(56% 0.16 230); color: #fff;
     border: none; border-radius: 9999px;
     cursor: pointer; font-family: inherit;
