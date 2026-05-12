@@ -45,7 +45,7 @@ def test_list_video_candidates_rejects_unknown_sort():
 
     store.list_video_candidates({"sort": "score; DROP TABLE users"}, query_fn=fake_query)
 
-    assert "ORDER BY c.score DESC" in calls[-1][0]
+    assert "ORDER BY c.play_count DESC" in calls[-1][0]
     assert "DROP TABLE" not in calls[-1][0]
 
 

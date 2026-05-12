@@ -91,8 +91,8 @@
     <div class="tabcut-field">
       <label for="sortBy">Sort</label>
       <select class="tabcut-select" id="sortBy">
+        <option value="play_count" selected>Plays</option>
         <option value="score">Score</option>
-        <option value="play_count">Plays</option>
         <option value="item_sold_count">Video Sales</option>
         <option value="goods_sold_count_7d">Product Sales</option>
         <option value="goods_gmv_7d">GMV</option>
@@ -295,7 +295,7 @@ function renderPager(data) {
 
 function resetTabcut() {
   ["categoryL1", "minVideoSales", "minGoodsSales", "minGmv"].forEach(id => qs(id).value = "");
-  qs("sortBy").value = "score";
+  qs("sortBy").value = "play_count";
   loadTabcut(1);
 }
 

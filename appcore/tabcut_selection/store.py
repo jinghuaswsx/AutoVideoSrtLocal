@@ -61,7 +61,7 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 50, 10, 200)
     offset = (page - 1) * page_size
-    sort_column = VIDEO_SORTS.get(str(args.get("sort") or "score"), "c.score")
+    sort_column = VIDEO_SORTS.get(str(args.get("sort") or "play_count"), "c.play_count")
     where = ["c.region = %s"]
     params: list[Any] = [str(args.get("region") or "US")]
 
