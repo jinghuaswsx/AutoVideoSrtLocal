@@ -180,6 +180,68 @@ def test_restart_resets_state_and_persists_new_config(done_task):
     assert task["delivery_mode"] == "local_primary"
 
 
+def test_restart_clears_display_intermediate_state(done_task):
+    store.update(
+        done_task["task_id"],
+        audio_path=str(done_task["task_dir"] / "old-audio.wav"),
+        utterances_raw=[{"index": 0, "text": "old raw"}],
+        utterances_en=[{"index": 0, "text": "old english"}],
+        source_full_text="old source full text",
+        source_full_text_zh="old zh source full text",
+        detected_source_language="es",
+        asr_normalize_artifact={"route": "old"},
+        shots=[{"index": 1, "source_text": "old shot"}],
+        translations=[{"shot_index": 1, "translated_text": "old translation"}],
+        shot_notes={"sentences": [{"asr_index": 0, "note": "old note"}]},
+        media_passthrough_mode="original_video",
+        media_passthrough_reason="short_asr",
+        media_passthrough_source_chars=12,
+        tts_generation_summary={"audio_rounds": 3},
+        step_model_tags={"translate": "old model"},
+        llm_debug_refs={"translate": [{"path": "old-debug.json"}]},
+        recommended_voice_id="old-recommended",
+        av_debug={"summary": {"warning_sentences": 1}},
+        timeline_manifest={"segments": [{"audio_path": "old.mp3"}]},
+        _alignment_confirmed=True,
+    )
+
+    task_restart.restart_task(
+        done_task["task_id"],
+        voice_id=None,
+        voice_gender="male",
+        subtitle_font="Impact",
+        subtitle_size=14,
+        subtitle_position_y=0.68,
+        subtitle_position="bottom",
+        interactive_review=False,
+        source_language="en",
+        user_id=1,
+        runner=_Runner(),
+    )
+
+    task = store.get(done_task["task_id"])
+    assert task["audio_path"] == ""
+    assert task["utterances_raw"] is None
+    assert task["utterances_en"] is None
+    assert task["source_full_text"] == ""
+    assert task["source_full_text_zh"] == ""
+    assert task["detected_source_language"] is None
+    assert task["asr_normalize_artifact"] is None
+    assert task["shots"] == []
+    assert task["translations"] == []
+    assert task["shot_notes"] is None
+    assert task["media_passthrough_mode"] is None
+    assert task["media_passthrough_reason"] is None
+    assert task["media_passthrough_source_chars"] is None
+    assert task["tts_generation_summary"] is None
+    assert task["step_model_tags"] == {}
+    assert task["llm_debug_refs"] == {}
+    assert task["recommended_voice_id"] is None
+    assert task["av_debug"] == {}
+    assert task["timeline_manifest"] == {}
+    assert task["_alignment_confirmed"] is False
+
+
 def test_restart_triggers_pipeline_start(done_task):
     runner = _Runner()
     task_restart.restart_task(
