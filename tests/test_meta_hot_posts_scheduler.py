@@ -75,11 +75,12 @@ def test_register_schedules_daily_sync_at_7am_and_analysis_interval(monkeypatch)
     assert analysis_kwargs["minutes"] == 10
 
 
-def test_analysis_tick_once_defaults_to_100_products(monkeypatch):
+def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):
     captured = {}
 
-    def fake_analyze_pending_products(*, limit, user_id=None):
+    def fake_analyze_pending_products(*, limit, user_id=None, per_item_delay_seconds):
         captured["limit"] = limit
+        captured["per_item_delay_seconds"] = per_item_delay_seconds
         return {"scanned": 0, "done": 0, "failed": 0}
 
     monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
@@ -89,7 +90,8 @@ def test_analysis_tick_once_defaults_to_100_products(monkeypatch):
 
     scheduler.analysis_tick_once()
 
-    assert captured["limit"] == 100
+    assert captured["limit"] == 30
+    assert captured["per_item_delay_seconds"] == 20
 
 
 def test_analysis_tick_once_skips_when_recent_run_is_still_running(monkeypatch):
@@ -138,7 +140,7 @@ def test_analysis_tick_once_marks_stale_running_run_failed_then_starts(monkeypat
     monkeypatch.setattr(
         scheduler,
         "analyze_pending_products",
-        lambda *, limit, user_id=None: {"scanned": 0, "done": 0, "failed": 0},
+        lambda *, limit, user_id=None, per_item_delay_seconds: {"scanned": 0, "done": 0, "failed": 0},
     )
 
     summary = scheduler.analysis_tick_once()
@@ -252,6 +254,55 @@ def test_analyze_pending_products_stops_after_global_category_provider_error(mon
     assert [item[0] for item in finished] == [7]
 
 
+def test_analyze_pending_products_waits_between_items(monkeypatch):
+    sleep_calls = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_product_analyses",
+        lambda limit: [
+            {"id": 7, "product_url": "https://example.com/products/socket"},
+            {"id": 8, "product_url": "https://example.com/products/lamp"},
+        ],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_analysis_running", lambda analysis_id: None)
+    monkeypatch.setattr(
+        scheduler.product_analysis,
+        "fetch_product_analysis",
+        lambda product_url: ProductAnalysisResult(
+            title="Flexible Socket Extension",
+            main_image_url="https://example.com/socket.jpg",
+            price_min=19.99,
+            price_max=29.99,
+            currency="USD",
+            skus=[],
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler.product_analysis,
+        "categorize_product",
+        lambda **kwargs: {
+            "category": "Tools & Hardware",
+            "confidence": 1.0,
+            "reason": "",
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-3.1-flash-lite-preview",
+            "raw_response": {"text": "Tools & Hardware"},
+        },
+    )
+    monkeypatch.setattr(scheduler.store, "finish_analysis", lambda analysis_id, **kwargs: None)
+
+    summary = scheduler.analyze_pending_products(
+        limit=2,
+        user_id=1,
+        per_item_delay_seconds=20,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
+
+    assert summary == {"scanned": 2, "done": 2, "failed": 0, "category_failed": 0}
+    assert sleep_calls == [20]
+
+
 def test_reanalyze_categories_uses_saved_title_without_fetching_product_page(monkeypatch):
     finished = []
 
@@ -316,6 +367,42 @@ def test_reanalyze_categories_marks_adc_model_even_when_category_call_fails(monk
     assert finished[0][1]["category"]["provider"] == "gemini_vertex_adc"
     assert finished[0][1]["category"]["model"] == "gemini-3.1-flash-lite-preview"
     assert "adc unavailable" in finished[0][1]["error_message"]
+
+
+def test_reanalyze_categories_waits_between_items(monkeypatch):
+    sleep_calls = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_category_reanalysis_candidates",
+        lambda limit: [
+            {"id": 7, "product_title": "Portable Blender"},
+            {"id": 8, "product_title": "Garden Light"},
+        ],
+    )
+    monkeypatch.setattr(
+        scheduler.product_analysis,
+        "categorize_product",
+        lambda **kwargs: {
+            "category": "Kitchenware",
+            "confidence": 1.0,
+            "reason": "",
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-3.1-flash-lite-preview",
+            "raw_response": {"text": "Kitchenware"},
+        },
+    )
+    monkeypatch.setattr(scheduler.store, "finish_category_reanalysis", lambda analysis_id, **kwargs: None)
+
+    summary = scheduler.reanalyze_categories(
+        limit=2,
+        user_id=1,
+        per_item_delay_seconds=20,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
+
+    assert summary == {"scanned": 2, "done": 2, "failed": 0}
+    assert sleep_calls == [20]
 
 
 def test_reanalyze_categories_stops_after_global_adc_provider_error(monkeypatch):

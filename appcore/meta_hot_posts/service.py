@@ -89,9 +89,17 @@ def build_analyze_response(payload: Mapping[str, Any] | None = None) -> MetaHotP
 
     payload = payload or {}
     try:
-        limit = int(payload.get("limit") or 100)
+        limit = int(payload.get("limit") or scheduler.SCHEDULED_ANALYSIS_LIMIT)
     except (TypeError, ValueError):
-        limit = 100
+        limit = scheduler.SCHEDULED_ANALYSIS_LIMIT
+    try:
+        delay = float(
+            payload.get("per_item_delay_seconds")
+            if payload.get("per_item_delay_seconds") is not None
+            else scheduler.SCHEDULED_ANALYSIS_DELAY_SECONDS
+        )
+    except (TypeError, ValueError):
+        delay = scheduler.SCHEDULED_ANALYSIS_DELAY_SECONDS
     try:
         user_id = int(payload.get("user_id") or 0) or None
     except (TypeError, ValueError):
@@ -106,6 +114,7 @@ def build_analyze_response(payload: Mapping[str, Any] | None = None) -> MetaHotP
                 user_id=user_id,
                 recategorize_only=recategorize_only,
                 include_all_categories=include_all_categories,
+                per_item_delay_seconds=delay,
             ),
         },
         202,

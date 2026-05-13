@@ -281,7 +281,7 @@ async function refreshMetaHotPosts() {
 }
 async function analyzeMetaHotPosts() {
   qs('mhStatus').textContent = 'Analyzing...';
-  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:100})});
+  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, per_item_delay_seconds:20})});
   loadMetaHotPosts(mhPage);
 }
 function closeMetaHotModal(id) {

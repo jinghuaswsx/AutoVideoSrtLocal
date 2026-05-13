@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from appcore import scheduled_tasks
 from appcore.db import query_one
@@ -14,6 +15,11 @@ log = logging.getLogger(__name__)
 SYNC_TASK_CODE = "meta_hot_posts_sync_tick"
 ANALYSIS_TASK_CODE = "meta_hot_posts_analysis_tick"
 ANALYSIS_STALE_AFTER_SECONDS = 3600
+SCHEDULED_ANALYSIS_LIMIT = 30
+SCHEDULED_ANALYSIS_DELAY_SECONDS = 20
+MANUAL_CATCH_UP_DELAY_SECONDS = 10
+
+SleepFn = Callable[[float], None]
 
 
 def _now() -> datetime:
@@ -41,6 +47,27 @@ def _running_age_seconds(row: dict[str, Any]) -> int:
     if not isinstance(started_at, datetime):
         return 0
     return max(0, int((_now() - started_at).total_seconds()))
+
+
+def _coerce_delay_seconds(value: float | int | str | None) -> float:
+    try:
+        delay = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, delay)
+
+
+def _sleep_after_item(
+    *,
+    index: int,
+    total: int,
+    per_item_delay_seconds: float | int | str | None,
+    sleep_fn: SleepFn | None,
+) -> None:
+    delay = _coerce_delay_seconds(per_item_delay_seconds)
+    if delay <= 0 or index >= total - 1:
+        return
+    (sleep_fn or time.sleep)(delay)
 
 
 def sync_hot_posts(
@@ -113,10 +140,18 @@ def _is_global_category_provider_error(exc: Exception) -> bool:
     )
 
 
-def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
+def analyze_pending_products(
+    *,
+    limit: int = 100,
+    user_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = 0,
+    sleep_fn: SleepFn | None = None,
+) -> dict[str, Any]:
     summary = {"scanned": 0, "done": 0, "failed": 0, "category_failed": 0}
     billing_user_id = resolve_billing_user_id(user_id)
-    for row in store.next_pending_product_analyses(limit=limit):
+    rows = store.next_pending_product_analyses(limit=limit)
+    total = len(rows)
+    for index, row in enumerate(rows):
         summary["scanned"] += 1
         analysis_id = int(row["id"])
         product_url = str(row.get("product_url") or "")
@@ -133,6 +168,12 @@ def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) ->
                 error_message=str(exc)[:1000],
             )
             summary["failed"] += 1
+            _sleep_after_item(
+                index=index,
+                total=total,
+                per_item_delay_seconds=per_item_delay_seconds,
+                sleep_fn=sleep_fn,
+            )
             continue
 
         category_error = None
@@ -166,6 +207,12 @@ def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) ->
             summary["stopped"] = True
             summary["stop_reason"] = "global_category_provider_error"
             break
+        _sleep_after_item(
+            index=index,
+            total=total,
+            per_item_delay_seconds=per_item_delay_seconds,
+            sleep_fn=sleep_fn,
+        )
     return summary
 
 
@@ -174,6 +221,8 @@ def reanalyze_categories(
     limit: int = 100,
     user_id: int | None = None,
     include_all: bool = False,
+    per_item_delay_seconds: float | int | str | None = 0,
+    sleep_fn: SleepFn | None = None,
 ) -> dict[str, Any]:
     summary = {"scanned": 0, "done": 0, "failed": 0}
     billing_user_id = resolve_billing_user_id(user_id)
@@ -181,7 +230,8 @@ def reanalyze_categories(
         rows = store.next_category_reanalysis_candidates(limit=limit, include_all=True)
     else:
         rows = store.next_category_reanalysis_candidates(limit=limit)
-    for row in rows:
+    total = len(rows)
+    for index, row in enumerate(rows):
         summary["scanned"] += 1
         analysis_id = int(row["id"])
         product_title = str(row.get("product_title") or "").strip()
@@ -213,6 +263,12 @@ def reanalyze_categories(
             summary["stopped"] = True
             summary["stop_reason"] = "global_category_provider_error"
             break
+        _sleep_after_item(
+            index=index,
+            total=total,
+            per_item_delay_seconds=per_item_delay_seconds,
+            sleep_fn=sleep_fn,
+        )
     return summary
 
 
@@ -269,10 +325,11 @@ def _guard_analysis_singleton(*, stale_after_seconds: int = ANALYSIS_STALE_AFTER
 
 def analysis_tick_once(
     *,
-    limit: int = 100,
+    limit: int = SCHEDULED_ANALYSIS_LIMIT,
     user_id: int | None = None,
     recategorize_only: bool = False,
     include_all_categories: bool = False,
+    per_item_delay_seconds: float | int | str | None = SCHEDULED_ANALYSIS_DELAY_SECONDS,
 ) -> dict[str, Any]:
     guard_summary = _guard_analysis_singleton()
     if guard_summary.get("skipped"):
@@ -288,9 +345,14 @@ def analysis_tick_once(
                 limit=limit,
                 user_id=user_id,
                 include_all=include_all_categories,
+                per_item_delay_seconds=per_item_delay_seconds,
             )
         else:
-            summary = analyze_pending_products(limit=limit, user_id=user_id)
+            summary = analyze_pending_products(
+                limit=limit,
+                user_id=user_id,
+                per_item_delay_seconds=per_item_delay_seconds,
+            )
     except Exception as exc:
         if run_id:
             scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])
