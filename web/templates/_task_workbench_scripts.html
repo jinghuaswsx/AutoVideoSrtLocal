@@ -1164,7 +1164,9 @@
     const meta = `<div class="preview-block"><div class="preview-label">审计摘要</div>${metaRows.map(([k, v]) => `<div class="preview-note">${escapeHtml(k)}：${escapeHtml(v)}</div>`).join("")}</div>`;
     const diagnosisSummary = diagnosis.summary || diagnosis.error || "";
     const verificationSummary = verification.summary || verification.error || "";
+    const humanReport = artifact.human_report || "";
     const body = [
+      humanReport ? renderPreviewItem({ type: "text", label: "中文审计结论", content: humanReport }) : "",
       diagnosisSummary ? renderPreviewItem({ type: "text", label: "Doubao 诊断总结", content: diagnosisSummary }) : "",
       renderAuditList("诊断问题", diagnosis.issues || []),
       verificationSummary ? renderPreviewItem({ type: "text", label: "Gemini 复核总结", content: verificationSummary }) : "",
@@ -1198,6 +1200,11 @@
     const lines = [
       item.reason || item.problem || item.issue || item.summary || "",
       item.evidence ? `证据：${item.evidence}` : "",
+      item.sync_point ? `同步点：${item.sync_point}` : "",
+      item.sentence_text ? `问题句子：${item.sentence_text}` : "",
+      item.timing_detail ? `时长证据：${item.timing_detail}` : "",
+      item.mismatch_reason ? `问题说明：${item.mismatch_reason}` : "",
+      item.recommendation ? `处理建议：${item.recommendation}` : "",
       item.before_text ? `修正前：${item.before_text}` : "",
       item.after_text ? `修正后：${item.after_text}` : "",
       item.suggested_text ? `建议文本：${item.suggested_text}` : "",
