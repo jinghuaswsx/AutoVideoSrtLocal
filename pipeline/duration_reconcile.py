@@ -58,6 +58,8 @@ def _scaled_target_chars_range(old_range: Any, target_duration: float, tts_durat
 def _duration_reason(status: str) -> str:
     if status == "ok":
         return "within_duration_ratio"
+    if status == "needs_semantic_repair":
+        return "semantic_coverage_missing"
     if status == "needs_rewrite":
         return "above_duration_ratio"
     if status == "needs_expand":
@@ -85,9 +87,15 @@ def _candidate_from_current(current: dict, *, round_number: int) -> dict:
             float(current.get("target_duration", 0.0) or 0.0),
             float(current.get("tts_duration", 0.0) or 0.0),
         ),
+        "target_duration": float(current.get("target_duration", 0.0) or 0.0),
         "target_chars_range": tuple(current.get("target_chars_range") or (1, 2)),
         "status": current.get("status", "ok"),
         "speed": current.get("speed", 1.0),
+        "must_keep_terms": list(current.get("must_keep_terms") or []),
+        "covered_source_terms": list(current.get("covered_source_terms") or []),
+        "omitted_source_terms": list(current.get("omitted_source_terms") or []),
+        "coverage_ok": current.get("coverage_ok", True),
+        "semantic_repair_attempts": int(current.get("semantic_repair_attempts", 0) or 0),
     }
 
 
@@ -104,6 +112,13 @@ def _apply_candidate(current: dict, candidate: dict) -> None:
     current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
     current["speed"] = candidate.get("speed", 1.0)
     current["selected_attempt_round"] = int(candidate.get("round", 0) or 0)
+    for key in ("must_keep_terms", "covered_source_terms", "omitted_source_terms"):
+        if key in candidate:
+            current[key] = list(candidate.get(key) or [])
+    if "coverage_ok" in candidate:
+        current["coverage_ok"] = bool(candidate.get("coverage_ok"))
+    if "semantic_repair_attempts" in candidate:
+        current["semantic_repair_attempts"] = int(candidate.get("semantic_repair_attempts") or 0)
 
 
 def _candidate_suffix(kind: str, round_number: int, attempt_number: int | None = None) -> str:
@@ -129,6 +144,27 @@ def _warning_status_for_ratio(ratio: float) -> str:
     return "warning_long" if ratio > MAX_DURATION_RATIO else "warning_short"
 
 
+def _semantic_coverage_issue(sentence: dict) -> bool:
+    omitted = [str(term).strip() for term in (sentence.get("omitted_source_terms") or []) if str(term).strip()]
+    return sentence.get("coverage_ok") is False or bool(omitted)
+
+
+def _candidate_rank(candidate: dict) -> tuple[int, float]:
+    return (
+        1 if _semantic_coverage_issue(candidate) else 0,
+        _duration_distance(
+            float(candidate.get("target_duration", 0.0) or 0.0),
+            float(candidate.get("tts_duration", 0.0) or 0.0),
+        ),
+    )
+
+
+def _warning_status_for_current(current: dict) -> str:
+    if _semantic_coverage_issue(current):
+        return "warning_semantic"
+    return _warning_status_for_ratio(float(current.get("duration_ratio", 1.0) or 1.0))
+
+
 def _sentence_progress_payload(position: int, current: dict, phase: str) -> dict:
     return {
         "mode": "sentence_reconcile",
@@ -151,6 +187,10 @@ def _sentence_progress_payload(position: int, current: dict, phase: str) -> dict
         "text_rewrite_attempts": current.get("text_rewrite_attempts", 0),
         "tts_regenerate_attempts": current.get("tts_regenerate_attempts", 0),
         "speed_adjustment_attempts": current.get("speed_adjustment_attempts", 0),
+        "semantic_repair_attempts": current.get("semantic_repair_attempts", 0),
+        "must_keep_terms": list(current.get("must_keep_terms") or []),
+        "omitted_source_terms": list(current.get("omitted_source_terms") or []),
+        "coverage_ok": current.get("coverage_ok", True),
         "rewrite_skip_reason": current.get("rewrite_skip_reason", ""),
         "best_effort": bool(current.get("best_effort")),
         "best_effort_reason": current.get("best_effort_reason", ""),
@@ -174,7 +214,12 @@ def _preserve_sentence_fields(current: dict, av_sentence: dict) -> None:
     for key, value in av_sentence.items():
         if key in current:
             continue
-        if key.startswith("source") or key.startswith("original_source") or key.startswith("localization"):
+        if (
+            key.startswith("source")
+            or key.startswith("original_source")
+            or key.startswith("localization")
+            or key in {"must_keep_terms", "covered_source_terms", "omitted_source_terms", "coverage_ok"}
+        ):
             current[key] = value
 
 
@@ -283,6 +328,7 @@ def reconcile_duration(
             "text_rewrite_attempts": 0,
             "tts_regenerate_attempts": 0,
             "speed_adjustment_attempts": 0,
+            "semantic_repair_attempts": 0,
             "max_text_rewrite_attempts": max_rewrite_rounds,
             "max_tts_regenerate_attempts": max_tts_regenerate_attempts,
             "selected_attempt_round": 0,
@@ -292,11 +338,21 @@ def reconcile_duration(
                 float(av_sentence.get("target_duration", 0.0) or 0.0),
                 float(tts_segment.get("tts_duration", 0.0) or 0.0),
             ),
+            "must_keep_terms": list(av_sentence.get("must_keep_terms") or []),
+            "covered_source_terms": list(av_sentence.get("covered_source_terms") or []),
+            "omitted_source_terms": list(av_sentence.get("omitted_source_terms") or []),
+            "coverage_ok": (
+                bool(av_sentence.get("coverage_ok"))
+                if av_sentence.get("coverage_ok") is not None
+                else not bool(av_sentence.get("omitted_source_terms") or [])
+            ),
             "attempts": [],
         }
         _preserve_sentence_fields(current, av_sentence)
 
         status, speed = classify_overshoot(current["target_duration"], current["tts_duration"])
+        if _semantic_coverage_issue(current):
+            status = "needs_semantic_repair"
         current["status"] = status
         current["speed"] = speed
         current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
@@ -305,8 +361,8 @@ def reconcile_duration(
         if status == "ok":
             _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
             _emit_sentence_progress(on_progress, position=position, current=current, phase="speed_adjust")
-        elif status in {"needs_rewrite", "needs_expand"}:
-            if not text_rewrite_enabled:
+        elif status in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
+            if not text_rewrite_enabled and status != "needs_semantic_repair":
                 current["text_rewrite_disabled"] = True
                 current["rewrite_skip_reason"] = "shot_char_limit_preserves_initial_translation"
                 current["status"] = _warning_status_for_ratio(current["duration_ratio"])
@@ -316,20 +372,29 @@ def reconcile_duration(
                 _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_skipped")
             else:
                 current_duration = current["tts_duration"]
-                action = "shorten" if status == "needs_rewrite" else "expand"
                 best_candidate = _candidate_from_current(current, round_number=0)
                 round_limit = min(max_rewrite_rounds, max_tts_regenerate_attempts)
                 for rewrite_round in range(1, round_limit + 1):
                     before_text = current["text"]
-                    new_range = _scaled_target_chars_range(
-                        current["target_chars_range"],
-                        current["target_duration"],
-                        current_duration,
-                    )
+                    if _semantic_coverage_issue(current):
+                        action = "repair_coverage"
+                        current["semantic_repair_attempts"] += 1
+                    elif current["status"] == "needs_rewrite":
+                        action = "shorten"
+                    else:
+                        action = "expand"
+                    if action == "repair_coverage" and duration_ratio(current["target_duration"], current_duration) >= MIN_DURATION_RATIO:
+                        new_range = tuple(current["target_chars_range"])
+                    else:
+                        new_range = _scaled_target_chars_range(
+                            current["target_chars_range"],
+                            current["target_duration"],
+                            current_duration,
+                        )
                     rewrite_temperature = av_translate.rewrite_temperature_for_attempt(rewrite_round)
                     current["text_rewrite_attempts"] += 1
                     try:
-                        new_text = av_translate.rewrite_one(
+                        rewrite_result = av_translate.rewrite_one(
                             asr_index=asr_index,
                             prev_text=before_text,
                             overshoot_sec=max(0.0, current_duration - current["target_duration"]),
@@ -344,6 +409,9 @@ def reconcile_duration(
                             attempt_number=rewrite_round,
                             previous_attempts=list(current["attempts"]),
                             temperature=rewrite_temperature,
+                            required_terms=list(current.get("must_keep_terms") or []),
+                            omitted_terms=list(current.get("omitted_source_terms") or []),
+                            return_sentence=True,
                         )
                     except Exception as exc:
                         current["rewrite_rounds"] = rewrite_round
@@ -368,6 +436,24 @@ def reconcile_duration(
                         )
                         _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_error")
                         continue
+                    if isinstance(rewrite_result, dict):
+                        new_text = str(rewrite_result.get("text") or "")
+                        if "covered_source_terms" in rewrite_result:
+                            current["covered_source_terms"] = list(rewrite_result.get("covered_source_terms") or [])
+                        if "omitted_source_terms" in rewrite_result:
+                            current["omitted_source_terms"] = list(rewrite_result.get("omitted_source_terms") or [])
+                        elif action == "repair_coverage":
+                            current["omitted_source_terms"] = []
+                        if "coverage_ok" in rewrite_result:
+                            current["coverage_ok"] = bool(rewrite_result.get("coverage_ok"))
+                        elif action == "repair_coverage":
+                            current["coverage_ok"] = True
+                    else:
+                        new_text = str(rewrite_result or "")
+                        if action == "repair_coverage":
+                            current["covered_source_terms"] = list(current.get("must_keep_terms") or [])
+                            current["omitted_source_terms"] = []
+                            current["coverage_ok"] = True
                     current["text"] = new_text
                     current["est_chars"] = len(new_text)
                     current["rewrite_rounds"] = rewrite_round
@@ -381,6 +467,8 @@ def reconcile_duration(
                     current["tts_regenerate_attempts"] += 1
                     current["tts_duration"] = current_duration
                     status, speed = classify_overshoot(current["target_duration"], current_duration)
+                    if _semantic_coverage_issue(current):
+                        status = "needs_semantic_repair"
                     current["status"] = status
                     current["speed"] = speed
                     current["duration_ratio"] = duration_ratio(current["target_duration"], current_duration)
@@ -398,15 +486,15 @@ def reconcile_duration(
                         "delta_pct": _delta_pct(current["target_duration"], current_duration),
                         "status": status,
                         "reason": _duration_reason(status),
+                        "coverage_ok": current.get("coverage_ok", True),
+                        "omitted_source_terms": list(current.get("omitted_source_terms") or []),
                         "selected": False,
                     }
                     current["attempts"].append(attempt)
                     _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_attempt")
 
                     candidate = _candidate_from_current(current, round_number=rewrite_round)
-                    best_distance = _duration_distance(current["target_duration"], best_candidate["tts_duration"])
-                    candidate_distance = _duration_distance(current["target_duration"], candidate["tts_duration"])
-                    if candidate_distance <= best_distance:
+                    if _candidate_rank(candidate) <= _candidate_rank(best_candidate):
                         best_candidate = candidate
 
                     if status == "ok":
@@ -416,10 +504,10 @@ def reconcile_duration(
                         _emit_sentence_progress(on_progress, position=position, current=current, phase="speed_adjust")
                         break
 
-                if current["status"] in {"needs_rewrite", "needs_expand"}:
+                if current["status"] in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
                     _apply_candidate(current, best_candidate)
                     _mark_selected_attempt(current["attempts"], current["selected_attempt_round"])
-                    current["status"] = _warning_status_for_ratio(current["duration_ratio"])
+                    current["status"] = _warning_status_for_current(current)
                     current["speed"] = 1.0
                     current["best_effort"] = True
                     current["best_effort_reason"] = "max_attempts_exhausted"

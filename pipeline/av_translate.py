@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from appcore import llm_client
@@ -17,6 +18,15 @@ FALLBACK_CPS = {
 }
 
 REWRITE_TEMPERATURE_LADDER = (0.6, 0.8, 1.0, 1.05, 1.1, 1.1, 1.15, 1.15, 1.2, 1.2)
+
+_SOURCE_ANCHOR_RE = re.compile(r"[A-Za-z][A-Za-z0-9'’-]*|\d+(?:[.,]\d+)?%?|[\u4e00-\u9fff]{2,}")
+_SOURCE_ANCHOR_STOPWORDS = {
+    "about", "after", "again", "also", "another", "because", "before", "being",
+    "could", "every", "from", "have", "here", "into", "just", "like", "more",
+    "most", "much", "only", "over", "really", "some", "that", "their", "them",
+    "then", "there", "these", "they", "this", "those", "through", "very", "what",
+    "when", "where", "while", "with", "without", "would", "your",
+}
 
 AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
@@ -38,6 +48,15 @@ AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
                             "est_chars": {"type": "integer"},
                             "source_intent": {"type": "string"},
                             "localization_note": {"type": "string"},
+                            "covered_source_terms": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "omitted_source_terms": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "coverage_ok": {"type": "boolean"},
                             "duration_risk": {
                                 "type": "string",
                                 "enum": ["ok", "may_be_short", "may_be_long"],
@@ -49,6 +68,9 @@ AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
                             "est_chars",
                             "source_intent",
                             "localization_note",
+                            "covered_source_terms",
+                            "omitted_source_terms",
+                            "coverage_ok",
                             "duration_risk",
                         ],
                     },
@@ -74,10 +96,15 @@ Hard rules:
 8. Write for ElevenLabs TTS: short clauses, clear rhythm, no dense subordinate clauses, no stacked adjectives.
 9. Prefer natural local idioms only when they preserve the source meaning and fit the video frame.
 10. Mark duration_risk as may_be_long or may_be_short when the line may be hard to fit.
+11. Treat must_keep_terms as non-optional source anchors. Translate or naturally express every anchor.
+12. Never solve a duration problem by dropping product parts, scene details, actions, or other must_keep_terms.
 
 For each sentence object:
 - source_intent: briefly describe the source sentence's sales intent or emotional function.
 - localization_note: briefly explain the localization choice, especially timing, idiom, or frame fit.
+- covered_source_terms: source anchors that are preserved in the target sentence.
+- omitted_source_terms: source anchors that could not be preserved; use [] when none are omitted.
+- coverage_ok: true only when the target sentence preserves every required source anchor.
 """
 
 REWRITE_SYSTEM_PROMPT_TEMPLATE = """You are a senior localization writer for {target_market} short-form commerce videos.
@@ -96,6 +123,7 @@ Hard rules:
 9. Do not reuse the same wording, clause order, or sentence frame from failed attempts.
 10. On retry attempts, change the sentence structure, rhythm, and spoken phrasing enough to create a meaning-preserving alternative.
 11. Prefer local, idiomatic spoken language over literal translation, but keep every factual claim grounded in the source.
+12. Preserve every must_keep_terms anchor. If this is a coverage repair, restore omitted source anchors before optimizing timing.
 """
 
 
@@ -109,6 +137,27 @@ def _segment_start(segment: dict) -> float:
 
 def _segment_end(segment: dict) -> float:
     return float(segment.get("end_time", segment.get("end", 0.0)))
+
+
+def extract_must_keep_terms(source_text: str, *, limit: int = 8) -> list[str]:
+    """Return deterministic source anchors for sentence-level coverage prompts."""
+    terms: list[str] = []
+    seen: set[str] = set()
+    for match in _SOURCE_ANCHOR_RE.findall(str(source_text or "")):
+        term = match.strip("'’").strip().lower()
+        if not term:
+            continue
+        if re.fullmatch(r"[a-z0-9'’-]+", term):
+            term = term.strip("'’")
+            if len(term) < 4 or term in _SOURCE_ANCHOR_STOPWORDS:
+                continue
+        if term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
+        if len(terms) >= limit:
+            break
+    return terms
 
 
 def compute_target_chars_range(target_duration, voice_id, target_language):
@@ -215,6 +264,7 @@ def _build_sentence_inputs(script_segments: list[dict], shot_notes: dict, av_inp
                 "role_in_structure": _role_in_structure(asr_index, structure_ranges),
                 "target_duration": target_duration,
                 "target_chars_range": target_chars_range,
+                "must_keep_terms": extract_must_keep_terms(original_source_text or source_text),
             }
         )
     return sentence_inputs, global_context
@@ -272,6 +322,19 @@ def _merge_output_sentences(raw_sentences: list[dict], sentence_inputs: list[dic
     for sentence in sentence_inputs:
         raw_item = raw_by_index.get(sentence["asr_index"], {})
         text = str(raw_item.get("text") or sentence["source_text"])
+        must_keep_terms = [str(term) for term in (sentence.get("must_keep_terms") or []) if str(term).strip()]
+        covered_source_terms = [
+            str(term).strip()
+            for term in (raw_item.get("covered_source_terms") or [])
+            if str(term).strip()
+        ]
+        omitted_source_terms = [
+            str(term).strip()
+            for term in (raw_item.get("omitted_source_terms") or [])
+            if str(term).strip()
+        ]
+        raw_coverage_ok = raw_item.get("coverage_ok")
+        coverage_ok = bool(raw_coverage_ok) if raw_coverage_ok is not None else not omitted_source_terms
         merged.append(
             {
                 "asr_index": sentence["asr_index"],
@@ -285,11 +348,15 @@ def _merge_output_sentences(raw_sentences: list[dict], sentence_inputs: list[dic
                 "role_in_structure": sentence["role_in_structure"],
                 "target_duration": sentence["target_duration"],
                 "target_chars_range": sentence["target_chars_range"],
+                "must_keep_terms": must_keep_terms,
                 "text": text,
                 "est_chars": int(raw_item.get("est_chars", len(text))),
                 "notes": raw_item.get("notes"),
                 "source_intent": raw_item.get("source_intent", ""),
                 "localization_note": raw_item.get("localization_note", raw_item.get("notes", "")),
+                "covered_source_terms": covered_source_terms,
+                "omitted_source_terms": omitted_source_terms,
+                "coverage_ok": coverage_ok,
                 "duration_risk": raw_item.get("duration_risk", "ok"),
             }
         )
@@ -352,7 +419,10 @@ def rewrite_one(
     attempt_number: int | None = None,
     previous_attempts: list[dict] | None = None,
     temperature: float | None = None,
-) -> str:
+    required_terms: list[str] | None = None,
+    omitted_terms: list[str] | None = None,
+    return_sentence: bool = False,
+) -> Any:
     messages, sentence_inputs, global_context = _build_translate_messages(
         script_segments, shot_notes, av_inputs, voice_id
     )
@@ -364,7 +434,18 @@ def rewrite_one(
         raise KeyError(f"unknown asr_index: {asr_index}")
 
     rewrite_direction = (direction or ("shorten" if overshoot_sec > 0 else "expand")).strip().lower()
-    if rewrite_direction == "expand":
+    if rewrite_direction == "repair_coverage":
+        required = [str(term) for term in (required_terms or focus_sentence.get("must_keep_terms") or [])]
+        omitted = [str(term) for term in (omitted_terms or [])]
+        rewrite_instruction = (
+            f'Previous translation: "{prev_text}". '
+            "Semantic coverage failed before duration acceptance. "
+            f"Restore these omitted source anchors: {', '.join(omitted) or 'none listed'}. "
+            f"Required source anchors for this sentence: {', '.join(required) or 'none listed'}. "
+            f"Keep one natural target-language sentence near {new_target_chars_range[0]}-{new_target_chars_range[1]} characters. "
+            "This is not pure shortening; restore source meaning first, then make the rhythm fit."
+        )
+    elif rewrite_direction == "expand":
         rewrite_instruction = (
             f'Previous translation: "{prev_text}". '
             "Current TTS is shorter than target. "
@@ -389,6 +470,8 @@ def rewrite_one(
         "focus_sentence": focus_sentence,
         "rewrite_direction": rewrite_direction,
         "rewrite_instruction": rewrite_instruction,
+        "required_terms": required_terms or focus_sentence.get("must_keep_terms") or [],
+        "omitted_terms": omitted_terms or [],
         "attempt_number": max(1, int(attempt_number or 1)),
         "previous_failed_attempts": [
             {
@@ -424,4 +507,7 @@ def rewrite_one(
     sentences = payload.get("sentences") or []
     if not sentences:
         raise ValueError("av_rewrite returned no sentences")
-    return str(sentences[0].get("text") or "")
+    sentence = dict(sentences[0])
+    if return_sentence:
+        return sentence
+    return str(sentence.get("text") or "")

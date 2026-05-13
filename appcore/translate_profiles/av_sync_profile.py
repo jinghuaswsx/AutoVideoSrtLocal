@@ -210,10 +210,16 @@ class AvSyncProfile(TranslateProfile):
         try:
             from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
             from pipeline.subtitle import build_srt_from_chunks, save_srt
+            from pipeline.subtitle_splitting import split_oversized_subtitle_chunks
 
             av_inputs = runner._resolve_av_inputs(task)
             target_language = av_inputs["target_language"]
             target_language_name = runner._target_language_name(av_inputs)
+            try:
+                rules = runner._get_lang_rules(target_language)
+            except Exception:
+                from pipeline.languages.registry import get_rules
+                rules = get_rules(target_language)
             variants = dict(task.get("variants") or {})
             variant_state = dict(variants.get("av") or {})
             sentences = [dict(item) for item in variant_state.get("sentences") or [] if isinstance(item, dict)]
@@ -226,7 +232,20 @@ class AvSyncProfile(TranslateProfile):
                 mode=str(av_inputs.get("sync_granularity") or "sentence"),
                 timeline_mode="source_time",
             )
-            srt_content = build_srt_from_chunks(subtitle_units)
+            subtitle_units = split_oversized_subtitle_chunks(
+                subtitle_units,
+                weak_boundary_words=getattr(rules, "WEAK_STARTERS", set()),
+                max_chars_per_line=getattr(rules, "MAX_CHARS_PER_LINE", 42),
+                max_lines=getattr(rules, "MAX_LINES", 2),
+                max_chars_per_second=getattr(rules, "MAX_CHARS_PER_SECOND", 17),
+            )
+            srt_content = build_srt_from_chunks(
+                subtitle_units,
+                weak_boundary_words=getattr(rules, "WEAK_STARTERS", set()),
+                max_chars_per_line=getattr(rules, "MAX_CHARS_PER_LINE", 42),
+                max_lines=getattr(rules, "MAX_LINES", 2),
+            )
+            srt_content = rules.post_process_srt(srt_content)
             srt_path = save_srt(srt_content, os.path.join(task_dir, "subtitle.av.srt"))
 
             variant_state.update(

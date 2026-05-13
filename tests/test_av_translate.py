@@ -81,8 +81,33 @@ def test_build_translate_messages_uses_sentence_localization_contract(monkeypatc
     assert "Do not merge, split, reorder, or skip sentences" in system_prompt
     assert "native short-video spoken line" in system_prompt
     assert "target_chars_range" in system_prompt
+    assert "must_keep_terms" in system_prompt
+    assert "coverage_ok" in system_prompt
     assert "Do not invent facts" in system_prompt
     assert "ElevenLabs" in system_prompt
+    assert "must_keep_terms" in messages[1]["content"]
+
+
+def test_build_sentence_inputs_extracts_source_anchors(monkeypatch):
+    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+
+    sentence_inputs, _global_context = av_translate._build_sentence_inputs(
+        [
+            {
+                "index": 0,
+                "start_time": 0.0,
+                "end_time": 3.0,
+                "text": "The windshield fogs up while driving home after work.",
+            }
+        ],
+        {"global": {}, "sentences": []},
+        AV_INPUTS,
+        "voice-1",
+    )
+
+    assert "windshield" in sentence_inputs[0]["must_keep_terms"]
+    assert "driving" in sentence_inputs[0]["must_keep_terms"]
+    assert "work" in sentence_inputs[0]["must_keep_terms"]
 
 
 def test_av_translate_response_schema_requires_sentence_metadata():
@@ -95,9 +120,15 @@ def test_av_translate_response_schema_requires_sentence_metadata():
     assert "localization_note" in properties
     assert "duration_risk" in properties
     assert "source_intent" in properties
+    assert "covered_source_terms" in properties
+    assert "omitted_source_terms" in properties
+    assert "coverage_ok" in properties
     assert "localization_note" in required
     assert "duration_risk" in required
     assert "source_intent" in required
+    assert "covered_source_terms" in required
+    assert "omitted_source_terms" in required
+    assert "coverage_ok" in required
 
 
 def test_compute_target_chars_range_uses_speech_rate_model(monkeypatch):
@@ -161,6 +192,47 @@ def test_role_in_structure_priority():
     assert av_translate._role_in_structure(1, structure_ranges) == "demo"
     assert av_translate._role_in_structure(0, structure_ranges) == "proof"
     assert av_translate._role_in_structure(8, structure_ranges) == "unknown"
+
+
+def test_merge_output_sentences_preserves_coverage_metadata():
+    sentence_inputs = [
+        {
+            "asr_index": 7,
+            "start_time": 0.0,
+            "end_time": 3.0,
+            "source_text": "Clean the windshield while driving home after work.",
+            "original_source_text": "Clean the windshield while driving home after work.",
+            "source_normalization_status": "ok",
+            "source_normalization_note": "",
+            "shot_context": None,
+            "role_in_structure": "demo",
+            "target_duration": 3.0,
+            "target_chars_range": (38, 45),
+            "must_keep_terms": ["windshield", "driving", "work"],
+        }
+    ]
+
+    result = av_translate._merge_output_sentences(
+        [
+            {
+                "asr_index": 7,
+                "text": "Clean it in seconds.",
+                "est_chars": 20,
+                "source_intent": "show the driving use case",
+                "localization_note": "too compressed",
+                "duration_risk": "may_be_short",
+                "covered_source_terms": [],
+                "omitted_source_terms": ["windshield", "driving", "work"],
+                "coverage_ok": False,
+            }
+        ],
+        sentence_inputs,
+    )
+
+    assert result[0]["must_keep_terms"] == ["windshield", "driving", "work"]
+    assert result[0]["covered_source_terms"] == []
+    assert result[0]["omitted_source_terms"] == ["windshield", "driving", "work"]
+    assert result[0]["coverage_ok"] is False
 
 
 def test_generate_av_localized_translation_happy(monkeypatch):
@@ -352,6 +424,64 @@ def test_rewrite_one_expand_prompt_avoids_shorten_language(monkeypatch):
     assert "cannot add new facts" in user_prompt
     assert "shorten" not in user_prompt
     assert "trim" not in user_prompt
+
+
+def test_rewrite_one_coverage_repair_prompt_restores_omitted_terms(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 1,
+                        "text": "Clear the windshield after work drives.",
+                        "est_chars": 42,
+                        "source_intent": "restore the omitted scene anchors",
+                        "localization_note": "keeps product part and driving context",
+                        "duration_risk": "ok",
+                        "covered_source_terms": ["windshield", "driving", "work"],
+                        "omitted_source_terms": [],
+                        "coverage_ok": True,
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(av_translate.llm_client, "invoke_chat", fake_invoke_chat)
+
+    sentence = av_translate.rewrite_one(
+        asr_index=1,
+        prev_text="Clear it fast.",
+        overshoot_sec=0.0,
+        direction="repair_coverage",
+        new_target_chars_range=(38, 45),
+        script_segments=[
+            {
+                "index": 1,
+                "start_time": 0.0,
+                "end_time": 3.0,
+                "text": "Clean the windshield while driving home after work.",
+            }
+        ],
+        shot_notes=SHOT_NOTES,
+        av_inputs=AV_INPUTS,
+        voice_id="voice-1",
+        required_terms=["windshield", "driving", "work"],
+        omitted_terms=["windshield", "driving", "work"],
+        return_sentence=True,
+    )
+
+    assert sentence["coverage_ok"] is True
+    assert sentence["text"] == "Clear the windshield after work drives."
+    assert captured["use_case_code"] == "video_translate.av_rewrite"
+    user_prompt = captured["kwargs"]["messages"][1]["content"].lower()
+    assert "repair_coverage" in user_prompt
+    assert "windshield" in user_prompt
+    assert "pure shortening" in user_prompt
 
 
 def test_rewrite_one_uses_attempt_temperature_and_failure_feedback(monkeypatch):
