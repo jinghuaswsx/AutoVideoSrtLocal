@@ -1536,6 +1536,8 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 60.2
         assert round_rec["speedup_hit_final"] is True
         assert round_rec["final_reason"] == "converged_speedup_refined"
+        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_final_audio_choice"] == "speedup"
         assert len(called["eval"]) == 1
         assert called["eval"][0]["audio_pre_duration"] == 61.5
         assert called["eval"][0]["audio_post_duration"] == 60.2
@@ -1561,6 +1563,8 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 62.5
         assert round_rec["speedup_hit_final"] is False
         assert round_rec["final_reason"] == "converged_speedup_miss_kept_original"
+        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_final_audio_choice"] == "converged"
         assert len(called["eval"]) == 1
         assert called["eval"][0]["hit_final_range"] is False
 
@@ -1582,5 +1586,7 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 61.8
         assert round_rec["speedup_hit_final"] is True
         assert round_rec["final_reason"] == "converged_speedup_longer_kept_original"
+        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_final_audio_choice"] == "converged"
         assert len(called["eval"]) == 1
         assert called["eval"][0]["hit_final_range"] is True

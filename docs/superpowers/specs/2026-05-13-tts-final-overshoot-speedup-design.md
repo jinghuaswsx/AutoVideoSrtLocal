@@ -38,6 +38,8 @@ The final-overshoot regeneration reuses the existing speedup round fields:
 - `speedup_chars_used`
 - `speedup_eval_id`
 - `speedup_failed_reason`
+- `speedup_context = "final_converged_overshoot"` so the UI and stats can distinguish this post-convergence regeneration from the older speedup shortcut.
+- `speedup_final_audio_choice = "speedup" | "converged"` to show which audio is used for final video composition.
 
 It also sets `final_reason` explicitly:
 
@@ -46,6 +48,16 @@ It also sets `final_reason` explicitly:
 - `converged_speedup_miss_kept_original` when regeneration succeeds but misses the final range.
 - `converged_speedup_failed_kept_original` when regeneration fails.
 - `converged` when no final-overshoot regeneration is attempted.
+
+## UI And Stats
+
+The task detail page must make this extra step explicit:
+
+- The speedup card title is `收敛音频变速生成` for this post-convergence branch.
+- The card shows the processing result and whether video composition uses the regenerated speedup audio or the original converged audio.
+- The final summary repeats the adopted audio choice next to the final duration/composition explanation.
+- `tts_generation_summary` includes `converged_speedup_audio_generations`, counted only when this final-overshoot branch successfully produces an extra speedup audio file.
+- The detail summary lists this count separately as `收敛音频变速生成音频 N 次`.
 
 ## Verification
 
@@ -57,3 +69,4 @@ Add focused tests around `_run_tts_duration_loop`:
 4. A regenerated candidate inside the final range but longer than the converged audio is evaluated but not adopted.
 5. A regenerated candidate outside the final range is evaluated but not adopted.
 6. Final-range audio shorter than video keeps the existing no-speedup path.
+7. The detail UI and generation summary expose the extra audio generation count and final adopted audio choice.
