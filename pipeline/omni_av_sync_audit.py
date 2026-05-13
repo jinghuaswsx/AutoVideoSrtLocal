@@ -57,6 +57,18 @@ _DIAGNOSIS_SCHEMA = {
     "additionalProperties": True,
     "properties": {
         "issues": {"type": "array"},
+        "timeline": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "asr_index": {"type": "integer"},
+                    "visual_observation": {"type": "string"},
+                    "diagnosis": {"type": "string"},
+                },
+            },
+        },
         "summary": {"type": "string"},
     },
 }
@@ -285,6 +297,9 @@ def _build_assess_messages(
             "content": (
                 "你是视频翻译音画同步评估员。Doubao 已经负责观看成片视频，你现在只结合它的视频理解笔记、"
                 "最终字幕/TTS 时间线和程序候选点做结构化中文评估。输出 JSON。"
+                "另输出 timeline 数组，按 ASR 时间顺序覆盖每一段 ASR；每行必须包含 asr_index、"
+                "visual_observation、diagnosis，其中 visual_observation 写这一段对应的实际画面内容，"
+                "diagnosis 写逐段诊断意见；没有明显问题也要写“未发现明显同步风险”。"
                 "必须使用中文表述 summary、evidence、timing_detail、recommendation，明确哪些同步点有问题，"
                 "哪一句音频太长或太短导致画面对不上。"
                 "不要凭空新增视频画面结论；如果 Doubao 笔记说不确定，只按程序候选和字幕/TTS 时间线给出风险级别。"
@@ -737,6 +752,10 @@ def _enrich_issue_for_report(issue: dict, sentence_by_asr: dict[int, dict]) -> d
     sentence_text = _report_sentence_text(sentence, enriched)
     if sentence_text:
         enriched["sentence_text"] = sentence_text
+    if sentence:
+        source_text = str(sentence.get("source_text") or "").strip()
+        if source_text and not enriched.get("source_text"):
+            enriched["source_text"] = source_text
     timing_detail, mismatch_reason, delta, ratio = _timing_detail(target_duration, tts_duration)
     enriched["timing_detail"] = timing_detail
     enriched["mismatch_reason"] = mismatch_reason
@@ -838,6 +857,202 @@ def _readable_findings_from_report(report: dict) -> list[dict]:
     )
 
 
+def _report_issues_for_timeline(report: dict) -> dict[int, dict]:
+    diagnosis = report.get("diagnosis") or {}
+    verification = report.get("verification") or {}
+    issues_by_asr: dict[int, dict] = {}
+    for item in diagnosis.get("issues") or []:
+        if not isinstance(item, dict):
+            continue
+        asr_index = _as_int_or_none(item.get("asr_index"))
+        if asr_index is not None:
+            issues_by_asr[asr_index] = item
+    for item in verification.get("accepted_issues") or []:
+        if not isinstance(item, dict) or not item.get("accepted", True):
+            continue
+        asr_index = _as_int_or_none(item.get("asr_index"))
+        if asr_index is not None:
+            issues_by_asr[asr_index] = item
+    return issues_by_asr
+
+
+def _timeline_hints_by_asr(report: dict) -> dict[int, dict]:
+    diagnosis = report.get("diagnosis") or {}
+    raw_entries = []
+    if isinstance(diagnosis, dict):
+        raw_entries.extend(diagnosis.get("timeline") or [])
+    raw_entries.extend(report.get("timeline") or [])
+    raw_entries.extend(report.get("audit_timeline") or [])
+    hints: dict[int, dict] = {}
+    for item in raw_entries:
+        if not isinstance(item, dict):
+            continue
+        asr_index = _as_int_or_none(item.get("asr_index"))
+        if asr_index is not None:
+            hints[asr_index] = item
+    return hints
+
+
+def _shot_notes_by_asr(task: dict | None) -> dict[int, dict]:
+    notes = (task or {}).get("shot_notes") or {}
+    if not isinstance(notes, dict):
+        return {}
+    result: dict[int, dict] = {}
+    for note in notes.get("sentences") or []:
+        if not isinstance(note, dict):
+            continue
+        asr_index = _as_int_or_none(note.get("asr_index"))
+        if asr_index is not None:
+            result[asr_index] = note
+    return result
+
+
+def _format_visual_context(note: dict | None) -> str:
+    if not isinstance(note, dict):
+        return ""
+    parts: list[str] = []
+    for key in ("scene", "action", "shot_type", "emotion_hint"):
+        value = str(note.get(key) or "").strip()
+        if value:
+            parts.append(value)
+    on_screen = note.get("on_screen_text")
+    if isinstance(on_screen, list):
+        text = "、".join(str(item).strip() for item in on_screen if str(item).strip())
+    else:
+        text = str(on_screen or "").strip()
+    if text:
+        parts.append(f"屏幕文字：{text}")
+    if not parts and note.get("product_visible") is not None:
+        parts.append("产品可见" if note.get("product_visible") else "产品未出现在画面中")
+    return "；".join(parts)
+
+
+def _visual_observation_for_timeline(issue: dict | None, hint: dict | None, shot_note: dict | None) -> str:
+    for source in (issue, hint):
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "visual_observation",
+            "actual_visual",
+            "visual_context",
+            "visual_summary",
+            "scene_description",
+            "scene",
+        ):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    return _format_visual_context(shot_note) or "未记录画面描述，请结合成片人工复核。"
+
+
+def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict | None) -> list[dict]:
+    issues_by_asr = _report_issues_for_timeline(report)
+    hints_by_asr = _timeline_hints_by_asr(report)
+    notes_by_asr = _shot_notes_by_asr(task)
+    accepted_asr = {
+        _as_int_or_none(item.get("asr_index"))
+        for item in (report.get("verification") or {}).get("accepted_issues", [])
+        if isinstance(item, dict) and item.get("accepted", True)
+    }
+    accepted_asr.discard(None)
+    rows: list[dict] = []
+    seen: set[int] = set()
+
+    for pos, sentence in enumerate(sentences or []):
+        if not isinstance(sentence, dict):
+            continue
+        asr_index = _as_int_or_none(sentence.get("asr_index"))
+        if asr_index is None:
+            asr_index = _as_int_or_none(sentence.get("index"))
+        if asr_index is None:
+            asr_index = pos
+        seen.add(asr_index)
+        issue = issues_by_asr.get(asr_index)
+        hint = hints_by_asr.get(asr_index)
+        start_time, end_time, target_duration, tts_duration = _timing_snapshot(sentence)
+        sync_point = (
+            f"ASR {asr_index}（{_format_sync_time(start_time)}-{_format_sync_time(end_time)}）"
+            if start_time is not None and end_time is not None
+            else f"ASR {asr_index}"
+        )
+        row = {
+            "asr_index": asr_index,
+            "source_segment_indices": sentence.get("source_segment_indices") or [],
+            "sync_point": sync_point,
+            "start_time": start_time,
+            "end_time": end_time,
+            "target_duration": target_duration,
+            "tts_duration": tts_duration,
+            "duration_ratio": _as_float_or_none(sentence.get("duration_ratio")),
+            "asr_text": str(sentence.get("source_text") or "").strip(),
+            "target_text": _report_sentence_text(sentence, issue or hint or {}),
+            "visual_observation": _visual_observation_for_timeline(issue, hint, notes_by_asr.get(asr_index)),
+            "diagnosis_status": "issue" if issue else "ok",
+            "verified": bool(issue and asr_index in accepted_asr),
+            "severity": str((issue or {}).get("severity") or "").lower(),
+            "severity_label": "",
+            "problem": "",
+            "diagnosis": "",
+            "timing": "",
+            "recommendation": "",
+            "evidence": "",
+            "suggested_text": "",
+        }
+        if row["severity"]:
+            row["severity_label"] = _SEVERITY_LABELS.get(row["severity"], row["severity"].upper())
+        if issue:
+            row.update({
+                "problem": _readable_problem(issue),
+                "diagnosis": (
+                    str(issue.get("diagnosis") or issue.get("reason") or issue.get("mismatch_reason") or issue.get("evidence") or "").strip()
+                    or _readable_problem(issue)
+                ),
+                "timing": issue.get("timing_detail") or "",
+                "recommendation": issue.get("recommendation") or "",
+                "evidence": issue.get("evidence") or issue.get("reason") or "",
+                "suggested_text": issue.get("final_text") or issue.get("suggested_text") or "",
+            })
+        else:
+            row["diagnosis"] = str((hint or {}).get("diagnosis") or "").strip() or "未发现明显同步风险。"
+        rows.append(row)
+
+    for asr_index, issue in issues_by_asr.items():
+        if asr_index in seen:
+            continue
+        rows.append({
+            "asr_index": asr_index,
+            "source_segment_indices": [],
+            "sync_point": issue.get("sync_point") or f"ASR {asr_index}",
+            "start_time": None,
+            "end_time": None,
+            "target_duration": issue.get("target_duration"),
+            "tts_duration": issue.get("tts_duration"),
+            "duration_ratio": issue.get("duration_ratio"),
+            "asr_text": issue.get("source_text") or "",
+            "target_text": issue.get("sentence_text") or "",
+            "visual_observation": _visual_observation_for_timeline(issue, hints_by_asr.get(asr_index), notes_by_asr.get(asr_index)),
+            "diagnosis_status": "issue",
+            "verified": bool(asr_index in accepted_asr),
+            "severity": str(issue.get("severity") or "").lower(),
+            "severity_label": _SEVERITY_LABELS.get(str(issue.get("severity") or "").lower(), str(issue.get("severity") or "").upper()),
+            "problem": _readable_problem(issue),
+            "diagnosis": str(issue.get("diagnosis") or issue.get("reason") or issue.get("mismatch_reason") or issue.get("evidence") or "").strip(),
+            "timing": issue.get("timing_detail") or "",
+            "recommendation": issue.get("recommendation") or "",
+            "evidence": issue.get("evidence") or issue.get("reason") or "",
+            "suggested_text": issue.get("final_text") or issue.get("suggested_text") or "",
+        })
+
+    return sorted(
+        rows,
+        key=lambda row: (
+            row.get("start_time") is None,
+            row.get("start_time") if row.get("start_time") is not None else 0,
+            row.get("asr_index") if row.get("asr_index") is not None else 999999,
+        ),
+    )
+
+
 def _attach_readable_report(report: dict) -> None:
     findings = _readable_findings_from_report(report)
     report["readable_findings"] = findings
@@ -860,7 +1075,7 @@ def _attach_readable_report(report: dict) -> None:
         )
 
 
-def _finalize_report_for_display(report: dict, sentences: list[dict] | None) -> None:
+def _finalize_report_for_display(report: dict, sentences: list[dict] | None, task: dict | None = None) -> None:
     sentence_by_asr = _sentences_by_asr_index(sentences)
     diagnosis = report.get("diagnosis")
     if isinstance(diagnosis, dict):
@@ -874,6 +1089,7 @@ def _finalize_report_for_display(report: dict, sentences: list[dict] | None) -> 
             _enrich_issue_for_report(issue, sentence_by_asr) if isinstance(issue, dict) else issue
             for issue in verification.get("accepted_issues") or []
         ]
+    report["audit_timeline"] = _build_audit_timeline(report, sentences, task)
     report["human_report"] = _build_human_report(report)
     _attach_readable_report(report)
 
@@ -890,6 +1106,7 @@ def _ensure_report_preview_items(report: dict) -> None:
         "readable_findings": report.get("readable_findings") or [],
         "diagnosis_summary": diagnosis.get("summary"),
         "verification_summary": verification.get("summary"),
+        "audit_timeline": report.get("audit_timeline") or [],
         "diagnosis_issues": diagnosis.get("issues") or [],
         "accepted_issues": verification.get("accepted_issues") or [],
         "applied_fixes": report.get("applied_fixes") or [],
@@ -920,9 +1137,9 @@ def _ensure_report_preview_items(report: dict) -> None:
 
 
 def _store_report(task_id: str, report: dict, *, variant: str = "av", sentences: list[dict] | None = None) -> None:
-    _finalize_report_for_display(report, sentences)
-    _ensure_report_preview_items(report)
     task = task_state.get(task_id) or {}
+    _finalize_report_for_display(report, sentences, task)
+    _ensure_report_preview_items(report)
     variants = dict(task.get("variants") or {})
     variant_state = dict(variants.get(variant) or {})
     variant_state["av_sync_audit"] = report

@@ -435,6 +435,210 @@ def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_pat
     assert report["items"][0]["content"] == human_report
 
 
+def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(
+        tmp_path,
+        segments=[
+            {
+                "index": 0,
+                "text": "Grab the handle and pull.",
+                "translated": "Zieh am Griff.",
+                "tts_text": "Zieh am Griff.",
+                "source_segment_indices": [0],
+                "tts_duration": 2.0,
+                "tts_path": str(tmp_path / "multi-s0.mp3"),
+            },
+            {
+                "index": 1,
+                "text": "The light flashes.",
+                "translated": "Das Licht blinkt.",
+                "tts_text": "Das Licht blinkt.",
+                "source_segment_indices": [1],
+                "tts_duration": 2.4,
+                "tts_path": str(tmp_path / "multi-s1.mp3"),
+            },
+        ],
+    )
+    task_state.update(
+        task_id,
+        shot_notes={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "scene": "手部特写",
+                    "action": "用户握住把手向外拉动",
+                    "on_screen_text": ["LOCK"],
+                },
+                {
+                    "asr_index": 1,
+                    "scene": "指示灯近景",
+                    "action": "灯光连续闪烁",
+                    "on_screen_text": [],
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={"text": "画面理解：先拉动把手，随后切到指示灯闪烁。"}),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {
+                "issues": [{
+                    "asr_index": 1,
+                    "severity": "medium",
+                    "problem_type": "duration_risk",
+                    "evidence": "音频时长超过这一段画面。",
+                    "safe_action": "shorten_text",
+                    "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
+                    "confidence": 0.87,
+                }],
+                "timeline": [{
+                    "asr_index": 1,
+                    "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
+                    "diagnosis": "音频拖到下一个同步点。",
+                }],
+                "summary": "发现 1 个同步风险",
+            },
+        }),
+    )
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    timeline = report["audit_timeline"]
+    assert [row["asr_index"] for row in timeline] == [0, 1]
+    assert timeline[0]["asr_text"] == "Grab the handle and pull."
+    assert timeline[0]["target_text"] == "Zieh am Griff."
+    assert timeline[0]["visual_observation"] == "手部特写；用户握住把手向外拉动；屏幕文字：LOCK"
+    assert timeline[0]["diagnosis_status"] == "ok"
+    assert timeline[0]["diagnosis"] == "未发现明显同步风险。"
+    assert timeline[1]["visual_observation"] == "画面里只有灯光闪烁，没有后续动作。"
+    assert timeline[1]["diagnosis_status"] == "issue"
+    assert timeline[1]["verified"] is False
+    assert "音频太长" in timeline[1]["problem"]
+    assert "重写/压缩文案后重新生成音频" in timeline[1]["recommendation"]
+
+    assess_system = omni_av_sync_audit.llm_client.invoke_chat.call_args.kwargs["messages"][0]["content"]
+    assert "timeline" in assess_system
+    assert "每一段 ASR" in assess_system
+    assert "visual_observation" in assess_system
+    assert "实际画面内容" in assess_system
+    assert "diagnosis" in assess_system
+    assert "诊断意见" in assess_system
+
+
+def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_task(
+        tmp_path,
+        mode="report_only",
+        sentences=[
+            {
+                "asr_index": 0,
+                "source_text": "Grab the handle and pull.",
+                "start_time": 0.0,
+                "end_time": 2.0,
+                "target_duration": 2.0,
+                "text": "Zieh am Griff.",
+                "tts_duration": 2.0,
+                "duration_ratio": 1.0,
+                "tts_path": str(tmp_path / "s0.mp3"),
+                "speed": 1.0,
+            },
+            {
+                "asr_index": 1,
+                "source_text": "The light flashes.",
+                "start_time": 2.0,
+                "end_time": 4.0,
+                "target_duration": 2.0,
+                "text": "Das Licht blinkt.",
+                "tts_duration": 2.4,
+                "duration_ratio": 1.2,
+                "tts_path": str(tmp_path / "s1.mp3"),
+                "speed": 1.0,
+            },
+        ],
+    )
+    task_state.update(
+        task_id,
+        shot_notes={
+            "sentences": [
+                {"asr_index": 0, "scene": "手部特写", "action": "用户握住把手向外拉动"},
+                {"asr_index": 1, "scene": "指示灯近景", "action": "灯光连续闪烁"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={"text": "画面理解：先拉动把手，随后灯光闪烁。"}),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "issues": [{
+                        "asr_index": 1,
+                        "severity": "medium",
+                        "problem_type": "duration_risk",
+                        "evidence": "TTS duration exceeds the visual window.",
+                        "safe_action": "shorten_text",
+                        "confidence": 0.87,
+                    }],
+                    "timeline": [{
+                        "asr_index": 1,
+                        "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
+                        "diagnosis": "音频拖到下一个同步点。",
+                    }],
+                    "summary": "发现 1 个同步风险",
+                },
+            },
+            {
+                "json": {
+                    "accepted_issues": [{
+                        "asr_index": 1,
+                        "severity": "medium",
+                        "problem_type": "duration_risk",
+                        "accepted": True,
+                        "reason": "音频时长超过这一段画面。",
+                        "safe_action": "shorten_text",
+                    }],
+                    "rejected_count": 0,
+                    "summary": "复核确认 1 个问题",
+                },
+            },
+        ]),
+    )
+
+    omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    timeline = report["audit_timeline"]
+    assert [row["asr_index"] for row in timeline] == [0, 1]
+    assert timeline[0]["asr_text"] == "Grab the handle and pull."
+    assert timeline[0]["target_text"] == "Zieh am Griff."
+    assert timeline[0]["visual_observation"] == "手部特写；用户握住把手向外拉动"
+    assert timeline[0]["diagnosis_status"] == "ok"
+    assert timeline[0]["verified"] is False
+    assert timeline[1]["asr_text"] == "The light flashes."
+    assert timeline[1]["target_text"] == "Das Licht blinkt."
+    assert timeline[1]["visual_observation"] == "画面里只有灯光闪烁，没有后续动作。"
+    assert timeline[1]["diagnosis_status"] == "issue"
+    assert timeline[1]["verified"] is True
+    assert "音频太长" in timeline[1]["problem"]
+    assert "重写/压缩文案后重新生成音频" in timeline[1]["recommendation"]
+
+
 def test_multi_report_only_skips_when_normal_segments_missing(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 

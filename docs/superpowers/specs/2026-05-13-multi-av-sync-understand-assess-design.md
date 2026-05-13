@@ -19,6 +19,16 @@
 4. `omni_av_sync.assess` 使用 Gemini 3.1 Flash Lite 输出 `issues` JSON，包含同步点、问题句子、证据、建议动作。
 5. 多语种模块到此结束：只展示辅助审计/分析结果，不再进入 `omni_av_sync.verify` 复核，也不自动修改音频、字幕或视频。Omni `safe_auto` 修复链路仍可保留复核。
 
+## 展示结构
+
+`av_sync_audit` 报告必须同时输出 `audit_timeline`，作为前端主展示结构。时间线按 ASR / 源句时间顺序排列，每一行包含：
+
+- ASR 原文和最终目标语/TTS 文案。
+- Doubao/Gemini 归纳出的实际画面内容；没有模型画面结论时使用 shot notes 或兜底提示。
+- 诊断状态、诊断意见、时长证据和处理建议。
+
+多语种路径只做 report-only 辅助分析，所以 `audit_timeline[].verified` 始终不能表示 Gemini verify 已复核；Omni `run()` 的 report_only / safe_auto 路径在 verify 后可以标记已确认问题。
+
 ## 候选风险规则
 
 - 目标画面窗口来自源句时间窗；最终字幕窗口作为辅助上下文。
