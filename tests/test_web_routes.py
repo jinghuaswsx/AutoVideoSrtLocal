@@ -3349,6 +3349,20 @@ def test_medias_scripts_wire_raw_sources_modal_flow():
     assert "refreshRawSourceList" in medias_js
 
 
+def test_medias_raw_source_title_style_shows_full_filename():
+    template = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    title_block = template.split(".oc-rs-title-display {", 1)[1].split("}", 1)[0]
+
+    assert "font-size:12px" in title_block
+    assert "font-weight:400" in title_block
+    assert "height:auto" in title_block
+    assert "white-space:normal" in title_block
+    assert "overflow-wrap:anywhere" in title_block
+    assert "overflow:hidden" not in title_block
+    assert "-webkit-line-clamp" not in title_block
+
+
 def test_medias_scripts_wire_raw_source_translate_dialog():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
