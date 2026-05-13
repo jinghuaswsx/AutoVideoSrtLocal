@@ -23,6 +23,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "商品分析失败记录" in body
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
     assert "/xuanpin/api/meta-hot-posts/failures" in body
+    assert "const mhPageSize = 50;" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):

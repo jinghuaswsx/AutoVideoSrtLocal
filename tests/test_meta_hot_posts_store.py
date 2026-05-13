@@ -34,6 +34,7 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "p.latest_comments >= %s" in data_sql
     assert "p.creation_time >= %s" in data_sql
     assert "p.creation_time < DATE_ADD(%s, INTERVAL 1 DAY)" in data_sql
+    assert "ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC" in data_sql
     assert data_params[:7] == ["Kitchenware", 10.0, 30.5, 1000, 50, "2026-05-01", "2026-05-13"]
 
 

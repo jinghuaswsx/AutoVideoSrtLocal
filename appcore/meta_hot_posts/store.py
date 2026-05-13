@@ -128,7 +128,7 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
         {where_sql}
-        ORDER BY COALESCE(p.latest_likes, 0) DESC, p.creation_time DESC, p.id DESC
+        ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC
         LIMIT %s OFFSET %s
         """,
         list(params + [page_size, offset]),
