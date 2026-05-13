@@ -76,6 +76,8 @@ from ._helpers import (
     _tts_final_target_range,
     _in_speedup_window,
     _speedup_ratio,
+    _speedup_candidate_speeds,
+    _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
     _distance_to_duration_range,

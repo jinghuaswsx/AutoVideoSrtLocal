@@ -343,6 +343,158 @@ def _speedup_ratio(audio_duration: float, video_duration: float) -> float:
     return float(rounded)
 
 
+def _speedup_candidate_speeds(
+    *,
+    audio_duration: float,
+    video_duration: float,
+    max_candidates: int = 3,
+) -> list[float]:
+    """Return native TTS speed values for shortening over-video audio.
+
+    Speedup is only used to shorten audio, so audio that is already within the
+    source video duration does not get slow-down candidates. The range is kept
+    deliberately gentle for voice quality.
+    """
+    if not (audio_duration > 0 and video_duration > 0):
+        return []
+    if audio_duration <= video_duration:
+        return []
+    if max_candidates <= 0:
+        return []
+
+    raw = Decimal(str(audio_duration)) / Decimal(str(video_duration))
+    start = raw.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+    start = max(Decimal("1.01"), min(Decimal("1.05"), start))
+    speeds: list[float] = []
+    current = start
+    while len(speeds) < max_candidates and current <= Decimal("1.05"):
+        value = float(current)
+        if value not in speeds:
+            speeds.append(value)
+        current += Decimal("0.01")
+    return speeds
+
+
+def _select_segment_candidate_assembly(
+    candidate_groups: list[list[dict]],
+    *,
+    video_duration: float,
+    target_floor_margin: float = 1.0,
+    beam_size: int = 512,
+) -> dict:
+    """Pick one audio candidate per segment for a video-capped assembly.
+
+    The optimizer only reports a hit when the selected total lands inside
+    ``[video_duration - target_floor_margin, video_duration]``. It still tracks
+    the best under-video duration for diagnostics when every valid combination
+    is too short.
+    """
+    target_lo = max(0.0, float(video_duration) - float(target_floor_margin))
+    target_hi = float(video_duration)
+    if not (target_hi > 0) or not candidate_groups:
+        return {
+            "hit": False,
+            "selected": [],
+            "total_duration": None,
+            "best_under_duration": None,
+            "target_lo": target_lo,
+            "target_hi": target_hi,
+            "gap": None,
+        }
+
+    beams: list[tuple[float, int, float, list[dict]]] = [(0.0, 0, 0.0, [])]
+    for raw_group in candidate_groups:
+        if not raw_group:
+            return {
+                "hit": False,
+                "selected": [],
+                "total_duration": None,
+                "best_under_duration": None,
+                "target_lo": target_lo,
+                "target_hi": target_hi,
+                "gap": None,
+            }
+
+        baseline_hash = next(
+            (c.get("tts_text_hash") for c in raw_group if c.get("tts_text_hash")),
+            None,
+        )
+        group = [
+            dict(c) for c in raw_group
+            if float(c.get("duration") or 0.0) > 0
+            and (
+                baseline_hash is None
+                or not c.get("tts_text_hash")
+                or c.get("tts_text_hash") == baseline_hash
+            )
+        ]
+        if not group:
+            return {
+                "hit": False,
+                "selected": [],
+                "total_duration": None,
+                "best_under_duration": None,
+                "target_lo": target_lo,
+                "target_hi": target_hi,
+                "gap": None,
+            }
+
+        next_beams: list[tuple[float, int, float, list[dict]]] = []
+        for total, modified_count, speed_penalty, selected in beams:
+            for candidate in group:
+                duration = float(candidate.get("duration") or 0.0)
+                speed = float(candidate.get("speed") or 1.0)
+                source = str(candidate.get("source") or "")
+                is_modified = source != "round" or abs(speed - 1.0) > 0.001
+                next_beams.append((
+                    total + duration,
+                    modified_count + (1 if is_modified else 0),
+                    speed_penalty + abs(speed - 1.0),
+                    selected + [candidate],
+                ))
+
+        def _beam_rank(item: tuple[float, int, float, list[dict]]) -> tuple:
+            total, modified_count, speed_penalty, _ = item
+            over_video = total > target_hi
+            if over_video:
+                return (1, total - target_hi, modified_count, speed_penalty)
+            return (0, -(total), modified_count, speed_penalty)
+
+        beams = sorted(next_beams, key=_beam_rank)[:max(1, beam_size)]
+
+    under = [item for item in beams if item[0] <= target_hi]
+    hit = [item for item in under if item[0] >= target_lo]
+    best_under = None
+    if under:
+        best_under = max(under, key=lambda item: item[0])
+    if not hit:
+        return {
+            "hit": False,
+            "selected": [],
+            "total_duration": None,
+            "best_under_duration": (
+                round(best_under[0], 6) if best_under is not None else None
+            ),
+            "target_lo": target_lo,
+            "target_hi": target_hi,
+            "gap": None,
+        }
+
+    best = sorted(hit, key=lambda item: (-item[0], item[1], item[2]))[0]
+    total, modified_count, speed_penalty, selected = best
+    return {
+        "hit": True,
+        "selected": selected,
+        "total_duration": round(total, 6),
+        "best_under_duration": round(best_under[0], 6) if best_under else None,
+        "target_lo": target_lo,
+        "target_hi": target_hi,
+        "gap": round(target_hi - total, 6),
+        "modified_segments": modified_count,
+        "speed_penalty": round(speed_penalty, 6),
+    }
+
+
 def _compute_next_target(
     round_index: int,
     last_audio_duration: float,

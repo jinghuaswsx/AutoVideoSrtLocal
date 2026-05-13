@@ -19,6 +19,25 @@ In that case, regenerate one candidate with ElevenLabs `voice_settings.speed`, c
 - If regeneration fails, keep the original converged audio.
 - If the converged audio is shorter than or equal to the video duration, keep the existing logic unchanged and do not regenerate.
 
+## 2026-05-13 Update: Video-Capped Speedup Candidates
+
+The speedup target is now stricter than the generic final range. A speedup candidate only counts as converged when its measured duration lands in `[video_duration - 1s, video_duration]`. In other words, speedup regeneration is only useful when it produces audio that fits inside the source video while staying close to the video length.
+
+Speedup regeneration may try up to three native ElevenLabs speed values:
+
+- Start with `ceil(audio_duration / video_duration, 2dp)`, clamped to `[1.01, 1.05]`.
+- Add at most two more candidates by increasing speed by `0.01` each time.
+- Never exceed `1.05`, and skip duplicate speeds.
+- Do not run native speedup for already-short audio (`audio_duration <= video_duration`); let the normal rewrite loop handle short audio instead of slowing speech down.
+
+Candidate adoption rules:
+
+- Adopt the first candidate whose measured duration is inside `[video_duration - 1s, video_duration]` and shorter than the pre-speedup audio.
+- If a candidate is longer than the pre-speedup audio, over the source video duration, or too short for the target floor, record it for diagnostics but do not adopt it.
+- In the post-convergence branch, if all candidates miss, keep the original converged audio.
+- In the older `[0.9v, 1.1v]` shortcut branch, if all candidates miss, do not terminate the duration loop; continue to the next rewrite round.
+- Continue to run `tts_speedup_eval` for each successfully generated candidate so the admin review page can compare every attempted speed.
+
 ## Scope
 
 This change is intentionally limited to the existing converged branch in `appcore/runtime/_pipeline_runner.py`.
