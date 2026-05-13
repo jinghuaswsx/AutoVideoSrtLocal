@@ -149,6 +149,77 @@ def test_pipeline_steps_for_lab_current(monkeypatch, omni_runner):
     ]
 
 
+def test_compose_variant_uses_av_for_sentence_reconcile(monkeypatch, omni_runner):
+    cfg = dict(CFG_LAB_CURRENT)
+    cfg["tts_strategy"] = "sentence_reconcile"
+    cfg["subtitle"] = "sentence_units"
+    task = {"plugin_config": cfg}
+
+    assert omni_runner._resolve_compose_variant_name(task) == "av"
+
+
+def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
+    monkeypatch, omni_runner,
+):
+    import appcore.task_state as task_state
+
+    task_id = "omni-shot-sentence-reconcile"
+    task_state.create(task_id, "/tmp/video.mp4", "/tmp/task", "video.mp4")
+    cfg = dict(CFG_LAB_CURRENT)
+    cfg["tts_strategy"] = "sentence_reconcile"
+    cfg["subtitle"] = "sentence_units"
+    task_state.update(
+        task_id,
+        plugin_config=cfg,
+        target_lang="fr",
+        selected_voice_id="voice-1",
+        shots=[
+            {
+                "index": 1,
+                "start": 0.0,
+                "end": 2.0,
+                "duration": 2.0,
+                "source_text": "Source one",
+                "description": "shot one",
+            },
+            {
+                "index": 2,
+                "start": 2.0,
+                "end": 3.5,
+                "duration": 1.5,
+                "source_text": "Source two",
+                "description": "shot two",
+            },
+        ],
+    )
+    monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda voice_id, lang: 10.0)
+    monkeypatch.setattr(
+        "pipeline.translate_v2.translate_shot",
+        lambda shot, **kwargs: {
+            "shot_index": shot["index"],
+            "translated_text": f"Texte {shot['index']}",
+            "char_count": 7,
+            "over_limit": False,
+            "retries": 0,
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {"model": "gemini-test"},
+    )
+
+    omni_runner._step_translate_shot_limit(task_id)
+
+    task = task_state.get(task_id)
+    av_sentences = task["variants"]["av"]["sentences"]
+    assert [s["text"] for s in av_sentences] == ["Texte 1", "Texte 2"]
+    assert av_sentences[0]["asr_index"] == 1
+    assert av_sentences[0]["target_duration"] == 2.0
+    assert av_sentences[0]["target_chars_range"] == [18, 22]
+    assert task["variants"]["normal"]["localized_translation"]["full_text"] == "Texte 1\nTexte 2"
+    assert task["steps"]["translate"] == "done"
+
+
 def test_pipeline_skips_separate_when_voice_separation_disabled(
     monkeypatch, omni_runner,
 ):

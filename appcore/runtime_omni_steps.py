@@ -511,6 +511,35 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     variant_state["localized_translation"] = localized_translation
     variants["normal"] = variant_state
 
+    cfg = task.get("plugin_config") or {}
+    if cfg.get("tts_strategy") == "sentence_reconcile" or cfg.get("subtitle") == "sentence_units":
+        av_sentences: list[dict[str, Any]] = []
+        for fallback_index, (shot, tr) in enumerate(zip(shots, translations)):
+            text = str(tr.get("translated_text") or "").strip()
+            if not text:
+                continue
+            start_time = float(shot.get("start") or 0.0)
+            end_time = float(shot.get("end") or start_time)
+            target_duration = max(0.0, end_time - start_time)
+            lo = max(1, int(cps * target_duration * 0.92))
+            hi = max(lo + 1, int(cps * target_duration * 1.08 + 0.5))
+            av_sentences.append({
+                "asr_index": int(shot.get("index") or fallback_index),
+                "start_time": start_time,
+                "end_time": end_time,
+                "target_duration": target_duration,
+                "target_chars_range": [lo, hi],
+                "text": text,
+                "est_chars": len(text),
+                "source_text": shot.get("source_text", ""),
+                "shot_index": shot.get("index"),
+                "shot_description": shot.get("description", ""),
+            })
+        av_variant_state = dict(variants.get("av") or {})
+        av_variant_state["sentences"] = av_sentences
+        av_variant_state["localized_translation"] = localized_translation
+        variants["av"] = av_variant_state
+
     task_state.update(
         task_id,
         localized_translation=localized_translation,

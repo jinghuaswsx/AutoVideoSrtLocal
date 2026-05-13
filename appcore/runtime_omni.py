@@ -131,15 +131,19 @@ class OmniTranslateRunner(MultiTranslateRunner):
         """根据 plugin_config 解析 compose / export 用的 variant。
 
         av_sync_profile.tts / translate / subtitle 都把数据写到 variants["av"]，
-        所以 omni 任务在 av_sentence preset 下 compose / export 也得读 "av"。
-        其他 cfg（standard / shot_char_limit）写 "normal"。
+        所以 omni 任务在句级链路下 compose / export 也得读 "av"。
+        非句级链路（standard / shot_char_limit + five_round）写 "normal"。
 
         2026-05-07 fix：base ``_is_av_pipeline_task`` 看 task.type / pipeline_version
         判断，omni 任务两个都不满足 → 误读 "normal" → variant_state["tts_audio_path"]
         KeyError 卡 compose。
         """
         cfg = (task or {}).get("plugin_config") or {}
-        if cfg.get("translate_algo") == "av_sentence":
+        if (
+            cfg.get("translate_algo") == "av_sentence"
+            or cfg.get("tts_strategy") == "sentence_reconcile"
+            or cfg.get("subtitle") == "sentence_units"
+        ):
             return "av"
         return super()._resolve_compose_variant_name(task)
 
