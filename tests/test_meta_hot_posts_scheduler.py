@@ -405,6 +405,65 @@ def test_reanalyze_categories_waits_between_items(monkeypatch):
     assert sleep_calls == [20]
 
 
+def test_reanalyze_categories_can_run_with_concurrency(monkeypatch):
+    import threading
+    import time
+
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+    finished = []
+    sleep_calls = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_category_reanalysis_candidates",
+        lambda limit: [
+            {"id": 7, "product_title": "Portable Blender"},
+            {"id": 8, "product_title": "Garden Light"},
+            {"id": 9, "product_title": "Phone Stand"},
+            {"id": 10, "product_title": "Body Scrub"},
+        ],
+    )
+
+    def categorize_product(**kwargs):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return {
+            "category": "Kitchenware",
+            "confidence": 1.0,
+            "reason": "",
+            "provider": "openrouter",
+            "model": "google/gemini-3.1-flash-lite-preview",
+            "raw_response": {"text": "Kitchenware"},
+        }
+
+    monkeypatch.setattr(scheduler.product_analysis, "categorize_product", categorize_product)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_category_reanalysis",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    summary = scheduler.reanalyze_categories(
+        limit=4,
+        user_id=1,
+        concurrency=3,
+        per_item_delay_seconds=20,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
+
+    assert summary == {"scanned": 4, "done": 4, "failed": 0}
+    assert max_active >= 2
+    assert sorted(item[0] for item in finished) == [7, 8, 9, 10]
+    assert sleep_calls == []
+
+
 def test_reanalyze_categories_stops_after_global_adc_provider_error(monkeypatch):
     finished = []
 

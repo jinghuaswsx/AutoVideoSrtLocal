@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import FIRST_COMPLETED, Future, wait
 from datetime import datetime
 from typing import Any, Callable
 
@@ -140,6 +141,44 @@ def _is_global_category_provider_error(exc: Exception) -> bool:
     )
 
 
+def _category_reanalysis_row(row: dict[str, Any], *, billing_user_id: int) -> dict[str, Any]:
+    analysis_id = int(row["id"])
+    product_title = str(row.get("product_title") or "").strip()
+    product_url = str(row.get("product_url") or "").strip()
+    try:
+        category = product_analysis.categorize_product(
+            product_title=product_title,
+            product_url=product_url,
+            user_id=billing_user_id,
+        )
+        error_message = _category_error_message(category)
+    except Exception as exc:
+        log.warning("meta hot post category reanalysis failed id=%s: %s", analysis_id, exc)
+        fatal_provider_error = _is_global_category_provider_error(exc)
+        category = _fallback_category(exc)
+        error_message = f"category failed: {str(exc)[:950]}"
+    else:
+        fatal_provider_error = False
+    store.finish_category_reanalysis(
+        analysis_id,
+        category=category,
+        error_message=error_message,
+    )
+    return {
+        "analysis_id": analysis_id,
+        "failed": bool(error_message),
+        "fatal_provider_error": fatal_provider_error,
+    }
+
+
+def _safe_concurrency(value: int | str | None) -> int:
+    try:
+        parsed = int(value or 1)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(10, parsed))
+
+
 def analyze_pending_products(
     *,
     limit: int = 100,
@@ -221,6 +260,7 @@ def reanalyze_categories(
     limit: int = 100,
     user_id: int | None = None,
     include_all: bool = False,
+    concurrency: int = 1,
     per_item_delay_seconds: float | int | str | None = 0,
     sleep_fn: SleepFn | None = None,
 ) -> dict[str, Any]:
@@ -231,35 +271,46 @@ def reanalyze_categories(
     else:
         rows = store.next_category_reanalysis_candidates(limit=limit)
     total = len(rows)
+    safe_concurrency = _safe_concurrency(concurrency)
+    if safe_concurrency > 1 and total:
+        from concurrent.futures import ThreadPoolExecutor
+
+        next_index = 0
+        futures: dict[Future, dict[str, Any]] = {}
+        stopped = False
+        with ThreadPoolExecutor(max_workers=safe_concurrency) as executor:
+            while next_index < total and len(futures) < safe_concurrency:
+                row = rows[next_index]
+                futures[executor.submit(_category_reanalysis_row, row, billing_user_id=billing_user_id)] = row
+                next_index += 1
+            while futures:
+                done_futures, _pending = wait(futures, return_when=FIRST_COMPLETED)
+                for future in done_futures:
+                    futures.pop(future, None)
+                    result = future.result()
+                    summary["scanned"] += 1
+                    if result.get("failed"):
+                        summary["failed"] += 1
+                    else:
+                        summary["done"] += 1
+                    if result.get("fatal_provider_error"):
+                        stopped = True
+                        summary["stopped"] = True
+                        summary["stop_reason"] = "global_category_provider_error"
+                while not stopped and next_index < total and len(futures) < safe_concurrency:
+                    row = rows[next_index]
+                    futures[executor.submit(_category_reanalysis_row, row, billing_user_id=billing_user_id)] = row
+                    next_index += 1
+        return summary
+
     for index, row in enumerate(rows):
+        result = _category_reanalysis_row(row, billing_user_id=billing_user_id)
         summary["scanned"] += 1
-        analysis_id = int(row["id"])
-        product_title = str(row.get("product_title") or "").strip()
-        product_url = str(row.get("product_url") or "").strip()
-        try:
-            category = product_analysis.categorize_product(
-                product_title=product_title,
-                product_url=product_url,
-                user_id=billing_user_id,
-            )
-            error_message = _category_error_message(category)
-        except Exception as exc:
-            log.warning("meta hot post category reanalysis failed id=%s: %s", analysis_id, exc)
-            fatal_provider_error = _is_global_category_provider_error(exc)
-            category = _fallback_category(exc)
-            error_message = f"category failed: {str(exc)[:950]}"
-        else:
-            fatal_provider_error = False
-        store.finish_category_reanalysis(
-            analysis_id,
-            category=category,
-            error_message=error_message,
-        )
-        if error_message:
+        if result.get("failed"):
             summary["failed"] += 1
         else:
             summary["done"] += 1
-        if fatal_provider_error:
+        if result.get("fatal_provider_error"):
             summary["stopped"] = True
             summary["stop_reason"] = "global_category_provider_error"
             break
