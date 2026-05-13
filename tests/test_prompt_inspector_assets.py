@@ -68,5 +68,7 @@ def test_omni_workbench_renders_special_artifacts_and_keeps_separation_panel():
     assert "function renderAsrCleanArtifact" in scripts
     assert "function renderShotDecomposeArtifact" in scripts
     assert "function renderAvSyncAuditArtifact" in scripts
+    assert "中文审计结论" in scripts
+    assert "artifact.human_report" in scripts
     assert "specializedPreviewOwnsStep(step)" in scripts
     assert 'step === "separate" || step === "loudness_match"' in scripts
