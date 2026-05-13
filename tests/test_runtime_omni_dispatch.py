@@ -435,6 +435,42 @@ def test_post_asr_dispatches_to_asr_clean_when_cfg_says_so(
     omni_runner._step_asr_normalize.assert_not_called()
 
 
+def test_asr_clean_resume_skip_persists_preview_artifact(
+    monkeypatch, omni_runner,
+):
+    import appcore.task_state as task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_id = "omni-asr-clean-resume-artifact"
+    task_state._tasks.pop(task_id, None)
+    raw_utterances = [
+        {"start_time": 0.0, "end_time": 1.0, "text": "raw windshield text"}
+    ]
+    clean_utterances = [
+        {"start_time": 0.0, "end_time": 1.0, "text": "clean windshield text"}
+    ]
+    task_state.create(task_id, "/tmp/video.mp4", "/tmp/task", "video.mp4", user_id=1)
+    task_state.update(
+        task_id,
+        source_language="en",
+        plugin_config=CFG_OMNI_CURRENT,
+        utterances=clean_utterances,
+        utterances_raw=raw_utterances,
+        artifacts={},
+    )
+
+    omni_runner._step_asr_clean(task_id)
+
+    task = task_state.get(task_id)
+    artifact = task["artifacts"]["asr_clean"]
+    assert task["steps"]["asr_clean"] == "done"
+    assert artifact["skipped"] is True
+    assert artifact["skip_reason"] == "already_cleaned"
+    assert artifact["input_utterances"] == raw_utterances
+    assert artifact["utterances"] == clean_utterances
+
+
 def test_post_asr_dispatches_to_asr_normalize_when_cfg_says_so(
     monkeypatch, omni_runner,
 ):
@@ -575,6 +611,91 @@ def test_sentence_units_subtitle_triggers_quality_assessment(
         "triggered_by": "auto",
         "user_id": 1,
     }]
+
+
+def test_sentence_units_subtitle_applies_safe_splitting(
+    monkeypatch, tmp_path, omni_runner,
+):
+    import appcore.task_state as task_state
+    from appcore.translate_profiles.av_sync_profile import AvSyncProfile
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+    task_id = "omni-sentence-units-split"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    long_text = (
+        "This windshield stays clear while you drive home after work "
+        "through cold evening traffic."
+    )
+    task_state.update(
+        task_id,
+        target_lang="en",
+        variants={
+            "av": {
+                "sentences": [
+                    {
+                        "asr_index": 0,
+                        "source_text": "The windshield fogs up after work.",
+                        "text": long_text,
+                        "tts_duration": 3.0,
+                        "target_duration": 3.0,
+                        "status": "ok",
+                    },
+                ],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        omni_runner,
+        "_complete_original_video_passthrough",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        omni_runner,
+        "_resolve_av_inputs",
+        lambda task: {
+            "target_language": "en",
+            "target_language_name": "English",
+            "sync_granularity": "sentence",
+        },
+    )
+    monkeypatch.setattr(
+        omni_runner,
+        "_target_language_name",
+        lambda av_inputs: av_inputs["target_language_name"],
+    )
+    monkeypatch.setattr(
+        "appcore.quality_assessment.trigger_assessment",
+        lambda **kwargs: 1,
+    )
+    split_calls = []
+
+    def fake_split(chunks, **kwargs):
+        split_calls.append({"chunks": chunks, "kwargs": kwargs})
+        first = dict(chunks[0])
+        first["text"] = "This windshield stays clear"
+        second = dict(chunks[0])
+        second["text"] = "while you drive home after work"
+        second["start_time"] = first["end_time"]
+        second["end_time"] = first["end_time"] + 0.001
+        return [first, second]
+
+    monkeypatch.setattr(
+        "pipeline.subtitle_splitting.split_oversized_subtitle_chunks",
+        fake_split,
+    )
+
+    AvSyncProfile().subtitle(omni_runner, task_id, str(tmp_path))
+
+    assert split_calls
+    assert split_calls[0]["chunks"][0]["text"] == long_text
+    assert split_calls[0]["kwargs"]["max_chars_per_line"] > 0
+    corrected = task_state.get(task_id)["corrected_subtitle"]["chunks"]
+    assert [chunk["text"] for chunk in corrected] == [
+        "This windshield stays clear",
+        "while you drive home after work",
+    ]
 
 
 def test_tts_dispatches_to_strategy_by_cfg(monkeypatch, omni_runner):

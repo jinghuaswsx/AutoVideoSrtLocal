@@ -659,6 +659,18 @@ def get_artifact(task_id, name):
     return _json_response({"error": "Artifact not found"}, 404)
 
 
+@bp.route("/api/multi-translate/<task_id>/artifact-path")
+@login_required
+def get_artifact_path(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+
+    from web.services.artifact_download import safe_task_relative_file_response
+
+    return safe_task_relative_file_response(task, request.args.get("path"))
+
+
 def _separation_artifact_path(task: dict, name: str) -> str | None:
     """老任务回填：preview_files 里没有 separation_vocals / separation_accompaniment
     时，从 task[\"separation\"] 读路径。新任务 _step_separate 会注册到 preview_files

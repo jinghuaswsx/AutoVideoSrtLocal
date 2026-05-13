@@ -66,6 +66,10 @@ def test_omni_workbench_renders_special_artifacts_and_keeps_separation_panel():
     scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
 
     assert "function renderAsrCleanArtifact" in scripts
+    assert "function synthesizeAsrCleanArtifact" in scripts
+    assert 'step === "asr_clean" && !artifact' in scripts
+    assert "currentTask?.utterances_raw" in scripts
+    assert "currentTask?.utterances" in scripts
     assert "function renderShotDecomposeArtifact" in scripts
     assert "function renderAvSyncAuditArtifact" in scripts
     assert "中文审计结论" in scripts
@@ -78,6 +82,11 @@ def test_omni_av_sync_audit_renderer_exposes_chinese_findings():
     scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
 
     assert "readable_findings" in scripts
+    assert "audit_timeline" in scripts
+    assert "function renderAvSyncAuditTimeline" in scripts
+    assert "逐段 ASR 审片表" in scripts
+    assert "画面内容" in scripts
+    assert "诊断意见" in scripts
     assert "中文审计结论" in scripts
     assert "function auditRecommendation" in scripts
     assert "音频太长" in scripts

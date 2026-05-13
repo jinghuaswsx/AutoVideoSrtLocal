@@ -285,16 +285,42 @@ class OmniTranslateRunner(MultiTranslateRunner):
 
         task = task_state.get(task_id)
         utterances = task.get("utterances") or []
+        source_language = (task.get("source_language") or "").strip()
         if not utterances:
+            if not (task.get("artifacts") or {}).get("asr_clean"):
+                task_state.set_artifact(
+                    task_id,
+                    "asr_clean",
+                    self._build_asr_clean_artifact(
+                        language=source_language,
+                        input_utterances=[],
+                        output_utterances=[],
+                        cleaned=False,
+                        skipped=True,
+                        skip_reason="no_utterances",
+                    ),
+                )
             self._set_step(task_id, "asr_clean", "done", "无音频文本，跳过纯净化")
             return
 
         # Resume idempotency: skip if already cleaned
         if task.get("utterances_raw"):  # set only after successful purify
+            if not (task.get("artifacts") or {}).get("asr_clean"):
+                task_state.set_artifact(
+                    task_id,
+                    "asr_clean",
+                    self._build_asr_clean_artifact(
+                        language=source_language,
+                        input_utterances=task.get("utterances_raw") or [],
+                        output_utterances=utterances,
+                        cleaned=True,
+                        skipped=True,
+                        skip_reason="already_cleaned",
+                    ),
+                )
             self._set_step(task_id, "asr_clean", "done", "已纯净化（resume 跳过）")
             return
 
-        source_language = (task.get("source_language") or "").strip()
         if source_language not in _MANUAL_SOURCE_LANGUAGES:
             message = (
                 f"source_language={source_language!r} 不在支持范围 "
@@ -320,16 +346,16 @@ class OmniTranslateRunner(MultiTranslateRunner):
             save_json=_save_json,
         )
 
-        artifact = {
-            "language": source_language,
-            "user_specified": user_specified,
-            "cleaned": result["cleaned"],
-            "fallback_used": result["fallback_used"],
-            "model_used": result["model_used"],
-            "validation_errors": result["validation_errors"],
-            "input_preview": " ".join(u.get("text", "") for u in utterances)[:200],
-            "output_preview": " ".join(u.get("text", "") for u in result["utterances"])[:200],
-        }
+        artifact = self._build_asr_clean_artifact(
+            language=source_language,
+            input_utterances=utterances,
+            output_utterances=result["utterances"],
+            cleaned=result["cleaned"],
+            fallback_used=result["fallback_used"],
+            model_used=result["model_used"],
+            validation_errors=result["validation_errors"],
+            user_specified=user_specified,
+        )
         task_state.set_artifact(task_id, "asr_clean", artifact)
 
         if result["cleaned"]:
@@ -348,6 +374,35 @@ class OmniTranslateRunner(MultiTranslateRunner):
                 task_id, "asr_clean", "done",
                 "ASR 纯净化未通过校验，保留原文本继续",
             )
+
+    @staticmethod
+    def _build_asr_clean_artifact(
+        *,
+        language: str,
+        input_utterances: list,
+        output_utterances: list,
+        cleaned: bool,
+        fallback_used: bool = False,
+        model_used: str = "",
+        validation_errors: list | None = None,
+        user_specified: bool = True,
+        skipped: bool = False,
+        skip_reason: str = "",
+    ) -> dict:
+        return {
+            "language": language,
+            "user_specified": user_specified,
+            "cleaned": cleaned,
+            "fallback_used": fallback_used,
+            "model_used": model_used,
+            "validation_errors": validation_errors or [],
+            "skipped": skipped,
+            "skip_reason": skip_reason,
+            "input_utterances": input_utterances,
+            "utterances": output_utterances,
+            "input_preview": " ".join(u.get("text", "") for u in input_utterances)[:200],
+            "output_preview": " ".join(u.get("text", "") for u in output_utterances)[:200],
+        }
 
     # ------------------------------------------------------------------
     # Phase 2: plugin_config-driven step builder + thin shims

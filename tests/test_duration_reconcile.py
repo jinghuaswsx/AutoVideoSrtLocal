@@ -124,6 +124,85 @@ def test_reconcile_duration_reverts_when_speed_adjustment_is_worse(monkeypatch):
     ]
 
 
+def test_reconcile_duration_repairs_semantic_coverage_before_accepting_timing(monkeypatch):
+    durations = iter([3.0])
+    rewrite_calls = []
+    regenerate_calls = []
+
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        return {
+            "asr_index": 0,
+            "text": "Clear the windshield while driving home after work.",
+            "est_chars": 51,
+            "source_intent": "restore the omitted product part and scene",
+            "localization_note": "semantic repair before timing acceptance",
+            "duration_risk": "ok",
+            "covered_source_terms": ["windshield", "driving", "work"],
+            "omitted_source_terms": [],
+            "coverage_ok": True,
+        }
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={"plugin_config": {"translate_algo": "av_sentence"}},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 3.0,
+                    "target_duration": 3.0,
+                    "target_chars_range": (38, 45),
+                    "text": "Clear it fast.",
+                    "est_chars": 14,
+                    "source_text": "Clean the windshield while driving home after work.",
+                    "must_keep_terms": ["windshield", "driving", "work"],
+                    "covered_source_terms": [],
+                    "omitted_source_terms": ["windshield", "driving", "work"],
+                    "coverage_ok": False,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 3.0}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[
+            {
+                "index": 0,
+                "start_time": 0.0,
+                "end_time": 3.0,
+                "text": "Clean the windshield while driving home after work.",
+            }
+        ],
+    )
+
+    sentence = result[0]
+    assert sentence["status"] == "ok"
+    assert sentence["text"] == "Clear the windshield while driving home after work."
+    assert sentence["coverage_ok"] is True
+    assert sentence["omitted_source_terms"] == []
+    assert sentence["semantic_repair_attempts"] == 1
+    assert sentence["attempts"][0]["action"] == "repair_coverage"
+    assert sentence["attempts"][0]["reason"] == "within_duration_ratio"
+    assert rewrite_calls[0]["direction"] == "repair_coverage"
+    assert rewrite_calls[0]["required_terms"] == ["windshield", "driving", "work"]
+    assert rewrite_calls[0]["omitted_terms"] == ["windshield", "driving", "work"]
+    assert rewrite_calls[0]["return_sentence"] is True
+    assert regenerate_calls == [
+        {"text": "Clear the windshield while driving home after work.", "speed": None}
+    ]
+
+
 def test_reconcile_duration_runs_ten_attempts_and_keeps_closest_candidate(monkeypatch):
     durations = iter([6.0, 5.9, 5.7, 5.5, 5.4, 5.35, 5.31, 5.28, 5.26, 5.251])
     rewrite_calls = []

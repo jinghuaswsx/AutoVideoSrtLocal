@@ -1046,6 +1046,10 @@
         const fallbackArtifact = buildTranslateArtifactFromTask(currentTask);
         if (fallbackArtifact) artifact = fallbackArtifact;
       }
+      if (step === "asr_clean" && !artifact) {
+        const fallbackArtifact = synthesizeAsrCleanArtifact(currentTask);
+        if (fallbackArtifact) artifact = fallbackArtifact;
+      }
       const status = currentTask?.steps?.[step] || "pending";
       const displayStatus = visualStepStatus(status);
       let html;
@@ -1194,6 +1198,26 @@
     `).join("")}</div>`;
   }
 
+  function synthesizeAsrCleanArtifact(task) {
+    const rawUtterances = currentTask?.utterances_raw || task?.utterances_raw || [];
+    const cleanUtterances = currentTask?.utterances || task?.utterances || [];
+    if (!rawUtterances.length && !cleanUtterances.length) return null;
+    const previewText = (items) => (items || []).map(u => u?.text || "").join(" ").slice(0, 200);
+    return {
+      language: task?.source_language || "",
+      cleaned: task?.steps?.asr_clean === "done" && !!cleanUtterances.length,
+      fallback_used: false,
+      model_used: "",
+      validation_errors: [],
+      skipped: true,
+      skip_reason: "missing_artifact",
+      input_utterances: rawUtterances,
+      utterances: cleanUtterances,
+      input_preview: previewText(rawUtterances),
+      output_preview: previewText(cleanUtterances),
+    };
+  }
+
   function renderAsrCleanArtifact(artifact) {
     const rawUtterances = currentTask?.utterances_raw || artifact.input_utterances || [];
     const cleanUtterances = currentTask?.utterances || artifact.utterances || [];
@@ -1265,8 +1289,10 @@
     const diagnosisSummary = diagnosis.summary || diagnosis.error || "";
     const verificationSummary = verification.summary || verification.error || "";
     const humanReport = artifact.human_report || "";
+    const timeline = renderAvSyncAuditTimeline(artifact);
     const readable = renderReadableAuditFindings(artifact);
     const body = [
+      timeline,
       readable || (humanReport ? renderPreviewItem({ type: "text", label: "中文审计结论", content: humanReport }) : ""),
       diagnosisSummary ? renderPreviewItem({ type: "text", label: "Doubao 诊断总结", content: diagnosisSummary }) : "",
       renderAuditList("诊断问题", diagnosis.issues || []),
@@ -1280,6 +1306,166 @@
       ? `<details class="preview-block"><summary class="preview-label">完整审计 JSON</summary><pre class="preview-text">${escapeHtml(jsonText)}</pre></details>`
       : "";
     return `${meta}${body}${raw}`;
+  }
+
+  function renderAvSyncAuditTimeline(artifact) {
+    const rows = normalizeAvSyncAuditTimeline(artifact);
+    if (!rows.length) return "";
+    const renderedRows = rows.map((row, index) => renderAvSyncAuditTimelineRow(row, index)).join("");
+    return `<div class="preview-block av-sync-timeline-card">
+      <div class="preview-label">逐段 ASR 审片表</div>
+      <div class="preview-note">按 ASR 时间顺序展开：每段对应 ASR 内容、实际画面内容和诊断意见。</div>
+      <div class="preview-list av-sync-timeline-list">${renderedRows}</div>
+    </div>`;
+  }
+
+  function normalizeAvSyncAuditTimeline(artifact) {
+    const directRows = Array.isArray(artifact?.audit_timeline)
+      ? artifact.audit_timeline.filter(row => row && typeof row === "object")
+      : [];
+    if (directRows.length) return directRows;
+    return buildAvSyncAuditTimelineFallback(artifact);
+  }
+
+  function buildAvSyncAuditTimelineFallback(artifact) {
+    const variantKey = artifact?.source_variant || "normal";
+    const variants = currentTask?.variants || {};
+    const variantState = variants[variantKey] || variants.normal || variants.av || {};
+    const segments = Array.isArray(variantState.segments)
+      ? variantState.segments
+      : (Array.isArray(variantState.sentences) ? variantState.sentences : []);
+    const scriptByIndex = new Map((currentTask?.script_segments || []).map((segment, pos) => {
+      const idx = Number(segment?.index ?? pos);
+      return [Number.isFinite(idx) ? idx : pos, segment || {}];
+    }));
+    const notesByAsr = new Map(((currentTask?.shot_notes || {}).sentences || []).map(note => [Number(note?.asr_index), note]));
+    const issuesByAsr = new Map();
+    (artifact?.diagnosis?.issues || []).forEach(issue => {
+      const idx = Number(issue?.asr_index);
+      if (Number.isFinite(idx)) issuesByAsr.set(idx, issue);
+    });
+    (artifact?.verification?.accepted_issues || []).forEach(issue => {
+      const idx = Number(issue?.asr_index);
+      if (Number.isFinite(idx)) issuesByAsr.set(idx, Object.assign({}, issue, { verified: true }));
+    });
+    if (!segments.length && Array.isArray(artifact?.readable_findings)) {
+      return artifact.readable_findings.map(item => Object.assign({}, item, {
+        asr_text: item.source_text || "",
+        target_text: item.sentence_text || "",
+        visual_observation: item.visual_observation || "旧报告未记录逐段画面描述，请结合成片人工复核。",
+        diagnosis_status: "issue",
+        diagnosis: item.problem || item.evidence || "",
+      }));
+    }
+    return segments.map((segment, pos) => {
+      const sourceIndices = avSyncSourceIndices(segment, pos);
+      const asrIndex = sourceIndices.length ? sourceIndices[0] : Number(segment?.asr_index ?? segment?.index ?? pos);
+      const sourceSegments = sourceIndices.map(idx => scriptByIndex.get(idx)).filter(Boolean);
+      const start = firstFinite(sourceSegments.map(item => item.start_time), segment?.start_time);
+      const end = lastFinite(sourceSegments.map(item => item.end_time), segment?.end_time);
+      const issue = issuesByAsr.get(asrIndex);
+      const note = notesByAsr.get(asrIndex);
+      const sourceText = sourceSegments.map(item => item.text || "").filter(Boolean).join(" ") || segment?.source_text || segment?.text || "";
+      const targetText = segment?.tts_text || segment?.translated || segment?.text || "";
+      return {
+        asr_index: asrIndex,
+        sync_point: Number.isFinite(asrIndex) ? `ASR ${asrIndex}${start !== null && end !== null ? `（${fmtTime(start)}-${fmtTime(end)}）` : ""}` : `#${pos + 1}`,
+        start_time: start,
+        end_time: end,
+        target_duration: segment?.target_duration,
+        tts_duration: segment?.tts_duration,
+        duration_ratio: segment?.duration_ratio,
+        asr_text: sourceText,
+        target_text: targetText,
+        visual_observation: avSyncVisualText(issue, note),
+        diagnosis_status: issue ? "issue" : "ok",
+        verified: Boolean(issue?.verified),
+        severity: issue?.severity || "",
+        severity_label: auditSeverityLabel(issue?.severity || ""),
+        problem: issue ? auditProblemFromItem(issue) : "",
+        diagnosis: issue?.reason || issue?.mismatch_reason || issue?.evidence || (issue ? auditProblemFromItem(issue) : "未发现明显同步风险。"),
+        timing: issue?.timing_detail || auditTimingSummary(issue || {}),
+        recommendation: issue?.recommendation || (issue ? auditRecommendation(issue).replace(/^处理建议：/, "") : ""),
+        evidence: issue?.evidence || issue?.reason || "",
+        suggested_text: issue?.final_text || issue?.suggested_text || "",
+      };
+    }).sort((a, b) => {
+      const aStart = Number.isFinite(Number(a.start_time)) ? Number(a.start_time) : 999999;
+      const bStart = Number.isFinite(Number(b.start_time)) ? Number(b.start_time) : 999999;
+      if (aStart !== bStart) return aStart - bStart;
+      return Number(a.asr_index ?? 999999) - Number(b.asr_index ?? 999999);
+    });
+  }
+
+  function avSyncSourceIndices(segment, fallbackIndex) {
+    const raw = segment?.source_segment_indices;
+    const values = Array.isArray(raw) ? raw : [raw ?? segment?.asr_index ?? segment?.index ?? fallbackIndex];
+    return values.map(item => Number(item)).filter(Number.isFinite);
+  }
+
+  function firstFinite(values, fallback) {
+    const found = values.map(Number).find(Number.isFinite);
+    const backup = Number(fallback);
+    return found !== undefined ? found : (Number.isFinite(backup) ? backup : null);
+  }
+
+  function lastFinite(values, fallback) {
+    const found = values.map(Number).filter(Number.isFinite).pop();
+    const backup = Number(fallback);
+    return found !== undefined ? found : (Number.isFinite(backup) ? backup : null);
+  }
+
+  function avSyncVisualText(issue, note) {
+    const direct = issue?.visual_observation || issue?.actual_visual || issue?.visual_context || issue?.visual_summary || "";
+    if (direct) return direct;
+    const parts = [];
+    ["scene", "action", "shot_type", "emotion_hint"].forEach(key => {
+      if (note?.[key]) parts.push(note[key]);
+    });
+    const onScreen = Array.isArray(note?.on_screen_text)
+      ? note.on_screen_text.filter(Boolean).join("、")
+      : (note?.on_screen_text || "");
+    if (onScreen) parts.push(`屏幕文字：${onScreen}`);
+    return parts.join("；") || "未记录画面描述，请结合成片人工复核。";
+  }
+
+  function renderAvSyncAuditTimelineRow(row, index) {
+    const isIssue = String(row.diagnosis_status || "").toLowerCase() === "issue";
+    const status = row.verified ? "复核确认" : (isIssue ? "候选问题" : "未发现风险");
+    const severity = row.severity_label || auditSeverityLabel(row.severity);
+    const title = row.sync_point || (row.asr_index !== undefined && row.asr_index !== null ? `ASR ${row.asr_index}` : `#${index + 1}`);
+    const timingBits = [];
+    if (row.target_duration !== undefined && row.target_duration !== null) timingBits.push(`画面 ${Number(row.target_duration).toFixed(2)}s`);
+    if (row.tts_duration !== undefined && row.tts_duration !== null) timingBits.push(`TTS ${Number(row.tts_duration).toFixed(2)}s`);
+    if (row.duration_ratio !== undefined && row.duration_ratio !== null) timingBits.push(`比例 ${Math.round(Number(row.duration_ratio) * 100)}%`);
+    const diagnosis = [
+      row.diagnosis || row.problem || (isIssue ? "存在同步风险。" : "未发现明显同步风险。"),
+      row.timing || "",
+      row.recommendation ? `处理建议：${row.recommendation}` : "",
+    ].filter(Boolean).join("\n");
+    return `<div class="av-sync-timeline-row ${isIssue ? "is-issue" : "is-ok"}">
+      <div class="av-sync-timeline-head">
+        <div class="preview-time">${escapeHtml(title)}</div>
+        <div class="av-sync-timeline-tags">
+          ${severity ? `<span>${escapeHtml(severity)}</span>` : ""}
+          <span>${escapeHtml(status)}</span>
+        </div>
+      </div>
+      ${timingBits.length ? `<div class="preview-note">${escapeHtml(timingBits.join(" · "))}</div>` : ""}
+      <div class="av-sync-timeline-grid">
+        ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
+        ${renderAvSyncTimelineField("目标/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
+        ${renderAvSyncTimelineField("画面内容", row.visual_observation || "未记录画面描述，请结合成片人工复核。")}
+        ${renderAvSyncTimelineField("诊断意见", diagnosis)}
+      </div>
+    </div>`;
+  }
+
+  function renderAvSyncTimelineField(label, value) {
+    return `<div class="av-sync-timeline-field">
+      <div class="preview-label">${escapeHtml(label)}</div>
+      <div class="preview-original">${escapeHtml(value || "-")}</div>
+    </div>`;
   }
 
   function renderReadableAuditFindings(artifact) {
@@ -3760,9 +3946,17 @@
   // ============================================================
   // TTS 收敛后变速候选子卡片渲染
   // ============================================================
+  function _speedupArtifactUrl(tid, rel) {
+    if (!rel) return '';
+    const base = (TASK_WORKBENCH_CONFIG && TASK_WORKBENCH_CONFIG.apiBase)
+      || '/api/tasks';
+    return safeMediaSrc(`${base}/${encodeURIComponent(tid)}/artifact-path?path=${encodeURIComponent(rel)}`);
+  }
+
   function _speedupArtifactLink(tid, rel, label) {
     if (!rel) return '<span class="muted">—</span>';
-    const url = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(rel)}`);
+    const url = _speedupArtifactUrl(tid, rel);
+    if (!url) return '<span class="muted">—</span>';
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label || '查看')}</a>`;
   }
 
@@ -3778,6 +3972,30 @@
     if (settings.stability != null) parts.push(`stability=${_fmtSpeedupNumber(settings.stability, 2)}`);
     if (settings.similarity_boost != null) parts.push(`similarity=${_fmtSpeedupNumber(settings.similarity_boost, 2)}`);
     return parts.length ? parts.join('<br>') : '<span class="muted">默认</span>';
+  }
+
+  function _speedupAudioPreview(gid, title, duration, url) {
+    const safeGid = String(gid || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    const durationText = duration && duration !== '?'
+      ? `<span class="tts-speedup-player-duration">${escapeHtml(duration)}s</span>`
+      : '';
+    const disabledAttr = url ? '' : ' disabled';
+    const openLink = url
+      ? `<a class="tts-speedup-player-open" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">打开文件</a>`
+      : '<span class="tts-speedup-player-open muted">文件未就绪</span>';
+    return `
+      <div class="tts-speedup-player-card">
+        <div class="tts-speedup-player-head">
+          <span class="col-label">${escapeHtml(title)}</span>
+          ${durationText}
+        </div>
+        <div class="audio-btn-group" id="${escapeAttr(safeGid)}">
+          <button type="button" class="audio-play-btn" onclick="playAudio('${escapeJs(safeGid)}','${escapeJs(url)}')"${disabledAttr}>&#9654; 播放</button>
+          <button type="button" class="audio-play-btn audio-pause-btn" onclick="pauseAudio('${escapeJs(safeGid)}')"${disabledAttr}>⏸ 暂停</button>
+          <span class="audio-time" id="${escapeAttr(safeGid)}-time"></span>
+        </div>
+        ${openLink}
+      </div>`;
   }
 
   function renderSpeedupCandidatesTable(r, tid) {
@@ -4043,10 +4261,12 @@
     }
 
     // 双轨播放器：变速前用原始 tts_full round 音频，变速后用 speedup_audio_path（相对路径）
-    const preRel  = `tts_full.round_${r.round}.mp3`;
+    const preRel = `tts_full.round_${r.round}.mp3`;
     const postRel = r.segment_assembly_audio_path || r.speedup_audio_path || '';
-    const preUrl  = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(preRel)}`);
-    const postUrl = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(postRel)}`);
+    const preUrl = _speedupArtifactUrl(tid, preRel);
+    const postUrl = _speedupArtifactUrl(tid, postRel);
+    const preGid = `speedup-pre-${r.round || 'x'}`;
+    const postGid = `speedup-post-${r.round || 'x'}`;
 
     return `
       <div class="tts-speedup-card">
@@ -4060,14 +4280,8 @@
         ${candidatesTable}
         ${selectionTable}
         <div class="tts-speedup-players">
-          <div>
-            <div class="col-label">变速前 ${preDur}s</div>
-            <audio controls preload="none" src="${escapeAttr(preUrl)}"></audio>
-          </div>
-          <div>
-            <div class="col-label">变速后 ${postDur}s</div>
-            <audio controls preload="none" src="${escapeAttr(postUrl)}"></audio>
-          </div>
+          ${_speedupAudioPreview(preGid, '变速前', preDur, preUrl)}
+          ${_speedupAudioPreview(postGid, '变速后', postDur, postUrl)}
         </div>
       </div>`;
   }

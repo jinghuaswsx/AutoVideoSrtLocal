@@ -268,6 +268,61 @@ def test_multi_translate_llm_debug_route_rejects_path_traversal(
     assert b"secret" not in resp.data
 
 
+def test_multi_translate_artifact_path_route_serves_task_relative_audio(
+    authed_client_no_db, tmp_path, monkeypatch,
+):
+    task_dir = tmp_path / "multi-artifact-path"
+    task_dir.mkdir()
+    audio = task_dir / "tts_full.round_1.mp3"
+    audio.write_bytes(b"audio")
+
+    task = {
+        "id": "multi-artifact-path",
+        "_user_id": 2,
+        "type": "multi_translate",
+        "task_dir": str(task_dir),
+    }
+
+    from web.routes import multi_translate as r
+
+    monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
+
+    resp = authed_client_no_db.get(
+        "/api/multi-translate/multi-artifact-path/artifact-path"
+        "?path=tts_full.round_1.mp3"
+    )
+
+    assert resp.status_code == 200
+    assert resp.data == b"audio"
+
+
+def test_multi_translate_artifact_path_route_rejects_traversal(
+    authed_client_no_db, tmp_path, monkeypatch,
+):
+    task_dir = tmp_path / "multi-artifact-path"
+    task_dir.mkdir()
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(b"outside")
+
+    task = {
+        "id": "multi-artifact-path",
+        "_user_id": 2,
+        "type": "multi_translate",
+        "task_dir": str(task_dir),
+    }
+
+    from web.routes import multi_translate as r
+
+    monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
+
+    resp = authed_client_no_db.get(
+        "/api/multi-translate/multi-artifact-path/artifact-path"
+        "?path=../outside.mp3"
+    )
+
+    assert resp.status_code == 404
+
+
 def test_normal_user_cannot_get_other_users_multi_translate_task(authed_user_client_no_db, monkeypatch):
     from web.routes import multi_translate as r
 

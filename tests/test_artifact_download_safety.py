@@ -152,6 +152,63 @@ def test_safe_task_file_response_sends_allowed_path(monkeypatch, tmp_path):
     assert called[0][1]["mimetype"] == "application/json"
 
 
+def test_safe_task_relative_file_response_sends_task_relative_path(monkeypatch, tmp_path):
+    from flask import Flask
+    from web.services import artifact_download
+
+    task_dir = tmp_path / "task"
+    nested = task_dir / "tts_segments"
+    nested.mkdir(parents=True)
+    inside = nested / "seg_0001.mp3"
+    inside.write_bytes(b"audio")
+
+    called = []
+    monkeypatch.setattr(
+        artifact_download,
+        "send_file",
+        lambda *args, **kwargs: called.append((args, kwargs)) or "sent",
+    )
+
+    app = Flask(__name__)
+    with app.app_context():
+        result = artifact_download.safe_task_relative_file_response(
+            {"task_dir": str(task_dir)},
+            "tts_segments/seg_0001.mp3",
+            mimetype="audio/mpeg",
+        )
+
+    assert result == "sent"
+    assert called[0][0][0].endswith("tts_segments/seg_0001.mp3")
+    assert called[0][1]["mimetype"] == "audio/mpeg"
+
+
+def test_safe_task_relative_file_response_rejects_traversal(monkeypatch, tmp_path):
+    from flask import Flask
+    from web.services import artifact_download
+
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(b"outside")
+
+    called = []
+    monkeypatch.setattr(
+        artifact_download,
+        "send_file",
+        lambda *args, **kwargs: called.append((args, kwargs)) or "sent",
+    )
+
+    app = Flask(__name__)
+    with app.app_context():
+        response, status = artifact_download.safe_task_relative_file_response(
+            {"task_dir": str(task_dir)},
+            "../outside.mp3",
+        )
+
+    assert status == 404
+    assert called == []
+
+
 def test_resolve_preview_artifact_path_prefers_variant_preview_file(tmp_path):
     from pathlib import Path
     from web.services import artifact_download

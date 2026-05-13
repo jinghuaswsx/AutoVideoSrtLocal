@@ -178,6 +178,26 @@ def safe_task_file_response(
     return send_file(os.path.abspath(safe_path), **send_file_kwargs)
 
 
+def safe_task_relative_file_response(
+    task: dict,
+    path: str | None,
+    *,
+    not_found_message: str = "Artifact not found",
+    **send_file_kwargs,
+):
+    raw_path = str(path or "").strip()
+    task_dir = str(task.get("task_dir") or "").strip()
+    if not raw_path or not task_dir:
+        return jsonify({"error": not_found_message}), 404
+    candidate = raw_path if os.path.isabs(raw_path) else os.path.join(task_dir, raw_path)
+    return safe_task_file_response(
+        task,
+        candidate,
+        not_found_message=not_found_message,
+        **send_file_kwargs,
+    )
+
+
 def safe_task_dir_path(task: dict, path: str | None) -> str | None:
     if not path:
         return None
