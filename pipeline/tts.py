@@ -523,6 +523,39 @@ def regenerate_full_audio_with_speed(
     return {"full_audio_path": full_audio_path, "segments": updated_segments}
 
 
+def assemble_full_audio_from_segments(
+    segments: List[Dict],
+    output_dir: str,
+    *,
+    variant: str,
+) -> Dict:
+    """Concat already-generated segment candidate files into one full track."""
+    if not segments:
+        raise ValueError("segments must not be empty")
+
+    seg_dir = os.path.join(output_dir, "tts_segments", f"{variant}_assembly")
+    os.makedirs(seg_dir, exist_ok=True)
+
+    concat_list_path = os.path.join(seg_dir, "concat.txt")
+    with open(concat_list_path, "w", encoding="utf-8") as concat_f:
+        for seg in segments:
+            seg_path = seg.get("tts_path")
+            if not seg_path:
+                raise ValueError("each segment must include tts_path")
+            concat_f.write(f"file '{os.path.abspath(seg_path)}'\n")
+
+    full_audio_path = os.path.join(output_dir, f"tts_full.{variant}.assembled.mp3")
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path,
+         "-c", "copy", full_audio_path],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"音频拼接失败 (segment assembly): {result.stderr}")
+
+    return {"full_audio_path": full_audio_path, "segments": segments}
+
+
 def _get_audio_duration(audio_path: str) -> float:
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",

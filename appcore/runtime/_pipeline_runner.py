@@ -87,6 +87,8 @@ from ._helpers import (
     _is_av_pipeline_task,
     _av_target_lang,
     _tts_final_target_range,
+    _speedup_candidate_speeds,
+    _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
     _distance_to_duration_range,
@@ -313,6 +315,234 @@ class PipelineRunner:
                 task_id, "tts",
                 f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · {sub}",
             )
+
+        def _segment_text_hash(text: str) -> str:
+            import hashlib
+
+            return hashlib.sha1(str(text or "").encode("utf-8")).hexdigest()
+
+        def _segment_candidate(seg: dict, *, index: int, source: str,
+                               speed: float, attempt: int | None = None) -> dict:
+            text = seg.get("tts_text") or seg.get("translated") or seg.get("text") or ""
+            duration = float(seg.get("tts_duration") or seg.get("duration") or 0.0)
+            path = seg.get("tts_path") or seg.get("audio_path")
+            candidate = dict(seg)
+            candidate.update({
+                "segment_index": index,
+                "tts_text": text,
+                "tts_text_hash": _segment_text_hash(text),
+                "tts_path": path,
+                "audio_path": path,
+                "duration": duration,
+                "tts_duration": duration,
+                "source": source,
+                "speed": speed,
+            })
+            if attempt is not None:
+                candidate["speedup_attempt"] = attempt
+            return candidate
+
+        def _base_candidate_groups(segments: list[dict]) -> list[list[dict]]:
+            return [
+                [_segment_candidate(seg, index=i, source="round", speed=1.0)]
+                for i, seg in enumerate(segments or [])
+            ]
+
+        def _add_speedup_segments_to_groups(
+            groups: list[list[dict]],
+            segments: list[dict],
+            *,
+            speed: float,
+            attempt: int,
+        ) -> None:
+            for i, seg in enumerate(segments or []):
+                if i >= len(groups):
+                    continue
+                groups[i].append(
+                    _segment_candidate(
+                        seg, index=i, source="speedup", speed=speed,
+                        attempt=attempt,
+                    )
+                )
+
+        def _relative(path: str | None) -> str | None:
+            if not path:
+                return None
+            try:
+                return os.path.relpath(path, task_dir)
+            except Exception:
+                return path
+
+        def _run_segment_speedup_assembly(
+            *,
+            result: dict,
+            audio_duration: float,
+            round_record: dict,
+            context: str,
+        ) -> dict:
+            speeds = _speedup_candidate_speeds(
+                audio_duration=audio_duration,
+                video_duration=video_duration,
+                max_candidates=3,
+            )
+            round_record["segment_assembly_applied"] = bool(speeds)
+            round_record["segment_assembly_target_lo"] = max(0.0, video_duration - 1.0)
+            round_record["segment_assembly_target_hi"] = video_duration
+            round_record["speedup_candidates"] = []
+            if not speeds:
+                round_record["segment_assembly_hit"] = False
+                return {"hit": False, "failed": False}
+            if not tts_engine.supports_speed_param:
+                reason = f"tts engine {tts_engine.code!r} does not support native speed param"
+                round_record["speedup_failed_reason"] = reason
+                round_record["segment_assembly_hit"] = False
+                return {"hit": False, "failed": True, "reason": reason}
+
+            groups = _base_candidate_groups(result.get("segments") or [])
+            last_speedup_path = None
+            last_speedup_duration = None
+            last_eval_id = None
+            last_speed = None
+            for attempt, speed in enumerate(speeds, start=1):
+                _substep(
+                    f"段级候选重生成 speed={speed:.2f} ({attempt}/{len(speeds)})"
+                )
+
+                def _on_segment_assembly_seg_done(done, total, info):
+                    self._emit_substep_msg(
+                        task_id, "tts",
+                        f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 段级候选 speed={speed:.2f} {done}/{total}",
+                    )
+                    round_record["speedup_segments_done"] = done
+                    round_record["speedup_segments_total"] = total
+                    self._emit_duration_round(
+                        task_id, round_index, "speedup_progress", round_record,
+                    )
+
+                variant_suffix = str(speed).replace(".", "_")
+                try:
+                    speedup_result = tts_engine.regenerate_with_speed(
+                        result["segments"],
+                        voice["elevenlabs_voice_id"],
+                        task_dir,
+                        variant=f"round_{round_index}.speed_{variant_suffix}",
+                        speed=speed,
+                        model_id=tts_model_id,
+                        language_code=tts_language_code,
+                        on_segment_done=_on_segment_assembly_seg_done,
+                    )
+                    speedup_audio_path = speedup_result["full_audio_path"]
+                    speedup_duration = tts_engine.get_audio_duration(speedup_audio_path)
+                except Exception as exc:
+                    log.exception(
+                        "[task %s] segment speedup candidate failed at round %d speed %.2f",
+                        task_id, round_index, speed,
+                    )
+                    round_record["speedup_failed_reason"] = str(exc)[:500]
+                    round_record["segment_assembly_hit"] = False
+                    return {"hit": False, "failed": True, "reason": str(exc)}
+
+                _add_speedup_segments_to_groups(
+                    groups, speedup_result.get("segments") or [],
+                    speed=speed, attempt=attempt,
+                )
+                candidate_hit = (video_duration - 1.0) <= speedup_duration <= video_duration
+                eval_id = None
+                try:
+                    from appcore import tts_speedup_eval
+                    eval_id = tts_speedup_eval.run_evaluation(
+                        task_id=task_id,
+                        round_index=round_index,
+                        language=target_language_label or "",
+                        video_duration=video_duration,
+                        audio_pre_path=result["full_audio_path"],
+                        audio_pre_duration=audio_duration,
+                        audio_post_path=speedup_audio_path,
+                        audio_post_duration=speedup_duration,
+                        speed_ratio=speed,
+                        hit_final_range=candidate_hit,
+                        user_id=self.user_id,
+                    )
+                except Exception:
+                    log.exception(
+                        "[task %s] tts_speedup_eval.run_evaluation raised; ignoring",
+                        task_id,
+                    )
+
+                candidate_meta = {
+                    "attempt": attempt,
+                    "speed": round(speed, 4),
+                    "audio_path": _relative(speedup_audio_path),
+                    "duration": speedup_duration,
+                    "hit_video_cap": candidate_hit,
+                    "shorter_than_pre": speedup_duration < audio_duration,
+                    "eval_id": eval_id,
+                }
+                round_record["speedup_candidates"].append(candidate_meta)
+                last_speedup_path = speedup_audio_path
+                last_speedup_duration = speedup_duration
+                last_eval_id = eval_id
+                last_speed = speed
+
+                selection = _select_segment_candidate_assembly(
+                    groups, video_duration=video_duration,
+                )
+                if selection.get("hit") and selection.get("total_duration", 0) < audio_duration:
+                    from pipeline.tts import assemble_full_audio_from_segments
+
+                    assembled = assemble_full_audio_from_segments(
+                        selection["selected"], task_dir,
+                        variant=f"round_{round_index}.segment_assembly",
+                    )
+                    assembled_path = assembled["full_audio_path"]
+                    assembled_duration = float(selection["total_duration"])
+                    round_record["segment_assembly_hit"] = True
+                    round_record["segment_assembly_audio_path"] = _relative(assembled_path)
+                    round_record["segment_assembly_duration"] = assembled_duration
+                    round_record["segment_assembly_gap"] = round(
+                        video_duration - assembled_duration, 6,
+                    )
+                    round_record["segment_assembly_selected"] = [
+                        {
+                            "segment_index": c.get("segment_index"),
+                            "source": c.get("source"),
+                            "speed": c.get("speed"),
+                            "duration": c.get("duration"),
+                            "audio_path": _relative(c.get("tts_path")),
+                        }
+                        for c in selection["selected"]
+                    ]
+                    round_record["speedup_speed"] = round(speed, 4)
+                    round_record["speedup_pre_duration"] = audio_duration
+                    round_record["speedup_post_duration"] = assembled_duration
+                    round_record["speedup_audio_path"] = _relative(assembled_path)
+                    round_record["speedup_eval_id"] = eval_id
+                    round_record["speedup_hit_final"] = True
+                    round_record["speedup_video_cap_hit"] = True
+                    return {
+                        "hit": True,
+                        "failed": False,
+                        "audio_path": assembled_path,
+                        "segments": assembled["segments"],
+                        "duration": assembled_duration,
+                        "eval_id": eval_id,
+                        "speed": speed,
+                        "context": context,
+                    }
+
+                round_record["segment_assembly_best_under_duration"] = (
+                    selection.get("best_under_duration")
+                )
+
+            round_record["segment_assembly_hit"] = False
+            round_record["speedup_speed"] = round(last_speed, 4) if last_speed else None
+            round_record["speedup_pre_duration"] = audio_duration
+            round_record["speedup_post_duration"] = last_speedup_duration
+            round_record["speedup_audio_path"] = _relative(last_speedup_path)
+            round_record["speedup_eval_id"] = last_eval_id
+            round_record["speedup_hit_final"] = False
+            round_record["speedup_video_cap_hit"] = False
+            return {"hit": False, "failed": False}
 
         for round_index in range(1, MAX_ROUNDS + 1):
             round_record: dict = {
@@ -805,115 +1035,39 @@ class PipelineRunner:
                 final_audio_path = result["full_audio_path"]
                 final_segments = result["segments"]
                 if audio_duration > video_duration:
-                    from appcore.runtime import _speedup_ratio
-
-                    speed = _speedup_ratio(audio_duration, video_duration)
                     round_record["speedup_applied"] = True
                     round_record["speedup_context"] = "final_converged_overshoot"
                     round_record["speedup_final_audio_choice"] = "converged"
-                    round_record["speedup_speed"] = round(speed, 4)
                     round_record["speedup_pre_duration"] = audio_duration
                     _substep(
-                        f"收敛后超长：speed={speed:.4f}, 重新生成 ElevenLabs 候选音频"
+                        "收敛后超长：生成段级 speed 候选并重组音频"
                     )
                     self._emit_duration_round(
                         task_id, round_index, "speedup_start", round_record,
                     )
 
-                    speedup_audio_path = None
-                    speedup_duration = None
-                    speedup_result = None
-                    try:
-                        if not tts_engine.supports_speed_param:
-                            raise NotImplementedError(
-                                f"tts engine {tts_engine.code!r} does not support native speed param"
-                            )
-
-                        def _on_final_speedup_seg_done(done, total, info):
-                            self._emit_substep_msg(
-                                task_id, "tts",
-                                f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 收敛后变速重生成 ElevenLabs 音频 {done}/{total}",
-                            )
-                            round_record["speedup_segments_done"] = done
-                            round_record["speedup_segments_total"] = total
-                            self._emit_duration_round(
-                                task_id, round_index, "speedup_progress", round_record,
-                            )
-
-                        speedup_result = tts_engine.regenerate_with_speed(
-                            result["segments"],
-                            voice["elevenlabs_voice_id"],
-                            task_dir,
-                            variant=f"round_{round_index}",
-                            speed=speed,
-                            model_id=tts_model_id,
-                            language_code=tts_language_code,
-                            on_segment_done=_on_final_speedup_seg_done,
+                    assembly = _run_segment_speedup_assembly(
+                        result=result,
+                        audio_duration=audio_duration,
+                        round_record=round_record,
+                        context="final_converged_overshoot",
+                    )
+                    if assembly.get("hit"):
+                        final_audio_path = assembly["audio_path"]
+                        final_segments = assembly["segments"]
+                        round_record["final_reason"] = (
+                            "converged_segment_assembly_refined"
                         )
-                        speedup_audio_path = speedup_result["full_audio_path"]
-                        speedup_duration = tts_engine.get_audio_duration(speedup_audio_path)
-                        round_record["speedup_audio_path"] = (
-                            os.path.relpath(speedup_audio_path, task_dir)
-                        )
-                        round_record["speedup_post_duration"] = speedup_duration
-                        round_record["speedup_chars_used"] = sum(
-                            len((s.get("tts_text") or "")) for s in result["segments"]
-                        )
-                    except Exception as exc:
-                        log.exception(
-                            "[task %s] final overshoot speedup failed at round %d, keeping converged audio",
-                            task_id, round_index,
-                        )
-                        round_record["speedup_failed_reason"] = str(exc)[:500]
-
-                    eval_id = None
-                    if speedup_audio_path is not None:
-                        hit_final = (
-                            final_target_lo <= speedup_duration <= final_target_hi
-                        )
-                        round_record["speedup_hit_final"] = hit_final
-                        try:
-                            from appcore import tts_speedup_eval
-                            eval_id = tts_speedup_eval.run_evaluation(
-                                task_id=task_id,
-                                round_index=round_index,
-                                language=target_language_label or "",
-                                video_duration=video_duration,
-                                audio_pre_path=result["full_audio_path"],
-                                audio_pre_duration=audio_duration,
-                                audio_post_path=speedup_audio_path,
-                                audio_post_duration=speedup_duration,
-                                speed_ratio=speed,
-                                hit_final_range=hit_final,
-                                user_id=self.user_id,
-                            )
-                        except Exception:
-                            log.exception(
-                                "[task %s] tts_speedup_eval.run_evaluation raised; ignoring",
-                                task_id,
-                            )
-
-                        speedup_shorter = speedup_duration < audio_duration
-                        round_record["speedup_shorter_than_pre"] = speedup_shorter
-                        if hit_final and speedup_shorter:
-                            final_audio_path = speedup_audio_path
-                            final_segments = speedup_result["segments"]
-                            round_record["final_reason"] = "converged_speedup_refined"
-                            round_record["speedup_final_audio_choice"] = "speedup"
-                        elif hit_final:
-                            round_record["final_reason"] = (
-                                "converged_speedup_longer_kept_original"
-                            )
-                        else:
-                            round_record["final_reason"] = (
-                                "converged_speedup_miss_kept_original"
-                            )
-                    else:
+                        round_record["speedup_final_audio_choice"] = "assembly"
+                    elif assembly.get("failed"):
                         round_record["speedup_hit_final"] = False
                         round_record["final_reason"] = (
                             "converged_speedup_failed_kept_original"
                         )
-                    round_record["speedup_eval_id"] = eval_id
+                    else:
+                        round_record["final_reason"] = (
+                            "converged_segment_assembly_miss_kept_original"
+                        )
                     self._emit_duration_round(
                         task_id, round_index, "speedup_done", round_record,
                     )
@@ -949,121 +1103,52 @@ class PipelineRunner:
             # 重新合成一遍音频。命中 final 即收敛；未命中走 atempo 兜底；变速本身
             # 失败则回退到原始音频走 atempo。无论哪条路径，都立即终结，不再继续
             # 后续 rewrite 轮次。
-            from appcore.runtime import _in_speedup_window, _speedup_ratio
+            from appcore.runtime import _in_speedup_window
             if _in_speedup_window(
                 audio_duration=audio_duration,
                 video_duration=video_duration,
                 window_ratio=speedup_window,
             ):
-                speed = _speedup_ratio(audio_duration, video_duration)
                 round_record["speedup_applied"] = True
-                round_record["speedup_speed"] = round(speed, 4)
                 round_record["speedup_pre_duration"] = audio_duration
-                round_record["is_final"] = True
-                _substep(f"变速短路：speed={speed:.4f}, 重生成 ElevenLabs 音频")
+                _substep("变速短路：生成段级 speed 候选并重组音频")
                 self._emit_duration_round(task_id, round_index, "speedup_start", round_record)
 
-                speedup_audio_path = None
-                speedup_duration = None
-                speedup_result = None
-                speedup_failed_reason = None
-                try:
-                    if not tts_engine.supports_speed_param:
-                        raise NotImplementedError(
-                            f"tts engine {tts_engine.code!r} does not support native speed param"
-                        )
-
-                    def _on_speedup_seg_done(done, total, info):
-                        self._emit_substep_msg(
-                            task_id, "tts",
-                            f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 变速重生成 ElevenLabs 音频 {done}/{total}",
-                        )
-                        # 不更新 round_record 的 audio_segments_done（那是原始 round 的字段），
-                        # 用专门的 speedup 字段，避免混淆 UI
-                        round_record["speedup_segments_done"] = done
-                        round_record["speedup_segments_total"] = total
-                        self._emit_duration_round(task_id, round_index, "speedup_progress", round_record)
-
-                    speedup_result = tts_engine.regenerate_with_speed(
-                        result["segments"],
-                        voice["elevenlabs_voice_id"],
-                        task_dir,
-                        variant=f"round_{round_index}",
-                        speed=speed,
-                        model_id=tts_model_id,
-                        language_code=tts_language_code,
-                        on_segment_done=_on_speedup_seg_done,
-                    )
-                    speedup_audio_path = speedup_result["full_audio_path"]
-                    speedup_duration = tts_engine.get_audio_duration(speedup_audio_path)
-                    round_record["speedup_audio_path"] = (
-                        os.path.relpath(speedup_audio_path, task_dir)
-                    )
-                    round_record["speedup_post_duration"] = speedup_duration
-                    round_record["speedup_chars_used"] = sum(
-                        len((s.get("tts_text") or "")) for s in result["segments"]
-                    )
-                except Exception as exc:
-                    log.exception(
-                        "[task %s] speedup regeneration failed at round %d, falling back",
-                        task_id, round_index,
-                    )
-                    speedup_failed_reason = str(exc)[:500]
-                    round_record["speedup_failed_reason"] = speedup_failed_reason
-
-                # Decide which audio is the final adopted one.
-                # ↑ 不再做 ffmpeg atempo 兜底（听感失真）；变速产物（或变速
-                # 失败时的原始产物）原样输出，残余时长偏差由 compose 阶段的
-                # timeline_manifest 自然处理。
-                if speedup_audio_path is None:
-                    # 变速调用失败 → 直接采用变速前的原始音频
-                    final_audio_path = result["full_audio_path"]
-                    round_record["final_reason"] = "speedup_failed_kept_original"
-                    round_record["speedup_hit_final"] = False
-                else:
-                    hit_final = (
-                        final_target_lo <= speedup_duration <= final_target_hi
-                    )
-                    round_record["speedup_hit_final"] = hit_final
-                    final_audio_path = speedup_audio_path
+                assembly = _run_segment_speedup_assembly(
+                    result=result,
+                    audio_duration=audio_duration,
+                    round_record=round_record,
+                    context="shortcut_window",
+                )
+                if not assembly.get("hit"):
+                    round_record["is_final"] = False
                     round_record["final_reason"] = (
-                        "speedup_converged" if hit_final else "speedup_kept_unaligned"
+                        "speedup_segment_assembly_failed_continue"
+                        if assembly.get("failed")
+                        else "speedup_segment_assembly_missed_continue"
                     )
+                    rounds[-1] = round_record
+                    task_state.update(task_id, tts_duration_rounds=rounds)
+                    self._emit_duration_round(
+                        task_id, round_index, "speedup_done", round_record,
+                    )
+                    last_audio_duration = audio_duration
+                    last_word_count = word_count
+                    continue
 
-                # 同步 AI 评估（仅当变速成功有 audio_post 才跑）
-                eval_id = None
-                if speedup_audio_path is not None:
-                    try:
-                        from appcore import tts_speedup_eval
-                        eval_id = tts_speedup_eval.run_evaluation(
-                            task_id=task_id,
-                            round_index=round_index,
-                            language=target_language_label or "",
-                            video_duration=video_duration,
-                            audio_pre_path=result["full_audio_path"],
-                            audio_pre_duration=audio_duration,
-                            audio_post_path=speedup_audio_path,
-                            audio_post_duration=speedup_duration,
-                            speed_ratio=speed,
-                            hit_final_range=bool(
-                                round_record.get("speedup_hit_final")
-                            ),
-                            user_id=self.user_id,
-                        )
-                    except Exception:
-                        log.exception(
-                            "[task %s] tts_speedup_eval.run_evaluation raised; ignoring",
-                            task_id,
-                        )
-                round_record["speedup_eval_id"] = eval_id
+                final_audio_path = assembly["audio_path"]
+                final_segments = assembly["segments"]
+                round_record["is_final"] = True
+                round_record["final_reason"] = "speedup_segment_assembly_converged"
+                round_record["speedup_final_audio_choice"] = "assembly"
 
                 round_products[-1]["tts_audio_path"] = final_audio_path
+                round_products[-1]["tts_segments"] = final_segments
                 rounds[-1] = round_record
-                if round_record["final_reason"] == "speedup_converged":
+                if round_record["final_reason"] == "speedup_segment_assembly_converged":
                     final_distance = 0.0
                 else:
-                    # speedup_kept_unaligned 或 speedup_failed_kept_original
-                    measured_duration = speedup_duration if speedup_duration is not None else audio_duration
+                    measured_duration = round_record.get("segment_assembly_duration") or audio_duration
                     final_distance = round(_distance_to_duration_range(
                         measured_duration, final_target_lo, final_target_hi,
                     ), 3)
@@ -1088,10 +1173,7 @@ class PipelineRunner:
                     "localized_translation": localized_translation,
                     "tts_script": tts_script,
                     "tts_audio_path": final_audio_path,
-                    "tts_segments": (
-                        speedup_result["segments"] if speedup_audio_path is not None
-                        else result["segments"]
-                    ),
+                    "tts_segments": final_segments,
                     "rounds": rounds,
                     "round_products": round_products,
                     "final_round": round_index,
@@ -1865,10 +1947,18 @@ class PipelineRunner:
 
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
         self._set_step(task_id, "extract", "running", "正在提取音频...")
-        from pipeline.extract import extract_audio
+        from pipeline.extract import extract_audio, get_video_duration
 
         audio_path = extract_audio(video_path, task_dir)
-        task_state.update(task_id, audio_path=audio_path)
+        updates = {"audio_path": audio_path}
+        try:
+            video_duration = float(get_video_duration(video_path) or 0.0)
+        except Exception:
+            log.warning("failed to probe source video duration for task %s", task_id, exc_info=True)
+            video_duration = 0.0
+        if video_duration > 0:
+            updates["video_duration"] = video_duration
+        task_state.update(task_id, **updates)
         task_state.set_preview_file(task_id, "audio_extract", audio_path)
         task_state.set_artifact(task_id, "extract", build_extract_artifact())
         self._set_step(task_id, "extract", "done", "音频提取完成")

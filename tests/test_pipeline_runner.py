@@ -92,6 +92,22 @@ def test_web_pipeline_runner_uses_sentence_translate_runner_for_av_tasks(tmp_pat
     assert runner.project_type == "sentence_translate"
 
 
+def test_step_extract_stores_original_video_duration(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    task_id = "task-extract-duration"
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
+    monkeypatch.setattr("pipeline.extract.extract_audio", lambda video_path, task_dir: str(tmp_path / "audio.wav"))
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda video_path: 21.37)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=1)
+    runner._step_extract(task_id, "video.mp4", str(tmp_path))
+
+    task = task_state.get(task_id)
+    assert task["audio_path"] == str(tmp_path / "audio.wav")
+    assert task["video_duration"] == pytest.approx(21.37)
+
+
 def test_base_pipeline_runner_av_steps_delegate_to_facade(tmp_path, monkeypatch):
     task_id = "task-av-base-runner-delegation"
     store.create(task_id, "video.mp4", str(tmp_path))
