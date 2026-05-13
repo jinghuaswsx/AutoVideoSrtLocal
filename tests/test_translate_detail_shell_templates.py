@@ -238,6 +238,9 @@ def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     assert "rewrite_skip_reason" in script
     assert "final_compose_summary" in script
     assert "最终合成说明" in script
+    assert "final-processing-banner" in script
+    assert "成品音轨" in script
+    assert "尾部静音补齐" in script
     assert "拼接方式" in script
     assert "coverage_ok" in script
     assert "omitted_source_terms" in script
@@ -250,6 +253,7 @@ def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     assert "av-attempt-text-after" in script
     assert "semantic-coverage-chip" in script
     assert ".sentence-process-modal" in styles
+    assert ".final-processing-banner" in styles
     assert ".semantic-coverage-chip" in styles
     assert 'id="sentenceReconcileProcessModal"' in template
     assert ".sentence-tts-progress" in styles

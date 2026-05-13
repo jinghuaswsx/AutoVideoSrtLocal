@@ -1,3 +1,5 @@
+import pytest
+
 from appcore.events import EventBus
 from appcore.runtime_sentence_translate import SentenceTranslateRunner
 from web import store
@@ -239,3 +241,50 @@ def test_tts_step_records_fallback_final_compose_summary(tmp_path, monkeypatch):
     assert summary["audio_truncated"] is True
     assert summary["truncation_seconds"] == 0.2
     assert summary["affected_sentence_indices"] == [0]
+    assert summary["audio_content_duration"] == pytest.approx(1.2)
+    assert summary["tail_padding_duration"] == pytest.approx(0.0)
+    assert "最终输出" in summary["final_processing_label"]
+    assert "截断" in summary["final_processing_label"]
+
+
+def test_final_compose_summary_spells_out_tail_padding_without_truncation():
+    from appcore.tts_strategies.sentence_reconcile import _build_final_compose_summary
+
+    summary = _build_final_compose_summary(
+        {"video_duration": 33.7},
+        [
+            {
+                "asr_index": 0,
+                "status": "ok",
+                "target_duration": 10.0,
+                "tts_duration": 10.0,
+                "audio_start_time": 0.0,
+                "audio_end_time": 10.0,
+                "audio_gap_before": 0.0,
+            },
+            {
+                "asr_index": 1,
+                "status": "ok",
+                "target_duration": 20.8,
+                "tts_duration": 20.6,
+                "audio_start_time": 11.6,
+                "audio_end_time": 32.2,
+                "audio_gap_before": 1.6,
+            },
+        ],
+        [
+            {"asr_index": 0, "source_end_time": 10.0, "tts_duration": 10.0},
+            {"asr_index": 1, "source_end_time": 33.7, "tts_duration": 20.6},
+        ],
+        audio_path="tts_full.av.mp3",
+        max_compact_gap=0.25,
+    )
+
+    assert summary["final_output_audio_duration"] == pytest.approx(33.7)
+    assert summary["effective_speech_duration"] == pytest.approx(30.6)
+    assert summary["silence_gap_duration"] == pytest.approx(1.6)
+    assert summary["audio_content_duration"] == pytest.approx(32.2)
+    assert summary["tail_padding_duration"] == pytest.approx(1.5)
+    assert summary["audio_truncated"] is False
+    assert "尾部静音 1.5s" in summary["final_processing_label"]
+    assert "无截断" in summary["final_processing_label"]

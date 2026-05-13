@@ -62,6 +62,20 @@ def _max_timeline_end(rows: list[dict]) -> float | None:
     return max_end if max_end > 0 else None
 
 
+def _max_audio_content_end(rows: list[dict]) -> float | None:
+    max_end = 0.0
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        end = _float_value(
+            row.get("audio_end_time", row.get("end_time", row.get("tts_duration", 0.0))),
+            0.0,
+        )
+        if end > max_end:
+            max_end = end
+    return max_end if max_end > 0 else None
+
+
 def _sentence_index(row: dict, fallback: int) -> int:
     value = row.get("asr_index", row.get("index", fallback))
     try:
@@ -175,6 +189,26 @@ def _build_final_compose_summary(
 
     final_output_audio_duration = _first_positive(video_duration, source_end, effective_speech_duration) or 0.0
     final_video_duration = _first_positive(video_duration, final_output_audio_duration) or 0.0
+    audio_content_duration = _first_positive(
+        _max_audio_content_end(final_sentences),
+        effective_speech_duration + silence_gap_duration,
+        effective_speech_duration,
+    ) or 0.0
+    tail_padding_duration = max(0.0, final_output_audio_duration - audio_content_duration)
+    if clipped_segments:
+        final_processing_label = (
+            f"最终输出 {final_output_audio_duration:.1f}s；"
+            f"原始排布 {audio_content_duration:.1f}s（口播 {effective_speech_duration:.1f}s + "
+            f"句间静音 {silence_gap_duration:.1f}s + 尾部静音 {tail_padding_duration:.1f}s）；"
+            f"已截断 {truncated_seconds:.1f}s"
+        )
+    else:
+        final_processing_label = (
+            f"最终输出 {final_output_audio_duration:.1f}s = "
+            f"口播 {effective_speech_duration:.1f}s + "
+            f"句间静音 {silence_gap_duration:.1f}s + "
+            f"尾部静音 {tail_padding_duration:.1f}s；无截断"
+        )
     notes = [
         "按每句 audio_start_time 放置音频，句间由静音补齐；输出时长由最终时间轴限制。",
     ]
@@ -189,6 +223,9 @@ def _build_final_compose_summary(
         "video_duration": round(video_duration or 0.0, 3),
         "target_sentence_duration": round(target_duration, 3),
         "effective_speech_duration": round(effective_speech_duration, 3),
+        "audio_content_duration": round(audio_content_duration, 3),
+        "tail_padding_duration": round(tail_padding_duration, 3),
+        "final_processing_label": final_processing_label,
         "final_output_audio_duration": round(final_output_audio_duration, 3),
         "final_audio_duration": round(final_output_audio_duration, 3),
         "final_video_duration": round(final_video_duration, 3),

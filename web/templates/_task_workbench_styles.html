@@ -1255,9 +1255,48 @@ video.media-player {
   line-height: var(--leading);
 }
 
+.final-processing-banner {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: #eff6ff;
+}
+
+.final-processing-banner.is-clipped {
+  border-left-color: var(--warning-fg);
+  background: #fff7ed;
+}
+
+.final-processing-banner.is-clean {
+  border-left-color: var(--success-fg);
+}
+
+.final-processing-kicker {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 800;
+}
+
+.final-processing-main {
+  margin-top: 3px;
+  color: var(--fg);
+  font-size: var(--text-base);
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.final-processing-detail {
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading);
+}
+
 .final-compose-metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: var(--space-2);
 }
 

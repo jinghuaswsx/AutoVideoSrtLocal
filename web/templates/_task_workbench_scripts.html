@@ -3449,6 +3449,9 @@
       effective_speech_duration: syncSummary.currentAudioDuration,
       final_output_audio_duration: syncSummary.finalAudioDuration,
       final_video_duration: syncSummary.videoDuration,
+      audio_content_duration: syncSummary.finalAudioDuration,
+      tail_padding_duration: 0,
+      final_processing_label: "旧任务未记录最终处理明细；页面按现有时长字段推断。",
       stitching_method: "按句 audio_start_time 放置，句间静音补齐，最终由 ffmpeg -t 限制到目标时间轴。",
       audio_truncated: false,
       truncation_seconds: 0,
@@ -3482,22 +3485,43 @@
   function renderFinalComposeSummary(sourceRows, context = {}) {
     const summary = sentenceFinalComposeSummary(sourceRows, context);
     if (!summary) return "";
-    const finalAudioDuration = summary.final_output_audio_duration ?? summary.final_audio_duration ?? summary.target_timeline_duration;
-    const finalVideoDuration = summary.final_video_duration ?? summary.video_duration ?? summary.target_timeline_duration;
+    const finalAudioDuration = numberOrNull(summary.final_output_audio_duration ?? summary.final_audio_duration ?? summary.target_timeline_duration);
+    const finalVideoDuration = numberOrNull(summary.final_video_duration ?? summary.video_duration ?? summary.target_timeline_duration);
+    const effectiveSpeechDuration = numberOrNull(summary.effective_speech_duration);
+    const silenceGapDuration = numberOrNull(summary.silence_gap_duration);
+    const explicitAudioContentDuration = numberOrNull(summary.audio_content_duration);
+    const audioContentDuration = explicitAudioContentDuration != null
+      ? explicitAudioContentDuration
+      : ((effectiveSpeechDuration != null || silenceGapDuration != null)
+        ? (effectiveSpeechDuration || 0) + (silenceGapDuration || 0)
+        : null);
+    const explicitTailPaddingDuration = numberOrNull(summary.tail_padding_duration);
+    const tailPaddingDuration = explicitTailPaddingDuration != null
+      ? explicitTailPaddingDuration
+      : (finalAudioDuration != null && audioContentDuration != null
+        ? Math.max(0, finalAudioDuration - audioContentDuration)
+        : null);
+    const clipped = Boolean(summary.audio_truncated);
+    const truncationDuration = numberOrNull(summary.truncation_seconds);
+    const fallbackProcessingLabel = clipped
+      ? `最终输出 ${formatAvDuration(finalAudioDuration)}；原始排布 ${formatAvDuration(audioContentDuration)}；已截断 ${formatAvDuration(truncationDuration)}`
+      : `最终输出 ${formatAvDuration(finalAudioDuration)} = 口播 ${formatAvDuration(effectiveSpeechDuration)} + 句间静音 ${formatAvDuration(silenceGapDuration)} + 尾部静音 ${formatAvDuration(tailPaddingDuration)}；无截断`;
+    const processingLabel = summary.final_processing_label || fallbackProcessingLabel;
     const metrics = [
       ["视频时长", formatAvDuration(summary.video_duration)],
-      ["有效口播时长", formatAvDuration(summary.effective_speech_duration)],
-      ["输出音轨时长", formatAvDuration(finalAudioDuration)],
+      ["成品音轨时长", formatAvDuration(finalAudioDuration)],
+      ["有效口播时长", formatAvDuration(effectiveSpeechDuration)],
+      ["音频内容时长", formatAvDuration(audioContentDuration)],
       ["最终视频时长", formatAvDuration(finalVideoDuration)],
       ["句级目标合计", formatAvDuration(summary.target_sentence_duration)],
-      ["静音补齐", `${escapeHtml(summary.silence_gap_count ?? 0)} 段 · ${escapeHtml(formatAvDuration(summary.silence_gap_duration))}`],
+      ["句间静音补齐", `${escapeHtml(summary.silence_gap_count ?? 0)} 段 · ${escapeHtml(formatAvDuration(silenceGapDuration))}`],
+      ["尾部静音补齐", formatAvDuration(tailPaddingDuration)],
     ].map(([label, value]) => `
       <div class="final-compose-metric">
         <span>${escapeHtml(label)}</span>
         <strong>${value}</strong>
       </div>
     `).join("");
-    const clipped = Boolean(summary.audio_truncated);
     const affected = Array.isArray(summary.affected_sentence_indices) && summary.affected_sentence_indices.length
       ? ` · 影响句 ${summary.affected_sentence_indices.map(item => escapeHtml(item)).join("、")}`
       : "";
@@ -3511,6 +3535,11 @@
             <div class="final-compose-subtitle">拼接方式：${escapeHtml(summary.stitching_method || "按句 audio_start_time 放置，句间静音补齐")}</div>
           </div>
           <span class="duration-status-tag ${escapeAttr(statusClass)}">${escapeHtml(finalComposeStatusLabel(summary))}</span>
+        </div>
+        <div class="final-processing-banner ${clipped ? "is-clipped" : "is-clean"}">
+          <div class="final-processing-kicker">最终处理</div>
+          <div class="final-processing-main">${escapeHtml(processingLabel)}</div>
+          <div class="final-processing-detail">按 audio_start_time 放置每句音频；句间静音补齐；尾部不足补静音；最后由 ffmpeg -t 限制到成品音轨时长。</div>
         </div>
         <div class="final-compose-metrics">${metrics}</div>
         <div class="final-compose-trim ${clipped ? "is-clipped" : "is-clean"}">

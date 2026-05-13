@@ -47,6 +47,12 @@ When a final sentence audio spills past its target timeline, the current source-
    - The button must remain available while TTS is running, using the latest progress rows available in `tts_duration_rounds`.
    - The modal should reuse the existing sentence reconcile rendering data; it must not require a second backend request.
 
+7. Final processing must be visually prominent:
+   - The detail page must make the final processing result stand out more than the intermediate sentence reconcile metrics.
+   - The card must clearly separate final product duration from spoken content duration.
+   - It must show how the final track is made: sentence audio placed by `audio_start_time`, silence inserted between sentences, tail silence padded when the target timeline is longer, and `ffmpeg -t` used as the final duration cap.
+   - It must explicitly state whether audio was truncated. When truncation exists, show removed seconds and affected sentence indices. When no truncation exists, state that no speech was cut and explain whether the remaining time is silence padding.
+
 ## Data Shape
 
 `variants.av.final_compose_summary` and top-level `final_compose_summary` should use:
@@ -64,6 +70,9 @@ When a final sentence audio spills past its target timeline, the current source-
   "stitching_method": "audio_start_time_compact_gaps",
   "silence_gap_count": 8,
   "silence_gap_duration": 2.25,
+  "audio_content_duration": 32.2,
+  "tail_padding_duration": 1.15,
+  "final_processing_label": "最终输出 33.7s = 口播 30.6s + 句间静音 1.6s + 尾部静音 1.5s；无截断",
   "has_best_effort": true,
   "warning_sentence_count": 1,
   "semantic_warning_count": 1,
@@ -76,6 +85,13 @@ When a final sentence audio spills past its target timeline, the current source-
 ```
 
 Missing values should render as unknown instead of hiding the card.
+
+`audio_content_duration` means the scheduled speech track before the final tail
+pad: effective spoken duration plus inserted inter-sentence silence, after
+sentence placement on the compact audio timeline. `tail_padding_duration` is the
+remaining silent tail between that scheduled content and the final output
+duration. These two fields are presentation diagnostics; the media source of
+truth remains the generated audio file and the final compose command.
 
 ## Verification
 
