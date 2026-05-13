@@ -245,6 +245,84 @@ def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, 
     assert "localized English" not in messages[0]["content"]
 
 
+def test_multi_ja_translate_uses_character_budget_localizer(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-ja-translate"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="ja",
+        source_language="en",
+        selected_voice_id="ja-voice",
+        script_segments=[
+            {
+                "index": 0,
+                "text": "Keep this bottle clean.",
+                "start_time": 0,
+                "end_time": 3,
+            }
+        ],
+        variants={},
+    )
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return {
+            "full_text": "ボトルを清潔に保てます",
+            "sentences": [
+                {
+                    "index": 0,
+                    "text": "ボトルを清潔に保てます",
+                    "source_segment_indices": [0],
+                }
+            ],
+            "_messages": [{"role": "system", "content": "ja"}],
+            "_usage": {},
+        }
+
+    monkeypatch.setattr(
+        "pipeline.ja_translate.generate_ja_localized_translation",
+        fake_generate,
+    )
+    monkeypatch.setattr(
+        "pipeline.ja_translate.build_source_full_text",
+        lambda segs: "Keep this bottle clean.",
+    )
+    monkeypatch.setattr(
+        "appcore.runtime_multi.generate_localized_translation",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("generic localizer should not run for ja")
+        ),
+    )
+    monkeypatch.setattr(
+        "appcore.runtime_multi.resolve_prompt_config",
+        lambda slot, lang: {"content": f"{slot}:{lang}"},
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
+    monkeypatch.setattr("appcore.runtime_multi._build_review_segments", lambda segs, loc: [])
+    monkeypatch.setattr("appcore.runtime_multi.build_asr_artifact", lambda *a, **kw: {})
+    monkeypatch.setattr("appcore.runtime_multi.build_translate_artifact", lambda *a, **kw: {})
+
+    runner = _make_runner()
+    runner._step_translate(task_id)
+
+    assert captured["voice_id"] == "ja-voice"
+    updated = task_state.get(task_id)
+    assert updated["localized_translation"]["full_text"] == "ボトルを清潔に保てます"
+    assert (
+        updated["variants"]["normal"]["localized_translation"]["full_text"]
+        == "ボトルを清潔に保てます"
+    )
+
+
 def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypatch):
     from appcore import task_state
 

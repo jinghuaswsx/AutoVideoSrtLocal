@@ -175,12 +175,164 @@ class _ModuleLocalizationAdapter(_PromptLocalizationAdapter):
 class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
     """Japanese adapter placeholder; task-specific overrides are added below."""
 
+    handles_translate = True
+
     def __init__(self):
         super().__init__("ja")
         from pipeline import ja_translate
 
         self.module = ja_translate
         self.__name__ = "pipeline.ja_translate"
+
+    @staticmethod
+    def _voice_public_id(voice: dict | None) -> str:
+        voice = voice or {}
+        return str(voice.get("elevenlabs_voice_id") or voice.get("voice_id") or "")
+
+    def run_translate(self, runner: "MultiTranslateRunner", task_id: str) -> None:
+        task = task_state.get(task_id)
+        task_dir = task["task_dir"]
+        source_language = (task.get("source_language") or "").strip()
+        if source_language not in _MANUAL_SOURCE_LANGUAGES:
+            message = (
+                f"source_language={source_language!r} 不在支持范围 "
+                f"({', '.join(_MANUAL_SOURCE_LANGUAGES)})；请手动选择源语言"
+            )
+            task_state.update(task_id, status="error", error=message)
+            runner._set_step(task_id, "translate", "failed", message)
+            return
+
+        script_segments = task.get("script_segments", [])
+        source_full_text = self.module.build_source_full_text(script_segments)
+        task_state.update(task_id, source_full_text_zh=source_full_text)
+        _save_json(task_dir, "source_full_text.json", {"full_text": source_full_text})
+
+        from pipeline.extract import get_video_duration
+
+        video_duration = get_video_duration(task.get("video_path") or "")
+        _ensure_source_transcript_is_actionable(
+            source_full_text=source_full_text,
+            video_duration=video_duration,
+            target_lang="ja",
+        )
+
+        voice = runner._resolve_voice(task, self)
+        voice_id = self._voice_public_id(voice)
+        runner._set_step(
+            task_id,
+            "translate",
+            "running",
+            "正在按日语字符预算逐句本土化...",
+            model_tag="ja_translate.localize",
+        )
+
+        localized_translation = self.module.generate_ja_localized_translation(
+            script_segments=script_segments,
+            voice_id=voice_id,
+            user_id=runner.user_id,
+            project_id=task_id,
+        )
+        initial_messages = localized_translation.pop("_messages", None)
+        if initial_messages:
+            _save_json(
+                task_dir,
+                "ja_localized_translate_messages.json",
+                prompt_file_payload(
+                    phase="ja_initial_translate",
+                    label="日语初始翻译",
+                    use_case_code="ja_translate.localize",
+                    provider="ja_translate.localize",
+                    model="ja_translate.localize",
+                    messages=initial_messages,
+                    request_payload={
+                        "use_case": "ja_translate.localize",
+                        "messages": initial_messages,
+                    },
+                    meta={"target_language": "ja"},
+                ),
+            )
+            task_state.add_llm_debug_ref(task_id, "translate", {
+                "id": "translate.initial",
+                "label": "日语初始翻译",
+                "path": "ja_localized_translate_messages.json",
+                "use_case": "ja_translate.localize",
+                "provider": "ja_translate.localize",
+                "model": "ja_translate.localize",
+                "target_language": "ja",
+            })
+
+        variants = dict(task.get("variants", {}))
+        variant_state = dict(variants.get("normal", {}))
+        variant_state["localized_translation"] = localized_translation
+        variants["normal"] = variant_state
+        _save_json(task_dir, "localized_translation.normal.json", localized_translation)
+
+        review_segments = _build_review_segments(script_segments, localized_translation)
+        requires_confirmation = bool(task.get("interactive_review"))
+        task_state.update(
+            task_id,
+            source_full_text=source_full_text,
+            source_full_text_zh=source_full_text,
+            source_language=source_language,
+            target_lang="ja",
+            localized_translation=localized_translation,
+            variants=variants,
+            segments=review_segments,
+            selected_voice_id=voice_id or task.get("selected_voice_id"),
+            _segments_confirmed=not requires_confirmation,
+        )
+        task_state.set_artifact(
+            task_id,
+            "asr",
+            build_asr_artifact(
+                task.get("utterances", []),
+                source_full_text,
+                source_language=source_language,
+            ),
+        )
+        task_state.set_artifact(
+            task_id,
+            "translate",
+            build_translate_artifact(
+                source_full_text,
+                localized_translation,
+                source_language=source_language,
+                target_language="ja",
+            ),
+        )
+        _save_json(task_dir, "localized_translation.json", localized_translation)
+
+        usage = localized_translation.get("_usage") or {}
+        _log_translate_billing(
+            user_id=runner.user_id,
+            project_id=task_id,
+            use_case_code="ja_translate.localize",
+            provider="ja_translate.localize",
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            success=True,
+            request_payload=_llm_request_payload(
+                localized_translation,
+                "ja_translate.localize",
+                "ja_translate.localize",
+                messages=initial_messages,
+            ),
+            response_payload=_llm_response_payload(localized_translation),
+        )
+
+        if requires_confirmation:
+            task_state.set_current_review_step(task_id, "translate")
+            runner._set_step(task_id, "translate", "waiting", "日语译文已生成，等待人工确认")
+        else:
+            task_state.set_current_review_step(task_id, "")
+            runner._set_step(task_id, "translate", "done", "日语本土化翻译完成")
+
+        runner._emit(task_id, EVT_TRANSLATE_RESULT, {
+            "source_full_text_zh": source_full_text,
+            "localized_translation": localized_translation,
+            "segments": review_segments,
+            "requires_confirmation": requires_confirmation,
+        })
 
 
 class MultiTranslateRunner(PipelineRunner):
@@ -261,6 +413,9 @@ class MultiTranslateRunner(PipelineRunner):
             task_dir,
         ):
             return
+        adapter = self._get_language_adapter(task)
+        if getattr(adapter, "handles_translate", False):
+            return adapter.run_translate(self, task_id)
         lang = self._resolve_target_lang(task)
         source_language = (task.get("source_language") or "").strip()
         if source_language not in _MANUAL_SOURCE_LANGUAGES:
