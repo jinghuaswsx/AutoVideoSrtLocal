@@ -453,6 +453,80 @@ def test_multi_ja_tts_uses_character_budget_duration_loop(tmp_path, monkeypatch)
     assert updated["variants"]["normal"]["tts_script"]["full_text"] == ja_text
 
 
+def test_multi_ja_subtitle_uses_timed_japanese_chunks(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-ja-subtitle"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    ja_text = "\u30dc\u30c8\u30eb\u3092\u6e05\u6f54\u306b\u4fdd\u3061\u307e\u3059\u3002"
+    tts_script = {
+        "full_text": ja_text,
+        "blocks": [{"index": 0, "text": ja_text}],
+        "subtitle_chunks": [{"text": ja_text, "block_indices": [0]}],
+    }
+    tts_segments = [
+        {
+            "index": 0,
+            "tts_text": ja_text,
+            "translated": ja_text,
+            "tts_duration": 3.0,
+        }
+    ]
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="ja",
+        variants={"normal": {"tts_script": tts_script, "segments": tts_segments}},
+        tts_script=tts_script,
+        segments=tts_segments,
+    )
+
+    fake_adapter = type("Adapter", (), {"display_name": "Subtitle ASR", "model_id": "fake"})()
+    monkeypatch.setattr("appcore.asr_router.resolve_adapter", lambda *a, **kw: (fake_adapter, None))
+    monkeypatch.setattr(
+        "appcore.asr_router.transcribe",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("subtitle ASR should not run for ja")
+        ),
+    )
+
+    captured = {}
+
+    def fake_build_timed_chunks(script, segments):
+        captured["tts_script"] = script
+        captured["tts_segments"] = segments
+        return [{"index": 0, "text": ja_text, "start_time": 0.0, "end_time": 3.0}]
+
+    def fake_save_srt(content, path):
+        captured["srt_content"] = content
+        srt_path = tmp_path / "subtitle.normal.srt"
+        srt_path.write_text(content, encoding="utf-8")
+        return str(srt_path)
+
+    monkeypatch.setattr("pipeline.ja_translate.build_timed_subtitle_chunks", fake_build_timed_chunks)
+    monkeypatch.setattr(
+        "appcore.runtime_multi.build_srt_from_chunks",
+        lambda chunks, weak_boundary_words=None: "1\n00:00:00,000 --> 00:00:03,000\n" + chunks[0]["text"],
+    )
+    monkeypatch.setattr("pipeline.languages.ja.post_process_srt", lambda content: content + "\n")
+    monkeypatch.setattr("appcore.runtime_multi.save_srt", fake_save_srt)
+    monkeypatch.setattr("appcore.runtime_multi.build_subtitle_artifact", lambda *a, **kw: {})
+
+    runner = _make_runner()
+    runner._step_subtitle(task_id, str(tmp_path))
+
+    updated = task_state.get(task_id)
+    assert captured["tts_script"] == tts_script
+    assert captured["tts_segments"] == tts_segments
+    assert updated["corrected_subtitle"]["chunks"][0]["text"] == ja_text
+    assert updated["variants"]["normal"]["srt_path"].endswith("subtitle.normal.srt")
+    assert captured["srt_content"].endswith(ja_text + "\n")
+
+
 def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypatch):
     from appcore import task_state
 

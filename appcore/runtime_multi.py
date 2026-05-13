@@ -188,6 +188,7 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
 
     handles_translate = True
     handles_tts = True
+    handles_subtitle = True
 
     def __init__(self):
         super().__init__("ja")
@@ -678,6 +679,55 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
         runner._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": tts_script})
         runner._set_step(task_id, "tts", "done", "日语配音生成完成并完成时长收敛")
 
+    def run_subtitle(self, runner: "MultiTranslateRunner", task_id: str, task_dir: str) -> None:
+        task = task_state.get(task_id)
+        if runner._skip_original_video_passthrough_step(task_id, "subtitle", task=task):
+            return
+
+        runner._set_step(task_id, "subtitle", "running", "正在生成日语字幕...")
+        from pipeline.languages import ja as ja_rules
+
+        variants = dict(task.get("variants", {}))
+        variant_state = dict(variants.get("normal", {}))
+        tts_script = variant_state.get("tts_script") or task.get("tts_script") or {}
+        tts_segments = variant_state.get("segments") or task.get("segments") or []
+        corrected_chunks = self.module.build_timed_subtitle_chunks(tts_script, tts_segments)
+        srt_content = build_srt_from_chunks(
+            corrected_chunks,
+            weak_boundary_words=ja_rules.WEAK_STARTERS,
+        )
+        srt_content = ja_rules.post_process_srt(srt_content)
+        srt_path = save_srt(srt_content, os.path.join(task_dir, "subtitle.normal.srt"))
+
+        variant_state.update(
+            {
+                "corrected_subtitle": {"chunks": corrected_chunks, "srt_content": srt_content},
+                "srt_path": srt_path,
+            }
+        )
+        variants["normal"] = variant_state
+
+        task_state.set_preview_file(task_id, "srt", srt_path)
+        task_state.update(
+            task_id,
+            variants=variants,
+            corrected_subtitle={"chunks": corrected_chunks, "srt_content": srt_content},
+            srt_path=srt_path,
+        )
+        task_state.set_artifact(
+            task_id,
+            "subtitle",
+            build_subtitle_artifact(srt_content, target_language="ja"),
+        )
+        _save_json(
+            task_dir,
+            "corrected_subtitle.normal.json",
+            {"chunks": corrected_chunks, "srt_content": srt_content},
+        )
+
+        runner._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
+        runner._set_step(task_id, "subtitle", "done", "日语字幕生成完成")
+
 
 class MultiTranslateRunner(PipelineRunner):
     project_type: str = "multi_translate"
@@ -903,6 +953,9 @@ class MultiTranslateRunner(PipelineRunner):
             task_dir,
         ):
             return
+        adapter = self._get_language_adapter(task)
+        if getattr(adapter, "handles_subtitle", False):
+            return adapter.run_subtitle(self, task_id, task_dir)
         lang = self._resolve_target_lang(task)
         rules = self._get_lang_rules(lang)
 
