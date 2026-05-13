@@ -116,6 +116,22 @@ def test_categorize_product_uses_title_only_text_output_and_adc_billing():
     assert "https://example.com/products/blender" not in calls["kwargs"]["prompt"]
 
 
+def test_categorize_product_marks_current_adc_provider_when_llm_response_has_no_route_metadata():
+    def fake_invoke(use_case_code, **kwargs):
+        return {"text": "Home Supplies", "json": None, "raw": "Home Supplies", "usage": {}}
+
+    result = product_analysis.categorize_product(
+        product_title="Solar LED Garden Lights",
+        product_url="https://example.com/products/light",
+        user_id=1,
+        invoke_fn=fake_invoke,
+    )
+
+    assert result["category"] == "Home Supplies"
+    assert result["provider"] == "gemini_vertex_adc"
+    assert result["model"] == "gemini-3.1-flash-lite-preview"
+
+
 def test_detect_product_link_type_handles_shopify_tiktok_and_generic_urls():
     assert product_analysis.detect_product_link_type("https://demo.com/products/lamp") == "shopify_product"
     assert product_analysis.detect_product_link_type("https://www.tiktok.com/shop/pdp/123") == "tiktok_shop"

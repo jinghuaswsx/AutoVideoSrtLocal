@@ -12,6 +12,9 @@ from bs4 import BeautifulSoup
 from appcore import llm_client
 from appcore.meta_hot_posts.categories import TIKTOK_SHOP_US_L1_CATEGORIES
 
+CATEGORY_PROVIDER = "gemini_vertex_adc"
+CATEGORY_MODEL = "gemini-3.1-flash-lite-preview"
+
 
 @dataclass
 class ProductAnalysisResult:
@@ -383,6 +386,6 @@ def categorize_product(
         billing_extra={"source": "meta_hot_posts"},
     )
     result = normalize_category_response(response)
-    result["provider"] = response.get("provider")
-    result["model"] = response.get("model")
+    result["provider"] = response.get("provider") or CATEGORY_PROVIDER
+    result["model"] = response.get("model") or CATEGORY_MODEL
     return result

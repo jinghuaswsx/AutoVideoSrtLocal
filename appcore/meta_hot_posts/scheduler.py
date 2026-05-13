@@ -81,6 +81,8 @@ def _fallback_category(error: Exception) -> dict[str, Any]:
         "category": None,
         "confidence": 0.0,
         "reason": "Category classification failed; product extraction was saved.",
+        "provider": product_analysis.CATEGORY_PROVIDER,
+        "model": product_analysis.CATEGORY_MODEL,
         "raw_category": "",
         "raw_response": {"error": str(error)[:1000]},
     }
@@ -93,6 +95,20 @@ def _category_error_message(category: dict[str, Any]) -> str | None:
     if raw_category:
         return f"category failed: unsupported category output {raw_category[:900]}"
     return "category failed: empty category output"
+
+
+def _is_global_category_provider_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "default credentials were not found",
+            "application default credentials",
+            "missing provider config",
+            "缺少供应商配置",
+            "gemini_vertex_adc_text",
+        )
+    )
 
 
 def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
@@ -171,10 +187,11 @@ def reanalyze_categories(
             error_message = _category_error_message(category)
         except Exception as exc:
             log.warning("meta hot post category reanalysis failed id=%s: %s", analysis_id, exc)
+            fatal_provider_error = _is_global_category_provider_error(exc)
             category = _fallback_category(exc)
-            category["provider"] = "gemini_vertex_adc"
-            category["model"] = "gemini-3.1-flash-lite-preview"
             error_message = f"category failed: {str(exc)[:950]}"
+        else:
+            fatal_provider_error = False
         store.finish_category_reanalysis(
             analysis_id,
             category=category,
@@ -184,6 +201,10 @@ def reanalyze_categories(
             summary["failed"] += 1
         else:
             summary["done"] += 1
+        if fatal_provider_error:
+            summary["stopped"] = True
+            summary["stop_reason"] = "global_category_provider_error"
+            break
     return summary
 
 

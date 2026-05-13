@@ -154,6 +154,8 @@ Gemini 分类必须走统一 LLM use case 和账单链路：
 - 已经提取成功、`product_title` 非空、但 `last_error` 以 `category failed:` 开头的记录，需要支持“只重算类目”。
 - 旧逻辑误写成 `Other` 的记录也可纳入重算，但重算时不重新抓商品页。
 - 重算成功后清空 `last_error`，更新 `category_l1`、`category_confidence`、`category_reason`、`llm_provider`、`llm_model` 和 `llm_response_json`。
+- 类目重算成功或失败都必须写入当前分类链路的 `llm_provider=gemini_vertex_adc`、`llm_model=gemini-3.1-flash-lite-preview`，避免同一轮修复后仍被当成旧模型/未处理记录反复重算。
+- 如果类目重算遇到全局 provider 配置或 ADC 凭据错误，本轮只标记当前记录失败并立即停止，不能继续扫完 100 条，避免在基础通道异常时批量消耗请求。
 
 ## 数据模型
 
