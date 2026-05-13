@@ -940,12 +940,107 @@
     return Boolean(currentTask?.separation);
   }
 
+  function buildTranslateArtifactFromTask(task) {
+    if (!task) return null;
+    const translations = Array.isArray(task.translations) ? task.translations : [];
+    const shots = Array.isArray(task.shots) ? task.shots : [];
+    const localized = task.localized_translation
+      || task.variants?.normal?.localized_translation
+      || task.variants?.av?.localized_translation
+      || null;
+    const isShotTranslate = translations.length
+      || (task.plugin_config?.translate_algo === "shot_char_limit" && shots.length);
+    if (!isShotTranslate) return null;
+
+    const rows = buildShotTranslationRows(shots, translations);
+    const sourceFullText = task.source_full_text_zh || task.source_full_text || rows
+      .map(row => row.source_text)
+      .filter(Boolean)
+      .join("\n");
+    const translatedFullText = localized?.full_text || rows
+      .map(row => row.translated_text)
+      .filter(Boolean)
+      .join("\n");
+    const targetLang = task.target_lang || TASK_WORKBENCH_CONFIG.voiceLanguage || "";
+    const sourceLang = task.source_language || TASK_WORKBENCH_CONFIG.defaultSourceLanguage || "";
+    const translatedCount = rows.filter(row => row.translated_text).length;
+    const overLimitCount = rows.filter(row => row.over_limit).length;
+    const retryCount = rows.reduce((sum, row) => sum + (Number(row.retries) || 0), 0);
+    const items = [
+      {
+        type: "shot_translation_summary",
+        label: "镜头级翻译过程",
+        total: rows.length,
+        translated_count: translatedCount,
+        over_limit_count: overLimitCount,
+        retry_count: retryCount,
+      },
+      {
+        type: "shot_translations",
+        label: "逐镜头过程和结果",
+        shots: rows,
+      },
+    ];
+    if (sourceFullText || translatedFullText) {
+      items.push({
+        type: "side_by_side",
+        show_retranslate: true,
+        left: { type: "text", label: `整段${langLabel(sourceLang, "原文")}`, content: sourceFullText },
+        right: { type: "text", label: `整段本土化${langLabel(targetLang, targetLang.toUpperCase())}`, content: translatedFullText },
+      });
+    }
+    if (localized?.sentences?.length) {
+      items.push({
+        type: "sentences",
+        label: `${langLabel(targetLang, targetLang.toUpperCase())}句子映射`,
+        sentences: localized.sentences,
+      });
+    }
+    return { title: "翻译本土化", layout: "shot_translate", items };
+  }
+
+  function buildShotTranslationRows(shots, translations) {
+    const byIndex = {};
+    translations.forEach(tr => {
+      if (tr && tr.shot_index !== undefined && tr.shot_index !== null) {
+        byIndex[String(tr.shot_index)] = tr;
+      }
+    });
+    const total = Math.max(shots.length, translations.length);
+    const rows = [];
+    for (let i = 0; i < total; i += 1) {
+      const shot = shots[i] || {};
+      const fallbackTr = translations[i] || {};
+      const shotIndex = shot.index ?? fallbackTr.shot_index ?? i;
+      const tr = byIndex[String(shotIndex)] || fallbackTr || {};
+      rows.push({
+        index: shotIndex,
+        start_time: shot.start ?? shot.start_time,
+        end_time: shot.end ?? shot.end_time,
+        duration: shot.duration,
+        source_text: shot.source_text || shot.asr_text || "",
+        description: shot.description || shot.visual_description || "",
+        translated_text: tr.translated_text || "",
+        char_limit: tr.char_limit,
+        char_count: tr.char_count,
+        over_limit: Boolean(tr.over_limit),
+        retries: Number(tr.retries) || 0,
+        silent: Boolean(shot.silent),
+      });
+    }
+    return rows;
+  }
+
   function renderStepPreviews(artifacts) {
     STEP_ORDER.forEach(step => {
       const previewEl = document.getElementById(`preview-${step}`);
       if (!previewEl) return;
       if (specializedPreviewOwnsStep(step)) return;
-      const artifact = artifacts[step];
+      let artifact = artifacts[step];
+      if (step === "translate" && (!artifact || (!artifact.items && !artifact.layout))) {
+        const fallbackArtifact = buildTranslateArtifactFromTask(currentTask);
+        if (fallbackArtifact) artifact = fallbackArtifact;
+      }
       const status = currentTask?.steps?.[step] || "pending";
       const displayStatus = visualStepStatus(status);
       let html;
@@ -1235,6 +1330,8 @@
       const centerHtml = item.show_retranslate ? `<div class="preview-side-center"><button class="btn btn-primary btn-sm side-retranslate-btn" id="sideRetranslateBtn" onclick="doRetranslate(this)">重新翻译</button></div>` : '';
       return `<div class="preview-side-by-side${centerHtml ? '' : ' no-center'}""><div class="preview-side">${renderPreviewItem(item.left, variantKey)}</div>${centerHtml}<div class="preview-side">${renderPreviewItem(item.right, variantKey)}</div></div>`;
     }
+    if (item.type === "shot_translation_summary") return renderShotTranslationSummary(item);
+    if (item.type === "shot_translations") return renderShotTranslations(item);
     if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
     if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
     if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
@@ -1243,6 +1340,68 @@
     if (item.type === "tts_blocks") return `<div class="preview-block">${label}<div class="preview-list">${(item.blocks || []).map(renderTtsBlockPreview).join("")}</div></div>`;
     if (item.type === "subtitle_chunks") return `<div class="preview-block">${label}<div class="preview-list">${(item.chunks || []).map(renderSubtitleChunkPreview).join("")}</div></div>`;
     return `<div class="preview-block">${label}<div class="preview-text">暂不支持的预览类型</div></div>`;
+  }
+
+  function renderShotTranslationSummary(item) {
+    const total = Number(item.total) || 0;
+    const translated = Number(item.translated_count) || 0;
+    const over = Number(item.over_limit_count) || 0;
+    const retries = Number(item.retry_count) || 0;
+    return `<div class="preview-block">
+      <div class="preview-label">${escapeHtml(item.label || "镜头级翻译过程")}</div>
+      <div class="shot-translation-summary">
+        <span class="shot-translation-stat"><strong>${translated}</strong>/<span>${total}</span> 已翻译</span>
+        <span class="shot-translation-stat"><strong>${retries}</strong> 次缩写重试</span>
+        <span class="shot-translation-stat ${over ? 'is-warning' : ''}"><strong>${over}</strong> 段超限</span>
+      </div>
+    </div>`;
+  }
+
+  function renderShotTranslations(item) {
+    const rows = Array.isArray(item.shots) ? item.shots : [];
+    if (!rows.length) {
+      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div><div class="preview-note">暂无镜头翻译明细。</div></div>`;
+    }
+    return `<div class="preview-block">
+      <div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div>
+      <div class="shot-translation-grid">${rows.map(renderShotTranslationRow).join("")}</div>
+    </div>`;
+  }
+
+  function renderShotTranslationRow(row) {
+    const start = row.start_time ?? 0;
+    const end = row.end_time ?? 0;
+    const charCount = row.char_count === undefined || row.char_count === null ? "—" : row.char_count;
+    const charLimit = row.char_limit === undefined || row.char_limit === null ? "—" : row.char_limit;
+    const retries = Number(row.retries) || 0;
+    const badges = [
+      row.silent ? '<span class="shot-translation-badge">静音</span>' : '',
+      retries ? `<span class="shot-translation-badge">重试 ${retries}</span>` : '',
+      row.over_limit ? '<span class="shot-translation-badge is-warning">超限</span>' : '',
+    ].filter(Boolean).join("");
+    const description = row.description
+      ? `<div class="shot-translation-desc">画面：${escapeHtml(row.description)}</div>`
+      : "";
+    return `<div class="shot-translation-row">
+      <div class="shot-translation-head">
+        <div>
+          <span class="shot-translation-index">镜头 ${escapeHtml(row.index ?? "")}</span>
+          <span class="preview-time">${fmtTime(start)} → ${fmtTime(end)}</span>
+        </div>
+        <div class="shot-translation-badges">${badges}</div>
+      </div>
+      ${description}
+      <div class="shot-translation-columns">
+        <div>
+          <div class="shot-translation-col-label">原文</div>
+          <div class="preview-original">${escapeHtml(row.source_text || "—")}</div>
+        </div>
+        <div>
+          <div class="shot-translation-col-label">译文 · ${escapeHtml(charCount)} / ${escapeHtml(charLimit)} 字符</div>
+          <div class="preview-translated">${escapeHtml(row.translated_text || "—")}</div>
+        </div>
+      </div>
+    </div>`;
   }
 
   function renderSegmentPreview(seg, breakAfter) {
