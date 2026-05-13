@@ -7,7 +7,7 @@ def test_meta_hot_posts_page_requires_admin(authed_user_client_no_db):
 def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "appcore.meta_hot_posts.service.category_options",
-        lambda: [{"value": "Kitchenware", "label": "Kitchenware"}],
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
     )
 
     resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
@@ -17,7 +17,8 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert 'href="/xuanpin/meta-hot-posts"' in body
     assert "Meta热帖" in body
     assert "/xuanpin/api/meta-hot-posts" in body
-    assert "Kitchenware" in body
+    assert 'value="Kitchenware"' in body
+    assert "厨房用品" in body
     assert "meta-hot-card-grid" in body
     assert "类目分析提示词" in body
     assert "商品分析失败记录" in body

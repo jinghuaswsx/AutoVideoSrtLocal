@@ -206,7 +206,7 @@ function renderCard(row) {
       <div class="mh-analysis">
         <div class="mh-product">${productImg}<div>
           <div class="mh-product-title">${fmt(row.product_title || '待分析商品')}</div>
-          <div class="mh-mini">类目：${fmt(row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
+          <div class="mh-mini">类目：${fmt(row.category_l1_zh || row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
           <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
         </div></div>
       </div>

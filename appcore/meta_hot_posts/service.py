@@ -32,6 +32,7 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item["sku_prices"] = _decode_sku_json(item.pop("sku_prices_json", None))
     item["sku_count"] = len(item["sku_prices"])
     item.setdefault("analysis_status", "pending")
+    item["category_l1_zh"] = categories.category_label_zh(item.get("category_l1"))
     return item
 
 
@@ -45,7 +46,11 @@ def category_options() -> list[dict[str, Any]]:
     dynamic = store.list_category_options()
     if dynamic:
         seen = {str(item.get("value") or "") for item in dynamic}
-        return dynamic + [item for item in categories.category_options() if item["value"] not in seen]
+        hydrated = [
+            categories.category_option(item.get("value") or item.get("label"))
+            for item in dynamic
+        ]
+        return hydrated + [item for item in categories.category_options() if item["value"] not in seen]
     return categories.category_options()
 
 
