@@ -41,23 +41,21 @@ def test_preset_selector_is_tall_enough_to_avoid_clipping(omni_list_html):
     assert line_height and float(line_height.group(1)) >= 1.3
 
 
-def test_modal_contains_capability_form_placeholder(omni_list_html):
-    assert 'id="pluginCapabilityForm"' in omni_list_html
-    assert 'class="plugin-capability-form"' in omni_list_html
+def test_create_project_modal_has_no_preset_crud_or_step_controls(omni_list_html):
+    assert 'id="presetSaveAsBtn"' not in omni_list_html
+    assert 'id="presetNewFlowBtn"' not in omni_list_html
+    assert 'id="presetDeleteBtn"' not in omni_list_html
+    assert 'id="presetFlowOverlay"' not in omni_list_html
+    assert 'id="pluginCapabilityForm"' not in omni_list_html
+    assert 'id="presetFlowCapabilityForm"' not in omni_list_html
+    assert "+ 另存为" not in omni_list_html
+    assert "+ 新建流程" not in omni_list_html
+    assert "保存流程" not in omni_list_html
 
 
-def test_modal_contains_save_as_preset_button(omni_list_html):
-    assert 'id="presetSaveAsBtn"' in omni_list_html
-    assert "+ 另存为" in omni_list_html
-
-
-def test_modal_contains_modified_flag(omni_list_html):
-    assert 'id="presetModifiedFlag"' in omni_list_html
-    assert "已修改" in omni_list_html
-
-
-def test_modal_contains_delete_button_for_user_presets(omni_list_html):
-    assert 'id="presetDeleteBtn"' in omni_list_html
+def test_create_project_modal_tells_admin_manages_presets(omni_list_html):
+    assert "系统级 preset" in omni_list_html
+    assert "管理员在系统设置统一维护" in omni_list_html
 
 
 def test_modal_contains_upload_form(omni_list_html):
@@ -90,26 +88,20 @@ def test_javascript_loads_presets_on_modal_open(omni_list_html):
 
 
 def test_preset_loading_error_message_is_escaped(omni_list_html):
-    assert "能力点加载失败：' + _escapeHtml(err.message || err)" in omni_list_html
-    assert "能力点加载失败：' + (err.message || err)" not in omni_list_html
+    assert "preset 加载失败：' + _escapeHtml(err.message || err)" in omni_list_html
+    assert "preset 加载失败：' + (err.message || err)" not in omni_list_html
 
 
-def test_javascript_implements_dependency_locks(omni_list_html):
-    """互斥/依赖联动逻辑在前端"""
-    # 函数名 + 关键约束都在脚本里
-    assert "_applyDependencyLocks" in omni_list_html
-    assert "shot_char_limit" in omni_list_html
-    assert "av_sentence" in omni_list_html
-    assert "sentence_units" in omni_list_html
-    assert "loudness_match" in omni_list_html
+def test_javascript_renders_only_system_presets(omni_list_html):
+    assert "systemPresets = __omniPresetState.presets.filter" in omni_list_html
+    assert "p.scope === 'system'" in omni_list_html
+    assert "userPresets" not in omni_list_html
+    assert "optgroup label=\"我的\"" not in omni_list_html
 
 
-def test_javascript_implements_save_as_user_preset(omni_list_html):
-    assert "presetSaveAsBtn" in omni_list_html
-    # POST /api/omni-presets 创建 user-level
-    assert "/api/omni-presets" in omni_list_html
-    # 保存的 plugin_config 来自 currentCfg
-    assert "currentCfg" in omni_list_html
+def test_javascript_does_not_create_or_delete_presets_from_create_modal(omni_list_html):
+    assert "fetch('/api/omni-presets', {" not in omni_list_html
+    assert "fetch('/api/omni-presets/'" not in omni_list_html
 
 
 def test_javascript_appends_plugin_config_to_form_data(omni_list_html):
@@ -131,6 +123,6 @@ def test_css_uses_ocean_blue_tokens_no_purple(omni_list_html):
             pytest.fail(f"detected purple hue {hue} in modal CSS")
 
 
-def test_modal_contains_capability_form_initial_loading_message(omni_list_html):
+def test_modal_contains_preset_initial_loading_message(omni_list_html):
     """没 fetch 完时显示加载提示。"""
-    assert "能力点加载中" in omni_list_html
+    assert "preset 加载中" in omni_list_html

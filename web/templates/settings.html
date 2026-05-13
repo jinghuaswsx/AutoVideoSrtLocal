@@ -1156,7 +1156,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 <div class="settings-card" id="omniPresetTabRoot">
   <p style="color:var(--settings-fg-muted);font-size:13px;margin:0 0 16px;">
     Omni 实验版（<a href="/omni-translate" style="color:oklch(56% 0.16 230);">/omni-translate</a>）的能力点 preset 管理。
-    系统级 preset 全员只读可用，普通用户在新建任务时可基于系统级 preset 微调并另存为自己的用户级 preset。
+    preset 由管理员在系统设置统一维护；普通用户新建任务时只能选择系统级 preset。
   </p>
 
   <section class="omni-preset-section">
@@ -1182,16 +1182,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     </table>
   </section>
 
-  <section class="omni-preset-section">
-    <h3>我的用户级 preset
-      <button type="button" id="omniCreateUserBtn" class="btn btn-ghost btn-sm"
-              style="float:right;font-size:12px;padding:4px 10px;">+ 新建用户级 preset</button>
-    </h3>
-    <table class="omni-preset-table" id="omniUserPresetTable">
-      <thead><tr><th style="width:25%;">名称</th><th>说明</th><th style="width:160px;">操作</th></tr></thead>
-      <tbody><tr><td colspan="3" class="omni-preset-empty">加载中...</td></tr></tbody>
-    </table>
-  </section>
 </div>
 
 <!-- 编辑/新建弹窗 -->
@@ -1250,7 +1240,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       state.defaultId = listData.default_preset_id;
       renderGlobalDefault();
       renderSystemTable();
-      renderUserTable();
     } catch (err) {
       alert('preset 列表加载失败：' + (err.message || err));
     }
@@ -1292,25 +1281,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     }).join('');
   }
 
-  function renderUserTable() {
-    var tbody = document.querySelector('#omniUserPresetTable tbody');
-    var rows = state.presets.filter(function(p) { return p.scope === 'user'; });
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="omni-preset-empty">暂无用户级 preset（admin 在新建任务时也可另存）</td></tr>';
-      return;
-    }
-    tbody.innerHTML = rows.map(function(p) {
-      return '<tr data-preset-id="' + p.id + '">'
-           + '<td><strong>' + escapeHtml(p.name) + '</strong></td>'
-           + '<td>' + escapeHtml(p.description || '') + '</td>'
-           + '<td><div class="preset-actions">'
-           + '<button class="btn btn-ghost btn-sm preset-edit-btn" type="button">编辑</button>'
-           + '<button class="btn btn-ghost btn-sm preset-delete-btn" type="button" style="color:oklch(58% 0.18 25);">删除</button>'
-           + '</div></td>'
-           + '</tr>';
-    }).join('');
-  }
-
   // ───────────── 编辑 / 新建 弹窗 ─────────────
   function openEditModal(preset, scopeForCreate) {
     var ov = document.getElementById('omniPresetEditOverlay');
@@ -1320,7 +1290,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     var capBox = document.getElementById('omniPresetEditCapForm');
     if (preset) {
       state.editing = { id: preset.id, scope: preset.scope, cfg: JSON.parse(JSON.stringify(preset.plugin_config || {})) };
-      titleEl.textContent = (preset.scope === 'system' ? '编辑系统级 preset：' : '编辑我的 preset：') + preset.name;
+      titleEl.textContent = '编辑系统级 preset：' + preset.name;
       nameInp.value = preset.name;
       descInp.value = preset.description || '';
     } else {
@@ -1328,8 +1298,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       var defaultCfg = (state.presets.find(function(p) { return p.id === state.defaultId; }) || {}).plugin_config
                     || (state.presets.find(function(p) { return p.scope === 'system'; }) || {}).plugin_config
                     || {};
-      state.editing = { id: null, scope: scopeForCreate, cfg: JSON.parse(JSON.stringify(defaultCfg)) };
-      titleEl.textContent = scopeForCreate === 'system' ? '新建系统级 preset' : '新建用户级 preset';
+      state.editing = { id: null, scope: 'system', cfg: JSON.parse(JSON.stringify(defaultCfg)) };
+      titleEl.textContent = '新建系统级 preset';
       nameInp.value = '';
       descInp.value = '';
     }
@@ -1504,9 +1474,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 
   document.getElementById('omniCreateSystemBtn').addEventListener('click', function() {
     openEditModal(null, 'system');
-  });
-  document.getElementById('omniCreateUserBtn').addEventListener('click', function() {
-    openEditModal(null, 'user');
   });
   document.getElementById('omniPresetEditCancelBtn').addEventListener('click', closeEditModal);
   document.getElementById('omniPresetEditSaveBtn').addEventListener('click', saveEdit);

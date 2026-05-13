@@ -57,13 +57,14 @@ def test_template_tab_body_has_system_preset_table(settings_html):
     assert 'id="omniSystemPresetTable"' in settings_html
 
 
-def test_template_tab_body_has_user_preset_table(settings_html):
-    assert 'id="omniUserPresetTable"' in settings_html
+def test_template_tab_body_has_no_user_preset_table(settings_html):
+    assert 'id="omniUserPresetTable"' not in settings_html
+    assert 'id="omniCreateUserBtn"' not in settings_html
+    assert "用户级 preset" not in settings_html
 
 
 def test_template_has_create_buttons(settings_html):
     assert 'id="omniCreateSystemBtn"' in settings_html
-    assert 'id="omniCreateUserBtn"' in settings_html
 
 
 def test_template_has_edit_modal(settings_html):

@@ -100,26 +100,24 @@ def create_user_preset(
     user_id: int, name: str, description: str | None, plugin_config: dict
 ) -> int:
     """新建用户级 preset，返回新 id。"""
-    _execute(
+    new_id = _execute(
         "INSERT INTO omni_translate_presets "
         "(scope, user_id, name, description, plugin_config) "
         "VALUES ('user', %s, %s, %s, %s)",
         (user_id, name, description, json.dumps(plugin_config, ensure_ascii=False)),
     )
-    row = _query_one("SELECT LAST_INSERT_ID() AS id")
-    return int(row["id"]) if row else 0
+    return int(new_id or 0)
 
 
 def create_system_preset(name: str, description: str | None, plugin_config: dict) -> int:
     """新建系统级 preset（admin only，由上层校验权限），返回新 id。"""
-    _execute(
+    new_id = _execute(
         "INSERT INTO omni_translate_presets "
         "(scope, user_id, name, description, plugin_config) "
         "VALUES ('system', NULL, %s, %s, %s)",
         (name, description, json.dumps(plugin_config, ensure_ascii=False)),
     )
-    row = _query_one("SELECT LAST_INSERT_ID() AS id")
-    return int(row["id"]) if row else 0
+    return int(new_id or 0)
 
 
 def update(

@@ -69,7 +69,7 @@ def fake_db(monkeypatch):
                     "plugin_config": plugin_config,
                     "created_at": datetime.now(), "updated_at": datetime.now(),
                 })
-            return
+            return new_id
         if sql_norm.startswith("UPDATE omni_translate_presets SET"):
             preset_id = args[-1]
             updates = list(args[:-1])
@@ -137,6 +137,35 @@ def test_create_system_preset(fake_db):
     preset = omni_preset_dao.get(pid)
     assert preset["scope"] == "system"
     assert preset["user_id"] is None
+
+
+def test_create_uses_execute_lastrowid_without_connection_local_last_insert(
+    monkeypatch,
+):
+    """appcore.db.execute already returns lastrowid; LAST_INSERT_ID is connection-local."""
+    calls: list[tuple[str, tuple]] = []
+
+    def fake_execute(sql, args=()):
+        calls.append((sql, args))
+        return 321
+
+    def fake_query_one(sql, args=()):
+        if "LAST_INSERT_ID" in " ".join(sql.split()):
+            return None
+        raise AssertionError("create_user_preset should not read the inserted id back")
+
+    monkeypatch.setattr("appcore.omni_preset_dao._execute", fake_execute)
+    monkeypatch.setattr("appcore.omni_preset_dao._query_one", fake_query_one)
+
+    pid = omni_preset_dao.create_user_preset(
+        user_id=42,
+        name="my preset",
+        description=None,
+        plugin_config={"asr_post": "asr_clean"},
+    )
+
+    assert pid == 321
+    assert len(calls) == 1
 
 
 def test_get_returns_none_for_unknown_id(fake_db):

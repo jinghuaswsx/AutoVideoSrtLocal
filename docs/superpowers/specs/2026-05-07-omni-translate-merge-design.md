@@ -183,39 +183,9 @@ CREATE TABLE omni_translate_presets (
 │ 视频文件: [选择文件]                                   │
 │ 源语言: [自动检测 ▾]   目标语言: [英语 ▾]              │
 │                                                        │
-│ ── 配置预设 ───────────────────────────────────────── │
-│ Preset: [omni-current 🌐 ▾]  [+ 另存为新 preset]       │
-│   (顶部 dropdown，左边图标区分系统级 🌐 / 用户级 👤)   │
-│                                                        │
-│ ── 能力点（按分组展开，可微调）───────────────────── │
-│ ① ASR 后处理                                           │
-│   ◉ asr_clean    按源语言原样清洗，不翻译              │
-│   ○ asr_normalize  ASR 文本统一翻成英文                │
-│                                                        │
-│ ② 镜头分镜                                             │
-│   ☐ shot_decompose  Gemini 视觉切出镜头列表            │
-│                                                        │
-│ ③ 翻译算法                                             │
-│   ◉ standard       整段一次性翻译                      │
-│   ○ shot_char_limit  按镜头字符上限（依赖 ②）          │
-│   ○ av_sentence    句级翻译 + 画面笔记驱动             │
-│                                                        │
-│ ④ 翻译 prompt 增强                                     │
-│   ☑ source_anchored  prompt 加防捏造提示               │
-│                                                        │
-│ ⑤ TTS 收敛策略                                         │
-│   ◉ five_round_rewrite  5 轮 rewrite + 变速短路        │
-│   ○ sentence_reconcile  句级时长协调                   │
-│                                                        │
-│ ⑥ 字幕生成                                             │
-│   ◉ asr_realign         TTS 后再跑 ASR 对齐            │
-│   ○ sentence_units      用句级时间轴直接出 SRT          │
-│                                                        │
-│ ⑦ 人声分离                                             │
-│   ☑ voice_separation  分离人声/BGM                     │
-│                                                        │
-│ ⑧ 响度匹配                                             │
-│   ☑ loudness_match    EBU R128 匹配（依赖 ⑦）          │
+│ ── 处理流程预设 ───────────────────────────────────── │
+│ 流程: [omni-current 🌐 ▾]                              │
+│   系统级 preset 由管理员在 /settings 统一维护          │
 │                                                        │
 ├────────────────────────────────────────────────────────┤
 │                          [取消]  [创建任务]            │
@@ -223,13 +193,10 @@ CREATE TABLE omni_translate_presets (
 ```
 
 行为规则：
-1. **打开弹窗**：preset 默认选中**全站默认**（admin 在 `/settings` 设的），下方能力点按该 preset 勾好
-2. **切换 preset**：下方能力点全部刷新成新 preset 的配置
-3. **改任何能力点**：preset 选择器旁出现「(已修改)」灰色小字 + 「+ 另存为新 preset」按钮高亮
-4. **「+ 另存为新 preset」点击**：弹小输入框（name + description），保存后选择器自动切到新建的 user-level preset；按钮变灰
-5. **dropdown 内**：列出所有可见 preset（系统级在上、用户级在下，分隔线分开）；用户级 preset 右侧 hover 显示 ✏️/🗑 图标可重命名/删除（系统级无）
-6. **互斥逻辑**：选 `shot_char_limit` 时自动勾上 `shot_decompose` 并禁勾掉；选 `av_sentence` 时 `source_anchored` 自动 uncheck + 灰掉 + tooltip "av_sentence 模式不适用"；其他依赖关系同
-7. **「创建任务」**：把当前能力点配置展开成 plugin_config JSON 一并提交后端
+1. **打开弹窗**：preset 默认选中**全站默认**（admin 在 `/settings` 设的）。
+2. **创建项目时只能选择系统级 preset**：新建任务弹窗不展示 8 组能力点表单，不允许在创建项目时临时点选各步骤，也不提供「另存为」「新建流程」「删除」入口。
+3. **普通用户不看到流程细节**：下拉只显示系统级 preset 名称；具体步骤组合由管理员在 `/settings?tab=omni_preset` 统一维护。
+4. **「创建任务」**：提交选中系统级 preset 的 `plugin_config` 快照；已有任务仍不回查 preset，preset 后续变更不影响已创建任务。
 
 ### 5.2 admin 设置（`/settings` → 加 tab `Omni Preset`）
 
@@ -249,8 +216,6 @@ CREATE TABLE omni_translate_presets (
 │  lab-current   镜头分镜实验      [编辑] [删除]      │
 │  [+ 新建系统级 preset]                              │
 │                                                     │
-│ ── 我的用户级 preset ──────────────────────────── │
-│  (admin 自己创建的 user-level preset 也显示在这里)  │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -345,8 +310,8 @@ PR1–PR4c 把 omni 的算法搬进了 `OmniProfile`。本次合并后 OmniProfi
 
 ### 7.2 Preset CRUD 单元测试
 
-- 系统级 preset：admin 能 CRUD；普通 user 只能读
-- 用户级 preset：每个 user 只能 CRUD 自己的；看不到别人的
+- 系统级 preset：admin 能 CRUD；普通 user 只能读和选择
+- 新建任务弹窗不提供用户级 preset 创建、编辑、删除入口
 - 全站默认：admin 设置后所有 user 看到的弹窗初始 preset 切换
 - 删除当前全站默认：拒绝，必须先选另一个
 
@@ -358,8 +323,8 @@ PR1–PR4c 把 omni 的算法搬进了 `OmniProfile`。本次合并后 OmniProfi
 
 ### 7.4 UI smoke
 
-- 新建弹窗：默认 preset 加载、切换 preset、能力点微调、互斥/依赖前端禁用、"另存为新 preset"、用户级 preset hover CRUD 全部能跑
-- `/settings` → `Omni Preset` tab：admin 可见、普通 user 不可见；admin 能 CRUD 系统级 + 设全站默认
+- 新建弹窗：默认 preset 加载、切换系统级 preset、提交选中 preset 的 plugin_config 快照；不显示能力点表单、不显示「另存为 / 新建流程 / 删除」
+- `/settings` → `Omni Preset` tab：admin 可见、普通 user 不可见；admin 能 CRUD 系统级 preset + 设全站默认
 - sidebar：`/sentence-translate/` 和 `/translate-lab/` 入口隐藏；老任务直链仍能访问详情页
 
 ### 7.5 Deprecate 行为
