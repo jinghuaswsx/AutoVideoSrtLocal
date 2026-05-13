@@ -108,6 +108,34 @@ def test_multi_resolves_dedicated_localization_modules_for_de_fr():
     assert fr_adapter.build_tts_segments is not None
 
 
+def test_de_fr_adapters_keep_admin_prompt_resolver(monkeypatch):
+    calls = []
+
+    def fake_resolve(slot, lang):
+        calls.append((slot, lang))
+        return {"content": f"{slot}:{lang}"}
+
+    monkeypatch.setattr("appcore.runtime_multi.resolve_prompt_config", fake_resolve)
+
+    runner = _make_runner()
+    de_adapter = runner._get_language_adapter({"target_lang": "de"})
+    fr_adapter = runner._get_language_adapter({"target_lang": "fr"})
+
+    de_adapter.build_tts_script_messages({"full_text": "Hallo"})
+    de_adapter.build_localized_rewrite_messages(
+        "source", {"full_text": "Hallo"}, 10, "shrink", source_language="en",
+    )
+    fr_adapter.build_tts_script_messages({"full_text": "Bonjour"})
+    fr_adapter.build_localized_rewrite_messages(
+        "source", {"full_text": "Bonjour"}, 10, "expand", source_language="en",
+    )
+
+    assert ("base_tts_script", "de") in calls
+    assert ("base_rewrite", "de") in calls
+    assert ("base_tts_script", "fr") in calls
+    assert ("base_rewrite", "fr") in calls
+
+
 def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, monkeypatch):
     from appcore import task_state
 
