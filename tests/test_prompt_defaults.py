@@ -7,6 +7,18 @@ def test_defaults_cover_de_and_fr_base_slots():
         assert (slot, "fr") in DEFAULTS, f"missing fr {slot}"
 
 
+def test_de_prompts_preserve_native_spelling_and_source_semantics():
+    translation = DEFAULTS[("base_translation", "de")]["content"].lower()
+    rewrite = DEFAULTS[("base_rewrite", "de")]["content"].lower()
+    tts_script = DEFAULTS[("base_tts_script", "de")]["content"].lower()
+
+    assert "umlaut" in translation
+    assert "not ae/oe/ue/ss" in translation
+    assert "source cta" in translation
+    assert "source cta" in rewrite
+    assert "9 words" in tts_script
+
+
 def test_ecommerce_plugin_shared():
     assert ("ecommerce_plugin", None) in DEFAULTS
     entry = DEFAULTS[("ecommerce_plugin", None)]

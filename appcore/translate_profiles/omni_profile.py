@@ -16,7 +16,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .base import TranslateProfile
+from .base import (
+    LANGUAGE_MAX_REWRITE_ATTEMPTS_BY_TARGET,
+    LANGUAGE_WORD_TOLERANCE_BY_TARGET,
+    TranslateProfile,
+)
 
 if TYPE_CHECKING:
     from appcore.runtime import PipelineRunner
@@ -24,17 +28,6 @@ if TYPE_CHECKING:
 
 # 慢收敛目标语言（de/ja/fi）放宽 word_tolerance + 提高 max_rewrite_attempts，
 # 让外层 5 轮循环不至于在边角语言上把 attempt 全部烧光。其他目标语言保持基线。
-_OMNI_WORD_TOLERANCE_BY_TARGET: dict[str, float] = {
-    "en": 0.10, "de": 0.15, "fr": 0.12, "es": 0.12, "it": 0.12, "pt": 0.12,
-    "ja": 0.18, "nl": 0.12, "sv": 0.12, "fi": 0.15,
-}
-
-_OMNI_MAX_REWRITE_ATTEMPTS_BY_TARGET: dict[str, int] = {
-    "en": 5, "de": 7, "fr": 5, "es": 5, "it": 5, "pt": 5,
-    "ja": 7, "nl": 5, "sv": 5, "fi": 7,
-}
-
-
 def _resolve_cfg(runner) -> dict | None:
     """读 runner 上当前 task 的 plugin_config（dispatch 时用）。
 
@@ -55,6 +48,8 @@ class OmniProfile(TranslateProfile):
 
     needs_separate = True
     needs_loudness_match = True
+    WORD_TOLERANCE_BY_TARGET = LANGUAGE_WORD_TOLERANCE_BY_TARGET
+    MAX_REWRITE_ATTEMPTS_BY_TARGET = LANGUAGE_MAX_REWRITE_ATTEMPTS_BY_TARGET
 
     # ------------------------------------------------------------------
     # post_asr: cfg["asr_post"] 二选一
@@ -111,12 +106,3 @@ class OmniProfile(TranslateProfile):
     # ------------------------------------------------------------------
     # per-target tunables（PR3，给 5-round rewrite loop 用）
     # ------------------------------------------------------------------
-    def word_tolerance_for(self, target_lang: str) -> float:
-        return _OMNI_WORD_TOLERANCE_BY_TARGET.get(
-            target_lang, self.DEFAULT_WORD_TOLERANCE,
-        )
-
-    def max_rewrite_attempts_for(self, target_lang: str) -> int:
-        return _OMNI_MAX_REWRITE_ATTEMPTS_BY_TARGET.get(
-            target_lang, self.DEFAULT_MAX_REWRITE_ATTEMPTS,
-        )

@@ -8,6 +8,43 @@ if TYPE_CHECKING:
     from appcore.runtime import PipelineRunner
 
 
+LANGUAGE_WORD_TOLERANCE_BY_TARGET: dict[str, float] = {
+    "en": 0.10,
+    "de": 0.15,
+    "fr": 0.12,
+    "es": 0.12,
+    "it": 0.12,
+    "pt": 0.12,
+    "ja": 0.18,
+    "nl": 0.12,
+    "sv": 0.12,
+    "fi": 0.15,
+}
+
+
+LANGUAGE_MAX_REWRITE_ATTEMPTS_BY_TARGET: dict[str, int] = {
+    "en": 5,
+    "de": 7,
+    "fr": 5,
+    "es": 5,
+    "it": 5,
+    "pt": 5,
+    "ja": 7,
+    "nl": 5,
+    "sv": 5,
+    "fi": 7,
+}
+
+
+LANGUAGE_SPEEDUP_WINDOW_BY_TARGET: dict[str, tuple[float, float]] = {
+    "de": (0.88, 1.14),
+}
+
+
+def _normalize_target_lang(target_lang: str | None) -> str:
+    return str(target_lang or "").strip().lower()
+
+
 class TranslateProfile(ABC):
     """A pluggable behavior bundle for the video translation pipeline."""
 
@@ -37,6 +74,11 @@ class TranslateProfile(ABC):
     DEFAULT_WORD_TOLERANCE: float = 0.20
     # 一轮外层 round 里 rewrite attempt 的上限。
     DEFAULT_MAX_REWRITE_ATTEMPTS: int = 5
+    DEFAULT_SPEEDUP_WINDOW: tuple[float, float] = (0.90, 1.10)
+
+    WORD_TOLERANCE_BY_TARGET: dict[str, float] = {}
+    MAX_REWRITE_ATTEMPTS_BY_TARGET: dict[str, int] = {}
+    SPEEDUP_WINDOW_BY_TARGET: dict[str, tuple[float, float]] = {}
 
     @abstractmethod
     def post_asr(self, runner: "PipelineRunner", task_id: str) -> None:
@@ -60,11 +102,24 @@ class TranslateProfile(ABC):
         默认 0.20（multi/av_sync 行为）。OmniProfile 针对 de/ja/fi 等慢收敛
         目标语言放宽到 0.15~0.18，避免 5×5=25 次 attempt 全部用完仍不收敛。
         """
-        return self.DEFAULT_WORD_TOLERANCE
+        return self.WORD_TOLERANCE_BY_TARGET.get(
+            _normalize_target_lang(target_lang),
+            self.DEFAULT_WORD_TOLERANCE,
+        )
 
     def max_rewrite_attempts_for(self, target_lang: str) -> int:
         """单轮外层 round 内 rewrite attempt 的上限。"""
-        return self.DEFAULT_MAX_REWRITE_ATTEMPTS
+        return self.MAX_REWRITE_ATTEMPTS_BY_TARGET.get(
+            _normalize_target_lang(target_lang),
+            self.DEFAULT_MAX_REWRITE_ATTEMPTS,
+        )
+
+    def speedup_window_for(self, target_lang: str) -> tuple[float, float]:
+        """Native speed-regeneration trigger window as video-duration ratios."""
+        return self.SPEEDUP_WINDOW_BY_TARGET.get(
+            _normalize_target_lang(target_lang),
+            self.DEFAULT_SPEEDUP_WINDOW,
+        )
 
     def get_tts_engine(self):
         """返回 profile 关联的 ``TtsEngine`` 实例。

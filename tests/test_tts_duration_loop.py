@@ -97,6 +97,22 @@ class TestSpeedupWindow:
         # audio=66.0 == 1.1*60 == stage1_hi（含边界）→ True
         assert _in_speedup_window(audio_duration=66.0, video_duration=60.0) is True
 
+    def test_language_window_can_catch_german_near_miss(self):
+        from appcore.runtime import _in_speedup_window
+
+        video_duration = 37.872
+        audio_duration = 42.422857
+
+        assert _in_speedup_window(
+            audio_duration=audio_duration,
+            video_duration=video_duration,
+        ) is False
+        assert _in_speedup_window(
+            audio_duration=audio_duration,
+            video_duration=video_duration,
+            window_ratio=(0.88, 1.14),
+        ) is True
+
     def test_speedup_ratio_basic(self):
         from appcore.runtime import _speedup_ratio
         # 1.0071 / 1.0012 both round upward to two decimals.

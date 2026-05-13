@@ -288,8 +288,9 @@ class PipelineRunner:
         # Final target range (shown to the user, used for final success judgement):
         final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
         # Stage-1 convergence range (rewrite手段; approximate via ±10% of video):
-        stage1_lo = video_duration * 0.9
-        stage1_hi = video_duration * 1.1
+        speedup_window = self.profile.speedup_window_for(target_language_label)
+        stage1_lo = video_duration * speedup_window[0]
+        stage1_hi = video_duration * speedup_window[1]
 
         rounds: list[dict] = []
         round_products: list[dict] = []  # full per-round products (kept in-memory only)
@@ -302,7 +303,9 @@ class PipelineRunner:
         validator = partial(
             getattr(loc_mod, "validate_tts_script", None)
             or importlib.import_module("pipeline.localization").validate_tts_script,
-            max_words=14 if target_language_label in ("de", "fr") else 10,
+            max_words=9 if target_language_label == "de" else (
+                14 if target_language_label == "fr" else 10
+            ),
         )
 
         def _substep(sub: str) -> None:
@@ -948,7 +951,9 @@ class PipelineRunner:
             # 后续 rewrite 轮次。
             from appcore.runtime import _in_speedup_window, _speedup_ratio
             if _in_speedup_window(
-                audio_duration=audio_duration, video_duration=video_duration,
+                audio_duration=audio_duration,
+                video_duration=video_duration,
+                window_ratio=speedup_window,
             ):
                 speed = _speedup_ratio(audio_duration, video_duration)
                 round_record["speedup_applied"] = True

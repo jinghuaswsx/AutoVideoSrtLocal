@@ -302,7 +302,12 @@ def _tts_final_target_range(video_duration: float) -> tuple[float, float]:
     return max(0.0, video_duration - 1.0), video_duration + 2.0
 
 
-def _in_speedup_window(*, audio_duration: float, video_duration: float) -> bool:
+def _in_speedup_window(
+    *,
+    audio_duration: float,
+    video_duration: float,
+    window_ratio: tuple[float, float] | None = None,
+) -> bool:
     """判断音频时长是否落入"变速短路"触发窗口：
     在 stage-1 区间 [0.9v, 1.1v] 内，但不在最终收敛区间 [v-1, v+2] 内。
 
@@ -311,9 +316,12 @@ def _in_speedup_window(*, audio_duration: float, video_duration: float) -> bool:
     """
     if not (audio_duration > 0 and video_duration > 0):
         return False
+    lo_ratio, hi_ratio = window_ratio or (0.9, 1.1)
+    if not (lo_ratio > 0 and hi_ratio > 0 and lo_ratio <= hi_ratio):
+        lo_ratio, hi_ratio = 0.9, 1.1
     final_lo, final_hi = _tts_final_target_range(video_duration)
-    stage1_lo = video_duration * 0.9
-    stage1_hi = video_duration * 1.1
+    stage1_lo = video_duration * lo_ratio
+    stage1_hi = video_duration * hi_ratio
     in_stage1 = stage1_lo <= audio_duration <= stage1_hi
     in_final = final_lo <= audio_duration <= final_hi
     return in_stage1 and not in_final

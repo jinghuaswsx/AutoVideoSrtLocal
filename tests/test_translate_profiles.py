@@ -97,8 +97,8 @@ def test_base_pipeline_runner_defaults_to_default_profile():
 
 EXPECTED_MULTI_STEPS = [
     "extract", "asr", "separate", "asr_normalize", "voice_match",
-    "alignment", "translate", "tts", "loudness_match", "subtitle",
-    "compose", "export",
+    "alignment", "translate", "tts", "av_sync_audit", "loudness_match",
+    "subtitle", "compose", "export",
 ]
 EXPECTED_OMNI_STEPS = [
     "extract", "asr", "separate", "asr_clean", "voice_match",
@@ -149,16 +149,32 @@ def test_analysis_step_inserted_when_flag_enabled():
 # === Per-target duration-loop tunables（PR3：profile 真正能影响 TTS 行为） ===
 
 
-def test_default_profile_returns_baseline_word_tolerance_for_any_lang():
+def test_default_profile_uses_per_target_word_tolerance():
     p = get_profile("default")
-    for lang in ("en", "de", "fr", "ja", "fi", "xx"):
-        assert p.word_tolerance_for(lang) == 0.20
+    assert p.word_tolerance_for("en") == 0.10
+    assert p.word_tolerance_for("de") == 0.15
+    assert p.word_tolerance_for("fr") == 0.12
+    assert p.word_tolerance_for("es") == 0.12
+    assert p.word_tolerance_for("ja") == 0.18
+    assert p.word_tolerance_for("fi") == 0.15
+    assert p.word_tolerance_for("xx") == 0.20
 
 
-def test_default_profile_returns_baseline_max_rewrite_attempts_for_any_lang():
+def test_default_profile_uses_per_target_max_rewrite_attempts():
     p = get_profile("default")
-    for lang in ("en", "de", "fr", "ja", "fi", "xx"):
-        assert p.max_rewrite_attempts_for(lang) == 5
+    assert p.max_rewrite_attempts_for("de") == 7
+    assert p.max_rewrite_attempts_for("ja") == 7
+    assert p.max_rewrite_attempts_for("fi") == 7
+    assert p.max_rewrite_attempts_for("en") == 5
+    assert p.max_rewrite_attempts_for("fr") == 5
+    assert p.max_rewrite_attempts_for("xx") == 5
+
+
+def test_default_profile_has_language_specific_speedup_window():
+    p = get_profile("default")
+    assert p.speedup_window_for("de") == (0.88, 1.14)
+    assert p.speedup_window_for("en") == (0.9, 1.1)
+    assert p.speedup_window_for("xx") == (0.9, 1.1)
 
 
 def test_av_sync_profile_uses_baseline_tunables():
