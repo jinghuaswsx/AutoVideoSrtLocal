@@ -337,7 +337,15 @@ def _call_diagnose(
         temperature=0.1,
         max_output_tokens=4096,
     )
-    return _json_from_result(result, {"issues": [], "summary": ""})
+    diagnosis = _json_from_result(result, {"issues": [], "summary": ""})
+    parse_error = result.get("json_parse_error") if isinstance(result, dict) else None
+    if parse_error and not diagnosis.get("issues"):
+        diagnosis["summary"] = "Doubao 返回了非标准 JSON，系统未解析出结构化同步问题；请查看提示词调试原文。"
+        diagnosis["parse_error"] = str(parse_error)[:500]
+        raw_text = str(result.get("text") or "") if isinstance(result, dict) else ""
+        if raw_text:
+            diagnosis["raw_text"] = raw_text[:2000]
+    return diagnosis
 
 
 def _call_verify(

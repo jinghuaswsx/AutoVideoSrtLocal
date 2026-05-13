@@ -277,11 +277,43 @@ def test_multi_report_only_includes_final_subtitle_context_in_diagnosis_prompt(m
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
 
-    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+    runner = _FakeRunner()
+    omni_av_sync_audit.run_report_only(runner, task_id, video_path, str(tmp_path))
 
     prompt = generate.call_args.kwargs["prompt"]
     assert "subtitle_srt" in prompt
     assert "FINAL SRT UNIQUE LINE" in prompt
+
+
+def test_multi_report_only_handles_unstructured_doubao_response(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={
+            "text": '{"issues": [{"asr_index": 0, "safe_action": none}]}',
+            "json": None,
+            "json_parse_error": "Expecting value",
+        }),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {"accepted_issues": [], "rejected_count": 0, "summary": "无结构化问题"},
+        }),
+    )
+
+    runner = _FakeRunner()
+    omni_av_sync_audit.run_report_only(runner, task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    assert report["status"] == "done"
+    assert report["diagnosis"]["parse_error"] == "Expecting value"
+    assert "非标准 JSON" in report["diagnosis"]["summary"]
+    assert runner.step_calls[-1][1:3] == ("av_sync_audit", "done")
 
 
 def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_path):
