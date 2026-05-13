@@ -88,6 +88,7 @@ from ._helpers import (
     _av_target_lang,
     _tts_final_target_range,
     _adaptive_speed_candidate,
+    _speedup_voice_settings_for_attempt,
     _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
@@ -287,6 +288,9 @@ class PipelineRunner:
         llm_model_id = get_model_display_name(provider, self.user_id)
 
         MAX_ROUNDS = 5
+        EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS = 1
+        max_rounds_allowed = MAX_ROUNDS
+        stage1_speedup_fallback_used = False
         # Final target range (shown to the user, used for final success judgement):
         final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
         # Stage-1 convergence range (rewrite手段; approximate via ±10% of video):
@@ -321,8 +325,15 @@ class PipelineRunner:
 
             return hashlib.sha1(str(text or "").encode("utf-8")).hexdigest()
 
-        def _segment_candidate(seg: dict, *, index: int, source: str,
-                               speed: float, attempt: int | None = None) -> dict:
+        def _segment_candidate(
+            seg: dict,
+            *,
+            index: int,
+            source: str,
+            speed: float,
+            attempt: int | None = None,
+            voice_settings: dict | None = None,
+        ) -> dict:
             text = seg.get("tts_text") or seg.get("translated") or seg.get("text") or ""
             duration = float(seg.get("tts_duration") or seg.get("duration") or 0.0)
             path = seg.get("tts_path") or seg.get("audio_path")
@@ -340,6 +351,9 @@ class PipelineRunner:
             })
             if attempt is not None:
                 candidate["speedup_attempt"] = attempt
+            if voice_settings:
+                candidate["voice_settings"] = dict(voice_settings)
+                candidate["voice_settings_profile"] = voice_settings.get("profile")
             return candidate
 
         def _base_candidate_groups(segments: list[dict]) -> list[list[dict]]:
@@ -354,6 +368,7 @@ class PipelineRunner:
             *,
             speed: float,
             attempt: int,
+            voice_settings: dict | None = None,
         ) -> None:
             for i, seg in enumerate(segments or []):
                 if i >= len(groups):
@@ -362,6 +377,7 @@ class PipelineRunner:
                     _segment_candidate(
                         seg, index=i, source="speedup", speed=speed,
                         attempt=attempt,
+                        voice_settings=voice_settings,
                     )
                 )
 
@@ -406,6 +422,12 @@ class PipelineRunner:
                 )
                 if speed is None:
                     break
+                voice_settings = _speedup_voice_settings_for_attempt(attempt)
+                voice_setting_kwargs = {
+                    key: voice_settings[key]
+                    for key in ("stability", "similarity_boost")
+                    if voice_settings.get(key) is not None
+                }
                 self._emit_substep_msg(
                     task_id, "tts",
                     f"正在生成{_lang_display(target_language_label)}配音 · 第 {active_round} 轮 · "
@@ -431,6 +453,7 @@ class PipelineRunner:
                         task_dir,
                         variant=f"round_{active_round}.speed_{variant_suffix}",
                         speed=speed,
+                        **voice_setting_kwargs,
                         model_id=tts_model_id,
                         language_code=tts_language_code,
                         on_segment_done=_on_segment_assembly_seg_done,
@@ -449,6 +472,7 @@ class PipelineRunner:
                 _add_speedup_segments_to_groups(
                     groups, speedup_result.get("segments") or [],
                     speed=speed, attempt=attempt,
+                    voice_settings=voice_settings,
                 )
                 candidate_hit = (video_duration - 1.0) <= speedup_duration <= video_duration
                 candidate_meta = {
@@ -459,6 +483,7 @@ class PipelineRunner:
                     "target_delta": round(speedup_duration - video_duration, 6),
                     "hit_video_cap": candidate_hit,
                     "shorter_than_pre": speedup_duration < audio_duration,
+                    "voice_settings": dict(voice_settings),
                 }
                 round_record["speedup_candidates"].append(candidate_meta)
                 last_speedup_path = speedup_audio_path
@@ -490,6 +515,7 @@ class PipelineRunner:
                             "speed": c.get("speed"),
                             "duration": c.get("duration"),
                             "audio_path": _relative(c.get("tts_path")),
+                            "voice_settings": c.get("voice_settings"),
                         }
                         for c in selection["selected"]
                     ]
@@ -522,7 +548,8 @@ class PipelineRunner:
             round_record["speedup_video_cap_hit"] = False
             return {"hit": False, "failed": False}
 
-        for round_index in range(1, MAX_ROUNDS + 1):
+        round_index = 1
+        while round_index <= max_rounds_allowed:
             round_record: dict = {
                 "round": round_index,
                 "video_duration": video_duration,
@@ -792,6 +819,7 @@ class PipelineRunner:
                     round_products.append(None)
                     task_state.update(task_id, tts_duration_rounds=rounds)
                     self._emit_duration_round(task_id, round_index, "rewrite_rejected", round_record)
+                    round_index += 1
                     continue
                 else:
                     round_record["rewrite_converged"] = True
@@ -1073,6 +1101,35 @@ class PipelineRunner:
                     ), 3)
                 round_record["final_distance"] = final_distance
 
+                can_run_stage1_fallback = (
+                    not assembly.get("hit")
+                    and not stage1_speedup_fallback_used
+                    and round_index < (MAX_ROUNDS + EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS)
+                )
+                if can_run_stage1_fallback:
+                    stage1_speedup_fallback_used = True
+                    max_rounds_allowed = min(
+                        MAX_ROUNDS + EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS,
+                        max(max_rounds_allowed, round_index + 1),
+                    )
+                    round_record["is_final"] = False
+                    round_record["stage1_speedup_fallback_triggered"] = True
+                    round_record["speedup_final_audio_choice"] = "retry_rewrite"
+                    round_record["final_reason"] = (
+                        "stage1_speedup_failed_retry_rewrite"
+                        if assembly.get("failed")
+                        else "stage1_speedup_miss_retry_rewrite"
+                    )
+                    rounds[-1] = round_record
+                    task_state.update(task_id, tts_duration_rounds=rounds)
+                    self._emit_duration_round(
+                        task_id, round_index, "speedup_retry", round_record,
+                    )
+                    last_audio_duration = audio_duration
+                    last_word_count = word_count
+                    round_index += 1
+                    continue
+
                 round_products[-1]["tts_audio_path"] = final_audio_path
                 round_products[-1]["tts_segments"] = final_segments
                 rounds[-1] = round_record
@@ -1103,8 +1160,9 @@ class PipelineRunner:
             # Note: do NOT update `prev_localized` — every rewrite uses the initial.
             last_audio_duration = audio_duration
             last_word_count = word_count
+            round_index += 1
 
-        # MAX_ROUNDS completed without landing in the stage-1 window.
+        # All allowed rounds completed without landing in a final stage-1 result.
         # Pick the round whose audio_duration is closest to the final target range.
         import appcore.task_state as task_state
         eligible_indices = [
@@ -1127,7 +1185,7 @@ class PipelineRunner:
             best_record["audio_duration"], final_target_lo, final_target_hi,
         )
         best_record["message"] = (
-            f"{MAX_ROUNDS} 轮未精确收敛，选第 {best_i + 1} 轮"
+            f"{max_rounds_allowed} 轮未精确收敛，选第 {best_i + 1} 轮"
             f"（{best_record['audio_duration']:.1f}s，距 {video_duration:.1f}s 最近）"
         )
         best_record["is_final"] = True

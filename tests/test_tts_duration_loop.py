@@ -127,6 +127,23 @@ class TestSpeedupWindow:
 
 
 class TestSegmentCandidateAssembly:
+    def test_speedup_voice_settings_profiles_vary_after_speed_only_attempt(self):
+        from appcore.runtime import _speedup_voice_settings_for_attempt
+
+        assert _speedup_voice_settings_for_attempt(1) == {
+            "profile": "speed_only",
+        }
+        assert _speedup_voice_settings_for_attempt(2) == {
+            "profile": "balanced_variation",
+            "stability": 0.5,
+            "similarity_boost": 0.8,
+        }
+        assert _speedup_voice_settings_for_attempt(3) == {
+            "profile": "duration_variation",
+            "stability": 0.35,
+            "similarity_boost": 0.72,
+        }
+
     def test_adaptive_speed_starts_from_measured_ratio_and_supports_slowdown(self):
         from appcore.runtime import _adaptive_speed_candidate
 
@@ -291,10 +308,10 @@ class TestDurationLoopRound1Only:
             out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             with open(out, "wb") as f:
                 f.write(b"fake")
-            return {"full_audio_path": out, "segments": [{"index": 0, "tts_path": out, "tts_duration": 31.5}]}
+            return {"full_audio_path": out, "segments": [{"index": 0, "tts_path": out, "tts_duration": 30.0}]}
 
         def fake_get_audio_duration(path):
-            return 31.5  # Within [29, 32] for video=30
+            return 30.0  # Within video-capped [29, 30] for video=30
 
         def fake_gen_tts_script(loc, **kwargs):
             return {"full_text": "Short text.", "blocks": [{"index": 0, "text": "Short.",
@@ -342,7 +359,7 @@ class TestDurationLoopRound1Only:
         assert result["tts_audio_path"].endswith("tts_full.round_1.mp3")
         assert len(result["rounds"]) == 1
         assert result["rounds"][0]["round"] == 1
-        assert result["rounds"][0]["audio_duration"] == 31.5
+        assert result["rounds"][0]["audio_duration"] == 30.0
 
     def test_round1_language_mismatch_fails_tts_step(self, tmp_path, monkeypatch):
         from appcore import task_state
@@ -453,7 +470,7 @@ class TestDurationLoopRound1Only:
             ]}
 
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
-        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 31.5)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 30.0)
         monkeypatch.setattr(
             "pipeline.translate.generate_tts_script",
             lambda loc, **kw: {
@@ -518,7 +535,7 @@ class TestDurationLoopRound1Only:
             ]}
 
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
-        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 31.5)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 30.0)
         monkeypatch.setattr(
             "pipeline.translate.generate_tts_script",
             lambda loc, **kw: {
@@ -588,7 +605,7 @@ class TestDurationLoopRound1Only:
             ]}
 
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
-        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 31.5)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 30.0)
         monkeypatch.setattr("appcore.tts_generation_stats.finalize", lambda *a, **kw: None)
         monkeypatch.setattr(
             "pipeline.translate.generate_tts_script",
@@ -827,9 +844,9 @@ class TestDurationLoopMultiRound:
         # round 1 record has no direction (no rewrite)
         assert "direction" not in result["rounds"][0]
 
-    def test_round1_audio_up_to_video_plus_two_converges_immediately(self, tmp_path, monkeypatch):
-        # video=30, final range=[29, 32]; 31.5s should stop at round 1.
-        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [31.5])
+    def test_round1_video_capped_audio_converges_immediately(self, tmp_path, monkeypatch):
+        # video=30, video-capped final range=[29, 30]; 30.0s should stop at round 1.
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [30.0])
         result = runner._run_tts_duration_loop(
             task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
             provider="openrouter", video_duration=30.0,
@@ -844,10 +861,8 @@ class TestDurationLoopMultiRound:
         assert len(result["rounds"]) == 1
         assert result["rounds"][0]["duration_lo"] == pytest.approx(29.0)
         assert result["rounds"][0]["duration_hi"] == pytest.approx(32.0)
-        assert result["rounds"][0]["final_reason"] == (
-            "converged_segment_assembly_miss_kept_original"
-        )
-        assert result["rounds"][0]["speedup_applied"] is True
+        assert result["rounds"][0]["final_reason"] == "converged"
+        assert not result["rounds"][0].get("speedup_applied")
 
     def test_round1_audio_below_video_minus_one_runs_stage1_speedup(self, tmp_path, monkeypatch):
         # video=30, target [29,30]; 28.5s is stage1-converged, then speedup reaches 29.0s.
@@ -934,7 +949,7 @@ class TestDurationLoopMultiRound:
             variant="normal",
         )
         assert result["final_round"] == 2
-        assert len(result["rounds"]) == 2
+        assert len(result["rounds"]) == 5
         assert result["tts_audio_path"].endswith("tts_full.round_2.mp3")
 
     def test_intermediate_files_written(self, tmp_path, monkeypatch):
@@ -1646,7 +1661,7 @@ class TestSpeedupShortcut:
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_full_audio)
 
         # 变速重合成：抛错或写文件
-        called = {"speedup_speeds": [], "assembled": []}
+        called = {"speedup_speeds": [], "speedup_voice_settings": [], "assembled": []}
         if speedup_raises is not None:
             def boom(*a, **kw):
                 raise speedup_raises
@@ -1657,6 +1672,10 @@ class TestSpeedupShortcut:
             def fake_speedup(segs, voice_id, task_dir, variant=None, **kw):
                 speed = round(float(kw.get("speed") or 1.0), 2)
                 called["speedup_speeds"].append(speed)
+                called["speedup_voice_settings"].append({
+                    "stability": kw.get("stability"),
+                    "similarity_boost": kw.get("similarity_boost"),
+                })
                 out = os.path.join(task_dir,
                                     f"tts_full.{variant}.speedup.mp3")
                 with open(out, "wb") as f:
@@ -1810,22 +1829,28 @@ class TestSpeedupShortcut:
         assert "speedup_eval_id" not in round_rec
 
     def test_speedup_miss_final_keeps_unaligned(self, tmp_path, monkeypatch):
-        """变速后仍超过视频 → 不采用，继续下一轮 rewrite。"""
+        """变速后仍超过视频 → 触发一次 fallback rewrite，下一轮命中则收敛。"""
         called = self._common_patches(monkeypatch, audio_dur=[64.0, 59.5],
                                       speedup_dur=63.0)
         runner = self._make_runner()
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
-        assert result["final_round"] == 1
+        assert result["final_round"] == 2
         assert round_rec.get("speedup_applied") is True
         assert round_rec["speedup_hit_final"] is False
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
-        assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
+        assert round_rec["final_reason"] == "stage1_speedup_miss_retry_rewrite"
+        assert round_rec["stage1_speedup_fallback_triggered"] is True
         assert called["speedup_speeds"] == [1.05, 1.04, 1.03]
+        assert called["speedup_voice_settings"] == [
+            {"stability": None, "similarity_boost": None},
+            {"stability": 0.5, "similarity_boost": 0.8},
+            {"stability": 0.35, "similarity_boost": 0.72},
+        ]
         assert "speedup_eval_id" not in round_rec
 
     def test_speedup_failure_falls_back_to_original(self, tmp_path, monkeypatch):
-        """ElevenLabs 变速调用抛错 → 不采用原始超长音频，继续下一轮 rewrite。"""
+        """ElevenLabs 变速调用抛错 → 继续下一轮 rewrite 兜底。"""
         called = self._common_patches(
             monkeypatch, audio_dur=[64.0, 59.5],
             speedup_raises=RuntimeError("simulated SSL EOF"),
@@ -1833,11 +1858,12 @@ class TestSpeedupShortcut:
         runner = self._make_runner()
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
-        assert result["final_round"] == 1
+        assert result["final_round"] == 2
         assert round_rec.get("speedup_applied") is True
         assert "speedup_failed_reason" in round_rec
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
-        assert round_rec["final_reason"] == "converged_speedup_failed_kept_original"
+        assert round_rec["final_reason"] == "stage1_speedup_failed_retry_rewrite"
+        assert round_rec["stage1_speedup_fallback_triggered"] is True
         assert "speedup_eval_id" not in round_rec
 
     def test_speedup_skipped_when_final_audio_not_over_video(self, tmp_path, monkeypatch):
@@ -1873,50 +1899,48 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_final_audio_choice"] == "assembly"
         assert "speedup_eval_id" not in round_rec
 
-    def test_final_overshoot_speedup_miss_keeps_converged_audio(
+    def test_final_overshoot_speedup_miss_uses_fallback_rewrite(
         self, tmp_path, monkeypatch,
     ):
-        """候选未命中 final 时，仍保留原来的已收敛音频做最终处理。"""
+        """候选未命中 video cap 时，先补一轮 rewrite/TTS 兜底。"""
         called = self._common_patches(
-            monkeypatch, audio_dur=61.5, speedup_dur=62.5,
+            monkeypatch, audio_dur=[61.5, 59.5], speedup_dur=62.5,
         )
         runner = self._make_runner()
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
 
-        assert result["final_round"] == 1
-        assert result["tts_audio_path"].endswith("tts_full.round_1.mp3")
-        assert not result["tts_audio_path"].endswith(".speedup.mp3")
-        assert result["tts_segments"][0]["tts_duration"] == 61.5
+        assert result["final_round"] == 2
+        assert result["tts_audio_path"].endswith("tts_full.round_2.mp3")
         assert round_rec.get("speedup_applied") is True
         assert round_rec["speedup_pre_duration"] == 61.5
         assert round_rec["speedup_post_duration"] == 62.5
         assert round_rec["speedup_hit_final"] is False
-        assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
+        assert round_rec["final_reason"] == "stage1_speedup_miss_retry_rewrite"
+        assert round_rec["stage1_speedup_fallback_triggered"] is True
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
-        assert round_rec["speedup_final_audio_choice"] == "converged"
+        assert round_rec["speedup_final_audio_choice"] == "retry_rewrite"
         assert "speedup_eval_id" not in round_rec
 
-    def test_final_overshoot_speedup_hit_but_longer_keeps_converged_audio(
+    def test_final_overshoot_speedup_still_over_video_uses_fallback_rewrite(
         self, tmp_path, monkeypatch,
     ):
-        """候选虽仍在旧 final 区间，但超过视频时不能采用。"""
+        """候选虽仍在旧 final 区间，但超过视频时不能采用，先补一轮 rewrite。"""
         called = self._common_patches(
-            monkeypatch, audio_dur=61.5, speedup_dur=61.8,
+            monkeypatch, audio_dur=[61.5, 59.5], speedup_dur=61.8,
         )
         runner = self._make_runner()
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
 
-        assert result["final_round"] == 1
-        assert result["tts_audio_path"].endswith("tts_full.round_1.mp3")
-        assert result["tts_segments"][0]["tts_duration"] == 61.5
+        assert result["final_round"] == 2
+        assert result["tts_audio_path"].endswith("tts_full.round_2.mp3")
         assert round_rec.get("speedup_applied") is True
         assert round_rec["speedup_post_duration"] == 61.8
         assert round_rec["speedup_hit_final"] is False
-        assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
+        assert round_rec["final_reason"] == "stage1_speedup_miss_retry_rewrite"
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
-        assert round_rec["speedup_final_audio_choice"] == "converged"
+        assert round_rec["speedup_final_audio_choice"] == "retry_rewrite"
         assert "speedup_eval_id" not in round_rec
 
     def test_final_overshoot_segment_assembly_adopts_video_capped_mix(
@@ -1950,12 +1974,12 @@ class TestSpeedupShortcut:
             pytest.approx(20.0), pytest.approx(20.0), pytest.approx(19.9),
         ]
 
-    def test_final_overshoot_segment_assembly_miss_keeps_converged_audio(
+    def test_final_overshoot_segment_assembly_miss_uses_fallback_rewrite(
         self, tmp_path, monkeypatch,
     ):
         called = self._common_patches(
             monkeypatch,
-            audio_dur=61.5,
+            audio_dur=[61.5, 59.5],
             audio_segments=[20.8, 20.4, 20.3],
             speedup_segments_by_speed={
                 1.03: [20.4, 20.2, 20.1],
@@ -1967,15 +1991,16 @@ class TestSpeedupShortcut:
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
 
-        assert result["tts_audio_path"].endswith("tts_full.round_1.mp3")
+        assert result["final_round"] == 2
+        assert result["tts_audio_path"].endswith("tts_full.round_2.mp3")
         assert not result["tts_audio_path"].endswith(".assembled.mp3")
         assert called["speedup_speeds"] == [1.03, 1.04, 1.05]
         assert round_rec["segment_assembly_applied"] is True
         assert round_rec["segment_assembly_hit"] is False
-        assert round_rec["speedup_final_audio_choice"] == "converged"
-        assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
+        assert round_rec["speedup_final_audio_choice"] == "retry_rewrite"
+        assert round_rec["final_reason"] == "stage1_speedup_miss_retry_rewrite"
 
-    def test_stage1_segment_assembly_miss_finishes_without_more_rewrite(
+    def test_stage1_segment_assembly_miss_uses_one_fallback_rewrite(
         self, tmp_path, monkeypatch,
     ):
         called = self._common_patches(
@@ -1990,10 +2015,35 @@ class TestSpeedupShortcut:
         runner = self._make_runner()
         result = self._run(runner, tmp_path, video_duration=60.0)
 
-        assert result["final_round"] == 1
+        assert result["final_round"] == 2
+        assert len(result["rounds"]) == 2
         assert called["speedup_speeds"] == [1.05, 1.04, 1.03]
-        assert result["rounds"][0]["final_reason"] == "converged_segment_assembly_miss_kept_original"
+        assert result["rounds"][0]["final_reason"] == "stage1_speedup_miss_retry_rewrite"
+        assert result["rounds"][0]["speedup_final_audio_choice"] == "retry_rewrite"
+        assert result["rounds"][0]["stage1_speedup_fallback_triggered"] is True
         assert result["rounds"][0]["segment_assembly_hit"] is False
+
+    def test_second_stage1_segment_assembly_miss_stops_without_second_fallback(
+        self, tmp_path, monkeypatch,
+    ):
+        called = self._common_patches(
+            monkeypatch,
+            audio_dur=[64.0, 63.5, 59.5],
+            speedup_segments_by_speed={
+                1.05: [63.0],
+                1.04: [63.0],
+                1.03: [63.0],
+            },
+        )
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+
+        assert result["final_round"] == 2
+        assert len(result["rounds"]) == 2
+        assert called["speedup_speeds"] == [1.05, 1.04, 1.03, 1.05, 1.04, 1.03]
+        assert result["rounds"][0]["stage1_speedup_fallback_triggered"] is True
+        assert "stage1_speedup_fallback_triggered" not in result["rounds"][1]
+        assert result["rounds"][1]["final_reason"] == "converged_segment_assembly_miss_kept_original"
 
     def test_speedup_waits_until_rewrite_reaches_stage1_window(
         self, tmp_path, monkeypatch,

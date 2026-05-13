@@ -69,6 +69,8 @@ class TtsEngine(ABC):
         *,
         variant: str,
         speed: float,
+        stability: float | None = None,
+        similarity_boost: float | None = None,
         model_id: str | None = None,
         language_code: str | None = None,
         on_segment_done: Optional[Callable[[int, int, dict], None]] = None,

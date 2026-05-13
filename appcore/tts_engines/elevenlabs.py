@@ -51,6 +51,8 @@ class ElevenLabsEngine(TtsEngine):
         *,
         variant: str,
         speed: float,
+        stability: float | None = None,
+        similarity_boost: float | None = None,
         model_id: str | None = None,
         language_code: str | None = None,
         on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
@@ -58,6 +60,10 @@ class ElevenLabsEngine(TtsEngine):
         from pipeline.tts import regenerate_full_audio_with_speed
 
         kwargs: dict = {"variant": variant, "speed": speed}
+        if stability is not None:
+            kwargs["stability"] = stability
+        if similarity_boost is not None:
+            kwargs["similarity_boost"] = similarity_boost
         if model_id is not None:
             kwargs["model_id"] = model_id
         if language_code is not None:

@@ -93,7 +93,7 @@ def test_build_tts_segments_falls_back_when_block_missing_source_segment_indices
     assert segments[0]["end_time"] == 2.0
 
 
-def test_generate_segment_audio_passes_speed_via_voice_settings(tmp_path, monkeypatch):
+def test_generate_segment_audio_passes_speed_and_voice_settings(tmp_path, monkeypatch):
     import pipeline.tts as tts
 
     captured = {}
@@ -120,10 +120,14 @@ def test_generate_segment_audio_passes_speed_via_voice_settings(tmp_path, monkey
         voice_id="voice-1",
         output_path=str(out),
         speed=1.05,
+        stability=0.5,
+        similarity_boost=0.8,
     )
 
     assert path == str(out)
     assert captured["voice_settings_kwargs"]["speed"] == pytest.approx(1.05)
+    assert captured["voice_settings_kwargs"]["stability"] == pytest.approx(0.5)
+    assert captured["voice_settings_kwargs"]["similarity_boost"] == pytest.approx(0.8)
     assert captured["convert_kwargs"]["voice_settings"].__class__ is DummyVoiceSettings
 
 

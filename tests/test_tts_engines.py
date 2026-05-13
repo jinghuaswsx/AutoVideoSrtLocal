@@ -102,6 +102,30 @@ def test_elevenlabs_regenerate_with_speed_delegates(monkeypatch):
     assert captured["kwargs"]["language_code"] == "ja"
 
 
+def test_elevenlabs_regenerate_with_speed_delegates_voice_settings(monkeypatch):
+    captured = {}
+
+    def fake_regen(segments, voice_id, output_dir, **kwargs):
+        captured["kwargs"] = kwargs
+        return {"full_audio_path": "/tmp/sp.mp3", "segments": segments}
+
+    monkeypatch.setattr("pipeline.tts.regenerate_full_audio_with_speed", fake_regen)
+
+    engine = ElevenLabsEngine()
+    engine.regenerate_with_speed(
+        [{"index": 0, "tts_text": "hi"}],
+        "voice-x",
+        "/tmp/task",
+        variant="round_2",
+        speed=1.04,
+        stability=0.5,
+        similarity_boost=0.8,
+    )
+    assert captured["kwargs"]["speed"] == 1.04
+    assert captured["kwargs"]["stability"] == pytest.approx(0.5)
+    assert captured["kwargs"]["similarity_boost"] == pytest.approx(0.8)
+
+
 def test_elevenlabs_get_audio_duration_delegates(monkeypatch):
     monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 42.5)
     engine = ElevenLabsEngine()

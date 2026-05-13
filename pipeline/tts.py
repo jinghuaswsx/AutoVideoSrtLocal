@@ -206,6 +206,8 @@ def generate_segment_audio(
     model_id: str = "eleven_turbo_v2_5",
     language_code: str | None = None,
     speed: float | None = None,
+    stability: float | None = None,
+    similarity_boost: float | None = None,
 ) -> str:
     """生成单段音频，返回文件路径（mp3）"""
     if _audio_file_already_valid(output_path):
@@ -220,14 +222,21 @@ def generate_segment_audio(
     )
     if language_code:
         kwargs["language_code"] = language_code
+    voice_settings: dict[str, float] = {}
     if speed is not None and abs(speed - 1.0) > 0.001:
+        voice_settings["speed"] = float(speed)
+    if stability is not None:
+        voice_settings["stability"] = float(stability)
+    if similarity_boost is not None:
+        voice_settings["similarity_boost"] = float(similarity_boost)
+    if voice_settings:
         if VoiceSettings is not None:
             try:
-                kwargs["voice_settings"] = VoiceSettings(speed=float(speed))
+                kwargs["voice_settings"] = VoiceSettings(**voice_settings)
             except Exception:
-                kwargs["voice_settings"] = {"speed": float(speed)}
+                kwargs["voice_settings"] = dict(voice_settings)
         else:
-            kwargs["voice_settings"] = {"speed": float(speed)}
+            kwargs["voice_settings"] = dict(voice_settings)
     # ElevenLabs SDK convert() 返回的是一个 generator/iterator —— 真正的 HTTP
     # 请求在迭代它时才发出。如果只把 convert() 调用放进 retry 包装，generator
     # 拿出来后在 retry 之外迭代时 SSL/连接异常就抓不到了。所以把整段 drain 都
@@ -405,6 +414,8 @@ def regenerate_full_audio_with_speed(
     elevenlabs_api_key: str | None = None,
     model_id: str = "eleven_turbo_v2_5",
     language_code: str | None = None,
+    stability: float | None = None,
+    similarity_boost: float | None = None,
     on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
 ) -> Dict:
     """以指定 speed 重新合成 segments 并 concat（**并发**调用 ElevenLabs）。
@@ -449,6 +460,8 @@ def regenerate_full_audio_with_speed(
                 elevenlabs_api_key=elevenlabs_api_key,
                 model_id=model_id, language_code=language_code,
                 speed=speed,
+                stability=stability,
+                similarity_boost=similarity_boost,
             )
             duration = _get_audio_duration(seg_path)
             return seg_path, duration
@@ -488,6 +501,8 @@ def regenerate_full_audio_with_speed(
             "tts_duration": duration,
             "tts_text_preview": (text or "")[:60],
             "speed": speed,
+            "stability": stability,
+            "similarity_boost": similarity_boost,
         }
         if on_segment_done is not None:
             try:

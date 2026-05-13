@@ -437,6 +437,23 @@ def _adaptive_speed_candidate(
     return None
 
 
+def _speedup_voice_settings_for_attempt(attempt: int) -> dict:
+    """Return conservative ElevenLabs voice setting overrides per speed attempt."""
+    if attempt == 2:
+        return {
+            "profile": "balanced_variation",
+            "stability": 0.50,
+            "similarity_boost": 0.80,
+        }
+    if attempt >= 3:
+        return {
+            "profile": "duration_variation",
+            "stability": 0.35,
+            "similarity_boost": 0.72,
+        }
+    return {"profile": "speed_only"}
+
+
 def _speedup_candidate_speeds(
     *,
     audio_duration: float,
