@@ -157,9 +157,10 @@ def test_next_category_reanalysis_candidates_selects_done_rows_with_titles():
     assert rows[0]["id"] == 11
     assert "status = 'done'" in sql
     assert "product_title IS NOT NULL" in sql
-    assert "last_error LIKE 'category failed:%%'" in sql
+    assert "last_error LIKE %s" in sql
+    assert "category failed:%%" not in sql
     assert "category_l1 = 'Other'" in sql
-    assert params == (100,)
+    assert params == ("category failed:%", "category failed:%", 100)
 
 
 def test_next_category_reanalysis_candidates_include_all_skips_current_adc_model():
@@ -173,8 +174,9 @@ def test_next_category_reanalysis_candidates_include_all_skips_current_adc_model
 
     sql, params = calls[0]
     assert "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview'" in sql
-    assert "AND (last_error LIKE 'category failed:%%'" not in sql
-    assert params == (80,)
+    assert "AND (last_error LIKE %s" not in sql
+    assert "category failed:%%" not in sql
+    assert params == ("category failed:%", 80)
 
 
 def test_next_category_reanalysis_candidates_excludes_current_adc_failures():
@@ -185,11 +187,12 @@ def test_next_category_reanalysis_candidates_excludes_current_adc_failures():
         query_fn=lambda sql, params=(): calls.append((sql, params)) or [],
     )
 
-    sql, _params = calls[0]
+    sql, params = calls[0]
     assert (
         "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview' "
-        "AND (last_error LIKE 'category failed:%%'"
+        "AND (last_error LIKE %s"
     ) in " ".join(sql.split())
+    assert params == ("category failed:%", "category failed:%", 100)
 
 
 def test_finish_category_reanalysis_updates_only_category_fields():
