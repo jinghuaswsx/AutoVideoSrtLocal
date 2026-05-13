@@ -9,6 +9,8 @@
 - translate_calls:      round 1 的 1 次初始翻译 + 每个 round 内所有 rewrite_attempt 之和
 - audio_rounds:         实际进入完整音频合成的轮数
 - audio_segment_calls:  所有 round 的 audio_segments_total 之和（段级 ElevenLabs 调用总数）
+- converged_speedup_audio_generations:
+                        最后收敛后，因为音频仍超过视频而额外生成的变速候选音频次数
 - audio_calls:          兼容旧字段，等同 audio_segment_calls
 """
 from __future__ import annotations
@@ -35,12 +37,14 @@ def compute_summary(rounds: Iterable[dict]) -> dict:
             "translate_calls": 0,
             "audio_rounds": 0,
             "audio_segment_calls": 0,
+            "converged_speedup_audio_generations": 0,
             "audio_calls": 0,
         }
 
     translate_calls = 0
     audio_rounds = 0
     audio_segment_calls = 0
+    converged_speedup_audio_generations = 0
     for idx, rec in enumerate(rounds_list):
         if idx == 0:
             translate_calls += 1
@@ -50,10 +54,17 @@ def compute_summary(rounds: Iterable[dict]) -> dict:
         audio_segment_calls += segment_calls
         if segment_calls > 0:
             audio_rounds += 1
+        if (
+            rec.get("speedup_applied")
+            and rec.get("speedup_context") == "final_converged_overshoot"
+            and rec.get("speedup_audio_path")
+        ):
+            converged_speedup_audio_generations += 1
     return {
         "translate_calls": translate_calls,
         "audio_rounds": audio_rounds,
         "audio_segment_calls": audio_segment_calls,
+        "converged_speedup_audio_generations": converged_speedup_audio_generations,
         "audio_calls": audio_segment_calls,
     }
 
@@ -64,11 +75,19 @@ def format_log_line(summary: dict) -> str:
     audio_segment_calls = int(
         summary.get("audio_segment_calls", summary.get("audio_calls", 0)) or 0
     )
+    converged_speedup_audio_generations = int(
+        summary.get("converged_speedup_audio_generations") or 0
+    )
+    speedup_part = (
+        f"，收敛音频变速生成音频 {converged_speedup_audio_generations} 次"
+        if converged_speedup_audio_generations > 0
+        else ""
+    )
     return (
         f"{_ANSI_BOLD_BLUE}"
         f"本任务用了 {summary['translate_calls']} 次文本翻译，"
         f"{audio_rounds} 轮语音生成，"
-        f"{audio_segment_calls} 次分段语音合成。"
+        f"{audio_segment_calls} 次分段语音合成{speedup_part}。"
         f"{_ANSI_RESET}"
     )
 

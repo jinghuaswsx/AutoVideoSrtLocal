@@ -99,16 +99,15 @@ class TestSpeedupWindow:
 
     def test_speedup_ratio_basic(self):
         from appcore.runtime import _speedup_ratio
-        # audio=64, video=60 → speed=64/60=1.0667（音频要变快、变短）
-        assert _speedup_ratio(64.0, 60.0) == pytest.approx(1.0667, abs=1e-4)
+        # 1.0071 / 1.0012 both round upward to two decimals.
+        assert _speedup_ratio(60.427, 60.0) == pytest.approx(1.01, abs=1e-4)
+        assert _speedup_ratio(60.072, 60.0) == pytest.approx(1.01, abs=1e-4)
 
-    def test_speedup_ratio_clamps_to_elevenlabs_legal_range(self):
+    def test_speedup_ratio_clamps_to_narrow_quality_range(self):
         from appcore.runtime import _speedup_ratio
-        # ElevenLabs 合法 speed ∈ [0.7, 1.2]
-        # 极端情况 audio=120, video=60 → ratio=2.0，应被 clamp 到 1.2
-        assert _speedup_ratio(120.0, 60.0) == 1.2
-        # audio=30, video=60 → ratio=0.5，应被 clamp 到 0.7
-        assert _speedup_ratio(30.0, 60.0) == 0.7
+        # The project keeps speedup gentle for voice quality: [0.95, 1.05].
+        assert _speedup_ratio(120.0, 60.0) == 1.05
+        assert _speedup_ratio(30.0, 60.0) == 0.95
 
 
 import os
@@ -665,7 +664,7 @@ class TestDurationLoopMultiRound:
         assert len(result["rounds"]) == 1
         assert result["rounds"][0]["duration_lo"] == pytest.approx(29.0)
         assert result["rounds"][0]["duration_hi"] == pytest.approx(32.0)
-        assert result["rounds"][0]["final_reason"] == "converged_speedup_refined"
+        assert result["rounds"][0]["final_reason"] == "converged_speedup_longer_kept_original"
         assert result["rounds"][0]["speedup_applied"] is True
 
     def test_round1_audio_below_video_minus_one_continues(self, tmp_path, monkeypatch):
@@ -1537,6 +1536,8 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 60.2
         assert round_rec["speedup_hit_final"] is True
         assert round_rec["final_reason"] == "converged_speedup_refined"
+        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_final_audio_choice"] == "speedup"
         assert len(called["eval"]) == 1
         assert called["eval"][0]["audio_pre_duration"] == 61.5
         assert called["eval"][0]["audio_post_duration"] == 60.2
@@ -1562,5 +1563,30 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 62.5
         assert round_rec["speedup_hit_final"] is False
         assert round_rec["final_reason"] == "converged_speedup_miss_kept_original"
+        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_final_audio_choice"] == "converged"
         assert len(called["eval"]) == 1
         assert called["eval"][0]["hit_final_range"] is False
+
+    def test_final_overshoot_speedup_hit_but_longer_keeps_converged_audio(
+        self, tmp_path, monkeypatch,
+    ):
+        """候选虽仍在 final 区间，但比原收敛音频更长时不能采用。"""
+        called = self._common_patches(
+            monkeypatch, audio_dur=61.5, speedup_dur=61.8,
+        )
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+        round_rec = result["rounds"][0]
+
+        assert result["final_round"] == 1
+        assert result["tts_audio_path"].endswith("tts_full.round_1.mp3")
+        assert result["tts_segments"][0]["tts_duration"] == 61.5
+        assert round_rec.get("speedup_applied") is True
+        assert round_rec["speedup_post_duration"] == 61.8
+        assert round_rec["speedup_hit_final"] is True
+        assert round_rec["final_reason"] == "converged_speedup_longer_kept_original"
+        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_final_audio_choice"] == "converged"
+        assert len(called["eval"]) == 1
+        assert called["eval"][0]["hit_final_range"] is True
