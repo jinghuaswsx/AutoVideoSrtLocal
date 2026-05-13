@@ -25,11 +25,22 @@ assembly remains `[video_duration - 1s, video_duration]`.
 5. After each speed variant is generated, add its segment files to the candidate
    groups and try segment assembly.
 6. If assembly hits `[video - 1s, video]`, adopt the assembled audio.
-7. If all speed attempts fail or miss, keep the stage-1 converged audio and mark
-   the miss in round metadata.
+7. If assembly misses but the closest over-video assembly is shorter than the
+   normal round audio and lands inside `[video - 1s, video + 2s]`, adopt that
+   assembly as the final audio. It may still be trimmed by video composition,
+   but it minimizes the tail cut compared with keeping the longer original
+   round audio.
+8. If all speed attempts fail or miss without an adoptable closest-over fallback,
+   consume at most one extra rewrite fallback round. Keep the failed/missed
+   round metadata for diagnostics with
+   `speedup_final_audio_choice = "retry_rewrite"`.
+9. If the extra fallback has already been spent, finalize on the best available
+   stage-1 audio rather than looping indefinitely. The final task may still
+   finish through a direct `[video - 1s, video]` hit, a later segment assembly
+   hit, or the existing best-pick fallback after all allowed rounds.
 
-This removes the old behavior where a stage-1 miss continued rewrite and could
-trigger speedup again on later rounds.
+This avoids falsely marking a stage-1-only audio as converged when the stricter
+video-capped assembly target was not met.
 
 ## Adaptive Speed Selection
 
@@ -61,7 +72,13 @@ Round records should use:
 - `speedup_candidates` with one item per generated speed variant
 - `segment_assembly_target_lo = video - 1s`
 - `segment_assembly_target_hi = video`
-- `speedup_final_audio_choice = "assembly"` or `"converged"`
+- `speedup_final_audio_choice = "assembly"` when adopted
+- `speedup_final_audio_choice = "assembly_closest_over"` when a shorter
+  over-video assembly fallback is adopted
+- `segment_assembly_fallback_applied = true` for that closest-over fallback
+- `speedup_final_audio_choice = "retry_rewrite"` when all candidates miss and
+  the one extra rewrite fallback is consumed
 
 The UI should describe this as "stage-1 converged audio speedup assembly", not
-as a mid-loop shortcut.
+as a mid-loop shortcut. It should also expose every generated speed candidate
+and the selected segment list when assembly succeeds.

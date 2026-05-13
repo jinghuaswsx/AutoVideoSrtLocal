@@ -49,7 +49,12 @@ Ranking:
 3. Prefer fewer speed-modified segments.
 4. Prefer lower total speed penalty.
 
-The implementation can use beam search. Segment counts are small, but beam search avoids exponential blow-up if a future task has many segments.
+2026-05-13 follow-up: the optimizer should prefer an exact dynamic-programming
+search over beam search. Candidate counts are small, and the optimizer is not
+the runtime bottleneck compared with ElevenLabs generation. The exact search
+should quantize durations to milliseconds, keep one best combination per total
+duration bucket, and preserve the same ranking rules above. Beam search remains
+only as a safety fallback for unexpectedly huge state spaces.
 
 ## Runtime Decisions
 
@@ -58,24 +63,53 @@ Post-convergence overshoot branch:
 - Trigger only when the regular round already converged to `[v-1, v+2]` and `audio_duration > video_duration`.
 - Try segment assembly over original candidates plus up to three speed variants.
 - If assembly hits `[v-1, v]`, adopt the assembled audio.
-- If assembly misses, keep the original converged audio.
+- If assembly misses but the closest over-video assembly is shorter than the
+  original round audio and still inside `[v-1, v+2]`, adopt that closest
+  over-video assembly as a truncation-minimizing fallback.
+- If no assembly improves the original converged audio, keep the original
+  converged audio.
 
 Older shortcut branch (`[0.9v, 1.1v]` but outside final range):
 
 - Try the same segment assembly.
 - If assembly hits `[v-1, v]`, adopt the assembled audio and finish.
-- If assembly misses, continue the normal rewrite loop instead of finalizing on an over-video speedup product.
+- If assembly misses but the closest over-video assembly is shorter than the
+  original round audio and enters `[v-1, v+2]`, adopt that closest over-video
+  assembly and finish.
+- If assembly misses without an adoptable closest-over fallback, run at most one
+  extra rewrite fallback round (`speedup_final_audio_choice = "retry_rewrite"`).
+  After that fallback is spent, keep the best available stage-1 audio rather
+  than looping indefinitely.
 
 For diagnostics, write metadata to the round record:
 
 - `segment_assembly_applied`
 - `segment_assembly_hit`
+- `segment_assembly_candidate_count`
 - `segment_assembly_audio_path`
 - `segment_assembly_duration`
 - `segment_assembly_gap`
 - `segment_assembly_selected`
+- `segment_assembly_best_under_duration` and `segment_assembly_best_under_selected`
+- `segment_assembly_closest_over_duration` and `segment_assembly_closest_over_selected`
+- `segment_assembly_min_duration` and `segment_assembly_min_selected`
+- `segment_assembly_fallback_applied = true` when the selected assembly did
+  not hit `[v-1, v]` but is adopted because it is the best shorter over-video
+  fallback inside `[v-1, v+2]`
+- `segment_assembly_fallback_reason = "closest_over_improved"`
 - `speedup_candidates`
+- `speedup_final_audio_choice = "retry_rewrite"` when a stage-1 post-process miss consumes the one extra rewrite fallback
 - Existing `speedup_*` fields remain populated for UI compatibility.
+
+The task detail UI must show every speed candidate as a separate diagnostic row
+and, when assembly succeeds, show the exact selected segment list: segment
+index, source (`round` or `speedup`), speed, duration, attempt, and audio path.
+When assembly misses, the UI should say that no segment combination fit inside
+`[v-1, v]` and the rewrite loop continues. It must also show the nearest
+non-adopted assembly evidence: either the best combination under video, the
+closest combination over video, or the shortest combination, including the
+segment list used for that diagnostic result. This distinguishes "no assembly
+ran" from "assembly ran but every combination was still unusable."
 
 ## Output
 

@@ -502,29 +502,50 @@ def _select_segment_candidate_assembly(
     """
     target_lo = max(0.0, float(video_duration) - float(target_floor_margin))
     target_hi = float(video_duration)
-    if not (target_hi > 0) or not candidate_groups:
+    def _rounded_duration(value: float | None) -> float | None:
+        return round(value, 6) if value is not None else None
+
+    def _empty_diagnostics() -> dict:
         return {
+            "candidate_combination_count": 0,
+            "best_under_duration": None,
+            "best_under_selected": [],
+            "closest_over_duration": None,
+            "closest_over_selected": [],
+            "min_duration": None,
+            "min_selected": [],
+        }
+
+    if not (target_hi > 0) or not candidate_groups:
+        empty = _empty_diagnostics()
+        empty.update({
             "hit": False,
             "selected": [],
             "total_duration": None,
-            "best_under_duration": None,
             "target_lo": target_lo,
             "target_hi": target_hi,
             "gap": None,
-        }
+        })
+        return empty
 
-    beams: list[tuple[float, int, float, list[dict]]] = [(0.0, 0, 0.0, [])]
+    def _miss(diagnostics: dict | None = None) -> dict:
+        response = _empty_diagnostics()
+        if diagnostics:
+            response.update(diagnostics)
+        response.update({
+            "hit": False,
+            "selected": [],
+            "total_duration": None,
+            "target_lo": target_lo,
+            "target_hi": target_hi,
+            "gap": None,
+        })
+        return response
+
+    prepared_groups: list[list[dict]] = []
     for raw_group in candidate_groups:
         if not raw_group:
-            return {
-                "hit": False,
-                "selected": [],
-                "total_duration": None,
-                "best_under_duration": None,
-                "target_lo": target_lo,
-                "target_hi": target_hi,
-                "gap": None,
-            }
+            return _miss()
 
         baseline_hash = next(
             (c.get("tts_text_hash") for c in raw_group if c.get("tts_text_hash")),
@@ -540,70 +561,202 @@ def _select_segment_candidate_assembly(
             )
         ]
         if not group:
-            return {
-                "hit": False,
-                "selected": [],
-                "total_duration": None,
-                "best_under_duration": None,
-                "target_lo": target_lo,
-                "target_hi": target_hi,
-                "gap": None,
-            }
+            return _miss()
+        prepared_groups.append(group)
 
-        next_beams: list[tuple[float, int, float, list[dict]]] = []
-        for total, modified_count, speed_penalty, selected in beams:
-            for candidate in group:
-                duration = float(candidate.get("duration") or 0.0)
-                speed = float(candidate.get("speed") or 1.0)
-                source = str(candidate.get("source") or "")
-                is_modified = source != "round" or abs(speed - 1.0) > 0.001
-                next_beams.append((
-                    total + duration,
-                    modified_count + (1 if is_modified else 0),
-                    speed_penalty + abs(speed - 1.0),
-                    selected + [candidate],
-                ))
+    candidate_combination_count = 1
+    for group in prepared_groups:
+        candidate_combination_count *= len(group)
 
-        def _beam_rank(item: tuple[float, int, float, list[dict]]) -> tuple:
-            total, modified_count, speed_penalty, _ = item
-            over_video = total > target_hi
-            if over_video:
-                return (1, total - target_hi, modified_count, speed_penalty)
-            return (0, -(total), modified_count, speed_penalty)
+    def _candidate_metrics(candidate: dict) -> tuple[float, int, float]:
+        duration = float(candidate.get("duration") or 0.0)
+        speed = float(candidate.get("speed") or 1.0)
+        source = str(candidate.get("source") or "")
+        is_modified = source != "round" or abs(speed - 1.0) > 0.001
+        return duration, 1 if is_modified else 0, abs(speed - 1.0)
 
-        beams = sorted(next_beams, key=_beam_rank)[:max(1, beam_size)]
-
-    under = [item for item in beams if item[0] <= target_hi]
-    hit = [item for item in under if item[0] >= target_lo]
-    best_under = None
-    if under:
-        best_under = max(under, key=lambda item: item[0])
-    if not hit:
-        return {
-            "hit": False,
-            "selected": [],
-            "total_duration": None,
-            "best_under_duration": (
-                round(best_under[0], 6) if best_under is not None else None
-            ),
+    def _selection_response(
+        total: float,
+        modified_count: int,
+        speed_penalty: float,
+        selected: list[dict],
+        diagnostics: dict,
+    ) -> dict:
+        response = dict(diagnostics)
+        response.update({
+            "hit": True,
+            "selected": selected,
+            "total_duration": _rounded_duration(total),
             "target_lo": target_lo,
             "target_hi": target_hi,
-            "gap": None,
-        }
+            "gap": _rounded_duration(target_hi - total),
+            "modified_segments": modified_count,
+            "speed_penalty": _rounded_duration(speed_penalty),
+        })
+        return response
 
-    best = sorted(hit, key=lambda item: (-item[0], item[1], item[2]))[0]
-    total, modified_count, speed_penalty, selected = best
-    return {
-        "hit": True,
-        "selected": selected,
-        "total_duration": round(total, 6),
-        "best_under_duration": round(best_under[0], 6) if best_under else None,
-        "target_lo": target_lo,
-        "target_hi": target_hi,
-        "gap": round(target_hi - total, 6),
-        "modified_segments": modified_count,
-        "speed_penalty": round(speed_penalty, 6),
-    }
+    def _diagnostics_from_states(final_states: list[tuple]) -> dict:
+        def _selection_from_state(state: tuple | None) -> list[dict]:
+            if state is None:
+                return []
+            selected: list[dict] = []
+            cursor = state
+            while cursor[3] is not None:
+                selected.append(cursor[3])
+                cursor = cursor[4]
+            selected.reverse()
+            return selected
+
+        diagnostics = _empty_diagnostics()
+        diagnostics["candidate_combination_count"] = candidate_combination_count
+        if not final_states:
+            return diagnostics
+
+        under_states = [state for state in final_states if state[0] <= target_hi]
+        over_states = [state for state in final_states if state[0] > target_hi]
+        best_under_state = (
+            sorted(
+                under_states,
+                key=lambda state: (-state[0], state[1], state[2]),
+            )[0]
+            if under_states else None
+        )
+        closest_over_state = (
+            sorted(
+                over_states,
+                key=lambda state: (state[0] - target_hi, state[1], state[2]),
+            )[0]
+            if over_states else None
+        )
+        min_state = sorted(
+            final_states,
+            key=lambda state: (state[0], state[1], state[2]),
+        )[0]
+
+        diagnostics.update({
+            "best_under_duration": _rounded_duration(
+                best_under_state[0] if best_under_state else None
+            ),
+            "best_under_selected": _selection_from_state(best_under_state),
+            "closest_over_duration": _rounded_duration(
+                closest_over_state[0] if closest_over_state else None
+            ),
+            "closest_over_selected": _selection_from_state(closest_over_state),
+            "min_duration": _rounded_duration(min_state[0]),
+            "min_selected": _selection_from_state(min_state),
+        })
+        return diagnostics
+
+    def _beam_select(groups: list[list[dict]]) -> dict:
+        beams: list[tuple[float, int, float, list[dict]]] = [(0.0, 0, 0.0, [])]
+        for group in groups:
+            next_beams: list[tuple[float, int, float, list[dict]]] = []
+            for total, modified_count, speed_penalty, selected in beams:
+                for candidate in group:
+                    duration, modified_delta, speed_delta = _candidate_metrics(candidate)
+                    next_beams.append((
+                        total + duration,
+                        modified_count + modified_delta,
+                        speed_penalty + speed_delta,
+                        selected + [candidate],
+                    ))
+
+            def _beam_rank(item: tuple[float, int, float, list[dict]]) -> tuple:
+                total, modified_count, speed_penalty, _ = item
+                over_video = total > target_hi
+                if over_video:
+                    return (1, total - target_hi, modified_count, speed_penalty)
+                return (0, -(total), modified_count, speed_penalty)
+
+            beams = sorted(next_beams, key=_beam_rank)[:max(1, beam_size)]
+
+        under = [item for item in beams if item[0] <= target_hi]
+        hit = [item for item in under if item[0] >= target_lo]
+        over = [item for item in beams if item[0] > target_hi]
+        best_under = max(under, key=lambda item: item[0]) if under else None
+        closest_over = min(over, key=lambda item: item[0] - target_hi) if over else None
+        min_item = min(beams, key=lambda item: item[0]) if beams else None
+        diagnostics = _empty_diagnostics()
+        diagnostics.update({
+            "candidate_combination_count": candidate_combination_count,
+            "best_under_duration": _rounded_duration(
+                best_under[0] if best_under is not None else None
+            ),
+            "best_under_selected": best_under[3] if best_under is not None else [],
+            "closest_over_duration": _rounded_duration(
+                closest_over[0] if closest_over is not None else None
+            ),
+            "closest_over_selected": (
+                closest_over[3] if closest_over is not None else []
+            ),
+            "min_duration": _rounded_duration(min_item[0] if min_item else None),
+            "min_selected": min_item[3] if min_item is not None else [],
+        })
+        if not hit:
+            return _miss(diagnostics)
+
+        best = sorted(hit, key=lambda item: (-item[0], item[1], item[2]))[0]
+        total, modified_count, speed_penalty, selected = best
+        return _selection_response(
+            total, modified_count, speed_penalty, selected, diagnostics,
+        )
+
+    state_budget = 1_000_000
+
+    # Exact DP: one best partial assembly per millisecond duration bucket.
+    # State tuple: (actual_total, modified_count, speed_penalty, candidate, parent_state)
+    initial_state = (0.0, 0, 0.0, None, None)
+    dp: dict[int, tuple] = {0: initial_state}
+
+    def _state_rank(state: tuple) -> tuple:
+        total, modified_count, speed_penalty, _, _ = state
+        return (-total, modified_count, speed_penalty)
+
+    def _is_better_state(candidate_state: tuple, current_state: tuple | None) -> bool:
+        if current_state is None:
+            return True
+        return _state_rank(candidate_state) < _state_rank(current_state)
+
+    for group in prepared_groups:
+        next_dp: dict[int, tuple] = {}
+        for state in dp.values():
+            total, modified_count, speed_penalty, _, _ = state
+            for candidate in group:
+                duration, modified_delta, speed_delta = _candidate_metrics(candidate)
+                new_total = total + duration
+                new_total_ms = max(1, int(round(new_total * 1000.0)))
+                new_state = (
+                    new_total,
+                    modified_count + modified_delta,
+                    speed_penalty + speed_delta,
+                    candidate,
+                    state,
+                )
+                if _is_better_state(new_state, next_dp.get(new_total_ms)):
+                    next_dp[new_total_ms] = new_state
+        if not next_dp:
+            return _miss()
+        if len(next_dp) > state_budget:
+            return _beam_select(prepared_groups)
+        dp = next_dp
+
+    final_states = list(dp.values())
+    diagnostics = _diagnostics_from_states(final_states)
+    hit_states = [state for state in final_states if target_lo <= state[0] <= target_hi]
+    if not hit_states:
+        return _miss(diagnostics)
+
+    best_state = sorted(hit_states, key=_state_rank)[0]
+    selected: list[dict] = []
+    cursor = best_state
+    while cursor[3] is not None:
+        selected.append(cursor[3])
+        cursor = cursor[4]
+    selected.reverse()
+
+    return _selection_response(
+        best_state[0], best_state[1], best_state[2], selected, diagnostics,
+    )
 
 
 def _compute_next_target(

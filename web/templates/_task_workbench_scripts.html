@@ -2558,14 +2558,19 @@
           || finalReason.startsWith('converged_segment_assembly_'));
       const finalSpeedupChoice = winner.speedup_final_audio_choice
         || (finalReason === 'converged_speedup_refined' ? 'speedup'
-          : (finalReason === 'converged_segment_assembly_refined' ? 'assembly' : 'converged'));
+          : (finalReason === 'converged_segment_assembly_refined' ? 'assembly'
+            : (finalReason === 'converged_segment_assembly_closest_over_refined'
+              ? 'assembly_closest_over'
+              : 'converged')));
       const speedupPostDuration = Number(winner.speedup_post_duration);
       const assemblyDuration = Number(winner.segment_assembly_duration);
       const baseFinalDuration = Number(
         winner.final_duration != null ? winner.final_duration : winner.audio_duration
       );
       let finalDuration = baseFinalDuration;
-      if (isFinalSpeedupResult && finalSpeedupChoice === 'assembly' && Number.isFinite(assemblyDuration)) {
+      if (isFinalSpeedupResult
+        && (finalSpeedupChoice === 'assembly' || finalSpeedupChoice === 'assembly_closest_over')
+        && Number.isFinite(assemblyDuration)) {
         finalDuration = assemblyDuration;
       } else if (isFinalSpeedupResult && finalSpeedupChoice === 'speedup' && Number.isFinite(speedupPostDuration)) {
         finalDuration = speedupPostDuration;
@@ -2633,13 +2638,16 @@
         converged_speedup_miss_kept_original: '变速音频未命中收敛区间',
         converged_speedup_failed_kept_original: '变速音频生成失败',
         converged_segment_assembly_refined: '段级组装音频命中 [v-1, v]，且不超过视频时长',
+        converged_segment_assembly_closest_over_refined: '段级组装未命中 [v-1, v]，采用更短的最近超视频组合以减少尾部截断',
         converged_segment_assembly_miss_kept_original: '段级组装未能拼出视频时长以内的可用音轨',
       };
       const finalSpeedupChoiceLabel = finalSpeedupChoice === 'assembly'
         ? '采用段级组装音频参与视频合成'
-        : (finalSpeedupChoice === 'speedup'
+        : (finalSpeedupChoice === 'assembly_closest_over'
+          ? '采用最近超视频段级组装音频参与视频合成'
+          : (finalSpeedupChoice === 'speedup'
             ? '采用变速音频参与视频合成'
-            : '保留收敛音频参与视频合成');
+            : '保留收敛音频参与视频合成'));
       if (finalReason === 'converged') {
         lines.push(`<strong>✓ 收敛成功</strong>：第 ${finalRound} 轮音频 ${finalDuration.toFixed(1)}s 首次落入目标区间${rangeStr}，直接采用。`);
         if (compareLine) lines.push(compareLine);
@@ -3742,6 +3750,133 @@
   // ============================================================
   // TTS 收敛后变速候选子卡片渲染
   // ============================================================
+  function _speedupArtifactLink(tid, rel, label) {
+    if (!rel) return '<span class="muted">—</span>';
+    const url = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(rel)}`);
+    return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label || '查看')}</a>`;
+  }
+
+  function _fmtSpeedupNumber(value, digits) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(digits == null ? 2 : digits) : '—';
+  }
+
+  function renderSpeedupCandidatesTable(r, tid) {
+    const candidates = Array.isArray(r && r.speedup_candidates) ? r.speedup_candidates : [];
+    if (!candidates.length) return '';
+    const rows = candidates.map(c => {
+      const delta = Number(c.target_delta);
+      const deltaText = Number.isFinite(delta)
+        ? (delta >= 0 ? `+${delta.toFixed(2)}s` : `${delta.toFixed(2)}s`)
+        : '—';
+      const hit = c.hit_video_cap === true
+        ? '<span class="ok">命中</span>'
+        : '<span class="warn">未命中</span>';
+      const shorter = c.shorter_than_pre === true
+        ? '<span class="ok">是</span>'
+        : '<span class="warn">否</span>';
+      return `
+        <tr>
+          <td>#${escapeHtml(c.attempt || '')}</td>
+          <td><code>${_fmtSpeedupNumber(c.speed, 2)}</code></td>
+          <td>${_fmtSpeedupNumber(c.duration, 2)}s</td>
+          <td>${deltaText}</td>
+          <td>${hit}</td>
+          <td>${shorter}</td>
+          <td>${_speedupArtifactLink(tid, c.audio_path, '音频')}</td>
+        </tr>`;
+    }).join('');
+    return `
+      <div class="tts-speedup-debug">
+        <div class="tts-speedup-debug-title">变速候选明细（${candidates.length} 次）</div>
+        <div class="tts-speedup-debug-scroll">
+          <table class="tts-speedup-debug-table">
+            <thead>
+              <tr><th>尝试</th><th>speed</th><th>整段时长</th><th>相对视频</th><th>[v-1,v]</th><th>比原音频短/长</th><th>文件</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function renderSegmentAssemblySelectionTable(r, tid) {
+    if (!r || !r.segment_assembly_applied) return '';
+    const renderRows = (items) => items.map((s, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(s.round || r.round || '')}</td>
+        <td>${escapeHtml(s.segment_index != null ? s.segment_index : '')}</td>
+        <td>${escapeHtml(s.source || '')}</td>
+        <td><code>${_fmtSpeedupNumber(s.speed, 2)}</code></td>
+        <td>${_fmtSpeedupNumber(s.duration, 2)}s</td>
+        <td>${s.speedup_attempt ? `#${escapeHtml(s.speedup_attempt)}` : '原速'}</td>
+        <td>${_speedupArtifactLink(tid, s.audio_path, '片段')}</td>
+      </tr>`).join('');
+    const renderTable = (title, items) => `
+      <div class="tts-speedup-debug-scroll">
+        <table class="tts-speedup-debug-table">
+          <thead>
+            <tr><th>#</th><th>轮次</th><th>片段</th><th>来源</th><th>speed</th><th>时长</th><th>尝试</th><th>文件</th></tr>
+          </thead>
+          <tbody>${renderRows(items)}</tbody>
+        </table>
+      </div>`;
+    const selected = Array.isArray(r.segment_assembly_selected) ? r.segment_assembly_selected : [];
+    if (!selected.length) {
+      const bestUnder = Number(r.segment_assembly_best_under_duration);
+      const closestOver = Number(r.segment_assembly_closest_over_duration);
+      const minDuration = Number(r.segment_assembly_min_duration);
+      const preDuration = Number(r.speedup_pre_duration || r.audio_duration);
+      const videoDuration = Number(r.video_duration);
+      const candidateCount = Number(r.segment_assembly_candidate_count);
+      const debugRows = Array.isArray(r.segment_assembly_best_under_selected) && r.segment_assembly_best_under_selected.length
+        ? r.segment_assembly_best_under_selected
+        : (Array.isArray(r.segment_assembly_closest_over_selected) && r.segment_assembly_closest_over_selected.length
+          ? r.segment_assembly_closest_over_selected
+          : (Array.isArray(r.segment_assembly_min_selected) ? r.segment_assembly_min_selected : []));
+      const debugDuration = Number.isFinite(bestUnder)
+        ? bestUnder
+        : (Number.isFinite(closestOver) ? closestOver : minDuration);
+      const countText = Number.isFinite(candidateCount) && candidateCount > 0
+        ? `共检查 ${candidateCount} 种段级组合。`
+        : '';
+      let bestText = Number.isFinite(bestUnder)
+        ? `当前最接近且不超过视频的组合为 ${bestUnder.toFixed(2)}s，但仍未进入 [v-1, v]。`
+        : '没有任何候选组合能做到不超过视频时长。';
+      if (!Number.isFinite(bestUnder) && Number.isFinite(closestOver)) {
+        const overText = Number.isFinite(videoDuration)
+          ? `，仍超出视频 ${Math.max(0, closestOver - videoDuration).toFixed(2)}s`
+          : '';
+        const shorterText = Number.isFinite(preDuration) && closestOver < preDuration
+          ? `，比原始本轮音频短 ${(preDuration - closestOver).toFixed(2)}s`
+          : '';
+        bestText = `最近超视频组合为 ${closestOver.toFixed(2)}s${shorterText}${overText}。`;
+      }
+      const continueText = r.speedup_attempt_result === 'continue_rewrite'
+        ? '本轮不采用，继续后续 rewrite。'
+        : '本轮不采用组装音频。';
+      const tableHtml = debugRows.length
+        ? `<div class="tts-speedup-debug-title sub">未采用的最近组合片段（${debugRows.length} 段，${_fmtSpeedupNumber(debugDuration, 2)}s）</div>${renderTable('', debugRows)}`
+        : '';
+      return `
+        <div class="tts-speedup-debug">
+          <div class="tts-speedup-debug-title">段级组装结果</div>
+          <div class="tts-speedup-summary warning">${escapeHtml(countText)}${escapeHtml(bestText)}${escapeHtml(continueText)}</div>
+          ${tableHtml}
+        </div>`;
+    }
+    return `
+      <div class="tts-speedup-debug">
+        <div class="tts-speedup-debug-title">${
+          r.segment_assembly_fallback_applied === true
+            ? `段级组装采用片段（最近超视频 fallback，${selected.length} 段）`
+            : `段级组装采用片段（${selected.length} 段）`
+        }</div>
+        ${renderTable('', selected)}
+      </div>`;
+  }
+
   function renderSpeedupCard(r, tid) {
     if (!r || !r.speedup_applied) return '';
     const isFinalConvergedSpeedup = r.speedup_context === 'final_converged_overshoot'
@@ -3764,25 +3899,40 @@
     const postDur  = (postValue != null) ? Number(postValue).toFixed(2) : '?';
     const choice = r.speedup_final_audio_choice
       || (r.final_reason === 'converged_speedup_refined' ? 'speedup'
-        : (r.final_reason === 'converged_segment_assembly_refined' ? 'assembly' : 'converged'));
-    const choiceLabel = choice === 'assembly'
+        : (r.final_reason === 'converged_segment_assembly_refined' ? 'assembly'
+          : (r.final_reason === 'converged_segment_assembly_closest_over_refined'
+            ? 'assembly_closest_over'
+            : 'converged')));
+    const choiceLabel = choice === 'rewrite'
+      ? '未采用本轮候选，继续后续 rewrite'
+      : (choice === 'assembly'
       ? '采用段级组装音频参与视频合成'
-      : (choice === 'speedup'
+      : (choice === 'assembly_closest_over'
+        ? '采用最近超视频段级组装音频参与视频合成'
+        : (choice === 'speedup'
           ? '采用变速音频参与视频合成'
-          : '保留收敛音频参与视频合成');
+          : '保留收敛音频参与视频合成')));
     const reasonLabel = ({
       converged_speedup_refined: '变速音频在收敛区间，且比收敛音频更短',
       converged_speedup_longer_kept_original: '变速音频在收敛区间，但不比收敛音频更短',
       converged_speedup_miss_kept_original: '变速音频不在收敛区间',
       converged_speedup_failed_kept_original: '变速音频生成失败',
       converged_segment_assembly_refined: '段级组装命中 [v-1, v]',
+      converged_segment_assembly_closest_over_refined: '段级组装未命中 [v-1, v]，但采用更短的最近超视频组合',
       converged_segment_assembly_miss_kept_original: '段级组装未命中 [v-1, v]',
     })[r.final_reason] || '';
-    const resultLine = isFinalConvergedSpeedup && hasFinalSpeedupDecision
+    const continuesRewrite = r.speedup_attempt_result === 'continue_rewrite';
+    const resultLine = continuesRewrite
+      ? `<div class="tts-speedup-result warning">
+          处理结果：<strong>未采用本轮候选，继续后续 rewrite</strong>（段级组装未命中 [v-1, v]）
+        </div>`
+      : (isFinalConvergedSpeedup && hasFinalSpeedupDecision
       ? `<div class="tts-speedup-result ${(choice === 'speedup' || choice === 'assembly') ? 'success' : 'warning'}">
           处理结果：<strong>${choiceLabel}</strong>${reasonLabel ? `（${reasonLabel}）` : ''}
         </div>`
-      : '';
+      : '');
+    const candidatesTable = renderSpeedupCandidatesTable(r, tid);
+    const selectionTable = renderSegmentAssemblySelectionTable(r, tid);
 
     // 失败分支：只显示 speed + 失败原因，不显示 hit badge / 播放器
     if (r.speedup_failed_reason) {
@@ -3800,15 +3950,20 @@
         <div class="tts-speedup-summary tts-speedup-status-failed">
           ${failedTip}
         </div>
+        ${candidatesTable}
+        ${selectionTable}
       </div>`;
     }
 
     const hitBadge = usesSegmentAssembly
       ? (r.segment_assembly_hit === true
           ? '<span style="color:var(--success-fg)">✓ 命中 [v-1, v]</span>'
+          : (r.segment_assembly_fallback_applied === true
+              ? '<span style="color:var(--warning-fg)">采用最近超视频组合</span>'
           : (r.segment_assembly_hit === false
               ? '<span style="color:var(--warning-fg)">⚠ 未命中 [v-1, v]</span>'
               : '<span style="color:var(--fg-muted)">生成 / 组装中</span>'))
+          )
       : (isFinalConvergedSpeedup
       ? (r.speedup_hit_final === true
           ? '<span style="color:var(--success-fg)">✓ 命中收敛区间</span>'
@@ -3834,6 +3989,8 @@
           <span>${hitBadge}</span>
         </div>
         ${resultLine}
+        ${candidatesTable}
+        ${selectionTable}
         <div class="tts-speedup-players">
           <div>
             <div class="col-label">变速前 ${preDur}s</div>
