@@ -55,6 +55,7 @@ from pipeline.languages.registry import SOURCE_LANGS as _MANUAL_SOURCE_LANGUAGES
 from pipeline.localization import build_source_full_text_zh, count_words
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
+from pipeline.subtitle_splitting import split_oversized_subtitle_chunks
 from pipeline.translate import generate_localized_translation
 from pipeline.tts import _get_audio_duration
 
@@ -624,6 +625,13 @@ def step_subtitle_asr_realign(runner, task_id: str, task_dir: str) -> None:
         tts_script.get("subtitle_chunks", []),
         asr_result,
         total_duration=total_duration,
+    )
+    corrected_chunks = split_oversized_subtitle_chunks(
+        corrected_chunks,
+        weak_boundary_words=rules.WEAK_STARTERS,
+        max_chars_per_line=getattr(rules, "MAX_CHARS_PER_LINE", 42),
+        max_lines=getattr(rules, "MAX_LINES", 2),
+        max_chars_per_second=getattr(rules, "MAX_CHARS_PER_SECOND", 17),
     )
 
     srt_content = build_srt_from_chunks(

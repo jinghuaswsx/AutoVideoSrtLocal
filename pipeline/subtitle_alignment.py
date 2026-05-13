@@ -45,6 +45,7 @@ def align_subtitle_chunks_to_asr(
                 **chunk,
                 "start_time": start_time,
                 "end_time": end_time,
+                "words": matched,
                 "source_asr_text": " ".join(word["text"] for word in matched),
             }
         )
