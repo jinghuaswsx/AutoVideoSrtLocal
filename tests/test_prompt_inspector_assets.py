@@ -70,3 +70,13 @@ def test_omni_workbench_renders_special_artifacts_and_keeps_separation_panel():
     assert "function renderAvSyncAuditArtifact" in scripts
     assert "specializedPreviewOwnsStep(step)" in scripts
     assert 'step === "separate" || step === "loudness_match"' in scripts
+
+
+def test_omni_av_sync_audit_renderer_exposes_chinese_findings():
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "readable_findings" in scripts
+    assert "中文审计结论" in scripts
+    assert "function auditRecommendation" in scripts
+    assert "音频太长" in scripts
+    assert "重新生成音频" in scripts
