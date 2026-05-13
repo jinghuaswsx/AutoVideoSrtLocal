@@ -8,8 +8,8 @@ from tools.shopify_image_localizer import controller, settings, version
 from tools.shopify_image_localizer.browser import session
 
 
-def test_shopify_image_localizer_release_version_is_4_13() -> None:
-    assert version.RELEASE_VERSION == "4.13"
+def test_shopify_image_localizer_release_version_is_4_14() -> None:
+    assert version.RELEASE_VERSION == "4.14"
 
 
 def test_domain_profile_dir_keeps_default_and_suffixes_other_domains() -> None:
