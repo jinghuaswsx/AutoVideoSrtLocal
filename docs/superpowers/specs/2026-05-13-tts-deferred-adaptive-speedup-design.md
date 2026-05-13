@@ -26,10 +26,10 @@ assembly remains `[video_duration - 1s, video_duration]`.
    groups and try segment assembly.
 6. If assembly hits `[video - 1s, video]`, adopt the assembled audio.
 7. If assembly misses but the closest over-video assembly is shorter than the
-   normal round audio and lands inside `[video - 1s, video + 2s]`, adopt that
-   assembly as the final audio. It may still be trimmed by video composition,
-   but it minimizes the tail cut compared with keeping the longer original
-   round audio.
+   normal round audio and lands inside `[video - 1s, video + 2s]`, assemble
+   that combination, immediately truncate it to `video_duration`, and adopt the
+   truncated artifact as the final audio. This makes the audio selected by the
+   optimizer the same file used by video composition.
 8. If all speed attempts fail or miss without an adoptable closest-over fallback,
    consume at most one extra rewrite fallback round. Keep the failed/missed
    round metadata for diagnostics with
@@ -73,9 +73,11 @@ Round records should use:
 - `segment_assembly_target_lo = video - 1s`
 - `segment_assembly_target_hi = video`
 - `speedup_final_audio_choice = "assembly"` when adopted
-- `speedup_final_audio_choice = "assembly_closest_over"` when a shorter
-  over-video assembly fallback is adopted
+- `speedup_final_audio_choice = "assembly_truncated"` when a shorter
+  over-video assembly fallback is adopted after truncation
 - `segment_assembly_fallback_applied = true` for that closest-over fallback
+- `segment_assembly_truncated = true` with pre/post truncation durations and
+  removed duration/count
 - `speedup_final_audio_choice = "retry_rewrite"` when all candidates miss and
   the one extra rewrite fallback is consumed
 

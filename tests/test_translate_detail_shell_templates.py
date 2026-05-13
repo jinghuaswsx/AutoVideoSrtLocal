@@ -155,6 +155,24 @@ def test_tts_generation_summary_is_rendered_in_duration_log():
     assert "保留收敛音频参与视频合成" in script
 
 
+def test_tts_speedup_debug_shows_segment_assembly_truncation():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert "assembly_truncated" in script
+    assert "converged_segment_assembly_truncated" in script
+    assert "best_pick_segment_assembly_truncated" in script
+    assert "segment_assembly_truncated" in script
+    assert "segment_assembly_pre_truncation_duration" in script
+    assert "segment_assembly_post_truncation_duration" in script
+    assert "segment_assembly_removed_duration" in script
+    assert "segment_assembly_untrimmed_audio_path" in script
+    assert "最优拼接裁剪" in script
+    assert "最终用于合成" in script
+    assert ".tts-speedup-trim-summary" in styles
+
+
 def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")

@@ -449,6 +449,8 @@ class PipelineRunner:
             audio_duration: float,
             round_record: dict,
             context: str,
+            tts_script: dict | None = None,
+            localized_translation: dict | None = None,
             round_number: int | None = None,
         ) -> dict:
             active_round = int(round_number or round_index)
@@ -605,14 +607,47 @@ class PipelineRunner:
                 )
                 assembled_path = assembled["full_audio_path"]
                 assembled_duration = float(fallback_duration)
+                truncated_path = os.path.join(
+                    task_dir,
+                    f"tts_full.round_{active_round}.segment_assembly.truncated.mp3",
+                )
+                trim_result = self._truncate_audio_to_duration(
+                    input_audio_path=assembled_path,
+                    output_audio_path=truncated_path,
+                    duration=video_duration,
+                    tts_segments=assembled["segments"],
+                    tts_script=tts_script or {},
+                    localized_translation=localized_translation or {},
+                )
+                final_audio_path = trim_result["audio_path"]
+                final_segments = trim_result["tts_segments"]
+                final_duration = float(trim_result["final_duration"])
                 round_record["segment_assembly_fallback_applied"] = True
                 round_record["segment_assembly_fallback_reason"] = (
                     "closest_over_improved"
                 )
-                round_record["segment_assembly_audio_path"] = _relative(assembled_path)
-                round_record["segment_assembly_duration"] = assembled_duration
+                round_record["segment_assembly_truncated"] = True
+                round_record["segment_assembly_untrimmed_audio_path"] = _relative(
+                    assembled_path
+                )
+                round_record["segment_assembly_audio_path"] = _relative(
+                    final_audio_path
+                )
+                round_record["segment_assembly_pre_truncation_duration"] = (
+                    assembled_duration
+                )
+                round_record["segment_assembly_post_truncation_duration"] = (
+                    final_duration
+                )
+                round_record["segment_assembly_removed_count"] = trim_result[
+                    "removed_count"
+                ]
+                round_record["segment_assembly_removed_duration"] = trim_result[
+                    "removed_duration"
+                ]
+                round_record["segment_assembly_duration"] = final_duration
                 round_record["segment_assembly_gap"] = round(
-                    video_duration - assembled_duration, 6,
+                    video_duration - final_duration, 6,
                 )
                 round_record["segment_assembly_selected"] = (
                     _serialize_segment_assembly_candidates(
@@ -623,17 +658,24 @@ class PipelineRunner:
                     round(fallback_speed, 4) if fallback_speed else None
                 )
                 round_record["speedup_pre_duration"] = audio_duration
-                round_record["speedup_post_duration"] = assembled_duration
-                round_record["speedup_audio_path"] = _relative(assembled_path)
-                round_record["speedup_hit_final"] = False
-                round_record["speedup_video_cap_hit"] = False
+                round_record["speedup_post_duration"] = final_duration
+                round_record["speedup_audio_path"] = _relative(final_audio_path)
+                round_record["speedup_hit_final"] = True
+                round_record["speedup_video_cap_hit"] = True
                 return {
                     "hit": False,
                     "fallback": True,
+                    "truncated": True,
                     "failed": False,
-                    "audio_path": assembled_path,
-                    "segments": assembled["segments"],
-                    "duration": assembled_duration,
+                    "audio_path": final_audio_path,
+                    "untrimmed_audio_path": assembled_path,
+                    "segments": final_segments,
+                    "tts_script": trim_result["tts_script"],
+                    "localized_translation": trim_result["localized_translation"],
+                    "duration": final_duration,
+                    "pre_truncation_duration": assembled_duration,
+                    "removed_count": trim_result["removed_count"],
+                    "removed_duration": trim_result["removed_duration"],
                     "speed": fallback_speed,
                     "context": context,
                 }
@@ -1131,6 +1173,8 @@ class PipelineRunner:
             video_cap_hi = video_duration
             final_audio_path = result["full_audio_path"]
             final_segments = result["segments"]
+            final_tts_script = tts_script
+            final_localized_translation = localized_translation
 
             if video_cap_lo <= audio_duration <= video_cap_hi:
                 round_record["is_final"] = True
@@ -1177,6 +1221,8 @@ class PipelineRunner:
                     audio_duration=audio_duration,
                     round_record=round_record,
                     context="stage1_converged_postprocess",
+                    tts_script=tts_script,
+                    localized_translation=localized_translation,
                 )
                 if assembly.get("hit"):
                     final_audio_path = assembly["audio_path"]
@@ -1188,18 +1234,32 @@ class PipelineRunner:
                 elif assembly.get("fallback"):
                     final_audio_path = assembly["audio_path"]
                     final_segments = assembly["segments"]
+                    final_tts_script = assembly.get("tts_script") or tts_script
+                    final_localized_translation = (
+                        assembly.get("localized_translation")
+                        or localized_translation
+                    )
                     round_record["is_final"] = True
-                    round_record["final_reason"] = (
-                        "converged_segment_assembly_closest_over_refined"
-                    )
-                    round_record["speedup_final_audio_choice"] = (
-                        "assembly_closest_over"
-                    )
-                    final_distance = round(_distance_to_duration_range(
-                        assembly.get("duration") or audio_duration,
-                        final_target_lo,
-                        final_target_hi,
-                    ), 3)
+                    if assembly.get("truncated"):
+                        round_record["final_reason"] = (
+                            "converged_segment_assembly_truncated"
+                        )
+                        round_record["speedup_final_audio_choice"] = (
+                            "assembly_truncated"
+                        )
+                        final_distance = 0.0
+                    else:
+                        round_record["final_reason"] = (
+                            "converged_segment_assembly_closest_over_refined"
+                        )
+                        round_record["speedup_final_audio_choice"] = (
+                            "assembly_closest_over"
+                        )
+                        final_distance = round(_distance_to_duration_range(
+                            assembly.get("duration") or audio_duration,
+                            final_target_lo,
+                            final_target_hi,
+                        ), 3)
                 elif assembly.get("failed"):
                     round_record["speedup_hit_final"] = False
                     final_distance = round(_distance_to_duration_range(
@@ -1265,6 +1325,10 @@ class PipelineRunner:
 
                 round_products[-1]["tts_audio_path"] = final_audio_path
                 round_products[-1]["tts_segments"] = final_segments
+                round_products[-1]["tts_script"] = final_tts_script
+                round_products[-1]["localized_translation"] = (
+                    final_localized_translation
+                )
                 rounds[-1] = round_record
                 if round_record.get("speedup_attempt_result") == "continue_rewrite":
                     task_state.update(task_id, tts_duration_rounds=rounds)
@@ -1288,8 +1352,8 @@ class PipelineRunner:
                     rounds=rounds,
                 )
                 return {
-                    "localized_translation": localized_translation,
-                    "tts_script": tts_script,
+                    "localized_translation": final_localized_translation,
+                    "tts_script": final_tts_script,
                     "tts_audio_path": final_audio_path,
                     "tts_segments": final_segments,
                     "rounds": rounds,
@@ -1352,6 +1416,8 @@ class PipelineRunner:
                 audio_duration=best_record["audio_duration"],
                 round_record=best_record,
                 context="best_pick_overrun",
+                tts_script=best_product["tts_script"],
+                localized_translation=best_product["localized_translation"],
                 round_number=best_i + 1,
             )
             if assembly.get("hit"):
@@ -1365,21 +1431,41 @@ class PipelineRunner:
             elif assembly.get("fallback"):
                 best_product["tts_audio_path"] = assembly["audio_path"]
                 best_product["tts_segments"] = assembly["segments"]
-                best_record["final_reason"] = (
-                    "best_pick_segment_assembly_closest_over_refined"
-                )
-                best_record["speedup_final_audio_choice"] = "assembly_closest_over"
-                best_record["final_distance"] = round(_distance_to_duration_range(
-                    assembly.get("duration") or best_record["audio_duration"],
-                    final_target_lo,
-                    final_target_hi,
-                ), 3)
+                if assembly.get("tts_script") is not None:
+                    best_product["tts_script"] = assembly["tts_script"]
+                if assembly.get("localized_translation") is not None:
+                    best_product["localized_translation"] = assembly[
+                        "localized_translation"
+                    ]
+                if assembly.get("truncated"):
+                    best_record["final_reason"] = (
+                        "best_pick_segment_assembly_truncated"
+                    )
+                    best_record["speedup_final_audio_choice"] = (
+                        "assembly_truncated"
+                    )
+                    best_record["final_distance"] = 0.0
+                else:
+                    best_record["final_reason"] = (
+                        "best_pick_segment_assembly_closest_over_refined"
+                    )
+                    best_record["speedup_final_audio_choice"] = (
+                        "assembly_closest_over"
+                    )
+                    best_record["final_distance"] = round(_distance_to_duration_range(
+                        assembly.get("duration") or best_record["audio_duration"],
+                        final_target_lo,
+                        final_target_hi,
+                    ), 3)
             self._emit_duration_round(
                 task_id, best_i + 1, "speedup_done", best_record,
             )
         # ffmpeg atempo 兜底：误差 ≤5% 时拉伸/压缩到精确等于视频长度
         pre_tempo_audio = best_product["tts_audio_path"]
-        if best_record.get("speedup_final_audio_choice") == "assembly":
+        if best_record.get("speedup_final_audio_choice") in {
+            "assembly",
+            "assembly_truncated",
+        }:
             final_best_audio = best_product["tts_audio_path"]
         else:
             final_best_audio = self._maybe_tempo_align(
@@ -1390,7 +1476,10 @@ class PipelineRunner:
                 round_record=best_record, task_id=task_id,
             )
         best_product["tts_audio_path"] = final_best_audio
-        if best_record.get("speedup_final_audio_choice") == "assembly":
+        if best_record.get("speedup_final_audio_choice") in {
+            "assembly",
+            "assembly_truncated",
+        }:
             final_best_duration = float(
                 best_record.get("segment_assembly_duration")
                 or best_record.get("speedup_post_duration")

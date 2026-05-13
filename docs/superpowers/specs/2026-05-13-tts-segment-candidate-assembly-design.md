@@ -64,8 +64,9 @@ Post-convergence overshoot branch:
 - Try segment assembly over original candidates plus up to three speed variants.
 - If assembly hits `[v-1, v]`, adopt the assembled audio.
 - If assembly misses but the closest over-video assembly is shorter than the
-  original round audio and still inside `[v-1, v+2]`, adopt that closest
-  over-video assembly as a truncation-minimizing fallback.
+  original round audio and still inside `[v-1, v+2]`, assemble that closest
+  over-video combination, immediately truncate it to `video_duration`, and
+  adopt the truncated audio for video composition.
 - If no assembly improves the original converged audio, keep the original
   converged audio.
 
@@ -74,8 +75,9 @@ Older shortcut branch (`[0.9v, 1.1v]` but outside final range):
 - Try the same segment assembly.
 - If assembly hits `[v-1, v]`, adopt the assembled audio and finish.
 - If assembly misses but the closest over-video assembly is shorter than the
-  original round audio and enters `[v-1, v+2]`, adopt that closest over-video
-  assembly and finish.
+  original round audio and enters `[v-1, v+2]`, assemble that closest
+  over-video combination, immediately truncate it to `video_duration`, adopt
+  the truncated audio, and finish.
 - If assembly misses without an adoptable closest-over fallback, run at most one
   extra rewrite fallback round (`speedup_final_audio_choice = "retry_rewrite"`).
   After that fallback is spent, keep the best available stage-1 audio rather
@@ -97,19 +99,30 @@ For diagnostics, write metadata to the round record:
   not hit `[v-1, v]` but is adopted because it is the best shorter over-video
   fallback inside `[v-1, v+2]`
 - `segment_assembly_fallback_reason = "closest_over_improved"`
+- `segment_assembly_truncated = true` when that closest-over fallback is
+  trimmed before composition
+- `segment_assembly_pre_truncation_duration`
+- `segment_assembly_post_truncation_duration`
+- `segment_assembly_removed_count` and `segment_assembly_removed_duration`
+- `segment_assembly_untrimmed_audio_path`
 - `speedup_candidates`
+- `speedup_final_audio_choice = "assembly_truncated"` when the adopted final
+  artifact is the truncated closest-over assembly
 - `speedup_final_audio_choice = "retry_rewrite"` when a stage-1 post-process miss consumes the one extra rewrite fallback
 - Existing `speedup_*` fields remain populated for UI compatibility.
 
 The task detail UI must show every speed candidate as a separate diagnostic row
 and, when assembly succeeds, show the exact selected segment list: segment
 index, source (`round` or `speedup`), speed, duration, attempt, and audio path.
-When assembly misses, the UI should say that no segment combination fit inside
-`[v-1, v]` and the rewrite loop continues. It must also show the nearest
-non-adopted assembly evidence: either the best combination under video, the
-closest combination over video, or the shortest combination, including the
-segment list used for that diagnostic result. This distinguishes "no assembly
-ran" from "assembly ran but every combination was still unusable."
+When the closest over-video assembly is adopted, the UI must show both the
+untrimmed assembly duration and the truncated final duration, plus removed
+duration/count. When assembly misses without adoption, the UI should say that
+no segment combination fit inside `[v-1, v]` and the rewrite loop continues. It
+must also show the nearest non-adopted assembly evidence: either the best
+combination under video, the closest combination over video, or the shortest
+combination, including the segment list used for that diagnostic result. This
+distinguishes "no assembly ran" from "assembly ran but every combination was
+still unusable."
 
 ## Output
 
