@@ -94,6 +94,20 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     assert debug_ref["use_case"] == "video_translate.localize"
 
 
+def test_multi_resolves_dedicated_localization_modules_for_de_fr():
+    runner = _make_runner()
+
+    de_adapter = runner._get_language_adapter({"target_lang": "de"})
+    fr_adapter = runner._get_language_adapter({"target_lang": "fr"})
+    es_adapter = runner._get_language_adapter({"target_lang": "es"})
+
+    assert de_adapter.__name__ == "pipeline.localization_de"
+    assert fr_adapter.__name__ == "pipeline.localization_fr"
+    assert es_adapter.__name__ == "multi_translate.localization.es"
+    assert de_adapter.build_tts_segments is not None
+    assert fr_adapter.build_tts_segments is not None
+
+
 def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, monkeypatch):
     from appcore import task_state
 

@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import math
@@ -156,6 +157,32 @@ class _PromptLocalizationAdapter:
     build_tts_segments = staticmethod(build_tts_segments)
 
 
+class _ModuleLocalizationAdapter(_PromptLocalizationAdapter):
+    """Prompt-resolver adapter backed by an existing language module."""
+
+    def __init__(self, lang: str, module_name: str):
+        super().__init__(lang)
+        self.module = importlib.import_module(module_name)
+        self.__name__ = self.module.__name__
+        self.validate_tts_script = getattr(
+            self.module, "validate_tts_script", validate_tts_script,
+        )
+        self.build_tts_segments = getattr(
+            self.module, "build_tts_segments", build_tts_segments,
+        )
+
+
+class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
+    """Japanese adapter placeholder; task-specific overrides are added below."""
+
+    def __init__(self):
+        super().__init__("ja")
+        from pipeline import ja_translate
+
+        self.module = ja_translate
+        self.__name__ = "pipeline.ja_translate"
+
+
 class MultiTranslateRunner(PipelineRunner):
     project_type: str = "multi_translate"
     profile_code: str = "default"
@@ -192,8 +219,22 @@ class MultiTranslateRunner(PipelineRunner):
         from pipeline.languages.registry import get_rules
         return get_rules(lang)
 
+    def _get_language_adapter(self, task_or_lang):
+        lang = (
+            task_or_lang
+            if isinstance(task_or_lang, str)
+            else self._resolve_target_lang(task_or_lang)
+        )
+        if lang == "de":
+            return _ModuleLocalizationAdapter("de", "pipeline.localization_de")
+        if lang == "fr":
+            return _ModuleLocalizationAdapter("fr", "pipeline.localization_fr")
+        if lang == "ja":
+            return _JapaneseMultiTranslateAdapter()
+        return _PromptLocalizationAdapter(lang)
+
     def _get_localization_module(self, task: dict):
-        return _PromptLocalizationAdapter(self._resolve_target_lang(task))
+        return self._get_language_adapter(task)
 
     def _get_tts_target_language_label(self, task: dict) -> str:
         return self._resolve_target_lang(task)
