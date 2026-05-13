@@ -104,9 +104,11 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         ("/medias/mk-selection", ("GET",), "medias.mk_selection_page"),
         ("/medias/obj/<path:object_key>", ("GET",), "medias.public_media_object"),
         ("/medias/object", ("GET",), "medias.media_object_proxy"),
+        ("/medias/product", ("GET",), "medias.product_tab_page"),
         ("/medias/products/<int:pid>/translation-tasks", ("GET",), "medias.translation_tasks_page"),
         ("/medias/raw-sources/<int:rid>/cover", ("GET",), "medias.raw_source_cover_url"),
         ("/medias/raw-sources/<int:rid>/video", ("GET",), "medias.raw_source_video_url"),
         ("/medias/tabcut-selection", ("GET",), "medias.tabcut_selection_page"),
         ("/medias/thumb/<int:item_id>", ("GET",), "medias.thumb"),
+        ("/medias/video", ("GET",), "medias.video_tab_page"),
     ]

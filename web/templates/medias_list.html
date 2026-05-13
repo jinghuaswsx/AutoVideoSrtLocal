@@ -1,5 +1,6 @@
 {% extends "layout.html" %}
 {% set is_product_detail_page = medias_product_detail|default(false) %}
+{% set medias_active_tab = medias_active_tab|default("products") %}
 {% block title %}{% if is_product_detail_page %}{{ medias_product_code }} - 素材管理{% else %}素材管理 - AutoVideoSrt{% endif %}{% endblock %}
 {% block page_title %}{% if is_product_detail_page %}{{ medias_product_name or medias_product_code }}{% else %}素材管理{% endif %}{% endblock %}
 {% block extra_style %}
@@ -2244,6 +2245,8 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   background:var(--bg-body,#f2f4f8);
 }
 .oc-page-tab {
+  display:inline-flex;
+  align-items:center;
   height:38px;
   padding:0 14px;
   border:0;
@@ -2255,6 +2258,7 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   font-weight:600;
   cursor:pointer;
   margin-bottom:-1px;
+  text-decoration:none;
 }
 .oc-page-tab:hover { color:var(--oc-fg); }
 .oc-page-tab.active { color:var(--oc-accent); border-bottom-color:var(--oc-accent); }
@@ -2462,11 +2466,11 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   {% endif %}
 
   <nav class="oc-page-tabs" role="tablist" aria-label="素材管理类型">
-    <button type="button" class="oc-page-tab active" data-media-tab="products" role="tab" aria-selected="true">产品管理</button>
-    <button type="button" class="oc-page-tab" data-media-tab="videos" role="tab" aria-selected="false">视频素材管理</button>
+    <a href="{{ url_for('medias.product_tab_page') }}" class="oc-page-tab{% if medias_active_tab == 'products' %} active{% endif %}" data-media-tab="products" role="tab" aria-selected="{{ 'true' if medias_active_tab == 'products' else 'false' }}">产品管理</a>
+    <a href="{{ url_for('medias.video_tab_page') }}" class="oc-page-tab{% if medias_active_tab == 'videos' %} active{% endif %}" data-media-tab="videos" role="tab" aria-selected="{{ 'true' if medias_active_tab == 'videos' else 'false' }}">视频素材管理</a>
   </nav>
 
-  <section id="mediaProductsPanel" class="oc-panel-page" role="tabpanel">
+  <section id="mediaProductsPanel" class="oc-panel-page" role="tabpanel"{% if medias_active_tab != 'products' %} hidden{% endif %}>
   <!-- Toolbar -->
   <div class="oc-toolbar">
     <div class="oc-toolbar-filter-row">
@@ -2493,7 +2497,7 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   <div class="oc-pager" id="pager"></div>
   </section>
 
-  <section id="videoMaterialsPanel" class="oc-panel-page" role="tabpanel" hidden>
+  <section id="videoMaterialsPanel" class="oc-panel-page" role="tabpanel"{% if medias_active_tab != 'videos' %} hidden{% endif %}>
     <div class="oc-vm-toolbar">
       <div class="oc-search">
         <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
@@ -2516,6 +2520,7 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
 <script>
 window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojson }};
 window.MEDIAS_LIST_INITIAL_QUERY = {{ (medias_initial_query or "") | tojson }};
+window.MEDIAS_ACTIVE_TAB = {{ medias_active_tab | tojson }};
 window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   "productId": medias_product_id,
   "productCode": medias_product_code,

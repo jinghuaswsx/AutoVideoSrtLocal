@@ -1,5 +1,56 @@
 from __future__ import annotations
 
+import pytest
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_tab"),
+    [
+        ("/medias/product", "products"),
+        ("/medias/video", "videos"),
+    ],
+)
+def test_medias_named_tab_routes_delegate_page_context_builder(
+    authed_client_no_db,
+    monkeypatch,
+    path,
+    expected_tab,
+):
+    captured = {}
+
+    def fake_context_builder(args, extra):
+        captured["query"] = args.get("q")
+        captured["extra"] = extra
+        return {
+            "shopify_image_localizer_release": {},
+            "material_roas_rmb_per_usd": 7.0,
+            "medias_initial_query": "",
+            **extra,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.medias.pages.medias.get_product_by_code",
+        lambda code: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.medias.pages.build_medias_page_context",
+        fake_context_builder,
+    )
+
+    response = authed_client_no_db.get(path)
+
+    assert response.status_code == 200
+    assert captured == {"query": None, "extra": {"medias_active_tab": expected_tab}}
+
+
+@pytest.mark.parametrize("path", ["/medias/product", "/medias/video"])
+def test_medias_named_tab_routes_require_login(authed_client_no_db, path):
+    raw_client = authed_client_no_db.application.test_client()
+
+    response = raw_client.get(path)
+
+    assert response.status_code == 302
+
 
 def test_medias_index_route_delegates_page_context_builder(
     authed_client_no_db,

@@ -62,6 +62,13 @@
     return document.querySelector('.oc-page-tabs [data-media-tab].active')?.dataset.mediaTab || 'products';
   }
 
+  function initialTab() {
+    const configured = String(window.MEDIAS_ACTIVE_TAB || '').trim();
+    if (configured === 'products' || configured === 'videos') return configured;
+    if (new URLSearchParams(window.location.search).get('tab') === 'videos') return 'videos';
+    return activeTab();
+  }
+
   function setTab(tab) {
     document.querySelectorAll('[data-media-tab]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.mediaTab === tab);
@@ -330,7 +337,10 @@
   function initVideoMaterials() {
     const tabs = document.querySelectorAll('[data-media-tab]');
     if (!tabs.length) return;
-    tabs.forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.mediaTab || 'products')));
+    tabs.forEach(btn => btn.addEventListener('click', () => {
+      if (btn.tagName.toLowerCase() === 'a') return;
+      setTab(btn.dataset.mediaTab || 'products');
+    }));
     const keyword = $('vmKeyword');
     let timer = null;
     if (keyword) keyword.addEventListener('input', () => {
@@ -365,11 +375,7 @@
         searchMkMaterials();
       }
     });
-    if (new URLSearchParams(window.location.search).get('tab') === 'videos') {
-      setTab('videos');
-    } else {
-      setTab(activeTab());
-    }
+    setTab(initialTab());
   }
 
   document.addEventListener('DOMContentLoaded', initVideoMaterials);

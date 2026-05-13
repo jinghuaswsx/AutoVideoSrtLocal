@@ -35,10 +35,29 @@ def _requested_initial_lang() -> str:
     return lang if re.fullmatch(r"[a-z0-9-]{1,16}", lang) else ""
 
 
+def _render_tab_page(active_tab: str):
+    return render_template(
+        "medias_list.html",
+        **_medias_page_context(medias_active_tab=active_tab),
+    )
+
+
 @bp.route("/")
 @login_required
 def index():
     return render_template("medias_list.html", **_medias_page_context())
+
+
+@bp.route("/product")
+@login_required
+def product_tab_page():
+    return _render_tab_page("products")
+
+
+@bp.route("/video")
+@login_required
+def video_tab_page():
+    return _render_tab_page("videos")
 
 
 @bp.route("/<product_code>")
