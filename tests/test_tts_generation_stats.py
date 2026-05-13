@@ -46,8 +46,13 @@ def test_compute_summary_counts_final_converged_speedup_generation():
     final_round = _round(rewrite_attempts=1, audio_segments=9)
     final_round.update({
         "speedup_applied": True,
-        "speedup_context": "final_converged_overshoot",
-        "speedup_audio_path": "tts_full.round_2.speedup.mp3",
+        "speedup_context": "stage1_converged_postprocess",
+        "speedup_audio_path": "tts_full.round_2.segment_assembly.assembled.mp3",
+        "speedup_candidates": [
+            {"speed": 1.03},
+            {"speed": 1.04},
+            {"speed": 1.05},
+        ],
     })
     rounds = [
         _round(rewrite_attempts=0, audio_segments=9),
@@ -61,7 +66,7 @@ def test_compute_summary_counts_final_converged_speedup_generation():
 
     summary = compute_summary(rounds)
 
-    assert summary["converged_speedup_audio_generations"] == 1
+    assert summary["converged_speedup_audio_generations"] == 3
 
 
 def test_compute_summary_handles_missing_audio_segments_total():
@@ -122,7 +127,7 @@ def test_format_log_line_lists_final_converged_speedup_generation():
         "converged_speedup_audio_generations": 1,
     })
 
-    assert "收敛音频变速生成音频 1 次" in line
+    assert "收敛后变速候选生成 1 次" in line
 
 
 def test_upsert_inserts_then_updates(monkeypatch):

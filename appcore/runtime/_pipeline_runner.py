@@ -87,7 +87,7 @@ from ._helpers import (
     _is_av_pipeline_task,
     _av_target_lang,
     _tts_final_target_range,
-    _speedup_candidate_speeds,
+    _adaptive_speed_candidate,
     _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
@@ -380,18 +380,11 @@ class PipelineRunner:
             round_record: dict,
             context: str,
         ) -> dict:
-            speeds = _speedup_candidate_speeds(
-                audio_duration=audio_duration,
-                video_duration=video_duration,
-                max_candidates=3,
-            )
-            round_record["segment_assembly_applied"] = bool(speeds)
+            max_speed_candidates = 3
+            round_record["segment_assembly_applied"] = True
             round_record["segment_assembly_target_lo"] = max(0.0, video_duration - 1.0)
             round_record["segment_assembly_target_hi"] = video_duration
             round_record["speedup_candidates"] = []
-            if not speeds:
-                round_record["segment_assembly_hit"] = False
-                return {"hit": False, "failed": False}
             if not tts_engine.supports_speed_param:
                 reason = f"tts engine {tts_engine.code!r} does not support native speed param"
                 round_record["speedup_failed_reason"] = reason
@@ -403,9 +396,17 @@ class PipelineRunner:
             last_speedup_duration = None
             last_eval_id = None
             last_speed = None
-            for attempt, speed in enumerate(speeds, start=1):
+            for attempt in range(1, max_speed_candidates + 1):
+                speed = _adaptive_speed_candidate(
+                    base_duration=audio_duration,
+                    video_duration=video_duration,
+                    previous_candidates=round_record["speedup_candidates"],
+                    max_candidates=max_speed_candidates,
+                )
+                if speed is None:
+                    break
                 _substep(
-                    f"段级候选重生成 speed={speed:.2f} ({attempt}/{len(speeds)})"
+                    f"段级候选重生成 speed={speed:.2f} ({attempt}/{max_speed_candidates})"
                 )
 
                 def _on_segment_assembly_seg_done(done, total, info):
@@ -474,6 +475,7 @@ class PipelineRunner:
                     "speed": round(speed, 4),
                     "audio_path": _relative(speedup_audio_path),
                     "duration": speedup_duration,
+                    "target_delta": round(speedup_duration - video_duration, 6),
                     "hit_video_cap": candidate_hit,
                     "shorter_than_pre": speedup_duration < audio_duration,
                     "eval_id": eval_id,
@@ -487,7 +489,7 @@ class PipelineRunner:
                 selection = _select_segment_candidate_assembly(
                     groups, video_duration=video_duration,
                 )
-                if selection.get("hit") and selection.get("total_duration", 0) < audio_duration:
+                if selection.get("hit"):
                     from pipeline.tts import assemble_full_audio_from_segments
 
                     assembled = assemble_full_audio_from_segments(
@@ -1024,53 +1026,15 @@ class PipelineRunner:
 
             self._emit_duration_round(task_id, round_index, "measure", round_record)
 
-            if final_target_lo <= audio_duration <= final_target_hi:
-                # 标记本轮为最终采用：UI 画 ✨ 徽章 + 底部摘要说明
+            video_cap_lo = max(0.0, video_duration - 1.0)
+            video_cap_hi = video_duration
+            final_audio_path = result["full_audio_path"]
+            final_segments = result["segments"]
+
+            if video_cap_lo <= audio_duration <= video_cap_hi:
                 round_record["is_final"] = True
                 round_record["final_reason"] = "converged"
-                # 已落入 final range，直接采用，不做 ffmpeg atempo 变速兜底——
-                # 变速会引入听感失真（音色奇怪）；残余 -1s~+2s 偏差由 compose
-                # 阶段的 timeline_manifest 自然处理。仅最后"5 轮全跑完仍未收敛"
-                # 的 best_pick 路径保留 atempo 强制对齐。
-                final_audio_path = result["full_audio_path"]
-                final_segments = result["segments"]
-                if audio_duration > video_duration:
-                    round_record["speedup_applied"] = True
-                    round_record["speedup_context"] = "final_converged_overshoot"
-                    round_record["speedup_final_audio_choice"] = "converged"
-                    round_record["speedup_pre_duration"] = audio_duration
-                    _substep(
-                        "收敛后超长：生成段级 speed 候选并重组音频"
-                    )
-                    self._emit_duration_round(
-                        task_id, round_index, "speedup_start", round_record,
-                    )
-
-                    assembly = _run_segment_speedup_assembly(
-                        result=result,
-                        audio_duration=audio_duration,
-                        round_record=round_record,
-                        context="final_converged_overshoot",
-                    )
-                    if assembly.get("hit"):
-                        final_audio_path = assembly["audio_path"]
-                        final_segments = assembly["segments"]
-                        round_record["final_reason"] = (
-                            "converged_segment_assembly_refined"
-                        )
-                        round_record["speedup_final_audio_choice"] = "assembly"
-                    elif assembly.get("failed"):
-                        round_record["speedup_hit_final"] = False
-                        round_record["final_reason"] = (
-                            "converged_speedup_failed_kept_original"
-                        )
-                    else:
-                        round_record["final_reason"] = (
-                            "converged_segment_assembly_miss_kept_original"
-                        )
-                    self._emit_duration_round(
-                        task_id, round_index, "speedup_done", round_record,
-                    )
+                round_record["final_distance"] = 0.0
                 round_products[-1]["tts_audio_path"] = final_audio_path
                 round_products[-1]["tts_segments"] = final_segments
                 rounds[-1] = round_record
@@ -1098,61 +1062,44 @@ class PipelineRunner:
                     "final_round": round_index,
                 }
 
-            # ============= 变速短路分支（2026-05-04） =============
-            # 进入 ±10% 但不在 [v-1, v+2] 时，用 ElevenLabs voice_settings.speed
-            # 重新合成一遍音频。命中 final 即收敛；未命中走 atempo 兜底；变速本身
-            # 失败则回退到原始音频走 atempo。无论哪条路径，都立即终结，不再继续
-            # 后续 rewrite 轮次。
-            from appcore.runtime import _in_speedup_window
-            if _in_speedup_window(
-                audio_duration=audio_duration,
-                video_duration=video_duration,
-                window_ratio=speedup_window,
-            ):
+            if stage1_lo <= audio_duration <= stage1_hi:
+                round_record["is_final"] = True
+                round_record["stage1_converged"] = True
                 round_record["speedup_applied"] = True
+                round_record["speedup_context"] = "stage1_converged_postprocess"
+                round_record["speedup_final_audio_choice"] = "converged"
                 round_record["speedup_pre_duration"] = audio_duration
-                _substep("变速短路：生成段级 speed 候选并重组音频")
+                _substep("阶段收敛后：生成段级 speed 候选并重组音频")
                 self._emit_duration_round(task_id, round_index, "speedup_start", round_record)
 
                 assembly = _run_segment_speedup_assembly(
                     result=result,
                     audio_duration=audio_duration,
                     round_record=round_record,
-                    context="shortcut_window",
+                    context="stage1_converged_postprocess",
                 )
-                if not assembly.get("hit"):
-                    round_record["is_final"] = False
-                    round_record["final_reason"] = (
-                        "speedup_segment_assembly_failed_continue"
-                        if assembly.get("failed")
-                        else "speedup_segment_assembly_missed_continue"
-                    )
-                    rounds[-1] = round_record
-                    task_state.update(task_id, tts_duration_rounds=rounds)
-                    self._emit_duration_round(
-                        task_id, round_index, "speedup_done", round_record,
-                    )
-                    last_audio_duration = audio_duration
-                    last_word_count = word_count
-                    continue
-
-                final_audio_path = assembly["audio_path"]
-                final_segments = assembly["segments"]
-                round_record["is_final"] = True
-                round_record["final_reason"] = "speedup_segment_assembly_converged"
-                round_record["speedup_final_audio_choice"] = "assembly"
+                if assembly.get("hit"):
+                    final_audio_path = assembly["audio_path"]
+                    final_segments = assembly["segments"]
+                    round_record["final_reason"] = "converged_segment_assembly_refined"
+                    round_record["speedup_final_audio_choice"] = "assembly"
+                    final_distance = 0.0
+                elif assembly.get("failed"):
+                    round_record["speedup_hit_final"] = False
+                    round_record["final_reason"] = "converged_speedup_failed_kept_original"
+                    final_distance = round(_distance_to_duration_range(
+                        audio_duration, video_cap_lo, video_cap_hi,
+                    ), 3)
+                else:
+                    round_record["final_reason"] = "converged_segment_assembly_miss_kept_original"
+                    final_distance = round(_distance_to_duration_range(
+                        audio_duration, video_cap_lo, video_cap_hi,
+                    ), 3)
+                round_record["final_distance"] = final_distance
 
                 round_products[-1]["tts_audio_path"] = final_audio_path
                 round_products[-1]["tts_segments"] = final_segments
                 rounds[-1] = round_record
-                if round_record["final_reason"] == "speedup_segment_assembly_converged":
-                    final_distance = 0.0
-                else:
-                    measured_duration = round_record.get("segment_assembly_duration") or audio_duration
-                    final_distance = round(_distance_to_duration_range(
-                        measured_duration, final_target_lo, final_target_hi,
-                    ), 3)
-                round_record["final_distance"] = final_distance
                 task_state.update(
                     task_id,
                     tts_duration_rounds=rounds,
@@ -1161,9 +1108,7 @@ class PipelineRunner:
                     tts_final_reason=round_record["final_reason"],
                     tts_final_distance=final_distance,
                 )
-                self._emit_duration_round(
-                    task_id, round_index, "speedup_done", round_record,
-                )
+                self._emit_duration_round(task_id, round_index, "speedup_done", round_record)
                 tts_generation_stats.finalize(
                     task_id=task_id,
                     task=task_state.get(task_id) or {},
@@ -1178,13 +1123,12 @@ class PipelineRunner:
                     "round_products": round_products,
                     "final_round": round_index,
                 }
-            # ============= 变速短路分支结束 =============
 
             # Note: do NOT update `prev_localized` — every rewrite uses the initial.
             last_audio_duration = audio_duration
             last_word_count = word_count
 
-        # MAX_ROUNDS rounds completed without landing in [video-1, video+2].
+        # MAX_ROUNDS completed without landing in the stage-1 window.
         # Pick the round whose audio_duration is closest to the final target range.
         import appcore.task_state as task_state
         eligible_indices = [

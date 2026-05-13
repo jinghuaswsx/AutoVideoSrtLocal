@@ -10,7 +10,7 @@ import json
 import logging
 import math
 import os
-from decimal import Decimal, ROUND_CEILING
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
 from appcore import ai_billing
 
@@ -341,6 +341,100 @@ def _speedup_ratio(audio_duration: float, video_duration: float) -> float:
     clamped = max(Decimal("0.95"), min(Decimal("1.05"), raw))
     rounded = clamped.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
     return float(rounded)
+
+
+_TTS_SPEED_MIN = Decimal("0.95")
+_TTS_SPEED_MAX = Decimal("1.05")
+_TTS_SPEED_STEP = Decimal("0.01")
+
+
+def _clamp_tts_speed(value: Decimal) -> Decimal:
+    return max(_TTS_SPEED_MIN, min(_TTS_SPEED_MAX, value))
+
+
+def _speed_grid() -> list[Decimal]:
+    values: list[Decimal] = []
+    current = _TTS_SPEED_MIN
+    while current <= _TTS_SPEED_MAX:
+        values.append(current.quantize(Decimal("0.01")))
+        current += _TTS_SPEED_STEP
+    return values
+
+
+def _speed_key(value) -> Decimal | None:
+    try:
+        return Decimal(str(value)).quantize(Decimal("0.01"))
+    except Exception:
+        return None
+
+
+def _adaptive_speed_candidate(
+    *,
+    base_duration: float,
+    video_duration: float,
+    previous_candidates: list[dict] | None,
+    max_candidates: int = 3,
+    target_floor_margin: float = 1.0,
+) -> float | None:
+    """Pick the next native TTS speed using feedback from prior attempts.
+
+    The provider speed value is always constrained to [0.95, 1.05].  The
+    feedback step is 0.01, which is 10% of the total allowed range.
+    """
+    if not (base_duration > 0 and video_duration > 0):
+        return None
+    previous = list(previous_candidates or [])
+    if max_candidates <= 0 or len(previous) >= max_candidates:
+        return None
+
+    target_lo = max(0.0, float(video_duration) - float(target_floor_margin))
+    target_hi = float(video_duration)
+    used = {
+        key for key in (_speed_key(c.get("speed")) for c in previous)
+        if key is not None
+    }
+
+    if not previous:
+        if target_lo <= float(base_duration) <= target_hi:
+            return None
+        raw = Decimal(str(base_duration)) / Decimal(str(video_duration))
+        rounding = ROUND_CEILING if raw >= Decimal("1.0") else ROUND_FLOOR
+        speed = raw.quantize(Decimal("0.01"), rounding=rounding)
+        speed = _clamp_tts_speed(speed)
+        if speed == Decimal("1.00"):
+            speed += _TTS_SPEED_STEP if base_duration > target_hi else -_TTS_SPEED_STEP
+            speed = _clamp_tts_speed(speed)
+        return float(speed)
+
+    last = previous[-1]
+    last_speed = _speed_key(last.get("speed"))
+    if last_speed is None:
+        return None
+    try:
+        last_duration = float(last.get("duration") or 0.0)
+    except (TypeError, ValueError):
+        last_duration = 0.0
+    if target_lo <= last_duration <= target_hi:
+        return None
+
+    direction = 1 if last_duration > target_hi else -1
+    preferred = _clamp_tts_speed(
+        last_speed + (_TTS_SPEED_STEP if direction > 0 else -_TTS_SPEED_STEP)
+    )
+    if preferred not in used:
+        return float(preferred)
+
+    grid = _speed_grid()
+    if direction > 0:
+        primary = [s for s in grid if s > last_speed]
+        secondary = [s for s in reversed(grid) if s < last_speed]
+    else:
+        primary = [s for s in reversed(grid) if s < last_speed]
+        secondary = [s for s in grid if s > last_speed]
+    for speed in primary + secondary:
+        if speed not in used:
+            return float(speed)
+    return None
 
 
 def _speedup_candidate_speeds(

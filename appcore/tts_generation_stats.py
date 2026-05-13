@@ -54,12 +54,15 @@ def compute_summary(rounds: Iterable[dict]) -> dict:
         audio_segment_calls += segment_calls
         if segment_calls > 0:
             audio_rounds += 1
-        if (
-            rec.get("speedup_applied")
-            and rec.get("speedup_context") == "final_converged_overshoot"
-            and rec.get("speedup_audio_path")
-        ):
-            converged_speedup_audio_generations += 1
+        if rec.get("speedup_applied") and rec.get("speedup_context") in {
+            "final_converged_overshoot",
+            "stage1_converged_postprocess",
+        }:
+            speedup_candidates = rec.get("speedup_candidates") or []
+            if speedup_candidates:
+                converged_speedup_audio_generations += len(speedup_candidates)
+            elif rec.get("speedup_audio_path"):
+                converged_speedup_audio_generations += 1
     return {
         "translate_calls": translate_calls,
         "audio_rounds": audio_rounds,
@@ -79,7 +82,7 @@ def format_log_line(summary: dict) -> str:
         summary.get("converged_speedup_audio_generations") or 0
     )
     speedup_part = (
-        f"，收敛音频变速生成音频 {converged_speedup_audio_generations} 次"
+        f"，收敛后变速候选生成 {converged_speedup_audio_generations} 次"
         if converged_speedup_audio_generations > 0
         else ""
     )
