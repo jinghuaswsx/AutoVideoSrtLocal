@@ -33,6 +33,28 @@ def test_decompose_shots_parses_response_and_normalizes_boundaries():
     assert "duration" in shots[0]
 
 
+def test_decompose_shots_uses_configured_binding_model_by_default():
+    fake_response = {
+        "json": {
+            "shots": [
+                {"index": 1, "start": 0.0, "end": 10.0, "description": "shot"},
+            ]
+        },
+        "text": None,
+        "raw": None,
+        "usage": {},
+    }
+    with patch("pipeline.shot_decompose.gemini_generate",
+               return_value=fake_response) as generate:
+        decompose_shots(
+            video_path="/tmp/v.mp4",
+            user_id=1,
+            duration_seconds=10.0,
+        )
+
+    assert generate.call_args.kwargs["model_override"] is None
+
+
 def test_decompose_shots_raises_when_empty():
     with patch("pipeline.shot_decompose.gemini_generate",
                return_value={"json": {"shots": []}, "text": None, "raw": None, "usage": {}}):

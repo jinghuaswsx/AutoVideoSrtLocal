@@ -248,6 +248,8 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
     elif project_type == "subtitle_removal" and recovered.get("status") in SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES:
         return _recover_subtitle_removal_state(recovered)
     elif project_type in INTERRUPTED_PIPELINE_PROJECT_TYPES:
+        if recovered.get("status") in {"error", "failed", "done", "cancelled"}:
+            return False, recovered, None
         if _has_waiting_steps(recovered):
             return False, recovered, None
         changed = _mark_inflight_steps_as_interrupted(recovered)

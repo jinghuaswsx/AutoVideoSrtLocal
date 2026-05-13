@@ -741,6 +741,34 @@ def test_recover_project_state_marks_translate_lab_running_as_interrupted():
     assert recovered["steps"]["subtitle"] == "pending"
 
 
+def test_recover_project_state_keeps_terminal_omni_error_state():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="omni_translate",
+        task_id="omni-error",
+        state={
+            "type": "omni_translate",
+            "status": "error",
+            "error": "API key expired",
+            "steps": {
+                "extract": "done",
+                "shot_decompose": "running",
+                "asr_clean": "pending",
+            },
+            "step_messages": {"shot_decompose": "API key expired"},
+        },
+        active=False,
+    )
+
+    assert changed is False
+    assert status is None
+    assert recovered["status"] == "error"
+    assert recovered["error"] == "API key expired"
+    assert recovered["steps"]["shot_decompose"] == "running"
+    assert recovered["step_messages"]["shot_decompose"] == "API key expired"
+
+
 def test_recover_project_state_treats_av_pipeline_translation_as_interrupted():
     from appcore import task_recovery
 

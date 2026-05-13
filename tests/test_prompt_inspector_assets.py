@@ -45,3 +45,18 @@ def test_omni_pipeline_exposes_dynamic_prompt_steps():
     assert 'id="step-shot_decompose"' in template
     assert 'id="step-av_sync_audit"' in template
     assert 'av_sync_audit: "音画同步审计"' in scripts
+
+
+def test_omni_js_step_order_tracks_dynamic_pipeline_steps():
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert (
+        'const STEP_ORDER = ["extract", "asr", "separate", "shot_decompose", '
+        '"asr_clean", "voice_match", "alignment", "translate", "tts", '
+        '"av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];'
+    ) in scripts
+    assert (
+        'const MAIN_STEPS = ["extract", "asr", "separate", "shot_decompose", '
+        '"asr_clean", "voice_match", "alignment", "translate", "tts", '
+        '"av_sync_audit", "loudness_match", "subtitle", "compose", "export"];'
+    ) in scripts

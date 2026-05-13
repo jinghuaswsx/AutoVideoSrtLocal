@@ -55,7 +55,7 @@ def decompose_shots(
     *,
     user_id: int,
     duration_seconds: float,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
 ) -> List[Dict[str, Any]]:
     """调用 Gemini 拆分分镜，返回归一化（首尾对齐、相邻衔接、附 duration）的 shots。"""
     prompt = SHOT_DECOMPOSE_PROMPT.format(duration=duration_seconds)

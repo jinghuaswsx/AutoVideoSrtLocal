@@ -177,13 +177,15 @@ def test_auto_retry_resumes_from_dynamic_step(monkeypatch):
     assert task_state.get(task_id)["_failure_count"] == 0
 
 
-def test_run_publishes_pipeline_error_on_exception():
+def test_run_publishes_pipeline_error_on_exception(monkeypatch):
     task_id = "test_run_error"
     _make_task(task_id)
     runner, events = _make_runner()
 
     runner._step_extract = MagicMock(side_effect=RuntimeError("boom"))
     runner._step_asr = MagicMock()
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.runtime._pipeline_runner.time.sleep", lambda *args, **kwargs: None)
 
     with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
         runner._run(task_id)
@@ -192,6 +194,9 @@ def test_run_publishes_pipeline_error_on_exception():
     assert len(error_events) == 1
     assert "boom" in error_events[0].payload["error"]
     assert task_state.get(task_id)["status"] == "error"
+    assert task_state.get(task_id)["steps"]["extract"] == "error"
+    step_events = [e for e in events if e.type == EVT_STEP_UPDATE]
+    assert any(e.payload["step"] == "extract" and e.payload["status"] == "error" for e in step_events)
 
 
 def test_no_flask_or_socketio_imports():

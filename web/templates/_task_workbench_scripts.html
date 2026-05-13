@@ -4,8 +4,8 @@
   const STEP_ORDER = {{ pipeline_step_order|tojson }};
   const MAIN_STEPS = {{ pipeline_main_steps|default([])|tojson }};
   {% elif api_base == '/api/omni-translate' %}
-  const STEP_ORDER = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
-  const MAIN_STEPS = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
+  const STEP_ORDER = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];
+  const MAIN_STEPS = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export"];
   {% elif pipeline_kind == 'multi_translate' %}
   const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
   // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
@@ -17,7 +17,13 @@
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
   {% endif %}
-  const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×" };
+  const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×", failed: "×", interrupted: "×", cancelled: "×" };
+  function isErrorLikeStatus(status) {
+    return ["error", "failed", "interrupted", "cancelled"].includes(status);
+  }
+  function visualStepStatus(status) {
+    return isErrorLikeStatus(status) ? "error" : status;
+  }
   const LANG_LABELS = {
     zh: "中文", en: "英文", es: "西班牙语", pt: "葡萄牙语",
     fr: "法语", it: "意大利语", ja: "日语", de: "德语",
@@ -521,7 +527,7 @@
     const pct = totalMain > 0 ? Math.round((doneCount / totalMain) * 100) : 0;
 
     // 4. 当前阶段 + 状态类（驱动 card 颜色/图标/进度条渐变）
-    const failedStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "failed");
+    const failedStep = MAIN_STEPS.find(s => isErrorLikeStatus(currentTask.steps?.[s]));
     const waitingStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "waiting");
     const runningStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "running");
     const taskStatus = currentTask.status;
@@ -537,7 +543,7 @@
       badgeText = "已中断";
       stepText = `中断于：${stepLabel(failedStep)}（${MAIN_STEPS.indexOf(failedStep) + 1}/${totalMain}）`;
       interruptAt = failedStep;
-    } else if (taskStatus === "error") {
+    } else if (isErrorLikeStatus(taskStatus)) {
       cardState = "is-error"; iconHtml = "×";
       badgeText = "已中断";
       const recoverFrom = runningStep
@@ -845,12 +851,13 @@
       } else {
         if (status === "running" && currentTask?.status === "error") status = "error";
       }
+      const displayStatus = visualStepStatus(status);
       const fallback = step === "analysis" && status === "idle"
         ? "可选附加分析 · 点击按钮手动触发"
-        : placeholderText(status);
+        : placeholderText(displayStatus);
       const message = currentTask?.step_messages?.[step] || fallback;
-      stepEl.className = `step ${status}`;
-      iconEl.className = `step-icon ${status}`;
+      stepEl.className = `step ${displayStatus}`;
+      iconEl.className = `step-icon ${displayStatus}`;
       iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
       msgEl.textContent = message;
       // 模型标签
@@ -932,16 +939,17 @@
       if (!previewEl) return;
       const artifact = artifacts[step];
       const status = currentTask?.steps?.[step] || "pending";
+      const displayStatus = visualStepStatus(status);
       let html;
       if (!artifact) {
-        const message = currentTask?.step_messages?.[step] || placeholderText(status);
+        const message = currentTask?.step_messages?.[step] || placeholderText(displayStatus);
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else if (artifact.layout === "variant_compare") {
         html = renderVariantCompareArtifact(artifact);
       } else if (artifact.layout === "analysis") {
         html = renderAnalysisArtifact(artifact);
       } else if (!artifact.items || !artifact.items.length) {
-        const message = currentTask?.step_messages?.[step] || placeholderText(status);
+        const message = currentTask?.step_messages?.[step] || placeholderText(displayStatus);
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else {
         // 老项目的 compose artifact 里可能还留着 soft_video 条目 → 过滤

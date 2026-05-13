@@ -1672,6 +1672,8 @@ class PipelineRunner:
                 "[task %s] auto-retry exhausted (%d/%d), marking task failed",
                 task_id, failure_count, _TASK_AUTO_RETRY_MAX,
             )
+            if current_step in step_names:
+                self._set_step(task_id, current_step, "error", str(exc))
             task_state.update(task_id, _failure_count=0, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
