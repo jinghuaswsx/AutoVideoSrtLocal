@@ -1761,35 +1761,6 @@
     }
   });
 
-  // 变速短路 AI 评估重新评估按钮（事件委托，Task 9）
-  if (!window.__ttsSpeedupRetryBound) {
-    window.__ttsSpeedupRetryBound = true;
-    document.addEventListener('click', async function(e) {
-      const btn = e.target && e.target.closest && e.target.closest('.tts-speedup-retry-btn');
-      if (!btn) return;
-      const evalId = btn.dataset.evalId;
-      if (!evalId) return;
-      btn.disabled = true;
-      const orig = btn.textContent;
-      btn.textContent = '评估中…';
-      try {
-        const resp = await fetch(`/admin/tts-speedup-evaluations/${evalId}/retry`, {
-          method: 'POST', headers: { 'Accept': 'application/json' },
-        });
-        if (resp.ok) {
-          btn.textContent = '已发起';
-          setTimeout(() => { if (btn.textContent === '已发起') btn.textContent = orig; }, 3000);
-        } else {
-          btn.textContent = '失败，请重试';
-          btn.disabled = false;
-        }
-      } catch (err) {
-        btn.textContent = '网络错误';
-        btn.disabled = false;
-      }
-    });
-  }
-
   const runAnalysisBtn = document.getElementById("runAnalysisBtn");
   if (runAnalysisBtn) {
     runAnalysisBtn.addEventListener("click", async () => {
@@ -3849,18 +3820,6 @@
     const preUrl  = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(preRel)}`);
     const postUrl = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(postRel)}`);
 
-    let evalSection = '';
-    if (r.speedup_eval_id) {
-      evalSection = `
-        <div class="tts-speedup-summary">
-          AI 评估已生成（eval_id=${r.speedup_eval_id}），完整评分见
-          <a href="/admin/tts-speedup-evaluations/?task_id=${encodeURIComponent(tid)}" target="_blank" rel="noopener noreferrer">跨任务评估页</a>。
-          <button class="tts-speedup-retry-btn" data-eval-id="${r.speedup_eval_id}">重新评估</button>
-        </div>`;
-    } else {
-      evalSection = `<div class="tts-speedup-summary tts-speedup-status-pending">AI 评估未发起</div>`;
-    }
-
     return `
       <div class="tts-speedup-card">
         <div class="tts-speedup-header">
@@ -3880,7 +3839,6 @@
             <audio controls preload="none" src="${escapeAttr(postUrl)}"></audio>
           </div>
         </div>
-        ${evalSection}
       </div>`;
   }
 

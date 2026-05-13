@@ -76,7 +76,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 48
+    assert len(USE_CASES) == 47
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -225,15 +225,5 @@ def test_list_by_module_groups_correctly():
         assert module in MODULE_LABELS, f"module {module} missing from MODULE_LABELS"
 
 
-def test_tts_speedup_quality_review_use_case_registered():
-    assert "video_translate.tts_speedup_quality_review" in USE_CASES, (
-        "video_translate.tts_speedup_quality_review use_case 未注册"
-    )
-    uc = get_use_case("video_translate.tts_speedup_quality_review")
-    assert uc["module"] == "video_translate"
-    assert uc["default_provider"] == "gemini_vertex"
-    assert uc["default_model"] == "gemini-3-flash-preview"
-    assert uc["usage_log_service"] == "gemini_vertex"
-    assert uc["units_type"] == "tokens"
-    assert uc["label"]
-    assert uc["description"]
+def test_tts_speedup_quality_review_use_case_removed():
+    assert "video_translate.tts_speedup_quality_review" not in USE_CASES

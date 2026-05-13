@@ -199,16 +199,6 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
-    "video_translate.tts_speedup_quality_review": _uc(
-        "video_translate.tts_speedup_quality_review",
-        "video_translate",
-        "TTS 变速短路质量评估",
-        "对 ElevenLabs 变速短路产物（变速前+变速后双轨）做多模态对比，输出 5 维质量分",
-        "gemini_vertex",
-        "gemini-3-flash-preview",
-        "gemini_vertex",
-        "tokens",
-    ),
     "video_translate.asr": _uc(
         "video_translate.asr",
         "video_translate",

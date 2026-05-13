@@ -394,7 +394,6 @@ class PipelineRunner:
             groups = _base_candidate_groups(result.get("segments") or [])
             last_speedup_path = None
             last_speedup_duration = None
-            last_eval_id = None
             last_speed = None
             for attempt in range(1, max_speed_candidates + 1):
                 speed = _adaptive_speed_candidate(
@@ -448,28 +447,6 @@ class PipelineRunner:
                     speed=speed, attempt=attempt,
                 )
                 candidate_hit = (video_duration - 1.0) <= speedup_duration <= video_duration
-                eval_id = None
-                try:
-                    from appcore import tts_speedup_eval
-                    eval_id = tts_speedup_eval.run_evaluation(
-                        task_id=task_id,
-                        round_index=round_index,
-                        language=target_language_label or "",
-                        video_duration=video_duration,
-                        audio_pre_path=result["full_audio_path"],
-                        audio_pre_duration=audio_duration,
-                        audio_post_path=speedup_audio_path,
-                        audio_post_duration=speedup_duration,
-                        speed_ratio=speed,
-                        hit_final_range=candidate_hit,
-                        user_id=self.user_id,
-                    )
-                except Exception:
-                    log.exception(
-                        "[task %s] tts_speedup_eval.run_evaluation raised; ignoring",
-                        task_id,
-                    )
-
                 candidate_meta = {
                     "attempt": attempt,
                     "speed": round(speed, 4),
@@ -478,12 +455,10 @@ class PipelineRunner:
                     "target_delta": round(speedup_duration - video_duration, 6),
                     "hit_video_cap": candidate_hit,
                     "shorter_than_pre": speedup_duration < audio_duration,
-                    "eval_id": eval_id,
                 }
                 round_record["speedup_candidates"].append(candidate_meta)
                 last_speedup_path = speedup_audio_path
                 last_speedup_duration = speedup_duration
-                last_eval_id = eval_id
                 last_speed = speed
 
                 selection = _select_segment_candidate_assembly(
@@ -518,7 +493,6 @@ class PipelineRunner:
                     round_record["speedup_pre_duration"] = audio_duration
                     round_record["speedup_post_duration"] = assembled_duration
                     round_record["speedup_audio_path"] = _relative(assembled_path)
-                    round_record["speedup_eval_id"] = eval_id
                     round_record["speedup_hit_final"] = True
                     round_record["speedup_video_cap_hit"] = True
                     return {
@@ -527,7 +501,6 @@ class PipelineRunner:
                         "audio_path": assembled_path,
                         "segments": assembled["segments"],
                         "duration": assembled_duration,
-                        "eval_id": eval_id,
                         "speed": speed,
                         "context": context,
                     }
@@ -541,7 +514,6 @@ class PipelineRunner:
             round_record["speedup_pre_duration"] = audio_duration
             round_record["speedup_post_duration"] = last_speedup_duration
             round_record["speedup_audio_path"] = _relative(last_speedup_path)
-            round_record["speedup_eval_id"] = last_eval_id
             round_record["speedup_hit_final"] = False
             round_record["speedup_video_cap_hit"] = False
             return {"hit": False, "failed": False}

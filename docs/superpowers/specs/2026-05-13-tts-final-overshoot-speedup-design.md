@@ -8,7 +8,7 @@
 
 After the TTS duration loop has already converged into the final accepted range `[video_duration - 1s, video_duration + 2s]`, handle only the case where the converged audio is still longer than the source video.
 
-In that case, regenerate one candidate with ElevenLabs `voice_settings.speed`, compare the candidate with the converged audio through the existing `tts_speedup_eval` flow, and choose the final audio by duration:
+In that case, regenerate speed candidates with ElevenLabs `voice_settings.speed` and choose the final audio by duration:
 
 - Compute raw speed as `audio_duration / video_duration`.
 - Clamp speed to `[0.95, 1.05]`.
@@ -36,7 +36,7 @@ Candidate adoption rules:
 - If a candidate is longer than the pre-speedup audio, over the source video duration, or too short for the target floor, record it for diagnostics but do not adopt it.
 - In the post-convergence branch, if all candidates miss, keep the original converged audio.
 - In the older `[0.9v, 1.1v]` shortcut branch, if all candidates miss, do not terminate the duration loop; continue to the next rewrite round.
-- Continue to run `tts_speedup_eval` for each successfully generated candidate so the admin review page can compare every attempted speed.
+- Do not run the removed `tts_speedup_eval` sidecar. Candidate quality is judged by duration/assembly metadata and manual playback from the task detail page.
 
 ## Scope
 
@@ -55,10 +55,9 @@ The final-overshoot regeneration reuses the existing speedup round fields:
 - `speedup_hit_final`
 - `speedup_audio_path`
 - `speedup_chars_used`
-- `speedup_eval_id`
 - `speedup_failed_reason`
 - `speedup_context = "final_converged_overshoot"` so the UI and stats can distinguish this post-convergence regeneration from the older speedup shortcut.
-- `speedup_final_audio_choice = "speedup" | "converged"` to show which audio is used for final video composition.
+- `speedup_final_audio_choice = "assembly" | "converged"` to show which audio is used for final video composition.
 
 It also sets `final_reason` explicitly:
 
@@ -85,7 +84,7 @@ Add focused tests around `_run_tts_duration_loop`:
 1. Final-range audio longer than video triggers ElevenLabs speed regeneration.
 2. Speed is clamped to `[0.95, 1.05]` and rounded upward to two decimals.
 3. A regenerated candidate inside the final range and shorter than the converged audio is adopted.
-4. A regenerated candidate inside the final range but longer than the converged audio is evaluated but not adopted.
-5. A regenerated candidate outside the final range is evaluated but not adopted.
+4. A regenerated candidate inside the final range but longer than the converged audio is recorded but not adopted.
+5. A regenerated candidate outside the final range is recorded but not adopted.
 6. Final-range audio shorter than video keeps the existing no-speedup path.
 7. The detail UI and generation summary expose the extra audio generation count and final adopted audio choice.

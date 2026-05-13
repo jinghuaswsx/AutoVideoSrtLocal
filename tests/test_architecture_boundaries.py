@@ -1666,29 +1666,25 @@ def test_security_audit_api_responses_live_outside_route_module():
     assert Path("web/services/security_audit.py").exists()
 
 
-def test_tts_speedup_eval_json_responses_live_outside_route_module():
-    module_source = Path("web/routes/tts_speedup_eval.py").read_text(encoding="utf-8")
-    module = ast.parse(module_source)
-    route_sources = []
-    for function_name in ("list_page", "retry_endpoint"):
-        route_function = next(
-            node
-            for node in module.body
-            if isinstance(node, ast.FunctionDef) and node.name == function_name
-        )
-        route_sources.append(ast.get_source_segment(module_source, route_function) or "")
-    route_source = "\n".join(route_sources)
+def test_tts_speedup_eval_module_removed_from_runtime_and_web():
+    assert not Path("appcore/tts_speedup_eval.py").exists()
+    assert not Path("web/routes/tts_speedup_eval.py").exists()
+    assert not Path("web/services/tts_speedup_eval.py").exists()
+    assert not Path("web/templates/admin/tts_speedup_eval_list.html").exists()
 
-    assert "jsonify(" not in route_source
-    assert "build_tts_speedup_list_fallback_response" in route_source
-    assert "build_tts_speedup_retry_response" in route_source
-    assert "tts_speedup_eval_flask_response" in route_source
-    assert "from appcore.db import" not in module_source
-    assert "db_query(" not in module_source
-    assert "db_query_one(" not in module_source
-    assert "tts_speedup_eval.list_evaluations" in module_source
-    assert "tts_speedup_eval.summarize_evaluations" in module_source
-    assert Path("web/services/tts_speedup_eval.py").exists()
+    app_source = Path("web/app.py").read_text(encoding="utf-8")
+    layout_source = Path("web/templates/layout.html").read_text(encoding="utf-8")
+    workbench_source = Path("web/templates/_task_workbench_scripts.html").read_text(
+        encoding="utf-8"
+    )
+    runtime_source = Path("appcore/runtime/_pipeline_runner.py").read_text(
+        encoding="utf-8"
+    )
+
+    for source in (app_source, layout_source, workbench_source, runtime_source):
+        assert "tts_speedup_eval" not in source
+        assert "tts-speedup-evaluations" not in source
+        assert "speedup_eval_id" not in source
 
 
 def test_admin_ai_billing_payload_responses_live_outside_route_module():

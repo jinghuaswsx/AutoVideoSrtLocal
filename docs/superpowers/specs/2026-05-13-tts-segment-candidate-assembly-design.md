@@ -85,6 +85,10 @@ The selected segment files are concatenated into:
 
 The selected segment metadata becomes the final `tts_segments` for composition. This means the final video composition consumes the exact segment files chosen by the optimizer.
 
+## 2026-05-13 Update: AI Evaluation Removal
+
+The automatic `tts_speedup_eval` sidecar is removed from the production path. Segment assembly remains the decision source for final audio selection. The runtime no longer calls an LLM, writes `speedup_eval_id`, or links to `/admin/tts-speedup-evaluations`; historical database rows may remain for old tasks, but new tasks only write speedup and segment assembly diagnostics.
+
 ## Verification
 
 - Pure optimizer tests cover exact-hit selection, over-video rejection, and tie-breaking toward fewer speed-modified segments.

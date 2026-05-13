@@ -4,6 +4,10 @@
 - 模块：多语言视频翻译 → 语音生成（TTS Duration Loop）
 - 目标：长视频任务在文案重写多轮仍无法精确落到 `[v-1, v+2]` 时，浪费大量 LLM/TTS 调用。引入 ElevenLabs 变速短路 + AI 评估，加速收敛并量化变速音频可用性。
 
+> 2026-05-13 更新：本文保留为历史设计记录。自动 AI 评估 sidecar 已被
+> `2026-05-13-tts-speedup-eval-removal-design.md` 移除；当前生产路径只保留
+> speed 候选生成、段级组装和任务详情里的人工试听诊断。
+
 ## 1. 背景
 
 [appcore/runtime/_pipeline_runner.py:_run_tts_duration_loop](../../appcore/runtime/_pipeline_runner.py#L203) 当前用最多 5 轮 LLM rewrite + ElevenLabs TTS 来收敛译文音频时长到 `[v-1, v+2]`。3-5 分钟以上的长视频经常 5 轮跑完仍只能拿到 ±5%~±10% 的偏差，最后回落到 `_maybe_tempo_align`（ffmpeg atempo，仅在 ±5% 内生效）。每多一轮 = 一次 LLM 文案重写 + 全部 segments 的 ElevenLabs 调用，成本和时长都翻倍。

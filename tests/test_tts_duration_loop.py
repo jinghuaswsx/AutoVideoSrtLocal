@@ -751,7 +751,6 @@ class TestDurationLoopMultiRound:
         monkeypatch.setattr("pipeline.translate.generate_localized_rewrite", fake_gen_rewrite)
         monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda v, l: 15.0)
         monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
-        monkeypatch.setattr("appcore.tts_speedup_eval.run_evaluation", lambda **kw: 999)
         # 禁用变速短路分支，让多轮 rewrite 测试走原始路径（不依赖 ElevenLabs API）
         monkeypatch.setattr("appcore.runtime._in_speedup_window", lambda **kw: False)
 
@@ -1576,7 +1575,7 @@ class TestSpeedupShortcut:
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_full_audio)
 
         # 变速重合成：抛错或写文件
-        called = {"eval": [], "speedup_speeds": [], "assembled": []}
+        called = {"speedup_speeds": [], "assembled": []}
         if speedup_raises is not None:
             def boom(*a, **kw):
                 raise speedup_raises
@@ -1645,11 +1644,6 @@ class TestSpeedupShortcut:
             return duration_by_path.get(path, regular_audio_durs[-1])
         monkeypatch.setattr(_tts_mod, "_get_audio_duration", fake_dur)
 
-        # 评估调用全部 stub 成 noop（测的是分支，不是评估）
-        monkeypatch.setattr(
-            "appcore.tts_speedup_eval.run_evaluation",
-            lambda **kw: (called["eval"].append(kw) or 999),
-        )
         # tempo align 简化为 identity（不真的走 ffmpeg）
         from appcore.runtime._pipeline_runner import PipelineRunner
         monkeypatch.setattr(
@@ -1708,7 +1702,7 @@ class TestSpeedupShortcut:
         assert round_rec["segment_assembly_hit"] is True
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["final_reason"] == "converged_segment_assembly_refined"
-        assert len(called["eval"]) == 1
+        assert "speedup_eval_id" not in round_rec
 
     def test_speedup_miss_final_keeps_unaligned(self, tmp_path, monkeypatch):
         """变速后仍超过视频 → 不采用，继续下一轮 rewrite。"""
@@ -1723,7 +1717,7 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
         assert called["speedup_speeds"] == [1.05, 1.04, 1.03]
-        assert len(called["eval"]) == 3
+        assert "speedup_eval_id" not in round_rec
 
     def test_speedup_failure_falls_back_to_original(self, tmp_path, monkeypatch):
         """ElevenLabs 变速调用抛错 → 不采用原始超长音频，继续下一轮 rewrite。"""
@@ -1739,7 +1733,7 @@ class TestSpeedupShortcut:
         assert "speedup_failed_reason" in round_rec
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["final_reason"] == "converged_speedup_failed_kept_original"
-        assert called["eval"] == []  # 变速失败不发起评估
+        assert "speedup_eval_id" not in round_rec
 
     def test_speedup_skipped_when_final_audio_not_over_video(self, tmp_path, monkeypatch):
         """audio=59.5 已在 final [59,62] 且未超过 video=60，不触发变速分支。"""
@@ -1748,7 +1742,7 @@ class TestSpeedupShortcut:
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
         assert not round_rec.get("speedup_applied")
-        assert called["eval"] == []
+        assert "speedup_eval_id" not in round_rec
 
     def test_final_overshoot_speedup_hit_adopts_candidate(self, tmp_path, monkeypatch):
         """已收敛但 audio=61.5 > video=60 时，候选命中 [v-1,v] 就采用组装音频。"""
@@ -1772,10 +1766,7 @@ class TestSpeedupShortcut:
         assert round_rec["final_reason"] == "converged_segment_assembly_refined"
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["speedup_final_audio_choice"] == "assembly"
-        assert len(called["eval"]) == 1
-        assert called["eval"][0]["audio_pre_duration"] == 61.5
-        assert called["eval"][0]["audio_post_duration"] == 59.8
-        assert called["eval"][0]["hit_final_range"] is True
+        assert "speedup_eval_id" not in round_rec
 
     def test_final_overshoot_speedup_miss_keeps_converged_audio(
         self, tmp_path, monkeypatch,
@@ -1799,8 +1790,7 @@ class TestSpeedupShortcut:
         assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["speedup_final_audio_choice"] == "converged"
-        assert len(called["eval"]) == 3
-        assert called["eval"][0]["hit_final_range"] is False
+        assert "speedup_eval_id" not in round_rec
 
     def test_final_overshoot_speedup_hit_but_longer_keeps_converged_audio(
         self, tmp_path, monkeypatch,
@@ -1822,8 +1812,7 @@ class TestSpeedupShortcut:
         assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
         assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["speedup_final_audio_choice"] == "converged"
-        assert len(called["eval"]) == 3
-        assert called["eval"][0]["hit_final_range"] is False
+        assert "speedup_eval_id" not in round_rec
 
     def test_final_overshoot_segment_assembly_adopts_video_capped_mix(
         self, tmp_path, monkeypatch,
