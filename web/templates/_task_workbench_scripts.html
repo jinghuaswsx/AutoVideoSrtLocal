@@ -1046,6 +1046,10 @@
         const fallbackArtifact = buildTranslateArtifactFromTask(currentTask);
         if (fallbackArtifact) artifact = fallbackArtifact;
       }
+      if (step === "asr_clean" && !artifact) {
+        const fallbackArtifact = synthesizeAsrCleanArtifact(currentTask);
+        if (fallbackArtifact) artifact = fallbackArtifact;
+      }
       const status = currentTask?.steps?.[step] || "pending";
       const displayStatus = visualStepStatus(status);
       let html;
@@ -1192,6 +1196,26 @@
         <div style="display:flex;flex-direction:column;gap:10px;">${(variantPayload.items || []).map(item => renderPreviewItem(item, variantKey)).join("")}</div>
       </div>
     `).join("")}</div>`;
+  }
+
+  function synthesizeAsrCleanArtifact(task) {
+    const rawUtterances = currentTask?.utterances_raw || task?.utterances_raw || [];
+    const cleanUtterances = currentTask?.utterances || task?.utterances || [];
+    if (!rawUtterances.length && !cleanUtterances.length) return null;
+    const previewText = (items) => (items || []).map(u => u?.text || "").join(" ").slice(0, 200);
+    return {
+      language: task?.source_language || "",
+      cleaned: task?.steps?.asr_clean === "done" && !!cleanUtterances.length,
+      fallback_used: false,
+      model_used: "",
+      validation_errors: [],
+      skipped: true,
+      skip_reason: "missing_artifact",
+      input_utterances: rawUtterances,
+      utterances: cleanUtterances,
+      input_preview: previewText(rawUtterances),
+      output_preview: previewText(cleanUtterances),
+    };
   }
 
   function renderAsrCleanArtifact(artifact) {

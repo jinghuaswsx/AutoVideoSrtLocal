@@ -378,6 +378,42 @@ def test_post_asr_dispatches_to_asr_clean_when_cfg_says_so(
     omni_runner._step_asr_normalize.assert_not_called()
 
 
+def test_asr_clean_resume_skip_persists_preview_artifact(
+    monkeypatch, omni_runner,
+):
+    import appcore.task_state as task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_id = "omni-asr-clean-resume-artifact"
+    task_state._tasks.pop(task_id, None)
+    raw_utterances = [
+        {"start_time": 0.0, "end_time": 1.0, "text": "raw windshield text"}
+    ]
+    clean_utterances = [
+        {"start_time": 0.0, "end_time": 1.0, "text": "clean windshield text"}
+    ]
+    task_state.create(task_id, "/tmp/video.mp4", "/tmp/task", "video.mp4", user_id=1)
+    task_state.update(
+        task_id,
+        source_language="en",
+        plugin_config=CFG_OMNI_CURRENT,
+        utterances=clean_utterances,
+        utterances_raw=raw_utterances,
+        artifacts={},
+    )
+
+    omni_runner._step_asr_clean(task_id)
+
+    task = task_state.get(task_id)
+    artifact = task["artifacts"]["asr_clean"]
+    assert task["steps"]["asr_clean"] == "done"
+    assert artifact["skipped"] is True
+    assert artifact["skip_reason"] == "already_cleaned"
+    assert artifact["input_utterances"] == raw_utterances
+    assert artifact["utterances"] == clean_utterances
+
+
 def test_post_asr_dispatches_to_asr_normalize_when_cfg_says_so(
     monkeypatch, omni_runner,
 ):
