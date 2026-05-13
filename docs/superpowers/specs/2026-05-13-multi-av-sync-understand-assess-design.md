@@ -17,7 +17,7 @@
 2. `omni_av_sync.understand` 使用 Doubao seed 2.0 lite 读取成片视频，输出自然语言中文视频理解笔记，不要求 JSON。
 3. 程序根据 `variants.normal.segments`、`script_segments`、`corrected_subtitle` / `subtitle.normal.srt` 构建同步句表和候选风险。
 4. `omni_av_sync.assess` 使用 Gemini 3.1 Flash Lite 输出 `issues` JSON，包含同步点、问题句子、证据、建议动作。
-5. 现有 `omni_av_sync.verify` 继续复核候选问题，报告卡片保持原入口。
+5. 多语种模块到此结束：只展示辅助审计/分析结果，不再进入 `omni_av_sync.verify` 复核，也不自动修改音频、字幕或视频。Omni `safe_auto` 修复链路仍可保留复核。
 
 ## 候选风险规则
 
@@ -30,4 +30,5 @@
 
 - Doubao debug ref 是 `av_sync_audit.understand`，请求无 `response_schema`。
 - Gemini debug ref 是 `av_sync_audit.assess`，请求包含 Doubao 视频理解笔记、最终字幕、程序候选风险。
+- 多语种任务只产生 `av_sync_audit.understand` 和 `av_sync_audit.assess` 两类调试记录，不产生 `av_sync_audit.verify`。
 - 对既有失败任务，从 `av_sync_audit` 重跑时不会因为 Doubao 非 JSON 输出失败。
