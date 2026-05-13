@@ -3337,9 +3337,15 @@ def test_medias_scripts_wire_raw_sources_modal_flow():
     assert '/medias/api/raw-sources/${del.dataset.rid}' in medias_js
     assert "js-rs-title-display" in medias_js
     assert "js-rs-title-input" in medias_js
+    assert "js-rs-title-save" in medias_js
+    assert "js-rs-title-cancel" in medias_js
+    assert "保存" in medias_js
+    assert "取消" in medias_js
     assert "startRawSourceTitleEdit" in medias_js
     assert "saveRawSourceTitle" in medias_js
     assert "cancelRawSourceTitleEdit" in medias_js
+    assert "titleSave.addEventListener('click'" in medias_js
+    assert "titleCancel.addEventListener('click'" in medias_js
     assert "refreshRawSourceList" in medias_js
 
 

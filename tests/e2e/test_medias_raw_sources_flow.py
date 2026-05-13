@@ -370,20 +370,20 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             expect(card.get_by_role("button", name="封面图")).to_be_visible()
             expect(card.get_by_role("button", name="视频")).to_be_visible()
             expect(card.locator(".oc-rs-meta-line")).to_contain_text("时长")
-            rename_result = page.evaluate("""
-                async () => {
-                  const resp = await fetch('/medias/api/raw-sources/1001', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ display_name: 'renamed-raw-source.mp4' }),
-                  });
-                  const payload = await resp.json().catch(() => ({}));
-                  return { status: resp.status, payload };
-                }
-            """)
-            assert rename_result["status"] == 200
-            page.evaluate("window.MediasRawSources.refreshRawSourceList(101)")
+            card.locator(".js-rs-title-display").click()
+            expect(card.locator(".js-rs-title-input")).to_be_visible()
+            expect(card.locator(".js-rs-title-save")).to_be_visible()
+            expect(card.locator(".js-rs-title-cancel")).to_be_visible()
+            card.locator(".js-rs-title-input").fill("renamed-raw-source.mp4")
+            card.locator(".js-rs-title-save").click()
             expect(card.locator(".js-rs-title-display")).to_have_text("renamed-raw-source.mp4")
+            assert state["raw_sources"][1001]["display_name"] == "renamed-raw-source.mp4"
+
+            card.locator(".js-rs-title-display").click()
+            card.locator(".js-rs-title-input").fill("cancelled-raw-source.mp4")
+            card.locator(".js-rs-title-cancel").click()
+            expect(card.locator(".js-rs-title-display")).to_have_text("renamed-raw-source.mp4")
+            assert state["raw_sources"][1001]["display_name"] == "renamed-raw-source.mp4"
 
             card.get_by_role("button", name="视频").click()
             expect(card.locator("video")).to_be_visible()
