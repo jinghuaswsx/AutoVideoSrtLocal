@@ -1569,8 +1569,9 @@
 
   function renderAvSyncAuditTimelineRow(row, index, options = {}) {
     if (options.tableOnly) {
+      const isIssue = isAvSyncAuditProblemRow(row);
       const title = row.sync_point || (row.asr_index !== undefined && row.asr_index !== null ? `ASR ${row.asr_index}` : `#${index + 1}`);
-      return `<div class="av-sync-timeline-row table-only">
+      return `<div class="av-sync-timeline-row table-only ${isIssue ? "is-issue" : ""}">
         <div class="av-sync-timeline-head">
           <div class="preview-time">${escapeHtml(title)}</div>
         </div>
@@ -1578,7 +1579,7 @@
           ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
           ${renderAvSyncTimelineField("正常翻译/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
           ${renderAvSyncTimelineField("视频画面", row.visual_observation || "画面不清晰/无法确认")}
-          ${renderAvSyncTimelineField("问题诊断", avSyncTableDiagnosis(row))}
+          ${renderAvSyncTimelineField("问题诊断", avSyncTableDiagnosis(row), `diagnosis-field ${isIssue ? "is-issue" : ""}`)}
         </div>
       </div>`;
     }
@@ -1613,11 +1614,21 @@
     </div>`;
   }
 
-  function renderAvSyncTimelineField(label, value) {
-    return `<div class="av-sync-timeline-field">
+  function renderAvSyncTimelineField(label, value, extraClass = "") {
+    const className = ["av-sync-timeline-field", extraClass].filter(Boolean).join(" ");
+    return `<div class="${escapeAttr(className)}">
       <div class="preview-label">${escapeHtml(label)}</div>
       <div class="preview-original">${escapeHtml(value || "-")}</div>
     </div>`;
+  }
+
+  function isAvSyncAuditProblemRow(row) {
+    if (!row || typeof row !== "object") return false;
+    if (String(row.diagnosis_status || "").toLowerCase() === "issue") return true;
+    const numericScore = Number(row.sync_score ?? row.score);
+    if (Number.isFinite(numericScore) && numericScore < 90) return true;
+    const recommendation = String(row.recommendation || "").trim();
+    return Boolean(recommendation && recommendation !== "无需调整。");
   }
 
   function avSyncTableDiagnosis(row) {

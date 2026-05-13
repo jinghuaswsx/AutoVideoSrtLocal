@@ -359,6 +359,9 @@
 .av-sync-timeline-grid.table-only { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.1fr); }
 .av-sync-timeline-field { min-width: 0; border: 1px solid var(--border-main); border-radius: 8px; padding: 10px; background: var(--bg-body); }
 .av-sync-timeline-field .preview-label { margin-bottom: 6px; letter-spacing: 0; text-transform: none; }
+.av-sync-timeline-field.diagnosis-field.is-issue { border-color: #fca5a5; background: rgba(248, 113, 113, 0.08); }
+.av-sync-timeline-field.diagnosis-field.is-issue .preview-label,
+.av-sync-timeline-field.diagnosis-field.is-issue .preview-original { color: #b91c1c; }
 @media (max-width: 760px) {
   .av-sync-timeline-head { flex-direction: column; }
   .av-sync-timeline-tags { justify-content: flex-start; }

@@ -48,6 +48,15 @@ For Gemini assessment:
 
 The frontend table should display the structured Gemini output. Missing fields mean the audit should be rerun or marked as structured assessment failed; the browser must not invent scorecard data.
 
+## UI Problem Highlighting
+
+The scorecard must make problematic diagnosis rows visually obvious for operators reviewing the table.
+
+- A row is considered problematic when `diagnosis_status == "issue"`, or when `sync_score < 90`, or when `recommendation` is present and not `无需调整。`.
+- Problematic rows must render as red-alert cards: red border, light red background, and red text in the `问题诊断` cell.
+- Non-problematic rows keep the existing neutral/normal table style.
+- The highlight is frontend-only display logic; it must not mutate the audit artifact or invent diagnosis content.
+
 ## Non-Goals
 
 - Do not change Doubao into a JSON-producing scorer.
@@ -61,3 +70,4 @@ The frontend table should display the structured Gemini output. Missing fields m
 - Backend tests prove `omni_av_sync.assess` uses Gemini 3 Flash and a schema requiring `sync_score`, `diagnosis`, and `recommendation`.
 - Backend tests prove the Gemini assessment prompt contains `scorecard_rows` and no verification prompt is called for report-only mode.
 - Frontend asset tests continue to require the scorecard table columns.
+- Frontend asset tests require the problem-row predicate, red card class, and diagnosis-cell red text class.
