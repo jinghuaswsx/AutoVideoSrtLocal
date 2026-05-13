@@ -766,6 +766,40 @@ class TestDurationLoopMultiRound:
         from appcore.runtime import PipelineRunner
         runner = PipelineRunner(bus=EventBus(), user_id=1)
 
+        from appcore.runtime._helpers import (
+            _fit_tts_segments_to_duration,
+            _trim_tts_metadata_to_segments,
+        )
+
+        def fake_truncate(
+            self, *, input_audio_path, output_audio_path, duration,
+            tts_segments, tts_script, localized_translation,
+        ):
+            with open(output_audio_path, "wb") as f:
+                f.write(b"fake-hard-overrun")
+            fitted_segments = _fit_tts_segments_to_duration(
+                tts_segments, duration,
+            )
+            fitted_script, fitted_translation = _trim_tts_metadata_to_segments(
+                tts_script, localized_translation, fitted_segments,
+            )
+            removed_duration = max(
+                0.0,
+                sum(float(s.get("tts_duration", 0.0) or 0.0) for s in tts_segments)
+                - float(duration),
+            )
+            return {
+                "skipped": False,
+                "audio_path": output_audio_path,
+                "tts_segments": fitted_segments,
+                "tts_script": fitted_script,
+                "localized_translation": fitted_translation,
+                "removed_count": max(0, len(tts_segments) - len(fitted_segments)),
+                "removed_duration": round(removed_duration, 3),
+                "final_duration": round(float(duration), 3),
+            }
+        monkeypatch.setattr(PipelineRunner, "_truncate_audio_to_duration", fake_truncate)
+
         initial_text = words(120)
         initial = {
             "full_text": initial_text,
@@ -968,6 +1002,10 @@ class TestRewriteAttemptDiversity:
             }
 
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
+        monkeypatch.setattr(
+            "pipeline.tts.regenerate_full_audio_with_speed",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("speedup disabled")),
+        )
         monkeypatch.setattr("pipeline.tts._get_audio_duration", fake_get_audio_duration)
         monkeypatch.setattr("pipeline.translate.generate_tts_script", fake_gen_tts_script)
         monkeypatch.setattr("pipeline.translate.generate_localized_rewrite", fake_gen_rewrite)
@@ -985,6 +1023,39 @@ class TestRewriteAttemptDiversity:
         from appcore.events import EventBus
         from appcore.runtime import PipelineRunner
         runner = PipelineRunner(bus=EventBus(), user_id=1)
+        from appcore.runtime._helpers import (
+            _fit_tts_segments_to_duration,
+            _trim_tts_metadata_to_segments,
+        )
+
+        def fake_truncate(
+            self, *, input_audio_path, output_audio_path, duration,
+            tts_segments, tts_script, localized_translation,
+        ):
+            with open(output_audio_path, "wb") as f:
+                f.write(b"fake-hard-overrun")
+            fitted_segments = _fit_tts_segments_to_duration(
+                tts_segments, duration,
+            )
+            fitted_script, fitted_translation = _trim_tts_metadata_to_segments(
+                tts_script, localized_translation, fitted_segments,
+            )
+            removed_duration = max(
+                0.0,
+                sum(float(s.get("tts_duration", 0.0) or 0.0) for s in tts_segments)
+                - float(duration),
+            )
+            return {
+                "skipped": False,
+                "audio_path": output_audio_path,
+                "tts_segments": fitted_segments,
+                "tts_script": fitted_script,
+                "localized_translation": fitted_translation,
+                "removed_count": max(0, len(tts_segments) - len(fitted_segments)),
+                "removed_duration": round(removed_duration, 3),
+                "final_duration": round(float(duration), 3),
+            }
+        monkeypatch.setattr(PipelineRunner, "_truncate_audio_to_duration", fake_truncate)
         initial = {"full_text": "A" * 400,
                    "sentences": [{"index": 0, "text": "A" * 400,
                                   "source_segment_indices": [0]}]}
@@ -1650,6 +1721,40 @@ class TestSpeedupShortcut:
             PipelineRunner, "_maybe_tempo_align",
             lambda self, **kw: kw["audio_path"],
         )
+        from appcore.runtime._helpers import (
+            _fit_tts_segments_to_duration,
+            _trim_tts_metadata_to_segments,
+        )
+
+        def fake_truncate(
+            self, *, input_audio_path, output_audio_path, duration,
+            tts_segments, tts_script, localized_translation,
+        ):
+            with open(output_audio_path, "wb") as f:
+                f.write(b"\xff\xfb\x10\x00")
+            fitted_segments = _fit_tts_segments_to_duration(
+                tts_segments, duration,
+            )
+            fitted_script, fitted_translation = _trim_tts_metadata_to_segments(
+                tts_script, localized_translation, fitted_segments,
+            )
+            removed_duration = max(
+                0.0,
+                sum(float(s.get("tts_duration", 0.0) or 0.0) for s in tts_segments)
+                - float(duration),
+            )
+            duration_by_path[output_audio_path] = float(duration)
+            return {
+                "skipped": False,
+                "audio_path": output_audio_path,
+                "tts_segments": fitted_segments,
+                "tts_script": fitted_script,
+                "localized_translation": fitted_translation,
+                "removed_count": max(0, len(tts_segments) - len(fitted_segments)),
+                "removed_duration": round(removed_duration, 3),
+                "final_duration": round(float(duration), 3),
+            }
+        monkeypatch.setattr(PipelineRunner, "_truncate_audio_to_duration", fake_truncate)
 
         # patch build_tts_segments 以避免依赖 start_time/end_time 字段
         import importlib
@@ -1929,3 +2034,62 @@ class TestSpeedupShortcut:
         assert round_rec["segment_assembly_hit"] is True
         assert round_rec["segment_assembly_duration"] == pytest.approx(59.4)
         assert round_rec["final_reason"] == "converged_segment_assembly_refined"
+
+    def test_best_pick_overrun_tries_segment_assembly_outside_shortcut_window(
+        self, tmp_path, monkeypatch,
+    ):
+        """Best-pick at +12% over video should still get one native-speed assembly chance."""
+        called = self._common_patches(
+            monkeypatch,
+            audio_dur=[33.5, 42.4, 28.0, 27.0, 26.0],
+            audio_segments=[14.2, 14.1, 14.1],
+            speedup_segments_by_speed={
+                1.05: [12.6, 12.5, 12.4],
+            },
+        )
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=37.872)
+        round_rec = result["rounds"][1]
+
+        assert result["final_round"] == 2
+        assert called["speedup_speeds"] == [1.05]
+        assert result["tts_audio_path"].endswith(
+            "tts_full.round_2.segment_assembly.assembled.mp3"
+        )
+        assert round_rec["speedup_context"] == "best_pick_overrun"
+        assert round_rec["speedup_final_audio_choice"] == "assembly"
+        assert round_rec["final_reason"] == "best_pick_segment_assembly_refined"
+        assert round_rec["segment_assembly_hit"] is True
+        assert round_rec["segment_assembly_duration"] == pytest.approx(37.5)
+
+    def test_best_pick_overrun_miss_truncates_to_video_duration_and_fits_segments(
+        self, tmp_path, monkeypatch,
+    ):
+        """If assembly misses, best-pick output must be capped to video duration, not v+2."""
+        called = self._common_patches(
+            monkeypatch,
+            audio_dur=[33.5, 42.4, 28.0, 27.0, 26.0],
+            audio_segments=[14.2, 14.1, 14.1],
+            speedup_segments_by_speed={
+                1.05: [14.0, 14.0, 14.0],
+                1.04: [14.0, 14.0, 14.0],
+                1.03: [14.0, 14.0, 14.0],
+            },
+        )
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=37.872)
+        round_rec = result["rounds"][1]
+
+        assert result["final_round"] == 2
+        assert called["speedup_speeds"] == [1.05, 1.04, 1.03]
+        assert result["tts_audio_path"].endswith("tts_full.hard_overrun.normal.mp3")
+        assert [s["tts_duration"] for s in result["tts_segments"]] == [
+            pytest.approx(14.2),
+            pytest.approx(14.1),
+            pytest.approx(9.572),
+        ]
+        assert round_rec["speedup_context"] == "best_pick_overrun"
+        assert round_rec["speedup_final_audio_choice"] == "truncated"
+        assert round_rec["final_reason"] == "best_pick_hard_truncated"
+        assert round_rec["hard_overrun_guard_applied"] is True
+        assert round_rec["hard_overrun_post_duration"] == pytest.approx(37.872)

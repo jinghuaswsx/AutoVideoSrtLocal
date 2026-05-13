@@ -379,7 +379,9 @@ class PipelineRunner:
             audio_duration: float,
             round_record: dict,
             context: str,
+            round_number: int | None = None,
         ) -> dict:
+            active_round = int(round_number or round_index)
             max_speed_candidates = 3
             round_record["segment_assembly_applied"] = True
             round_record["segment_assembly_target_lo"] = max(0.0, video_duration - 1.0)
@@ -404,19 +406,21 @@ class PipelineRunner:
                 )
                 if speed is None:
                     break
-                _substep(
-                    f"段级候选重生成 speed={speed:.2f} ({attempt}/{max_speed_candidates})"
+                self._emit_substep_msg(
+                    task_id, "tts",
+                    f"正在生成{_lang_display(target_language_label)}配音 · 第 {active_round} 轮 · "
+                    f"段级候选重生成 speed={speed:.2f} ({attempt}/{max_speed_candidates})",
                 )
 
                 def _on_segment_assembly_seg_done(done, total, info):
                     self._emit_substep_msg(
                         task_id, "tts",
-                        f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 段级候选 speed={speed:.2f} {done}/{total}",
+                        f"正在生成{_lang_display(target_language_label)}配音 · 第 {active_round} 轮 · 段级候选 speed={speed:.2f} {done}/{total}",
                     )
                     round_record["speedup_segments_done"] = done
                     round_record["speedup_segments_total"] = total
                     self._emit_duration_round(
-                        task_id, round_index, "speedup_progress", round_record,
+                        task_id, active_round, "speedup_progress", round_record,
                     )
 
                 variant_suffix = str(speed).replace(".", "_")
@@ -425,7 +429,7 @@ class PipelineRunner:
                         result["segments"],
                         voice["elevenlabs_voice_id"],
                         task_dir,
-                        variant=f"round_{round_index}.speed_{variant_suffix}",
+                        variant=f"round_{active_round}.speed_{variant_suffix}",
                         speed=speed,
                         model_id=tts_model_id,
                         language_code=tts_language_code,
@@ -436,7 +440,7 @@ class PipelineRunner:
                 except Exception as exc:
                     log.exception(
                         "[task %s] segment speedup candidate failed at round %d speed %.2f",
-                        task_id, round_index, speed,
+                        task_id, active_round, speed,
                     )
                     round_record["speedup_failed_reason"] = str(exc)[:500]
                     round_record["segment_assembly_hit"] = False
@@ -469,7 +473,7 @@ class PipelineRunner:
 
                     assembled = assemble_full_audio_from_segments(
                         selection["selected"], task_dir,
-                        variant=f"round_{round_index}.segment_assembly",
+                        variant=f"round_{active_round}.segment_assembly",
                     )
                     assembled_path = assembled["full_audio_path"]
                     assembled_duration = float(selection["total_duration"])
@@ -1129,24 +1133,115 @@ class PipelineRunner:
         best_record["is_final"] = True
         best_record["final_reason"] = "best_pick"
         best_record["final_distance"] = round(best_distance, 3)
+        best_record["speedup_final_audio_choice"] = "best_pick"
+        if best_record["audio_duration"] > video_duration:
+            best_record["speedup_applied"] = True
+            best_record["speedup_context"] = "best_pick_overrun"
+            best_record["speedup_pre_duration"] = best_record["audio_duration"]
+            self._emit_substep_msg(
+                task_id, "tts",
+                f"正在生成{_lang_display(target_language_label)}配音 · 第 {best_i + 1} 轮 · "
+                "最佳轮次仍超长：生成段级 speed 候选并重组音频",
+            )
+            self._emit_duration_round(
+                task_id, best_i + 1, "speedup_start", best_record,
+            )
+            assembly = _run_segment_speedup_assembly(
+                result={
+                    "full_audio_path": best_product["tts_audio_path"],
+                    "segments": best_product["tts_segments"],
+                },
+                audio_duration=best_record["audio_duration"],
+                round_record=best_record,
+                context="best_pick_overrun",
+                round_number=best_i + 1,
+            )
+            if assembly.get("hit"):
+                best_product["tts_audio_path"] = assembly["audio_path"]
+                best_product["tts_segments"] = assembly["segments"]
+                best_record["final_reason"] = (
+                    "best_pick_segment_assembly_refined"
+                )
+                best_record["speedup_final_audio_choice"] = "assembly"
+                best_record["final_distance"] = 0.0
+            self._emit_duration_round(
+                task_id, best_i + 1, "speedup_done", best_record,
+            )
         # ffmpeg atempo 兜底：误差 ≤5% 时拉伸/压缩到精确等于视频长度
-        final_best_audio = self._maybe_tempo_align(
-            audio_path=best_product["tts_audio_path"],
-            audio_duration=best_record["audio_duration"],
-            video_duration=video_duration,
-            task_dir=task_dir, variant=variant,
-            round_record=best_record, task_id=task_id,
-        )
+        pre_tempo_audio = best_product["tts_audio_path"]
+        if best_record.get("speedup_final_audio_choice") == "assembly":
+            final_best_audio = best_product["tts_audio_path"]
+        else:
+            final_best_audio = self._maybe_tempo_align(
+                audio_path=best_product["tts_audio_path"],
+                audio_duration=best_record["audio_duration"],
+                video_duration=video_duration,
+                task_dir=task_dir, variant=variant,
+                round_record=best_record, task_id=task_id,
+            )
         best_product["tts_audio_path"] = final_best_audio
+        if best_record.get("speedup_final_audio_choice") == "assembly":
+            final_best_duration = float(
+                best_record.get("segment_assembly_duration")
+                or best_record.get("speedup_post_duration")
+                or 0.0
+            )
+        elif os.path.abspath(final_best_audio) == os.path.abspath(pre_tempo_audio):
+            final_best_duration = float(best_record.get("audio_duration") or 0.0)
+        else:
+            try:
+                final_best_duration = tts_engine.get_audio_duration(final_best_audio)
+            except Exception:
+                final_best_duration = float(best_record.get("audio_duration") or 0.0)
+        if final_best_duration > video_duration + 0.001:
+            hard_path = os.path.join(
+                task_dir, f"tts_full.hard_overrun.{variant}.mp3",
+            )
+            trim_result = self._truncate_audio_to_duration(
+                input_audio_path=final_best_audio,
+                output_audio_path=hard_path,
+                duration=video_duration,
+                tts_segments=best_product["tts_segments"],
+                tts_script=best_product["tts_script"],
+                localized_translation=best_product["localized_translation"],
+            )
+            if not trim_result.get("skipped"):
+                best_product["tts_audio_path"] = trim_result["audio_path"]
+                best_product["tts_segments"] = trim_result["tts_segments"]
+                best_product["tts_script"] = trim_result["tts_script"]
+                best_product["localized_translation"] = trim_result[
+                    "localized_translation"
+                ]
+                best_record["hard_overrun_guard_applied"] = True
+                best_record["hard_overrun_pre_duration"] = round(
+                    final_best_duration, 3,
+                )
+                best_record["hard_overrun_post_duration"] = trim_result[
+                    "final_duration"
+                ]
+                best_record["hard_overrun_removed_count"] = trim_result[
+                    "removed_count"
+                ]
+                best_record["hard_overrun_removed_duration"] = trim_result[
+                    "removed_duration"
+                ]
+                best_record["hard_overrun_audio_path"] = _relative(
+                    trim_result["audio_path"],
+                )
+                best_record["speedup_final_audio_choice"] = "truncated"
+                best_record["final_reason"] = "best_pick_hard_truncated"
+                best_record["final_distance"] = 0.0
         rounds[best_i] = best_record
         self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
+        final_reason = best_record.get("final_reason") or "best_pick"
+        final_distance = float(best_record.get("final_distance") or 0.0)
         task_state.update(
             task_id,
             tts_duration_rounds=rounds,
             tts_duration_status="converged",
             tts_final_round=best_i + 1,
-            tts_final_reason="best_pick",
-            tts_final_distance=round(best_distance, 3),
+            tts_final_reason=final_reason,
+            tts_final_distance=round(final_distance, 3),
         )
         tts_generation_stats.finalize(
             task_id=task_id,
