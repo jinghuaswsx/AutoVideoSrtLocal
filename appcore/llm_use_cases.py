@@ -246,7 +246,7 @@ USE_CASES: dict[str, UseCase] = {
         "音画同步重写",
         "音画同步流程中的局部重写",
         "openrouter",
-        "openai/gpt-5.5",
+        "google/gemini-3-flash-preview",
         "openrouter",
         "tokens",
     ),

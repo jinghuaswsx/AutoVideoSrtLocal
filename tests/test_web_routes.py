@@ -619,7 +619,7 @@ def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db
     assert "pipelineCard" in body
 
 
-def test_project_detail_page_contains_av_insight_cards_and_rewrite_modal(authed_client_no_db, monkeypatch):
+def test_project_detail_page_removes_standalone_av_insight_cards(authed_client_no_db, monkeypatch):
     task = store.create("task-project-av-insights", "video.mp4", "output/task-project-av-insights")
     store.update(
         task["id"],
@@ -692,15 +692,16 @@ def test_project_detail_page_contains_av_insight_cards_and_rewrite_modal(authed_
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'id="avInsightsPanel"' in body
-    assert 'id="avShotNotesCard"' in body
-    assert 'id="avWarningsCard"' in body
+    assert 'id="avInsightsPanel"' not in body
+    assert 'id="avShotNotesCard"' not in body
+    assert 'id="avWarningsCard"' not in body
+    assert "音画同步洞察" not in body
     assert 'id="avRewriteModal"' in body
-    assert "renderAvInsights()" in body
+    assert "renderAvInsights()" not in body
     assert "submitAvRewrite()" in body
 
 
-def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, monkeypatch):
+def test_project_detail_page_renders_sentence_convergence_inside_tts_card(authed_client_no_db, monkeypatch):
     task = store.create("task-project-av-convergence", "video.mp4", "output/task-project-av-convergence")
     store.update(
         task["id"],
@@ -794,9 +795,11 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'id="avConvergencePanel"' in body
+    assert 'id="avConvergencePanel"' not in body
     assert 'id="avSubtitleUnitsPanel"' in body
-    assert "句级收敛" in body
+    assert 'id="preview-tts"' in body
+    assert body.index('id="preview-tts"') < body.index('id="avSubtitleUnitsPanel"')
+    assert "句级时长收敛（Sentence Reconcile）" in body
     assert "字幕编排" in body
     assert "目标时长" in body
     assert "偏差" in body
@@ -804,8 +807,8 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "TTS 重生成" in body
     assert "调速" in body
     assert "原文纯净化" in body
-    assert "GPT-5.5" in body
-    assert "renderAvConvergence()" in body
+    assert "function renderAvConvergence()" not in body
+    assert "renderAvConvergence()" not in body
     assert "renderAvSubtitleUnits()" in body
 
     scripts = (Path(__file__).resolve().parents[1] / "web" / "templates" / "_task_workbench_scripts.html").read_text(
@@ -877,7 +880,8 @@ def test_av_project_detail_uses_multilingual_detail_shell(authed_client_no_db, m
     assert 'id="taskStatusCard"' in body
     assert 'id="voice-selector-multi"' in body
     assert 'class="vs-preview-card"' in body
-    assert 'id="avConvergencePanel"' in body
+    assert 'id="avConvergencePanel"' not in body
+    assert 'id="preview-tts"' in body
     assert 'id="avSubtitleUnitsPanel"' in body
     assert 'apiBase: "/api/tasks"' in body
     assert 'detailMode: "av_sync"' in body

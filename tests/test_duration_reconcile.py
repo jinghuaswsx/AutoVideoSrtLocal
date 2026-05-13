@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, reconcile_duration
@@ -25,6 +27,112 @@ def test_speed_adjustment_clamped_to_five_percent():
     assert compute_speed_for_target(5.0, 5.4) is None
     assert compute_speed_for_target(5.0, 4.8) == pytest.approx(0.96)
     assert compute_speed_for_target(5.0, 4.6) is None
+
+
+def _parallel_sentence_fixture(count: int = 3) -> tuple[dict, dict]:
+    sentences = []
+    segments = []
+    for index in range(count):
+        sentences.append(
+            {
+                "asr_index": index,
+                "start_time": float(index * 5),
+                "end_time": float(index * 5 + 5),
+                "target_duration": 5.0,
+                "target_chars_range": (40, 50),
+                "text": f"Sentence {index} needs rewrite",
+                "est_chars": 30,
+                "source_text": f"Source {index}",
+            }
+        )
+        segments.append(
+            {
+                "asr_index": index,
+                "tts_path": f"/tmp/seg{index}.mp3",
+                "tts_duration": 6.0,
+            }
+        )
+    return {"sentences": sentences}, {"segments": segments}
+
+
+def test_reconcile_duration_runs_sentence_workers_concurrently_and_preserves_order(monkeypatch):
+    av_output, tts_output = _parallel_sentence_fixture(3)
+    barrier = threading.Barrier(2, timeout=3)
+    lock = threading.Lock()
+    events = []
+
+    def fake_rewrite_one(**kwargs):
+        with lock:
+            events.append(("rewrite_start", kwargs["asr_index"]))
+        if kwargs["asr_index"] in {0, 1}:
+            barrier.wait()
+        with lock:
+            events.append(("rewrite_finish", kwargs["asr_index"]))
+        return f"Short rewrite {kwargs['asr_index']}"
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.generate_segment_audio",
+        lambda text, voice_id, output_path, **kwargs: output_path,
+    )
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: 5.0)
+
+    result = reconcile_duration(
+        task={},
+        av_output=av_output,
+        tts_output=tts_output,
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": index, "text": f"Source {index}"} for index in range(3)],
+        max_rewrite_rounds=1,
+        max_sentence_workers=2,
+    )
+
+    first_finish_index = next(index for index, event in enumerate(events) if event[0] == "rewrite_finish")
+    starts_before_first_finish = [event for event in events[:first_finish_index] if event[0] == "rewrite_start"]
+    assert {event[1] for event in starts_before_first_finish} == {0, 1}
+    assert [sentence["asr_index"] for sentence in result] == [0, 1, 2]
+    assert [sentence["text"] for sentence in result] == [
+        "Short rewrite 0",
+        "Short rewrite 1",
+        "Short rewrite 2",
+    ]
+
+
+def test_reconcile_duration_emits_queued_progress_for_all_sentences_before_workers(monkeypatch):
+    av_output, tts_output = _parallel_sentence_fixture(3)
+    progress = []
+
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.av_translate.rewrite_one",
+        lambda **kwargs: f"Short rewrite {kwargs['asr_index']}",
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.generate_segment_audio",
+        lambda text, voice_id, output_path, **kwargs: output_path,
+    )
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: 5.0)
+
+    reconcile_duration(
+        task={},
+        av_output=av_output,
+        tts_output=tts_output,
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": index, "text": f"Source {index}"} for index in range(3)],
+        max_rewrite_rounds=1,
+        max_sentence_workers=2,
+        on_progress=progress.append,
+    )
+
+    assert [record["phase"] for record in progress[:3]] == ["queued", "queued", "queued"]
+    assert [record["sentence_position"] for record in progress[:3]] == [0, 1, 2]
+    assert all(record["status"] == "queued" for record in progress[:3])
+    assert any(record["phase"] == "initial_measure" for record in progress[3:])
 
 
 def test_reconcile_duration_speed_adjustment_does_not_consume_audio_retry(monkeypatch):
@@ -437,6 +545,7 @@ def test_reconcile_duration_emits_live_rewrite_and_tts_regen_progress(monkeypatc
 
     phases = [event["phase"] for event in events]
     assert phases == [
+        "queued",
         "initial_measure",
         "rewrite_start",
         "tts_regen_start",
@@ -445,7 +554,14 @@ def test_reconcile_duration_emits_live_rewrite_and_tts_regen_progress(monkeypatc
         "sentence_done",
     ]
 
-    rewrite_start = events[1]
+    assert events[0] | {
+        "phase": "queued",
+        "status": "queued",
+        "sentence_position": 0,
+        "asr_index": 0,
+    } == events[0]
+
+    rewrite_start = events[2]
     assert rewrite_start | {
         "mode": "sentence_reconcile",
         "round": 1,
@@ -460,7 +576,7 @@ def test_reconcile_duration_emits_live_rewrite_and_tts_regen_progress(monkeypatc
     } == rewrite_start
     assert rewrite_start["active_temperature"] == pytest.approx(0.6)
 
-    tts_regen_start = events[2]
+    tts_regen_start = events[3]
     assert tts_regen_start | {
         "phase": "tts_regen_start",
         "active_attempt": 1,
@@ -470,7 +586,7 @@ def test_reconcile_duration_emits_live_rewrite_and_tts_regen_progress(monkeypatc
         "text": "Short rewrite",
     } == tts_regen_start
 
-    rewrite_attempt = events[3]
+    rewrite_attempt = events[4]
     assert rewrite_attempt["phase"] == "rewrite_attempt"
     assert rewrite_attempt["text_rewrite_attempts"] == 1
     assert rewrite_attempt["tts_regenerate_attempts"] == 1

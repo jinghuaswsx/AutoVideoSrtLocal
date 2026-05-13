@@ -176,7 +176,7 @@ def test_video_translate_av_sync_defaults():
         ),
         "video_translate.av_rewrite": (
             "openrouter",
-            "openai/gpt-5.5",
+            "google/gemini-3-flash-preview",
             "openrouter",
         ),
     }
@@ -195,7 +195,7 @@ def test_video_translate_av_sync_uses_gpt55_openrouter():
     assert localize["default_model"] == "openai/gpt-5.5"
     assert localize["units_type"] == "tokens"
     assert rewrite["default_provider"] == "openrouter"
-    assert rewrite["default_model"] == "openai/gpt-5.5"
+    assert rewrite["default_model"] == "google/gemini-3-flash-preview"
     assert rewrite["units_type"] == "tokens"
 
 

@@ -322,7 +322,7 @@ def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], v
 
 def _build_av_debug_state(
     sentences: list[dict],
-    model: str = "openai/gpt-5.5",
+    model: str = "google/gemini-3-flash-preview",
     source_normalization: dict | None = None,
 ) -> dict:
     ok_statuses = {"ok", "rewritten_ok", "speed_adjusted"}
