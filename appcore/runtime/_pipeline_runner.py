@@ -1865,10 +1865,18 @@ class PipelineRunner:
 
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
         self._set_step(task_id, "extract", "running", "正在提取音频...")
-        from pipeline.extract import extract_audio
+        from pipeline.extract import extract_audio, get_video_duration
 
         audio_path = extract_audio(video_path, task_dir)
-        task_state.update(task_id, audio_path=audio_path)
+        updates = {"audio_path": audio_path}
+        try:
+            video_duration = float(get_video_duration(video_path) or 0.0)
+        except Exception:
+            log.warning("failed to probe source video duration for task %s", task_id, exc_info=True)
+            video_duration = 0.0
+        if video_duration > 0:
+            updates["video_duration"] = video_duration
+        task_state.update(task_id, **updates)
         task_state.set_preview_file(task_id, "audio_extract", audio_path)
         task_state.set_artifact(task_id, "extract", build_extract_artifact())
         self._set_step(task_id, "extract", "done", "音频提取完成")

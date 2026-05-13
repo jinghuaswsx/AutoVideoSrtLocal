@@ -826,6 +826,18 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "原 ASR" in scripts
 
 
+def test_task_workbench_scripts_contain_sentence_reconcile_sync_diagnostics():
+    scripts = (Path(__file__).resolve().parents[1] / "web" / "templates" / "_task_workbench_scripts.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "renderSentenceReconcileSyncSummary" in scripts
+    assert "声音 / 画面 / 字幕同步诊断" in scripts
+    assert "生成链路" in scripts
+    assert "问题点" in scripts
+    assert "建议调整" in scripts
+
+
 def test_av_project_detail_uses_multilingual_detail_shell(authed_client_no_db, monkeypatch):
     task = store.create("task-project-av-shell", "video.mp4", "output/task-project-av-shell")
     store.update(
