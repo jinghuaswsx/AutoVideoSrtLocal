@@ -380,6 +380,15 @@ def _save_debug_payload(
     })
 
 
+def _reset_step_debug_refs(task_id: str, step: str = "av_sync_audit") -> None:
+    task = task_state.get(task_id) or {}
+    all_refs = dict(task.get("llm_debug_refs") or {})
+    if step not in all_refs:
+        return
+    all_refs[step] = []
+    task_state.update(task_id, llm_debug_refs=all_refs)
+
+
 def _call_video_understand(
     runner,
     task_id: str,
@@ -1315,6 +1324,7 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
             return report
 
         report = _base_report(mode)
+        _reset_step_debug_refs(task_id)
         try:
             diagnosis = _call_diagnose(runner, task_id, video_path, task_dir, task, cfg, sentences)
             report["diagnosis"] = diagnosis
@@ -1397,6 +1407,7 @@ def run_report_only(
         report = _base_report(mode)
         report["source_variant"] = variant
         report["analysis_only"] = True
+        _reset_step_debug_refs(task_id)
         try:
             diagnosis = _call_diagnose(runner, task_id, video_path, task_dir, task, cfg, sentences)
             report["diagnosis"] = diagnosis

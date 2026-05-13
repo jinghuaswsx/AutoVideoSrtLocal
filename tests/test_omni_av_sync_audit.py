@@ -192,6 +192,10 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     from pipeline import omni_av_sync_audit
 
     task_id, video_path = _create_multi_task(tmp_path)
+    task_state.update(task_id, llm_debug_refs={"av_sync_audit": [
+        {"id": "av_sync_audit.diagnose", "path": "old-diagnose.json"},
+        {"id": "av_sync_audit.verify", "path": "old-verify.json"},
+    ]})
     before = list(task_state.get(task_id)["variants"]["normal"]["segments"])
     generate = MagicMock(return_value={
         "text": "00:00-00:02 画面中有人拉动把手，字幕显示 Zieh am Griff，音频结尾略拖到下一镜头。",
