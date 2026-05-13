@@ -183,7 +183,7 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         assert app.login_shopify_tip_label["fg"] == "red"
         assert (
             app.login_shopify_tip_label["text"]
-            == "第一步： 点击登录店铺，选择对应网站\n"
+            == "第一步： 左侧选择对应网站，点击登录店铺\n"
             "第二步： 进入对应网站，点 已登录 按钮"
         )
         assert "14" in str(app.login_shopify_tip_label["font"])
@@ -213,23 +213,21 @@ def test_gui_mapping_button_tracks_running_state(monkeypatch: pytest.MonkeyPatch
         app.root.destroy()
 
 
-def test_gui_choose_domain_always_prompts_even_for_single_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gui_choose_domain_uses_visible_dropdown_for_single_domain(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:
         app._set_domain_items([{"domain": "newjoyloo.com"}])
 
-        prompts: list[tuple[list[str], str]] = []
+        def fail_prompt(*_args, **_kwargs):
+            raise AssertionError("domain should come from the visible dropdown")
 
-        def fake_prompt(domains, current):
-            prompts.append((list(domains), current))
-            return "newjoyloo.com"
-
-        monkeypatch.setattr(app, "_prompt_shopify_domain_choice", fake_prompt)
+        monkeypatch.setattr(app, "_prompt_shopify_domain_choice", fail_prompt)
 
         chosen = app._choose_shopify_domain()
 
         assert chosen == "newjoyloo.com"
-        assert prompts == [(["newjoyloo.com"], "newjoyloo.com")]
+        assert app.current_shopify_domain_var.get() == "newjoyloo.com"
+        assert app.domain_box.get() == "newjoyloo.com"
     finally:
         app.root.destroy()
 
@@ -279,26 +277,25 @@ def test_gui_login_status_label_updates_to_selected_domain_black(monkeypatch: py
         app.root.destroy()
 
 
-def test_gui_choose_domain_prompts_again_after_already_logged_in(monkeypatch: pytest.MonkeyPatch) -> None:
-    """登录过以后再点登录店铺，仍然要弹选择对话框，让用户切换域名。"""
+def test_gui_choose_domain_keeps_visible_dropdown_after_already_logged_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """登录过以后再点登录店铺，直接使用下拉框当前域名。"""
     app = _make_app(monkeypatch)
     try:
         app._set_domain_items([{"domain": "newjoyloo.com"}, {"domain": "omurio.com"}])
         # 模拟先前已选过 omurio.com
-        app.current_shopify_domain_var.set("omurio.com")
+        app.domain_box.set("omurio.com")
+        app._on_shopify_domain_selected()
 
-        prompts: list[tuple[list[str], str]] = []
+        def fail_prompt(*_args, **_kwargs):
+            raise AssertionError("domain should come from the visible dropdown")
 
-        def fake_prompt(domains, current):
-            prompts.append((list(domains), current))
-            return "newjoyloo.com"
-
-        monkeypatch.setattr(app, "_prompt_shopify_domain_choice", fake_prompt)
+        monkeypatch.setattr(app, "_prompt_shopify_domain_choice", fail_prompt)
 
         chosen = app._choose_shopify_domain()
 
-        assert chosen == "newjoyloo.com"
-        assert prompts == [(["newjoyloo.com", "omurio.com"], "omurio.com")]
+        assert chosen == "omurio.com"
+        assert app.current_shopify_domain_var.get() == "omurio.com"
+        assert app.domain_box.get() == "omurio.com"
     finally:
         app.root.destroy()
 
@@ -332,6 +329,86 @@ def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.Mon
 
         assert app.current_shopify_domain_var.get() == "omurio.com"
         assert app.login_shopify_button["text"] == "登录店铺"
+        assert thread_args[0][1] == (
+            "http://172.30.254.14",
+            "demo-key",
+            r"C:\chrome-shopify-image",
+            "omurio.com",
+        )
+    finally:
+        app.root.destroy()
+
+
+def test_gui_domain_dropdown_updates_selected_domain_and_cached_slug(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        slug_by_domain = {
+            "newjoyloo.com": "0ixug9-pv",
+            "omurio.com": "7t1gn3-sv",
+        }
+        monkeypatch.setattr(
+            gui.settings,
+            "cached_store_slug_for_domain",
+            lambda domain, root=None: slug_by_domain.get(domain, ""),
+        )
+
+        app._set_domain_items(
+            [
+                {"domain": "newjoyloo.com"},
+                {"domain": "omurio.com"},
+            ]
+        )
+
+        assert list(app.domain_box["values"]) == ["newjoyloo.com", "omurio.com"]
+        assert app.domain_box.get() == "newjoyloo.com"
+        app.root.deiconify()
+        app.root.update_idletasks()
+        app.root.update()
+        assert app.domain_box.winfo_height() == app.login_shopify_button.winfo_height()
+
+        packed_widgets = app.login_shopify_frame.pack_slaves()
+        assert packed_widgets.index(app.domain_box) < packed_widgets.index(app.login_shopify_button)
+
+        app.domain_box.set("omurio.com")
+        app._on_shopify_domain_selected()
+
+        assert app.current_shopify_domain_var.get() == "omurio.com"
+        assert app.current_login_status_var.get() == "当前网站：omurio.com  当前网站shopify编码：7t1gn3-sv"
+        assert app.current_login_status_label["fg"] == "black"
+    finally:
+        app.root.destroy()
+
+
+def test_gui_login_button_uses_domain_dropdown_without_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app._set_domain_items(
+            [
+                {"domain": "newjoyloo.com"},
+                {"domain": "omurio.com"},
+            ]
+        )
+        app.domain_box.set("omurio.com")
+        app._on_shopify_domain_selected()
+
+        def fail_prompt(*_args, **_kwargs):
+            raise AssertionError("login button should use the visible domain dropdown")
+
+        monkeypatch.setattr(app, "_prompt_shopify_domain_choice", fail_prompt)
+        thread_args = []
+
+        class FakeThread:
+            def __init__(self, *, target, args, daemon):
+                thread_args.append((target, args, daemon))
+
+            def start(self):
+                return None
+
+        monkeypatch.setattr(gui.threading, "Thread", FakeThread)
+
+        app.open_shopify_login()
+
+        assert app.current_shopify_domain_var.get() == "omurio.com"
         assert thread_args[0][1] == (
             "http://172.30.254.14",
             "demo-key",

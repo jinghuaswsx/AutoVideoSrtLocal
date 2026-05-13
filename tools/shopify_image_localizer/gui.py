@@ -127,6 +127,17 @@ class ShopifyImageLocalizerApp:
 
         self.login_shopify_frame = tk.Frame(self.main_frame)
         self.login_shopify_frame.pack(fill="x", pady=(0, 10))
+        initial_domains = [settings.normalize_domain(item.get("domain")) for item in self.domain_items]
+        self.domain_box = ttk.Combobox(
+            self.login_shopify_frame,
+            textvariable=self.current_shopify_domain_var,
+            state="readonly",
+            values=initial_domains,
+            width=28,
+            height=2,
+        )
+        self.domain_box.pack(side="left", padx=(0, 8), ipady=12)
+        self.domain_box.bind("<<ComboboxSelected>>", lambda _event: self._on_shopify_domain_selected())
         self.login_shopify_button = tk.Button(
             self.login_shopify_frame,
             text="登录shopify店铺",
@@ -145,7 +156,7 @@ class ShopifyImageLocalizerApp:
         )
         self.confirm_login_button.pack(side="left", padx=(8, 0))
         self._login_shopify_tip_full_text = (
-            "第一步： 点击登录店铺，选择对应网站\n"
+            "第一步： 左侧选择对应网站，点击登录店铺\n"
             "第二步： 进入对应网站，点 已登录 按钮"
         )
         self.login_shopify_tip_label = tk.Label(
@@ -805,6 +816,14 @@ class ShopifyImageLocalizerApp:
         self.current_shopify_domain_var.set(domain)
         self.login_shopify_button.configure(text="登录店铺")
 
+    def _on_shopify_domain_selected(self) -> None:
+        domain = settings.normalize_domain(self.current_shopify_domain_var.get())
+        self.current_shopify_domain_var.set(domain)
+        if hasattr(self, "domain_box"):
+            self.domain_box.set(domain)
+        self._refresh_login_button_text()
+        self._update_login_status(domain or None)
+
     def _set_domain_items(self, items: list[dict], fallback: bool = False) -> None:
         normalized_items: list[dict] = []
         seen: set[str] = set()
@@ -823,6 +842,9 @@ class ShopifyImageLocalizerApp:
         if current not in domains:
             current = domains[0]
         self.current_shopify_domain_var.set(current)
+        if hasattr(self, "domain_box"):
+            self.domain_box.configure(values=domains)
+            self.domain_box.set(current)
         self._refresh_login_button_text()
         # 域名列表 / current 变了之后同步刷新状态指示，让有缓存 slug 的 domain 显示「当前网站」
         self._update_login_status(current or None)
@@ -852,7 +874,13 @@ class ShopifyImageLocalizerApp:
         current = settings.normalize_domain(self.current_shopify_domain_var.get())
         if not domains:
             return current
-        return self._prompt_shopify_domain_choice(domains, current)
+        if current not in domains:
+            current = domains[0]
+        self.current_shopify_domain_var.set(current)
+        if hasattr(self, "domain_box"):
+            self.domain_box.set(current)
+        self._update_login_status(current or None)
+        return current
 
     def _prompt_shopify_domain_choice(self, domains: list[str], current: str) -> str:
         dialog = tk.Toplevel(self.root)
