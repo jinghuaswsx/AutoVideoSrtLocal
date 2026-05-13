@@ -194,34 +194,39 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     task_id, video_path = _create_multi_task(tmp_path)
     before = list(task_state.get(task_id)["variants"]["normal"]["segments"])
     generate = MagicMock(return_value={
-        "json": {
-            "issues": [{
-                "asr_index": 0,
-                "severity": "medium",
-                "problem_type": "duration_risk",
-                "evidence": "配音略长",
-                "safe_action": "shorten_text",
-                "suggested_text": "Zieh am Griff.",
-                "confidence": 0.8,
-            }],
-            "summary": "发现 1 个候选问题",
-        },
+        "text": "00:00-00:02 画面中有人拉动把手，字幕显示 Zieh am Griff，音频结尾略拖到下一镜头。",
     })
-    chat = MagicMock(return_value={
-        "json": {
-            "accepted_issues": [{
-                "asr_index": 0,
-                "severity": "medium",
-                "problem_type": "duration_risk",
-                "accepted": True,
-                "reason": "成立",
-                "safe_action": "shorten_text",
-                "final_text": "Zieh am Griff.",
-            }],
-            "rejected_count": 0,
-            "summary": "复核通过",
+    chat = MagicMock(side_effect=[
+        {
+            "json": {
+                "issues": [{
+                    "asr_index": 0,
+                    "severity": "medium",
+                    "problem_type": "audio_too_long",
+                    "evidence": "程序候选显示音频比目标画面长 0.40 秒，Doubao 视频笔记也提到结尾略拖。",
+                    "safe_action": "shorten_text",
+                    "suggested_text": "Zieh am Griff.",
+                    "confidence": 0.84,
+                }],
+                "summary": "发现 1 个候选同步问题",
+            },
         },
-    })
+        {
+            "json": {
+                "accepted_issues": [{
+                    "asr_index": 0,
+                    "severity": "medium",
+                    "problem_type": "audio_too_long",
+                    "accepted": True,
+                    "reason": "成立",
+                    "safe_action": "shorten_text",
+                    "final_text": "Zieh am Griff.",
+                }],
+                "rejected_count": 0,
+                "summary": "复核通过",
+            },
+        },
+    ])
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
 
@@ -236,20 +241,82 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     assert report["summary"]["applied"] == 0
     assert report["items"], "workbench should be able to render the report"
     assert task["variants"]["normal"]["av_sync_audit"]["status"] == "done"
+
+    assert generate.call_args.args[0] == "omni_av_sync.understand"
     prompt = generate.call_args.kwargs["prompt"]
-    assert "Grab the handle and pull." in prompt
-    assert "Zieh am Griff." in prompt
-    assert "必须使用中文表述" in prompt
-    assert "sync_point" in prompt
-    assert "sentence_text" in prompt
-    assert "音频变速" in prompt
-    assert "重写文案后重新生成音频" in prompt
-    verify_messages = chat.call_args.kwargs["messages"]
+    assert "已经合成的视频" in prompt
+    assert "不要输出 JSON" in prompt
+    assert "只输出 JSON" not in prompt
+    assert "Grab the handle and pull." not in prompt
+    assert generate.call_args.kwargs.get("response_schema") is None
+    assert generate.call_args.kwargs["media"] == [video_path]
+
+    assess_call = chat.call_args_list[0]
+    assert assess_call.args[0] == "omni_av_sync.assess"
+    assess_payload = assess_call.kwargs["messages"][1]["content"]
+    assert "video_understanding" in assess_payload
+    assert "program_candidates" in assess_payload
+    assert "音频太长" in assess_payload
+    assert "必须使用中文表述" in assess_call.kwargs["messages"][0]["content"]
+    assert "处理建议" in assess_call.kwargs["messages"][0]["content"]
+
+    verify_messages = chat.call_args_list[1].kwargs["messages"]
     assert "必须使用中文表述" in verify_messages[0]["content"]
     assert "处理建议" in verify_messages[0]["content"]
 
 
-def test_multi_report_only_includes_final_subtitle_context_in_diagnosis_prompt(monkeypatch, tmp_path):
+def test_multi_report_only_retains_program_candidate_when_assess_misses(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path, segments=[
+        {
+            "index": 0,
+            "text": "Grab the handle and pull.",
+            "translated": "Zieh am Griff.",
+            "tts_text": "Zieh am Griff.",
+            "source_segment_indices": [0],
+            "tts_duration": 2.7,
+            "tts_path": str(tmp_path / "multi-s0.mp3"),
+        },
+        {
+            "index": 1,
+            "text": "The light flashes.",
+            "translated": "Das Licht blinkt.",
+            "tts_text": "Das Licht blinkt.",
+            "source_segment_indices": [1],
+            "tts_duration": 2.0,
+            "tts_path": str(tmp_path / "multi-s1.mp3"),
+        },
+    ])
+    for segment in task_state.get(task_id)["variants"]["normal"]["segments"]:
+        Path(segment["tts_path"]).write_bytes(b"mp3")
+
+    generate = MagicMock(return_value={"text": "画面理解：第一句对应拉把手动作，随后切到灯闪。"})
+    chat = MagicMock(side_effect=[
+        {"json": {"issues": [], "summary": "Gemini 未返回结构化问题"}},
+        {"json": {"accepted_issues": [], "rejected_count": 1, "summary": "仅保留候选供人工复核"}},
+    ])
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    issue = report["diagnosis"]["issues"][0]
+    assert report["summary"]["diagnosed"] == 1
+    assert issue["problem_type"] == "audio_too_long"
+    assert issue["asr_index"] == 0
+    assert "音频太长" in issue["evidence"]
+    assert "0.70s" in issue["timing_detail"]
+    assert "重写" in issue["recommendation"]
+
+    assess_payload = chat.call_args_list[0].kwargs["messages"][1]["content"]
+    assert "program_candidates" in assess_payload
+    assert "duration_delta" in assess_payload
+    assert "duration_ratio" in assess_payload
+
+
+def test_multi_report_only_includes_final_subtitle_context_in_assess_prompt(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 
     task_id, video_path = _create_multi_task(tmp_path)
@@ -270,40 +337,61 @@ def test_multi_report_only_includes_final_subtitle_context_in_diagnosis_prompt(m
         srt_path=str(srt_path),
         corrected_subtitle=normal["corrected_subtitle"],
     )
-    generate = MagicMock(return_value={"json": {"issues": [], "summary": "ok"}})
-    chat = MagicMock(return_value={
-        "json": {"accepted_issues": [], "rejected_count": 0, "summary": "ok"},
-    })
+    generate = MagicMock(return_value={"text": "视频理解笔记：字幕与动作基本对应。"})
+    chat = MagicMock(side_effect=[
+        {"json": {"issues": [], "summary": "ok"}},
+        {"json": {"accepted_issues": [], "rejected_count": 0, "summary": "ok"}},
+    ])
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
 
     runner = _FakeRunner()
     omni_av_sync_audit.run_report_only(runner, task_id, video_path, str(tmp_path))
 
-    prompt = generate.call_args.kwargs["prompt"]
+    prompt = chat.call_args_list[0].kwargs["messages"][1]["content"]
     assert "subtitle_srt" in prompt
     assert "FINAL SRT UNIQUE LINE" in prompt
 
 
-def test_multi_report_only_handles_unstructured_doubao_response(monkeypatch, tmp_path):
+def test_multi_report_only_accepts_unstructured_doubao_video_notes(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 
-    task_id, video_path = _create_multi_task(tmp_path)
+    task_id, video_path = _create_multi_task(tmp_path, segments=[
+        {
+            "index": 0,
+            "text": "Grab the handle and pull.",
+            "translated": "Zieh am Griff.",
+            "tts_text": "Zieh am Griff.",
+            "source_segment_indices": [0],
+            "tts_duration": 2.0,
+            "tts_path": str(tmp_path / "multi-s0.mp3"),
+        },
+        {
+            "index": 1,
+            "text": "The light flashes.",
+            "translated": "Das Licht blinkt.",
+            "tts_text": "Das Licht blinkt.",
+            "source_segment_indices": [1],
+            "tts_duration": 2.0,
+            "tts_path": str(tmp_path / "multi-s1.mp3"),
+        },
+    ])
+    for segment in task_state.get(task_id)["variants"]["normal"]["segments"]:
+        Path(segment["tts_path"]).write_bytes(b"mp3")
+
+    notes = "视频理解笔记：画面先拉把手，再出现灯闪；没有观察到明显口型或字幕错位。"
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_generate",
-        MagicMock(return_value={
-            "text": '{"issues": [{"asr_index": 0, "safe_action": none}]}',
-            "json": None,
-            "json_parse_error": "Expecting value",
-        }),
+        MagicMock(return_value={"text": notes, "json": None}),
     )
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {"accepted_issues": [], "rejected_count": 0, "summary": "无结构化问题"},
-        }),
+        MagicMock(side_effect=[
+            {"json": {"issues": [], "summary": "未发现明显同步问题"}},
+            {"json": {"accepted_issues": [], "rejected_count": 0, "summary": "无结构化问题"}},
+        ]),
     )
 
     runner = _FakeRunner()
@@ -311,8 +399,8 @@ def test_multi_report_only_handles_unstructured_doubao_response(monkeypatch, tmp
 
     report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
     assert report["status"] == "done"
-    assert report["diagnosis"]["parse_error"] == "Expecting value"
-    assert "非标准 JSON" in report["diagnosis"]["summary"]
+    assert report["diagnosis"]["video_understanding"]["summary"] == notes
+    assert "parse_error" not in report["diagnosis"]
     assert runner.step_calls[-1][1:3] == ("av_sync_audit", "done")
 
 
@@ -323,37 +411,40 @@ def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_pat
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_generate",
-        MagicMock(return_value={
-            "json": {
-                "issues": [{
-                    "asr_index": 0,
-                    "severity": "high",
-                    "problem_type": "duration_risk",
-                    "evidence": "TTS duration exceeds the visual window.",
-                    "safe_action": "shorten_text",
-                    "confidence": 0.92,
-                }],
-                "summary": "发现 1 个同步风险",
-            },
-        }),
+        MagicMock(return_value={"text": "画面理解：第一句音频略拖，后半句压到下一镜头。"}),
     )
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {
-                "accepted_issues": [{
-                    "asr_index": 0,
-                    "severity": "high",
-                    "problem_type": "duration_risk",
-                    "accepted": True,
-                    "reason": "音频比画面窗口长，风险成立",
-                    "safe_action": "shorten_text",
-                }],
-                "rejected_count": 0,
-                "summary": "复核确认 1 个问题",
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "issues": [{
+                        "asr_index": 0,
+                        "severity": "high",
+                        "problem_type": "audio_too_long",
+                        "evidence": "TTS duration exceeds the visual window.",
+                        "safe_action": "shorten_text",
+                        "confidence": 0.92,
+                    }],
+                    "summary": "发现 1 个同步风险",
+                },
             },
-        }),
+            {
+                "json": {
+                    "accepted_issues": [{
+                        "asr_index": 0,
+                        "severity": "high",
+                        "problem_type": "audio_too_long",
+                        "accepted": True,
+                        "reason": "音频比画面窗口长，风险成立",
+                        "safe_action": "shorten_text",
+                    }],
+                    "rejected_count": 0,
+                    "summary": "复核确认 1 个问题",
+                },
+            },
+        ]),
     )
 
     omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
@@ -401,39 +492,42 @@ def test_report_only_writes_report_without_mutating_sentences(monkeypatch, tmp_p
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_generate",
-        MagicMock(return_value={
-            "json": {
-                "issues": [{
-                    "asr_index": 0,
-                    "severity": "high",
-                    "problem_type": "speech_late",
-                    "evidence": "配音晚于动作",
-                    "safe_action": "shorten_text",
-                    "suggested_text": "Short sentence.",
-                    "confidence": 0.9,
-                }],
-                "summary": "发现 1 个问题",
-            },
-        }),
+        MagicMock(return_value={"text": "画面理解：第一句配音晚于动作，需要缩短。"}),
     )
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {
-                "accepted_issues": [{
-                    "asr_index": 0,
-                    "severity": "high",
-                    "problem_type": "speech_late",
-                    "accepted": True,
-                    "reason": "成立",
-                    "safe_action": "shorten_text",
-                    "final_text": "Short sentence.",
-                }],
-                "rejected_count": 0,
-                "summary": "复核通过",
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "issues": [{
+                        "asr_index": 0,
+                        "severity": "high",
+                        "problem_type": "speech_late",
+                        "evidence": "配音晚于动作",
+                        "safe_action": "shorten_text",
+                        "suggested_text": "Short sentence.",
+                        "confidence": 0.9,
+                    }],
+                    "summary": "发现 1 个问题",
+                },
             },
-        }),
+            {
+                "json": {
+                    "accepted_issues": [{
+                        "asr_index": 0,
+                        "severity": "high",
+                        "problem_type": "speech_late",
+                        "accepted": True,
+                        "reason": "成立",
+                        "safe_action": "shorten_text",
+                        "final_text": "Short sentence.",
+                    }],
+                    "rejected_count": 0,
+                    "summary": "复核通过",
+                },
+            },
+        ]),
     )
 
     omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
@@ -458,14 +552,15 @@ def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_generate",
-        MagicMock(return_value={"json": {"issues": [], "summary": "诊断完成"}}),
+        MagicMock(return_value={"text": "视频理解笔记：画面与字幕基本对应。"}),
     )
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {"accepted_issues": [], "rejected_count": 0, "summary": "复核完成"},
-        }),
+        MagicMock(side_effect=[
+            {"json": {"issues": [], "summary": "评估完成"}},
+            {"json": {"accepted_issues": [], "rejected_count": 0, "summary": "复核完成"}},
+        ]),
     )
 
     omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
@@ -473,13 +568,18 @@ def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
     task = task_state.get(task_id)
     refs = task["llm_debug_refs"]["av_sync_audit"]
     assert [ref["id"] for ref in refs] == [
-        "av_sync_audit.diagnose",
+        "av_sync_audit.understand",
+        "av_sync_audit.assess",
         "av_sync_audit.verify",
     ]
-    diagnose_payload = json.loads((tmp_path / refs[0]["path"]).read_text(encoding="utf-8"))
-    verify_payload = json.loads((tmp_path / refs[1]["path"]).read_text(encoding="utf-8"))
-    assert diagnose_payload["request_payload"]["type"] == "generate"
-    assert diagnose_payload["request_payload"]["use_case_code"] == "omni_av_sync.diagnose"
+    understand_payload = json.loads((tmp_path / refs[0]["path"]).read_text(encoding="utf-8"))
+    assess_payload = json.loads((tmp_path / refs[1]["path"]).read_text(encoding="utf-8"))
+    verify_payload = json.loads((tmp_path / refs[2]["path"]).read_text(encoding="utf-8"))
+    assert understand_payload["request_payload"]["type"] == "generate"
+    assert understand_payload["request_payload"]["use_case_code"] == "omni_av_sync.understand"
+    assert understand_payload["request_payload"].get("response_schema") is None
+    assert assess_payload["request_payload"]["type"] == "chat"
+    assert assess_payload["request_payload"]["use_case_code"] == "omni_av_sync.assess"
     assert verify_payload["request_payload"]["type"] == "chat"
     assert verify_payload["request_payload"]["use_case_code"] == "omni_av_sync.verify"
 
@@ -493,37 +593,51 @@ def test_safe_auto_applies_only_accepted_medium_high_issue(
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_generate",
-        MagicMock(return_value={"json": {"issues": [], "summary": ""}}),
+        MagicMock(return_value={"text": "视频理解：第一句可通过缩短音频修正。"}),
     )
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {
-                "accepted_issues": [
-                    {
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "issues": [{
                         "asr_index": 0,
                         "severity": "high",
                         "problem_type": "duration_risk",
-                        "accepted": True,
-                        "reason": "更贴近 2 秒",
+                        "evidence": "第一句音频略长。",
                         "safe_action": "shorten_text",
-                        "final_text": "Short sentence.",
-                    },
-                    {
-                        "asr_index": 1,
-                        "severity": "low",
-                        "problem_type": "subtitle_risk",
-                        "accepted": True,
-                        "reason": "低风险",
-                        "safe_action": "shorten_text",
-                        "final_text": "Ignored.",
-                    },
-                ],
-                "rejected_count": 0,
-                "summary": "复核完成",
+                    }],
+                    "summary": "发现 1 个问题",
+                },
             },
-        }),
+            {
+                "json": {
+                    "accepted_issues": [
+                        {
+                            "asr_index": 0,
+                            "severity": "high",
+                            "problem_type": "duration_risk",
+                            "accepted": True,
+                            "reason": "更贴近 2 秒",
+                            "safe_action": "shorten_text",
+                            "final_text": "Short sentence.",
+                        },
+                        {
+                            "asr_index": 1,
+                            "severity": "low",
+                            "problem_type": "subtitle_risk",
+                            "accepted": True,
+                            "reason": "低风险",
+                            "safe_action": "shorten_text",
+                            "final_text": "Ignored.",
+                        },
+                    ],
+                    "rejected_count": 0,
+                    "summary": "复核完成",
+                },
+            },
+        ]),
     )
     monkeypatch.setattr(
         omni_av_sync_audit,
@@ -553,26 +667,40 @@ def test_safe_auto_rolls_back_when_duration_gets_worse(monkeypatch, tmp_path):
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_generate",
-        MagicMock(return_value={"json": {"issues": [], "summary": ""}}),
+        MagicMock(return_value={"text": "视频理解：第一句需要缩短，但重新生成后可能变差。"}),
     )
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {
-                "accepted_issues": [{
-                    "asr_index": 0,
-                    "severity": "medium",
-                    "problem_type": "duration_risk",
-                    "accepted": True,
-                    "reason": "尝试缩短",
-                    "safe_action": "shorten_text",
-                    "final_text": "Short sentence.",
-                }],
-                "rejected_count": 0,
-                "summary": "复核完成",
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "issues": [{
+                        "asr_index": 0,
+                        "severity": "medium",
+                        "problem_type": "duration_risk",
+                        "evidence": "第一句音频略长。",
+                        "safe_action": "shorten_text",
+                    }],
+                    "summary": "发现 1 个问题",
+                },
             },
-        }),
+            {
+                "json": {
+                    "accepted_issues": [{
+                        "asr_index": 0,
+                        "severity": "medium",
+                        "problem_type": "duration_risk",
+                        "accepted": True,
+                        "reason": "尝试缩短",
+                        "safe_action": "shorten_text",
+                        "final_text": "Short sentence.",
+                    }],
+                    "rejected_count": 0,
+                    "summary": "复核完成",
+                },
+            },
+        ]),
     )
     monkeypatch.setattr(
         omni_av_sync_audit,

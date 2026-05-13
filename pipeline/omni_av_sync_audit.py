@@ -124,6 +124,9 @@ def _compact_sentences(sentences: list[dict]) -> list[dict]:
             "duration_ratio": sentence.get("duration_ratio"),
             "speed": sentence.get("speed"),
             "status": sentence.get("status"),
+            "subtitle_text": sentence.get("subtitle_text"),
+            "subtitle_start_time": sentence.get("subtitle_start_time"),
+            "subtitle_end_time": sentence.get("subtitle_end_time"),
         })
     return compact
 
@@ -159,39 +162,122 @@ def _subtitle_context(task: dict, cfg: dict) -> dict:
     return context
 
 
-def _build_diagnosis_prompt(task: dict, cfg: dict, sentences: list[dict]) -> str:
+def _build_video_understanding_prompt(task: dict, cfg: dict) -> str:
+    target_lang = task.get("target_lang") or task.get("target_language") or cfg.get("target_lang") or ""
+    project_type = cfg.get("project_type") or task.get("type") or "omni"
+    return (
+        "请只观看这个已经合成的视频，输出中文视频理解笔记。不要输出 JSON，不要做复杂模型评分，"
+        "也不要根据下面没有提供的句级数据臆测。你的核心任务是读懂成片视频本身。\n"
+        f"项目类型：{project_type}；目标语言：{target_lang or '-'}。\n"
+        "请按时间顺序写：\n"
+        "1. 画面动作、镜头变化、人物/产品关键动作。\n"
+        "2. 你能看到的字幕、屏幕文字或明显可读文本。\n"
+        "3. 直观看到/听到的音画、字幕或口型错位现象；看不准就写“不确定”。\n"
+        "保持简洁，但要保留具体时间点或相邻镜头关系。"
+    )
+
+
+def _program_sync_candidates(sentences: list[dict]) -> list[dict]:
+    candidates: list[dict] = []
+    for sentence in sentences or []:
+        start_time, end_time, target_duration, tts_duration = _timing_snapshot(sentence)
+        if target_duration is None or tts_duration is None or target_duration <= 0 or tts_duration <= 0:
+            continue
+        delta = round(tts_duration - target_duration, 2)
+        ratio = round(tts_duration / target_duration, 4)
+        long_threshold = max(0.35, target_duration * 0.12)
+        short_threshold = max(0.35, target_duration * 0.18)
+        problem_type = ""
+        safe_action = "none"
+        if delta > long_threshold:
+            problem_type = "audio_too_long"
+            safe_action = "shorten_text"
+        elif delta < -short_threshold:
+            problem_type = "audio_too_short"
+            safe_action = "expand_text"
+        else:
+            continue
+
+        asr_index = _as_int_or_none(sentence.get("asr_index"))
+        if asr_index is None:
+            continue
+        timing_detail, mismatch_reason, _delta, _ratio = _timing_detail(target_duration, tts_duration)
+        severity_threshold = max(0.8, target_duration * 0.25)
+        severity = "high" if abs(delta) >= severity_threshold else "medium"
+        sync_point = f"ASR {asr_index}"
+        if start_time is not None and end_time is not None:
+            sync_point = f"ASR {asr_index}（{_format_sync_time(start_time)}-{_format_sync_time(end_time)}）"
+        sentence_text = _report_sentence_text(sentence, {})
+        direction = "音频太长" if delta > 0 else "音频太短"
+        candidates.append({
+            "asr_index": asr_index,
+            "severity": severity,
+            "problem_type": problem_type,
+            "sync_point": sync_point,
+            "sentence_text": sentence_text,
+            "evidence": (
+                f"{sync_point} 的目标画面 {target_duration:.2f}s，TTS 音频 {tts_duration:.2f}s，"
+                f"{direction} {abs(delta):.2f}s（{round(ratio * 100)}%）。"
+            ),
+            "timing_detail": timing_detail,
+            "mismatch_reason": mismatch_reason,
+            "safe_action": safe_action,
+            "confidence": 0.72 if severity == "medium" else 0.82,
+            "target_duration": round(target_duration, 4),
+            "tts_duration": round(tts_duration, 4),
+            "duration_delta": delta,
+            "duration_ratio": ratio,
+            "start_time": start_time,
+            "end_time": end_time,
+            "source_text": sentence.get("source_text"),
+            "translated": sentence.get("translated") or sentence.get("text"),
+            "subtitle_text": sentence.get("subtitle_text"),
+        })
+    return candidates
+
+
+def _build_assess_messages(
+    video_understanding: dict,
+    task: dict,
+    cfg: dict,
+    sentences: list[dict],
+    program_candidates: list[dict],
+) -> list[dict]:
     payload = {
         "source_language": task.get("source_language"),
         "target_lang": task.get("target_lang") or task.get("target_language"),
         "plugin_config": cfg,
-        "shot_notes": task.get("shot_notes"),
+        "video_understanding": video_understanding,
         "sentences": _compact_sentences(sentences),
+        "program_candidates": program_candidates,
         "constraints": {
             "do_not_change_video": True,
             "do_not_shift_timeline": True,
             "allowed_actions": ["none", "shorten_text", "expand_text", "regenerate_tts", "manual_review"],
             "safe_speed_range": [0.95, 1.05],
+            "do_not_invent_visual_mismatch": True,
+            "prefer_program_timing_evidence": True,
         },
     }
     subtitle_context = _subtitle_context(task, cfg)
     if subtitle_context:
         payload["subtitle_context"] = subtitle_context
-    if cfg.get("project_type") == "multi_translate":
-        intro = (
-            "请审计这个多语种视频翻译成片的音画同步质量。你收到的 media 应当是已经合成后的 "
-            "hard_video 成片。请先理解视频画面、动作和字幕，再结合下方字幕内容与句级时间线判断音画同步风险。"
-        )
-    else:
-        intro = "请审计这个 Omni 视频翻译任务的音画同步风险。"
-    return (
-        intro
-        + "只输出 JSON，issues 内每项必须包含 asr_index、severity、problem_type、"
-        "evidence、safe_action、confidence；并尽量包含 sync_point、sentence_text、timing_detail、recommendation。"
-        "必须使用中文表述 summary、evidence、timing_detail、recommendation，明确哪些同步点有问题，"
-        "哪一句音频太长或太短导致画面对不上。处理建议只能在以下范围内选择：音频变速、"
-        "重写文案后重新生成音频、重新生成音频、人工复核。不要建议剪辑画面或移动时间轴。\n\n"
-        f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
-    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是视频翻译音画同步评估员。Doubao 已经负责观看成片视频，你现在只结合它的视频理解笔记、"
+                "最终字幕/TTS 时间线和程序候选点做结构化中文评估。输出 JSON。"
+                "必须使用中文表述 summary、evidence、timing_detail、recommendation，明确哪些同步点有问题，"
+                "哪一句音频太长或太短导致画面对不上。"
+                "不要凭空新增视频画面结论；如果 Doubao 笔记说不确定，只按程序候选和字幕/TTS 时间线给出风险级别。"
+                "处理建议只能是音频变速、重写文案后重新生成音频、重新生成音频或人工复核；"
+                "不要建议剪辑画面或移动时间轴。issues 内每项必须包含 asr_index、severity、problem_type、"
+                "evidence、safe_action、confidence，并尽量包含 sync_point、sentence_text、timing_detail、recommendation。"
+            ),
+        },
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=2)},
+    ]
 
 
 def _build_verify_messages(diagnosis: dict, task: dict, cfg: dict, sentences: list[dict]) -> list[dict]:
@@ -211,7 +297,7 @@ def _build_verify_messages(diagnosis: dict, task: dict, cfg: dict, sentences: li
         {
             "role": "system",
             "content": (
-                "你是视频翻译音画同步复核员。复核 Doubao 提出的问题是否成立，"
+                "你是视频翻译音画同步复核员。复核程序候选与 Gemini 评估的问题是否成立，"
                 "只保留 medium/high 且可安全处理的问题。输出 JSON。"
                 "必须使用中文表述 reason、summary、timing_detail、recommendation。"
                 "每个 accepted_issues 都要明确问题同步点、问题句子、音频时长偏差原因和处理建议；"
@@ -277,20 +363,19 @@ def _save_debug_payload(
     })
 
 
-def _call_diagnose(
+def _call_video_understand(
     runner,
     task_id: str,
     video_path: str,
     task_dir: str,
     task: dict,
     cfg: dict,
-    sentences: list[dict],
 ) -> dict:
-    use_case_code = "omni_av_sync.diagnose"
-    prompt = _build_diagnosis_prompt(task, cfg, sentences)
+    use_case_code = "omni_av_sync.understand"
+    prompt = _build_video_understanding_prompt(task, cfg)
     system = (
-        "你是短视频音画同步审计员。你只能提出结构化候选问题，"
-        "不能决定修改视频，也不能建议大幅变速或剪辑。"
+        "你是短视频成片理解员。你的任务是观看视频并用中文写观察笔记，"
+        "不要输出 JSON，不要做复杂结构化审计。"
     )
     provider, model = _resolve_llm_binding(use_case_code)
     messages = [
@@ -304,15 +389,14 @@ def _call_diagnose(
         prompt=prompt,
         system=system,
         media=[video_path] if video_path else None,
-        response_schema=_DIAGNOSIS_SCHEMA,
         temperature=0.1,
-        max_output_tokens=4096,
+        max_output_tokens=1800,
     )
     _save_debug_payload(
         task_id,
         task_dir,
-        phase="diagnose",
-        label="Doubao 音画同步诊断",
+        phase="understand",
+        label="Doubao 成片视频理解",
         use_case_code=use_case_code,
         provider=provider,
         model=model,
@@ -320,32 +404,134 @@ def _call_diagnose(
         request_payload=request_payload,
         input_snapshot=[
             {
-                "key": "sentences",
-                "title": "句级时间轴",
-                "content": json.dumps(_compact_sentences(sentences), ensure_ascii=False, indent=2),
+                "key": "video_path",
+                "title": "合成成片视频",
+                "content": video_path,
             },
         ],
     )
-    result = llm_client.invoke_generate(
-        use_case_code,
-        prompt=prompt,
-        system=system,
-        media=[video_path] if video_path else None,
-        user_id=getattr(runner, "user_id", None),
-        project_id=task_id,
-        response_schema=_DIAGNOSIS_SCHEMA,
+    try:
+        result = llm_client.invoke_generate(
+            use_case_code,
+            prompt=prompt,
+            system=system,
+            media=[video_path] if video_path else None,
+            user_id=getattr(runner, "user_id", None),
+            project_id=task_id,
+            response_schema=None,
+            temperature=0.1,
+            max_output_tokens=1800,
+        )
+    except Exception as exc:  # noqa: BLE001 - keep program audit usable if video understanding fails
+        return {"summary": "", "error": str(exc)[:500]}
+    notes = str((result or {}).get("text") or "").strip() if isinstance(result, dict) else ""
+    return {"summary": notes}
+
+
+def _call_sync_assess(
+    runner,
+    task_id: str,
+    task_dir: str,
+    task: dict,
+    cfg: dict,
+    sentences: list[dict],
+    video_understanding: dict,
+    program_candidates: list[dict],
+) -> dict:
+    use_case_code = "omni_av_sync.assess"
+    messages = _build_assess_messages(video_understanding, task, cfg, sentences, program_candidates)
+    provider, model = _resolve_llm_binding(use_case_code)
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "omni_av_sync_assess", "schema": _DIAGNOSIS_SCHEMA},
+    }
+    request_payload = build_chat_request_payload(
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        response_format=response_format,
         temperature=0.1,
-        max_output_tokens=4096,
+        max_tokens=4096,
     )
+    _save_debug_payload(
+        task_id,
+        task_dir,
+        phase="assess",
+        label="Gemini 音画同步结构化评估",
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=[
+            {
+                "key": "video_understanding",
+                "title": "Doubao 视频理解笔记",
+                "content": json.dumps(video_understanding, ensure_ascii=False, indent=2),
+            },
+            {
+                "key": "program_candidates",
+                "title": "程序候选同步点",
+                "content": json.dumps(program_candidates, ensure_ascii=False, indent=2),
+            },
+        ],
+    )
+    try:
+        result = llm_client.invoke_chat(
+            use_case_code,
+            messages=messages,
+            user_id=getattr(runner, "user_id", None),
+            project_id=task_id,
+            temperature=0.1,
+            max_tokens=4096,
+            response_format=response_format,
+        )
+    except Exception as exc:  # noqa: BLE001 - keep deterministic timing candidates visible
+        return {
+            "issues": [dict(issue) for issue in program_candidates[:5]],
+            "summary": "Gemini 结构化评估失败，已保留程序候选同步点供复核。",
+            "assess_error": str(exc)[:500],
+            "video_understanding": video_understanding,
+            "program_candidates": program_candidates,
+        }
     diagnosis = _json_from_result(result, {"issues": [], "summary": ""})
-    parse_error = result.get("json_parse_error") if isinstance(result, dict) else None
-    if parse_error and not diagnosis.get("issues"):
-        diagnosis["summary"] = "Doubao 返回了非标准 JSON，系统未解析出结构化同步问题；请查看提示词调试原文。"
-        diagnosis["parse_error"] = str(parse_error)[:500]
-        raw_text = str(result.get("text") or "") if isinstance(result, dict) else ""
-        if raw_text:
-            diagnosis["raw_text"] = raw_text[:2000]
+    if not diagnosis.get("issues") and isinstance(diagnosis.get("accepted_issues"), list):
+        diagnosis["issues"] = [issue for issue in diagnosis.get("accepted_issues") or [] if isinstance(issue, dict)]
+    if not diagnosis.get("issues") and program_candidates:
+        diagnosis["issues"] = [dict(issue) for issue in program_candidates[:5]]
+        diagnosis["summary"] = (
+            "程序按最终字幕/TTS 时间线检测到候选同步风险；结构化评估未返回问题，"
+            "已保留程序候选供复核。"
+        )
+    diagnosis.setdefault("issues", [])
+    diagnosis.setdefault("summary", "")
+    diagnosis["video_understanding"] = video_understanding
+    diagnosis["program_candidates"] = program_candidates
     return diagnosis
+
+
+def _call_diagnose(
+    runner,
+    task_id: str,
+    video_path: str,
+    task_dir: str,
+    task: dict,
+    cfg: dict,
+    sentences: list[dict],
+) -> dict:
+    video_understanding = _call_video_understand(runner, task_id, video_path, task_dir, task, cfg)
+    program_candidates = _program_sync_candidates(sentences)
+    return _call_sync_assess(
+        runner,
+        task_id,
+        task_dir,
+        task,
+        cfg,
+        sentences,
+        video_understanding,
+        program_candidates,
+    )
 
 
 def _call_verify(
@@ -683,11 +869,83 @@ def _source_window(source_segments: list[dict]) -> tuple[float | None, float | N
     return min(starts), max(ends)
 
 
+def _subtitle_chunks_for_variant(task: dict, variant: str) -> list[dict]:
+    variants = task.get("variants") or {}
+    variant_state = variants.get(variant) or {}
+    corrected = variant_state.get("corrected_subtitle") or task.get("corrected_subtitle") or {}
+    if not isinstance(corrected, dict):
+        return []
+    chunks = corrected.get("chunks") or []
+    return [chunk for chunk in chunks if isinstance(chunk, dict)]
+
+
+def _chunk_index_values(chunk: dict, key: str) -> set[int]:
+    raw = chunk.get(key)
+    if isinstance(raw, list):
+        values = [_as_int_or_none(item) for item in raw]
+        return {value for value in values if value is not None}
+    value = _as_int_or_none(raw)
+    return {value} if value is not None else set()
+
+
+def _matching_subtitle_chunks(
+    sentence: dict,
+    subtitle_chunks: list[dict],
+    position: int,
+) -> list[dict]:
+    if not subtitle_chunks:
+        return []
+    source_indices = set(sentence.get("source_segment_indices") or [])
+    source_matches = [
+        chunk for chunk in subtitle_chunks
+        if source_indices and source_indices.intersection(_chunk_index_values(chunk, "source_segment_indices"))
+    ]
+    if source_matches:
+        return source_matches
+    sentence_matches = [
+        chunk for chunk in subtitle_chunks
+        if position in _chunk_index_values(chunk, "sentence_indices")
+    ]
+    if sentence_matches:
+        return sentence_matches
+    start_time = _as_float_or_none(sentence.get("start_time"))
+    end_time = _as_float_or_none(sentence.get("end_time"))
+    if start_time is not None and end_time is not None:
+        time_matches = []
+        for chunk in subtitle_chunks:
+            chunk_start = _as_float_or_none(chunk.get("start_time"))
+            chunk_end = _as_float_or_none(chunk.get("end_time"))
+            if chunk_start is None or chunk_end is None:
+                continue
+            if min(end_time, chunk_end) - max(start_time, chunk_start) > 0:
+                time_matches.append(chunk)
+        if time_matches:
+            return time_matches
+    if position < len(subtitle_chunks):
+        return [subtitle_chunks[position]]
+    return []
+
+
+def _subtitle_window(chunks: list[dict]) -> tuple[float | None, float | None]:
+    starts = [
+        value for value in (_as_float_or_none(chunk.get("start_time")) for chunk in chunks)
+        if value is not None
+    ]
+    ends = [
+        value for value in (_as_float_or_none(chunk.get("end_time")) for chunk in chunks)
+        if value is not None
+    ]
+    if not starts or not ends:
+        return None, None
+    return min(starts), max(ends)
+
+
 def _normal_report_sentences(task: dict, *, variant: str = "normal") -> list[dict]:
     variants = task.get("variants") or {}
     variant_state = variants.get(variant) or {}
     tts_segments = variant_state.get("segments") or task.get("segments") or []
     script_by_index = _script_segment_index(task.get("script_segments") or [])
+    subtitle_chunks = _subtitle_chunks_for_variant(task, variant)
     report_sentences: list[dict] = []
     for pos, segment in enumerate(tts_segments):
         if not isinstance(segment, dict):
@@ -719,7 +977,7 @@ def _normal_report_sentences(task: dict, *, variant: str = "normal") -> list[dic
             or ""
         ).strip()
         asr_index = source_indices[0] if source_indices else (_as_int_or_none(segment.get("index")) or pos)
-        report_sentences.append({
+        sentence = {
             "asr_index": asr_index,
             "source_segment_indices": source_indices,
             "start_time": start_time,
@@ -736,7 +994,22 @@ def _normal_report_sentences(task: dict, *, variant: str = "normal") -> list[dic
             "speed": _safe_float(segment.get("speed"), 1.0),
             "status": segment.get("status") or "report_only",
             "tts_path": segment.get("tts_path"),
-        })
+        }
+        matched_subtitles = _matching_subtitle_chunks(sentence, subtitle_chunks, pos)
+        if matched_subtitles:
+            subtitle_text = " ".join(
+                str(chunk.get("text") or "").strip()
+                for chunk in matched_subtitles
+                if str(chunk.get("text") or "").strip()
+            ).strip()
+            subtitle_start, subtitle_end = _subtitle_window(matched_subtitles)
+            if subtitle_text:
+                sentence["subtitle_text"] = subtitle_text
+            if subtitle_start is not None:
+                sentence["subtitle_start_time"] = subtitle_start
+            if subtitle_end is not None:
+                sentence["subtitle_end_time"] = subtitle_end
+        report_sentences.append(sentence)
     return report_sentences
 
 
@@ -947,7 +1220,7 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
             report["status"] = "diagnose_failed"
             report["diagnosis"] = {"issues": [], "summary": "", "error": str(exc)[:500]}
             _store_report(task_id, report, sentences=sentences)
-            runner._set_step(task_id, "av_sync_audit", "done", "Doubao 诊断失败，已跳过自动修正")
+            runner._set_step(task_id, "av_sync_audit", "done", "音画同步评估失败，已跳过自动修正")
             return report
 
         try:
@@ -1028,7 +1301,7 @@ def run_report_only(
             report["status"] = "diagnose_failed"
             report["diagnosis"] = {"issues": [], "summary": "", "error": str(exc)[:500]}
             _store_report(task_id, report, variant=variant, sentences=sentences)
-            runner._set_step(task_id, "av_sync_audit", "done", "Doubao 诊断失败，已跳过音画同步评估")
+            runner._set_step(task_id, "av_sync_audit", "done", "音画同步评估失败，已跳过音画同步评估")
             return report
 
         try:
