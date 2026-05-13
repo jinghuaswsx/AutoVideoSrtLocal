@@ -33,6 +33,8 @@ _MAX_SAFE_RATIO = 1.05
 _MIN_SAFE_SPEED = 0.95
 _MAX_SAFE_SPEED = 1.05
 _MAX_SUBTITLE_CONTEXT_CHARS = 12000
+_ASSESS_PROVIDER = "openrouter"
+_ASSESS_MODEL = "google/gemini-3-flash-preview"
 
 _SEVERITY_LABELS = {
     "low": "低风险",
@@ -75,19 +77,27 @@ _DIAGNOSIS_SCHEMA = {
     },
 }
 
-_MULTI_TABLE_SCHEMA = {
+_SCORECARD_SCHEMA = {
     "type": "object",
-    "additionalProperties": True,
+    "additionalProperties": False,
+    "required": ["timeline"],
     "properties": {
         "timeline": {
             "type": "array",
             "items": {
                 "type": "object",
-                "additionalProperties": True,
+                "additionalProperties": False,
+                "required": [
+                    "asr_index",
+                    "visual_observation",
+                    "sync_score",
+                    "diagnosis",
+                    "recommendation",
+                ],
                 "properties": {
                     "asr_index": {"type": "integer"},
                     "visual_observation": {"type": "string"},
-                    "sync_score": {"type": "number"},
+                    "sync_score": {"type": "number", "minimum": 0, "maximum": 100},
                     "diagnosis": {"type": "string"},
                     "recommendation": {"type": "string"},
                 },
@@ -109,6 +119,10 @@ _VERIFY_SCHEMA = {
 
 def _is_multi_translate_report(cfg: dict) -> bool:
     return str((cfg or {}).get("project_type") or "") == "multi_translate"
+
+
+def _is_report_only_scorecard(cfg: dict) -> bool:
+    return str((cfg or {}).get("av_sync_audit") or "") == "report_only"
 
 
 def _json_from_result(result: dict | None, default: dict) -> dict:
@@ -185,6 +199,38 @@ def _compact_sentences(sentences: list[dict]) -> list[dict]:
             "subtitle_end_time": sentence.get("subtitle_end_time"),
         })
     return compact
+
+
+def _scorecard_rows(sentences: list[dict], task: dict | None) -> list[dict]:
+    notes_by_asr = _shot_notes_by_asr(task)
+    rows: list[dict] = []
+    for pos, sentence in enumerate(sentences or []):
+        if not isinstance(sentence, dict):
+            continue
+        asr_index = _as_int_or_none(sentence.get("asr_index"))
+        if asr_index is None:
+            asr_index = _as_int_or_none(sentence.get("index"))
+        if asr_index is None:
+            asr_index = pos
+        start_time, end_time, target_duration, tts_duration = _timing_snapshot(sentence)
+        sync_point = (
+            f"ASR {asr_index}（{_format_sync_time(start_time)}-{_format_sync_time(end_time)}）"
+            if start_time is not None and end_time is not None
+            else f"ASR {asr_index}"
+        )
+        rows.append({
+            "asr_index": asr_index,
+            "sync_point": sync_point,
+            "start_time": start_time,
+            "end_time": end_time,
+            "asr_text": str(sentence.get("source_text") or "").strip(),
+            "target_text": _report_sentence_text(sentence, {}),
+            "visual_observation": _format_visual_context(notes_by_asr.get(asr_index)),
+            "target_duration": target_duration,
+            "tts_duration": tts_duration,
+            "duration_ratio": _as_float_or_none(sentence.get("duration_ratio")),
+        })
+    return rows
 
 
 def _truncate_context_text(text: str, max_chars: int = _MAX_SUBTITLE_CONTEXT_CHARS) -> str:
@@ -299,19 +345,19 @@ def _build_assess_messages(
     sentences: list[dict],
     program_candidates: list[dict],
 ) -> list[dict]:
-    if _is_multi_translate_report(cfg):
+    if _is_multi_translate_report(cfg) or _is_report_only_scorecard(cfg):
         payload = {
             "source_language": task.get("source_language"),
             "target_lang": task.get("target_lang") or task.get("target_language"),
             "video_understanding": video_understanding,
-            "sentences": _compact_sentences(sentences),
+            "scorecard_rows": _scorecard_rows(sentences, task),
             "constraints": {
                 "output_only_timeline": True,
                 "one_row_per_asr": True,
                 "do_not_change_video": True,
-                "do_not_judge_risk": True,
+                "do_not_change_asr_or_tts_text": True,
                 "do_not_write_summary": True,
-                "do_not_write_recommendations": True,
+                "score_range": [0, 100],
             },
         }
     else:
@@ -334,21 +380,23 @@ def _build_assess_messages(
     subtitle_context = _subtitle_context(task, cfg)
     if subtitle_context:
         payload["subtitle_context"] = subtitle_context
-    if _is_multi_translate_report(cfg):
+    if _is_multi_translate_report(cfg) or _is_report_only_scorecard(cfg):
         return [
             {
                 "role": "system",
                 "content": (
-                    "你是多语种视频翻译的审片表整理员。你的唯一任务是填写逐段审片表。"
+                    "你是视频翻译音画同步评分员。你的唯一任务是填写逐段审片表，并为每段给出评分。"
                     "只输出 JSON，根字段只能使用 timeline。不要输出总结，不要输出问题列表。"
-                    "timeline 必须按 ASR 时间顺序覆盖每一段 ASR；每项必须包含 asr_index、visual_observation、"
-                    "sync_score、diagnosis、recommendation。"
-                    "ASR 原文和正常翻译/TTS 文案已经在输入 sentences 中提供，不要改写。"
-                    "visual_observation 只写该 ASR 时间段配套视频里实际看到的画面：动作、物体、字幕、屏幕文字、镜头变化。"
+                    "timeline 必须按 scorecard_rows 的 ASR 顺序覆盖每一段；每项必须包含 asr_index、"
+                    "visual_observation、sync_score、diagnosis、recommendation。"
+                    "你只能根据每行的 ASR 内容、正常翻译/TTS 文案，以及 Doubao 视频理解笔记归纳出的实际视频画面评分。"
+                    "ASR 内容和正常翻译/TTS 文案已经在 scorecard_rows 中提供，不要改写。"
+                    "visual_observation 只写该 ASR 时间段配套视频里实际看到的画面：动作、物体、字幕、屏幕文字、镜头变化；"
+                    "如果 scorecard_rows 已有可用 visual_observation，可直接校正后沿用。"
                     "sync_score 是这一段音画同步评分，0-100 分，100 表示完全同步。"
                     "diagnosis 用一句中文简要判断这一段音画同步情况。"
-                    "recommendation 用一句中文给整改调整意见；没有问题时写“无需调整”。"
-                    "看不清或无法对应时，就写“画面不清晰/无法确认”，不要编造。"
+                    "recommendation 用一句中文给整改调整意见；没有问题时必须写“无需调整。”。"
+                    "看不清或无法对应时，visual_observation 写“画面不清晰/无法确认”，并按不确定性扣分。"
                 ),
             },
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=2)},
@@ -532,6 +580,35 @@ def _call_video_understand(
     return {"summary": notes}
 
 
+def _normalize_scorecard_timeline(raw: Any, *, require_rows: bool) -> list[dict]:
+    if not isinstance(raw, list):
+        raise ValueError("Gemini scorecard response must contain timeline array")
+    if require_rows and not raw:
+        raise ValueError("Gemini scorecard response timeline is empty")
+
+    normalized: list[dict] = []
+    required_text = ("visual_observation", "diagnosis", "recommendation")
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("Gemini scorecard timeline item must be an object")
+        asr_index = _as_int_or_none(item.get("asr_index"))
+        score = _as_float_or_none(item.get("sync_score"))
+        if asr_index is None:
+            raise ValueError("Gemini scorecard timeline item missing asr_index")
+        if score is None:
+            raise ValueError(f"Gemini scorecard ASR {asr_index} missing sync_score")
+        row = dict(item)
+        row["asr_index"] = asr_index
+        row["sync_score"] = max(0.0, min(100.0, score))
+        for key in required_text:
+            value = str(row.get(key) or "").strip()
+            if not value:
+                raise ValueError(f"Gemini scorecard ASR {asr_index} missing {key}")
+            row[key] = value
+        normalized.append(row)
+    return normalized
+
+
 def _call_sync_assess(
     runner,
     task_id: str,
@@ -544,8 +621,9 @@ def _call_sync_assess(
 ) -> dict:
     use_case_code = "omni_av_sync.assess"
     messages = _build_assess_messages(video_understanding, task, cfg, sentences, program_candidates)
-    provider, model = _resolve_llm_binding(use_case_code)
-    schema = _MULTI_TABLE_SCHEMA if _is_multi_translate_report(cfg) else _DIAGNOSIS_SCHEMA
+    provider, model = _ASSESS_PROVIDER, _ASSESS_MODEL
+    is_scorecard = _is_multi_translate_report(cfg) or _is_report_only_scorecard(cfg)
+    schema = _SCORECARD_SCHEMA if is_scorecard else _DIAGNOSIS_SCHEMA
     response_format = {
         "type": "json_schema",
         "json_schema": {"name": "omni_av_sync_assess", "schema": schema},
@@ -591,8 +669,12 @@ def _call_sync_assess(
             temperature=0.1,
             max_tokens=4096,
             response_format=response_format,
+            provider_override=provider,
+            model_override=model,
         )
     except Exception as exc:  # noqa: BLE001 - keep deterministic timing candidates visible
+        if _is_report_only_scorecard(cfg):
+            raise
         if _is_multi_translate_report(cfg):
             return {
                 "issues": [],
@@ -610,9 +692,11 @@ def _call_sync_assess(
             "program_candidates": program_candidates,
         }
     diagnosis = _json_from_result(result, {"issues": [], "timeline": [], "summary": ""})
-    if _is_multi_translate_report(cfg):
-        if not isinstance(diagnosis.get("timeline"), list):
-            diagnosis["timeline"] = []
+    if is_scorecard:
+        diagnosis["timeline"] = _normalize_scorecard_timeline(
+            diagnosis.get("timeline"),
+            require_rows=_is_report_only_scorecard(cfg),
+        )
         diagnosis["issues"] = []
         diagnosis["summary"] = ""
     else:
@@ -1663,6 +1747,16 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
             report["diagnosis"] = {"issues": [], "summary": "", "error": str(exc)[:500]}
             _store_report(task_id, report, sentences=sentences)
             runner._set_step(task_id, "av_sync_audit", "done", "音画同步评估失败，已跳过自动修正")
+            return report
+
+        if mode == "report_only":
+            report["verification"] = {
+                "accepted_issues": [],
+                "rejected_count": 0,
+                "summary": "音画同步审计仅做 Gemini 结构化评分，不执行复核或自动修改。",
+            }
+            _store_report(task_id, report, sentences=sentences)
+            runner._set_step(task_id, "av_sync_audit", "done", "音画同步审计完成（仅报告）")
             return report
 
         try:

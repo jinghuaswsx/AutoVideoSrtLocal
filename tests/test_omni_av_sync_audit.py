@@ -392,7 +392,23 @@ def test_multi_report_only_accepts_unstructured_doubao_video_notes(monkeypatch, 
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={"json": {"issues": [], "summary": "未发现明显同步问题"}}),
+        MagicMock(return_value={
+            "json": {
+                "timeline": [{
+                    "asr_index": 0,
+                    "visual_observation": "画面先拉把手。",
+                    "sync_score": 96,
+                    "diagnosis": "音画同步良好。",
+                    "recommendation": "无需调整。",
+                }, {
+                    "asr_index": 1,
+                    "visual_observation": "随后出现灯闪。",
+                    "sync_score": 95,
+                    "diagnosis": "音画同步良好。",
+                    "recommendation": "无需调整。",
+                }],
+            },
+        }),
     )
 
     runner = _FakeRunner()
@@ -554,7 +570,7 @@ def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_pa
 
     task_id, video_path = _create_task(
         tmp_path,
-        mode="report_only",
+        mode="safe_auto",
         sentences=[
             {
                 "asr_index": 0,
@@ -628,7 +644,7 @@ def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_pa
                         "problem_type": "duration_risk",
                         "accepted": True,
                         "reason": "音频时长超过这一段画面。",
-                        "safe_action": "shorten_text",
+                        "safe_action": "manual_review",
                     }],
                     "rejected_count": 0,
                     "summary": "复核确认 1 个问题",
@@ -687,37 +703,23 @@ def test_report_only_writes_report_without_mutating_sentences(monkeypatch, tmp_p
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(side_effect=[
-            {
-                "json": {
-                    "issues": [{
-                        "asr_index": 0,
-                        "severity": "high",
-                        "problem_type": "speech_late",
-                        "evidence": "配音晚于动作",
-                        "safe_action": "shorten_text",
-                        "suggested_text": "Short sentence.",
-                        "confidence": 0.9,
-                    }],
-                    "summary": "发现 1 个问题",
-                },
+        MagicMock(return_value={
+            "json": {
+                "timeline": [{
+                    "asr_index": 0,
+                    "visual_observation": "画面中产品动作与第一句 ASR 对应。",
+                    "sync_score": 83,
+                    "diagnosis": "第一句配音略晚于动作，但仍在可接受范围内。",
+                    "recommendation": "无需调整。",
+                }, {
+                    "asr_index": 1,
+                    "visual_observation": "第二句画面与 TTS 同步。",
+                    "sync_score": 96,
+                    "diagnosis": "音画同步良好。",
+                    "recommendation": "无需调整。",
+                }],
             },
-            {
-                "json": {
-                    "accepted_issues": [{
-                        "asr_index": 0,
-                        "severity": "high",
-                        "problem_type": "speech_late",
-                        "accepted": True,
-                        "reason": "成立",
-                        "safe_action": "shorten_text",
-                        "final_text": "Short sentence.",
-                    }],
-                    "rejected_count": 0,
-                    "summary": "复核通过",
-                },
-            },
-        ]),
+        }),
     )
 
     omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
@@ -726,9 +728,13 @@ def test_report_only_writes_report_without_mutating_sentences(monkeypatch, tmp_p
     assert task["variants"]["av"]["sentences"] == before
     report = task["artifacts"]["av_sync_audit"]
     assert report["mode"] == "report_only"
-    assert report["summary"]["diagnosed"] == 1
-    assert report["summary"]["accepted"] == 1
+    assert report["summary"]["diagnosed"] == 0
+    assert report["summary"]["accepted"] == 0
     assert report["summary"]["applied"] == 0
+    assert omni_av_sync_audit.llm_client.invoke_chat.call_count == 1
+    assert report["audit_timeline"][0]["sync_score"] == 83
+    assert report["audit_timeline"][0]["diagnosis"] == "第一句配音略晚于动作，但仍在可接受范围内。"
+    assert report["audit_timeline"][0]["recommendation"] == "无需调整。"
 
 
 def test_report_contains_chinese_readable_av_sync_findings(monkeypatch, tmp_path):
@@ -736,7 +742,7 @@ def test_report_contains_chinese_readable_av_sync_findings(monkeypatch, tmp_path
 
     task_id, video_path = _create_task(
         tmp_path,
-        mode="report_only",
+        mode="safe_auto",
         sentences=[
             {
                 "asr_index": 6,
@@ -755,41 +761,51 @@ def test_report_contains_chinese_readable_av_sync_findings(monkeypatch, tmp_path
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_generate",
-        MagicMock(return_value={
-            "json": {
-                "issues": [{
-                    "asr_index": 6,
-                    "severity": "high",
-                    "problem_type": "duration_risk",
-                    "evidence": (
-                        "TTS duration 5.381s exceeds allocated target duration 2.640s, "
-                        "duration ratio 2.04 is far above the safe range upper bound 1.05."
-                    ),
-                    "safe_action": "shorten_text",
-                    "confidence": 0.92,
-                }],
-                "summary": "There is one high-risk TTS duration mismatch issue.",
-            },
-        }),
+        MagicMock(return_value={"text": "视频理解笔记：这一段展示把手锁定动作。"}),
     )
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {
-                "accepted_issues": [{
-                    "asr_index": 6,
-                    "severity": "high",
-                    "problem_type": "duration_risk",
-                    "accepted": True,
-                    "reason": "The generated audio is more than twice the available visual slot.",
-                    "safe_action": "shorten_text",
-                    "final_text": "The handle locks in smoothly.",
-                }],
-                "rejected_count": 0,
-                "summary": "Retained one high-risk issue.",
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "issues": [{
+                        "asr_index": 6,
+                        "severity": "high",
+                        "problem_type": "duration_risk",
+                        "evidence": (
+                            "TTS duration 5.381s exceeds allocated target duration 2.640s, "
+                            "duration ratio 2.04 is far above the safe range upper bound 1.05."
+                        ),
+                        "safe_action": "manual_review",
+                        "confidence": 0.92,
+                    }],
+                    "timeline": [{
+                        "asr_index": 6,
+                        "visual_observation": "画面展示把手锁定动作。",
+                        "sync_score": 45,
+                        "diagnosis": "TTS 明显长于画面窗口。",
+                        "recommendation": "人工复核后压缩文案并重新生成音频。",
+                    }],
+                    "summary": "There is one high-risk TTS duration mismatch issue.",
+                },
             },
-        }),
+            {
+                "json": {
+                    "accepted_issues": [{
+                        "asr_index": 6,
+                        "severity": "high",
+                        "problem_type": "duration_risk",
+                        "accepted": True,
+                        "reason": "The generated audio is more than twice the available visual slot.",
+                        "safe_action": "manual_review",
+                        "final_text": "The handle locks in smoothly.",
+                    }],
+                    "rejected_count": 0,
+                    "summary": "Retained one high-risk issue.",
+                },
+            },
+        ]),
     )
 
     omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
@@ -805,10 +821,8 @@ def test_report_contains_chinese_readable_av_sync_findings(monkeypatch, tmp_path
     assert "5.38s" in finding["timing"]
     assert "2.64s" in finding["timing"]
     assert "This handle locks securely" in finding["sentence_text"]
-    assert "不建议只" in finding["recommendation"]
-    assert "音频变速" in finding["recommendation"]
-    assert "重写" in finding["recommendation"]
-    assert "文案" in finding["recommendation"]
+    assert "人工复核" in finding["recommendation"]
+    assert "重写文案" in finding["recommendation"]
     assert "重新生成音频" in finding["recommendation"]
 
 
@@ -828,10 +842,23 @@ def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(side_effect=[
-            {"json": {"issues": [], "summary": "评估完成"}},
-            {"json": {"accepted_issues": [], "rejected_count": 0, "summary": "复核完成"}},
-        ]),
+        MagicMock(return_value={
+            "json": {
+                "timeline": [{
+                    "asr_index": 0,
+                    "visual_observation": "画面与第一句对应。",
+                    "sync_score": 95,
+                    "diagnosis": "音画同步良好。",
+                    "recommendation": "无需调整。",
+                }, {
+                    "asr_index": 1,
+                    "visual_observation": "画面与第二句对应。",
+                    "sync_score": 94,
+                    "diagnosis": "音画同步良好。",
+                    "recommendation": "无需调整。",
+                }],
+            },
+        }),
     )
 
     omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
@@ -841,18 +868,33 @@ def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
     assert [ref["id"] for ref in refs] == [
         "av_sync_audit.understand",
         "av_sync_audit.assess",
-        "av_sync_audit.verify",
     ]
     understand_payload = json.loads((tmp_path / refs[0]["path"]).read_text(encoding="utf-8"))
     assess_payload = json.loads((tmp_path / refs[1]["path"]).read_text(encoding="utf-8"))
-    verify_payload = json.loads((tmp_path / refs[2]["path"]).read_text(encoding="utf-8"))
     assert understand_payload["request_payload"]["type"] == "generate"
     assert understand_payload["request_payload"]["use_case_code"] == "omni_av_sync.understand"
     assert understand_payload["request_payload"].get("response_schema") is None
     assert assess_payload["request_payload"]["type"] == "chat"
     assert assess_payload["request_payload"]["use_case_code"] == "omni_av_sync.assess"
-    assert verify_payload["request_payload"]["type"] == "chat"
-    assert verify_payload["request_payload"]["use_case_code"] == "omni_av_sync.verify"
+    assert assess_payload["request_payload"]["provider"] == "openrouter"
+    assert assess_payload["request_payload"]["model"] == "google/gemini-3-flash-preview"
+    user_payload = json.loads(assess_payload["messages"][1]["content"])
+    assert "scorecard_rows" in user_payload
+    assert set(user_payload["scorecard_rows"][0]) >= {
+        "asr_index",
+        "asr_text",
+        "target_text",
+        "visual_observation",
+    }
+    response_schema = assess_payload["request_payload"]["response_format"]["json_schema"]["schema"]
+    timeline_item = response_schema["properties"]["timeline"]["items"]
+    assert timeline_item["required"] == [
+        "asr_index",
+        "visual_observation",
+        "sync_score",
+        "diagnosis",
+        "recommendation",
+    ]
 
 
 def test_safe_auto_applies_only_accepted_medium_high_issue(
