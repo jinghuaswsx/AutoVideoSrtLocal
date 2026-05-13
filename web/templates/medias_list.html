@@ -1057,6 +1057,27 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   overflow:hidden;
   text-overflow:ellipsis;
 }
+.oc-product-link-manage-btn {
+  height:34px;
+  padding:0 14px;
+  border-radius:var(--oc-r-full,9999px);
+  background:var(--oc-accent);
+  border-color:var(--oc-accent);
+  color:#fff;
+  font-size:14px;
+  font-weight:700;
+  box-shadow:0 6px 14px oklch(56% 0.16 230 / 0.22);
+}
+.oc-product-link-manage-btn:hover {
+  background:var(--oc-accent-hover);
+  border-color:var(--oc-accent-hover);
+  color:#fff;
+  box-shadow:0 8px 18px oklch(56% 0.16 230 / 0.28);
+}
+.oc-product-link-manage-btn svg {
+  width:17px;
+  height:17px;
+}
 .oc-product-links-modal {
   width:min(960px, calc(100vw - 48px));
   max-height:min(88vh, 880px);

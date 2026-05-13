@@ -669,6 +669,7 @@ def test_medias_assets_include_product_link_push_entry():
     from pathlib import Path
 
     template = Path("web/templates/medias_list.html").read_text(encoding="utf-8")
+    edit_detail_template = Path("web/templates/_medias_edit_detail_modal.html").read_text(encoding="utf-8")
     script = Path("web/static/medias.js").read_text(encoding="utf-8")
 
     assert "<th>投放推送</th>" in script
@@ -678,6 +679,15 @@ def test_medias_assets_include_product_link_push_entry():
     assert "data-product-link-domains" in script
     assert "openProductLinkDomainsModal" in script
     assert "product-link-domains" in script
+    assert 'class="oc-btn sm ghost" data-product-link-domains' in script
+    assert 'class="oc-btn sm primary oc-product-link-manage-btn" data-product-link-domains' not in script
+    assert 'id="edProductLinksOpenBtn"' in edit_detail_template
+    assert 'class="oc-btn primary sm oc-product-link-manage-btn" id="edProductLinksOpenBtn"' in edit_detail_template
+    assert ".oc-product-link-manage-btn {" in template
+    assert "height:34px;" in template
+    assert "border-radius:var(--oc-r-full,9999px);" in template
+    assert "background:var(--oc-accent);" in template
+    assert "font-size:14px;" in template
     assert "id=\"productLinkDomainsModalMask\"" in template
     assert "推送链接" in script
     assert "推送文案" in script
