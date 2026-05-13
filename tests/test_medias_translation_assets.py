@@ -200,6 +200,14 @@ def test_medias_js_material_filename_validation_allows_supplement_slot_letters()
     assert "补充素材 后只能接 A-G 字母或直接接半角括号" in script
 
 
+def test_medias_js_material_filename_validation_allows_multi_owner_tail():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "const LOCALIZED_MULTI_OWNER_TAIL_RE = /-[^-()\\s]+multi-蔡靖华\\.mp4$/;" in script
+    assert "-顾倩multi-蔡靖华.mp4" in script
+
+
 def test_medias_search_input_runs_live_search():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")

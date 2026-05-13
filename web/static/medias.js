@@ -143,14 +143,16 @@
 
   // 编辑页小语种素材沿用严格命名规范。
   // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材[A-G可选]({语种中文名})-指派-蔡靖华.mp4
-  // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（半角括号；补充素材后可选 A-G 字母）
+  // 也兼容：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-顾倩multi-蔡靖华.mp4
+  // 固定字段：原素材 / 补充素材 / 蔡靖华（半角括号；补充素材后可选 A-G 字母）
   function validateMaterialFilename(filename, productName, langCode) {
     if (langCode === 'en') return validateSimpleMaterialFilename(filename, productName);
 
     const fn = String(filename || '');
     const noSpaceErrors = validateFilenameNoSpaces(fn);
     if (noSpaceErrors.length) return noSpaceErrors;
-    const TAIL = '-指派-蔡靖华.mp4';
+    const LOCALIZED_ASSIGNED_TAIL = '-指派-蔡靖华.mp4';
+    const LOCALIZED_MULTI_OWNER_TAIL_RE = /-[^-()\s]+multi-蔡靖华\.mp4$/;
     const LOCALIZED_SUPPLEMENT_MARKER = '-原素材-补充素材';
     const errs = [];
 
@@ -165,11 +167,18 @@
       return errs;
     }
 
-    if (!fn.endsWith(TAIL)) {
-      errs.push(`结尾必须是 "${TAIL}"`);
+    let tailStart = -1;
+    if (fn.endsWith(LOCALIZED_ASSIGNED_TAIL)) {
+      tailStart = fn.length - LOCALIZED_ASSIGNED_TAIL.length;
+    } else {
+      const multiTailMatch = fn.match(LOCALIZED_MULTI_OWNER_TAIL_RE);
+      if (multiTailMatch) tailStart = fn.length - multiTailMatch[0].length;
+    }
+    if (tailStart < 0) {
+      errs.push(`结尾必须是 "${LOCALIZED_ASSIGNED_TAIL}" 或 "-顾倩multi-蔡靖华.mp4" 这类负责人 multi 格式`);
       return errs;
     }
-    const headMid = fn.slice(0, fn.length - TAIL.length);
+    const headMid = fn.slice(0, tailStart);
 
     if (headMid.length < 11 || headMid[10] !== '-') {
       errs.push('开头必须是 "YYYY.MM.DD-" 格式');
@@ -190,7 +199,7 @@
     const rest = headMid.slice(11);
 
     if (!rest.endsWith(')')) {
-      errs.push('在 "-指派-蔡靖华.mp4" 之前必须紧跟 ")"（常见问题：多了空格、或用了中文全角括号 "）"）');
+      errs.push('在结尾负责人段之前必须紧跟 ")"（常见问题：多了空格、或用了中文全角括号 "）"）');
       return errs;
     }
 
@@ -280,7 +289,7 @@
     if (langCode !== 'en') {
       const lang = (LANGUAGES || []).find(l => l.code === langCode);
       const langZh = (lang && lang.name_zh) || '';
-      const strictTailRe = new RegExp(`^-原素材-补充素材[A-Ga-g]?\\(${escapeRegExp(langZh)}\\)-指派-蔡靖华\\.mp4$`);
+      const strictTailRe = new RegExp(`^-原素材-补充素材[A-Ga-g]?\\(${escapeRegExp(langZh)}\\)(?:-指派-蔡靖华|-[^-()\\s]+multi-蔡靖华)\\.mp4$`);
       return [
         paint(dateSegment || '(缺日期)', validDate),
         paint(separatorSegment || '(缺-)', separatorSegment === '-'),
