@@ -135,6 +135,11 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
             where.append(f"{column} >= %s")
             params.append(value)
 
+    max_goods_sales_7d = _int_arg(args, "max_goods_sales_7d", 0, 0, 10**12)
+    if max_goods_sales_7d:
+        where.append("c.goods_sold_count_7d <= %s")
+        params.append(max_goods_sales_7d)
+
     for arg_name, column in [
         ("min_goods_gmv_7d", "c.goods_gmv_7d"),
         ("min_video_gmv", "c.video_split_gmv"),
@@ -248,6 +253,11 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
     if min_sales:
         where.append("COALESCE(s.sold_count_7d, s.sold_count_period) >= %s")
         params.append(min_sales)
+
+    max_sales = _int_arg(args, "max_sales_7d", 0, 0, 10**12)
+    if max_sales:
+        where.append("COALESCE(s.sold_count_7d, s.sold_count_period) <= %s")
+        params.append(max_sales)
 
     min_gmv = _float_arg(args, "min_gmv_7d")
     if min_gmv is not None:
