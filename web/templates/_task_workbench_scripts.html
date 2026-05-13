@@ -55,6 +55,7 @@
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
   function _apiUrl(path) { return `${TASK_WORKBENCH_CONFIG.apiBase}/${taskId}${path || ''}`; }
   let currentTask = TASK_WORKBENCH_CONFIG.initialTask;
+  let sentenceReconcileModalState = null;
   const _userTranslatePref = {{ (translate_pref or 'openrouter')|tojson }};
   let refreshTimer = null;
   let activeRefreshLoop = null;
@@ -2361,6 +2362,8 @@
         if (overlay && !overlay.classList.contains('hidden')) closeJsonModal();
         const promptOverlay = document.getElementById('promptInspectorModal');
         if (promptOverlay && !promptOverlay.classList.contains('hidden')) closePromptInspector();
+        const sentenceOverlay = document.getElementById('sentenceReconcileProcessModal');
+        if (sentenceOverlay && !sentenceOverlay.classList.contains('hidden')) closeSentenceReconcileProcessModal();
       }
     });
   }
@@ -3352,76 +3355,145 @@
     `;
   }
 
-  function renderSentenceReconcileDurationLog(container, progressRounds = null) {
-    if (!container || !currentTask || !isAvSyncTask(currentTask)) return false;
-    const av = currentTask.variants?.av || {};
-    const avDebug = currentTask.av_debug || av.av_debug || {};
-    const convergenceDebug = avDebug.sentence_convergence || avDebug.convergence || {};
-    const debugSentences = Array.isArray(convergenceDebug.sentences) ? convergenceDebug.sentences : [];
-    const avSentences = Array.isArray(av.sentences) ? av.sentences : [];
-    const progressItems = Array.isArray(progressRounds) ? progressRounds.filter(Boolean) : [];
-    const initialAudioProgress = progressItems.find(item => item && (item.phase === "initial_audio_gen" || Number(item.round) === 0)) || null;
-    const sentenceProgressItems = progressItems.filter(isSentenceReconcileProgressItem);
-    const progressRows = sentenceProgressItems.length ? coalesceSentenceProgressRows(sentenceProgressItems) : [];
-    const sourceRows = progressRows.length ? progressRows : (avSentences.length ? avSentences : debugSentences);
-    if (!sourceRows.length) return false;
+  function sentenceSemanticCoverageState(sentence = {}, debug = {}) {
+    sentence = sentence || {};
+    debug = debug || {};
+    const omitted = [
+      ...(Array.isArray(sentence.omitted_source_terms) ? sentence.omitted_source_terms : []),
+      ...(Array.isArray(debug.omitted_source_terms) ? debug.omitted_source_terms : []),
+    ].map(item => String(item || "").trim()).filter(Boolean);
+    const hasCoverageFlag = Object.prototype.hasOwnProperty.call(sentence, "coverage_ok")
+      || Object.prototype.hasOwnProperty.call(debug, "coverage_ok");
+    const coverageOk = Object.prototype.hasOwnProperty.call(sentence, "coverage_ok")
+      ? sentence.coverage_ok
+      : debug.coverage_ok;
+    if (coverageOk === false || omitted.length) {
+      return { state: "fail", recorded: true, label: "❌ 失败", omitted };
+    }
+    if (hasCoverageFlag) {
+      return { state: "pass", recorded: true, label: "✅ 通过", omitted: [] };
+    }
+    return { state: "unknown", recorded: false, label: "未记录", omitted: [] };
+  }
+
+  function renderSemanticCoverageChip(state, { compact = false } = {}) {
+    if (!state || !state.recorded) return "";
+    const omitted = Array.isArray(state.omitted) ? state.omitted.filter(Boolean) : [];
+    const omittedText = omitted.length ? ` · 遗漏：${omitted.join("、")}` : "";
+    const label = compact ? state.label : `语义判断 ${state.label}${omittedText}`;
+    return `<span class="semantic-coverage-chip ${escapeAttr(state.state)}">${escapeHtml(label)}</span>`;
+  }
+
+  function sentenceFinalComposeSummary(sourceRows, context = {}) {
+    const av = context.av || {};
+    const avDebug = context.avDebug || {};
+    const explicit = av.final_compose_summary
+      || currentTask?.final_compose_summary
+      || avDebug.final_compose_summary
+      || {};
+    if (explicit && Object.keys(explicit).length) return explicit;
+    const syncSummary = buildSentenceReconcileSyncSummary(sourceRows, context) || {};
+    return {
+      status: syncSummary.className === "is-ok" ? "fully_converged" : "review_needed",
+      status_label: syncSummary.className === "is-ok" ? "完全收敛" : "需人工复核",
+      video_duration: syncSummary.videoDuration,
+      target_sentence_duration: syncSummary.targetDuration,
+      effective_speech_duration: syncSummary.currentAudioDuration,
+      final_output_audio_duration: syncSummary.finalAudioDuration,
+      final_video_duration: syncSummary.videoDuration,
+      stitching_method: "按句 audio_start_time 放置，句间静音补齐，最终由 ffmpeg -t 限制到目标时间轴。",
+      audio_truncated: false,
+      truncation_seconds: 0,
+      affected_sentence_indices: [],
+      review_required: syncSummary.className !== "is-ok",
+      notes: ["旧任务未记录 final_compose_summary，页面按现有时长字段推断。"],
+    };
+  }
+
+  function finalComposeStatusClass(status) {
+    const value = String(status || "").toLowerCase();
+    if (value === "fully_converged") return "success";
+    if (value === "clipped_output") return "warning";
+    if (value === "fallback_output" || value === "review_needed") return "warning";
+    if (value === "failed") return "error";
+    return "running";
+  }
+
+  function finalComposeStatusLabel(summary = {}) {
+    const status = String(summary.status || "").toLowerCase();
+    if (summary.status_label) return summary.status_label;
+    return ({
+      fully_converged: "完全收敛",
+      fallback_output: "兜底输出",
+      clipped_output: "裁剪输出",
+      review_needed: "需人工复核",
+      failed: "失败",
+    })[status] || "进行中";
+  }
+
+  function renderFinalComposeSummary(sourceRows, context = {}) {
+    const summary = sentenceFinalComposeSummary(sourceRows, context);
+    if (!summary) return "";
+    const finalAudioDuration = summary.final_output_audio_duration ?? summary.final_audio_duration ?? summary.target_timeline_duration;
+    const finalVideoDuration = summary.final_video_duration ?? summary.video_duration ?? summary.target_timeline_duration;
+    const metrics = [
+      ["视频时长", formatAvDuration(summary.video_duration)],
+      ["有效口播时长", formatAvDuration(summary.effective_speech_duration)],
+      ["输出音轨时长", formatAvDuration(finalAudioDuration)],
+      ["最终视频时长", formatAvDuration(finalVideoDuration)],
+      ["句级目标合计", formatAvDuration(summary.target_sentence_duration)],
+      ["静音补齐", `${escapeHtml(summary.silence_gap_count ?? 0)} 段 · ${escapeHtml(formatAvDuration(summary.silence_gap_duration))}`],
+    ].map(([label, value]) => `
+      <div class="final-compose-metric">
+        <span>${escapeHtml(label)}</span>
+        <strong>${value}</strong>
+      </div>
+    `).join("");
+    const clipped = Boolean(summary.audio_truncated);
+    const affected = Array.isArray(summary.affected_sentence_indices) && summary.affected_sentence_indices.length
+      ? ` · 影响句 ${summary.affected_sentence_indices.map(item => escapeHtml(item)).join("、")}`
+      : "";
+    const notes = Array.isArray(summary.notes) ? summary.notes.filter(Boolean) : [];
+    const statusClass = finalComposeStatusClass(summary.status);
+    return `
+      <div class="final-compose-summary ${escapeAttr(statusClass)}">
+        <div class="final-compose-head">
+          <div>
+            <div class="final-compose-title">最终合成说明</div>
+            <div class="final-compose-subtitle">拼接方式：${escapeHtml(summary.stitching_method || "按句 audio_start_time 放置，句间静音补齐")}</div>
+          </div>
+          <span class="duration-status-tag ${escapeAttr(statusClass)}">${escapeHtml(finalComposeStatusLabel(summary))}</span>
+        </div>
+        <div class="final-compose-metrics">${metrics}</div>
+        <div class="final-compose-trim ${clipped ? "is-clipped" : "is-clean"}">
+          是否截断：<strong>${clipped ? "是" : "否"}</strong>
+          ${clipped ? ` · 截断 ${escapeHtml(formatAvDuration(summary.truncation_seconds))}${affected}` : ""}
+        </div>
+        ${notes.length ? `<div class="final-compose-notes">${notes.map(note => `<div>${escapeHtml(note)}</div>`).join("")}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function renderSentenceProcessLaunch(sourceRows, context = {}) {
+    const progressItems = Array.isArray(context.progressItems) ? context.progressItems : [];
+    const latest = latestSentenceTtsProgress(progressItems);
+    const currentLabel = latest
+      ? `当前：句 ${latest.asr_index ?? latest.sentence_position ?? "--"} · ${sentenceProgressPhaseLabel(latest.phase)}`
+      : "可查看每句 10 轮候选、语义判断和音频生成结果";
+    return `
+      <button type="button" class="sentence-process-launch" onclick="openSentenceReconcileProcessModal()">
+        <span class="sentence-process-launch-title">查看语音生成过程</span>
+        <span class="sentence-process-launch-meta">${escapeHtml(sourceRows.length)} 句 · ${escapeHtml(currentLabel)}</span>
+      </button>
+    `;
+  }
+
+  function renderSentenceReconcileDetailRows(sourceRows, context = {}) {
+    const rows = Array.isArray(sourceRows) ? sourceRows : [];
+    const debugSentences = Array.isArray(context.debugSentences) ? context.debugSentences : [];
     const debugByIndex = new Map(debugSentences.map((item, index) => [String(item.asr_index ?? item.index ?? index), item]));
-    const sourceNormalization = avDebug.source_normalization || av.source_normalization || currentTask.source_normalization || {};
-    const sourceNormSummary = sourceNormalization.summary || {};
-    const model = convergenceDebug.model || avDebug.model || av.model || "google/gemini-3-flash-preview";
-
-    const status = currentTask.tts_duration_status || (progressItems.length ? 'running' : 'done');
-    const statusTag = ({
-      running: '<span class="duration-status-tag running">运行中</span>',
-      done: '<span class="duration-status-tag success">已完成</span>',
-      converged: '<span class="duration-status-tag success">已完成</span>',
-      failed: '<span class="duration-status-tag error">失败</span>',
-    })[status] || '';
-
-    const totals = sourceRows.reduce((acc, sentence, rowIndex) => {
-      const debug = debugSentences.find(item => String(item.asr_index ?? item.index ?? rowIndex) === String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
-      const attempts = normalizeAvAttempts(sentence, debug);
-      acc.text += avAttemptCount(sentence, debug, attempts, "text_rewrite_attempts", "text_attempt");
-      acc.tts += avAttemptCount(sentence, debug, attempts, "tts_regenerate_attempts", "tts_attempt");
-      acc.speed += avSpeedAdjustmentCount(sentence, debug, attempts);
-      if (sentence.best_effort || debug.best_effort) acc.bestEffort += 1;
-      return acc;
-    }, { text: 0, tts: 0, speed: 0, bestEffort: 0 });
-    const convergedCount = sourceRows.filter(sentence => isAvSentenceConverged(sentence, debugByIndex)).length;
-    const reviewCount = Math.max(sourceRows.length - convergedCount, 0);
-    const sourceChangedCount = sourceNormSummary.changed_sentences ?? avDebug.summary?.source_changed_sentences ?? 0;
-    const sourceTotalCount = sourceNormSummary.total_sentences ?? sourceRows.length;
-
     const parts = [];
-    parts.push(`
-      <div class="collapsible-header duration-log-header">
-        <span class="collapsible-title">语音生成过程 · 句级时长收敛（Sentence Reconcile）</span>
-        ${statusTag}
-        <span class="meta">共 ${sourceRows.length} 句 · 文案尝试 ${totals.text} · TTS 重生成 ${totals.tts} · 调速 ${totals.speed} · 最佳候选 ${totals.bestEffort}</span>
-        <button type="button" class="collapsible-toggle" aria-label="展开/折叠" aria-expanded="true">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
-      </div>
-      <div class="collapsible-body">
-    `);
-    parts.push(renderSentenceTtsLiveProgress(progressItems, initialAudioProgress));
-    parts.push(`
-      <div class="av-convergence-summary duration-convergence-summary">
-        ${renderAvConvergenceMetric("模型", model)}
-        ${renderAvConvergenceMetric("共几句", sourceRows.length)}
-        ${renderAvConvergenceMetric("已收敛", convergedCount)}
-        ${renderAvConvergenceMetric("需校对", reviewCount)}
-        ${renderAvConvergenceMetric("原文纯净化", `${sourceChangedCount}/${sourceTotalCount}`)}
-        ${renderAvConvergenceMetric("文案尝试", totals.text)}
-        ${renderAvConvergenceMetric("TTS 重生成", totals.tts)}
-        ${renderAvConvergenceMetric("调速", totals.speed)}
-      </div>
-    `);
-    parts.push(renderSentenceReconcileSyncSummary(sourceRows, { av, avDebug, debugSentences, progressItems: sentenceProgressItems }));
-
-    sourceRows.forEach((sentence, rowIndex) => {
+    rows.forEach((sentence, rowIndex) => {
       const debug = debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
       const attempts = normalizeAvAttempts(sentence, debug);
       const asrIndex = sentence.asr_index ?? sentence.index ?? sentence.round ?? rowIndex;
@@ -3456,6 +3528,10 @@
       const issueHtml = syncIssue
         ? `<div class="duration-round-meta warning">问题点：${escapeHtml(syncIssue.reason)} · 建议调整：${escapeHtml(syncIssue.advice)}</div>`
         : "";
+      const semanticHtml = renderSemanticCoverageChip(sentenceSemanticCoverageState(sentence, debug));
+      const clipHtml = sentence.audio_clipped || debug.audio_clipped
+        ? `<div class="duration-round-meta warning">音频裁剪：${escapeHtml(formatAvDuration(sentence.audio_clipped_seconds ?? debug.audio_clipped_seconds))} · 原因 ${escapeHtml(sentence.audio_clip_reason || debug.audio_clip_reason || "--")}</div>`
+        : "";
       const attemptsDetail = attempts.length ? renderAvAttemptsDetail(attempts) : "";
       parts.push(`
         <div class="duration-round ${statusLabel.className}">
@@ -3463,6 +3539,7 @@
             <span class="status-icon ${statusIcon.className}">${statusIcon.text}</span>
             <span>句 ${escapeHtml(asrIndex)}</span>
             <span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span>
+            ${semanticHtml}
           </div>
           <div class="duration-round-meta">目标时长 ${formatAvDuration(targetDuration)} · 当前时长 ${formatAvDuration(ttsDuration)} · 偏差 ${formatAvDelta(computedDelta)}${charLabel}</div>
           <div class="duration-round-meta">原文：${escapeHtml(sourceText || "--")}</div>
@@ -3471,15 +3548,129 @@
           <div class="duration-round-meta">句级翻译：${escapeHtml(finalText || "--")}</div>
           ${selectedLabel ? `<div class="duration-round-meta">候选：${escapeHtml(selectedLabel)}</div>` : ""}
           ${issueHtml}
+          ${clipHtml}
           ${skipHtml}
           ${attemptsDetail}
         </div>
       `);
     });
+    return parts.join("") || '<div class="preview-placeholder">暂无句级语音生成详情。</div>';
+  }
+
+  function renderSentenceReconcileProcessModalBody(state = sentenceReconcileModalState) {
+    if (!state) return '<div class="preview-placeholder">暂无语音生成过程。</div>';
+    const { sourceRows = [], context = {} } = state;
+    return `
+      ${renderSentenceTtsLiveProgress(context.progressItems || [], context.initialAudioProgress || null)}
+      ${renderFinalComposeSummary(sourceRows, context)}
+      <div class="sentence-process-detail-list">
+        ${renderSentenceReconcileDetailRows(sourceRows, context)}
+      </div>
+    `;
+  }
+
+  function openSentenceReconcileProcessModal() {
+    const overlay = document.getElementById("sentenceReconcileProcessModal");
+    const body = document.getElementById("sentenceReconcileProcessBody");
+    if (!overlay || !body) return;
+    body.innerHTML = renderSentenceReconcileProcessModalBody();
+    overlay.classList.remove("hidden");
+  }
+
+  function closeSentenceReconcileProcessModal() {
+    const overlay = document.getElementById("sentenceReconcileProcessModal");
+    if (overlay) overlay.classList.add("hidden");
+  }
+
+  function updateOpenSentenceReconcileProcessModal() {
+    const overlay = document.getElementById("sentenceReconcileProcessModal");
+    const body = document.getElementById("sentenceReconcileProcessBody");
+    if (overlay && body && !overlay.classList.contains("hidden")) {
+      body.innerHTML = renderSentenceReconcileProcessModalBody();
+    }
+  }
+
+  function renderSentenceReconcileDurationLog(container, progressRounds = null) {
+    if (!container || !currentTask || !isAvSyncTask(currentTask)) return false;
+    const av = currentTask.variants?.av || {};
+    const avDebug = currentTask.av_debug || av.av_debug || {};
+    const convergenceDebug = avDebug.sentence_convergence || avDebug.convergence || {};
+    const debugSentences = Array.isArray(convergenceDebug.sentences) ? convergenceDebug.sentences : [];
+    const avSentences = Array.isArray(av.sentences) ? av.sentences : [];
+    const progressItems = Array.isArray(progressRounds) ? progressRounds.filter(Boolean) : [];
+    const initialAudioProgress = progressItems.find(item => item && (item.phase === "initial_audio_gen" || Number(item.round) === 0)) || null;
+    const sentenceProgressItems = progressItems.filter(isSentenceReconcileProgressItem);
+    const progressRows = sentenceProgressItems.length ? coalesceSentenceProgressRows(sentenceProgressItems) : [];
+    const sourceRows = progressRows.length ? progressRows : (avSentences.length ? avSentences : debugSentences);
+    if (!sourceRows.length) return false;
+    const debugByIndex = new Map(debugSentences.map((item, index) => [String(item.asr_index ?? item.index ?? index), item]));
+    const sourceNormalization = avDebug.source_normalization || av.source_normalization || currentTask.source_normalization || {};
+    const sourceNormSummary = sourceNormalization.summary || {};
+    const model = convergenceDebug.model || avDebug.model || av.model || "google/gemini-3-flash-preview";
+
+    const status = currentTask.tts_duration_status || (progressItems.length ? 'running' : 'done');
+    const statusTag = ({
+      running: '<span class="duration-status-tag running">运行中</span>',
+      done: '<span class="duration-status-tag success">已完成</span>',
+      converged: '<span class="duration-status-tag success">已完成</span>',
+      fully_converged: '<span class="duration-status-tag success">完全收敛</span>',
+      fallback_output: '<span class="duration-status-tag warning">兜底输出</span>',
+      clipped_output: '<span class="duration-status-tag warning">裁剪输出</span>',
+      review_needed: '<span class="duration-status-tag warning">需人工复核</span>',
+      failed: '<span class="duration-status-tag error">失败</span>',
+    })[status] || '';
+
+    const totals = sourceRows.reduce((acc, sentence, rowIndex) => {
+      const debug = debugSentences.find(item => String(item.asr_index ?? item.index ?? rowIndex) === String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
+      const attempts = normalizeAvAttempts(sentence, debug);
+      acc.text += avAttemptCount(sentence, debug, attempts, "text_rewrite_attempts", "text_attempt");
+      acc.tts += avAttemptCount(sentence, debug, attempts, "tts_regenerate_attempts", "tts_attempt");
+      acc.speed += avSpeedAdjustmentCount(sentence, debug, attempts);
+      if (sentence.best_effort || debug.best_effort) acc.bestEffort += 1;
+      return acc;
+    }, { text: 0, tts: 0, speed: 0, bestEffort: 0 });
+    const convergedCount = sourceRows.filter(sentence => isAvSentenceConverged(sentence, debugByIndex)).length;
+    const reviewCount = Math.max(sourceRows.length - convergedCount, 0);
+    const sourceChangedCount = sourceNormSummary.changed_sentences ?? avDebug.summary?.source_changed_sentences ?? 0;
+    const sourceTotalCount = sourceNormSummary.total_sentences ?? sourceRows.length;
+    const context = { av, avDebug, debugSentences, progressItems: sentenceProgressItems, initialAudioProgress };
+    sentenceReconcileModalState = { sourceRows, context };
+
+    const parts = [];
+    parts.push(`
+      <div class="collapsible-header duration-log-header">
+        <span class="collapsible-title">语音生成过程 · 句级时长收敛（Sentence Reconcile）</span>
+        ${statusTag}
+        <span class="meta">共 ${sourceRows.length} 句 · 文案尝试 ${totals.text} · TTS 重生成 ${totals.tts} · 调速 ${totals.speed} · 最佳候选 ${totals.bestEffort}</span>
+        <button type="button" class="collapsible-toggle" aria-label="展开/折叠" aria-expanded="true">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="collapsible-body">
+    `);
+    parts.push(renderSentenceTtsLiveProgress(progressItems, initialAudioProgress));
+    parts.push(`
+      <div class="av-convergence-summary duration-convergence-summary">
+        ${renderAvConvergenceMetric("模型", model)}
+        ${renderAvConvergenceMetric("共几句", sourceRows.length)}
+        ${renderAvConvergenceMetric("已收敛", convergedCount)}
+        ${renderAvConvergenceMetric("需校对", reviewCount)}
+        ${renderAvConvergenceMetric("原文纯净化", `${sourceChangedCount}/${sourceTotalCount}`)}
+        ${renderAvConvergenceMetric("文案尝试", totals.text)}
+        ${renderAvConvergenceMetric("TTS 重生成", totals.tts)}
+        ${renderAvConvergenceMetric("调速", totals.speed)}
+      </div>
+    `);
+    parts.push(renderFinalComposeSummary(sourceRows, context));
+    parts.push(renderSentenceReconcileSyncSummary(sourceRows, context));
+    parts.push(renderSentenceProcessLaunch(sourceRows, context));
 
     parts.push('</div>');
     container.innerHTML = parts.join('');
     container.hidden = false;
+    updateOpenSentenceReconcileProcessModal();
     if (window.bootCollapsibleCards) {
       window.bootCollapsibleCards(container.parentNode || document, taskId);
     }
@@ -3601,6 +3792,7 @@
         reason ? `原因 ${reason}` : "",
         selected ? "最佳候选" : "",
       ].filter(Boolean).join(" · ");
+      const semanticHtml = renderSemanticCoverageChip(sentenceSemanticCoverageState(attempt, {}), { compact: false });
       const error = attempt.error || attempt.exception || "";
       return `
         <tr class="${selected ? "is-selected" : ""}">
@@ -3632,6 +3824,7 @@
           <td>
             <div class="av-attempt-section-title">结果</div>
             <div class="av-attempt-meta">${escapeHtml(resultMeta || "--")}</div>
+            ${semanticHtml ? `<div class="av-attempt-meta">${semanticHtml}</div>` : ""}
             ${error ? `<div class="av-attempt-error">${escapeHtml(error)}</div>` : ""}
           </td>
         </tr>

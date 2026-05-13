@@ -3470,9 +3470,21 @@ class PipelineRunner:
             with_soft=self.include_soft_video,
         )
         variant_state["result"] = result
+        final_compose_summary = dict(
+            variant_state.get("final_compose_summary")
+            or task.get("final_compose_summary")
+            or {}
+        )
+        if final_compose_summary:
+            final_compose_summary["compose_completed"] = True
+            final_compose_summary["compose_result"] = result
+            variant_state["final_compose_summary"] = final_compose_summary
         variants[variant] = variant_state
 
-        task_state.update(task_id, variants=variants, result=result, status="composing_done")
+        update_payload = {"variants": variants, "result": result, "status": "composing_done"}
+        if final_compose_summary:
+            update_payload["final_compose_summary"] = final_compose_summary
+        task_state.update(task_id, **update_payload)
         if result.get("soft_video"):
             task_state.set_preview_file(task_id, "soft_video", result["soft_video"])
         if result.get("hard_video"):

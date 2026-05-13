@@ -86,9 +86,8 @@ def test_source_time_subtitle_units_keep_original_sentence_positions():
     assert units[1]["end_time"] == pytest.approx(31.35)
 
 
-def test_runtime_rebuild_rejects_audio_that_exceeds_own_source_window(tmp_path):
+def test_runtime_rebuild_clips_audio_that_exceeds_own_source_window(tmp_path):
     from appcore.runtime import _rebuild_tts_full_audio_from_segments
-    from pipeline.audio_stitch import TimelineAudioOverflowError
 
     seg0 = tmp_path / "seg0.mp3"
     seg1 = tmp_path / "seg1.mp3"
@@ -100,58 +99,61 @@ def test_runtime_rebuild_rejects_audio_that_exceeds_own_source_window(tmp_path):
         calls.append(args)
         return SimpleNamespace(returncode=0, stderr="")
 
-    with pytest.raises(TimelineAudioOverflowError, match="exceeds source window"):
-        with patch("subprocess.run", side_effect=fake_run):
-            _rebuild_tts_full_audio_from_segments(
-                str(tmp_path),
-                [
-                    {
-                        "asr_index": 0,
-                        "tts_path": str(seg0),
-                        "start_time": 0.0,
-                        "end_time": 1.0,
-                        "tts_duration": 1.4,
-                    },
-                    {
-                        "asr_index": 1,
-                        "tts_path": str(seg1),
-                        "start_time": 1.2,
-                        "end_time": 2.0,
-                        "tts_duration": 0.7,
-                    },
-                ],
-                variant="av",
-            )
+    segments = [
+        {
+            "asr_index": 0,
+            "tts_path": str(seg0),
+            "start_time": 0.0,
+            "end_time": 1.0,
+            "tts_duration": 1.4,
+        },
+        {
+            "asr_index": 1,
+            "tts_path": str(seg1),
+            "start_time": 1.2,
+            "end_time": 2.0,
+            "tts_duration": 0.7,
+        },
+    ]
+    with patch("subprocess.run", side_effect=fake_run):
+        _rebuild_tts_full_audio_from_segments(str(tmp_path), segments, variant="av")
 
-    assert calls == []
+    assert calls
+    filter_graph = calls[0][calls[0].index("-filter_complex") + 1]
+    assert "atrim=duration=1.000" in filter_graph
+    assert segments[0]["audio_clipped"] is True
+    assert segments[0]["audio_clipped_seconds"] == pytest.approx(0.4)
+    assert segments[0]["audio_clip_reason"] == "source_window"
 
 
-def test_runtime_rebuild_rejects_audio_that_would_overlap_next_sentence(tmp_path):
+def test_runtime_rebuild_clips_audio_that_would_overlap_next_sentence(tmp_path):
     from appcore.runtime import _rebuild_tts_full_audio_from_segments
-    from pipeline.audio_stitch import TimelineAudioOverflowError
 
     seg0 = tmp_path / "seg0.mp3"
     seg1 = tmp_path / "seg1.mp3"
     seg0.write_bytes(b"seg0")
     seg1.write_bytes(b"seg1")
 
-    with pytest.raises(TimelineAudioOverflowError, match="overlaps next"):
-        _rebuild_tts_full_audio_from_segments(
-            str(tmp_path),
-            [
-                {
-                    "asr_index": 0,
-                    "tts_path": str(seg0),
-                    "start_time": 0.0,
-                    "tts_duration": 1.4,
-                },
-                {
-                    "asr_index": 1,
-                    "tts_path": str(seg1),
-                    "start_time": 1.2,
-                    "end_time": 2.0,
-                    "tts_duration": 0.7,
-                },
-            ],
-            variant="av",
-        )
+    segments = [
+        {
+            "asr_index": 0,
+            "tts_path": str(seg0),
+            "start_time": 0.0,
+            "tts_duration": 1.4,
+        },
+        {
+            "asr_index": 1,
+            "tts_path": str(seg1),
+            "start_time": 1.2,
+            "end_time": 2.0,
+            "tts_duration": 0.7,
+        },
+    ]
+
+    with patch("subprocess.run", return_value=SimpleNamespace(returncode=0, stderr="")) as run:
+        _rebuild_tts_full_audio_from_segments(str(tmp_path), segments, variant="av")
+
+    filter_graph = run.call_args[0][0][run.call_args[0][0].index("-filter_complex") + 1]
+    assert "atrim=duration=1.200" in filter_graph
+    assert segments[0]["audio_clipped"] is True
+    assert segments[0]["audio_clip_reason"] == "next_sentence"

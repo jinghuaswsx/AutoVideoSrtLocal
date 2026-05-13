@@ -33,6 +33,198 @@ if TYPE_CHECKING:
     from appcore.translate_profiles.base import TranslateProfile
 
 
+def _float_value(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _first_positive(*values) -> float | None:
+    for value in values:
+        numeric = _float_value(value, 0.0)
+        if numeric > 0:
+            return numeric
+    return None
+
+
+def _max_timeline_end(rows: list[dict]) -> float | None:
+    max_end = 0.0
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        end = _float_value(
+            row.get("source_end_time", row.get("end_time", row.get("audio_end_time", 0.0))),
+            0.0,
+        )
+        if end > max_end:
+            max_end = end
+    return max_end if max_end > 0 else None
+
+
+def _sentence_index(row: dict, fallback: int) -> int:
+    value = row.get("asr_index", row.get("index", fallback))
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _semantic_issue(row: dict) -> bool:
+    omitted = [str(term).strip() for term in (row.get("omitted_source_terms") or []) if str(term).strip()]
+    return row.get("coverage_ok") is False or bool(omitted)
+
+
+def _copy_clip_metadata_to_sentences(sentences: list[dict], segments: list[dict]) -> None:
+    segment_by_index = {
+        str(segment.get("asr_index", segment.get("index", index))): segment
+        for index, segment in enumerate(segments or [])
+        if isinstance(segment, dict)
+    }
+    clip_fields = (
+        "audio_clipped",
+        "audio_clip_reason",
+        "audio_clip_duration",
+        "audio_clipped_seconds",
+    )
+    for fallback, sentence in enumerate(sentences or []):
+        if not isinstance(sentence, dict):
+            continue
+        segment = segment_by_index.get(str(sentence.get("asr_index", sentence.get("index", fallback))))
+        if not segment:
+            continue
+        for field in clip_fields:
+            if field in segment:
+                sentence[field] = segment[field]
+
+
+def _build_final_compose_summary(
+    task: dict,
+    final_sentences: list[dict],
+    final_tts_segments: list[dict],
+    *,
+    audio_path: str,
+    max_compact_gap: float,
+) -> dict:
+    source_end = _max_timeline_end(final_tts_segments) or _max_timeline_end(final_sentences)
+    video_duration = _first_positive(
+        task.get("video_duration"),
+        task.get("original_video_duration"),
+        source_end,
+    )
+    effective_speech_duration = sum(
+        max(0.0, _float_value(sentence.get("tts_duration"), 0.0))
+        for sentence in (final_sentences or [])
+        if isinstance(sentence, dict)
+    )
+    target_duration = sum(
+        max(0.0, _float_value(sentence.get("target_duration"), 0.0))
+        for sentence in (final_sentences or [])
+        if isinstance(sentence, dict)
+    )
+    silence_gap_duration = sum(
+        max(0.0, _float_value(sentence.get("audio_gap_before"), 0.0))
+        for sentence in (final_sentences or [])
+        if isinstance(sentence, dict)
+    )
+    clipped_segments = [
+        segment
+        for segment in (final_tts_segments or [])
+        if isinstance(segment, dict) and segment.get("audio_clipped")
+    ]
+    truncated_seconds = round(
+        sum(max(0.0, _float_value(segment.get("audio_clipped_seconds"), 0.0)) for segment in clipped_segments),
+        3,
+    )
+    affected_sentence_indices = [
+        _sentence_index(segment, index)
+        for index, segment in enumerate(clipped_segments)
+    ]
+    has_best_effort = any(
+        bool(sentence.get("best_effort"))
+        for sentence in (final_sentences or [])
+        if isinstance(sentence, dict)
+    )
+    semantic_warning_count = sum(
+        1
+        for sentence in (final_sentences or [])
+        if isinstance(sentence, dict) and _semantic_issue(sentence)
+    )
+    warning_sentence_count = sum(
+        1
+        for sentence in (final_sentences or [])
+        if isinstance(sentence, dict)
+        and (
+            bool(sentence.get("best_effort"))
+            or str(sentence.get("status") or "").startswith("warning")
+            or _semantic_issue(sentence)
+        )
+    )
+    if clipped_segments:
+        status = "clipped_output"
+        status_label = "裁剪输出"
+    elif has_best_effort:
+        status = "fallback_output"
+        status_label = "兜底输出"
+    elif semantic_warning_count:
+        status = "review_needed"
+        status_label = "需人工复核"
+    else:
+        status = "fully_converged"
+        status_label = "完全收敛"
+
+    final_output_audio_duration = _first_positive(video_duration, source_end, effective_speech_duration) or 0.0
+    final_video_duration = _first_positive(video_duration, final_output_audio_duration) or 0.0
+    notes = [
+        "按每句 audio_start_time 放置音频，句间由静音补齐；输出时长由最终时间轴限制。",
+    ]
+    if clipped_segments:
+        notes.append("存在超出句子窗口或最终时间轴的音频片段，已先裁剪再参与视频合成。")
+    elif warning_sentence_count:
+        notes.append("存在语义或时长软问题，任务继续输出，结果需复核。")
+
+    return {
+        "status": status,
+        "status_label": status_label,
+        "video_duration": round(video_duration or 0.0, 3),
+        "target_sentence_duration": round(target_duration, 3),
+        "effective_speech_duration": round(effective_speech_duration, 3),
+        "final_output_audio_duration": round(final_output_audio_duration, 3),
+        "final_audio_duration": round(final_output_audio_duration, 3),
+        "final_video_duration": round(final_video_duration, 3),
+        "target_timeline_duration": round(final_output_audio_duration, 3),
+        "source_timeline_duration": round(source_end or 0.0, 3),
+        "audio_path": audio_path,
+        "timeline_mode": "compact_asr_primary",
+        "stitching_method": "按句 audio_start_time 放置，句间静音补齐，最终由 ffmpeg -t 限制到目标时间轴。",
+        "max_compact_gap": round(float(max_compact_gap), 3),
+        "silence_gap_count": sum(
+            1
+            for sentence in (final_sentences or [])
+            if isinstance(sentence, dict) and _float_value(sentence.get("audio_gap_before"), 0.0) > 0.001
+        ),
+        "silence_gap_duration": round(silence_gap_duration, 3),
+        "audio_truncated": bool(clipped_segments),
+        "overflow_clipped": bool(clipped_segments),
+        "truncation_seconds": truncated_seconds,
+        "affected_sentence_indices": affected_sentence_indices,
+        "clipped_segments": [
+            {
+                "asr_index": _sentence_index(segment, index),
+                "reason": segment.get("audio_clip_reason") or "",
+                "clipped_seconds": round(_float_value(segment.get("audio_clipped_seconds"), 0.0), 3),
+                "clip_duration": round(_float_value(segment.get("audio_clip_duration"), 0.0), 3),
+            }
+            for index, segment in enumerate(clipped_segments)
+        ],
+        "has_best_effort": has_best_effort,
+        "warning_sentence_count": warning_sentence_count,
+        "semantic_warning_count": semantic_warning_count,
+        "review_required": bool(has_best_effort or semantic_warning_count or clipped_segments),
+        "notes": notes,
+    }
+
+
 class SentenceReconcileStrategy(TtsConvergenceStrategy):
     code = "sentence_reconcile"
     name = "句级 reconcile（shot_notes-aware）"
@@ -198,10 +390,19 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 calls=tts_debug_calls,
                 save_json=_save_json,
             )
-            av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
             final_localized_translation = _build_av_localized_translation(final_sentences)
             final_tts_segments = _build_av_tts_segments(final_sentences)
             final_full_audio_path = _rebuild_tts_full_audio_from_segments(task_dir, final_tts_segments, variant="av")
+            _copy_clip_metadata_to_sentences(final_sentences, final_tts_segments)
+            av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
+            final_compose_summary = _build_final_compose_summary(
+                task_state.get(task_id) or task,
+                final_sentences,
+                final_tts_segments,
+                audio_path=final_full_audio_path,
+                max_compact_gap=0.25,
+            )
+            av_debug["final_compose_summary"] = final_compose_summary
             final_tts_output = {
                 "full_audio_path": final_full_audio_path,
                 "segments": final_tts_segments,
@@ -220,6 +421,7 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                     "source_normalization": source_normalization,
                     "audio_timeline_mode": "compact_asr_primary",
                     "max_compact_gap": 0.25,
+                    "final_compose_summary": final_compose_summary,
                 }
             )
             variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_full_audio_path
@@ -232,7 +434,8 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 tts_audio_path=final_full_audio_path,
                 voice_id=voice.get("id") or tts_voice_id,
                 localized_translation=final_localized_translation,
-                tts_duration_status="done",
+                tts_duration_status=final_compose_summary["status"],
+                final_compose_summary=final_compose_summary,
                 av_debug=av_debug,
                 audio_timeline_mode="compact_asr_primary",
                 max_compact_gap=0.25,

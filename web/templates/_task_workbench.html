@@ -1034,6 +1034,21 @@
   </div>
 </div>
 
+<div class="sentence-process-overlay hidden" id="sentenceReconcileProcessModal" onclick="if (event.target === this) closeSentenceReconcileProcessModal()">
+  <div class="sentence-process-modal" role="dialog" aria-modal="true" aria-labelledby="sentenceProcessTitle">
+    <div class="sentence-process-modal__header">
+      <div>
+        <h3 id="sentenceProcessTitle">语音生成过程</h3>
+        <p>句级收敛、语义判断、候选轮次和最终合成说明。</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeSentenceReconcileProcessModal()">关闭</button>
+    </div>
+    <div class="sentence-process-modal__body" id="sentenceReconcileProcessBody">
+      <div class="preview-placeholder">暂无语音生成过程。</div>
+    </div>
+  </div>
+</div>
+
 <div class="av-rewrite-overlay hidden" id="avRewriteModal" onclick="if (event.target === this) closeAvRewriteModal()">
   <div class="av-rewrite-modal" role="dialog" aria-modal="true" aria-labelledby="avRewriteTitle">
     <div class="av-rewrite-modal__header">

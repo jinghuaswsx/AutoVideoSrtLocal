@@ -48,9 +48,17 @@ def build_stitched_audio(
     for i, seg in enumerate(segments):
         delay_ms = int(round(float(seg["shot_start"]) * 1000))
         inputs.extend(["-i", str(seg["audio_path"])])
-        filter_parts.append(
-            f"[{i}:a]adelay={delay_ms}|{delay_ms},apad[a{i}]"
-        )
+        clip_duration = seg.get("clip_duration")
+        if clip_duration is not None:
+            safe_clip_duration = max(0.001, float(clip_duration))
+            filter_parts.append(
+                f"[{i}:a]atrim=duration={safe_clip_duration:.3f},"
+                f"asetpts=PTS-STARTPTS,adelay={delay_ms}|{delay_ms},apad[a{i}]"
+            )
+        else:
+            filter_parts.append(
+                f"[{i}:a]adelay={delay_ms}|{delay_ms},apad[a{i}]"
+            )
     mix_inputs = "".join(f"[a{i}]" for i in range(len(segments)))
     filter_graph = ";".join(filter_parts) + (
         f";{mix_inputs}amix=inputs={len(segments)}:duration=longest[aout]"
@@ -183,6 +191,69 @@ def _validate_source_timeline_fit(
                 )
 
 
+def _prepare_source_timeline_segments(
+    segments: List[Dict[str, Any]],
+    *,
+    total_duration: float | None,
+    overflow_tolerance: float,
+) -> List[Dict[str, Any]]:
+    ordered = sorted(
+        [
+            {
+                "segment": segment,
+                "index": index,
+                "start": _float_value(segment.get("audio_start_time", segment.get("start_time")), 0.0),
+                "end": _float_value(segment.get("audio_end_time", segment.get("end_time")), 0.0),
+                "tts_duration": max(0.0, _float_value(segment.get("tts_duration"), 0.0)),
+            }
+            for index, segment in enumerate(segments)
+        ],
+        key=lambda item: (item["start"], item["index"]),
+    )
+    output_limit = _float_value(total_duration, 0.0) if total_duration is not None else 0.0
+
+    for pos, item in enumerate(ordered):
+        segment = item["segment"]
+        start = item["start"]
+        end = item["end"]
+        tts_duration = item["tts_duration"]
+        tts_end = start + tts_duration
+        clip_duration = tts_duration
+        clip_reason = ""
+
+        def apply_bound(bound_end: float, reason: str) -> None:
+            nonlocal clip_duration, clip_reason
+            bound_duration = max(0.0, bound_end - start)
+            if bound_duration + 0.0005 < clip_duration:
+                clip_duration = bound_duration
+                clip_reason = reason
+
+        if end > start and tts_end > end + overflow_tolerance:
+            apply_bound(end, "source_window")
+
+        if pos + 1 < len(ordered):
+            next_start = ordered[pos + 1]["start"]
+            if next_start > start and tts_end > next_start + overflow_tolerance:
+                apply_bound(next_start, "next_sentence")
+
+        if output_limit > 0 and tts_end > output_limit + overflow_tolerance:
+            apply_bound(output_limit, "output_timeline")
+
+        clipped_seconds = max(0.0, tts_duration - clip_duration)
+        if clipped_seconds > overflow_tolerance and clip_reason:
+            segment["audio_clipped"] = True
+            segment["audio_clip_reason"] = clip_reason
+            segment["audio_clip_duration"] = round(clip_duration, 3)
+            segment["audio_clipped_seconds"] = round(clipped_seconds, 3)
+        else:
+            segment["audio_clipped"] = False
+            segment["audio_clip_duration"] = round(tts_duration, 3)
+            segment["audio_clipped_seconds"] = 0.0
+            segment.pop("audio_clip_reason", None)
+
+    return segments
+
+
 def build_source_timeline_audio(
     segments: List[Dict[str, Any]],
     *,
@@ -200,7 +271,7 @@ def build_source_timeline_audio(
     if not segments:
         raise ValueError("segments cannot be empty")
 
-    _validate_source_timeline_fit(
+    _prepare_source_timeline_segments(
         segments,
         total_duration=total_duration,
         overflow_tolerance=overflow_tolerance,
@@ -217,12 +288,14 @@ def build_source_timeline_audio(
         tts_duration = _float_value(segment.get("tts_duration"), 0.0)
         source_end = _float_value(segment.get("audio_end_time", segment.get("end_time")), 0.0)
         timeline_end = max(timeline_end, source_end if source_end > 0 else start_time + tts_duration)
+        clip_duration = segment.get("audio_clip_duration") if segment.get("audio_clipped") else None
         stitch_segments.append(
             {
                 "shot_start": start_time,
                 "shot_duration": tts_duration,
                 "actual_duration": tts_duration,
                 "audio_path": segment_path,
+                **({"clip_duration": clip_duration} if clip_duration is not None else {}),
             }
         )
 

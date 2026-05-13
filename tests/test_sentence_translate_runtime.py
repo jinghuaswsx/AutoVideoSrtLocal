@@ -9,7 +9,7 @@ def _runner() -> SentenceTranslateRunner:
 
 def test_translate_step_only_creates_initial_localized_sentences(tmp_path, monkeypatch):
     task_id = "sentence-translate-initial-only"
-    store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=None)
     store.update(
         task_id,
         pipeline_version="av",
@@ -70,7 +70,7 @@ def test_translate_step_only_creates_initial_localized_sentences(tmp_path, monke
 
 def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_path, monkeypatch):
     task_id = "sentence-translate-tts-converges"
-    store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=None)
     initial_sentence = {
         "asr_index": 0,
         "text": "Dieses Serum fühlt sich frisch an.",
@@ -148,3 +148,94 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
     assert variant["sentences"][0]["text"] == "Frisch auf der Haut."
     assert variant["av_debug"]["summary"]["text_rewrite_attempts"] == 1
     assert saved["tts_audio_path"] == str(final_audio)
+
+
+def test_tts_step_records_fallback_final_compose_summary(tmp_path, monkeypatch):
+    task_id = "sentence-translate-tts-fallback-summary"
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=None)
+    initial_sentence = {
+        "asr_index": 0,
+        "text": "Long candidate.",
+        "est_chars": 15,
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "target_duration": 1.0,
+        "target_chars_range": [8, 12],
+        "must_keep_terms": ["windshield"],
+        "coverage_ok": False,
+        "omitted_source_terms": ["windshield"],
+    }
+    store.update(
+        task_id,
+        pipeline_version="av",
+        target_lang="es",
+        selected_voice_id="voice-1",
+        selected_voice_name="Voice One",
+        av_translate_inputs={
+            "target_language": "es",
+            "target_language_name": "Spanish",
+            "target_market": "MX",
+            "sync_granularity": "sentence",
+            "product_overrides": {},
+        },
+        normalized_script_segments=[
+            {"index": 0, "text": "A windshield line.", "start_time": 0.0, "end_time": 1.0},
+        ],
+        variants={"av": {"sentences": [initial_sentence], "source_normalization": {"summary": {}}}},
+    )
+    final_audio = tmp_path / "tts_full.av.mp3"
+    final_audio.write_bytes(b"audio")
+
+    monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr(
+        "pipeline.tts.generate_full_audio",
+        lambda segments, *args, **kwargs: {
+            "full_audio_path": str(tmp_path / "first.mp3"),
+            "segments": [{**segments[0], "tts_path": str(tmp_path / "seg_0000.mp3"), "tts_duration": 1.2}],
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.validate_tts_script_language_or_raise",
+        lambda **kwargs: {"is_target_language": True},
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.reconcile_duration",
+        lambda **kwargs: [
+            {
+                **kwargs["av_output"]["sentences"][0],
+                "tts_path": str(tmp_path / "seg_0000.rewrite.mp3"),
+                "tts_duration": 1.2,
+                "duration_ratio": 1.2,
+                "status": "warning_semantic",
+                "best_effort": True,
+                "best_effort_reason": "max_attempts_exhausted",
+                "text_rewrite_attempts": 10,
+                "tts_regenerate_attempts": 10,
+                "coverage_ok": False,
+                "omitted_source_terms": ["windshield"],
+            }
+        ],
+    )
+
+    def fake_rebuild(task_dir, segments, variant="av"):
+        segments[0]["audio_clipped"] = True
+        segments[0]["audio_clipped_seconds"] = 0.2
+        segments[0]["audio_clip_reason"] = "source_window"
+        return str(final_audio)
+
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile._rebuild_tts_full_audio_from_segments",
+        fake_rebuild,
+    )
+
+    _runner()._step_tts(task_id, str(tmp_path))
+
+    saved = store.get(task_id)
+    summary = saved["final_compose_summary"]
+    assert saved["tts_duration_status"] == "clipped_output"
+    assert summary["status"] == "clipped_output"
+    assert summary["has_best_effort"] is True
+    assert summary["semantic_warning_count"] == 1
+    assert summary["audio_truncated"] is True
+    assert summary["truncation_seconds"] == 0.2
+    assert summary["affected_sentence_indices"] == [0]

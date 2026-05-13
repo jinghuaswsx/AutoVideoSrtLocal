@@ -217,9 +217,22 @@ def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     assert "语句重新翻译" in script
     assert "音频重生成" in script
     assert "rewrite_skip_reason" in script
+    assert "final_compose_summary" in script
+    assert "最终合成说明" in script
+    assert "拼接方式" in script
+    assert "coverage_ok" in script
+    assert "omitted_source_terms" in script
+    assert "语义判断" in script
+    assert "openSentenceReconcileProcessModal" in script
+    assert "sentenceReconcileProcessModal" in script
+    assert "查看语音生成过程" in script
     assert "av-attempt-table" in script
     assert "av-attempt-text-before" in script
     assert "av-attempt-text-after" in script
+    assert "semantic-coverage-chip" in script
+    assert ".sentence-process-modal" in styles
+    assert ".semantic-coverage-chip" in styles
+    assert 'id="sentenceReconcileProcessModal"' in template
     assert ".sentence-tts-progress" in styles
     assert ".av-attempt-table" in styles
     assert 'id="avConvergencePanel"' not in template
