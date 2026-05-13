@@ -82,11 +82,16 @@ def _normalize_shots(
     """强制分镜首尾衔接 + 每个分镜加 duration 字段。就地修改。"""
     if not shots:
         raise ValueError("Gemini 未返回任何分镜")
+    duration = float(duration_seconds or 0.0)
+    if duration <= 0:
+        duration = max(float(shot.get("end") or 0.0) for shot in shots)
     shots[0]["start"] = 0.0
-    shots[-1]["end"] = float(duration_seconds)
+    shots[-1]["end"] = max(float(shots[-1].get("end") or 0.0), duration)
     for i in range(len(shots) - 1):
         shots[i + 1]["start"] = shots[i]["end"]
     for shot in shots:
+        if float(shot["end"]) < float(shot["start"]):
+            shot["end"] = shot["start"]
         shot["duration"] = round(
             float(shot["end"]) - float(shot["start"]), 3,
         )

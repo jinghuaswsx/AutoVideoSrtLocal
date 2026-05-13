@@ -202,6 +202,27 @@ def step_asr_normalize(runner, task_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_shot_decompose_duration(task: dict, video_path: str) -> float:
+    duration = float(task.get("video_duration") or 0.0)
+    if duration <= 0:
+        try:
+            from pipeline.extract import get_video_duration
+
+            duration = float(get_video_duration(video_path) or 0.0)
+        except Exception:
+            log.warning("failed to probe video duration for shot_decompose", exc_info=True)
+    utterance_end = 0.0
+    for utt in task.get("utterances") or []:
+        try:
+            utterance_end = max(
+                utterance_end,
+                float(utt.get("end_time") or utt.get("end") or 0.0),
+            )
+        except (TypeError, ValueError):
+            continue
+    return max(duration, utterance_end)
+
+
 def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) -> None:
     """Gemini 视觉分析视频，切镜头列表 + 时间轴对齐。
 
@@ -217,7 +238,9 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
     runner._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...",
                      model_tag=f"{_sd_provider} · {_sd_model}")
     task = task_state.get(task_id) or {}
-    duration = float(task.get("video_duration") or 0.0)
+    duration = _resolve_shot_decompose_duration(task, video_path)
+    if duration > 0 and not task.get("video_duration"):
+        task_state.update(task_id, video_duration=duration)
 
     shots = decompose_shots(
         video_path,

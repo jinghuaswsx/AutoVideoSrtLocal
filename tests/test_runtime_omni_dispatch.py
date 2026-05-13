@@ -232,6 +232,62 @@ def test_pipeline_skips_separate_when_voice_separation_disabled(
     assert "loudness_match" not in names
 
 
+def test_shot_decompose_falls_back_to_asr_end_when_video_duration_missing(
+    monkeypatch, tmp_path, omni_runner,
+):
+    import appcore.task_state as task_state
+    from appcore.runtime_omni_steps import step_shot_decompose
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
+        },
+    )
+    captured = {}
+
+    def fake_decompose(video_path, **kwargs):
+        captured["duration_seconds"] = kwargs["duration_seconds"]
+        return [
+            {
+                "index": 1,
+                "start": 0.0,
+                "end": kwargs["duration_seconds"],
+                "duration": kwargs["duration_seconds"],
+                "description": "full video",
+            }
+        ]
+
+    monkeypatch.setattr("pipeline.shot_decompose.decompose_shots", fake_decompose)
+    monkeypatch.setattr(
+        "pipeline.shot_decompose.align_asr_to_shots",
+        lambda shots, asr_segments: shots,
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 0.0)
+    task_id = "omni-shot-duration-fallback"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        utterances=[
+            {"start_time": 0.0, "end_time": 1.5, "text": "Intro."},
+            {"start_time": 21.8, "end_time": 23.3, "text": "CTA."},
+        ],
+    )
+
+    step_shot_decompose(
+        omni_runner,
+        task_id,
+        str(tmp_path / "video.mp4"),
+        str(tmp_path),
+    )
+
+    assert captured["duration_seconds"] == 23.3
+
+
 def test_pipeline_keeps_loudness_when_voice_separation_on(
     monkeypatch, omni_runner,
 ):
