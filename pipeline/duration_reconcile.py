@@ -180,10 +180,17 @@ def _sentence_progress_payload(position: int, current: dict, phase: str) -> dict
         "source_text": current.get("source_text") or current.get("original_source_text") or "",
         "status": current.get("status", ""),
         "speed": current.get("speed", 1.0),
+        "active_attempt": current.get("active_attempt"),
+        "active_action": current.get("active_action", ""),
+        "active_temperature": current.get("active_temperature"),
+        "active_tts_attempt": current.get("active_tts_attempt"),
+        "pending_tts_text": current.get("pending_tts_text", ""),
         "text_rewrite_attempts": current.get("text_rewrite_attempts", 0),
         "tts_regenerate_attempts": current.get("tts_regenerate_attempts", 0),
         "speed_adjustment_attempts": current.get("speed_adjustment_attempts", 0),
         "semantic_repair_attempts": current.get("semantic_repair_attempts", 0),
+        "max_text_rewrite_attempts": current.get("max_text_rewrite_attempts"),
+        "max_tts_regenerate_attempts": current.get("max_tts_regenerate_attempts"),
         "must_keep_terms": list(current.get("must_keep_terms") or []),
         "omitted_source_terms": list(current.get("omitted_source_terms") or []),
         "coverage_ok": current.get("coverage_ok", True),
@@ -390,6 +397,12 @@ def reconcile_duration(
                         )
                     rewrite_temperature = av_translate.rewrite_temperature_for_attempt(rewrite_round)
                     current["text_rewrite_attempts"] += 1
+                    current["active_attempt"] = rewrite_round
+                    current["active_action"] = action
+                    current["active_temperature"] = rewrite_temperature
+                    current["active_tts_attempt"] = current["tts_regenerate_attempts"] + 1
+                    current["pending_tts_text"] = ""
+                    _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_start")
                     try:
                         rewrite_result = av_translate.rewrite_one(
                             asr_index=asr_index,
@@ -412,6 +425,7 @@ def reconcile_duration(
                         )
                     except Exception as exc:
                         current["rewrite_rounds"] = rewrite_round
+                        current["pending_tts_text"] = ""
                         current["attempts"].append(
                             {
                                 "round": rewrite_round,
@@ -458,6 +472,9 @@ def reconcile_duration(
                     current["est_chars"] = len(new_text)
                     current["rewrite_rounds"] = rewrite_round
                     current["target_chars_range"] = new_range
+                    current["pending_tts_text"] = new_text
+                    current["active_tts_attempt"] = current["tts_regenerate_attempts"] + 1
+                    _emit_sentence_progress(on_progress, position=position, current=current, phase="tts_regen_start")
                     current["tts_path"], current_duration = _regenerate_segment(
                         sentence=current,
                         voice_id=voice_id,

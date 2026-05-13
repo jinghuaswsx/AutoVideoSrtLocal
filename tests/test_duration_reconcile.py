@@ -396,6 +396,93 @@ def test_reconcile_duration_rewrite_success(monkeypatch):
     assert regenerate_calls == [{"text": "Short rewrite", "speed": None}]
 
 
+def test_reconcile_duration_emits_live_rewrite_and_tts_regen_progress(monkeypatch):
+    durations = iter([5.0])
+    events = []
+
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.av_translate.rewrite_one",
+        lambda **kwargs: "Short rewrite",
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.generate_segment_audio",
+        lambda text, voice_id, output_path, **kwargs: output_path,
+    )
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (60, 70),
+                    "text": "A very long line that needs rewrite",
+                    "est_chars": 34,
+                    "source_text": "source sentence",
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 6.0}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source sentence"}],
+        on_progress=events.append,
+    )
+
+    phases = [event["phase"] for event in events]
+    assert phases == [
+        "initial_measure",
+        "rewrite_start",
+        "tts_regen_start",
+        "rewrite_attempt",
+        "speed_adjust",
+        "sentence_done",
+    ]
+
+    rewrite_start = events[1]
+    assert rewrite_start | {
+        "mode": "sentence_reconcile",
+        "round": 1,
+        "sentence_position": 0,
+        "asr_index": 0,
+        "phase": "rewrite_start",
+        "active_attempt": 1,
+        "active_action": "shorten",
+        "active_tts_attempt": 1,
+        "status": "needs_rewrite",
+        "source_text": "source sentence",
+    } == rewrite_start
+    assert rewrite_start["active_temperature"] == pytest.approx(0.6)
+
+    tts_regen_start = events[2]
+    assert tts_regen_start | {
+        "phase": "tts_regen_start",
+        "active_attempt": 1,
+        "active_action": "shorten",
+        "active_tts_attempt": 1,
+        "pending_tts_text": "Short rewrite",
+        "text": "Short rewrite",
+    } == tts_regen_start
+
+    rewrite_attempt = events[3]
+    assert rewrite_attempt["phase"] == "rewrite_attempt"
+    assert rewrite_attempt["text_rewrite_attempts"] == 1
+    assert rewrite_attempt["tts_regenerate_attempts"] == 1
+    assert rewrite_attempt["attempts"][0] | {
+        "round": 1,
+        "action": "shorten",
+        "before_text": "A very long line that needs rewrite",
+        "after_text": "Short rewrite",
+        "status": "ok",
+    } == rewrite_attempt["attempts"][0]
+
+
 def test_reconcile_duration_rewrite_gives_up(monkeypatch):
     durations = iter([6.0, 6.0])
     regenerate_calls = []

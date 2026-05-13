@@ -80,10 +80,26 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
             runner._set_step(task_id, "tts", "running", f"正在生成{target_language_name}首轮配音...")
             tts_input_segments = _build_av_tts_segments(av_sentences)
             from appcore.runtime._helpers import make_tts_progress_emitter
+
+            def _on_initial_tts_progress(snapshot: dict) -> None:
+                record = {
+                    "mode": "sentence_reconcile",
+                    "round": 0,
+                    "phase": "initial_audio_gen",
+                    "status": "initial_audio_gen",
+                    "audio_segments_done": int(snapshot.get("done") or 0),
+                    "audio_segments_total": int(snapshot.get("total") or 0),
+                    "audio_segments_active": int(snapshot.get("active") or 0),
+                    "audio_segments_queued": int(snapshot.get("queued") or 0),
+                    "target_language": target_language,
+                }
+                runner._emit_duration_round(task_id, 0, "initial_audio_gen", record)
+
             on_progress = make_tts_progress_emitter(
                 runner, task_id,
                 lang_label=target_language_name,
                 round_label="首轮",
+                extra_state_update=_on_initial_tts_progress,
             )
             tts_output = tts_engine.synthesize_full(
                 tts_input_segments,
@@ -134,10 +150,26 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 phase = str(record.get("phase") or "sentence_progress")
                 asr_index = record.get("asr_index")
                 status = record.get("status") or ""
+                active_attempt = record.get("active_attempt")
+                active_tts_attempt = record.get("active_tts_attempt")
+                max_text_attempts = record.get("max_text_rewrite_attempts")
+                max_tts_attempts = record.get("max_tts_regenerate_attempts")
+                if phase == "rewrite_start":
+                    attempt_label = f"第 {active_attempt}/{max_text_attempts} 次" if max_text_attempts else f"第 {active_attempt} 次"
+                    message = f"正在重新翻译句 {asr_index} · {attempt_label} · {record.get('active_action') or status}"
+                elif phase == "tts_regen_start":
+                    attempt_label = f"第 {active_tts_attempt}/{max_tts_attempts} 次" if max_tts_attempts else f"第 {active_tts_attempt} 次"
+                    message = f"正在重生成句 {asr_index} 音频 · {attempt_label}"
+                elif phase == "rewrite_attempt":
+                    message = f"句 {asr_index} · 译文和音频已测量 · {status}"
+                elif phase == "sentence_done":
+                    message = f"句 {asr_index} · 收敛处理完成 · {status}"
+                else:
+                    message = f"正在按句联合收敛文案与音频时长 · 句 {asr_index} · {status}"
                 runner._emit_substep_msg(
                     task_id,
                     "tts",
-                    f"正在按句联合收敛文案与音频时长 · 句 {asr_index} · {status}",
+                    message,
                 )
                 runner._emit_duration_round(task_id, round_index, phase, record)
 

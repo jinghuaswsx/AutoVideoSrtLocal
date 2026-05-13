@@ -203,11 +203,24 @@ def test_tts_speedup_players_render_as_readable_preview_cards():
 def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
 
     assert "renderSentenceReconcileDurationLog" in script
+    assert "renderSentenceTtsLiveProgress" in script
     assert "mode === 'sentence_reconcile'" in script
+    assert "语音生成过程" in script
     assert "句级时长收敛（Sentence Reconcile）" in script
+    assert "initial_audio_gen" in script
+    assert "rewrite_start" in script
+    assert "tts_regen_start" in script
+    assert "语句重新翻译" in script
+    assert "音频重生成" in script
     assert "rewrite_skip_reason" in script
+    assert "av-attempt-table" in script
+    assert "av-attempt-text-before" in script
+    assert "av-attempt-text-after" in script
+    assert ".sentence-tts-progress" in styles
+    assert ".av-attempt-table" in styles
 
 
 def test_shot_char_limit_translate_process_has_legacy_state_fallback():

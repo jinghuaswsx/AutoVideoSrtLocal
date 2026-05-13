@@ -3213,6 +3213,87 @@
     return `${numeric > 0 ? "+" : ""}${numeric.toFixed(2)}s`;
   }
 
+  function isSentenceReconcileProgressItem(item) {
+    if (!item) return false;
+    if (item.phase === "initial_audio_gen" || Number(item.round) === 0) return false;
+    return item.sentence_position != null || item.asr_index != null || item.source_text || item.text;
+  }
+
+  function sentenceAttemptActionLabel(action) {
+    const value = String(action || "").toLowerCase();
+    if (value === "shorten") return "压缩文案";
+    if (value === "expand") return "扩写文案";
+    if (value === "repair_coverage") return "语义修复";
+    return action || "--";
+  }
+
+  function sentenceProgressPhaseLabel(phase) {
+    return ({
+      initial_audio_gen: "首轮音频生成",
+      initial_measure: "初始时长测量",
+      rewrite_start: "语句重新翻译",
+      tts_regen_start: "音频重生成",
+      rewrite_attempt: "重翻译 + 音频测量完成",
+      rewrite_error: "语句重新翻译失败",
+      speed_adjust: "速度微调",
+      sentence_done: "当前句完成",
+    })[phase] || phase || "--";
+  }
+
+  function latestSentenceTtsProgress(progressItems) {
+    const items = (progressItems || []).filter(isSentenceReconcileProgressItem);
+    return items.length ? items[items.length - 1] : null;
+  }
+
+  function renderSentenceTtsLiveProgress(progressItems, initialAudioProgress = null) {
+    const current = latestSentenceTtsProgress(progressItems);
+    if (!initialAudioProgress && !current) return "";
+
+    const total = numberOrNull(initialAudioProgress?.audio_segments_total);
+    const done = numberOrNull(initialAudioProgress?.audio_segments_done) || 0;
+    const active = numberOrNull(initialAudioProgress?.audio_segments_active) || 0;
+    const queued = numberOrNull(initialAudioProgress?.audio_segments_queued) || 0;
+    const pct = total ? Math.max(0, Math.min(100, (done / total) * 100)) : 0;
+    const currentPhase = current ? sentenceProgressPhaseLabel(current.phase) : "等待句级收敛";
+    const currentAsr = current ? (current.asr_index ?? current.sentence_position ?? "--") : "--";
+    const currentAttempt = current?.active_attempt != null
+      ? `文案 ${current.active_attempt}/${current.max_text_rewrite_attempts || "?"}`
+      : "";
+    const currentTtsAttempt = current?.active_tts_attempt != null
+      ? `TTS ${current.active_tts_attempt}/${current.max_tts_regenerate_attempts || "?"}`
+      : "";
+    const currentAction = current?.active_action ? sentenceAttemptActionLabel(current.active_action) : "";
+    const liveText = current?.pending_tts_text || current?.text || "";
+    const liveMeta = [currentAction, currentAttempt, currentTtsAttempt, current?.status || ""].filter(Boolean).join(" · ");
+
+    return `
+      <div class="sentence-tts-progress">
+        <div class="sentence-tts-progress-head">
+          <div>
+            <div class="sentence-tts-progress-title">语音生成过程</div>
+            <div class="sentence-tts-progress-subtitle">首轮生成 → 句级测量 → 语句重新翻译 → 音频重生成 → 收敛判定</div>
+          </div>
+          <span class="sentence-tts-progress-badge">${escapeHtml(currentPhase)}</span>
+        </div>
+        <div class="sentence-tts-progress-grid">
+          <div class="sentence-tts-progress-step">
+            <div class="sentence-tts-progress-step-title">首轮音频生成</div>
+            <div class="sentence-tts-progress-track" aria-hidden="true">
+              <span style="width:${escapeAttr(pct.toFixed(2))}%"></span>
+            </div>
+            <div class="sentence-tts-progress-meta">${total ? `${escapeHtml(done)}/${escapeHtml(total)} 段` : "等待进度"} · 活跃 ${escapeHtml(active)} 路 · 排队 ${escapeHtml(queued)}</div>
+          </div>
+          <div class="sentence-tts-progress-step is-current">
+            <div class="sentence-tts-progress-step-title">当前句处理</div>
+            <div class="sentence-tts-progress-current">句 ${escapeHtml(currentAsr)} · ${escapeHtml(currentPhase)}</div>
+            ${liveMeta ? `<div class="sentence-tts-progress-meta">${escapeHtml(liveMeta)}</div>` : ""}
+            ${liveText ? `<div class="sentence-tts-progress-preview">${escapeHtml(liveText)}</div>` : ""}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderSentenceReconcileDurationLog(container, progressRounds = null) {
     if (!container || !currentTask || !isAvSyncTask(currentTask)) return false;
     const av = currentTask.variants?.av || {};
@@ -3221,7 +3302,9 @@
     const debugSentences = Array.isArray(convergenceDebug.sentences) ? convergenceDebug.sentences : [];
     const avSentences = Array.isArray(av.sentences) ? av.sentences : [];
     const progressItems = Array.isArray(progressRounds) ? progressRounds.filter(Boolean) : [];
-    const sourceRows = progressItems.length ? progressItems : (avSentences.length ? avSentences : debugSentences);
+    const initialAudioProgress = progressItems.find(item => item && (item.phase === "initial_audio_gen" || Number(item.round) === 0)) || null;
+    const sentenceProgressItems = progressItems.filter(isSentenceReconcileProgressItem);
+    const sourceRows = sentenceProgressItems.length ? sentenceProgressItems : (avSentences.length ? avSentences : debugSentences);
     if (!sourceRows.length) return false;
 
     const status = currentTask.tts_duration_status || (progressItems.length ? 'running' : 'done');
@@ -3245,7 +3328,7 @@
     const parts = [];
     parts.push(`
       <div class="collapsible-header duration-log-header">
-        <span class="collapsible-title">句级时长收敛（Sentence Reconcile）</span>
+        <span class="collapsible-title">语音生成过程 · 句级时长收敛（Sentence Reconcile）</span>
         ${statusTag}
         <span class="meta">共 ${sourceRows.length} 句 · 文案尝试 ${totals.text} · TTS 重生成 ${totals.tts} · 调速 ${totals.speed} · 最佳候选 ${totals.bestEffort}</span>
         <button type="button" class="collapsible-toggle" aria-label="展开/折叠" aria-expanded="true">
@@ -3256,7 +3339,8 @@
       </div>
       <div class="collapsible-body">
     `);
-    parts.push(renderSentenceReconcileSyncSummary(sourceRows, { av, avDebug, debugSentences, progressItems }));
+    parts.push(renderSentenceTtsLiveProgress(progressItems, initialAudioProgress));
+    parts.push(renderSentenceReconcileSyncSummary(sourceRows, { av, avDebug, debugSentences, progressItems: sentenceProgressItems }));
 
     sourceRows.forEach((sentence, rowIndex) => {
       const debug = debugSentences.find(item => String(item.asr_index ?? item.index ?? rowIndex) === String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
@@ -3296,7 +3380,7 @@
           <div class="duration-round-meta">句级翻译：${escapeHtml(finalText || "--")}</div>
           ${issueHtml}
           ${skipHtml}
-          ${attemptsDetail ? `<div class="duration-round-meta">${attemptsDetail}</div>` : ""}
+          ${attemptsDetail}
         </div>
       `);
     });
@@ -3611,7 +3695,7 @@
   }
 
   function renderAvAttemptsDetail(attempts) {
-    const bits = attempts.map((attempt, index) => {
+    const rows = attempts.map((attempt, index) => {
       const round = attempt.round ?? attempt.rewrite_round ?? index + 1;
       const action = attempt.action || attempt.operation || "";
       const status = attempt.status || "";
@@ -3631,25 +3715,76 @@
         ));
       const beforeText = attempt.before_text || attempt.text || "";
       const afterText = attempt.after_text || attempt.final_text || "";
-      const meta = [
-        action ? `动作 ${action}` : "",
-        status ? `状态 ${status}` : "",
-        reason ? `原因 ${reason}` : "",
+      const rewriteMeta = [
+        action ? sentenceAttemptActionLabel(action) : "",
         textAttempt != null ? `文案 #${textAttempt}` : "",
-        ttsAttempt != null ? `TTS #${ttsAttempt}` : "",
         temperature != null ? `温度 ${temperature.toFixed(2)}` : "",
-        selected ? "最佳候选" : "",
+      ].filter(Boolean).join(" · ");
+      const audioMeta = [
+        ttsAttempt != null ? `TTS #${ttsAttempt}` : "",
         `目标 ${formatAvDuration(targetDuration)}`,
         `当前 ${formatAvDuration(ttsDuration)}`,
         `偏差 ${formatAvDelta(computedDelta)}`,
       ].filter(Boolean).join(" · ");
-      const textParts = [
-        beforeText ? `前：${beforeText}` : "",
-        afterText ? `后：${afterText}` : "",
-      ].filter(Boolean).join(" / ");
-      return `R${escapeHtml(round)} ${escapeHtml(meta)}${textParts ? `｜${escapeHtml(textParts)}` : ""}`;
-    });
-    return `<div class="av-convergence-attempts">轮次详情：${bits.join(" / ")}</div>`;
+      const resultMeta = [
+        status ? `状态 ${status}` : "",
+        reason ? `原因 ${reason}` : "",
+        selected ? "最佳候选" : "",
+      ].filter(Boolean).join(" · ");
+      const error = attempt.error || attempt.exception || "";
+      return `
+        <tr class="${selected ? "is-selected" : ""}">
+          <td class="av-attempt-round">
+            <strong>R${escapeHtml(round)}</strong>
+            ${selected ? '<span class="av-attempt-pill">最佳候选</span>' : ""}
+          </td>
+          <td>
+            <div class="av-attempt-section-title">语句重新翻译</div>
+            ${rewriteMeta ? `<div class="av-attempt-meta">${escapeHtml(rewriteMeta)}</div>` : ""}
+            <div class="av-attempt-text av-attempt-text-before">
+              <span>修改前</span>
+              <p>${escapeHtml(beforeText || "--")}</p>
+            </div>
+            <div class="av-attempt-text av-attempt-text-after">
+              <span>修改后</span>
+              <p>${escapeHtml(afterText || "--")}</p>
+            </div>
+          </td>
+          <td>
+            <div class="av-attempt-section-title">音频重生成</div>
+            <div class="av-attempt-meta">${escapeHtml(audioMeta)}</div>
+            <div class="av-attempt-metrics">
+              <span>目标 <strong>${escapeHtml(formatAvDuration(targetDuration))}</strong></span>
+              <span>当前 <strong>${escapeHtml(formatAvDuration(ttsDuration))}</strong></span>
+              <span>偏差 <strong>${escapeHtml(formatAvDelta(computedDelta))}</strong></span>
+            </div>
+          </td>
+          <td>
+            <div class="av-attempt-section-title">结果</div>
+            <div class="av-attempt-meta">${escapeHtml(resultMeta || "--")}</div>
+            ${error ? `<div class="av-attempt-error">${escapeHtml(error)}</div>` : ""}
+          </td>
+        </tr>
+      `;
+    }).join("");
+    return `
+      <details class="av-convergence-attempts" open>
+        <summary>轮次详情（${escapeHtml(attempts.length)} 次）</summary>
+        <div class="av-attempt-table-wrap">
+          <table class="av-attempt-table">
+            <thead>
+              <tr>
+                <th>轮次</th>
+                <th>语句重新翻译</th>
+                <th>音频重生成</th>
+                <th>结果</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </details>
+    `;
   }
 
   function formatAvCounter(value, maxValue) {
