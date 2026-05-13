@@ -147,6 +147,7 @@ def _resume_cleanup_updates(task: dict, step_names: list[str], start_step: str) 
     updates: dict = {
         "artifacts": _drop_artifacts(task, *_drop_steps_from(step_names, start_step)),
         "status": "running",
+        "error": "",
         "current_review_step": "",
     }
     if start_step in {"asr_clean", "asr_normalize"}:
@@ -596,6 +597,7 @@ def update_source_language(task_id):
         detected_source_language=None,
         artifacts=artifacts,
         status="running",
+        error="",
         current_review_step="",
     )
 

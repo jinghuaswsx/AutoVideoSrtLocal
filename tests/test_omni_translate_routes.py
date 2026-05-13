@@ -360,6 +360,8 @@ def test_resume_accepts_dynamic_steps_from_plugin_config(authed_client_no_db, st
 
     assert resp.status_code == 200
     assert resp.get_json()["start_step"] == start_step
+    update_kwargs = mock_store.update.call_args.kwargs
+    assert update_kwargs["error"] == ""
     pending_steps = [
         call.args[1] for call in mock_store.set_step.call_args_list
         if call.args[2] == "pending"
