@@ -1260,8 +1260,9 @@
     const diagnosisSummary = diagnosis.summary || diagnosis.error || "";
     const verificationSummary = verification.summary || verification.error || "";
     const humanReport = artifact.human_report || "";
+    const readable = renderReadableAuditFindings(artifact);
     const body = [
-      humanReport ? renderPreviewItem({ type: "text", label: "中文审计结论", content: humanReport }) : "",
+      readable || (humanReport ? renderPreviewItem({ type: "text", label: "中文审计结论", content: humanReport }) : ""),
       diagnosisSummary ? renderPreviewItem({ type: "text", label: "Doubao 诊断总结", content: diagnosisSummary }) : "",
       renderAuditList("诊断问题", diagnosis.issues || []),
       verificationSummary ? renderPreviewItem({ type: "text", label: "Gemini 复核总结", content: verificationSummary }) : "",
@@ -1276,6 +1277,39 @@
     return `${meta}${body}${raw}`;
   }
 
+  function renderReadableAuditFindings(artifact) {
+    const findings = Array.isArray(artifact.readable_findings) ? artifact.readable_findings : [];
+    const summary = artifact.readable_summary || "";
+    if (!summary && !findings.length) return "";
+    const summaryBlock = summary
+      ? `<div class="preview-block"><div class="preview-label">中文审计结论</div><div class="preview-note">${escapeHtml(summary)}</div></div>`
+      : "";
+    const listBlock = findings.length
+      ? `<div class="preview-block"><div class="preview-label">需要处理的同步点</div><div class="preview-list">${findings.map((item, index) => renderReadableAuditFinding(item, index)).join("")}</div></div>`
+      : "";
+    return `${summaryBlock}${listBlock}`;
+  }
+
+  function renderReadableAuditFinding(item, index) {
+    const title = [
+      item.sync_point || (item.asr_index !== undefined && item.asr_index !== null ? `ASR ${item.asr_index}` : `#${index + 1}`),
+      item.severity_label || auditSeverityLabel(item.severity),
+      item.verified ? "复核确认" : "候选问题",
+    ].filter(Boolean).join(" · ");
+    const lines = [
+      item.problem ? `问题：${item.problem}` : "",
+      item.timing ? `时长：${item.timing}` : "",
+      item.sentence_text ? `目标句：${item.sentence_text}` : "",
+      item.source_text ? `原句：${item.source_text}` : "",
+      item.recommendation ? `处理建议：${item.recommendation}` : "",
+      item.suggested_text ? `建议文案：${item.suggested_text}` : "",
+    ].filter(Boolean);
+    return `<div class="preview-block">
+      <div class="preview-time">${escapeHtml(title)}</div>
+      ${lines.map(line => `<div class="preview-note">${escapeHtml(line)}</div>`).join("")}
+    </div>`;
+  }
+
   function renderAuditList(title, list) {
     if (!list || !list.length) {
       return `<div class="preview-block"><div class="preview-label">${escapeHtml(title)}</div><div class="preview-note">暂无</div></div>`;
@@ -1288,18 +1322,18 @@
       return `<div class="preview-block"><div class="preview-note">${escapeHtml(item || "")}</div></div>`;
     }
     const head = [
-      item.severity ? String(item.severity).toUpperCase() : "",
+      auditSeverityLabel(item.severity),
       item.asr_index !== undefined && item.asr_index !== null ? `ASR ${item.asr_index}` : `#${index + 1}`,
-      item.action || item.safe_action || item.status || "",
+      auditProblemFromItem(item),
     ].filter(Boolean).join(" · ");
     const lines = [
       item.reason || item.problem || item.issue || item.summary || "",
       item.evidence ? `证据：${item.evidence}` : "",
       item.sync_point ? `同步点：${item.sync_point}` : "",
       item.sentence_text ? `问题句子：${item.sentence_text}` : "",
-      item.timing_detail ? `时长证据：${item.timing_detail}` : "",
+      item.timing_detail ? `时长证据：${item.timing_detail}` : auditTimingSummary(item),
       item.mismatch_reason ? `问题说明：${item.mismatch_reason}` : "",
-      item.recommendation ? `处理建议：${item.recommendation}` : "",
+      item.recommendation ? `处理建议：${item.recommendation}` : auditRecommendation(item),
       item.before_text ? `修正前：${item.before_text}` : "",
       item.after_text ? `修正后：${item.after_text}` : "",
       item.suggested_text ? `建议文本：${item.suggested_text}` : "",
@@ -1313,6 +1347,90 @@
       ${lines.map(line => `<div class="preview-note">${escapeHtml(line)}</div>`).join("")}
       ${fallback ? `<pre class="preview-text">${escapeHtml(fallback)}</pre>` : ""}
     </div>`;
+  }
+
+  function auditSeverityLabel(value) {
+    const key = String(value || "").toLowerCase();
+    if (key === "high") return "高风险";
+    if (key === "medium") return "中风险";
+    if (key === "low") return "低风险";
+    return value ? String(value).toUpperCase() : "";
+  }
+
+  function auditProblemTypeLabel(value) {
+    const key = String(value || "");
+    const map = {
+      visual_mismatch: "文案与画面动作不匹配",
+      speech_early: "配音提前结束",
+      speech_late: "配音进入下一个画面",
+      duration_risk: "TTS 时长不匹配",
+      subtitle_risk: "字幕节奏风险",
+      tts_quality_risk: "TTS 质量风险",
+    };
+    return map[key] || key;
+  }
+
+  function auditRatioFromItem(item) {
+    const direct = Number(item.duration_ratio ?? item.before_duration_ratio ?? item.after_duration_ratio);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const evidence = String(item.evidence || item.reason || "");
+    const match = evidence.match(/duration ratio\s+([0-9.]+)/i);
+    if (match) {
+      const parsed = Number(match[1]);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return null;
+  }
+
+  function auditProblemFromItem(item) {
+    const text = `${item.timing_detail || ""} ${item.mismatch_reason || ""} ${item.evidence || ""}`;
+    if (text.includes("音频太长")) return "音频太长，画面会对不上";
+    if (text.includes("音频太短")) return "音频偏短，画面后半段容易空出来";
+    const ratio = auditRatioFromItem(item);
+    if (ratio && ratio > 1.05) return "音频太长，画面会对不上";
+    if (ratio && ratio < 0.95) return "音频偏短，画面后半段容易空出来";
+    return auditProblemTypeLabel(item.problem_type) || auditActionLabel(item.action || item.safe_action || item.status);
+  }
+
+  function auditTimingSummary(item) {
+    if (item.timing) return `时长：${item.timing}`;
+    const evidence = String(item.evidence || "");
+    const longMatch = evidence.match(/TTS duration\s+([0-9.]+)s exceeds allocated target duration\s+([0-9.]+)s/i);
+    const shortMatch = evidence.match(/TTS duration\s+([0-9.]+)s is shorter than allocated target duration\s+([0-9.]+)s/i);
+    const ratio = auditRatioFromItem(item);
+    const match = longMatch || shortMatch;
+    if (!match) return "";
+    const tts = Number(match[1]);
+    const target = Number(match[2]);
+    const delta = Number.isFinite(tts) && Number.isFinite(target) ? Math.abs(tts - target) : null;
+    const relation = longMatch ? "音频超出" : "音频短缺";
+    const deltaText = delta === null ? "" : `，${relation} ${delta.toFixed(2)}s`;
+    return `时长：画面可用 ${target.toFixed(2)}s，TTS 实测 ${tts.toFixed(2)}s，比例 ${ratio ? ratio.toFixed(2) : "未知"}${deltaText}`;
+  }
+
+  function auditActionLabel(value) {
+    const raw = String(value || "");
+    const key = raw.toLowerCase();
+    if (!raw) return "";
+    if (key.includes("shorten")) return "重写/缩短文案后重新生成音频";
+    if (key.includes("expand")) return "扩写文案后重新生成音频";
+    if (key.includes("regenerate")) return "重新生成音频";
+    if (key.includes("manual")) return "人工复核";
+    if (key === "none") return "无需处理";
+    return raw;
+  }
+
+  function auditRecommendation(item) {
+    if (item.recommendation) return `处理建议：${item.recommendation}`;
+    const action = auditActionLabel(item.action || item.safe_action || item.status);
+    const ratio = auditRatioFromItem(item);
+    if (ratio && ratio > 1.05) {
+      return `处理建议：不建议只做音频变速；要塞进画面需要约 ${ratio.toFixed(2)}x，超过 0.95-1.05 安全范围。建议重写文案、缩短这一句，然后重新生成音频。`;
+    }
+    if (ratio && ratio < 0.95) {
+      return `处理建议：不建议只做音频变速；要铺满画面需要约 ${ratio.toFixed(2)}x 慢放，低于 0.95-1.05 安全范围。建议扩写或补足这一句文案，然后重新生成音频。`;
+    }
+    return action ? `处理建议：${action}` : "";
   }
 
   function renderPreviewItem(item, variantKey = null) {

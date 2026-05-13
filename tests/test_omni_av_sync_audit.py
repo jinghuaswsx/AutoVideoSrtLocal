@@ -541,6 +541,87 @@ def test_report_only_writes_report_without_mutating_sentences(monkeypatch, tmp_p
     assert report["summary"]["applied"] == 0
 
 
+def test_report_contains_chinese_readable_av_sync_findings(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_task(
+        tmp_path,
+        mode="report_only",
+        sentences=[
+            {
+                "asr_index": 6,
+                "source_text": "Show how the handle locks into place.",
+                "start_time": 12.0,
+                "end_time": 14.64,
+                "target_duration": 2.64,
+                "text": "This handle locks securely into place with one smooth motion.",
+                "tts_duration": 5.381,
+                "duration_ratio": 2.04,
+                "tts_path": str(tmp_path / "s6.mp3"),
+                "speed": 1.0,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={
+            "json": {
+                "issues": [{
+                    "asr_index": 6,
+                    "severity": "high",
+                    "problem_type": "duration_risk",
+                    "evidence": (
+                        "TTS duration 5.381s exceeds allocated target duration 2.640s, "
+                        "duration ratio 2.04 is far above the safe range upper bound 1.05."
+                    ),
+                    "safe_action": "shorten_text",
+                    "confidence": 0.92,
+                }],
+                "summary": "There is one high-risk TTS duration mismatch issue.",
+            },
+        }),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {
+                "accepted_issues": [{
+                    "asr_index": 6,
+                    "severity": "high",
+                    "problem_type": "duration_risk",
+                    "accepted": True,
+                    "reason": "The generated audio is more than twice the available visual slot.",
+                    "safe_action": "shorten_text",
+                    "final_text": "The handle locks in smoothly.",
+                }],
+                "rejected_count": 0,
+                "summary": "Retained one high-risk issue.",
+            },
+        }),
+    )
+
+    omni_av_sync_audit.run(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    finding = report["readable_findings"][0]
+    assert "中文审计结论" in report["readable_summary"]
+    assert finding["severity_label"] == "高风险"
+    assert "ASR 6" in finding["sync_point"]
+    assert "12.00" in finding["sync_point"]
+    assert "14.64" in finding["sync_point"]
+    assert "音频太长" in finding["problem"]
+    assert "5.38s" in finding["timing"]
+    assert "2.64s" in finding["timing"]
+    assert "This handle locks securely" in finding["sentence_text"]
+    assert "不建议只" in finding["recommendation"]
+    assert "音频变速" in finding["recommendation"]
+    assert "重写" in finding["recommendation"]
+    assert "文案" in finding["recommendation"]
+    assert "重新生成音频" in finding["recommendation"]
+
+
 def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 

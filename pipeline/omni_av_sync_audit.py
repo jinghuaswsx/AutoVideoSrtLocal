@@ -34,6 +34,21 @@ _MIN_SAFE_SPEED = 0.95
 _MAX_SAFE_SPEED = 1.05
 _MAX_SUBTITLE_CONTEXT_CHARS = 12000
 
+_SEVERITY_LABELS = {
+    "low": "低风险",
+    "medium": "中风险",
+    "high": "高风险",
+}
+
+_PROBLEM_TYPE_LABELS = {
+    "visual_mismatch": "文案与画面动作不匹配",
+    "speech_early": "配音提前结束",
+    "speech_late": "配音进入下一个画面",
+    "duration_risk": "TTS 时长不匹配",
+    "subtitle_risk": "字幕节奏风险",
+    "tts_quality_risk": "TTS 质量风险",
+}
+
 
 _DIAGNOSIS_SCHEMA = {
     "type": "object",
@@ -753,6 +768,70 @@ def _build_human_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _readable_problem(issue: dict) -> str:
+    mismatch_reason = str(issue.get("mismatch_reason") or "").strip()
+    timing_detail = str(issue.get("timing_detail") or "").strip()
+    if "音频太长" in mismatch_reason or "音频太长" in timing_detail:
+        return "音频太长，容易拖到下一个画面，导致画面对不上"
+    if "音频太短" in mismatch_reason or "音频太短" in timing_detail:
+        return "音频偏短，旁白提前结束，画面后半段容易空出来"
+    problem_type = str(issue.get("problem_type") or "").strip()
+    return _PROBLEM_TYPE_LABELS.get(problem_type, problem_type or "音画同步风险")
+
+
+def _readable_findings_from_report(report: dict) -> list[dict]:
+    diagnosis = report.get("diagnosis") or {}
+    verification = report.get("verification") or {}
+    accepted = [item for item in verification.get("accepted_issues") or [] if isinstance(item, dict)]
+    diagnosed = [item for item in diagnosis.get("issues") or [] if isinstance(item, dict)]
+    accepted_asr = {_as_int_or_none(item.get("asr_index")) for item in accepted}
+    accepted_asr.discard(None)
+    issues = accepted + [
+        item for item in diagnosed
+        if _as_int_or_none(item.get("asr_index")) not in accepted_asr
+    ]
+    findings: list[dict] = []
+    for issue in issues:
+        severity = str(issue.get("severity") or "").lower()
+        findings.append({
+            "asr_index": _as_int_or_none(issue.get("asr_index")),
+            "sync_point": issue.get("sync_point") or "",
+            "severity": severity,
+            "severity_label": _SEVERITY_LABELS.get(severity, severity.upper() if severity else "未分级"),
+            "verified": issue in accepted,
+            "problem": _readable_problem(issue),
+            "timing": issue.get("timing_detail") or "",
+            "sentence_text": issue.get("sentence_text") or "",
+            "source_text": issue.get("source_text") or "",
+            "recommendation": issue.get("recommendation") or "",
+            "evidence": issue.get("evidence") or issue.get("reason") or "",
+            "suggested_text": issue.get("final_text") or issue.get("suggested_text") or "",
+        })
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    return sorted(
+        findings,
+        key=lambda item: (
+            severity_order.get(item.get("severity") or "", 3),
+            item.get("asr_index") if item.get("asr_index") is not None else 999999,
+        ),
+    )
+
+
+def _attach_readable_report(report: dict) -> None:
+    findings = _readable_findings_from_report(report)
+    report["readable_findings"] = findings
+    if not findings:
+        report["readable_summary"] = "中文审计结论：未发现需要处理的音画同步点。"
+        return
+    verified_count = sum(1 for item in findings if item.get("verified"))
+    lead = findings[0]
+    report["readable_summary"] = (
+        f"中文审计结论：发现 {len(findings)} 个需要关注的同步点，"
+        f"其中 {verified_count} 个已由复核确认。优先处理 {lead.get('sync_point') or '未知同步点'}："
+        f"{lead.get('problem') or '音画同步风险'}。处理建议：{lead.get('recommendation') or '人工复核后处理'}"
+    )
+
+
 def _finalize_report_for_display(report: dict, sentences: list[dict] | None) -> None:
     sentence_by_asr = _sentences_by_asr_index(sentences)
     diagnosis = report.get("diagnosis")
@@ -768,6 +847,7 @@ def _finalize_report_for_display(report: dict, sentences: list[dict] | None) -> 
             for issue in verification.get("accepted_issues") or []
         ]
     report["human_report"] = _build_human_report(report)
+    _attach_readable_report(report)
 
 
 def _ensure_report_preview_items(report: dict) -> None:
@@ -778,6 +858,8 @@ def _ensure_report_preview_items(report: dict) -> None:
         "status": report.get("status"),
         "mode": report.get("mode"),
         "summary": summary,
+        "readable_summary": report.get("readable_summary"),
+        "readable_findings": report.get("readable_findings") or [],
         "diagnosis_summary": diagnosis.get("summary"),
         "verification_summary": verification.get("summary"),
         "diagnosis_issues": diagnosis.get("issues") or [],
@@ -797,6 +879,8 @@ def _ensure_report_preview_items(report: dict) -> None:
         lines.append(f"诊断摘要：{diagnosis.get('summary')}")
     if verification.get("summary"):
         lines.append(f"复核摘要：{verification.get('summary')}")
+    if report.get("readable_summary"):
+        lines.append(str(report.get("readable_summary")))
     report["items"] = [
         {"type": "text", "label": "中文审计结论", "content": report.get("human_report") or "\n".join(lines)},
         {
