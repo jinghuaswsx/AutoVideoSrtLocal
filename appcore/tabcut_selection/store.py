@@ -254,6 +254,16 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
         where.append("COALESCE(s.gmv_7d, s.gmv_period) >= %s")
         params.append(min_gmv)
 
+    min_price = _float_arg(args, "min_price")
+    if min_price is not None:
+        where.append("COALESCE(s.price_min, s.price_max) >= %s")
+        params.append(min_price)
+
+    max_price = _float_arg(args, "max_price")
+    if max_price is not None:
+        where.append("COALESCE(s.price_min, s.price_max) <= %s")
+        params.append(max_price)
+
     where_sql = " AND ".join(where)
     count_rows = query_fn(
         f"""

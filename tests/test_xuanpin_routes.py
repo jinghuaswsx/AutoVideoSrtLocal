@@ -69,6 +69,10 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "/xuanpin/api/tabcut/goods" in body
     assert "/xuanpin/api/tabcut/categories" in body
     assert '<select class="tabcut-select" id="categoryL1">' in body
+    assert '<input class="tabcut-input" id="minPrice" type="number"' in body
+    assert '<input class="tabcut-input" id="maxPrice" type="number"' in body
+    assert 'params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value)' in body
+    assert 'params.set(tabcutView === "videos" ? "max_item_price" : "max_price", qs("maxPrice").value)' in body
     assert "tabcut-video-grid" in body
 
 

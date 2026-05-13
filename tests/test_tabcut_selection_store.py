@@ -170,6 +170,27 @@ def test_list_goods_filters_by_snapshot_date_source_category_and_sales():
     assert data_params[:4] == ["US", "2026-05-11", "goods_cat_25", 50]
 
 
+def test_list_goods_filters_by_display_price_range():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_goods(
+        {
+            "min_price": "12.5",
+            "max_price": "22",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "COALESCE(s.price_min, s.price_max) >= %s" in data_sql
+    assert "COALESCE(s.price_min, s.price_max) <= %s" in data_sql
+    assert data_params[:3] == ["US", 12.5, 22.0]
+
+
 def test_build_goods_response_hydrates_source_category_label(monkeypatch):
     monkeypatch.setattr(
         store,
