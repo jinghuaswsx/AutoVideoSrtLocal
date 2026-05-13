@@ -2457,9 +2457,11 @@
     if (status === 'converged' && finalRound) {
       const winner = rounds.find(r => r.round === finalRound) || rounds[rounds.length - 1];
       const isFinalSpeedupResult = typeof finalReason === 'string'
-        && finalReason.startsWith('converged_speedup_');
+        && (finalReason.startsWith('converged_speedup_')
+          || finalReason.startsWith('converged_segment_assembly_'));
       const finalSpeedupChoice = winner.speedup_final_audio_choice
-        || (finalReason === 'converged_speedup_refined' ? 'speedup' : 'converged');
+        || (finalReason === 'converged_speedup_refined' ? 'speedup'
+          : (finalReason === 'converged_segment_assembly_refined' ? 'assembly' : 'converged'));
       const speedupPostDuration = Number(winner.speedup_post_duration);
       const baseFinalDuration = Number(
         winner.final_duration != null ? winner.final_duration : winner.audio_duration
@@ -2531,17 +2533,21 @@
         converged_speedup_longer_kept_original: '变速音频命中收敛区间，但不比收敛音频更短',
         converged_speedup_miss_kept_original: '变速音频未命中收敛区间',
         converged_speedup_failed_kept_original: '变速音频生成失败',
+        converged_segment_assembly_refined: '段级组装音频命中 [v-1, v]，且不超过视频时长',
+        converged_segment_assembly_miss_kept_original: '段级组装未能拼出视频时长以内的可用音轨',
       };
-      const finalSpeedupChoiceLabel = finalSpeedupChoice === 'speedup'
-        ? '采用变速音频参与视频合成'
-        : '保留收敛音频参与视频合成';
+      const finalSpeedupChoiceLabel = finalSpeedupChoice === 'assembly'
+        ? '采用段级组装音频参与视频合成'
+        : (finalSpeedupChoice === 'speedup'
+            ? '采用变速音频参与视频合成'
+            : '保留收敛音频参与视频合成');
       if (finalReason === 'converged') {
         lines.push(`<strong>✓ 收敛成功</strong>：第 ${finalRound} 轮音频 ${finalDuration.toFixed(1)}s 首次落入目标区间${rangeStr}，直接采用。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
         if (composeLine) lines.push(composeLine);
       } else if (isFinalSpeedupResult) {
-        lines.push(`<strong>收敛音频变速生成</strong>：第 ${finalRound} 轮收敛后音频超过原视频，已额外生成变速音频评估；<b>${finalSpeedupChoiceLabel}</b>（${finalSpeedupReasonLabels[finalReason] || '已按评估结果选择最终音频'}）。`);
+        lines.push(`<strong>收敛音频段级组装</strong>：第 ${finalRound} 轮收敛后音频超过原视频，已额外生成段级候选并尝试重组；<b>${finalSpeedupChoiceLabel}</b>（${finalSpeedupReasonLabels[finalReason] || '已按评估结果选择最终音频'}）。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
         if (composeLine) lines.push(composeLine);
@@ -3640,26 +3646,40 @@
   function renderSpeedupCard(r, tid) {
     if (!r || !r.speedup_applied) return '';
     const isFinalConvergedSpeedup = r.speedup_context === 'final_converged_overshoot'
-      || (typeof r.final_reason === 'string' && r.final_reason.startsWith('converged_speedup_'));
+      || (typeof r.final_reason === 'string'
+        && (r.final_reason.startsWith('converged_speedup_')
+          || r.final_reason.startsWith('converged_segment_assembly_')));
     const hasFinalSpeedupDecision = typeof r.final_reason === 'string'
-      && r.final_reason.startsWith('converged_speedup_');
-    const cardTitle = isFinalConvergedSpeedup ? '收敛音频变速生成' : '变速短路';
+      && (r.final_reason.startsWith('converged_speedup_')
+        || r.final_reason.startsWith('converged_segment_assembly_'));
+    const usesSegmentAssembly = !!r.segment_assembly_applied;
+    const cardTitle = usesSegmentAssembly
+      ? '段级候选组装'
+      : (isFinalConvergedSpeedup ? '收敛音频变速生成' : '变速短路');
     const speedFmt = (r.speedup_speed != null) ? Number(r.speedup_speed).toFixed(2) : '?';
     const preDur   = (r.speedup_pre_duration  != null) ? Number(r.speedup_pre_duration).toFixed(2)  : '?';
-    const postDur  = (r.speedup_post_duration != null) ? Number(r.speedup_post_duration).toFixed(2) : '?';
+    const postValue = r.segment_assembly_duration != null
+      ? r.segment_assembly_duration
+      : r.speedup_post_duration;
+    const postDur  = (postValue != null) ? Number(postValue).toFixed(2) : '?';
     const choice = r.speedup_final_audio_choice
-      || (r.final_reason === 'converged_speedup_refined' ? 'speedup' : 'converged');
-    const choiceLabel = choice === 'speedup'
-      ? '采用变速音频参与视频合成'
-      : '保留收敛音频参与视频合成';
+      || (r.final_reason === 'converged_speedup_refined' ? 'speedup'
+        : (r.final_reason === 'converged_segment_assembly_refined' ? 'assembly' : 'converged'));
+    const choiceLabel = choice === 'assembly'
+      ? '采用段级组装音频参与视频合成'
+      : (choice === 'speedup'
+          ? '采用变速音频参与视频合成'
+          : '保留收敛音频参与视频合成');
     const reasonLabel = ({
       converged_speedup_refined: '变速音频在收敛区间，且比收敛音频更短',
       converged_speedup_longer_kept_original: '变速音频在收敛区间，但不比收敛音频更短',
       converged_speedup_miss_kept_original: '变速音频不在收敛区间',
       converged_speedup_failed_kept_original: '变速音频生成失败',
+      converged_segment_assembly_refined: '段级组装命中 [v-1, v]',
+      converged_segment_assembly_miss_kept_original: '段级组装未命中 [v-1, v]',
     })[r.final_reason] || '';
     const resultLine = isFinalConvergedSpeedup && hasFinalSpeedupDecision
-      ? `<div class="tts-speedup-result ${choice === 'speedup' ? 'success' : 'warning'}">
+      ? `<div class="tts-speedup-result ${(choice === 'speedup' || choice === 'assembly') ? 'success' : 'warning'}">
           处理结果：<strong>${choiceLabel}</strong>${reasonLabel ? `（${reasonLabel}）` : ''}
         </div>`
       : '';
@@ -3668,7 +3688,7 @@
     if (r.speedup_failed_reason) {
       const failedTip = isFinalConvergedSpeedup
         ? `${escapeHtml(r.speedup_failed_reason)}（已保留收敛音频用于视频合成）`
-        : `${escapeHtml(r.speedup_failed_reason)}（已回退原始音频走 atempo 兜底）`;
+        : `${escapeHtml(r.speedup_failed_reason)}（未采用本轮变速候选，继续后续 rewrite）`;
       return `
       <div class="tts-speedup-card">
         <div class="tts-speedup-header">
@@ -3683,7 +3703,13 @@
       </div>`;
     }
 
-    const hitBadge = isFinalConvergedSpeedup
+    const hitBadge = usesSegmentAssembly
+      ? (r.segment_assembly_hit === true
+          ? '<span style="color:var(--success-fg)">✓ 命中 [v-1, v]</span>'
+          : (r.segment_assembly_hit === false
+              ? '<span style="color:var(--warning-fg)">⚠ 未命中 [v-1, v]</span>'
+              : '<span style="color:var(--fg-muted)">生成 / 组装中</span>'))
+      : (isFinalConvergedSpeedup
       ? (r.speedup_hit_final === true
           ? '<span style="color:var(--success-fg)">✓ 命中收敛区间</span>'
           : (r.speedup_hit_final === false
@@ -3691,11 +3717,11 @@
               : '<span style="color:var(--fg-muted)">生成 / 评估中</span>'))
       : (r.speedup_hit_final
           ? '<span style="color:var(--success-fg)">✓ 命中 [v-1, v+2]</span>'
-          : '<span style="color:var(--warning-fg)">⚠ 未命中 final，已 atempo 兜底</span>');
+          : '<span style="color:var(--warning-fg)">⚠ 未命中 final，继续 rewrite</span>'));
 
     // 双轨播放器：变速前用原始 tts_full round 音频，变速后用 speedup_audio_path（相对路径）
     const preRel  = `tts_full.round_${r.round}.mp3`;
-    const postRel = r.speedup_audio_path || '';
+    const postRel = r.segment_assembly_audio_path || r.speedup_audio_path || '';
     const preUrl  = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(preRel)}`);
     const postUrl = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(postRel)}`);
 
