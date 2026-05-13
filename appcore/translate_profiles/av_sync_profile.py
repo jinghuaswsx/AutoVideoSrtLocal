@@ -224,6 +224,7 @@ class AvSyncProfile(TranslateProfile):
             subtitle_units = build_subtitle_units_from_sentences(
                 sentences,
                 mode=str(av_inputs.get("sync_granularity") or "sentence"),
+                timeline_mode="source_time",
             )
             srt_content = build_srt_from_chunks(subtitle_units)
             srt_path = save_srt(srt_content, os.path.join(task_dir, "subtitle.av.srt"))

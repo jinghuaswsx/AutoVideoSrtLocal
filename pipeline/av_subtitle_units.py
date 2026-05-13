@@ -15,6 +15,17 @@ def _sentence_duration(sentence: dict, key: str) -> float:
     return float(sentence.get(key, 0.0) or 0.0)
 
 
+def _sentence_audio_start(sentence: dict) -> float:
+    return float(sentence.get("audio_start_time", sentence.get("start_time", 0.0)) or 0.0)
+
+
+def _sentence_audio_end(sentence: dict) -> float:
+    explicit_end = sentence.get("audio_end_time")
+    if explicit_end is not None:
+        return float(explicit_end or 0.0)
+    return _sentence_audio_start(sentence) + _sentence_duration(sentence, "tts_duration")
+
+
 def _sentence_role(sentence: dict) -> str:
     role = _clean_text(sentence.get("role_in_structure")).lower()
     return role if role else "unknown"
@@ -38,10 +49,20 @@ def _unit_role(sentences: list[dict]) -> str:
     return "mixed"
 
 
-def _make_unit(unit_index: int, sentences: list[dict], start_time: float) -> dict:
+def _make_unit(
+    unit_index: int,
+    sentences: list[dict],
+    start_time: float,
+    *,
+    timeline_mode: str = "continuous",
+) -> dict:
     tts_duration = round(sum(_sentence_duration(sentence, "tts_duration") for sentence in sentences), 3)
     target_duration = round(sum(_sentence_duration(sentence, "target_duration") for sentence in sentences), 3)
-    end_time = round(start_time + tts_duration, 3)
+    if timeline_mode == "source_time":
+        start_time = min(_sentence_audio_start(sentence) for sentence in sentences)
+        end_time = round(max(_sentence_audio_end(sentence) for sentence in sentences), 3)
+    else:
+        end_time = round(start_time + tts_duration, 3)
     return {
         "unit_index": unit_index,
         "sentence_indices": [int(sentence.get("_sentence_index", index)) for index, sentence in enumerate(sentences)],
@@ -98,10 +119,12 @@ def build_subtitle_units_from_sentences(
     sentences: list[dict],
     *,
     mode: str = "hybrid",
+    timeline_mode: str = "continuous",
     max_unit_duration: float = 3.2,
     max_unit_chars: int = 72,
 ) -> list[dict]:
     normalized_mode = mode if mode in {"sentence", "hybrid"} else "hybrid"
+    normalized_timeline_mode = "source_time" if timeline_mode == "source_time" else "continuous"
     ordered = [
         {**sentence, "_sentence_index": index}
         for index, sentence in enumerate(sentences or [])
@@ -119,13 +142,25 @@ def build_subtitle_units_from_sentences(
             max_unit_chars=max_unit_chars,
         ):
             if current:
-                unit = _make_unit(len(units), current, current_start)
+                unit = _make_unit(
+                    len(units),
+                    current,
+                    current_start,
+                    timeline_mode=normalized_timeline_mode,
+                )
                 units.append(unit)
                 current_start = unit["end_time"]
             current = []
         current.append(sentence)
 
     if current:
-        units.append(_make_unit(len(units), current, current_start))
+        units.append(
+            _make_unit(
+                len(units),
+                current,
+                current_start,
+                timeline_mode=normalized_timeline_mode,
+            )
+        )
 
     return units
