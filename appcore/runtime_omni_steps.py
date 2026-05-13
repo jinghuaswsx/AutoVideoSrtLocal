@@ -662,6 +662,11 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
         result["char_limit"] = job["char_limit"]
         result["unit_index"] = unit.get("index")
         result["asr_index"] = unit.get("asr_index")
+        result["source_text"] = unit.get("source_text", "")
+        result["start_time"] = unit.get("start")
+        result["end_time"] = unit.get("end")
+        result["duration"] = unit.get("duration")
+        result["description"] = unit.get("description", "")
         result["shot_context"] = unit.get("shot_context") or []
         return result, debug_calls
 
