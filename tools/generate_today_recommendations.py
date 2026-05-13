@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from appcore import llm_client, pushes, today_recommendations
+from appcore import llm_client, media_video_materials, pushes, today_recommendations
 from appcore.db import query, query_one
 from web.services.media_mk_selection import normalize_mk_media_path
 
@@ -246,11 +246,13 @@ def collect_candidates(args: argparse.Namespace) -> tuple[str, list[dict[str, An
     headers = _build_headers()
     base_url = _mk_base_url()
     candidates: list[dict[str, Any]] = []
+    existing_english_identity = media_video_materials.existing_english_material_identity()
     stats = {
         "rankings_loaded": len(rankings),
         "mk_searches": 0,
         "mk_no_match": 0,
         "mk_no_video": 0,
+        "mk_existing_english_video_excluded": 0,
         "candidates": 0,
     }
     session = requests.Session()
@@ -274,6 +276,19 @@ def collect_candidates(args: argparse.Namespace) -> tuple[str, list[dict[str, An
             continue
         item, videos = _select_mk_item(items, handle)
         if not item:
+            stats["mk_no_video"] += 1
+            continue
+        before_filter = len(videos)
+        videos = [
+            video for video in videos
+            if not media_video_materials.is_existing_english_material(
+                video_path=video.get("path"),
+                video_name=video.get("name"),
+                identity=existing_english_identity,
+            )
+        ]
+        stats["mk_existing_english_video_excluded"] += before_filter - len(videos)
+        if not videos:
             stats["mk_no_video"] += 1
             continue
         videos = videos[: args.max_materials_per_product]

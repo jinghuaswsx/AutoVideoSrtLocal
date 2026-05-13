@@ -2230,6 +2230,154 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   .oc-header .title { font-size: 17px; }
   .oc-tool-download-meta { font-size: 11px; }
 }
+
+.oc-page-tabs {
+  display:flex;
+  align-items:center;
+  gap:var(--oc-sp-1);
+  margin-bottom:var(--oc-sp-4);
+  border-bottom:1px solid var(--oc-border);
+}
+.oc-page-tab {
+  height:38px;
+  padding:0 14px;
+  border:0;
+  border-bottom:2px solid transparent;
+  background:transparent;
+  color:var(--oc-fg-muted);
+  font:inherit;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  margin-bottom:-1px;
+}
+.oc-page-tab:hover { color:var(--oc-fg); }
+.oc-page-tab.active { color:var(--oc-accent); border-bottom-color:var(--oc-accent); }
+.oc-panel-page[hidden] { display:none; }
+.oc-vm-toolbar {
+  display:grid;
+  grid-template-columns:minmax(260px, 1fr) 180px 180px auto;
+  gap:var(--oc-sp-3);
+  align-items:center;
+  padding:var(--oc-sp-3) var(--oc-sp-4);
+  background:var(--oc-bg);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-lg);
+}
+.oc-vm-total { justify-self:end; }
+.oc-vm-table { min-width:1180px; table-layout:fixed; }
+.oc-vm-table th:nth-child(1), .oc-vm-table td:nth-child(1) { width:72px; }
+.oc-vm-table th:nth-child(2), .oc-vm-table td:nth-child(2) { width:92px; }
+.oc-vm-table th:nth-child(5), .oc-vm-table td:nth-child(5) { width:120px; }
+.oc-vm-table th:nth-child(6), .oc-vm-table td:nth-child(6) { width:130px; }
+.oc-vm-table th:nth-child(8), .oc-vm-table td:nth-child(8) { width:92px; }
+.oc-vm-table th:nth-child(9), .oc-vm-table td:nth-child(9) { width:138px; }
+.oc-vm-table th:nth-child(10), .oc-vm-table td:nth-child(10) { width:96px; text-align:center; }
+.oc-vm-preview { width:48px; height:64px; }
+.oc-vm-preview img,
+.oc-vm-preview span {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:48px;
+  height:64px;
+  border-radius:var(--oc-r);
+  background:var(--oc-bg-muted);
+  object-fit:cover;
+  color:var(--oc-fg-muted);
+}
+.oc-vm-strong {
+  font-weight:600;
+  color:var(--oc-fg);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.oc-vm-muted {
+  color:var(--oc-fg-muted);
+  font-size:12px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.oc-vm-plan {
+  display:inline-flex;
+  align-items:center;
+  height:24px;
+  padding:0 8px;
+  border-radius:9999px;
+  font-size:12px;
+  font-weight:600;
+}
+.oc-vm-plan.has { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.oc-vm-plan.none { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
+.oc-vm-binding-name {
+  font-size:13px;
+  font-weight:600;
+  color:var(--oc-fg);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.oc-vm-binding-meta {
+  margin-top:2px;
+  color:var(--oc-fg-muted);
+  font-size:12px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.oc-vm-bind-modal { width:min(880px, calc(100vw - 40px)); }
+.oc-vm-bind-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:var(--oc-sp-4);
+}
+.oc-vm-bind-meta { margin:6px 0 0; color:var(--oc-fg-muted); font-size:12px; }
+.oc-vm-bind-search {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  gap:var(--oc-sp-2);
+  margin-bottom:var(--oc-sp-4);
+}
+.oc-vm-bind-results {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-2);
+  max-height:56vh;
+  overflow:auto;
+}
+.oc-vm-empty {
+  padding:var(--oc-sp-5);
+  border:1px dashed var(--oc-border-strong);
+  border-radius:var(--oc-r-md);
+  color:var(--oc-fg-muted);
+  text-align:center;
+  font-size:13px;
+}
+.oc-vm-empty.err {
+  border-style:solid;
+  border-color:var(--oc-danger);
+  background:var(--oc-danger-bg);
+  color:var(--oc-danger-fg);
+}
+.oc-vm-mk-row {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  gap:var(--oc-sp-3);
+  align-items:center;
+  padding:var(--oc-sp-3);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg);
+}
+.oc-vm-mk-body { min-width:0; }
+.oc-vm-mk-stats { margin-top:4px; color:var(--oc-accent); font-size:12px; font-weight:600; }
+@media (max-width: 860px) {
+  .oc-vm-toolbar { grid-template-columns:1fr; }
+  .oc-vm-total { justify-self:start; }
+}
 {% endblock %}
 
 {% block content %}
@@ -2305,6 +2453,12 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   </div>
   {% endif %}
 
+  <nav class="oc-page-tabs" role="tablist" aria-label="素材管理类型">
+    <button type="button" class="oc-page-tab active" data-media-tab="products" role="tab" aria-selected="true">产品管理</button>
+    <button type="button" class="oc-page-tab" data-media-tab="videos" role="tab" aria-selected="false">视频素材管理</button>
+  </nav>
+
+  <section id="mediaProductsPanel" class="oc-panel-page" role="tabpanel">
   <!-- Toolbar -->
   <div class="oc-toolbar">
     <div class="oc-toolbar-filter-row">
@@ -2329,6 +2483,27 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   <!-- List -->
   <div class="oc-list" id="grid"></div>
   <div class="oc-pager" id="pager"></div>
+  </section>
+
+  <section id="videoMaterialsPanel" class="oc-panel-page" role="tabpanel" hidden>
+    <div class="oc-vm-toolbar">
+      <div class="oc-search">
+        <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
+        <input id="vmKeyword" placeholder="搜索产品 ID、产品编码、素材名">
+      </div>
+      <select id="vmLang" class="oc-select" title="按素材语种筛选">
+        <option value="">语种：全部</option>
+      </select>
+      <select id="vmAdPlan" class="oc-select" title="按广告计划状态筛选">
+        <option value="all">广告计划：全部</option>
+        <option value="has">有广告计划</option>
+        <option value="none">没有广告计划</option>
+      </select>
+      <span class="count oc-vm-total" id="vmTotalPill">共 0 条素材</span>
+    </div>
+    <div class="oc-list" id="vmList"></div>
+    <div class="oc-pager" id="vmPager"></div>
+  </section>
 </div>
 <script>
 window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojson }};
@@ -2358,6 +2533,32 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 
 {% include "_medias_edit_modal.html" %}
 {% include "_medias_edit_detail_modal.html" %}
+<div id="vmBindMask" class="oc-modal-mask oc" hidden>
+  <div class="oc-modal oc-vm-bind-modal" role="dialog" aria-modal="true" aria-labelledby="vmBindTitle">
+    <div class="oc-modal-head oc-vm-bind-head">
+      <div>
+        <h3 id="vmBindTitle">绑定明空素材</h3>
+        <p id="vmBindMeta" class="oc-vm-bind-meta">-</p>
+      </div>
+      <button type="button" id="vmBindClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body">
+      <div class="oc-vm-bind-search">
+        <input id="vmBindKeyword" class="oc-input" placeholder="搜索明空素材文件名">
+        <button type="button" id="vmBindSearchBtn" class="oc-btn ghost">
+          <svg width="14" height="14"><use href="#ic-search"/></svg>
+          <span>搜索</span>
+        </button>
+      </div>
+      <div id="vmBindResults" class="oc-vm-bind-results"></div>
+    </div>
+    <div class="oc-modal-foot">
+      <button type="button" id="vmBindCancel" class="oc-btn ghost">取消</button>
+    </div>
+  </div>
+</div>
 <div id="productLinksPushModalMask" class="oc-modal-mask oc oc-product-links-mask" hidden>
   <div class="oc-modal oc-product-links-modal" role="dialog" aria-modal="true" aria-labelledby="productLinksPushTitle">
     <div class="oc-modal-head">
@@ -2899,6 +3100,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 <link rel="stylesheet" href="{{ url_for('static', filename='css/video_ai_review.css') }}">
 <script src="{{ url_for('static', filename='js/video_ai_review.js') }}"></script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
+<script src="{{ url_for('static', filename='media_video_materials.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translate_modal.js') }}"></script>
 

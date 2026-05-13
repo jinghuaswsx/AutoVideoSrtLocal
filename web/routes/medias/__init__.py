@@ -238,6 +238,7 @@ from . import detail_images as _detail_images
 from . import mk_selection as _mk_selection
 from . import tabcut_selection as _tabcut_selection
 from . import media_upload as _media_upload
+from . import video_materials as _video_materials
 
 from ._helpers import _can_access_product, _material_evaluation_message, _schedule_material_evaluation
 from ._helpers import _delete_media_object, _MAX_IMAGE_BYTES, _MAX_RAW_VIDEO_BYTES, _ALLOWED_IMAGE_TYPES, _ALLOWED_RAW_VIDEO_TYPES
@@ -271,6 +272,9 @@ _validate_private_media_object_access = _media_upload._validate_private_media_ob
 _validate_public_media_object_access = _media_upload._validate_public_media_object_access
 _build_private_media_object_proxy_response = _media_upload._build_private_media_object_proxy_response
 _build_public_media_object_proxy_response = _media_upload._build_public_media_object_proxy_response
+api_video_materials = _video_materials.api_video_materials
+api_video_materials_mk_search = _video_materials.api_video_materials_mk_search
+api_video_material_mk_binding = _video_materials.api_video_material_mk_binding
 api_mk_selection = _mk_selection.api_mk_selection
 api_mk_selection_refresh = _mk_selection.api_mk_selection_refresh
 api_tabcut_selection_videos = _tabcut_selection.api_tabcut_selection_videos
