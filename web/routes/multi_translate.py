@@ -12,6 +12,7 @@ from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import task_state, medias, translation_route_store
+from appcore.runtime_multi import MultiTranslateRunner
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.project_state import save_project_state
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
@@ -240,6 +241,8 @@ def detail(task_id: str):
         state=state,
         target_lang=target_lang,
         translate_pref=translate_pref,
+        pipeline_step_order=MultiTranslateRunner.pipeline_step_names(include_analysis=True),
+        pipeline_main_steps=MultiTranslateRunner.pipeline_step_names(include_analysis=False),
     )
 
 
@@ -518,7 +521,7 @@ def export(task_id):
     return _json_response({"status": "started"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "asr_normalize", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+RESUMABLE_STEPS = MultiTranslateRunner.pipeline_step_names(include_analysis=False)
 
 
 @bp.route("/api/multi-translate/<task_id>/resume", methods=["POST"])
@@ -552,6 +555,7 @@ def resume(task_id):
                 "alignment",
                 "translate",
                 "tts",
+                "av_sync_audit",
                 "subtitle",
                 "compose",
                 "export",

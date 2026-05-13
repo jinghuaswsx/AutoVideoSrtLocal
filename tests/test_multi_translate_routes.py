@@ -78,6 +78,14 @@ def test_detail_404_for_other_user(authed_client_no_db):
     assert resp.status_code == 404
 
 
+def test_multi_translate_resume_steps_include_av_sync_audit():
+    from web.routes import multi_translate as r
+
+    assert "av_sync_audit" in r.RESUMABLE_STEPS
+    assert r.RESUMABLE_STEPS.index("tts") < r.RESUMABLE_STEPS.index("av_sync_audit")
+    assert r.RESUMABLE_STEPS.index("av_sync_audit") < r.RESUMABLE_STEPS.index("subtitle")
+
+
 def test_admin_list_does_not_scope_multi_translate_projects_to_self(authed_client_no_db):
     with patch("web.routes.multi_translate.db_query", return_value=[]) as m_q, \
          patch("appcore.settings.get_retention_hours", return_value=72), \

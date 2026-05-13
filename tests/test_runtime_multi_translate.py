@@ -11,6 +11,28 @@ def _make_runner():
     return MultiTranslateRunner(bus=EventBus(), user_id=1)
 
 
+def test_multi_pipeline_inserts_av_sync_audit_after_tts():
+    runner = _make_runner()
+    names = [name for name, _fn in runner._get_pipeline_steps("t1", "/tmp/video.mp4", "/tmp/task")]
+
+    assert names == [
+        "extract",
+        "asr",
+        "separate",
+        "asr_normalize",
+        "voice_match",
+        "alignment",
+        "translate",
+        "tts",
+        "av_sync_audit",
+        "loudness_match",
+        "subtitle",
+        "compose",
+        "export",
+    ]
+    assert names.index("tts") < names.index("av_sync_audit") < names.index("subtitle")
+
+
 def test_step_translate_calls_resolver_with_base_plus_plugin():
     runner = _make_runner()
     task = {
@@ -290,7 +312,7 @@ def test_step_translate_completes_original_video_passthrough_for_sparse_multi_ta
 
     updated = task_state.get(task_id)
     assert updated["status"] == "done"
-    for step in ("alignment", "voice_match", "translate", "tts", "subtitle", "compose", "export"):
+    for step in ("alignment", "voice_match", "translate", "tts", "av_sync_audit", "subtitle", "compose", "export"):
         assert updated["steps"][step] == "done"
     assert updated["result"]["hard_video"].endswith("_hard.normal.mp4")
     assert (tmp_path / "music_hard.normal.mp4").read_bytes() == b"music-video"

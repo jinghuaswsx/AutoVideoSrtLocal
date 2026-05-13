@@ -160,6 +160,27 @@ class MultiTranslateRunner(PipelineRunner):
     profile_code: str = "default"
     tts_model_id = "eleven_multilingual_v2"
 
+    @staticmethod
+    def pipeline_step_names(*, include_analysis: bool = False) -> list[str]:
+        names = [
+            "extract",
+            "asr",
+            "separate",
+            "asr_normalize",
+            "voice_match",
+            "alignment",
+            "translate",
+            "tts",
+            "av_sync_audit",
+            "loudness_match",
+            "subtitle",
+            "compose",
+        ]
+        if include_analysis:
+            names.append("analysis")
+        names.append("export")
+        return names
+
     def _resolve_target_lang(self, task: dict) -> str:
         lang = task.get("target_lang")
         if not lang:
@@ -607,4 +628,14 @@ class MultiTranslateRunner(PipelineRunner):
         现在由 ``self.profile`` 决定哪些步骤要插，以及 post_asr 的步骤名（默认
         ``asr_normalize``）。multi 走 ``DefaultProfile``，最终步骤序列与历史完全一致。
         """
-        return self._build_steps_from_profile(task_id, video_path, task_dir)
+        steps = self._build_steps_from_profile(task_id, video_path, task_dir)
+        out = []
+        for name, fn in steps:
+            out.append((name, fn))
+            if name == "tts":
+                out.append(("av_sync_audit", lambda: self._step_av_sync_audit(task_id, video_path, task_dir)))
+        return out
+
+    def _step_av_sync_audit(self, task_id: str, video_path: str, task_dir: str) -> None:
+        from pipeline import omni_av_sync_audit
+        omni_av_sync_audit.run_report_only(self, task_id, video_path, task_dir, variant="normal")
