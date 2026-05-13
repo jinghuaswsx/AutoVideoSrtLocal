@@ -1273,6 +1273,10 @@
   }
 
   function renderAvSyncAuditArtifact(artifact) {
+    if (isAvSyncTableOnlyReport(artifact)) {
+      return renderAvSyncAuditTimeline(artifact, { tableOnly: true })
+        || `<div class="preview-placeholder">暂无逐段 ASR 审片表。</div>`;
+    }
     const summary = artifact.summary || {};
     const diagnosis = artifact.diagnosis || {};
     const verification = artifact.verification || {};
@@ -1308,13 +1312,21 @@
     return `${meta}${body}${raw}`;
   }
 
-  function renderAvSyncAuditTimeline(artifact) {
+  function isAvSyncTableOnlyReport(artifact) {
+    return Boolean(artifact && artifact.analysis_only && artifact.source_variant);
+  }
+
+  function renderAvSyncAuditTimeline(artifact, options = {}) {
+    const tableOnly = Boolean(options.tableOnly);
     const rows = normalizeAvSyncAuditTimeline(artifact);
     if (!rows.length) return "";
-    const renderedRows = rows.map((row, index) => renderAvSyncAuditTimelineRow(row, index)).join("");
+    const renderedRows = rows.map((row, index) => renderAvSyncAuditTimelineRow(row, index, { tableOnly })).join("");
+    const note = tableOnly
+      ? "按 ASR 时间顺序展开：每段对应 ASR 原文、正常翻译/TTS、视频画面。"
+      : "按 ASR 时间顺序展开：每段对应 ASR 内容、实际画面内容和诊断意见。";
     return `<div class="preview-block av-sync-timeline-card">
       <div class="preview-label">逐段 ASR 审片表</div>
-      <div class="preview-note">按 ASR 时间顺序展开：每段对应 ASR 内容、实际画面内容和诊断意见。</div>
+      <div class="preview-note">${escapeHtml(note)}</div>
       <div class="preview-list av-sync-timeline-list">${renderedRows}</div>
     </div>`;
   }
@@ -1429,7 +1441,20 @@
     return parts.join("；") || "未记录画面描述，请结合成片人工复核。";
   }
 
-  function renderAvSyncAuditTimelineRow(row, index) {
+  function renderAvSyncAuditTimelineRow(row, index, options = {}) {
+    if (options.tableOnly) {
+      const title = row.sync_point || (row.asr_index !== undefined && row.asr_index !== null ? `ASR ${row.asr_index}` : `#${index + 1}`);
+      return `<div class="av-sync-timeline-row table-only">
+        <div class="av-sync-timeline-head">
+          <div class="preview-time">${escapeHtml(title)}</div>
+        </div>
+        <div class="av-sync-timeline-grid table-only">
+          ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
+          ${renderAvSyncTimelineField("正常翻译/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
+          ${renderAvSyncTimelineField("视频画面", row.visual_observation || "画面不清晰/无法确认")}
+        </div>
+      </div>`;
+    }
     const isIssue = String(row.diagnosis_status || "").toLowerCase() === "issue";
     const status = row.verified ? "复核确认" : (isIssue ? "候选问题" : "未发现风险");
     const severity = row.severity_label || auditSeverityLabel(row.severity);

@@ -202,16 +202,10 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     })
     chat = MagicMock(return_value={
         "json": {
-            "issues": [{
-                "asr_index": 0,
-                "severity": "medium",
-                "problem_type": "audio_too_long",
-                "evidence": "程序候选显示音频比目标画面长 0.40 秒，Doubao 视频笔记也提到结尾略拖。",
-                "safe_action": "shorten_text",
-                "suggested_text": "Zieh am Griff.",
-                "confidence": 0.84,
-            }],
-            "summary": "发现 1 个候选同步问题",
+            "timeline": [
+                {"asr_index": 0, "visual_observation": "画面中有人拉动把手，字幕显示 Zieh am Griff。"},
+                {"asr_index": 1, "visual_observation": "画面切到指示灯闪烁。"},
+            ],
         },
     })
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
@@ -223,13 +217,18 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     assert task["variants"]["normal"]["segments"] == before
     report = task["artifacts"]["av_sync_audit"]
     assert report["mode"] == "report_only"
-    assert report["summary"]["diagnosed"] == 1
+    assert report["summary"]["diagnosed"] == 0
     assert report["summary"]["accepted"] == 0
     assert report["summary"]["applied"] == 0
     assert report["analysis_only"] is True
     assert "辅助分析" in report["verification"]["summary"]
     assert report["items"], "workbench should be able to render the report"
     assert task["variants"]["normal"]["av_sync_audit"]["status"] == "done"
+    assert report["diagnosis"]["issues"] == []
+    assert [row["visual_observation"] for row in report["audit_timeline"]] == [
+        "画面中有人拉动把手，字幕显示 Zieh am Griff。",
+        "画面切到指示灯闪烁。",
+    ]
 
     assert generate.call_args.args[0] == "omni_av_sync.understand"
     prompt = generate.call_args.kwargs["prompt"]
@@ -244,10 +243,10 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     assert assess_call.args[0] == "omni_av_sync.assess"
     assess_payload = assess_call.kwargs["messages"][1]["content"]
     assert "video_understanding" in assess_payload
-    assert "program_candidates" in assess_payload
-    assert "音频太长" in assess_payload
-    assert "必须使用中文表述" in assess_call.kwargs["messages"][0]["content"]
-    assert "处理建议" in assess_call.kwargs["messages"][0]["content"]
+    assert "program_candidates" not in assess_payload
+    assert "音频太长" not in assess_payload
+    assert "唯一任务是填写逐段审片表" in assess_call.kwargs["messages"][0]["content"]
+    assert "不要输出处理建议" in assess_call.kwargs["messages"][0]["content"]
     assert chat.call_count == 1
     refs = task["llm_debug_refs"]["av_sync_audit"]
     assert [ref["id"] for ref in refs] == [
@@ -256,7 +255,7 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     ]
 
 
-def test_multi_report_only_retains_program_candidate_when_assess_misses(monkeypatch, tmp_path):
+def test_multi_report_only_does_not_promote_program_candidate_when_table_is_empty(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 
     task_id, video_path = _create_multi_task(tmp_path, segments=[
@@ -290,17 +289,16 @@ def test_multi_report_only_retains_program_candidate_when_assess_misses(monkeypa
     omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
 
     report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
-    issue = report["diagnosis"]["issues"][0]
-    assert report["summary"]["diagnosed"] == 1
-    assert issue["problem_type"] == "audio_too_long"
-    assert issue["asr_index"] == 0
-    assert "音频太长" in issue["evidence"]
-    assert "0.70s" in issue["timing_detail"]
-    assert "重写" in issue["recommendation"]
+    assert report["summary"]["diagnosed"] == 0
+    assert report["diagnosis"]["issues"] == []
+    assert [row["asr_index"] for row in report["audit_timeline"]] == [0, 1]
+    assert report["audit_timeline"][0]["target_text"] == "Zieh am Griff."
+    assert report["audit_timeline"][0]["problem"] == ""
+    assert report["audit_timeline"][0]["recommendation"] == ""
 
     assess_payload = chat.call_args_list[0].kwargs["messages"][1]["content"]
-    assert "program_candidates" in assess_payload
-    assert "duration_delta" in assess_payload
+    assert "program_candidates" not in assess_payload
+    assert "duration_delta" not in assess_payload
     assert "duration_ratio" in assess_payload
     assert chat.call_count == 1
 
@@ -387,7 +385,7 @@ def test_multi_report_only_accepts_unstructured_doubao_video_notes(monkeypatch, 
     assert runner.step_calls[-1][1:3] == ("av_sync_audit", "done")
 
 
-def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_path):
+def test_multi_report_only_ignores_actionable_issue_report_fields(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 
     task_id, video_path = _create_multi_task(tmp_path)
@@ -401,15 +399,10 @@ def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_pat
         "invoke_chat",
         MagicMock(return_value={
             "json": {
-                "issues": [{
+                "timeline": [{
                     "asr_index": 0,
-                    "severity": "high",
-                    "problem_type": "audio_too_long",
-                    "evidence": "TTS duration exceeds the visual window.",
-                    "safe_action": "shorten_text",
-                    "confidence": 0.92,
+                    "visual_observation": "画面中有人拉动把手，随后进入下一镜头。",
                 }],
-                "summary": "发现 1 个同步风险",
             },
         }),
     )
@@ -417,22 +410,16 @@ def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_pat
     omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
 
     report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
-    issue = report["diagnosis"]["issues"][0]
     assert report["verification"]["accepted_issues"] == []
-    assert issue["sync_point"] == "ASR 0（00:00.00-00:02.00）"
-    assert issue["sentence_text"] == "Zieh am Griff."
-    assert issue["timing_detail"] == "目标画面 2.00s，TTS 音频 2.40s，音频太长 0.40s（120%）"
-    assert "不建议只靠音频变速" in issue["recommendation"]
-    assert "重写/压缩文案后重新生成音频" in issue["recommendation"]
-    human_report = report["human_report"]
-    assert "问题同步点：ASR 0（00:00.00-00:02.00）" in human_report
-    assert "问题句子：Zieh am Griff." in human_report
-    assert "音频太长 0.40s" in human_report
-    assert "画面对不上" in human_report
-    assert "处理建议：" in human_report
-    assert "重写/压缩文案后重新生成音频" in human_report
-    assert report["items"][0]["label"] == "中文审计结论"
-    assert report["items"][0]["content"] == human_report
+    assert report["diagnosis"]["issues"] == []
+    assert report["summary"]["diagnosed"] == 0
+    timeline = report["audit_timeline"]
+    assert timeline[0]["sync_point"] == "ASR 0（00:00.00-00:02.00）"
+    assert timeline[0]["asr_text"] == "Grab the handle and pull."
+    assert timeline[0]["target_text"] == "Zieh am Griff."
+    assert timeline[0]["visual_observation"] == "画面中有人拉动把手，随后进入下一镜头。"
+    assert timeline[0]["problem"] == ""
+    assert timeline[0]["recommendation"] == ""
 
 
 def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monkeypatch, tmp_path):
@@ -490,21 +477,13 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
         "invoke_chat",
         MagicMock(return_value={
             "json": {
-                "issues": [{
-                    "asr_index": 1,
-                    "severity": "medium",
-                    "problem_type": "duration_risk",
-                    "evidence": "音频时长超过这一段画面。",
-                    "safe_action": "shorten_text",
-                    "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
-                    "confidence": 0.87,
-                }],
                 "timeline": [{
+                    "asr_index": 0,
+                    "visual_observation": "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。",
+                }, {
                     "asr_index": 1,
                     "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
-                    "diagnosis": "音频拖到下一个同步点。",
                 }],
-                "summary": "发现 1 个同步风险",
             },
         }),
     )
@@ -516,22 +495,21 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
     assert [row["asr_index"] for row in timeline] == [0, 1]
     assert timeline[0]["asr_text"] == "Grab the handle and pull."
     assert timeline[0]["target_text"] == "Zieh am Griff."
-    assert timeline[0]["visual_observation"] == "手部特写；用户握住把手向外拉动；屏幕文字：LOCK"
-    assert timeline[0]["diagnosis_status"] == "ok"
-    assert timeline[0]["diagnosis"] == "未发现明显同步风险。"
+    assert timeline[0]["visual_observation"] == "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。"
     assert timeline[1]["visual_observation"] == "画面里只有灯光闪烁，没有后续动作。"
-    assert timeline[1]["diagnosis_status"] == "issue"
+    assert report["diagnosis"]["issues"] == []
+    assert timeline[1]["diagnosis_status"] == "ok"
     assert timeline[1]["verified"] is False
-    assert "音频太长" in timeline[1]["problem"]
-    assert "重写/压缩文案后重新生成音频" in timeline[1]["recommendation"]
+    assert timeline[1]["problem"] == ""
+    assert timeline[1]["recommendation"] == ""
 
     assess_system = omni_av_sync_audit.llm_client.invoke_chat.call_args.kwargs["messages"][0]["content"]
-    assert "timeline" in assess_system
-    assert "每一段 ASR" in assess_system
-    assert "visual_observation" in assess_system
-    assert "实际画面内容" in assess_system
-    assert "diagnosis" in assess_system
-    assert "诊断意见" in assess_system
+    assert "唯一任务是填写逐段审片表" in assess_system
+    assert "不要输出总结" in assess_system
+    assert "不要输出处理建议" in assess_system
+    assert "不要输出问题列表" in assess_system
+    assert "issues 内每项" not in assess_system
+    assert "处理建议只能" not in assess_system
 
 
 def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_path):

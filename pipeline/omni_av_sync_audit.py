@@ -73,6 +73,24 @@ _DIAGNOSIS_SCHEMA = {
     },
 }
 
+_MULTI_TABLE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "timeline": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "asr_index": {"type": "integer"},
+                    "visual_observation": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
 _VERIFY_SCHEMA = {
     "type": "object",
     "additionalProperties": True,
@@ -82,6 +100,10 @@ _VERIFY_SCHEMA = {
         "summary": {"type": "string"},
     },
 }
+
+
+def _is_multi_translate_report(cfg: dict) -> bool:
+    return str((cfg or {}).get("project_type") or "") == "multi_translate"
 
 
 def _json_from_result(result: dict | None, default: dict) -> dict:
@@ -272,25 +294,57 @@ def _build_assess_messages(
     sentences: list[dict],
     program_candidates: list[dict],
 ) -> list[dict]:
-    payload = {
-        "source_language": task.get("source_language"),
-        "target_lang": task.get("target_lang") or task.get("target_language"),
-        "plugin_config": cfg,
-        "video_understanding": video_understanding,
-        "sentences": _compact_sentences(sentences),
-        "program_candidates": program_candidates,
-        "constraints": {
-            "do_not_change_video": True,
-            "do_not_shift_timeline": True,
-            "allowed_actions": ["none", "shorten_text", "expand_text", "regenerate_tts", "manual_review"],
-            "safe_speed_range": [0.95, 1.05],
-            "do_not_invent_visual_mismatch": True,
-            "prefer_program_timing_evidence": True,
-        },
-    }
+    if _is_multi_translate_report(cfg):
+        payload = {
+            "source_language": task.get("source_language"),
+            "target_lang": task.get("target_lang") or task.get("target_language"),
+            "video_understanding": video_understanding,
+            "sentences": _compact_sentences(sentences),
+            "constraints": {
+                "output_only_timeline": True,
+                "one_row_per_asr": True,
+                "do_not_change_video": True,
+                "do_not_judge_risk": True,
+                "do_not_write_summary": True,
+                "do_not_write_recommendations": True,
+            },
+        }
+    else:
+        payload = {
+            "source_language": task.get("source_language"),
+            "target_lang": task.get("target_lang") or task.get("target_language"),
+            "plugin_config": cfg,
+            "video_understanding": video_understanding,
+            "sentences": _compact_sentences(sentences),
+            "program_candidates": program_candidates,
+            "constraints": {
+                "do_not_change_video": True,
+                "do_not_shift_timeline": True,
+                "allowed_actions": ["none", "shorten_text", "expand_text", "regenerate_tts", "manual_review"],
+                "safe_speed_range": [0.95, 1.05],
+                "do_not_invent_visual_mismatch": True,
+                "prefer_program_timing_evidence": True,
+            },
+        }
     subtitle_context = _subtitle_context(task, cfg)
     if subtitle_context:
         payload["subtitle_context"] = subtitle_context
+    if _is_multi_translate_report(cfg):
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "你是多语种视频翻译的审片表整理员。你的唯一任务是填写逐段审片表。"
+                    "只输出 JSON，根字段只能使用 timeline。不要输出总结，不要输出处理建议，"
+                    "不要输出问题列表，不要判断风险，不要写 diagnosis。"
+                    "timeline 必须按 ASR 时间顺序覆盖每一段 ASR；每项必须包含 asr_index、visual_observation。"
+                    "ASR 原文和正常翻译/TTS 文案已经在输入 sentences 中提供，不要改写。"
+                    "visual_observation 只写该 ASR 时间段配套视频里实际看到的画面：动作、物体、字幕、屏幕文字、镜头变化。"
+                    "看不清或无法对应时，就写“画面不清晰/无法确认”，不要编造。"
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=2)},
+        ]
     return [
         {
             "role": "system",
@@ -482,9 +536,10 @@ def _call_sync_assess(
     use_case_code = "omni_av_sync.assess"
     messages = _build_assess_messages(video_understanding, task, cfg, sentences, program_candidates)
     provider, model = _resolve_llm_binding(use_case_code)
+    schema = _MULTI_TABLE_SCHEMA if _is_multi_translate_report(cfg) else _DIAGNOSIS_SCHEMA
     response_format = {
         "type": "json_schema",
-        "json_schema": {"name": "omni_av_sync_assess", "schema": _DIAGNOSIS_SCHEMA},
+        "json_schema": {"name": "omni_av_sync_assess", "schema": schema},
     }
     request_payload = build_chat_request_payload(
         use_case_code=use_case_code,
@@ -529,6 +584,15 @@ def _call_sync_assess(
             response_format=response_format,
         )
     except Exception as exc:  # noqa: BLE001 - keep deterministic timing candidates visible
+        if _is_multi_translate_report(cfg):
+            return {
+                "issues": [],
+                "timeline": [],
+                "summary": "",
+                "assess_error": str(exc)[:500],
+                "video_understanding": video_understanding,
+                "program_candidates": program_candidates,
+            }
         return {
             "issues": [dict(issue) for issue in program_candidates[:5]],
             "summary": "Gemini 结构化评估失败，已保留程序候选同步点供复核。",
@@ -536,15 +600,21 @@ def _call_sync_assess(
             "video_understanding": video_understanding,
             "program_candidates": program_candidates,
         }
-    diagnosis = _json_from_result(result, {"issues": [], "summary": ""})
-    if not diagnosis.get("issues") and isinstance(diagnosis.get("accepted_issues"), list):
-        diagnosis["issues"] = [issue for issue in diagnosis.get("accepted_issues") or [] if isinstance(issue, dict)]
-    if not diagnosis.get("issues") and program_candidates:
-        diagnosis["issues"] = [dict(issue) for issue in program_candidates[:5]]
-        diagnosis["summary"] = (
-            "程序按最终字幕/TTS 时间线检测到候选同步风险；结构化评估未返回问题，"
-            "已保留程序候选供复核。"
-        )
+    diagnosis = _json_from_result(result, {"issues": [], "timeline": [], "summary": ""})
+    if _is_multi_translate_report(cfg):
+        if not isinstance(diagnosis.get("timeline"), list):
+            diagnosis["timeline"] = []
+        diagnosis["issues"] = []
+        diagnosis["summary"] = ""
+    else:
+        if not diagnosis.get("issues") and isinstance(diagnosis.get("accepted_issues"), list):
+            diagnosis["issues"] = [issue for issue in diagnosis.get("accepted_issues") or [] if isinstance(issue, dict)]
+        if not diagnosis.get("issues") and program_candidates:
+            diagnosis["issues"] = [dict(issue) for issue in program_candidates[:5]]
+            diagnosis["summary"] = (
+                "程序按最终字幕/TTS 时间线检测到候选同步风险；结构化评估未返回问题，"
+                "已保留程序候选供复核。"
+            )
     diagnosis.setdefault("issues", [])
     diagnosis.setdefault("summary", "")
     diagnosis["video_understanding"] = video_understanding
