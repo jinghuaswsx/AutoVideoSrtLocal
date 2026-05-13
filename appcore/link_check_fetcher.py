@@ -8,8 +8,6 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 import requests
 from bs4 import BeautifulSoup
 
-from appcore.payment_screenshot_filter import is_payment_screenshot
-
 
 class LocaleLockError(RuntimeError):
     pass
@@ -236,8 +234,6 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
     ]
 
     for source_url in _variant_featured_images(soup, base_url=base_url):
-        if is_payment_screenshot(source_url, ""):
-            continue
         _append_image(items, seen, source_url=source_url, kind="carousel")
 
     for selector in carousel_selectors:
@@ -246,8 +242,6 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
             if not src:
                 continue
             absolute = _absolute_image_url(src, base_url)
-            if is_payment_screenshot(absolute, node.get("alt")):
-                continue
             _append_image(items, seen, source_url=absolute, kind="carousel")
 
     for selector in detail_selectors:
@@ -256,8 +250,6 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
             if not src:
                 continue
             absolute = _absolute_image_url(src, base_url)
-            if is_payment_screenshot(absolute, node.get("alt")):
-                continue
             _append_image(items, seen, source_url=absolute, kind="detail")
 
     return items
