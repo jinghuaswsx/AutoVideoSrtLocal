@@ -223,17 +223,33 @@ def upload_capcut_archive_for_current_user(
     }
 
 
+def _merge_non_empty(base: dict, override: dict) -> dict:
+    merged = dict(base or {})
+    for key, value in (override or {}).items():
+        if value:
+            merged[key] = value
+    return merged
+
+
 def _paths_for(task: dict, variant: str | None) -> tuple[dict, dict, dict, str | None]:
+    top_result = task.get("result") or {}
+    top_exports = task.get("exports") or {}
+    top_srt_path = (
+        task.get("srt_path")
+        or top_result.get("srt")
+        or (task.get("preview_files") or {}).get("srt")
+    )
     if variant:
         variant_state = (task.get("variants") or {}).get(variant, {}) or {}
-        result = variant_state.get("result") or {}
-        exports = variant_state.get("exports") or {}
-        srt_path = variant_state.get("srt_path")
+        variant_result = variant_state.get("result") or {}
+        result = _merge_non_empty(top_result, variant_result)
+        exports = _merge_non_empty(top_exports, variant_state.get("exports") or {})
+        srt_path = variant_state.get("srt_path") or variant_result.get("srt") or top_srt_path
     else:
         variant_state = {}
-        result = task.get("result") or {}
-        exports = task.get("exports") or {}
-        srt_path = task.get("srt_path")
+        result = top_result
+        exports = top_exports
+        srt_path = top_srt_path
     return variant_state, result, exports, srt_path
 
 

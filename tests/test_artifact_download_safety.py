@@ -63,6 +63,39 @@ def test_artifact_download_rejects_directory_paths(monkeypatch, tmp_path):
     assert called == []
 
 
+def test_artifact_download_variant_falls_back_to_top_level_srt(monkeypatch, tmp_path):
+    from flask import Flask
+    from web.services import artifact_download
+
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    srt = task_dir / "subtitle.av.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nBonjour\n", encoding="utf-8")
+
+    called = []
+    monkeypatch.setattr(
+        artifact_download,
+        "send_file",
+        lambda *args, **kwargs: called.append((args, kwargs)) or "sent",
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context():
+        result = artifact_download.serve_artifact_download(
+            {
+                "task_dir": str(task_dir),
+                "result": {"srt": str(srt)},
+                "variants": {"normal": {}},
+            },
+            "task-1",
+            "srt",
+            variant="normal",
+        )
+
+    assert result == "sent"
+    assert called[0][0][0].endswith("subtitle.av.srt")
+
+
 def test_safe_task_file_response_rejects_outside_path(monkeypatch, tmp_path):
     from flask import Flask
     from web.services import artifact_download
