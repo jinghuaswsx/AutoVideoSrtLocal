@@ -150,6 +150,23 @@ def test_omni_detail_renders_dynamic_pipeline_steps(authed_client_no_db):
     assert '"av_sync_audit"' in html
 
 
+def test_multi_detail_renders_report_only_av_sync_audit_step(authed_client_no_db):
+    task_id = "multi-av-sync-audit-step"
+    project = _fake_project(task_id, "multi_translate")
+
+    with patch("web.routes.multi_translate.db_query_one", return_value=project), patch(
+        "web.routes.multi_translate.recover_project_if_needed"
+    ), patch("appcore.api_keys.get_key", return_value="openrouter"):
+        resp = authed_client_no_db.get(f"/multi-translate/{task_id}")
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert 'id="step-av_sync_audit"' in html
+    assert '"av_sync_audit"' in html
+    assert html.index('id="step-compose"') < html.index('id="step-av_sync_audit"')
+    assert html.index('id="step-av_sync_audit"') < html.index('id="step-export"')
+
+
 def test_workbench_preview_renderer_skips_non_visual_steps():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(

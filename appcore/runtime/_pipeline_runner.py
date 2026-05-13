@@ -1809,7 +1809,7 @@ class PipelineRunner:
         if not _is_original_video_passthrough(task):
             return {}
 
-        skip_steps = ["alignment", "translate", "tts", "subtitle"]
+        skip_steps = ["alignment", "translate", "tts", "av_sync_audit", "subtitle"]
         if self.project_type in {"multi_translate", "ja_translate"} or "voice_match" in (task.get("steps") or {}):
             skip_steps.insert(1, "voice_match")
         if self.include_analysis_in_main_flow:

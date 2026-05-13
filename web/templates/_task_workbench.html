@@ -779,21 +779,6 @@
       <div class="step-preview" id="preview-tts"></div>
       <div id="ttsDurationLog" class="duration-log" hidden></div>
     </div>
-    {% if show_av_sync_audit_step %}
-    <div class="step" id="step-av_sync_audit">
-      <div class="step-main">
-        <div class="step-icon" id="icon-av_sync_audit">8</div>
-        <div style="flex:1">
-          <div class="step-name-row">
-            <span class="step-name">音画同步审计</span>
-            <button class="resume-btn hidden" id="resume-av_sync_audit" data-step="av_sync_audit">从此步继续</button>
-          </div>
-          <div class="step-msg" id="msg-av_sync_audit">等待中...<span class="step-model-tag hidden" id="model-tag-av_sync_audit"></span></div>
-        </div>
-      </div>
-      <div class="step-preview" id="preview-av_sync_audit"></div>
-    </div>
-    {% endif %}
     {% if show_loudness_step %}
     <div class="step" id="step-loudness_match">
       <div class="step-main">
@@ -860,6 +845,21 @@
       </div>
       <div class="step-preview" id="preview-compose"></div>
     </div>
+    {% if show_av_sync_audit_step %}
+    <div class="step" id="step-av_sync_audit">
+      <div class="step-main">
+        <div class="step-icon" id="icon-av_sync_audit">8</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">音画同步审计</span>
+            <button class="resume-btn hidden" id="resume-av_sync_audit" data-step="av_sync_audit">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-av_sync_audit">等待中...<span class="step-model-tag hidden" id="model-tag-av_sync_audit"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-av_sync_audit"></div>
+    </div>
+    {% endif %}
     <div class="step" id="step-export">
       <div class="step-main">
         <div class="step-icon" id="icon-export">{{ 11 if extended_pipeline else 8 }}</div>

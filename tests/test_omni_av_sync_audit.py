@@ -116,6 +116,60 @@ def _create_task(tmp_path, *, mode="report_only", sentences=None):
     return task_id, str(video_path)
 
 
+def _create_multi_task(tmp_path, *, segments=None):
+    task_id = "multi-av-audit"
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"video")
+    task_state.create(task_id, str(video_path), str(tmp_path), "video.mp4")
+    tts_segments = segments if segments is not None else [
+        {
+            "index": 0,
+            "text": "Grab the handle and pull.",
+            "translated": "Zieh am Griff.",
+            "tts_text": "Zieh am Griff.",
+            "source_segment_indices": [0],
+            "tts_duration": 2.4,
+            "tts_path": str(tmp_path / "multi-s0.mp3"),
+        },
+        {
+            "index": 1,
+            "text": "The light flashes.",
+            "translated": "Das Licht blinkt.",
+            "tts_text": "Das Licht blinkt.",
+            "source_segment_indices": [1],
+            "tts_duration": 1.6,
+            "tts_path": str(tmp_path / "multi-s1.mp3"),
+        },
+    ]
+    for segment in tts_segments:
+        path = segment.get("tts_path")
+        if path:
+            Path(path).write_bytes(b"mp3")
+    task_state.update(
+        task_id,
+        source_language="en",
+        target_lang="de",
+        script_segments=[
+            {"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Grab the handle and pull."},
+            {"index": 1, "start_time": 2.0, "end_time": 4.0, "text": "The light flashes."},
+        ],
+        variants={
+            "normal": {
+                "segments": tts_segments,
+                "tts_audio_path": str(tmp_path / "tts_full.normal.mp3"),
+                "localized_translation": {
+                    "full_text": "Zieh am Griff. Das Licht blinkt.",
+                    "sentences": [
+                        {"index": 0, "text": "Zieh am Griff.", "source_segment_indices": [0]},
+                        {"index": 1, "text": "Das Licht blinkt.", "source_segment_indices": [1]},
+                    ],
+                },
+            },
+        },
+    )
+    return task_id, str(video_path)
+
+
 def test_run_skips_when_av_sentences_missing(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 
@@ -132,6 +186,76 @@ def test_run_skips_when_av_sentences_missing(monkeypatch, tmp_path):
     report = task["artifacts"]["av_sync_audit"]
     assert report["status"] == "skipped_missing_av_sentences"
     assert task["variants"]["av"]["av_sync_audit"]["status"] == "skipped_missing_av_sentences"
+
+
+def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    before = list(task_state.get(task_id)["variants"]["normal"]["segments"])
+    generate = MagicMock(return_value={
+        "json": {
+            "issues": [{
+                "asr_index": 0,
+                "severity": "medium",
+                "problem_type": "duration_risk",
+                "evidence": "配音略长",
+                "safe_action": "shorten_text",
+                "suggested_text": "Zieh am Griff.",
+                "confidence": 0.8,
+            }],
+            "summary": "发现 1 个候选问题",
+        },
+    })
+    chat = MagicMock(return_value={
+        "json": {
+            "accepted_issues": [{
+                "asr_index": 0,
+                "severity": "medium",
+                "problem_type": "duration_risk",
+                "accepted": True,
+                "reason": "成立",
+                "safe_action": "shorten_text",
+                "final_text": "Zieh am Griff.",
+            }],
+            "rejected_count": 0,
+            "summary": "复核通过",
+        },
+    })
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    task = task_state.get(task_id)
+    assert task["variants"]["normal"]["segments"] == before
+    report = task["artifacts"]["av_sync_audit"]
+    assert report["mode"] == "report_only"
+    assert report["summary"]["diagnosed"] == 1
+    assert report["summary"]["accepted"] == 1
+    assert report["summary"]["applied"] == 0
+    assert report["items"], "workbench should be able to render the report"
+    assert task["variants"]["normal"]["av_sync_audit"]["status"] == "done"
+    prompt = generate.call_args.kwargs["prompt"]
+    assert "Grab the handle and pull." in prompt
+    assert "Zieh am Griff." in prompt
+
+
+def test_multi_report_only_skips_when_normal_segments_missing(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path, segments=[])
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(side_effect=AssertionError("should not call diagnosis")),
+    )
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    task = task_state.get(task_id)
+    assert task["artifacts"]["av_sync_audit"]["status"] == "skipped_missing_report_sentences"
+    assert task["variants"]["normal"]["av_sync_audit"]["status"] == "skipped_missing_report_sentences"
 
 
 def test_report_only_writes_report_without_mutating_sentences(monkeypatch, tmp_path):

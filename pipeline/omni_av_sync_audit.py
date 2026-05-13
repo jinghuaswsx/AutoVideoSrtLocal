@@ -112,10 +112,13 @@ def _compact_sentences(sentences: list[dict]) -> list[dict]:
     for sentence in sentences:
         compact.append({
             "asr_index": sentence.get("asr_index"),
+            "source_segment_indices": sentence.get("source_segment_indices"),
             "start_time": sentence.get("start_time"),
             "end_time": sentence.get("end_time"),
             "target_duration": sentence.get("target_duration"),
+            "source_text": sentence.get("source_text"),
             "text": sentence.get("text"),
+            "translated": sentence.get("translated"),
             "tts_duration": sentence.get("tts_duration"),
             "duration_ratio": sentence.get("duration_ratio"),
             "speed": sentence.get("speed"),
@@ -346,6 +349,7 @@ def _call_verify(
 
 def _base_report(mode: str) -> dict:
     return {
+        "title": "音画同步审计",
         "mode": mode,
         "status": "done",
         "diagnosis": {"issues": [], "summary": ""},
@@ -361,14 +365,170 @@ def _base_report(mode: str) -> dict:
     }
 
 
-def _store_report(task_id: str, report: dict) -> None:
+def _ensure_report_preview_items(report: dict) -> None:
+    summary = report.get("summary") or {}
+    diagnosis = report.get("diagnosis") or {}
+    verification = report.get("verification") or {}
+    preview = {
+        "status": report.get("status"),
+        "mode": report.get("mode"),
+        "summary": summary,
+        "diagnosis_summary": diagnosis.get("summary"),
+        "verification_summary": verification.get("summary"),
+        "diagnosis_issues": diagnosis.get("issues") or [],
+        "accepted_issues": verification.get("accepted_issues") or [],
+        "applied_fixes": report.get("applied_fixes") or [],
+    }
+    lines = [
+        f"模式：{report.get('mode') or '-'}",
+        f"状态：{report.get('status') or '-'}",
+        f"诊断问题：{summary.get('diagnosed', 0)}",
+        f"复核通过：{summary.get('accepted', 0)}",
+        f"已应用修正：{summary.get('applied', 0)}",
+        f"回滚：{summary.get('rolled_back', 0)}",
+        f"人工复核：{summary.get('manual_review', 0)}",
+    ]
+    if diagnosis.get("summary"):
+        lines.append(f"诊断摘要：{diagnosis.get('summary')}")
+    if verification.get("summary"):
+        lines.append(f"复核摘要：{verification.get('summary')}")
+    report["items"] = [
+        {"type": "text", "label": "审计摘要", "content": "\n".join(lines)},
+        {
+            "type": "text",
+            "label": "结构化结果",
+            "content": json.dumps(preview, ensure_ascii=False, indent=2),
+        },
+    ]
+
+
+def _store_report(task_id: str, report: dict, *, variant: str = "av") -> None:
+    _ensure_report_preview_items(report)
     task = task_state.get(task_id) or {}
     variants = dict(task.get("variants") or {})
-    variant_state = dict(variants.get("av") or {})
+    variant_state = dict(variants.get(variant) or {})
     variant_state["av_sync_audit"] = report
-    variants["av"] = variant_state
+    variants[variant] = variant_state
     task_state.update(task_id, variants=variants)
     task_state.set_artifact(task_id, "av_sync_audit", report)
+
+
+def _as_float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _segment_indices(segment: dict) -> list[int]:
+    raw = segment.get("source_segment_indices")
+    if isinstance(raw, list):
+        indexes = [_as_int_or_none(item) for item in raw]
+        return [idx for idx in indexes if idx is not None]
+    idx = _as_int_or_none(raw)
+    if idx is not None:
+        return [idx]
+    idx = _as_int_or_none(segment.get("index"))
+    return [idx] if idx is not None else []
+
+
+def _script_segment_index(script_segments: list[dict]) -> dict[int, dict]:
+    indexed: dict[int, dict] = {}
+    for pos, segment in enumerate(script_segments or []):
+        if not isinstance(segment, dict):
+            continue
+        idx = _as_int_or_none(segment.get("index"))
+        indexed[pos if idx is None else idx] = segment
+    return indexed
+
+
+def _source_window(source_segments: list[dict]) -> tuple[float | None, float | None]:
+    starts = [
+        value for value in (_as_float_or_none(seg.get("start_time")) for seg in source_segments)
+        if value is not None
+    ]
+    ends = [
+        value for value in (_as_float_or_none(seg.get("end_time")) for seg in source_segments)
+        if value is not None
+    ]
+    if not starts or not ends:
+        return None, None
+    return min(starts), max(ends)
+
+
+def _normal_report_sentences(task: dict, *, variant: str = "normal") -> list[dict]:
+    variants = task.get("variants") or {}
+    variant_state = variants.get(variant) or {}
+    tts_segments = variant_state.get("segments") or task.get("segments") or []
+    script_by_index = _script_segment_index(task.get("script_segments") or [])
+    report_sentences: list[dict] = []
+    for pos, segment in enumerate(tts_segments):
+        if not isinstance(segment, dict):
+            continue
+        source_indices = _segment_indices(segment)
+        source_segments = [script_by_index[idx] for idx in source_indices if idx in script_by_index]
+        start_time, end_time = _source_window(source_segments)
+        if start_time is None:
+            start_time = _as_float_or_none(segment.get("start_time"))
+        if end_time is None:
+            end_time = _as_float_or_none(segment.get("end_time"))
+        target_duration = _as_float_or_none(segment.get("target_duration"))
+        if target_duration is None and start_time is not None and end_time is not None and end_time > start_time:
+            target_duration = round(end_time - start_time, 4)
+        tts_duration = _as_float_or_none(segment.get("tts_duration"))
+        if target_duration is None:
+            target_duration = tts_duration or 0.0
+        if tts_duration is None:
+            tts_duration = 0.0
+        source_text = " ".join(
+            str(seg.get("text") or "").strip()
+            for seg in source_segments
+            if str(seg.get("text") or "").strip()
+        ).strip() or str(segment.get("text") or "").strip()
+        translated = str(
+            segment.get("tts_text")
+            or segment.get("translated")
+            or segment.get("text")
+            or ""
+        ).strip()
+        asr_index = source_indices[0] if source_indices else (_as_int_or_none(segment.get("index")) or pos)
+        report_sentences.append({
+            "asr_index": asr_index,
+            "source_segment_indices": source_indices,
+            "start_time": start_time,
+            "end_time": end_time,
+            "target_duration": target_duration,
+            "source_text": source_text,
+            "text": translated,
+            "translated": translated,
+            "tts_duration": tts_duration,
+            "duration_ratio": _safe_float(
+                segment.get("duration_ratio"),
+                _ratio(float(target_duration or 0.0), float(tts_duration or 0.0)),
+            ),
+            "speed": _safe_float(segment.get("speed"), 1.0),
+            "status": segment.get("status") or "report_only",
+            "tts_path": segment.get("tts_path"),
+        })
+    return report_sentences
+
+
+def _multi_report_config(task: dict) -> dict:
+    return {
+        "av_sync_audit": "report_only",
+        "project_type": task.get("type") or "multi_translate",
+        "translate_algo": "multi_translate_default",
+        "tts_strategy": "five_round_rewrite",
+        "subtitle": "asr_realign",
+        "target_lang": task.get("target_lang") or task.get("target_language"),
+    }
 
 
 def _candidate_issues(verification: dict) -> list[dict]:
@@ -604,6 +764,78 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
         _store_report(task_id, report)
         try:
             runner._set_step(task_id, "av_sync_audit", "done", "音画同步审计异常，已跳过")
+        except Exception:
+            pass
+        return report
+
+
+def run_report_only(
+    runner,
+    task_id: str,
+    video_path: str,
+    task_dir: str,
+    *,
+    variant: str = "normal",
+) -> dict:
+    """Run the AV sync audit as a multi-translate evaluation only.
+
+    This path deliberately never calls the safe-auto fixer and never mutates
+    TTS/subtitle outputs. It only stores a report under ``av_sync_audit``.
+    """
+    try:
+        task = task_state.get(task_id) or {}
+        cfg = _multi_report_config(task)
+        mode = "report_only"
+        runner._set_step(task_id, "av_sync_audit", "running", "正在评估音画同步风险...")
+
+        sentences = _normal_report_sentences(task, variant=variant)
+        if not sentences:
+            report = _base_report(mode)
+            report["status"] = "skipped_missing_report_sentences"
+            _store_report(task_id, report, variant=variant)
+            runner._set_step(task_id, "av_sync_audit", "done", "缺少 TTS 句级结果，已跳过音画同步评估")
+            return report
+
+        report = _base_report(mode)
+        report["source_variant"] = variant
+        try:
+            diagnosis = _call_diagnose(runner, task_id, video_path, task_dir, task, cfg, sentences)
+            report["diagnosis"] = diagnosis
+            report["summary"]["diagnosed"] = len(diagnosis.get("issues") or [])
+        except Exception as exc:  # noqa: BLE001 - evaluation must not block the pipeline
+            report["status"] = "diagnose_failed"
+            report["diagnosis"] = {"issues": [], "summary": "", "error": str(exc)[:500]}
+            _store_report(task_id, report, variant=variant)
+            runner._set_step(task_id, "av_sync_audit", "done", "Doubao 诊断失败，已跳过音画同步评估")
+            return report
+
+        try:
+            verification = _call_verify(runner, task_id, task_dir, task, cfg, sentences, report["diagnosis"])
+            report["verification"] = verification
+            report["summary"]["accepted"] = len(_candidate_issues(verification))
+        except Exception as exc:  # noqa: BLE001 - keep the diagnosis report
+            report["status"] = "verify_failed"
+            report["verification"] = {
+                "accepted_issues": [],
+                "rejected_count": 0,
+                "summary": "",
+                "error": str(exc)[:500],
+            }
+            _store_report(task_id, report, variant=variant)
+            runner._set_step(task_id, "av_sync_audit", "done", "Gemini 复核失败，已保留诊断报告")
+            return report
+
+        _store_report(task_id, report, variant=variant)
+        runner._set_step(task_id, "av_sync_audit", "done", "音画同步评估完成（仅报告）")
+        return report
+    except Exception as exc:  # noqa: BLE001 - report-only audit must never fail multi-translate
+        log.warning("[multi_av_sync_audit] unexpected failure task=%s", task_id, exc_info=True)
+        report = _base_report("report_only")
+        report["status"] = "failed"
+        report["error"] = str(exc)[:500]
+        _store_report(task_id, report, variant=variant)
+        try:
+            runner._set_step(task_id, "av_sync_audit", "done", "音画同步评估异常，已跳过")
         except Exception:
             pass
         return report
