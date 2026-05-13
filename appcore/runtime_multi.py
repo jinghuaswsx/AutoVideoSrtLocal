@@ -21,6 +21,7 @@ from appcore.llm_debug_runtime import save_llm_debug_calls
 from pipeline.asr import transcribe_local_audio
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
+from pipeline.subtitle_splitting import split_oversized_subtitle_chunks
 from pipeline.tts import _get_audio_duration
 from appcore.llm_prompt_configs import resolve_prompt_config
 from appcore.runtime import (
@@ -388,6 +389,13 @@ class MultiTranslateRunner(PipelineRunner):
             tts_script.get("subtitle_chunks", []),
             asr_result,
             total_duration=total_duration,
+        )
+        corrected_chunks = split_oversized_subtitle_chunks(
+            corrected_chunks,
+            weak_boundary_words=rules.WEAK_STARTERS,
+            max_chars_per_line=getattr(rules, "MAX_CHARS_PER_LINE", 42),
+            max_lines=getattr(rules, "MAX_LINES", 2),
+            max_chars_per_second=getattr(rules, "MAX_CHARS_PER_SECOND", 17),
         )
 
         srt_content = build_srt_from_chunks(

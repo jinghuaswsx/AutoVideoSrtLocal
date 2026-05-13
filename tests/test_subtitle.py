@@ -1,4 +1,4 @@
-from pipeline.subtitle import build_srt_from_chunks, build_srt_from_manifest
+from pipeline.subtitle import build_srt_from_chunks, build_srt_from_manifest, format_subtitle_chunk_text
 
 
 def test_build_srt_from_manifest_uses_manifest_timing():
@@ -71,3 +71,39 @@ def test_build_srt_from_chunks_removes_terminal_punctuation_and_balances_two_lin
     counts = [len(line.split()) for line in subtitle_lines]
     assert sum(counts) == 9
     assert max(counts) - min(counts) <= 1
+
+
+def test_format_subtitle_chunk_text_preserves_line_order_when_balancing():
+    text = "Deshalb sollte man öffentlichen Trinkwasserspendern wirklich nie"
+
+    formatted = format_subtitle_chunk_text(
+        text,
+        max_chars_per_line=38,
+        max_lines=2,
+    )
+
+    assert formatted.splitlines()[0].startswith("Deshalb")
+
+
+def test_build_srt_from_chunks_preserves_overflow_text_instead_of_truncating():
+    text = (
+        "Deshalb sollte man öffentlichen Trinkwasserspendern wirklich nie "
+        "vertrauen, besonders in der Öffentlichkeit."
+    )
+
+    srt = build_srt_from_chunks(
+        [
+            {
+                "index": 0,
+                "text": text,
+                "start_time": 0.1,
+                "end_time": 5.1,
+            }
+        ],
+        max_chars_per_line=38,
+        max_lines=2,
+    )
+
+    assert "vertrauen" in srt
+    assert "besonders" in srt
+    assert "Öffentlichkeit" in srt

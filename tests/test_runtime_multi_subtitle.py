@@ -30,15 +30,28 @@ def test_step_subtitle_uses_lang_rules_for_weak_starters_and_post_process():
                return_value={"utterances": [{"text": "Bonjour les amis", "start_time": 0, "end_time": 1}]}), \
          patch("appcore.runtime_multi._get_audio_duration", return_value=1.0), \
          patch("appcore.runtime_multi.align_subtitle_chunks_to_asr") as m_align, \
+         patch("appcore.runtime_multi.split_oversized_subtitle_chunks") as m_split, \
          patch("appcore.runtime_multi.build_srt_from_chunks") as m_build, \
          patch("appcore.runtime_multi.save_srt", return_value="/tmp/x/subtitle.srt"), \
          patch("appcore.runtime_multi._save_json"), \
          patch("appcore.runtime_multi.resolve_key", return_value="volc"):
-        m_align.return_value = [{"text": "Bonjour les amis",
-                                   "start_time": 0.0, "end_time": 1.0}]
+        aligned_chunks = [{"text": "Bonjour les amis",
+                           "start_time": 0.0, "end_time": 1.0}]
+        split_chunks = [{"text": "Bonjour les amis",
+                         "start_time": 0.0, "end_time": 1.0}]
+        m_align.return_value = aligned_chunks
+        m_split.return_value = split_chunks
         m_build.return_value = "1\n00:00:00,000 --> 00:00:01,000\nBonjour les amis ?\n"
         runner._step_subtitle("t1", "/tmp/x")
 
+    split_kwargs = m_split.call_args.kwargs
+    assert m_split.call_args.args[0] == aligned_chunks
+    assert "et" in split_kwargs["weak_boundary_words"]
+    assert "ou" in split_kwargs["weak_boundary_words"]
+    assert split_kwargs["max_chars_per_line"] == 42
+    assert split_kwargs["max_lines"] == 2
+    assert split_kwargs["max_chars_per_second"] == 17
+    assert m_build.call_args.args[0] == split_chunks
     kwargs = m_build.call_args.kwargs
     assert "et" in kwargs["weak_boundary_words"]
     assert "ou" in kwargs["weak_boundary_words"]

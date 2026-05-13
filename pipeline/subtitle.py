@@ -107,13 +107,7 @@ def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
             for i in range(0, min(len(words[0]), max_chars * max_lines), max_chars)
         )
     if max_lines == 1:
-        line = ""
-        for word in words:
-            candidate = word if not line else line + " " + word
-            if len(candidate) > max_chars and line:
-                break
-            line = candidate
-        return line or text[:max_chars]
+        return text
 
     # 尝试找最佳断点使两行尽量均衡
     best_split = None
@@ -136,31 +130,25 @@ def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
 
     if best_split:
         line1, line2 = best_split
-        # 较长行放第一行
-        if len(line2) > len(line1):
-            line1, line2 = line2, line1
         return f"{line1}\n{line2}"
 
-    # 文案超出容量：顺序填词，超出丢弃
-    lines = [""] * max_lines
-    current_line = 0
-    truncated = False
-
+    lines: list[str] = []
+    current = ""
     for word in words:
-        if current_line >= max_lines:
-            truncated = True
-            break
-        line = lines[current_line]
-        candidate = word if not line else line + " " + word
-        if len(candidate) <= max_chars:
-            lines[current_line] = candidate
-        else:
-            current_line += 1
-            if current_line < max_lines:
-                lines[current_line] = word
+        candidate = word if not current else current + " " + word
+        if len(candidate) <= max_chars or not current:
+            current = candidate
+            continue
+        lines.append(current)
+        current = word
+    if current:
+        lines.append(current)
 
-    if truncated:
-        log.warning("字幕文本被截断（超出 %d 字符 × %d 行）: %s...", max_chars, max_lines, text[:80])
+    if len(lines) > max_lines:
+        log.warning(
+            "字幕文本超过显示容量（%d 字符 x %d 行），已保全文本并输出 %d 行: %s...",
+            max_chars, max_lines, len(lines), text[:80],
+        )
 
     return "\n".join(line for line in lines if line)
 
