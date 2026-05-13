@@ -2236,7 +2236,12 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   align-items:center;
   gap:var(--oc-sp-1);
   margin-bottom:var(--oc-sp-4);
+  padding-top:var(--oc-sp-2);
   border-bottom:1px solid var(--oc-border);
+  position:sticky;
+  top:var(--sticky-tabs-top, 130px);
+  z-index:21;
+  background:var(--bg-body,#f2f4f8);
 }
 .oc-page-tab {
   height:38px;
@@ -2263,6 +2268,9 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   background:var(--oc-bg);
   border:1px solid var(--oc-border);
   border-radius:var(--oc-r-lg);
+  position:sticky;
+  top:var(--sticky-toolbar-top, 176px);
+  z-index:20;
 }
 .oc-vm-total { justify-self:end; }
 .oc-vm-table { min-width:1180px; table-layout:fixed; }
@@ -2517,12 +2525,17 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   var TOPBAR = 56;
   function updateStickyOffsets() {
     var header = document.querySelector('.oc-header');
+    var tabs = document.querySelector('.oc-page-tabs');
     var toolbar = document.querySelector('.oc-toolbar');
     var list = document.querySelector('.oc-list');
     if (!header || !toolbar || !list) return;
     var hh = header.getBoundingClientRect().height;
+    var tabsHeight = tabs ? tabs.getBoundingClientRect().height : 0;
+    var tabsMargin = tabs ? parseFloat(window.getComputedStyle(tabs).marginBottom || '0') || 0 : 0;
     var th = toolbar.getBoundingClientRect().height;
-    var toolbarTop = TOPBAR + hh;
+    var tabsTop = TOPBAR + hh;
+    var toolbarTop = tabsTop + tabsHeight + tabsMargin;
+    document.documentElement.style.setProperty('--sticky-tabs-top', tabsTop + 'px');
     document.documentElement.style.setProperty('--sticky-toolbar-top', toolbarTop + 'px');
     var tableTop = toolbarTop + th + 16; /* 16px margin-top */
     list.style.maxHeight = Math.max(window.innerHeight - tableTop - 80, 320) + 'px';

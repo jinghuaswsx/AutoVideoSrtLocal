@@ -24,6 +24,9 @@ def test_medias_page_renders_video_material_management_tab(authed_client_no_db, 
     assert "视频素材管理" in html
     assert "media_video_materials.js" in html
     assert "vmBindMask" in html
+    assert "position:sticky" in html
+    assert "--sticky-tabs-top" in html
+    assert "tabsHeight" in html
 
 
 def test_video_materials_api_lists_with_filters(authed_client_no_db, monkeypatch):
