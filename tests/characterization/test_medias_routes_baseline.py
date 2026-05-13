@@ -88,6 +88,7 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         ("/medias/api/raw-sources/<int:rid>", ("DELETE",), "medias.api_delete_raw_source"),
         ("/medias/api/raw-sources/<int:rid>", ("PATCH",), "medias.api_update_raw_source"),
         ("/medias/api/supply-pairing/search", ("GET",), "medias.api_supply_pairing_search"),
+        ("/medias/api/tabcut-selection/categories", ("GET",), "medias.api_tabcut_selection_categories"),
         ("/medias/api/tabcut-selection/goods", ("GET",), "medias.api_tabcut_selection_goods"),
         ("/medias/api/tabcut-selection/refresh", ("POST",), "medias.api_tabcut_selection_refresh"),
         ("/medias/api/tabcut-selection/videos", ("GET",), "medias.api_tabcut_selection_videos"),
