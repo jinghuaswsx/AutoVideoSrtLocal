@@ -65,7 +65,9 @@ _DIAGNOSIS_SCHEMA = {
                 "properties": {
                     "asr_index": {"type": "integer"},
                     "visual_observation": {"type": "string"},
+                    "sync_score": {"type": "number"},
                     "diagnosis": {"type": "string"},
+                    "recommendation": {"type": "string"},
                 },
             },
         },
@@ -358,8 +360,9 @@ def _build_assess_messages(
                 "你是视频翻译音画同步评估员。Doubao 已经负责观看成片视频，你现在只结合它的视频理解笔记、"
                 "最终字幕/TTS 时间线和程序候选点做结构化中文评估。输出 JSON。"
                 "另输出 timeline 数组，按 ASR 时间顺序覆盖每一段 ASR；每行必须包含 asr_index、"
-                "visual_observation、diagnosis，其中 visual_observation 写这一段对应的实际画面内容，"
-                "diagnosis 写逐段诊断意见；没有明显问题也要写“未发现明显同步风险”。"
+                "visual_observation、sync_score、diagnosis、recommendation，其中 visual_observation 写这一段对应的实际画面内容，"
+                "sync_score 是这一段音画同步评分，0-100 分，100 表示完全同步；"
+                "diagnosis 写逐段诊断意见；recommendation 写整改调整意见，没有明显问题时写“无需调整”。"
                 "必须使用中文表述 summary、evidence、timing_detail、recommendation，明确哪些同步点有问题，"
                 "哪一句音频太长或太短导致画面对不上。"
                 "不要凭空新增视频画面结论；如果 Doubao 笔记说不确定，只按程序候选和字幕/TTS 时间线给出风险级别。"
@@ -1055,6 +1058,9 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
         issue = issues_by_asr.get(asr_index)
         hint = hints_by_asr.get(asr_index)
         start_time, end_time, target_duration, tts_duration = _timing_snapshot(sentence)
+        sync_score = _sync_score_for_timeline(issue)
+        if sync_score is None:
+            sync_score = _sync_score_for_timeline(hint)
         sync_point = (
             f"ASR {asr_index}（{_format_sync_time(start_time)}-{_format_sync_time(end_time)}）"
             if start_time is not None and end_time is not None
@@ -1072,7 +1078,7 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
             "asr_text": str(sentence.get("source_text") or "").strip(),
             "target_text": _report_sentence_text(sentence, issue or hint or {}),
             "visual_observation": _visual_observation_for_timeline(issue, hint, notes_by_asr.get(asr_index)),
-            "sync_score": _sync_score_for_timeline(issue or hint),
+            "sync_score": sync_score,
             "diagnosis_status": "issue" if issue else "ok",
             "verified": bool(issue and asr_index in accepted_asr),
             "severity": str((issue or {}).get("severity") or "").lower(),
@@ -1090,11 +1096,18 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
             row.update({
                 "problem": _readable_problem(issue),
                 "diagnosis": (
-                    str(issue.get("diagnosis") or issue.get("reason") or issue.get("mismatch_reason") or issue.get("evidence") or "").strip()
+                    str(
+                        (hint or {}).get("diagnosis")
+                        or issue.get("diagnosis")
+                        or issue.get("reason")
+                        or issue.get("mismatch_reason")
+                        or issue.get("evidence")
+                        or ""
+                    ).strip()
                     or _readable_problem(issue)
                 ),
                 "timing": issue.get("timing_detail") or "",
-                "recommendation": issue.get("recommendation") or "",
+                "recommendation": (hint or {}).get("recommendation") or issue.get("recommendation") or "",
                 "evidence": issue.get("evidence") or issue.get("reason") or "",
                 "suggested_text": issue.get("final_text") or issue.get("suggested_text") or "",
             })
@@ -1106,6 +1119,10 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
     for asr_index, issue in issues_by_asr.items():
         if asr_index in seen:
             continue
+        hint = hints_by_asr.get(asr_index)
+        sync_score = _sync_score_for_timeline(issue)
+        if sync_score is None:
+            sync_score = _sync_score_for_timeline(hint)
         rows.append({
             "asr_index": asr_index,
             "source_segment_indices": [],
@@ -1117,16 +1134,23 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
             "duration_ratio": issue.get("duration_ratio"),
             "asr_text": issue.get("source_text") or "",
             "target_text": issue.get("sentence_text") or "",
-            "visual_observation": _visual_observation_for_timeline(issue, hints_by_asr.get(asr_index), notes_by_asr.get(asr_index)),
-            "sync_score": _sync_score_for_timeline(issue),
+            "visual_observation": _visual_observation_for_timeline(issue, hint, notes_by_asr.get(asr_index)),
+            "sync_score": sync_score,
             "diagnosis_status": "issue",
             "verified": bool(asr_index in accepted_asr),
             "severity": str(issue.get("severity") or "").lower(),
             "severity_label": _SEVERITY_LABELS.get(str(issue.get("severity") or "").lower(), str(issue.get("severity") or "").upper()),
             "problem": _readable_problem(issue),
-            "diagnosis": str(issue.get("diagnosis") or issue.get("reason") or issue.get("mismatch_reason") or issue.get("evidence") or "").strip(),
+            "diagnosis": str(
+                (hint or {}).get("diagnosis")
+                or issue.get("diagnosis")
+                or issue.get("reason")
+                or issue.get("mismatch_reason")
+                or issue.get("evidence")
+                or ""
+            ).strip(),
             "timing": issue.get("timing_detail") or "",
-            "recommendation": issue.get("recommendation") or "",
+            "recommendation": (hint or {}).get("recommendation") or issue.get("recommendation") or "",
             "evidence": issue.get("evidence") or issue.get("reason") or "",
             "suggested_text": issue.get("final_text") or issue.get("suggested_text") or "",
         })

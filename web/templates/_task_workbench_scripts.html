@@ -1313,7 +1313,9 @@
   }
 
   function isAvSyncTableOnlyReport(artifact) {
-    return Boolean(artifact && artifact.analysis_only && artifact.source_variant);
+    if (!artifact) return false;
+    if (artifact.analysis_only && artifact.source_variant) return true;
+    return artifact.mode === "report_only" && Array.isArray(artifact.audit_timeline);
   }
 
   function renderAvSyncAuditTimeline(artifact, options = {}) {
@@ -1322,7 +1324,7 @@
     if (!rows.length) return "";
     const renderedRows = rows.map((row, index) => renderAvSyncAuditTimelineRow(row, index, { tableOnly })).join("");
     const note = tableOnly
-      ? "按 ASR 时间顺序展开：每段对应 ASR 原文、正常翻译/TTS、视频画面。"
+      ? "按 ASR 时间顺序展开：每段对应 ASR 原文、正常翻译/TTS、视频画面和问题诊断。"
       : "按 ASR 时间顺序展开：每段对应 ASR 内容、实际画面内容和诊断意见。";
     return `<div class="preview-block av-sync-timeline-card">
       <div class="preview-label">逐段 ASR 审片表</div>

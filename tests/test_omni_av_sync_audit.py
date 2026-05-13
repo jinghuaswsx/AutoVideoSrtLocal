@@ -613,7 +613,9 @@ def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_pa
                     "timeline": [{
                         "asr_index": 1,
                         "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
+                        "sync_score": 72,
                         "diagnosis": "音频拖到下一个同步点。",
+                        "recommendation": "压缩这一句文案后重新生成音频。",
                     }],
                     "summary": "发现 1 个同步风险",
                 },
@@ -648,10 +650,11 @@ def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_pa
     assert timeline[1]["asr_text"] == "The light flashes."
     assert timeline[1]["target_text"] == "Das Licht blinkt."
     assert timeline[1]["visual_observation"] == "画面里只有灯光闪烁，没有后续动作。"
+    assert timeline[1]["sync_score"] == 72
     assert timeline[1]["diagnosis_status"] == "issue"
     assert timeline[1]["verified"] is True
     assert "音频太长" in timeline[1]["problem"]
-    assert "重写/压缩文案后重新生成音频" in timeline[1]["recommendation"]
+    assert "压缩这一句文案后重新生成音频" in timeline[1]["recommendation"]
 
 
 def test_multi_report_only_skips_when_normal_segments_missing(monkeypatch, tmp_path):
