@@ -806,6 +806,8 @@ class PipelineRunner:
 
                     speed = _speedup_ratio(audio_duration, video_duration)
                     round_record["speedup_applied"] = True
+                    round_record["speedup_context"] = "final_converged_overshoot"
+                    round_record["speedup_final_audio_choice"] = "converged"
                     round_record["speedup_speed"] = round(speed, 4)
                     round_record["speedup_pre_duration"] = audio_duration
                     _substep(
@@ -888,10 +890,17 @@ class PipelineRunner:
                                 task_id,
                             )
 
-                        if hit_final:
+                        speedup_shorter = speedup_duration < audio_duration
+                        round_record["speedup_shorter_than_pre"] = speedup_shorter
+                        if hit_final and speedup_shorter:
                             final_audio_path = speedup_audio_path
                             final_segments = speedup_result["segments"]
                             round_record["final_reason"] = "converged_speedup_refined"
+                            round_record["speedup_final_audio_choice"] = "speedup"
+                        elif hit_final:
+                            round_record["final_reason"] = (
+                                "converged_speedup_longer_kept_original"
+                            )
                         else:
                             round_record["final_reason"] = (
                                 "converged_speedup_miss_kept_original"

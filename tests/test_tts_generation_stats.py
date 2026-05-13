@@ -40,6 +40,30 @@ def test_compute_summary_multi_round_aggregates_rewrite_and_segments():
     assert summary["audio_calls"] == 28
 
 
+def test_compute_summary_counts_final_converged_speedup_generation():
+    from appcore.tts_generation_stats import compute_summary
+
+    final_round = _round(rewrite_attempts=1, audio_segments=9)
+    final_round.update({
+        "speedup_applied": True,
+        "speedup_context": "final_converged_overshoot",
+        "speedup_audio_path": "tts_full.round_2.speedup.mp3",
+    })
+    rounds = [
+        _round(rewrite_attempts=0, audio_segments=9),
+        final_round,
+        {
+            "speedup_applied": True,
+            "speedup_context": "shortcut_window",
+            "speedup_audio_path": "tts_full.round_3.speedup.mp3",
+        },
+    ]
+
+    summary = compute_summary(rounds)
+
+    assert summary["converged_speedup_audio_generations"] == 1
+
+
 def test_compute_summary_handles_missing_audio_segments_total():
     from appcore.tts_generation_stats import compute_summary
     rounds = [{"rewrite_attempts": []}]
@@ -85,6 +109,20 @@ def test_format_log_line_zero_counts():
     assert "0 次文本翻译" in line
     assert "0 轮语音生成" in line
     assert "0 次分段语音合成" in line
+
+
+def test_format_log_line_lists_final_converged_speedup_generation():
+    from appcore.tts_generation_stats import format_log_line
+
+    line = format_log_line({
+        "translate_calls": 2,
+        "audio_rounds": 2,
+        "audio_segment_calls": 20,
+        "audio_calls": 20,
+        "converged_speedup_audio_generations": 1,
+    })
+
+    assert "收敛音频变速生成音频 1 次" in line
 
 
 def test_upsert_inserts_then_updates(monkeypatch):
