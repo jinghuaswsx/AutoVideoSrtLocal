@@ -800,7 +800,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert av_state["subtitle_units"][0]["text"] == "First line Second line"
     assert saved["corrected_subtitle"]["chunks"] == av_state["subtitle_units"]
     assert "First line Second line" in saved["corrected_subtitle"]["srt_content"]
-    assert av_state["av_debug"]["model"] == "openai/gpt-5.5"
+    assert av_state["av_debug"]["model"] == "google/gemini-3-flash-preview"
     assert av_state["av_debug"]["summary"]["total_sentences"] == len(av_state["sentences"])
     assert av_state["av_debug"]["summary"]["ok_sentences"] == 2
     assert av_state["av_debug"]["summary"]["warning_sentences"] == 0
