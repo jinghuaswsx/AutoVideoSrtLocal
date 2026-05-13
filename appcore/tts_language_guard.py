@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_debug_payloads import build_chat_request_payload, prompt_file_payload
 
 
 LANGUAGE_NAMES = {
@@ -19,6 +20,9 @@ LANGUAGE_NAMES = {
     "fi": "Finnish",
     "zh": "Chinese",
 }
+USE_CASE_CODE = "video_translate.tts_language_check"
+PROVIDER_OVERRIDE = "openrouter"
+MODEL_OVERRIDE = "google/gemini-3.1-flash-lite-preview"
 
 
 class TtsLanguageValidationError(RuntimeError):
@@ -89,6 +93,40 @@ def _error_message(result: dict) -> str:
     ).strip()
 
 
+def _build_debug_call(
+    *,
+    messages: list[dict],
+    target_language: str,
+    variant: str,
+    round_index: int,
+) -> dict:
+    request_payload = build_chat_request_payload(
+        use_case_code=USE_CASE_CODE,
+        provider=PROVIDER_OVERRIDE,
+        model=MODEL_OVERRIDE,
+        messages=messages,
+        temperature=0,
+        max_tokens=8,
+        extra={
+            "billing_extra": {"variant": variant, "round": round_index},
+        },
+    )
+    return prompt_file_payload(
+        phase="tts_language_check",
+        label="TTS 语种校验",
+        use_case_code=USE_CASE_CODE,
+        provider=PROVIDER_OVERRIDE,
+        model=MODEL_OVERRIDE,
+        messages=messages,
+        request_payload=request_payload,
+        meta={
+            "target_language": target_language,
+            "variant": variant,
+            "round": round_index,
+        },
+    )
+
+
 def validate_tts_script_language_or_raise(
     *,
     text: str,
@@ -113,19 +151,28 @@ def validate_tts_script_language_or_raise(
         }
         raise TtsLanguageValidationError(_error_message(result), result=result)
 
+    messages = build_tts_language_check_messages(clean_text, target_language)
+    debug_call = _build_debug_call(
+        messages=messages,
+        target_language=target_language,
+        variant=variant,
+        round_index=round_index,
+    )
+
     try:
         response = llm_client.invoke_chat(
-            "video_translate.tts_language_check",
-            messages=build_tts_language_check_messages(clean_text, target_language),
+            USE_CASE_CODE,
+            messages=messages,
             user_id=user_id,
             project_id=project_id,
             temperature=0,
             max_tokens=8,
-            provider_override="openrouter",
-            model_override="google/gemini-3.1-flash-lite-preview",
+            provider_override=PROVIDER_OVERRIDE,
+            model_override=MODEL_OVERRIDE,
             billing_extra={"variant": variant, "round": round_index},
         )
         result = _normalize_result(str(response.get("text") or ""), target_language)
+        result["_llm_debug_calls"] = [debug_call]
     except TtsLanguageValidationError:
         raise
     except Exception as exc:
@@ -137,6 +184,7 @@ def validate_tts_script_language_or_raise(
             "confidence": 0.0,
             "reason": f"Gemini language check failed: {exc}",
             "problem_excerpt": clean_text[:160],
+            "_llm_debug_calls": [debug_call],
         }
         raise TtsLanguageValidationError(_error_message(result), result=result) from exc
 

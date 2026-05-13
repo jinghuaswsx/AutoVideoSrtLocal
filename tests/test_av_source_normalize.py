@@ -67,6 +67,13 @@ def test_normalize_source_segments_uses_llm_contract(monkeypatch):
     assert result["segments"][0]["start_time"] == 0.0
     assert result["segments"][1]["asr_index"] == 1
     assert result["sentences"][1]["cleanup_note"] == "Kept uncertain product terms instead of inventing facts."
+    debug_call = result["_llm_debug_calls"][0]
+    assert debug_call["use_case_code"] == "video_translate.source_normalize"
+    assert debug_call["label"] == "AV 原文纯净化"
+    assert debug_call["messages"][0]["content"] == av_source_normalize.SYSTEM_PROMPT
+    assert "uh this ze lip zee model no key" in debug_call["messages"][1]["content"]
+    assert debug_call["request_payload"]["type"] == "chat"
+    assert debug_call["request_payload"]["temperature"] == 0.2
 
 
 def test_normalize_source_segments_preserves_original_when_llm_omits_sentence(monkeypatch):

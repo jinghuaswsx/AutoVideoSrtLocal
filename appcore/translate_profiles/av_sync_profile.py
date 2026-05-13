@@ -51,6 +51,7 @@ class AvSyncProfile(TranslateProfile):
             _normalize_av_sentences,
             _save_json,
         )
+        from appcore.llm_debug_runtime import save_llm_debug_calls
         from appcore.preview_artifacts import build_translate_artifact
 
         task = task_state.get(task_id)
@@ -96,6 +97,13 @@ class AvSyncProfile(TranslateProfile):
                 user_id=runner.user_id,
                 project_id=task_id,
             )
+            save_llm_debug_calls(
+                task_id=task_id,
+                task_dir=task_dir,
+                step="translate",
+                calls=source_normalization.pop("_llm_debug_calls", []),
+                save_json=_save_json,
+            )
             script_segments = list(source_normalization.get("segments") or raw_script_segments)
             source_full_text = _join_source_full_text(script_segments)
             task_state.update(
@@ -128,6 +136,13 @@ class AvSyncProfile(TranslateProfile):
                     "画面分析暂不可用，已使用 ASR 时间轴兜底继续翻译...",
                 )
                 shot_notes = build_fallback_shot_notes(script_segments, reason=str(exc))
+            save_llm_debug_calls(
+                task_id=task_id,
+                task_dir=task_dir,
+                step="translate",
+                calls=shot_notes.pop("_llm_debug_calls", []),
+                save_json=_save_json,
+            )
             _save_json(task_dir, "shot_notes.json", shot_notes)
 
             runner._set_step(task_id, "translate", "running", "正在生成首版句级本土化译文...")
@@ -138,6 +153,13 @@ class AvSyncProfile(TranslateProfile):
                 voice_id=speech_rate_voice_id,
                 user_id=runner.user_id,
                 project_id=task_id,
+            )
+            save_llm_debug_calls(
+                task_id=task_id,
+                task_dir=task_dir,
+                step="translate",
+                calls=(av_output or {}).pop("_llm_debug_calls", []),
+                save_json=_save_json,
             )
             av_sentences = _normalize_av_sentences((av_output or {}).get("sentences") or [])
             localized_translation = _build_av_localized_translation(av_sentences)

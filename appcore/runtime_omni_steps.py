@@ -35,7 +35,7 @@ from appcore.events import (
     EVT_SUBTITLE_READY,
     EVT_TRANSLATE_RESULT,
 )
-from appcore.llm_debug_payloads import prompt_file_payload
+from appcore.llm_debug_payloads import build_generate_request_payload, prompt_file_payload
 from appcore.llm_debug_runtime import save_llm_debug_calls
 from appcore.preview_artifacts import (
     build_asr_artifact,
@@ -231,7 +231,12 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
     源头: appcore/runtime_v2.py:_step_shot_decompose（master b50b72c1）。
     适配: V2 task 用 ``video_duration``；omni 走 _step_extract 也写了这个字段。
     """
-    from pipeline.shot_decompose import align_asr_to_shots, decompose_shots
+    from pipeline.shot_decompose import (
+        SHOT_DECOMPOSE_PROMPT,
+        SHOT_DECOMPOSE_SCHEMA,
+        align_asr_to_shots,
+        decompose_shots,
+    )
     from appcore import llm_bindings
 
     _sd_binding = llm_bindings.resolve("shot_decompose.run")
@@ -244,10 +249,41 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
     if duration > 0 and not task.get("video_duration"):
         task_state.update(task_id, video_duration=duration)
 
+    prompt = SHOT_DECOMPOSE_PROMPT.format(duration=duration)
+    media = [video_path]
+    debug_call = prompt_file_payload(
+        phase="shot_decompose",
+        label="镜头分镜",
+        use_case_code="shot_decompose.run",
+        provider=_sd_provider,
+        model=_sd_model,
+        messages=[{"role": "user", "content": prompt}],
+        request_payload=build_generate_request_payload(
+            use_case_code="shot_decompose.run",
+            provider=_sd_provider,
+            model=_sd_model,
+            prompt=prompt,
+            media=media,
+            response_schema=SHOT_DECOMPOSE_SCHEMA,
+        ),
+        input_snapshot=[
+            {
+                "video_path": video_path,
+                "duration_seconds": duration,
+            }
+        ],
+    )
     shots = decompose_shots(
         video_path,
         user_id=runner.user_id,
         duration_seconds=duration,
+    )
+    save_llm_debug_calls(
+        task_id=task_id,
+        task_dir=task_dir,
+        step="shot_decompose",
+        calls=[debug_call],
+        save_json=_save_json,
     )
 
     utterances = task.get("utterances") or []
@@ -575,6 +611,7 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     cps = get_rate(voice_id, target_lang) or default_cps
 
     translations: list[dict[str, Any]] = []
+    debug_calls: list[dict[str, Any]] = []
     for i, unit in enumerate(translation_units):
         limit = compute_char_limit(float(unit.get("duration") or 0.0), cps)
         prev_translation = (
@@ -593,6 +630,7 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
             user_id=runner.user_id,
         )
         result = dict(result)
+        debug_calls.extend(result.pop("_llm_debug_calls", []))
         result["char_limit"] = max(1, limit)
         result["unit_index"] = unit.get("index")
         result["asr_index"] = unit.get("asr_index")
@@ -603,6 +641,13 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
             "result": result,
         })
 
+    save_llm_debug_calls(
+        task_id=task_id,
+        task_dir=task.get("task_dir") or "",
+        step="translate",
+        calls=debug_calls,
+        save_json=_save_json,
+    )
     task_state.update(task_id, translations=translations)
 
     # 构建下游 TTS / subtitle 需要的统一数据结构（兼容 base TTS loop + 字幕步骤）

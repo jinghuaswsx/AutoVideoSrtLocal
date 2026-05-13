@@ -52,6 +52,15 @@ def test_translate_shot_retries_when_over_limit():
     assert calls["n"] == 2
     assert result["translated_text"] == "Short."
     assert result["over_limit"] is False
+    assert [call["phase"] for call in result["_llm_debug_calls"]] == [
+        "shot_translate.initial.1",
+        "shot_translate.retry.1.1",
+    ]
+    retry_call = result["_llm_debug_calls"][1]
+    assert retry_call["use_case_code"] == "translate_lab.shot_translate"
+    assert retry_call["label"] == "镜头 1 缩写重试 1"
+    assert retry_call["request_payload"]["type"] == "generate"
+    assert retry_call["request_payload"]["response_schema"] is not None
 
 
 def test_translate_shot_marks_over_limit_after_max_retries():

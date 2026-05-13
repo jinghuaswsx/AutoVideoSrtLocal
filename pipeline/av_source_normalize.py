@@ -4,6 +4,11 @@ import json
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_debug_payloads import (
+    build_chat_request_payload,
+    default_provider_model,
+    prompt_file_payload,
+)
 
 
 SOURCE_NORMALIZE_RESPONSE_FORMAT: dict[str, Any] = {
@@ -56,6 +61,8 @@ Hard rules:
 
 For cleanup_note, explain the concrete cleanup in one short phrase.
 """
+
+USE_CASE_CODE = "video_translate.source_normalize"
 
 
 def _segment_index(segment: dict, fallback_index: int) -> int:
@@ -111,6 +118,48 @@ def _build_messages(
     ]
 
 
+def _build_debug_call(
+    *,
+    messages: list[dict],
+    script_segments: list[dict],
+    source_language: str,
+    av_inputs: dict,
+) -> dict:
+    provider, model = default_provider_model(USE_CASE_CODE)
+    request_payload = build_chat_request_payload(
+        use_case_code=USE_CASE_CODE,
+        provider=provider,
+        model=model,
+        messages=messages,
+        response_format=SOURCE_NORMALIZE_RESPONSE_FORMAT,
+        temperature=0.2,
+        max_tokens=4096,
+    )
+    return prompt_file_payload(
+        phase="source_normalize",
+        label="AV 原文纯净化",
+        use_case_code=USE_CASE_CODE,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=[
+            {
+                "asr_index": _segment_index(segment, fallback_index),
+                "start_time": _segment_start(segment),
+                "end_time": _segment_end(segment),
+                "text": str(segment.get("text") or ""),
+            }
+            for fallback_index, segment in enumerate(script_segments or [])
+        ],
+        meta={
+            "source_language": source_language or "auto",
+            "target_language": av_inputs.get("target_language"),
+            "target_market": av_inputs.get("target_market"),
+        },
+    )
+
+
 def _normalize_llm_sentences(raw_sentences: list[dict]) -> dict[int, dict]:
     normalized: dict[int, dict] = {}
     for item in raw_sentences or []:
@@ -139,14 +188,21 @@ def normalize_source_segments(
             "segments": [],
             "sentences": [],
             "summary": {"total_sentences": 0, "changed_sentences": 0},
+            "_llm_debug_calls": [],
         }
     messages = _build_messages(
         script_segments=script_segments or [],
         source_language=source_language or "auto",
         av_inputs=av_inputs,
     )
+    debug_call = _build_debug_call(
+        messages=messages,
+        script_segments=script_segments or [],
+        source_language=source_language or "auto",
+        av_inputs=av_inputs,
+    )
     response = llm_client.invoke_chat(
-        "video_translate.source_normalize",
+        USE_CASE_CODE,
         messages=messages,
         user_id=user_id,
         project_id=project_id,
@@ -208,4 +264,5 @@ def normalize_source_segments(
             "total_sentences": len(output_segments),
             "changed_sentences": changed_count,
         },
+        "_llm_debug_calls": [debug_call],
     }

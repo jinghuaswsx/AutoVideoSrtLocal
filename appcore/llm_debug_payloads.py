@@ -5,6 +5,27 @@ from __future__ import annotations
 from typing import Any
 
 
+def default_provider_model(
+    use_case_code: str,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Return explicit provider/model or registry defaults for debug display."""
+    if provider and model:
+        return provider, model
+    try:
+        from appcore.llm_use_cases import get_use_case
+
+        use_case = get_use_case(use_case_code)
+    except Exception:
+        return provider, model
+    return (
+        provider or use_case.get("default_provider"),
+        model or use_case.get("default_model"),
+    )
+
+
 def build_chat_request_payload(
     *,
     use_case_code: str | None,

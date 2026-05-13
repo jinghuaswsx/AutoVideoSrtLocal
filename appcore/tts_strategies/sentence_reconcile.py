@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import appcore.task_state as task_state
+from appcore.llm_debug_runtime import save_llm_debug_calls
 from appcore.runtime import (
     _build_av_debug_state,
     _build_av_localized_translation,
@@ -98,6 +99,7 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 for segment in tts_input_segments
                 if segment.get("tts_text") or segment.get("translated")
             ).strip()
+            tts_debug_calls: list[dict] = []
             try:
                 av_language_check = validate_tts_script_language_or_raise(
                     text=av_tts_text,
@@ -108,12 +110,22 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                     round_index=1,
                 )
             except TtsLanguageValidationError as exc:
+                error_result = dict(exc.result or {"is_target_language": False, "reason": str(exc)})
+                tts_debug_calls.extend(error_result.pop("_llm_debug_calls", []))
+                save_llm_debug_calls(
+                    task_id=task_id,
+                    task_dir=task_dir,
+                    step="tts",
+                    calls=tts_debug_calls,
+                    save_json=_save_json,
+                )
                 _save_json(
                     task_dir,
                     "tts_language_check.av.json",
-                    exc.result or {"is_target_language": False, "reason": str(exc)},
+                    error_result,
                 )
                 raise
+            tts_debug_calls.extend(av_language_check.pop("_llm_debug_calls", []))
             _save_json(task_dir, "tts_language_check.av.json", av_language_check)
 
             runner._set_step(task_id, "tts", "running", "正在按句联合收敛文案与音频时长...")
@@ -144,6 +156,16 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
             )
             from pipeline.audio_stitch import apply_compact_audio_schedule
             final_sentences = apply_compact_audio_schedule(final_sentences, max_gap=0.25)
+            for sentence in final_sentences:
+                if isinstance(sentence, dict):
+                    tts_debug_calls.extend(sentence.pop("_llm_debug_calls", []))
+            save_llm_debug_calls(
+                task_id=task_id,
+                task_dir=task_dir,
+                step="tts",
+                calls=tts_debug_calls,
+                save_json=_save_json,
+            )
             av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
             final_localized_translation = _build_av_localized_translation(final_sentences)
             final_tts_segments = _build_av_tts_segments(final_sentences)

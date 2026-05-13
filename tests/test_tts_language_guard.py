@@ -36,6 +36,12 @@ def test_tts_language_guard_uses_gemini_flash_lite_use_case(monkeypatch):
     assert "只返回一个字" in kwargs["messages"][0]["content"]
     assert "¿Sabías que esto funciona?" in kwargs["messages"][1]["content"]
     assert "response_format" not in kwargs
+    debug_call = result["_llm_debug_calls"][0]
+    assert debug_call["use_case_code"] == "video_translate.tts_language_check"
+    assert debug_call["label"] == "TTS 语种校验"
+    assert debug_call["request_payload"]["provider"] == "openrouter"
+    assert debug_call["request_payload"]["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert "¿Sabías que esto funciona?" in debug_call["messages"][1]["content"]
 
 
 def test_tts_language_guard_raises_on_language_mismatch(monkeypatch):
@@ -61,3 +67,4 @@ def test_tts_language_guard_raises_on_language_mismatch(monkeypatch):
 
     assert "TTS language check failed" in str(exc_info.value)
     assert exc_info.value.result["answer"] == "否"
+    assert exc_info.value.result["_llm_debug_calls"][0]["use_case_code"] == "video_translate.tts_language_check"

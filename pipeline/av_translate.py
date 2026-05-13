@@ -6,6 +6,11 @@ from typing import Any
 
 from appcore import llm_client
 from appcore.cancellation import cancellable_sleep
+from appcore.llm_debug_payloads import (
+    build_chat_request_payload,
+    default_provider_model,
+    prompt_file_payload,
+)
 from pipeline import speech_rate_model
 
 FALLBACK_CPS = {
@@ -18,6 +23,8 @@ FALLBACK_CPS = {
 }
 
 REWRITE_TEMPERATURE_LADDER = (0.6, 0.8, 1.0, 1.05, 1.1, 1.1, 1.15, 1.15, 1.2, 1.2)
+AV_LOCALIZE_USE_CASE = "video_translate.av_localize"
+AV_REWRITE_USE_CASE = "video_translate.av_rewrite"
 
 _SOURCE_ANCHOR_RE = re.compile(r"[A-Za-z][A-Za-z0-9'’-]*|\d+(?:[.,]\d+)?%?|[\u4e00-\u9fff]{2,}")
 _SOURCE_ANCHOR_STOPWORDS = {
@@ -292,6 +299,40 @@ def _build_translate_messages(script_segments: list[dict], shot_notes: dict, av_
     return messages, sentence_inputs, global_context
 
 
+def _build_chat_debug_call(
+    *,
+    use_case_code: str,
+    phase: str,
+    label: str,
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+    input_snapshot: list[dict] | None = None,
+    meta: dict | None = None,
+) -> dict:
+    provider, model = default_provider_model(use_case_code)
+    request_payload = build_chat_request_payload(
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        response_format=AV_TRANSLATE_RESPONSE_FORMAT,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return prompt_file_payload(
+        phase=phase,
+        label=label,
+        use_case_code=use_case_code,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=input_snapshot,
+        meta=meta,
+    )
+
+
 def _build_rewrite_system_message(av_inputs: dict) -> dict:
     return {
         "role": "system",
@@ -378,12 +419,26 @@ def generate_av_localized_translation(
     messages, sentence_inputs, _global_context = _build_translate_messages(
         script_segments, shot_notes, av_inputs, voice_id
     )
+    debug_call = _build_chat_debug_call(
+        use_case_code=AV_LOCALIZE_USE_CASE,
+        phase="av_localize",
+        label="句级首版本土化",
+        messages=messages,
+        temperature=0.2,
+        max_tokens=8192,
+        input_snapshot=sentence_inputs,
+        meta={
+            "target_language": av_inputs.get("target_language"),
+            "target_market": av_inputs.get("target_market"),
+            "voice_id": voice_id,
+        },
+    )
     last_error: Exception | None = None
 
     for attempt in range(2):
         try:
             response = llm_client.invoke_chat(
-                "video_translate.av_localize",
+                AV_LOCALIZE_USE_CASE,
                 messages=messages,
                 user_id=user_id,
                 project_id=project_id,
@@ -394,6 +449,7 @@ def generate_av_localized_translation(
             payload = _extract_response_json(response)
             return {
                 "sentences": _merge_output_sentences(payload.get("sentences") or [], sentence_inputs),
+                "_llm_debug_calls": [debug_call],
             }
         except Exception as exc:  # pragma: no cover - exercised by retry test
             last_error = exc
@@ -497,12 +553,28 @@ def rewrite_one(
         _build_rewrite_system_message(av_inputs),
         {"role": "user", "content": json.dumps(rewrite_payload, ensure_ascii=False, indent=2)},
     ]
+    rewrite_temperature = temperature if temperature is not None else rewrite_temperature_for_attempt(attempt_number)
+    debug_call = _build_chat_debug_call(
+        use_case_code=AV_REWRITE_USE_CASE,
+        phase=f"av_rewrite.{asr_index}.{max(1, int(attempt_number or 1))}",
+        label="句级 TTS 文案改写",
+        messages=rewrite_messages,
+        temperature=rewrite_temperature,
+        max_tokens=4096,
+        input_snapshot=[focus_sentence],
+        meta={
+            "asr_index": asr_index,
+            "direction": rewrite_direction,
+            "target_chars_range": list(new_target_chars_range),
+            "attempt_number": max(1, int(attempt_number or 1)),
+        },
+    )
     response = llm_client.invoke_chat(
-        "video_translate.av_rewrite",
+        AV_REWRITE_USE_CASE,
         messages=rewrite_messages,
         user_id=user_id,
         project_id=project_id,
-        temperature=temperature if temperature is not None else rewrite_temperature_for_attempt(attempt_number),
+        temperature=rewrite_temperature,
         max_tokens=4096,
         response_format=AV_TRANSLATE_RESPONSE_FORMAT,
     )
@@ -512,5 +584,6 @@ def rewrite_one(
         raise ValueError("av_rewrite returned no sentences")
     sentence = dict(sentences[0])
     if return_sentence:
+        sentence["_llm_debug_calls"] = [debug_call]
         return sentence
     return str(sentence.get("text") or "")

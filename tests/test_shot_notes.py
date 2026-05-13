@@ -94,6 +94,12 @@ def test_shot_notes_happy_path(monkeypatch):
     assert result["sentences"][0]["scene"] == "桌面特写"
     assert result["generated_at"]
     assert result["model"]["provider"] == "openrouter"
+    debug_call = result["_llm_debug_calls"][0]
+    assert debug_call["use_case_code"] == "video_translate.shot_notes"
+    assert debug_call["label"] == "句级画面笔记"
+    assert debug_call["messages"][0]["content"] == shot_notes.SYSTEM_PROMPT
+    assert debug_call["request_payload"]["type"] == "generate"
+    assert debug_call["request_payload"]["media"] == ["demo.mp4"]
 
 
 def test_shot_notes_fills_missing_sentences(monkeypatch):

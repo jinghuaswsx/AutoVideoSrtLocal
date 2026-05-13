@@ -286,6 +286,13 @@ def test_generate_av_localized_translation_happy(monkeypatch):
     assert result["sentences"][0]["role_in_structure"] == "hook"
     assert result["sentences"][1]["target_duration"] == 1.5
     assert result["sentences"][1]["role_in_structure"] == "cta"
+    debug_call = result["_llm_debug_calls"][0]
+    assert debug_call["use_case_code"] == "video_translate.av_localize"
+    assert debug_call["label"] == "句级首版本土化"
+    assert debug_call["messages"][0]["role"] == "system"
+    assert debug_call["messages"][1]["role"] == "user"
+    assert debug_call["request_payload"]["type"] == "chat"
+    assert debug_call["request_payload"]["temperature"] == 0.2
 
 
 def test_generate_av_retries_on_failure(monkeypatch):
@@ -378,6 +385,50 @@ def test_rewrite_one_includes_overshoot_in_prompt(monkeypatch):
     assert "one target-language sentence for every source sentence" not in system_prompt
     user_prompt = captured["kwargs"]["messages"][1]["content"]
     assert "0.8" in user_prompt
+
+
+def test_rewrite_one_returns_debug_call_for_sentence_result(monkeypatch):
+    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+    monkeypatch.setattr(
+        av_translate.llm_client,
+        "invoke_chat",
+        lambda *args, **kwargs: {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 1,
+                        "text": "Shorter copy",
+                        "est_chars": 12,
+                        "source_intent": "demo",
+                        "localization_note": "shortened for timing",
+                        "duration_risk": "ok",
+                    }
+                ]
+            }
+        },
+    )
+
+    sentence = av_translate.rewrite_one(
+        asr_index=1,
+        prev_text="This one is definitely too long for the slot",
+        overshoot_sec=0.8,
+        direction="shorten",
+        new_target_chars_range=(12, 16),
+        script_segments=SCRIPT_SEGMENTS,
+        shot_notes=SHOT_NOTES,
+        av_inputs=AV_INPUTS,
+        voice_id="voice-1",
+        user_id=9,
+        project_id="task-2",
+        return_sentence=True,
+    )
+
+    debug_call = sentence["_llm_debug_calls"][0]
+    assert debug_call["use_case_code"] == "video_translate.av_rewrite"
+    assert debug_call["label"] == "句级 TTS 文案改写"
+    assert debug_call["request_payload"]["temperature"] == av_translate.rewrite_temperature_for_attempt(None)
+    assert "This one is definitely too long" in debug_call["messages"][1]["content"]
+    user_prompt = debug_call["messages"][1]["content"]
     assert "12-16" in user_prompt
     assert "This one is definitely too long for the slot" in user_prompt
 

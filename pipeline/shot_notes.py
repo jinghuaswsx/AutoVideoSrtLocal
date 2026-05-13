@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_debug_payloads import (
+    build_generate_request_payload,
+    default_provider_model,
+    prompt_file_payload,
+)
 from appcore.llm_use_cases import get_use_case
 
 SHOT_NOTES_SCHEMA: dict[str, Any] = {
@@ -141,6 +146,8 @@ ASR:
 {script_segments_json}
 """
 
+USE_CASE_CODE = "video_translate.shot_notes"
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -228,6 +235,54 @@ def _build_prompt(script_segments: list[dict], target_language: str, target_mark
     )
 
 
+def _build_debug_call(
+    *,
+    prompt: str,
+    media: list[str],
+    script_segments: list[dict],
+    target_language: str,
+    target_market: str,
+) -> dict:
+    provider, model = default_provider_model(USE_CASE_CODE)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    request_payload = build_generate_request_payload(
+        use_case_code=USE_CASE_CODE,
+        provider=provider,
+        model=model,
+        prompt=prompt,
+        system=SYSTEM_PROMPT,
+        media=media,
+        response_schema=SHOT_NOTES_SCHEMA,
+        temperature=0.2,
+        max_output_tokens=4096,
+    )
+    return prompt_file_payload(
+        phase="shot_notes",
+        label="句级画面笔记",
+        use_case_code=USE_CASE_CODE,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=[
+            {
+                "index": _segment_asr_index(segment, fallback_index),
+                "start_time": _segment_start(segment),
+                "end_time": _segment_end(segment),
+                "text": _segment_text(segment),
+            }
+            for fallback_index, segment in enumerate(script_segments or [])
+        ],
+        meta={
+            "target_language": target_language,
+            "target_market": target_market,
+        },
+    )
+
+
 def _normalize_output(raw_output: dict, script_segments: list[dict]) -> dict:
     raw_global = raw_output.get("global") if isinstance(raw_output, dict) else None
     raw_sentences = raw_output.get("sentences") if isinstance(raw_output, dict) else None
@@ -250,7 +305,7 @@ def _normalize_output(raw_output: dict, script_segments: list[dict]) -> dict:
             )
         )
 
-    use_case = get_use_case("video_translate.shot_notes")
+    use_case = get_use_case(USE_CASE_CODE)
     return {
         "global": {
             **_default_global(),
@@ -291,12 +346,19 @@ def generate_shot_notes(
 ) -> dict:
     prompt = _build_prompt(script_segments, target_language, target_market)
     media = [str(video_path)]
+    debug_call = _build_debug_call(
+        prompt=prompt,
+        media=media,
+        script_segments=script_segments,
+        target_language=target_language,
+        target_market=target_market,
+    )
     last_error: Exception | None = None
 
     for attempt in range(max_retries + 1):
         try:
             result = llm_client.invoke_generate(
-                "video_translate.shot_notes",
+                USE_CASE_CODE,
                 prompt=prompt,
                 system=SYSTEM_PROMPT,
                 media=media,
@@ -306,7 +368,9 @@ def generate_shot_notes(
                 temperature=0.2,
                 max_output_tokens=4096,
             )
-            return _normalize_output(result, script_segments)
+            notes = _normalize_output(result, script_segments)
+            notes["_llm_debug_calls"] = [debug_call]
+            return notes
         except Exception as exc:  # pragma: no cover - error path asserted by tests
             last_error = exc
             if attempt >= max_retries:

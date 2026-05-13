@@ -5,7 +5,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from appcore.llm_debug_payloads import (
+    build_generate_request_payload,
+    default_provider_model,
+    prompt_file_payload,
+)
 from appcore.llm_client import invoke_generate as gemini_generate
+
+USE_CASE_CODE = "translate_lab.shot_translate"
 
 TRANSLATE_SCHEMA = {
     "type": "object",
@@ -45,7 +52,7 @@ def compute_char_limit(shot_duration: float, chars_per_second: float,
 def _call_llm(prompt: str, user_id: int) -> str:
     """调用 Gemini 生成 JSON 翻译，返回 translated_text。"""
     invoked = gemini_generate(
-        "translate_lab.shot_translate",
+        USE_CASE_CODE,
         prompt=prompt,
         user_id=user_id,
         response_schema=TRANSLATE_SCHEMA,
@@ -53,6 +60,34 @@ def _call_llm(prompt: str, user_id: int) -> str:
     resp = invoked.get("json") or {}
     text = resp.get("translated_text", "") or ""
     return text.strip()
+
+
+def _build_debug_call(
+    *,
+    phase: str,
+    label: str,
+    prompt: str,
+    input_snapshot: dict | None = None,
+) -> dict:
+    provider, model = default_provider_model(USE_CASE_CODE)
+    messages = [{"role": "user", "content": prompt}]
+    request_payload = build_generate_request_payload(
+        use_case_code=USE_CASE_CODE,
+        provider=provider,
+        model=model,
+        prompt=prompt,
+        response_schema=TRANSLATE_SCHEMA,
+    )
+    return prompt_file_payload(
+        phase=phase,
+        label=label,
+        use_case_code=USE_CASE_CODE,
+        provider=provider,
+        model=model,
+        messages=messages,
+        request_payload=request_payload,
+        input_snapshot=[input_snapshot] if input_snapshot else None,
+    )
 
 
 def translate_shot(
@@ -75,6 +110,21 @@ def translate_shot(
         next_source=next_source or "（无）",
         char_limit=char_limit,
     )
+    shot_index = shot.get("index")
+    debug_calls = [
+        _build_debug_call(
+            phase=f"shot_translate.initial.{shot_index}",
+            label=f"镜头 {shot_index} 初始翻译",
+            prompt=initial_prompt,
+            input_snapshot={
+                "shot": shot,
+                "target_language": target_language,
+                "char_limit": char_limit,
+                "prev_translation": prev_translation,
+                "next_source": next_source,
+            },
+        )
+    ]
     text = _call_llm(initial_prompt, user_id)
 
     retries = 0
@@ -83,6 +133,20 @@ def translate_shot(
             previous=text,
             char_limit=char_limit,
             actual=len(text),
+        )
+        debug_calls.append(
+            _build_debug_call(
+                phase=f"shot_translate.retry.{shot_index}.{retries + 1}",
+                label=f"镜头 {shot_index} 缩写重试 {retries + 1}",
+                prompt=retry_prompt,
+                input_snapshot={
+                    "shot": shot,
+                    "target_language": target_language,
+                    "char_limit": char_limit,
+                    "previous": text,
+                    "actual": len(text),
+                },
+            )
         )
         text = _call_llm(retry_prompt, user_id)
         retries += 1
@@ -93,4 +157,5 @@ def translate_shot(
         "char_count": len(text),
         "over_limit": len(text) > char_limit,
         "retries": retries,
+        "_llm_debug_calls": debug_calls,
     }

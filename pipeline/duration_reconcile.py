@@ -434,6 +434,9 @@ def reconcile_duration(
                         _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_error")
                         continue
                     if isinstance(rewrite_result, dict):
+                        debug_calls = rewrite_result.pop("_llm_debug_calls", [])
+                        if debug_calls:
+                            current.setdefault("_llm_debug_calls", []).extend(debug_calls)
                         new_text = str(rewrite_result.get("text") or "")
                         if "covered_source_terms" in rewrite_result:
                             current["covered_source_terms"] = list(rewrite_result.get("covered_source_terms") or [])
