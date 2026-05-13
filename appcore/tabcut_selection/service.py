@@ -33,6 +33,7 @@ def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
         item = dict(row)
         raw = _json_dict(item.pop("video_raw_json", None))
         item["hashtags"] = _hashtag_names(raw)
+        _fill_missing(item, "currency_symbol", item.get("price_currency"))
         raw_item = _first_raw_item(raw)
         if raw_item:
             _fill_missing(item, "primary_item_pic_url", raw_item.get("itemCoverUrl"))

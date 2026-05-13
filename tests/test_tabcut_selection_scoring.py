@@ -21,6 +21,46 @@ def test_normalize_video_row_strips_signed_video_url():
     assert row["primary_item_name"] == "Item"
 
 
+def test_normalize_video_row_extracts_primary_item_price():
+    row = normalize_video_row(
+        {
+            "videoId": "v1",
+            "itemList": [
+                {
+                    "itemId": "i1",
+                    "itemName": "Item",
+                    "skuPrice": "$12.34",
+                    "currencySymbol": "$",
+                }
+            ],
+        }
+    )
+
+    assert row["primary_item_price_min"] == 12.34
+    assert row["primary_item_price_max"] == 12.34
+    assert row["price_currency"] == "$"
+
+
+def test_normalize_video_row_extracts_visible_card_price_with_space():
+    row = normalize_video_row(
+        {
+            "videoId": "v1",
+            "itemList": [
+                {
+                    "itemId": "i1",
+                    "itemName": "OVF Black Nitrile Gloves",
+                    "skuPrice": "$ 3.76",
+                    "currencySymbol": "$",
+                }
+            ],
+        }
+    )
+
+    assert row["primary_item_price_min"] == 3.76
+    assert row["primary_item_price_max"] == 3.76
+    assert row["price_currency"] == "$"
+
+
 def test_normalize_goods_row_extracts_gmv_and_categories():
     row = normalize_goods_row(
         {

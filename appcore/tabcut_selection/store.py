@@ -17,6 +17,7 @@ VIDEO_SORTS = {
     "item_sold_count": "c.item_sold_count",
     "video_split_sold_count": "c.video_split_sold_count",
     "video_split_gmv": "c.video_split_gmv",
+    "primary_item_price_min": "c.primary_item_price_min",
     "goods_sold_count_7d": "c.goods_sold_count_7d",
     "goods_gmv_7d": "c.goods_gmv_7d",
     "goods_growth_rate_7d": "c.goods_growth_rate_7d",
@@ -143,6 +144,16 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
             where.append(f"{column} >= %s")
             params.append(value)
 
+    min_item_price = _float_arg(args, "min_item_price")
+    if min_item_price is not None:
+        where.append("c.primary_item_price_min >= %s")
+        params.append(min_item_price)
+
+    max_item_price = _float_arg(args, "max_item_price")
+    if max_item_price is not None:
+        where.append("c.primary_item_price_min <= %s")
+        params.append(max_item_price)
+
     where_sql = " AND ".join(where)
     count_rows = query_fn(
         f"""
@@ -156,6 +167,9 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
     rows = query_fn(
         f"""
         SELECT c.id, c.biz_date, c.region, c.video_id, c.primary_item_id,
+               COALESCE(c.primary_item_price_min, gs.price_min) AS primary_item_price_min,
+               COALESCE(c.primary_item_price_max, gs.price_max) AS primary_item_price_max,
+               c.price_currency,
                c.score, c.score_parts_json, COALESCE(vs.play_count, c.play_count) AS play_count,
                vs.like_count, vs.share_count, vs.comment_count,
                c.item_sold_count, c.video_split_sold_count, c.video_split_gmv,
@@ -537,6 +551,9 @@ def upsert_video_candidate(candidate: Mapping[str, Any], *, execute_fn: ExecuteF
         candidate.get("region") or "US",
         candidate.get("video_id"),
         candidate.get("primary_item_id"),
+        candidate.get("primary_item_price_min"),
+        candidate.get("primary_item_price_max"),
+        candidate.get("price_currency"),
         candidate.get("score") or 0,
         _json(candidate.get("score_parts")),
         candidate.get("play_count"),
@@ -556,13 +573,17 @@ def upsert_video_candidate(candidate: Mapping[str, Any], *, execute_fn: ExecuteF
     return execute_fn(
         """
         INSERT INTO tabcut_video_candidates (
-            biz_date, region, video_id, primary_item_id, score, score_parts_json,
+            biz_date, region, video_id, primary_item_id,
+            primary_item_price_min, primary_item_price_max, price_currency,
+            score, score_parts_json,
             play_count, item_sold_count, video_split_sold_count, video_split_gmv,
             goods_sold_count_7d, goods_gmv_7d, goods_sold_count_total, goods_gmv_total,
             goods_growth_rate_7d, category_l1_name, category_l2_name, category_l3_name,
             candidate_json
         ) VALUES (
-            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s,
             %s, %s, %s, %s,
             %s, %s, %s, %s,
             %s, %s, %s, %s,
@@ -570,6 +591,9 @@ def upsert_video_candidate(candidate: Mapping[str, Any], *, execute_fn: ExecuteF
         )
         ON DUPLICATE KEY UPDATE
             primary_item_id=VALUES(primary_item_id),
+            primary_item_price_min=VALUES(primary_item_price_min),
+            primary_item_price_max=VALUES(primary_item_price_max),
+            price_currency=VALUES(price_currency),
             score=VALUES(score),
             score_parts_json=VALUES(score_parts_json),
             play_count=VALUES(play_count),
