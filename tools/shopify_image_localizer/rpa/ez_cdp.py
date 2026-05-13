@@ -18,6 +18,7 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -194,7 +195,33 @@ def _is_google_url(url: str | None) -> bool:
     return normalized in {"https://www.google.com", "http://www.google.com", "https://google.com", "http://google.com"}
 
 
+def _is_restored_invalid_tool_url(url: str | None) -> bool:
+    value = str(url or "").strip()
+    if not value:
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and (parsed.hostname or "").lower() == "ez"
+
+
+def close_restored_invalid_tool_tabs(context, *, keep_pages: list | tuple = ()) -> int:
+    pages = list(getattr(context, "pages", None) or [])
+    keep_ids = {id(page) for page in keep_pages}
+    closed = 0
+    for page in reversed(pages):
+        if id(page) in keep_ids:
+            continue
+        if not _is_restored_invalid_tool_url(_page_url(page)):
+            continue
+        try:
+            page.close()
+            closed += 1
+        except Exception:
+            pass
+    return closed
+
+
 def ensure_google_home_tab(context) -> None:
+    close_restored_invalid_tool_tabs(context)
     pages = list(getattr(context, "pages", None) or [])
     if not pages:
         page = context.new_page()
@@ -219,8 +246,9 @@ def _target_page_token(target_url: str) -> str:
 
 
 def select_or_create_business_page(context, target_url: str):
+    close_restored_invalid_tool_tabs(context)
     token = _target_page_token(target_url)
-    pages = list(getattr(context, "pages", None) or [])
+    pages = [page for page in list(getattr(context, "pages", None) or []) if not _is_restored_invalid_tool_url(_page_url(page))]
     for page in pages[1:]:
         if token and token in _page_url(page):
             return page
@@ -228,6 +256,7 @@ def select_or_create_business_page(context, target_url: str):
 
 
 def prune_browser_tabs(context, *, keep_pages: list | tuple = (), max_tabs: int = MAX_BROWSER_TABS) -> None:
+    close_restored_invalid_tool_tabs(context, keep_pages=keep_pages)
     pages = list(getattr(context, "pages", None) or [])
     keep_ids = {id(page) for page in keep_pages}
     for page in reversed(pages[1:]):

@@ -1650,6 +1650,66 @@ def test_prune_browser_tabs_keeps_google_first_and_target_under_limit():
     assert len(open_pages) <= 20
 
 
+def test_prune_browser_tabs_closes_restored_invalid_ez_tab_even_under_limit():
+    class FakePage:
+        def __init__(self, name: str, url: str):
+            self.name = name
+            self.url = url
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeContext:
+        def __init__(self):
+            self.pages = [
+                FakePage("google", "https://www.google.com"),
+                FakePage("bad-ez", "https://ez/8560000000000"),
+                FakePage("target", "https://admin.shopify.com/store/0ixug9-pv/apps/translate-and-adapt/localize/product?id=8560000000000"),
+            ]
+
+    context = FakeContext()
+    target = context.pages[2]
+
+    ez_cdp.prune_browser_tabs(context, keep_pages=(target,), max_tabs=20)
+
+    assert context.pages[1].closed is True
+    assert target.closed is False
+
+
+def test_select_or_create_business_page_closes_restored_invalid_ez_tab():
+    class FakePage:
+        def __init__(self, name: str, url: str):
+            self.name = name
+            self.url = url
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeContext:
+        def __init__(self):
+            self.pages = [
+                FakePage("google", "https://www.google.com"),
+                FakePage("bad-ez", "https://ez/8560000000000"),
+            ]
+
+        def new_page(self):
+            page = FakePage("business", "about:blank")
+            self.pages.append(page)
+            return page
+
+    context = FakeContext()
+
+    page = ez_cdp.select_or_create_business_page(
+        context,
+        "https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8560000000000",
+    )
+
+    assert context.pages[1].closed is True
+    assert page.name == "business"
+
+
 def test_google_home_tab_is_restored_when_first_tab_was_closed_or_reused():
     calls: list[tuple] = []
 
