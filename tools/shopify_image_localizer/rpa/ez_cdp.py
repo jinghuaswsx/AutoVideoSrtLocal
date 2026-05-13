@@ -820,6 +820,10 @@ def replace_many(
                     )
                 if not pending_pairs and selected_pairs:
                     _log(f"[轮播图] 全部 {len(selected_pairs)} 个位置已有 {language}，跳过上传")
+                    _log("[轮播图] 已全部替换到目标语言，停留 5 秒供人工检查确认")
+                    cancellation.throw_if_cancelled(cancel_token)
+                    page.wait_for_timeout(5000)
+                    cancellation.throw_if_cancelled(cancel_token)
                 for idx, (slot_idx, path) in enumerate(pending_pairs):
                     cancellation.throw_if_cancelled(cancel_token)
                     _log(f"[轮播图][位置 {slot_idx}] 已入队 路径={path}")

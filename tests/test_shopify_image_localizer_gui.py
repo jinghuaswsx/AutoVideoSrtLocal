@@ -149,6 +149,50 @@ def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest
         app.root.destroy()
 
 
+def test_gui_close_software_button_cleans_cdp_profiles_and_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app._set_domain_items(
+            [
+                {"domain": "newjoyloo.com"},
+                {"domain": "omurio.com"},
+            ]
+        )
+        token = cancellation.CancellationToken()
+        app._current_cancel_token = token
+
+        cleanup_calls: list[list[str]] = []
+        destroyed: list[bool] = []
+
+        monkeypatch.setattr(app, "_ui_after", lambda _delay, callback, *args: callback(*args))
+        monkeypatch.setattr(app, "_cleanup_related_browser_processes", lambda profiles: cleanup_calls.append(profiles))
+        monkeypatch.setattr(app, "_destroy_root", lambda: destroyed.append(True))
+
+        class FakeThread:
+            def __init__(self, *, target, daemon):
+                self.target = target
+                self.daemon = daemon
+
+            def start(self):
+                self.target()
+
+        monkeypatch.setattr(gui.threading, "Thread", FakeThread)
+
+        assert app.close_app_button["text"] == "关闭软件"
+        assert app.close_app_button["bg"] == "#c62828"
+        assert app.close_app_button.pack_info().get("side") == "right"
+
+        app.close_application()
+
+        assert token.is_cancelled()
+        assert app._shutdown_requested is True
+        assert app.close_app_button["state"] == "disabled"
+        assert cleanup_calls == [[r"C:\chrome-shopify-image", r"C:\chrome-shopify-image-omurio"]]
+        assert destroyed == [True]
+    finally:
+        app.root.destroy()
+
+
 def test_gui_does_not_persist_empty_runtime_credentials_on_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -375,6 +419,50 @@ def test_gui_domain_dropdown_updates_selected_domain_and_cached_slug(monkeypatch
         assert app.current_shopify_domain_var.get() == "omurio.com"
         assert app.current_login_status_var.get() == "当前网站：omurio.com  当前网站shopify编码：7t1gn3-sv"
         assert app.current_login_status_label["fg"] == "black"
+    finally:
+        app.root.destroy()
+
+
+def test_gui_fast_domain_fetch_updates_dropdown_after_mainloop_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetched = threading.Event()
+
+    monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_languages_async", lambda self: None)
+    monkeypatch.setattr(
+        gui.settings,
+        "load_runtime_config",
+        lambda root=None: {
+            "base_url": "http://172.30.254.14",
+            "api_key": "demo-key",
+            "browser_user_data_dir": r"C:\chrome-shopify-image",
+            "shopify_domain": "newjoyloo.com",
+        },
+    )
+    monkeypatch.setattr(
+        gui.settings,
+        "cached_store_slug_for_domain",
+        lambda domain, root=None: "",
+    )
+    monkeypatch.setattr(gui.messagebox, "showinfo", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui.messagebox, "showwarning", lambda *args, **kwargs: None)
+
+    def fake_fetch_domains(*_args, **_kwargs):
+        fetched.set()
+        return {"items": [{"domain": "newjoyloo.com"}, {"domain": "omurio.com"}]}
+
+    monkeypatch.setattr(gui.api_client, "fetch_domains", fake_fetch_domains)
+
+    try:
+        app = gui.ShopifyImageLocalizerApp(prompt_on_start=False)
+    except tk.TclError as exc:
+        pytest.skip(f"Tk is unavailable: {exc}")
+    try:
+        app.root.withdraw()
+        assert fetched.wait(2)
+        time.sleep(0.1)
+        app.root.update()
+
+        assert list(app.domain_box["values"]) == ["newjoyloo.com", "omurio.com"]
     finally:
         app.root.destroy()
 

@@ -9,6 +9,7 @@ from tkinter import font as tkfont, messagebox, ttk
 
 from tools.shopify_image_localizer import api_client, cancellation, controller, settings, storage, version
 from tools.shopify_image_localizer.browser import session
+from tools.shopify_image_localizer.rpa import ez_cdp
 
 
 
@@ -70,6 +71,9 @@ class ShopifyImageLocalizerApp:
         self._progress_running: bool = False
         self._main_thread = threading.current_thread()
         self._tk_mainloop_started = False
+        self._pending_ui_callbacks: list[tuple[int, object, tuple]] = []
+        self._pending_ui_lock = threading.Lock()
+        self._shutdown_requested = False
         # 批量语言选择
         self.batch_languages: list[str] = []  # 已选择的批量语言标签列表
         self.current_running_language: str = ""  # 当前正在运行的语言
@@ -80,6 +84,7 @@ class ShopifyImageLocalizerApp:
         self._build_form()
         self._build_summary()
         self._build_log()
+        self.root.protocol("WM_DELETE_WINDOW", self.close_application)
 
         self._append_log("程序已启动，正在加载线上语言列表")
         self.root.after(0, self._mark_tk_mainloop_started)
@@ -89,10 +94,19 @@ class ShopifyImageLocalizerApp:
 
     def _mark_tk_mainloop_started(self) -> None:
         self._tk_mainloop_started = True
+        with self._pending_ui_lock:
+            callbacks = list(self._pending_ui_callbacks)
+            self._pending_ui_callbacks.clear()
+        for delay_ms, callback, args in callbacks:
+            if delay_ms <= 0:
+                callback(*args)
+            else:
+                self.root.after(delay_ms, callback, *args)
 
     def _ui_after(self, delay_ms: int, callback, *args):
         if threading.current_thread() is not self._main_thread and not self._tk_mainloop_started:
-            self._call_ui_inline_if_possible(callback, *args)
+            with self._pending_ui_lock:
+                self._pending_ui_callbacks.append((delay_ms, callback, args))
             return None
         try:
             return self.root.after(delay_ms, callback, *args)
@@ -111,16 +125,29 @@ class ShopifyImageLocalizerApp:
 
     def _build_form(self) -> None:
         # 整个界面最左上角的状态指示：未登录显示红字，登录后显示当前域名（黑字）
+        self.top_bar_frame = tk.Frame(self.main_frame)
+        self.top_bar_frame.pack(fill="x", pady=(0, 4))
         self.current_login_status_var = tk.StringVar()
         self.current_login_status_label = tk.Label(
-            self.main_frame,
+            self.top_bar_frame,
             textvariable=self.current_login_status_var,
             anchor="w",
             font=("TkDefaultFont", 14, "bold"),
             wraplength=900,
             justify="left",
         )
-        self.current_login_status_label.pack(anchor="w", pady=(0, 4))
+        self.current_login_status_label.pack(side="left", anchor="w", fill="x", expand=True)
+        self.close_app_button = tk.Button(
+            self.top_bar_frame,
+            text="关闭软件",
+            command=self.close_application,
+            width=10,
+            bg="#c62828",
+            fg="white",
+            activebackground="#b71c1c",
+            activeforeground="white",
+        )
+        self.close_app_button.pack(side="right", padx=(12, 0), anchor="ne")
         # 启动时根据当前 domain + 本地 slug 缓存决定显示——已有缓存直接显示「当前网站」，
         # 用户不必再点「已登录」（仍可手动刷新）。
         self._update_login_status(self.current_shopify_domain_var.get() or None)
@@ -587,6 +614,76 @@ class ShopifyImageLocalizerApp:
         self.status_var.set("正在停止当前任务")
         self._append_log("已请求停止，当前步骤结束后会退出")
 
+    def close_application(self) -> None:
+        if self._shutdown_requested:
+            return
+        self._shutdown_requested = True
+        if self._current_cancel_token is not None and not self._current_cancel_token.is_cancelled():
+            self._current_cancel_token.cancel()
+        try:
+            self.close_app_button.configure(state="disabled")
+        except Exception:
+            pass
+        try:
+            self.stop_button.configure(state="disabled")
+            self.status_var.set("正在关闭软件并清理 CDP 浏览器")
+            self._append_log("正在关闭软件：取消任务、清理 CDP 浏览器窗口并退出程序")
+        except Exception:
+            pass
+
+        profiles = self._related_browser_profiles()
+
+        def worker() -> None:
+            self._cleanup_related_browser_processes(profiles)
+            self._ui_after(0, self._destroy_root)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _related_browser_profiles(self) -> list[str]:
+        base_dir = self.browser_user_data_dir_var.get().strip() or settings.DEFAULT_BROWSER_USER_DATA_DIR
+        domains: list[str] = []
+        for item in self.domain_items or settings.default_domain_items():
+            domain = settings.normalize_domain((item or {}).get("domain"))
+            if domain:
+                domains.append(domain)
+        current = settings.normalize_domain(self.current_shopify_domain_var.get())
+        if current:
+            domains.append(current)
+        if settings.DEFAULT_SHOPIFY_DOMAIN not in domains:
+            domains.append(settings.DEFAULT_SHOPIFY_DOMAIN)
+
+        profiles: list[str] = []
+        seen: set[str] = set()
+        for domain in domains:
+            profile = settings.browser_user_data_dir_for_domain(base_dir, domain)
+            key = profile.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            profiles.append(profile)
+        return profiles
+
+    def _cleanup_related_browser_processes(self, profiles: list[str]) -> None:
+        try:
+            ez_cdp._kill_cdp_chrome_for_port(ez_cdp.DEFAULT_CDP_PORT)
+        except Exception:
+            pass
+        for profile in profiles:
+            try:
+                session.kill_chrome_for_profile(profile, wait_s=1.0)
+            except Exception:
+                pass
+
+    def _destroy_root(self) -> None:
+        try:
+            self.root.quit()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
     def _open_workspace(self) -> None:
         if not self._workspace_root:
             return
@@ -771,11 +868,14 @@ class ShopifyImageLocalizerApp:
                 self.language_box.current(0)
 
     def _load_languages_async(self) -> None:
+        base_url = settings.DEFAULT_BASE_URL
+        api_key = self.api_key_var.get().strip()
+
         def worker() -> None:
             try:
                 payload = api_client.fetch_languages(
-                    settings.DEFAULT_BASE_URL,
-                    self.api_key_var.get().strip(),
+                    base_url,
+                    api_key,
                 )
                 items = list(payload.get("items") or [])
                 self._ui_after(0, self._set_language_items, items, False)
@@ -854,11 +954,14 @@ class ShopifyImageLocalizerApp:
             self._append_log(f"已加载 {len(domains)} 个域名：{', '.join(domains)}")
 
     def _load_domains_async(self) -> None:
+        base_url = settings.DEFAULT_BASE_URL
+        api_key = self.api_key_var.get().strip()
+
         def worker() -> None:
             try:
                 payload = api_client.fetch_domains(
-                    settings.DEFAULT_BASE_URL,
-                    self.api_key_var.get().strip(),
+                    base_url,
+                    api_key,
                 )
                 items = list(payload.get("items") or [])
                 self._ui_after(0, self._set_domain_items, items, False)

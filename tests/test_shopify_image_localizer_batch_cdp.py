@@ -1561,6 +1561,87 @@ def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypat
     assert "[轮播图] 整体完成：请求=2 成功=1 跳过=1 失败=0" in output
 
 
+def test_ez_replace_many_pauses_for_review_when_all_slots_already_translated(monkeypatch, capsys):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", url))
+
+        def bring_to_front(self):
+            calls.append(("bring_to_front",))
+
+        def wait_for_timeout(self, timeout):
+            calls.append(("wait_for_timeout", timeout))
+
+        def close(self):
+            calls.append(("page_close",))
+
+    class FakeContext:
+        def __init__(self):
+            self.page = FakePage()
+
+        def set_default_timeout(self, timeout):
+            calls.append(("timeout", timeout))
+
+        def new_page(self):
+            calls.append(("new_page",))
+            return self.page
+
+    class FakeBrowser:
+        def __init__(self):
+            self.contexts = [FakeContext()]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(ez_cdp, "sync_playwright", lambda: FakePlaywright())
+    monkeypatch.setattr(ez_cdp, "_wait_plugin_frame", lambda page, **kwargs: object())
+    monkeypatch.setattr(
+        ez_cdp,
+        "filter_pairs_missing_language_markers",
+        lambda frame, pairs, language: (
+            [
+                {"slot": 0, "status": "skipped", "reason": f"{language} already exists", "path": "C:/tmp/a.jpg"},
+                {"slot": 1, "status": "skipped", "reason": f"{language} already exists", "path": "C:/tmp/b.jpg"},
+            ],
+            [],
+        ),
+    )
+    monkeypatch.setattr(ez_cdp, "replace_slot", lambda *args, **kwargs: pytest.fail("no upload expected"))
+
+    result = ez_cdp.replace_many(
+        ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
+        user_data_dir=r"C:\chrome-shopify-image",
+        pairs=[(0, "C:/tmp/a.jpg"), (1, "C:/tmp/b.jpg")],
+        language="German",
+    )
+
+    assert [row["status"] for row in result] == ["skipped", "skipped"]
+    assert ("wait_for_timeout", 5000) in calls
+    assert calls.index(("wait_for_timeout", 5000)) < calls.index(("page_close",))
+    output = capsys.readouterr().out
+    assert "停留 5 秒" in output
+
+
 def test_preload_opens_business_page_after_google_first_tab(monkeypatch):
     calls: list[tuple] = []
 
