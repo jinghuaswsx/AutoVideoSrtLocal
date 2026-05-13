@@ -173,6 +173,33 @@ def test_tts_speedup_debug_shows_segment_assembly_truncation():
     assert ".tts-speedup-trim-summary" in styles
 
 
+def test_tts_speedup_players_render_as_readable_preview_cards():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+    speedup_section = script[
+        script.index("function _speedupArtifactUrl"):
+        script.index("function escapeTextarea")
+    ]
+    render_block = script[
+        script.index("function renderSpeedupCard"):
+        script.index("function escapeTextarea")
+    ]
+
+    assert "function _speedupAudioPreview" in script
+    assert "tts-speedup-player-card" in speedup_section
+    assert "audio-play-btn" in speedup_section
+    assert "audio-pause-btn" in speedup_section
+    assert "打开文件" in speedup_section
+    assert "_speedupAudioPreview(preGid, '变速前', preDur, preUrl)" in render_block
+    assert "_speedupAudioPreview(postGid, '变速后', postDur, postUrl)" in render_block
+    assert "<audio controls preload=\"none\"" not in render_block
+    assert ".tts-speedup-players" in styles
+    assert "grid-template-columns" in styles
+    assert ".tts-speedup-player-card" in styles
+    assert "minmax(260px, 1fr)" in styles
+
+
 def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")

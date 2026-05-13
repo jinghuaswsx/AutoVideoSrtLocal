@@ -261,6 +261,15 @@ def thumbnail(task_id: str):
     )
 
 
+def _get_viewable_task(task_id: str) -> dict | None:
+    task = load_task(task_id)
+    if not task:
+        return None
+    if str(task.get("_user_id")) == str(current_user.id) or is_admin_user(current_user):
+        return task
+    return None
+
+
 @bp.route("/<task_id>/artifact/<name>", methods=["GET"])
 @login_required
 def get_artifact(task_id, name):
@@ -279,6 +288,18 @@ def get_artifact(task_id, name):
         return _json_response({"error": "Artifact not found"}, 404)
 
     return send_file_with_range(path)
+
+
+@bp.route("/<task_id>/artifact-path", methods=["GET"])
+@login_required
+def get_artifact_path(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return task_not_found_response()
+
+    from web.services.artifact_download import safe_task_relative_file_response
+
+    return safe_task_relative_file_response(task, request.args.get("path"))
 
 
 _ALLOWED_ROUND_KINDS = {

@@ -3760,9 +3760,17 @@
   // ============================================================
   // TTS 收敛后变速候选子卡片渲染
   // ============================================================
+  function _speedupArtifactUrl(tid, rel) {
+    if (!rel) return '';
+    const base = (TASK_WORKBENCH_CONFIG && TASK_WORKBENCH_CONFIG.apiBase)
+      || '/api/tasks';
+    return safeMediaSrc(`${base}/${encodeURIComponent(tid)}/artifact-path?path=${encodeURIComponent(rel)}`);
+  }
+
   function _speedupArtifactLink(tid, rel, label) {
     if (!rel) return '<span class="muted">—</span>';
-    const url = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(rel)}`);
+    const url = _speedupArtifactUrl(tid, rel);
+    if (!url) return '<span class="muted">—</span>';
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label || '查看')}</a>`;
   }
 
@@ -3778,6 +3786,30 @@
     if (settings.stability != null) parts.push(`stability=${_fmtSpeedupNumber(settings.stability, 2)}`);
     if (settings.similarity_boost != null) parts.push(`similarity=${_fmtSpeedupNumber(settings.similarity_boost, 2)}`);
     return parts.length ? parts.join('<br>') : '<span class="muted">默认</span>';
+  }
+
+  function _speedupAudioPreview(gid, title, duration, url) {
+    const safeGid = String(gid || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    const durationText = duration && duration !== '?'
+      ? `<span class="tts-speedup-player-duration">${escapeHtml(duration)}s</span>`
+      : '';
+    const disabledAttr = url ? '' : ' disabled';
+    const openLink = url
+      ? `<a class="tts-speedup-player-open" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">打开文件</a>`
+      : '<span class="tts-speedup-player-open muted">文件未就绪</span>';
+    return `
+      <div class="tts-speedup-player-card">
+        <div class="tts-speedup-player-head">
+          <span class="col-label">${escapeHtml(title)}</span>
+          ${durationText}
+        </div>
+        <div class="audio-btn-group" id="${escapeAttr(safeGid)}">
+          <button type="button" class="audio-play-btn" onclick="playAudio('${escapeJs(safeGid)}','${escapeJs(url)}')"${disabledAttr}>&#9654; 播放</button>
+          <button type="button" class="audio-play-btn audio-pause-btn" onclick="pauseAudio('${escapeJs(safeGid)}')"${disabledAttr}>⏸ 暂停</button>
+          <span class="audio-time" id="${escapeAttr(safeGid)}-time"></span>
+        </div>
+        ${openLink}
+      </div>`;
   }
 
   function renderSpeedupCandidatesTable(r, tid) {
@@ -4043,10 +4075,12 @@
     }
 
     // 双轨播放器：变速前用原始 tts_full round 音频，变速后用 speedup_audio_path（相对路径）
-    const preRel  = `tts_full.round_${r.round}.mp3`;
+    const preRel = `tts_full.round_${r.round}.mp3`;
     const postRel = r.segment_assembly_audio_path || r.speedup_audio_path || '';
-    const preUrl  = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(preRel)}`);
-    const postUrl = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(postRel)}`);
+    const preUrl = _speedupArtifactUrl(tid, preRel);
+    const postUrl = _speedupArtifactUrl(tid, postRel);
+    const preGid = `speedup-pre-${r.round || 'x'}`;
+    const postGid = `speedup-post-${r.round || 'x'}`;
 
     return `
       <div class="tts-speedup-card">
@@ -4060,14 +4094,8 @@
         ${candidatesTable}
         ${selectionTable}
         <div class="tts-speedup-players">
-          <div>
-            <div class="col-label">变速前 ${preDur}s</div>
-            <audio controls preload="none" src="${escapeAttr(preUrl)}"></audio>
-          </div>
-          <div>
-            <div class="col-label">变速后 ${postDur}s</div>
-            <audio controls preload="none" src="${escapeAttr(postUrl)}"></audio>
-          </div>
+          ${_speedupAudioPreview(preGid, '变速前', preDur, preUrl)}
+          ${_speedupAudioPreview(postGid, '变速后', postDur, postUrl)}
         </div>
       </div>`;
   }
