@@ -33,6 +33,45 @@ def test_prompt_inspector_button_label_uses_step_label():
     assert 'document.querySelector("#quality-assessment-card .step-name-row")' in scripts
 
 
+def test_task_workbench_step_title_renders_provider_model_tags():
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web/templates/_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert "function collectStepModelTags" in scripts
+    assert "function renderStepTitleModelTags" in scripts
+    assert "currentTask?.step_model_tags?.[step]" in scripts
+    assert "currentTask?.llm_debug_refs?.[step]" in scripts
+    assert "ref.use_case" in scripts
+    assert "ref.phase" in scripts
+    assert "renderStepTitleModelTags(step, row)" in scripts
+    assert ".step-title-model-tags" in styles
+    assert ".step-title-model-tag" in styles
+
+
+def test_translate_lab_step_title_renders_provider_model_tags():
+    template = (ROOT / "web/templates/translate_lab_detail.html").read_text(encoding="utf-8")
+    scripts = (ROOT / "web/static/translate_lab.js").read_text(encoding="utf-8")
+    styles = (ROOT / "web/static/translate_lab.css").read_text(encoding="utf-8")
+
+    assert "data-step-title-model-tags" in template
+    assert "function renderLabStepTitleModelTag" in scripts
+    assert "D.stepModelTags" in scripts
+    assert 'item.querySelector(".lab-step-label")' in scripts
+    assert ".lab-step-title-model-tags" in styles
+
+
+def test_copywriting_step_title_renders_provider_model_tags():
+    template = (ROOT / "web/templates/copywriting_detail.html").read_text(encoding="utf-8")
+    scripts = (ROOT / "web/templates/_copywriting_scripts.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web/templates/_copywriting_styles.html").read_text(encoding="utf-8")
+
+    assert "data-cw-step-title" in template
+    assert "function renderCopywritingStepTitleModelTag" in scripts
+    assert "renderCopywritingStepTitleModelTag(el, modelTag)" in scripts
+    assert ".cw-step-title-model-tags" in styles
+    assert ".cw-step-title-model-tag" in styles
+
+
 def test_omni_pipeline_exposes_asr_clean_prompt_step():
     template = (ROOT / "web/templates/_task_workbench.html").read_text(encoding="utf-8")
     scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")

@@ -15,7 +15,8 @@
         {% set mtag = (task.step_model_tags or {}).get(step_key, '') %}
         <div class="cw-step {% if ss == 'done' %}done{% elif ss == 'running' %}active{% elif ss == 'error' %}error{% endif %}"
              id="step-{{ step_key }}" data-status="{{ ss }}"{% if mtag %} title="{{ mtag }}"{% endif %}>
-            {{ step_label }}{% if mtag %}<span class="step-model-tag" style="margin-left:4px;padding:0 5px;font-size:10px;font-family:var(--font-mono,monospace);color:oklch(38% 0.09 215);background:oklch(94% 0.04 215);border:1px solid oklch(88% 0.06 215);border-radius:3px;">{{ mtag }}</span>{% endif %}
+            <span data-cw-step-title>{{ step_label }}</span>
+            <span class="cw-step-title-model-tags">{% if mtag %}<span class="cw-step-title-model-tag">{{ mtag }}</span>{% endif %}</span>
         </div>
         {% endfor %}
     </div>

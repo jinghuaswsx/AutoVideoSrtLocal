@@ -11,14 +11,14 @@ def test_four_asr_normalize_use_cases_registered():
 
 def test_detect_use_case_uses_gemini_flash_lite():
     uc = get_use_case("asr_normalize.detect_language")
-    assert uc["default_provider"] == "gemini_aistudio"
-    assert uc["default_model"] == "gemini-3.1-flash-lite-preview"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite-preview"
     assert uc["module"] == "video_translate"
     assert uc["units_type"] == "tokens"
-    assert uc["usage_log_service"] == "gemini"
+    assert uc["usage_log_service"] == "openrouter"
 
 
-def test_translate_use_cases_use_openrouter_claude_sonnet():
+def test_translate_use_cases_use_openrouter_gemini_3_flash():
     for code in (
         "asr_normalize.translate_zh_to_en",
         "asr_normalize.translate_es_to_en",
@@ -26,7 +26,7 @@ def test_translate_use_cases_use_openrouter_claude_sonnet():
     ):
         uc = get_use_case(code)
         assert uc["default_provider"] == "openrouter"
-        assert uc["default_model"] == "anthropic/claude-sonnet-4.6"
+        assert uc["default_model"] == "google/gemini-3-flash-preview"
         assert uc["module"] == "video_translate"
         assert uc["units_type"] == "tokens"
         assert uc["usage_log_service"] == "openrouter"

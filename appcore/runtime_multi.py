@@ -26,6 +26,7 @@ from appcore.events import (
 )
 from appcore.llm_debug_payloads import prompt_file_payload
 from appcore.llm_debug_runtime import save_llm_debug_calls
+from appcore.llm_display import resolve_use_case_provider_model
 from pipeline.asr import transcribe_local_audio
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
@@ -78,16 +79,7 @@ def _resolve_translate_use_case_binding(use_case: str = _TRANSLATE_USE_CASE) -> 
     Unit tests often run without a configured DB; in that case fall back to the
     use-case registry defaults instead of resurrecting the old user preference.
     """
-    try:
-        from appcore import llm_bindings
-
-        binding = llm_bindings.resolve(use_case)
-        return str(binding.get("provider") or use_case), str(binding.get("model") or use_case)
-    except Exception:
-        from appcore.llm_use_cases import get_use_case
-
-        default = get_use_case(use_case)
-        return default["default_provider"], default["default_model"]
+    return resolve_use_case_provider_model(use_case)
 
 
 def _count_source_speech_units(text: str) -> int:
@@ -231,12 +223,13 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
 
         voice = runner._resolve_voice(task, self)
         voice_id = self._voice_public_id(voice)
+        ja_provider, ja_model = resolve_use_case_provider_model("ja_translate.localize")
         runner._set_step(
             task_id,
             "translate",
             "running",
             "正在按日语字符预算逐句本土化...",
-            model_tag="ja_translate.localize",
+            model_tag=f"{ja_provider} · {ja_model}",
         )
 
         localized_translation = self.module.generate_ja_localized_translation(
@@ -254,11 +247,13 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
                     phase="ja_initial_translate",
                     label="日语初始翻译",
                     use_case_code="ja_translate.localize",
-                    provider="ja_translate.localize",
-                    model="ja_translate.localize",
+                    provider=ja_provider,
+                    model=ja_model,
                     messages=initial_messages,
                     request_payload={
-                        "use_case": "ja_translate.localize",
+                        "use_case_code": "ja_translate.localize",
+                        "provider": ja_provider,
+                        "model": ja_model,
                         "messages": initial_messages,
                     },
                     meta={"target_language": "ja"},
@@ -269,8 +264,8 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
                 "label": "日语初始翻译",
                 "path": "ja_localized_translate_messages.json",
                 "use_case": "ja_translate.localize",
-                "provider": "ja_translate.localize",
-                "model": "ja_translate.localize",
+                "provider": ja_provider,
+                "model": ja_model,
                 "target_language": "ja",
             })
 
@@ -320,13 +315,13 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
             user_id=runner.user_id,
             project_id=task_id,
             use_case_code="ja_translate.localize",
-            provider="ja_translate.localize",
+            provider=ja_provider,
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             success=True,
             request_payload=_llm_request_payload(
                 localized_translation,
-                "ja_translate.localize",
+                ja_provider,
                 "ja_translate.localize",
                 messages=initial_messages,
             ),
@@ -390,14 +385,15 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
         translation_message_paths: dict[int, str] = {}
         if os.path.exists(os.path.join(task_dir, "ja_localized_translate_messages.json")):
             translation_message_paths[1] = "ja_localized_translate_messages.json"
+        translate_provider, translate_model = resolve_use_case_provider_model("ja_translate.localize")
 
         task_state.update(
             task_id,
             tts_duration_rounds=[],
             tts_duration_status="running",
-            tts_translate_provider="ja_translate.localize",
-            tts_translate_model="ja_translate.localize",
-            tts_translate_channel="ja_translate.localize",
+            tts_translate_provider=translate_provider,
+            tts_translate_model=translate_model,
+            tts_translate_channel=translate_provider,
         )
 
         for round_index in range(1, 6):

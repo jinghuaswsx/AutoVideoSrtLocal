@@ -62,11 +62,12 @@
     <ol class="lab-steps" id="labSteps">
       {% for code, label in lab_steps %}
       {% set status = (state.steps or {}).get(code, 'pending') %}
+      {% set model_tag = (state.step_model_tags or {}).get(code, '') %}
       <li class="lab-step-item lab-step--{{ status }}" data-step="{{ code }}">
         <span class="lab-step-index">{{ loop.index }}</span>
         <div class="lab-step-text">
-          <div class="lab-step-label">{{ label }}</div>
-          <div class="lab-step-msg" data-step-msg="{{ code }}">{{ (state.step_messages or {}).get(code, '') }}<span class="step-model-tag hidden" data-model-tag="{{ code }}">{{ (state.step_model_tags or {}).get(code, '') }}</span></div>
+          <div class="lab-step-label">{{ label }}<span class="lab-step-title-model-tags" data-step-title-model-tags="{{ code }}">{% if model_tag %}<span class="lab-step-title-model-tag">{{ model_tag }}</span>{% endif %}</span></div>
+          <div class="lab-step-msg" data-step-msg="{{ code }}">{{ (state.step_messages or {}).get(code, '') }}</div>
         </div>
         <span class="lab-step-status" data-step-status="{{ code }}">{{ status }}</span>
       </li>

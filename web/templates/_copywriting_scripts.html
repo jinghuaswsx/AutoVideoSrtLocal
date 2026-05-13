@@ -78,6 +78,30 @@ socket.on("cw_error", function(data) {
 
 // ── UI 更新 ──────────────────────────────────────
 
+function renderCopywritingStepTitleModelTag(el, modelTag) {
+    if (!el) return;
+    let slot = el.querySelector(".cw-step-title-model-tags");
+    if (!slot) {
+        slot = document.createElement("span");
+        slot.className = "cw-step-title-model-tags";
+        const title = el.querySelector("[data-cw-step-title]");
+        if (title) title.insertAdjacentElement("afterend", slot);
+        else el.appendChild(slot);
+    }
+    slot.textContent = "";
+    const text = String(modelTag || "").trim();
+    if (!text) {
+        el.removeAttribute("title");
+        return;
+    }
+    el.title = text;
+    const tagSpan = document.createElement("span");
+    tagSpan.className = "cw-step-title-model-tag";
+    tagSpan.textContent = text;
+    tagSpan.title = "供应商 / 模型\n" + text;
+    slot.appendChild(tagSpan);
+}
+
 function showOverlay(text) {
     const overlay = document.getElementById("editorOverlay");
     document.getElementById("overlayText").textContent = text || "处理中...";
@@ -96,17 +120,7 @@ function updateStepUI(step, status, message, modelTag) {
     else if (status === "error") el.classList.add("error");
 
     // 模型标签
-    if (modelTag) {
-        el.title = modelTag;
-        let tagSpan = el.querySelector(".step-model-tag");
-        if (!tagSpan) {
-            tagSpan = document.createElement("span");
-            tagSpan.className = "step-model-tag";
-            tagSpan.style.cssText = "margin-left:4px;padding:0 5px;font-size:10px;font-family:var(--font-mono,monospace);color:oklch(38% 0.09 215);background:oklch(94% 0.04 215);border:1px solid oklch(88% 0.06 215);border-radius:3px;";
-            el.appendChild(tagSpan);
-        }
-        tagSpan.textContent = modelTag;
-    }
+    renderCopywritingStepTitleModelTag(el, modelTag);
 
     // 遮罩控制
     if (step === "keyframe" && status === "running") {
