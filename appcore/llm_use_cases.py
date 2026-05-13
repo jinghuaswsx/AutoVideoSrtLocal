@@ -488,6 +488,17 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    # 选品中心
+    "meta_hot_posts.categorize": _uc(
+        "meta_hot_posts.categorize",
+        "xuanpin",
+        "Meta 热帖商品类目判断",
+        "用 Gemini 3 Flash 根据商品标题和商品链接判断 TikTok Shop US 一级类目",
+        "gemini_vertex",
+        "gemini-3-flash-preview",
+        "gemini_vertex",
+        "tokens",
+    ),
     # 视频创作
     "video_creation.generate": _uc(
         "video_creation.generate",
@@ -570,4 +581,5 @@ MODULE_LABELS: dict[str, str] = {
     "asr_clean": "ASR 同语言纯净化",
     "translation_quality": "翻译质量评估",
     "video_ai_review": "AI 视频分析",
+    "xuanpin": "选品中心",
 }

@@ -53,6 +53,7 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert 'href="/xuanpin/today-recommendations"' in body
     assert 'href="/xuanpin/new-products"' in body
     assert 'href="/xuanpin/tabcut"' in body
+    assert 'href="/xuanpin/meta-hot-posts"' in body
     assert "/xuanpin/api/mk-selection" in body
 
 
@@ -65,6 +66,7 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert 'href="/xuanpin/today-recommendations"' in body
     assert 'href="/xuanpin/new-products"' in body
     assert 'href="/xuanpin/tabcut"' in body
+    assert 'href="/xuanpin/meta-hot-posts"' in body
     assert "/xuanpin/api/tabcut/videos" in body
     assert "/xuanpin/api/tabcut/goods" in body
     assert "/xuanpin/api/tabcut/categories" in body
@@ -93,6 +95,7 @@ def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(
     assert 'href="/xuanpin/mk"' in body
     assert 'href="/xuanpin/today-recommendations"' in body
     assert 'href="/xuanpin/new-products"' in body
+    assert 'href="/xuanpin/meta-hot-posts"' in body
     assert "/xuanpin/api/new-products/list" in body
 
 
@@ -144,6 +147,7 @@ def test_xuanpin_today_recommendations_page_uses_tab_and_api(
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'href="/xuanpin/today-recommendations"' in body
+    assert 'href="/xuanpin/meta-hot-posts"' in body
     assert "/xuanpin/api/today-recommendations/adopt" in body
     assert "Test Product" in body
 

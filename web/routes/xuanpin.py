@@ -39,6 +39,12 @@ def _today_recommendations():
     return service
 
 
+def _meta_hot_posts():
+    from appcore.meta_hot_posts import service
+
+    return service
+
+
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
@@ -59,6 +65,17 @@ def tabcut_selection_page():
     if not _is_admin():
         abort(403)
     return render_template("tabcut_selection.html", tabcut_goods_categories=goods_category_options())
+
+
+@bp.route("/meta-hot-posts", methods=["GET"])
+@login_required
+def meta_hot_posts_page():
+    if not _is_admin():
+        abort(403)
+    return render_template(
+        "meta_hot_posts.html",
+        meta_hot_post_categories=_meta_hot_posts().category_options(),
+    )
 
 
 @bp.route("/new-products", methods=["GET"])
@@ -135,6 +152,42 @@ def api_tabcut_categories():
 @login_required
 def api_tabcut_refresh():
     return _tabcut_routes().api_tabcut_selection_refresh()
+
+
+@bp.route("/api/meta-hot-posts", methods=["GET"])
+@login_required
+def api_meta_hot_posts():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_list_response(request.args)
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/categories", methods=["GET"])
+@login_required
+def api_meta_hot_posts_categories():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_category_options_response()
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/refresh", methods=["POST"])
+@login_required
+def api_meta_hot_posts_refresh():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_refresh_response()
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/analyze", methods=["POST"])
+@login_required
+def api_meta_hot_posts_analyze():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_analyze_response(request.get_json(silent=True) or {})
+    return jsonify(result.payload), result.status_code
 
 
 @bp.route("/api/new-products/list", methods=["GET"])

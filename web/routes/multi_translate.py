@@ -40,6 +40,8 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("multi_translate", __name__)
 
+_OPTIONAL_PROGRESS_STEPS = {"av_sync_audit"}
+
 db_query = translation_route_store.query
 db_query_one = translation_route_store.query_one
 db_execute = translation_route_store.execute
@@ -235,6 +237,11 @@ def detail(task_id: str):
     target_lang = state.get("target_lang", "")
     from appcore.api_keys import get_key
     translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    pipeline_main_steps = MultiTranslateRunner.pipeline_step_names(include_analysis=False)
+    pipeline_progress_steps = [
+        step for step in pipeline_main_steps
+        if step not in _OPTIONAL_PROGRESS_STEPS
+    ]
     return render_template(
         "multi_translate_detail.html",
         project=row,
@@ -242,7 +249,8 @@ def detail(task_id: str):
         target_lang=target_lang,
         translate_pref=translate_pref,
         pipeline_step_order=MultiTranslateRunner.pipeline_step_names(include_analysis=True),
-        pipeline_main_steps=MultiTranslateRunner.pipeline_step_names(include_analysis=False),
+        pipeline_main_steps=pipeline_main_steps,
+        pipeline_progress_steps=pipeline_progress_steps,
     )
 
 

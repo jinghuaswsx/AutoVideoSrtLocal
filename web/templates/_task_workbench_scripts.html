@@ -3,9 +3,11 @@
   {% if pipeline_step_order is defined and pipeline_step_order %}
   const STEP_ORDER = {{ pipeline_step_order|tojson }};
   const MAIN_STEPS = {{ pipeline_main_steps|default([])|tojson }};
+  const PROGRESS_STEPS = {{ pipeline_progress_steps|default(pipeline_main_steps|default([]))|tojson }};
   {% elif api_base == '/api/omni-translate' %}
   const STEP_ORDER = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export"];
+  const PROGRESS_STEPS = MAIN_STEPS;
   {% elif pipeline_kind == 'multi_translate' %}
   const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export", "analysis"];
   // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
@@ -13,9 +15,11 @@
   // separate 与 loudness_match 是人声分离 + 响度匹配链路（管理员未启用时各自 step
   // 直接 done，不影响进度计数）。
   const MAIN_STEPS = ["extract", "asr", "asr_normalize", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export"];
+  const PROGRESS_STEPS = ["extract", "asr", "asr_normalize", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
   {% else %}
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+  const PROGRESS_STEPS = MAIN_STEPS;
   {% endif %}
   const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×", failed: "×", interrupted: "×", cancelled: "×" };
   function isErrorLikeStatus(status) {
@@ -521,10 +525,11 @@
       tgtEl.textContent = langLabel(tgt, (tgt || "").toUpperCase());
     }
 
-    // 3. 主进度：MAIN_STEPS 中 done 计数
+    // 3. 主进度：PROGRESS_STEPS 中 done 计数。可选项仍在 MAIN_STEPS 中驱动状态/恢复按钮，但不进百分比分母。
     const totalMain = MAIN_STEPS.length;
-    const doneCount = MAIN_STEPS.filter(s => currentTask.steps?.[s] === "done").length;
-    const pct = totalMain > 0 ? Math.round((doneCount / totalMain) * 100) : 0;
+    const totalProgress = PROGRESS_STEPS.length;
+    const doneCount = PROGRESS_STEPS.filter(s => currentTask.steps?.[s] === "done").length;
+    const pct = totalProgress > 0 ? Math.round((doneCount / totalProgress) * 100) : 0;
 
     // 4. 当前阶段 + 状态类（驱动 card 颜色/图标/进度条渐变）
     const failedStep = MAIN_STEPS.find(s => isErrorLikeStatus(currentTask.steps?.[s]));
@@ -562,10 +567,10 @@
       cardState = "is-running"; iconHtml = '<span class="spinner"></span>';
       badgeText = "处理中";
       stepText = `正在执行：${stepLabel(runningStep)}（${MAIN_STEPS.indexOf(runningStep) + 1}/${totalMain}）`;
-    } else if (doneCount === totalMain || taskStatus === "done") {
+    } else if (doneCount === totalProgress || taskStatus === "done") {
       cardState = "is-done"; iconHtml = "✓";
       badgeText = "已完成";
-      stepText = doneCount === totalMain ? `全部 ${totalMain} 个步骤已完成` : "处理完成";
+      stepText = doneCount === totalProgress ? `全部 ${totalProgress} 个步骤已完成` : "处理完成";
     } else if (taskStatus === "uploaded") {
       stepText = "上传完成，可以开始处理";
     }

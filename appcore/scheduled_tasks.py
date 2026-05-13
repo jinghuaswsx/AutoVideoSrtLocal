@@ -235,6 +235,38 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "meta_hot_posts_sync_tick": {
+        "code": "meta_hot_posts_sync_tick",
+        "name": "Meta 热帖同步",
+        "description": (
+            "每天北京时间 07:00 使用已同步的 wedev Cookie/Bearer 拉取 /api/spy/hot/posts，"
+            "目标采集 500 条，单请求最小间隔 3 秒，并把热帖卡片字段与商品链接写入本地表。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md"
+        ),
+        "schedule": "每天 07:00（北京时间），目标采集 500 条",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "meta_hot_posts_sync_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.sync_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
+    "meta_hot_posts_analysis_tick": {
+        "code": "meta_hot_posts_analysis_tick",
+        "name": "Meta 热帖商品分析",
+        "description": (
+            "每 10 分钟扫描 Meta 热帖未完成商品链接，串行抓商品页标题、主图、SKU 价格，"
+            "再调用 Gemini 3 Flash 判断 TikTok Shop US 一级类目。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "meta_hot_posts_analysis_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.analysis_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",

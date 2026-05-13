@@ -1,0 +1,114 @@
+from appcore.meta_hot_posts import product_analysis
+
+
+def test_parse_shopify_product_json_extracts_title_image_and_sku_prices():
+    payload = {
+        "product": {
+            "title": "Demo Lamp",
+            "image": {"src": "//cdn.example/main.jpg"},
+            "variants": [
+                {"id": 1, "sku": "LAMP-A", "title": "Black", "price": "19.99"},
+                {"id": 2, "sku": "LAMP-B", "title": "White", "price": "24.50"},
+            ],
+        }
+    }
+
+    result = product_analysis.parse_shopify_product_json(payload, base_url="https://shop.example/products/demo")
+
+    assert result.title == "Demo Lamp"
+    assert result.main_image_url == "https://cdn.example/main.jpg"
+    assert result.price_min == 19.99
+    assert result.price_max == 24.5
+    assert result.currency == "USD"
+    assert result.skus == [
+        {"sku": "LAMP-A", "title": "Black", "price": 19.99, "currency": "USD"},
+        {"sku": "LAMP-B", "title": "White", "price": 24.5, "currency": "USD"},
+    ]
+
+
+def test_parse_product_html_extracts_jsonld_product_offers():
+    html = """
+    <html><head>
+      <script type="application/ld+json">
+      {
+        "@type": "Product",
+        "name": "Storage Rack",
+        "image": ["https://cdn.example/rack.jpg"],
+        "offers": [
+          {"sku": "RACK-S", "price": "12.99", "priceCurrency": "USD"},
+          {"sku": "RACK-L", "price": "18.99", "priceCurrency": "USD"}
+        ]
+      }
+      </script>
+    </head><body></body></html>
+    """
+
+    result = product_analysis.parse_product_html(html, base_url="https://shop.example/products/rack")
+
+    assert result.title == "Storage Rack"
+    assert result.main_image_url == "https://cdn.example/rack.jpg"
+    assert result.price_min == 12.99
+    assert result.price_max == 18.99
+    assert result.skus[1]["sku"] == "RACK-L"
+
+
+def test_normalize_category_response_rejects_unknown_category():
+    response = {
+        "json": {
+            "category": "Made Up Category",
+            "confidence": 0.8,
+            "reason": "test",
+        }
+    }
+
+    result = product_analysis.normalize_category_response(response)
+
+    assert result["category"] == "Other"
+    assert result["confidence"] == 0.0
+    assert result["raw_category"] == "Made Up Category"
+
+
+def test_build_category_prompt_includes_title_url_and_category_pool():
+    prompt = product_analysis.build_category_prompt(
+        product_title="Portable Blender",
+        product_url="https://example.com/products/blender",
+    )
+
+    assert "Portable Blender" in prompt
+    assert "https://example.com/products/blender" in prompt
+    assert "Kitchenware" in prompt
+    assert "只允许从下面的 category_pool 中选择" in prompt
+
+
+def test_detect_product_link_type_handles_shopify_tiktok_and_generic_urls():
+    assert product_analysis.detect_product_link_type("https://demo.com/products/lamp") == "shopify_product"
+    assert product_analysis.detect_product_link_type("https://www.tiktok.com/shop/pdp/123") == "tiktok_shop"
+    assert product_analysis.detect_product_link_type("https://example.com/item/abc") == "generic_product"
+
+
+def test_parse_product_html_extracts_shopify_variants_payload_when_jsonld_missing():
+    html = """
+    <html><head>
+      <meta property="og:title" content="Shopify Demo Product">
+      <meta property="og:image" content="//cdn.example/demo.jpg">
+    </head><body>
+      <script>
+      {
+        "id": 123,
+        "title": "Shopify Demo Product",
+        "variants": [
+          {"id": 1, "sku": "SKU-1", "title": "Small", "price": "1299"},
+          {"id": 2, "sku": "SKU-2", "title": "Large", "price": "1899"}
+        ]
+      }
+      </script>
+    </body></html>
+    """
+
+    result = product_analysis.parse_product_html(html, base_url="https://demo.com/products/demo")
+
+    assert result.title == "Shopify Demo Product"
+    assert result.main_image_url == "https://cdn.example/demo.jpg"
+    assert result.price_min == 12.99
+    assert result.price_max == 18.99
+    assert result.skus[0]["sku"] == "SKU-1"
