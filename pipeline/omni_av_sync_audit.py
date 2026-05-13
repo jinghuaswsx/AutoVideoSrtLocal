@@ -45,6 +45,8 @@ _PROBLEM_TYPE_LABELS = {
     "speech_early": "配音提前结束",
     "speech_late": "配音进入下一个画面",
     "duration_risk": "TTS 时长不匹配",
+    "audio_too_long": "音频太长导致画面对不上",
+    "audio_too_short": "音频太短导致画面留白",
     "subtitle_risk": "字幕节奏风险",
     "tts_quality_risk": "TTS 质量风险",
 }
