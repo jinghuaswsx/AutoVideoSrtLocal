@@ -62,6 +62,18 @@ def test_edit_localized_material_filename_accepts_multi_owner_tail():
     assert result.effective_lang == "fr"
 
 
+def test_edit_localized_material_filename_accepts_any_no_space_assignment_tail():
+    result = validate_material_filename(
+        "2026.05.13-手机屏幕放大器-原素材-补充素材(法语)-顾倩multi补拍A-蔡靖华.mp4",
+        "手机屏幕放大器",
+        "fr",
+        {"en": "英语", "fr": "法语"},
+    )
+
+    assert result.ok
+    assert result.effective_lang == "fr"
+
+
 def test_initial_material_filename_requires_only_date_product_tail_and_mp4():
     assert validate_initial_material_filename(
         "2024.01.06-逝后指南-混剪-李文龙.mp4",

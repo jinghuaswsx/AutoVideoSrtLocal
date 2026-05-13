@@ -11,8 +11,7 @@ from typing import Any
 
 _DATE_RE = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})$")
 _LOCALIZED_MARKER = "补充素材"
-_LOCALIZED_ASSIGNED_TAIL = "-指派-蔡靖华.mp4"
-_LOCALIZED_MULTI_OWNER_TAIL_RE = re.compile(r"-[^-()\s]+multi-蔡靖华\.mp4$")
+_LOCALIZED_ASSIGNMENT_TAIL_RE = re.compile(r"^(.*\))-(\S+)-蔡靖华\.mp4$")
 _LOCALIZED_MID_MARKER = "-原素材-补充素材"
 _LOCALIZED_SLOT_LANG_RE = re.compile(r"^[A-Ga-g]?\(")
 FILENAME_SPACE_ERROR = "文件名不能包含空格"
@@ -180,7 +179,7 @@ def _validate_localized_filename(
 
     head_mid = _strip_localized_tail(filename)
     if head_mid is None:
-        return [f'结尾必须是 "{_LOCALIZED_ASSIGNED_TAIL}" 或 "-顾倩multi-蔡靖华.mp4" 这类负责人 multi 格式']
+        return ['结尾必须是 "-{不含空格的指派字段}-蔡靖华.mp4"']
 
     if len(head_mid) < 11 or head_mid[10] != "-":
         return ['开头必须是 "YYYY.MM.DD-" 格式']
@@ -212,11 +211,9 @@ def _validate_localized_filename(
 
 
 def _strip_localized_tail(filename: str) -> str | None:
-    if filename.endswith(_LOCALIZED_ASSIGNED_TAIL):
-        return filename[: -len(_LOCALIZED_ASSIGNED_TAIL)]
-    match = _LOCALIZED_MULTI_OWNER_TAIL_RE.search(filename)
+    match = _LOCALIZED_ASSIGNMENT_TAIL_RE.match(filename)
     if match:
-        return filename[: match.start()]
+        return match.group(1)
     return None
 
 
