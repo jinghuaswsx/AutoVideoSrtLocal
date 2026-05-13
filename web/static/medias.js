@@ -7007,6 +7007,10 @@
     return nameZh || code || '';
   }
 
+  function validateFilenameNoSpaces(filename) {
+    return String(filename || '').includes(' ') ? ['文件名不能包含空格'] : [];
+  }
+
   function isRawSourceVideoFile(file) {
     if (!file) return false;
     const type = String(file.type || '').toLowerCase();
@@ -7142,6 +7146,10 @@
             aria-label="编辑原始素材名称"
             hidden
           >${title}</textarea>
+          <div class="oc-rs-title-actions js-rs-title-actions" hidden>
+            <button type="button" class="oc-btn primary sm js-rs-title-save"><svg width="12" height="12" aria-hidden="true"><use href="#ic-check"/></svg><span>保存</span></button>
+            <button type="button" class="oc-btn ghost sm js-rs-title-cancel"><svg width="12" height="12" aria-hidden="true"><use href="#ic-close"/></svg><span>取消</span></button>
+          </div>
         </div>
         <div class="vtabs">
           <button type="button" class="vtab active" data-tab="cover">封面图</button>
@@ -7188,9 +7196,11 @@
   function setRawSourceTitleEditing(card, editing) {
     const display = card?.querySelector('.js-rs-title-display');
     const input = card?.querySelector('.js-rs-title-input');
+    const actions = card?.querySelector('.js-rs-title-actions');
     if (!display || !input) return;
     display.hidden = !!editing;
     input.hidden = !editing;
+    if (actions) actions.hidden = !editing;
     if (editing) {
       input.focus();
       input.setSelectionRange(0, input.value.length);
@@ -7236,6 +7246,9 @@
 
     card.dataset.saving = '1';
     input.disabled = true;
+    card.querySelectorAll('.js-rs-title-save, .js-rs-title-cancel').forEach((btn) => {
+      btn.disabled = true;
+    });
     try {
       const data = await requestJSON(`/medias/api/raw-sources/${rid}`, {
         method: 'PATCH',
@@ -7253,6 +7266,9 @@
     } finally {
       card.dataset.saving = '';
       input.disabled = false;
+      card.querySelectorAll('.js-rs-title-save, .js-rs-title-cancel').forEach((btn) => {
+        btn.disabled = false;
+      });
     }
   }
 
@@ -7288,6 +7304,8 @@
       const panes = card.querySelectorAll('.vpane');
       const titleDisplay = card.querySelector('.js-rs-title-display');
       const titleInput = card.querySelector('.js-rs-title-input');
+      const titleSave = card.querySelector('.js-rs-title-save');
+      const titleCancel = card.querySelector('.js-rs-title-cancel');
       tabs.forEach((tab) => {
         tab.addEventListener('click', () => {
           tabs.forEach((node) => node.classList.toggle('active', node === tab));
@@ -7297,6 +7315,26 @@
       });
       if (titleDisplay) {
         titleDisplay.addEventListener('click', () => startRawSourceTitleEdit(titleDisplay));
+      }
+      if (titleSave) {
+        titleSave.addEventListener('pointerdown', async (event) => {
+          event.preventDefault();
+          await saveRawSourceTitle(card);
+        });
+        titleSave.addEventListener('click', async (event) => {
+          event.preventDefault();
+          await saveRawSourceTitle(card);
+        });
+      }
+      if (titleCancel) {
+        titleCancel.addEventListener('pointerdown', (event) => {
+          event.preventDefault();
+          cancelRawSourceTitleEdit(card);
+        });
+        titleCancel.addEventListener('click', (event) => {
+          event.preventDefault();
+          cancelRawSourceTitleEdit(card);
+        });
       }
       if (titleInput) {
         titleInput.addEventListener('keydown', async (event) => {
@@ -7310,7 +7348,11 @@
             await saveRawSourceTitle(card);
           }
         });
-        titleInput.addEventListener('blur', async () => {
+        titleInput.addEventListener('blur', async (event) => {
+          const nextTarget = event.relatedTarget;
+          if (nextTarget && card.contains(nextTarget) && nextTarget.closest('.js-rs-title-actions')) {
+            return;
+          }
           await saveRawSourceTitle(card);
         });
       }
