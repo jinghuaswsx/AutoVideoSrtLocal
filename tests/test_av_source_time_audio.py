@@ -84,3 +84,74 @@ def test_source_time_subtitle_units_keep_original_sentence_positions():
     assert units[0]["end_time"] == pytest.approx(2.0)
     assert units[1]["start_time"] == pytest.approx(28.53)
     assert units[1]["end_time"] == pytest.approx(31.35)
+
+
+def test_runtime_rebuild_rejects_audio_that_exceeds_own_source_window(tmp_path):
+    from appcore.runtime import _rebuild_tts_full_audio_from_segments
+    from pipeline.audio_stitch import TimelineAudioOverflowError
+
+    seg0 = tmp_path / "seg0.mp3"
+    seg1 = tmp_path / "seg1.mp3"
+    seg0.write_bytes(b"seg0")
+    seg1.write_bytes(b"seg1")
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stderr="")
+
+    with pytest.raises(TimelineAudioOverflowError, match="exceeds source window"):
+        with patch("subprocess.run", side_effect=fake_run):
+            _rebuild_tts_full_audio_from_segments(
+                str(tmp_path),
+                [
+                    {
+                        "asr_index": 0,
+                        "tts_path": str(seg0),
+                        "start_time": 0.0,
+                        "end_time": 1.0,
+                        "tts_duration": 1.4,
+                    },
+                    {
+                        "asr_index": 1,
+                        "tts_path": str(seg1),
+                        "start_time": 1.2,
+                        "end_time": 2.0,
+                        "tts_duration": 0.7,
+                    },
+                ],
+                variant="av",
+            )
+
+    assert calls == []
+
+
+def test_runtime_rebuild_rejects_audio_that_would_overlap_next_sentence(tmp_path):
+    from appcore.runtime import _rebuild_tts_full_audio_from_segments
+    from pipeline.audio_stitch import TimelineAudioOverflowError
+
+    seg0 = tmp_path / "seg0.mp3"
+    seg1 = tmp_path / "seg1.mp3"
+    seg0.write_bytes(b"seg0")
+    seg1.write_bytes(b"seg1")
+
+    with pytest.raises(TimelineAudioOverflowError, match="overlaps next"):
+        _rebuild_tts_full_audio_from_segments(
+            str(tmp_path),
+            [
+                {
+                    "asr_index": 0,
+                    "tts_path": str(seg0),
+                    "start_time": 0.0,
+                    "tts_duration": 1.4,
+                },
+                {
+                    "asr_index": 1,
+                    "tts_path": str(seg1),
+                    "start_time": 1.2,
+                    "end_time": 2.0,
+                    "tts_duration": 0.7,
+                },
+            ],
+            variant="av",
+        )

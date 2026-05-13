@@ -16,6 +16,10 @@ import subprocess
 from typing import Any, Dict, List
 
 
+class TimelineAudioOverflowError(RuntimeError):
+    """Raised when a TTS segment cannot fit in the fixed source timeline."""
+
+
 def build_stitched_audio(
     segments: List[Dict[str, Any]],
     *,
@@ -74,11 +78,67 @@ def _float_value(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _segment_label(segment: Dict[str, Any], fallback_index: int) -> str:
+    asr_index = segment.get("asr_index", segment.get("index"))
+    if asr_index is None:
+        return f"#{fallback_index}"
+    return f"asr_index={asr_index}"
+
+
+def _validate_source_timeline_fit(
+    segments: List[Dict[str, Any]],
+    *,
+    total_duration: float | None,
+    overflow_tolerance: float,
+) -> None:
+    ordered = sorted(
+        [
+            {
+                "segment": segment,
+                "index": index,
+                "start": _float_value(segment.get("audio_start_time", segment.get("start_time")), 0.0),
+                "end": _float_value(segment.get("audio_end_time", segment.get("end_time")), 0.0),
+                "tts_duration": _float_value(segment.get("tts_duration"), 0.0),
+            }
+            for index, segment in enumerate(segments)
+        ],
+        key=lambda item: (item["start"], item["index"]),
+    )
+    output_limit = _float_value(total_duration, 0.0) if total_duration is not None else 0.0
+
+    for pos, item in enumerate(ordered):
+        start = item["start"]
+        end = item["end"]
+        tts_end = start + item["tts_duration"]
+        label = _segment_label(item["segment"], item["index"])
+
+        if end > start and tts_end > end + overflow_tolerance:
+            raise TimelineAudioOverflowError(
+                f"TTS segment {label} exceeds source window: "
+                f"start={start:.3f}, source_end={end:.3f}, tts_end={tts_end:.3f}"
+            )
+
+        if output_limit > 0 and tts_end > output_limit + overflow_tolerance:
+            raise TimelineAudioOverflowError(
+                f"TTS segment {label} exceeds output timeline: "
+                f"start={start:.3f}, output_end={output_limit:.3f}, tts_end={tts_end:.3f}"
+            )
+
+        if pos + 1 < len(ordered):
+            next_start = ordered[pos + 1]["start"]
+            if next_start > start and tts_end > next_start + overflow_tolerance:
+                raise TimelineAudioOverflowError(
+                    f"TTS segment {label} overlaps next sentence: "
+                    f"start={start:.3f}, next_start={next_start:.3f}, tts_end={tts_end:.3f}"
+                )
+
+
 def build_source_timeline_audio(
     segments: List[Dict[str, Any]],
     *,
     output_path: str,
     total_duration: float | None = None,
+    overflow_tolerance: float = 0.15,
     run_command=None,
 ) -> str:
     """Build one AV TTS track without moving the source video timeline.
@@ -89,6 +149,12 @@ def build_source_timeline_audio(
     """
     if not segments:
         raise ValueError("segments cannot be empty")
+
+    _validate_source_timeline_fit(
+        segments,
+        total_duration=total_duration,
+        overflow_tolerance=overflow_tolerance,
+    )
 
     stitch_segments: List[Dict[str, Any]] = []
     timeline_end = 0.0
