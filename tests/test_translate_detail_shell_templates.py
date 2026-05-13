@@ -140,7 +140,7 @@ def test_tts_generation_summary_is_rendered_in_duration_log():
     assert "次文本翻译" in script
     assert "轮语音生成" in script
     assert "次分段语音合成" in script
-    assert "收敛音频变速生成音频" in script
+    assert "收敛后变速候选生成" in script
     assert "converged_speedup_audio_generations" in script
     assert "audio_segment_calls" in script
     assert "audio_rounds" in script
@@ -150,6 +150,7 @@ def test_tts_generation_summary_is_rendered_in_duration_log():
     assert "duration-generation-summary" in script
     assert ".duration-generation-summary" in styles
     assert "final_converged_overshoot" in script
+    assert "stage1_converged_postprocess" in script
     assert "采用变速音频参与视频合成" in script
     assert "保留收敛音频参与视频合成" in script
 

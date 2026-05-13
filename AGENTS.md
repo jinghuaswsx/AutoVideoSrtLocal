@@ -45,7 +45,7 @@
 - 数据分析数据质量护栏：`docs/analytics-data-quality-guardrails.md`；所有 `/order-profit/*` 等 JSON 顶层带 `data_quality`，逻辑集中在 `appcore/order_analytics/data_quality.py`
 - SKU 实际保本 ROAS：`docs/superpowers/specs/2026-05-10-sku-actual-breakeven-roas-design.md`；每天 01:00 由 `tools/sku_actual_roas_snapshot.py` 计算 `D-32` 到 `D-3`，快照表 `sku_actual_breakeven_roas_snapshots`
 - Meta 多账户广告：`2026-05-07-meta-ads-multi-account-design.md` 起串读补丁 — `2026-05-09-ads-purchase-value-order-fallback-design.md` / `2026-05-09-meta-ads-xhr-token-channel.md` / `2026-05-09-meta-ads-account-timezone-and-async-fix.md` / `2026-05-09-meta-daily-final-permission-recovery.md`
-- TTS 变速短路：`2026-05-04-tts-speedup-shortcut-design.md` + `2026-05-13-tts-segment-candidate-assembly-design.md`（multi-translate 近目标超长时用段级候选池重组，目标 `[v-1,v]`）
+- TTS 变速短路：`2026-05-13-tts-deferred-adaptive-speedup-design.md` + `2026-05-13-tts-segment-candidate-assembly-design.md`（先收敛到 ±10%，再最多 3 路 speed 段级重组；speed 始终 `[0.95,1.05]`）
 - 实时大盘 / 业务日对齐：`docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md` + `2026-05-09-realtime-dashboard-store-filter.md` + `2026-05-10-realtime-dashboard-profit-margin.md`
 - 店小秘 watchdog / ROI 锁告警：`docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md` + `2026-05-09-roi-hourly-sync-lock-recovery.md`
 - 选品/产品链接体系：3 份 `2026-05-09-product-link-*.md`; 顶部国家勾选前置校验 `2026-05-09-product-edit-ad-supported-langs-precheck-design.md`; TABCUT 价格筛选 `2026-05-13-tabcut-video-price-filter-design.md`

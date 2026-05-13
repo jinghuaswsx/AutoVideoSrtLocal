@@ -127,18 +127,41 @@ class TestSpeedupWindow:
 
 
 class TestSegmentCandidateAssembly:
-    def test_speedup_candidate_speeds_are_video_cap_shortening_only(self):
-        from appcore.runtime import _speedup_candidate_speeds
+    def test_adaptive_speed_starts_from_measured_ratio_and_supports_slowdown(self):
+        from appcore.runtime import _adaptive_speed_candidate
 
-        assert _speedup_candidate_speeds(
-            audio_duration=61.5, video_duration=60.0,
-        ) == [1.03, 1.04, 1.05]
-        assert _speedup_candidate_speeds(
-            audio_duration=64.0, video_duration=60.0,
-        ) == [1.05]
-        assert _speedup_candidate_speeds(
-            audio_duration=59.8, video_duration=60.0,
-        ) == []
+        assert _adaptive_speed_candidate(
+            base_duration=61.5, video_duration=60.0,
+            previous_candidates=[],
+        ) == pytest.approx(1.03)
+        assert _adaptive_speed_candidate(
+            base_duration=58.5, video_duration=60.0,
+            previous_candidates=[],
+        ) == pytest.approx(0.97)
+        assert _adaptive_speed_candidate(
+            base_duration=59.5, video_duration=60.0,
+            previous_candidates=[],
+        ) is None
+
+    def test_adaptive_speed_uses_feedback_and_never_leaves_quality_bounds(self):
+        from appcore.runtime import _adaptive_speed_candidate
+
+        assert _adaptive_speed_candidate(
+            base_duration=61.5, video_duration=60.0,
+            previous_candidates=[{"speed": 1.03, "duration": 60.8}],
+        ) == pytest.approx(1.04)
+        assert _adaptive_speed_candidate(
+            base_duration=58.5, video_duration=60.0,
+            previous_candidates=[{"speed": 0.97, "duration": 58.8}],
+        ) == pytest.approx(0.96)
+        assert _adaptive_speed_candidate(
+            base_duration=80.0, video_duration=60.0,
+            previous_candidates=[{"speed": 1.05, "duration": 63.0}],
+        ) == pytest.approx(1.04)
+        assert _adaptive_speed_candidate(
+            base_duration=40.0, video_duration=60.0,
+            previous_candidates=[{"speed": 0.95, "duration": 58.0}],
+        ) == pytest.approx(0.96)
 
     def test_selects_closest_under_video_segment_combination(self):
         from appcore.runtime import _select_segment_candidate_assembly
@@ -689,6 +712,20 @@ class TestDurationLoopMultiRound:
             return {"full_audio_path": out,
                     "segments": [{"index": 0, "tts_path": out, "tts_duration": audio_durations[-1]}]}
 
+        def fake_assemble(selected, task_dir, variant):
+            out = os.path.join(task_dir, f"tts_full.{variant}.assembled.mp3")
+            with open(out, "wb") as f:
+                f.write(b"fake-assembled")
+            segments = []
+            for i, seg in enumerate(selected):
+                seg_copy = dict(seg)
+                seg_copy.setdefault("index", i)
+                seg_copy["tts_duration"] = seg_copy.get(
+                    "tts_duration", seg_copy.get("duration", 0.0)
+                )
+                segments.append(seg_copy)
+            return {"full_audio_path": out, "segments": segments}
+
         def fake_get_audio_duration(path):
             if str(path).endswith(".speedup.mp3"):
                 return audio_durations[-1]
@@ -708,6 +745,7 @@ class TestDurationLoopMultiRound:
 
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
         monkeypatch.setattr("pipeline.tts.regenerate_full_audio_with_speed", fake_regenerate_with_speed)
+        monkeypatch.setattr("pipeline.tts.assemble_full_audio_from_segments", fake_assemble)
         monkeypatch.setattr("pipeline.tts._get_audio_duration", fake_get_audio_duration)
         monkeypatch.setattr("pipeline.translate.generate_tts_script", fake_gen_tts_script)
         monkeypatch.setattr("pipeline.translate.generate_localized_rewrite", fake_gen_rewrite)
@@ -778,8 +816,8 @@ class TestDurationLoopMultiRound:
         )
         assert result["rounds"][0]["speedup_applied"] is True
 
-    def test_round1_audio_below_video_minus_one_continues(self, tmp_path, monkeypatch):
-        # video=30, final range=[29, 32]; 28.5s is too short, 29.0s converges.
+    def test_round1_audio_below_video_minus_one_runs_stage1_speedup(self, tmp_path, monkeypatch):
+        # video=30, target [29,30]; 28.5s is stage1-converged, then speedup reaches 29.0s.
         runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [28.5, 29.0])
         result = runner._run_tts_duration_loop(
             task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
@@ -791,16 +829,17 @@ class TestDurationLoopMultiRound:
             script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
             variant="normal",
         )
-        assert result["final_round"] == 2
-        assert len(result["rounds"]) == 2
+        assert result["final_round"] == 1
+        assert len(result["rounds"]) == 1
         assert result["rounds"][0]["audio_duration"] == pytest.approx(28.5)
-        assert result["rounds"][1]["audio_duration"] == pytest.approx(29.0)
+        assert result["rounds"][0]["speedup_context"] == "stage1_converged_postprocess"
+        assert result["rounds"][0]["segment_assembly_duration"] == pytest.approx(29.0)
 
-    def test_round2_stage1_hit_but_not_final_range_continues(self, tmp_path, monkeypatch):
+    def test_round2_stage1_hit_runs_postprocess_and_finishes(self, tmp_path, monkeypatch):
         # video=35
         # old stage1 range: [31.5, 38.5]
         # final range: [34.0, 37.0]
-        # round 2 audio=38.2 should NOT stop the loop.
+        # round 2 audio=38.2 now stops rewrite and enters speedup post-process.
         runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [40.0, 38.2, 34.0])
         result = runner._run_tts_duration_loop(
             task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
@@ -812,10 +851,11 @@ class TestDurationLoopMultiRound:
             script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
             variant="normal",
         )
-        assert result["final_round"] == 3
-        assert len(result["rounds"]) == 3
+        assert result["final_round"] == 2
+        assert len(result["rounds"]) == 2
         assert result["rounds"][1]["audio_duration"] == pytest.approx(38.2)
-        assert result["rounds"][2]["audio_duration"] == pytest.approx(34.0)
+        assert result["rounds"][1]["speedup_context"] == "stage1_converged_postprocess"
+        assert result["rounds"][1]["segment_assembly_duration"] == pytest.approx(34.0)
 
     def test_all_rounds_exhausted_picks_best(self, tmp_path, monkeypatch):
         # 5 rounds all > hi=32 (video=30). Best = last (34.0, closest to [29, 32]).
@@ -861,7 +901,7 @@ class TestDurationLoopMultiRound:
             variant="normal",
         )
         assert result["final_round"] == 2
-        assert len(result["rounds"]) == 5
+        assert len(result["rounds"]) == 2
         assert result["tts_audio_path"].endswith("tts_full.round_2.mp3")
 
     def test_intermediate_files_written(self, tmp_path, monkeypatch):
@@ -1666,7 +1706,8 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 59.5
         assert round_rec["speedup_hit_final"] is True
         assert round_rec["segment_assembly_hit"] is True
-        assert round_rec["final_reason"] == "speedup_segment_assembly_converged"
+        assert round_rec["speedup_context"] == "stage1_converged_postprocess"
+        assert round_rec["final_reason"] == "converged_segment_assembly_refined"
         assert len(called["eval"]) == 1
 
     def test_speedup_miss_final_keeps_unaligned(self, tmp_path, monkeypatch):
@@ -1676,11 +1717,13 @@ class TestSpeedupShortcut:
         runner = self._make_runner()
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
-        assert result["final_round"] == 2
+        assert result["final_round"] == 1
         assert round_rec.get("speedup_applied") is True
         assert round_rec["speedup_hit_final"] is False
-        assert round_rec["final_reason"] == "speedup_segment_assembly_missed_continue"
-        assert len(called["eval"]) == 1  # 仍然评估
+        assert round_rec["speedup_context"] == "stage1_converged_postprocess"
+        assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
+        assert called["speedup_speeds"] == [1.05, 1.04, 1.03]
+        assert len(called["eval"]) == 3
 
     def test_speedup_failure_falls_back_to_original(self, tmp_path, monkeypatch):
         """ElevenLabs 变速调用抛错 → 不采用原始超长音频，继续下一轮 rewrite。"""
@@ -1691,10 +1734,11 @@ class TestSpeedupShortcut:
         runner = self._make_runner()
         result = self._run(runner, tmp_path, video_duration=60.0)
         round_rec = result["rounds"][0]
-        assert result["final_round"] == 2
+        assert result["final_round"] == 1
         assert round_rec.get("speedup_applied") is True
         assert "speedup_failed_reason" in round_rec
-        assert round_rec["final_reason"] == "speedup_segment_assembly_failed_continue"
+        assert round_rec["speedup_context"] == "stage1_converged_postprocess"
+        assert round_rec["final_reason"] == "converged_speedup_failed_kept_original"
         assert called["eval"] == []  # 变速失败不发起评估
 
     def test_speedup_skipped_when_final_audio_not_over_video(self, tmp_path, monkeypatch):
@@ -1726,7 +1770,7 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_hit_final"] is True
         assert round_rec["segment_assembly_hit"] is True
         assert round_rec["final_reason"] == "converged_segment_assembly_refined"
-        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["speedup_final_audio_choice"] == "assembly"
         assert len(called["eval"]) == 1
         assert called["eval"][0]["audio_pre_duration"] == 61.5
@@ -1753,7 +1797,7 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 62.5
         assert round_rec["speedup_hit_final"] is False
         assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
-        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["speedup_final_audio_choice"] == "converged"
         assert len(called["eval"]) == 3
         assert called["eval"][0]["hit_final_range"] is False
@@ -1776,7 +1820,7 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_post_duration"] == 61.8
         assert round_rec["speedup_hit_final"] is False
         assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
-        assert round_rec["speedup_context"] == "final_converged_overshoot"
+        assert round_rec["speedup_context"] == "stage1_converged_postprocess"
         assert round_rec["speedup_final_audio_choice"] == "converged"
         assert len(called["eval"]) == 3
         assert called["eval"][0]["hit_final_range"] is False
@@ -1837,7 +1881,7 @@ class TestSpeedupShortcut:
         assert round_rec["speedup_final_audio_choice"] == "converged"
         assert round_rec["final_reason"] == "converged_segment_assembly_miss_kept_original"
 
-    def test_shortcut_segment_assembly_miss_continues_rewrite(
+    def test_stage1_segment_assembly_miss_finishes_without_more_rewrite(
         self, tmp_path, monkeypatch,
     ):
         called = self._common_patches(
@@ -1845,6 +1889,26 @@ class TestSpeedupShortcut:
             audio_dur=[64.0, 59.5],
             speedup_segments_by_speed={
                 1.05: [63.0],
+                1.04: [63.0],
+                1.03: [63.0],
+            },
+        )
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+
+        assert result["final_round"] == 1
+        assert called["speedup_speeds"] == [1.05, 1.04, 1.03]
+        assert result["rounds"][0]["final_reason"] == "converged_segment_assembly_miss_kept_original"
+        assert result["rounds"][0]["segment_assembly_hit"] is False
+
+    def test_speedup_waits_until_rewrite_reaches_stage1_window(
+        self, tmp_path, monkeypatch,
+    ):
+        called = self._common_patches(
+            monkeypatch,
+            audio_dur=[70.0, 64.0, 59.5],
+            speedup_segments_by_speed={
+                1.05: [59.5],
             },
         )
         runner = self._make_runner()
@@ -1852,6 +1916,27 @@ class TestSpeedupShortcut:
 
         assert result["final_round"] == 2
         assert called["speedup_speeds"] == [1.05]
-        assert result["rounds"][0]["final_reason"] == "speedup_segment_assembly_missed_continue"
-        assert result["rounds"][0]["segment_assembly_hit"] is False
-        assert result["rounds"][1]["audio_duration"] == pytest.approx(59.5)
+        assert not result["rounds"][0].get("speedup_applied")
+        assert result["rounds"][1]["speedup_context"] == "stage1_converged_postprocess"
+        assert result["rounds"][1]["final_reason"] == "converged_segment_assembly_refined"
+
+    def test_stage1_short_audio_uses_slow_speed_feedback_to_lengthen(
+        self, tmp_path, monkeypatch,
+    ):
+        called = self._common_patches(
+            monkeypatch,
+            audio_dur=58.5,
+            speedup_segments_by_speed={
+                0.97: [58.8],
+                0.96: [59.4],
+            },
+        )
+        runner = self._make_runner()
+        result = self._run(runner, tmp_path, video_duration=60.0)
+        round_rec = result["rounds"][0]
+
+        assert result["final_round"] == 1
+        assert called["speedup_speeds"] == [0.97, 0.96]
+        assert round_rec["segment_assembly_hit"] is True
+        assert round_rec["segment_assembly_duration"] == pytest.approx(59.4)
+        assert round_rec["final_reason"] == "converged_segment_assembly_refined"

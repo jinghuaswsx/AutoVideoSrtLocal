@@ -2549,17 +2549,20 @@
       const finalSpeedupGenerationsValue = Number(generationSummary.converged_speedup_audio_generations);
       const finalSpeedupGenerations = Number.isFinite(finalSpeedupGenerationsValue)
         ? finalSpeedupGenerationsValue
-        : rounds.filter(r =>
-            r && r.speedup_applied
-            && r.speedup_context === 'final_converged_overshoot'
-            && r.speedup_audio_path
-          ).length;
+        : rounds.reduce((sum, r) => {
+            if (!r || !r.speedup_applied) return sum;
+            if (!['final_converged_overshoot', 'stage1_converged_postprocess'].includes(r.speedup_context)) return sum;
+            if (Array.isArray(r.speedup_candidates) && r.speedup_candidates.length) {
+              return sum + r.speedup_candidates.length;
+            }
+            return sum + (r.speedup_audio_path ? 1 : 0);
+          }, 0);
       const summaryBits = [];
       if (Number.isFinite(translateCalls)) summaryBits.push(`${translateCalls} 次文本翻译`);
       if (Number.isFinite(audioRounds)) summaryBits.push(`${audioRounds} 轮语音生成`);
       if (Number.isFinite(audioSegmentCalls)) summaryBits.push(`${audioSegmentCalls} 次分段语音合成`);
       if (Number.isFinite(finalSpeedupGenerations) && finalSpeedupGenerations > 0) {
-        summaryBits.push(`收敛音频变速生成音频 ${finalSpeedupGenerations} 次`);
+        summaryBits.push(`收敛后变速候选生成 ${finalSpeedupGenerations} 次`);
       }
       if (summaryBits.length) {
         parts.push(`
@@ -2581,14 +2584,16 @@
         || (finalReason === 'converged_speedup_refined' ? 'speedup'
           : (finalReason === 'converged_segment_assembly_refined' ? 'assembly' : 'converged'));
       const speedupPostDuration = Number(winner.speedup_post_duration);
+      const assemblyDuration = Number(winner.segment_assembly_duration);
       const baseFinalDuration = Number(
         winner.final_duration != null ? winner.final_duration : winner.audio_duration
       );
-      const finalDuration = (
-        isFinalSpeedupResult
-        && finalSpeedupChoice === 'speedup'
-        && Number.isFinite(speedupPostDuration)
-      ) ? speedupPostDuration : baseFinalDuration;
+      let finalDuration = baseFinalDuration;
+      if (isFinalSpeedupResult && finalSpeedupChoice === 'assembly' && Number.isFinite(assemblyDuration)) {
+        finalDuration = assemblyDuration;
+      } else if (isFinalSpeedupResult && finalSpeedupChoice === 'speedup' && Number.isFinite(speedupPostDuration)) {
+        finalDuration = speedupPostDuration;
+      }
       const trimmed = (winner.pre_trim_duration != null && winner.final_duration != null
           && winner.pre_trim_duration > winner.final_duration + 1e-6)
         || (winner.removed_count != null && winner.removed_count > 0);
@@ -2665,7 +2670,7 @@
         if (tempoLine) lines.push(tempoLine);
         if (composeLine) lines.push(composeLine);
       } else if (isFinalSpeedupResult) {
-        lines.push(`<strong>收敛音频段级组装</strong>：第 ${finalRound} 轮收敛后音频超过原视频，已额外生成段级候选并尝试重组；<b>${finalSpeedupChoiceLabel}</b>（${finalSpeedupReasonLabels[finalReason] || '已按评估结果选择最终音频'}）。`);
+        lines.push(`<strong>收敛后段级组装</strong>：第 ${finalRound} 轮进入阶段收敛窗后，已额外生成段级 speed 候选并尝试重组；<b>${finalSpeedupChoiceLabel}</b>（${finalSpeedupReasonLabels[finalReason] || '已按评估结果选择最终音频'}）。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
         if (composeLine) lines.push(composeLine);
@@ -3759,7 +3764,7 @@
   }
 
   // ============================================================
-  // TTS 变速短路子卡片渲染 (Task 9)
+  // TTS 收敛后变速候选子卡片渲染
   // ============================================================
   function renderSpeedupCard(r, tid) {
     if (!r || !r.speedup_applied) return '';
@@ -3771,8 +3776,9 @@
       && (r.final_reason.startsWith('converged_speedup_')
         || r.final_reason.startsWith('converged_segment_assembly_'));
     const usesSegmentAssembly = !!r.segment_assembly_applied;
+    const isStage1Postprocess = r.speedup_context === 'stage1_converged_postprocess';
     const cardTitle = usesSegmentAssembly
-      ? '段级候选组装'
+      ? (isStage1Postprocess ? '收敛后段级候选组装' : '段级候选组装')
       : (isFinalConvergedSpeedup ? '收敛音频变速生成' : '变速短路');
     const speedFmt = (r.speedup_speed != null) ? Number(r.speedup_speed).toFixed(2) : '?';
     const preDur   = (r.speedup_pre_duration  != null) ? Number(r.speedup_pre_duration).toFixed(2)  : '?';
