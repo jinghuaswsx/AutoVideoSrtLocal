@@ -800,14 +800,120 @@ class PipelineRunner:
                 # 阶段的 timeline_manifest 自然处理。仅最后"5 轮全跑完仍未收敛"
                 # 的 best_pick 路径保留 atempo 强制对齐。
                 final_audio_path = result["full_audio_path"]
+                final_segments = result["segments"]
+                if audio_duration > video_duration:
+                    from appcore.runtime import _speedup_ratio
+
+                    speed = _speedup_ratio(audio_duration, video_duration)
+                    round_record["speedup_applied"] = True
+                    round_record["speedup_speed"] = round(speed, 4)
+                    round_record["speedup_pre_duration"] = audio_duration
+                    _substep(
+                        f"收敛后超长：speed={speed:.4f}, 重新生成 ElevenLabs 候选音频"
+                    )
+                    self._emit_duration_round(
+                        task_id, round_index, "speedup_start", round_record,
+                    )
+
+                    speedup_audio_path = None
+                    speedup_duration = None
+                    speedup_result = None
+                    try:
+                        if not tts_engine.supports_speed_param:
+                            raise NotImplementedError(
+                                f"tts engine {tts_engine.code!r} does not support native speed param"
+                            )
+
+                        def _on_final_speedup_seg_done(done, total, info):
+                            self._emit_substep_msg(
+                                task_id, "tts",
+                                f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 收敛后变速重生成 ElevenLabs 音频 {done}/{total}",
+                            )
+                            round_record["speedup_segments_done"] = done
+                            round_record["speedup_segments_total"] = total
+                            self._emit_duration_round(
+                                task_id, round_index, "speedup_progress", round_record,
+                            )
+
+                        speedup_result = tts_engine.regenerate_with_speed(
+                            result["segments"],
+                            voice["elevenlabs_voice_id"],
+                            task_dir,
+                            variant=f"round_{round_index}",
+                            speed=speed,
+                            model_id=tts_model_id,
+                            language_code=tts_language_code,
+                            on_segment_done=_on_final_speedup_seg_done,
+                        )
+                        speedup_audio_path = speedup_result["full_audio_path"]
+                        speedup_duration = tts_engine.get_audio_duration(speedup_audio_path)
+                        round_record["speedup_audio_path"] = (
+                            os.path.relpath(speedup_audio_path, task_dir)
+                        )
+                        round_record["speedup_post_duration"] = speedup_duration
+                        round_record["speedup_chars_used"] = sum(
+                            len((s.get("tts_text") or "")) for s in result["segments"]
+                        )
+                    except Exception as exc:
+                        log.exception(
+                            "[task %s] final overshoot speedup failed at round %d, keeping converged audio",
+                            task_id, round_index,
+                        )
+                        round_record["speedup_failed_reason"] = str(exc)[:500]
+
+                    eval_id = None
+                    if speedup_audio_path is not None:
+                        hit_final = (
+                            final_target_lo <= speedup_duration <= final_target_hi
+                        )
+                        round_record["speedup_hit_final"] = hit_final
+                        try:
+                            from appcore import tts_speedup_eval
+                            eval_id = tts_speedup_eval.run_evaluation(
+                                task_id=task_id,
+                                round_index=round_index,
+                                language=target_language_label or "",
+                                video_duration=video_duration,
+                                audio_pre_path=result["full_audio_path"],
+                                audio_pre_duration=audio_duration,
+                                audio_post_path=speedup_audio_path,
+                                audio_post_duration=speedup_duration,
+                                speed_ratio=speed,
+                                hit_final_range=hit_final,
+                                user_id=self.user_id,
+                            )
+                        except Exception:
+                            log.exception(
+                                "[task %s] tts_speedup_eval.run_evaluation raised; ignoring",
+                                task_id,
+                            )
+
+                        if hit_final:
+                            final_audio_path = speedup_audio_path
+                            final_segments = speedup_result["segments"]
+                            round_record["final_reason"] = "converged_speedup_refined"
+                        else:
+                            round_record["final_reason"] = (
+                                "converged_speedup_miss_kept_original"
+                            )
+                    else:
+                        round_record["speedup_hit_final"] = False
+                        round_record["final_reason"] = (
+                            "converged_speedup_failed_kept_original"
+                        )
+                    round_record["speedup_eval_id"] = eval_id
+                    self._emit_duration_round(
+                        task_id, round_index, "speedup_done", round_record,
+                    )
                 round_products[-1]["tts_audio_path"] = final_audio_path
+                round_products[-1]["tts_segments"] = final_segments
                 rounds[-1] = round_record
                 task_state.update(
                     task_id,
                     tts_duration_rounds=rounds,
                     tts_duration_status="converged",
                     tts_final_round=round_index,
-                    tts_final_reason="converged",
+                    tts_final_reason=round_record["final_reason"],
                     tts_final_distance=0.0,
                 )
                 self._emit_duration_round(task_id, round_index, "converged", round_record)
@@ -820,7 +926,7 @@ class PipelineRunner:
                     "localized_translation": localized_translation,
                     "tts_script": tts_script,
                     "tts_audio_path": final_audio_path,
-                    "tts_segments": result["segments"],
+                    "tts_segments": final_segments,
                     "rounds": rounds,
                     "round_products": round_products,
                     "final_round": round_index,
