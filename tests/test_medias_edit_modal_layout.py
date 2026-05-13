@@ -105,6 +105,21 @@ def test_medias_listing_status_pill_keeps_text_horizontal():
     assert ".oc-listing-pill { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:44px; height:32px; padding:0 10px; border-radius:9999px; font-size:13px; font-weight:500; line-height:1.25; text-align:center; white-space:nowrap; }" in html
 
 
+def test_detail_images_support_multi_select_delete_assets():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "selectedDetailImageIds = new Set()" in script
+    assert "deleteSelectedDetailImages" in script
+    assert 'class="oc-detail-image-select"' in script
+    assert 'querySelectorAll(\'.oc-detail-image-select\')' in script
+    assert "确定删除选中的 ${ids.length} 张详情图？" in script
+    assert "for (const imgId of ids)" in script
+    assert "selectedDetailImageIds.has(Number(it.id))" in script
+    assert ".oc-detail-images-toolbar" in html
+    assert ".oc-detail-image.is-selected" in html
+
+
 def test_edit_video_material_cards_support_inline_filename_edit():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")

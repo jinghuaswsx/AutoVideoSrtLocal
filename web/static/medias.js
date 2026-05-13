@@ -1027,6 +1027,8 @@
     const staticLimit = 50;
     const gifLimit = 20;
     let items = [];
+    let selectedDetailImageIds = new Set();
+    let detailImagesToolbar = null;
 
     function show() { if (section) section.hidden = false; }
     function hide() { if (section) section.hidden = true; }
@@ -1038,9 +1040,16 @@
 
     function renderItemHTML(it, idx) {
       const imageUrl = safeMediaSrc(it.thumbnail_url);
+      const imageId = Number(it.id) || 0;
+      const checked = selectedDetailImageIds.has(Number(it.id)) ? 'checked' : '';
+      const selectedClass = checked ? ' is-selected' : '';
       return `
-        <div class="oc-detail-image" data-id="${it.id}">
+        <div class="oc-detail-image${selectedClass}" data-id="${imageId}">
           <img src="${escapeHtml(imageUrl)}" alt="详情图 ${idx + 1}" loading="lazy">
+          <label class="oc-detail-image-select-wrap" title="选择这张详情图">
+            <input class="oc-detail-image-select" type="checkbox" aria-label="选择详情图 ${idx + 1}" ${checked}>
+            <span></span>
+          </label>
           <span class="oc-detail-image-idx">${idx + 1}</span>
           <button class="oc-detail-image-del" type="button" title="删除这张" aria-label="删除">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
@@ -1052,12 +1061,63 @@
       `;
     }
 
+    function ensureSelectionToolbar() {
+      if (!grid || detailImagesToolbar || !grid.parentNode) return detailImagesToolbar;
+      detailImagesToolbar = document.createElement('div');
+      detailImagesToolbar.className = 'oc-detail-images-toolbar';
+      detailImagesToolbar.hidden = true;
+      detailImagesToolbar.innerHTML = `
+        <span class="oc-detail-images-selection-count" data-detail-selection-count>已选 0 张</span>
+        <button class="oc-btn danger sm" type="button" data-detail-selection-delete>删除选中</button>
+        <button class="oc-btn ghost sm" type="button" data-detail-selection-clear>取消选择</button>
+      `;
+      grid.parentNode.insertBefore(detailImagesToolbar, grid);
+      const deleteBtn = detailImagesToolbar.querySelector('[data-detail-selection-delete]');
+      const clearBtn = detailImagesToolbar.querySelector('[data-detail-selection-clear]');
+      if (deleteBtn) deleteBtn.addEventListener('click', deleteSelectedDetailImages);
+      if (clearBtn) clearBtn.addEventListener('click', clearDetailImageSelection);
+      return detailImagesToolbar;
+    }
+
+    function updateSelectionToolbar() {
+      const toolbar = ensureSelectionToolbar();
+      if (!toolbar) return;
+      const count = selectedDetailImageIds.size;
+      const label = toolbar.querySelector('[data-detail-selection-count]');
+      const deleteBtn = toolbar.querySelector('[data-detail-selection-delete]');
+      toolbar.hidden = count === 0;
+      if (label) label.textContent = `已选 ${count} 张`;
+      if (deleteBtn) deleteBtn.disabled = count === 0;
+    }
+
+    function pruneSelection() {
+      const validIds = new Set(items.map(it => Number(it.id)).filter(Boolean));
+      selectedDetailImageIds.forEach(id => {
+        if (!validIds.has(id)) selectedDetailImageIds.delete(id);
+      });
+    }
+
+    function onToggleSelect(e) {
+      e.stopPropagation();
+      const card = e.currentTarget.closest('.oc-detail-image');
+      if (!card) return;
+      const imgId = Number(card.dataset.id);
+      if (!imgId) return;
+      if (e.currentTarget.checked) selectedDetailImageIds.add(imgId);
+      else selectedDetailImageIds.delete(imgId);
+      card.classList.toggle('is-selected', selectedDetailImageIds.has(imgId));
+      updateSelectionToolbar();
+    }
+
     function renderInto(targetGrid, list, emptyText) {
       if (!targetGrid) return;
       if (!list.length) {
         targetGrid.innerHTML = `<div class="oc-detail-images-empty">${escapeHtml(emptyText)}</div>`;
       } else {
         targetGrid.innerHTML = list.map(renderItemHTML).join('');
+        targetGrid.querySelectorAll('.oc-detail-image-select').forEach(input => {
+          input.addEventListener('change', onToggleSelect);
+        });
         targetGrid.querySelectorAll('.oc-detail-image-del').forEach(btn => {
           btn.addEventListener('click', onDelete);
         });
@@ -1066,6 +1126,7 @@
 
     function renderGrid() {
       if (!grid) return;
+      pruneSelection();
       if (gifGrid) {
         const staticList = items.filter(it => !isGifItem(it));
         const gifList = items.filter(isGifItem);
@@ -1077,7 +1138,14 @@
         renderInto(grid, items, '尚未上传详情图');
         if (badge) badge.textContent = String(items.length);
       }
+      updateSelectionToolbar();
       onItemsChange(items.slice());
+    }
+
+    async function requestDeleteDetailImage(pid, imgId) {
+      await fetchJSON(`/medias/api/products/${pid}/detail-images/${imgId}`, {
+        method: 'DELETE',
+      });
     }
 
     async function onDelete(e) {
@@ -1090,14 +1158,49 @@
       const pid = await ensurePid({ allowCreate: false });
       if (!pid) return;
       try {
-        await fetchJSON(`/medias/api/products/${pid}/detail-images/${imgId}`, {
-          method: 'DELETE',
-        });
-        items = items.filter(x => x.id !== imgId);
+        await requestDeleteDetailImage(pid, imgId);
+        items = items.filter(x => Number(x.id) !== imgId);
+        selectedDetailImageIds.delete(imgId);
         renderGrid();
       } catch (err) {
         alert('删除失败：' + (err.message || err));
       }
+    }
+
+    async function deleteSelectedDetailImages(e) {
+      if (e) e.stopPropagation();
+      const ids = items
+        .filter(it => selectedDetailImageIds.has(Number(it.id)))
+        .map(it => Number(it.id))
+        .filter(Boolean);
+      if (!ids.length) return;
+      if (!window.confirm(`确定删除选中的 ${ids.length} 张详情图？`)) return;
+      const pid = await ensurePid({ allowCreate: false });
+      if (!pid) return;
+      const failedIds = new Set();
+      const failures = [];
+      for (const imgId of ids) {
+        try {
+          await requestDeleteDetailImage(pid, imgId);
+        } catch (err) {
+          failedIds.add(imgId);
+          failures.push(err.message || String(err));
+        }
+      }
+      const deletedIds = ids.filter(id => !failedIds.has(id));
+      const deletedSet = new Set(deletedIds);
+      items = items.filter(x => !deletedSet.has(Number(x.id)));
+      deletedIds.forEach(id => selectedDetailImageIds.delete(id));
+      renderGrid();
+      if (failedIds.size) {
+        alert(`已删除 ${deletedIds.length} 张，${failedIds.size} 张失败：${failures[0] || '请稍后重试'}`);
+      }
+    }
+
+    function clearDetailImageSelection(e) {
+      if (e) e.stopPropagation();
+      selectedDetailImageIds.clear();
+      renderGrid();
     }
 
     function setProgress(text) {
@@ -1238,6 +1341,7 @@
 
     async function load(pid) {
       items = [];
+      selectedDetailImageIds = new Set();
       renderGrid();
       if (!pid) return;
       try {
@@ -1254,6 +1358,7 @@
 
     function reset() {
       items = [];
+      selectedDetailImageIds = new Set();
       renderGrid();
       setProgress('');
     }
