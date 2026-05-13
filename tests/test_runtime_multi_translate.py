@@ -323,6 +323,136 @@ def test_multi_ja_translate_uses_character_budget_localizer(tmp_path, monkeypatc
     )
 
 
+def test_multi_ja_tts_uses_character_budget_duration_loop(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-ja-tts"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    ja_text = "\u30dc\u30c8\u30eb\u3092\u6e05\u6f54\u306b\u4fdd\u3061\u307e\u3059\u3002"
+    localized_translation = {
+        "full_text": ja_text,
+        "sentences": [
+            {
+                "index": 0,
+                "text": ja_text,
+                "source_segment_indices": [0],
+            }
+        ],
+    }
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="ja",
+        source_language="en",
+        custom_translate_provider="openrouter",
+        selected_voice_id="ja-voice",
+        selected_voice_name="Japanese Voice",
+        source_full_text_zh="Keep this bottle clean.",
+        script_segments=[
+            {
+                "index": 0,
+                "text": "Keep this bottle clean.",
+                "start_time": 0,
+                "end_time": 3,
+            }
+        ],
+        variants={"normal": {"localized_translation": localized_translation}},
+        localized_translation=localized_translation,
+    )
+
+    runner = _make_runner()
+
+    def fail_generic_loop(**kwargs):
+        raise AssertionError("generic duration loop should not run for ja")
+
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fail_generic_loop)
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
+    monkeypatch.setattr("appcore.runtime_multi.resolve_key", lambda *a, **kw: "fake-elevenlabs")
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *a, **kw: "fake-elevenlabs")
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
+    monkeypatch.setattr("appcore.runtime_multi._get_audio_duration", lambda path: 3.0)
+    monkeypatch.setattr("appcore.ai_billing.log_request", lambda **kw: None)
+    monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "pipeline.timeline.build_timeline_manifest",
+        lambda segments, video_duration: {"segments": len(segments), "video_duration": video_duration},
+    )
+
+    captured = {}
+
+    def fake_build_script(current_localized):
+        captured["localized_translation"] = current_localized
+        return {
+            "full_text": ja_text,
+            "blocks": [
+                {
+                    "index": 0,
+                    "text": ja_text,
+                    "sentence_indices": [0],
+                    "source_segment_indices": [0],
+                }
+            ],
+            "subtitle_chunks": [
+                {
+                    "text": ja_text,
+                    "block_indices": [0],
+                    "source_segment_indices": [0],
+                }
+            ],
+        }
+
+    def fake_build_segments(tts_script, script_segments):
+        captured["tts_script"] = tts_script
+        captured["script_segments"] = script_segments
+        return [
+            {
+                "index": 0,
+                "text": "Keep this bottle clean.",
+                "translated": ja_text,
+                "tts_text": ja_text,
+                "source_segment_indices": [0],
+                "start_time": 0.0,
+                "end_time": 3.0,
+            }
+        ]
+
+    def fake_generate_audio(tts_segments, **kwargs):
+        captured["tts_segments"] = tts_segments
+        captured["tts_kwargs"] = kwargs
+        audio = tmp_path / "tts_full.ja_round_1.mp3"
+        audio.write_bytes(b"audio")
+        return {
+            "full_audio_path": str(audio),
+            "segments": [{**tts_segments[0], "tts_duration": 3.0}],
+        }
+
+    monkeypatch.setattr("pipeline.ja_translate.build_ja_tts_script", fake_build_script)
+    monkeypatch.setattr("pipeline.ja_translate.build_ja_tts_segments", fake_build_segments)
+    monkeypatch.setattr("pipeline.ja_translate.count_visible_japanese_chars", lambda text: 11)
+    monkeypatch.setattr(
+        "pipeline.ja_translate.rewrite_ja_localized_translation",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("ja rewrite should not run after converged first round")
+        ),
+    )
+    monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_generate_audio)
+
+    runner._step_tts(task_id, str(tmp_path))
+
+    updated = task_state.get(task_id)
+    assert captured["localized_translation"] == localized_translation
+    assert captured["script_segments"] == updated["script_segments"]
+    assert captured["tts_kwargs"]["voice_id"] == "ja-voice"
+    assert captured["tts_kwargs"]["language_code"] == "ja"
+    assert updated["tts_duration_rounds"][0]["ja_char_count"] == 11
+    assert updated["tts_final_reason"] == "converged"
+    assert updated["variants"]["normal"]["tts_script"]["full_text"] == ja_text
+
+
 def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypatch):
     from appcore import task_state
 
