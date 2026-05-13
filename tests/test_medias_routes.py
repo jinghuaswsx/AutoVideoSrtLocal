@@ -1,5 +1,6 @@
 import json
 import io
+import re
 import threading
 import zipfile
 from pathlib import Path
@@ -89,6 +90,45 @@ def test_products_list_delegates_to_response_builder(authed_client_no_db, monkey
         "page": "2",
         "response_payload": {"items": [{"id": 123}], "total": 1, "page": 2, "page_size": 20},
     }
+
+
+def test_product_detail_page_bootstraps_requested_initial_lang(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product_by_code",
+        lambda code: {
+            "id": 6,
+            "user_id": 33,
+            "name": "可堆叠棒球帽收纳盒",
+            "product_code": code,
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        "web.services.media_pages.shopify_image_localizer_release.get_release_info",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        "web.services.media_pages.product_roas.get_configured_rmb_per_usd",
+        lambda: 6.83,
+    )
+
+    response = authed_client_no_db.get("/medias/baseball-cap-organizer-rjc?lang=de")
+    body = response.get_data(as_text=True)
+    match = re.search(r"window\.MEDIAS_PRODUCT_DETAIL = (\{.*?\});", body)
+
+    assert response.status_code == 200
+    assert match
+    assert json.loads(match.group(1))["initialLang"] == "de"
+
+
+def test_medias_js_uses_product_detail_initial_lang_before_rendering():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert "function productDetailInitialLang" in script
+    assert "edState.activeLang = productDetailInitialLang() || 'en';" in script
 
 
 def test_refresh_product_shopify_sku_route_delegates_response_building(

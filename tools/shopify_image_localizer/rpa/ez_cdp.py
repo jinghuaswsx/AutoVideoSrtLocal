@@ -8,6 +8,7 @@ connects to that browser over CDP after it is running, then drives the EZ iframe
 DOM and file inputs directly.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -29,6 +30,7 @@ DEFAULT_CDP_PORT = 7777
 ACTION_DELAY_MS = 1000
 UPLOAD_FILE_READY_TIMEOUT_MS = 20000
 STARTUP_URL = "https://www.google.com"
+MAX_BROWSER_TABS = 20
 
 
 def _timestamp() -> str:
@@ -108,6 +110,10 @@ def _commandline_uses_profile(command_line: str, user_data_dir: str) -> bool:
     return False
 
 
+def _hidden_subprocess_kwargs() -> dict[str, object]:
+    return session._hidden_subprocess_kwargs()
+
+
 def _cdp_port_matches_profile(port: int, user_data_dir: str) -> bool:
     if os.name != "nt":
         return True
@@ -127,6 +133,7 @@ def _cdp_port_matches_profile(port: int, user_data_dir: str) -> bool:
             capture_output=True,
             text=True,
             timeout=6,
+            **_hidden_subprocess_kwargs(),
         )
     except Exception:
         return False
@@ -154,6 +161,7 @@ def _kill_cdp_chrome_for_port(port: int) -> None:
             ],
             capture_output=True,
             timeout=8,
+            **_hidden_subprocess_kwargs(),
         )
     except Exception:
         pass
@@ -167,6 +175,113 @@ def _chrome_exe() -> str:
     if which:
         return which
     raise RuntimeError("未找到 chrome.exe")
+
+
+def _startup_urls(initial_url: str | None = None) -> list[str]:
+    urls = [STARTUP_URL]
+    candidate = str(initial_url or "").strip()
+    if candidate and candidate.rstrip("/") != STARTUP_URL.rstrip("/"):
+        urls.append(candidate)
+    return urls
+
+
+def _page_url(page) -> str:
+    return str(getattr(page, "url", "") or "")
+
+
+def _is_google_url(url: str | None) -> bool:
+    normalized = str(url or "").strip().lower().rstrip("/")
+    return normalized in {"https://www.google.com", "http://www.google.com", "https://google.com", "http://google.com"}
+
+
+def ensure_google_home_tab(context) -> None:
+    pages = list(getattr(context, "pages", None) or [])
+    if not pages:
+        page = context.new_page()
+        page.goto(STARTUP_URL, wait_until="domcontentloaded", timeout=30000)
+        return
+    first = pages[0]
+    first_url = _page_url(first)
+    if _is_google_url(first_url):
+        return
+    first.goto(STARTUP_URL, wait_until="domcontentloaded", timeout=30000)
+
+
+def _target_page_token(target_url: str) -> str:
+    value = str(target_url or "")
+    if "ez-product-image-translate" in value:
+        return "ez-product-image-translate"
+    if "translate-and-adapt" in value:
+        return "translate-and-adapt"
+    if "/products/" in value:
+        return "/products/"
+    return value
+
+
+def select_or_create_business_page(context, target_url: str):
+    token = _target_page_token(target_url)
+    pages = list(getattr(context, "pages", None) or [])
+    for page in pages[1:]:
+        if token and token in _page_url(page):
+            return page
+    return context.new_page()
+
+
+def prune_browser_tabs(context, *, keep_pages: list | tuple = (), max_tabs: int = MAX_BROWSER_TABS) -> None:
+    pages = list(getattr(context, "pages", None) or [])
+    keep_ids = {id(page) for page in keep_pages}
+    for page in reversed(pages[1:]):
+        if len(pages) <= max_tabs:
+            return
+        if id(page) in keep_ids:
+            continue
+        try:
+            page.close()
+        except Exception:
+            pass
+        with contextlib.suppress(ValueError):
+            pages.remove(page)
+
+
+def _ensure_google_home_tab_via_cdp(port: int) -> None:
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
+            try:
+                context = browser.contexts[0] if browser.contexts else browser.new_context()
+                ensure_google_home_tab(context)
+                prune_browser_tabs(context)
+            finally:
+                with contextlib.suppress(Exception):
+                    browser.close()
+    except Exception:
+        pass
+
+
+def open_managed_tab(
+    *,
+    user_data_dir: str,
+    target_url: str,
+    port: int = DEFAULT_CDP_PORT,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> None:
+    ensure_cdp_chrome(user_data_dir, port=port, cancel_token=cancel_token)
+    cancellation.throw_if_cancelled(cancel_token)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
+        try:
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            ensure_google_home_tab(context)
+            page = select_or_create_business_page(context, target_url)
+            prune_browser_tabs(context, keep_pages=(page,))
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+            page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+        finally:
+            with contextlib.suppress(Exception):
+                browser.close()
 
 
 def ensure_cdp_chrome(
@@ -185,6 +300,7 @@ def ensure_cdp_chrome(
     """
     if _cdp_alive(port):
         if _cdp_port_matches_profile(port, user_data_dir):
+            _ensure_google_home_tab_via_cdp(port)
             return False
         _kill_cdp_chrome_for_port(port)
         deadline = time.time() + 5
@@ -194,6 +310,8 @@ def ensure_cdp_chrome(
     session.kill_chrome_for_profile(user_data_dir)
     if proxy_server is None:
         proxy_server = session.detect_system_proxy()
+    Path(user_data_dir).mkdir(parents=True, exist_ok=True)
+    session._enable_chrome_developer_mode(user_data_dir)
     args = [
         _chrome_exe(),
         f"--remote-debugging-port={port}",
@@ -202,12 +320,15 @@ def ensure_cdp_chrome(
         "--no-default-browser-check",
         "--start-maximized",
     ]
+    ext_dir = session._resolve_bundled_extension_dir()
+    if ext_dir:
+        args.append(f"--load-extension={ext_dir}")
     if proxy_server:
         args.extend([
             f"--proxy-server={proxy_server}",
             "--proxy-bypass-list=127.0.0.1;localhost;172.30.254.14;<local>",
         ])
-    args.append(initial_url)
+    args.extend(_startup_urls(initial_url))
 
     subprocess.Popen(
         args,
@@ -220,6 +341,7 @@ def ensure_cdp_chrome(
     while time.time() < deadline:
         cancellation.throw_if_cancelled(cancel_token)
         if _cdp_alive(port):
+            _ensure_google_home_tab_via_cdp(port)
             return True
         cancellation.cancellable_sleep(cancel_token, 0.5)
     raise RuntimeError(f"Chrome CDP 127.0.0.1:{port} 未就绪")
@@ -633,18 +755,13 @@ def replace_many(
             )
             context = browser.contexts[0] if browser.contexts else browser.new_context()
             context.set_default_timeout(15000)
-            # 复用 _preload_chrome_tab_to_url 已经打开的 EZ tab（视觉识别期间预热的那个），
-            # 避免再 new_page 多开一个一模一样的 EZ 页面。找不到现成的才新建。
-            existing_ez_pages = [p for p in (getattr(context, "pages", None) or []) if "ez-product-image-translate" in (getattr(p, "url", "") or "")]
-            if existing_ez_pages:
-                page = existing_ez_pages[0]
-                try:
-                    page.bring_to_front()
-                except Exception:
-                    pass
-                _log(f"[轮播图] 复用已有 EZ 页面 url={page.url}")
-            else:
-                page = context.new_page()
+            ensure_google_home_tab(context)
+            page = select_or_create_business_page(context, ez_url)
+            prune_browser_tabs(context, keep_pages=(page,))
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
             try:
                 cancellation.throw_if_cancelled(cancel_token)
                 _run_step(

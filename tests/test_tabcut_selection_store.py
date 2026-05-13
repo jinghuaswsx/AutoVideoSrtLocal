@@ -70,6 +70,101 @@ def test_list_video_candidates_filters_by_video_publish_date_range():
     assert data_params[:3] == ["US", "2026-04-13", "2026-05-12"]
 
 
+def test_list_video_candidates_filters_by_source_rank():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({"source_rank": "7d"}, query_fn=fake_query)
+
+    count_sql, count_params = calls[0]
+    data_sql, data_params = calls[-1]
+    assert "EXISTS (" in count_sql
+    assert "tabcut_video_snapshots source_vs" in count_sql
+    assert "source_vs.source_sort IN (%s, %s)" in count_sql
+    assert "video_7d_play" in count_params
+    assert "video_7d_sales" in count_params
+    assert "source_vs.source_sort IN (%s, %s)" in data_sql
+    assert data_params[:3] == ["US", "video_7d_play", "video_7d_sales"]
+
+
+def test_list_video_candidates_rejects_unknown_source_rank():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({"source_rank": "7d; DROP TABLE tabcut_videos"}, query_fn=fake_query)
+
+    assert "source_vs.source_sort" not in calls[-1][0]
+    assert "DROP TABLE" not in calls[-1][0]
+
+
+def test_list_category_options_returns_distinct_l1_names():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [
+            {"value": "Beauty", "label": "Beauty", "video_count": 12, "goods_count": 7},
+            {"value": "Food", "label": "Food", "video_count": 3, "goods_count": 9},
+        ]
+
+    result = store.list_category_options(query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert result == [
+        {"value": "Beauty", "label": "Beauty", "video_count": 12, "goods_count": 7},
+        {"value": "Food", "label": "Food", "video_count": 3, "goods_count": 9},
+    ]
+    assert "tabcut_video_candidates" in sql
+    assert "tabcut_goods" in sql
+    assert "category_l1_name" in sql
+    assert params == ["US", "US"]
+
+
+def test_list_goods_filters_by_snapshot_date_source_category_and_sales():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_goods(
+        {
+            "biz_date": "2026-05-11",
+            "source_category": "25",
+            "min_sales_7d": "50",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "s.biz_date = %s" in data_sql
+    assert "s.source = %s" in data_sql
+    assert "COALESCE(s.sold_count_7d, s.sold_count_period) >= %s" in data_sql
+    assert data_params[:4] == ["US", "2026-05-11", "goods_cat_25", 50]
+
+
+def test_build_goods_response_hydrates_source_category_label(monkeypatch):
+    monkeypatch.setattr(
+        store,
+        "list_goods",
+        lambda args: {
+            "items": [{"item_id": "i1", "source": "goods_cat_25"}],
+            "total": 1,
+        },
+    )
+
+    result = service.build_goods_response({})
+
+    assert result.payload["items"][0]["source_category_label"] == "五金工具"
+    assert result.payload["items"][0]["source_category_name"] == "Tools & Hardware"
+
+
 def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
     monkeypatch.setattr(
         store,

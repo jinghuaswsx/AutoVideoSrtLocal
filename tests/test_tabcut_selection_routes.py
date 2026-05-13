@@ -5,7 +5,15 @@ def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
     body = resp.get_data(as_text=True)
     assert "TABCUT" in body
     assert "/xuanpin/api/tabcut/videos" in body
+    assert "/xuanpin/api/tabcut/goods" in body
     assert "tabcut-video-grid" in body
+    assert "sourceRank" in body
+    assert '<select class="tabcut-select" id="categoryL1">' in body
+    assert '<option value="">All</option>' in body
+    assert "/xuanpin/api/tabcut/categories" in body
+    assert "数据来源" in body
+    assert "goodsBizDate" in body
+    assert "sourceCategory" in body
     assert "publishDateFrom" in body
     assert "tabcut-video-cover-link" in body
     assert "发布时间" in body
@@ -50,3 +58,17 @@ def test_tabcut_selection_goods_api_delegates(monkeypatch, authed_client_no_db):
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"item_id": "i1"}]
+
+
+def test_tabcut_selection_categories_api_delegates(monkeypatch, authed_client_no_db):
+    from appcore.tabcut_selection.service import TabcutResponse
+
+    monkeypatch.setattr(
+        "web.routes.medias.tabcut_selection.service.build_category_options_response",
+        lambda args: TabcutResponse({"items": [{"value": "Beauty", "label": "Beauty"}]}),
+    )
+
+    resp = authed_client_no_db.get("/medias/api/tabcut-selection/categories")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"value": "Beauty", "label": "Beauty"}]

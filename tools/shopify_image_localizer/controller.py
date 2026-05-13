@@ -3,23 +3,29 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
-import sqlite3
+import json
+import time
+import urllib.request
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 from tools.shopify_image_localizer import (
     api_client,
     cancellation,
     domain_image_mapping,
+    ext_bridge,
     locales,
     settings,
     storage,
 )
 from tools.shopify_image_localizer.browser import session
-from tools.shopify_image_localizer.rpa import run_product_cdp
+from tools.shopify_image_localizer.rpa import ez_cdp, run_product_cdp
 
 
 SHOPIFY_ADMIN_ROOT_URL = "https://admin.shopify.com/"
+SHOPIFY_ADMIN_STORE_URL_CONTAINS = "admin.shopify.com/store/"
+BROWSER_URL_CAPTURE_TIMEOUT_S = 8.0
 
 
 StatusCallback = Callable[[str], None]
@@ -111,7 +117,7 @@ def run_shopify_localizer(
     shopify_product_id_cb: ShopifyProductIdCallback | None = None,
     visual_pair_confirm_cb: VisualPairConfirmCallback | None = None,
     cancel_token: cancellation.CancellationToken | None = None,
-    skip_kill_chrome: bool = False,
+    skip_kill_chrome: bool = True,
 ) -> dict:
     reporter = status_cb or _noop
     cancellation.throw_if_cancelled(cancel_token)
@@ -131,7 +137,7 @@ def run_shopify_localizer(
         shopify_domain=normalized_domain,
     )
     if skip_kill_chrome:
-        emit("跳过清理浏览器进程（由调用方统一管理生命周期）")
+        emit("复用现有浏览器会话（仅在浏览器不可用或 profile 不匹配时由 CDP 初始化流程恢复）")
     else:
         emit("正在清理旧 Chrome 浏览器进程")
         session.kill_chrome_for_profile(effective_browser_dir)
@@ -446,10 +452,15 @@ def build_shopify_target_url(
         raise RuntimeError("Shopify ID 不能为空")
     store_slug = settings.shopify_store_slug_for_domain(shopify_domain)
     if normalized_target == "ez":
-        return session.build_ez_url(product_id, store_slug=store_slug)
-    if normalized_target == "detail":
-        return session.build_translate_url(product_id, str(lang or "").strip(), store_slug=store_slug)
-    raise ValueError(f"unsupported Shopify target: {target}")
+        url = session.build_ez_url(product_id, store_slug=store_slug)
+    elif normalized_target == "detail":
+        url = session.build_translate_url(product_id, str(lang or "").strip(), store_slug=store_slug)
+    else:
+        raise ValueError(f"unsupported Shopify target: {target}")
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "admin.shopify.com" or not parsed.path.startswith("/store/"):
+        raise RuntimeError(f"生成的 Shopify 管理后台 URL 非法，必须是 admin.shopify.com/store 页面，已阻止打开：{url}")
+    return url
 
 
 def open_shopify_target(
@@ -486,7 +497,7 @@ def open_shopify_target(
         lang=shop_locale or lang,
         shopify_domain=normalized_domain,
     )
-    session.open_urls_in_chrome(effective_browser_dir, [url])
+    ez_cdp.open_managed_tab(user_data_dir=effective_browser_dir, target_url=url)
     return {
         "status": "opened",
         "target": str(target or "").strip().lower(),
@@ -505,9 +516,7 @@ def open_shopify_login_page(
     browser_user_data_dir: str,
     shopify_domain: str = settings.DEFAULT_SHOPIFY_DOMAIN,
 ) -> dict:
-    """启动普通 Chrome（无 CDP，避免 Cloudflare 反 bot 拦截 admin.shopify.com 登录）打开主入口。
-    用户在浏览器里登录 + 手动选择店铺后，由 GUI 单独按「已登录」按钮调用
-    confirm_shopify_login_capture_slug 抓 slug。"""
+    """确保同一个 CDP Chrome 已启动，保留第一 tab 为 Google，并把 Shopify 登录页开到后续 tab。"""
     normalized_domain = settings.normalize_domain(shopify_domain)
     effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
     settings.save_runtime_config(
@@ -516,8 +525,7 @@ def open_shopify_login_page(
         browser_user_data_dir=browser_user_data_dir,
         shopify_domain=normalized_domain,
     )
-    session.kill_chrome_for_profile(effective_browser_dir)
-    session.start_chrome(effective_browser_dir, [SHOPIFY_ADMIN_ROOT_URL])
+    ez_cdp.open_managed_tab(user_data_dir=effective_browser_dir, target_url=SHOPIFY_ADMIN_ROOT_URL)
     return {
         "status": "opened",
         "target": "shopify_login",
@@ -527,33 +535,209 @@ def open_shopify_login_page(
     }
 
 
-def _read_latest_admin_store_url(history_db_path: Path) -> tuple[str, int]:
-    """以 read-only/immutable 模式打开 Chrome History SQLite，返回最近一次访问的
-    admin.shopify.com/store/<slug>/... URL 及其 last_visit_time（chrome 在跑也能读）。"""
-    if not history_db_path.is_file():
-        return "", 0
-    # Path.as_uri() 在 Windows 上返回 file:///C:/... 形式，sqlite3 才能正确解析
-    uri = f"{history_db_path.as_uri()}?mode=ro&immutable=1"
+def _domain_title_token(shopify_domain: str | None) -> str:
+    domain = settings.normalize_domain(shopify_domain, default="")
+    token = domain.split(".", 1)[0].strip().lower()
+    return token
+
+
+def _tab_matches_shopify_domain(tab: dict, shopify_domain: str | None) -> bool:
+    token = _domain_title_token(shopify_domain)
+    if not token:
+        return False
+    haystack = f"{tab.get('title') or ''} {tab.get('url') or ''}".lower()
+    return token in haystack
+
+
+def _select_current_admin_store_url_from_tabs(
+    tabs: list[dict] | None,
+    *,
+    shopify_domain: str | None = None,
+    require_domain_match: bool = False,
+) -> tuple[str, str]:
+    """Pick the current Shopify admin store URL from live Chrome tabs."""
+    candidates: list[tuple[int, int, float, int, str]] = []
+    for tab in tabs or []:
+        if not isinstance(tab, dict):
+            continue
+        url = str(tab.get("url") or "").strip()
+        if not settings.extract_store_slug_from_admin_url(url):
+            continue
+        domain_match = 1 if _tab_matches_shopify_domain(tab, shopify_domain) else 0
+        if require_domain_match and not domain_match:
+            continue
+        try:
+            last_accessed = float(tab.get("lastAccessed") or 0)
+        except (TypeError, ValueError):
+            last_accessed = 0
+        try:
+            tab_id = int(tab.get("id") or 0)
+        except (TypeError, ValueError):
+            tab_id = 0
+        candidates.append((domain_match, 1 if tab.get("active") else 0, last_accessed, tab_id, url))
+    if not candidates:
+        return "", ""
+    _domain_match, active, _last_accessed, _tab_id, url = max(
+        candidates,
+        key=lambda item: (item[0], item[1], item[2], item[3]),
+    )
+    return url, "active_tab" if active else "open_tab"
+
+
+def _read_current_admin_store_url_from_cdp(
+    port: int = ez_cdp.DEFAULT_CDP_PORT,
+    *,
+    expected_browser_user_data_dir: str | None = None,
+    shopify_domain: str | None = None,
+) -> tuple[str, str]:
+    """Read live Chrome tabs from CDP /json without touching Chrome History."""
+    if expected_browser_user_data_dir and not ez_cdp._cdp_port_matches_profile(
+        port,
+        expected_browser_user_data_dir,
+    ):
+        return "", "cdp_profile_mismatch"
     try:
-        conn = sqlite3.connect(uri, uri=True, timeout=2)
+        with urllib.request.urlopen(f"http://127.0.0.1:{int(port)}/json", timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
     except Exception:
-        return "", 0
+        return "", "cdp_unavailable"
+    if not isinstance(payload, list):
+        return "", "cdp_tabs_not_found"
+    tabs: list[dict] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") and item.get("type") != "page":
+            continue
+        tabs.append({
+            "id": index + 1,
+            "url": item.get("url"),
+            "title": item.get("title"),
+            "active": False,
+            "lastAccessed": 0,
+        })
+    require_domain_match = bool(_domain_title_token(shopify_domain))
+    url, _source = _select_current_admin_store_url_from_tabs(
+        tabs,
+        shopify_domain=shopify_domain,
+        require_domain_match=require_domain_match,
+    )
+    if url:
+        return url, "cdp_tab"
+    if require_domain_match:
+        return "", "cdp_domain_not_found"
+    return "", "cdp_tabs_not_found"
+
+
+def _fallback_current_admin_store_url(
+    previous_source: str,
+    *,
+    expected_browser_user_data_dir: str | None = None,
+    shopify_domain: str | None = None,
+) -> tuple[str, str]:
+    url, source = _read_current_admin_store_url_from_cdp(
+        expected_browser_user_data_dir=expected_browser_user_data_dir,
+        shopify_domain=shopify_domain,
+    )
+    if url:
+        return url, source
+    if source in {"cdp_profile_mismatch", "cdp_domain_not_found"}:
+        return "", source
+    return "", previous_source or source
+
+
+def _read_current_admin_store_url_from_browser(
+    timeout_s: float = BROWSER_URL_CAPTURE_TIMEOUT_S,
+    *,
+    expected_browser_user_data_dir: str | None = None,
+    shopify_domain: str | None = None,
+) -> tuple[str, str]:
+    """Read the current URL from Chrome tabs via the bundled extension bridge.
+
+    The "already logged in" button must not use Chrome History: while Chrome is
+    still running, History can lag behind the visible tab and return an old slug.
+    """
+    bridge = ext_bridge.ExtensionBridge()
+    deadline = time.monotonic() + max(1.0, float(timeout_s or 0))
     try:
-        cur = conn.execute(
-            "SELECT url, last_visit_time FROM urls "
-            "WHERE url LIKE 'https://admin.shopify.com/store/%' "
-            "ORDER BY last_visit_time DESC LIMIT 1"
+        bridge.start()
+    except OSError:
+        return _fallback_current_admin_store_url(
+            "extension_bridge_unavailable",
+            expected_browser_user_data_dir=expected_browser_user_data_dir,
+            shopify_domain=shopify_domain,
         )
-        row = cur.fetchone()
-        if not row:
-            return "", 0
-        url, ts = row
-        return str(url or ""), int(ts or 0)
-    except Exception:
-        return "", 0
+    try:
+        if not bridge.wait_client(timeout_s=min(4.0, max(0.5, deadline - time.monotonic()))):
+            return _fallback_current_admin_store_url(
+                "extension_not_connected",
+                expected_browser_user_data_dir=expected_browser_user_data_dir,
+                shopify_domain=shopify_domain,
+            )
+        queries = [
+            {
+                "url_contains": SHOPIFY_ADMIN_STORE_URL_CONTAINS,
+                "active": True,
+                "last_focused_window": True,
+            },
+            {"url_contains": SHOPIFY_ADMIN_STORE_URL_CONTAINS},
+        ]
+        for params in queries:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                tabs = bridge.call("list_tabs", params, timeout_s=max(0.5, remaining))
+            except Exception:
+                tabs = []
+            url, source = _select_current_admin_store_url_from_tabs(
+                tabs if isinstance(tabs, list) else [],
+                shopify_domain=shopify_domain,
+            )
+            if url:
+                return url, source
+        return _fallback_current_admin_store_url(
+            "browser_tabs_not_found",
+            expected_browser_user_data_dir=expected_browser_user_data_dir,
+            shopify_domain=shopify_domain,
+        )
     finally:
-        with contextlib.suppress(Exception):
-            conn.close()
+        bridge.stop()
+
+
+def confirm_shopify_login_capture_slug_from_url(
+    *,
+    browser_user_data_dir: str,
+    shopify_domain: str,
+    admin_url: str,
+) -> dict:
+    """Manual fallback for the login dialog: parse a pasted live admin URL and cache its slug."""
+    normalized_domain = settings.normalize_domain(shopify_domain)
+    effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
+    url = str(admin_url or "").strip()
+    slug = settings.extract_store_slug_from_admin_url(url)
+    if not slug:
+        return {
+            "status": "not_found",
+            "shopify_domain": normalized_domain,
+            "browser_user_data_dir": effective_browser_dir,
+            "url": url,
+            "slug": "",
+            "source": "manual_url",
+            "message": (
+                "输入的 URL 不是 admin.shopify.com/store/<slug>/ 形式；"
+                "请复制浏览器地址栏里当前 Shopify 后台店铺主页 URL 后再保存。"
+            ),
+        }
+    settings.cache_store_slug_for_domain(normalized_domain, slug)
+    return {
+        "status": "captured",
+        "shopify_domain": normalized_domain,
+        "browser_user_data_dir": effective_browser_dir,
+        "url": url,
+        "slug": slug,
+        "source": "manual_url",
+    }
 
 
 def confirm_shopify_login_capture_slug(
@@ -561,20 +745,13 @@ def confirm_shopify_login_capture_slug(
     browser_user_data_dir: str,
     shopify_domain: str,
 ) -> dict:
-    """用户在浏览器中登录并停在目标店铺主页后调用：从 Chrome History 抓最新一条
-    admin.shopify.com/store/<slug>/ URL（即用户当前停留的店铺主页），提取 slug 写
-    (domain → slug) 缓存。这是显式按钮触发，避免后台 thread 时机太早抓到旧 URL。"""
+    """用户点「已登录」后调用：从当前 Chrome 标签页读取目标店铺 URL，提取 slug 写缓存。"""
     normalized_domain = settings.normalize_domain(shopify_domain)
     effective_browser_dir = settings.browser_user_data_dir_for_domain(browser_user_data_dir, normalized_domain)
-    history_paths = [
-        Path(effective_browser_dir) / "Default" / "History",
-        Path(effective_browser_dir) / "History",
-    ]
-    best_url, best_ts = "", 0
-    for path in history_paths:
-        url, ts = _read_latest_admin_store_url(path)
-        if ts > best_ts:
-            best_url, best_ts = url, ts
+    best_url, source = _read_current_admin_store_url_from_browser(
+        expected_browser_user_data_dir=effective_browser_dir,
+        shopify_domain=normalized_domain,
+    )
     slug = settings.extract_store_slug_from_admin_url(best_url) if best_url else ""
     if not slug:
         return {
@@ -583,9 +760,10 @@ def confirm_shopify_login_capture_slug(
             "browser_user_data_dir": effective_browser_dir,
             "url": best_url,
             "slug": "",
+            "source": source,
             "message": (
-                "未在 Chrome 历史中找到 admin.shopify.com/store/<slug>/ 形式的 URL；"
-                "请确认浏览器已登录并停留在目标店铺主页，再点一次「已登录」。"
+                "未从当前 Chrome 浏览器标签页读取到 admin.shopify.com/store/<slug>/ 形式的 URL；"
+                "请确认浏览器已登录并停留在目标店铺主页，再点「已登录」。"
             ),
         }
     settings.cache_store_slug_for_domain(normalized_domain, slug)
@@ -595,4 +773,5 @@ def confirm_shopify_login_capture_slug(
         "browser_user_data_dir": effective_browser_dir,
         "url": best_url,
         "slug": slug,
+        "source": source,
     }

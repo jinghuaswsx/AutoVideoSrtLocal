@@ -5,6 +5,7 @@
 #
 # 用法：
 #   bash scripts/build_shopify_image_localizer_wine.sh \
+#     --release-standard-read \
 #     --version 3.9 \
 #     [--release-note "修复 EZ 提交按钮兼容性"]
 #
@@ -21,6 +22,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RELEASE_STANDARD_PATH="${REPO_ROOT}/docs/shopify-image-localizer-exe-release-standard.md"
 WINEPREFIX_DEFAULT="/home/cjh/wine-shopify-build"
 WINE_PYTHON_DEFAULT='C:\Python312\python.exe'
 DOWNLOADS_DIR="/opt/autovideosrt/web/static/downloads/tools"
@@ -29,16 +31,19 @@ PROD_ENV_FILE="/opt/autovideosrt/.env"
 
 VERSION=""
 RELEASE_NOTE=""
+RELEASE_STANDARD_READ=0
 WINEPREFIX_PATH="${WINEPREFIX:-$WINEPREFIX_DEFAULT}"
 WINE_PYTHON="${WINE_PYTHON:-$WINE_PYTHON_DEFAULT}"
 
 usage() {
   cat <<'USAGE'
 用法: bash scripts/build_shopify_image_localizer_wine.sh \
+  --release-standard-read \
   --version <ver> [--release-note "..."] [--prefix /path/to/wine-prefix] [--wine-python 'C:\path\python.exe']
 
 必填:
   --version <ver>          发布版本号（不带前缀 v）；同版本目录或 zip 已存在时直接退出。
+  --release-standard-read  确认已阅读 docs/shopify-image-localizer-exe-release-standard.md。
 
 可选:
   --release-note "..."     写入 system_settings.shopify_image_localizer_release.release_note。
@@ -78,6 +83,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) VERSION="${2:-}"; shift 2 ;;
     --release-note) RELEASE_NOTE="${2:-}"; shift 2 ;;
+    --release-standard-read) RELEASE_STANDARD_READ=1; shift ;;
     --prefix) WINEPREFIX_PATH="${2:-}"; shift 2 ;;
     --wine-python) WINE_PYTHON="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -93,6 +99,61 @@ if [[ "$VERSION" =~ [\\/:\*\?\"\<\>\|] ]]; then
   err "版本号 '$VERSION' 含非法文件名字符"
   exit 2
 fi
+if [[ "$RELEASE_STANDARD_READ" != "1" ]]; then
+  err "打包前必须阅读 $RELEASE_STANDARD_PATH，并传 --release-standard-read。"
+  exit 2
+fi
+if [[ ! -f "$RELEASE_STANDARD_PATH" ]]; then
+  err "发布规范文档不存在：$RELEASE_STANDARD_PATH"
+  exit 2
+fi
+
+# 0. 源码门禁：只允许普通 master checkout，且必须是最新 origin/master。
+command -v git >/dev/null 2>&1 || { err "git 未安装"; exit 1; }
+GIT_TOP="$(git -C "$REPO_ROOT" rev-parse --show-toplevel)"
+if [[ "$(cd "$GIT_TOP" && pwd -P)" != "$(cd "$REPO_ROOT" && pwd -P)" ]]; then
+  err "必须从仓库根目录打包：$GIT_TOP"
+  exit 1
+fi
+GIT_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
+if [[ "$GIT_BRANCH" != "master" ]]; then
+  err "Shopify Image Localizer EXE 只能从 master 打包，当前分支：$GIT_BRANCH"
+  exit 1
+fi
+GIT_DIR="$(cd "$REPO_ROOT" && cd "$(git rev-parse --git-dir)" && pwd -P)"
+GIT_COMMON_DIR="$(cd "$REPO_ROOT" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
+if [[ "$GIT_DIR" != "$GIT_COMMON_DIR" ]]; then
+  err "禁止从 git worktree 打包。git-dir=$GIT_DIR git-common-dir=$GIT_COMMON_DIR"
+  exit 1
+fi
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]]; then
+  err "tracked 工作区不干净；请先 commit 或清理后再打包。"
+  exit 1
+fi
+info "同步 origin/master 以确认当前 master 是最新"
+git -C "$REPO_ROOT" fetch origin master --prune
+HEAD_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+ORIGIN_MASTER_COMMIT="$(git -C "$REPO_ROOT" rev-parse origin/master)"
+if [[ "$HEAD_COMMIT" != "$ORIGIN_MASTER_COMMIT" ]]; then
+  err "当前 HEAD 不是最新 origin/master。HEAD=$HEAD_COMMIT origin/master=$ORIGIN_MASTER_COMMIT"
+  exit 1
+fi
+CODE_VERSION="$(python3 - "$REPO_ROOT" <<'PY'
+import pathlib
+import re
+import sys
+path = pathlib.Path(sys.argv[1]) / "tools/shopify_image_localizer/version.py"
+match = re.search(r'RELEASE_VERSION\s*=\s*["\']([^"\']+)["\']', path.read_text(encoding="utf-8"))
+if not match:
+    raise SystemExit("missing RELEASE_VERSION")
+print(match.group(1).strip().lstrip("vV"))
+PY
+)"
+if [[ "$CODE_VERSION" != "${VERSION#v}" && "$CODE_VERSION" != "${VERSION#V}" ]]; then
+  err "version.py 的 RELEASE_VERSION 必须等于 --version。version.py=$CODE_VERSION --version=$VERSION"
+  exit 1
+fi
+ok "源码门禁通过：master $HEAD_COMMIT，规范已确认，版本 $CODE_VERSION"
 
 # 1. prereq 校验
 command -v wine >/dev/null 2>&1 || { err "wine 未安装。按 spec '首次环境初始化' 装 WineHQ stable 11.0+。"; exit 1; }
@@ -157,6 +218,9 @@ mkdir -p "$XDG_RUNTIME_DIR"
 
 # 把 Linux 路径 $OUTPUT_ROOT 翻译成 Wine Z: 风格的 Windows 路径
 WIN_OUTPUT_ROOT="Z:$(printf '%s' "$OUTPUT_ROOT" | sed 's|/|\\|g')"
+WIN_REPO_ROOT="Z:$(printf '%s' "$REPO_ROOT" | sed 's|/|\\|g')"
+WIN_GIT_DIR="Z:$(printf '%s' "$GIT_DIR" | sed 's|/|\\|g')"
+WIN_GIT_COMMON_DIR="Z:$(printf '%s' "$GIT_COMMON_DIR" | sed 's|/|\\|g')"
 
 cd "$REPO_ROOT"
 xvfb-run --auto-servernum env \
@@ -164,7 +228,15 @@ xvfb-run --auto-servernum env \
   WINEARCH=win64 \
   WINEDEBUG=-all \
   XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  SHOPIFY_LOCALIZER_GIT_TOP="$WIN_REPO_ROOT" \
+  SHOPIFY_LOCALIZER_GIT_BRANCH="$GIT_BRANCH" \
+  SHOPIFY_LOCALIZER_GIT_DIR="$WIN_GIT_DIR" \
+  SHOPIFY_LOCALIZER_GIT_COMMON_DIR="$WIN_GIT_COMMON_DIR" \
+  SHOPIFY_LOCALIZER_GIT_STATUS="" \
+  SHOPIFY_LOCALIZER_GIT_HEAD="$HEAD_COMMIT" \
+  SHOPIFY_LOCALIZER_GIT_ORIGIN_MASTER="$ORIGIN_MASTER_COMMIT" \
   wine "$WINE_PYTHON" -m tools.shopify_image_localizer.build_exe \
+    --release-standard-read \
     --version "$VERSION" \
     --output-root "$WIN_OUTPUT_ROOT"
 
@@ -190,6 +262,7 @@ zip_path = sys.argv[1]
 required_suffixes = (
     "shopify_image_localizer_config.json",
     "shopify_image_localizer_default_config.json",
+    "release_manifest.json",
 )
 required_fields = ("api_key", "browser_user_data_dir")
 with zipfile.ZipFile(zip_path) as archive:
@@ -198,6 +271,12 @@ with zipfile.ZipFile(zip_path) as archive:
         matches = [name for name in names if name.endswith(suffix)]
         if not matches:
             raise SystemExit(f"missing {suffix} in zip")
+        if suffix == "release_manifest.json":
+            manifest = json.loads(archive.read(matches[0]).decode("utf-8"))
+            missing = [field for field in ("source_commit", "origin_master_commit", "release_standard") if not manifest.get(field)]
+            if missing:
+                raise SystemExit(f"release_manifest.json missing field(s): {', '.join(missing)}")
+            continue
         payload = json.loads(archive.read(matches[0]).decode("utf-8"))
         missing = [field for field in required_fields if not str(payload.get(field) or "").strip()]
         if missing:

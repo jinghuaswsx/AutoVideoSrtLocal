@@ -170,7 +170,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "cdp_environment_watchdog",
         "name": "CDP 环境监控",
         "description": (
-            "每分钟检查 DXM01-Meta、DXM02-MK、DXM03-RJC 的 systemd、CDP 和 noVNC 可用性；"
+            "每分钟检查 DXM01-Meta、DXM02-MK、DXM03-RJC、TABCUT 的 systemd、CDP 和 noVNC 可用性；"
             "并兼盯 /data/autovideosrt/browser/runtime*/automation.lock 持有时长（spec: "
             "docs/superpowers/specs/2026-05-09-roi-hourly-sync-lock-recovery.md）。"
             "异常时重启对应环境并通过本任务失败日志触发 admin 报警。"
@@ -263,19 +263,21 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "tabcut_daily_selection",
         "name": "Tabcut US 选品日快照",
         "description": (
-            "每天北京时间 08:00 使用服务器 cjh 桌面 Chrome 的 Tabcut 旗舰版登录态，"
-            "采集美国站近 30 天商品快照，并抓取视频日榜、周榜、月榜播放量/销量榜，"
-            "每个视频榜单至少 1000 条原始数据，写入 TABCUT 选品模块。"
-            "请求间隔不低于 3 秒。Docs-anchor: "
-            "docs/superpowers/specs/2026-05-12-tabcut-crawler-design.md"
+            "每天北京时间 08:00 使用服务器 Tabcut 可视浏览器环境 "
+            "autovideosrt-tabcut-vnc.service（CDP 127.0.0.1:9227，noVNC 6097）"
+            "采集美国站数据：视频榜日/周/月播放与销量榜各 1000 条，"
+            "以及已框选的 9 个商品榜类目每天前 50 名。运行结果写入 "
+            "scheduled_task_runs，采集产物写入 /data/autovideosrt/tabcut/daily。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-12-tabcut-daily-task-management.md"
         ),
         "schedule": "每天 08:00（北京时间），采集 US 最近 30 天数据",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
-        "source_ref": "tabcut-daily-selection.timer",
-        "runner": "tools/tabcut_crawler/main.py",
-        "deployment": "生产服务器 cjh 用户桌面 Chrome profile",
+        "source_ref": "autovideosrt-tabcut-daily-selection.timer",
+        "runner": "python -m tools.tabcut_crawler.main --mode recent7 --days 30",
+        "deployment": "生产服务器 cjh 用户 autovideosrt-tabcut-vnc.service 专用 Chrome profile",
         "log_table": "scheduled_task_runs",
+        "output_file": "/data/autovideosrt/tabcut/daily/",
     },
     "active_task_pre_restart_check": {
         "code": "active_task_pre_restart_check",

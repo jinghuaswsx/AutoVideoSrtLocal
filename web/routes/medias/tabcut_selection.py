@@ -38,6 +38,14 @@ def api_tabcut_selection_goods():
     return _json_response(service.build_goods_response(request.args))
 
 
+@bp.route("/api/tabcut-selection/categories", methods=["GET"])
+@login_required
+def api_tabcut_selection_categories():
+    if not _routes_module()._is_admin():
+        return _json_response(service.build_admin_required_response())
+    return _json_response(service.build_category_options_response(request.args))
+
+
 @bp.route("/api/tabcut-selection/refresh", methods=["POST"])
 @login_required
 def api_tabcut_selection_refresh():

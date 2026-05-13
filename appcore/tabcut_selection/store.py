@@ -5,6 +5,7 @@ import json
 from typing import Any, Callable, Mapping
 
 from appcore.db import execute, query
+from appcore.tabcut_selection.categories import goods_category_source
 
 
 QueryFn = Callable[[str, list[Any]], list[dict]]
@@ -28,6 +29,12 @@ GOODS_SORTS = {
     "gmv_total": "s.gmv_total",
     "sold_growth_rate_7d": "s.sold_growth_rate_7d",
     "related_video_count": "s.related_video_count",
+}
+
+SOURCE_RANKS = {
+    "1d": ("video_1d_play", "video_1d_sales"),
+    "7d": ("video_7d_play", "video_7d_sales"),
+    "30d": ("video_30d_play", "video_30d_sales"),
 }
 
 
@@ -95,6 +102,23 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
     if publish_date_to:
         where.append("v.create_time < DATE_ADD(%s, INTERVAL 1 DAY)")
         params.append(publish_date_to)
+
+    source_rank_values = SOURCE_RANKS.get(str(args.get("source_rank") or ""))
+    if source_rank_values:
+        placeholders = ", ".join(["%s"] * len(source_rank_values))
+        where.append(
+            f"""
+            EXISTS (
+                SELECT 1
+                FROM tabcut_video_snapshots source_vs
+                WHERE source_vs.biz_date = c.biz_date
+                  AND source_vs.region = c.region
+                  AND source_vs.video_id = c.video_id
+                  AND source_vs.source_sort IN ({placeholders})
+            )
+            """
+        )
+        params.extend(source_rank_values)
 
     min_video_sales = _int_arg(args, "min_video_sales", 0, 0, 10**12)
     if min_video_sales:
@@ -186,6 +210,16 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
     where = ["s.region = %s"]
     params: list[Any] = [str(args.get("region") or "US")]
 
+    biz_date = _date_arg(args, "biz_date")
+    if biz_date:
+        where.append("s.biz_date = %s")
+        params.append(biz_date)
+
+    source_category = goods_category_source(_text_arg(args, "source_category"))
+    if source_category:
+        where.append("s.source = %s")
+        params.append(source_category)
+
     for arg_name, column in [
         ("category_l1", "g.category_l1_name"),
         ("category_l2", "g.category_l2_name"),
@@ -234,6 +268,55 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
         "page": page,
         "page_size": page_size,
     }
+
+
+def list_category_options(
+    args: Mapping[str, Any] | None = None,
+    *,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    args = args or {}
+    region = str(args.get("region") or "US")
+    rows = query_fn(
+        """
+        SELECT category_l1_name AS value,
+               category_l1_name AS label,
+               SUM(video_count) AS video_count,
+               SUM(goods_count) AS goods_count
+        FROM (
+            SELECT c.category_l1_name,
+                   COUNT(DISTINCT c.video_id) AS video_count,
+                   0 AS goods_count
+            FROM tabcut_video_candidates c
+            WHERE c.region = %s
+              AND c.category_l1_name IS NOT NULL
+              AND c.category_l1_name <> ''
+            GROUP BY c.category_l1_name
+            UNION ALL
+            SELECT g.category_l1_name,
+                   0 AS video_count,
+                   COUNT(DISTINCT g.item_id) AS goods_count
+            FROM tabcut_goods g
+            WHERE g.region = %s
+              AND g.category_l1_name IS NOT NULL
+              AND g.category_l1_name <> ''
+            GROUP BY g.category_l1_name
+        ) category_sources
+        GROUP BY category_l1_name
+        ORDER BY category_l1_name ASC
+        """,
+        [region, region],
+    )
+    return [
+        {
+            "value": str(row.get("value") or ""),
+            "label": str(row.get("label") or row.get("value") or ""),
+            "video_count": int(row.get("video_count") or 0),
+            "goods_count": int(row.get("goods_count") or 0),
+        }
+        for row in rows
+        if row.get("value")
+    ]
 
 
 def upsert_video(video: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:

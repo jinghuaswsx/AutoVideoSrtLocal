@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import zipfile
 
 import pytest
@@ -21,6 +22,128 @@ def test_shopify_build_default_output_root_matches_platform():
         else build_exe.DEFAULT_OUTPUT_ROOT_POSIX
     )
     assert build_exe._default_output_root() == expected
+
+
+def test_shopify_build_release_preflight_requires_standard_ack(tmp_path):
+    with pytest.raises(RuntimeError, match="release standard"):
+        build_exe._validate_release_preflight(
+            tmp_path,
+            release_version=build_exe.version.RELEASE_VERSION,
+            release_standard_read=False,
+        )
+
+
+def test_shopify_build_release_preflight_rejects_linked_worktree(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    standard = tmp_path / build_exe.RELEASE_STANDARD_RELATIVE_PATH
+    standard.parent.mkdir(parents=True)
+    standard.write_text("standard", encoding="utf-8")
+
+    def fake_git_output(repo_root, *args):
+        responses = {
+            ("rev-parse", "--show-toplevel"): str(tmp_path),
+            ("rev-parse", "--abbrev-ref", "HEAD"): "master",
+            ("rev-parse", "--git-dir"): str(tmp_path / ".git" / "worktrees" / "build"),
+            ("rev-parse", "--git-common-dir"): str(tmp_path / ".git"),
+            ("status", "--porcelain", "--untracked-files=no"): "",
+            ("rev-parse", "HEAD"): "abc123",
+            ("rev-parse", "origin/master"): "abc123",
+        }
+        return responses[args]
+
+    monkeypatch.setattr(build_exe, "_git_output", fake_git_output)
+
+    with pytest.raises(RuntimeError, match="worktree"):
+        build_exe._validate_release_preflight(
+            tmp_path,
+            release_version=build_exe.version.RELEASE_VERSION,
+            release_standard_read=True,
+        )
+
+
+def test_shopify_build_release_preflight_rejects_version_mismatch(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    standard = tmp_path / build_exe.RELEASE_STANDARD_RELATIVE_PATH
+    standard.parent.mkdir(parents=True)
+    standard.write_text("standard", encoding="utf-8")
+
+    def fake_git_output(repo_root, *args):
+        responses = {
+            ("rev-parse", "--show-toplevel"): str(tmp_path),
+            ("rev-parse", "--abbrev-ref", "HEAD"): "master",
+            ("rev-parse", "--git-dir"): str(tmp_path / ".git"),
+            ("rev-parse", "--git-common-dir"): str(tmp_path / ".git"),
+            ("status", "--porcelain", "--untracked-files=no"): "",
+            ("rev-parse", "HEAD"): "abc123",
+            ("rev-parse", "origin/master"): "abc123",
+        }
+        return responses[args]
+
+    monkeypatch.setattr(build_exe, "_git_output", fake_git_output)
+
+    with pytest.raises(RuntimeError, match="version.py"):
+        build_exe._validate_release_preflight(
+            tmp_path,
+            release_version="999.0",
+            release_standard_read=True,
+        )
+
+
+def test_shopify_build_release_preflight_accepts_clean_current_master(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    standard = tmp_path / build_exe.RELEASE_STANDARD_RELATIVE_PATH
+    standard.parent.mkdir(parents=True)
+    standard.write_text("standard", encoding="utf-8")
+
+    def fake_git_output(repo_root, *args):
+        responses = {
+            ("rev-parse", "--show-toplevel"): str(tmp_path),
+            ("rev-parse", "--abbrev-ref", "HEAD"): "master",
+            ("rev-parse", "--git-dir"): str(tmp_path / ".git"),
+            ("rev-parse", "--git-common-dir"): str(tmp_path / ".git"),
+            ("status", "--porcelain", "--untracked-files=no"): "",
+            ("rev-parse", "HEAD"): "abc123",
+            ("rev-parse", "origin/master"): "abc123",
+        }
+        return responses[args]
+
+    monkeypatch.setattr(build_exe, "_git_output", fake_git_output)
+
+    build_exe._validate_release_preflight(
+        tmp_path,
+        release_version=build_exe.version.RELEASE_VERSION,
+        release_standard_read=True,
+    )
+
+
+def test_shopify_build_release_preflight_accepts_verified_env_when_git_is_missing(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    standard = tmp_path / build_exe.RELEASE_STANDARD_RELATIVE_PATH
+    standard.parent.mkdir(parents=True)
+    standard.write_text("standard", encoding="utf-8")
+    git_dir = tmp_path / ".git"
+
+    def missing_git(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(subprocess, "check_output", missing_git)
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_TOP", str(tmp_path))
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_BRANCH", "master")
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_DIR", str(git_dir))
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_COMMON_DIR", str(git_dir))
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_STATUS", "")
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_HEAD", "abc123")
+    monkeypatch.setenv("SHOPIFY_LOCALIZER_GIT_ORIGIN_MASTER", "abc123")
+
+    build_exe._validate_release_preflight(
+        tmp_path,
+        release_version=build_exe.version.RELEASE_VERSION,
+        release_standard_read=True,
+    )
 
 
 def test_shopify_build_portable_zip_keeps_versioned_folder(tmp_path):

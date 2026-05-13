@@ -1,4 +1,4 @@
-def test_browser_monitor_page_renders_three_vnc_iframes(authed_client_no_db, monkeypatch):
+def test_browser_monitor_page_renders_four_vnc_iframes(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.browser_monitor.scheduled_tasks.latest_run", lambda task_code: None)
 
     resp = authed_client_no_db.get("/browser-monitor")
@@ -9,6 +9,7 @@ def test_browser_monitor_page_renders_three_vnc_iframes(authed_client_no_db, mon
     assert "DXM01-Meta" in html
     assert "DXM02-MK" in html
     assert "DXM03-RJC" in html
+    assert "TABCUT" in html
     assert (
         'src="http://172.30.254.14:6092/vnc.html?host=172.30.254.14'
         '&amp;port=6092&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
@@ -20,6 +21,10 @@ def test_browser_monitor_page_renders_three_vnc_iframes(authed_client_no_db, mon
     assert (
         'src="http://172.30.254.14:6095/vnc.html?host=172.30.254.14'
         '&amp;port=6095&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
+    ) in html
+    assert (
+        'src="http://172.30.254.14:6097/vnc.html?host=172.30.254.14'
+        '&amp;port=6097&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
 
 
@@ -75,3 +80,5 @@ def test_browser_monitor_page_uses_watchdog_latest_summary(authed_client_no_db, 
     assert "正常" in html
     assert "异常" in html
     assert "novnc: HTTP 500" in html
+    assert 'class="browser-monitor-status-strip"' in html
+    assert "browser-monitor-status-card" not in html

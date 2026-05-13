@@ -2511,6 +2511,7 @@ window.MEDIAS_LIST_INITIAL_QUERY = {{ (medias_initial_query or "") | tojson }};
 window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   "productId": medias_product_id,
   "productCode": medias_product_code,
+  "initialLang": medias_initial_lang|default(""),
 } | tojson }}{% else %}null{% endif %};
 (function() {
   var TOPBAR = 56;

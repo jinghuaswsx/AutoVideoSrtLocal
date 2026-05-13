@@ -33,6 +33,7 @@
 | `DXM02-MK` | `autovideosrt-dxm02-mk-vnc.service` | `9223` | `/data/autovideosrt/browser/profiles/mk-selection` | `/data/autovideosrt/browser/runtime-mk-selection` | 明空选品店小秘 |
 | `DXM03-RJC` | `autovideosrt-dxm03-rjc-vnc.service` | `9225` | `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` | `/data/autovideosrt/browser/runtime-rjc-dianxiaomi` | 荣锦成店小秘订单与 Shopify ID |
 | 小秘云仓 | `autovideosrt-xmyc-browser.service` | `9224` | `/data/autovideosrt/browser/profiles/xmyc-storage` | `/data/autovideosrt/browser/runtime-xmyc-storage` | 小秘云仓库存/采购价 |
+| `TABCUT` | `autovideosrt-tabcut-vnc.service` | `9227` | `/data/autovideosrt/browser/profiles/tabcut` | `/data/autovideosrt/browser/runtime-tabcut` | Tabcut 选品采集 |
 
 `9224` 已被小秘云仓占用，`DXM03-RJC` 使用 `9225`，避免与现有服务冲突。
 
@@ -69,7 +70,7 @@ Meta 相关 systemd service 必须改为依赖 `autovideosrt-dxm01-meta-vnc.serv
 
 ## 常驻监控与报警
 
-DXM01-Meta、DXM02-MK、DXM03-RJC 必须在服务器在线时保持常驻、可视化、CDP 可用。新增 `cdp_environment_watchdog` 定时任务，每分钟检查三项：
+DXM01-Meta、DXM02-MK、DXM03-RJC、TABCUT 必须在服务器在线时保持常驻、可视化、CDP 可用。新增 `cdp_environment_watchdog` 定时任务，每分钟检查三项：
 
 - systemd service 是否为 `active`；
 - CDP `/json/version` 是否可访问；

@@ -50,9 +50,19 @@ function detachDebugger(tabId) {
 const handlers = {
   async ping() { return { pong: true, time: Date.now() }; },
 
-  async list_tabs({ url_contains = null } = {}) {
-    const tabs = await new Promise((r) => chrome.tabs.query({}, r));
-    let out = tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active, windowId: t.windowId }));
+  async list_tabs({ url_contains = null, active = null, last_focused_window = false } = {}) {
+    const query = {};
+    if (active !== null) query.active = Boolean(active);
+    if (last_focused_window) query.lastFocusedWindow = true;
+    const tabs = await new Promise((r) => chrome.tabs.query(query, r));
+    let out = tabs.map((t) => ({
+      id: t.id,
+      url: t.url,
+      title: t.title,
+      active: t.active,
+      windowId: t.windowId,
+      lastAccessed: t.lastAccessed || 0,
+    }));
     if (url_contains) out = out.filter((t) => (t.url || "").includes(url_contains));
     return out;
   },
