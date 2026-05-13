@@ -32,6 +32,7 @@ _MIN_SAFE_RATIO = 0.95
 _MAX_SAFE_RATIO = 1.05
 _MIN_SAFE_SPEED = 0.95
 _MAX_SAFE_SPEED = 1.05
+_MAX_SUBTITLE_CONTEXT_CHARS = 12000
 
 
 _DIAGNOSIS_SCHEMA = {
@@ -127,6 +128,37 @@ def _compact_sentences(sentences: list[dict]) -> list[dict]:
     return compact
 
 
+def _truncate_context_text(text: str, max_chars: int = _MAX_SUBTITLE_CONTEXT_CHARS) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n...[truncated]"
+
+
+def _subtitle_context(task: dict, cfg: dict) -> dict:
+    variant = cfg.get("report_variant") or (
+        "normal" if cfg.get("project_type") == "multi_translate" else "av"
+    )
+    variants = task.get("variants") or {}
+    variant_state = variants.get(variant) or {}
+    corrected = variant_state.get("corrected_subtitle") or task.get("corrected_subtitle") or {}
+    srt_content = ""
+    if isinstance(corrected, dict):
+        srt_content = str(corrected.get("srt_content") or "").strip()
+
+    srt_path = variant_state.get("srt_path") or task.get("srt_path")
+    if not srt_content and srt_path:
+        try:
+            with open(str(srt_path), "r", encoding="utf-8") as handle:
+                srt_content = handle.read().strip()
+        except OSError:
+            srt_content = ""
+
+    context: dict[str, Any] = {}
+    if srt_content:
+        context["subtitle_srt"] = _truncate_context_text(srt_content)
+    return context
+
+
 def _build_diagnosis_prompt(task: dict, cfg: dict, sentences: list[dict]) -> str:
     payload = {
         "source_language": task.get("source_language"),
@@ -141,9 +173,19 @@ def _build_diagnosis_prompt(task: dict, cfg: dict, sentences: list[dict]) -> str
             "safe_speed_range": [0.95, 1.05],
         },
     }
+    subtitle_context = _subtitle_context(task, cfg)
+    if subtitle_context:
+        payload["subtitle_context"] = subtitle_context
+    if cfg.get("project_type") == "multi_translate":
+        intro = (
+            "请审计这个多语种视频翻译成片的音画同步质量。你收到的 media 应当是已经合成后的 "
+            "hard_video 成片。请先理解视频画面、动作和字幕，再结合下方字幕内容与句级时间线判断音画同步风险。"
+        )
+    else:
+        intro = "请审计这个 Omni 视频翻译任务的音画同步风险。"
     return (
-        "请审计这个 Omni 视频翻译任务的音画同步风险。"
-        "只输出 JSON，issues 内每项必须包含 asr_index、severity、problem_type、"
+        intro
+        + "只输出 JSON，issues 内每项必须包含 asr_index、severity、problem_type、"
         "evidence、safe_action、confidence；并尽量包含 sync_point、sentence_text、timing_detail、recommendation。"
         "必须使用中文表述 summary、evidence、timing_detail、recommendation，明确哪些同步点有问题，"
         "哪一句音频太长或太短导致画面对不上。处理建议只能在以下范围内选择：音频变速、"
@@ -694,6 +736,7 @@ def _multi_report_config(task: dict) -> dict:
     return {
         "av_sync_audit": "report_only",
         "project_type": task.get("type") or "multi_translate",
+        "report_variant": "normal",
         "translate_algo": "multi_translate_default",
         "tts_strategy": "five_round_rewrite",
         "subtitle": "asr_realign",
@@ -955,6 +998,7 @@ def run_report_only(
     try:
         task = task_state.get(task_id) or {}
         cfg = _multi_report_config(task)
+        cfg["report_variant"] = variant
         mode = "report_only"
         runner._set_step(task_id, "av_sync_audit", "running", "正在评估音画同步风险...")
 

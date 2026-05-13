@@ -745,10 +745,10 @@ class MultiTranslateRunner(PipelineRunner):
             "alignment",
             "translate",
             "tts",
-            "av_sync_audit",
             "loudness_match",
             "subtitle",
             "compose",
+            "av_sync_audit",
         ]
         if include_analysis:
             names.append("analysis")
@@ -1240,10 +1240,44 @@ class MultiTranslateRunner(PipelineRunner):
         out = []
         for name, fn in steps:
             out.append((name, fn))
-            if name == "tts":
+            if name == "compose":
                 out.append(("av_sync_audit", lambda: self._step_av_sync_audit(task_id, video_path, task_dir)))
         return out
 
+    def _resolve_av_sync_audit_video_path(self, task_id: str) -> str | None:
+        task = task_state.get(task_id) or {}
+        variants = task.get("variants") or {}
+        variant_state = variants.get("normal") or {}
+        variant_result = variant_state.get("result") or {}
+        task_result = task.get("result") or {}
+        candidates = [
+            variant_result.get("hard_video") if isinstance(variant_result, dict) else None,
+            task_result.get("hard_video") if isinstance(task_result, dict) else None,
+            variant_state.get("hard_video"),
+            task.get("hard_video"),
+        ]
+        for candidate in candidates:
+            if candidate and os.path.isfile(str(candidate)):
+                return str(candidate)
+        return None
+
     def _step_av_sync_audit(self, task_id: str, video_path: str, task_dir: str) -> None:
         from pipeline import omni_av_sync_audit
-        omni_av_sync_audit.run_report_only(self, task_id, video_path, task_dir, variant="normal")
+
+        audit_video_path = self._resolve_av_sync_audit_video_path(task_id)
+        if not audit_video_path:
+            self._set_step(
+                task_id,
+                "av_sync_audit",
+                "done",
+                "缺少合成视频，已跳过音画同步审计",
+            )
+            return
+
+        omni_av_sync_audit.run_report_only(
+            self,
+            task_id,
+            audit_video_path,
+            task_dir,
+            variant="normal",
+        )

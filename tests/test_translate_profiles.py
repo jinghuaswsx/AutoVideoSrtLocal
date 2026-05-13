@@ -97,8 +97,8 @@ def test_base_pipeline_runner_defaults_to_default_profile():
 
 EXPECTED_MULTI_STEPS = [
     "extract", "asr", "separate", "asr_normalize", "voice_match",
-    "alignment", "translate", "tts", "av_sync_audit", "loudness_match",
-    "subtitle", "compose", "export",
+    "alignment", "translate", "tts", "loudness_match",
+    "subtitle", "compose", "av_sync_audit", "export",
 ]
 EXPECTED_OMNI_STEPS = [
     "extract", "asr", "separate", "asr_clean", "voice_match",
@@ -141,8 +141,8 @@ def test_analysis_step_inserted_when_flag_enabled():
     runner.include_analysis_in_main_flow = True
     names = _step_names(runner)
     assert "analysis" in names
-    # analysis 必须在 compose 后、export 前
-    assert names.index("analysis") == names.index("compose") + 1
+    assert names.index("av_sync_audit") == names.index("compose") + 1
+    assert names.index("analysis") == names.index("av_sync_audit") + 1
     assert names.index("analysis") + 1 == names.index("export")
 
 

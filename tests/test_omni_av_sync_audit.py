@@ -249,6 +249,41 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     assert "处理建议" in verify_messages[0]["content"]
 
 
+def test_multi_report_only_includes_final_subtitle_context_in_diagnosis_prompt(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text(
+        "1\n00:00:00,000 --> 00:00:02,000\nFINAL SRT UNIQUE LINE\n",
+        encoding="utf-8",
+    )
+    task = task_state.get(task_id)
+    variants = dict(task["variants"])
+    normal = dict(variants["normal"])
+    normal["srt_path"] = str(srt_path)
+    normal["corrected_subtitle"] = {"srt_content": srt_path.read_text(encoding="utf-8")}
+    variants["normal"] = normal
+    task_state.update(
+        task_id,
+        variants=variants,
+        srt_path=str(srt_path),
+        corrected_subtitle=normal["corrected_subtitle"],
+    )
+    generate = MagicMock(return_value={"json": {"issues": [], "summary": "ok"}})
+    chat = MagicMock(return_value={
+        "json": {"accepted_issues": [], "rejected_count": 0, "summary": "ok"},
+    })
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    prompt = generate.call_args.kwargs["prompt"]
+    assert "subtitle_srt" in prompt
+    assert "FINAL SRT UNIQUE LINE" in prompt
+
+
 def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 

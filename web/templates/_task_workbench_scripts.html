@@ -7,12 +7,12 @@
   const STEP_ORDER = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export"];
   {% elif pipeline_kind == 'multi_translate' %}
-  const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
+  const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export", "analysis"];
   // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
   // 进入 MAIN_STEPS 让顶部状态卡能反映「等待用户确认音色」并计入 12/12 进度。
   // separate 与 loudness_match 是人声分离 + 响度匹配链路（管理员未启用时各自 step
   // 直接 done，不影响进度计数）。
-  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
+  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export"];
   {% else %}
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];

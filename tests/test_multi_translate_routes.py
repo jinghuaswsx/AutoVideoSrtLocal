@@ -82,8 +82,8 @@ def test_multi_translate_resume_steps_include_av_sync_audit():
     from web.routes import multi_translate as r
 
     assert "av_sync_audit" in r.RESUMABLE_STEPS
-    assert r.RESUMABLE_STEPS.index("tts") < r.RESUMABLE_STEPS.index("av_sync_audit")
-    assert r.RESUMABLE_STEPS.index("av_sync_audit") < r.RESUMABLE_STEPS.index("subtitle")
+    assert r.RESUMABLE_STEPS.index("compose") < r.RESUMABLE_STEPS.index("av_sync_audit")
+    assert r.RESUMABLE_STEPS.index("av_sync_audit") < r.RESUMABLE_STEPS.index("export")
 
 
 def test_admin_list_does_not_scope_multi_translate_projects_to_self(authed_client_no_db):

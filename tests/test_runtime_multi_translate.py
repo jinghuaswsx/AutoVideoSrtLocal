@@ -1,5 +1,5 @@
 import importlib
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,7 +11,7 @@ def _make_runner():
     return MultiTranslateRunner(bus=EventBus(), user_id=1)
 
 
-def test_multi_pipeline_inserts_av_sync_audit_after_tts():
+def test_multi_pipeline_inserts_av_sync_audit_after_compose():
     runner = _make_runner()
     names = [name for name, _fn in runner._get_pipeline_steps("t1", "/tmp/video.mp4", "/tmp/task")]
 
@@ -24,13 +24,71 @@ def test_multi_pipeline_inserts_av_sync_audit_after_tts():
         "alignment",
         "translate",
         "tts",
-        "av_sync_audit",
         "loudness_match",
         "subtitle",
         "compose",
+        "av_sync_audit",
         "export",
     ]
-    assert names.index("tts") < names.index("av_sync_audit") < names.index("subtitle")
+    assert names.index("compose") < names.index("av_sync_audit") < names.index("export")
+
+
+def test_step_av_sync_audit_uses_composed_hard_video(tmp_path, monkeypatch):
+    from appcore import task_state
+    from pipeline import omni_av_sync_audit
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+
+    task_id = "multi-audit-hard-video"
+    source = tmp_path / "source.mp4"
+    hard_video = tmp_path / "source_hard.normal.mp4"
+    source.write_bytes(b"source")
+    hard_video.write_bytes(b"hard")
+    task_state.create(task_id, str(source), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        variants={"normal": {"result": {"hard_video": str(hard_video)}}},
+        result={"hard_video": str(hard_video)},
+    )
+
+    run_report_only = MagicMock()
+    monkeypatch.setattr(omni_av_sync_audit, "run_report_only", run_report_only)
+
+    runner = _make_runner()
+    runner._step_av_sync_audit(task_id, str(source), str(tmp_path))
+
+    run_report_only.assert_called_once_with(
+        runner,
+        task_id,
+        str(hard_video),
+        str(tmp_path),
+        variant="normal",
+    )
+
+
+def test_step_av_sync_audit_skips_when_composed_video_missing(tmp_path, monkeypatch):
+    from appcore import task_state
+    from pipeline import omni_av_sync_audit
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+
+    task_id = "multi-audit-before-compose"
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    task_state.create(task_id, str(source), str(tmp_path), user_id=1)
+
+    run_report_only = MagicMock(side_effect=AssertionError("should not audit source video"))
+    monkeypatch.setattr(omni_av_sync_audit, "run_report_only", run_report_only)
+
+    runner = _make_runner()
+    runner._step_av_sync_audit(task_id, str(source), str(tmp_path))
+
+    run_report_only.assert_not_called()
+    updated = task_state.get(task_id)
+    assert updated["steps"]["av_sync_audit"] == "done"
+    assert "合成视频" in updated["step_messages"]["av_sync_audit"]
 
 
 def test_step_translate_calls_resolver_with_base_plus_plugin():
