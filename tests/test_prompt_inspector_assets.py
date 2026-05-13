@@ -142,6 +142,7 @@ def test_omni_av_sync_audit_renderer_exposes_chinese_findings():
 
 def test_multi_av_sync_audit_renderer_is_table_only():
     scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (ROOT / "web/templates/_task_workbench_styles.html").read_text(encoding="utf-8")
 
     assert "function isAvSyncTableOnlyReport" in scripts
     assert "renderAvSyncAuditTimeline(artifact, { tableOnly: true })" in scripts
@@ -151,6 +152,10 @@ def test_multi_av_sync_audit_renderer_is_table_only():
     assert "同步评分" in scripts
     assert "整改建议" in scripts
     assert "av-sync-timeline-grid table-only" in scripts
+    assert "function isAvSyncAuditProblemRow" in scripts
+    assert 'av-sync-timeline-row table-only ${isIssue ? "is-issue" : ""}' in scripts
+    assert 'diagnosis-field ${isIssue ? "is-issue" : ""}' in scripts
+    assert ".av-sync-timeline-field.diagnosis-field.is-issue" in styles
 
     artifact_body = _function_body(scripts, "renderAvSyncAuditArtifact")
     table_only_start = artifact_body.index("if (isAvSyncTableOnlyReport(artifact))")
