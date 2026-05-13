@@ -200,6 +200,25 @@ def test_tts_speedup_players_render_as_readable_preview_cards():
     assert "minmax(260px, 1fr)" in styles
 
 
+def test_tts_card_has_expand_collapse_control():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert 'id="ttsCardCollapseToggle"' in template
+    assert 'aria-controls="preview-tts ttsDurationLog"' in template
+    assert "syncTtsCardCollapseState" in script
+    assert "ttsCardCollapsed:" in script
+    assert "tts-card-collapsed" in script
+    assert "preview-tts" in script
+    assert "ttsDurationLog" in script
+    assert "aria-expanded" in script
+    assert ".tts-card-collapse-toggle" in styles
+    assert ".step.tts-card-collapsed #preview-tts" in styles
+    assert ".step.tts-card-collapsed #ttsDurationLog" in styles
+
+
 def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")

@@ -395,6 +395,37 @@ video.media-player {
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { width: 14px; height: 14px; border: 2px solid var(--primary-color); border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
 .step-name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; flex-wrap: wrap; min-width: 0; }
+.tts-card-collapse-toggle {
+  margin-left: auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.tts-card-collapse-toggle:hover {
+  background: var(--bg-muted);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tts-card-collapse-toggle:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+.step.tts-card-collapsed #preview-tts,
+.step.tts-card-collapsed #ttsDurationLog {
+  display: none !important;
+}
 .llm-prompt-pill {
   display: inline-flex;
   align-items: center;
