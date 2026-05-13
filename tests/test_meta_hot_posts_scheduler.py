@@ -1,5 +1,6 @@
 from appcore.meta_hot_posts import scheduler
 from appcore.meta_hot_posts.product_analysis import ProductAnalysisResult
+from datetime import datetime, timedelta
 
 
 def test_sync_hot_posts_fetches_until_target_count(monkeypatch):
@@ -77,17 +78,79 @@ def test_register_schedules_daily_sync_at_7am_and_analysis_interval(monkeypatch)
 def test_analysis_tick_once_defaults_to_100_products(monkeypatch):
     captured = {}
 
-    def fake_analyze_pending_products(*, limit):
+    def fake_analyze_pending_products(*, limit, user_id=None):
         captured["limit"] = limit
         return {"scanned": 0, "done": 0, "failed": 0}
 
     monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
     monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: None)
     monkeypatch.setattr(scheduler, "analyze_pending_products", fake_analyze_pending_products)
 
     scheduler.analysis_tick_once()
 
     assert captured["limit"] == 100
+
+
+def test_analysis_tick_once_skips_when_recent_run_is_still_running(monkeypatch):
+    started_at = datetime(2026, 5, 13, 10, 30, 0)
+
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "latest_running_run",
+        lambda task_code: {"id": 10, "started_at": started_at},
+    )
+    monkeypatch.setattr(scheduler, "_now", lambda: started_at + timedelta(minutes=20))
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "start_run",
+        lambda task_code: (_ for _ in ()).throw(AssertionError("new run must not start")),
+    )
+
+    summary = scheduler.analysis_tick_once()
+
+    assert summary["skipped"] is True
+    assert summary["reason"] == "previous_run_still_running"
+    assert summary["running_run_id"] == 10
+
+
+def test_analysis_tick_once_marks_stale_running_run_failed_then_starts(monkeypatch):
+    started_at = datetime(2026, 5, 13, 10, 0, 0)
+    events = []
+
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "latest_running_run",
+        lambda task_code: {"id": 10, "started_at": started_at},
+    )
+    monkeypatch.setattr(scheduler, "_now", lambda: started_at + timedelta(hours=1, minutes=2))
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: events.append(("finish", run_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "reset_stale_running_product_analyses",
+        lambda older_than_seconds: events.append(("reset_products", older_than_seconds)) or 3,
+    )
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 99)
+    monkeypatch.setattr(
+        scheduler,
+        "analyze_pending_products",
+        lambda *, limit, user_id=None: {"scanned": 0, "done": 0, "failed": 0},
+    )
+
+    summary = scheduler.analysis_tick_once()
+
+    assert summary["stale_run_replaced"] == 10
+    assert summary["stale_products_reset"] == 3
+    assert ("reset_products", 3600) in events
+    stale_finish = next(event for event in events if event[0] == "finish" and event[1] == 10)
+    assert stale_finish[0] == "finish"
+    assert stale_finish[1] == 10
+    assert stale_finish[2]["status"] == "failed"
+    assert "exceeded 3600s" in stale_finish[2]["error_message"]
 
 
 def test_analyze_pending_products_keeps_product_result_when_category_fails(monkeypatch):
@@ -113,6 +176,7 @@ def test_analyze_pending_products_keeps_product_result_when_category_fails(monke
     )
 
     def fail_category(**kwargs):
+        finished.append(("category_kwargs", kwargs))
         raise ValueError("invalid llm json")
 
     monkeypatch.setattr(scheduler.product_analysis, "categorize_product", fail_category)
@@ -122,11 +186,13 @@ def test_analyze_pending_products_keeps_product_result_when_category_fails(monke
         lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
     )
 
-    summary = scheduler.analyze_pending_products(limit=1)
+    summary = scheduler.analyze_pending_products(limit=1, user_id=1)
 
     assert summary == {"scanned": 1, "done": 1, "failed": 0, "category_failed": 1}
-    assert finished[0][0] == 7
-    payload = finished[0][1]
+    assert finished[0][0] == "category_kwargs"
+    assert finished[0][1]["user_id"] == 1
+    assert finished[1][0] == 7
+    payload = finished[1][1]
     assert payload["status"] == "done"
     assert payload["result"]["title"] == "Flexible Socket Extension"
     assert payload["result"]["price_min"] == 19.99

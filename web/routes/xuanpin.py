@@ -204,7 +204,9 @@ def api_meta_hot_posts_refresh():
 def api_meta_hot_posts_analyze():
     if not _is_admin():
         return jsonify({"error": "forbidden"}), 403
-    result = _meta_hot_posts().build_analyze_response(request.get_json(silent=True) or {})
+    payload = request.get_json(silent=True) or {}
+    payload["user_id"] = getattr(current_user, "id", None)
+    result = _meta_hot_posts().build_analyze_response(payload)
     return jsonify(result.payload), result.status_code
 
 

@@ -58,3 +58,22 @@
 - [ ] Commit with `Docs-anchor: docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md#定时任务`.
 - [ ] Push `HEAD:master`.
 - [ ] Pull and restart `/opt/autovideosrt-test` and `/opt/autovideosrt`; verify services active and HTTP 302/200 as appropriate.
+
+### Task 5: Singleton Guard And Billing Registration
+
+**Files:**
+- Modify: `appcore/meta_hot_posts/scheduler.py`
+- Modify: `appcore/meta_hot_posts/product_analysis.py`
+- Modify: `appcore/meta_hot_posts/store.py`
+- Modify: `appcore/scheduled_tasks.py`
+- Modify: `appcore/llm_use_cases.py`
+- Create: `db/migrations/2026_05_13_meta_hot_posts_llm_binding.sql`
+- Test: `tests/test_meta_hot_posts_scheduler.py`
+- Test: `tests/test_meta_hot_posts_product_analysis.py`
+- Test: `tests/test_llm_use_cases_registry.py`
+
+- [ ] Add scheduler tests for skipping when an analysis run started within one hour.
+- [ ] Add scheduler tests for marking stale running runs failed and then starting a new run.
+- [ ] Add product analysis test proving `user_id` is passed into `llm_client.invoke_generate`.
+- [ ] Add migration binding `meta_hot_posts.categorize -> gemini_vertex / gemini-3-flash-preview`.
+- [ ] Add or update registry tests proving the use case is present, token-priced, and Gemini Vertex backed.

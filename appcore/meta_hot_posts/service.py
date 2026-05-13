@@ -91,4 +91,8 @@ def build_analyze_response(payload: Mapping[str, Any] | None = None) -> MetaHotP
         limit = int(payload.get("limit") or 100)
     except (TypeError, ValueError):
         limit = 100
-    return MetaHotPostsResponse({"ok": True, "result": scheduler.analysis_tick_once(limit=limit)}, 202)
+    try:
+        user_id = int(payload.get("user_id") or 0) or None
+    except (TypeError, ValueError):
+        user_id = None
+    return MetaHotPostsResponse({"ok": True, "result": scheduler.analysis_tick_once(limit=limit, user_id=user_id)}, 202)

@@ -339,11 +339,13 @@ def categorize_product(
     *,
     product_title: str,
     product_url: str,
+    user_id: int | None = None,
     invoke_fn=llm_client.invoke_generate,
 ) -> dict[str, Any]:
     response = invoke_fn(
         "meta_hot_posts.categorize",
         prompt=build_category_prompt(product_title=product_title, product_url=product_url),
+        user_id=user_id,
         temperature=0,
         max_output_tokens=512,
         response_schema={
@@ -355,6 +357,7 @@ def categorize_product(
             },
             "required": ["category", "confidence", "reason"],
         },
+        billing_extra={"source": "meta_hot_posts"},
     )
     result = normalize_category_response(response)
     result["provider"] = response.get("provider")

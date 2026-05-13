@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from appcore import scheduled_tasks
+from appcore.db import query_one
 from appcore.meta_hot_posts import product_analysis, store
 from tools.meta_hot_posts.client import MetaHotPostsClient
 
@@ -11,6 +13,34 @@ log = logging.getLogger(__name__)
 
 SYNC_TASK_CODE = "meta_hot_posts_sync_tick"
 ANALYSIS_TASK_CODE = "meta_hot_posts_analysis_tick"
+ANALYSIS_STALE_AFTER_SECONDS = 3600
+
+
+def _now() -> datetime:
+    return datetime.now()
+
+
+def resolve_billing_user_id(explicit_user_id: int | None = None) -> int:
+    if explicit_user_id:
+        return int(explicit_user_id)
+    row = query_one(
+        "SELECT id FROM users "
+        "WHERE is_active=1 AND role IN ('superadmin','admin') "
+        "ORDER BY CASE WHEN username='admin' THEN 0 WHEN role='superadmin' THEN 1 ELSE 2 END, id ASC "
+        "LIMIT 1"
+    )
+    if not row:
+        raise RuntimeError("No active admin user found for Meta hot posts AI billing")
+    return int(row["id"])
+
+
+def _running_age_seconds(row: dict[str, Any]) -> int:
+    started_at = row.get("started_at")
+    if isinstance(started_at, str):
+        started_at = datetime.fromisoformat(started_at.replace("T", " ")[:19])
+    if not isinstance(started_at, datetime):
+        return 0
+    return max(0, int((_now() - started_at).total_seconds()))
 
 
 def sync_hot_posts(
@@ -56,8 +86,9 @@ def _fallback_category(error: Exception) -> dict[str, Any]:
     }
 
 
-def analyze_pending_products(*, limit: int = 100) -> dict[str, Any]:
+def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
     summary = {"scanned": 0, "done": 0, "failed": 0, "category_failed": 0}
+    billing_user_id = resolve_billing_user_id(user_id)
     for row in store.next_pending_product_analyses(limit=limit):
         summary["scanned"] += 1
         analysis_id = int(row["id"])
@@ -82,6 +113,7 @@ def analyze_pending_products(*, limit: int = 100) -> dict[str, Any]:
             category = product_analysis.categorize_product(
                 product_title=result.title,
                 product_url=product_url,
+                user_id=billing_user_id,
             )
         except Exception as exc:
             log.warning("meta hot post category classification failed id=%s: %s", analysis_id, exc)
@@ -117,18 +149,56 @@ def sync_tick_once(*, target_count: int = 500, max_pages: int = 50) -> dict[str,
     return summary
 
 
-def analysis_tick_once(*, limit: int = 100) -> dict[str, Any]:
+def _guard_analysis_singleton(*, stale_after_seconds: int = ANALYSIS_STALE_AFTER_SECONDS) -> dict[str, Any]:
+    running = scheduled_tasks.latest_running_run(ANALYSIS_TASK_CODE)
+    if not running:
+        return {}
+    age_seconds = _running_age_seconds(running)
+    running_id = int(running["id"])
+    if age_seconds < int(stale_after_seconds):
+        return {
+            "skipped": True,
+            "reason": "previous_run_still_running",
+            "running_run_id": running_id,
+            "running_started_at": running.get("started_at"),
+            "running_age_seconds": age_seconds,
+        }
+    reset_count = store.reset_stale_running_product_analyses(
+        older_than_seconds=int(stale_after_seconds),
+    )
+    scheduled_tasks.finish_run(
+        running_id,
+        status="failed",
+        summary={
+            "stale_run_replaced": running_id,
+            "running_age_seconds": age_seconds,
+            "stale_products_reset": reset_count,
+        },
+        error_message=f"running analysis exceeded {int(stale_after_seconds)}s; superseded by a new run",
+    )
+    return {
+        "stale_run_replaced": running_id,
+        "running_age_seconds": age_seconds,
+        "stale_products_reset": reset_count,
+    }
+
+
+def analysis_tick_once(*, limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
+    guard_summary = _guard_analysis_singleton()
+    if guard_summary.get("skipped"):
+        return guard_summary
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(ANALYSIS_TASK_CODE)
     except Exception:
         log.debug("failed to start meta hot posts analysis run", exc_info=True)
     try:
-        summary = analyze_pending_products(limit=limit)
+        summary = analyze_pending_products(limit=limit, user_id=user_id)
     except Exception as exc:
         if run_id:
             scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])
         raise
+    summary.update(guard_summary)
     if run_id:
         status = "success" if summary.get("failed", 0) == 0 else "failed"
         error = None if status == "success" else f"{summary['failed']} product(s) failed"

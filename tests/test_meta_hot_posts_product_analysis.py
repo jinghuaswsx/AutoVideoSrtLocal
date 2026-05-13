@@ -80,6 +80,31 @@ def test_build_category_prompt_includes_title_url_and_category_pool():
     assert "只允许从下面的 category_pool 中选择" in prompt
 
 
+def test_categorize_product_passes_billing_user_id_to_llm():
+    calls = {}
+
+    def fake_invoke(use_case_code, **kwargs):
+        calls["use_case_code"] = use_case_code
+        calls["kwargs"] = kwargs
+        return {
+            "json": {"category": "Kitchenware", "confidence": 0.9, "reason": "title"},
+            "provider": "gemini_vertex",
+            "model": "gemini-3-flash-preview",
+        }
+
+    result = product_analysis.categorize_product(
+        product_title="Portable Blender",
+        product_url="https://example.com/products/blender",
+        user_id=7,
+        invoke_fn=fake_invoke,
+    )
+
+    assert result["category"] == "Kitchenware"
+    assert calls["use_case_code"] == "meta_hot_posts.categorize"
+    assert calls["kwargs"]["user_id"] == 7
+    assert calls["kwargs"]["billing_extra"]["source"] == "meta_hot_posts"
+
+
 def test_detect_product_link_type_handles_shopify_tiktok_and_generic_urls():
     assert product_analysis.detect_product_link_type("https://demo.com/products/lamp") == "shopify_product"
     assert product_analysis.detect_product_link_type("https://www.tiktok.com/shop/pdp/123") == "tiktok_shop"

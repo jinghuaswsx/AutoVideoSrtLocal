@@ -59,3 +59,19 @@ def test_meta_hot_posts_failures_api_delegates_to_service(authed_client_no_db, m
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"id": 2}]
+
+
+def test_meta_hot_posts_analyze_api_passes_current_user_for_billing(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(payload):
+        captured["payload"] = payload
+        return type("Resp", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_analyze_response", fake_response)
+
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/analyze", json={"limit": 100})
+
+    assert resp.status_code == 202
+    assert captured["payload"]["limit"] == 100
+    assert captured["payload"]["user_id"]

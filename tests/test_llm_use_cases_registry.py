@@ -76,7 +76,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 47
+    assert len(USE_CASES) == 48
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -85,6 +85,16 @@ def test_registry_count_and_new_units_types():
     assert "ja_translate.rewrite" in USE_CASES
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
     assert USE_CASES["image_translate.generate"]["units_type"] == "images"
+
+
+def test_meta_hot_posts_categorize_use_case_is_registered_for_billing():
+    uc = USE_CASES["meta_hot_posts.categorize"]
+
+    assert uc["module"] == "xuanpin"
+    assert uc["default_provider"] == "gemini_vertex"
+    assert uc["default_model"] == "gemini-3-flash-preview"
+    assert uc["usage_log_service"] == "gemini_vertex"
+    assert uc["units_type"] == "tokens"
 
 
 def test_copywriting_translate_audit_uses_gemini_flash_lite():

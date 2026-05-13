@@ -256,7 +256,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta 热帖商品分析",
         "description": (
             "每 10 分钟扫描 Meta 热帖未完成商品链接，每轮最多 100 个，串行抓商品页标题、主图、SKU 价格，"
-            "再调用 Gemini 3 Flash 判断 TikTok Shop US 一级类目。Docs-anchor: "
+            "再调用 Gemini 3 Flash 判断 TikTok Shop US 一级类目；DB 单例守护，1 小时内已有运行则跳过，"
+            "超过 1 小时则标记旧 run failed 后接管。Docs-anchor: "
             "docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md"
         ),
         "schedule": "每 10 分钟",
@@ -872,6 +873,23 @@ def start_run(task_code: str, *, scheduled_for: datetime | None = None) -> int:
         "VALUES (%s, %s, 'running', %s, NOW())",
         (task["code"], task["name"], scheduled_for),
     ))
+
+
+def latest_running_run(task_code: str) -> dict[str, Any] | None:
+    ensure_runs_table()
+    rows = query(
+        """
+        SELECT id, task_code, task_name, status, scheduled_for, started_at,
+               finished_at, duration_seconds, summary_json, error_message,
+               output_file, created_at, updated_at
+        FROM scheduled_task_runs
+        WHERE task_code = %s AND status = 'running'
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+        """,
+        (task_code,),
+    )
+    return _normalize_row(rows[0]) if rows else None
 
 
 def finish_run(

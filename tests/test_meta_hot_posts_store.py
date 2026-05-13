@@ -126,3 +126,18 @@ def test_list_failed_product_analyses_returns_recent_failures():
     assert "WHERE status = 'failed'" in sql
     assert "ORDER BY updated_at DESC" in sql
     assert params == (100,)
+
+
+def test_reset_stale_running_product_analyses_marks_old_running_failed():
+    calls = []
+
+    store.reset_stale_running_product_analyses(
+        older_than_seconds=3600,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 4,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_post_product_analyses" in sql
+    assert "status='running'" in sql
+    assert "TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s" in sql
+    assert params == (3600,)

@@ -269,6 +269,23 @@ def list_failed_product_analyses(
     )
 
 
+def reset_stale_running_product_analyses(
+    *,
+    older_than_seconds: int = 3600,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_product_analyses
+        SET status='failed',
+            last_error='stale running analysis exceeded timeout and was reset'
+        WHERE status='running'
+          AND TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s
+        """,
+        (int(older_than_seconds),),
+    )
+
+
 def mark_analysis_running(analysis_id: int, *, execute_fn: ExecuteFn = execute) -> int:
     return execute_fn(
         """
