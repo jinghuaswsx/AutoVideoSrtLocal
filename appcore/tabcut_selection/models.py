@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+import re
+from typing import Any, Mapping
+
+
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -23,6 +27,17 @@ def _nonnegative_int_or_none(value: Any) -> int | None:
 def _float_or_none(value: Any) -> float | None:
     if value in (None, ""):
         return None
+    if isinstance(value, str):
+        text = value.strip().replace(",", "")
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            match = _NUMBER_RE.search(text)
+            if not match:
+                return None
+            return float(match.group(0))
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -66,6 +81,76 @@ def _price_bounds(price_list: Any) -> tuple[float | None, float | None]:
     return min(values), max(values)
 
 
+def _first_item(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    items = payload.get("itemList")
+    if isinstance(items, list) and items and isinstance(items[0], Mapping):
+        return items[0]
+    return None
+
+
+def _currency_from_payload(payload: Mapping[str, Any]) -> str | None:
+    for key in ("currencySymbol", "priceCurrency", "currency"):
+        value = _text(payload.get(key))
+        if value:
+            return value
+    info = payload.get("currencySymbolInfo")
+    if isinstance(info, Mapping):
+        return _text(info.get("local") or info.get("region") or info.get("symbol"))
+    return None
+
+
+def _price_bounds_from_payload(payload: Mapping[str, Any]) -> tuple[float | None, float | None]:
+    direct_min = _float_or_none(payload.get("price_min"))
+    direct_max = _float_or_none(payload.get("price_max"))
+    if direct_min is not None or direct_max is not None:
+        return direct_min if direct_min is not None else direct_max, direct_max if direct_max is not None else direct_min
+
+    price_min, price_max = _price_bounds(payload.get("priceList"))
+    if price_min is not None or price_max is not None:
+        return price_min, price_max
+
+    for key in ("skuPrice", "priceAmount", "priceOrigin", "itemPrice", "price"):
+        value = payload.get(key)
+        price = _first_local_amount({"price": value}, "price") if isinstance(value, Mapping) else _float_or_none(value)
+        if price is not None:
+            return price, price
+    return None, None
+
+
+def extract_primary_item_price_fields(*payloads: Any) -> dict[str, Any]:
+    for payload in payloads:
+        if not isinstance(payload, Mapping):
+            continue
+        sources: list[Mapping[str, Any]] = []
+        primary = _first_item(payload)
+        if primary:
+            sources.append(primary)
+        sources.append(payload)
+
+        for source in sources:
+            price_min, price_max = _price_bounds_from_payload(source)
+            if price_min is None and price_max is None:
+                continue
+            if price_min is None:
+                price_min = price_max
+            if price_max is None:
+                price_max = price_min
+            currency = next(
+                (symbol for symbol in (_currency_from_payload(item) for item in sources) if symbol),
+                None,
+            )
+            return {
+                "primary_item_price_min": price_min,
+                "primary_item_price_max": price_max,
+                "price_currency": currency,
+            }
+    return {
+        "primary_item_price_min": None,
+        "primary_item_price_max": None,
+        "price_currency": None,
+    }
+
+
 def _parse_datetime(value: Any) -> str | None:
     text = _text(value)
     if not text:
@@ -81,6 +166,7 @@ def normalize_video_row(row: dict[str, Any], *, source_sort: str | None = None) 
     items = row.get("itemList") if isinstance(row.get("itemList"), list) else []
     primary = items[0] if items and isinstance(items[0], dict) else {}
     video_id = _text(row.get("videoId"))
+    price_fields = extract_primary_item_price_fields(primary, row)
 
     return {
         "video_id": video_id,
@@ -94,6 +180,9 @@ def normalize_video_row(row: dict[str, Any], *, source_sort: str | None = None) 
         "create_time": _parse_datetime(row.get("createTime")),
         "primary_item_id": _text(primary.get("itemId") or row.get("itemId")),
         "primary_item_name": _text(primary.get("itemName") or row.get("itemName")),
+        "primary_item_price_min": price_fields["primary_item_price_min"],
+        "primary_item_price_max": price_fields["primary_item_price_max"],
+        "price_currency": price_fields["price_currency"],
         "source_sort": source_sort,
         "rank_position": _nonnegative_int_or_none(row.get("rank")),
         "play_count": _nonnegative_int_or_none(row.get("playCount") or row.get("playCountTotal")),

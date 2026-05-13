@@ -24,6 +24,18 @@ def test_tabcut_schema_defines_required_tables_and_indexes():
     assert "uniq_tabcut_video_candidate" in sql
 
 
+def test_tabcut_video_candidate_price_migration_defines_columns_and_index():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_05_13_tabcut_video_candidate_price.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ALTER TABLE tabcut_video_candidates" in sql
+    assert "primary_item_price_min DECIMAL(18, 4) NULL" in sql
+    assert "primary_item_price_max DECIMAL(18, 4) NULL" in sql
+    assert "price_currency VARCHAR(16) NULL" in sql
+    assert "idx_tabcut_video_candidates_price" in sql
+
+
 def test_tabcut_daily_selection_registered():
     from appcore import scheduled_tasks
 

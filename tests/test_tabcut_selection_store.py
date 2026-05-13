@@ -90,6 +90,27 @@ def test_list_video_candidates_filters_by_source_rank():
     assert data_params[:3] == ["US", "video_7d_play", "video_7d_sales"]
 
 
+def test_list_video_candidates_filters_by_primary_item_price_range():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates(
+        {
+            "min_item_price": "10.50",
+            "max_item_price": "25",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "c.primary_item_price_min >= %s" in data_sql
+    assert "c.primary_item_price_min <= %s" in data_sql
+    assert data_params[:3] == ["US", 10.5, 25.0]
+
+
 def test_list_video_candidates_rejects_unknown_source_rank():
     calls = []
 
@@ -216,6 +237,9 @@ def test_upsert_video_candidate_uses_parameterized_execute():
             "region": "US",
             "video_id": "v1",
             "primary_item_id": "i1",
+            "primary_item_price_min": 12.34,
+            "primary_item_price_max": 15.67,
+            "price_currency": "$",
             "score": 10.5,
             "score_parts": {"play_count": 1.0},
         },
@@ -226,6 +250,7 @@ def test_upsert_video_candidate_uses_parameterized_execute():
     assert "%s" in sql
     assert "ON DUPLICATE KEY UPDATE" in sql
     assert params[0:4] == ["2026-05-11", "US", "v1", "i1"]
+    assert params[4:7] == [12.34, 15.67, "$"]
 
 
 def test_build_tabcut_refresh_response_delegates_to_runner():
@@ -272,3 +297,27 @@ def test_hydrate_video_items_uses_analysis_video_search_root_item_fields():
     assert item["currency_symbol"] == "$"
     assert item["primary_item_sold_count"] == 1234
     assert item["primary_item_url"] == "https://www.tiktok.com/shop/pdp/i1"
+
+
+def test_hydrate_video_items_uses_price_currency_as_currency_symbol(monkeypatch):
+    monkeypatch.setattr(
+        store,
+        "list_video_candidates",
+        lambda args: {
+            "items": [
+                {
+                    "video_id": "v1",
+                    "primary_item_id": "i1",
+                    "primary_item_price_min": 9.99,
+                    "price_currency": "€",
+                    "video_raw_json": "{}",
+                }
+            ],
+            "total": 1,
+        },
+    )
+
+    result = service.build_videos_response({})
+    item = result.payload["items"][0]
+
+    assert item["currency_symbol"] == "€"

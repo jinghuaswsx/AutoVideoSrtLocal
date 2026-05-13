@@ -191,4 +191,6 @@ def test_analysis_video_search_normalizes_videos_goods_and_candidates():
     assert normalized["goods"][0]["item_id"] == "i1"
     assert normalized["candidates"][0]["video_id"] == "v1"
     assert normalized["candidates"][0]["primary_item_id"] == "i1"
+    assert normalized["candidates"][0]["primary_item_price_min"] == 12.34
+    assert normalized["candidates"][0]["primary_item_price_max"] == 12.34
     assert normalized["candidates"][0]["goods_sold_count_total"] == 8888

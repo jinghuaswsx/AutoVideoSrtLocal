@@ -309,6 +309,13 @@ def _build_candidates(
         seen.add(video_id)
         item_id = str(video.get("primary_item_id") or "")
         goods = goods_by_item.get(item_id, {})
+        primary_item_price_min = video.get("primary_item_price_min")
+        if primary_item_price_min is None:
+            primary_item_price_min = goods.get("price_min")
+        primary_item_price_max = video.get("primary_item_price_max")
+        if primary_item_price_max is None:
+            primary_item_price_max = goods.get("price_max")
+        price_currency = video.get("price_currency") or goods.get("price_currency")
         metrics = {
             **video,
             "goods_sold_count_7d": goods.get("sold_count_7d_sum"),
@@ -323,6 +330,9 @@ def _build_candidates(
             "region": "US",
             "video_id": video_id,
             "primary_item_id": item_id or None,
+            "primary_item_price_min": primary_item_price_min,
+            "primary_item_price_max": primary_item_price_max,
+            "price_currency": price_currency,
             "score": scored["score"],
             "score_parts": scored["parts"],
             "play_count": video.get("play_count"),
@@ -413,4 +423,3 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
-
