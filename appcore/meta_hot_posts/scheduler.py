@@ -105,6 +105,8 @@ def _is_global_category_provider_error(exc: Exception) -> bool:
             "default credentials were not found",
             "application default credentials",
             "missing provider config",
+            "resource_exhausted",
+            "resource exhausted",
             "缺少供应商配置",
             "gemini_vertex_adc_text",
         )

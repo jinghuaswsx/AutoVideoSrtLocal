@@ -300,3 +300,37 @@ def test_reanalyze_categories_stops_after_global_adc_provider_error(monkeypatch)
         "stop_reason": "global_category_provider_error",
     }
     assert [item[0] for item in finished] == [7]
+
+
+def test_reanalyze_categories_stops_after_vertex_resource_exhausted(monkeypatch):
+    finished = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_category_reanalysis_candidates",
+        lambda limit: [
+            {"id": 7, "product_title": "Portable Blender"},
+            {"id": 8, "product_title": "Garden Light"},
+        ],
+    )
+
+    def fail_category(**kwargs):
+        raise RuntimeError("429 RESOURCE_EXHAUSTED. Please try again later.")
+
+    monkeypatch.setattr(scheduler.product_analysis, "categorize_product", fail_category)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_category_reanalysis",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    summary = scheduler.reanalyze_categories(limit=100, user_id=1)
+
+    assert summary == {
+        "scanned": 1,
+        "done": 0,
+        "failed": 1,
+        "stopped": True,
+        "stop_reason": "global_category_provider_error",
+    }
+    assert [item[0] for item in finished] == [7]
