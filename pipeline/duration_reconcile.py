@@ -118,11 +118,7 @@ def _mark_selected_attempt(attempts: list[dict], selected_round: int) -> None:
 
 
 def _text_rewrite_enabled_for_task(task: dict | None) -> bool:
-    cfg = (task or {}).get("plugin_config") or {}
-    # shot_char_limit 已经按镜头时长给出最短可接受文案。继续让句级收敛
-    # 高温改写极容易把产品语义压成拟声词/残片；这里保留音频流程，但禁用
-    # 二次文本改写，宁愿标记时长 warning，也不牺牲内容正确性。
-    return cfg.get("translate_algo") != "shot_char_limit"
+    return True
 
 
 def _warning_status_for_ratio(ratio: float) -> str:
@@ -174,7 +170,12 @@ def _preserve_sentence_fields(current: dict, av_sentence: dict) -> None:
     for key, value in av_sentence.items():
         if key in current:
             continue
-        if key.startswith("source") or key.startswith("original_source") or key.startswith("localization"):
+        if (
+            key.startswith("source")
+            or key.startswith("original_source")
+            or key.startswith("localization")
+            or key.startswith("shot")
+        ):
             current[key] = value
 
 

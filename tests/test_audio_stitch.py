@@ -7,7 +7,11 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from pipeline.audio_stitch import build_stitched_audio, build_timeline_manifest
+from pipeline.audio_stitch import (
+    apply_compact_audio_schedule,
+    build_stitched_audio,
+    build_timeline_manifest,
+)
 
 
 def test_build_timeline_manifest_entries_match_segments():
@@ -22,6 +26,48 @@ def test_build_timeline_manifest_entries_match_segments():
     assert entries[0]["end"] == 5.0
     assert entries[1]["start"] == 5.0
     assert entries[1]["end"] == 8.0
+
+
+def test_apply_compact_audio_schedule_caps_large_source_gap():
+    scheduled = apply_compact_audio_schedule(
+        [
+            {
+                "asr_index": 0,
+                "start_time": 0.179,
+                "end_time": 4.159,
+                "tts_duration": 2.926,
+                "text": "Hook",
+            },
+            {
+                "asr_index": 1,
+                "start_time": 4.319,
+                "end_time": 8.679,
+                "tts_duration": 3.657,
+                "text": "Second",
+            },
+            {
+                "asr_index": 2,
+                "start_time": 11.9,
+                "end_time": 14.0,
+                "tts_duration": 1.8,
+                "text": "Collapsed gap",
+            },
+        ],
+        max_gap=0.25,
+    )
+
+    assert scheduled[0]["audio_start_time"] == 0.0
+    assert scheduled[0]["audio_end_time"] == 2.926
+    assert scheduled[0]["source_start_time"] == 0.179
+    assert scheduled[1]["source_gap_before"] == 0.16
+    assert scheduled[1]["audio_gap_before"] == 0.16
+    assert scheduled[1]["compact_gap_applied"] is False
+    assert scheduled[1]["audio_start_time"] == 3.086
+    assert scheduled[2]["source_gap_before"] == 3.221
+    assert scheduled[2]["audio_gap_before"] == 0.25
+    assert scheduled[2]["compact_gap_applied"] is True
+    assert scheduled[2]["audio_start_time"] == 6.993
+    assert scheduled[2]["timeline_mode"] == "compact_asr_primary"
 
 
 def test_build_timeline_manifest_provides_segments_and_video_ranges():

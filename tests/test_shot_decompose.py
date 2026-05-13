@@ -126,6 +126,30 @@ def test_align_asr_splits_cross_boundary_segment_by_overlap():
     assert aligned[0]["source_text"] == ""
 
 
+def test_align_asr_records_overlap_text_and_does_not_mark_overlapped_shot_silent():
+    shots = [
+        {"index": 1, "start": 0.0, "end": 3.0, "duration": 3.0, "description": "hook"},
+        {"index": 2, "start": 3.0, "end": 6.0, "duration": 3.0, "description": "demo"},
+        {"index": 3, "start": 6.0, "end": 10.33, "duration": 4.33, "description": "storage"},
+    ]
+    asr_segments = [
+        {"start": 0.179, "end": 4.159, "text": "Opening hook keeps speaking"},
+        {"start": 4.319, "end": 8.679, "text": "Second ASR sentence continues"},
+    ]
+
+    aligned = align_asr_to_shots(shots, asr_segments)
+
+    assert aligned[1]["source_text"] == ""
+    assert aligned[1]["overlap_source_text"] == (
+        "Opening hook keeps speaking Second ASR sentence continues"
+    )
+    assert [seg["text"] for seg in aligned[1]["overlapping_asr_segments"]] == [
+        "Opening hook keeps speaking",
+        "Second ASR sentence continues",
+    ]
+    assert aligned[1]["silent"] is False
+
+
 def test_align_asr_concatenates_multiple_segments_in_same_shot():
     shots = [
         {"index": 1, "start": 0.0, "end": 10.0, "duration": 10.0,

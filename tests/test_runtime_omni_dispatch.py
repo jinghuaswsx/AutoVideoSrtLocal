@@ -220,6 +220,63 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     assert task["steps"]["translate"] == "done"
 
 
+def test_shot_limit_translate_prefers_alignment_asr_segments_over_stale_shot_segments(
+    monkeypatch, omni_runner,
+):
+    import appcore.task_state as task_state
+
+    task_id = "omni-shot-prefers-alignment"
+    task_state.create(task_id, "/tmp/video.mp4", "/tmp/task", "video.mp4")
+    cfg = dict(CFG_LAB_CURRENT)
+    cfg["tts_strategy"] = "sentence_reconcile"
+    cfg["subtitle"] = "sentence_units"
+    task_state.update(
+        task_id,
+        plugin_config=cfg,
+        target_lang="es",
+        selected_voice_id="voice-1",
+        alignment={
+            "script_segments": [
+                {"index": 0, "start_time": 0.179, "end_time": 4.159, "text": "ASR hook"},
+                {"index": 1, "start_time": 4.319, "end_time": 8.679, "text": "ASR second"},
+            ]
+        },
+        script_segments=[
+            {"index": 1, "start_time": 0.0, "end_time": 3.0, "text": "stale shot hook"},
+            {"index": 3, "start_time": 6.0, "end_time": 10.33, "text": "stale shot second"},
+        ],
+        shots=[
+            {"index": 1, "start": 0.0, "end": 3.0, "duration": 3.0, "source_text": "shot one", "description": "shot one"},
+            {"index": 2, "start": 3.0, "end": 6.0, "duration": 3.0, "source_text": "", "description": "shot two"},
+            {"index": 3, "start": 6.0, "end": 10.33, "duration": 4.33, "source_text": "shot three", "description": "shot three"},
+        ],
+    )
+    calls = []
+    monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda voice_id, lang: 10.0)
+    monkeypatch.setattr(
+        "pipeline.translate_v2.translate_shot",
+        lambda shot, **kwargs: calls.append(dict(shot)) or {
+            "shot_index": shot["index"],
+            "translated_text": f"Texto {shot['index']}",
+            "char_count": 7,
+            "over_limit": False,
+            "retries": 0,
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {"model": "gemini-test"},
+    )
+
+    omni_runner._step_translate_shot_limit(task_id)
+
+    assert [call["source_text"] for call in calls] == ["ASR hook", "ASR second"]
+    task = task_state.get(task_id)
+    av_sentences = task["variants"]["av"]["sentences"]
+    assert [item["source_text"] for item in av_sentences] == ["ASR hook", "ASR second"]
+    assert av_sentences[0]["start_time"] == pytest.approx(0.179)
+
+
 def test_shot_limit_translate_sets_process_preview_artifact(
     monkeypatch, omni_runner,
 ):

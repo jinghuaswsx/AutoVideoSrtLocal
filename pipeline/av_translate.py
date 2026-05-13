@@ -211,7 +211,10 @@ def _build_sentence_inputs(script_segments: list[dict], shot_notes: dict, av_inp
                 "original_source_text": original_source_text,
                 "source_normalization_status": segment.get("source_normalization_status"),
                 "source_normalization_note": segment.get("source_normalization_note"),
-                "shot_context": _shot_context_for_index(shot_notes, asr_index),
+                "shot_context": _first_non_empty(
+                    segment.get("shot_context"),
+                    _shot_context_for_index(shot_notes, asr_index),
+                ),
                 "role_in_structure": _role_in_structure(asr_index, structure_ranges),
                 "target_duration": target_duration,
                 "target_chars_range": target_chars_range,

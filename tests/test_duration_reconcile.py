@@ -379,12 +379,12 @@ def test_reconcile_duration_rewrite_gives_up(monkeypatch):
     ]
 
 
-def test_reconcile_duration_preserves_shot_char_limit_text_when_out_of_range(monkeypatch):
+def test_reconcile_duration_rewrites_long_shot_char_limit_sentence(monkeypatch):
     rewrite_calls = []
 
     def fake_rewrite_one(**kwargs):
         rewrite_calls.append(kwargs)
-        return "Clic"
+        return "Se instala fácil"
 
     monkeypatch.setattr(
         "pipeline.duration_reconcile.av_translate.rewrite_one",
@@ -396,7 +396,7 @@ def test_reconcile_duration_preserves_shot_char_limit_text_when_out_of_range(mon
     )
     monkeypatch.setattr(
         "pipeline.duration_reconcile.tts.get_audio_duration",
-        lambda path: 1.2,
+        lambda path: 0.98,
     )
 
     result = reconcile_duration(
@@ -439,14 +439,88 @@ def test_reconcile_duration_preserves_shot_char_limit_text_when_out_of_range(mon
     )
 
     sentence = result[0]
-    assert rewrite_calls == []
-    assert sentence["text"] == "Pose facile"
-    assert sentence["text_rewrite_attempts"] == 0
-    assert sentence["tts_regenerate_attempts"] == 0
-    assert sentence["status"] == "warning_long"
-    assert sentence["text_rewrite_disabled"] is True
-    assert sentence["best_effort_reason"] == "shot_char_limit_rewrite_disabled"
-    assert sentence["rewrite_skip_reason"] == "shot_char_limit_preserves_initial_translation"
+    assert sentence["text"] == "Se instala fácil"
+    assert sentence["text_rewrite_attempts"] == 1
+    assert sentence["tts_regenerate_attempts"] == 1
+    assert sentence["status"] == "speed_adjusted"
+    assert sentence["duration_ratio"] == pytest.approx(0.98 / 0.96)
+    assert "text_rewrite_disabled" not in sentence
+    assert rewrite_calls[0]["direction"] == "shorten"
+
+
+def test_reconcile_duration_rewrites_short_shot_char_limit_sentence(monkeypatch):
+    durations = iter([4.5, 4.36])
+    rewrite_calls = []
+    regenerate_calls = []
+
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        return "El mío siempre está sucio y me cuesta ver cuando pega el sol."
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={"plugin_config": {"translate_algo": "shot_char_limit"}},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 3,
+                    "start_time": 4.319,
+                    "end_time": 8.679,
+                    "target_duration": 4.36,
+                    "target_chars_range": (59, 70),
+                    "text": "El mío siempre está sucio.",
+                    "est_chars": 26,
+                    "source_text": "Mine is always dirty, and I have such a hard time seeing out of it.",
+                    "shot_context": [{"index": 2, "description": "car interior demo"}],
+                }
+            ]
+        },
+        tts_output={
+            "segments": [
+                {
+                    "asr_index": 3,
+                    "tts_path": "/tmp/seg3.mp3",
+                    "tts_duration": 3.2,
+                }
+            ]
+        },
+        voice_id="voice-1",
+        target_language="es",
+        av_inputs={"target_language": "es", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[
+            {
+                "index": 3,
+                "start_time": 4.319,
+                "end_time": 8.679,
+                "text": "Mine is always dirty, and I have such a hard time seeing out of it.",
+            }
+        ],
+    )
+
+    sentence = result[0]
+    assert sentence["status"] == "speed_adjusted"
+    assert sentence["text"] == "El mío siempre está sucio y me cuesta ver cuando pega el sol."
+    assert sentence["duration_ratio"] == pytest.approx(1.0)
+    assert sentence["speed"] == pytest.approx(1.0321)
+    assert sentence["text_rewrite_attempts"] == 1
+    assert sentence["tts_regenerate_attempts"] == 1
+    assert "text_rewrite_disabled" not in sentence
+    assert rewrite_calls[0]["direction"] == "expand"
+    assert rewrite_calls[0]["script_segments"][0]["text"].startswith("Mine is always dirty")
+    assert regenerate_calls[0] == {
+        "text": "El mío siempre está sucio y me cuesta ver cuando pega el sol.",
+        "speed": None,
+    }
+    assert regenerate_calls[1]["text"] == "El mío siempre está sucio y me cuesta ver cuando pega el sol."
+    assert regenerate_calls[1]["speed"] == pytest.approx(1.0321)
 
 
 def test_reconcile_duration_expands_short_sentence(monkeypatch):

@@ -252,6 +252,15 @@ def _build_av_tts_segments(sentences: list[dict]) -> list[dict]:
                 "target_chars_range": list(sentence.get("target_chars_range") or []),
                 "tts_duration": float(sentence.get("tts_duration", 0.0) or 0.0),
                 "tts_path": sentence.get("tts_path"),
+                "source_start_time": float(sentence.get("source_start_time", sentence.get("start_time", 0.0)) or 0.0),
+                "source_end_time": float(sentence.get("source_end_time", sentence.get("end_time", 0.0)) or 0.0),
+                "audio_start_time": float(sentence.get("audio_start_time", sentence.get("start_time", 0.0)) or 0.0),
+                "audio_end_time": float(sentence.get("audio_end_time", sentence.get("end_time", 0.0)) or 0.0),
+                "source_gap_before": float(sentence.get("source_gap_before", 0.0) or 0.0),
+                "audio_gap_before": float(sentence.get("audio_gap_before", 0.0) or 0.0),
+                "compact_gap_applied": bool(sentence.get("compact_gap_applied")),
+                "timeline_mode": sentence.get("timeline_mode"),
+                "shot_context": sentence.get("shot_context") or [],
                 "speed": float(sentence.get("speed", 1.0) or 1.0),
                 "rewrite_rounds": int(sentence.get("rewrite_rounds", 0) or 0),
                 "status": sentence.get("status"),
@@ -290,7 +299,25 @@ def _rebuild_tts_full_audio_from_segments_legacy_concat(task_dir: str, segments:
 def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], variant: str = "av") -> str:
     full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
     full_audio_path = os.path.join(task_dir, full_audio_name)
-    return build_source_timeline_audio(segments or [], output_path=full_audio_path)
+    source_duration = max(
+        (
+            float(
+                segment.get(
+                    "source_end_time",
+                    segment.get("end_time", segment.get("audio_end_time", 0.0)),
+                )
+                or 0.0
+            )
+            for segment in (segments or [])
+            if isinstance(segment, dict)
+        ),
+        default=0.0,
+    )
+    return build_source_timeline_audio(
+        segments or [],
+        output_path=full_audio_path,
+        total_duration=source_duration if source_duration > 0 else None,
+    )
 
 
 def _build_av_debug_state(

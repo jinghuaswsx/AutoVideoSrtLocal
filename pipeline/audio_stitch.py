@@ -85,6 +85,56 @@ def _segment_label(segment: Dict[str, Any], fallback_index: int) -> str:
     return f"asr_index={asr_index}"
 
 
+def apply_compact_audio_schedule(
+    sentences: List[Dict[str, Any]],
+    *,
+    max_gap: float = 0.25,
+) -> List[Dict[str, Any]]:
+    """Return sentences with a compact ASR-primary audio timeline.
+
+    Source timing is preserved in ``source_*`` diagnostics. Actual audio
+    stitching should use ``audio_start_time`` / ``audio_end_time``.
+    """
+    scheduled: List[Dict[str, Any]] = []
+    cursor = 0.0
+    previous_source_end: float | None = None
+    gap_limit = max(0.0, float(max_gap))
+
+    for index, sentence in enumerate(sentences or []):
+        if not isinstance(sentence, dict):
+            continue
+        item = dict(sentence)
+        source_start = _float_value(item.get("source_start_time", item.get("start_time")), 0.0)
+        source_end = _float_value(item.get("source_end_time", item.get("end_time")), source_start)
+        tts_duration = _float_value(item.get("tts_duration"), 0.0)
+
+        if index == 0 or previous_source_end is None:
+            source_gap = 0.0
+            audio_gap = 0.0
+        else:
+            source_gap = max(0.0, source_start - previous_source_end)
+            audio_gap = min(source_gap, gap_limit)
+
+        audio_start = cursor + audio_gap
+        audio_end = audio_start + max(0.0, tts_duration)
+
+        item["source_start_time"] = round(source_start, 3)
+        item["source_end_time"] = round(source_end, 3)
+        item["audio_start_time"] = round(audio_start, 3)
+        item["audio_end_time"] = round(audio_end, 3)
+        item["source_gap_before"] = round(source_gap, 3)
+        item["audio_gap_before"] = round(audio_gap, 3)
+        item["compact_gap_applied"] = source_gap > audio_gap + 0.001
+        item["max_compact_gap"] = round(gap_limit, 3)
+        item["timeline_mode"] = "compact_asr_primary"
+
+        scheduled.append(item)
+        cursor = audio_end
+        previous_source_end = source_end
+
+    return scheduled
+
+
 def _validate_source_timeline_fit(
     segments: List[Dict[str, Any]],
     *,

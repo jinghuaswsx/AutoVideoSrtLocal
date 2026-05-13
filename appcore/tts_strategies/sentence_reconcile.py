@@ -142,6 +142,8 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 project_id=task_id,
                 on_progress=_on_reconcile_progress,
             )
+            from pipeline.audio_stitch import apply_compact_audio_schedule
+            final_sentences = apply_compact_audio_schedule(final_sentences, max_gap=0.25)
             av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
             final_localized_translation = _build_av_localized_translation(final_sentences)
             final_tts_segments = _build_av_tts_segments(final_sentences)
@@ -162,6 +164,8 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                     "voice_id": voice.get("id") or tts_voice_id,
                     "av_debug": av_debug,
                     "source_normalization": source_normalization,
+                    "audio_timeline_mode": "compact_asr_primary",
+                    "max_compact_gap": 0.25,
                 }
             )
             variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_full_audio_path
@@ -176,6 +180,8 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 localized_translation=final_localized_translation,
                 tts_duration_status="done",
                 av_debug=av_debug,
+                audio_timeline_mode="compact_asr_primary",
+                max_compact_gap=0.25,
             )
             task_state.set_preview_file(task_id, "tts_full_audio", final_full_audio_path)
             task_state.set_artifact(task_id, "tts", build_tts_artifact(final_tts_segments))

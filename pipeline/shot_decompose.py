@@ -106,7 +106,13 @@ def align_asr_to_shots(
     每个分镜附带 source_text（拼接）、asr_segments（原始条目）、silent 标志。
     """
     enriched = [
-        dict(s, source_text="", asr_segments=[])
+        dict(
+            s,
+            source_text="",
+            asr_segments=[],
+            overlap_source_text="",
+            overlapping_asr_segments=[],
+        )
         for s in shots
     ]
     for seg in asr_segments:
@@ -117,15 +123,22 @@ def align_asr_to_shots(
             continue
         best_idx = None
         best_overlap = 0.0
+        overlaps: list[tuple[int, float]] = []
         for i, shot in enumerate(enriched):
             ov = max(
                 0.0,
                 min(s_end, shot["end"]) - max(s_start, shot["start"]),
             )
+            if ov > 0:
+                overlaps.append((i, ov))
             if ov > best_overlap:
                 best_overlap = ov
                 best_idx = i
-        if best_idx is None:
+        for i, ov in overlaps:
+            overlap_seg = dict(seg)
+            overlap_seg["overlap_duration"] = round(ov, 3)
+            enriched[i]["overlapping_asr_segments"].append(overlap_seg)
+        if best_idx is None or best_overlap <= 0:
             continue
         if enriched[best_idx]["source_text"]:
             enriched[best_idx]["source_text"] += " " + text
@@ -133,5 +146,11 @@ def align_asr_to_shots(
             enriched[best_idx]["source_text"] = text
         enriched[best_idx]["asr_segments"].append(seg)
     for shot in enriched:
-        shot["silent"] = not shot["source_text"]
+        overlap_text = " ".join(
+            (seg.get("text") or "").strip()
+            for seg in shot["overlapping_asr_segments"]
+            if (seg.get("text") or "").strip()
+        ).strip()
+        shot["overlap_source_text"] = overlap_text
+        shot["silent"] = not (shot["source_text"] or overlap_text)
     return enriched

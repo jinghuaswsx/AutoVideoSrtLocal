@@ -266,6 +266,102 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
                      f"分镜完成，共 {len(aligned)} 段")
 
 
+def _segment_time(segment: dict[str, Any], key: str) -> float:
+    if key == "start":
+        return float(segment.get("start_time", segment.get("start", 0.0)) or 0.0)
+    return float(segment.get("end_time", segment.get("end", 0.0)) or 0.0)
+
+
+def _segment_text(segment: dict[str, Any]) -> str:
+    return str(segment.get("text") or segment.get("source_text") or "").strip()
+
+
+def _positive_overlap(start: float, end: float, window_start: float, window_end: float) -> float:
+    return max(0.0, min(end, window_end) - max(start, window_start))
+
+
+def _int_or_fallback(value: Any, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _unit_index(segment: dict[str, Any], fallback: int) -> int:
+    value = segment.get("index", segment.get("asr_index", fallback))
+    return _int_or_fallback(value, fallback)
+
+
+def build_asr_primary_translation_units(
+    script_segments: list[dict[str, Any]] | None,
+    utterances: list[dict[str, Any]] | None,
+    shots: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Build shot-aware translation units where ASR is the speech authority.
+
+    Docs-anchor: docs/superpowers/specs/2026-05-13-omni-asr-primary-compact-timeline-design.md
+    """
+    source_segments = [
+        item for item in (script_segments or utterances or [])
+        if isinstance(item, dict) and _segment_text(item)
+    ]
+    shot_rows = [item for item in (shots or []) if isinstance(item, dict)]
+    if not source_segments:
+        source_segments = [
+            {
+                "index": shot.get("index", fallback_index),
+                "start_time": shot.get("start", 0.0),
+                "end_time": shot.get("end", shot.get("start", 0.0)),
+                "text": shot.get("source_text") or shot.get("overlap_source_text") or "",
+            }
+            for fallback_index, shot in enumerate(shot_rows)
+            if str(shot.get("source_text") or shot.get("overlap_source_text") or "").strip()
+        ]
+    units: list[dict[str, Any]] = []
+
+    for fallback_index, segment in enumerate(source_segments):
+        start = _segment_time(segment, "start")
+        end = _segment_time(segment, "end")
+        if end < start:
+            end = start
+        text = _segment_text(segment)
+        shot_context: list[dict[str, Any]] = []
+        for shot in shot_rows:
+            shot_start = float(shot.get("start") or 0.0)
+            shot_end = float(shot.get("end") or shot_start)
+            overlap = _positive_overlap(start, end, shot_start, shot_end)
+            if overlap <= 0:
+                continue
+            shot_context.append({
+                "index": shot.get("index"),
+                "start": shot_start,
+                "end": shot_end,
+                "description": str(shot.get("description") or "").strip(),
+                "overlap_duration": round(overlap, 3),
+            })
+
+        descriptions = [
+            item["description"] for item in shot_context
+            if item.get("description")
+        ]
+        index = _unit_index(segment, fallback_index)
+        asr_index = _int_or_fallback(segment.get("asr_index"), index)
+        units.append({
+            "index": index,
+            "asr_index": asr_index,
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "duration": round(max(0.0, end - start), 3),
+            "source_text": text,
+            "description": " / ".join(descriptions),
+            "shot_context": shot_context,
+            "source_segment_indices": list(segment.get("utterance_indices") or [index]),
+            "words": segment.get("words") or [],
+        })
+
+    return units
+
+
 # ---------------------------------------------------------------------------
 # ③ 翻译算法：standard（multi-like，可选 source_anchored INPUT NOTICE）
 # ---------------------------------------------------------------------------
@@ -463,32 +559,31 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     shots: list[dict[str, Any]] = task.get("shots") or []
     if not shots:
         raise RuntimeError("translate_algo=shot_char_limit 需要 shots（请先开启 shot_decompose）")
+    alignment_segments = (task.get("alignment") or {}).get("script_segments") or []
+    translation_units = build_asr_primary_translation_units(
+        alignment_segments or task.get("script_segments") or [],
+        task.get("utterances") or [],
+        shots,
+    )
+    if not translation_units:
+        raise RuntimeError("translate_algo=shot_char_limit 未找到可翻译的 ASR 文本")
     voice_id = task.get("selected_voice_id") or ""
     target_lang = runner._resolve_target_lang(task)
     default_cps = 15.0
     cps = get_rate(voice_id, target_lang) or default_cps
 
     translations: list[dict[str, Any]] = []
-    for i, shot in enumerate(shots):
-        if shot.get("silent"):
-            translations.append({
-                "shot_index": shot.get("index"),
-                "translated_text": "",
-                "char_limit": 0,
-                "char_count": 0,
-                "over_limit": False,
-                "retries": 0,
-            })
-            continue
-        limit = compute_char_limit(float(shot.get("duration") or 0.0), cps)
+    for i, unit in enumerate(translation_units):
+        limit = compute_char_limit(float(unit.get("duration") or 0.0), cps)
         prev_translation = (
             translations[-1]["translated_text"] if translations else None
         )
         next_source = (
-            shots[i + 1].get("source_text") if i + 1 < len(shots) else None
+            translation_units[i + 1].get("source_text")
+            if i + 1 < len(translation_units) else None
         )
         result = translate_shot(
-            shot=shot,
+            shot=unit,
             target_language=target_lang,
             char_limit=max(1, limit),
             prev_translation=prev_translation,
@@ -497,9 +592,12 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
         )
         result = dict(result)
         result["char_limit"] = max(1, limit)
+        result["unit_index"] = unit.get("index")
+        result["asr_index"] = unit.get("asr_index")
+        result["shot_context"] = unit.get("shot_context") or []
         translations.append(result)
         runner._emit(task_id, EVT_LAB_TRANSLATE_PROGRESS, {
-            "index": shot.get("index"),
+            "index": unit.get("index"),
             "result": result,
         })
 
@@ -510,9 +608,9 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     for i, tr in enumerate(translations):
         if tr.get("translated_text"):
             sentences.append({
-                "index": i,
+                "index": tr.get("asr_index", i),
                 "text": tr["translated_text"],
-                "source_segment_indices": [i],
+                "source_segment_indices": [tr.get("asr_index", i)],
             })
     localized_translation = {
         "full_text": "\n".join(
@@ -523,17 +621,18 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     }
 
     script_segments = []
-    for shot in shots:
+    for unit in translation_units:
         script_segments.append({
-            "index": shot.get("index"),
-            "text": shot.get("source_text", ""),
-            "start_time": float(shot.get("start") or 0.0),
-            "end_time": float(shot.get("end") or 0.0),
+            "index": unit.get("asr_index", unit.get("index")),
+            "text": unit.get("source_text", ""),
+            "start_time": float(unit.get("start") or 0.0),
+            "end_time": float(unit.get("end") or 0.0),
+            "shot_context": unit.get("shot_context") or [],
         })
 
     source_full_text = "\n".join(
-        shot.get("source_text", "") for shot in shots
-        if shot.get("source_text")
+        unit.get("source_text", "") for unit in translation_units
+        if unit.get("source_text")
     )
 
     variants = dict(task.get("variants", {}))
@@ -544,26 +643,34 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     cfg = task.get("plugin_config") or {}
     if cfg.get("tts_strategy") == "sentence_reconcile" or cfg.get("subtitle") == "sentence_units":
         av_sentences: list[dict[str, Any]] = []
-        for fallback_index, (shot, tr) in enumerate(zip(shots, translations)):
+        for fallback_index, (unit, tr) in enumerate(zip(translation_units, translations)):
             text = str(tr.get("translated_text") or "").strip()
             if not text:
                 continue
-            start_time = float(shot.get("start") or 0.0)
-            end_time = float(shot.get("end") or start_time)
+            start_time = float(unit.get("start") or 0.0)
+            end_time = float(unit.get("end") or start_time)
             target_duration = max(0.0, end_time - start_time)
             lo = max(1, int(cps * target_duration * 0.92))
             hi = max(lo + 1, int(cps * target_duration * 1.08 + 0.5))
+            asr_index = _int_or_fallback(
+                unit.get("asr_index", unit.get("index")),
+                fallback_index,
+            )
+            shot_context = list(unit.get("shot_context") or [])
             av_sentences.append({
-                "asr_index": int(shot.get("index") or fallback_index),
+                "asr_index": asr_index,
                 "start_time": start_time,
                 "end_time": end_time,
+                "source_start_time": start_time,
+                "source_end_time": end_time,
                 "target_duration": target_duration,
                 "target_chars_range": [lo, hi],
                 "text": text,
                 "est_chars": len(text),
-                "source_text": shot.get("source_text", ""),
-                "shot_index": shot.get("index"),
-                "shot_description": shot.get("description", ""),
+                "source_text": unit.get("source_text", ""),
+                "shot_indices": [item.get("index") for item in shot_context],
+                "shot_context": shot_context,
+                "shot_description": unit.get("description", ""),
             })
         av_variant_state = dict(variants.get("av") or {})
         av_variant_state["sentences"] = av_sentences
