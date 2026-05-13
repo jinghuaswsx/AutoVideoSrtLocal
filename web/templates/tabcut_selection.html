@@ -9,9 +9,9 @@
 .tabcut-toolbar { display:grid; grid-template-columns:repeat(9, minmax(118px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
 .tabcut-field label { display:block; margin-bottom:5px; color:#64748b; font-size:12px; font-weight:700; }
 .tabcut-input, .tabcut-select { width:100%; height:34px; padding:0 9px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1f2937; font-size:14px; }
-.tabcut-price-field { grid-column:span 2; min-width:210px; }
-.tabcut-price-range { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); gap:8px; align-items:center; }
-.tabcut-price-separator { color:#94a3b8; font-weight:800; }
+.tabcut-range-field { grid-column:span 2; min-width:210px; }
+.tabcut-range-inputs { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); gap:8px; align-items:center; }
+.tabcut-range-separator { color:#94a3b8; font-weight:800; }
 .tabcut-actions { display:flex; gap:8px; }
 .tabcut-btn { height:34px; padding:0 14px; border:1px solid #0f766e; border-radius:6px; background:#0f766e; color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
 .tabcut-btn.secondary { border-color:#cbd5e1; background:#fff; color:#334155; }
@@ -118,19 +118,23 @@
       <label for="minVideoSales">Video Sales</label>
       <input class="tabcut-input" id="minVideoSales" type="number" min="0" placeholder="0">
     </div>
-    <div class="tabcut-field">
+    <div class="tabcut-field tabcut-range-field">
       <label for="minGoodsSales">商品销量</label>
-      <input class="tabcut-input" id="minGoodsSales" type="number" min="0" placeholder="0">
+      <div class="tabcut-range-inputs">
+        <input class="tabcut-input" id="minGoodsSales" type="number" min="0" placeholder="最低">
+        <span class="tabcut-range-separator">—</span>
+        <input class="tabcut-input" id="maxGoodsSales" type="number" min="0" placeholder="最高">
+      </div>
     </div>
     <div class="tabcut-field">
       <label for="minGmv">GMV</label>
       <input class="tabcut-input" id="minGmv" type="number" min="0" step="0.01" placeholder="0">
     </div>
-    <div class="tabcut-field tabcut-price-field">
+    <div class="tabcut-field tabcut-range-field">
       <label for="minPrice">价格</label>
-      <div class="tabcut-price-range">
+      <div class="tabcut-range-inputs">
         <input class="tabcut-input" id="minPrice" type="number" min="0" step="0.01" placeholder="最低">
-        <span class="tabcut-price-separator">—</span>
+        <span class="tabcut-range-separator">—</span>
         <input class="tabcut-input" id="maxPrice" type="number" min="0" step="0.01" placeholder="最高">
       </div>
     </div>
@@ -311,6 +315,7 @@ function paramsFor(page) {
   if (tabcutView === "videos" && qs("publishDateTo").value) params.set("publish_date_to", qs("publishDateTo").value);
   if (qs("minVideoSales").value) params.set("min_video_sales", qs("minVideoSales").value);
   if (qs("minGoodsSales").value) params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value);
+  if (qs("maxGoodsSales").value) params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", qs("maxGoodsSales").value);
   if (qs("minGmv").value) params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", qs("minGmv").value);
   if (qs("minPrice").value) params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value);
   if (qs("maxPrice").value) params.set(tabcutView === "videos" ? "max_item_price" : "max_price", qs("maxPrice").value);
@@ -370,7 +375,7 @@ function renderPager(data) {
 }
 
 function resetTabcut() {
-  ["categoryL1", "sourceCategory", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
+  ["categoryL1", "sourceCategory", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "maxGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
   qs("sortBy").value = "play_count";
   loadTabcut(1);
 }

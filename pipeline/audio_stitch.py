@@ -21,6 +21,7 @@ def build_stitched_audio(
     *,
     total_duration: float,
     output_path: str,
+    run_command=None,
 ) -> str:
     """根据每段的 ``shot_start`` / ``audio_path`` 拼接整段音轨。
 
@@ -61,8 +62,66 @@ def build_stitched_audio(
         "-b:a", "192k",
         output_path,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    run = run_command or subprocess.run
+    run(cmd, check=True, capture_output=True)
     return output_path
+
+
+def _float_value(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def build_source_timeline_audio(
+    segments: List[Dict[str, Any]],
+    *,
+    output_path: str,
+    total_duration: float | None = None,
+    run_command=None,
+) -> str:
+    """Build one AV TTS track without moving the source video timeline.
+
+    Each input segment is placed at its source ``start_time``. Gaps between
+    translated voice clips are therefore silence in the generated TTS track,
+    instead of being collapsed by concat.
+    """
+    if not segments:
+        raise ValueError("segments cannot be empty")
+
+    stitch_segments: List[Dict[str, Any]] = []
+    timeline_end = 0.0
+    for segment in segments:
+        segment_path = os.path.abspath(str(segment.get("tts_path") or ""))
+        if not segment_path or not os.path.exists(segment_path):
+            raise FileNotFoundError(f"missing TTS segment: {segment_path}")
+
+        start_time = _float_value(segment.get("audio_start_time", segment.get("start_time")), 0.0)
+        tts_duration = _float_value(segment.get("tts_duration"), 0.0)
+        source_end = _float_value(segment.get("audio_end_time", segment.get("end_time")), 0.0)
+        timeline_end = max(timeline_end, source_end if source_end > 0 else start_time + tts_duration)
+        stitch_segments.append(
+            {
+                "shot_start": start_time,
+                "shot_duration": tts_duration,
+                "actual_duration": tts_duration,
+                "audio_path": segment_path,
+            }
+        )
+
+    output_duration = _float_value(total_duration, 0.0) if total_duration is not None else timeline_end
+    if output_duration <= 0:
+        output_duration = timeline_end
+    if output_duration <= 0:
+        raise ValueError("total duration cannot be zero")
+
+    return build_stitched_audio(
+        stitch_segments,
+        total_duration=output_duration,
+        output_path=output_path,
+        run_command=run_command,
+    )
 
 
 def build_timeline_manifest(segments: List[Dict[str, Any]]) -> Dict[str, Any]:

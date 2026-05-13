@@ -1,5 +1,5 @@
 import importlib
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,7 +11,7 @@ def _make_runner():
     return MultiTranslateRunner(bus=EventBus(), user_id=1)
 
 
-def test_multi_pipeline_inserts_av_sync_audit_after_tts():
+def test_multi_pipeline_inserts_av_sync_audit_after_compose():
     runner = _make_runner()
     names = [name for name, _fn in runner._get_pipeline_steps("t1", "/tmp/video.mp4", "/tmp/task")]
 
@@ -24,13 +24,71 @@ def test_multi_pipeline_inserts_av_sync_audit_after_tts():
         "alignment",
         "translate",
         "tts",
-        "av_sync_audit",
         "loudness_match",
         "subtitle",
         "compose",
+        "av_sync_audit",
         "export",
     ]
-    assert names.index("tts") < names.index("av_sync_audit") < names.index("subtitle")
+    assert names.index("compose") < names.index("av_sync_audit") < names.index("export")
+
+
+def test_step_av_sync_audit_uses_composed_hard_video(tmp_path, monkeypatch):
+    from appcore import task_state
+    from pipeline import omni_av_sync_audit
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+
+    task_id = "multi-audit-hard-video"
+    source = tmp_path / "source.mp4"
+    hard_video = tmp_path / "source_hard.normal.mp4"
+    source.write_bytes(b"source")
+    hard_video.write_bytes(b"hard")
+    task_state.create(task_id, str(source), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        variants={"normal": {"result": {"hard_video": str(hard_video)}}},
+        result={"hard_video": str(hard_video)},
+    )
+
+    run_report_only = MagicMock()
+    monkeypatch.setattr(omni_av_sync_audit, "run_report_only", run_report_only)
+
+    runner = _make_runner()
+    runner._step_av_sync_audit(task_id, str(source), str(tmp_path))
+
+    run_report_only.assert_called_once_with(
+        runner,
+        task_id,
+        str(hard_video),
+        str(tmp_path),
+        variant="normal",
+    )
+
+
+def test_step_av_sync_audit_skips_when_composed_video_missing(tmp_path, monkeypatch):
+    from appcore import task_state
+    from pipeline import omni_av_sync_audit
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+
+    task_id = "multi-audit-before-compose"
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    task_state.create(task_id, str(source), str(tmp_path), user_id=1)
+
+    run_report_only = MagicMock(side_effect=AssertionError("should not audit source video"))
+    monkeypatch.setattr(omni_av_sync_audit, "run_report_only", run_report_only)
+
+    runner = _make_runner()
+    runner._step_av_sync_audit(task_id, str(source), str(tmp_path))
+
+    run_report_only.assert_not_called()
+    updated = task_state.get(task_id)
+    assert updated["steps"]["av_sync_audit"] == "done"
+    assert "合成视频" in updated["step_messages"]["av_sync_audit"]
 
 
 def test_step_translate_calls_resolver_with_base_plus_plugin():
@@ -92,6 +150,48 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     assert debug_ref["label"] == "初始翻译"
     assert debug_ref["path"] == "localized_translate_messages.json"
     assert debug_ref["use_case"] == "video_translate.localize"
+
+
+def test_multi_resolves_dedicated_localization_modules_for_de_fr():
+    runner = _make_runner()
+
+    de_adapter = runner._get_language_adapter({"target_lang": "de"})
+    fr_adapter = runner._get_language_adapter({"target_lang": "fr"})
+    es_adapter = runner._get_language_adapter({"target_lang": "es"})
+
+    assert de_adapter.__name__ == "pipeline.localization_de"
+    assert fr_adapter.__name__ == "pipeline.localization_fr"
+    assert es_adapter.__name__ == "multi_translate.localization.es"
+    assert de_adapter.build_tts_segments is not None
+    assert fr_adapter.build_tts_segments is not None
+
+
+def test_de_fr_adapters_keep_admin_prompt_resolver(monkeypatch):
+    calls = []
+
+    def fake_resolve(slot, lang):
+        calls.append((slot, lang))
+        return {"content": f"{slot}:{lang}"}
+
+    monkeypatch.setattr("appcore.runtime_multi.resolve_prompt_config", fake_resolve)
+
+    runner = _make_runner()
+    de_adapter = runner._get_language_adapter({"target_lang": "de"})
+    fr_adapter = runner._get_language_adapter({"target_lang": "fr"})
+
+    de_adapter.build_tts_script_messages({"full_text": "Hallo"})
+    de_adapter.build_localized_rewrite_messages(
+        "source", {"full_text": "Hallo"}, 10, "shrink", source_language="en",
+    )
+    fr_adapter.build_tts_script_messages({"full_text": "Bonjour"})
+    fr_adapter.build_localized_rewrite_messages(
+        "source", {"full_text": "Bonjour"}, 10, "expand", source_language="en",
+    )
+
+    assert ("base_tts_script", "de") in calls
+    assert ("base_rewrite", "de") in calls
+    assert ("base_tts_script", "fr") in calls
+    assert ("base_rewrite", "fr") in calls
 
 
 def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, monkeypatch):
@@ -201,6 +301,288 @@ def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, 
     )
     assert "Spanish" in messages[0]["content"]
     assert "localized English" not in messages[0]["content"]
+
+
+def test_multi_ja_translate_uses_character_budget_localizer(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-ja-translate"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="ja",
+        source_language="en",
+        selected_voice_id="ja-voice",
+        script_segments=[
+            {
+                "index": 0,
+                "text": "Keep this bottle clean.",
+                "start_time": 0,
+                "end_time": 3,
+            }
+        ],
+        variants={},
+    )
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return {
+            "full_text": "ボトルを清潔に保てます",
+            "sentences": [
+                {
+                    "index": 0,
+                    "text": "ボトルを清潔に保てます",
+                    "source_segment_indices": [0],
+                }
+            ],
+            "_messages": [{"role": "system", "content": "ja"}],
+            "_usage": {},
+        }
+
+    monkeypatch.setattr(
+        "pipeline.ja_translate.generate_ja_localized_translation",
+        fake_generate,
+    )
+    monkeypatch.setattr(
+        "pipeline.ja_translate.build_source_full_text",
+        lambda segs: "Keep this bottle clean.",
+    )
+    monkeypatch.setattr(
+        "appcore.runtime_multi.generate_localized_translation",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("generic localizer should not run for ja")
+        ),
+    )
+    monkeypatch.setattr(
+        "appcore.runtime_multi.resolve_prompt_config",
+        lambda slot, lang: {"content": f"{slot}:{lang}"},
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
+    monkeypatch.setattr("appcore.runtime_multi._build_review_segments", lambda segs, loc: [])
+    monkeypatch.setattr("appcore.runtime_multi.build_asr_artifact", lambda *a, **kw: {})
+    monkeypatch.setattr("appcore.runtime_multi.build_translate_artifact", lambda *a, **kw: {})
+
+    runner = _make_runner()
+    runner._step_translate(task_id)
+
+    assert captured["voice_id"] == "ja-voice"
+    updated = task_state.get(task_id)
+    assert updated["localized_translation"]["full_text"] == "ボトルを清潔に保てます"
+    assert (
+        updated["variants"]["normal"]["localized_translation"]["full_text"]
+        == "ボトルを清潔に保てます"
+    )
+
+
+def test_multi_ja_tts_uses_character_budget_duration_loop(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-ja-tts"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    ja_text = "\u30dc\u30c8\u30eb\u3092\u6e05\u6f54\u306b\u4fdd\u3061\u307e\u3059\u3002"
+    localized_translation = {
+        "full_text": ja_text,
+        "sentences": [
+            {
+                "index": 0,
+                "text": ja_text,
+                "source_segment_indices": [0],
+            }
+        ],
+    }
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="ja",
+        source_language="en",
+        custom_translate_provider="openrouter",
+        selected_voice_id="ja-voice",
+        selected_voice_name="Japanese Voice",
+        source_full_text_zh="Keep this bottle clean.",
+        script_segments=[
+            {
+                "index": 0,
+                "text": "Keep this bottle clean.",
+                "start_time": 0,
+                "end_time": 3,
+            }
+        ],
+        variants={"normal": {"localized_translation": localized_translation}},
+        localized_translation=localized_translation,
+    )
+
+    runner = _make_runner()
+
+    def fail_generic_loop(**kwargs):
+        raise AssertionError("generic duration loop should not run for ja")
+
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fail_generic_loop)
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
+    monkeypatch.setattr("appcore.runtime_multi.resolve_key", lambda *a, **kw: "fake-elevenlabs")
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *a, **kw: "fake-elevenlabs")
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
+    monkeypatch.setattr("appcore.runtime_multi._get_audio_duration", lambda path: 3.0)
+    monkeypatch.setattr("appcore.ai_billing.log_request", lambda **kw: None)
+    monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "pipeline.timeline.build_timeline_manifest",
+        lambda segments, video_duration: {"segments": len(segments), "video_duration": video_duration},
+    )
+
+    captured = {}
+
+    def fake_build_script(current_localized):
+        captured["localized_translation"] = current_localized
+        return {
+            "full_text": ja_text,
+            "blocks": [
+                {
+                    "index": 0,
+                    "text": ja_text,
+                    "sentence_indices": [0],
+                    "source_segment_indices": [0],
+                }
+            ],
+            "subtitle_chunks": [
+                {
+                    "text": ja_text,
+                    "block_indices": [0],
+                    "source_segment_indices": [0],
+                }
+            ],
+        }
+
+    def fake_build_segments(tts_script, script_segments):
+        captured["tts_script"] = tts_script
+        captured["script_segments"] = script_segments
+        return [
+            {
+                "index": 0,
+                "text": "Keep this bottle clean.",
+                "translated": ja_text,
+                "tts_text": ja_text,
+                "source_segment_indices": [0],
+                "start_time": 0.0,
+                "end_time": 3.0,
+            }
+        ]
+
+    def fake_generate_audio(tts_segments, **kwargs):
+        captured["tts_segments"] = tts_segments
+        captured["tts_kwargs"] = kwargs
+        audio = tmp_path / "tts_full.ja_round_1.mp3"
+        audio.write_bytes(b"audio")
+        return {
+            "full_audio_path": str(audio),
+            "segments": [{**tts_segments[0], "tts_duration": 3.0}],
+        }
+
+    monkeypatch.setattr("pipeline.ja_translate.build_ja_tts_script", fake_build_script)
+    monkeypatch.setattr("pipeline.ja_translate.build_ja_tts_segments", fake_build_segments)
+    monkeypatch.setattr("pipeline.ja_translate.count_visible_japanese_chars", lambda text: 11)
+    monkeypatch.setattr(
+        "pipeline.ja_translate.rewrite_ja_localized_translation",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("ja rewrite should not run after converged first round")
+        ),
+    )
+    monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_generate_audio)
+
+    runner._step_tts(task_id, str(tmp_path))
+
+    updated = task_state.get(task_id)
+    assert captured["localized_translation"] == localized_translation
+    assert captured["script_segments"] == updated["script_segments"]
+    assert captured["tts_kwargs"]["voice_id"] == "ja-voice"
+    assert captured["tts_kwargs"]["language_code"] == "ja"
+    assert updated["tts_duration_rounds"][0]["ja_char_count"] == 11
+    assert updated["tts_final_reason"] == "converged"
+    assert updated["variants"]["normal"]["tts_script"]["full_text"] == ja_text
+
+
+def test_multi_ja_subtitle_uses_timed_japanese_chunks(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-ja-subtitle"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    ja_text = "\u30dc\u30c8\u30eb\u3092\u6e05\u6f54\u306b\u4fdd\u3061\u307e\u3059\u3002"
+    tts_script = {
+        "full_text": ja_text,
+        "blocks": [{"index": 0, "text": ja_text}],
+        "subtitle_chunks": [{"text": ja_text, "block_indices": [0]}],
+    }
+    tts_segments = [
+        {
+            "index": 0,
+            "tts_text": ja_text,
+            "translated": ja_text,
+            "tts_duration": 3.0,
+        }
+    ]
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="ja",
+        variants={"normal": {"tts_script": tts_script, "segments": tts_segments}},
+        tts_script=tts_script,
+        segments=tts_segments,
+    )
+
+    fake_adapter = type("Adapter", (), {"display_name": "Subtitle ASR", "model_id": "fake"})()
+    monkeypatch.setattr("appcore.asr_router.resolve_adapter", lambda *a, **kw: (fake_adapter, None))
+    monkeypatch.setattr(
+        "appcore.asr_router.transcribe",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("subtitle ASR should not run for ja")
+        ),
+    )
+
+    captured = {}
+
+    def fake_build_timed_chunks(script, segments):
+        captured["tts_script"] = script
+        captured["tts_segments"] = segments
+        return [{"index": 0, "text": ja_text, "start_time": 0.0, "end_time": 3.0}]
+
+    def fake_save_srt(content, path):
+        captured["srt_content"] = content
+        srt_path = tmp_path / "subtitle.normal.srt"
+        srt_path.write_text(content, encoding="utf-8")
+        return str(srt_path)
+
+    monkeypatch.setattr("pipeline.ja_translate.build_timed_subtitle_chunks", fake_build_timed_chunks)
+    monkeypatch.setattr(
+        "appcore.runtime_multi.build_srt_from_chunks",
+        lambda chunks, weak_boundary_words=None: "1\n00:00:00,000 --> 00:00:03,000\n" + chunks[0]["text"],
+    )
+    monkeypatch.setattr("pipeline.languages.ja.post_process_srt", lambda content: content + "\n")
+    monkeypatch.setattr("appcore.runtime_multi.save_srt", fake_save_srt)
+    monkeypatch.setattr("appcore.runtime_multi.build_subtitle_artifact", lambda *a, **kw: {})
+
+    runner = _make_runner()
+    runner._step_subtitle(task_id, str(tmp_path))
+
+    updated = task_state.get(task_id)
+    assert captured["tts_script"] == tts_script
+    assert captured["tts_segments"] == tts_segments
+    assert updated["corrected_subtitle"]["chunks"][0]["text"] == ja_text
+    assert updated["variants"]["normal"]["srt_path"].endswith("subtitle.normal.srt")
+    assert captured["srt_content"].endswith(ja_text + "\n")
 
 
 def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypatch):

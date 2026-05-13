@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .base import TranslateProfile
+from .base import (
+    LANGUAGE_MAX_REWRITE_ATTEMPTS_BY_TARGET,
+    LANGUAGE_SPEEDUP_WINDOW_BY_TARGET,
+    LANGUAGE_WORD_TOLERANCE_BY_TARGET,
+    TranslateProfile,
+)
 
 if TYPE_CHECKING:
     from appcore.runtime import PipelineRunner
@@ -21,6 +26,9 @@ class DefaultProfile(TranslateProfile):
 
     needs_separate = True
     needs_loudness_match = True
+    WORD_TOLERANCE_BY_TARGET = LANGUAGE_WORD_TOLERANCE_BY_TARGET
+    MAX_REWRITE_ATTEMPTS_BY_TARGET = LANGUAGE_MAX_REWRITE_ATTEMPTS_BY_TARGET
+    SPEEDUP_WINDOW_BY_TARGET = LANGUAGE_SPEEDUP_WINDOW_BY_TARGET
 
     def post_asr(self, runner: "PipelineRunner", task_id: str) -> None:
         runner._step_asr_normalize(task_id)

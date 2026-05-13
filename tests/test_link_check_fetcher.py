@@ -172,7 +172,7 @@ def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
     assert items[1]["source_url"] == "https://img.example.com/detail.jpg?width=800"
 
 
-def test_extract_images_from_html_skips_payment_method_screenshots():
+def test_extract_images_from_html_keeps_payment_method_screenshots():
     from appcore.link_check_fetcher import extract_images_from_html
 
     html = """
@@ -198,6 +198,56 @@ def test_extract_images_from_html_skips_payment_method_screenshots():
     assert sources == [
         "https://img.example.com/hero.jpg?width=720",
         "https://img.example.com/detail.jpg?width=720",
+        "https://cdn.techcloudly.com/image/aaaaaa.webp",
+        "https://cdn.techcloudly.com/image/bbbbbb.webp",
+        "https://img.example.com/secure.jpg",
+        "https://img.example.com/trust.jpg",
+    ]
+
+
+def test_extract_images_from_html_keeps_techcloudly_detail_images_including_service_sections():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    carousel_html = "\n".join(
+        f"""
+        <div class="t4s-product__media-item" data-media-id="{idx}">
+          <img data-src="https://img.example.com/carousel-{idx}.jpg?width=720">
+        </div>
+        """
+        for idx in range(10)
+    )
+    detail_html = """
+      <div class="t4s-rte t4s-tab-content t4s-active">
+        <div><img src="https://cdn.techcloudly.com/image/payment.gif" alt=""></div>
+        <p>Payments Via PayPal and Credit Card.</p>
+        <p>Cultivate your garden with quality seeds.</p>
+        <div><img src="https://cdn.techcloudly.com/image/detail-1.jpeg" alt=""></div>
+        <p>Four seasons in bloom.</p>
+        <div><img src="https://cdn.techcloudly.com/image/detail-2.jpeg" alt=""></div>
+        <p>A plethora of colors.</p>
+        <div><img src="https://cdn.techcloudly.com/image/detail-3.webp" alt=""></div>
+        <h2>Make Your Seed to Garden</h2>
+        <div><img src="https://cdn.techcloudly.com/image/detail-4.jpeg" alt=""></div>
+        <h3>Ready to Blossom? Click ADD TO CART and share your garden journey with us!</h3>
+        <p><img src="https://cdn.techcloudly.com/image/unicef.png" alt="">Planting Seeds of Hope</p>
+        <h4>Processing</h4>
+        <div><img src="https://cdn.techcloudly.com/image/after-sale.png" alt=""></div>
+      </div>
+    """
+    html = f"<html lang='en'><body>{carousel_html}{detail_html}</body></html>"
+
+    items = extract_images_from_html(html, base_url="https://shop.example.com/products/demo")
+
+    assert len(items) == 17
+    assert [item["kind"] for item in items[:10]] == ["carousel"] * 10
+    assert [item["source_url"] for item in items[10:]] == [
+        "https://cdn.techcloudly.com/image/payment.gif",
+        "https://cdn.techcloudly.com/image/detail-1.jpeg",
+        "https://cdn.techcloudly.com/image/detail-2.jpeg",
+        "https://cdn.techcloudly.com/image/detail-3.webp",
+        "https://cdn.techcloudly.com/image/detail-4.jpeg",
+        "https://cdn.techcloudly.com/image/unicef.png",
+        "https://cdn.techcloudly.com/image/after-sale.png",
     ]
 
 

@@ -40,6 +40,7 @@ from appcore.llm_debug_runtime import save_llm_debug_calls
 from appcore.preview_artifacts import (
     build_asr_artifact,
     build_asr_normalize_artifact,
+    build_shot_translate_artifact,
     build_subtitle_artifact,
     build_translate_artifact,
 )
@@ -55,6 +56,7 @@ from pipeline.languages.registry import SOURCE_LANGS as _MANUAL_SOURCE_LANGUAGES
 from pipeline.localization import build_source_full_text_zh, count_words
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
+from pipeline.subtitle_splitting import split_oversized_subtitle_chunks
 from pipeline.translate import generate_localized_translation
 from pipeline.tts import _get_audio_duration
 
@@ -202,6 +204,27 @@ def step_asr_normalize(runner, task_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_shot_decompose_duration(task: dict, video_path: str) -> float:
+    duration = float(task.get("video_duration") or 0.0)
+    if duration <= 0:
+        try:
+            from pipeline.extract import get_video_duration
+
+            duration = float(get_video_duration(video_path) or 0.0)
+        except Exception:
+            log.warning("failed to probe video duration for shot_decompose", exc_info=True)
+    utterance_end = 0.0
+    for utt in task.get("utterances") or []:
+        try:
+            utterance_end = max(
+                utterance_end,
+                float(utt.get("end_time") or utt.get("end") or 0.0),
+            )
+        except (TypeError, ValueError):
+            continue
+    return max(duration, utterance_end)
+
+
 def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) -> None:
     """Gemini 视觉分析视频，切镜头列表 + 时间轴对齐。
 
@@ -217,7 +240,9 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
     runner._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...",
                      model_tag=f"{_sd_provider} · {_sd_model}")
     task = task_state.get(task_id) or {}
-    duration = float(task.get("video_duration") or 0.0)
+    duration = _resolve_shot_decompose_duration(task, video_path)
+    if duration > 0 and not task.get("video_duration"):
+        task_state.update(task_id, video_duration=duration)
 
     shots = decompose_shots(
         video_path,
@@ -449,6 +474,7 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
             translations.append({
                 "shot_index": shot.get("index"),
                 "translated_text": "",
+                "char_limit": 0,
                 "char_count": 0,
                 "over_limit": False,
                 "retries": 0,
@@ -469,6 +495,8 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
             next_source=next_source,
             user_id=runner.user_id,
         )
+        result = dict(result)
+        result["char_limit"] = max(1, limit)
         translations.append(result)
         runner._emit(task_id, EVT_LAB_TRANSLATE_PROGRESS, {
             "index": shot.get("index"),
@@ -550,6 +578,18 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
         source_full_text_zh=source_full_text,
         variants=variants,
     )
+    task_state.set_artifact(
+        task_id,
+        "translate",
+        build_shot_translate_artifact(
+            shots,
+            translations,
+            source_full_text,
+            localized_translation,
+            source_language=task.get("source_language", "en"),
+            target_language=target_lang,
+        ),
+    )
     runner._set_step(task_id, "translate", "done",
                      f"{target_lang.upper()} 镜头级翻译完成（{len(translations)} 段）")
 
@@ -601,6 +641,13 @@ def step_subtitle_asr_realign(runner, task_id: str, task_dir: str) -> None:
         tts_script.get("subtitle_chunks", []),
         asr_result,
         total_duration=total_duration,
+    )
+    corrected_chunks = split_oversized_subtitle_chunks(
+        corrected_chunks,
+        weak_boundary_words=rules.WEAK_STARTERS,
+        max_chars_per_line=getattr(rules, "MAX_CHARS_PER_LINE", 42),
+        max_lines=getattr(rules, "MAX_LINES", 2),
+        max_chars_per_second=getattr(rules, "MAX_CHARS_PER_SECOND", 17),
     )
 
     srt_content = build_srt_from_chunks(

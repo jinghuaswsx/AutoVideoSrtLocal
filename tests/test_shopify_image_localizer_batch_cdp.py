@@ -330,7 +330,7 @@ def test_taa_extract_image_refs_preserves_srcs_and_alt_text():
     ]
 
 
-def test_download_visual_detail_sources_skips_payment_screenshot_candidates(monkeypatch, tmp_path):
+def test_download_visual_detail_sources_includes_payment_screenshot_candidates(monkeypatch, tmp_path):
     workspace = run_product_cdp.storage.Workspace(
         root=tmp_path,
         source_en_dir=tmp_path / "source" / "en",
@@ -365,12 +365,12 @@ def test_download_visual_detail_sources_skips_payment_screenshot_candidates(monk
         candidate_srcs=[product_src, alt_payment_src, host_payment_src],
     )
 
-    assert [row["src"] for row in captured["detail"]] == [product_src]
-    assert [row["src"] for row in result["slot_images"]] == [product_src]
+    assert [row["src"] for row in captured["detail"]] == [product_src, alt_payment_src, host_payment_src]
+    assert [row["src"] for row in result["slot_images"]] == [product_src, alt_payment_src, host_payment_src]
     assert captured["reference"][0]["url"] == "https://server.example.com/ref.jpg"
 
 
-def test_add_original_detail_fallbacks_skips_payment_screenshot_images(monkeypatch, tmp_path):
+def test_add_original_detail_fallbacks_includes_payment_screenshot_images(monkeypatch, tmp_path):
     workspace = run_product_cdp.storage.Workspace(
         root=tmp_path,
         source_en_dir=tmp_path / "source" / "en",
@@ -416,12 +416,13 @@ def test_add_original_detail_fallbacks_skips_payment_screenshot_images(monkeypat
         localized_images=[],
     )
 
-    assert fetched == [product_src]
-    assert len(added) == 1
+    assert fetched == [product_src, payment_src]
+    assert len(added) == 2
     assert added[0]["url"] == product_src
+    assert added[1]["url"] == payment_src
 
 
-def test_build_detail_source_index_map_ignores_payment_screenshot_refs():
+def test_build_detail_source_index_map_includes_payment_screenshot_refs():
     payment_token = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     product_token = "cccccccccccccccccccccccccccccccc"
     html = (
@@ -439,7 +440,7 @@ def test_build_detail_source_index_map_ignores_payment_screenshot_refs():
         carousel_image_count=11,
     )
 
-    assert mapping == {product_token: 13}
+    assert mapping == {payment_token: 12, product_token: 13}
 
 
 def test_run_uses_confirmed_visual_carousel_fallback_when_deterministic_pairing_misses(monkeypatch, tmp_path):
@@ -822,7 +823,7 @@ def test_detail_replacements_accept_visual_forced_candidate_when_src_has_no_matc
     assert plan["replacements"][0]["match_method"] == "visual"
 
 
-def test_plan_body_html_replacements_skips_payment_screenshot_before_matching():
+def test_plan_body_html_replacements_includes_payment_screenshot_before_matching():
     payment_token = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     product_token = "cccccccccccccccccccccccccccccccc"
     payment_src = f"https://cdn.example.com/{payment_token}.jpg"
@@ -838,8 +839,8 @@ def test_plan_body_html_replacements_skips_payment_screenshot_before_matching():
 
     plan = taa_cdp.plan_body_html_replacements(html, localized_images)
 
-    assert plan["image_count"] == 1
-    assert [row["old"] for row in plan["replacements"]] == [product_src]
+    assert plan["image_count"] == 2
+    assert [row["old"] for row in plan["replacements"]] == [payment_src, product_src]
     assert plan["skipped_missing"] == []
 
 

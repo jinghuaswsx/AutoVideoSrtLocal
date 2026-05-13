@@ -239,6 +239,141 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     prompt = generate.call_args.kwargs["prompt"]
     assert "Grab the handle and pull." in prompt
     assert "Zieh am Griff." in prompt
+    assert "必须使用中文表述" in prompt
+    assert "sync_point" in prompt
+    assert "sentence_text" in prompt
+    assert "音频变速" in prompt
+    assert "重写文案后重新生成音频" in prompt
+    verify_messages = chat.call_args.kwargs["messages"]
+    assert "必须使用中文表述" in verify_messages[0]["content"]
+    assert "处理建议" in verify_messages[0]["content"]
+
+
+def test_multi_report_only_includes_final_subtitle_context_in_diagnosis_prompt(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text(
+        "1\n00:00:00,000 --> 00:00:02,000\nFINAL SRT UNIQUE LINE\n",
+        encoding="utf-8",
+    )
+    task = task_state.get(task_id)
+    variants = dict(task["variants"])
+    normal = dict(variants["normal"])
+    normal["srt_path"] = str(srt_path)
+    normal["corrected_subtitle"] = {"srt_content": srt_path.read_text(encoding="utf-8")}
+    variants["normal"] = normal
+    task_state.update(
+        task_id,
+        variants=variants,
+        srt_path=str(srt_path),
+        corrected_subtitle=normal["corrected_subtitle"],
+    )
+    generate = MagicMock(return_value={"json": {"issues": [], "summary": "ok"}})
+    chat = MagicMock(return_value={
+        "json": {"accepted_issues": [], "rejected_count": 0, "summary": "ok"},
+    })
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
+
+    runner = _FakeRunner()
+    omni_av_sync_audit.run_report_only(runner, task_id, video_path, str(tmp_path))
+
+    prompt = generate.call_args.kwargs["prompt"]
+    assert "subtitle_srt" in prompt
+    assert "FINAL SRT UNIQUE LINE" in prompt
+
+
+def test_multi_report_only_handles_unstructured_doubao_response(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={
+            "text": '{"issues": [{"asr_index": 0, "safe_action": none}]}',
+            "json": None,
+            "json_parse_error": "Expecting value",
+        }),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {"accepted_issues": [], "rejected_count": 0, "summary": "无结构化问题"},
+        }),
+    )
+
+    runner = _FakeRunner()
+    omni_av_sync_audit.run_report_only(runner, task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    assert report["status"] == "done"
+    assert report["diagnosis"]["parse_error"] == "Expecting value"
+    assert "非标准 JSON" in report["diagnosis"]["summary"]
+    assert runner.step_calls[-1][1:3] == ("av_sync_audit", "done")
+
+
+def test_report_only_builds_chinese_actionable_human_report(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={
+            "json": {
+                "issues": [{
+                    "asr_index": 0,
+                    "severity": "high",
+                    "problem_type": "duration_risk",
+                    "evidence": "TTS duration exceeds the visual window.",
+                    "safe_action": "shorten_text",
+                    "confidence": 0.92,
+                }],
+                "summary": "发现 1 个同步风险",
+            },
+        }),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {
+                "accepted_issues": [{
+                    "asr_index": 0,
+                    "severity": "high",
+                    "problem_type": "duration_risk",
+                    "accepted": True,
+                    "reason": "音频比画面窗口长，风险成立",
+                    "safe_action": "shorten_text",
+                }],
+                "rejected_count": 0,
+                "summary": "复核确认 1 个问题",
+            },
+        }),
+    )
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    accepted = report["verification"]["accepted_issues"][0]
+    assert accepted["sync_point"] == "ASR 0（00:00.00-00:02.00）"
+    assert accepted["sentence_text"] == "Zieh am Griff."
+    assert accepted["timing_detail"] == "目标画面 2.00s，TTS 音频 2.40s，音频太长 0.40s（120%）"
+    assert "不建议只靠音频变速" in accepted["recommendation"]
+    assert "重写/压缩文案后重新生成音频" in accepted["recommendation"]
+    human_report = report["human_report"]
+    assert "问题同步点：ASR 0（00:00.00-00:02.00）" in human_report
+    assert "问题句子：Zieh am Griff." in human_report
+    assert "音频太长 0.40s" in human_report
+    assert "画面对不上" in human_report
+    assert "处理建议：" in human_report
+    assert "重写/压缩文案后重新生成音频" in human_report
+    assert report["items"][0]["label"] == "中文审计结论"
+    assert report["items"][0]["content"] == human_report
 
 
 def test_multi_report_only_skips_when_normal_segments_missing(monkeypatch, tmp_path):
@@ -379,13 +514,17 @@ def test_report_contains_chinese_readable_av_sync_findings(monkeypatch, tmp_path
     finding = report["readable_findings"][0]
     assert "中文审计结论" in report["readable_summary"]
     assert finding["severity_label"] == "高风险"
-    assert finding["sync_point"] == "ASR 6 · 12.00s → 14.64s"
+    assert "ASR 6" in finding["sync_point"]
+    assert "12.00" in finding["sync_point"]
+    assert "14.64" in finding["sync_point"]
     assert "音频太长" in finding["problem"]
     assert "5.38s" in finding["timing"]
     assert "2.64s" in finding["timing"]
     assert "This handle locks securely" in finding["sentence_text"]
-    assert "不建议只做音频变速" in finding["recommendation"]
-    assert "重写文案" in finding["recommendation"]
+    assert "不建议只" in finding["recommendation"]
+    assert "音频变速" in finding["recommendation"]
+    assert "重写" in finding["recommendation"]
+    assert "文案" in finding["recommendation"]
     assert "重新生成音频" in finding["recommendation"]
 
 

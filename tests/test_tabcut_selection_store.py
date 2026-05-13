@@ -111,6 +111,27 @@ def test_list_video_candidates_filters_by_primary_item_price_range():
     assert data_params[:3] == ["US", 10.5, 25.0]
 
 
+def test_list_video_candidates_filters_by_goods_sales_range():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates(
+        {
+            "min_goods_sales_7d": "50",
+            "max_goods_sales_7d": "500",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "c.goods_sold_count_7d >= %s" in data_sql
+    assert "c.goods_sold_count_7d <= %s" in data_sql
+    assert data_params[:3] == ["US", 50, 500]
+
+
 def test_list_video_candidates_rejects_unknown_source_rank():
     calls = []
 
@@ -189,6 +210,27 @@ def test_list_goods_filters_by_display_price_range():
     assert "COALESCE(s.price_min, s.price_max) >= %s" in data_sql
     assert "COALESCE(s.price_min, s.price_max) <= %s" in data_sql
     assert data_params[:3] == ["US", 12.5, 22.0]
+
+
+def test_list_goods_filters_by_display_sales_range():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_goods(
+        {
+            "min_sales_7d": "50",
+            "max_sales_7d": "500",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "COALESCE(s.sold_count_7d, s.sold_count_period) >= %s" in data_sql
+    assert "COALESCE(s.sold_count_7d, s.sold_count_period) <= %s" in data_sql
+    assert data_params[:3] == ["US", 50, 500]
 
 
 def test_build_goods_response_hydrates_source_category_label(monkeypatch):

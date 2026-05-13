@@ -35,6 +35,7 @@ from appcore.events import (
     Event,
     EventBus,
 )
+from pipeline.audio_stitch import build_source_timeline_audio
 
 from ._helpers import _is_av_pipeline_task, _av_target_lang
 
@@ -259,7 +260,7 @@ def _build_av_tts_segments(sentences: list[dict]) -> list[dict]:
     return segments
 
 
-def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], variant: str = "av") -> str:
+def _rebuild_tts_full_audio_from_segments_legacy_concat(task_dir: str, segments: list[dict], variant: str = "av") -> str:
     seg_dir = os.path.join(task_dir, "tts_segments", variant) if variant else os.path.join(task_dir, "tts_segments")
     os.makedirs(seg_dir, exist_ok=True)
     concat_list_path = os.path.join(seg_dir, "concat.rewrite.txt")
@@ -284,6 +285,12 @@ def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], v
     if result.returncode != 0:
         raise RuntimeError(f"音频拼接失败: {result.stderr}")
     return full_audio_path
+
+
+def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], variant: str = "av") -> str:
+    full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
+    full_audio_path = os.path.join(task_dir, full_audio_name)
+    return build_source_timeline_audio(segments or [], output_path=full_audio_path)
 
 
 def _build_av_debug_state(

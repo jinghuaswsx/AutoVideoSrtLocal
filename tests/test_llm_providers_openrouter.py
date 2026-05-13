@@ -395,3 +395,38 @@ def test_doubao_generate_uploads_video_media_and_parses_schema(
     user_content = payload["input"][1]["content"]
     assert {"type": "input_video", "video_url": "https://cdn.example/clip.mp4"} in user_content
     assert "data:video" not in repr(user_content)
+
+
+def test_doubao_generate_keeps_raw_text_when_schema_json_is_invalid(
+    fake_provider_db, monkeypatch, tmp_path,
+):
+    fake_provider_db.seed("doubao_llm", api_key="k",
+                          base_url="https://ark.example/api/v3")
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake video")
+
+    monkeypatch.setattr(
+        "appcore.llm_providers.openrouter_adapter._upload_media_for_provider",
+        lambda path: "https://cdn.example/clip.mp4",
+    )
+    raw_text = '{"issues": [{"asr_index": 0, "safe_action": none}]}'
+    fake_response = MagicMock()
+    fake_response.output = [MagicMock(content=[MagicMock(text=raw_text)])]
+    fake_response.usage = MagicMock(prompt_tokens=11, completion_tokens=7)
+    fake_client = MagicMock()
+    fake_client.responses.create.return_value = fake_response
+    monkeypatch.setattr(
+        "appcore.llm_providers.openrouter_adapter._create_ark_client",
+        lambda *, api_key, base_url: fake_client,
+    )
+
+    result = DoubaoAdapter().generate(
+        model="doubao-seed-2-0-lite-260215",
+        prompt="check sync",
+        media=[video],
+        response_schema={"type": "object"},
+    )
+
+    assert result["json"] is None
+    assert result["text"] == raw_text
+    assert "json_parse_error" in result

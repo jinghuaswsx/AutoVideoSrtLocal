@@ -203,6 +203,7 @@ class PipelineRunnerV2(PipelineRunner):
     ) -> None:
         from pipeline.shot_decompose import align_asr_to_shots, decompose_shots
 
+        from appcore.runtime_omni_steps import _resolve_shot_decompose_duration
         from appcore import llm_bindings
         _sd_binding = llm_bindings.resolve("shot_decompose.run")
         _sd_provider = _sd_binding.get("provider") or "openrouter"
@@ -210,7 +211,9 @@ class PipelineRunnerV2(PipelineRunner):
         self._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...",
                        model_tag=f"{_sd_provider} · {_sd_model}")
         task = task_state.get(task_id) or {}
-        duration = float(task.get("video_duration") or 0.0)
+        duration = _resolve_shot_decompose_duration(task, video_path)
+        if duration > 0 and not task.get("video_duration"):
+            task_state.update(task_id, video_duration=duration)
 
         # Gemini 分镜
         shots = decompose_shots(

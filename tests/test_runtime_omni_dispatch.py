@@ -220,6 +220,69 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     assert task["steps"]["translate"] == "done"
 
 
+def test_shot_limit_translate_sets_process_preview_artifact(
+    monkeypatch, omni_runner,
+):
+    import appcore.task_state as task_state
+
+    task_id = "omni-shot-process-preview"
+    task_state.create(task_id, "/tmp/video.mp4", "/tmp/task", "video.mp4")
+    task_state.update(
+        task_id,
+        plugin_config=CFG_LAB_CURRENT,
+        target_lang="es",
+        selected_voice_id="voice-1",
+        shots=[
+            {
+                "index": 1,
+                "start": 0.0,
+                "end": 2.0,
+                "duration": 2.0,
+                "source_text": "Source one",
+                "description": "shot one",
+            },
+            {
+                "index": 2,
+                "start": 2.0,
+                "end": 3.5,
+                "duration": 1.5,
+                "source_text": "Source two",
+                "description": "shot two",
+            },
+        ],
+    )
+    monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda voice_id, lang: 10.0)
+    monkeypatch.setattr(
+        "pipeline.translate_v2.translate_shot",
+        lambda shot, **kwargs: {
+            "shot_index": shot["index"],
+            "translated_text": f"Texto {shot['index']}",
+            "char_count": 7,
+            "over_limit": False,
+            "retries": 1 if shot["index"] == 2 else 0,
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {"model": "gemini-test"},
+    )
+
+    omni_runner._step_translate_shot_limit(task_id)
+
+    task = task_state.get(task_id)
+    artifact = task["artifacts"]["translate"]
+    assert artifact["title"] == "翻译本土化"
+    assert artifact["items"][0]["type"] == "shot_translation_summary"
+    assert artifact["items"][0]["total"] == 2
+    assert artifact["items"][0]["retry_count"] == 1
+    assert artifact["items"][1]["type"] == "shot_translations"
+    first_row = artifact["items"][1]["shots"][0]
+    assert first_row["source_text"] == "Source one"
+    assert first_row["translated_text"] == "Texto 1"
+    assert first_row["char_limit"] == 18
+    assert artifact["items"][2]["type"] == "side_by_side"
+
+
 def test_pipeline_skips_separate_when_voice_separation_disabled(
     monkeypatch, omni_runner,
 ):
@@ -230,6 +293,62 @@ def test_pipeline_skips_separate_when_voice_separation_disabled(
     names = _step_names(omni_runner)
     assert "separate" not in names
     assert "loudness_match" not in names
+
+
+def test_shot_decompose_falls_back_to_asr_end_when_video_duration_missing(
+    monkeypatch, tmp_path, omni_runner,
+):
+    import appcore.task_state as task_state
+    from appcore.runtime_omni_steps import step_shot_decompose
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
+        },
+    )
+    captured = {}
+
+    def fake_decompose(video_path, **kwargs):
+        captured["duration_seconds"] = kwargs["duration_seconds"]
+        return [
+            {
+                "index": 1,
+                "start": 0.0,
+                "end": kwargs["duration_seconds"],
+                "duration": kwargs["duration_seconds"],
+                "description": "full video",
+            }
+        ]
+
+    monkeypatch.setattr("pipeline.shot_decompose.decompose_shots", fake_decompose)
+    monkeypatch.setattr(
+        "pipeline.shot_decompose.align_asr_to_shots",
+        lambda shots, asr_segments: shots,
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 0.0)
+    task_id = "omni-shot-duration-fallback"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        utterances=[
+            {"start_time": 0.0, "end_time": 1.5, "text": "Intro."},
+            {"start_time": 21.8, "end_time": 23.3, "text": "CTA."},
+        ],
+    )
+
+    step_shot_decompose(
+        omni_runner,
+        task_id,
+        str(tmp_path / "video.mp4"),
+        str(tmp_path),
+    )
+
+    assert captured["duration_seconds"] == 23.3
 
 
 def test_pipeline_keeps_loudness_when_voice_separation_on(

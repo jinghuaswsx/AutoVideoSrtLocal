@@ -469,8 +469,11 @@ class DoubaoAdapter(LLMAdapter):
             "usage": _extract_ark_usage(response),
         }
         if response_schema is not None:
-            result["json"] = _parse_json_content(text)
-            result["text"] = None
+            try:
+                result["json"] = _parse_json_content(text)
+                result["text"] = None
+            except json.JSONDecodeError as exc:
+                result["json_parse_error"] = str(exc)
         return result
 
 

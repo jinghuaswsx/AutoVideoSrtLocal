@@ -123,3 +123,33 @@ def test_regenerate_full_audio_with_speed_invokes_on_segment_done_callback(tmp_p
         )
 
     assert progress == [(1, 3), (2, 3), (3, 3)]
+
+
+def test_assemble_full_audio_from_segments_writes_concat_for_selected_candidates(tmp_path):
+    from pipeline import tts
+
+    seg_a = tmp_path / "seg_a.mp3"
+    seg_b = tmp_path / "seg_b.mp3"
+    seg_a.write_bytes(b"\xff\xfb\x10\x00")
+    seg_b.write_bytes(b"\xff\xfb\x10\x00")
+
+    selected = [
+        {"segment_index": 0, "tts_path": str(seg_a), "tts_duration": 1.2},
+        {"segment_index": 1, "tts_path": str(seg_b), "tts_duration": 1.4},
+    ]
+
+    with patch("subprocess.run") as fake_run:
+        fake_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+        result = tts.assemble_full_audio_from_segments(
+            selected, str(tmp_path), variant="round_1.segment_assembly",
+        )
+
+    concat_path = tmp_path / "tts_segments" / "round_1.segment_assembly_assembly" / "concat.txt"
+    assert concat_path.exists()
+    concat_text = concat_path.read_text(encoding="utf-8")
+    assert str(seg_a) in concat_text
+    assert str(seg_b) in concat_text
+    assert result["full_audio_path"] == str(
+        tmp_path / "tts_full.round_1.segment_assembly.assembled.mp3"
+    )
+    assert result["segments"] == selected

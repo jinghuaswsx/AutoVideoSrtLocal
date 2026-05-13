@@ -3,12 +3,12 @@ from __future__ import annotations
 from appcore.payment_screenshot_filter import is_payment_screenshot
 
 
-def test_is_payment_screenshot_matches_confirmed_host_and_alt_keywords():
-    assert is_payment_screenshot("https://cdn.techcloudly.com/image/demo.webp", None)
-    assert is_payment_screenshot("https://cdn.example.com/payment.jpg", "Payment Methods 1")
-    assert is_payment_screenshot("https://cdn.example.com/secure.jpg", "Secure Checkout")
-    assert is_payment_screenshot("https://cdn.example.com/trust.jpg", "Trust Badge")
-    assert is_payment_screenshot(
+def test_is_payment_screenshot_does_not_block_payment_or_trust_images():
+    assert not is_payment_screenshot("https://cdn.techcloudly.com/image/demo.webp", None)
+    assert not is_payment_screenshot("https://cdn.example.com/payment.jpg", "Payment Methods 1")
+    assert not is_payment_screenshot("https://cdn.example.com/secure.jpg", "Secure Checkout")
+    assert not is_payment_screenshot("https://cdn.example.com/trust.jpg", "Trust Badge")
+    assert not is_payment_screenshot(
         "https://cdn.example.com/secure-text.jpg",
         "All transactions are secure and encrypted",
     )

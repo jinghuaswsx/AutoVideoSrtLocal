@@ -102,7 +102,7 @@ def test_resolve_av_voice_ids_falls_back_to_stored_string_when_lookup_fails():
     assert elevenlabs_voice_id == "recommended-voice"
 
 
-def test_rebuild_tts_full_audio_writes_concat_file_and_runs_ffmpeg(tmp_path):
+def test_rebuild_tts_full_audio_uses_source_timeline_delays(tmp_path):
     from web.services.task_av_rewrite import rebuild_tts_full_audio
 
     seg0 = tmp_path / "seg 0.mp3"
@@ -117,35 +117,26 @@ def test_rebuild_tts_full_audio_writes_concat_file_and_runs_ffmpeg(tmp_path):
 
     result = rebuild_tts_full_audio(
         str(tmp_path),
-        [{"tts_path": str(seg0)}, {"tts_path": str(seg1)}],
+        [
+            {"tts_path": str(seg0), "start_time": 0.0, "end_time": 3.0, "tts_duration": 2.0},
+            {"tts_path": str(seg1), "start_time": 28.53, "end_time": 31.35, "tts_duration": 2.82},
+        ],
         "av",
         run_command=fake_run,
     )
 
-    concat_list = tmp_path / "tts_segments" / "av" / "concat.rewrite.txt"
     assert result == str(tmp_path / "tts_full.av.mp3")
-    assert concat_list.read_text(encoding="utf-8") == (
-        f"file '{seg0.resolve()}'\n"
-        f"file '{str(seg1.resolve()).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n"
-    )
-    assert calls == [
-        (
-            [
-                "ffmpeg",
-                "-y",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                str(concat_list),
-                "-c",
-                "copy",
-                str(tmp_path / "tts_full.av.mp3"),
-            ],
-            {"capture_output": True, "text": True},
-        )
-    ]
+    cmd, kwargs = calls[0]
+    assert cmd[0] == "ffmpeg"
+    assert "-filter_complex" in cmd
+    filter_graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "adelay=0|0" in filter_graph
+    assert "adelay=28530|28530" in filter_graph
+    assert "amix=inputs=2" in filter_graph
+    assert cmd[cmd.index("-t") + 1] == "31.350"
+    assert "-f" not in cmd
+    assert "concat" not in cmd
+    assert kwargs == {"check": True, "capture_output": True}
 
 
 def test_rebuild_tts_full_audio_rejects_missing_segment(tmp_path):

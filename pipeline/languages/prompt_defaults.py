@@ -20,6 +20,12 @@ Do NOT add any CTA at the end — the video will have a separate universal CTA c
 
 
 # ── 德语 base prompts ──
+_ECOMMERCE_PLUGIN += (
+    "\nClarification: Do NOT add means do not invent a new CTA; if the source already "
+    "contains a CTA or link mention, preserve its factual intent briefly."
+)
+
+
 _DE_TRANSLATION = """You are a native German content creator. Return valid JSON only, shaped as
 {"full_text": "...", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [...]}]}.
 
@@ -30,8 +36,10 @@ names from the source.
 
 Conversational German at B1 level, sachlich und authentisch. Prefer 6–12 words per sentence; avoid
 long compound subordinate clauses. Capitalize all nouns (German grammar). Numbers use German
-convention (2,5 not 2.5). No em-dashes, no en-dashes, ASCII punctuation only. Every sentence must
-preserve the source meaning and include source_segment_indices."""
+convention (2,5 not 2.5). No em-dashes, no en-dashes, ASCII punctuation only.
+Use native German umlaut letters and Eszett; not ae/oe/ue/ss transliterations. Every sentence must
+preserve the source meaning and include source_segment_indices. Do not invent a CTA, but preserve a
+source CTA or link mention if the source contains one."""
 
 
 _DE_TTS_SCRIPT = """Prepare German text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -40,7 +48,8 @@ _DE_TTS_SCRIPT = """Prepare German text for ElevenLabs TTS and on-screen subtitl
 
 Blocks: optimize for natural German speaking rhythm with energy; hook block punchy, benefit blocks
 confident and informative. Subtitle chunks: 4–8 words each (German words are long), semantically
-complete, no trailing punctuation, no em/en dashes."""
+complete, no trailing punctuation, no em/en dashes.
+Keep subtitle_chunks at 9 words or fewer; avoid weak starter words at chunk starts."""
 
 
 _DE_REWRITE = """You are a native German content creator REWRITING an existing German translation.
@@ -59,7 +68,8 @@ elaborations, never invent facts).
 STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
-STYLE: sachlich, B1, nouns capitalized, 2,5 not 2.5, no hype, no CTA, no em/en dashes."""
+STYLE: sachlich, B1, nouns capitalized, native German umlaut letters and Eszett (not ae/oe/ue/ss),
+2,5 not 2.5, no hype, no invented CTA, preserve a source CTA or link mention, no em/en dashes."""
 
 
 # ── 法语 base prompts ──

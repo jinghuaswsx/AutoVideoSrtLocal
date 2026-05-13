@@ -32,6 +32,7 @@ _MIN_SAFE_RATIO = 0.95
 _MAX_SAFE_RATIO = 1.05
 _MIN_SAFE_SPEED = 0.95
 _MAX_SAFE_SPEED = 1.05
+_MAX_SUBTITLE_CONTEXT_CHARS = 12000
 
 _SEVERITY_LABELS = {
     "low": "低风险",
@@ -142,253 +143,35 @@ def _compact_sentences(sentences: list[dict]) -> list[dict]:
     return compact
 
 
-def _format_seconds(value: Any) -> str:
-    return f"{_safe_float(value):.2f}s"
+def _truncate_context_text(text: str, max_chars: int = _MAX_SUBTITLE_CONTEXT_CHARS) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n...[truncated]"
 
 
-def _sentence_by_asr_index(sentences: list[dict]) -> dict[int, dict]:
-    indexed: dict[int, dict] = {}
-    for sentence in sentences:
+def _subtitle_context(task: dict, cfg: dict) -> dict:
+    variant = cfg.get("report_variant") or (
+        "normal" if cfg.get("project_type") == "multi_translate" else "av"
+    )
+    variants = task.get("variants") or {}
+    variant_state = variants.get(variant) or {}
+    corrected = variant_state.get("corrected_subtitle") or task.get("corrected_subtitle") or {}
+    srt_content = ""
+    if isinstance(corrected, dict):
+        srt_content = str(corrected.get("srt_content") or "").strip()
+
+    srt_path = variant_state.get("srt_path") or task.get("srt_path")
+    if not srt_content and srt_path:
         try:
-            indexed[int(sentence.get("asr_index"))] = sentence
-        except (TypeError, ValueError):
-            continue
-    return indexed
+            with open(str(srt_path), "r", encoding="utf-8") as handle:
+                srt_content = handle.read().strip()
+        except OSError:
+            srt_content = ""
 
-
-def _issue_asr_index(issue: dict) -> int | None:
-    try:
-        return int(issue.get("asr_index"))
-    except (TypeError, ValueError):
-        return None
-
-
-def _issue_action(issue: dict) -> str:
-    return str(issue.get("safe_action") or issue.get("action") or "").strip()
-
-
-def _action_matches(action: str, keyword: str) -> bool:
-    action_lc = action.lower()
-    return keyword in action_lc
-
-
-def _severity_label(issue: dict) -> str:
-    raw = str(issue.get("severity") or "").lower()
-    return _SEVERITY_LABELS.get(raw, raw.upper() if raw else "未分级")
-
-
-def _sentence_text(sentence: dict, issue: dict) -> str:
-    return str(
-        issue.get("sentence_text")
-        or issue.get("target_text")
-        or sentence.get("text")
-        or sentence.get("translated")
-        or ""
-    ).strip()
-
-
-def _target_duration(sentence: dict, issue: dict) -> float:
-    return _safe_float(
-        issue.get("target_duration"),
-        _safe_float(sentence.get("target_duration")),
-    )
-
-
-def _tts_duration(sentence: dict, issue: dict) -> float:
-    return _safe_float(
-        issue.get("tts_duration"),
-        _safe_float(sentence.get("tts_duration")),
-    )
-
-
-def _duration_ratio(sentence: dict, issue: dict) -> float:
-    target_duration = _target_duration(sentence, issue)
-    tts_duration = _tts_duration(sentence, issue)
-    return _safe_float(
-        issue.get("duration_ratio"),
-        _safe_float(sentence.get("duration_ratio"), _ratio(target_duration, tts_duration)),
-    )
-
-
-def _problem_label(issue: dict, sentence: dict) -> str:
-    ratio = _duration_ratio(sentence, issue)
-    if ratio > _MAX_SAFE_RATIO:
-        return "音频太长，容易拖到下一个画面，导致画面对不上"
-    if 0 < ratio < _MIN_SAFE_RATIO:
-        return "音频偏短，旁白提前结束，画面后半段容易空出来"
-    problem_type = str(issue.get("problem_type") or "").strip()
-    return _PROBLEM_TYPE_LABELS.get(problem_type, problem_type or "音画同步风险")
-
-
-def _timing_text(sentence: dict, issue: dict) -> str:
-    target_duration = _target_duration(sentence, issue)
-    tts_duration = _tts_duration(sentence, issue)
-    ratio = _duration_ratio(sentence, issue)
-    if target_duration <= 0 or tts_duration <= 0:
-        return "缺少可用的句级时长数据，需要人工复核"
-    delta = tts_duration - target_duration
-    if delta > 0:
-        relation = f"音频超出 {_format_seconds(delta)}"
-    elif delta < 0:
-        relation = f"音频短缺 {_format_seconds(abs(delta))}"
-    else:
-        relation = "音频时长与画面窗口一致"
-    return (
-        f"画面可用时长 {_format_seconds(target_duration)}，"
-        f"TTS 实测 {_format_seconds(tts_duration)}，比例 {ratio:.2f}，{relation}"
-    )
-
-
-def _sync_point_text(asr_index: int | None, sentence: dict) -> str:
-    label = f"ASR {asr_index}" if asr_index is not None else "未知 ASR"
-    start = sentence.get("start_time")
-    end = sentence.get("end_time")
-    if start is None or end is None:
-        return label
-    return f"{label} · {_format_seconds(start)} → {_format_seconds(end)}"
-
-
-def _recommendation_text(issue: dict, sentence: dict) -> str:
-    action = _issue_action(issue)
-    ratio = _duration_ratio(sentence, issue)
-    target_duration = _target_duration(sentence, issue)
-    tts_duration = _tts_duration(sentence, issue)
-
-    if target_duration <= 0 or tts_duration <= 0:
-        return "建议先人工核对这一句的时间轴和 TTS 文件，再决定是重新生成音频还是调整文案。"
-
-    if _MIN_SAFE_SPEED <= ratio <= _MAX_SAFE_SPEED:
-        return (
-            f"可优先做音频变速，建议速度约 {ratio:.2f}x，仍在 0.95-1.05 安全范围；"
-            "变速后复听，确认不失真且画面能对上。"
-        )
-
-    if ratio > _MAX_SAFE_SPEED:
-        if _action_matches(action, "regenerate"):
-            return (
-                "不建议只做音频变速：要塞进画面需要约 "
-                f"{ratio:.2f}x，超过 0.95-1.05 安全范围。建议先重新生成音频；"
-                "如果仍然过长，再重写文案、压缩这一句后重新生成音频。"
-            )
-        return (
-            "不建议只做音频变速：要塞进画面需要约 "
-            f"{ratio:.2f}x，超过 0.95-1.05 安全范围。建议重写文案、缩短这一句，"
-            "然后重新生成音频。"
-        )
-
-    if ratio < _MIN_SAFE_SPEED:
-        return (
-            "不建议只做音频变速：要铺满画面需要约 "
-            f"{ratio:.2f}x 慢放，低于 0.95-1.05 安全范围。建议扩写或补足这一句文案，"
-            "然后重新生成音频。"
-        )
-
-    if _action_matches(action, "manual"):
-        return "建议人工复核画面动作和旁白内容，再决定是否重写文案并重新生成音频。"
-    if _action_matches(action, "shorten"):
-        return "建议重写文案、缩短这一句，然后重新生成音频。"
-    if _action_matches(action, "expand"):
-        return "建议扩写或补足这一句文案，然后重新生成音频。"
-    return "建议重新生成这一句音频；如果时长仍不贴合，再调整文案。"
-
-
-def _merge_issue_details(base_issue: dict, accepted_issue: dict | None) -> dict:
-    if not accepted_issue:
-        return dict(base_issue)
-    merged = dict(base_issue)
-    for key, value in accepted_issue.items():
-        if value not in (None, ""):
-            merged[key] = value
-    return merged
-
-
-def _readable_findings(report: dict, sentences: list[dict]) -> list[dict]:
-    sentence_index = _sentence_by_asr_index(sentences)
-    diagnosis_issues = [
-        issue for issue in (report.get("diagnosis") or {}).get("issues") or []
-        if isinstance(issue, dict)
-    ]
-    accepted_by_asr = {
-        asr_index: issue
-        for issue in (report.get("verification") or {}).get("accepted_issues") or []
-        if isinstance(issue, dict)
-        for asr_index in [_issue_asr_index(issue)]
-        if asr_index is not None and issue.get("accepted", True)
-    }
-
-    findings: list[dict] = []
-    seen: set[int] = set()
-    for issue in diagnosis_issues:
-        asr_index = _issue_asr_index(issue)
-        if asr_index is None:
-            continue
-        seen.add(asr_index)
-        accepted_issue = accepted_by_asr.get(asr_index)
-        merged = _merge_issue_details(issue, accepted_issue)
-        sentence = sentence_index.get(asr_index, {})
-        findings.append({
-            "asr_index": asr_index,
-            "sync_point": _sync_point_text(asr_index, sentence),
-            "severity": str(merged.get("severity") or "").lower(),
-            "severity_label": _severity_label(merged),
-            "verified": bool(accepted_issue),
-            "problem": _problem_label(merged, sentence),
-            "timing": _timing_text(sentence, merged),
-            "sentence_text": _sentence_text(sentence, merged),
-            "source_text": str(sentence.get("source_text") or "").strip(),
-            "recommendation": _recommendation_text(merged, sentence),
-            "evidence": str(merged.get("evidence") or merged.get("reason") or "").strip(),
-            "suggested_text": str(
-                merged.get("final_text") or merged.get("suggested_text") or ""
-            ).strip(),
-        })
-
-    for asr_index, accepted_issue in accepted_by_asr.items():
-        if asr_index in seen:
-            continue
-        sentence = sentence_index.get(asr_index, {})
-        findings.append({
-            "asr_index": asr_index,
-            "sync_point": _sync_point_text(asr_index, sentence),
-            "severity": str(accepted_issue.get("severity") or "").lower(),
-            "severity_label": _severity_label(accepted_issue),
-            "verified": True,
-            "problem": _problem_label(accepted_issue, sentence),
-            "timing": _timing_text(sentence, accepted_issue),
-            "sentence_text": _sentence_text(sentence, accepted_issue),
-            "source_text": str(sentence.get("source_text") or "").strip(),
-            "recommendation": _recommendation_text(accepted_issue, sentence),
-            "evidence": str(accepted_issue.get("reason") or accepted_issue.get("evidence") or "").strip(),
-            "suggested_text": str(
-                accepted_issue.get("final_text") or accepted_issue.get("suggested_text") or ""
-            ).strip(),
-        })
-
-    severity_order = {"high": 0, "medium": 1, "low": 2}
-    return sorted(
-        findings,
-        key=lambda item: (
-            severity_order.get(item.get("severity") or "", 3),
-            int(item.get("asr_index") or 0),
-        ),
-    )
-
-
-def _attach_readable_report(report: dict, sentences: list[dict]) -> None:
-    findings = _readable_findings(report, sentences)
-    report["readable_findings"] = findings
-    if not findings:
-        report["readable_summary"] = "中文审计结论：未发现需要处理的音画同步点。"
-        return
-
-    verified_count = sum(1 for item in findings if item.get("verified"))
-    high_items = [item for item in findings if item.get("severity") == "high"]
-    lead = high_items[0] if high_items else findings[0]
-    report["readable_summary"] = (
-        f"中文审计结论：发现 {len(findings)} 个需要关注的同步点，"
-        f"其中 {verified_count} 个已由复核确认。优先处理 {lead['sync_point']}："
-        f"{lead['problem']}。处理建议：{lead['recommendation']}"
-    )
+    context: dict[str, Any] = {}
+    if srt_content:
+        context["subtitle_srt"] = _truncate_context_text(srt_content)
+    return context
 
 
 def _build_diagnosis_prompt(task: dict, cfg: dict, sentences: list[dict]) -> str:
@@ -405,13 +188,23 @@ def _build_diagnosis_prompt(task: dict, cfg: dict, sentences: list[dict]) -> str
             "safe_speed_range": [0.95, 1.05],
         },
     }
+    subtitle_context = _subtitle_context(task, cfg)
+    if subtitle_context:
+        payload["subtitle_context"] = subtitle_context
+    if cfg.get("project_type") == "multi_translate":
+        intro = (
+            "请审计这个多语种视频翻译成片的音画同步质量。你收到的 media 应当是已经合成后的 "
+            "hard_video 成片。请先理解视频画面、动作和字幕，再结合下方字幕内容与句级时间线判断音画同步风险。"
+        )
+    else:
+        intro = "请审计这个 Omni 视频翻译任务的音画同步风险。"
     return (
-        "请审计这个 Omni 视频翻译任务的音画同步风险。"
-        "只输出 JSON，issues 内每项必须包含 asr_index、severity、problem_type、"
-        "evidence、safe_action、confidence；evidence 和 summary 必须使用简体中文，"
-        "要明确哪个 ASR 同步点、哪一句 TTS 过长或过短、会怎样导致画面对不上，"
-        "并给出是音频变速、重写文案后重新生成音频，还是仅重新生成音频。"
-        "不要建议剪辑画面或移动时间轴。\n\n"
+        intro
+        + "只输出 JSON，issues 内每项必须包含 asr_index、severity、problem_type、"
+        "evidence、safe_action、confidence；并尽量包含 sync_point、sentence_text、timing_detail、recommendation。"
+        "必须使用中文表述 summary、evidence、timing_detail、recommendation，明确哪些同步点有问题，"
+        "哪一句音频太长或太短导致画面对不上。处理建议只能在以下范围内选择：音频变速、"
+        "重写文案后重新生成音频、重新生成音频、人工复核。不要建议剪辑画面或移动时间轴。\n\n"
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
 
@@ -435,8 +228,9 @@ def _build_verify_messages(diagnosis: dict, task: dict, cfg: dict, sentences: li
             "content": (
                 "你是视频翻译音画同步复核员。复核 Doubao 提出的问题是否成立，"
                 "只保留 medium/high 且可安全处理的问题。输出 JSON。"
-                "reason 和 summary 必须使用简体中文，并明确处理方式："
-                "音频变速、重写/压缩/扩写文案后重新生成音频，或仅重新生成音频。"
+                "必须使用中文表述 reason、summary、timing_detail、recommendation。"
+                "每个 accepted_issues 都要明确问题同步点、问题句子、音频时长偏差原因和处理建议；"
+                "处理建议只能是音频变速、重写文案后重新生成音频、重新生成音频或人工复核。"
             ),
         },
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=2)},
@@ -558,7 +352,15 @@ def _call_diagnose(
         temperature=0.1,
         max_output_tokens=4096,
     )
-    return _json_from_result(result, {"issues": [], "summary": ""})
+    diagnosis = _json_from_result(result, {"issues": [], "summary": ""})
+    parse_error = result.get("json_parse_error") if isinstance(result, dict) else None
+    if parse_error and not diagnosis.get("issues"):
+        diagnosis["summary"] = "Doubao 返回了非标准 JSON，系统未解析出结构化同步问题；请查看提示词调试原文。"
+        diagnosis["parse_error"] = str(parse_error)[:500]
+        raw_text = str(result.get("text") or "") if isinstance(result, dict) else ""
+        if raw_text:
+            diagnosis["raw_text"] = raw_text[:2000]
+    return diagnosis
 
 
 def _call_verify(
@@ -634,6 +436,234 @@ def _base_report(mode: str) -> dict:
     }
 
 
+def _format_sync_time(value: Any) -> str:
+    seconds = _as_float_or_none(value)
+    if seconds is None:
+        return "--:--.--"
+    minutes = int(max(0.0, seconds) // 60)
+    remainder = max(0.0, seconds) - minutes * 60
+    return f"{minutes:02d}:{remainder:05.2f}"
+
+
+def _sentences_by_asr_index(sentences: list[dict] | None) -> dict[int, dict]:
+    indexed: dict[int, dict] = {}
+    for pos, sentence in enumerate(sentences or []):
+        if not isinstance(sentence, dict):
+            continue
+        asr_index = _as_int_or_none(sentence.get("asr_index"))
+        if asr_index is None:
+            asr_index = _as_int_or_none(sentence.get("index"))
+        if asr_index is None:
+            asr_index = pos
+        indexed[asr_index] = sentence
+    return indexed
+
+
+def _report_sentence_text(sentence: dict | None, issue: dict) -> str:
+    if sentence:
+        text = str(
+            sentence.get("text")
+            or sentence.get("translated")
+            or sentence.get("tts_text")
+            or ""
+        ).strip()
+        if text:
+            return text
+    return str(issue.get("sentence_text") or issue.get("final_text") or issue.get("suggested_text") or "").strip()
+
+
+def _timing_snapshot(sentence: dict | None) -> tuple[float | None, float | None, float | None, float | None]:
+    if not sentence:
+        return None, None, None, None
+    target_duration = _as_float_or_none(sentence.get("target_duration"))
+    start_time = _as_float_or_none(sentence.get("start_time"))
+    end_time = _as_float_or_none(sentence.get("end_time"))
+    if target_duration is None and start_time is not None and end_time is not None and end_time > start_time:
+        target_duration = round(end_time - start_time, 4)
+    tts_duration = _as_float_or_none(sentence.get("tts_duration"))
+    duration_ratio = _as_float_or_none(sentence.get("duration_ratio"))
+    if duration_ratio is None and target_duration and tts_duration:
+        duration_ratio = _ratio(target_duration, tts_duration)
+    return start_time, end_time, target_duration, tts_duration if tts_duration is not None else None
+
+
+def _timing_detail(target_duration: float | None, tts_duration: float | None) -> tuple[str, str, float | None, float | None]:
+    if target_duration is None or tts_duration is None or target_duration <= 0:
+        return "缺少完整时长数据，需人工核对该同步点。", "时长数据不完整，无法自动判断是否画面对不上。", None, None
+    delta = round(tts_duration - target_duration, 2)
+    ratio = round(tts_duration / target_duration, 4)
+    ratio_pct = round(ratio * 100)
+    if delta > 0.05:
+        detail = f"目标画面 {target_duration:.2f}s，TTS 音频 {tts_duration:.2f}s，音频太长 {delta:.2f}s（{ratio_pct}%）"
+        reason = "这句音频太长，后半句容易拖到下一个画面或同步点，导致画面对不上。"
+    elif delta < -0.05:
+        detail = f"目标画面 {target_duration:.2f}s，TTS 音频 {tts_duration:.2f}s，音频太短 {abs(delta):.2f}s（{ratio_pct}%）"
+        reason = "这句音频太短，画面动作还没结束时旁白已经结束，容易导致画面对不上。"
+    else:
+        detail = f"目标画面 {target_duration:.2f}s，TTS 音频 {tts_duration:.2f}s，时长基本匹配（{ratio_pct}%）"
+        reason = "句子时长接近画面窗口，如仍有不适配，多半来自语义或画面动作匹配问题。"
+    return detail, reason, delta, ratio
+
+
+def _recommendation_for_issue(issue: dict, delta: float | None, ratio: float | None) -> str:
+    action = str(issue.get("safe_action") or "").strip()
+    if action == "manual_review":
+        return "建议人工复核该同步点，再决定是否重写文案或重新生成音频。"
+    if action == "regenerate_tts":
+        return "建议保持文案不变，重新生成音频；如果新音频仍有小幅偏差，再考虑音频变速。"
+    if action == "expand_text":
+        if ratio is not None and ratio < 0.9:
+            return "不建议只靠音频变速；建议重写/扩写文案后重新生成音频，让旁白覆盖完整画面动作。"
+        return "建议优先尝试音频变速（小幅减速）；如仍对不上，再重写/扩写文案后重新生成音频。"
+    if action == "shorten_text":
+        if ratio is not None and ratio > 1.1:
+            return "不建议只靠音频变速；建议重写/压缩文案后重新生成音频，减少句子拖到下一画面的风险。"
+        return "建议优先尝试音频变速（小幅加速）；如仍对不上，再重写/压缩文案后重新生成音频。"
+    if delta is not None and delta > 0.05:
+        return "建议先评估音频变速是否足够；如果偏差超过小幅变速范围，应重写/压缩文案后重新生成音频。"
+    if delta is not None and delta < -0.05:
+        return "建议先评估音频变速是否足够；如果偏差超过小幅变速范围，应重写/扩写文案后重新生成音频。"
+    return "建议保持现有音频；如现场观感仍不对，重新生成音频并人工复核。"
+
+
+def _enrich_issue_for_report(issue: dict, sentence_by_asr: dict[int, dict]) -> dict:
+    enriched = dict(issue)
+    asr_index = _as_int_or_none(enriched.get("asr_index"))
+    sentence = sentence_by_asr.get(asr_index) if asr_index is not None else None
+    start_time, end_time, target_duration, tts_duration = _timing_snapshot(sentence)
+    if asr_index is not None:
+        if start_time is not None and end_time is not None:
+            sync_point = f"ASR {asr_index}（{_format_sync_time(start_time)}-{_format_sync_time(end_time)}）"
+        else:
+            sync_point = f"ASR {asr_index}"
+        enriched["sync_point"] = sync_point
+    sentence_text = _report_sentence_text(sentence, enriched)
+    if sentence_text:
+        enriched["sentence_text"] = sentence_text
+    timing_detail, mismatch_reason, delta, ratio = _timing_detail(target_duration, tts_duration)
+    enriched["timing_detail"] = timing_detail
+    enriched["mismatch_reason"] = mismatch_reason
+    enriched["recommendation"] = _recommendation_for_issue(enriched, delta, ratio)
+    if target_duration is not None:
+        enriched["target_duration"] = round(target_duration, 4)
+    if tts_duration is not None:
+        enriched["tts_duration"] = round(tts_duration, 4)
+    if delta is not None:
+        enriched["duration_delta"] = delta
+    if ratio is not None:
+        enriched["duration_ratio"] = ratio
+    return enriched
+
+
+def _build_human_report(report: dict) -> str:
+    summary = report.get("summary") or {}
+    diagnosis = report.get("diagnosis") or {}
+    verification = report.get("verification") or {}
+    accepted = verification.get("accepted_issues") or []
+    diagnosed = diagnosis.get("issues") or []
+    issues = accepted or diagnosed
+    lines = [
+        "音画同步审计结论",
+        f"模式：{report.get('mode') or '-'}；状态：{report.get('status') or '-'}；"
+        f"诊断问题 {summary.get('diagnosed', 0)} 个，复核确认 {summary.get('accepted', 0)} 个。",
+    ]
+    if not issues:
+        lines.append("未确认需要处理的音画同步问题。")
+        return "\n".join(lines)
+    lines.append("确认问题如下：" if accepted else "候选问题如下：")
+    for idx, issue in enumerate(issues, 1):
+        lines.extend([
+            f"{idx}. 问题同步点：{issue.get('sync_point') or '-'}",
+            f"   问题句子：{issue.get('sentence_text') or '-'}",
+            f"   时长证据：{issue.get('timing_detail') or '-'}",
+            f"   问题说明：{issue.get('mismatch_reason') or issue.get('reason') or issue.get('evidence') or '-'}",
+            f"   处理建议：{issue.get('recommendation') or '-'}",
+        ])
+    return "\n".join(lines)
+
+
+def _readable_problem(issue: dict) -> str:
+    mismatch_reason = str(issue.get("mismatch_reason") or "").strip()
+    timing_detail = str(issue.get("timing_detail") or "").strip()
+    if "音频太长" in mismatch_reason or "音频太长" in timing_detail:
+        return "音频太长，容易拖到下一个画面，导致画面对不上"
+    if "音频太短" in mismatch_reason or "音频太短" in timing_detail:
+        return "音频偏短，旁白提前结束，画面后半段容易空出来"
+    problem_type = str(issue.get("problem_type") or "").strip()
+    return _PROBLEM_TYPE_LABELS.get(problem_type, problem_type or "音画同步风险")
+
+
+def _readable_findings_from_report(report: dict) -> list[dict]:
+    diagnosis = report.get("diagnosis") or {}
+    verification = report.get("verification") or {}
+    accepted = [item for item in verification.get("accepted_issues") or [] if isinstance(item, dict)]
+    diagnosed = [item for item in diagnosis.get("issues") or [] if isinstance(item, dict)]
+    accepted_asr = {_as_int_or_none(item.get("asr_index")) for item in accepted}
+    accepted_asr.discard(None)
+    issues = accepted + [
+        item for item in diagnosed
+        if _as_int_or_none(item.get("asr_index")) not in accepted_asr
+    ]
+    findings: list[dict] = []
+    for issue in issues:
+        severity = str(issue.get("severity") or "").lower()
+        findings.append({
+            "asr_index": _as_int_or_none(issue.get("asr_index")),
+            "sync_point": issue.get("sync_point") or "",
+            "severity": severity,
+            "severity_label": _SEVERITY_LABELS.get(severity, severity.upper() if severity else "未分级"),
+            "verified": issue in accepted,
+            "problem": _readable_problem(issue),
+            "timing": issue.get("timing_detail") or "",
+            "sentence_text": issue.get("sentence_text") or "",
+            "source_text": issue.get("source_text") or "",
+            "recommendation": issue.get("recommendation") or "",
+            "evidence": issue.get("evidence") or issue.get("reason") or "",
+            "suggested_text": issue.get("final_text") or issue.get("suggested_text") or "",
+        })
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    return sorted(
+        findings,
+        key=lambda item: (
+            severity_order.get(item.get("severity") or "", 3),
+            item.get("asr_index") if item.get("asr_index") is not None else 999999,
+        ),
+    )
+
+
+def _attach_readable_report(report: dict) -> None:
+    findings = _readable_findings_from_report(report)
+    report["readable_findings"] = findings
+    if not findings:
+        report["readable_summary"] = "中文审计结论：未发现需要处理的音画同步点。"
+        return
+    verified_count = sum(1 for item in findings if item.get("verified"))
+    lead = findings[0]
+    report["readable_summary"] = (
+        f"中文审计结论：发现 {len(findings)} 个需要关注的同步点，"
+        f"其中 {verified_count} 个已由复核确认。优先处理 {lead.get('sync_point') or '未知同步点'}："
+        f"{lead.get('problem') or '音画同步风险'}。处理建议：{lead.get('recommendation') or '人工复核后处理'}"
+    )
+
+
+def _finalize_report_for_display(report: dict, sentences: list[dict] | None) -> None:
+    sentence_by_asr = _sentences_by_asr_index(sentences)
+    diagnosis = report.get("diagnosis")
+    if isinstance(diagnosis, dict):
+        diagnosis["issues"] = [
+            _enrich_issue_for_report(issue, sentence_by_asr) if isinstance(issue, dict) else issue
+            for issue in diagnosis.get("issues") or []
+        ]
+    verification = report.get("verification")
+    if isinstance(verification, dict):
+        verification["accepted_issues"] = [
+            _enrich_issue_for_report(issue, sentence_by_asr) if isinstance(issue, dict) else issue
+            for issue in verification.get("accepted_issues") or []
+        ]
+    report["human_report"] = _build_human_report(report)
+    _attach_readable_report(report)
+
+
 def _ensure_report_preview_items(report: dict) -> None:
     summary = report.get("summary") or {}
     diagnosis = report.get("diagnosis") or {}
@@ -666,7 +696,7 @@ def _ensure_report_preview_items(report: dict) -> None:
     if report.get("readable_summary"):
         lines.append(str(report.get("readable_summary")))
     report["items"] = [
-        {"type": "text", "label": "审计摘要", "content": "\n".join(lines)},
+        {"type": "text", "label": "中文审计结论", "content": report.get("human_report") or "\n".join(lines)},
         {
             "type": "text",
             "label": "结构化结果",
@@ -675,14 +705,8 @@ def _ensure_report_preview_items(report: dict) -> None:
     ]
 
 
-def _store_report(
-    task_id: str,
-    report: dict,
-    *,
-    variant: str = "av",
-    sentences: list[dict] | None = None,
-) -> None:
-    _attach_readable_report(report, sentences or [])
+def _store_report(task_id: str, report: dict, *, variant: str = "av", sentences: list[dict] | None = None) -> None:
+    _finalize_report_for_display(report, sentences)
     _ensure_report_preview_items(report)
     task = task_state.get(task_id) or {}
     variants = dict(task.get("variants") or {})
@@ -804,6 +828,7 @@ def _multi_report_config(task: dict) -> dict:
     return {
         "av_sync_audit": "report_only",
         "project_type": task.get("type") or "multi_translate",
+        "report_variant": "normal",
         "translate_algo": "multi_translate_default",
         "tts_strategy": "five_round_rewrite",
         "subtitle": "asr_realign",
@@ -993,7 +1018,7 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
         if not sentences:
             report = _base_report(mode)
             report["status"] = "skipped_missing_av_sentences"
-            _store_report(task_id, report)
+            _store_report(task_id, report, sentences=sentences)
             runner._set_step(task_id, "av_sync_audit", "done", "缺少句级结果，已跳过音画同步审计")
             return report
 
@@ -1026,7 +1051,7 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
             return report
 
         if mode == "safe_auto":
-            sentences = _apply_safe_auto(runner, task_id, task_dir, report, cfg, sentences)
+            _apply_safe_auto(runner, task_id, task_dir, report, cfg, sentences)
 
         _store_report(task_id, report, sentences=sentences)
         message = "音画同步审计完成"
@@ -1065,6 +1090,7 @@ def run_report_only(
     try:
         task = task_state.get(task_id) or {}
         cfg = _multi_report_config(task)
+        cfg["report_variant"] = variant
         mode = "report_only"
         runner._set_step(task_id, "av_sync_audit", "running", "正在评估音画同步风险...")
 
@@ -1072,7 +1098,7 @@ def run_report_only(
         if not sentences:
             report = _base_report(mode)
             report["status"] = "skipped_missing_report_sentences"
-            _store_report(task_id, report, variant=variant)
+            _store_report(task_id, report, variant=variant, sentences=sentences)
             runner._set_step(task_id, "av_sync_audit", "done", "缺少 TTS 句级结果，已跳过音画同步评估")
             return report
 

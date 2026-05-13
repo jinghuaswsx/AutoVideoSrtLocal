@@ -211,6 +211,8 @@ def invoke_chat(
         resp_payload["text"] = result["text"]
     if result.get("json") is not None:
         resp_payload["json"] = result["json"]
+    if result.get("json_parse_error"):
+        resp_payload["json_parse_error"] = result["json_parse_error"]
     if result.get("usage"):
         resp_payload["usage"] = {
             k: str(v) for k, v in result["usage"].items()
@@ -300,6 +302,8 @@ def invoke_generate(
         resp_payload["text"] = result["text"]
     if result.get("json") is not None:
         resp_payload["json"] = result["json"]
+    if result.get("json_parse_error"):
+        resp_payload["json_parse_error"] = result["json_parse_error"]
     if result.get("usage"):
         resp_payload["usage"] = {
             k: str(v) for k, v in result["usage"].items()

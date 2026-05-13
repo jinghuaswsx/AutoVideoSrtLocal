@@ -162,3 +162,15 @@ def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     assert "mode === 'sentence_reconcile'" in script
     assert "句级时长收敛（Sentence Reconcile）" in script
     assert "rewrite_skip_reason" in script
+
+
+def test_shot_char_limit_translate_process_has_legacy_state_fallback():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert "buildTranslateArtifactFromTask" in script
+    assert 'item.type === "shot_translation_summary"' in script
+    assert 'item.type === "shot_translations"' in script
+    assert "镜头级翻译过程" in script
+    assert ".shot-translation-grid" in styles

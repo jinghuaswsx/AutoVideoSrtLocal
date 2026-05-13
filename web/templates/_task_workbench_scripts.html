@@ -7,12 +7,12 @@
   const STEP_ORDER = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export"];
   {% elif pipeline_kind == 'multi_translate' %}
-  const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export", "analysis"];
+  const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export", "analysis"];
   // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
   // 进入 MAIN_STEPS 让顶部状态卡能反映「等待用户确认音色」并计入 12/12 进度。
   // separate 与 loudness_match 是人声分离 + 响度匹配链路（管理员未启用时各自 step
   // 直接 done，不影响进度计数）。
-  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "export"];
+  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "separate", "voice_match", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export"];
   {% else %}
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
@@ -940,12 +940,107 @@
     return Boolean(currentTask?.separation);
   }
 
+  function buildTranslateArtifactFromTask(task) {
+    if (!task) return null;
+    const translations = Array.isArray(task.translations) ? task.translations : [];
+    const shots = Array.isArray(task.shots) ? task.shots : [];
+    const localized = task.localized_translation
+      || task.variants?.normal?.localized_translation
+      || task.variants?.av?.localized_translation
+      || null;
+    const isShotTranslate = translations.length
+      || (task.plugin_config?.translate_algo === "shot_char_limit" && shots.length);
+    if (!isShotTranslate) return null;
+
+    const rows = buildShotTranslationRows(shots, translations);
+    const sourceFullText = task.source_full_text_zh || task.source_full_text || rows
+      .map(row => row.source_text)
+      .filter(Boolean)
+      .join("\n");
+    const translatedFullText = localized?.full_text || rows
+      .map(row => row.translated_text)
+      .filter(Boolean)
+      .join("\n");
+    const targetLang = task.target_lang || TASK_WORKBENCH_CONFIG.voiceLanguage || "";
+    const sourceLang = task.source_language || TASK_WORKBENCH_CONFIG.defaultSourceLanguage || "";
+    const translatedCount = rows.filter(row => row.translated_text).length;
+    const overLimitCount = rows.filter(row => row.over_limit).length;
+    const retryCount = rows.reduce((sum, row) => sum + (Number(row.retries) || 0), 0);
+    const items = [
+      {
+        type: "shot_translation_summary",
+        label: "镜头级翻译过程",
+        total: rows.length,
+        translated_count: translatedCount,
+        over_limit_count: overLimitCount,
+        retry_count: retryCount,
+      },
+      {
+        type: "shot_translations",
+        label: "逐镜头过程和结果",
+        shots: rows,
+      },
+    ];
+    if (sourceFullText || translatedFullText) {
+      items.push({
+        type: "side_by_side",
+        show_retranslate: true,
+        left: { type: "text", label: `整段${langLabel(sourceLang, "原文")}`, content: sourceFullText },
+        right: { type: "text", label: `整段本土化${langLabel(targetLang, targetLang.toUpperCase())}`, content: translatedFullText },
+      });
+    }
+    if (localized?.sentences?.length) {
+      items.push({
+        type: "sentences",
+        label: `${langLabel(targetLang, targetLang.toUpperCase())}句子映射`,
+        sentences: localized.sentences,
+      });
+    }
+    return { title: "翻译本土化", layout: "shot_translate", items };
+  }
+
+  function buildShotTranslationRows(shots, translations) {
+    const byIndex = {};
+    translations.forEach(tr => {
+      if (tr && tr.shot_index !== undefined && tr.shot_index !== null) {
+        byIndex[String(tr.shot_index)] = tr;
+      }
+    });
+    const total = Math.max(shots.length, translations.length);
+    const rows = [];
+    for (let i = 0; i < total; i += 1) {
+      const shot = shots[i] || {};
+      const fallbackTr = translations[i] || {};
+      const shotIndex = shot.index ?? fallbackTr.shot_index ?? i;
+      const tr = byIndex[String(shotIndex)] || fallbackTr || {};
+      rows.push({
+        index: shotIndex,
+        start_time: shot.start ?? shot.start_time,
+        end_time: shot.end ?? shot.end_time,
+        duration: shot.duration,
+        source_text: shot.source_text || shot.asr_text || "",
+        description: shot.description || shot.visual_description || "",
+        translated_text: tr.translated_text || "",
+        char_limit: tr.char_limit,
+        char_count: tr.char_count,
+        over_limit: Boolean(tr.over_limit),
+        retries: Number(tr.retries) || 0,
+        silent: Boolean(shot.silent),
+      });
+    }
+    return rows;
+  }
+
   function renderStepPreviews(artifacts) {
     STEP_ORDER.forEach(step => {
       const previewEl = document.getElementById(`preview-${step}`);
       if (!previewEl) return;
       if (specializedPreviewOwnsStep(step)) return;
-      const artifact = artifacts[step];
+      let artifact = artifacts[step];
+      if (step === "translate" && (!artifact || (!artifact.items && !artifact.layout))) {
+        const fallbackArtifact = buildTranslateArtifactFromTask(currentTask);
+        if (fallbackArtifact) artifact = fallbackArtifact;
+      }
       const status = currentTask?.steps?.[step] || "pending";
       const displayStatus = visualStepStatus(status);
       let html;
@@ -1164,9 +1259,10 @@
     const meta = `<div class="preview-block"><div class="preview-label">审计摘要</div>${metaRows.map(([k, v]) => `<div class="preview-note">${escapeHtml(k)}：${escapeHtml(v)}</div>`).join("")}</div>`;
     const diagnosisSummary = diagnosis.summary || diagnosis.error || "";
     const verificationSummary = verification.summary || verification.error || "";
+    const humanReport = artifact.human_report || "";
     const readable = renderReadableAuditFindings(artifact);
     const body = [
-      readable,
+      readable || (humanReport ? renderPreviewItem({ type: "text", label: "中文审计结论", content: humanReport }) : ""),
       diagnosisSummary ? renderPreviewItem({ type: "text", label: "Doubao 诊断总结", content: diagnosisSummary }) : "",
       renderAuditList("诊断问题", diagnosis.issues || []),
       verificationSummary ? renderPreviewItem({ type: "text", label: "Gemini 复核总结", content: verificationSummary }) : "",
@@ -1232,9 +1328,12 @@
     ].filter(Boolean).join(" · ");
     const lines = [
       item.reason || item.problem || item.issue || item.summary || "",
-      auditTimingSummary(item),
-      auditRecommendation(item),
-      item.evidence ? `原始证据：${item.evidence}` : "",
+      item.evidence ? `证据：${item.evidence}` : "",
+      item.sync_point ? `同步点：${item.sync_point}` : "",
+      item.sentence_text ? `问题句子：${item.sentence_text}` : "",
+      item.timing_detail ? `时长证据：${item.timing_detail}` : auditTimingSummary(item),
+      item.mismatch_reason ? `问题说明：${item.mismatch_reason}` : "",
+      item.recommendation ? `处理建议：${item.recommendation}` : auditRecommendation(item),
       item.before_text ? `修正前：${item.before_text}` : "",
       item.after_text ? `修正后：${item.after_text}` : "",
       item.suggested_text ? `建议文本：${item.suggested_text}` : "",
@@ -1284,6 +1383,9 @@
   }
 
   function auditProblemFromItem(item) {
+    const text = `${item.timing_detail || ""} ${item.mismatch_reason || ""} ${item.evidence || ""}`;
+    if (text.includes("音频太长")) return "音频太长，画面会对不上";
+    if (text.includes("音频太短")) return "音频偏短，画面后半段容易空出来";
     const ratio = auditRatioFromItem(item);
     if (ratio && ratio > 1.05) return "音频太长，画面会对不上";
     if (ratio && ratio < 0.95) return "音频偏短，画面后半段容易空出来";
@@ -1353,6 +1455,8 @@
       const centerHtml = item.show_retranslate ? `<div class="preview-side-center"><button class="btn btn-primary btn-sm side-retranslate-btn" id="sideRetranslateBtn" onclick="doRetranslate(this)">重新翻译</button></div>` : '';
       return `<div class="preview-side-by-side${centerHtml ? '' : ' no-center'}""><div class="preview-side">${renderPreviewItem(item.left, variantKey)}</div>${centerHtml}<div class="preview-side">${renderPreviewItem(item.right, variantKey)}</div></div>`;
     }
+    if (item.type === "shot_translation_summary") return renderShotTranslationSummary(item);
+    if (item.type === "shot_translations") return renderShotTranslations(item);
     if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
     if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
     if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
@@ -1361,6 +1465,68 @@
     if (item.type === "tts_blocks") return `<div class="preview-block">${label}<div class="preview-list">${(item.blocks || []).map(renderTtsBlockPreview).join("")}</div></div>`;
     if (item.type === "subtitle_chunks") return `<div class="preview-block">${label}<div class="preview-list">${(item.chunks || []).map(renderSubtitleChunkPreview).join("")}</div></div>`;
     return `<div class="preview-block">${label}<div class="preview-text">暂不支持的预览类型</div></div>`;
+  }
+
+  function renderShotTranslationSummary(item) {
+    const total = Number(item.total) || 0;
+    const translated = Number(item.translated_count) || 0;
+    const over = Number(item.over_limit_count) || 0;
+    const retries = Number(item.retry_count) || 0;
+    return `<div class="preview-block">
+      <div class="preview-label">${escapeHtml(item.label || "镜头级翻译过程")}</div>
+      <div class="shot-translation-summary">
+        <span class="shot-translation-stat"><strong>${translated}</strong>/<span>${total}</span> 已翻译</span>
+        <span class="shot-translation-stat"><strong>${retries}</strong> 次缩写重试</span>
+        <span class="shot-translation-stat ${over ? 'is-warning' : ''}"><strong>${over}</strong> 段超限</span>
+      </div>
+    </div>`;
+  }
+
+  function renderShotTranslations(item) {
+    const rows = Array.isArray(item.shots) ? item.shots : [];
+    if (!rows.length) {
+      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div><div class="preview-note">暂无镜头翻译明细。</div></div>`;
+    }
+    return `<div class="preview-block">
+      <div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div>
+      <div class="shot-translation-grid">${rows.map(renderShotTranslationRow).join("")}</div>
+    </div>`;
+  }
+
+  function renderShotTranslationRow(row) {
+    const start = row.start_time ?? 0;
+    const end = row.end_time ?? 0;
+    const charCount = row.char_count === undefined || row.char_count === null ? "—" : row.char_count;
+    const charLimit = row.char_limit === undefined || row.char_limit === null ? "—" : row.char_limit;
+    const retries = Number(row.retries) || 0;
+    const badges = [
+      row.silent ? '<span class="shot-translation-badge">静音</span>' : '',
+      retries ? `<span class="shot-translation-badge">重试 ${retries}</span>` : '',
+      row.over_limit ? '<span class="shot-translation-badge is-warning">超限</span>' : '',
+    ].filter(Boolean).join("");
+    const description = row.description
+      ? `<div class="shot-translation-desc">画面：${escapeHtml(row.description)}</div>`
+      : "";
+    return `<div class="shot-translation-row">
+      <div class="shot-translation-head">
+        <div>
+          <span class="shot-translation-index">镜头 ${escapeHtml(row.index ?? "")}</span>
+          <span class="preview-time">${fmtTime(start)} → ${fmtTime(end)}</span>
+        </div>
+        <div class="shot-translation-badges">${badges}</div>
+      </div>
+      ${description}
+      <div class="shot-translation-columns">
+        <div>
+          <div class="shot-translation-col-label">原文</div>
+          <div class="preview-original">${escapeHtml(row.source_text || "—")}</div>
+        </div>
+        <div>
+          <div class="shot-translation-col-label">译文 · ${escapeHtml(charCount)} / ${escapeHtml(charLimit)} 字符</div>
+          <div class="preview-translated">${escapeHtml(row.translated_text || "—")}</div>
+        </div>
+      </div>
+    </div>`;
   }
 
   function renderSegmentPreview(seg, breakAfter) {
@@ -2409,9 +2575,11 @@
     if (status === 'converged' && finalRound) {
       const winner = rounds.find(r => r.round === finalRound) || rounds[rounds.length - 1];
       const isFinalSpeedupResult = typeof finalReason === 'string'
-        && finalReason.startsWith('converged_speedup_');
+        && (finalReason.startsWith('converged_speedup_')
+          || finalReason.startsWith('converged_segment_assembly_'));
       const finalSpeedupChoice = winner.speedup_final_audio_choice
-        || (finalReason === 'converged_speedup_refined' ? 'speedup' : 'converged');
+        || (finalReason === 'converged_speedup_refined' ? 'speedup'
+          : (finalReason === 'converged_segment_assembly_refined' ? 'assembly' : 'converged'));
       const speedupPostDuration = Number(winner.speedup_post_duration);
       const baseFinalDuration = Number(
         winner.final_duration != null ? winner.final_duration : winner.audio_duration
@@ -2483,17 +2651,21 @@
         converged_speedup_longer_kept_original: '变速音频命中收敛区间，但不比收敛音频更短',
         converged_speedup_miss_kept_original: '变速音频未命中收敛区间',
         converged_speedup_failed_kept_original: '变速音频生成失败',
+        converged_segment_assembly_refined: '段级组装音频命中 [v-1, v]，且不超过视频时长',
+        converged_segment_assembly_miss_kept_original: '段级组装未能拼出视频时长以内的可用音轨',
       };
-      const finalSpeedupChoiceLabel = finalSpeedupChoice === 'speedup'
-        ? '采用变速音频参与视频合成'
-        : '保留收敛音频参与视频合成';
+      const finalSpeedupChoiceLabel = finalSpeedupChoice === 'assembly'
+        ? '采用段级组装音频参与视频合成'
+        : (finalSpeedupChoice === 'speedup'
+            ? '采用变速音频参与视频合成'
+            : '保留收敛音频参与视频合成');
       if (finalReason === 'converged') {
         lines.push(`<strong>✓ 收敛成功</strong>：第 ${finalRound} 轮音频 ${finalDuration.toFixed(1)}s 首次落入目标区间${rangeStr}，直接采用。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
         if (composeLine) lines.push(composeLine);
       } else if (isFinalSpeedupResult) {
-        lines.push(`<strong>收敛音频变速生成</strong>：第 ${finalRound} 轮收敛后音频超过原视频，已额外生成变速音频评估；<b>${finalSpeedupChoiceLabel}</b>（${finalSpeedupReasonLabels[finalReason] || '已按评估结果选择最终音频'}）。`);
+        lines.push(`<strong>收敛音频段级组装</strong>：第 ${finalRound} 轮收敛后音频超过原视频，已额外生成段级候选并尝试重组；<b>${finalSpeedupChoiceLabel}</b>（${finalSpeedupReasonLabels[finalReason] || '已按评估结果选择最终音频'}）。`);
         if (compareLine) lines.push(compareLine);
         if (tempoLine) lines.push(tempoLine);
         if (composeLine) lines.push(composeLine);
@@ -2542,6 +2714,249 @@
     }
   }
 
+  function renderSentenceReconcileSyncSummary(sourceRows, context = {}) {
+    const summary = buildSentenceReconcileSyncSummary(sourceRows, context);
+    if (!summary) return "";
+    const metricHtml = [
+      ["原视频时长", formatAvDuration(summary.videoDuration)],
+      ["句级目标合计", formatAvDuration(summary.targetDuration)],
+      ["当前整段配音", formatAvDuration(summary.currentAudioDuration)],
+      ["最终整段配音", formatAvDuration(summary.finalAudioDuration)],
+      ["字幕时间轴", formatAvDuration(summary.subtitleDuration)],
+      ["音画差值", formatSignedSeconds(summary.audioVideoDelta)],
+      ["音字幕差值", formatSignedSeconds(summary.audioSubtitleDelta)],
+    ].map(([label, value]) => `
+      <div class="sentence-sync-metric">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `).join("");
+
+    const problemsHtml = summary.problems.length
+      ? summary.problems.slice(0, 5).map(problem => `
+          <div class="sentence-sync-problem">
+            <div class="sentence-sync-problem-title">
+              <span>句 ${escapeHtml(problem.asrIndex)}</span>
+              <strong>${escapeHtml(problem.label)}</strong>
+              <span>${escapeHtml(formatAvDelta(problem.deltaPct))}</span>
+            </div>
+            <div>问题点：${escapeHtml(problem.reason)}</div>
+            <div>建议调整：${escapeHtml(problem.advice)}</div>
+          </div>
+        `).join("")
+      : `<div class="sentence-sync-problem is-ok">问题点：没有发现明显句级时长异常；优先检查画面切点和字幕是否按最终音频重新生成。</div>`;
+
+    return `
+      <div class="sentence-sync-summary ${summary.className}">
+        <div class="sentence-sync-head">
+          <div>
+            <div class="sentence-sync-title">声音 / 画面 / 字幕同步诊断</div>
+            <div class="sentence-sync-flow">生成链路：句级译文 → 首轮 TTS → 逐句收敛/调速/重生成 → 拼成整段配音 → 用最终 TTS 时长生成字幕。</div>
+          </div>
+          <span class="sentence-sync-verdict">${escapeHtml(summary.verdict)}</span>
+        </div>
+        <div class="sentence-sync-metrics">${metricHtml}</div>
+        <div class="sentence-sync-diagnosis">${escapeHtml(summary.diagnosis)}</div>
+        <div class="sentence-sync-problems">${problemsHtml}</div>
+      </div>
+    `;
+  }
+
+  function buildSentenceReconcileSyncSummary(sourceRows, context = {}) {
+    const rows = Array.isArray(sourceRows) ? sourceRows.filter(Boolean) : [];
+    if (!rows.length) return null;
+    const av = context.av || {};
+    const subtitleUnits = collectSentenceSubtitleUnits(av);
+    const timeline = av.timeline_manifest || currentTask?.timeline_manifest || {};
+    const videoDuration = firstFinite([
+      currentTask?.video_duration,
+      currentTask?.original_video_duration,
+      timeline.video_duration,
+      maxEndTime(rows),
+      maxEndTime(currentTask?.script_segments || []),
+      maxEndTime(currentTask?.utterances || []),
+    ]);
+    const targetDuration = sumDuration(rows, row => row.target_duration);
+    const audioFromRows = sumDuration(rows, row => row.audio_duration ?? row.tts_duration ?? row.current_duration);
+    const currentAudioDuration = firstFinite([
+      timeline.total_tts_duration,
+      av.total_tts_duration,
+      av.tts_total_duration,
+      audioFromRows,
+    ]);
+    const finalAudioDuration = firstFinite([
+      av.final_audio_duration,
+      currentAudioDuration,
+      audioFromRows,
+    ]);
+    const subtitleDuration = firstFinite([
+      maxEndTime(subtitleUnits),
+      currentTask?.corrected_subtitle ? maxEndTime(currentTask.corrected_subtitle.chunks || []) : null,
+      finalAudioDuration,
+    ]);
+    const audioVideoDelta = (finalAudioDuration != null && videoDuration != null)
+      ? finalAudioDuration - videoDuration
+      : null;
+    const audioSubtitleDelta = (finalAudioDuration != null && subtitleDuration != null)
+      ? finalAudioDuration - subtitleDuration
+      : null;
+    const debugSentences = Array.isArray(context.debugSentences) ? context.debugSentences : [];
+    const problems = rows.map((row, rowIndex) => {
+      const debug = debugSentences.find(item => String(item.asr_index ?? item.index ?? rowIndex) === String(row.asr_index ?? row.index ?? rowIndex)) || {};
+      return buildSentenceSyncIssue(row, debug, rowIndex);
+    }).filter(Boolean).sort((a, b) => Math.abs(b.deltaPct || 0) - Math.abs(a.deltaPct || 0));
+
+    const hardProblemCount = problems.filter(problem => Math.abs(problem.deltaPct || 0) > 8).length;
+    let verdict = "同步信息不足";
+    let diagnosis = "还缺原视频或最终音频时长，先等语音生成和字幕生成写入更多状态。";
+    let className = "is-review";
+    if (videoDuration != null && finalAudioDuration != null) {
+      const absVideoDelta = Math.abs(audioVideoDelta || 0);
+      const absSubtitleDelta = Math.abs(audioSubtitleDelta || 0);
+      if (absVideoDelta <= 0.35 && absSubtitleDelta <= 0.15 && hardProblemCount === 0) {
+        verdict = "三者基本同步";
+        diagnosis = "最终整段配音、字幕时间轴和原视频时长差距很小；如果观感仍漂移，优先看具体画面切点。";
+        className = "is-ok";
+      } else if (absVideoDelta <= 1.0 && absSubtitleDelta <= 0.25) {
+        verdict = "轻微同步风险";
+        diagnosis = buildGlobalSyncDiagnosis(audioVideoDelta, audioSubtitleDelta, problems);
+        className = "is-warning";
+      } else {
+        verdict = "需要调整";
+        diagnosis = buildGlobalSyncDiagnosis(audioVideoDelta, audioSubtitleDelta, problems);
+        className = "is-danger";
+      }
+    }
+
+    return {
+      videoDuration,
+      targetDuration,
+      currentAudioDuration,
+      finalAudioDuration,
+      subtitleDuration,
+      audioVideoDelta,
+      audioSubtitleDelta,
+      problems,
+      verdict,
+      diagnosis,
+      className,
+    };
+  }
+
+  function buildGlobalSyncDiagnosis(audioVideoDelta, audioSubtitleDelta, problems) {
+    const lines = [];
+    const avDelta = numberOrNull(audioVideoDelta);
+    const subDelta = numberOrNull(audioSubtitleDelta);
+    if (avDelta != null) {
+      if (Math.abs(avDelta) <= 0.35) {
+        lines.push("整段配音与原视频长度基本贴合。");
+      } else if (avDelta > 0) {
+        lines.push(`整段配音比原视频长 ${Math.abs(avDelta).toFixed(2)}s，末尾可能被截或字幕落后画面。`);
+      } else {
+        lines.push(`整段配音比原视频短 ${Math.abs(avDelta).toFixed(2)}s，画面末尾可能无声或字幕提前结束。`);
+      }
+    }
+    if (subDelta != null && Math.abs(subDelta) > 0.15) {
+      lines.push(`最终音频与字幕时间轴相差 ${formatSignedSeconds(subDelta)}，需要从字幕生成步重新生成字幕。`);
+    }
+    if (problems.length) {
+      const worst = problems[0];
+      lines.push(`最明显的问题在句 ${worst.asrIndex}：${worst.reason}，先按该句建议调整。`);
+    }
+    return lines.join(" ");
+  }
+
+  function buildSentenceSyncIssue(sentence, debug, rowIndex) {
+    const targetDuration = numberOrNull(sentence?.target_duration ?? debug?.target_duration);
+    const ttsDuration = numberOrNull(
+      sentence?.audio_duration ?? sentence?.tts_duration ?? sentence?.current_duration
+      ?? debug?.audio_duration ?? debug?.tts_duration ?? debug?.current_duration
+    );
+    const explicitDelta = numberOrNull(sentence?.delta_pct ?? sentence?.deviation_pct ?? debug?.delta_pct ?? debug?.deviation_pct);
+    const deltaPct = explicitDelta != null
+      ? explicitDelta
+      : (targetDuration && ttsDuration != null ? ((ttsDuration - targetDuration) / targetDuration) * 100 : null);
+    const status = String(sentence?.status || debug?.status || "").toLowerCase();
+    const asrIndex = sentence?.asr_index ?? debug?.asr_index ?? sentence?.index ?? rowIndex;
+    if (targetDuration == null || ttsDuration == null) {
+      return {
+        asrIndex,
+        deltaPct: 0,
+        label: "缺少时长",
+        reason: "这一句缺目标或实测 TTS 时长，无法判断同步。",
+        advice: "重新生成语音或检查该句 TTS 文件是否落盘。",
+      };
+    }
+    const absDelta = Math.abs(deltaPct || 0);
+    const needsReview = absDelta > 5
+      || status.includes("warning")
+      || status.includes("long")
+      || status.includes("short")
+      || status.includes("review")
+      || status.includes("overshoot");
+    if (!needsReview) return null;
+    if ((deltaPct || 0) > 0 || status.includes("long") || status.includes("overshoot")) {
+      return {
+        asrIndex,
+        deltaPct,
+        label: "配音偏长",
+        reason: `目标 ${formatAvDuration(targetDuration)}，实际 ${formatAvDuration(ttsDuration)}，声音会拖住字幕/画面。`,
+        advice: "先缩短句级译文，删掉修饰语和重复信息；仍偏长再重生成 TTS 或小幅提高 speed。",
+      };
+    }
+    return {
+      asrIndex,
+      deltaPct,
+      label: "配音偏短",
+      reason: `目标 ${formatAvDuration(targetDuration)}，实际 ${formatAvDuration(ttsDuration)}，字幕可能提前结束或画面空声。`,
+      advice: "适当扩写译文或降低 speed；如果画面动作很短，就保持短句并让字幕重新按最终音频生成。",
+    };
+  }
+
+  function collectSentenceSubtitleUnits(av) {
+    if (Array.isArray(av?.subtitle_units)) return av.subtitle_units;
+    if (Array.isArray(av?.corrected_subtitle?.chunks)) return av.corrected_subtitle.chunks;
+    if (Array.isArray(currentTask?.corrected_subtitle?.chunks)) return currentTask.corrected_subtitle.chunks;
+    return [];
+  }
+
+  function firstFinite(values) {
+    for (const value of values || []) {
+      const numeric = numberOrNull(value);
+      if (numeric != null) return numeric;
+    }
+    return null;
+  }
+
+  function sumDuration(rows, getter) {
+    let total = 0;
+    let count = 0;
+    (rows || []).forEach(row => {
+      const numeric = numberOrNull(getter(row));
+      if (numeric != null) {
+        total += numeric;
+        count += 1;
+      }
+    });
+    return count ? total : null;
+  }
+
+  function maxEndTime(rows) {
+    let maxEnd = null;
+    (rows || []).forEach(row => {
+      const end = numberOrNull(row?.end_time ?? row?.end ?? row?.source_end);
+      if (end != null) maxEnd = maxEnd == null ? end : Math.max(maxEnd, end);
+    });
+    return maxEnd;
+  }
+
+  function formatSignedSeconds(value) {
+    const numeric = numberOrNull(value);
+    if (numeric == null) return "--";
+    if (Math.abs(numeric) < 0.005) return "0.00s";
+    return `${numeric > 0 ? "+" : ""}${numeric.toFixed(2)}s`;
+  }
+
   function renderSentenceReconcileDurationLog(container, progressRounds = null) {
     if (!container || !currentTask || !isAvSyncTask(currentTask)) return false;
     const av = currentTask.variants?.av || {};
@@ -2585,6 +3000,7 @@
       </div>
       <div class="collapsible-body">
     `);
+    parts.push(renderSentenceReconcileSyncSummary(sourceRows, { av, avDebug, debugSentences, progressItems }));
 
     sourceRows.forEach((sentence, rowIndex) => {
       const debug = debugSentences.find(item => String(item.asr_index ?? item.index ?? rowIndex) === String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
@@ -2607,6 +3023,10 @@
       const skipHtml = skipReason
         ? `<div class="duration-round-meta warning">文案改写已跳过：${escapeHtml(skipReason)}</div>`
         : "";
+      const syncIssue = buildSentenceSyncIssue(sentence, debug, rowIndex);
+      const issueHtml = syncIssue
+        ? `<div class="duration-round-meta warning">问题点：${escapeHtml(syncIssue.reason)} · 建议调整：${escapeHtml(syncIssue.advice)}</div>`
+        : "";
       const attemptsDetail = attempts.length ? renderAvAttemptsDetail(attempts) : "";
       parts.push(`
         <div class="duration-round ${statusLabel.className}">
@@ -2615,9 +3035,10 @@
             <span>句 ${escapeHtml(asrIndex)}</span>
             <span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span>
           </div>
-          <div class="duration-round-meta">目标 ${formatAvDuration(targetDuration)} · 当前 ${formatAvDuration(ttsDuration)} · 偏差 ${formatAvDelta(computedDelta)}${charLabel}</div>
+          <div class="duration-round-meta">目标 ${formatAvDuration(targetDuration)} · 实际 ${formatAvDuration(ttsDuration)} · 偏差 ${formatAvDelta(computedDelta)}${charLabel}</div>
           <div class="duration-round-meta">原文：${escapeHtml(sourceText || "--")}</div>
-          <div class="duration-round-meta">配音文案：${escapeHtml(finalText || "--")}</div>
+          <div class="duration-round-meta">句级翻译：${escapeHtml(finalText || "--")}</div>
+          ${issueHtml}
           ${skipHtml}
           ${attemptsDetail ? `<div class="duration-round-meta">${attemptsDetail}</div>` : ""}
         </div>
@@ -3343,26 +3764,40 @@
   function renderSpeedupCard(r, tid) {
     if (!r || !r.speedup_applied) return '';
     const isFinalConvergedSpeedup = r.speedup_context === 'final_converged_overshoot'
-      || (typeof r.final_reason === 'string' && r.final_reason.startsWith('converged_speedup_'));
+      || (typeof r.final_reason === 'string'
+        && (r.final_reason.startsWith('converged_speedup_')
+          || r.final_reason.startsWith('converged_segment_assembly_')));
     const hasFinalSpeedupDecision = typeof r.final_reason === 'string'
-      && r.final_reason.startsWith('converged_speedup_');
-    const cardTitle = isFinalConvergedSpeedup ? '收敛音频变速生成' : '变速短路';
+      && (r.final_reason.startsWith('converged_speedup_')
+        || r.final_reason.startsWith('converged_segment_assembly_'));
+    const usesSegmentAssembly = !!r.segment_assembly_applied;
+    const cardTitle = usesSegmentAssembly
+      ? '段级候选组装'
+      : (isFinalConvergedSpeedup ? '收敛音频变速生成' : '变速短路');
     const speedFmt = (r.speedup_speed != null) ? Number(r.speedup_speed).toFixed(2) : '?';
     const preDur   = (r.speedup_pre_duration  != null) ? Number(r.speedup_pre_duration).toFixed(2)  : '?';
-    const postDur  = (r.speedup_post_duration != null) ? Number(r.speedup_post_duration).toFixed(2) : '?';
+    const postValue = r.segment_assembly_duration != null
+      ? r.segment_assembly_duration
+      : r.speedup_post_duration;
+    const postDur  = (postValue != null) ? Number(postValue).toFixed(2) : '?';
     const choice = r.speedup_final_audio_choice
-      || (r.final_reason === 'converged_speedup_refined' ? 'speedup' : 'converged');
-    const choiceLabel = choice === 'speedup'
-      ? '采用变速音频参与视频合成'
-      : '保留收敛音频参与视频合成';
+      || (r.final_reason === 'converged_speedup_refined' ? 'speedup'
+        : (r.final_reason === 'converged_segment_assembly_refined' ? 'assembly' : 'converged'));
+    const choiceLabel = choice === 'assembly'
+      ? '采用段级组装音频参与视频合成'
+      : (choice === 'speedup'
+          ? '采用变速音频参与视频合成'
+          : '保留收敛音频参与视频合成');
     const reasonLabel = ({
       converged_speedup_refined: '变速音频在收敛区间，且比收敛音频更短',
       converged_speedup_longer_kept_original: '变速音频在收敛区间，但不比收敛音频更短',
       converged_speedup_miss_kept_original: '变速音频不在收敛区间',
       converged_speedup_failed_kept_original: '变速音频生成失败',
+      converged_segment_assembly_refined: '段级组装命中 [v-1, v]',
+      converged_segment_assembly_miss_kept_original: '段级组装未命中 [v-1, v]',
     })[r.final_reason] || '';
     const resultLine = isFinalConvergedSpeedup && hasFinalSpeedupDecision
-      ? `<div class="tts-speedup-result ${choice === 'speedup' ? 'success' : 'warning'}">
+      ? `<div class="tts-speedup-result ${(choice === 'speedup' || choice === 'assembly') ? 'success' : 'warning'}">
           处理结果：<strong>${choiceLabel}</strong>${reasonLabel ? `（${reasonLabel}）` : ''}
         </div>`
       : '';
@@ -3371,7 +3806,7 @@
     if (r.speedup_failed_reason) {
       const failedTip = isFinalConvergedSpeedup
         ? `${escapeHtml(r.speedup_failed_reason)}（已保留收敛音频用于视频合成）`
-        : `${escapeHtml(r.speedup_failed_reason)}（已回退原始音频走 atempo 兜底）`;
+        : `${escapeHtml(r.speedup_failed_reason)}（未采用本轮变速候选，继续后续 rewrite）`;
       return `
       <div class="tts-speedup-card">
         <div class="tts-speedup-header">
@@ -3386,7 +3821,13 @@
       </div>`;
     }
 
-    const hitBadge = isFinalConvergedSpeedup
+    const hitBadge = usesSegmentAssembly
+      ? (r.segment_assembly_hit === true
+          ? '<span style="color:var(--success-fg)">✓ 命中 [v-1, v]</span>'
+          : (r.segment_assembly_hit === false
+              ? '<span style="color:var(--warning-fg)">⚠ 未命中 [v-1, v]</span>'
+              : '<span style="color:var(--fg-muted)">生成 / 组装中</span>'))
+      : (isFinalConvergedSpeedup
       ? (r.speedup_hit_final === true
           ? '<span style="color:var(--success-fg)">✓ 命中收敛区间</span>'
           : (r.speedup_hit_final === false
@@ -3394,11 +3835,11 @@
               : '<span style="color:var(--fg-muted)">生成 / 评估中</span>'))
       : (r.speedup_hit_final
           ? '<span style="color:var(--success-fg)">✓ 命中 [v-1, v+2]</span>'
-          : '<span style="color:var(--warning-fg)">⚠ 未命中 final，已 atempo 兜底</span>');
+          : '<span style="color:var(--warning-fg)">⚠ 未命中 final，继续 rewrite</span>'));
 
     // 双轨播放器：变速前用原始 tts_full round 音频，变速后用 speedup_audio_path（相对路径）
     const preRel  = `tts_full.round_${r.round}.mp3`;
-    const postRel = r.speedup_audio_path || '';
+    const postRel = r.segment_assembly_audio_path || r.speedup_audio_path || '';
     const preUrl  = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(preRel)}`);
     const postUrl = safeMediaSrc(`/tasks/${encodeURIComponent(tid)}/artifact?path=${encodeURIComponent(postRel)}`);
 

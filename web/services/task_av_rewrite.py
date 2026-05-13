@@ -15,6 +15,7 @@ from appcore.preview_artifacts import (
 )
 from appcore.runtime import _build_av_localized_translation, _build_av_tts_segments
 from pipeline import tts
+from pipeline.audio_stitch import build_source_timeline_audio
 from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
 from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, duration_ratio
 from pipeline.subtitle import build_srt_from_chunks, save_srt
@@ -64,7 +65,7 @@ def resolve_av_voice_ids(
     return resolved_voice_id, elevenlabs_voice_id
 
 
-def rebuild_tts_full_audio(
+def rebuild_tts_full_audio_legacy(
     task_dir: str,
     segments: list[dict],
     variant: str = "av",
@@ -93,6 +94,22 @@ def rebuild_tts_full_audio(
     if result.returncode != 0:
         raise RuntimeError(f"音频拼接失败: {result.stderr}")
     return full_audio_path
+
+
+def rebuild_tts_full_audio(
+    task_dir: str,
+    segments: list[dict],
+    variant: str = "av",
+    *,
+    run_command=None,
+) -> str:
+    full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
+    full_audio_path = os.path.join(task_dir, full_audio_name)
+    return build_source_timeline_audio(
+        segments,
+        output_path=full_audio_path,
+        run_command=run_command,
+    )
 
 
 def build_translate_compare_artifact(
@@ -290,8 +307,14 @@ def rewrite_task_av_sentence(
     full_audio_path = rebuild_audio(task_dir, tts_segments, variant)
 
     sync_granularity = str((av_inputs or {}).get("sync_granularity") or "hybrid")
-    build_subtitle_units = build_subtitle_units or build_subtitle_units_from_sentences
-    subtitle_units = build_subtitle_units(sentences, mode=sync_granularity)
+    if build_subtitle_units is None:
+        subtitle_units = build_subtitle_units_from_sentences(
+            sentences,
+            mode=sync_granularity,
+            timeline_mode="source_time",
+        )
+    else:
+        subtitle_units = build_subtitle_units(sentences, mode=sync_granularity)
     build_srt = build_srt or build_srt_from_chunks
     srt_content = build_srt(subtitle_units)
     save_subtitle = save_subtitle or save_srt

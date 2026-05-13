@@ -33,6 +33,32 @@ def test_decompose_shots_parses_response_and_normalizes_boundaries():
     assert "duration" in shots[0]
 
 
+def test_decompose_shots_keeps_model_end_when_duration_unknown():
+    fake_response = {
+        "json": {
+            "shots": [
+                {"index": 1, "start": 0.0, "end": 17.33,
+                 "description": "product demo"},
+                {"index": 2, "start": 17.33, "end": 23.47,
+                 "description": "rear mirror and CTA"},
+            ]
+        },
+        "text": None,
+        "raw": None,
+        "usage": {},
+    }
+    with patch("pipeline.shot_decompose.gemini_generate",
+               return_value=fake_response):
+        shots = decompose_shots(
+            video_path="/tmp/v.mp4",
+            user_id=1,
+            duration_seconds=0.0,
+        )
+
+    assert shots[-1]["end"] == 23.47
+    assert shots[-1]["duration"] > 0
+
+
 def test_decompose_shots_uses_configured_binding_model_by_default():
     fake_response = {
         "json": {

@@ -76,6 +76,8 @@ from ._helpers import (
     _tts_final_target_range,
     _in_speedup_window,
     _speedup_ratio,
+    _speedup_candidate_speeds,
+    _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
     _distance_to_duration_range,
@@ -357,6 +359,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         subtitle_units = build_subtitle_units_from_sentences(
             final_sentences,
             mode=str(av_inputs.get("sync_granularity") or "hybrid"),
+            timeline_mode="source_time",
         )
         final_tts_output = {
             "full_audio_path": final_full_audio_path,
