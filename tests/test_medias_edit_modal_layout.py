@@ -120,6 +120,12 @@ def test_detail_images_support_multi_select_delete_assets():
     assert ".oc-detail-image.is-selected" in html
 
 
+def test_medias_js_uses_cache_buster_for_detail_image_multiselect():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "filename='medias.js', v='detail-image-multiselect-20260513'" in html
+
+
 def test_edit_video_material_cards_support_inline_filename_edit():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
