@@ -99,6 +99,7 @@
   bootVoices();
   bootSharedSubtitlePreview();
   renderStepPreviews({});
+  syncTtsCardCollapseState();
   bootInitialTask();
 
   // QA 评估卡片有自己的 8s 轮询；任务跑完后 activeRefreshLoop 会停，
@@ -906,7 +907,43 @@
     updateResumeButtons(currentTask);
     syncActiveRefreshLoop(currentTask);
     renderTtsDurationLog();
+    syncTtsCardCollapseState();
     renderStatusCard();
+  }
+
+  function syncTtsCardCollapseState(nextCollapsed = null) {
+    const stepEl = document.getElementById("step-tts");
+    const previewEl = document.getElementById("preview-tts");
+    const durationLogEl = document.getElementById("ttsDurationLog");
+    const toggle = document.getElementById("ttsCardCollapseToggle");
+    if (!stepEl || !previewEl || !durationLogEl || !toggle) return;
+
+    const storageKey = `ttsCardCollapsed:${taskId || "global"}`;
+    if (toggle.dataset.bound !== "1") {
+      toggle.dataset.bound = "1";
+      toggle.addEventListener("click", () => {
+        syncTtsCardCollapseState(!stepEl.classList.contains("tts-card-collapsed"));
+      });
+    }
+
+    let collapsed = false;
+    if (nextCollapsed === null) {
+      try {
+        collapsed = localStorage.getItem(storageKey) === "1";
+      } catch (_) {
+        collapsed = false;
+      }
+    } else {
+      collapsed = Boolean(nextCollapsed);
+      try {
+        localStorage.setItem(storageKey, collapsed ? "1" : "0");
+      } catch (_) { /* quota / private mode */ }
+    }
+
+    stepEl.classList.toggle("tts-card-collapsed", collapsed);
+    toggle.textContent = collapsed ? "展开" : "收拢";
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    toggle.title = collapsed ? "展开语音生成日志" : "收拢语音生成日志";
   }
 
   function renderStepMessages() {
