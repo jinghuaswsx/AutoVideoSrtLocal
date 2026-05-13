@@ -121,6 +121,7 @@ Unit tests must cover:
 4. `build_source_timeline_audio` uses `audio_start_time` when present.
 5. Subtitle units follow `audio_start_time` in compact mode.
 6. `shot_char_limit` no longer disables rewrite in `sentence_reconcile`.
+7. Alignment preview artifacts keep the `scene_cuts` item before the segment list so the shared workbench renderer can show detected cut points and confirmed script segments together.
 
 Regression evidence for task `d8aba350-231a-45f4-909a-fb4ed77b6d75`:
 
