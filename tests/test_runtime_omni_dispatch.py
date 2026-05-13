@@ -336,6 +336,71 @@ def test_subtitle_dispatches_to_sentence_units_via_av_sync_profile(
     assert getattr(omni_runner, "_av_subtitle_called", None) == ("t-x", "/tmp/x")
 
 
+def test_sentence_units_subtitle_triggers_quality_assessment(
+    monkeypatch, tmp_path, omni_runner,
+):
+    import appcore.task_state as task_state
+    from appcore.translate_profiles.av_sync_profile import AvSyncProfile
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+    task_id = "omni-sentence-units-qa"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        target_lang="fr",
+        variants={
+            "av": {
+                "sentences": [
+                    {
+                        "asr_index": 0,
+                        "source_text": "A must-have.",
+                        "text": "Indispensable.",
+                        "tts_duration": 1.0,
+                        "target_duration": 1.0,
+                        "status": "ok",
+                    },
+                ],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        omni_runner,
+        "_complete_original_video_passthrough",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        omni_runner,
+        "_resolve_av_inputs",
+        lambda task: {
+            "target_language": "fr",
+            "target_language_name": "French",
+            "sync_granularity": "sentence",
+        },
+    )
+    monkeypatch.setattr(
+        omni_runner,
+        "_target_language_name",
+        lambda av_inputs: av_inputs["target_language_name"],
+    )
+    calls = []
+    monkeypatch.setattr(
+        "appcore.quality_assessment.trigger_assessment",
+        lambda **kwargs: calls.append(kwargs) or 1,
+    )
+
+    AvSyncProfile().subtitle(omni_runner, task_id, str(tmp_path))
+
+    assert task_state.get(task_id)["steps"]["subtitle"] == "done"
+    assert calls == [{
+        "task_id": task_id,
+        "project_type": "omni_translate",
+        "triggered_by": "auto",
+        "user_id": 1,
+    }]
+
+
 def test_tts_dispatches_to_strategy_by_cfg(monkeypatch, omni_runner):
     _patch_resolve_cfg(monkeypatch, CFG_AV_SYNC_CURRENT)
     seen = {}

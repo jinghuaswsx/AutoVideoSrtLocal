@@ -339,9 +339,9 @@ USE_CASES: dict[str, UseCase] = {
         "video_analysis",
         "分镜拆解",
         "识别镜头切换并生成分镜描述",
-        "gemini_aistudio",
-        "gemini-3.1-pro-preview",
-        "gemini_video_analysis",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
         "tokens",
     ),
     "video_csk.analyze": _uc(

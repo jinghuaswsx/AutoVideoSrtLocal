@@ -255,5 +255,21 @@ class AvSyncProfile(TranslateProfile):
             )
             runner._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
             runner._set_step(task_id, "subtitle", "done", f"{target_language_name} 字幕生成完成")
+            try:
+                from appcore import quality_assessment as _qa
+
+                _qa.trigger_assessment(
+                    task_id=task_id,
+                    project_type=runner.project_type,
+                    triggered_by="auto",
+                    user_id=runner.user_id,
+                )
+            except Exception:
+                log.warning(
+                    "[%s] failed to trigger translation quality assessment for task %s",
+                    getattr(runner, "project_type", "unknown"),
+                    task_id,
+                    exc_info=True,
+                )
         except Exception as exc:
             _fail_localize(task_id, runner, current_step, str(exc))

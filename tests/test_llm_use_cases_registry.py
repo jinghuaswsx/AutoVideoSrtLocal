@@ -52,10 +52,14 @@ def test_video_translate_asr_and_tts_defaults():
 
 
 def test_gemini_video_analysis_family_defaults():
-    for code in ("video_score.run", "video_review.analyze", "shot_decompose.run"):
+    for code in ("video_score.run", "video_review.analyze"):
         uc = USE_CASES[code]
         assert uc["default_provider"] == "gemini_aistudio"
         assert uc["usage_log_service"] == "gemini_video_analysis"
+    shot = USE_CASES["shot_decompose.run"]
+    assert shot["default_provider"] == "openrouter"
+    assert shot["default_model"] == "google/gemini-3-flash-preview"
+    assert shot["usage_log_service"] == "openrouter"
 
 
 def test_image_and_link_check_defaults():
@@ -72,7 +76,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 45
+    assert len(USE_CASES) == 46
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES

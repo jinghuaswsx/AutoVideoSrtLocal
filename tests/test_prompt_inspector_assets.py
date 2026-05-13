@@ -60,3 +60,13 @@ def test_omni_js_step_order_tracks_dynamic_pipeline_steps():
         '"asr_clean", "voice_match", "alignment", "translate", "tts", '
         '"av_sync_audit", "loudness_match", "subtitle", "compose", "export"];'
     ) in scripts
+
+
+def test_omni_workbench_renders_special_artifacts_and_keeps_separation_panel():
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "function renderAsrCleanArtifact" in scripts
+    assert "function renderShotDecomposeArtifact" in scripts
+    assert "function renderAvSyncAuditArtifact" in scripts
+    assert "specializedPreviewOwnsStep(step)" in scripts
+    assert 'step === "separate" || step === "loudness_match"' in scripts

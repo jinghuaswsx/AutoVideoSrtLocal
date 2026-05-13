@@ -64,6 +64,32 @@ def test_build_inputs_handles_missing_full_text():
     assert inputs["tts_recognition"] == "hi world"
 
 
+def test_build_inputs_reads_sentence_reconcile_variant_outputs():
+    task = {
+        "utterances": [{"text": "A must-have."}, {"text": "Fits any car."}],
+        "variants": {
+            "normal": {
+                "localized_translation": {
+                    "full_text": "Un indispensable.\nPour toute voiture.",
+                },
+            },
+            "av": {
+                "sentences": [
+                    {"text": "Indispensable.", "tts_text": "Indispensable."},
+                    {"text": "Toute voiture.", "tts_text": "Toute voiture."},
+                ],
+            },
+        },
+        "source_language": "en",
+        "target_lang": "fr",
+    }
+
+    inputs = svc._build_inputs(task)
+
+    assert inputs["translation"] == "Un indispensable.\nPour toute voiture."
+    assert inputs["tts_recognition"] == "Indispensable. Toute voiture."
+
+
 def test_get_project_for_assessment_queries_live_project(monkeypatch):
     from appcore import quality_assessment as qa
 

@@ -25,28 +25,100 @@ class AssessmentInProgressError(RuntimeError):
         self.run_id = run_id
 
 
+def _join_text_items(items: Any, *keys: str) -> str:
+    parts: list[str] = []
+    if not isinstance(items, list):
+        return ""
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key in keys:
+            value = (item.get(key) or "").strip() if isinstance(item.get(key), str) else ""
+            if value:
+                parts.append(value)
+                break
+    return " ".join(parts).strip()
+
+
+def _translation_from_localized(loc: Any) -> str:
+    if not isinstance(loc, dict):
+        return ""
+    full_text = (loc.get("full_text") or "").strip()
+    if full_text:
+        return full_text
+    return _join_text_items(
+        loc.get("sentences") or [],
+        "text",
+        "translated",
+        "translated_text",
+        "tts_text",
+    )
+
+
+def _localized_translation_candidates(task: dict) -> list[dict]:
+    candidates: list[dict] = []
+    top_level = task.get("localized_translation")
+    if isinstance(top_level, dict):
+        candidates.append(top_level)
+    variants = task.get("variants") or {}
+    ordered_keys = ["normal", "av", "hook_cta"]
+    for key in ordered_keys + [key for key in variants.keys() if key not in ordered_keys]:
+        variant = variants.get(key) or {}
+        if not isinstance(variant, dict):
+            continue
+        loc = variant.get("localized_translation")
+        if isinstance(loc, dict):
+            candidates.append(loc)
+        if isinstance(variant.get("sentences"), list):
+            candidates.append({"sentences": variant.get("sentences")})
+    return candidates
+
+
+def _tts_recognition_from_result(result: Any) -> str:
+    if not isinstance(result, dict):
+        return ""
+    full_text = (result.get("full_text") or "").strip()
+    if full_text:
+        return full_text
+    for key in ("utterances", "segments", "sentences"):
+        text = _join_text_items(result.get(key) or [], "tts_text", "text", "transcript")
+        if text:
+            return text
+    return ""
+
+
+def _tts_recognition_from_variants(task: dict) -> str:
+    variants = task.get("variants") or {}
+    ordered_keys = ["av", "normal", "hook_cta"]
+    for key in ordered_keys + [key for key in variants.keys() if key not in ordered_keys]:
+        variant = variants.get(key) or {}
+        if not isinstance(variant, dict):
+            continue
+        for result_key in ("english_asr_result", "tts_asr_result", "tts_result"):
+            text = _tts_recognition_from_result(variant.get(result_key))
+            if text:
+                return text
+        text = _join_text_items(variant.get("sentences") or [], "tts_text", "text")
+        if text:
+            return text
+    return _tts_recognition_from_result(task.get("tts_result"))
+
+
 def _build_inputs(task: dict) -> dict:
     """Extract the three texts the assessor needs."""
-    utterances = task.get("utterances") or []
-    original_asr = " ".join(
-        (u.get("text") or "").strip() for u in utterances if u.get("text")
-    ).strip()
+    utterances = task.get("utterances") or task.get("utterances_raw") or []
+    original_asr = _join_text_items(utterances, "text")
 
-    loc = task.get("localized_translation") or {}
-    translation = (loc.get("full_text") or "").strip()
-    if not translation:
-        sentences = loc.get("sentences") or []
-        translation = " ".join(
-            (s.get("text") or "").strip() for s in sentences if s.get("text")
-        ).strip()
+    translation = ""
+    for loc in _localized_translation_candidates(task):
+        translation = _translation_from_localized(loc)
+        if translation:
+            break
 
     asr2 = task.get("english_asr_result") or {}
-    tts_recognition = (asr2.get("full_text") or "").strip()
+    tts_recognition = _tts_recognition_from_result(asr2)
     if not tts_recognition:
-        utts = asr2.get("utterances") or []
-        tts_recognition = " ".join(
-            (u.get("text") or "").strip() for u in utts if u.get("text")
-        ).strip()
+        tts_recognition = _tts_recognition_from_variants(task)
 
     # multi-translate 在 asr_normalize 步骤会把 source_language 改写成 'en'（统一英文路径），
     # 但 task.utterances（这里拼成 original_asr）保留的是源语言原文（如 es）。

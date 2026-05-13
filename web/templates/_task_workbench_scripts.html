@@ -933,15 +933,29 @@
     }
   }
 
+  function specializedPreviewOwnsStep(step) {
+    if (!(step === "separate" || step === "loudness_match")) return false;
+    const apiBase = TASK_WORKBENCH_CONFIG.apiBase || "";
+    if (apiBase !== "/api/omni-translate" && apiBase !== "/api/multi-translate") return false;
+    return Boolean(currentTask?.separation);
+  }
+
   function renderStepPreviews(artifacts) {
     STEP_ORDER.forEach(step => {
       const previewEl = document.getElementById(`preview-${step}`);
       if (!previewEl) return;
+      if (specializedPreviewOwnsStep(step)) return;
       const artifact = artifacts[step];
       const status = currentTask?.steps?.[step] || "pending";
       const displayStatus = visualStepStatus(status);
       let html;
-      if (!artifact) {
+      if (step === "asr_clean" && artifact) {
+        html = renderAsrCleanArtifact(artifact);
+      } else if (step === "shot_decompose" && (artifact || (currentTask?.shots || []).length)) {
+        html = renderShotDecomposeArtifact(artifact, currentTask?.shots || []);
+      } else if (step === "av_sync_audit" && artifact) {
+        html = renderAvSyncAuditArtifact(artifact);
+      } else if (!artifact) {
         const message = currentTask?.step_messages?.[step] || placeholderText(displayStatus);
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else if (artifact.layout === "variant_compare") {
@@ -1078,6 +1092,125 @@
         <div style="display:flex;flex-direction:column;gap:10px;">${(variantPayload.items || []).map(item => renderPreviewItem(item, variantKey)).join("")}</div>
       </div>
     `).join("")}</div>`;
+  }
+
+  function renderAsrCleanArtifact(artifact) {
+    const rawUtterances = currentTask?.utterances_raw || artifact.input_utterances || [];
+    const cleanUtterances = currentTask?.utterances || artifact.utterances || [];
+    const rows = [
+      ["语言", artifact.language || currentTask?.source_language || ""],
+      ["模型", artifact.model_used || artifact.model || ""],
+      ["已纯净化", artifact.cleaned === false ? "否" : "是"],
+      ["兜底结果", artifact.fallback_used ? "是" : "否"],
+    ].filter(row => row[1] !== "" && row[1] !== undefined && row[1] !== null);
+    const summary = rows.length
+      ? `<div class="preview-block"><div class="preview-label">纯净化摘要</div>${rows.map(([k, v]) => `<div class="preview-note">${escapeHtml(k)}：${escapeHtml(v)}</div>`).join("")}</div>`
+      : "";
+    const errors = (artifact.validation_errors || []).length
+      ? `<div class="preview-block"><div class="preview-label">校验提示</div><ul class="csk-list">${artifact.validation_errors.map(err => `<li>${escapeHtml(err)}</li>`).join("")}</ul></div>`
+      : "";
+    if (rawUtterances.length || cleanUtterances.length) {
+      return `${summary}${errors}<div class="preview-compare" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+        ${rawUtterances.length ? renderPreviewItem({ type: "utterances", label: `纯净化前 · ${rawUtterances.length} 段`, utterances: rawUtterances }) : ""}
+        ${cleanUtterances.length ? renderPreviewItem({ type: "utterances", label: `纯净化后 · ${cleanUtterances.length} 段`, utterances: cleanUtterances }) : ""}
+      </div>`;
+    }
+    const inputPreview = artifact.input_preview || artifact.input || "";
+    const outputPreview = artifact.output_preview || artifact.output || "";
+    return `${summary}${errors}<div class="preview-compare" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+      ${renderPreviewItem({ type: "text", label: "纯净化前", content: inputPreview })}
+      ${renderPreviewItem({ type: "text", label: "纯净化后", content: outputPreview })}
+    </div>`;
+  }
+
+  function renderShotDecomposeArtifact(artifact, taskShots) {
+    const shots = artifact?.shots || artifact?.items || taskShots || [];
+    if (!shots.length) {
+      const message = currentTask?.step_messages?.shot_decompose || "分镜完成，但没有可展示的详情。";
+      return `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
+    }
+    const rows = shots.map((shot, index) => {
+      const start = shot.start ?? shot.start_time;
+      const end = shot.end ?? shot.end_time;
+      const title = `镜头 ${shot.index ?? index + 1}`;
+      const text = shot.description || shot.visual_description || shot.scene || "";
+      const source = shot.source_text || shot.asr_text || shot.voiceover || "";
+      const notes = [];
+      if (shot.duration !== undefined && shot.duration !== null) notes.push(`时长：${Number(shot.duration).toFixed(2)}s`);
+      if (source) notes.push(`对应原文：${source}`);
+      if (shot.silent) notes.push("无旁白/静音镜头");
+      return `<div class="preview-block">
+        <div class="preview-time">${escapeHtml(title)} · ${fmtTime(start)} → ${fmtTime(end)}</div>
+        <div class="preview-original">${escapeHtml(text || "无画面描述")}</div>
+        ${renderPreviewNotes(notes)}
+      </div>`;
+    }).join("");
+    return `<div class="preview-block"><div class="preview-label">分镜详情</div><div class="preview-note">共 ${shots.length} 段</div></div><div class="preview-list">${rows}</div>`;
+  }
+
+  function renderAvSyncAuditArtifact(artifact) {
+    const summary = artifact.summary || {};
+    const diagnosis = artifact.diagnosis || {};
+    const verification = artifact.verification || {};
+    const metaRows = [
+      ["模式", artifact.mode || ""],
+      ["状态", artifact.status || ""],
+      ["诊断问题", summary.diagnosed],
+      ["复核通过", summary.accepted],
+      ["自动修正", summary.applied],
+      ["回滚", summary.rolled_back],
+      ["人工复核", summary.manual_review],
+    ].filter(row => row[1] !== "" && row[1] !== undefined && row[1] !== null);
+    const meta = `<div class="preview-block"><div class="preview-label">审计摘要</div>${metaRows.map(([k, v]) => `<div class="preview-note">${escapeHtml(k)}：${escapeHtml(v)}</div>`).join("")}</div>`;
+    const diagnosisSummary = diagnosis.summary || diagnosis.error || "";
+    const verificationSummary = verification.summary || verification.error || "";
+    const body = [
+      diagnosisSummary ? renderPreviewItem({ type: "text", label: "Doubao 诊断总结", content: diagnosisSummary }) : "",
+      renderAuditList("诊断问题", diagnosis.issues || []),
+      verificationSummary ? renderPreviewItem({ type: "text", label: "Gemini 复核总结", content: verificationSummary }) : "",
+      renderAuditList("复核通过问题", verification.accepted_issues || []),
+      renderAuditList("修正记录", artifact.applied_fixes || []),
+    ].join("");
+    let jsonText = "";
+    try { jsonText = JSON.stringify(artifact, null, 2); } catch (_) { jsonText = ""; }
+    const raw = jsonText
+      ? `<details class="preview-block"><summary class="preview-label">完整审计 JSON</summary><pre class="preview-text">${escapeHtml(jsonText)}</pre></details>`
+      : "";
+    return `${meta}${body}${raw}`;
+  }
+
+  function renderAuditList(title, list) {
+    if (!list || !list.length) {
+      return `<div class="preview-block"><div class="preview-label">${escapeHtml(title)}</div><div class="preview-note">暂无</div></div>`;
+    }
+    return `<div class="preview-block"><div class="preview-label">${escapeHtml(title)}</div><div class="preview-list">${list.map((item, index) => renderAuditItem(item, index)).join("")}</div></div>`;
+  }
+
+  function renderAuditItem(item, index) {
+    if (!item || typeof item !== "object") {
+      return `<div class="preview-block"><div class="preview-note">${escapeHtml(item || "")}</div></div>`;
+    }
+    const head = [
+      item.severity ? String(item.severity).toUpperCase() : "",
+      item.asr_index !== undefined && item.asr_index !== null ? `ASR ${item.asr_index}` : `#${index + 1}`,
+      item.action || item.safe_action || item.status || "",
+    ].filter(Boolean).join(" · ");
+    const lines = [
+      item.reason || item.problem || item.issue || item.summary || "",
+      item.evidence ? `证据：${item.evidence}` : "",
+      item.before_text ? `修正前：${item.before_text}` : "",
+      item.after_text ? `修正后：${item.after_text}` : "",
+      item.suggested_text ? `建议文本：${item.suggested_text}` : "",
+      item.final_text ? `复核文本：${item.final_text}` : "",
+      item.before_duration_ratio !== undefined && item.before_duration_ratio !== null ? `修正前比例：${Number(item.before_duration_ratio).toFixed(2)}` : "",
+      item.after_duration_ratio !== undefined && item.after_duration_ratio !== null ? `修正后比例：${Number(item.after_duration_ratio).toFixed(2)}` : "",
+    ].filter(Boolean);
+    const fallback = lines.length ? "" : JSON.stringify(item, null, 2);
+    return `<div class="preview-block">
+      <div class="preview-time">${escapeHtml(head)}</div>
+      ${lines.map(line => `<div class="preview-note">${escapeHtml(line)}</div>`).join("")}
+      ${fallback ? `<pre class="preview-text">${escapeHtml(fallback)}</pre>` : ""}
+    </div>`;
   }
 
   function renderPreviewItem(item, variantKey = null) {

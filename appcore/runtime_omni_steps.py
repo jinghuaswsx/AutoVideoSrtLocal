@@ -211,9 +211,11 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
     from pipeline.shot_decompose import align_asr_to_shots, decompose_shots
     from appcore import llm_bindings
 
-    _sd_model = llm_bindings.resolve("shot_decompose.run").get("model") or "gemini-3.1-pro-preview"
+    _sd_binding = llm_bindings.resolve("shot_decompose.run")
+    _sd_provider = _sd_binding.get("provider") or "openrouter"
+    _sd_model = _sd_binding.get("model") or "google/gemini-3-flash-preview"
     runner._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...",
-                     model_tag=f"gemini · {_sd_model}")
+                     model_tag=f"{_sd_provider} · {_sd_model}")
     task = task_state.get(task_id) or {}
     duration = float(task.get("video_duration") or 0.0)
 
