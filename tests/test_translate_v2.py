@@ -63,6 +63,32 @@ def test_translate_shot_retries_when_over_limit():
     assert retry_call["request_payload"]["response_schema"] is not None
 
 
+def test_translate_shot_debug_calls_use_current_llm_binding(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
+        },
+    )
+
+    with patch("pipeline.translate_v2._call_llm", return_value="Listo."):
+        result = translate_shot(
+            shot={"index": 1, "source_text": "原文", "description": "d", "duration": 2.0},
+            target_language="es",
+            char_limit=20,
+            prev_translation=None,
+            next_source=None,
+            user_id=1,
+        )
+
+    debug_call = result["_llm_debug_calls"][0]
+    assert debug_call["provider"] == "openrouter"
+    assert debug_call["model"] == "google/gemini-3-flash-preview"
+    assert debug_call["request_payload"]["provider"] == "openrouter"
+    assert debug_call["request_payload"]["model"] == "google/gemini-3-flash-preview"
+
+
 def test_translate_shot_marks_over_limit_after_max_retries():
     def fake_llm(prompt, user_id):
         return "Always way too long for this limit."

@@ -19,6 +19,7 @@ namespace (Phase 2).
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import logging
 import math
@@ -65,6 +66,20 @@ log = logging.getLogger(__name__)
 # Translate use case (复制自 runtime_multi.py，保持 binding 一致)
 _TRANSLATE_USE_CASE = "video_translate.localize"
 _CJK_CHAR_RE = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
+_SHOT_TRANSLATE_DEFAULT_WORKERS = 4
+_SHOT_TRANSLATE_MAX_WORKERS = 8
+
+
+def _shot_translate_worker_count(total_units: int) -> int:
+    if total_units <= 1:
+        return 1
+    raw = os.getenv("OMNI_SHOT_TRANSLATE_MAX_WORKERS", "").strip()
+    try:
+        workers = int(raw) if raw else _SHOT_TRANSLATE_DEFAULT_WORKERS
+    except ValueError:
+        workers = _SHOT_TRANSLATE_DEFAULT_WORKERS
+    workers = max(1, min(_SHOT_TRANSLATE_MAX_WORKERS, workers))
+    return min(total_units, workers)
 
 
 def _resolve_translate_use_case_binding(use_case: str = _TRANSLATE_USE_CASE) -> tuple[str, str]:
@@ -610,36 +625,89 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     default_cps = 15.0
     cps = get_rate(voice_id, target_lang) or default_cps
 
-    translations: list[dict[str, Any]] = []
-    debug_calls: list[dict[str, Any]] = []
+    jobs: list[dict[str, Any]] = []
     for i, unit in enumerate(translation_units):
         limit = compute_char_limit(float(unit.get("duration") or 0.0), cps)
-        prev_translation = (
-            translations[-1]["translated_text"] if translations else None
-        )
         next_source = (
             translation_units[i + 1].get("source_text")
             if i + 1 < len(translation_units) else None
         )
+        jobs.append({
+            "position": i,
+            "unit": unit,
+            "char_limit": max(1, limit),
+            "next_source": next_source,
+        })
+
+    worker_count = _shot_translate_worker_count(len(jobs))
+    translations_by_position: list[dict[str, Any] | None] = [None] * len(jobs)
+    debug_calls_by_position: list[list[dict[str, Any]]] = [[] for _ in jobs]
+
+    def _run_translate_job(
+        job: dict[str, Any],
+        *,
+        prev_translation: str | None,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        unit = job["unit"]
         result = translate_shot(
             shot=unit,
             target_language=target_lang,
-            char_limit=max(1, limit),
+            char_limit=job["char_limit"],
             prev_translation=prev_translation,
-            next_source=next_source,
+            next_source=job["next_source"],
             user_id=runner.user_id,
         )
         result = dict(result)
-        debug_calls.extend(result.pop("_llm_debug_calls", []))
-        result["char_limit"] = max(1, limit)
+        debug_calls = list(result.pop("_llm_debug_calls", []))
+        result["char_limit"] = job["char_limit"]
         result["unit_index"] = unit.get("index")
         result["asr_index"] = unit.get("asr_index")
         result["shot_context"] = unit.get("shot_context") or []
-        translations.append(result)
-        runner._emit(task_id, EVT_LAB_TRANSLATE_PROGRESS, {
-            "index": unit.get("index"),
-            "result": result,
-        })
+        return result, debug_calls
+
+    if worker_count > 1:
+        with ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="omni-shot-translate",
+        ) as pool:
+            future_to_job = {
+                pool.submit(_run_translate_job, job, prev_translation=None): job
+                for job in jobs
+            }
+            for future in as_completed(future_to_job):
+                job = future_to_job[future]
+                result, call_rows = future.result()
+                position = job["position"]
+                translations_by_position[position] = result
+                debug_calls_by_position[position] = call_rows
+                unit = job["unit"]
+                runner._emit(task_id, EVT_LAB_TRANSLATE_PROGRESS, {
+                    "index": unit.get("index"),
+                    "result": result,
+                })
+    else:
+        prev_translation: str | None = None
+        for job in jobs:
+            result, call_rows = _run_translate_job(
+                job,
+                prev_translation=prev_translation,
+            )
+            position = job["position"]
+            translations_by_position[position] = result
+            debug_calls_by_position[position] = call_rows
+            prev_translation = str(result.get("translated_text") or "") or None
+            unit = job["unit"]
+            runner._emit(task_id, EVT_LAB_TRANSLATE_PROGRESS, {
+                "index": unit.get("index"),
+                "result": result,
+            })
+
+    translations = [item for item in translations_by_position if item is not None]
+    debug_calls = [
+        call
+        for call_rows in debug_calls_by_position
+        for call in call_rows
+    ]
 
     save_llm_debug_calls(
         task_id=task_id,

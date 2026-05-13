@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import threading
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -224,6 +226,74 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     assert (
         task["step_model_tags"]["translate"]
         == "gemini_aistudio · gemini-3.1-pro-preview"
+    )
+
+
+def test_shot_limit_translate_runs_units_concurrently_and_preserves_order(
+    monkeypatch, omni_runner,
+):
+    import appcore.task_state as task_state
+
+    task_id = "omni-shot-concurrent"
+    task_state.create(task_id, "/tmp/video.mp4", "/tmp/task", "video.mp4")
+    task_state.update(
+        task_id,
+        plugin_config=CFG_LAB_CURRENT,
+        target_lang="es",
+        selected_voice_id="voice-1",
+        shots=[
+            {
+                "index": i,
+                "start": float(i - 1),
+                "end": float(i),
+                "duration": 1.0,
+                "source_text": f"Source {i}",
+                "description": f"shot {i}",
+            }
+            for i in range(1, 5)
+        ],
+    )
+    monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda voice_id, lang: 10.0)
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
+        },
+    )
+
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    def fake_translate_shot(shot, **kwargs):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.05)
+        with lock:
+            active -= 1
+        return {
+            "shot_index": shot["index"],
+            "translated_text": f"Texto {shot['index']}",
+            "char_count": 7,
+            "over_limit": False,
+            "retries": 0,
+        }
+
+    monkeypatch.setattr("pipeline.translate_v2.translate_shot", fake_translate_shot)
+
+    omni_runner._step_translate_shot_limit(task_id)
+
+    task = task_state.get(task_id)
+    assert max_active > 1
+    assert [item["translated_text"] for item in task["translations"]] == [
+        "Texto 1", "Texto 2", "Texto 3", "Texto 4",
+    ]
+    assert (
+        task["step_model_tags"]["translate"]
+        == "openrouter · google/gemini-3-flash-preview"
     )
 
 

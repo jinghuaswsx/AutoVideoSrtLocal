@@ -62,6 +62,20 @@ def _call_llm(prompt: str, user_id: int) -> str:
     return text.strip()
 
 
+def _debug_provider_model() -> tuple[str | None, str | None]:
+    try:
+        from appcore import llm_bindings
+
+        binding = llm_bindings.resolve(USE_CASE_CODE)
+        return default_provider_model(
+            USE_CASE_CODE,
+            provider=str(binding.get("provider") or "") or None,
+            model=str(binding.get("model") or "") or None,
+        )
+    except Exception:
+        return default_provider_model(USE_CASE_CODE)
+
+
 def _build_debug_call(
     *,
     phase: str,
@@ -69,7 +83,7 @@ def _build_debug_call(
     prompt: str,
     input_snapshot: dict | None = None,
 ) -> dict:
-    provider, model = default_provider_model(USE_CASE_CODE)
+    provider, model = _debug_provider_model()
     messages = [{"role": "user", "content": prompt}]
     request_payload = build_generate_request_payload(
         use_case_code=USE_CASE_CODE,

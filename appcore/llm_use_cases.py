@@ -277,9 +277,9 @@ USE_CASES: dict[str, UseCase] = {
         "translate_lab",
         "分镜逐句翻译",
         "翻译实验室按分镜逐句翻译口播文案",
-        "gemini_aistudio",
-        "gemini-3.1-pro-preview",
-        "gemini",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
         "tokens",
     ),
     "translate_lab.tts_refine": _uc(

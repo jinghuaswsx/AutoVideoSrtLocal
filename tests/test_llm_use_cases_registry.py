@@ -137,7 +137,12 @@ def test_new_billing_backfill_use_cases_defaults():
     assert USE_CASES["video_csk.analyze"]["usage_log_service"] == "gemini_video_analysis"
 
     assert USE_CASES["translate_lab.shot_translate"]["module"] == "translate_lab"
-    assert USE_CASES["translate_lab.shot_translate"]["default_provider"] == "gemini_aistudio"
+    assert USE_CASES["translate_lab.shot_translate"]["default_provider"] == "openrouter"
+    assert (
+        USE_CASES["translate_lab.shot_translate"]["default_model"]
+        == "google/gemini-3-flash-preview"
+    )
+    assert USE_CASES["translate_lab.shot_translate"]["usage_log_service"] == "openrouter"
     assert USE_CASES["translate_lab.tts_refine"]["module"] == "translate_lab"
     assert USE_CASES["translate_lab.tts_refine"]["default_provider"] == "gemini_aistudio"
 
