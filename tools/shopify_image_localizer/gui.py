@@ -156,8 +156,8 @@ class ShopifyImageLocalizerApp:
         )
         self.confirm_login_button.pack(side="left", padx=(8, 0))
         self._login_shopify_tip_full_text = (
-            "第一步： 左侧选择对应网站，点击登录店铺\n"
-            "第二步： 进入对应网站，点 已登录 按钮"
+            "第一步： 选域名，点登录店铺\n"
+            "第二步： 登录后，选网站，点已登录"
         )
         self.login_shopify_tip_label = tk.Label(
             self.login_shopify_frame,

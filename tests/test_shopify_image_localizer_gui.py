@@ -183,8 +183,8 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         assert app.login_shopify_tip_label["fg"] == "red"
         assert (
             app.login_shopify_tip_label["text"]
-            == "第一步： 左侧选择对应网站，点击登录店铺\n"
-            "第二步： 进入对应网站，点 已登录 按钮"
+            == "第一步： 选域名，点登录店铺\n"
+            "第二步： 登录后，选网站，点已登录"
         )
         assert "14" in str(app.login_shopify_tip_label["font"])
 
