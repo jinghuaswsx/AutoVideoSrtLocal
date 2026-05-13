@@ -20,6 +20,8 @@ def test_medias_page_renders_video_material_management_tab(authed_client_no_db, 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'data-media-tab="products"' in html
+    assert 'href="/medias/product"' in html
+    assert 'href="/medias/video"' in html
     assert "产品管理" in html
     assert "视频素材管理" in html
     assert "media_video_materials.js" in html
