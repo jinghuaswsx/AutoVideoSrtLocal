@@ -497,6 +497,73 @@
     }[step] || step;
   }
 
+  function _tagMetaText(parts) {
+    const clean = (parts || []).map(v => String(v || "").trim()).filter(Boolean);
+    return Array.from(new Set(clean)).join(" · ");
+  }
+
+  function _addStepModelTag(tags, label, metaParts) {
+    const text = String(label || "").trim();
+    if (!text) return;
+    const existing = tags.find(item => item.label === text);
+    const meta = _tagMetaText(metaParts);
+    if (existing) {
+      if (meta && !existing.meta.includes(meta)) existing.meta.push(meta);
+      return;
+    }
+    tags.push({ label: text, meta: meta ? [meta] : [] });
+  }
+
+  function collectStepModelTags(step) {
+    const tags = [];
+    const stateTag = currentTask?.step_model_tags?.[step];
+    if (Array.isArray(stateTag)) {
+      stateTag.forEach(tag => _addStepModelTag(tags, tag, ["step_model_tags"]));
+    } else {
+      _addStepModelTag(tags, stateTag, ["step_model_tags"]);
+    }
+    const refs = currentTask?.llm_debug_refs?.[step] || [];
+    if (Array.isArray(refs)) {
+      refs.forEach(ref => {
+        if (!ref || typeof ref !== "object") return;
+        const provider = String(ref.provider || "").trim();
+        const model = String(ref.model || "").trim();
+        if (!provider || !model) return;
+        _addStepModelTag(tags, `${provider} · ${model}`, [
+          ref.use_case,
+          ref.phase,
+          ref.label,
+        ]);
+      });
+    }
+    return tags;
+  }
+
+  function renderStepTitleModelTags(step, row) {
+    if (!row) return;
+    let wrap = row.querySelector(".step-title-model-tags");
+    const tags = collectStepModelTags(step);
+    if (!tags.length) {
+      if (wrap) wrap.remove();
+      return;
+    }
+    if (!wrap) {
+      wrap = document.createElement("span");
+      wrap.className = "step-title-model-tags";
+      const nameEl = row.querySelector(".step-name");
+      if (nameEl) nameEl.insertAdjacentElement("afterend", wrap);
+      else row.prepend(wrap);
+    }
+    wrap.textContent = "";
+    tags.forEach(tag => {
+      const span = document.createElement("span");
+      span.className = "step-title-model-tag";
+      span.textContent = tag.label;
+      span.title = ["供应商 / 模型", tag.label, ...tag.meta].filter(Boolean).join("\n");
+      wrap.appendChild(span);
+    });
+  }
+
   // 顶部实时状态卡：源/目标语言、当前阶段、主进度百分比、中断推荐起点、附加项状态
   function renderStatusCard() {
     const card = document.getElementById("taskStatusCard");
@@ -865,14 +932,6 @@
       iconEl.className = `step-icon ${displayStatus}`;
       iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
       msgEl.textContent = message;
-      // 模型标签
-      const modelTag = currentTask?.step_model_tags?.[step] || "";
-      if (modelTag) {
-        const span = document.createElement("span");
-        span.className = "step-model-tag";
-        span.textContent = modelTag;
-        msgEl.appendChild(span);
-      }
     });
     renderLlmDebugButtons();
     updateAnalysisButton();
@@ -881,6 +940,7 @@
   function renderLlmDebugButtons() {
     function renderButton(step, row, label) {
       if (!row) return;
+      renderStepTitleModelTags(step, row);
       const refs = currentTask?.llm_debug_refs?.[step] || [];
       let btn = document.getElementById(`llm-prompt-${step}`);
       if (!Array.isArray(refs) || refs.length === 0) {

@@ -23,10 +23,12 @@
 
 /* 步骤状态栏 */
 .cw-steps { display:flex; gap:8px; margin-bottom:16px; }
-.cw-step { flex:1; padding:8px 12px; border-radius:10px; background:var(--bg-card); border:1.5px solid var(--border-main); font-size:12px; text-align:center; color:var(--text-main); transition:all .2s; }
+.cw-step { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; min-width:0; padding:8px 12px; border-radius:10px; background:var(--bg-card); border:1.5px solid var(--border-main); font-size:12px; text-align:center; color:var(--text-main); transition:all .2s; }
 .cw-step.active { border-color:var(--primary-color); color:var(--primary-color); font-weight:600; }
 .cw-step.done { border-color:#16a34a; color:#16a34a; }
 .cw-step.error { border-color:#dc2626; color:#dc2626; }
+.cw-step-title-model-tags { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; min-width:0; }
+.cw-step-title-model-tag { display:inline-flex; align-items:center; min-width:0; max-width:100%; height:18px; padding:0 6px; border-radius:3px; border:1px solid oklch(88% 0.06 215); background:oklch(94% 0.04 215); color:oklch(38% 0.09 215); font-family:var(--font-mono,monospace); font-size:10px; font-weight:600; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* 文案编辑区 */
 .cw-editor { background:var(--bg-card); border:1.5px solid var(--border-main); border-radius:14px; padding:16px; }

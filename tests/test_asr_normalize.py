@@ -383,7 +383,7 @@ def test_run_asr_normalize_artifact_includes_token_metadata(
 ):
     mock_resolve_model.side_effect = lambda code: {
         "asr_normalize.detect_language": "gemini-3.1-flash-lite-preview",
-        "asr_normalize.translate_es_to_en": "anthropic/claude-sonnet-4.6",
+        "asr_normalize.translate_es_to_en": "google/gemini-3-flash-preview",
     }.get(code)
     mock_detect.return_value = ({"language": "es", "confidence": 0.97, "is_mixed": False},
                                  {"input_tokens": 320, "output_tokens": 40})
@@ -398,7 +398,7 @@ def test_run_asr_normalize_artifact_includes_token_metadata(
     assert artifact["tokens"]["translate"] == {"input_tokens": 1850, "output_tokens": 1620}
     assert "elapsed_ms" in artifact and artifact["elapsed_ms"] >= 0
     assert artifact["model"]["detect"] == "gemini-3.1-flash-lite-preview"
-    assert artifact["model"]["translate"] == "anthropic/claude-sonnet-4.6"
+    assert artifact["model"]["translate"] == "google/gemini-3-flash-preview"
     assert artifact["input"]["language_label"] == "西班牙语"
     assert artifact["input"]["utterance_count"] == 2
     assert artifact["output"]["utterance_count"] == 2
@@ -416,7 +416,7 @@ def test_run_user_specified_es_routes_to_es_specialized_translates(
     mock_resolve_model, mock_detect, mock_translate,
 ):
     mock_resolve_model.side_effect = lambda code: {
-        "asr_normalize.translate_es_to_en": "anthropic/claude-sonnet-4.6",
+        "asr_normalize.translate_es_to_en": "google/gemini-3-flash-preview",
     }.get(code)
     mock_translate.return_value = (
         [{"index": 0, "start": 0.5, "end": 2.3, "text": "Hi"},
@@ -436,7 +436,7 @@ def test_run_user_specified_es_routes_to_es_specialized_translates(
     assert artifact["is_mixed"] is False
     assert artifact["detection_source"] == "user_specified"
     assert artifact["model"]["detect"] is None
-    assert artifact["model"]["translate"] == "anthropic/claude-sonnet-4.6"
+    assert artifact["model"]["translate"] == "google/gemini-3-flash-preview"
     assert "_utterances_en" in artifact
 
 

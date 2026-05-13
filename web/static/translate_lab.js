@@ -446,6 +446,28 @@
   }
 
   // ── 步骤状态渲染 ─────────────────────────────────────
+  function renderLabStepTitleModelTag(code, tagText) {
+    var item = document.querySelector('.lab-step-item[data-step="' + code + '"]');
+    if (!item) return;
+    var label = item.querySelector(".lab-step-label");
+    if (!label) return;
+    var slot = item.querySelector('[data-step-title-model-tags="' + code + '"]');
+    if (!slot) {
+      slot = document.createElement("span");
+      slot.className = "lab-step-title-model-tags";
+      slot.setAttribute("data-step-title-model-tags", code);
+      label.appendChild(slot);
+    }
+    slot.textContent = "";
+    var text = String(tagText || "").trim();
+    if (!text) return;
+    var span = document.createElement("span");
+    span.className = "lab-step-title-model-tag";
+    span.textContent = text;
+    span.title = "供应商 / 模型\n" + text;
+    slot.appendChild(span);
+  }
+
   function setStepState(code, status, message) {
     var item = document.querySelector('.lab-step-item[data-step="' + code + '"]');
     if (!item) return;
@@ -456,17 +478,11 @@
     var statusEl = item.querySelector('[data-step-status="' + code + '"]');
     if (statusEl) statusEl.textContent = status || "pending";
 
+    renderLabStepTitleModelTag(code, (D.stepModelTags || {})[code] || "");
+
     var msgEl = item.querySelector('[data-step-msg="' + code + '"]');
     if (msgEl && message !== undefined && message !== null) {
       msgEl.textContent = message;
-      // 重新追加模型标签
-      var tagText = (D.stepModelTags || {})[code] || "";
-      if (tagText) {
-        var span = document.createElement("span");
-        span.className = "step-model-tag";
-        span.textContent = tagText;
-        msgEl.appendChild(span);
-      }
     }
   }
 

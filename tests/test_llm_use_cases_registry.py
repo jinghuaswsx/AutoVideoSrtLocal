@@ -28,13 +28,26 @@ def test_llm_use_case_providers_have_registered_adapters():
             assert provider in PROVIDER_ADAPTERS, f"{code} missing adapter for {provider}"
 
 
-def test_video_translate_defaults_align_with_master_vertex_pref():
-    for code in ("video_translate.localize",
-                 "video_translate.tts_script",
-                 "video_translate.rewrite"):
+def test_video_translate_copy_text_defaults_use_openrouter_gemini_3_flash():
+    for code in (
+        "video_translate.localize",
+        "video_translate.tts_script",
+        "video_translate.rewrite",
+        "video_translate.source_normalize",
+        "video_translate.av_localize",
+        "video_translate.av_rewrite",
+        "asr_normalize.translate_zh_to_en",
+        "asr_normalize.translate_es_to_en",
+        "asr_normalize.translate_generic_to_en",
+        "ja_translate.localize",
+        "ja_translate.rewrite",
+        "translate_lab.shot_translate",
+        "translate_lab.tts_refine",
+    ):
         uc = USE_CASES[code]
-        assert uc["default_provider"] == "gemini_vertex"
-        assert uc["default_model"] == "gemini-3.1-flash-lite-preview"
+        assert uc["default_provider"] == "openrouter"
+        assert uc["default_model"] == "google/gemini-3-flash-preview"
+        assert uc["usage_log_service"] == "openrouter"
         assert uc["units_type"] == "tokens"
 
 
@@ -43,9 +56,6 @@ def test_video_translate_asr_and_tts_defaults():
     assert USE_CASES["video_translate.tts"]["units_type"] == "chars"
     assert USE_CASES["video_translate.asr"]["default_provider"] == "doubao_asr"
     assert USE_CASES["video_translate.asr"]["units_type"] == "seconds"
-    assert USE_CASES["video_translate.source_normalize"]["default_provider"] == "openrouter"
-    assert USE_CASES["video_translate.source_normalize"]["default_model"] == "openai/gpt-5.5"
-    assert USE_CASES["video_translate.source_normalize"]["units_type"] == "tokens"
     assert USE_CASES["video_translate.tts_language_check"]["default_provider"] == "openrouter"
     assert USE_CASES["video_translate.tts_language_check"]["default_model"] == "google/gemini-3.1-flash-lite-preview"
     assert USE_CASES["video_translate.tts_language_check"]["units_type"] == "tokens"
@@ -144,7 +154,8 @@ def test_new_billing_backfill_use_cases_defaults():
     )
     assert USE_CASES["translate_lab.shot_translate"]["usage_log_service"] == "openrouter"
     assert USE_CASES["translate_lab.tts_refine"]["module"] == "translate_lab"
-    assert USE_CASES["translate_lab.tts_refine"]["default_provider"] == "gemini_aistudio"
+    assert USE_CASES["translate_lab.tts_refine"]["default_provider"] == "openrouter"
+    assert USE_CASES["translate_lab.tts_refine"]["default_model"] == "google/gemini-3-flash-preview"
 
     assert USE_CASES["prompt_library.generate"]["module"] == "prompt_library"
     assert USE_CASES["prompt_library.translate"]["module"] == "prompt_library"
@@ -171,12 +182,12 @@ def test_video_translate_av_sync_defaults():
         ),
         "video_translate.av_localize": (
             "openrouter",
-            "openai/gpt-5.5",
+            "google/gemini-3-flash-preview",
             "openrouter",
         ),
         "video_translate.av_rewrite": (
             "openrouter",
-            "openai/gpt-5.5",
+            "google/gemini-3-flash-preview",
             "openrouter",
         ),
     }
@@ -187,15 +198,15 @@ def test_video_translate_av_sync_defaults():
         assert uc["usage_log_service"] == service
 
 
-def test_video_translate_av_sync_uses_gpt55_openrouter():
+def test_video_translate_av_sync_copy_text_uses_gemini_3_flash_openrouter():
     localize = USE_CASES["video_translate.av_localize"]
     rewrite = USE_CASES["video_translate.av_rewrite"]
 
     assert localize["default_provider"] == "openrouter"
-    assert localize["default_model"] == "openai/gpt-5.5"
+    assert localize["default_model"] == "google/gemini-3-flash-preview"
     assert localize["units_type"] == "tokens"
     assert rewrite["default_provider"] == "openrouter"
-    assert rewrite["default_model"] == "openai/gpt-5.5"
+    assert rewrite["default_model"] == "google/gemini-3-flash-preview"
     assert rewrite["units_type"] == "tokens"
 
 

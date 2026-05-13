@@ -15,6 +15,8 @@ from appcore import ai_billing
 from appcore.api_keys import resolve_key
 from appcore.events import EVT_SUBTITLE_READY, EVT_TRANSLATE_RESULT, EVT_TTS_SCRIPT_READY
 from appcore.llm_bindings import resolve
+from appcore.llm_debug_payloads import prompt_file_payload
+from appcore.llm_display import resolve_use_case_provider_model
 from appcore.runtime import (
     PipelineRunner,
     _build_review_segments,
@@ -43,6 +45,18 @@ from appcore.preview_artifacts import (
 log = logging.getLogger(__name__)
 
 _EMERGENCY_MULTILINGUAL_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+
+
+def _runtime_use_case_provider_model(use_case_code: str) -> tuple[str, str]:
+    try:
+        binding = resolve(use_case_code)
+        provider = str(binding.get("provider") or "").strip()
+        model = str(binding.get("model") or "").strip()
+        if provider and model:
+            return provider, model
+    except Exception:
+        pass
+    return resolve_use_case_provider_model(use_case_code)
 
 
 def _voice_public_id(voice: dict | None) -> str:
@@ -149,13 +163,14 @@ class JapaneseTranslateRunner(PipelineRunner):
         script_segments = task.get("script_segments", [])
         voice = self._resolve_voice(task, ja_translate)
         voice_id = _voice_public_id(voice)
+        ja_provider, ja_model = _runtime_use_case_provider_model("ja_translate.localize")
 
         self._set_step(
             task_id,
             "translate",
             "running",
             "正在按日语字符预算逐句本土化...",
-            model_tag="ja_translate.localize",
+            model_tag=f"{ja_provider} · {ja_model}",
         )
 
         source_full_text = ja_translate.build_source_full_text(script_segments)
@@ -170,12 +185,33 @@ class JapaneseTranslateRunner(PipelineRunner):
             _save_json(
                 task_dir,
                 "ja_localized_translate_messages.json",
-                {
-                    "phase": "ja_initial_translate",
-                    "target_language": "ja",
-                    "messages": initial_messages,
-                },
+                prompt_file_payload(
+                    phase="ja_initial_translate",
+                    label="日语初始翻译",
+                    use_case_code="ja_translate.localize",
+                    provider=ja_provider,
+                    model=ja_model,
+                    messages=initial_messages,
+                    request_payload={
+                        "type": "chat",
+                        "use_case_code": "ja_translate.localize",
+                        "provider": ja_provider,
+                        "model": ja_model,
+                        "messages": initial_messages,
+                    },
+                    meta={"target_language": "ja"},
+                ),
             )
+            task_state.add_llm_debug_ref(task_id, "translate", {
+                "id": "translate.ja_initial.1",
+                "label": "日语初始翻译",
+                "path": "ja_localized_translate_messages.json",
+                "phase": "ja_initial_translate",
+                "use_case": "ja_translate.localize",
+                "provider": ja_provider,
+                "model": ja_model,
+                "target_language": "ja",
+            })
 
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get("normal", {}))
@@ -241,13 +277,7 @@ class JapaneseTranslateRunner(PipelineRunner):
         self._emit_substep_msg(task_id, "tts", "正在生成日语配音 · 加载配音模板")
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
 
-        try:
-            binding = resolve("ja_translate.localize")
-            translate_provider = binding.get("provider") or "ja_translate.localize"
-            translate_model = binding.get("model") or "ja_translate.localize"
-        except Exception:
-            translate_provider = "ja_translate.localize"
-            translate_model = "ja_translate.localize"
+        translate_provider, translate_model = _runtime_use_case_provider_model("ja_translate.localize")
         translate_channel = {
             "openrouter": "OpenRouter",
             "doubao": "豆包（火山）",
