@@ -750,13 +750,23 @@ def _build_human_report(report: dict) -> str:
     accepted = verification.get("accepted_issues") or []
     diagnosed = diagnosis.get("issues") or []
     issues = accepted or diagnosed
+    if report.get("analysis_only"):
+        summary_line = (
+            f"诊断问题 {summary.get('diagnosed', 0)} 个，仅做辅助分析，不执行复核或自动修改。"
+        )
+    else:
+        summary_line = (
+            f"诊断问题 {summary.get('diagnosed', 0)} 个，复核确认 {summary.get('accepted', 0)} 个。"
+        )
     lines = [
         "音画同步审计结论",
-        f"模式：{report.get('mode') or '-'}；状态：{report.get('status') or '-'}；"
-        f"诊断问题 {summary.get('diagnosed', 0)} 个，复核确认 {summary.get('accepted', 0)} 个。",
+        f"模式：{report.get('mode') or '-'}；状态：{report.get('status') or '-'}；{summary_line}",
     ]
     if not issues:
-        lines.append("未确认需要处理的音画同步问题。")
+        if report.get("analysis_only"):
+            lines.append("未发现明显需要关注的音画同步候选问题。")
+        else:
+            lines.append("未确认需要处理的音画同步问题。")
         return "\n".join(lines)
     lines.append("确认问题如下：" if accepted else "候选问题如下：")
     for idx, issue in enumerate(issues, 1):
@@ -827,11 +837,18 @@ def _attach_readable_report(report: dict) -> None:
         return
     verified_count = sum(1 for item in findings if item.get("verified"))
     lead = findings[0]
-    report["readable_summary"] = (
-        f"中文审计结论：发现 {len(findings)} 个需要关注的同步点，"
-        f"其中 {verified_count} 个已由复核确认。优先处理 {lead.get('sync_point') or '未知同步点'}："
-        f"{lead.get('problem') or '音画同步风险'}。处理建议：{lead.get('recommendation') or '人工复核后处理'}"
-    )
+    if report.get("analysis_only"):
+        report["readable_summary"] = (
+            f"中文审计结论：发现 {len(findings)} 个需要关注的同步点，本结果仅作辅助分析。"
+            f"优先关注 {lead.get('sync_point') or '未知同步点'}："
+            f"{lead.get('problem') or '音画同步风险'}。处理建议：{lead.get('recommendation') or '人工复核后处理'}"
+        )
+    else:
+        report["readable_summary"] = (
+            f"中文审计结论：发现 {len(findings)} 个需要关注的同步点，"
+            f"其中 {verified_count} 个已由复核确认。优先处理 {lead.get('sync_point') or '未知同步点'}："
+            f"{lead.get('problem') or '音画同步风险'}。处理建议：{lead.get('recommendation') or '人工复核后处理'}"
+        )
 
 
 def _finalize_report_for_display(report: dict, sentences: list[dict] | None) -> None:
@@ -872,7 +889,7 @@ def _ensure_report_preview_items(report: dict) -> None:
         f"模式：{report.get('mode') or '-'}",
         f"状态：{report.get('status') or '-'}",
         f"诊断问题：{summary.get('diagnosed', 0)}",
-        f"复核通过：{summary.get('accepted', 0)}",
+        "辅助分析：是" if report.get("analysis_only") else f"复核通过：{summary.get('accepted', 0)}",
         f"已应用修正：{summary.get('applied', 0)}",
         f"回滚：{summary.get('rolled_back', 0)}",
         f"人工复核：{summary.get('manual_review', 0)}",
@@ -1379,6 +1396,7 @@ def run_report_only(
 
         report = _base_report(mode)
         report["source_variant"] = variant
+        report["analysis_only"] = True
         try:
             diagnosis = _call_diagnose(runner, task_id, video_path, task_dir, task, cfg, sentences)
             report["diagnosis"] = diagnosis
@@ -1390,21 +1408,11 @@ def run_report_only(
             runner._set_step(task_id, "av_sync_audit", "done", "音画同步评估失败，已跳过音画同步评估")
             return report
 
-        try:
-            verification = _call_verify(runner, task_id, task_dir, task, cfg, sentences, report["diagnosis"])
-            report["verification"] = verification
-            report["summary"]["accepted"] = len(_candidate_issues(verification))
-        except Exception as exc:  # noqa: BLE001 - keep the diagnosis report
-            report["status"] = "verify_failed"
-            report["verification"] = {
-                "accepted_issues": [],
-                "rejected_count": 0,
-                "summary": "",
-                "error": str(exc)[:500],
-            }
-            _store_report(task_id, report, variant=variant, sentences=sentences)
-            runner._set_step(task_id, "av_sync_audit", "done", "Gemini 复核失败，已保留诊断报告")
-            return report
+        report["verification"] = {
+            "accepted_issues": [],
+            "rejected_count": 0,
+            "summary": "多语种音画同步审计仅做辅助分析，不执行 Gemini 复核或自动修改。",
+        }
 
         _store_report(task_id, report, variant=variant, sentences=sentences)
         runner._set_step(task_id, "av_sync_audit", "done", "音画同步评估完成（仅报告）")
