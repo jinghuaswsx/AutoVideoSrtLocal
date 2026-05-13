@@ -262,7 +262,7 @@ def next_category_reanalysis_candidates(
     else:
         category_clause = (
             f"({not_current_model} AND "
-            "(last_error LIKE 'category failed:%' "
+            "(last_error LIKE 'category failed:%%' "
             "OR (category_l1 = 'Other' AND COALESCE(category_confidence, 0) = 0) "
             "OR category_l1 IS NULL "
             "OR category_l1 = ''))"
@@ -276,7 +276,7 @@ def next_category_reanalysis_candidates(
           AND product_title <> ''
           AND {category_clause}
         ORDER BY
-          CASE WHEN last_error LIKE 'category failed:%' THEN 0 ELSE 1 END,
+          CASE WHEN last_error LIKE 'category failed:%%' THEN 0 ELSE 1 END,
           updated_at ASC,
           id ASC
         LIMIT %s
