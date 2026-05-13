@@ -256,7 +256,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta 热帖商品分析",
         "description": (
             "每 10 分钟扫描 Meta 热帖未完成商品链接，每轮最多 100 个，串行抓商品页标题、主图、SKU 价格，"
-            "再调用 Gemini 3 Flash 判断 TikTok Shop US 一级类目；DB 单例守护，1 小时内已有运行则跳过，"
+            "再调用 ADC 通道 Gemini 3.1 Flash-Lite 按商品标题判断 TikTok Shop US 一级类目；"
+            "支持只重算类目且不重抓商品页；DB 单例守护，1 小时内已有运行则跳过，"
             "超过 1 小时则标记旧 run failed 后接管。Docs-anchor: "
             "docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md"
         ),

@@ -1,5 +1,5 @@
--- Meta hot posts category use case binding.
--- Docs-anchor: docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md
+-- Switch Meta hot posts category classification to title-only Gemini Flash-Lite via Vertex ADC.
+-- Docs-anchor: docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md#Gemini 分类
 
 INSERT INTO llm_use_case_bindings (
   use_case_code,

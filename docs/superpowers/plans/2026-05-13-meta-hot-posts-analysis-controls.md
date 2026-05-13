@@ -75,5 +75,31 @@
 - [ ] Add scheduler tests for skipping when an analysis run started within one hour.
 - [ ] Add scheduler tests for marking stale running runs failed and then starting a new run.
 - [ ] Add product analysis test proving `user_id` is passed into `llm_client.invoke_generate`.
-- [ ] Add migration binding `meta_hot_posts.categorize -> gemini_vertex / gemini-3-flash-preview`.
-- [ ] Add or update registry tests proving the use case is present, token-priced, and Gemini Vertex backed.
+- [ ] Add migration binding `meta_hot_posts.categorize -> gemini_vertex_adc / gemini-3.1-flash-lite-preview`.
+- [ ] Add or update registry tests proving the use case is present, token-priced, and Gemini Vertex ADC backed.
+
+### Task 6: Title-Only ADC Category Reanalysis
+
+**Files:**
+- Modify: `docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md`
+- Modify: `appcore/llm_use_cases.py`
+- Modify: `appcore/meta_hot_posts/product_analysis.py`
+- Modify: `appcore/meta_hot_posts/scheduler.py`
+- Modify: `appcore/meta_hot_posts/store.py`
+- Modify: `appcore/meta_hot_posts/service.py`
+- Modify: `db/migrations/2026_05_13_meta_hot_posts_llm_binding.sql`
+- Create: `db/migrations/2026_05_13_meta_hot_posts_adc_category_binding.sql`
+- Test: `tests/test_meta_hot_posts_product_analysis.py`
+- Test: `tests/test_meta_hot_posts_scheduler.py`
+- Test: `tests/test_meta_hot_posts_store.py`
+- Test: `tests/test_llm_use_cases_registry.py`
+
+- [ ] Update tests so `meta_hot_posts.categorize` defaults to `gemini_vertex_adc / gemini-3.1-flash-lite-preview`.
+- [ ] Update product-analysis tests so the prompt includes product title and category pool, excludes product URL, and does not request `response_schema`.
+- [ ] Add store tests for selecting category-reanalysis candidates and updating only category fields.
+- [ ] Add scheduler tests proving category-reanalysis candidates are processed without fetching product pages again.
+- [ ] Change the use case registry and migration binding to ADC Flash-Lite.
+- [ ] Change categorization prompt/normalization to title-only text output; unknown or parse-failed output keeps category empty instead of `Other`.
+- [ ] Add category-only reanalysis flow to scheduler/service, capped at 100 rows per run.
+- [ ] Run focused pytest for product analysis, store, scheduler, routes, use case registry, and LLM client.
+- [ ] Deploy, then run a full category reanalysis pass and inspect category distribution.

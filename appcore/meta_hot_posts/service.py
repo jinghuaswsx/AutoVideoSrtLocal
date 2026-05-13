@@ -63,7 +63,8 @@ def build_category_prompt_response() -> MetaHotPostsResponse:
             "prompt": prompt,
             "categories": categories.TIKTOK_SHOP_US_L1_CATEGORIES,
             "use_case": "meta_hot_posts.categorize",
-            "model": "gemini-3-flash-preview",
+            "model": "gemini-3.1-flash-lite-preview",
+            "provider": "gemini_vertex_adc",
         }
     )
 
@@ -95,4 +96,17 @@ def build_analyze_response(payload: Mapping[str, Any] | None = None) -> MetaHotP
         user_id = int(payload.get("user_id") or 0) or None
     except (TypeError, ValueError):
         user_id = None
-    return MetaHotPostsResponse({"ok": True, "result": scheduler.analysis_tick_once(limit=limit, user_id=user_id)}, 202)
+    recategorize_only = bool(payload.get("recategorize_only") or payload.get("recategorize"))
+    include_all_categories = bool(payload.get("include_all_categories") or payload.get("include_all"))
+    return MetaHotPostsResponse(
+        {
+            "ok": True,
+            "result": scheduler.analysis_tick_once(
+                limit=limit,
+                user_id=user_id,
+                recategorize_only=recategorize_only,
+                include_all_categories=include_all_categories,
+            ),
+        },
+        202,
+    )

@@ -142,3 +142,78 @@ def test_reset_stale_running_product_analyses_marks_old_running_failed():
     assert "status='running'" in sql
     assert "TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s" in sql
     assert params == (3600,)
+
+
+def test_next_category_reanalysis_candidates_selects_done_rows_with_titles():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"id": 11, "product_title": "Portable Blender"}]
+
+    rows = store.next_category_reanalysis_candidates(limit=500, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["id"] == 11
+    assert "status = 'done'" in sql
+    assert "product_title IS NOT NULL" in sql
+    assert "last_error LIKE 'category failed:%'" in sql
+    assert "category_l1 = 'Other'" in sql
+    assert params == (100,)
+
+
+def test_next_category_reanalysis_candidates_include_all_skips_current_adc_model():
+    calls = []
+
+    store.next_category_reanalysis_candidates(
+        limit=80,
+        include_all=True,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [],
+    )
+
+    sql, params = calls[0]
+    assert "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview'" in sql
+    assert "AND (last_error LIKE 'category failed:%'" not in sql
+    assert params == (80,)
+
+
+def test_next_category_reanalysis_candidates_excludes_current_adc_failures():
+    calls = []
+
+    store.next_category_reanalysis_candidates(
+        limit=100,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [],
+    )
+
+    sql, _params = calls[0]
+    assert (
+        "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview' "
+        "AND (last_error LIKE 'category failed:%'"
+    ) in " ".join(sql.split())
+
+
+def test_finish_category_reanalysis_updates_only_category_fields():
+    calls = []
+
+    store.finish_category_reanalysis(
+        11,
+        category={
+            "category": "Kitchenware",
+            "confidence": 1.0,
+            "reason": "Title maps to kitchen product.",
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-3.1-flash-lite-preview",
+            "raw_response": {"text": "Kitchenware"},
+        },
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_post_product_analyses" in sql
+    assert "product_title=" not in sql
+    assert "sku_prices_json=" not in sql
+    assert "category_l1=%s" in sql
+    assert params[1] == "Kitchenware"
+    assert params[4] == "gemini_vertex_adc"
+    assert params[-1] == 11

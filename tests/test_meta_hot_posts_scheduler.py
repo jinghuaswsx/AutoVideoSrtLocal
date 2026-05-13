@@ -196,5 +196,71 @@ def test_analyze_pending_products_keeps_product_result_when_category_fails(monke
     assert payload["status"] == "done"
     assert payload["result"]["title"] == "Flexible Socket Extension"
     assert payload["result"]["price_min"] == 19.99
-    assert payload["category"]["category"] == "Other"
+    assert payload["category"]["category"] is None
     assert "invalid llm json" in payload["error_message"]
+
+
+def test_reanalyze_categories_uses_saved_title_without_fetching_product_page(monkeypatch):
+    finished = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_category_reanalysis_candidates",
+        lambda limit: [{"id": 7, "product_title": "Portable Blender"}],
+    )
+    monkeypatch.setattr(
+        scheduler.product_analysis,
+        "fetch_product_analysis",
+        lambda product_url: (_ for _ in ()).throw(AssertionError("must not fetch product page")),
+    )
+    monkeypatch.setattr(
+        scheduler.product_analysis,
+        "categorize_product",
+        lambda **kwargs: {
+            "category": "Kitchenware",
+            "confidence": 1.0,
+            "reason": "Title maps to kitchen item.",
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-3.1-flash-lite-preview",
+            "raw_response": {"text": "Kitchenware"},
+        },
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_category_reanalysis",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    summary = scheduler.reanalyze_categories(limit=100, user_id=1)
+
+    assert summary == {"scanned": 1, "done": 1, "failed": 0}
+    assert finished[0][0] == 7
+    assert finished[0][1]["category"]["category"] == "Kitchenware"
+    assert finished[0][1]["error_message"] is None
+
+
+def test_reanalyze_categories_marks_adc_model_even_when_category_call_fails(monkeypatch):
+    finished = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_category_reanalysis_candidates",
+        lambda limit: [{"id": 7, "product_title": "Portable Blender"}],
+    )
+
+    def fail_category(**kwargs):
+        raise RuntimeError("adc unavailable")
+
+    monkeypatch.setattr(scheduler.product_analysis, "categorize_product", fail_category)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_category_reanalysis",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    summary = scheduler.reanalyze_categories(limit=100, user_id=1)
+
+    assert summary == {"scanned": 1, "done": 0, "failed": 1}
+    assert finished[0][1]["category"]["provider"] == "gemini_vertex_adc"
+    assert finished[0][1]["category"]["model"] == "gemini-3.1-flash-lite-preview"
+    assert "adc unavailable" in finished[0][1]["error_message"]

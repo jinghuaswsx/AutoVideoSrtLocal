@@ -78,12 +78,21 @@ def sync_hot_posts(
 
 def _fallback_category(error: Exception) -> dict[str, Any]:
     return {
-        "category": "Other",
+        "category": None,
         "confidence": 0.0,
         "reason": "Category classification failed; product extraction was saved.",
         "raw_category": "",
         "raw_response": {"error": str(error)[:1000]},
     }
+
+
+def _category_error_message(category: dict[str, Any]) -> str | None:
+    if category.get("category"):
+        return None
+    raw_category = str(category.get("raw_category") or "").strip()
+    if raw_category:
+        return f"category failed: unsupported category output {raw_category[:900]}"
+    return "category failed: empty category output"
 
 
 def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
@@ -120,6 +129,10 @@ def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) ->
             category = _fallback_category(exc)
             category_error = f"category failed: {str(exc)[:950]}"
             summary["category_failed"] += 1
+        else:
+            category_error = _category_error_message(category)
+            if category_error:
+                summary["category_failed"] += 1
 
         store.finish_analysis(
             analysis_id,
@@ -129,6 +142,48 @@ def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) ->
             error_message=category_error,
         )
         summary["done"] += 1
+    return summary
+
+
+def reanalyze_categories(
+    *,
+    limit: int = 100,
+    user_id: int | None = None,
+    include_all: bool = False,
+) -> dict[str, Any]:
+    summary = {"scanned": 0, "done": 0, "failed": 0}
+    billing_user_id = resolve_billing_user_id(user_id)
+    if include_all:
+        rows = store.next_category_reanalysis_candidates(limit=limit, include_all=True)
+    else:
+        rows = store.next_category_reanalysis_candidates(limit=limit)
+    for row in rows:
+        summary["scanned"] += 1
+        analysis_id = int(row["id"])
+        product_title = str(row.get("product_title") or "").strip()
+        product_url = str(row.get("product_url") or "").strip()
+        try:
+            category = product_analysis.categorize_product(
+                product_title=product_title,
+                product_url=product_url,
+                user_id=billing_user_id,
+            )
+            error_message = _category_error_message(category)
+        except Exception as exc:
+            log.warning("meta hot post category reanalysis failed id=%s: %s", analysis_id, exc)
+            category = _fallback_category(exc)
+            category["provider"] = "gemini_vertex_adc"
+            category["model"] = "gemini-3.1-flash-lite-preview"
+            error_message = f"category failed: {str(exc)[:950]}"
+        store.finish_category_reanalysis(
+            analysis_id,
+            category=category,
+            error_message=error_message,
+        )
+        if error_message:
+            summary["failed"] += 1
+        else:
+            summary["done"] += 1
     return summary
 
 
@@ -183,7 +238,13 @@ def _guard_analysis_singleton(*, stale_after_seconds: int = ANALYSIS_STALE_AFTER
     }
 
 
-def analysis_tick_once(*, limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
+def analysis_tick_once(
+    *,
+    limit: int = 100,
+    user_id: int | None = None,
+    recategorize_only: bool = False,
+    include_all_categories: bool = False,
+) -> dict[str, Any]:
     guard_summary = _guard_analysis_singleton()
     if guard_summary.get("skipped"):
         return guard_summary
@@ -193,7 +254,14 @@ def analysis_tick_once(*, limit: int = 100, user_id: int | None = None) -> dict[
     except Exception:
         log.debug("failed to start meta hot posts analysis run", exc_info=True)
     try:
-        summary = analyze_pending_products(limit=limit, user_id=user_id)
+        if recategorize_only:
+            summary = reanalyze_categories(
+                limit=limit,
+                user_id=user_id,
+                include_all=include_all_categories,
+            )
+        else:
+            summary = analyze_pending_products(limit=limit, user_id=user_id)
     except Exception as exc:
         if run_id:
             scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])

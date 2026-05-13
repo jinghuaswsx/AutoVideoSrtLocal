@@ -249,6 +249,42 @@ def next_pending_product_analyses(
     )
 
 
+def next_category_reanalysis_candidates(
+    *,
+    limit: int = 100,
+    include_all: bool = False,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(100, int(limit)))
+    not_current_model = "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview'"
+    if include_all:
+        category_clause = not_current_model
+    else:
+        category_clause = (
+            f"({not_current_model} AND "
+            "(last_error LIKE 'category failed:%' "
+            "OR (category_l1 = 'Other' AND COALESCE(category_confidence, 0) = 0) "
+            "OR category_l1 IS NULL "
+            "OR category_l1 = ''))"
+        )
+    return query_fn(
+        f"""
+        SELECT id, product_url, product_title, category_l1, last_error
+        FROM meta_hot_post_product_analyses
+        WHERE status = 'done'
+          AND product_title IS NOT NULL
+          AND product_title <> ''
+          AND {category_clause}
+        ORDER BY
+          CASE WHEN last_error LIKE 'category failed:%' THEN 0 ELSE 1 END,
+          updated_at ASC,
+          id ASC
+        LIMIT %s
+        """,
+        (safe_limit,),
+    )
+
+
 def list_failed_product_analyses(
     *,
     limit: int = 100,
@@ -346,6 +382,40 @@ def finish_analysis(
             _json(category.get("raw_response") or category),
             _json(result),
             status,
+            int(analysis_id),
+        ),
+    )
+
+
+def finish_category_reanalysis(
+    analysis_id: int,
+    *,
+    category: Mapping[str, Any] | None = None,
+    error_message: str | None = None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    category = category or {}
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_product_analyses
+        SET last_error=%s,
+            category_l1=%s,
+            category_confidence=%s,
+            category_reason=%s,
+            llm_provider=%s,
+            llm_model=%s,
+            llm_response_json=%s,
+            analyzed_at=NOW()
+        WHERE id=%s
+        """,
+        (
+            error_message,
+            category.get("category"),
+            category.get("confidence"),
+            category.get("reason"),
+            category.get("provider"),
+            category.get("model"),
+            _json(category.get("raw_response") or category),
             int(analysis_id),
         ),
     )

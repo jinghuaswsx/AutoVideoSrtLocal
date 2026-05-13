@@ -63,33 +63,41 @@ def test_normalize_category_response_rejects_unknown_category():
 
     result = product_analysis.normalize_category_response(response)
 
-    assert result["category"] == "Other"
+    assert result["category"] is None
     assert result["confidence"] == 0.0
     assert result["raw_category"] == "Made Up Category"
 
 
-def test_build_category_prompt_includes_title_url_and_category_pool():
+def test_normalize_category_response_accepts_plain_text_with_label_noise():
+    result = product_analysis.normalize_category_response({"text": "Category: Kitchenware."})
+
+    assert result["category"] == "Kitchenware"
+    assert result["confidence"] == 1.0
+
+
+def test_build_category_prompt_includes_title_and_category_pool_but_not_url():
     prompt = product_analysis.build_category_prompt(
         product_title="Portable Blender",
         product_url="https://example.com/products/blender",
     )
 
     assert "Portable Blender" in prompt
-    assert "https://example.com/products/blender" in prompt
+    assert "https://example.com/products/blender" not in prompt
     assert "Kitchenware" in prompt
     assert "只允许从下面的 category_pool 中选择" in prompt
+    assert "只返回一个类目名称" in prompt
 
 
-def test_categorize_product_passes_billing_user_id_to_llm():
+def test_categorize_product_uses_title_only_text_output_and_adc_billing():
     calls = {}
 
     def fake_invoke(use_case_code, **kwargs):
         calls["use_case_code"] = use_case_code
         calls["kwargs"] = kwargs
         return {
-            "json": {"category": "Kitchenware", "confidence": 0.9, "reason": "title"},
-            "provider": "gemini_vertex",
-            "model": "gemini-3-flash-preview",
+            "text": "Kitchenware",
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-3.1-flash-lite-preview",
         }
 
     result = product_analysis.categorize_product(
@@ -100,9 +108,12 @@ def test_categorize_product_passes_billing_user_id_to_llm():
     )
 
     assert result["category"] == "Kitchenware"
+    assert result["confidence"] == 1.0
     assert calls["use_case_code"] == "meta_hot_posts.categorize"
     assert calls["kwargs"]["user_id"] == 7
     assert calls["kwargs"]["billing_extra"]["source"] == "meta_hot_posts"
+    assert "response_schema" not in calls["kwargs"]
+    assert "https://example.com/products/blender" not in calls["kwargs"]["prompt"]
 
 
 def test_detect_product_link_type_handles_shopify_tiktok_and_generic_urls():

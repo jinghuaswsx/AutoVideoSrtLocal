@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from appcore import llm_client
-from appcore.meta_hot_posts.categories import TIKTOK_SHOP_US_L1_CATEGORIES, normalize_category
+from appcore.meta_hot_posts.categories import TIKTOK_SHOP_US_L1_CATEGORIES
 
 
 @dataclass
@@ -294,16 +294,48 @@ def fetch_product_analysis(product_url: str, *, session: requests.Session | None
     return result
 
 
-def build_category_prompt(*, product_title: str, product_url: str) -> str:
+_CATEGORY_BY_LOWER = {item.lower(): item for item in TIKTOK_SHOP_US_L1_CATEGORIES}
+
+
+def _clean_category_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("```"):
+        parts = text.split("```")
+        text = parts[1] if len(parts) > 1 else text
+        if text.lower().startswith("text"):
+            text = text[4:]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    text = lines[0] if lines else text
+    if ":" in text and text.split(":", 1)[0].strip().lower() in {"category", "category_l1", "类目"}:
+        text = text.split(":", 1)[1].strip()
+    return text.strip("`'\" .。；;，,")
+
+
+def _strict_category(value: object) -> str | None:
+    text = _clean_category_text(value)
+    if not text:
+        return None
+    exact = _CATEGORY_BY_LOWER.get(text.lower())
+    if exact:
+        return exact
+    lower = text.lower()
+    matches = [item for item in TIKTOK_SHOP_US_L1_CATEGORIES if item.lower() in lower]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def build_category_prompt(*, product_title: str, product_url: str = "") -> str:
     category_pool = "\n".join(f"- {item}" for item in TIKTOK_SHOP_US_L1_CATEGORIES)
     return (
         "你是 TikTok Shop US 产品类目判断器。\n"
         "只允许从下面的 category_pool 中选择一个一级类目；如果无法判断，选择 Other。\n"
-        "只返回 JSON，不要 Markdown。\n\n"
+        "只返回一个类目名称，不要 JSON，不要 Markdown，不要解释。\n\n"
         f"category_pool:\n{category_pool}\n\n"
         f"product_title: {product_title}\n"
-        f"product_url: {product_url}\n\n"
-        "返回格式：{\"category\":\"Kitchenware\",\"confidence\":0.0,\"reason\":\"简短英文原因\"}"
+        "返回示例：Kitchenware"
     )
 
 
@@ -315,16 +347,16 @@ def normalize_category_response(response: Mapping[str, Any]) -> dict[str, Any]:
             try:
                 payload = json.loads(text)
             except json.JSONDecodeError:
-                payload = {}
+                payload = {"category": text}
         else:
             payload = {}
     raw_category = str(payload.get("category") or "").strip()
-    category = normalize_category(raw_category)
+    category = _strict_category(raw_category)
     try:
-        confidence = float(payload.get("confidence") or 0)
+        confidence = float(payload.get("confidence") or (1.0 if category else 0.0))
     except (TypeError, ValueError):
         confidence = 0.0
-    if category == "Other" and raw_category.lower() != "other":
+    if category is None:
         confidence = 0.0
     return {
         "category": category,
@@ -347,16 +379,7 @@ def categorize_product(
         prompt=build_category_prompt(product_title=product_title, product_url=product_url),
         user_id=user_id,
         temperature=0,
-        max_output_tokens=512,
-        response_schema={
-            "type": "object",
-            "properties": {
-                "category": {"type": "string"},
-                "confidence": {"type": "number"},
-                "reason": {"type": "string"},
-            },
-            "required": ["category", "confidence", "reason"],
-        },
+        max_output_tokens=64,
         billing_extra={"source": "meta_hot_posts"},
     )
     result = normalize_category_response(response)

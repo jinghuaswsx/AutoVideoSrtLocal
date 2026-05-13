@@ -91,9 +91,9 @@ def test_meta_hot_posts_categorize_use_case_is_registered_for_billing():
     uc = USE_CASES["meta_hot_posts.categorize"]
 
     assert uc["module"] == "xuanpin"
-    assert uc["default_provider"] == "gemini_vertex"
-    assert uc["default_model"] == "gemini-3-flash-preview"
-    assert uc["usage_log_service"] == "gemini_vertex"
+    assert uc["default_provider"] == "gemini_vertex_adc"
+    assert uc["default_model"] == "gemini-3.1-flash-lite-preview"
+    assert uc["usage_log_service"] == "gemini_vertex_adc"
     assert uc["units_type"] == "tokens"
 
 
