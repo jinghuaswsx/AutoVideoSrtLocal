@@ -25,6 +25,11 @@
 .mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
 .mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
 .mh-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; color:var(--mh-muted); font-size:13px; }
+.mh-pager { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; margin:10px 0 12px; color:var(--mh-muted); font-size:13px; }
+.mh-pager button { height:32px; min-width:32px; padding:0 10px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
+.mh-pager button.active { border-color:var(--mh-accent); background:var(--mh-accent); color:#fff; }
+.mh-pager button:disabled { opacity:.45; cursor:not-allowed; }
+.mh-pager-info { min-width:190px; text-align:center; }
 .meta-hot-card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:16px; padding:16px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#eef2f7; }
 .mh-card { min-width:0; border:1px solid #e5e7eb; border-radius:8px; background:#fff; overflow:hidden; }
 .mh-card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:12px 14px; border-bottom:1px solid #edf2f7; }
@@ -125,9 +130,13 @@
     <span id="mhStatus">Ready</span>
   </div>
 
+  <div class="mh-pager" id="mhPagerTop" aria-label="Meta热帖分页"></div>
+
   <div id="metaHotCardGrid" class="meta-hot-card-grid">
     <div class="mh-empty">加载中...</div>
   </div>
+
+  <div class="mh-pager" id="mhPagerBottom" aria-label="Meta热帖分页"></div>
 
   <div class="mh-modal" id="mhPromptModal" hidden>
     <div class="mh-modal-panel">
@@ -220,6 +229,34 @@ function buildParams(page) {
   if (qs('mhCreatedTo').value) params.set('created_to', qs('mhCreatedTo').value);
   return params;
 }
+function renderMetaHotPager(data) {
+  const total = Number(data.total || 0);
+  const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
+  const rawPage = Math.max(1, Number(data.page || mhPage || 1));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const safeLastPage = Math.max(1, totalPages);
+  const page = totalPages > 0 ? Math.min(rawPage, totalPages) : 1;
+  const disabledPrev = totalPages <= 0 || page <= 1 ? ' disabled' : '';
+  const disabledNext = totalPages <= 0 || page >= totalPages ? ' disabled' : '';
+  const buttons = [
+    `<button type="button"${disabledPrev} onclick="loadMetaHotPosts(1)">首页</button>`,
+    `<button type="button"${disabledPrev} onclick="loadMetaHotPosts(${Math.max(1, page - 1)})">上一页</button>`,
+  ];
+  const start = Math.max(1, page - 2);
+  const end = Math.min(safeLastPage, page + 2);
+  for (let i = start; i <= end; i += 1) {
+    const active = i === page ? ' active' : '';
+    buttons.push(`<button type="button" class="${active.trim()}" onclick="loadMetaHotPosts(${i})">${i}</button>`);
+  }
+  buttons.push(
+    `<button type="button"${disabledNext} onclick="loadMetaHotPosts(${Math.min(safeLastPage, page + 1)})">下一页</button>`,
+    `<button type="button"${disabledNext} onclick="loadMetaHotPosts(${safeLastPage})">末页</button>`,
+    `<span class="mh-pager-info">第 ${totalPages ? page : 0} / ${totalPages} 页 · 共 ${total} 条 · 每页 ${pageSize} 条</span>`
+  );
+  ['mhPagerTop', 'mhPagerBottom'].forEach(id => {
+    qs(id).innerHTML = buttons.join('');
+  });
+}
 async function loadMetaHotPosts(page = 1) {
   mhPage = page;
   qs('mhStatus').textContent = 'Loading...';
@@ -229,7 +266,9 @@ async function loadMetaHotPosts(page = 1) {
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无结果</div>';
-  qs('mhStatus').textContent = `Page ${data.page || 1}`;
+  mhPage = Number(data.page || page || 1);
+  renderMetaHotPager(data);
+  qs('mhStatus').textContent = `Page ${mhPage}`;
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');

@@ -24,6 +24,13 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
     assert "/xuanpin/api/meta-hot-posts/failures" in body
     assert "const mhPageSize = 50;" in body
+    assert 'id="mhPagerTop"' in body
+    assert 'id="mhPagerBottom"' in body
+    assert "function renderMetaHotPager(data)" in body
+    assert "首页" in body
+    assert "上一页" in body
+    assert "下一页" in body
+    assert "末页" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
