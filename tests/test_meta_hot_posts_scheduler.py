@@ -1,4 +1,5 @@
 from appcore.meta_hot_posts import scheduler
+from appcore.meta_hot_posts.product_analysis import ProductAnalysisResult
 
 
 def test_sync_hot_posts_fetches_until_target_count(monkeypatch):
@@ -71,3 +72,47 @@ def test_register_schedules_daily_sync_at_7am_and_analysis_interval(monkeypatch)
     assert analysis_args[1] == "meta_hot_posts_analysis_tick"
     assert analysis_args[3] == "interval"
     assert analysis_kwargs["minutes"] == 10
+
+
+def test_analyze_pending_products_keeps_product_result_when_category_fails(monkeypatch):
+    finished = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_product_analyses",
+        lambda limit: [{"id": 7, "product_url": "https://example.com/products/socket"}],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_analysis_running", lambda analysis_id: None)
+    monkeypatch.setattr(
+        scheduler.product_analysis,
+        "fetch_product_analysis",
+        lambda product_url: ProductAnalysisResult(
+            title="Flexible Socket Extension",
+            main_image_url="https://example.com/socket.jpg",
+            price_min=19.99,
+            price_max=29.99,
+            currency="USD",
+            skus=[{"sku": "SOCKET-1", "title": "Single", "price": 19.99, "currency": "USD"}],
+        ),
+    )
+
+    def fail_category(**kwargs):
+        raise ValueError("invalid llm json")
+
+    monkeypatch.setattr(scheduler.product_analysis, "categorize_product", fail_category)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_analysis",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    summary = scheduler.analyze_pending_products(limit=1)
+
+    assert summary == {"scanned": 1, "done": 1, "failed": 0, "category_failed": 1}
+    assert finished[0][0] == 7
+    payload = finished[0][1]
+    assert payload["status"] == "done"
+    assert payload["result"]["title"] == "Flexible Socket Extension"
+    assert payload["result"]["price_min"] == 19.99
+    assert payload["category"]["category"] == "Other"
+    assert "invalid llm json" in payload["error_message"]

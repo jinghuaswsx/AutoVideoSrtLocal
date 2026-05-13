@@ -46,8 +46,18 @@ def sync_hot_posts(
     return summary
 
 
+def _fallback_category(error: Exception) -> dict[str, Any]:
+    return {
+        "category": "Other",
+        "confidence": 0.0,
+        "reason": "Category classification failed; product extraction was saved.",
+        "raw_category": "",
+        "raw_response": {"error": str(error)[:1000]},
+    }
+
+
 def analyze_pending_products(*, limit: int = 5) -> dict[str, Any]:
-    summary = {"scanned": 0, "done": 0, "failed": 0}
+    summary = {"scanned": 0, "done": 0, "failed": 0, "category_failed": 0}
     for row in store.next_pending_product_analyses(limit=limit):
         summary["scanned"] += 1
         analysis_id = int(row["id"])
@@ -55,19 +65,8 @@ def analyze_pending_products(*, limit: int = 5) -> dict[str, Any]:
         store.mark_analysis_running(analysis_id)
         try:
             result = product_analysis.fetch_product_analysis(product_url)
-            category = product_analysis.categorize_product(
-                product_title=result.title,
-                product_url=product_url,
-            )
-            store.finish_analysis(
-                analysis_id,
-                status="done",
-                result=result.to_dict(),
-                category=category,
-            )
-            summary["done"] += 1
         except Exception as exc:
-            log.exception("meta hot post product analysis failed id=%s", analysis_id)
+            log.exception("meta hot post product fetch failed id=%s", analysis_id)
             store.finish_analysis(
                 analysis_id,
                 status="failed",
@@ -76,6 +75,28 @@ def analyze_pending_products(*, limit: int = 5) -> dict[str, Any]:
                 error_message=str(exc)[:1000],
             )
             summary["failed"] += 1
+            continue
+
+        category_error = None
+        try:
+            category = product_analysis.categorize_product(
+                product_title=result.title,
+                product_url=product_url,
+            )
+        except Exception as exc:
+            log.warning("meta hot post category classification failed id=%s: %s", analysis_id, exc)
+            category = _fallback_category(exc)
+            category_error = f"category failed: {str(exc)[:950]}"
+            summary["category_failed"] += 1
+
+        store.finish_analysis(
+            analysis_id,
+            status="done",
+            result=result.to_dict(),
+            category=category,
+            error_message=category_error,
+        )
+        summary["done"] += 1
     return summary
 
 
