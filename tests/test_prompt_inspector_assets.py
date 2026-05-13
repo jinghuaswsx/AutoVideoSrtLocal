@@ -4,6 +4,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _function_body(source: str, name: str) -> str:
+    start = source.index(f"function {name}")
+    next_start = source.find("\n  function ", start + 1)
+    return source[start:] if next_start == -1 else source[start:next_start]
+
+
 def test_task_workbench_contains_prompt_inspector_modal_assets():
     template = (ROOT / "web/templates/_task_workbench.html").read_text(encoding="utf-8")
     scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
@@ -91,3 +97,21 @@ def test_omni_av_sync_audit_renderer_exposes_chinese_findings():
     assert "function auditRecommendation" in scripts
     assert "音频太长" in scripts
     assert "重新生成音频" in scripts
+
+
+def test_multi_av_sync_audit_renderer_is_table_only():
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "function isAvSyncTableOnlyReport" in scripts
+    assert "renderAvSyncAuditTimeline(artifact, { tableOnly: true })" in scripts
+    assert "正常翻译/TTS" in scripts
+    assert "视频画面" in scripts
+    assert "av-sync-timeline-grid table-only" in scripts
+
+    artifact_body = _function_body(scripts, "renderAvSyncAuditArtifact")
+    table_only_start = artifact_body.index("if (isAvSyncTableOnlyReport(artifact))")
+    table_only_branch = artifact_body[table_only_start:artifact_body.index("const summary", table_only_start)]
+    assert "renderReadableAuditFindings" not in table_only_branch
+    assert "renderAuditList" not in table_only_branch
+    assert "human_report" not in table_only_branch
+    assert "完整审计 JSON" not in table_only_branch
