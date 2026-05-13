@@ -552,9 +552,11 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     from pipeline.translate_v2 import compute_char_limit, translate_shot
     from appcore import llm_bindings
 
-    _tr_model = llm_bindings.resolve("translate_lab.shot_translate").get("model") or ""
+    _tr_binding = llm_bindings.resolve("translate_lab.shot_translate")
+    _tr_provider = _tr_binding.get("provider") or ""
+    _tr_model = _tr_binding.get("model") or ""
     runner._set_step(task_id, "translate", "running", "正在按镜头翻译...",
-                     model_tag=f"gemini · {_tr_model}")
+                     model_tag=f"{_tr_provider} · {_tr_model}")
     task = task_state.get(task_id) or {}
     shots: list[dict[str, Any]] = task.get("shots") or []
     if not shots:

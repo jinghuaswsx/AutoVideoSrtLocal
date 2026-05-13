@@ -205,7 +205,10 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     )
     monkeypatch.setattr(
         "appcore.llm_bindings.resolve",
-        lambda use_case: {"model": "gemini-test"},
+        lambda use_case: {
+            "provider": "gemini_aistudio",
+            "model": "gemini-3.1-pro-preview",
+        },
     )
 
     omni_runner._step_translate_shot_limit(task_id)
@@ -218,6 +221,10 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     assert av_sentences[0]["target_chars_range"] == [18, 22]
     assert task["variants"]["normal"]["localized_translation"]["full_text"] == "Texte 1\nTexte 2"
     assert task["steps"]["translate"] == "done"
+    assert (
+        task["step_model_tags"]["translate"]
+        == "gemini_aistudio · gemini-3.1-pro-preview"
+    )
 
 
 def test_shot_limit_translate_prefers_alignment_asr_segments_over_stale_shot_segments(
