@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+from decimal import Decimal, ROUND_CEILING
 
 from appcore import ai_billing
 
@@ -324,11 +325,14 @@ def _speedup_ratio(audio_duration: float, video_duration: float) -> float:
     ratio = audio_duration / video_duration：
     - >1 时音频过长，需要变快、变短 → speed > 1
     - <1 时音频过短，需要变慢、变长 → speed < 1
-    Clamp 到 ElevenLabs 合法范围 [0.7, 1.2]，超出窗口的极端值由调用方在
-    _in_speedup_window 阶段已经过滤掉，这里 clamp 只是兜底。
+    Clamp 到温和变速范围 [0.95, 1.05]，再按两位小数向上取整。
     """
-    raw = audio_duration / video_duration
-    return max(0.7, min(1.2, raw))
+    # Use a gentle quality range and always round upward to two decimals:
+    # 1.0012 -> 1.01, 1.0071 -> 1.01.
+    raw = Decimal(str(audio_duration)) / Decimal(str(video_duration))
+    clamped = max(Decimal("0.95"), min(Decimal("1.05"), raw))
+    rounded = clamped.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+    return float(rounded)
 
 
 def _compute_next_target(
