@@ -1452,6 +1452,7 @@
           ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
           ${renderAvSyncTimelineField("正常翻译/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
           ${renderAvSyncTimelineField("视频画面", row.visual_observation || "画面不清晰/无法确认")}
+          ${renderAvSyncTimelineField("问题诊断", avSyncTableDiagnosis(row))}
         </div>
       </div>`;
     }
@@ -1491,6 +1492,20 @@
       <div class="preview-label">${escapeHtml(label)}</div>
       <div class="preview-original">${escapeHtml(value || "-")}</div>
     </div>`;
+  }
+
+  function avSyncTableDiagnosis(row) {
+    const score = row.sync_score ?? row.score;
+    const lines = [];
+    if (score !== undefined && score !== null && score !== "") {
+      const numeric = Number(score);
+      lines.push(`同步评分：${Number.isFinite(numeric) ? Math.round(numeric) : score}/100`);
+    } else {
+      lines.push("同步评分：未评分");
+    }
+    lines.push(`简要描述：${row.diagnosis || "未记录诊断描述。"}`);
+    lines.push(`整改建议：${row.recommendation || "未记录整改建议。"}`);
+    return lines.join("\n");
   }
 
   function renderReadableAuditFindings(artifact) {

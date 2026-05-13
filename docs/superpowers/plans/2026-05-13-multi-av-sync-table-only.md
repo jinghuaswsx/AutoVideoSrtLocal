@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make multi-translate audio/video sync audit show only one ASR-ordered review table: ASR text, final translation/TTS, and actual video visuals.
+**Goal:** Make multi-translate audio/video sync audit show only one ASR-ordered review table: ASR text, final translation/TTS, actual video visuals, and per-segment sync diagnosis.
 
 **Architecture:** Keep the existing `omni_av_sync_audit.run_report_only()` data path for multi-translate, but narrow its LLM contract to table assembly instead of a full audit report. The shared workbench renderer will use a table-only mode for multi-translate `analysis_only` reports, while leaving Omni report rendering untouched for a later synchronization pass.
 
@@ -41,7 +41,7 @@ Run: `pytest tests/test_omni_av_sync_audit.py::test_report_only_builds_asr_order
 
 - [ ] **Step 1: Write failing frontend asset tests**
 
-Assert that the AV sync renderer has a multi table-only branch, that table-only rows render `ASR 内容`, `正常翻译/TTS`, and `视频画面`, and that the table-only branch does not append `中文审计结论`, `诊断问题`, `复核通过问题`, `修正记录`, or `完整审计 JSON`.
+Assert that the AV sync renderer has a multi table-only branch, that table-only rows render `ASR 内容`, `正常翻译/TTS`, `视频画面`, and `问题诊断`, and that the table-only branch does not append `中文审计结论`, `诊断问题`, `复核通过问题`, `修正记录`, or `完整审计 JSON`.
 
 - [ ] **Step 2: Run frontend asset tests**
 

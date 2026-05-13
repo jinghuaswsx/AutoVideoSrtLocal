@@ -201,10 +201,22 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
         "text": "00:00-00:02 画面中有人拉动把手，字幕显示 Zieh am Griff，音频结尾略拖到下一镜头。",
     })
     chat = MagicMock(return_value={
-        "json": {
-            "timeline": [
-                {"asr_index": 0, "visual_observation": "画面中有人拉动把手，字幕显示 Zieh am Griff。"},
-                {"asr_index": 1, "visual_observation": "画面切到指示灯闪烁。"},
+            "json": {
+                "timeline": [
+                {
+                    "asr_index": 0,
+                    "visual_observation": "画面中有人拉动把手，字幕显示 Zieh am Griff。",
+                    "sync_score": 92,
+                    "diagnosis": "音频与拉把手动作基本同步。",
+                    "recommendation": "无需调整。",
+                },
+                {
+                    "asr_index": 1,
+                    "visual_observation": "画面切到指示灯闪烁。",
+                    "sync_score": 76,
+                    "diagnosis": "TTS 结尾略长，可能压到下一个画面。",
+                    "recommendation": "压缩这一句文案后重新生成音频。",
+                },
             ],
         },
     })
@@ -229,6 +241,12 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
         "画面中有人拉动把手，字幕显示 Zieh am Griff。",
         "画面切到指示灯闪烁。",
     ]
+    assert report["audit_timeline"][0]["sync_score"] == 92
+    assert report["audit_timeline"][0]["diagnosis"] == "音频与拉把手动作基本同步。"
+    assert report["audit_timeline"][0]["recommendation"] == "无需调整。"
+    assert report["audit_timeline"][1]["sync_score"] == 76
+    assert report["audit_timeline"][1]["diagnosis"] == "TTS 结尾略长，可能压到下一个画面。"
+    assert report["audit_timeline"][1]["recommendation"] == "压缩这一句文案后重新生成音频。"
 
     assert generate.call_args.args[0] == "omni_av_sync.understand"
     prompt = generate.call_args.kwargs["prompt"]
@@ -246,7 +264,9 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     assert "program_candidates" not in assess_payload
     assert "音频太长" not in assess_payload
     assert "唯一任务是填写逐段审片表" in assess_call.kwargs["messages"][0]["content"]
-    assert "不要输出处理建议" in assess_call.kwargs["messages"][0]["content"]
+    assert "sync_score" in assess_call.kwargs["messages"][0]["content"]
+    assert "recommendation" in assess_call.kwargs["messages"][0]["content"]
+    assert "不要输出总结" in assess_call.kwargs["messages"][0]["content"]
     assert chat.call_count == 1
     refs = task["llm_debug_refs"]["av_sync_audit"]
     assert [ref["id"] for ref in refs] == [
@@ -402,6 +422,9 @@ def test_multi_report_only_ignores_actionable_issue_report_fields(monkeypatch, t
                 "timeline": [{
                     "asr_index": 0,
                     "visual_observation": "画面中有人拉动把手，随后进入下一镜头。",
+                    "sync_score": 68,
+                    "diagnosis": "音频比动作略拖后。",
+                    "recommendation": "缩短目标语句子并重新生成音频。",
                 }],
             },
         }),
@@ -418,8 +441,10 @@ def test_multi_report_only_ignores_actionable_issue_report_fields(monkeypatch, t
     assert timeline[0]["asr_text"] == "Grab the handle and pull."
     assert timeline[0]["target_text"] == "Zieh am Griff."
     assert timeline[0]["visual_observation"] == "画面中有人拉动把手，随后进入下一镜头。"
+    assert timeline[0]["sync_score"] == 68
+    assert timeline[0]["diagnosis"] == "音频比动作略拖后。"
+    assert timeline[0]["recommendation"] == "缩短目标语句子并重新生成音频。"
     assert timeline[0]["problem"] == ""
-    assert timeline[0]["recommendation"] == ""
 
 
 def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monkeypatch, tmp_path):
@@ -480,9 +505,15 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
                 "timeline": [{
                     "asr_index": 0,
                     "visual_observation": "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。",
+                    "sync_score": 94,
+                    "diagnosis": "翻译音频与拉把手动作同步。",
+                    "recommendation": "无需调整。",
                 }, {
                     "asr_index": 1,
                     "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
+                    "sync_score": 70,
+                    "diagnosis": "TTS 长于灯光闪烁画面，结尾可能拖到后续画面。",
+                    "recommendation": "压缩这一句目标文案后重新生成音频。",
                 }],
             },
         }),
@@ -496,18 +527,24 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
     assert timeline[0]["asr_text"] == "Grab the handle and pull."
     assert timeline[0]["target_text"] == "Zieh am Griff."
     assert timeline[0]["visual_observation"] == "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。"
+    assert timeline[0]["sync_score"] == 94
+    assert timeline[0]["diagnosis"] == "翻译音频与拉把手动作同步。"
+    assert timeline[0]["recommendation"] == "无需调整。"
     assert timeline[1]["visual_observation"] == "画面里只有灯光闪烁，没有后续动作。"
+    assert timeline[1]["sync_score"] == 70
+    assert timeline[1]["diagnosis"] == "TTS 长于灯光闪烁画面，结尾可能拖到后续画面。"
+    assert timeline[1]["recommendation"] == "压缩这一句目标文案后重新生成音频。"
     assert report["diagnosis"]["issues"] == []
     assert timeline[1]["diagnosis_status"] == "ok"
     assert timeline[1]["verified"] is False
     assert timeline[1]["problem"] == ""
-    assert timeline[1]["recommendation"] == ""
 
     assess_system = omni_av_sync_audit.llm_client.invoke_chat.call_args.kwargs["messages"][0]["content"]
     assert "唯一任务是填写逐段审片表" in assess_system
     assert "不要输出总结" in assess_system
-    assert "不要输出处理建议" in assess_system
     assert "不要输出问题列表" in assess_system
+    assert "sync_score" in assess_system
+    assert "recommendation" in assess_system
     assert "issues 内每项" not in assess_system
     assert "处理建议只能" not in assess_system
 
