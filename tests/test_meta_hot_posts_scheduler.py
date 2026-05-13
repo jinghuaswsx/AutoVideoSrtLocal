@@ -199,8 +199,8 @@ def test_analyze_pending_products_keeps_product_result_when_category_fails(monke
     assert payload["result"]["title"] == "Flexible Socket Extension"
     assert payload["result"]["price_min"] == 19.99
     assert payload["category"]["category"] is None
-    assert payload["category"]["provider"] == "gemini_vertex_adc"
-    assert payload["category"]["model"] == "gemini-3.1-flash-lite-preview"
+    assert payload["category"]["provider"] == "openrouter"
+    assert payload["category"]["model"] == "google/gemini-3.1-flash-lite-preview"
     assert "invalid llm json" in payload["error_message"]
 
 
@@ -342,7 +342,7 @@ def test_reanalyze_categories_uses_saved_title_without_fetching_product_page(mon
     assert finished[0][1]["error_message"] is None
 
 
-def test_reanalyze_categories_marks_adc_model_even_when_category_call_fails(monkeypatch):
+def test_reanalyze_categories_marks_openrouter_model_even_when_category_call_fails(monkeypatch):
     finished = []
 
     monkeypatch.setattr(
@@ -352,7 +352,7 @@ def test_reanalyze_categories_marks_adc_model_even_when_category_call_fails(monk
     )
 
     def fail_category(**kwargs):
-        raise RuntimeError("adc unavailable")
+        raise RuntimeError("openrouter unavailable")
 
     monkeypatch.setattr(scheduler.product_analysis, "categorize_product", fail_category)
     monkeypatch.setattr(
@@ -364,9 +364,9 @@ def test_reanalyze_categories_marks_adc_model_even_when_category_call_fails(monk
     summary = scheduler.reanalyze_categories(limit=100, user_id=1)
 
     assert summary == {"scanned": 1, "done": 0, "failed": 1}
-    assert finished[0][1]["category"]["provider"] == "gemini_vertex_adc"
-    assert finished[0][1]["category"]["model"] == "gemini-3.1-flash-lite-preview"
-    assert "adc unavailable" in finished[0][1]["error_message"]
+    assert finished[0][1]["category"]["provider"] == "openrouter"
+    assert finished[0][1]["category"]["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert "openrouter unavailable" in finished[0][1]["error_message"]
 
 
 def test_reanalyze_categories_waits_between_items(monkeypatch):

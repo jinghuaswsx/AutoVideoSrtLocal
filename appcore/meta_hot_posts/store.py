@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Callable, Mapping
 
 from appcore.db import execute, query
+from appcore.meta_hot_posts.category_route import CATEGORY_MODEL, CATEGORY_PROVIDER
 
 
 QueryFn = Callable[[str, tuple[Any, ...]], list[dict]]
@@ -256,14 +257,14 @@ def next_category_reanalysis_candidates(
     query_fn: QueryFn = query,
 ) -> list[dict]:
     safe_limit = max(1, min(100, int(limit)))
-    not_current_model = "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview'"
+    not_current_route = "(COALESCE(llm_provider, '') <> %s OR COALESCE(llm_model, '') <> %s)"
     category_failed_pattern = "category failed:%"
-    category_params: list[Any] = []
+    category_params: list[Any] = [CATEGORY_PROVIDER, CATEGORY_MODEL]
     if include_all:
-        category_clause = not_current_model
+        category_clause = not_current_route
     else:
         category_clause = (
-            f"({not_current_model} AND "
+            f"({not_current_route} AND "
             "(last_error LIKE %s "
             "OR (category_l1 = 'Other' AND COALESCE(category_confidence, 0) = 0) "
             "OR category_l1 IS NULL "

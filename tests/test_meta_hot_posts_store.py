@@ -160,10 +160,16 @@ def test_next_category_reanalysis_candidates_selects_done_rows_with_titles():
     assert "last_error LIKE %s" in sql
     assert "category failed:%%" not in sql
     assert "category_l1 = 'Other'" in sql
-    assert params == ("category failed:%", "category failed:%", 100)
+    assert params == (
+        "openrouter",
+        "google/gemini-3.1-flash-lite-preview",
+        "category failed:%",
+        "category failed:%",
+        100,
+    )
 
 
-def test_next_category_reanalysis_candidates_include_all_skips_current_adc_model():
+def test_next_category_reanalysis_candidates_include_all_skips_current_openrouter_route():
     calls = []
 
     store.next_category_reanalysis_candidates(
@@ -173,13 +179,14 @@ def test_next_category_reanalysis_candidates_include_all_skips_current_adc_model
     )
 
     sql, params = calls[0]
-    assert "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview'" in sql
+    assert "COALESCE(llm_provider, '') <> %s" in sql
+    assert "COALESCE(llm_model, '') <> %s" in sql
     assert "AND (last_error LIKE %s" not in sql
     assert "category failed:%%" not in sql
-    assert params == ("category failed:%", 80)
+    assert params == ("openrouter", "google/gemini-3.1-flash-lite-preview", "category failed:%", 80)
 
 
-def test_next_category_reanalysis_candidates_excludes_current_adc_failures():
+def test_next_category_reanalysis_candidates_excludes_current_openrouter_failures():
     calls = []
 
     store.next_category_reanalysis_candidates(
@@ -189,10 +196,16 @@ def test_next_category_reanalysis_candidates_excludes_current_adc_failures():
 
     sql, params = calls[0]
     assert (
-        "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview' "
+        "COALESCE(llm_provider, '') <> %s OR COALESCE(llm_model, '') <> %s) "
         "AND (last_error LIKE %s"
     ) in " ".join(sql.split())
-    assert params == ("category failed:%", "category failed:%", 100)
+    assert params == (
+        "openrouter",
+        "google/gemini-3.1-flash-lite-preview",
+        "category failed:%",
+        "category failed:%",
+        100,
+    )
 
 
 def test_finish_category_reanalysis_updates_only_category_fields():
@@ -204,8 +217,8 @@ def test_finish_category_reanalysis_updates_only_category_fields():
             "category": "Kitchenware",
             "confidence": 1.0,
             "reason": "Title maps to kitchen product.",
-            "provider": "gemini_vertex_adc",
-            "model": "gemini-3.1-flash-lite-preview",
+            "provider": "openrouter",
+            "model": "google/gemini-3.1-flash-lite-preview",
             "raw_response": {"text": "Kitchenware"},
         },
         error_message=None,
@@ -218,5 +231,5 @@ def test_finish_category_reanalysis_updates_only_category_fields():
     assert "sku_prices_json=" not in sql
     assert "category_l1=%s" in sql
     assert params[1] == "Kitchenware"
-    assert params[4] == "gemini_vertex_adc"
+    assert params[4] == "openrouter"
     assert params[-1] == 11

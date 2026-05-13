@@ -88,7 +88,7 @@ def test_build_category_prompt_includes_title_and_category_pool_but_not_url():
     assert "只返回一个类目名称" in prompt
 
 
-def test_categorize_product_uses_title_only_text_output_and_adc_billing():
+def test_categorize_product_uses_title_only_text_output_and_openrouter_billing():
     calls = {}
 
     def fake_invoke(use_case_code, **kwargs):
@@ -96,8 +96,8 @@ def test_categorize_product_uses_title_only_text_output_and_adc_billing():
         calls["kwargs"] = kwargs
         return {
             "text": "Kitchenware",
-            "provider": "gemini_vertex_adc",
-            "model": "gemini-3.1-flash-lite-preview",
+            "provider": "openrouter",
+            "model": "google/gemini-3.1-flash-lite-preview",
         }
 
     result = product_analysis.categorize_product(
@@ -116,7 +116,7 @@ def test_categorize_product_uses_title_only_text_output_and_adc_billing():
     assert "https://example.com/products/blender" not in calls["kwargs"]["prompt"]
 
 
-def test_categorize_product_marks_current_adc_provider_when_llm_response_has_no_route_metadata():
+def test_categorize_product_marks_current_openrouter_provider_when_llm_response_has_no_route_metadata():
     def fake_invoke(use_case_code, **kwargs):
         return {"text": "Home Supplies", "json": None, "raw": "Home Supplies", "usage": {}}
 
@@ -128,8 +128,8 @@ def test_categorize_product_marks_current_adc_provider_when_llm_response_has_no_
     )
 
     assert result["category"] == "Home Supplies"
-    assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3.1-flash-lite-preview"
+    assert result["provider"] == "openrouter"
+    assert result["model"] == "google/gemini-3.1-flash-lite-preview"
 
 
 def test_detect_product_link_type_handles_shopify_tiktok_and_generic_urls():

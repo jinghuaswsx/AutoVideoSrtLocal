@@ -10,10 +10,8 @@ import requests
 from bs4 import BeautifulSoup
 
 from appcore import llm_client
+from appcore.meta_hot_posts.category_route import CATEGORY_MODEL, CATEGORY_PROVIDER
 from appcore.meta_hot_posts.categories import TIKTOK_SHOP_US_L1_CATEGORIES
-
-CATEGORY_PROVIDER = "gemini_vertex_adc"
-CATEGORY_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 @dataclass

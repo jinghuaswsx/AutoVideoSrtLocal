@@ -68,8 +68,8 @@ def build_category_prompt_response() -> MetaHotPostsResponse:
             "prompt": prompt,
             "categories": categories.TIKTOK_SHOP_US_L1_CATEGORIES,
             "use_case": "meta_hot_posts.categorize",
-            "model": "gemini-3.1-flash-lite-preview",
-            "provider": "gemini_vertex_adc",
+            "model": product_analysis.CATEGORY_MODEL,
+            "provider": product_analysis.CATEGORY_PROVIDER,
         }
     )
 
