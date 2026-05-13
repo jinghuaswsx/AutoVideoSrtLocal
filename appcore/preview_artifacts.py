@@ -154,6 +154,83 @@ def build_translate_artifact(source_or_segments, localized_translation: dict | N
     }
 
 
+def build_shot_translate_artifact(
+    shots: list[dict] | None,
+    translations: list[dict] | None,
+    source_full_text: str,
+    localized_translation: dict | None,
+    *,
+    source_language: str = "zh",
+    target_language: str = "en",
+) -> dict:
+    """Build a translate preview for shot_char_limit with per-shot process details."""
+    shot_rows = _merge_shot_translation_rows(shots or [], translations or [])
+    translated_count = sum(1 for row in shot_rows if row.get("translated_text"))
+    over_limit_count = sum(1 for row in shot_rows if row.get("over_limit"))
+    retry_count = sum(int(row.get("retries") or 0) for row in shot_rows)
+    items = [
+        {
+            "type": "shot_translation_summary",
+            "label": "镜头级翻译过程",
+            "total": len(shot_rows),
+            "translated_count": translated_count,
+            "over_limit_count": over_limit_count,
+            "retry_count": retry_count,
+        },
+        {
+            "type": "shot_translations",
+            "label": "逐镜头过程和结果",
+            "shots": shot_rows,
+        },
+    ]
+    if source_full_text or localized_translation:
+        items.extend(
+            build_translate_artifact(
+                source_full_text,
+                localized_translation or {},
+                source_language=source_language,
+                target_language=target_language,
+            )["items"]
+        )
+    return {
+        "title": "翻译本土化",
+        "layout": "shot_translate",
+        "items": items,
+    }
+
+
+def _merge_shot_translation_rows(shots: list[dict], translations: list[dict]) -> list[dict]:
+    by_index = {
+        tr.get("shot_index"): tr
+        for tr in translations
+        if isinstance(tr, dict) and tr.get("shot_index") is not None
+    }
+    rows: list[dict] = []
+    total = max(len(shots), len(translations))
+    for pos in range(total):
+        shot = shots[pos] if pos < len(shots) and isinstance(shots[pos], dict) else {}
+        fallback_tr = translations[pos] if pos < len(translations) and isinstance(translations[pos], dict) else {}
+        shot_index = shot.get("index", fallback_tr.get("shot_index", pos))
+        tr = by_index.get(shot_index) or fallback_tr or {}
+        start_time = shot.get("start", shot.get("start_time"))
+        end_time = shot.get("end", shot.get("end_time"))
+        rows.append({
+            "index": shot_index,
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration": shot.get("duration"),
+            "source_text": shot.get("source_text") or shot.get("asr_text") or "",
+            "description": shot.get("description") or shot.get("visual_description") or "",
+            "translated_text": tr.get("translated_text") or "",
+            "char_limit": tr.get("char_limit"),
+            "char_count": tr.get("char_count"),
+            "over_limit": bool(tr.get("over_limit")),
+            "retries": int(tr.get("retries") or 0),
+            "silent": bool(shot.get("silent")),
+        })
+    return rows
+
+
 def build_tts_artifact(tts_script_or_segments, segments: list[dict] | None = None,
                        duration_rounds: list[dict] | None = None) -> dict:
     if segments is None and isinstance(tts_script_or_segments, list):

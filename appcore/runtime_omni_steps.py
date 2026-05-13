@@ -40,6 +40,7 @@ from appcore.llm_debug_runtime import save_llm_debug_calls
 from appcore.preview_artifacts import (
     build_asr_artifact,
     build_asr_normalize_artifact,
+    build_shot_translate_artifact,
     build_subtitle_artifact,
     build_translate_artifact,
 )
@@ -473,6 +474,7 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
             translations.append({
                 "shot_index": shot.get("index"),
                 "translated_text": "",
+                "char_limit": 0,
                 "char_count": 0,
                 "over_limit": False,
                 "retries": 0,
@@ -493,6 +495,8 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
             next_source=next_source,
             user_id=runner.user_id,
         )
+        result = dict(result)
+        result["char_limit"] = max(1, limit)
         translations.append(result)
         runner._emit(task_id, EVT_LAB_TRANSLATE_PROGRESS, {
             "index": shot.get("index"),
@@ -573,6 +577,18 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
         source_full_text=source_full_text,
         source_full_text_zh=source_full_text,
         variants=variants,
+    )
+    task_state.set_artifact(
+        task_id,
+        "translate",
+        build_shot_translate_artifact(
+            shots,
+            translations,
+            source_full_text,
+            localized_translation,
+            source_language=task.get("source_language", "en"),
+            target_language=target_lang,
+        ),
     )
     runner._set_step(task_id, "translate", "done",
                      f"{target_lang.upper()} 镜头级翻译完成（{len(translations)} 段）")
