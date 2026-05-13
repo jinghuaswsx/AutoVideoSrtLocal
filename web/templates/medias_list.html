@@ -1640,6 +1640,18 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   margin-top:var(--oc-sp-3);
   min-height:64px;
 }
+.oc-detail-images-toolbar {
+  display:flex; align-items:center; gap:var(--oc-sp-2);
+  margin-top:var(--oc-sp-3); padding:var(--oc-sp-2) var(--oc-sp-3);
+  border:1px solid var(--oc-border); border-radius:var(--oc-r-md);
+  background:var(--oc-accent-subtle); color:var(--oc-fg);
+  flex-wrap:wrap;
+}
+.oc-detail-images-toolbar[hidden] { display:none; }
+.oc-detail-images-selection-count {
+  margin-right:auto; font-size:12px; font-weight:600;
+  color:var(--oc-accent); font-variant-numeric:tabular-nums;
+}
 .oc-detail-images-empty {
   grid-column:1 / -1;
   padding:var(--oc-sp-5) var(--oc-sp-4);
@@ -1663,11 +1675,41 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   border-color:var(--oc-accent);
   box-shadow:var(--oc-shadow-sm);
 }
+.oc-detail-image.is-selected {
+  border-color:var(--oc-accent);
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
 .oc-detail-image img {
   width:100%; height:100%; object-fit:cover; display:block;
 }
-.oc-detail-image-idx {
+.oc-detail-image-select-wrap {
   position:absolute; top:6px; left:6px;
+  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+  border-radius:var(--oc-r-full, 9999px);
+  background:oklch(22% 0.02 235 / 0.72);
+  cursor:pointer; z-index:2;
+}
+.oc-detail-image-select {
+  position:absolute; opacity:0; pointer-events:none;
+}
+.oc-detail-image-select-wrap span {
+  width:14px; height:14px; border:1.5px solid var(--oc-bg);
+  border-radius:4px; background:transparent;
+  transition:background var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-detail-image-select:checked + span {
+  background:var(--oc-accent); border-color:var(--oc-accent);
+}
+.oc-detail-image-select:checked + span::after {
+  content:""; display:block; width:7px; height:4px;
+  border-left:2px solid var(--oc-bg); border-bottom:2px solid var(--oc-bg);
+  transform:translate(2px,3px) rotate(-45deg);
+}
+.oc-detail-image-select:focus-visible + span {
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
+.oc-detail-image-idx {
+  position:absolute; bottom:6px; left:6px;
   display:inline-flex; align-items:center; justify-content:center;
   min-width:22px; height:22px; padding:0 6px;
   border-radius:var(--oc-r-full, 9999px);
