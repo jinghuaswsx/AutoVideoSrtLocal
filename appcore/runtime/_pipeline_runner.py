@@ -87,7 +87,7 @@ from ._helpers import (
     _is_av_pipeline_task,
     _av_target_lang,
     _tts_final_target_range,
-    _adaptive_speed_candidate,
+    _speedup_sampling_plan,
     _speedup_voice_settings_for_attempt,
     _select_segment_candidate_assembly,
     _DEFAULT_WPS,
@@ -332,6 +332,7 @@ class PipelineRunner:
             source: str,
             speed: float,
             attempt: int | None = None,
+            sample_index: int | None = None,
             voice_settings: dict | None = None,
         ) -> dict:
             text = seg.get("tts_text") or seg.get("translated") or seg.get("text") or ""
@@ -351,6 +352,8 @@ class PipelineRunner:
             })
             if attempt is not None:
                 candidate["speedup_attempt"] = attempt
+            if sample_index is not None:
+                candidate["speedup_sample_index"] = sample_index
             if voice_settings:
                 candidate["voice_settings"] = dict(voice_settings)
                 candidate["voice_settings_profile"] = voice_settings.get("profile")
@@ -368,6 +371,7 @@ class PipelineRunner:
             *,
             speed: float,
             attempt: int,
+            sample_index: int | None = None,
             voice_settings: dict | None = None,
         ) -> None:
             for i, seg in enumerate(segments or []):
@@ -377,6 +381,7 @@ class PipelineRunner:
                     _segment_candidate(
                         seg, index=i, source="speedup", speed=speed,
                         attempt=attempt,
+                        sample_index=sample_index,
                         voice_settings=voice_settings,
                     )
                 )
@@ -401,6 +406,8 @@ class PipelineRunner:
                     "duration": c.get("duration"),
                     "audio_path": _relative(c.get("tts_path")),
                     "speedup_attempt": c.get("speedup_attempt"),
+                    "speedup_sample_index": c.get("speedup_sample_index"),
+                    "voice_settings_profile": c.get("voice_settings_profile"),
                     "voice_settings": c.get("voice_settings"),
                 }
                 for c in candidates or []
@@ -473,14 +480,18 @@ class PipelineRunner:
             fallback_duration = None
             fallback_speed = None
             for attempt in range(1, max_speed_candidates + 1):
-                speed = _adaptive_speed_candidate(
+                speed_plan = _speedup_sampling_plan(
                     base_duration=audio_duration,
                     video_duration=video_duration,
                     previous_candidates=round_record["speedup_candidates"],
                     max_candidates=max_speed_candidates,
                 )
-                if speed is None:
+                if not speed_plan:
                     break
+                speed_spec = speed_plan[0]
+                attempt = int(speed_spec.get("attempt") or attempt)
+                sample_index = int(speed_spec.get("sample_index") or attempt)
+                speed = float(speed_spec["speed"])
                 voice_settings = _speedup_voice_settings_for_attempt(attempt)
                 voice_setting_kwargs = {
                     key: voice_settings[key]
@@ -510,7 +521,10 @@ class PipelineRunner:
                         result["segments"],
                         voice["elevenlabs_voice_id"],
                         task_dir,
-                        variant=f"round_{active_round}.speed_{variant_suffix}",
+                        variant=(
+                            f"round_{active_round}.speed_{variant_suffix}"
+                            f".sample_{sample_index}"
+                        ),
                         speed=speed,
                         **voice_setting_kwargs,
                         model_id=tts_model_id,
@@ -531,11 +545,13 @@ class PipelineRunner:
                 _add_speedup_segments_to_groups(
                     groups, speedup_result.get("segments") or [],
                     speed=speed, attempt=attempt,
+                    sample_index=sample_index,
                     voice_settings=voice_settings,
                 )
                 candidate_hit = (video_duration - 1.0) <= speedup_duration <= video_duration
                 candidate_meta = {
                     "attempt": attempt,
+                    "sample_index": sample_index,
                     "speed": round(speed, 4),
                     "audio_path": _relative(speedup_audio_path),
                     "duration": speedup_duration,

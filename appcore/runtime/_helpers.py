@@ -333,18 +333,18 @@ def _speedup_ratio(audio_duration: float, video_duration: float) -> float:
     ratio = audio_duration / video_duration：
     - >1 时音频过长，需要变快、变短 → speed > 1
     - <1 时音频过短，需要变慢、变长 → speed < 1
-    Clamp 到温和变速范围 [0.95, 1.05]，再按两位小数向上取整。
+    Clamp 到温和变速范围 [0.94, 1.06]，再按两位小数向上取整。
     """
     # Use a gentle quality range and always round upward to two decimals:
     # 1.0012 -> 1.01, 1.0071 -> 1.01.
     raw = Decimal(str(audio_duration)) / Decimal(str(video_duration))
-    clamped = max(Decimal("0.95"), min(Decimal("1.05"), raw))
+    clamped = max(Decimal("0.94"), min(Decimal("1.06"), raw))
     rounded = clamped.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
     return float(rounded)
 
 
-_TTS_SPEED_MIN = Decimal("0.95")
-_TTS_SPEED_MAX = Decimal("1.05")
+_TTS_SPEED_MIN = Decimal("0.94")
+_TTS_SPEED_MAX = Decimal("1.06")
 _TTS_SPEED_STEP = Decimal("0.01")
 
 
@@ -378,7 +378,7 @@ def _adaptive_speed_candidate(
 ) -> float | None:
     """Pick the next native TTS speed using feedback from prior attempts.
 
-    The provider speed value is always constrained to [0.95, 1.05].  The
+    The provider speed value is always constrained to [0.94, 1.06].  The
     feedback step is 0.01, which is 10% of the total allowed range.
     """
     if not (base_duration > 0 and video_duration > 0):
@@ -437,6 +437,48 @@ def _adaptive_speed_candidate(
     return None
 
 
+def _speedup_sampling_plan(
+    *,
+    base_duration: float,
+    video_duration: float,
+    previous_candidates: list[dict] | None,
+    max_candidates: int = 3,
+) -> list[dict]:
+    """Return native-speed sample specs for the current speed assembly phase."""
+    if not (base_duration > 0 and video_duration > 0):
+        return []
+    previous = list(previous_candidates or [])
+    remaining = max(0, int(max_candidates) - len(previous))
+    if remaining <= 0:
+        return []
+
+    if float(base_duration) > float(video_duration):
+        start = len(previous) + 1
+        return [
+            {
+                "attempt": attempt,
+                "sample_index": attempt,
+                "speed": float(_TTS_SPEED_MAX),
+            }
+            for attempt in range(start, start + remaining)
+        ]
+
+    speed = _adaptive_speed_candidate(
+        base_duration=base_duration,
+        video_duration=video_duration,
+        previous_candidates=previous,
+        max_candidates=max_candidates,
+    )
+    if speed is None:
+        return []
+    attempt = len(previous) + 1
+    return [{
+        "attempt": attempt,
+        "sample_index": attempt,
+        "speed": speed,
+    }]
+
+
 def _speedup_voice_settings_for_attempt(attempt: int) -> dict:
     """Return conservative ElevenLabs voice setting overrides per speed attempt."""
     if attempt == 2:
@@ -475,10 +517,10 @@ def _speedup_candidate_speeds(
 
     raw = Decimal(str(audio_duration)) / Decimal(str(video_duration))
     start = raw.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
-    start = max(Decimal("1.01"), min(Decimal("1.05"), start))
+    start = max(Decimal("1.01"), min(_TTS_SPEED_MAX, start))
     speeds: list[float] = []
     current = start
-    while len(speeds) < max_candidates and current <= Decimal("1.05"):
+    while len(speeds) < max_candidates and current <= _TTS_SPEED_MAX:
         value = float(current)
         if value not in speeds:
             speeds.append(value)

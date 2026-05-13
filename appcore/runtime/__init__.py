@@ -77,6 +77,7 @@ from ._helpers import (
     _in_speedup_window,
     _speedup_ratio,
     _adaptive_speed_candidate,
+    _speedup_sampling_plan,
     _speedup_voice_settings_for_attempt,
     _speedup_candidate_speeds,
     _select_segment_candidate_assembly,
