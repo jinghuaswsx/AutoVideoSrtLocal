@@ -255,7 +255,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "meta_hot_posts_analysis_tick",
         "name": "Meta 热帖商品分析",
         "description": (
-            "每 10 分钟扫描 Meta 热帖未完成商品链接，串行抓商品页标题、主图、SKU 价格，"
+            "每 10 分钟扫描 Meta 热帖未完成商品链接，每轮最多 100 个，串行抓商品页标题、主图、SKU 价格，"
             "再调用 Gemini 3 Flash 判断 TikTok Shop US 一级类目。Docs-anchor: "
             "docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md"
         ),

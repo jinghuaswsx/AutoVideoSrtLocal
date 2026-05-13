@@ -74,6 +74,22 @@ def test_register_schedules_daily_sync_at_7am_and_analysis_interval(monkeypatch)
     assert analysis_kwargs["minutes"] == 10
 
 
+def test_analysis_tick_once_defaults_to_100_products(monkeypatch):
+    captured = {}
+
+    def fake_analyze_pending_products(*, limit):
+        captured["limit"] = limit
+        return {"scanned": 0, "done": 0, "failed": 0}
+
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(scheduler, "analyze_pending_products", fake_analyze_pending_products)
+
+    scheduler.analysis_tick_once()
+
+    assert captured["limit"] == 100
+
+
 def test_analyze_pending_products_keeps_product_result_when_category_fails(monkeypatch):
     finished = []
 

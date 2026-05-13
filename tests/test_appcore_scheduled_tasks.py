@@ -321,6 +321,7 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert analysis_task["source_type"] == "apscheduler"
     assert analysis_task["runner"] == "appcore.meta_hot_posts.scheduler.analysis_tick_once"
     assert analysis_task["log_table"] == "scheduled_task_runs"
+    assert "100 个" in analysis_task["description"]
 
 
 def test_task_definitions_include_server_and_app_timers():

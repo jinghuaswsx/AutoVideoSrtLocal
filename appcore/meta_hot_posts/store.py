@@ -235,7 +235,7 @@ def next_pending_product_analyses(
     max_attempts: int = 3,
     query_fn: QueryFn = query,
 ) -> list[dict]:
-    safe_limit = max(1, min(50, int(limit)))
+    safe_limit = max(1, min(100, int(limit)))
     return query_fn(
         """
         SELECT id, product_url, product_url_hash, attempts
@@ -246,6 +246,26 @@ def next_pending_product_analyses(
         LIMIT %s
         """,
         (int(max_attempts), safe_limit),
+    )
+
+
+def list_failed_product_analyses(
+    *,
+    limit: int = 100,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(100, int(limit)))
+    return query_fn(
+        """
+        SELECT id, product_url, attempts, last_error,
+               product_title, product_main_image_url, price_min, price_max,
+               currency, category_l1, analyzed_at, updated_at
+        FROM meta_hot_post_product_analyses
+        WHERE status = 'failed'
+        ORDER BY updated_at DESC, id DESC
+        LIMIT %s
+        """,
+        (safe_limit,),
     )
 
 

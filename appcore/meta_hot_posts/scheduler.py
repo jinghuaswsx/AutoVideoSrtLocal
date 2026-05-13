@@ -56,7 +56,7 @@ def _fallback_category(error: Exception) -> dict[str, Any]:
     }
 
 
-def analyze_pending_products(*, limit: int = 5) -> dict[str, Any]:
+def analyze_pending_products(*, limit: int = 100) -> dict[str, Any]:
     summary = {"scanned": 0, "done": 0, "failed": 0, "category_failed": 0}
     for row in store.next_pending_product_analyses(limit=limit):
         summary["scanned"] += 1
@@ -117,7 +117,7 @@ def sync_tick_once(*, target_count: int = 500, max_pages: int = 50) -> dict[str,
     return summary
 
 
-def analysis_tick_once(*, limit: int = 5) -> dict[str, Any]:
+def analysis_tick_once(*, limit: int = 100) -> dict[str, Any]:
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(ANALYSIS_TASK_CODE)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from appcore.meta_hot_posts import categories, store
+from appcore.meta_hot_posts import categories, product_analysis, store
 
 
 @dataclass(frozen=True)
@@ -53,6 +53,30 @@ def build_category_options_response() -> MetaHotPostsResponse:
     return MetaHotPostsResponse({"items": category_options()})
 
 
+def build_category_prompt_response() -> MetaHotPostsResponse:
+    prompt = product_analysis.build_category_prompt(
+        product_title="{product_title}",
+        product_url="{product_url}",
+    )
+    return MetaHotPostsResponse(
+        {
+            "prompt": prompt,
+            "categories": categories.TIKTOK_SHOP_US_L1_CATEGORIES,
+            "use_case": "meta_hot_posts.categorize",
+            "model": "gemini-3-flash-preview",
+        }
+    )
+
+
+def build_failures_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
+    try:
+        limit = int(args.get("limit") or 100)
+    except (TypeError, ValueError):
+        limit = 100
+    items = store.list_failed_product_analyses(limit=limit)
+    return MetaHotPostsResponse({"items": items, "total": len(items), "limit": max(1, min(100, limit))})
+
+
 def build_refresh_response() -> MetaHotPostsResponse:
     from appcore.meta_hot_posts import scheduler
 
@@ -64,7 +88,7 @@ def build_analyze_response(payload: Mapping[str, Any] | None = None) -> MetaHotP
 
     payload = payload or {}
     try:
-        limit = int(payload.get("limit") or 5)
+        limit = int(payload.get("limit") or 100)
     except (TypeError, ValueError):
-        limit = 5
+        limit = 100
     return MetaHotPostsResponse({"ok": True, "result": scheduler.analysis_tick_once(limit=limit)}, 202)

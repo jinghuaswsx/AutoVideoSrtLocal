@@ -172,6 +172,24 @@ def api_meta_hot_posts_categories():
     return jsonify(result.payload), result.status_code
 
 
+@bp.route("/api/meta-hot-posts/category-prompt", methods=["GET"])
+@login_required
+def api_meta_hot_posts_category_prompt():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_category_prompt_response()
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/failures", methods=["GET"])
+@login_required
+def api_meta_hot_posts_failures():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_failures_response(request.args)
+    return jsonify(result.payload), result.status_code
+
+
 @bp.route("/api/meta-hot-posts/refresh", methods=["POST"])
 @login_required
 def api_meta_hot_posts_refresh():

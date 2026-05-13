@@ -91,3 +91,38 @@ def test_next_pending_product_analyses_selects_unfinished_rows():
     assert "status IN ('pending', 'failed')" in sql
     assert "attempts < %s" in sql
     assert params == (3, 3)
+
+
+def test_next_pending_product_analyses_allows_100_per_tick():
+    calls = []
+
+    store.next_pending_product_analyses(
+        limit=500,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [],
+    )
+
+    assert calls[0][1] == (3, 100)
+
+
+def test_list_failed_product_analyses_returns_recent_failures():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [
+            {
+                "id": 9,
+                "product_url": "https://example.com/bad",
+                "attempts": 2,
+                "last_error": "403 Client Error",
+                "updated_at": "2026-05-13 18:00:00",
+            }
+        ]
+
+    rows = store.list_failed_product_analyses(limit=200, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["product_url"] == "https://example.com/bad"
+    assert "WHERE status = 'failed'" in sql
+    assert "ORDER BY updated_at DESC" in sql
+    assert params == (100,)

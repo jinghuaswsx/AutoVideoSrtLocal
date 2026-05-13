@@ -14,6 +14,9 @@
 .mh-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--mh-line); border-radius:999px; background:#f6f8fb; }
 .mh-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
 .mh-tab.active { background:var(--mh-accent); color:#fff; }
+.mh-tool-row { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:44px; margin-bottom:10px; padding:8px 12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-tool-title { color:#475569; font-size:13px; font-weight:700; }
+.mh-tool-buttons { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .mh-toolbar { display:grid; grid-template-columns:repeat(6, minmax(120px, 1fr)) auto; gap:10px; align-items:end; margin-bottom:14px; padding:14px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
 .mh-field label { display:block; margin-bottom:5px; color:var(--mh-muted); font-size:12px; font-weight:700; }
 .mh-input, .mh-select { width:100%; height:34px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:var(--mh-text); font-size:14px; }
@@ -44,6 +47,18 @@
 .mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
 .mh-mini { margin-top:4px; color:#64748b; font-size:12px; }
 .mh-empty { grid-column:1/-1; padding:48px 16px; text-align:center; color:#64748b; }
+.mh-modal[hidden] { display:none; }
+.mh-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15,23,42,.42); }
+.mh-modal-panel { width:min(980px, 96vw); max-height:86vh; overflow:hidden; border-radius:8px; background:#fff; box-shadow:0 24px 70px rgba(15,23,42,.22); }
+.mh-modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--mh-line); }
+.mh-modal-head h3 { margin:0; font-size:16px; }
+.mh-modal-body { max-height:calc(86vh - 58px); overflow:auto; padding:14px 16px; }
+.mh-pre { margin:0 0 12px; padding:12px; border:1px solid #e2e8f0; border-radius:6px; background:#0f172a; color:#e2e8f0; white-space:pre-wrap; word-break:break-word; font-size:12px; line-height:1.55; }
+.mh-category-list { display:flex; gap:6px; flex-wrap:wrap; }
+.mh-failure-list { display:grid; gap:10px; }
+.mh-failure-item { padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-failure-url { color:#0f766e; font-weight:700; word-break:break-all; }
+.mh-failure-error { margin-top:6px; color:#b91c1c; font-size:12px; white-space:pre-wrap; word-break:break-word; }
 @media (max-width: 980px) { .mh-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); } .mh-actions { grid-column:1/-1; } }
 {% endblock %}
 {% block content %}
@@ -55,6 +70,16 @@
     <a class="mh-tab" href="/xuanpin/tabcut">TABCUT</a>
     <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
   </nav>
+
+  <div class="mh-tool-row">
+    <div class="mh-tool-title">Meta 热帖工具</div>
+    <div class="mh-tool-buttons">
+      <button class="mh-btn secondary" type="button" onclick="showCategoryPrompt()">类目分析提示词</button>
+      <button class="mh-btn secondary" type="button" onclick="showFailureRecords()">商品分析失败记录</button>
+      <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
+      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
+    </div>
+  </div>
 
   <section class="mh-toolbar">
     <div class="mh-field">
@@ -98,14 +123,35 @@
 
   <div class="mh-status">
     <span id="mhStatus">Ready</span>
-    <span>
-      <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
-      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
-    </span>
   </div>
 
   <div id="metaHotCardGrid" class="meta-hot-card-grid">
     <div class="mh-empty">加载中...</div>
+  </div>
+
+  <div class="mh-modal" id="mhPromptModal" hidden>
+    <div class="mh-modal-panel">
+      <div class="mh-modal-head">
+        <h3>类目分析提示词</h3>
+        <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhPromptModal')">关闭</button>
+      </div>
+      <div class="mh-modal-body">
+        <pre class="mh-pre" id="mhPromptText">Loading...</pre>
+        <div class="mh-category-list" id="mhPromptCategories"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mh-modal" id="mhFailuresModal" hidden>
+    <div class="mh-modal-panel">
+      <div class="mh-modal-head">
+        <h3>商品分析失败记录</h3>
+        <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhFailuresModal')">关闭</button>
+      </div>
+      <div class="mh-modal-body">
+        <div class="mh-failure-list" id="mhFailureList">Loading...</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -196,8 +242,39 @@ async function refreshMetaHotPosts() {
 }
 async function analyzeMetaHotPosts() {
   qs('mhStatus').textContent = 'Analyzing...';
-  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:5})});
+  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:100})});
   loadMetaHotPosts(mhPage);
+}
+function closeMetaHotModal(id) {
+  qs(id).hidden = true;
+}
+async function showCategoryPrompt() {
+  qs('mhPromptModal').hidden = false;
+  qs('mhPromptText').textContent = 'Loading...';
+  qs('mhPromptCategories').innerHTML = '';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/category-prompt');
+  const data = await res.json();
+  qs('mhPromptText').textContent = data.prompt || '';
+  qs('mhPromptCategories').innerHTML = (data.categories || [])
+    .map(item => `<span class="mh-tag">${esc(item)}</span>`)
+    .join('');
+}
+function renderFailure(item) {
+  const url = item.product_url || '';
+  return `<div class="mh-failure-item">
+    <a class="mh-failure-url" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url || '-')}</a>
+    <div class="mh-mini">失败次数：${fmt(item.attempts)} · 更新时间：${fmt(item.updated_at)} · 标题：${fmt(item.product_title || '-')}</div>
+    <div class="mh-failure-error">${esc(item.last_error || '-')}</div>
+  </div>`;
+}
+async function showFailureRecords() {
+  qs('mhFailuresModal').hidden = false;
+  qs('mhFailureList').textContent = 'Loading...';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/failures?limit=100');
+  const data = await res.json();
+  qs('mhFailureList').innerHTML = (data.items || []).length
+    ? data.items.map(renderFailure).join('')
+    : '<div class="mh-empty">暂无失败记录</div>';
 }
 loadMetaHotPosts(1);
 </script>
