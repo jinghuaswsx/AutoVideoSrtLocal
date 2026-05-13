@@ -1,0 +1,204 @@
+{% extends "layout.html" %}
+{% block title %}选品中心 - Meta热帖{% endblock %}
+{% block page_title %}
+<span class="selection-center-title">选品中心</span>
+<span class="selection-center-title-note">Meta热帖 <span class="mh-count" id="mhCount">--</span></span>
+{% endblock %}
+{% block extra_style %}
+:root {
+  --mh-bg:#f8fafc; --mh-panel:#fff; --mh-line:#dbe3ef; --mh-strong:#c6d3e1;
+  --mh-text:#1f2937; --mh-muted:#64748b; --mh-subtle:#94a3b8;
+  --mh-accent:#0f766e; --mh-soft:#ecfdf5; --mh-danger:#dc2626; --mh-radius:8px;
+}
+.meta-hot-page { color:var(--mh-text); }
+.mh-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--mh-line); border-radius:999px; background:#f6f8fb; }
+.mh-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
+.mh-tab.active { background:var(--mh-accent); color:#fff; }
+.mh-toolbar { display:grid; grid-template-columns:repeat(6, minmax(120px, 1fr)) auto; gap:10px; align-items:end; margin-bottom:14px; padding:14px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-field label { display:block; margin-bottom:5px; color:var(--mh-muted); font-size:12px; font-weight:700; }
+.mh-input, .mh-select { width:100%; height:34px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:var(--mh-text); font-size:14px; }
+.mh-range { display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center; }
+.mh-actions { display:flex; gap:8px; }
+.mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+.mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
+.mh-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; color:var(--mh-muted); font-size:13px; }
+.meta-hot-card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:16px; padding:16px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#eef2f7; }
+.mh-card { min-width:0; border:1px solid #e5e7eb; border-radius:8px; background:#fff; overflow:hidden; }
+.mh-card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:12px 14px; border-bottom:1px solid #edf2f7; }
+.mh-card-title { font-size:18px; font-weight:700; }
+.mh-tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.mh-tag { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #e2e8f0; border-radius:4px; color:#475569; background:#f8fafc; font-size:12px; }
+.mh-card-body { padding:12px 14px; }
+.mh-time, .mh-metric { margin-bottom:7px; color:#64748b; font-size:13px; }
+.mh-metric b { color:#334155; }
+.mh-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.mh-ratio { color:var(--mh-danger); font-weight:800; }
+.mh-media { width:267px; max-width:100%; height:476px; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; }
+.mh-media img, .mh-media iframe, .mh-media video { width:100%; height:100%; border:0; object-fit:cover; display:block; }
+.mh-message { max-height:178px; overflow:auto; line-height:1.45; font-size:14px; color:#334155; word-break:break-word; }
+.mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
+.mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
+.mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-product { display:grid; grid-template-columns:54px minmax(0, 1fr); gap:9px; align-items:start; }
+.mh-product img, .mh-product-empty { width:54px; height:54px; border-radius:6px; object-fit:cover; background:#e2e8f0; }
+.mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
+.mh-mini { margin-top:4px; color:#64748b; font-size:12px; }
+.mh-empty { grid-column:1/-1; padding:48px 16px; text-align:center; color:#64748b; }
+@media (max-width: 980px) { .mh-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); } .mh-actions { grid-column:1/-1; } }
+{% endblock %}
+{% block content %}
+<div class="meta-hot-page">
+  <nav class="mh-tabs" aria-label="选品中心类型">
+    <a class="mh-tab" href="/xuanpin/mk">明空选品</a>
+    <a class="mh-tab" href="/xuanpin/today-recommendations">今日推荐</a>
+    <a class="mh-tab" href="/xuanpin/new-products">新品选择</a>
+    <a class="mh-tab" href="/xuanpin/tabcut">TABCUT</a>
+    <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
+  </nav>
+
+  <section class="mh-toolbar">
+    <div class="mh-field">
+      <label for="mhCategory">类目</label>
+      <select class="mh-select" id="mhCategory">
+        <option value="">全部</option>
+        {% for category in meta_hot_post_categories %}
+        <option value="{{ category.value }}">{{ category.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mh-field">
+      <label>价格</label>
+      <div class="mh-range">
+        <input class="mh-input" id="mhMinPrice" type="number" min="0" step="0.01" placeholder="最低">
+        <span>—</span>
+        <input class="mh-input" id="mhMaxPrice" type="number" min="0" step="0.01" placeholder="最高">
+      </div>
+    </div>
+    <div class="mh-field">
+      <label for="mhMinInteractions">交互数</label>
+      <input class="mh-input" id="mhMinInteractions" type="number" min="0" placeholder="最低">
+    </div>
+    <div class="mh-field">
+      <label for="mhMinComments">评论数</label>
+      <input class="mh-input" id="mhMinComments" type="number" min="0" placeholder="最低">
+    </div>
+    <div class="mh-field">
+      <label for="mhCreatedFrom">创建起</label>
+      <input class="mh-input" id="mhCreatedFrom" type="date">
+    </div>
+    <div class="mh-field">
+      <label for="mhCreatedTo">创建止</label>
+      <input class="mh-input" id="mhCreatedTo" type="date">
+    </div>
+    <div class="mh-actions">
+      <button class="mh-btn" type="button" onclick="loadMetaHotPosts(1)">筛选</button>
+      <button class="mh-btn secondary" type="button" onclick="resetMetaHotPosts()">重置</button>
+    </div>
+  </section>
+
+  <div class="mh-status">
+    <span id="mhStatus">Ready</span>
+    <span>
+      <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
+      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
+    </span>
+  </div>
+
+  <div id="metaHotCardGrid" class="meta-hot-card-grid">
+    <div class="mh-empty">加载中...</div>
+  </div>
+</div>
+
+<script>
+let mhPage = 1;
+const mhPageSize = 30;
+const qs = id => document.getElementById(id);
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function fmt(v) { return v === null || v === undefined || v === '' ? '-' : esc(v); }
+function fmtMoney(min, max, currency) {
+  if (min === null || min === undefined || min === '') return '-';
+  const prefix = currency && currency !== 'USD' ? currency + ' ' : '$';
+  if (max && Number(max) !== Number(min)) return `${prefix}${Number(min).toFixed(2)} - ${prefix}${Number(max).toFixed(2)}`;
+  return `${prefix}${Number(min).toFixed(2)}`;
+}
+function cardMedia(row) {
+  if (row.video_url) {
+    const src = row.invisible && row.invisible_region === 'usa'
+      ? `/api/spy/video/${encodeURIComponent(row.page_id || '')}/${encodeURIComponent(row.post_id || '')}`
+      : `https://www.facebook.com/plugins/video.php?height=476&href=${encodeURIComponent(row.video_url)}&show_text=false&width=267&t=0`;
+    return `<div class="mh-media"><iframe loading="lazy" src="${esc(src)}" allowfullscreen allow="clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe></div>`;
+  }
+  if (row.image_url) return `<div class="mh-media"><img src="${esc(row.image_url)}" alt="" loading="lazy"></div>`;
+  return `<div class="mh-media"></div>`;
+}
+function renderCard(row) {
+  const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
+  const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
+  return `<article class="mh-card">
+    <div class="mh-card-head">
+      <div class="mh-card-title">帖子</div>
+      <div class="mh-tags"><span class="mh-tag">互动变化: ${fmt(row.sync_period_likes)}</span><span class="mh-tag">变化周期: ${fmt(row.sync_period_hours)}h</span></div>
+    </div>
+    <div class="mh-card-body">
+      <div class="mh-time">创建：${fmt(row.creation_time)}，更新：${fmt(row.last_synced_at)}</div>
+      <div class="mh-metric">交互数：<b>${fmt(row.likes)}</b>，评论数：<b>${fmt(row.comments)}</b>，分享数：<b>${fmt(row.shares)}</b></div>
+      <div class="mh-metric">交互数：<b>${fmt(row.latest_likes)}</b>，评论数：<b>${fmt(row.latest_comments)}</b>，分享数：<b>${fmt(row.latest_shares)}</b></div>
+      <div class="mh-row"><span class="mh-ratio">${ratio}</span><span>${row.copycat ? '产品观察' : ''}</span></div>
+      ${cardMedia(row)}
+      <div class="mh-message">${row.message_html || ''}</div>
+      <div class="mh-analysis">
+        <div class="mh-product">${productImg}<div>
+          <div class="mh-product-title">${fmt(row.product_title || '待分析商品')}</div>
+          <div class="mh-mini">类目：${fmt(row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
+          <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
+        </div></div>
+      </div>
+    </div>
+    <div class="mh-links">
+      ${row.post_url ? `<a class="mh-link-btn" href="${esc(row.post_url)}" target="_blank" rel="noopener noreferrer">去帖子页</a>` : ''}
+      ${row.ad_library_url ? `<a class="mh-link-btn" href="${esc(row.ad_library_url)}" target="_blank" rel="noopener noreferrer">去主页广告</a>` : ''}
+      ${row.product_url ? `<a class="mh-link-btn" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">去商品页</a>` : ''}
+    </div>
+  </article>`;
+}
+function buildParams(page) {
+  const params = new URLSearchParams({page, page_size: mhPageSize});
+  if (qs('mhCategory').value) params.set('category', qs('mhCategory').value);
+  if (qs('mhMinPrice').value) params.set('min_price', qs('mhMinPrice').value);
+  if (qs('mhMaxPrice').value) params.set('max_price', qs('mhMaxPrice').value);
+  if (qs('mhMinInteractions').value) params.set('min_interactions', qs('mhMinInteractions').value);
+  if (qs('mhMinComments').value) params.set('min_comments', qs('mhMinComments').value);
+  if (qs('mhCreatedFrom').value) params.set('created_from', qs('mhCreatedFrom').value);
+  if (qs('mhCreatedTo').value) params.set('created_to', qs('mhCreatedTo').value);
+  return params;
+}
+async function loadMetaHotPosts(page = 1) {
+  mhPage = page;
+  qs('mhStatus').textContent = 'Loading...';
+  const res = await fetch(`/xuanpin/api/meta-hot-posts?${buildParams(page)}`);
+  const data = await res.json();
+  qs('mhCount').textContent = data.total ?? 0;
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">暂无结果</div>';
+  qs('mhStatus').textContent = `Page ${data.page || 1}`;
+}
+function resetMetaHotPosts() {
+  ['mhCategory','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
+  loadMetaHotPosts(1);
+}
+async function refreshMetaHotPosts() {
+  qs('mhStatus').textContent = 'Syncing...';
+  await fetch('/xuanpin/api/meta-hot-posts/refresh', {method:'POST', headers:{'Content-Type':'application/json'}});
+  loadMetaHotPosts(1);
+}
+async function analyzeMetaHotPosts() {
+  qs('mhStatus').textContent = 'Analyzing...';
+  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:5})});
+  loadMetaHotPosts(mhPage);
+}
+loadMetaHotPosts(1);
+</script>
+{% endblock %}
