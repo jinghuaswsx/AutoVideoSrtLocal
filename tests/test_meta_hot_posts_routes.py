@@ -19,6 +19,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts" in body
     assert "Kitchenware" in body
     assert "meta-hot-card-grid" in body
+    assert "const mhPageSize = 50;" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
