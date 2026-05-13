@@ -202,6 +202,56 @@ def test_analyze_pending_products_keeps_product_result_when_category_fails(monke
     assert "invalid llm json" in payload["error_message"]
 
 
+def test_analyze_pending_products_stops_after_global_category_provider_error(monkeypatch):
+    finished = []
+    marked = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_product_analyses",
+        lambda limit: [
+            {"id": 7, "product_url": "https://example.com/products/socket"},
+            {"id": 8, "product_url": "https://example.com/products/lamp"},
+        ],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_analysis_running", lambda analysis_id: marked.append(analysis_id))
+    monkeypatch.setattr(
+        scheduler.product_analysis,
+        "fetch_product_analysis",
+        lambda product_url: ProductAnalysisResult(
+            title="Flexible Socket Extension",
+            main_image_url="https://example.com/socket.jpg",
+            price_min=19.99,
+            price_max=29.99,
+            currency="USD",
+            skus=[],
+        ),
+    )
+
+    def fail_category(**kwargs):
+        raise RuntimeError("429 RESOURCE_EXHAUSTED. Please try again later.")
+
+    monkeypatch.setattr(scheduler.product_analysis, "categorize_product", fail_category)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_analysis",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    summary = scheduler.analyze_pending_products(limit=100, user_id=1)
+
+    assert summary == {
+        "scanned": 1,
+        "done": 1,
+        "failed": 0,
+        "category_failed": 1,
+        "stopped": True,
+        "stop_reason": "global_category_provider_error",
+    }
+    assert marked == [7]
+    assert [item[0] for item in finished] == [7]
+
+
 def test_reanalyze_categories_uses_saved_title_without_fetching_product_page(monkeypatch):
     finished = []
 

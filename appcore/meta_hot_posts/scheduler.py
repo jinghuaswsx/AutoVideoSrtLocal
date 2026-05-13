@@ -144,10 +144,12 @@ def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) ->
             )
         except Exception as exc:
             log.warning("meta hot post category classification failed id=%s: %s", analysis_id, exc)
+            fatal_provider_error = _is_global_category_provider_error(exc)
             category = _fallback_category(exc)
             category_error = f"category failed: {str(exc)[:950]}"
             summary["category_failed"] += 1
         else:
+            fatal_provider_error = False
             category_error = _category_error_message(category)
             if category_error:
                 summary["category_failed"] += 1
@@ -160,6 +162,10 @@ def analyze_pending_products(*, limit: int = 100, user_id: int | None = None) ->
             error_message=category_error,
         )
         summary["done"] += 1
+        if fatal_provider_error:
+            summary["stopped"] = True
+            summary["stop_reason"] = "global_category_provider_error"
+            break
     return summary
 
 
