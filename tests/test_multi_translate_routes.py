@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -84,6 +85,47 @@ def test_multi_translate_resume_steps_include_av_sync_audit():
     assert "av_sync_audit" in r.RESUMABLE_STEPS
     assert r.RESUMABLE_STEPS.index("compose") < r.RESUMABLE_STEPS.index("av_sync_audit")
     assert r.RESUMABLE_STEPS.index("av_sync_audit") < r.RESUMABLE_STEPS.index("export")
+
+
+def test_multi_translate_progress_steps_exclude_optional_av_sync_audit(authed_client_no_db):
+    project = {
+        "id": "multi-progress-task",
+        "user_id": 1,
+        "type": "multi_translate",
+        "display_name": "Progress task",
+        "original_filename": "progress.mp4",
+        "status": "done",
+        "deleted_at": None,
+        "state_json": json.dumps({"target_lang": "de"}, ensure_ascii=False),
+    }
+
+    with patch("web.routes.multi_translate.db_query_one", return_value=project), \
+         patch("web.routes.multi_translate.recover_project_if_needed"), \
+         patch("appcore.api_keys.get_key", return_value="openrouter"):
+        resp = authed_client_no_db.get("/multi-translate/multi-progress-task")
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    main_match = re.search(r"const MAIN_STEPS = (?P<steps>\[[^\n]+]);", html)
+    progress_match = re.search(r"const PROGRESS_STEPS = (?P<steps>\[[^\n]+]);", html)
+    assert main_match
+    assert progress_match
+    main_steps = json.loads(main_match.group("steps"))
+    progress_steps = json.loads(progress_match.group("steps"))
+
+    assert "av_sync_audit" in main_steps
+    assert "av_sync_audit" not in progress_steps
+    assert progress_steps == [step for step in main_steps if step != "av_sync_audit"]
+
+
+def test_task_status_progress_uses_progress_steps_for_percentage():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert "const totalProgress = PROGRESS_STEPS.length;" in script
+    assert "const doneCount = PROGRESS_STEPS.filter" in script
 
 
 def test_admin_list_does_not_scope_multi_translate_projects_to_self(authed_client_no_db):
