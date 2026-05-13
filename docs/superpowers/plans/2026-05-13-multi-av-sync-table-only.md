@@ -4,7 +4,7 @@
 
 **Goal:** Make multi-translate audio/video sync audit show only one ASR-ordered review table: ASR text, final translation/TTS, actual video visuals, and per-segment sync diagnosis.
 
-**Architecture:** Keep the existing `omni_av_sync_audit.run_report_only()` data path for multi-translate, but narrow its LLM contract to table assembly instead of a full audit report. The shared workbench renderer will use a table-only mode for multi-translate `analysis_only` reports, while leaving Omni report rendering untouched for a later synchronization pass.
+**Architecture:** Keep the existing `omni_av_sync_audit.run_report_only()` data path for multi-translate, but narrow its LLM contract to table assembly instead of a full audit report. The shared workbench renderer uses the same table-only mode for multi-translate `analysis_only` reports and Omni `report_only` AV sync artifacts. Safe-auto internals can still keep issue/verification data, but report-only display is the ASR table.
 
 **Tech Stack:** Python 3.12, Flask task artifacts, Jinja/vanilla JS workbench renderer, pytest.
 
@@ -49,7 +49,23 @@ Run: `pytest tests/test_prompt_inspector_assets.py -q`
 
 - [ ] **Step 3: Implement table-only rendering**
 
-Add `isAvSyncTableOnlyReport()` and pass a `tableOnly` flag into `renderAvSyncAuditTimelineRow()`. For table-only mode, render only the three requested fields plus the ASR/time heading.
+Add `isAvSyncTableOnlyReport()` and pass a `tableOnly` flag into `renderAvSyncAuditTimelineRow()`. For table-only mode, render only the requested table fields plus the ASR/time heading.
+
+### Task 2b: Sync Table-Only Report Mode To Omni
+
+**Files:**
+- Modify: `tests/test_omni_av_sync_audit.py`
+- Modify: `tests/test_prompt_inspector_assets.py`
+- Modify: `pipeline/omni_av_sync_audit.py`
+- Modify: `web/templates/_task_workbench_scripts.html`
+
+- [ ] **Step 1: Write failing Omni tests**
+
+Assert that Omni `report_only` audit rows preserve per-segment `sync_score` and `recommendation` from the model timeline, and that the workbench table-only predicate includes `artifact.mode === "report_only"` with an `audit_timeline`.
+
+- [ ] **Step 2: Implement shared table-only behavior**
+
+Extend the Omni assess schema/prompt to request `sync_score` and `recommendation` in timeline rows, merge those timeline hints into the final `audit_timeline`, and let `report_only` artifacts render through the same table-only branch.
 
 - [ ] **Step 4: Re-run frontend asset tests**
 

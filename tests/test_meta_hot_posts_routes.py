@@ -31,6 +31,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "上一页" in body
     assert "下一页" in body
     assert "末页" in body
+    assert "JSON.stringify({limit:30, per_item_delay_seconds:20})" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):

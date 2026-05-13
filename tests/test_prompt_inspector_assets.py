@@ -90,6 +90,8 @@ def test_omni_av_sync_audit_renderer_exposes_chinese_findings():
     assert "readable_findings" in scripts
     assert "audit_timeline" in scripts
     assert "function renderAvSyncAuditTimeline" in scripts
+    assert 'artifact.mode === "report_only"' in scripts
+    assert "Array.isArray(artifact.audit_timeline)" in scripts
     assert "逐段 ASR 审片表" in scripts
     assert "画面内容" in scripts
     assert "诊断意见" in scripts

@@ -257,16 +257,19 @@ def next_category_reanalysis_candidates(
 ) -> list[dict]:
     safe_limit = max(1, min(100, int(limit)))
     not_current_model = "COALESCE(llm_model, '') <> 'gemini-3.1-flash-lite-preview'"
+    category_failed_pattern = "category failed:%"
+    category_params: list[Any] = []
     if include_all:
         category_clause = not_current_model
     else:
         category_clause = (
             f"({not_current_model} AND "
-            "(last_error LIKE 'category failed:%%' "
+            "(last_error LIKE %s "
             "OR (category_l1 = 'Other' AND COALESCE(category_confidence, 0) = 0) "
             "OR category_l1 IS NULL "
             "OR category_l1 = ''))"
         )
+        category_params.append(category_failed_pattern)
     return query_fn(
         f"""
         SELECT id, product_url, product_title, category_l1, last_error
@@ -276,12 +279,12 @@ def next_category_reanalysis_candidates(
           AND product_title <> ''
           AND {category_clause}
         ORDER BY
-          CASE WHEN last_error LIKE 'category failed:%%' THEN 0 ELSE 1 END,
+          CASE WHEN last_error LIKE %s THEN 0 ELSE 1 END,
           updated_at ASC,
           id ASC
         LIMIT %s
         """,
-        (safe_limit,),
+        tuple(category_params + [category_failed_pattern, safe_limit]),
     )
 
 
