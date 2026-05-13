@@ -8,6 +8,7 @@ from web.preview_artifacts import (
     build_translate_artifact,
     build_variant_compare_artifact,
     build_tts_artifact,
+    build_shot_translate_artifact,
 )
 
 
@@ -68,6 +69,63 @@ def test_build_variant_compare_artifact_contains_two_named_columns():
     assert artifact["layout"] == "variant_compare"
     assert artifact["variants"]["normal"]["label"] == "普通版"
     assert artifact["variants"]["hook_cta"]["label"] == "黄金3秒 + CTA版"
+
+
+def test_shot_translate_artifact_uses_asr_translation_units_as_process_rows():
+    shots = [
+        {"index": 1, "start": 0.0, "end": 3.0, "description": "hook visual", "source_text": "old shot text"},
+        {"index": 2, "start": 3.0, "end": 6.0, "description": "demo visual", "source_text": ""},
+        {"index": 3, "start": 6.0, "end": 10.33, "description": "storage visual", "source_text": "old shot text 3"},
+    ]
+    translations = [
+        {
+            "shot_index": 0,
+            "asr_index": 0,
+            "source_text": "Opening hook keeps speaking",
+            "start_time": 0.179,
+            "end_time": 4.159,
+            "duration": 3.98,
+            "description": "hook visual / demo visual",
+            "translated_text": "Gancho inicial",
+            "char_limit": 40,
+            "char_count": 14,
+            "retries": 0,
+            "shot_context": [{"index": 1}, {"index": 2}],
+        },
+        {
+            "shot_index": 1,
+            "asr_index": 1,
+            "source_text": "Second ASR sentence continues",
+            "start_time": 4.319,
+            "end_time": 8.679,
+            "duration": 4.36,
+            "description": "demo visual / storage visual",
+            "translated_text": "Segunda frase",
+            "char_limit": 44,
+            "char_count": 13,
+            "retries": 1,
+            "shot_context": [{"index": 2}, {"index": 3}],
+        },
+    ]
+
+    artifact = build_shot_translate_artifact(
+        shots,
+        translations,
+        "Opening hook keeps speaking\nSecond ASR sentence continues",
+        {"full_text": "Gancho inicial\nSegunda frase"},
+    )
+
+    summary = artifact["items"][0]
+    rows = artifact["items"][1]["shots"]
+    assert summary["total"] == 2
+    assert rows[0]["index"] == 0
+    assert rows[0]["source_text"] == "Opening hook keeps speaking"
+    assert rows[0]["description"] == "hook visual / demo visual"
+    assert rows[0]["shot_context"] == [{"index": 1}, {"index": 2}]
+    assert [row["source_text"] for row in rows] == [
+        "Opening hook keeps speaking",
+        "Second ASR sentence continues",
+    ]
 
 
 def test_build_tts_artifact_does_not_embed_duration_rounds():

@@ -199,7 +199,55 @@ def build_shot_translate_artifact(
     }
 
 
+def _has_asr_translation_rows(translations: list[dict]) -> bool:
+    return any(
+        isinstance(tr, dict) and str(tr.get("source_text") or "").strip()
+        for tr in translations
+    )
+
+
+def _shot_context_description(shot_context: list[dict] | None) -> str:
+    descriptions = [
+        str(item.get("description") or "").strip()
+        for item in (shot_context or [])
+        if isinstance(item, dict) and str(item.get("description") or "").strip()
+    ]
+    return " / ".join(descriptions)
+
+
+def _rows_from_asr_translations(translations: list[dict]) -> list[dict]:
+    rows: list[dict] = []
+    for pos, tr in enumerate(translations):
+        if not isinstance(tr, dict):
+            continue
+        source_text = str(tr.get("source_text") or "").strip()
+        if not source_text:
+            continue
+        shot_context = tr.get("shot_context") if isinstance(tr.get("shot_context"), list) else []
+        rows.append({
+            "index": tr.get("asr_index", tr.get("unit_index", tr.get("shot_index", pos))),
+            "start_time": tr.get("start_time", tr.get("start")),
+            "end_time": tr.get("end_time", tr.get("end")),
+            "duration": tr.get("duration"),
+            "source_text": source_text,
+            "description": (
+                tr.get("description")
+                or _shot_context_description(shot_context)
+            ),
+            "translated_text": tr.get("translated_text") or "",
+            "char_limit": tr.get("char_limit"),
+            "char_count": tr.get("char_count"),
+            "over_limit": bool(tr.get("over_limit")),
+            "retries": int(tr.get("retries") or 0),
+            "silent": False,
+            "shot_context": shot_context,
+        })
+    return rows
+
+
 def _merge_shot_translation_rows(shots: list[dict], translations: list[dict]) -> list[dict]:
+    if _has_asr_translation_rows(translations):
+        return _rows_from_asr_translations(translations)
     by_index = {
         tr.get("shot_index"): tr
         for tr in translations
@@ -219,7 +267,12 @@ def _merge_shot_translation_rows(shots: list[dict], translations: list[dict]) ->
             "start_time": start_time,
             "end_time": end_time,
             "duration": shot.get("duration"),
-            "source_text": shot.get("source_text") or shot.get("asr_text") or "",
+            "source_text": (
+                shot.get("source_text")
+                or shot.get("overlap_source_text")
+                or shot.get("asr_text")
+                or ""
+            ),
             "description": shot.get("description") or shot.get("visual_description") or "",
             "translated_text": tr.get("translated_text") or "",
             "char_limit": tr.get("char_limit"),
@@ -227,6 +280,7 @@ def _merge_shot_translation_rows(shots: list[dict], translations: list[dict]) ->
             "over_limit": bool(tr.get("over_limit")),
             "retries": int(tr.get("retries") or 0),
             "silent": bool(shot.get("silent")),
+            "shot_context": shot.get("shot_context") or tr.get("shot_context") or [],
         })
     return rows
 

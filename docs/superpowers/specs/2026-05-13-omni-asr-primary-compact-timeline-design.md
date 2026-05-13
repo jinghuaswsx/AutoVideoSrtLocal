@@ -57,6 +57,14 @@ For subtitles:
 - In compact audio mode, subtitle units should follow `audio_start_time` / `audio_end_time` so text appears with the actual voice.
 - The original ASR source window remains visible in diagnostics.
 
+For translate preview:
+
+- The "翻译本土化" process table should be keyed by ASR speech units, not raw shot rows.
+- Each preview row must show the ASR unit source text as "原文".
+- Overlapping shot descriptions should appear as visual context on that ASR row.
+- A shot with no ASR source text must not appear as a standalone translation row; it may only appear inside `shot_context` or diagnostics.
+- The summary total should count ASR translation units, not visual shots.
+
 ## Shot/ASR Matching
 
 `align_asr_to_shots` should keep the existing per-shot diagnostic fields, but it must expose overlap evidence rather than pretending non-primary-overlap shots are silent:

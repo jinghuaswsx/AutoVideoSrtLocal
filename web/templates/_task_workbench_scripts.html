@@ -957,7 +957,8 @@
       || (task.plugin_config?.translate_algo === "shot_char_limit" && shots.length);
     if (!isShotTranslate) return null;
 
-    const rows = buildShotTranslationRows(shots, translations);
+    const asrRows = buildAsrPrimaryShotTranslationRows(translations);
+    const rows = asrRows.length ? asrRows : buildShotTranslationRows(shots, translations);
     const sourceFullText = task.source_full_text_zh || task.source_full_text || rows
       .map(row => row.source_text)
       .filter(Boolean)
@@ -1004,6 +1005,33 @@
     return { title: "翻译本土化", layout: "shot_translate", items };
   }
 
+  function buildAsrPrimaryShotTranslationRows(translations) {
+    const rows = [];
+    translations.forEach((translation, pos) => {
+      if (!translation || !translation.source_text) return;
+      const shotContext = Array.isArray(translation.shot_context) ? translation.shot_context : [];
+      rows.push({
+        index: translation.asr_index ?? translation.unit_index ?? translation.shot_index ?? pos,
+        start_time: translation.start_time ?? translation.start,
+        end_time: translation.end_time ?? translation.end,
+        duration: translation.duration,
+        source_text: translation.source_text || "",
+        description: translation.description || shotContext
+          .map(item => item?.description || "")
+          .filter(Boolean)
+          .join(" / "),
+        translated_text: translation.translated_text || "",
+        char_limit: translation.char_limit,
+        char_count: translation.char_count,
+        over_limit: Boolean(translation.over_limit),
+        retries: Number(translation.retries) || 0,
+        silent: false,
+        shot_context: shotContext,
+      });
+    });
+    return rows;
+  }
+
   function buildShotTranslationRows(shots, translations) {
     const byIndex = {};
     translations.forEach(tr => {
@@ -1023,7 +1051,7 @@
         start_time: shot.start ?? shot.start_time,
         end_time: shot.end ?? shot.end_time,
         duration: shot.duration,
-        source_text: shot.source_text || shot.asr_text || "",
+        source_text: shot.source_text || shot.overlap_source_text || shot.asr_text || "",
         description: shot.description || shot.visual_description || "",
         translated_text: tr.translated_text || "",
         char_limit: tr.char_limit,
@@ -1031,6 +1059,7 @@
         over_limit: Boolean(tr.over_limit),
         retries: Number(tr.retries) || 0,
         silent: Boolean(shot.silent),
+        shot_context: shot.shot_context || tr.shot_context || [],
       });
     }
     return rows;

@@ -279,9 +279,14 @@ def test_shot_limit_translate_prefers_alignment_asr_segments_over_stale_shot_seg
 
     assert [call["source_text"] for call in calls] == ["ASR hook", "ASR second"]
     task = task_state.get(task_id)
+    assert [item["source_text"] for item in task["translations"]] == ["ASR hook", "ASR second"]
     av_sentences = task["variants"]["av"]["sentences"]
     assert [item["source_text"] for item in av_sentences] == ["ASR hook", "ASR second"]
     assert av_sentences[0]["start_time"] == pytest.approx(0.179)
+    artifact_rows = task["artifacts"]["translate"]["items"][1]["shots"]
+    assert len(artifact_rows) == 2
+    assert artifact_rows[0]["source_text"] == "ASR hook"
+    assert artifact_rows[0]["description"] == "shot one / shot two"
 
 
 def test_shot_limit_translate_sets_process_preview_artifact(
