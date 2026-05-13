@@ -62,6 +62,14 @@ def test_gemini_video_analysis_family_defaults():
     assert shot["usage_log_service"] == "openrouter"
 
 
+def test_omni_av_sync_assess_uses_gemini_3_flash():
+    assess = USE_CASES["omni_av_sync.assess"]
+
+    assert assess["default_provider"] == "openrouter"
+    assert assess["default_model"] == "google/gemini-3-flash-preview"
+    assert assess["usage_log_service"] == "openrouter"
+
+
 def test_image_and_link_check_defaults():
     assert USE_CASES["image_translate.detect"]["default_provider"] == "gemini_vertex"
     assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite-preview"
@@ -210,7 +218,7 @@ def test_omni_av_sync_audit_use_cases_defaults():
     assess = USE_CASES["omni_av_sync.assess"]
     assert assess["module"] == "omni_translate"
     assert assess["default_provider"] == "openrouter"
-    assert assess["default_model"] == "google/gemini-3.1-flash-lite-preview"
+    assert assess["default_model"] == "google/gemini-3-flash-preview"
     assert assess["usage_log_service"] == "openrouter"
     assert assess["units_type"] == "tokens"
 
