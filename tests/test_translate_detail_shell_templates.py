@@ -147,3 +147,13 @@ def test_tts_generation_summary_is_rendered_in_duration_log():
     assert "±10%" not in script
     assert "duration-generation-summary" in script
     assert ".duration-generation-summary" in styles
+
+
+def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "renderSentenceReconcileDurationLog" in script
+    assert "mode === 'sentence_reconcile'" in script
+    assert "句级时长收敛（Sentence Reconcile）" in script
+    assert "rewrite_skip_reason" in script

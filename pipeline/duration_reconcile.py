@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Callable
 
 from pipeline import av_translate, tts
 
@@ -117,6 +117,59 @@ def _mark_selected_attempt(attempts: list[dict], selected_round: int) -> None:
         attempt["selected"] = int(attempt.get("round", -1)) == selected_round
 
 
+def _text_rewrite_enabled_for_task(task: dict | None) -> bool:
+    cfg = (task or {}).get("plugin_config") or {}
+    # shot_char_limit 已经按镜头时长给出最短可接受文案。继续让句级收敛
+    # 高温改写极容易把产品语义压成拟声词/残片；这里保留音频流程，但禁用
+    # 二次文本改写，宁愿标记时长 warning，也不牺牲内容正确性。
+    return cfg.get("translate_algo") != "shot_char_limit"
+
+
+def _warning_status_for_ratio(ratio: float) -> str:
+    return "warning_long" if ratio > MAX_DURATION_RATIO else "warning_short"
+
+
+def _sentence_progress_payload(position: int, current: dict, phase: str) -> dict:
+    return {
+        "mode": "sentence_reconcile",
+        "round": position + 1,
+        "sentence_position": position,
+        "asr_index": current.get("asr_index"),
+        "phase": phase,
+        "target_duration": current.get("target_duration"),
+        "target_chars": list(current.get("target_chars_range") or []),
+        "audio_duration": current.get("tts_duration"),
+        "duration_ratio": round(float(current.get("duration_ratio", 0.0) or 0.0), 4),
+        "delta_pct": _delta_pct(
+            float(current.get("target_duration", 0.0) or 0.0),
+            float(current.get("tts_duration", 0.0) or 0.0),
+        ),
+        "text": current.get("text", ""),
+        "source_text": current.get("source_text") or current.get("original_source_text") or "",
+        "status": current.get("status", ""),
+        "speed": current.get("speed", 1.0),
+        "text_rewrite_attempts": current.get("text_rewrite_attempts", 0),
+        "tts_regenerate_attempts": current.get("tts_regenerate_attempts", 0),
+        "speed_adjustment_attempts": current.get("speed_adjustment_attempts", 0),
+        "rewrite_skip_reason": current.get("rewrite_skip_reason", ""),
+        "best_effort": bool(current.get("best_effort")),
+        "best_effort_reason": current.get("best_effort_reason", ""),
+        "attempts": list(current.get("attempts") or []),
+    }
+
+
+def _emit_sentence_progress(
+    callback: Callable[[dict], None] | None,
+    *,
+    position: int,
+    current: dict,
+    phase: str,
+) -> None:
+    if callback is None:
+        return
+    callback(_sentence_progress_payload(position, current, phase))
+
+
 def _preserve_sentence_fields(current: dict, av_sentence: dict) -> None:
     for key, value in av_sentence.items():
         if key in current:
@@ -206,9 +259,11 @@ def reconcile_duration(
     project_id: str | None = None,
     max_rewrite_rounds: int = MAX_TEXT_REWRITE_ATTEMPTS,
     max_tts_regenerate_attempts: int = MAX_TTS_REGENERATE_ATTEMPTS,
+    on_progress: Callable[[dict], None] | None = None,
 ) -> list[dict]:
     tts_by_index = _tts_segment_map(tts_output)
     final_sentences = []
+    text_rewrite_enabled = _text_rewrite_enabled_for_task(task)
 
     for position, av_sentence in enumerate((av_output or {}).get("sentences") or []):
         asr_index = int(av_sentence.get("asr_index", position))
@@ -245,120 +300,131 @@ def reconcile_duration(
         current["status"] = status
         current["speed"] = speed
         current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="initial_measure")
 
         if status == "ok":
             _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
+            _emit_sentence_progress(on_progress, position=position, current=current, phase="speed_adjust")
         elif status in {"needs_rewrite", "needs_expand"}:
-            current_duration = current["tts_duration"]
-            action = "shorten" if status == "needs_rewrite" else "expand"
-            best_candidate = _candidate_from_current(current, round_number=0)
-            round_limit = min(max_rewrite_rounds, max_tts_regenerate_attempts)
-            for rewrite_round in range(1, round_limit + 1):
-                before_text = current["text"]
-                new_range = _scaled_target_chars_range(
-                    current["target_chars_range"],
-                    current["target_duration"],
-                    current_duration,
-                )
-                rewrite_temperature = av_translate.rewrite_temperature_for_attempt(rewrite_round)
-                current["text_rewrite_attempts"] += 1
-                try:
-                    new_text = av_translate.rewrite_one(
-                        asr_index=asr_index,
-                        prev_text=before_text,
-                        overshoot_sec=max(0.0, current_duration - current["target_duration"]),
-                        direction=action,
-                        new_target_chars_range=new_range,
-                        script_segments=script_segments,
-                        shot_notes=shot_notes,
-                        av_inputs=av_inputs,
-                        voice_id=voice_id,
-                        user_id=user_id,
-                        project_id=project_id,
-                        attempt_number=rewrite_round,
-                        previous_attempts=list(current["attempts"]),
-                        temperature=rewrite_temperature,
-                    )
-                except Exception as exc:
-                    current["rewrite_rounds"] = rewrite_round
-                    current["attempts"].append(
-                        {
-                            "round": rewrite_round,
-                            "text_attempt": current["text_rewrite_attempts"],
-                            "tts_attempt": current["tts_regenerate_attempts"],
-                            "temperature": rewrite_temperature,
-                            "action": action,
-                            "before_text": before_text,
-                            "after_text": "",
-                            "target_duration": current["target_duration"],
-                            "tts_duration": current_duration,
-                            "duration_ratio": round(current["duration_ratio"], 4),
-                            "delta_pct": _delta_pct(current["target_duration"], current_duration),
-                            "status": "rewrite_error",
-                            "reason": "rewrite_failed",
-                            "error": _error_text(exc),
-                            "selected": False,
-                        }
-                    )
-                    continue
-                current["text"] = new_text
-                current["est_chars"] = len(new_text)
-                current["rewrite_rounds"] = rewrite_round
-                current["target_chars_range"] = new_range
-                current["tts_path"], current_duration = _regenerate_segment(
-                    sentence=current,
-                    voice_id=voice_id,
-                    target_language=target_language,
-                    suffix=_candidate_suffix("rewrite", rewrite_round),
-                )
-                current["tts_regenerate_attempts"] += 1
-                current["tts_duration"] = current_duration
-                status, speed = classify_overshoot(current["target_duration"], current_duration)
-                current["status"] = status
-                current["speed"] = speed
-                current["duration_ratio"] = duration_ratio(current["target_duration"], current_duration)
-                attempt = {
-                    "round": rewrite_round,
-                    "text_attempt": current["text_rewrite_attempts"],
-                    "tts_attempt": current["tts_regenerate_attempts"],
-                    "temperature": rewrite_temperature,
-                    "action": action,
-                    "before_text": before_text,
-                    "after_text": new_text,
-                    "target_duration": current["target_duration"],
-                    "tts_duration": current_duration,
-                    "duration_ratio": round(current["duration_ratio"], 4),
-                    "delta_pct": _delta_pct(current["target_duration"], current_duration),
-                    "status": status,
-                    "reason": _duration_reason(status),
-                    "selected": False,
-                }
-                current["attempts"].append(attempt)
-
-                candidate = _candidate_from_current(current, round_number=rewrite_round)
-                best_distance = _duration_distance(current["target_duration"], best_candidate["tts_duration"])
-                candidate_distance = _duration_distance(current["target_duration"], candidate["tts_duration"])
-                if candidate_distance <= best_distance:
-                    best_candidate = candidate
-
-                if status == "ok":
-                    current["selected_attempt_round"] = rewrite_round
-                    _mark_selected_attempt(current["attempts"], rewrite_round)
-                    _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
-                    break
-
-            if current["status"] in {"needs_rewrite", "needs_expand"}:
-                _apply_candidate(current, best_candidate)
-                _mark_selected_attempt(current["attempts"], current["selected_attempt_round"])
-                current["status"] = (
-                    "warning_long"
-                    if current["duration_ratio"] > MAX_DURATION_RATIO
-                    else "warning_short"
-                )
+            if not text_rewrite_enabled:
+                current["text_rewrite_disabled"] = True
+                current["rewrite_skip_reason"] = "shot_char_limit_preserves_initial_translation"
+                current["status"] = _warning_status_for_ratio(current["duration_ratio"])
                 current["speed"] = 1.0
                 current["best_effort"] = True
-                current["best_effort_reason"] = "max_attempts_exhausted"
+                current["best_effort_reason"] = "shot_char_limit_rewrite_disabled"
+                _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_skipped")
+            else:
+                current_duration = current["tts_duration"]
+                action = "shorten" if status == "needs_rewrite" else "expand"
+                best_candidate = _candidate_from_current(current, round_number=0)
+                round_limit = min(max_rewrite_rounds, max_tts_regenerate_attempts)
+                for rewrite_round in range(1, round_limit + 1):
+                    before_text = current["text"]
+                    new_range = _scaled_target_chars_range(
+                        current["target_chars_range"],
+                        current["target_duration"],
+                        current_duration,
+                    )
+                    rewrite_temperature = av_translate.rewrite_temperature_for_attempt(rewrite_round)
+                    current["text_rewrite_attempts"] += 1
+                    try:
+                        new_text = av_translate.rewrite_one(
+                            asr_index=asr_index,
+                            prev_text=before_text,
+                            overshoot_sec=max(0.0, current_duration - current["target_duration"]),
+                            direction=action,
+                            new_target_chars_range=new_range,
+                            script_segments=script_segments,
+                            shot_notes=shot_notes,
+                            av_inputs=av_inputs,
+                            voice_id=voice_id,
+                            user_id=user_id,
+                            project_id=project_id,
+                            attempt_number=rewrite_round,
+                            previous_attempts=list(current["attempts"]),
+                            temperature=rewrite_temperature,
+                        )
+                    except Exception as exc:
+                        current["rewrite_rounds"] = rewrite_round
+                        current["attempts"].append(
+                            {
+                                "round": rewrite_round,
+                                "text_attempt": current["text_rewrite_attempts"],
+                                "tts_attempt": current["tts_regenerate_attempts"],
+                                "temperature": rewrite_temperature,
+                                "action": action,
+                                "before_text": before_text,
+                                "after_text": "",
+                                "target_duration": current["target_duration"],
+                                "tts_duration": current_duration,
+                                "duration_ratio": round(current["duration_ratio"], 4),
+                                "delta_pct": _delta_pct(current["target_duration"], current_duration),
+                                "status": "rewrite_error",
+                                "reason": "rewrite_failed",
+                                "error": _error_text(exc),
+                                "selected": False,
+                            }
+                        )
+                        _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_error")
+                        continue
+                    current["text"] = new_text
+                    current["est_chars"] = len(new_text)
+                    current["rewrite_rounds"] = rewrite_round
+                    current["target_chars_range"] = new_range
+                    current["tts_path"], current_duration = _regenerate_segment(
+                        sentence=current,
+                        voice_id=voice_id,
+                        target_language=target_language,
+                        suffix=_candidate_suffix("rewrite", rewrite_round),
+                    )
+                    current["tts_regenerate_attempts"] += 1
+                    current["tts_duration"] = current_duration
+                    status, speed = classify_overshoot(current["target_duration"], current_duration)
+                    current["status"] = status
+                    current["speed"] = speed
+                    current["duration_ratio"] = duration_ratio(current["target_duration"], current_duration)
+                    attempt = {
+                        "round": rewrite_round,
+                        "text_attempt": current["text_rewrite_attempts"],
+                        "tts_attempt": current["tts_regenerate_attempts"],
+                        "temperature": rewrite_temperature,
+                        "action": action,
+                        "before_text": before_text,
+                        "after_text": new_text,
+                        "target_duration": current["target_duration"],
+                        "tts_duration": current_duration,
+                        "duration_ratio": round(current["duration_ratio"], 4),
+                        "delta_pct": _delta_pct(current["target_duration"], current_duration),
+                        "status": status,
+                        "reason": _duration_reason(status),
+                        "selected": False,
+                    }
+                    current["attempts"].append(attempt)
+                    _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_attempt")
 
+                    candidate = _candidate_from_current(current, round_number=rewrite_round)
+                    best_distance = _duration_distance(current["target_duration"], best_candidate["tts_duration"])
+                    candidate_distance = _duration_distance(current["target_duration"], candidate["tts_duration"])
+                    if candidate_distance <= best_distance:
+                        best_candidate = candidate
+
+                    if status == "ok":
+                        current["selected_attempt_round"] = rewrite_round
+                        _mark_selected_attempt(current["attempts"], rewrite_round)
+                        _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
+                        _emit_sentence_progress(on_progress, position=position, current=current, phase="speed_adjust")
+                        break
+
+                if current["status"] in {"needs_rewrite", "needs_expand"}:
+                    _apply_candidate(current, best_candidate)
+                    _mark_selected_attempt(current["attempts"], current["selected_attempt_round"])
+                    current["status"] = _warning_status_for_ratio(current["duration_ratio"])
+                    current["speed"] = 1.0
+                    current["best_effort"] = True
+                    current["best_effort_reason"] = "max_attempts_exhausted"
+
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="sentence_done")
         final_sentences.append(current)
 
     return final_sentences

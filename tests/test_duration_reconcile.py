@@ -379,6 +379,76 @@ def test_reconcile_duration_rewrite_gives_up(monkeypatch):
     ]
 
 
+def test_reconcile_duration_preserves_shot_char_limit_text_when_out_of_range(monkeypatch):
+    rewrite_calls = []
+
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        return "Clic"
+
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.av_translate.rewrite_one",
+        fake_rewrite_one,
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.generate_segment_audio",
+        lambda text, voice_id, output_path, **kwargs: output_path,
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.get_audio_duration",
+        lambda path: 1.2,
+    )
+
+    result = reconcile_duration(
+        task={"plugin_config": {"translate_algo": "shot_char_limit"}},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 10,
+                    "start_time": 7.08,
+                    "end_time": 8.04,
+                    "target_duration": 0.96,
+                    "target_chars_range": (12, 15),
+                    "text": "Pose facile",
+                    "est_chars": 11,
+                    "source_text": "This window screen installs super easy.",
+                }
+            ]
+        },
+        tts_output={
+            "segments": [
+                {
+                    "asr_index": 10,
+                    "tts_path": "/tmp/seg10.mp3",
+                    "tts_duration": 1.3,
+                }
+            ]
+        },
+        voice_id="voice-1",
+        target_language="fr",
+        av_inputs={"target_language": "fr", "target_market": "FR", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[
+            {
+                "index": 10,
+                "start_time": 7.08,
+                "end_time": 8.04,
+                "text": "This window screen installs super easy.",
+            }
+        ],
+    )
+
+    sentence = result[0]
+    assert rewrite_calls == []
+    assert sentence["text"] == "Pose facile"
+    assert sentence["text_rewrite_attempts"] == 0
+    assert sentence["tts_regenerate_attempts"] == 0
+    assert sentence["status"] == "warning_long"
+    assert sentence["text_rewrite_disabled"] is True
+    assert sentence["best_effort_reason"] == "shot_char_limit_rewrite_disabled"
+    assert sentence["rewrite_skip_reason"] == "shot_char_limit_preserves_initial_translation"
+
+
 def test_reconcile_duration_expands_short_sentence(monkeypatch):
     durations = iter([4.9, 5.0])
     rewrite_calls = []

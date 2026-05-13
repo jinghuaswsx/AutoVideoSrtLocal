@@ -2063,7 +2063,12 @@
     const container = document.getElementById('ttsDurationLog');
     if (!container) return;
     const rounds = (currentTask && currentTask.tts_duration_rounds) || [];
+    if (rounds.some(round => round && round.mode === 'sentence_reconcile')) {
+      renderSentenceReconcileDurationLog(container, rounds);
+      return;
+    }
     if (!rounds.length) {
+      if (renderSentenceReconcileDurationLog(container)) return;
       container.hidden = true;
       container.innerHTML = '';
       return;
@@ -2380,6 +2385,97 @@
     if (window.bootCollapsibleCards) {
       window.bootCollapsibleCards(container.parentNode || document, taskId);
     }
+  }
+
+  function renderSentenceReconcileDurationLog(container, progressRounds = null) {
+    if (!container || !currentTask || !isAvSyncTask(currentTask)) return false;
+    const av = currentTask.variants?.av || {};
+    const avDebug = currentTask.av_debug || av.av_debug || {};
+    const convergenceDebug = avDebug.sentence_convergence || avDebug.convergence || {};
+    const debugSentences = Array.isArray(convergenceDebug.sentences) ? convergenceDebug.sentences : [];
+    const avSentences = Array.isArray(av.sentences) ? av.sentences : [];
+    const progressItems = Array.isArray(progressRounds) ? progressRounds.filter(Boolean) : [];
+    const sourceRows = progressItems.length ? progressItems : (avSentences.length ? avSentences : debugSentences);
+    if (!sourceRows.length) return false;
+
+    const status = currentTask.tts_duration_status || (progressItems.length ? 'running' : 'done');
+    const statusTag = ({
+      running: '<span class="duration-status-tag running">运行中</span>',
+      done: '<span class="duration-status-tag success">已完成</span>',
+      converged: '<span class="duration-status-tag success">已完成</span>',
+      failed: '<span class="duration-status-tag error">失败</span>',
+    })[status] || '';
+
+    const totals = sourceRows.reduce((acc, sentence, rowIndex) => {
+      const debug = debugSentences.find(item => String(item.asr_index ?? item.index ?? rowIndex) === String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
+      const attempts = normalizeAvAttempts(sentence, debug);
+      acc.text += avAttemptCount(sentence, debug, attempts, "text_rewrite_attempts", "text_attempt");
+      acc.tts += avAttemptCount(sentence, debug, attempts, "tts_regenerate_attempts", "tts_attempt");
+      acc.speed += avSpeedAdjustmentCount(sentence, debug, attempts);
+      if (sentence.best_effort || debug.best_effort) acc.bestEffort += 1;
+      return acc;
+    }, { text: 0, tts: 0, speed: 0, bestEffort: 0 });
+
+    const parts = [];
+    parts.push(`
+      <div class="collapsible-header duration-log-header">
+        <span class="collapsible-title">句级时长收敛（Sentence Reconcile）</span>
+        ${statusTag}
+        <span class="meta">共 ${sourceRows.length} 句 · 文案尝试 ${totals.text} · TTS 重生成 ${totals.tts} · 调速 ${totals.speed} · 最佳候选 ${totals.bestEffort}</span>
+        <button type="button" class="collapsible-toggle" aria-label="展开/折叠" aria-expanded="true">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="collapsible-body">
+    `);
+
+    sourceRows.forEach((sentence, rowIndex) => {
+      const debug = debugSentences.find(item => String(item.asr_index ?? item.index ?? rowIndex) === String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
+      const attempts = normalizeAvAttempts(sentence, debug);
+      const asrIndex = sentence.asr_index ?? sentence.index ?? sentence.round ?? rowIndex;
+      const targetDuration = numberOrNull(sentence.target_duration ?? debug.target_duration);
+      const ttsDuration = numberOrNull(sentence.audio_duration ?? sentence.tts_duration ?? debug.tts_duration);
+      const deltaPct = numberOrNull(sentence.delta_pct ?? debug.delta_pct);
+      const computedDelta = deltaPct != null
+        ? deltaPct
+        : (targetDuration && ttsDuration != null ? ((ttsDuration - targetDuration) / targetDuration) * 100 : null);
+      const statusLabel = avConvergenceStatusLabel(sentence.status || debug.status || "", computedDelta);
+      const finalText = sentence.text || sentence.final_text || debug.text || debug.final_text || "";
+      const sourceText = sentence.source_text || debug.source_text || sentence.original_source_text || debug.original_source_text || "";
+      const targetChars = Array.isArray(sentence.target_chars)
+        ? sentence.target_chars
+        : (Array.isArray(sentence.target_chars_range) ? sentence.target_chars_range : (Array.isArray(debug.target_chars_range) ? debug.target_chars_range : []));
+      const charLabel = targetChars.length === 2 ? ` · 目标 ${escapeHtml(targetChars[0])}-${escapeHtml(targetChars[1])} 字符` : "";
+      const skipReason = sentence.rewrite_skip_reason || debug.rewrite_skip_reason || "";
+      const skipHtml = skipReason
+        ? `<div class="duration-round-meta warning">文案改写已跳过：${escapeHtml(skipReason)}</div>`
+        : "";
+      const attemptsDetail = attempts.length ? renderAvAttemptsDetail(attempts) : "";
+      parts.push(`
+        <div class="duration-round ${statusLabel.className}">
+          <div class="duration-round-title">
+            <span class="status-icon ${statusLabel.className.includes('--ok') ? 'success' : 'warning'}">${statusLabel.className.includes('--ok') ? '✓' : '!'}</span>
+            <span>句 ${escapeHtml(asrIndex)}</span>
+            <span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span>
+          </div>
+          <div class="duration-round-meta">目标 ${formatAvDuration(targetDuration)} · 当前 ${formatAvDuration(ttsDuration)} · 偏差 ${formatAvDelta(computedDelta)}${charLabel}</div>
+          <div class="duration-round-meta">原文：${escapeHtml(sourceText || "--")}</div>
+          <div class="duration-round-meta">配音文案：${escapeHtml(finalText || "--")}</div>
+          ${skipHtml}
+          ${attemptsDetail ? `<div class="duration-round-meta">${attemptsDetail}</div>` : ""}
+        </div>
+      `);
+    });
+
+    parts.push('</div>');
+    container.innerHTML = parts.join('');
+    container.hidden = false;
+    if (window.bootCollapsibleCards) {
+      window.bootCollapsibleCards(container.parentNode || document, taskId);
+    }
+    return true;
   }
 
   function isAvSyncTask(task = currentTask) {

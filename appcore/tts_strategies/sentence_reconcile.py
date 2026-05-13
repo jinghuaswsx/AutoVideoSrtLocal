@@ -117,6 +117,18 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
             _save_json(task_dir, "tts_language_check.av.json", av_language_check)
 
             runner._set_step(task_id, "tts", "running", "正在按句联合收敛文案与音频时长...")
+            def _on_reconcile_progress(record: dict) -> None:
+                round_index = int(record.get("round") or 1)
+                phase = str(record.get("phase") or "sentence_progress")
+                asr_index = record.get("asr_index")
+                status = record.get("status") or ""
+                runner._emit_substep_msg(
+                    task_id,
+                    "tts",
+                    f"正在按句联合收敛文案与音频时长 · 句 {asr_index} · {status}",
+                )
+                runner._emit_duration_round(task_id, round_index, phase, record)
+
             final_sentences = reconcile_duration(
                 task=task_state.get(task_id) or task,
                 av_output={"sentences": av_sentences},
@@ -128,6 +140,7 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 script_segments=script_segments,
                 user_id=runner.user_id,
                 project_id=task_id,
+                on_progress=_on_reconcile_progress,
             )
             av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
             final_localized_translation = _build_av_localized_translation(final_sentences)
