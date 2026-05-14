@@ -215,6 +215,54 @@ def test_translation_tick_once_marks_stale_running_run_failed_then_starts(monkey
     assert "exceeded 3600s" in stale_finish[2]["error_message"]
 
 
+def test_video_localization_tick_once_replaces_running_run_every_time(monkeypatch):
+    started_at = datetime(2026, 5, 14, 10, 0, 0)
+    events = []
+
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "latest_running_run",
+        lambda task_code: {"id": 21, "started_at": started_at},
+    )
+    monkeypatch.setattr(scheduler, "_now", lambda: started_at + timedelta(minutes=5))
+    monkeypatch.setattr(
+        scheduler.store,
+        "reset_running_local_videos",
+        lambda: events.append(("reset_videos",)) or 2,
+    )
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: events.append(("finish", run_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "start_run",
+        lambda task_code: events.append(("start", task_code)) or 101,
+    )
+    monkeypatch.setattr(
+        scheduler.video_localization,
+        "download_hot_post_videos",
+        lambda *, limit, min_delay_seconds: events.append(("download", limit, min_delay_seconds))
+        or {"scanned": 1, "downloaded": 1, "failed": 0},
+    )
+
+    summary = scheduler.video_localization_tick_once(limit=1, min_delay_seconds=10)
+
+    assert summary["running_run_replaced"] == 21
+    assert summary["running_videos_reset"] == 2
+    assert summary["running_age_seconds"] == 300
+    assert summary["downloaded"] == 1
+    assert "skipped" not in summary
+    assert events[0] == ("reset_videos",)
+    assert events[1][0] == "finish"
+    assert events[1][1] == 21
+    assert events[1][2]["status"] == "failed"
+    assert "superseded by a new run" in events[1][2]["error_message"]
+    assert events[2] == ("start", scheduler.VIDEO_LOCALIZATION_TASK_CODE)
+    assert events[3] == ("download", 1, 10)
+
+
 def test_translate_pending_messages_translates_and_saves(monkeypatch):
     finished = []
     marked = []

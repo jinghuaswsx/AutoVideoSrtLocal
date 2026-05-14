@@ -484,6 +484,18 @@ def reset_stale_running_local_videos(
     )
 
 
+def reset_running_local_videos(*, execute_fn: ExecuteFn = execute) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET local_video_status='failed',
+            local_video_error='local video download superseded by a new run'
+        WHERE local_video_status='downloading'
+        """,
+        (),
+    )
+
+
 def ensure_product_analysis(product_url: str, *, execute_fn: ExecuteFn = execute) -> int:
     url = str(product_url or "").strip()
     if not url:

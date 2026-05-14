@@ -19,7 +19,6 @@ TRANSLATION_TASK_CODE = "meta_hot_posts_translate_messages_tick"
 VIDEO_LOCALIZATION_TASK_CODE = "meta_hot_posts_video_localization_tick"
 ANALYSIS_STALE_AFTER_SECONDS = 3600
 MESSAGE_TRANSLATION_STALE_AFTER_SECONDS = 3600
-VIDEO_LOCALIZATION_STALE_AFTER_SECONDS = 7200
 SCHEDULED_ANALYSIS_LIMIT = 30
 SCHEDULED_ANALYSIS_DELAY_SECONDS = 20
 SCHEDULED_TRANSLATION_LIMIT = 50
@@ -474,40 +473,28 @@ def _guard_translation_singleton(
     }
 
 
-def _guard_video_localization_singleton(
-    *,
-    stale_after_seconds: int = VIDEO_LOCALIZATION_STALE_AFTER_SECONDS,
-) -> dict[str, Any]:
+def _take_over_video_localization_singleton() -> dict[str, Any]:
     running = scheduled_tasks.latest_running_run(VIDEO_LOCALIZATION_TASK_CODE)
     if not running:
         return {}
     age_seconds = _running_age_seconds(running)
     running_id = int(running["id"])
-    if age_seconds < int(stale_after_seconds):
-        return {
-            "skipped": True,
-            "reason": "previous_run_still_running",
-            "running_run_id": running_id,
-            "running_started_at": running.get("started_at"),
-            "running_age_seconds": age_seconds,
-        }
-    reset_count = store.reset_stale_running_local_videos(
-        older_than_seconds=int(stale_after_seconds),
-    )
+    reset_count = store.reset_running_local_videos()
     scheduled_tasks.finish_run(
         running_id,
         status="failed",
         summary={
-            "stale_run_replaced": running_id,
+            "running_run_replaced": running_id,
             "running_age_seconds": age_seconds,
-            "stale_videos_reset": reset_count,
+            "running_videos_reset": reset_count,
         },
-        error_message=f"running video localization exceeded {int(stale_after_seconds)}s; superseded by a new run",
+        error_message="running video localization superseded by a new run",
     )
     return {
-        "stale_run_replaced": running_id,
+        "running_run_replaced": running_id,
+        "running_started_at": running.get("started_at"),
         "running_age_seconds": age_seconds,
-        "stale_videos_reset": reset_count,
+        "running_videos_reset": reset_count,
     }
 
 
@@ -590,9 +577,7 @@ def video_localization_tick_once(
     limit: int = SCHEDULED_VIDEO_LOCALIZATION_LIMIT,
     min_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS,
 ) -> dict[str, Any]:
-    guard_summary = _guard_video_localization_singleton()
-    if guard_summary.get("skipped"):
-        return guard_summary
+    guard_summary = _take_over_video_localization_singleton()
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(VIDEO_LOCALIZATION_TASK_CODE)

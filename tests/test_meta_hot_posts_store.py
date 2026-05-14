@@ -286,6 +286,22 @@ def test_local_video_status_transitions_are_recorded():
     assert failure_params == ("download failed", 78)
 
 
+def test_reset_running_local_videos_marks_all_downloading_failed_for_takeover():
+    calls = []
+
+    result = store.reset_running_local_videos(
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 3,
+    )
+
+    sql, params = calls[0]
+    assert result == 3
+    assert "UPDATE meta_hot_posts" in sql
+    assert "local_video_status='failed'" in sql
+    assert "local_video_status='downloading'" in sql
+    assert "TIMESTAMPDIFF" not in sql
+    assert params == ()
+
+
 def test_get_hot_post_local_video_returns_cache_row():
     calls = []
 
