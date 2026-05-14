@@ -844,14 +844,20 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "window.confirm" in html
     assert "selectedRestartCount()" in html
     assert "image_count: selectedRestartCount()" in html
+    assert "全部报文预览" in html
+    assert 'id="vcdAllPayloadModal"' in html
+    assert 'id="vcdAllPayloadBody"' in html
+    assert 'data-all-payload-preview' in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html
         assert f'data-prompt-step="{step}"' in html
-        assert f'data-result-step="{step}"' in html
         assert f'data-visual-step="{step}"' in html
         assert f'data-retry-step="{step}"' in html
         assert f'data-step-timer="{step}"' in html
+    assert "结果展示" not in html
+    assert "vcd-result-box" not in html
+    assert "data-result-step" not in html
     assert "保存图片" in html
     assert "复制图片" in html
     assert "一键复制文案" in html

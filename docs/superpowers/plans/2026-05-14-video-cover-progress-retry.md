@@ -38,4 +38,6 @@
 - [ ] Implement `appcore.video_cover_settings` with `get_model_defaults()` and `save_model_defaults()` using the `system_settings.video_cover_model_defaults` JSON key.
 - [ ] Add `/video-cover/api/default-config` GET/POST under `@superadmin_required`; render the config modal only when `current_user.is_superadmin`.
 - [ ] On project creation, snapshot current defaults into `state_json.model_defaults`; make automatic execution, retry and restart resolve provider/model from that snapshot for all four steps.
+- [ ] Write failing tests that the detail page removes main-flow raw result boxes, keeps per-step title prompt buttons, and adds a top-level “全部报文预览” Modal entry.
+- [ ] Update `web/templates/video_cover_detail.html` so each process card only renders visualized content in the main flow; move raw request/response JSON into the step prompt Modal and all-report Modal.
 - [ ] Run focused pytest and compile checks.

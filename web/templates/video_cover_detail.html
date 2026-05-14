@@ -44,7 +44,7 @@
 .vcd-cards { display:grid; gap:14px; }
 .vcd-process-card { padding:0; overflow:hidden; }
 .vcd-card-head { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); gap:12px; align-items:center; padding:14px 16px; border-bottom:1px solid var(--border-main); background:#f8fafc; }
-.vcd-card-title { font-size:15px; font-weight:900; color:var(--text-main); }
+.vcd-card-title { display:flex; align-items:center; gap:10px; min-width:0; font-size:15px; font-weight:900; color:var(--text-main); }
 .vcd-card-timer { justify-self:center; min-width:112px; text-align:center; font-size:12px; font-weight:900; color:#64748b; padding:5px 10px; border-radius:999px; background:var(--bg-card); border:1px solid var(--border-main); }
 .vcd-card-actions { justify-self:end; display:flex; flex-wrap:wrap; gap:8px; }
 .vcd-status-dot { display:inline-block; width:8px; height:8px; border-radius:999px; margin-right:7px; background:#94a3b8; }
@@ -53,7 +53,6 @@
 .vcd-process-card.error .vcd-status-dot { background:#dc2626; }
 .vcd-card-body { padding:16px; display:grid; gap:14px; }
 .vcd-section-title { font-size:12px; font-weight:900; color:#64748b; margin-bottom:8px; }
-.vcd-result-box { min-height:44px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:12px; font-size:13px; line-height:1.6; color:var(--text-main); white-space:pre-wrap; overflow-wrap:anywhere; }
 .vcd-visual-box { min-height:72px; display:grid; gap:10px; }
 .vcd-field-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
 .vcd-mini-card { border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; }
@@ -112,7 +111,10 @@
         {% endfor %}
       </div>
     </div>
-    <button class="btn btn-danger vcd-restart-btn" type="button" id="vcdRestartBtn">强制重新开始</button>
+    <div class="vcd-card-actions">
+      <button class="btn btn-ghost" type="button" data-all-payload-preview>全部报文预览</button>
+      <button class="btn btn-danger vcd-restart-btn" type="button" id="vcdRestartBtn">强制重新开始</button>
+    </div>
   </div>
   <div class="vcd-progress-steps" id="vcdProgressSteps">
     {% for step in step_order %}
@@ -179,20 +181,19 @@
     {% set timing = (state.get('step_timing') or {}).get(step, {}) %}
     <section class="vcd-process-card {{ status }}" data-process-card="{{ step }}">
       <div class="vcd-card-head">
-        <div class="vcd-card-title"><span class="vcd-status-dot"></span>{{ step_labels[step] }}</div>
+        <div class="vcd-card-title">
+          <span class="vcd-status-dot"></span>
+          <span>{{ step_labels[step] }}</span>
+          <button class="btn btn-ghost btn-sm" type="button" data-prompt-step="{{ step }}">提示词</button>
+        </div>
         <div class="vcd-card-timer" data-step-timer="{{ step }}">
           {% if status == 'running' %}已运行 {{ timing.get('running_seconds', 0) }} 秒{% elif timing.get('elapsed_seconds') is not none %}耗时 {{ timing.get('elapsed_seconds') }} 秒{% else %}等待开始{% endif %}
         </div>
         <div class="vcd-card-actions">
-          <button class="btn btn-ghost btn-sm" type="button" data-prompt-step="{{ step }}">提示词</button>
           <button class="btn btn-primary btn-sm" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>重新跑</button>
         </div>
       </div>
       <div class="vcd-card-body">
-        <div>
-          <div class="vcd-section-title">结果展示</div>
-          <div class="vcd-result-box" data-result-step="{{ step }}">等待结果</div>
-        </div>
         <div>
           <div class="vcd-section-title">可视化展现</div>
           <div class="vcd-visual-box" data-visual-step="{{ step }}"><div class="vcd-empty">等待前序步骤完成后展示结构化结果。</div></div>
@@ -202,6 +203,18 @@
     {% endfor %}
     <div class="vcd-error" id="vcdError"></div>
   </main>
+</div>
+
+<div class="vcd-modal-backdrop" id="vcdAllPayloadModal">
+  <div class="vcd-modal">
+    <div class="vcd-modal-head">
+      <div class="vcd-modal-title">全部报文预览</div>
+      <button class="btn btn-ghost btn-sm" type="button" id="vcdAllPayloadClose">关闭</button>
+    </div>
+    <div class="vcd-modal-body">
+      <pre class="vcd-pre" id="vcdAllPayloadBody"></pre>
+    </div>
+  </div>
 </div>
 
 <div class="vcd-modal-backdrop" id="vcdPromptModal">
@@ -230,6 +243,8 @@
   const modal = document.getElementById('vcdPromptModal');
   const modalTitle = document.getElementById('vcdPromptTitle');
   const modalBody = document.getElementById('vcdPromptBody');
+  const allPayloadModal = document.getElementById('vcdAllPayloadModal');
+  const allPayloadBody = document.getElementById('vcdAllPayloadBody');
 
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -284,15 +299,6 @@
   }
   function getStructured(step) {
     return getStepResult(step).structured_result || {};
-  }
-  function rawStepText(step) {
-    const result = getStepResult(step);
-    if (result.raw_response) return compactJson(result.raw_response);
-    if (step === 'video_analysis') return compactJson(currentState.video_analysis || currentState.video_analysis_structured);
-    if (step === 'product_analysis') return compactJson(currentState.product_analysis || currentState.product_analysis_structured);
-    if (step === 'ad_copy') return compactJson(currentState.ad_copy_sets);
-    if (step === 'cover_generation') return compactJson(currentState.result);
-    return '';
   }
   function renderFieldGrid(fields, labels) {
     const html = labels.map(([key, label]) => {
@@ -398,8 +404,6 @@
       if (card) card.className = `vcd-process-card ${status}`;
       const timer = document.querySelector(`[data-step-timer="${step}"]`);
       if (timer) timer.textContent = timerText(step, status);
-      const resultBox = document.querySelector(`[data-result-step="${step}"]`);
-      if (resultBox) resultBox.textContent = rawStepText(step) || (status === 'running' ? '正在生成结果...' : '等待结果');
       const visualBox = document.querySelector(`[data-visual-step="${step}"]`);
       if (visualBox) visualBox.innerHTML = renderVisual(step);
       const retry = document.querySelector(`[data-retry-step="${step}"]`);
@@ -446,6 +450,31 @@
     modalBody.textContent = compactJson({request, result});
     modal.classList.add('show');
   }
+  function stepPayload(step) {
+    return {
+      label: STEP_LABELS[step] || step,
+      status: (currentState.steps || {})[step] || 'pending',
+      message: (currentState.step_messages || {})[step] || '',
+      timing: ((currentState.step_timing || {})[step]) || {},
+      model: ((currentState.models || {})[step]) || {},
+      request: ((currentState.step_requests || {})[step]) || {},
+      result: ((currentState.step_results || {})[step]) || {}
+    };
+  }
+  function openAllPayloads() {
+    const payload = {
+      task_id: TASK_ID,
+      image_count: currentState.image_count || 2,
+      model_defaults: currentState.model_defaults || {},
+      product: currentState.product || {},
+      steps: STEP_ORDER.reduce((acc, step) => {
+        acc[step] = stepPayload(step);
+        return acc;
+      }, {})
+    };
+    allPayloadBody.textContent = compactJson(payload);
+    allPayloadModal.classList.add('show');
+  }
   async function copyCoverText() {
     const text = copyTextForCover(selectedCover());
     if (!text) return;
@@ -477,8 +506,11 @@
   }));
   document.querySelectorAll('[data-retry-step]').forEach(btn => btn.addEventListener('click', () => retryStep(btn.dataset.retryStep)));
   document.querySelectorAll('[data-prompt-step]').forEach(btn => btn.addEventListener('click', () => openPrompt(btn.dataset.promptStep)));
+  document.querySelector('[data-all-payload-preview]').addEventListener('click', openAllPayloads);
   document.getElementById('vcdPromptClose').addEventListener('click', () => modal.classList.remove('show'));
+  document.getElementById('vcdAllPayloadClose').addEventListener('click', () => allPayloadModal.classList.remove('show'));
   modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('show'); });
+  allPayloadModal.addEventListener('click', event => { if (event.target === allPayloadModal) allPayloadModal.classList.remove('show'); });
   render();
   setInterval(() => { loadState().catch(() => {}); }, 2500);
 })();

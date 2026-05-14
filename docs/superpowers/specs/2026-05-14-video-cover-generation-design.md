@@ -34,11 +34,11 @@
 ## 1.2 过程可视化与结构化结果
 
 - 任务详情页右侧主界面除顶部 4 步大进度条外，只由四张动态高度步骤卡片组成：视频分析、产品分析、文案创作、封面生成。
+- 顶部进度卡片必须提供“全部报文预览”按钮；点击后用 Modal 汇总展示 4 个步骤的请求输入、模型配置、prompt / messages、原始返回和结构化结果。
 - 每张步骤卡片必须包含：
   - 顶部中间的时间进度：运行态动态显示“已运行 Ns”，完成后显示“耗时 Ns”；后端在状态中记录 `started_at`、`finished_at`、`elapsed_seconds`，前端轮询时用当前时间补足运行中秒数。
-  - “提示词”按钮：打开弹窗，展示该步骤的请求数据、模型选择、媒体输入摘要、prompt / messages 以及原始返回。
-  - “结果展示”：展示模型返回的原始结果或关键字段。
-  - “可视化展现”：按结构化字段设计前端布局，不直接把完整报文贴成唯一结果。
+  - 标题旁的“提示词”按钮：打开 Modal，展示该步骤本次请求的输入、模型选择、媒体输入摘要、prompt / messages、原始返回和结构化结果。
+  - “可视化展现”：主流程只展示按结构化字段设计的前端布局，不直接展示完整原始报文或密集 JSON。
   - “重新跑”按钮：步骤失败或已完成后可用；运行中禁用。
 - `video_analysis`、`product_analysis`、`ad_copy` 必须要求模型返回结构化 JSON；后端保存 `raw_response` 和 `structured_result`，前端优先用 `structured_result` 渲染。
 - 视频分析可视化建议字段：`video_text`、`voiceover`、`cover_reference`、`actions`、`composition`、`authenticity_cues`、`ignore_elements`、`cover_suggestions`。
