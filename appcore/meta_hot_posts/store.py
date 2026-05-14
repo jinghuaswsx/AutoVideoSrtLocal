@@ -54,6 +54,15 @@ def _date_arg(args: Mapping[str, Any], name: str) -> str | None:
         return None
 
 
+def _mark_status_arg(args: Mapping[str, Any]) -> str | None:
+    value = str(args.get("mark_status") or "").strip().lower()
+    if value in {"ok", "pass", "yes", "行"}:
+        return "ok"
+    if value in {"bad", "fail", "no", "不行"}:
+        return "bad"
+    return None
+
+
 def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 30, 10, 100)
@@ -85,6 +94,11 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
     if min_comments:
         where.append("p.latest_comments >= %s")
         params.append(min_comments)
+
+    mark_status = _mark_status_arg(args)
+    if mark_status:
+        where.append("p.mark_status = %s")
+        params.append(mark_status)
 
     created_from = _date_arg(args, "created_from")
     if created_from:

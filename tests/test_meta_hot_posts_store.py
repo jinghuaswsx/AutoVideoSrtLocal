@@ -17,6 +17,7 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
             "max_price": "30.5",
             "min_interactions": "1000",
             "min_comments": "50",
+            "mark_status": "ok",
             "created_from": "2026-05-01",
             "created_to": "2026-05-13",
             "page": "1",
@@ -32,6 +33,7 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "a.price_min <= %s" in data_sql
     assert "p.latest_likes >= %s" in data_sql
     assert "p.latest_comments >= %s" in data_sql
+    assert "p.mark_status = %s" in data_sql
     assert "p.creation_time >= %s" in data_sql
     assert "p.creation_time < DATE_ADD(%s, INTERVAL 1 DAY)" in data_sql
     assert "p.is_marked" in data_sql
@@ -39,7 +41,7 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "p.marked_at" in data_sql
     assert "p.marked_by" in data_sql
     assert "ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC" in data_sql
-    assert data_params[:7] == ["Kitchenware", 10.0, 30.5, 1000, 50, "2026-05-01", "2026-05-13"]
+    assert data_params[:8] == ["Kitchenware", 10.0, 30.5, 1000, 50, "ok", "2026-05-01", "2026-05-13"]
 
 
 def test_upsert_hot_post_uses_wedev_post_unique_key():

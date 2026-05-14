@@ -36,6 +36,9 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "const mhPageSize = 50;" in body
     assert 'id="mhPagerTop"' in body
     assert 'id="mhPagerBottom"' in body
+    assert 'id="mhMarkStatus"' in body
+    assert "标注" in body
+    assert "params.set('mark_status', qs('mhMarkStatus').value)" in body
     assert "function renderMetaHotPager(data)" in body
     assert "首页" in body
     assert "上一页" in body
