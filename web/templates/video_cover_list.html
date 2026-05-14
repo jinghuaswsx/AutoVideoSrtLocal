@@ -7,17 +7,30 @@
 .vc-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
 .vc-header-actions { display:flex; align-items:center; gap:10px; }
 .vc-header h1 { font-size:20px; font-weight:700; margin:0; color:var(--text-main); }
-.vc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:14px; }
-.vc-card { display:flex; flex-direction:column; min-height:150px; padding:16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:inherit; text-decoration:none; transition:border-color .15s, box-shadow .15s; }
+.vc-grid { display:grid; grid-template-columns:repeat(auto-fill, 180px); gap:16px; align-items:start; }
+.vc-card-wrap { position:relative; width:180px; }
+.vc-card { display:flex; flex-direction:column; width:180px; min-height:0; padding:0; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:inherit; text-decoration:none; overflow:hidden; transition:border-color .15s, box-shadow .15s; }
 .vc-card:hover { border-color:var(--primary-color); box-shadow:0 4px 14px rgba(15,23,42,.10); }
-.vc-card-title { font-size:14px; font-weight:700; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:8px; }
-.vc-card-subtitle { font-size:12px; color:#9ca3af; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.vc-card-meta { margin-top:auto; display:flex; justify-content:space-between; gap:8px; color:#9ca3af; font-size:12px; }
+.vc-card-cover { width:180px; height:270px; background:#fff; overflow:hidden; flex-shrink:0; }
+.vc-card-cover img { width:100%; height:100%; object-fit:cover; display:block; }
+.vc-card-body { display:grid; gap:6px; padding:10px; }
+.vc-card-title { font-size:13px; font-weight:800; color:var(--text-main); overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.35; min-height:35px; word-break:break-word; }
+.vc-card-subtitle { font-size:12px; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vc-card-meta { display:grid; gap:5px; color:#64748b; font-size:12px; }
+.vc-card-meta-row { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; }
 .vc-status { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:999px; font-size:12px; font-weight:700; }
 .vc-status.done { background:rgba(22,163,74,.14); color:#16a34a; }
 .vc-status.running { background:rgba(245,158,11,.14); color:#d97706; }
 .vc-status.error { background:rgba(239,68,68,.14); color:#dc2626; }
 .vc-status.uploaded { background:rgba(14,165,233,.14); color:#0284c7; }
+.card-menu-btn { position:absolute; top:8px; right:8px; width:30px; height:30px; border-radius:999px; border:1px solid rgba(255,255,255,.88); background:rgba(15,23,42,.62); color:#f8fafc; cursor:pointer; font-size:18px; line-height:1; display:flex; align-items:center; justify-content:center; z-index:3; }
+.card-menu-btn:hover { background:rgba(15,23,42,.84); }
+.card-menu { position:absolute; top:42px; right:8px; min-width:112px; display:none; padding:6px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); box-shadow:0 12px 30px rgba(15,23,42,.18); z-index:4; }
+.card-menu.open { display:block; }
+.card-menu button { width:100%; height:30px; border:0; border-radius:6px; background:transparent; color:var(--text-main); text-align:left; padding:0 10px; font-size:13px; cursor:pointer; }
+.card-menu button:hover { background:var(--sidebar-hover-bg); color:var(--primary-color); }
+.card-menu button.danger { color:#dc2626; }
+.card-menu button.danger:hover { background:#fef2f2; color:#b91c1c; }
 .vc-empty { padding:56px 20px; text-align:center; border:1px dashed var(--border-main); border-radius:8px; color:#9ca3af; background:var(--bg-card); }
 .vc-modal-backdrop { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,.42); padding:20px; }
 .vc-modal-backdrop.show { display:flex; }
@@ -73,17 +86,34 @@
 {% if projects %}
 <div class="vc-grid">
   {% for p in projects %}
-  <a class="vc-card" href="/video-cover/{{ p.id }}">
-    <div class="vc-card-title">{{ p.display_name or p.original_filename or p.id }}</div>
-    <div class="vc-card-subtitle">{{ p.original_filename or '' }}</div>
-    <div class="vc-card-subtitle">创建人：{{ p.creator_name or '未知' }}</div>
-    <div class="vc-card-meta">
-      <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
-      <span class="vc-status {{ p.status }}">
-        {% if p.status == 'done' %}已完成{% elif p.status == 'running' %}处理中{% elif p.status == 'error' %}失败{% elif p.status == 'uploaded' %}待处理{% else %}{{ p.status }}{% endif %}
-      </span>
+  <div class="vc-card-wrap">
+    <a class="vc-card" href="/video-cover/{{ p.id }}">
+      {% if p.thumbnail_path %}
+      <div class="vc-card-cover">
+        <img src="/api/tasks/{{ p.id }}/thumbnail" alt="" loading="lazy">
+      </div>
+      {% else %}
+      <div class="vc-card-cover vc-card-cover-empty" aria-label="无封面"></div>
+      {% endif %}
+      <div class="vc-card-body">
+        <div class="vc-card-title" title="{{ p.display_name or p.original_filename or p.id }}">{{ p.display_name or p.original_filename or p.id }}</div>
+        <div class="vc-card-meta">
+          <div class="vc-card-subtitle" title="创建人：{{ p.creator_name or '未知' }}">创建人：{{ p.creator_name or '未知' }}</div>
+          <div class="vc-card-subtitle">创建时间：{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</div>
+          <div class="vc-card-meta-row">
+            <span class="vc-status {{ p.status }}">
+              {% if p.status == 'done' %}已完成{% elif p.status == 'running' %}处理中{% elif p.status == 'error' %}失败{% elif p.status == 'uploaded' %}待处理{% else %}{{ p.status }}{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+    </a>
+    <button class="card-menu-btn" type="button" data-task-id="{{ p.id }}" onclick="toggleProjectMenu(event, 'menu-' + this.dataset.taskId)" aria-label="项目操作">⋯</button>
+    <div class="card-menu" id="menu-{{ p.id }}">
+      <button type="button" data-task-id="{{ p.id }}" onclick="duplicateProject(event, this.dataset.taskId)">复制项目</button>
+      <button class="danger" type="button" data-task-id="{{ p.id }}" onclick="deleteProject(event, this.dataset.taskId)">删除项目</button>
     </div>
-  </a>
+  </div>
   {% endfor %}
 </div>
 {% else %}
@@ -261,11 +291,63 @@
     clearBtn.classList.add('preview-hidden');
   }
   function show() { backdrop.classList.add('show'); errorBox.textContent = ''; }
-  function hide() { backdrop.classList.remove('show'); form.reset(); clearFile(); setImageCount(2); errorBox.textContent = ''; submit.disabled = false; submit.textContent = '创建项目'; }
+  function hide() { backdrop.classList.remove('show'); form.reset(); clearFile(); setImageCount(4); errorBox.textContent = ''; submit.disabled = false; submit.textContent = '创建项目'; }
   function setImageCount(value) {
-    imageCountInput.value = String(value || 2);
+    imageCountInput.value = String(value || 4);
     imageCountPills.forEach(btn => btn.classList.toggle('active', btn.dataset.imageCount === imageCountInput.value));
   }
+  function closeProjectMenus(exceptId) {
+    document.querySelectorAll('.card-menu.open').forEach(menu => {
+      if (!exceptId || menu.id !== exceptId) menu.classList.remove('open');
+    });
+  }
+  window.toggleProjectMenu = function(event, menuId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeProjectMenus(menuId);
+    const menu = document.getElementById(menuId);
+    if (menu) menu.classList.toggle('open');
+  };
+  window.deleteProject = async function(event, taskId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeProjectMenus();
+    if (!window.confirm('确定删除这个项目吗？此操作不可恢复。')) return;
+    try {
+      const response = await fetch('/video-cover/api/' + encodeURIComponent(taskId), {
+        method: 'DELETE',
+        headers: {'X-CSRFToken': csrfToken()}
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '删除失败');
+      window.location.reload();
+    } catch (error) {
+      window.alert(error && error.message ? error.message : '删除失败');
+    }
+  };
+  function safeInternalHref(url, fallback) {
+    const value = String(url || '');
+    if (value.startsWith('/') && !value.startsWith('//')) return value;
+    return fallback;
+  }
+  window.duplicateProject = async function(event, taskId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeProjectMenus();
+    if (!window.confirm('复制后会创建新项目并重新开始处理，确定继续吗？')) return;
+    try {
+      const response = await fetch('/video-cover/api/' + encodeURIComponent(taskId) + '/duplicate', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken()}
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '复制失败');
+      const fallbackUrl = '/video-cover/' + encodeURIComponent(payload.id || '');
+      window.location.href = safeInternalHref(payload.redirect_url, fallbackUrl);
+    } catch (error) {
+      window.alert(error && error.message ? error.message : '复制失败');
+    }
+  };
   function setConfigSteps(steps) {
     if (!configForm || !steps) return;
     configSteps.forEach(step => {
@@ -389,6 +471,7 @@
     configSubmit.textContent = '保存配置';
   }
   showBtn.addEventListener('click', show);
+  document.addEventListener('click', () => closeProjectMenus());
   if (showConfigBtn) showConfigBtn.addEventListener('click', showConfig);
   if (cancelConfigBtn) cancelConfigBtn.addEventListener('click', hideConfig);
   if (configBackdrop) configBackdrop.addEventListener('click', event => { if (event.target === configBackdrop) hideConfig(); });

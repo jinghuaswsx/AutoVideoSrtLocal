@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from io import BytesIO
 import json
 from pathlib import Path
@@ -779,16 +780,33 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
 
     calls = []
 
-    def fake_list_projects(*, user_id, is_admin):
-        calls.append({"user_id": user_id, "is_admin": is_admin})
+    monkeypatch.setattr(
+        video_cover,
+        "_video_cover_creator_name_expr",
+        lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
+        raising=False,
+    )
+
+    def fake_list_projects(*, user_id, is_admin, owner_name_expr=""):
+        calls.append({"user_id": user_id, "is_admin": is_admin, "owner_name_expr": owner_name_expr})
         return [
             {
                 "id": "task-1",
                 "display_name": "Lamp Cover",
                 "original_filename": "lamp.mp4",
+                "thumbnail_path": "/tmp/task-1/thumb.jpg",
                 "status": "uploaded",
-                "created_at": None,
-                "creator_name": "alice",
+                "created_at": datetime(2026, 5, 15, 9, 8),
+                "creator_name": "张三",
+            },
+            {
+                "id": "task-2",
+                "display_name": "No Thumb",
+                "original_filename": "blank.mp4",
+                "thumbnail_path": "",
+                "status": "error",
+                "created_at": datetime(2026, 5, 15, 10, 1),
+                "creator_name": "李四",
             }
         ]
 
@@ -800,7 +818,22 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert "文案封面生成" in html
     assert "新建项目" in html
     assert "Lamp Cover" in html
-    assert "alice" in html
+    assert "张三" in html
+    assert "李四" in html
+    assert ".vc-grid { display:grid; grid-template-columns:repeat(auto-fill, 180px);" in html
+    assert ".vc-card-cover { width:180px; height:270px; background:#fff;" in html
+    assert '<img src="/api/tasks/task-1/thumbnail" alt="" loading="lazy">' in html
+    assert '<div class="vc-card-cover vc-card-cover-empty" aria-label="无封面"></div>' in html
+    assert "创建人：" in html
+    assert "创建时间：" in html
+    assert "05-15 09:08" in html
+    assert "复制项目" in html
+    assert "删除项目" in html
+    assert "toggleProjectMenu(event, 'menu-' + " in html
+    assert "duplicateProject(event, " in html
+    assert "deleteProject(event, " in html
+    assert "fetch('/video-cover/api/' + encodeURIComponent(taskId) + '/duplicate'" in html
+    assert "fetch('/video-cover/api/' + encodeURIComponent(taskId)" in html
     assert "商品链接" in html
     assert "videoCoverDropzone" in html
     assert 'id="videoCoverFile"' in html
@@ -815,7 +848,13 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert 'value="4"' in html
     assert '<button class="vc-count-pill active" type="button" data-image-count="4">4 张</button>' in html
     assert "默认配置" not in html
-    assert calls == [{"user_id": 1, "is_admin": True}]
+    assert calls == [
+        {
+            "user_id": 1,
+            "is_admin": True,
+            "owner_name_expr": "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
+        }
+    ]
 
 
 def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
@@ -824,7 +863,7 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     monkeypatch.setattr(
         video_cover.video_cover_project_store,
         "list_projects",
-        lambda *, user_id, is_admin: [],
+        lambda *, user_id, is_admin, owner_name_expr="": [],
     )
     monkeypatch.setattr(
         video_cover.video_cover_settings,
@@ -979,6 +1018,7 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
 
     inserted = {}
     started = []
+    thumbnail_calls = []
     model_defaults = {
         "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
         "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
@@ -1010,11 +1050,11 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
         lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
         raising=False,
     )
-    monkeypatch.setattr(
-        video_cover,
-        "extract_thumbnail",
-        lambda video_path, output_dir, scale=None: str(Path(output_dir) / "thumb.jpg"),
-    )
+    def fake_extract_thumbnail(video_path, output_dir, scale=None):
+        thumbnail_calls.append({"video_path": video_path, "output_dir": output_dir, "scale": scale})
+        return str(Path(output_dir) / "thumb.jpg")
+
+    monkeypatch.setattr(video_cover, "extract_thumbnail", fake_extract_thumbnail)
 
     resp = authed_client_no_db.post(
         "/video-cover/api/projects",
@@ -1037,6 +1077,15 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     assert state["product_url"] == "https://shop.example/products/lamp"
     assert state["image_count"] == 3
     assert state["model_defaults"] == model_defaults
+    assert state["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
+    assert inserted["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
+    assert thumbnail_calls == [
+        {
+            "video_path": state["video_path"],
+            "output_dir": inserted["task_dir"],
+            "scale": "180:270:force_original_aspect_ratio=increase,crop=180:270",
+        }
+    ]
     assert state["product"]["title"] == "Portable Blender Pro"
     assert state["product"]["main_image_url"] == "https://cdn.example/blender.png"
     assert Path(state["product"]["product_image_path"]).is_file()
@@ -1098,6 +1147,55 @@ def test_video_cover_project_create_defaults_to_four_covers(authed_client_no_db,
     payload = resp.get_json()
     assert inserted["state"]["image_count"] == 4
     assert started == [(payload["id"], "video_analysis", 4)]
+
+
+def test_video_cover_project_create_uses_white_card_fallback_when_thumbnail_fails(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    inserted = {}
+
+    def fake_insert_project(**kwargs):
+        inserted.update(kwargs)
+
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: {})
+    monkeypatch.setattr(
+        video_cover,
+        "_extract_product",
+        lambda product_url: (_FakeProduct(), _FakeProduct.title, _FakeProduct.main_image_url),
+    )
+    monkeypatch.setattr(video_cover, "_fetch_product_image", lambda image_url: _png_bytes(size=(900, 240)))
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: True,
+        raising=False,
+    )
+
+    def fail_extract_thumbnail(video_path, output_dir, scale=None):
+        raise RuntimeError("ffmpeg failed")
+
+    monkeypatch.setattr(video_cover, "extract_thumbnail", fail_extract_thumbnail)
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/projects",
+        data={
+            "product_url": "https://shop.example/products/lamp",
+            "video_file": (BytesIO(b"video"), "lamp.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 201
+    assert inserted["thumbnail_path"] == ""
+    assert inserted["state"]["thumbnail_path"] == ""
 
 
 def test_video_cover_background_chain_uses_project_model_default_snapshot(monkeypatch, tmp_path):
@@ -1891,6 +1989,180 @@ def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed
     ):
         assert key not in next_state
     assert started == [("task-1", "video_analysis", 4)]
+
+
+def test_video_cover_delete_soft_deletes_visible_project_and_cleans_storage(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    task_dir = tmp_path / "task-1"
+    task_dir.mkdir()
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    state = {"video_path": str(video_path)}
+    row = {
+        "id": "task-1",
+        "task_dir": str(task_dir),
+        "state_json": json.dumps(state, ensure_ascii=False),
+        "display_name": "Lamp",
+    }
+    cleanup_calls = []
+    delete_calls = []
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        "appcore.cleanup.delete_task_storage",
+        lambda payload: cleanup_calls.append(payload),
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "soft_delete_project",
+        lambda task_id, *, user_id, is_admin: delete_calls.append(
+            {"task_id": task_id, "user_id": user_id, "is_admin": is_admin}
+        ),
+    )
+
+    resp = authed_client_no_db.delete("/video-cover/api/task-1")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert cleanup_calls == [
+        {
+            "task_dir": str(task_dir),
+            "state_json": row["state_json"],
+        }
+    ]
+    assert delete_calls == [{"task_id": "task-1", "user_id": 1, "is_admin": True}]
+
+
+def test_video_cover_duplicate_copies_inputs_and_restarts(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"source-video")
+    source_product = tmp_path / "product_main.jpg"
+    source_product.write_bytes(b"source-product")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "display_name": "Lamp Cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(source_video),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path / "old-task"),
+        "thumbnail_path": str(tmp_path / "old-task" / "thumbnail.jpg"),
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(source_product),
+        },
+        "image_count": 3,
+        "model_defaults": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+        },
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "result": {"covers": [{"object_key": "old"}]},
+        "error": "old error",
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "display_name": "Lamp Cover",
+        "original_filename": "lamp.mp4",
+        "task_dir": state["task_dir"],
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }
+    inserted = {}
+    started = []
+    thumbnail_calls = []
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "insert_project",
+        lambda **kwargs: inserted.update(kwargs),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "resolve_project_display_name_conflict",
+        lambda user_id, desired_name: desired_name,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+
+    def fake_extract_thumbnail(video_path, output_dir, scale=None):
+        thumbnail_calls.append({"video_path": video_path, "output_dir": output_dir, "scale": scale})
+        return str(Path(output_dir) / "thumb.jpg")
+
+    monkeypatch.setattr(video_cover, "extract_thumbnail", fake_extract_thumbnail)
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/duplicate")
+
+    assert resp.status_code == 201
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["id"] == inserted["task_id"]
+    assert payload["redirect_url"] == f"/video-cover/{inserted['task_id']}"
+    next_state = inserted["state"]
+    assert inserted["user_id"] == 1
+    assert inserted["display_name"] == "Lamp Cover 复制"
+    assert inserted["original_filename"] == "lamp.mp4"
+    assert inserted["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
+    assert next_state["display_name"] == "Lamp Cover 复制"
+    assert next_state["product_url"] == "https://shop.example/products/lamp"
+    assert next_state["image_count"] == 3
+    for step, defaults in state["model_defaults"].items():
+        assert next_state["model_defaults"][step]["provider"] == defaults["provider"]
+        assert next_state["model_defaults"][step]["model_id"] == defaults["model_id"]
+    assert next_state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+    assert "result" not in next_state
+    assert "error" not in next_state
+    assert Path(next_state["video_path"]).read_bytes() == b"source-video"
+    assert next_state["video_path"] != str(source_video)
+    assert Path(next_state["product"]["product_image_path"]).read_bytes() == b"source-product"
+    assert next_state["product"]["product_image_path"] != str(source_product)
+    assert thumbnail_calls == [
+        {
+            "video_path": next_state["video_path"],
+            "output_dir": inserted["task_dir"],
+            "scale": "180:270:force_original_aspect_ratio=increase,crop=180:270",
+        }
+    ]
+    assert started == [(inserted["task_id"], "video_analysis", 3)]
 
 
 def test_video_cover_download_serves_owned_cover(authed_client_no_db, monkeypatch, tmp_path):

@@ -33,6 +33,7 @@ def list_projects(
     *,
     user_id: int,
     is_admin: bool,
+    owner_name_expr: str = "u.username",
     query_func: QueryFunc = query,
 ) -> list[dict]:
     where = "p.type = %s AND p.deleted_at IS NULL"
@@ -42,7 +43,8 @@ def list_projects(
         args = (VIDEO_COVER_TYPE, user_id)
     return query_func(
         "SELECT p.id, p.user_id, p.display_name, p.original_filename, p.thumbnail_path, "
-        "p.status, p.created_at, u.username AS creator_name "
+        "p.status, p.created_at, "
+        f"{owner_name_expr} AS creator_name "
         "FROM projects p "
         "LEFT JOIN users u ON u.id = p.user_id "
         f"WHERE {where} "
@@ -91,6 +93,24 @@ def get_user_project(
         user_id=user_id,
         is_admin=False,
         query_one_func=query_one_func,
+    )
+
+
+def soft_delete_project(
+    task_id: str,
+    *,
+    user_id: int,
+    is_admin: bool,
+    execute_func: ExecuteFunc = execute,
+) -> object:
+    if is_admin:
+        return execute_func(
+            "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND type = %s",
+            (task_id, VIDEO_COVER_TYPE),
+        )
+    return execute_func(
+        "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s AND type = %s",
+        (task_id, user_id, VIDEO_COVER_TYPE),
     )
 
 
