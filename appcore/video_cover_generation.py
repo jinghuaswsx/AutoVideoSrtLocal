@@ -1389,6 +1389,7 @@ def generate_video_covers(
     ad_copy_invoke_fn: Callable[..., dict] = llm_client.invoke_chat,
     current_date: str | None = None,
     image_count: int = 1,
+    on_cover_done: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     product_url = _validate_http_url(product_url)
     _validate_video_path(video_path, video_filename)
@@ -1476,6 +1477,45 @@ def generate_video_covers(
     covers = []
     image_prompts = []
     spec = SOCIAL_REELS_SPEC
+
+    def build_result() -> dict[str, Any]:
+        return {
+            "task_id": task_id,
+            "product": {
+                "title": product_title,
+                "main_image_url": main_image_url,
+                "product_url": product_url,
+            },
+            "reference": {"object_key": reference_key},
+            "inputs": {
+                "product_analysis": product_analysis,
+                "video_analysis": video_analysis,
+                "ad_copy_sets": copy_payload,
+            },
+            "model": {"channel": cover_selection.provider, "model_id": cover_selection.model},
+            "image_count": image_count,
+            "image_prompts": list(image_prompts),
+            "models": {
+                "product_analysis": {
+                    "provider": product_selection.provider,
+                    "model_id": product_selection.model,
+                },
+                "video_analysis": {
+                    "provider": video_selection.provider,
+                    "model_id": video_selection.model,
+                },
+                "ad_copy": {
+                    "provider": ad_copy_selection.provider,
+                    "model_id": ad_copy_selection.model,
+                },
+                "cover_generation": {
+                    "provider": cover_selection.provider,
+                    "model_id": cover_selection.model,
+                },
+            },
+            "covers": list(covers),
+        }
+
     for index in range(1, image_count + 1):
         copy_item = _copy_for_cover(copy_payload, index)
         selected_copy_payload = {
@@ -1530,40 +1570,7 @@ def generate_video_covers(
                 **overlay_meta,
             }
         )
+        if on_cover_done:
+            on_cover_done(build_result())
 
-    return {
-        "task_id": task_id,
-        "product": {
-            "title": product_title,
-            "main_image_url": main_image_url,
-            "product_url": product_url,
-        },
-        "reference": {"object_key": reference_key},
-        "inputs": {
-            "product_analysis": product_analysis,
-            "video_analysis": video_analysis,
-            "ad_copy_sets": copy_payload,
-        },
-        "model": {"channel": cover_selection.provider, "model_id": cover_selection.model},
-        "image_count": image_count,
-        "image_prompts": image_prompts,
-        "models": {
-            "product_analysis": {
-                "provider": product_selection.provider,
-                "model_id": product_selection.model,
-            },
-            "video_analysis": {
-                "provider": video_selection.provider,
-                "model_id": video_selection.model,
-            },
-            "ad_copy": {
-                "provider": ad_copy_selection.provider,
-                "model_id": ad_copy_selection.model,
-            },
-            "cover_generation": {
-                "provider": cover_selection.provider,
-                "model_id": cover_selection.model,
-            },
-        },
-        "covers": covers,
-    }
+    return build_result()

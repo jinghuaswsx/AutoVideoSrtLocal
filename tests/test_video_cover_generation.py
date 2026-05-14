@@ -192,6 +192,7 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
     video_path = tmp_path / "input.mp4"
     video_path.write_bytes(b"fake video")
     calls = []
+    progress = []
     copy_payload = {
         "ad_copy_sets": [
             {
@@ -234,9 +235,11 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
         video_analysis_text="<视频素材分析>demo</视频素材分析>",
         ad_copy_payload=copy_payload,
         image_count=3,
+        on_cover_done=lambda partial: progress.append([cover["index"] for cover in partial["covers"]]),
     )
 
     assert len(calls) == 3
+    assert progress == [[1], [1, 2], [1, 2, 3]]
     assert [cover["index"] for cover in result["covers"]] == [1, 2, 3]
     assert [cover["source_ad_copy_id"] for cover in result["covers"]] == [1, 2, 3]
     assert [cover["hook"] for cover in result["covers"]] == ["Hook 1", "Hook 2", "Hook 3"]
@@ -947,14 +950,15 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
         "result": {
             "covers": [
                 {
-                    "platform": "social_reels",
+                    "platform": "social_reels_1",
                     "label": "Facebook / Instagram / TikTok / Shorts",
                     "index": 1,
-                    "object_key": "artifacts/video_cover/1/task-1/social_reels.png",
+                    "object_key": "artifacts/video_cover/1/task-1/social_reels_1.png",
                     "width": 1080,
                     "height": 1920,
                     "source_ad_copy_id": 1,
                     "hook": "Hook 1",
+                    "formatted_copy": "标题: Hook 1\n文案: Body copy 1\n描述: Shop Now",
                     "copy": {
                         "english": {
                             "headline": "Hook 1",
@@ -965,6 +969,29 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
                             "headline": "钩子 1",
                             "body_text": "正文 1",
                             "cta": "立即购买",
+                        },
+                    },
+                },
+                {
+                    "platform": "social_reels_2",
+                    "label": "Facebook / Instagram / TikTok / Shorts #2",
+                    "index": 2,
+                    "object_key": "artifacts/video_cover/1/task-1/social_reels_2.png",
+                    "width": 1080,
+                    "height": 1920,
+                    "source_ad_copy_id": 1,
+                    "hook": "Hook 2",
+                    "formatted_copy": "标题: Hook 2\n文案: Body copy 2\n描述: Save Time",
+                    "copy": {
+                        "english": {
+                            "title": "Hook 2",
+                            "message": "Body copy 2",
+                            "description": "Save Time",
+                        },
+                        "chinese_translation": {
+                            "title": "钩子 2",
+                            "message": "正文 2",
+                            "description": "节省时间",
                         },
                     },
                 }
@@ -1007,8 +1034,20 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "data-result-step" not in html
     assert "保存图片" in html
     assert "复制图片" in html
-    assert "一键复制文案" in html
-    assert "/video-cover/api/task-1/download/social_reels" in html
+    assert "复制文案" in html
+    assert "一键复制文案" not in html
+    assert "vcd-cover-results-grid" in html
+    assert "vcd-cover-result-card" in html
+    assert "vcd-cover-copy-panel" in html
+    assert "vcd-cover-copy-button" in html
+    assert "covers.map((cover, idx)" in html
+    assert 'data-copy-cover-text="${idx}"' in html
+    assert "copyTextForCover(covers[index])" in html
+    assert "selectedCoverIndex" not in html
+    assert "data-cover-index" not in html
+    assert "vcd-thumbs" not in html
+    assert "/video-cover/api/task-1/download/social_reels_1" in html
+    assert "/video-cover/api/task-1/download/social_reels_2" in html
 
 
 def test_video_cover_detail_matches_multi_translate_step_status_style(authed_client_no_db, monkeypatch):
@@ -1261,9 +1300,10 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
             ]
         },
     }
+    saved_states = []
 
     def fake_generate_video_covers(**kwargs):
-        return {
+        partial = {
             "product": state["product"],
             "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
             "inputs": {},
@@ -1287,9 +1327,18 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
                 }
             ],
         }
+        kwargs["on_cover_done"](partial)
+        return partial
 
     monkeypatch.setattr(video_cover, "generate_video_covers", fake_generate_video_covers)
     monkeypatch.setattr(video_cover, "_attach_urls", lambda payload: payload)
+    monkeypatch.setattr(
+        video_cover,
+        "save_project_state",
+        lambda task_id, next_state, status: saved_states.append(
+            {"task_id": task_id, "state": json.loads(json.dumps(next_state, ensure_ascii=False)), "status": status}
+        ),
+    )
 
     video_cover._run_cover_generation_step(state, provider="local", model="gpt-image-2", user_id=8)
 
@@ -1298,6 +1347,10 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
     assert request_payload["request_data"]["ad_copy_sets"]["ad_copy_sets"][0]["english"]["title"] == (
         "Don’t Get Stuck Unprepared"
     )
+    assert saved_states[0]["task_id"] == "task-1"
+    assert saved_states[0]["status"] == "running"
+    assert saved_states[0]["state"]["result"]["covers"][0]["formatted_copy"].startswith("标题: Don’t Get Stuck")
+    assert saved_states[0]["state"]["step_messages"]["cover_generation"] == "已生成 1/1 张封面，正在整理结果..."
 
 
 def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db, monkeypatch):

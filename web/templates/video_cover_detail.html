@@ -85,16 +85,21 @@
 .vcd-copy-headline { font-size:15px; font-weight:900; color:var(--text-main); margin-bottom:6px; }
 .vcd-copy-body { font-size:13px; color:var(--text-main); line-height:1.5; }
 .vcd-copy-meta { margin-top:8px; font-size:12px; color:#64748b; }
-.vcd-final-layout { display:grid; grid-template-columns:minmax(220px, 360px) minmax(0, 1fr); gap:18px; align-items:center; }
-.vcd-cover-pane { display:grid; justify-items:center; gap:10px; }
-.vcd-cover-img { width:min(280px, 100%); aspect-ratio:9/16; object-fit:cover; border-radius:8px; border:1px solid var(--border-main); background:#e5e7eb; }
-.vcd-cover-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+.vcd-cover-results-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 280px)); gap:18px; align-items:start; justify-content:start; }
+.vcd-cover-result-card { width:100%; display:grid; gap:10px; align-content:start; }
+.vcd-cover-copy-panel { width:100%; display:grid; gap:10px; align-content:start; min-height:190px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:12px; }
+.vcd-cover-copy-lines { display:grid; gap:8px; }
+.vcd-cover-copy-line { display:grid; gap:3px; }
+.vcd-cover-copy-label { font-size:11px; font-weight:900; color:#64748b; }
+.vcd-cover-copy-value { font-size:13px; line-height:1.55; color:var(--text-main); overflow-wrap:anywhere; }
+.vcd-cover-copy-value.title { font-size:16px; font-weight:900; line-height:1.35; }
+.vcd-cover-copy-button { width:100%; }
+.vcd-cover-image-panel { width:100%; display:grid; gap:8px; }
+.vcd-cover-img { width:100%; aspect-ratio:9/16; object-fit:cover; border-radius:8px; border:1px solid var(--border-main); background:#e5e7eb; }
+.vcd-cover-actions { width:100%; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+.vcd-cover-actions .vcd-pill-btn { width:100%; padding:0 8px; }
 .vcd-pill-btn { display:inline-flex; align-items:center; justify-content:center; height:30px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-size:12px; font-weight:900; text-decoration:none; cursor:pointer; }
 .vcd-pill-btn.primary { border-color:var(--primary-color); background:var(--primary-color); color:#f8fafc; }
-.vcd-thumbs { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-.vcd-thumb { width:42px; height:58px; border:2px solid transparent; border-radius:8px; overflow:hidden; padding:0; background:#e5e7eb; cursor:pointer; }
-.vcd-thumb.active { border-color:var(--primary-color); }
-.vcd-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
 .vcd-final-copy { display:grid; gap:10px; align-content:center; }
 .vcd-final-hook { font-size:20px; font-weight:900; color:var(--text-main); }
 .vcd-final-body { font-size:14px; line-height:1.7; color:var(--text-main); }
@@ -109,13 +114,14 @@
 .vcd-modal-body { padding:16px; }
 .vcd-pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.55; padding:12px; border:1px solid var(--border-main); border-radius:8px; background:#0f172a; color:#e5e7eb; }
 @media (max-width:1080px) {
-  .vcd-project-grid, .vcd-final-layout { grid-template-columns:1fr; }
+  .vcd-project-grid { grid-template-columns:1fr; }
   .vcd-progress-steps { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .vcd-card-timer { margin-left:0; }
 }
 @media (max-width:720px) {
   .vcd-top-actions { align-items:stretch; flex-direction:column; }
   .vcd-progress-steps, .vcd-field-grid { grid-template-columns:1fr; }
+  .vcd-cover-results-grid { grid-template-columns:minmax(0, 280px); justify-content:center; }
 }
 {% endblock %}
 
@@ -262,7 +268,6 @@
   const STEP_LABELS = {{ step_labels|tojson }};
   let currentState = {{ state|tojson }};
   let restartCount = Number(currentState.image_count || 4);
-  let selectedCoverIndex = 0;
   const errorBox = document.getElementById('vcdError');
   const modal = document.getElementById('vcdPromptModal');
   const modalTitle = document.getElementById('vcdPromptTitle');
@@ -400,41 +405,36 @@
       </article>`;
     }).join('')}</div>`;
   }
-  function selectedCover() {
-    const covers = (((currentState.result || {}).covers) || []);
-    if (!covers.length) return null;
-    if (selectedCoverIndex >= covers.length) selectedCoverIndex = 0;
-    return covers[selectedCoverIndex];
-  }
   function copyTextForCover(cover) {
     if (cover && cover.formatted_copy) return cover.formatted_copy;
     return formattedCopyText((cover && cover.copy) || {});
   }
   function renderCoverVisual() {
     const covers = (((currentState.result || {}).covers) || []);
-    if (!covers.length) return '<div class="vcd-empty">完成封面生成后，这里会显示左图右文案结果。</div>';
-    const cover = selectedCover();
-    const normalized = normalizeCopyTextFields(cover.copy || {});
-    const en = normalized.english;
-    const zh = normalized.chinese_translation;
-    const thumbs = covers.length > 1 ? `<div class="vcd-thumbs">${covers.map((row, idx) => `<button type="button" class="vcd-thumb ${idx === selectedCoverIndex ? 'active' : ''}" data-cover-index="${idx}"><img src="${escapeHtml(row.url || '')}" alt="封面 ${idx + 1}"></button>`).join('')}</div>` : '';
-    return `<div class="vcd-final-layout">
-      <div class="vcd-cover-pane">
-        <img class="vcd-cover-img" src="${escapeHtml(cover.url || '')}" alt="最终封面" loading="lazy">
-        ${thumbs}
-        <div class="vcd-cover-actions">
-          <a class="vcd-pill-btn primary" href="${escapeHtml(cover.download_url || '#')}" download>保存图片</a>
-          <button class="vcd-pill-btn" type="button" data-copy-image="${escapeHtml(cover.url || '')}">复制图片</button>
+    if (!covers.length) return '<div class="vcd-empty">封面生成过程中，已完成的图片和文案会在这里从左到右显示。</div>';
+    return `<div class="vcd-cover-results-grid">${covers.map((cover, idx) => {
+      const normalized = normalizeCopyTextFields(cover.copy || {});
+      const en = normalized.english;
+      const zh = normalized.chinese_translation;
+      return `<article class="vcd-cover-result-card">
+        <div class="vcd-cover-copy-panel">
+          <div class="vcd-cover-copy-lines">
+            <div class="vcd-cover-copy-line"><span class="vcd-cover-copy-label">标题</span><span class="vcd-cover-copy-value title">${escapeHtml(en.title || cover.hook || '')}</span></div>
+            <div class="vcd-cover-copy-line"><span class="vcd-cover-copy-label">文案</span><span class="vcd-cover-copy-value">${escapeHtml(en.message)}</span></div>
+            <div class="vcd-cover-copy-line"><span class="vcd-cover-copy-label">描述</span><span class="vcd-cover-copy-value">${escapeHtml(en.description)}</span></div>
+          </div>
+          <div class="vcd-copy-meta">${escapeHtml(zh.title)} ${escapeHtml(zh.message)} ${escapeHtml(zh.description)}</div>
+          <button class="vcd-pill-btn primary vcd-cover-copy-button" type="button" data-copy-cover-text="${idx}">复制文案</button>
         </div>
-      </div>
-      <div class="vcd-final-copy">
-        <div class="vcd-final-hook">${escapeHtml(en.title || cover.hook || '')}</div>
-        <div class="vcd-final-body">${escapeHtml(en.message)}</div>
-        <div class="vcd-final-cta">${escapeHtml(en.description)}</div>
-        <div class="vcd-copy-meta">${escapeHtml(zh.title)} ${escapeHtml(zh.message)} ${escapeHtml(zh.description)}</div>
-        <button class="vcd-pill-btn primary" type="button" data-copy-cover-text="1">一键复制文案</button>
-      </div>
-    </div>`;
+        <div class="vcd-cover-image-panel">
+          <img class="vcd-cover-img" src="${escapeHtml(cover.url || '')}" alt="最终封面 ${idx + 1}" loading="lazy">
+          <div class="vcd-cover-actions">
+            <a class="vcd-pill-btn primary" href="${escapeHtml(cover.download_url || '#')}" download>保存图片</a>
+            <button class="vcd-pill-btn" type="button" data-copy-image="${escapeHtml(cover.url || '')}">复制图片</button>
+          </div>
+        </div>
+      </article>`;
+    }).join('')}</div>`;
   }
   function renderVisual(step) {
     if (step === 'video_analysis') return renderVideoVisual();
@@ -479,8 +479,7 @@
       const retry = document.querySelector(`[data-retry-step="${step}"]`);
       if (retry) retry.disabled = status === 'running';
     });
-    document.querySelectorAll('[data-cover-index]').forEach(btn => btn.addEventListener('click', () => { selectedCoverIndex = Number(btn.dataset.coverIndex || 0); render(); }));
-    document.querySelectorAll('[data-copy-cover-text]').forEach(btn => btn.addEventListener('click', copyCoverText));
+    document.querySelectorAll('[data-copy-cover-text]').forEach(btn => btn.addEventListener('click', () => copyCoverText(btn.dataset.copyCoverText)));
     document.querySelectorAll('[data-copy-image]').forEach(btn => btn.addEventListener('click', () => copyImage(btn.dataset.copyImage)));
   }
   async function loadState() {
@@ -545,8 +544,10 @@
     allPayloadBody.textContent = compactJson(payload);
     allPayloadModal.classList.add('show');
   }
-  async function copyCoverText() {
-    const text = copyTextForCover(selectedCover());
+  async function copyCoverText(index) {
+    const covers = (((currentState.result || {}).covers) || []);
+    index = Number(index || 0);
+    const text = copyTextForCover(covers[index]);
     if (!text) return;
     await copyText(text);
   }

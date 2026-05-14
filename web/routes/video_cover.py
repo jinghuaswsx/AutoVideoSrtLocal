@@ -657,6 +657,31 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         },
         "prompt": selected_prompt,
     })
+
+    task_id = str(state.get("id") or "")
+
+    def apply_cover_result(next_result: dict) -> None:
+        image_prompts = next_result.get("image_prompts") if isinstance(next_result.get("image_prompts"), list) else []
+        request_payload = state.setdefault("step_requests", {}).setdefault("cover_generation", {})
+        request_payload["image_prompts"] = image_prompts
+        if image_prompts and isinstance(image_prompts[0], dict):
+            request_payload["prompt"] = str(image_prompts[0].get("prompt") or request_payload.get("prompt") or "")
+        state["result"] = next_result
+        state["inputs"] = next_result.get("inputs") or {}
+        _store_step_result(state, "cover_generation", next_result, {"covers": next_result.get("covers") or []})
+        state.setdefault("models", {}).update(next_result.get("models") or {})
+
+    def persist_partial_cover_result(partial_result: dict) -> None:
+        apply_cover_result(partial_result)
+        done_count = len(partial_result.get("covers") or [])
+        if done_count < image_count:
+            message = f"已生成 {done_count}/{image_count} 张封面，继续排队生成下一张..."
+        else:
+            message = f"已生成 {done_count}/{image_count} 张封面，正在整理结果..."
+        state.setdefault("step_messages", {})["cover_generation"] = message
+        if task_id:
+            _save_state(task_id, state, status="running")
+
     result = generate_video_covers(
         product_url=str(state.get("product_url") or ""),
         video_path=str(state.get("video_path") or ""),
@@ -672,16 +697,9 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         video_analysis_text=str(state.get("video_analysis") or ""),
         ad_copy_payload=state.get("ad_copy_sets") if isinstance(state.get("ad_copy_sets"), dict) else None,
         image_count=image_count,
+        on_cover_done=persist_partial_cover_result,
     )
-    image_prompts = result.get("image_prompts") if isinstance(result.get("image_prompts"), list) else []
-    request_payload = state.setdefault("step_requests", {}).setdefault("cover_generation", {})
-    request_payload["image_prompts"] = image_prompts
-    if image_prompts and isinstance(image_prompts[0], dict):
-        request_payload["prompt"] = str(image_prompts[0].get("prompt") or request_payload.get("prompt") or "")
-    state["result"] = result
-    state["inputs"] = result.get("inputs") or {}
-    _store_step_result(state, "cover_generation", result, {"covers": result.get("covers") or []})
-    state.setdefault("models", {}).update(result.get("models") or {})
+    apply_cover_result(result)
     return _attach_urls(result)
 
 
