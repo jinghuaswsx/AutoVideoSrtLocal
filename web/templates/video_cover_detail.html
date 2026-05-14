@@ -395,7 +395,7 @@
   function renderCopyVisual() {
     const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
     if (!sets.length) return '<div class="vcd-empty">等待文案创作结果。</div>';
-    return `<div class="vcd-copy-grid">${sets.map(item => {
+    return `<div class="vcd-copy-grid">${sets.map((item, idx) => {
       const normalized = normalizeCopyTextFields(item);
       const en = normalized.english;
       const zh = normalized.chinese_translation;

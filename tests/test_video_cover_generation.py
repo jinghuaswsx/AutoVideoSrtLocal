@@ -1271,6 +1271,7 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "overflow-y:auto" in html
     assert "overscroll-behavior:contain" in html
     assert '<aside class="vcd-panel vcd-input-panel">' in html
+    assert "sets.map((item, idx)" in html
     assert 'data-copy-ad-copy="${idx}"' in html
     assert "copyAdCopyText(btn.dataset.copyAdCopy)" in html
     assert "formattedCopyText(sets[index])" in html
