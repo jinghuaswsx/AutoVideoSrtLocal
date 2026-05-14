@@ -117,17 +117,22 @@ def test_does_not_stack_gap_when_final_gap_would_exceed_cap():
 
 def test_hook_protection_skips_large_early_shift():
     base = _scheduled_sentences()
+    base[1]["audio_gap_before"] = 0.0
+    base[1]["audio_start_time"] = 2.0
+    base[1]["audio_end_time"] = 4.0
+    base[2]["audio_start_time"] = 4.25
+    base[2]["audio_end_time"] = 5.0
     sentences, summary = speech_shot_alignment.apply_speech_shot_alignment(
         base,
         shots=[
-            {"start": 0.0, "end": 2.18},
-            {"start": 2.18, "end": 6.0},
+            {"start": 0.0, "end": 2.14},
+            {"start": 2.14, "end": 6.0},
         ],
         scene_cuts=[],
         video_duration=6.0,
     )
 
-    assert sentences[1]["audio_start_time"] == pytest.approx(2.2)
+    assert sentences[1]["audio_start_time"] == pytest.approx(2.0)
     assert summary["shot_anchor_skip_reasons"]["hook_protection"] >= 1
 
 
@@ -338,8 +343,10 @@ def apply_speech_shot_alignment(
         prev_end = _float_value(prev.get("audio_end_time"), 0.0)
         current_start = _float_value(sentence.get("audio_start_time"), 0.0)
         base_gap = max(0.0, _float_value(sentence.get("audio_gap_before"), 0.0))
-        upper = prev_end + hard_final_gap_cap
-        candidates = [cut for cut in anchors if current_start < cut <= upper]
+        candidates = [
+            cut for cut in anchors
+            if current_start < cut <= current_start + hard_final_gap_cap
+        ]
         if not candidates:
             skip_reasons["too_far_from_cut"] += 1
             decisions.append({

@@ -178,15 +178,19 @@ The first implementation can be deterministic and greedy:
    - `prev_end = sentence[i - 1].audio_end_time`
    - `current_start = sentence[i].audio_start_time`
    - `base_compact_gap = sentence[i].audio_gap_before`
-   - candidate cuts in `(current_start, prev_end + hard_final_gap_cap]`
+   - diagnostic candidate cuts in
+     `(current_start, current_start + hard_final_gap_cap]`
    - `anchor_target_gap = cut - prev_end`
    - `anchor_extra_silence = anchor_target_gap - base_compact_gap`
 4. Keep only candidates with:
    - `anchor_extra_silence > 0`;
    - `anchor_target_gap <= hard_final_gap_cap`;
    - `anchor_extra_silence` inside the remaining global extra budget.
-5. Reject candidates that violate hook protection, global budget, or final
-   video duration.
+5. Reject candidates that violate the final gap cap, hook protection, global
+   budget, or final video duration. The diagnostic lookahead is intentionally
+   based on the current start rather than `prev_end` so the card can explain a
+   nearby shot cut as `would_exceed_final_gap_cap` instead of collapsing it into
+   a generic `too_far_from_cut` skip reason.
 6. Sort candidates by:
    - anchor extra silence ascending;
    - absolute post-snap distance to the cut ascending;
