@@ -152,6 +152,120 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
     assert saved["tts_audio_path"] == str(final_audio)
 
 
+def test_omni_tts_step_applies_speech_shot_alignment_before_rebuild(tmp_path, monkeypatch):
+    task_id = "omni-tts-shot-aligns-before-rebuild"
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=None)
+    initial_sentences = [
+        {
+            "asr_index": 0,
+            "text": "First line.",
+            "est_chars": 10,
+            "start_time": 0.0,
+            "end_time": 2.0,
+            "target_duration": 2.0,
+            "target_chars_range": [8, 12],
+        },
+        {
+            "asr_index": 1,
+            "text": "Second line.",
+            "est_chars": 12,
+            "start_time": 2.2,
+            "end_time": 4.2,
+            "target_duration": 2.0,
+            "target_chars_range": [8, 12],
+        },
+    ]
+    store.update(
+        task_id,
+        type="omni_translate",
+        pipeline_version="av",
+        target_lang="de",
+        selected_voice_id="voice-1",
+        selected_voice_name="Voice One",
+        video_duration=6.0,
+        plugin_config={
+            "shot_decompose": True,
+            "translate_algo": "shot_char_limit",
+            "tts_strategy": "sentence_reconcile",
+            "subtitle": "sentence_units",
+        },
+        shots=[
+            {"index": 1, "start": 0.0, "end": 2.28, "description": "a"},
+            {"index": 2, "start": 2.28, "end": 6.0, "description": "b"},
+        ],
+        av_translate_inputs={
+            "target_language": "de",
+            "target_language_name": "German",
+            "target_market": "DE",
+            "sync_granularity": "sentence",
+            "product_overrides": {},
+        },
+        normalized_script_segments=[
+            {"index": 0, "text": "First line.", "start_time": 0.0, "end_time": 2.0},
+            {"index": 1, "text": "Second line.", "start_time": 2.2, "end_time": 4.2},
+        ],
+        variants={"av": {"sentences": initial_sentences, "source_normalization": {"summary": {}}}},
+    )
+
+    final_audio = tmp_path / "tts_full.av.mp3"
+    final_audio.write_bytes(b"audio")
+    rebuilt_segments = []
+
+    monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr(
+        "pipeline.tts.generate_full_audio",
+        lambda segments, *args, **kwargs: {
+            "full_audio_path": str(tmp_path / "first.mp3"),
+            "segments": [
+                {**segments[0], "tts_path": str(tmp_path / "seg_0000.mp3"), "tts_duration": 2.0},
+                {**segments[1], "tts_path": str(tmp_path / "seg_0001.mp3"), "tts_duration": 2.0},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.validate_tts_script_language_or_raise",
+        lambda **kwargs: {"is_target_language": True},
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.reconcile_duration",
+        lambda **kwargs: [
+            {
+                **kwargs["av_output"]["sentences"][0],
+                "tts_path": str(tmp_path / "seg_0000.rewrite.mp3"),
+                "tts_duration": 2.0,
+                "duration_ratio": 1.0,
+                "status": "ok",
+            },
+            {
+                **kwargs["av_output"]["sentences"][1],
+                "tts_path": str(tmp_path / "seg_0001.rewrite.mp3"),
+                "tts_duration": 2.0,
+                "duration_ratio": 1.0,
+                "status": "ok",
+            },
+        ],
+    )
+
+    def fake_rebuild(task_dir, segments, variant="av"):
+        rebuilt_segments.extend([dict(segment) for segment in segments])
+        return str(final_audio)
+
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile._rebuild_tts_full_audio_from_segments",
+        fake_rebuild,
+    )
+
+    _runner()._step_tts(task_id, str(tmp_path))
+
+    saved = store.get(task_id)
+    summary = saved["speech_shot_alignment"]
+    assert summary["speech_shot_alignment_status"] == "optimized"
+    assert summary["shot_anchor_extra_silence_total"] == pytest.approx(0.08)
+    assert saved["final_compose_summary"]["speech_shot_alignment_status"] == "optimized"
+    assert rebuilt_segments[1]["audio_gap_before"] == pytest.approx(0.28)
+    assert rebuilt_segments[1]["audio_start_time"] == pytest.approx(2.28)
+
+
 def test_tts_step_records_fallback_final_compose_summary(tmp_path, monkeypatch):
     task_id = "sentence-translate-tts-fallback-summary"
     store.create(task_id, "video.mp4", str(tmp_path), user_id=None)

@@ -25,6 +25,8 @@ from appcore.tts_language_guard import (
     TtsLanguageValidationError,
     validate_tts_script_language_or_raise,
 )
+from pipeline.audio_stitch import apply_compact_audio_schedule
+from pipeline.speech_shot_alignment import apply_speech_shot_alignment
 
 from .base import TtsConvergenceStrategy
 
@@ -110,6 +112,45 @@ def _copy_clip_metadata_to_sentences(sentences: list[dict], segments: list[dict]
         for field in clip_fields:
             if field in segment:
                 sentence[field] = segment[field]
+
+
+def _should_run_speech_shot_alignment(task: dict) -> bool:
+    cfg = task.get("plugin_config") if isinstance(task.get("plugin_config"), dict) else {}
+    return (
+        task.get("type") == "omni_translate"
+        and bool(cfg.get("shot_decompose"))
+        and cfg.get("tts_strategy") == "sentence_reconcile"
+    )
+
+
+def _default_speech_shot_alignment_summary(
+    final_sentences: list[dict],
+    *,
+    status: str = "skipped_not_omni_sentence_reconcile",
+) -> dict:
+    return {
+        "speech_shot_alignment_enabled": False,
+        "speech_shot_alignment_applied": False,
+        "speech_shot_alignment_status": status,
+        "speech_shot_alignment_analyzed_boundaries": max(0, len(final_sentences or []) - 1),
+        "speech_shot_alignment_decisions": [],
+        "shot_anchor_cut_count": 0,
+        "shot_anchor_extra_silence_total": 0.0,
+        "shot_anchor_aligned_boundary_count": 0,
+        "shot_anchor_extra_silence_budget": 0.0,
+        "shot_anchor_skip_reasons": {},
+        "speech_shot_alignment_max_final_gap": round(
+            max(
+                (
+                    _float_value(sentence.get("audio_gap_before"), 0.0)
+                    for sentence in (final_sentences or [])
+                    if isinstance(sentence, dict)
+                ),
+                default=0.0,
+            ),
+            3,
+        ),
+    }
 
 
 def _build_final_compose_summary(
@@ -415,8 +456,19 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 project_id=task_id,
                 on_progress=_on_reconcile_progress,
             )
-            from pipeline.audio_stitch import apply_compact_audio_schedule
             final_sentences = apply_compact_audio_schedule(final_sentences, max_gap=0.25)
+            alignment_summary = _default_speech_shot_alignment_summary(final_sentences)
+            task_for_alignment = task_state.get(task_id) or task
+            if _should_run_speech_shot_alignment(task_for_alignment):
+                final_sentences, alignment_summary = apply_speech_shot_alignment(
+                    final_sentences,
+                    shots=list(task_for_alignment.get("shots") or []),
+                    scene_cuts=list(task_for_alignment.get("scene_cuts") or []),
+                    video_duration=(
+                        task_for_alignment.get("video_duration")
+                        or task_for_alignment.get("original_video_duration")
+                    ),
+                )
             for sentence in final_sentences:
                 if isinstance(sentence, dict):
                     tts_debug_calls.extend(sentence.pop("_llm_debug_calls", []))
@@ -439,6 +491,13 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 audio_path=final_full_audio_path,
                 max_compact_gap=0.25,
             )
+            final_compose_summary.update(alignment_summary)
+            if alignment_summary.get("speech_shot_alignment_applied"):
+                final_compose_summary.setdefault("notes", []).append(
+                    "语音镜头对齐：优化 "
+                    f"{alignment_summary.get('shot_anchor_aligned_boundary_count', 0)} 个断点，"
+                    f"额外静音 {alignment_summary.get('shot_anchor_extra_silence_total', 0):.2f}s。"
+                )
             av_debug["final_compose_summary"] = final_compose_summary
             final_tts_output = {
                 "full_audio_path": final_full_audio_path,
@@ -459,6 +518,7 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                     "audio_timeline_mode": "compact_asr_primary",
                     "max_compact_gap": 0.25,
                     "final_compose_summary": final_compose_summary,
+                    "speech_shot_alignment": alignment_summary,
                 }
             )
             variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_full_audio_path
@@ -473,6 +533,7 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 localized_translation=final_localized_translation,
                 tts_duration_status=final_compose_summary["status"],
                 final_compose_summary=final_compose_summary,
+                speech_shot_alignment=alignment_summary,
                 av_debug=av_debug,
                 audio_timeline_mode="compact_asr_primary",
                 max_compact_gap=0.25,
