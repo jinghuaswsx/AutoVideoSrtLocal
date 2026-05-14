@@ -1346,7 +1346,7 @@ git commit -m "feat(omni): render loudness profile controls" -m "Docs-anchor: do
 - Modify: `web/templates/_separation_card.html`
 - Modify: `tests/test_translate_detail_shell_templates.py`
 
-- [ ] **Step 1: Write failing static UI assertions**
+- [x] **Step 1: Write failing static UI assertions**
 
 Extend `test_loudness_card_exposes_profile_controls_and_actual_algorithm` in `tests/test_translate_detail_shell_templates.py` with these assertions:
 
@@ -1360,7 +1360,7 @@ Extend `test_loudness_card_exposes_profile_controls_and_actual_algorithm` in `te
     assert "overflow-wrap: anywhere" in separation
 ```
 
-- [ ] **Step 2: Run the focused static UI test and verify failure**
+- [x] **Step 2: Run the focused static UI test and verify failure**
 
 Run:
 
@@ -1370,7 +1370,7 @@ pytest tests/test_translate_detail_shell_templates.py::test_loudness_card_expose
 
 Expected: failure on missing `当前运行逻辑：` or the enlarged button CSS strings.
 
-- [ ] **Step 3: Add applied profile label helper**
+- [x] **Step 3: Add applied profile label helper**
 
 In `web/templates/_separation_card.html`, add a helper that reads `tl.profile` and `tl.manual_boost_pct` from the latest `tts_loudness` summary:
 
@@ -1381,7 +1381,7 @@ In `web/templates/_separation_card.html`, add a helper that reads `tl.profile` a
   }
 ```
 
-- [ ] **Step 4: Render the current runtime logic line**
+- [x] **Step 4: Render the current runtime logic line**
 
 In `renderLoudnessProfileControls(tl)`, include this line before the selected-status hint:
 
@@ -1389,7 +1389,7 @@ In `renderLoudnessProfileControls(tl)`, include this line before the selected-st
       '<div class="loudness-profile-runtime">当前运行逻辑：' + escapeHtml(appliedLoudnessProfileLabel(tl)) + '</div>' +
 ```
 
-- [ ] **Step 5: Enlarge and harden the pill CSS**
+- [x] **Step 5: Enlarge and harden the pill CSS**
 
 Update `#preview-loudness_match .loudness-profile-pill` so the controls are larger and text stays visible:
 
@@ -1404,7 +1404,7 @@ Update `#preview-loudness_match .loudness-profile-pill` so the controls are larg
     text-align: center;
 ```
 
-- [ ] **Step 6: Run focused test and commit**
+- [x] **Step 6: Run focused test and commit**
 
 Run:
 

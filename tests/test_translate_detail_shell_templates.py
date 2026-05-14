@@ -188,6 +188,13 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     assert "A_after_B_failure" in separation
     assert "已选择，点击“从此步继续”后生效" in separation
     assert "当前结果已按此方案生成" in separation
+    assert "当前运行逻辑：" in separation
+    assert "appliedLoudnessProfileLabel" in separation
+    assert "min-width: 104px" in separation
+    assert "min-height: 56px" in separation
+    assert "font-size: 16px" in separation
+    assert "white-space: normal" in separation
+    assert "overflow-wrap: anywhere" in separation
     assert "+10%" in separation
     assert "+100%" in separation
     assert "loudnessStepStatus" in separation
