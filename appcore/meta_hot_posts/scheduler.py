@@ -8,7 +8,14 @@ from typing import Any, Callable
 
 from appcore import scheduled_tasks
 from appcore.db import query_one
-from appcore.meta_hot_posts import europe_fit, message_translation, product_analysis, store, video_localization
+from appcore.meta_hot_posts import (
+    europe_fit,
+    message_translation,
+    product_analysis,
+    store,
+    video_copyability,
+    video_localization,
+)
 from tools.meta_hot_posts.client import MetaHotPostsClient
 
 log = logging.getLogger(__name__)
@@ -18,8 +25,10 @@ ANALYSIS_TASK_CODE = "meta_hot_posts_analysis_tick"
 TRANSLATION_TASK_CODE = "meta_hot_posts_translate_messages_tick"
 VIDEO_LOCALIZATION_TASK_CODE = "meta_hot_posts_video_localization_tick"
 EUROPE_FIT_TASK_CODE = "meta_hot_posts_europe_fit_tick"
+VIDEO_COPYABILITY_TASK_CODE = "meta_hot_posts_video_copyability_tick"
 ANALYSIS_STALE_AFTER_SECONDS = 3600
 MESSAGE_TRANSLATION_STALE_AFTER_SECONDS = 3600
+VIDEO_COPYABILITY_STALE_AFTER_SECONDS = 3600
 SCHEDULED_ANALYSIS_LIMIT = 30
 SCHEDULED_ANALYSIS_DELAY_SECONDS = 20
 SCHEDULED_TRANSLATION_LIMIT = 50
@@ -28,6 +37,7 @@ SCHEDULED_VIDEO_LOCALIZATION_LIMIT = 30
 SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS = 30
 SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS = 5
 SCHEDULED_EUROPE_FIT_LIMIT = 30
+SCHEDULED_VIDEO_COPYABILITY_LIMIT = 1
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -541,6 +551,43 @@ def _guard_video_localization_singleton() -> dict[str, Any]:
     }
 
 
+def _guard_video_copyability_singleton(
+    *,
+    stale_after_seconds: int = VIDEO_COPYABILITY_STALE_AFTER_SECONDS,
+) -> dict[str, Any]:
+    running = scheduled_tasks.latest_running_run(VIDEO_COPYABILITY_TASK_CODE)
+    if not running:
+        return {}
+    age_seconds = _running_age_seconds(running)
+    running_id = int(running["id"])
+    if age_seconds < int(stale_after_seconds):
+        return {
+            "skipped": True,
+            "reason": "previous_run_still_running",
+            "running_run_id": running_id,
+            "running_started_at": running.get("started_at"),
+            "running_age_seconds": age_seconds,
+        }
+    reset_count = store.reset_stale_running_video_copyability_analyses(
+        older_than_seconds=int(stale_after_seconds),
+    )
+    scheduled_tasks.finish_run(
+        running_id,
+        status="failed",
+        summary={
+            "stale_run_replaced": running_id,
+            "running_age_seconds": age_seconds,
+            "stale_video_copyability_reset": reset_count,
+        },
+        error_message=f"running video copyability analysis exceeded {int(stale_after_seconds)}s; superseded by a new run",
+    )
+    return {
+        "stale_run_replaced": running_id,
+        "running_age_seconds": age_seconds,
+        "stale_video_copyability_reset": reset_count,
+    }
+
+
 def analysis_tick_once(
     *,
     limit: int = SCHEDULED_ANALYSIS_LIMIT,
@@ -660,7 +707,6 @@ def video_localization_startup_tick_once(
         takeover_running=True,
     )
 
-
 def _is_current_europe_fit_run(run_id: int | None) -> bool:
     if not run_id:
         return True
@@ -756,6 +802,36 @@ def europe_fit_tick_once(
     return summary
 
 
+def video_copyability_tick_once(
+    *,
+    limit: int = SCHEDULED_VIDEO_COPYABILITY_LIMIT,
+    user_id: int | None = None,
+) -> dict[str, Any]:
+    guard_summary = _guard_video_copyability_singleton()
+    if guard_summary.get("skipped"):
+        return guard_summary
+    run_id = None
+    try:
+        run_id = scheduled_tasks.start_run(VIDEO_COPYABILITY_TASK_CODE)
+    except Exception:
+        log.debug("failed to start meta hot posts video copyability run", exc_info=True)
+    try:
+        summary = video_copyability.run_pending_video_copyability_analyses(
+            limit=limit,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        if run_id:
+            scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])
+        raise
+    summary.update(guard_summary)
+    if run_id:
+        status = "success" if summary.get("failed", 0) == 0 else "failed"
+        error = None if status == "success" else f"{summary['failed']} video copyability item(s) failed"
+        scheduled_tasks.finish_run(run_id, status=status, summary=summary, error_message=error)
+    return summary
+
+
 def register(scheduler) -> None:
     scheduled_tasks.add_controlled_job(
         scheduler,
@@ -819,4 +895,15 @@ def register(scheduler) -> None:
         replace_existing=True,
         misfire_grace_time=60,
         run_date=_now() + timedelta(seconds=SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS),
+    )
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        VIDEO_COPYABILITY_TASK_CODE,
+        video_copyability_tick_once,
+        "interval",
+        minutes=10,
+        id=VIDEO_COPYABILITY_TASK_CODE,
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=60,
     )

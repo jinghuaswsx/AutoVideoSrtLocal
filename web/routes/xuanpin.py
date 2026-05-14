@@ -253,7 +253,6 @@ def api_meta_hot_posts_localize_videos():
     result = _meta_hot_posts().build_localize_videos_response(payload)
     return jsonify(result.payload), result.status_code
 
-
 @bp.route("/api/meta-hot-posts/europe-fit", methods=["POST"])
 @login_required
 def api_meta_hot_posts_europe_fit():
@@ -262,6 +261,26 @@ def api_meta_hot_posts_europe_fit():
     payload = request.get_json(silent=True) or {}
     payload["user_id"] = getattr(current_user, "id", None)
     result = _meta_hot_posts().build_europe_fit_response(payload)
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/analyze-videos", methods=["POST"])
+@login_required
+def api_meta_hot_posts_analyze_videos():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    payload["user_id"] = getattr(current_user, "id", None)
+    result = _meta_hot_posts().build_video_copyability_response(payload)
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/video-copyability/top50", methods=["GET"])
+@login_required
+def api_meta_hot_posts_video_copyability_top50():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_video_copyability_top50_response(request.args)
     return jsonify(result.payload), result.status_code
 
 

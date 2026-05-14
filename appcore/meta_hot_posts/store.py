@@ -17,6 +17,15 @@ def _json(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False, default=str)
 
 
+def _score(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def product_url_hash(product_url: str) -> str:
     return hashlib.sha256(str(product_url or "").strip().encode("utf-8")).hexdigest()
 
@@ -465,6 +474,235 @@ def get_hot_post_local_video(
         (int(post_id),),
     )
     return rows[0] if rows else None
+
+def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> int:
+    return execute_fn(
+        """
+        INSERT INTO meta_hot_post_video_copyability_analyses (
+          hot_post_id, wedev_post_id, product_url, local_video_path, status
+        )
+        SELECT p.id, p.wedev_post_id, p.product_url, p.local_video_path, 'pending'
+        FROM meta_hot_posts p
+        WHERE p.local_video_status = 'downloaded'
+          AND p.local_video_path IS NOT NULL
+          AND TRIM(p.local_video_path) <> ''
+          AND p.product_url IS NOT NULL
+          AND TRIM(p.product_url) <> ''
+        ON DUPLICATE KEY UPDATE
+          wedev_post_id=VALUES(wedev_post_id),
+          product_url=VALUES(product_url),
+          local_video_path=VALUES(local_video_path)
+        """,
+        (),
+    )
+
+
+def next_pending_video_copyability_analyses(
+    *,
+    limit: int = 1,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(100, int(limit)))
+    return query_fn(
+        """
+        SELECT va.id AS analysis_id,
+               va.hot_post_id,
+               va.wedev_post_id,
+               va.product_url,
+               va.local_video_path,
+               va.compressed_video_path,
+               va.attempts,
+               p.post_url,
+               p.ad_library_url,
+               p.video_url,
+               p.page_id,
+               p.post_id,
+               p.creation_time,
+               p.last_synced_at,
+               p.latest_likes,
+               p.latest_comments,
+               p.latest_shares,
+               p.sync_period_likes,
+               p.sync_period_hours,
+               p.message_html,
+               p.message_zh_html,
+               pa.product_title,
+               pa.product_main_image_url,
+               pa.price_min,
+               pa.price_max,
+               pa.currency,
+               pa.category_l1,
+               pa.category_confidence,
+               pa.category_reason
+        FROM meta_hot_post_video_copyability_analyses va
+        JOIN meta_hot_posts p ON p.id = va.hot_post_id
+        LEFT JOIN meta_hot_post_product_analyses pa ON pa.product_url_hash = p.product_url_hash
+        WHERE va.status IN ('pending', 'failed')
+          AND va.attempts < %s
+          AND p.local_video_status = 'downloaded'
+          AND p.local_video_path IS NOT NULL
+          AND TRIM(p.local_video_path) <> ''
+          AND p.product_url IS NOT NULL
+          AND TRIM(p.product_url) <> ''
+        ORDER BY va.updated_at ASC,
+                 COALESCE(p.sync_period_likes, 0) DESC,
+                 p.creation_time DESC,
+                 va.id ASC
+        LIMIT %s
+        """,
+        (int(max_attempts), safe_limit),
+    )
+
+
+def mark_video_copyability_running(
+    analysis_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET status='running',
+            attempts=attempts + 1,
+            last_error=NULL
+        WHERE id=%s
+        """,
+        (int(analysis_id),),
+    )
+
+
+def finish_video_copyability_analysis(
+    analysis_id: int,
+    *,
+    result: Mapping[str, Any] | None = None,
+    error_message: str | None = None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    payload = dict(result or {})
+    status = "failed" if error_message else "done"
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET status=%s,
+            last_error=%s,
+            overall_score=%s,
+            copyability_score=%s,
+            meta_us_ad_fit_score=%s,
+            product_fit_score=%s,
+            compliance_risk_score=%s,
+            recommendation=%s,
+            summary=%s,
+            llm_provider=%s,
+            llm_model=%s,
+            compressed_video_path=%s,
+            analysis_json=%s,
+            analyzed_at=CASE WHEN %s = 'done' THEN NOW() ELSE analyzed_at END
+        WHERE id=%s
+        """,
+        (
+            status,
+            str(error_message)[:1000] if error_message else None,
+            _score(payload.get("overall_score")),
+            _score(payload.get("copyability_score")),
+            _score(payload.get("meta_us_ad_fit_score")),
+            _score(payload.get("product_fit_score")),
+            _score(payload.get("compliance_risk_score")),
+            str(payload.get("recommendation") or "")[:32] or None,
+            str(payload.get("summary") or "")[:4000] or None,
+            str(payload.get("provider") or "")[:64] or None,
+            str(payload.get("model") or "")[:128] or None,
+            str(payload.get("compressed_video_path") or "")[:2048] or None,
+            _json(payload),
+            status,
+            int(analysis_id),
+        ),
+    )
+
+
+def reset_stale_running_video_copyability_analyses(
+    *,
+    older_than_seconds: int = 3600,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET status='failed',
+            last_error='video copyability analysis stale running reset'
+        WHERE status='running'
+          AND TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s
+        """,
+        (int(older_than_seconds),),
+    )
+
+
+def list_top_video_copyability_analyses(
+    *,
+    limit: int = 50,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(50, int(limit)))
+    return query_fn(
+        """
+        SELECT va.id AS analysis_id,
+               va.hot_post_id AS id,
+               va.hot_post_id,
+               va.wedev_post_id,
+               va.product_url,
+               va.local_video_path,
+               va.compressed_video_path,
+               va.overall_score,
+               va.copyability_score,
+               va.meta_us_ad_fit_score,
+               va.product_fit_score,
+               va.compliance_risk_score,
+               va.recommendation,
+               va.summary,
+               va.llm_provider,
+               va.llm_model,
+               va.analysis_json,
+               va.analyzed_at,
+               p.post_url,
+               p.ad_library_url,
+               p.video_url,
+               p.image_url,
+               p.page_id,
+               p.post_id,
+               p.creation_time,
+               p.last_synced_at,
+               p.latest_likes,
+               p.latest_comments,
+               p.latest_shares,
+               p.sync_period_likes,
+               p.sync_period_hours,
+               p.copycat,
+               p.local_video_status,
+               p.message_html,
+               p.message_zh_html,
+               pa.status AS analysis_status,
+               pa.product_title,
+               pa.product_main_image_url,
+               pa.price_min,
+               pa.price_max,
+               pa.currency,
+               pa.sku_prices_json,
+               pa.category_l1,
+               pa.category_confidence,
+               pa.category_reason
+        FROM meta_hot_post_video_copyability_analyses va
+        JOIN meta_hot_posts p ON p.id = va.hot_post_id
+        LEFT JOIN meta_hot_post_product_analyses pa ON pa.product_url_hash = p.product_url_hash
+        WHERE va.status = 'done'
+        ORDER BY va.overall_score DESC,
+                 va.copyability_score DESC,
+                 va.meta_us_ad_fit_score DESC,
+                 va.analyzed_at DESC,
+                 va.id DESC
+        LIMIT %s
+        """,
+        (safe_limit,),
+    )
 
 
 def next_pending_europe_fit_materials(

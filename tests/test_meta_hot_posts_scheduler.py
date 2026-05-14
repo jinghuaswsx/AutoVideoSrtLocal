@@ -72,6 +72,7 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_europe_fit
     video_args, video_kwargs = calls[3]
     europe_args, europe_kwargs = calls[4]
     startup_args, startup_kwargs = calls[5]
+    copyability_args, copyability_kwargs = calls[6]
     assert sync_args[1] == "meta_hot_posts_sync_tick"
     assert sync_args[3] == "cron"
     assert sync_kwargs["hour"] == 7
@@ -96,6 +97,52 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_europe_fit
     assert video_kwargs["misfire_grace_time"] == 60
     assert startup_kwargs["id"] == "meta_hot_posts_video_localization_tick_startup"
     assert startup_kwargs["run_date"] == now + timedelta(seconds=5)
+    assert copyability_args[1] == "meta_hot_posts_video_copyability_tick"
+    assert copyability_args[3] == "interval"
+    assert copyability_kwargs["minutes"] == 10
+    assert copyability_kwargs["max_instances"] == 1
+
+
+def test_video_copyability_tick_once_defaults_to_one_video(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: None)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
+
+    def fake_run(*, limit, user_id=None):
+        captured["limit"] = limit
+        captured["user_id"] = user_id
+        return {"queued": 0, "scanned": 0, "done": 0, "failed": 0}
+
+    monkeypatch.setattr(scheduler.video_copyability, "run_pending_video_copyability_analyses", fake_run)
+
+    scheduler.video_copyability_tick_once(user_id=9)
+
+    assert captured["limit"] == 1
+    assert captured["user_id"] == 9
+
+
+def test_video_copyability_tick_once_skips_when_recent_run_is_still_running(monkeypatch):
+    started_at = datetime(2026, 5, 14, 10, 0, 0)
+
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "latest_running_run",
+        lambda task_code: {"id": 33, "started_at": started_at},
+    )
+    monkeypatch.setattr(scheduler, "_now", lambda: started_at + timedelta(minutes=12))
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "start_run",
+        lambda task_code: (_ for _ in ()).throw(AssertionError("new run must not start")),
+    )
+
+    summary = scheduler.video_copyability_tick_once()
+
+    assert summary["skipped"] is True
+    assert summary["reason"] == "previous_run_still_running"
+    assert summary["running_run_id"] == 33
 
 
 def test_video_localization_tick_once_defaults_to_30_seconds(monkeypatch):

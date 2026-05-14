@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -306,22 +306,37 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     },
     "meta_hot_posts_europe_fit_tick": {
         "code": "meta_hot_posts_europe_fit_tick",
-        "name": "Meta 热帖欧洲投放评估",
+        "name": "Meta hot posts Europe fit assessment",
         "description": (
-            "每 10 分钟扫描已有商品链接且本地视频已下载的 Meta 热帖素材，默认每轮最多 30 条；"
-            "把视频按 480p、15fps、600k 码率压缩后，通过 OpenRouter Gemini 3 Flash 判断是否适合"
-            "直接搬运到德国、法国、意大利、西班牙等欧洲 Meta 广告市场。新一轮会接管仍在 running 的旧 run。"
+            "Every 10 minutes, assess up to 30 downloaded Meta hot post videos with product links "
+            "for direct reuse in European Meta ad markets through OpenRouter Gemini 3 Flash. "
+            "Videos are compressed to 480p / 15fps / 600k, and a new run takes over an old running run. "
             "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-europe-fit-design.md"
         ),
-        "schedule": "每 10 分钟",
+        "schedule": "Every 10 minutes",
         "source_type": "apscheduler",
-        "source_label": "Web 进程 APScheduler",
+        "source_label": "Web process APScheduler",
         "source_ref": "meta_hot_posts_europe_fit_tick",
         "runner": "appcore.meta_hot_posts.scheduler.europe_fit_tick_once",
-        "deployment": "Web 服务启动时注册",
+        "deployment": "Registered on Web service startup",
         "log_table": "scheduled_task_runs",
     },
-    "tos_backup": {
+    "meta_hot_posts_video_copyability_tick": {
+        "code": "meta_hot_posts_video_copyability_tick",
+        "name": "Meta hot posts video copyability analysis",
+        "description": (
+            "Every 10 minutes, analyze one localized Meta hot post video for direct Meta ad reuse "
+            "after compression to 480p / 15fps / 600k. "
+            "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-video-copyability-analysis-design.md"
+        ),
+        "schedule": "Every 10 minutes",
+        "source_type": "apscheduler",
+        "source_label": "Web process APScheduler",
+        "source_ref": "meta_hot_posts_video_copyability_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.video_copyability_tick_once",
+        "deployment": "Registered on Web service startup",
+        "log_table": "scheduled_task_runs",
+    },    "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",
         "description": "每天凌晨同步受保护文件到 autovideosrtlocal 桶，并保留 7 天 MySQL dump。",
@@ -727,6 +742,14 @@ def is_task_enabled(task_code: str) -> bool:
     return bool(_with_control_state(task, row).get("control_enabled"))
 
 
+def _global_scheduled_tasks_enabled() -> bool:
+    try:
+        import config
+    except Exception:
+        return True
+    return bool(getattr(config, "SCHEDULED_TASKS_ENABLED", True))
+
+
 def _record_control_state(
     task_code: str,
     *,
@@ -895,6 +918,13 @@ def apply_scheduler_controls(scheduler: Any) -> None:
 
 
 def run_if_enabled(task_code: str, func, *args, **kwargs):
+    if not _global_scheduled_tasks_enabled():
+        log.info("scheduled task skipped because global scheduling is disabled: %s", task_code)
+        return {
+            "skipped": True,
+            "reason": "scheduled tasks globally disabled",
+            "task_code": task_code,
+        }
     if not is_task_enabled(task_code):
         log.info("scheduled task skipped because it is disabled: %s", task_code)
         return {

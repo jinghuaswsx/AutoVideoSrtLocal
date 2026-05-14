@@ -3,10 +3,16 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+import config
+
 log = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
 _atexit_registered = False
+
+
+def scheduled_tasks_enabled() -> bool:
+    return bool(getattr(config, "SCHEDULED_TASKS_ENABLED", True))
 
 
 def get_scheduler() -> BackgroundScheduler:
@@ -71,3 +77,18 @@ def register_atexit_shutdown() -> None:
         return
     atexit.register(shutdown_scheduler)
     _atexit_registered = True
+
+
+def start_scheduler_if_enabled(
+    *,
+    get_scheduler_fn=get_scheduler,
+    register_atexit_shutdown_fn=register_atexit_shutdown,
+) -> BackgroundScheduler | None:
+    if not scheduled_tasks_enabled():
+        log.info("[scheduler] disabled by SCHEDULED_TASKS_ENABLED=0")
+        return None
+
+    scheduler = get_scheduler_fn()
+    scheduler.start()
+    register_atexit_shutdown_fn()
+    return scheduler

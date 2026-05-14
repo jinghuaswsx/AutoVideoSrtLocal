@@ -331,6 +331,13 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert video_task["log_table"] == "scheduled_task_runs"
     assert "2026-05-14-meta-hot-posts-video-localization-design.md" in video_task["description"]
 
+    copyability_task = definitions["meta_hot_posts_video_copyability_tick"]
+    assert copyability_task["schedule"]
+    assert copyability_task["source_type"] == "apscheduler"
+    assert copyability_task["runner"] == "appcore.meta_hot_posts.scheduler.video_copyability_tick_once"
+    assert copyability_task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-14-meta-hot-posts-video-copyability-analysis-design.md" in copyability_task["description"]
+
     translation_task = definitions["meta_hot_posts_translate_messages_tick"]
     assert translation_task["schedule"] == "每 10 分钟"
     assert translation_task["source_type"] == "apscheduler"
@@ -340,11 +347,11 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert "中文" in translation_task["description"]
 
     europe_task = definitions["meta_hot_posts_europe_fit_tick"]
-    assert europe_task["schedule"] == "每 10 分钟"
+    assert europe_task["schedule"] == "Every 10 minutes"
     assert europe_task["source_type"] == "apscheduler"
     assert europe_task["runner"] == "appcore.meta_hot_posts.scheduler.europe_fit_tick_once"
     assert europe_task["log_table"] == "scheduled_task_runs"
-    assert "30 条" in europe_task["description"]
+    assert "30" in europe_task["description"]
     assert "OpenRouter" in europe_task["description"]
     assert "2026-05-14-meta-hot-posts-europe-fit-design.md" in europe_task["description"]
 

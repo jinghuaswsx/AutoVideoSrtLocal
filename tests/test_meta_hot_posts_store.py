@@ -1,4 +1,4 @@
-from appcore.meta_hot_posts import store
+﻿from appcore.meta_hot_posts import store
 
 
 def test_list_hot_posts_applies_category_price_interaction_comment_and_create_filters():
@@ -318,6 +318,108 @@ def test_get_hot_post_local_video_returns_cache_row():
     assert params == (5,)
 
 
+def test_ensure_video_copyability_candidates_inserts_downloaded_product_videos():
+    calls = []
+
+    result = store.ensure_video_copyability_candidates(
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 6,
+    )
+
+    sql, params = calls[0]
+    assert result == 6
+    assert "INSERT INTO meta_hot_post_video_copyability_analyses" in sql
+    assert "FROM meta_hot_posts p" in sql
+    assert "p.local_video_status = 'downloaded'" in sql
+    assert "p.product_url IS NOT NULL" in sql
+    assert "ON DUPLICATE KEY UPDATE" in sql
+    assert params == ()
+
+
+def test_next_pending_video_copyability_analyses_selects_unfinished_downloaded_rows():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"analysis_id": 7, "hot_post_id": 9, "product_url": "https://example.com/p"}]
+
+    rows = store.next_pending_video_copyability_analyses(limit=500, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["analysis_id"] == 7
+    assert "meta_hot_post_video_copyability_analyses va" in sql
+    assert "JOIN meta_hot_posts p ON p.id = va.hot_post_id" in sql
+    assert "LEFT JOIN meta_hot_post_product_analyses pa" in sql
+    assert "va.status IN ('pending', 'failed')" in sql
+    assert "p.local_video_status = 'downloaded'" in sql
+    assert "va.attempts < %s" in sql
+    assert params == (3, 100)
+
+
+def test_video_copyability_status_transitions_are_recorded():
+    calls = []
+
+    store.mark_video_copyability_running(
+        77,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_video_copyability_analysis(
+        77,
+        result={
+            "overall_score": 91,
+            "copyability_score": 94,
+            "meta_us_ad_fit_score": 89,
+            "product_fit_score": 88,
+            "compliance_risk_score": 12,
+            "recommendation": "copy",
+            "summary": "Strong hook.",
+        },
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_video_copyability_analysis(
+        78,
+        result={},
+        error_message="provider failed",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    running_sql, running_params = calls[0]
+    success_sql, success_params = calls[1]
+    failure_sql, failure_params = calls[2]
+    assert "UPDATE meta_hot_post_video_copyability_analyses" in running_sql
+    assert "status='running'" in running_sql
+    assert "attempts=attempts + 1" in running_sql
+    assert running_params == (77,)
+    assert "status=%s" in success_sql
+    assert "overall_score=%s" in success_sql
+    assert "analysis_json=%s" in success_sql
+    assert "analyzed_at=CASE WHEN %s = 'done' THEN NOW() ELSE analyzed_at END" in success_sql
+    assert success_params[0] == "done"
+    assert success_params[2:7] == (91, 94, 89, 88, 12)
+    assert success_params[-1] == 77
+    assert "status=%s" in failure_sql
+    assert failure_params[0] == "failed"
+    assert failure_params[1] == "provider failed"
+
+
+def test_list_top_video_copyability_analyses_orders_best_50():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"analysis_id": 1, "overall_score": 99, "product_url": "https://example.com/p"}]
+
+    rows = store.list_top_video_copyability_analyses(limit=200, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["overall_score"] == 99
+    assert "WHERE va.status = 'done'" in sql
+    assert "ORDER BY va.overall_score DESC" in sql
+    assert "va.copyability_score DESC" in sql
+    assert "va.meta_us_ad_fit_score DESC" in sql
+    assert params == (50,)
+
+
 def test_next_pending_europe_fit_materials_selects_downloaded_video_rows():
     calls = []
 
@@ -433,7 +535,6 @@ def test_list_top_europe_fit_materials_orders_by_score():
     assert "e.status = 'done'" in sql
     assert "ORDER BY e.suitability_score DESC" in sql
     assert params == (50,)
-
 
 def test_next_pending_product_analyses_selects_unfinished_rows():
     calls = []

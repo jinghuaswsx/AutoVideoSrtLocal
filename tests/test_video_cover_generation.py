@@ -30,6 +30,45 @@ class _FakeProduct:
     currency = "USD"
 
 
+def test_normalize_product_image_jpg_outputs_400_square_jpeg():
+    from appcore.video_cover_generation import normalize_product_image_jpg
+
+    payload = normalize_product_image_jpg(_png_bytes(size=(900, 240), color=(20, 120, 180)))
+
+    assert payload.startswith(b"\xff\xd8")
+    with Image.open(BytesIO(payload)) as img:
+        assert img.format == "JPEG"
+        assert img.size == (400, 400)
+
+
+def _make_superadmin_client_no_db(monkeypatch):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"],
+    )
+    from web.app import create_app
+
+    fake_user = {
+        "id": 1,
+        "username": "admin",
+        "role": "superadmin",
+        "is_active": 1,
+    }
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 1 else None)
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "1"
+        session["_fresh"] = True
+    return client
+
+
 def test_generate_video_covers_uses_product_and_video_references(tmp_path, monkeypatch):
     from appcore import local_media_storage
     from appcore.video_cover_generation import generate_video_covers
@@ -53,7 +92,11 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     def fake_analysis(use_case_code: str, **kwargs):
         analysis_calls.append({"use_case_code": use_case_code, "kwargs": kwargs})
         if use_case_code == "video_cover.video_analysis":
-            assert Path(kwargs["media"]).is_file()
+            media = kwargs["media"]
+            if isinstance(media, list):
+                assert all(Path(item).is_file() for item in media)
+            else:
+                assert Path(media).is_file()
             return {"text": "video_text: fresh smoothie\ncover_reference: hand using blender"}
         if use_case_code == "video_cover.product_analysis":
             media = kwargs["media"]
@@ -136,6 +179,69 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert ad_copy_calls[0]["kwargs"]["provider_override"] == "openrouter"
     assert ad_copy_calls[0]["kwargs"]["model_override"] == "google/gemini-3-flash-preview"
     assert "当前日期：" in ad_copy_calls[0]["kwargs"]["messages"][1]["content"]
+
+
+def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
+    from appcore import local_media_storage
+    from appcore.video_cover_generation import generate_video_covers
+
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake video")
+    calls = []
+    copy_payload = {
+        "ad_copy_sets": [
+            {
+                "id": idx,
+                "angle": f"角度 {idx}",
+                "english": {
+                    "headline": f"Hook {idx}",
+                    "body_text": f"Body copy {idx}",
+                    "cta": "Shop Now",
+                },
+                "chinese_translation": {
+                    "headline": f"钩子 {idx}",
+                    "body_text": f"正文 {idx}",
+                    "cta": "立即购买",
+                },
+                "usage_note": f"画面建议 {idx}",
+            }
+            for idx in range(1, 6)
+        ]
+    }
+
+    def fake_thumbnail(video_path_arg: str, output_dir: str, scale=None):
+        return str(_jpg_file(Path(output_dir) / "thumbnail.jpg"))
+
+    def fake_generate_image(prompt: str, *, source_image: bytes, source_mime: str, **kwargs):
+        calls.append(prompt)
+        return _png_bytes(size=(900, 900), color=(30, 160, 210)), "image/png"
+
+    result = generate_video_covers(
+        product_url="https://shop.example/products/blender",
+        video_path=str(video_path),
+        video_filename="demo.mp4",
+        user_id=7,
+        task_id="cover-task-count",
+        product_fetch_fn=lambda url: _FakeProduct(),
+        image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
+        thumbnail_extractor=fake_thumbnail,
+        image_generate_fn=fake_generate_image,
+        product_analysis_text="<产品分析报告>demo</产品分析报告>",
+        video_analysis_text="<视频素材分析>demo</视频素材分析>",
+        ad_copy_payload=copy_payload,
+        image_count=3,
+    )
+
+    assert len(calls) == 3
+    assert [cover["index"] for cover in result["covers"]] == [1, 2, 3]
+    assert [cover["source_ad_copy_id"] for cover in result["covers"]] == [1, 2, 3]
+    assert [cover["hook"] for cover in result["covers"]] == ["Hook 1", "Hook 2", "Hook 3"]
+    assert [cover["copy"]["english"]["body_text"] for cover in result["covers"]] == [
+        "Body copy 1",
+        "Body copy 2",
+        "Body copy 3",
+    ]
+    assert all(local_media_storage.exists(cover["object_key"]) for cover in result["covers"])
 
 
 def test_resolve_video_cover_model_options_matches_requested_mappings():
@@ -415,13 +521,114 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert 'id="videoCoverPreview"' in html
     assert 'id="previewClear"' in html
     assert "拖入视频" in html
+    assert 'data-image-count="1"' in html
+    assert 'data-image-count="2"' in html
+    assert 'data-image-count="3"' in html
+    assert 'data-image-count="4"' in html
+    assert 'name="image_count"' in html
+    assert 'value="2"' in html
+    assert "默认配置" not in html
     assert calls == [{"user_id": 1, "is_admin": True}]
+
+
+def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
+    from web.routes import video_cover
+
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "list_projects",
+        lambda *, user_id, is_admin: [],
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_settings,
+        "get_model_defaults",
+        lambda: {
+            "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
+            "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "local", "model_id": "gpt-image-2"},
+        },
+    )
+    client = _make_superadmin_client_no_db(monkeypatch)
+
+    resp = client.get("/video-cover")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "默认配置" in html
+    assert 'id="vcShowDefaultConfig"' in html
+    for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
+        assert f'name="{step}_provider"' in html
+        assert f'name="{step}_model_id"' in html
+
+
+def test_video_cover_default_config_requires_superadmin(authed_client_no_db):
+    get_resp = authed_client_no_db.get("/video-cover/api/default-config")
+    post_resp = authed_client_no_db.post(
+        "/video-cover/api/default-config",
+        json={"steps": {"video_analysis": {"provider": "openrouter", "model_id": "custom"}}},
+    )
+
+    assert get_resp.status_code == 403
+    assert post_resp.status_code == 403
+
+
+def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
+    from web.routes import video_cover
+
+    saved = {}
+    defaults = {
+        "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
+        "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+        "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+        "cover_generation": {"provider": "local", "model_id": "gpt-image-2"},
+    }
+
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: defaults)
+    monkeypatch.setattr(
+        video_cover.video_cover_settings,
+        "save_model_defaults",
+        lambda payload: saved.setdefault("payload", payload) or {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+        },
+    )
+    client = _make_superadmin_client_no_db(monkeypatch)
+
+    get_resp = client.get("/video-cover/api/default-config")
+    post_resp = client.post(
+        "/video-cover/api/default-config",
+        json={
+            "steps": {
+                "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+                "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+                "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+                "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+            }
+        },
+    )
+
+    assert get_resp.status_code == 200
+    assert get_resp.get_json()["data"]["steps"] == defaults
+    assert post_resp.status_code == 200
+    assert saved["payload"]["video_analysis"]["provider"] == "openrouter"
+    assert saved["payload"]["cover_generation"]["model_id"] == "openai/gpt-5.4-image-2:mid"
+    assert post_resp.get_json()["data"]["steps"]["cover_generation"]["provider"] == "openrouter"
 
 
 def test_video_cover_project_create_persists_initial_workflow(authed_client_no_db, monkeypatch, tmp_path):
     from web.routes import video_cover
 
     inserted = {}
+    started = []
+    model_defaults = {
+        "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+        "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+        "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+        "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+    }
 
     def fake_insert_project(**kwargs):
         inserted.update(kwargs)
@@ -430,6 +637,19 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
     monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: model_defaults)
+    monkeypatch.setattr(
+        video_cover,
+        "_extract_product",
+        lambda product_url: (_FakeProduct(), _FakeProduct.title, _FakeProduct.main_image_url),
+    )
+    monkeypatch.setattr(video_cover, "_fetch_product_image", lambda image_url: _png_bytes(size=(900, 240)))
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
     monkeypatch.setattr(
         video_cover,
         "extract_thumbnail",
@@ -441,6 +661,7 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
         data={
             "product_url": "https://shop.example/products/lamp",
             "video_file": (BytesIO(b"video"), "lamp.mp4"),
+            "image_count": "3",
         },
         content_type="multipart/form-data",
     )
@@ -454,6 +675,14 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     state = inserted["state"]
     assert state["type"] == "video_cover"
     assert state["product_url"] == "https://shop.example/products/lamp"
+    assert state["image_count"] == 3
+    assert state["model_defaults"] == model_defaults
+    assert state["product"]["title"] == "Portable Blender Pro"
+    assert state["product"]["main_image_url"] == "https://cdn.example/blender.png"
+    assert Path(state["product"]["product_image_path"]).is_file()
+    with Image.open(state["product"]["product_image_path"]) as img:
+        assert img.format == "JPEG"
+        assert img.size == (400, 400)
     assert Path(state["video_path"]).is_file()
     assert state["steps"] == {
         "video_analysis": "pending",
@@ -461,28 +690,114 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
         "ad_copy": "pending",
         "cover_generation": "pending",
     }
+    assert started == [(payload["id"], "video_analysis", 3)]
 
 
-def test_video_cover_detail_shows_final_result_download_at_top(authed_client_no_db, monkeypatch):
+def test_video_cover_background_chain_uses_project_model_default_snapshot(monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    calls = []
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(tmp_path / "lamp.mp4"),
+        "video_filename": "lamp.mp4",
+        "steps": {
+            "video_analysis": "pending",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "pending",
+        },
+        "step_messages": {},
+        "model_defaults": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+        },
+    }
+    row = {"id": "task-1", "user_id": 8, "state_json": json.dumps(state, ensure_ascii=False)}
+    monkeypatch.setattr(video_cover, "_load_project_for_background", lambda task_id: (row, state))
+    monkeypatch.setattr(video_cover, "_save_state", lambda task_id, next_state, status: None)
+
+    def fake_run_step(next_state, step, *, provider, model, user_id):
+        calls.append({"step": step, "provider": provider, "model": model, "user_id": user_id})
+        return {}
+
+    monkeypatch.setattr(video_cover, "_run_project_step", fake_run_step)
+
+    video_cover._run_video_cover_chain("task-1")
+
+    assert calls == [
+        {"step": "video_analysis", "provider": "openrouter", "model": "google/gemini-3.1-pro-preview", "user_id": 8},
+        {"step": "product_analysis", "provider": "gemini_vertex_adc", "model": "gemini-3-flash-preview", "user_id": 8},
+        {"step": "ad_copy", "provider": "openrouter", "model": "google/gemini-3-flash-preview", "user_id": 8},
+        {"step": "cover_generation", "provider": "openrouter", "model": "openai/gpt-5.4-image-2:mid", "user_id": 8},
+    ]
+
+
+def test_video_cover_detail_renders_progress_restart_and_four_process_cards(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
     state = {
         "product_url": "https://shop.example/products/lamp",
         "display_name": "Lamp",
+        "image_count": 2,
         "steps": {
             "video_analysis": "done",
             "product_analysis": "done",
             "ad_copy": "done",
             "cover_generation": "done",
         },
+        "step_timing": {
+            "video_analysis": {"elapsed_seconds": 12},
+            "product_analysis": {"elapsed_seconds": 8},
+            "ad_copy": {"elapsed_seconds": 4},
+            "cover_generation": {"elapsed_seconds": 31},
+        },
+        "ad_copy_sets": {
+            "ad_copy_sets": [
+                {
+                    "id": 1,
+                    "angle": "痛点解决型",
+                    "english": {
+                        "headline": "Hook 1",
+                        "body_text": "Body copy 1",
+                        "cta": "Shop Now",
+                    },
+                    "chinese_translation": {
+                        "headline": "钩子 1",
+                        "body_text": "正文 1",
+                        "cta": "立即购买",
+                    },
+                    "usage_note": "适合封面 1。",
+                }
+            ]
+        },
         "result": {
             "covers": [
                 {
                     "platform": "social_reels",
                     "label": "Facebook / Instagram / TikTok / Shorts",
+                    "index": 1,
                     "object_key": "artifacts/video_cover/1/task-1/social_reels.png",
                     "width": 1080,
                     "height": 1920,
+                    "source_ad_copy_id": 1,
+                    "hook": "Hook 1",
+                    "copy": {
+                        "english": {
+                            "headline": "Hook 1",
+                            "body_text": "Body copy 1",
+                            "cta": "Shop Now",
+                        },
+                        "chinese_translation": {
+                            "headline": "钩子 1",
+                            "body_text": "正文 1",
+                            "cta": "立即购买",
+                        },
+                    },
                 }
             ]
         },
@@ -493,15 +808,96 @@ def test_video_cover_detail_shows_final_result_download_at_top(authed_client_no_
         "get_project",
         lambda task_id, *, user_id, is_admin: row,
     )
-    monkeypatch.setattr(video_cover, "recover_project_if_needed", lambda task_id, project_type: state)
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "强制重新开始" in html
+    assert html.count('<section class="vcd-process-card') == 4
+    for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
+        assert f'data-process-card="{step}"' in html
+        assert f'data-prompt-step="{step}"' in html
+        assert f'data-result-step="{step}"' in html
+        assert f'data-visual-step="{step}"' in html
+        assert f'data-retry-step="{step}"' in html
+        assert f'data-step-timer="{step}"' in html
+    assert "保存图片" in html
+    assert "复制图片" in html
+    assert "一键复制文案" in html
+    assert "/video-cover/api/task-1/download/social_reels" in html
+
+
+def test_video_cover_detail_renders_input_card_without_get_recovery(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg")
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(product_image),
+        },
+        "steps": {
+            "video_analysis": "running",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "pending",
+        },
+        "step_messages": {"video_analysis": "运行中..."},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
 
     resp = authed_client_no_db.get("/video-cover/task-1")
 
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "最终封面" in html
-    assert "下载最终封面" in html
-    assert "/video-cover/api/task-1/download/social_reels" in html
+    assert "项目输入" in html
+    assert "Portable Blender Pro" in html
+    assert 'data-copy-product-url="https://shop.example/products/lamp"' in html
+    assert "/video-cover/api/task-1/product-image" in html
+    assert "/video-cover/api/task-1/source-video" in html
+    assert "vcd-product-image" in html
+    assert "vcd-source-video" in html
+
+
+def test_video_cover_source_media_routes_serve_project_files(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video-data")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg-data")
+    state = {
+        "video_path": str(video_path),
+        "product": {"product_image_path": str(product_image)},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    video_resp = authed_client_no_db.get("/video-cover/api/task-1/source-video")
+    image_resp = authed_client_no_db.get("/video-cover/api/task-1/product-image")
+
+    assert video_resp.status_code == 200
+    assert video_resp.data == b"video-data"
+    assert image_resp.status_code == 200
+    assert image_resp.data == b"jpg-data"
+    assert image_resp.mimetype == "image/jpeg"
 
 
 def test_video_cover_step_requires_previous_steps_done(authed_client_no_db, monkeypatch, tmp_path):
@@ -542,9 +938,7 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
 
     video_path = tmp_path / "lamp.mp4"
     video_path.write_bytes(b"video")
-    saved = {}
-    captured = {}
-    product = _FakeProduct()
+    started = []
     state = {
         "id": "task-1",
         "type": "video_cover",
@@ -571,13 +965,110 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
         "get_project",
         lambda task_id, *, user_id, is_admin: row,
     )
-    monkeypatch.setattr(video_cover, "_extract_product", lambda product_url: (product, product.title, product.main_image_url))
-    monkeypatch.setattr(video_cover, "probe_media_info", lambda video_path_arg: {"duration": 8.0, "resolution": "720x1280"})
-    def fake_generate_video_analysis(**kwargs):
-        captured.update(kwargs)
-        return "video_text: demo"
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
 
-    monkeypatch.setattr(video_cover, "generate_video_analysis", fake_generate_video_analysis)
+    resp = authed_client_no_db.post(
+        "/video-cover/api/task-1/run/video_analysis",
+        data={},
+    )
+
+    assert resp.status_code == 202
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert started == [("task-1", "video_analysis", None)]
+
+
+def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "image_count": 2,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "running",
+            "cover_generation": "pending",
+        },
+        "step_timing": {
+            "video_analysis": {"elapsed_seconds": 12},
+            "ad_copy": {"started_at": 1000.0},
+        },
+        "result": {
+            "covers": [
+                {
+                    "platform": "social_reels_1",
+                    "object_key": "artifacts/video_cover/1/task-1/social_reels_1.png",
+                    "index": 1,
+                }
+            ]
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(video_cover, "time_time", lambda: 1015.0, raising=False)
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/state")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["state"]["image_count"] == 2
+    assert payload["state"]["step_timing"]["video_analysis"]["elapsed_seconds"] == 12
+    assert payload["state"]["step_timing"]["ad_copy"]["running_seconds"] == 15
+    assert payload["state"]["result"]["covers"][0]["url"]
+    assert payload["state"]["result"]["covers"][0]["download_url"].endswith("/video-cover/api/task-1/download/social_reels_1")
+
+
+def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    saved = {}
+    started = []
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "image_count": 2,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "video_analysis": "old video",
+        "product_analysis": "old product",
+        "ad_copy_sets": {"ad_copy_sets": []},
+        "result": {"covers": []},
+        "step_timing": {"video_analysis": {"elapsed_seconds": 1}},
+        "step_requests": {"video_analysis": {"prompt": "old"}},
+        "step_results": {"video_analysis": {"raw_response": "old"}},
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "state_json": json.dumps(state, ensure_ascii=False),
+        "display_name": "Lamp",
+    }
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
 
     def fake_save(task_id, next_state, status=None, execute_func=None, **kwargs):
         saved["task_id"] = task_id
@@ -585,22 +1076,31 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
         saved["status"] = status
 
     monkeypatch.setattr(video_cover, "save_project_state", fake_save)
-
-    resp = authed_client_no_db.post(
-        "/video-cover/api/task-1/run/video_analysis",
-        data={"provider": "gemini_vertex_adc", "model": "gemini_31_pro"},
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
     )
 
-    assert resp.status_code == 200
+    resp = authed_client_no_db.post("/video-cover/api/task-1/restart", json={"image_count": 4})
+
+    assert resp.status_code == 202
     payload = resp.get_json()
     assert payload["ok"] is True
-    assert payload["data"]["video_analysis"] == "video_text: demo"
     assert saved["task_id"] == "task-1"
     assert saved["status"] == "running"
-    assert saved["state"]["steps"]["video_analysis"] == "done"
-    assert saved["state"]["video_analysis"] == "video_text: demo"
-    assert saved["state"]["models"]["video_analysis"]["provider"] == "gemini_vertex_adc"
-    assert captured["user_id"] == 8
+    next_state = saved["state"]
+    assert next_state["image_count"] == 4
+    assert next_state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+    for key in ("video_analysis", "product_analysis", "ad_copy_sets", "result", "step_timing", "step_requests", "step_results"):
+        assert key not in next_state
+    assert started == [("task-1", "video_analysis", 4)]
 
 
 def test_video_cover_download_serves_owned_cover(authed_client_no_db, monkeypatch, tmp_path):

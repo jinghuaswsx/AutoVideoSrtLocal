@@ -59,6 +59,10 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
     assert "function localizeMetaHotPostVideos" in body
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
+    assert "可抄 Top 50" in body
+    assert "function showVideoCopyabilityTop50" in body
+    assert "/xuanpin/api/meta-hot-posts/video-copyability/top50" in body
+    assert "/xuanpin/api/meta-hot-posts/analyze-videos" in body
     assert "row.local_video_url" in body
     assert "<video" in body
     assert "欧洲Top50" in body
@@ -179,6 +183,34 @@ def test_meta_hot_posts_europe_top_api_delegates_to_service(authed_client_no_db,
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"id": 2}]
+
+
+def test_meta_hot_posts_analyze_videos_api_passes_current_user_for_billing(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(payload):
+        captured["payload"] = payload
+        return type("Resp", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_video_copyability_response", fake_response)
+
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/analyze-videos", json={"limit": 1})
+
+    assert resp.status_code == 202
+    assert captured["payload"]["limit"] == 1
+    assert captured["payload"]["user_id"]
+
+
+def test_meta_hot_posts_video_copyability_top50_api_delegates_to_service(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.build_video_copyability_top50_response",
+        lambda args: type("Resp", (), {"payload": {"items": [{"analysis_id": 1}], "total": 1}, "status_code": 200})(),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/video-copyability/top50")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"analysis_id": 1}]
 
 
 def test_meta_hot_posts_local_video_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):

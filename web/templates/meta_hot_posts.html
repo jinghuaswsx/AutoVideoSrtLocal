@@ -66,6 +66,10 @@
 .mh-product img, .mh-product-empty { width:54px; height:54px; border-radius:6px; object-fit:cover; background:#e2e8f0; }
 .mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
 .mh-mini { margin-top:4px; color:#64748b; font-size:12px; }
+.mh-copyability { margin-top:10px; padding:10px; border:1px solid #bae6fd; border-radius:6px; background:#f0f9ff; }
+.mh-score-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:7px; }
+.mh-score { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #7dd3fc; border-radius:4px; color:#075985; background:#fff; font-size:12px; font-weight:700; }
+.mh-copy-summary { color:#334155; font-size:13px; line-height:1.45; }
 .mh-empty { grid-column:1/-1; padding:48px 16px; text-align:center; color:#64748b; }
 .mh-modal[hidden] { display:none; }
 .mh-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15,23,42,.42); }
@@ -106,6 +110,8 @@
       <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
       <button class="mh-btn secondary" type="button" onclick="localizeMetaHotPostVideos()">本地化视频</button>
       <button class="mh-btn secondary" type="button" onclick="assessEuropeFitMaterials()">欧洲评估</button>
+      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPostVideos()">分析视频</button>
+      <button class="mh-btn" type="button" onclick="showVideoCopyabilityTop50()">可抄 Top 50</button>
     </div>
   </div>
 
@@ -266,6 +272,20 @@ function renderEuropeFitPanel(row) {
     ${changes ? `<div class="mh-mini">需要调整</div><ul class="mh-europe-list">${changes}</ul>` : ''}
   </div>`;
 }
+function copyabilityBlock(row) {
+  const data = row.video_copyability || null;
+  if (!data) return '';
+  return `<div class="mh-copyability">
+    <div class="mh-score-list">
+      <span class="mh-score">总分 ${fmt(data.overall_score)}</span>
+      <span class="mh-score">可抄 ${fmt(data.copyability_score)}</span>
+      <span class="mh-score">Meta ${fmt(data.meta_us_ad_fit_score)}</span>
+      <span class="mh-score">风险 ${fmt(data.compliance_risk_score)}</span>
+      <span class="mh-score">${fmt(data.recommendation || '-')}</span>
+    </div>
+    <div class="mh-copy-summary">${esc(data.summary || '')}</div>
+  </div>`;
+}
 function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
@@ -284,6 +304,7 @@ function renderCard(row) {
       <div class="mh-row"><span class="mh-ratio">${ratio}</span><span>${row.copycat ? '产品观察' : ''}</span></div>
       ${cardMedia(row)}
       <div class="mh-message">${row.message_html || ''}</div>
+      ${copyabilityBlock(row)}
       <div class="mh-analysis">
         <div class="mh-product">${productImg}<div>
           <div class="mh-product-title">${fmt(row.product_title || '待分析商品')}</div>
@@ -401,13 +422,30 @@ async function translateMetaHotPostMessages() {
 }
 async function localizeMetaHotPostVideos() {
   qs('mhStatus').textContent = '视频本地化中...';
-  await fetch('/xuanpin/api/meta-hot-posts/localize-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, min_delay_seconds:10})});
+  await fetch('/xuanpin/api/meta-hot-posts/localize-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, min_delay_seconds:30})});
   loadMetaHotPosts(mhPage);
 }
 async function assessEuropeFitMaterials() {
   qs('mhStatus').textContent = '欧洲评估中...';
   await fetch('/xuanpin/api/meta-hot-posts/europe-fit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30})});
   loadEuropeTopMaterials();
+}
+async function analyzeMetaHotPostVideos() {
+  qs('mhStatus').textContent = 'Analyzing video...';
+  await fetch('/xuanpin/api/meta-hot-posts/analyze-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:1})});
+  showVideoCopyabilityTop50();
+}
+async function showVideoCopyabilityTop50() {
+  qs('mhStatus').textContent = 'Loading Top 50...';
+  qs('mhPagerTop').innerHTML = '';
+  qs('mhPagerBottom').innerHTML = '';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50');
+  const data = await res.json();
+  qs('mhCount').textContent = data.total ?? 0;
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
+  qs('mhStatus').textContent = `可抄 Top 50 · ${data.total || 0} 条`;
 }
 function markStatusLabel(markStatus) {
   if (markStatus === 'ok') return '行';

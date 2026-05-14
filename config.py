@@ -33,6 +33,18 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if value in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
 def _path(name: str, default: str) -> str:
     value = _env(name, default)
     if os.path.isabs(value):
@@ -54,6 +66,7 @@ def _optional_path(name: str) -> str:
 # ---------------------------------------------------------------------------
 SERVER_ENV = _env("SERVER_ENV", "local").lower() or "local"
 LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", "http://127.0.0.1:5000")
+SCHEDULED_TASKS_ENABLED = _env_bool("SCHEDULED_TASKS_ENABLED", True)
 
 
 # ---------------------------------------------------------------------------

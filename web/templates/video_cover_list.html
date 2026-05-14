@@ -5,6 +5,7 @@
 
 {% block extra_style %}
 .vc-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.vc-header-actions { display:flex; align-items:center; gap:10px; }
 .vc-header h1 { font-size:20px; font-weight:700; margin:0; color:var(--text-main); }
 .vc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:14px; }
 .vc-card { display:flex; flex-direction:column; min-height:150px; padding:16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:inherit; text-decoration:none; transition:border-color .15s, box-shadow .15s; }
@@ -26,6 +27,15 @@
 .vc-field { display:grid; gap:7px; }
 .vc-label { font-size:13px; font-weight:700; color:var(--text-main); }
 .vc-input { width:100%; min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:8px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
+.vc-config-grid { display:grid; gap:10px; }
+.vc-config-row { display:grid; grid-template-columns:120px minmax(120px, .8fr) minmax(180px, 1fr); gap:8px; align-items:end; padding:10px; border:1px solid var(--border-main); border-radius:8px; }
+.vc-config-step { font-size:13px; font-weight:800; color:var(--text-main); padding-bottom:8px; }
+.vc-config-field { display:grid; gap:6px; }
+.vc-config-field span { font-size:12px; color:#64748b; font-weight:700; }
+.vc-config-status { min-height:20px; color:#16a34a; font-size:13px; }
+.vc-count-pills { display:flex; flex-wrap:wrap; gap:8px; }
+.vc-count-pill { height:30px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-size:13px; font-weight:800; cursor:pointer; }
+.vc-count-pill.active { border-color:var(--primary-color); background:var(--primary-color); color:#f8fafc; }
 .video-dropzone { position:relative; min-height:290px; border:1.5px dashed var(--border-main); border-radius:8px; display:grid; place-items:center; padding:18px; background:rgba(14,165,233,.04); cursor:pointer; overflow:hidden; transition:border-color .15s, background .15s; }
 .video-dropzone:hover, .video-dropzone.dragover { border-color:var(--primary-color); background:rgba(14,165,233,.09); }
 .video-dropzone.has-file { border-style:solid; background:#0f172a; }
@@ -41,14 +51,21 @@
 .vc-error { min-height:20px; color:#dc2626; font-size:13px; }
 @media (max-width:720px) {
   .vc-header { align-items:stretch; flex-direction:column; }
+  .vc-header-actions { width:100%; flex-direction:column; align-items:stretch; }
   .vc-header .btn { width:100%; }
+  .vc-config-row { grid-template-columns:1fr; }
 }
 {% endblock %}
 
 {% block content %}
 <div class="vc-header">
   <h1>文案封面生成</h1>
-  <button class="btn btn-primary" type="button" id="vcShowCreate">新建项目</button>
+  <div class="vc-header-actions">
+    {% if current_user.is_superadmin %}
+    <button class="btn btn-ghost" type="button" id="vcShowDefaultConfig">默认配置</button>
+    {% endif %}
+    <button class="btn btn-primary" type="button" id="vcShowCreate">新建项目</button>
+  </div>
 </div>
 
 {% if projects %}
@@ -71,6 +88,49 @@
 <div class="vc-empty">还没有封面创作项目，点击「新建项目」开始。</div>
 {% endif %}
 
+{% if current_user.is_superadmin %}
+<div class="vc-modal-backdrop" id="vcConfigBackdrop">
+  <div class="vc-modal">
+    <h2>默认配置</h2>
+    <form class="vc-form" id="vcConfigForm">
+      <div class="vc-config-grid">
+        {% for step in step_order %}
+        {% set defaults = model_defaults.get(step, {}) %}
+        {% set cfg = model_options.steps.get(step, {}) %}
+        <div class="vc-config-row">
+          <div class="vc-config-step">{{ step_labels.get(step, step) }}</div>
+          <label class="vc-config-field">
+            <span>供应商</span>
+            <select class="vc-input" name="{{ step }}_provider">
+              {% if step == 'cover_generation' %}
+                {% for code, label in cfg.providers.items() %}
+                <option value="{{ code }}" {% if defaults.get('provider') == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              {% else %}
+                {% for code, item in cfg.providers.items() %}
+                <option value="{{ code }}" {% if defaults.get('provider') == code %}selected{% endif %}>{{ item.label }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </label>
+          <label class="vc-config-field">
+            <span>模型 ID</span>
+            <input class="vc-input" name="{{ step }}_model_id" value="{{ defaults.get('model_id', '') }}" placeholder="model-id">
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="vc-error" id="vcConfigError"></div>
+      <div class="vc-config-status" id="vcConfigStatus"></div>
+      <div class="vc-actions">
+        <button class="btn btn-ghost" type="button" id="vcCancelConfig">取消</button>
+        <button class="btn btn-primary" type="submit" id="vcConfigSubmit">保存配置</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <div class="vc-modal-backdrop" id="vcCreateBackdrop">
   <div class="vc-modal">
     <h2>新建封面创作项目</h2>
@@ -79,6 +139,16 @@
         <span class="vc-label">商品链接</span>
         <input class="vc-input" type="url" name="product_url" required placeholder="https://example.com/products/name">
       </label>
+      <div class="vc-field">
+        <span class="vc-label">生成封面张数</span>
+        <input type="hidden" name="image_count" id="vcImageCountInput" value="2">
+        <div class="vc-count-pills" role="group" aria-label="生成封面张数">
+          <button class="vc-count-pill" type="button" data-image-count="1">1 张</button>
+          <button class="vc-count-pill active" type="button" data-image-count="2">2 张</button>
+          <button class="vc-count-pill" type="button" data-image-count="3">3 张</button>
+          <button class="vc-count-pill" type="button" data-image-count="4">4 张</button>
+        </div>
+      </div>
       <div class="vc-field">
         <span class="vc-label">视频文件</span>
         <div id="videoCoverDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
@@ -120,6 +190,16 @@
   const preview = document.getElementById('videoCoverPreview');
   const fileName = document.getElementById('videoCoverFileName');
   const clearBtn = document.getElementById('previewClear');
+  const imageCountInput = document.getElementById('vcImageCountInput');
+  const imageCountPills = Array.from(document.querySelectorAll('[data-image-count]'));
+  const configBackdrop = document.getElementById('vcConfigBackdrop');
+  const showConfigBtn = document.getElementById('vcShowDefaultConfig');
+  const cancelConfigBtn = document.getElementById('vcCancelConfig');
+  const configForm = document.getElementById('vcConfigForm');
+  const configSubmit = document.getElementById('vcConfigSubmit');
+  const configError = document.getElementById('vcConfigError');
+  const configStatus = document.getElementById('vcConfigStatus');
+  const configSteps = {{ (step_order or [])|list|tojson }};
   let selectedFile = null;
   let previewUrl = '';
   function csrfToken() {
@@ -158,8 +238,47 @@
     clearBtn.classList.add('preview-hidden');
   }
   function show() { backdrop.classList.add('show'); errorBox.textContent = ''; }
-  function hide() { backdrop.classList.remove('show'); form.reset(); clearFile(); errorBox.textContent = ''; submit.disabled = false; submit.textContent = '创建项目'; }
+  function hide() { backdrop.classList.remove('show'); form.reset(); clearFile(); setImageCount(2); errorBox.textContent = ''; submit.disabled = false; submit.textContent = '创建项目'; }
+  function setImageCount(value) {
+    imageCountInput.value = String(value || 2);
+    imageCountPills.forEach(btn => btn.classList.toggle('active', btn.dataset.imageCount === imageCountInput.value));
+  }
+  function setConfigSteps(steps) {
+    if (!configForm || !steps) return;
+    configSteps.forEach(step => {
+      const row = steps[step] || {};
+      const provider = configForm.elements[step + '_provider'];
+      const model = configForm.elements[step + '_model_id'];
+      if (provider && row.provider) provider.value = row.provider;
+      if (model && row.model_id) model.value = row.model_id;
+    });
+  }
+  async function showConfig() {
+    if (!configBackdrop) return;
+    configBackdrop.classList.add('show');
+    configError.textContent = '';
+    configStatus.textContent = '';
+    try {
+      const response = await fetch('/video-cover/api/default-config');
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '读取配置失败');
+      setConfigSteps(payload.data && payload.data.steps);
+    } catch (error) {
+      configError.textContent = error && error.message ? error.message : '读取配置失败';
+    }
+  }
+  function hideConfig() {
+    if (!configBackdrop) return;
+    configBackdrop.classList.remove('show');
+    configError.textContent = '';
+    configStatus.textContent = '';
+    configSubmit.disabled = false;
+    configSubmit.textContent = '保存配置';
+  }
   showBtn.addEventListener('click', show);
+  if (showConfigBtn) showConfigBtn.addEventListener('click', showConfig);
+  if (cancelConfigBtn) cancelConfigBtn.addEventListener('click', hideConfig);
+  if (configBackdrop) configBackdrop.addEventListener('click', event => { if (event.target === configBackdrop) hideConfig(); });
   cancelBtn.addEventListener('click', hide);
   backdrop.addEventListener('click', event => { if (event.target === backdrop) hide(); });
   dropzone.addEventListener('click', event => {
@@ -188,6 +307,39 @@
     if (file) setInputFile(file);
   });
   fileInput.addEventListener('change', () => setInputFile(fileInput.files[0]));
+  imageCountPills.forEach(btn => btn.addEventListener('click', () => setImageCount(btn.dataset.imageCount)));
+  if (configForm) {
+    configForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const steps = {};
+      configSteps.forEach(step => {
+        steps[step] = {
+          provider: (configForm.elements[step + '_provider'] || {}).value || '',
+          model_id: (configForm.elements[step + '_model_id'] || {}).value || ''
+        };
+      });
+      configSubmit.disabled = true;
+      configSubmit.textContent = '保存中...';
+      configError.textContent = '';
+      configStatus.textContent = '';
+      try {
+        const response = await fetch('/video-cover/api/default-config', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+          body: JSON.stringify({steps})
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error(payload.error || '保存失败');
+        setConfigSteps(payload.data && payload.data.steps);
+        configStatus.textContent = '已保存';
+      } catch (error) {
+        configError.textContent = error && error.message ? error.message : '保存失败';
+      } finally {
+        configSubmit.disabled = false;
+        configSubmit.textContent = '保存配置';
+      }
+    });
+  }
   clearBtn.addEventListener('click', event => {
     event.stopPropagation();
     clearFile();
