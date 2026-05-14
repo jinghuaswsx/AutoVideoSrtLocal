@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from appcore import scheduled_tasks
 from appcore.db import query_one
-from appcore.meta_hot_posts import message_translation, product_analysis, store
+from appcore.meta_hot_posts import message_translation, product_analysis, store, video_localization
 from tools.meta_hot_posts.client import MetaHotPostsClient
 
 log = logging.getLogger(__name__)
@@ -16,12 +16,16 @@ log = logging.getLogger(__name__)
 SYNC_TASK_CODE = "meta_hot_posts_sync_tick"
 ANALYSIS_TASK_CODE = "meta_hot_posts_analysis_tick"
 TRANSLATION_TASK_CODE = "meta_hot_posts_translate_messages_tick"
+VIDEO_LOCALIZATION_TASK_CODE = "meta_hot_posts_video_localization_tick"
 ANALYSIS_STALE_AFTER_SECONDS = 3600
 MESSAGE_TRANSLATION_STALE_AFTER_SECONDS = 3600
+VIDEO_LOCALIZATION_STALE_AFTER_SECONDS = 7200
 SCHEDULED_ANALYSIS_LIMIT = 30
 SCHEDULED_ANALYSIS_DELAY_SECONDS = 20
 SCHEDULED_TRANSLATION_LIMIT = 50
 SCHEDULED_TRANSLATION_DELAY_SECONDS = 3
+SCHEDULED_VIDEO_LOCALIZATION_LIMIT = 30
+SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS = 10
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -470,6 +474,43 @@ def _guard_translation_singleton(
     }
 
 
+def _guard_video_localization_singleton(
+    *,
+    stale_after_seconds: int = VIDEO_LOCALIZATION_STALE_AFTER_SECONDS,
+) -> dict[str, Any]:
+    running = scheduled_tasks.latest_running_run(VIDEO_LOCALIZATION_TASK_CODE)
+    if not running:
+        return {}
+    age_seconds = _running_age_seconds(running)
+    running_id = int(running["id"])
+    if age_seconds < int(stale_after_seconds):
+        return {
+            "skipped": True,
+            "reason": "previous_run_still_running",
+            "running_run_id": running_id,
+            "running_started_at": running.get("started_at"),
+            "running_age_seconds": age_seconds,
+        }
+    reset_count = store.reset_stale_running_local_videos(
+        older_than_seconds=int(stale_after_seconds),
+    )
+    scheduled_tasks.finish_run(
+        running_id,
+        status="failed",
+        summary={
+            "stale_run_replaced": running_id,
+            "running_age_seconds": age_seconds,
+            "stale_videos_reset": reset_count,
+        },
+        error_message=f"running video localization exceeded {int(stale_after_seconds)}s; superseded by a new run",
+    )
+    return {
+        "stale_run_replaced": running_id,
+        "running_age_seconds": age_seconds,
+        "stale_videos_reset": reset_count,
+    }
+
+
 def analysis_tick_once(
     *,
     limit: int = SCHEDULED_ANALYSIS_LIMIT,
@@ -544,6 +585,36 @@ def translation_tick_once(
     return summary
 
 
+def video_localization_tick_once(
+    *,
+    limit: int = SCHEDULED_VIDEO_LOCALIZATION_LIMIT,
+    min_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS,
+) -> dict[str, Any]:
+    guard_summary = _guard_video_localization_singleton()
+    if guard_summary.get("skipped"):
+        return guard_summary
+    run_id = None
+    try:
+        run_id = scheduled_tasks.start_run(VIDEO_LOCALIZATION_TASK_CODE)
+    except Exception:
+        log.debug("failed to start meta hot posts video localization run", exc_info=True)
+    try:
+        summary = video_localization.download_hot_post_videos(
+            limit=limit,
+            min_delay_seconds=min_delay_seconds,
+        )
+    except Exception as exc:
+        if run_id:
+            scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])
+        raise
+    summary.update(guard_summary)
+    if run_id:
+        status = "success" if summary.get("failed", 0) == 0 else "failed"
+        error = None if status == "success" else f"{summary['failed']} video(s) failed"
+        scheduled_tasks.finish_run(run_id, status=status, summary=summary, error_message=error)
+    return summary
+
+
 def register(scheduler) -> None:
     scheduled_tasks.add_controlled_job(
         scheduler,
@@ -573,6 +644,16 @@ def register(scheduler) -> None:
         "interval",
         minutes=10,
         id=TRANSLATION_TASK_CODE,
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        VIDEO_LOCALIZATION_TASK_CODE,
+        video_localization_tick_once,
+        "interval",
+        minutes=10,
+        id=VIDEO_LOCALIZATION_TASK_CODE,
         replace_existing=True,
         max_instances=1,
     )

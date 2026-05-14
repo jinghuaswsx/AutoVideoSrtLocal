@@ -324,6 +324,13 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert "30 个" in analysis_task["description"]
     assert "20 秒" in analysis_task["description"]
 
+    video_task = definitions["meta_hot_posts_video_localization_tick"]
+    assert video_task["schedule"]
+    assert video_task["source_type"] == "apscheduler"
+    assert video_task["runner"] == "appcore.meta_hot_posts.scheduler.video_localization_tick_once"
+    assert video_task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-14-meta-hot-posts-video-localization-design.md" in video_task["description"]
+
     translation_task = definitions["meta_hot_posts_translate_messages_tick"]
     assert translation_task["schedule"] == "每 10 分钟"
     assert translation_task["source_type"] == "apscheduler"

@@ -57,6 +57,10 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "翻译文案" in body
     assert "function translateMetaHotPostMessages" in body
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
+    assert "function localizeMetaHotPostVideos" in body
+    assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
+    assert "row.local_video_url" in body
+    assert "<video" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -125,6 +129,50 @@ def test_meta_hot_posts_translate_api_passes_current_user_for_billing(authed_cli
     assert resp.status_code == 202
     assert captured["payload"]["limit"] == 80
     assert captured["payload"]["user_id"]
+
+
+def test_meta_hot_posts_localize_videos_api_delegates_to_service(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(payload):
+        captured["payload"] = payload
+        return type("Resp", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_localize_videos_response", fake_response)
+
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/localize-videos", json={"limit": 5})
+
+    assert resp.status_code == 202
+    assert captured["payload"]["limit"] == 5
+
+
+def test_meta_hot_posts_local_video_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):
+    video = tmp_path / "output" / "meta_hot_posts" / "videos" / "5.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.resolve_local_video_response",
+        lambda post_id: type("Resolved", (), {"path": video, "status_code": 200, "error": None})(),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/5/local-video")
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "video/mp4"
+    assert resp.get_data() == b"video"
+
+
+def test_meta_hot_posts_local_video_route_returns_404_when_missing(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.resolve_local_video_response",
+        lambda post_id: type("Resolved", (), {"path": None, "status_code": 404, "error": "not_found"})(),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/5/local-video")
+
+    assert resp.status_code == 404
+    assert resp.get_json()["error"] == "not_found"
 
 
 def test_meta_hot_posts_mark_api_passes_current_user_and_status(authed_client_no_db, monkeypatch):

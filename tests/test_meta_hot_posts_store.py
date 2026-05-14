@@ -213,6 +213,95 @@ def test_reset_stale_running_message_translations_marks_old_running_failed():
     assert params == (3600,)
 
 
+def test_list_hot_posts_selects_local_video_cache_fields():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 1}]
+        return [{"wedev_post_id": 1, "local_video_status": "downloaded"}]
+
+    payload = store.list_hot_posts({}, query_fn=fake_query)
+
+    data_sql, _params = calls[-1]
+    assert payload["items"][0]["local_video_status"] == "downloaded"
+    assert "p.local_video_path" in data_sql
+    assert "p.local_video_status" in data_sql
+    assert "p.local_video_error" in data_sql
+    assert "p.local_video_downloaded_at" in data_sql
+    assert "p.local_video_attempts" in data_sql
+
+
+def test_next_pending_local_videos_selects_undownloaded_video_rows():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"id": 9, "video_url": "https://www.facebook.com/reel/1/"}]
+
+    rows = store.next_pending_local_videos(limit=500, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["id"] == 9
+    assert "video_url IS NOT NULL" in sql
+    assert "local_video_status IN ('pending', 'failed')" in sql
+    assert "local_video_status IS NULL" in sql
+    assert "local_video_attempts < %s" in sql
+    assert "local_video_status <> 'downloaded'" in sql
+    assert params == (3, 100)
+
+
+def test_local_video_status_transitions_are_recorded():
+    calls = []
+
+    store.mark_local_video_downloading(
+        77,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_local_video_download(
+        77,
+        local_video_path="meta_hot_posts/videos/77.mp4",
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_local_video_download(
+        78,
+        local_video_path=None,
+        error_message="download failed",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    running_sql, running_params = calls[0]
+    success_sql, success_params = calls[1]
+    failure_sql, failure_params = calls[2]
+    assert "local_video_status='downloading'" in running_sql
+    assert "local_video_attempts=local_video_attempts + 1" in running_sql
+    assert running_params == (77,)
+    assert "local_video_status='downloaded'" in success_sql
+    assert "local_video_downloaded_at=NOW()" in success_sql
+    assert success_params == ("meta_hot_posts/videos/77.mp4", 77)
+    assert "local_video_status='failed'" in failure_sql
+    assert "local_video_error=%s" in failure_sql
+    assert failure_params == ("download failed", 78)
+
+
+def test_get_hot_post_local_video_returns_cache_row():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"id": 5, "local_video_path": "meta_hot_posts/videos/5.mp4"}]
+
+    row = store.get_hot_post_local_video(5, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert row["local_video_path"] == "meta_hot_posts/videos/5.mp4"
+    assert "FROM meta_hot_posts" in sql
+    assert "local_video_status" in sql
+    assert params == (5,)
+
+
 def test_next_pending_product_analyses_selects_unfinished_rows():
     calls = []
 

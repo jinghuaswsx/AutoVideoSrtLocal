@@ -37,3 +37,18 @@ def test_meta_hot_posts_message_translation_migration_adds_cached_chinese_fields
     assert "message_zh_attempts" in body
     assert "message_zh_translated_at" in body
     assert "idx_meta_hot_posts_message_zh_status" in body
+
+
+def test_meta_hot_posts_local_video_migration_adds_cache_fields():
+    body = Path("db/migrations/2026_05_14_meta_hot_posts_local_video.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "local_video_path" in body
+    assert "local_video_status" in body
+    assert "local_video_error" in body
+    assert "local_video_downloaded_at" in body
+    assert "local_video_attempts" in body
+    assert "idx_meta_hot_posts_local_video_status" in body
+    assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md" in body

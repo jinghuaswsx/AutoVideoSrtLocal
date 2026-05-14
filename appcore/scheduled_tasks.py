@@ -287,6 +287,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "meta_hot_posts_video_localization_tick": {
+        "code": "meta_hot_posts_video_localization_tick",
+        "name": "Meta 热帖视频本地化",
+        "description": (
+            "每 10 分钟串行下载 Meta 热帖中尚未本地化的视频，默认每轮最多 30 条；"
+            "每条下载完成或失败后至少间隔 10 秒再处理下一条，下载结果写回 local_video_* 字段。"
+            "页面优先使用本地 MP4，缺失时回退 Facebook iframe。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "meta_hot_posts_video_localization_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.video_localization_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",

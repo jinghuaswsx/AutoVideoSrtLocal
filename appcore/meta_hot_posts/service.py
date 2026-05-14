@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
-from appcore.meta_hot_posts import categories, product_analysis, store
+from appcore.meta_hot_posts import categories, product_analysis, store, video_localization
 
 MARK_STATUS_OK = "ok"
 MARK_STATUS_BAD = "bad"
@@ -13,6 +14,13 @@ MARK_STATUS_BAD = "bad"
 class MetaHotPostsResponse:
     payload: dict[str, Any]
     status_code: int = 200
+
+
+@dataclass(frozen=True)
+class LocalVideoResponse:
+    path: Path | None
+    status_code: int = 200
+    error: str | None = None
 
 
 def _decode_sku_json(value: Any) -> list[dict[str, Any]]:
@@ -60,6 +68,14 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item["message_source_html"] = source_message
     if translated_message:
         item["message_html"] = translated_message
+    if (
+        item.get("id")
+        and item.get("local_video_status") == "downloaded"
+        and item.get("local_video_path")
+    ):
+        item["local_video_url"] = f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video"
+    else:
+        item["local_video_url"] = ""
     mark_status = _normalize_mark_status(item.get("mark_status"))
     if not mark_status and _bool_payload(item.get("is_marked")):
         mark_status = MARK_STATUS_BAD
@@ -208,3 +224,45 @@ def build_translate_response(payload: Mapping[str, Any] | None = None) -> MetaHo
         },
         202,
     )
+
+
+def build_localize_videos_response(payload: Mapping[str, Any] | None = None) -> MetaHotPostsResponse:
+    from appcore.meta_hot_posts import scheduler
+
+    payload = payload or {}
+    try:
+        limit = int(payload.get("limit") or scheduler.SCHEDULED_VIDEO_LOCALIZATION_LIMIT)
+    except (TypeError, ValueError):
+        limit = scheduler.SCHEDULED_VIDEO_LOCALIZATION_LIMIT
+    try:
+        delay = float(
+            payload.get("min_delay_seconds")
+            if payload.get("min_delay_seconds") is not None
+            else payload.get("per_item_delay_seconds")
+            if payload.get("per_item_delay_seconds") is not None
+            else scheduler.SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS
+        )
+    except (TypeError, ValueError):
+        delay = scheduler.SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS
+    return MetaHotPostsResponse(
+        {
+            "ok": True,
+            "result": scheduler.video_localization_tick_once(
+                limit=limit,
+                min_delay_seconds=delay,
+            ),
+        },
+        202,
+    )
+
+
+def resolve_local_video_response(post_id: int) -> LocalVideoResponse:
+    row = store.get_hot_post_local_video(post_id)
+    if not row:
+        return LocalVideoResponse(None, 404, "not_found")
+    if row.get("local_video_status") != "downloaded" or not row.get("local_video_path"):
+        return LocalVideoResponse(None, 404, "not_downloaded")
+    path = video_localization.resolve_local_video_path(str(row.get("local_video_path") or ""))
+    if path is None:
+        return LocalVideoResponse(None, 404, "not_found")
+    return LocalVideoResponse(path, 200, None)

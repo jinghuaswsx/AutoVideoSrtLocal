@@ -144,6 +144,8 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
                p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
+               p.local_video_path, p.local_video_status, p.local_video_error,
+               p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
                a.product_title, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
@@ -204,10 +206,10 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
           likes, comments, shares, latest_likes, latest_comments, latest_shares,
           sync_period_likes, sync_period_hours, copycat, select_json, video_url,
           image_url, invisible, invisible_region, message_html,
-          message_zh_html, message_zh_status, raw_json
+          message_zh_html, message_zh_status, local_video_status, raw_json
         ) VALUES (
           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-          %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, 'pending', %s
+          %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, 'pending', 'pending', %s
         )
         ON DUPLICATE KEY UPDATE
           page_id=VALUES(page_id),
@@ -229,6 +231,10 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
           sync_period_hours=VALUES(sync_period_hours),
           copycat=VALUES(copycat),
           select_json=VALUES(select_json),
+          local_video_path=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_path ELSE NULL END,
+          local_video_status=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_status ELSE 'pending' END,
+          local_video_error=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_error ELSE NULL END,
+          local_video_downloaded_at=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_downloaded_at ELSE NULL END,
           video_url=VALUES(video_url),
           image_url=VALUES(image_url),
           invisible=VALUES(invisible),
@@ -367,6 +373,111 @@ def reset_stale_running_message_translations(
         SET message_zh_status='failed',
             message_zh_error='message translation stale running reset'
         WHERE message_zh_status='running'
+          AND TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s
+        """,
+        (int(older_than_seconds),),
+    )
+
+
+def next_pending_local_videos(
+    *,
+    limit: int = 20,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(100, int(limit)))
+    return query_fn(
+        """
+        SELECT id, wedev_post_id, page_id, post_id, video_url,
+               local_video_path, local_video_status, local_video_attempts
+        FROM meta_hot_posts
+        WHERE video_url IS NOT NULL
+          AND TRIM(video_url) <> ''
+          AND (local_video_status IS NULL OR local_video_status = '' OR local_video_status IN ('pending', 'failed'))
+          AND (local_video_status IS NULL OR local_video_status <> 'downloaded')
+          AND local_video_attempts < %s
+        ORDER BY COALESCE(sync_period_likes, 0) DESC, creation_time DESC, id ASC
+        LIMIT %s
+        """,
+        (int(max_attempts), safe_limit),
+    )
+
+
+def mark_local_video_downloading(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET local_video_status='downloading',
+            local_video_attempts=local_video_attempts + 1,
+            local_video_error=NULL
+        WHERE id=%s
+        """,
+        (int(post_id),),
+    )
+
+
+def finish_local_video_download(
+    post_id: int,
+    *,
+    local_video_path: str | None,
+    error_message: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    if error_message:
+        return execute_fn(
+            """
+            UPDATE meta_hot_posts
+            SET local_video_status='failed',
+                local_video_error=%s
+            WHERE id=%s
+            """,
+            (str(error_message)[:1000], int(post_id)),
+        )
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET local_video_path=%s,
+            local_video_status='downloaded',
+            local_video_error=NULL,
+            local_video_downloaded_at=NOW()
+        WHERE id=%s
+        """,
+        (local_video_path or "", int(post_id)),
+    )
+
+
+def get_hot_post_local_video(
+    post_id: int,
+    *,
+    query_fn: QueryFn = query,
+) -> dict[str, Any] | None:
+    rows = query_fn(
+        """
+        SELECT id, local_video_path, local_video_status, local_video_error,
+               local_video_downloaded_at
+        FROM meta_hot_posts
+        WHERE id=%s
+        """,
+        (int(post_id),),
+    )
+    return rows[0] if rows else None
+
+
+def reset_stale_running_local_videos(
+    *,
+    older_than_seconds: int = 7200,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET local_video_status='failed',
+            local_video_error='local video download stale running reset'
+        WHERE local_video_status='downloading'
           AND TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s
         """,
         (int(older_than_seconds),),

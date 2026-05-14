@@ -92,6 +92,7 @@
       <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
       <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
       <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
+      <button class="mh-btn secondary" type="button" onclick="localizeMetaHotPostVideos()">本地化视频</button>
     </div>
   </div>
 
@@ -197,6 +198,9 @@ function fmtMoney(min, max, currency) {
   return `${prefix}${Number(min).toFixed(2)}`;
 }
 function cardMedia(row) {
+  if (row.local_video_url) {
+    return `<div class="mh-media"><video controls preload="metadata" playsinline src="${esc(row.local_video_url)}"></video></div>`;
+  }
   if (row.video_url) {
     const src = row.invisible && row.invisible_region === 'usa'
       ? `/api/spy/video/${encodeURIComponent(row.page_id || '')}/${encodeURIComponent(row.post_id || '')}`
@@ -328,6 +332,11 @@ async function analyzeMetaHotPosts() {
 async function translateMetaHotPostMessages() {
   qs('mhStatus').textContent = '翻译中...';
   await fetch('/xuanpin/api/meta-hot-posts/translate-messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:50, per_item_delay_seconds:3})});
+  loadMetaHotPosts(mhPage);
+}
+async function localizeMetaHotPostVideos() {
+  qs('mhStatus').textContent = '视频本地化中...';
+  await fetch('/xuanpin/api/meta-hot-posts/localize-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, min_delay_seconds:10})});
   loadMetaHotPosts(mhPage);
 }
 function markStatusLabel(markStatus) {
