@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from appcore import scheduled_tasks
 from appcore.db import query_one
-from appcore.meta_hot_posts import message_translation, product_analysis, store, video_localization
+from appcore.meta_hot_posts import europe_fit, message_translation, product_analysis, store, video_localization
 from tools.meta_hot_posts.client import MetaHotPostsClient
 
 log = logging.getLogger(__name__)
@@ -17,6 +17,7 @@ SYNC_TASK_CODE = "meta_hot_posts_sync_tick"
 ANALYSIS_TASK_CODE = "meta_hot_posts_analysis_tick"
 TRANSLATION_TASK_CODE = "meta_hot_posts_translate_messages_tick"
 VIDEO_LOCALIZATION_TASK_CODE = "meta_hot_posts_video_localization_tick"
+EUROPE_FIT_TASK_CODE = "meta_hot_posts_europe_fit_tick"
 ANALYSIS_STALE_AFTER_SECONDS = 3600
 MESSAGE_TRANSLATION_STALE_AFTER_SECONDS = 3600
 SCHEDULED_ANALYSIS_LIMIT = 30
@@ -26,6 +27,7 @@ SCHEDULED_TRANSLATION_DELAY_SECONDS = 3
 SCHEDULED_VIDEO_LOCALIZATION_LIMIT = 30
 SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS = 30
 SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS = 5
+SCHEDULED_EUROPE_FIT_LIMIT = 30
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -499,6 +501,31 @@ def _take_over_video_localization_singleton() -> dict[str, Any]:
     }
 
 
+def _take_over_europe_fit_singleton() -> dict[str, Any]:
+    running = scheduled_tasks.latest_running_run(EUROPE_FIT_TASK_CODE)
+    if not running:
+        return {}
+    age_seconds = _running_age_seconds(running)
+    running_id = int(running["id"])
+    reset_count = store.reset_running_europe_fit_assessments()
+    scheduled_tasks.finish_run(
+        running_id,
+        status="failed",
+        summary={
+            "running_run_replaced": running_id,
+            "running_age_seconds": age_seconds,
+            "running_europe_fit_reset": reset_count,
+        },
+        error_message="running Europe fit assessment superseded by a new run",
+    )
+    return {
+        "running_run_replaced": running_id,
+        "running_started_at": running.get("started_at"),
+        "running_age_seconds": age_seconds,
+        "running_europe_fit_reset": reset_count,
+    }
+
+
 def _guard_video_localization_singleton() -> dict[str, Any]:
     running = scheduled_tasks.latest_running_run(VIDEO_LOCALIZATION_TASK_CODE)
     if not running:
@@ -634,6 +661,101 @@ def video_localization_startup_tick_once(
     )
 
 
+def _is_current_europe_fit_run(run_id: int | None) -> bool:
+    if not run_id:
+        return True
+    running = scheduled_tasks.latest_running_run(EUROPE_FIT_TASK_CODE)
+    if not running:
+        return False
+    try:
+        return int(running.get("id") or 0) == int(run_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def assess_europe_fit_materials(
+    *,
+    limit: int = SCHEDULED_EUROPE_FIT_LIMIT,
+    user_id: int | None = None,
+    run_id: int | None = None,
+) -> dict[str, Any]:
+    summary = {"scanned": 0, "done": 0, "failed": 0}
+    billing_user_id = resolve_billing_user_id(user_id)
+    rows = store.next_pending_europe_fit_materials(limit=limit)
+    for row in rows:
+        if not _is_current_europe_fit_run(run_id):
+            summary["superseded"] = True
+            summary["stop_reason"] = "newer_run_started"
+            break
+        post_id = int(row["id"])
+        summary["scanned"] += 1
+        store.mark_europe_fit_running(post_id)
+        try:
+            result = europe_fit.assess_material(row, user_id=billing_user_id)
+        except Exception as exc:
+            if not _is_current_europe_fit_run(run_id):
+                summary["superseded"] = True
+                summary["stop_reason"] = "newer_run_started"
+                break
+            log.warning("meta hot post Europe fit assessment failed id=%s: %s", post_id, exc)
+            store.finish_europe_fit_assessment(
+                post_id,
+                status="failed",
+                result={},
+                video_optimization={},
+                error_message=str(exc)[:1000],
+            )
+            summary["failed"] += 1
+            continue
+        if not _is_current_europe_fit_run(run_id):
+            summary["superseded"] = True
+            summary["stop_reason"] = "newer_run_started"
+            break
+        store.finish_europe_fit_assessment(
+            post_id,
+            status="done",
+            result=result,
+            video_optimization=result.get("video_optimization") or {},
+            error_message=None,
+        )
+        summary["done"] += 1
+    return summary
+
+
+def europe_fit_tick_once(
+    *,
+    limit: int = SCHEDULED_EUROPE_FIT_LIMIT,
+    user_id: int | None = None,
+) -> dict[str, Any]:
+    guard_summary = _take_over_europe_fit_singleton()
+    run_id = None
+    try:
+        run_id = scheduled_tasks.start_run(EUROPE_FIT_TASK_CODE)
+    except Exception:
+        log.debug("failed to start meta hot posts Europe fit run", exc_info=True)
+    try:
+        summary = assess_europe_fit_materials(
+            limit=limit,
+            user_id=user_id,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        if run_id:
+            scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])
+        raise
+    summary.update(guard_summary)
+    if run_id:
+        status = "failed" if summary.get("failed", 0) > 0 or summary.get("superseded") else "success"
+        if summary.get("superseded"):
+            error = "Europe fit assessment superseded by a newer run"
+        elif status == "failed":
+            error = f"{summary['failed']} Europe fit material(s) failed"
+        else:
+            error = None
+        scheduled_tasks.finish_run(run_id, status=status, summary=summary, error_message=error)
+    return summary
+
+
 def register(scheduler) -> None:
     scheduled_tasks.add_controlled_job(
         scheduler,
@@ -675,6 +797,17 @@ def register(scheduler) -> None:
         id=VIDEO_LOCALIZATION_TASK_CODE,
         replace_existing=True,
         max_instances=1,
+        misfire_grace_time=60,
+    )
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        EUROPE_FIT_TASK_CODE,
+        europe_fit_tick_once,
+        "interval",
+        minutes=10,
+        id=EUROPE_FIT_TASK_CODE,
+        replace_existing=True,
+        max_instances=2,
         misfire_grace_time=60,
     )
     scheduled_tasks.add_controlled_job(

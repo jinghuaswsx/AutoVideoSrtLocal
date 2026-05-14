@@ -304,6 +304,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "meta_hot_posts_europe_fit_tick": {
+        "code": "meta_hot_posts_europe_fit_tick",
+        "name": "Meta 热帖欧洲投放评估",
+        "description": (
+            "每 10 分钟扫描已有商品链接且本地视频已下载的 Meta 热帖素材，默认每轮最多 30 条；"
+            "把视频按 480p、15fps、600k 码率压缩后，通过 OpenRouter Gemini 3 Flash 判断是否适合"
+            "直接搬运到德国、法国、意大利、西班牙等欧洲 Meta 广告市场。新一轮会接管仍在 running 的旧 run。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-europe-fit-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "meta_hot_posts_europe_fit_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.europe_fit_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",

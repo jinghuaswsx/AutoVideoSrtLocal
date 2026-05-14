@@ -14,6 +14,9 @@
 .mh-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--mh-line); border-radius:999px; background:#f6f8fb; }
 .mh-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
 .mh-tab.active { background:var(--mh-accent); color:#fff; }
+.mh-subtabs { display:flex; gap:6px; margin:0 0 12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#fff; }
+.mh-subtab { min-width:96px; height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
+.mh-subtab.active { background:#0f766e; color:#fff; }
 .mh-tool-row { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:44px; margin-bottom:10px; padding:8px 12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
 .mh-tool-title { color:#475569; font-size:13px; font-weight:700; }
 .mh-tool-buttons { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
@@ -55,6 +58,10 @@
 .mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
 .mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
 .mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-europe-panel { margin-top:10px; padding:10px; border:1px solid #bbf7d0; border-radius:6px; background:#f0fdf4; }
+.mh-europe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; font-size:13px; font-weight:800; color:#166534; }
+.mh-score { display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:26px; padding:0 8px; border-radius:6px; background:#166534; color:#fff; font-size:14px; }
+.mh-europe-list { margin:5px 0 0; padding-left:18px; color:#365349; font-size:12px; line-height:1.45; }
 .mh-product { display:grid; grid-template-columns:54px minmax(0, 1fr); gap:9px; align-items:start; }
 .mh-product img, .mh-product-empty { width:54px; height:54px; border-radius:6px; object-fit:cover; background:#e2e8f0; }
 .mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
@@ -84,6 +91,11 @@
     <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
   </nav>
 
+  <div class="mh-subtabs" role="tablist" aria-label="Meta热帖子菜单">
+    <button class="mh-subtab active" id="mhLibrarySubtab" type="button" onclick="switchMetaHotSubtab('library')">素材库</button>
+    <button class="mh-subtab" id="mhEuropeSubtab" type="button" onclick="switchMetaHotSubtab('europe')">欧洲Top50</button>
+  </div>
+
   <div class="mh-tool-row">
     <div class="mh-tool-title">Meta 热帖工具</div>
     <div class="mh-tool-buttons">
@@ -93,6 +105,7 @@
       <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
       <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
       <button class="mh-btn secondary" type="button" onclick="localizeMetaHotPostVideos()">本地化视频</button>
+      <button class="mh-btn secondary" type="button" onclick="assessEuropeFitMaterials()">欧洲评估</button>
     </div>
   </div>
 
@@ -185,6 +198,7 @@
 
 <script>
 let mhPage = 1;
+let mhSubtab = 'library';
 const mhPageSize = 50;
 const qs = id => document.getElementById(id);
 function esc(v) {
@@ -229,6 +243,29 @@ function renderMarkOptions(row) {
   const postId = Number(row.id || 0);
   return `<div class="mh-mark-options" data-post-id="${postId}" data-mark-status="${currentStatus}" aria-label="标注结果">${renderMarkOption(postId, currentStatus, 'ok', '行')}${renderMarkOption(postId, currentStatus, 'bad', '不行')}</div>`;
 }
+function listItems(items) {
+  return (items || []).filter(Boolean).slice(0, 4).map(item => `<li>${esc(item)}</li>`).join('');
+}
+function recommendationLabel(value) {
+  if (value === 'direct_reuse') return '可直接搬运';
+  if (value === 'adapt_before_use') return '本土化后投放';
+  if (value === 'not_recommended') return '不建议';
+  return fmt(value || '-');
+}
+function renderEuropeFitPanel(row) {
+  if (row.europe_fit_score === undefined || row.europe_fit_score === null || row.europe_fit_score === '') return '';
+  const countries = (row.europe_fit_best_countries || []).join(', ') || '-';
+  const strengths = listItems(row.europe_fit_strengths);
+  const risks = listItems(row.europe_fit_risks);
+  const changes = listItems(row.europe_fit_required_changes);
+  return `<div class="mh-europe-panel">
+    <div class="mh-europe-head"><span>欧洲评估 · ${recommendationLabel(row.europe_fit_recommendation)}</span><span class="mh-score">${fmt(row.europe_fit_score)}</span></div>
+    <div class="mh-mini">适合国家：${esc(countries)} · 模型：${fmt(row.europe_fit_model || '')}</div>
+    ${strengths ? `<ul class="mh-europe-list">${strengths}</ul>` : ''}
+    ${risks ? `<div class="mh-mini">风险</div><ul class="mh-europe-list">${risks}</ul>` : ''}
+    ${changes ? `<div class="mh-mini">需要调整</div><ul class="mh-europe-list">${changes}</ul>` : ''}
+  </div>`;
+}
 function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
@@ -254,6 +291,7 @@ function renderCard(row) {
           <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
         </div></div>
       </div>
+      ${renderEuropeFitPanel(row)}
     </div>
     <div class="mh-links">
       ${row.post_url ? `<a class="mh-link-btn" href="${esc(row.post_url)}" target="_blank" rel="noopener noreferrer">去帖子页</a>` : ''}
@@ -273,6 +311,16 @@ function buildParams(page) {
   if (qs('mhCreatedFrom').value) params.set('created_from', qs('mhCreatedFrom').value);
   if (qs('mhCreatedTo').value) params.set('created_to', qs('mhCreatedTo').value);
   return params;
+}
+function switchMetaHotSubtab(tab) {
+  mhSubtab = tab === 'europe' ? 'europe' : 'library';
+  qs('mhLibrarySubtab').classList.toggle('active', mhSubtab === 'library');
+  qs('mhEuropeSubtab').classList.toggle('active', mhSubtab === 'europe');
+  if (mhSubtab === 'europe') {
+    loadEuropeTopMaterials();
+  } else {
+    loadMetaHotPosts(mhPage || 1);
+  }
 }
 function renderMetaHotPager(data) {
   const total = Number(data.total || 0);
@@ -303,6 +351,9 @@ function renderMetaHotPager(data) {
   });
 }
 async function loadMetaHotPosts(page = 1) {
+  mhSubtab = 'library';
+  qs('mhLibrarySubtab').classList.add('active');
+  qs('mhEuropeSubtab').classList.remove('active');
   mhPage = page;
   qs('mhStatus').textContent = 'Loading...';
   const res = await fetch(`/xuanpin/api/meta-hot-posts?${buildParams(page)}`);
@@ -314,6 +365,20 @@ async function loadMetaHotPosts(page = 1) {
   mhPage = Number(data.page || page || 1);
   renderMetaHotPager(data);
   qs('mhStatus').textContent = `Page ${mhPage}`;
+}
+async function loadEuropeTopMaterials() {
+  mhSubtab = 'europe';
+  qs('mhLibrarySubtab').classList.remove('active');
+  qs('mhEuropeSubtab').classList.add('active');
+  qs('mhStatus').textContent = 'Loading Europe Top50...';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/europe-top?limit=50');
+  const data = await res.json();
+  qs('mhCount').textContent = data.total ?? 0;
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">暂无欧洲评估结果</div>';
+  ['mhPagerTop', 'mhPagerBottom'].forEach(id => { qs(id).innerHTML = ''; });
+  qs('mhStatus').textContent = '欧洲Top50';
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
@@ -338,6 +403,11 @@ async function localizeMetaHotPostVideos() {
   qs('mhStatus').textContent = '视频本地化中...';
   await fetch('/xuanpin/api/meta-hot-posts/localize-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, min_delay_seconds:10})});
   loadMetaHotPosts(mhPage);
+}
+async function assessEuropeFitMaterials() {
+  qs('mhStatus').textContent = '欧洲评估中...';
+  await fetch('/xuanpin/api/meta-hot-posts/europe-fit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30})});
+  loadEuropeTopMaterials();
 }
 function markStatusLabel(markStatus) {
   if (markStatus === 'ok') return '行';

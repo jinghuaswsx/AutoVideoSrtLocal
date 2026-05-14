@@ -53,7 +53,7 @@ def test_sync_hot_posts_stops_when_upstream_returns_empty(monkeypatch):
     assert summary["posts"] == 1
 
 
-def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
+def test_register_schedules_daily_sync_analysis_translation_video_and_europe_fit(monkeypatch):
     calls = []
     now = datetime(2026, 5, 14, 18, 0, 0)
 
@@ -70,7 +70,8 @@ def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     analysis_args, analysis_kwargs = calls[1]
     translation_args, translation_kwargs = calls[2]
     video_args, video_kwargs = calls[3]
-    startup_args, startup_kwargs = calls[4]
+    europe_args, europe_kwargs = calls[4]
+    startup_args, startup_kwargs = calls[5]
     assert sync_args[1] == "meta_hot_posts_sync_tick"
     assert sync_args[3] == "cron"
     assert sync_kwargs["hour"] == 7
@@ -85,6 +86,10 @@ def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     assert video_args[3] == "interval"
     assert video_kwargs["minutes"] == 10
     assert "next_run_time" not in video_kwargs
+    assert europe_args[1] == "meta_hot_posts_europe_fit_tick"
+    assert europe_args[3] == "interval"
+    assert europe_kwargs["minutes"] == 10
+    assert europe_kwargs["max_instances"] == 2
     assert startup_args[1] == "meta_hot_posts_video_localization_tick"
     assert startup_args[2] == scheduler.video_localization_startup_tick_once
     assert startup_args[3] == "date"
@@ -111,6 +116,73 @@ def test_video_localization_tick_once_defaults_to_30_seconds(monkeypatch):
 
     assert captured["limit"] == 30
     assert captured["min_delay_seconds"] == 30
+
+
+def test_europe_fit_tick_once_defaults_to_30_materials(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: None)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
+
+    def fake_assess(*, limit, user_id=None, run_id=None):
+        captured["limit"] = limit
+        captured["run_id"] = run_id
+        return {"scanned": 0, "done": 0, "failed": 0}
+
+    monkeypatch.setattr(scheduler, "assess_europe_fit_materials", fake_assess)
+
+    scheduler.europe_fit_tick_once()
+
+    assert captured["limit"] == 30
+    assert captured["run_id"] == 42
+
+
+def test_europe_fit_tick_once_replaces_previous_running_run(monkeypatch):
+    started_at = datetime(2026, 5, 14, 10, 0, 0)
+    events = []
+
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "latest_running_run",
+        lambda task_code: {"id": 31, "started_at": started_at},
+    )
+    monkeypatch.setattr(scheduler, "_now", lambda: started_at + timedelta(minutes=5))
+    monkeypatch.setattr(
+        scheduler.store,
+        "reset_running_europe_fit_assessments",
+        lambda: events.append(("reset_europe",)) or 4,
+    )
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: events.append(("finish", run_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "start_run",
+        lambda task_code: events.append(("start", task_code)) or 102,
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "assess_europe_fit_materials",
+        lambda *, limit, user_id=None, run_id=None: events.append(("assess", limit, run_id))
+        or {"scanned": 1, "done": 1, "failed": 0},
+    )
+
+    summary = scheduler.europe_fit_tick_once(limit=1)
+
+    assert summary["running_run_replaced"] == 31
+    assert summary["running_europe_fit_reset"] == 4
+    assert summary["running_age_seconds"] == 300
+    assert summary["done"] == 1
+    assert events[0] == ("reset_europe",)
+    assert events[1][0] == "finish"
+    assert events[1][1] == 31
+    assert events[1][2]["status"] == "failed"
+    assert "superseded by a new run" in events[1][2]["error_message"]
+    assert events[2] == ("start", scheduler.EUROPE_FIT_TASK_CODE)
+    assert events[3] == ("assess", 1, 102)
 
 
 def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):
@@ -390,6 +462,53 @@ def test_translate_pending_messages_records_failures(monkeypatch):
 
     assert summary == {"scanned": 1, "done": 0, "failed": 1}
     assert finished == [(1, {"translated_html": None, "error_message": "provider failed"})]
+
+
+def test_assess_europe_fit_materials_stops_when_run_is_superseded(monkeypatch):
+    finished = []
+    marked = []
+    latest_calls = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_europe_fit_materials",
+        lambda limit: [
+            {"id": 1, "local_video_path": "meta_hot_posts/videos/1.mp4"},
+            {"id": 2, "local_video_path": "meta_hot_posts/videos/2.mp4"},
+        ],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_europe_fit_running", lambda post_id: marked.append(post_id))
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_europe_fit_assessment",
+        lambda post_id, **kwargs: finished.append((post_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        scheduler.europe_fit,
+        "assess_material",
+        lambda row, user_id=None: {"suitability_score": 90, "video_optimization": {}},
+    )
+
+    def fake_latest(task_code):
+        latest_calls.append(task_code)
+        if len(latest_calls) >= 2:
+            return {"id": 999}
+        return {"id": 42}
+
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", fake_latest)
+
+    summary = scheduler.assess_europe_fit_materials(limit=2, user_id=7, run_id=42)
+
+    assert summary == {
+        "scanned": 1,
+        "done": 0,
+        "failed": 0,
+        "superseded": True,
+        "stop_reason": "newer_run_started",
+    }
+    assert marked == [1]
+    assert finished == []
 
 
 def test_analyze_pending_products_keeps_product_result_when_category_fails(monkeypatch):

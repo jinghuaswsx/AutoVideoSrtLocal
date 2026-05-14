@@ -61,6 +61,13 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
     assert "row.local_video_url" in body
     assert "<video" in body
+    assert "欧洲Top50" in body
+    assert "mhSubtab" in body
+    assert "function loadEuropeTopMaterials" in body
+    assert "/xuanpin/api/meta-hot-posts/europe-top" in body
+    assert "function assessEuropeFitMaterials" in body
+    assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
+    assert "renderEuropeFitPanel" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -144,6 +151,34 @@ def test_meta_hot_posts_localize_videos_api_delegates_to_service(authed_client_n
 
     assert resp.status_code == 202
     assert captured["payload"]["limit"] == 5
+
+
+def test_meta_hot_posts_europe_fit_api_passes_current_user(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(payload):
+        captured["payload"] = payload
+        return type("Resp", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_europe_fit_response", fake_response)
+
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/europe-fit", json={"limit": 30})
+
+    assert resp.status_code == 202
+    assert captured["payload"]["limit"] == 30
+    assert captured["payload"]["user_id"]
+
+
+def test_meta_hot_posts_europe_top_api_delegates_to_service(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.build_europe_top_response",
+        lambda args: type("Resp", (), {"payload": {"items": [{"id": 2}], "total": 1}, "status_code": 200})(),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/europe-top?limit=50")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"id": 2}]
 
 
 def test_meta_hot_posts_local_video_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):

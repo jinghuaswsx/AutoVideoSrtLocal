@@ -318,6 +318,123 @@ def test_get_hot_post_local_video_returns_cache_row():
     assert params == (5,)
 
 
+def test_next_pending_europe_fit_materials_selects_downloaded_video_rows():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"id": 9, "product_url": "https://example.com/products/a"}]
+
+    rows = store.next_pending_europe_fit_materials(limit=500, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["id"] == 9
+    assert "FROM meta_hot_posts p" in sql
+    assert "LEFT JOIN meta_hot_post_product_analyses a" in sql
+    assert "LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id" in sql
+    assert "p.local_video_status = 'downloaded'" in sql
+    assert "p.local_video_path IS NOT NULL" in sql
+    assert "p.product_url IS NOT NULL" in sql
+    assert "(e.id IS NULL OR e.status IN ('pending', 'failed'))" in sql
+    assert "COALESCE(e.attempts, 0) < %s" in sql
+    assert params == (3, 100)
+
+
+def test_europe_fit_status_transitions_are_recorded():
+    calls = []
+
+    store.mark_europe_fit_running(
+        77,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_europe_fit_assessment(
+        77,
+        status="done",
+        result={
+            "suitability_score": 91,
+            "recommendation": "direct_reuse",
+            "direct_reuse": True,
+            "best_countries": ["DE", "FR"],
+            "country_scores": {"DE": 92},
+            "strengths": ["clear demo"],
+            "risks": ["minor English overlay"],
+            "required_changes": [],
+            "reasoning": "Strong visual proof.",
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
+            "raw_response": {"ok": True},
+        },
+        video_optimization={"optimized": True},
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_europe_fit_assessment(
+        78,
+        status="failed",
+        result={},
+        video_optimization={},
+        error_message="local video missing",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    running_sql, running_params = calls[0]
+    success_sql, success_params = calls[1]
+    failure_sql, failure_params = calls[2]
+    assert "INSERT INTO meta_hot_post_europe_assessments" in running_sql
+    assert "ON DUPLICATE KEY UPDATE" in running_sql
+    assert "attempts=attempts + 1" in running_sql
+    assert running_params == (77,)
+    assert "suitability_score=%s" in success_sql
+    assert "recommendation=%s" in success_sql
+    assert "direct_reuse=%s" in success_sql
+    assert "video_optimization_json=%s" in success_sql
+    assert "assessed_at=CASE WHEN %s = 'done' THEN NOW() ELSE assessed_at END" in success_sql
+    assert success_params[1] is None
+    assert success_params[2] == 91
+    assert success_params[3] == "direct_reuse"
+    assert success_params[4] == 1
+    assert success_params[-2] == "done"
+    assert success_params[-1] == 77
+    assert "last_error=%s" in failure_sql
+    assert failure_params[0] == "failed"
+    assert failure_params[1] == "local video missing"
+    assert failure_params[-1] == 78
+
+
+def test_reset_running_europe_fit_assessments_requeues_for_takeover():
+    calls = []
+
+    result = store.reset_running_europe_fit_assessments(
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 3,
+    )
+
+    sql, params = calls[0]
+    assert result == 3
+    assert "UPDATE meta_hot_post_europe_assessments" in sql
+    assert "status='pending'" in sql
+    assert "status='running'" in sql
+    assert "superseded by a new run" in sql
+    assert params == ()
+
+
+def test_list_top_europe_fit_materials_orders_by_score():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"id": 5, "europe_fit_score": 96}]
+
+    rows = store.list_top_europe_fit_materials(limit=500, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["europe_fit_score"] == 96
+    assert "FROM meta_hot_post_europe_assessments e" in sql
+    assert "JOIN meta_hot_posts p ON p.id = e.post_id" in sql
+    assert "e.status = 'done'" in sql
+    assert "ORDER BY e.suitability_score DESC" in sql
+    assert params == (50,)
+
+
 def test_next_pending_product_analyses_selects_unfinished_rows():
     calls = []
 

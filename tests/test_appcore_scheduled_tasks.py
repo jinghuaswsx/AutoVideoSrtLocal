@@ -339,6 +339,15 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert "50 条" in translation_task["description"]
     assert "中文" in translation_task["description"]
 
+    europe_task = definitions["meta_hot_posts_europe_fit_tick"]
+    assert europe_task["schedule"] == "每 10 分钟"
+    assert europe_task["source_type"] == "apscheduler"
+    assert europe_task["runner"] == "appcore.meta_hot_posts.scheduler.europe_fit_tick_once"
+    assert europe_task["log_table"] == "scheduled_task_runs"
+    assert "30 条" in europe_task["description"]
+    assert "OpenRouter" in europe_task["description"]
+    assert "2026-05-14-meta-hot-posts-europe-fit-design.md" in europe_task["description"]
+
 
 def test_task_definitions_include_server_and_app_timers():
     from appcore import scheduled_tasks

@@ -38,6 +38,34 @@ def _decode_sku_json(value: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _decode_json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value:
+        import json
+
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def _decode_json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value:
+        import json
+
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
 def _bool_payload(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -81,6 +109,26 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         mark_status = MARK_STATUS_BAD
     item["mark_status"] = mark_status
     item["is_marked"] = bool(mark_status)
+    item["europe_fit_best_countries"] = _decode_json_list(
+        item.pop("europe_fit_best_countries_json", None)
+    )
+    item["europe_fit_country_scores"] = _decode_json_dict(
+        item.pop("europe_fit_country_scores_json", None)
+    )
+    item["europe_fit_strengths"] = _decode_json_list(
+        item.pop("europe_fit_strengths_json", None)
+    )
+    item["europe_fit_risks"] = _decode_json_list(
+        item.pop("europe_fit_risks_json", None)
+    )
+    item["europe_fit_required_changes"] = _decode_json_list(
+        item.pop("europe_fit_required_changes_json", None)
+    )
+    item["europe_fit_video_optimization"] = _decode_json_dict(
+        item.pop("europe_fit_video_optimization_json", None)
+    )
+    if "europe_fit_direct_reuse" in item:
+        item["europe_fit_direct_reuse"] = _bool_payload(item.get("europe_fit_direct_reuse"))
     return item
 
 
@@ -88,6 +136,16 @@ def build_list_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
     payload = store.list_hot_posts(args)
     payload["items"] = [_hydrate_item(item) for item in payload.get("items") or []]
     return MetaHotPostsResponse(payload)
+
+
+def build_europe_top_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
+    try:
+        limit = int(args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    items = store.list_top_europe_fit_materials(limit=limit)
+    hydrated = [_hydrate_item(item) for item in items]
+    return MetaHotPostsResponse({"items": hydrated, "total": len(hydrated), "limit": max(1, min(50, limit))})
 
 
 def category_options() -> list[dict[str, Any]]:
@@ -250,6 +308,30 @@ def build_localize_videos_response(payload: Mapping[str, Any] | None = None) -> 
             "result": scheduler.video_localization_tick_once(
                 limit=limit,
                 min_delay_seconds=delay,
+            ),
+        },
+        202,
+    )
+
+
+def build_europe_fit_response(payload: Mapping[str, Any] | None = None) -> MetaHotPostsResponse:
+    from appcore.meta_hot_posts import scheduler
+
+    payload = payload or {}
+    try:
+        limit = int(payload.get("limit") or scheduler.SCHEDULED_EUROPE_FIT_LIMIT)
+    except (TypeError, ValueError):
+        limit = scheduler.SCHEDULED_EUROPE_FIT_LIMIT
+    try:
+        user_id = int(payload.get("user_id") or 0) or None
+    except (TypeError, ValueError):
+        user_id = None
+    return MetaHotPostsResponse(
+        {
+            "ok": True,
+            "result": scheduler.europe_fit_tick_once(
+                limit=limit,
+                user_id=user_id,
             ),
         },
         202,

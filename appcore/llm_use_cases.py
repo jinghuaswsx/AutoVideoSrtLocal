@@ -510,6 +510,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "meta_hot_posts.europe_fit": _uc(
+        "meta_hot_posts.europe_fit",
+        "xuanpin",
+        "Meta 热帖欧洲投放适配评估",
+        "用 OpenRouter Gemini 3 Flash 评估热帖视频和商品链接是否适合直接搬运到欧洲 Meta 广告市场",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
+        "tokens",
+    ),
     # 视频创作
     "video_creation.generate": _uc(
         "video_creation.generate",

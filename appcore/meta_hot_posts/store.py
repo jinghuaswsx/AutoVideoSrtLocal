@@ -467,6 +467,176 @@ def get_hot_post_local_video(
     return rows[0] if rows else None
 
 
+def next_pending_europe_fit_materials(
+    *,
+    limit: int = 30,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(100, int(limit)))
+    return query_fn(
+        """
+        SELECT p.id, p.wedev_post_id, p.page_id, p.post_id,
+               p.product_url, p.creation_time, p.likes, p.comments, p.shares,
+               p.latest_likes, p.latest_comments, p.latest_shares,
+               p.sync_period_likes, p.sync_period_hours,
+               p.video_url, p.local_video_path, p.local_video_status,
+               p.message_html,
+               a.product_title, a.product_main_image_url, a.price_min,
+               a.price_max, a.currency, a.sku_prices_json,
+               a.category_l1, a.category_confidence, a.category_reason,
+               e.status AS europe_fit_status, e.attempts AS europe_fit_attempts
+        FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id
+        WHERE p.product_url IS NOT NULL
+          AND TRIM(p.product_url) <> ''
+          AND p.local_video_path IS NOT NULL
+          AND TRIM(p.local_video_path) <> ''
+          AND p.local_video_status = 'downloaded'
+          AND (e.id IS NULL OR e.status IN ('pending', 'failed'))
+          AND COALESCE(e.attempts, 0) < %s
+        ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id ASC
+        LIMIT %s
+        """,
+        (int(max_attempts), safe_limit),
+    )
+
+
+def mark_europe_fit_running(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        INSERT INTO meta_hot_post_europe_assessments (post_id, status, attempts, last_error)
+        VALUES (%s, 'running', 1, NULL)
+        ON DUPLICATE KEY UPDATE
+          status='running',
+          attempts=attempts + 1,
+          last_error=NULL
+        """,
+        (int(post_id),),
+    )
+
+
+def finish_europe_fit_assessment(
+    post_id: int,
+    *,
+    status: str,
+    result: Mapping[str, Any] | None = None,
+    video_optimization: Mapping[str, Any] | None = None,
+    error_message: str | None = None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    result = result or {}
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_europe_assessments
+        SET status=%s,
+            last_error=%s,
+            suitability_score=%s,
+            recommendation=%s,
+            direct_reuse=%s,
+            best_countries_json=%s,
+            country_scores_json=%s,
+            strengths_json=%s,
+            risks_json=%s,
+            required_changes_json=%s,
+            reasoning=%s,
+            llm_provider=%s,
+            llm_model=%s,
+            llm_response_json=%s,
+            video_optimization_json=%s,
+            assessed_at=CASE WHEN %s = 'done' THEN NOW() ELSE assessed_at END
+        WHERE post_id=%s
+        """,
+        (
+            status,
+            error_message,
+            result.get("suitability_score"),
+            result.get("recommendation"),
+            1 if result.get("direct_reuse") else 0,
+            _json(result.get("best_countries") or []),
+            _json(result.get("country_scores") or {}),
+            _json(result.get("strengths") or []),
+            _json(result.get("risks") or []),
+            _json(result.get("required_changes") or []),
+            result.get("reasoning"),
+            result.get("provider"),
+            result.get("model"),
+            _json(result.get("raw_response") or result),
+            _json(video_optimization or result.get("video_optimization") or {}),
+            status,
+            int(post_id),
+        ),
+    )
+
+
+def reset_running_europe_fit_assessments(*, execute_fn: ExecuteFn = execute) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_europe_assessments
+        SET status='pending',
+            last_error='Europe fit assessment superseded by a new run'
+        WHERE status='running'
+        """,
+        (),
+    )
+
+
+def list_top_europe_fit_materials(
+    *,
+    limit: int = 50,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(50, int(limit)))
+    return query_fn(
+        """
+        SELECT p.id, p.wedev_post_id, p.page_id, p.post_id, p.bm_page_id,
+               p.post_url, p.ad_library_url, p.product_url, p.creation_time,
+               p.last_synced_at, p.likes, p.comments, p.shares,
+               p.latest_likes, p.latest_comments, p.latest_shares,
+               p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               p.video_url, p.image_url, p.invisible, p.invisible_region,
+               p.message_html, p.message_zh_html, p.message_zh_status,
+               p.local_video_path, p.local_video_status, p.local_video_error,
+               p.local_video_downloaded_at, p.local_video_attempts,
+               a.status AS analysis_status,
+               a.product_title, a.product_main_image_url, a.price_min,
+               a.price_max, a.currency, a.sku_prices_json,
+               a.category_l1, a.category_confidence, a.category_reason,
+               a.last_error, a.analyzed_at,
+               e.status AS europe_fit_status,
+               e.suitability_score AS europe_fit_score,
+               e.recommendation AS europe_fit_recommendation,
+               e.direct_reuse AS europe_fit_direct_reuse,
+               e.best_countries_json AS europe_fit_best_countries_json,
+               e.country_scores_json AS europe_fit_country_scores_json,
+               e.strengths_json AS europe_fit_strengths_json,
+               e.risks_json AS europe_fit_risks_json,
+               e.required_changes_json AS europe_fit_required_changes_json,
+               e.reasoning AS europe_fit_reasoning,
+               e.llm_provider AS europe_fit_provider,
+               e.llm_model AS europe_fit_model,
+               e.video_optimization_json AS europe_fit_video_optimization_json,
+               e.assessed_at AS europe_fit_assessed_at
+        FROM meta_hot_post_europe_assessments e
+        JOIN meta_hot_posts p ON p.id = e.post_id
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        WHERE e.status = 'done'
+        ORDER BY e.suitability_score DESC,
+                 COALESCE(p.sync_period_likes, 0) DESC,
+                 e.assessed_at DESC,
+                 p.id DESC
+        LIMIT %s
+        """,
+        (safe_limit,),
+    )
+
+
 def reset_stale_running_local_videos(
     *,
     older_than_seconds: int = 7200,

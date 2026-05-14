@@ -51,4 +51,19 @@ def test_meta_hot_posts_local_video_migration_adds_cache_fields():
     assert "local_video_downloaded_at" in body
     assert "local_video_attempts" in body
     assert "idx_meta_hot_posts_local_video_status" in body
-    assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md" in body
+
+
+def test_meta_hot_posts_europe_fit_migration_creates_assessment_table():
+    body = Path("db/migrations/2026_05_14_meta_hot_posts_europe_fit.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CREATE TABLE IF NOT EXISTS meta_hot_post_europe_assessments" in body
+    assert "post_id BIGINT UNSIGNED NOT NULL" in body
+    assert "suitability_score" in body
+    assert "recommendation" in body
+    assert "direct_reuse" in body
+    assert "video_optimization_json" in body
+    assert "uniq_meta_hot_post_europe_assessments_post" in body
+    assert "idx_meta_hot_post_europe_assessments_rank" in body
+    assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-europe-fit-design.md" in body
