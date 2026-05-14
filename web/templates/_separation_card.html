@@ -198,11 +198,11 @@
         ? '<div class="loudness-warn">⚠ 已超过总超时上限，可能即将自动降级</div>'
         : "";
       setHtmlIfChanged(preview, '<div class="separation-detail">' +
-          '<div class="kv-row"><span class="k">preset</span><span class="v">' + (sep.model || "-") + '</span></div>' +
+          '<div class="kv-row"><span class="k">preset</span><span class="v">' + escapeHtml(sep.model || "-") + '</span></div>' +
           '<div class="kv-row"><span class="k">已等待 / 上限</span><span class="v">' +
             fmt(elapsed, 0, "s") + ' / ' + fmt(timeoutSec, 0, "s") +
           '</span></div>' +
-          '<div class="kv-row"><span class="k">API</span><span class="v">' + (sep.api_url || "-") + '</span></div>' +
+          '<div class="kv-row"><span class="k">API</span><span class="v">' + escapeHtml(sep.api_url || "-") + '</span></div>' +
           warning +
         '</div>');
       return;
@@ -212,7 +212,7 @@
       var vocalsUrl = API_BASE + "/" + TASK_ID + "/artifact/separation_vocals";
       var accompUrl = API_BASE + "/" + TASK_ID + "/artifact/separation_accompaniment";
       setHtmlIfChanged(preview, '<div class="separation-detail">' +
-          '<div class="kv-row"><span class="k">preset</span><span class="v">' + (sep.model || "-") + '</span></div>' +
+          '<div class="kv-row"><span class="k">preset</span><span class="v">' + escapeHtml(sep.model || "-") + '</span></div>' +
           '<div class="kv-row"><span class="k">耗时</span><span class="v">' + fmt(elapsed, 1, "s") + '</span></div>' +
           '<div class="kv-row"><span class="k">原人声 L₀</span><span class="v">' + fmt(sep.vocals_lufs, 1, " LUFS") + '</span></div>' +
           '<div class="kv-row"><span class="k">原视频整体</span><span class="v">' + fmt(sep.video_lufs, 1, " LUFS") + '</span></div>' +
@@ -237,9 +237,9 @@
 
     // failed / unavailable / timeout / silence
     var label = STATUS_LABEL_ZH[status] || status;
-    var errMsg = (sep.error || "").substring(0, 200);
+    var errMsg = escapeHtml(sep.error || "").substring(0, 200);
     setHtmlIfChanged(preview, '<div class="separation-detail muted">' +
-        '<div class="kv-row"><span class="k">状态</span><span class="v">' + label + '</span></div>' +
+        '<div class="kv-row"><span class="k">状态</span><span class="v">' + escapeHtml(label) + '</span></div>' +
         '<div class="kv-row"><span class="k">耗时</span><span class="v">' + fmt(elapsed, 1, "s") + '</span></div>' +
         (errMsg ? '<div class="kv-row"><span class="k">原因</span><span class="v">' + errMsg + '</span></div>' : "") +
         '<div class="loudness-warn">⚠ 已自动降级走旧逻辑（不混背景音、不做响度匹配，主任务继续）</div>' +
@@ -378,7 +378,7 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (task) {
         if (task) {
-          if (task.separation) separation = task.separation;
+          if (Object.prototype.hasOwnProperty.call(task, "separation")) separation = task.separation;
           selectedLoudnessProfile = task.loudness_profile || selectedLoudnessProfile || "standard";
           selectedManualBoostPct = Number(task.loudness_manual_boost_pct || selectedManualBoostPct || 50);
           loudnessStepStatus = (task.steps && task.steps.loudness_match) || loudnessStepStatus || "";

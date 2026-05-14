@@ -194,6 +194,10 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     assert 'state.steps.loudness_match' in separation
     assert 'task.steps.loudness_match' in separation
     assert 'loudnessStepStatus === "running"' in separation
+    assert "escapeHtml(sep.model" in separation
+    assert "escapeHtml(sep.api_url" in separation
+    assert "escapeHtml(sep.error" in separation
+    assert 'hasOwnProperty.call(task, "separation")' in separation
 
 
 def test_tts_generation_summary_is_rendered_in_duration_log():
