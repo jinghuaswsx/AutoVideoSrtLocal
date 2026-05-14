@@ -1,4 +1,6 @@
+from pathlib import Path
 from unittest.mock import patch
+
 from pipeline.shot_decompose import decompose_shots, align_asr_to_shots
 
 
@@ -79,6 +81,83 @@ def test_decompose_shots_uses_configured_binding_model_by_default():
         )
 
     assert generate.call_args.kwargs["model_override"] is None
+
+
+def test_decompose_shots_preprocesses_existing_video_before_llm(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source-video")
+    captured_cmd = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"small-video")
+
+    fake_response = {
+        "json": {
+            "shots": [
+                {"index": 1, "start": 0.0, "end": 10.0, "description": "shot"},
+            ]
+        },
+        "text": None,
+        "raw": None,
+        "usage": {},
+    }
+
+    def fake_generate(*args, **kwargs):
+        media_path = Path(kwargs["media"][0])
+        assert media_path != source
+        assert media_path.exists()
+        assert media_path.read_bytes() == b"small-video"
+        return fake_response
+
+    with patch("pipeline.shot_decompose.probe_media_info",
+               return_value={"width": 1080, "height": 1920, "duration": 10.0}), \
+         patch("pipeline.shot_decompose.subprocess.run", side_effect=fake_run), \
+         patch("pipeline.shot_decompose.gemini_generate", side_effect=fake_generate) as generate:
+        shots = decompose_shots(
+            video_path=str(source),
+            user_id=1,
+            duration_seconds=10.0,
+        )
+
+    cmd = captured_cmd["cmd"]
+    assert cmd[:4] == ["ffmpeg", "-y", "-i", str(source)]
+    assert "scale=-2:min(480\\,ih),fps=15" in cmd
+    assert "-b:v" in cmd and cmd[cmd.index("-b:v") + 1] == "600k"
+    assert "-maxrate" in cmd and cmd[cmd.index("-maxrate") + 1] == "800k"
+    assert "-bufsize" in cmd and cmd[cmd.index("-bufsize") + 1] == "1200k"
+    assert "-an" in cmd
+    assert not Path(generate.call_args.kwargs["media"][0]).exists()
+    assert shots[0]["duration"] == 10.0
+
+
+def test_decompose_shots_falls_back_to_original_video_when_preprocess_fails(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source-video")
+    fake_response = {
+        "json": {
+            "shots": [
+                {"index": 1, "start": 0.0, "end": 10.0, "description": "shot"},
+            ]
+        },
+        "text": None,
+        "raw": None,
+        "usage": {},
+    }
+
+    with patch("pipeline.shot_decompose.probe_media_info",
+               return_value={"width": 1080, "height": 1920, "duration": 10.0}), \
+         patch("pipeline.shot_decompose.subprocess.run",
+               side_effect=RuntimeError("ffmpeg failed")), \
+         patch("pipeline.shot_decompose.gemini_generate",
+               return_value=fake_response) as generate:
+        decompose_shots(
+            video_path=str(source),
+            user_id=1,
+            duration_seconds=10.0,
+        )
+
+    assert generate.call_args.kwargs["media"] == [str(source)]
 
 
 def test_decompose_shots_raises_when_empty():

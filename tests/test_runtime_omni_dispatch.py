@@ -490,6 +490,86 @@ def test_shot_decompose_falls_back_to_asr_end_when_video_duration_missing(
     assert captured["duration_seconds"] == 23.3
 
 
+def test_shot_decompose_debug_payload_uses_preprocessed_llm_video(
+    monkeypatch, tmp_path, omni_runner,
+):
+    import appcore.task_state as task_state
+    from appcore.runtime_omni_steps import step_shot_decompose
+    from pipeline.shot_decompose import ShotDecomposeMedia
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
+        },
+    )
+
+    original_video = tmp_path / "video.mp4"
+    llm_video = tmp_path / "shot_480p.mp4"
+    original_video.write_bytes(b"source")
+    llm_video.write_bytes(b"small")
+    captured_debug_calls = []
+
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 10.0)
+    monkeypatch.setattr(
+        "pipeline.shot_decompose.prepare_shot_decompose_media",
+        lambda video_path, output_dir=None: ShotDecomposeMedia(
+            original_path=str(original_video),
+            llm_path=str(llm_video),
+            preprocessed=True,
+            cleanup_path=str(llm_video),
+            original_bytes=100,
+            llm_bytes=10,
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "pipeline.shot_decompose.cleanup_shot_decompose_media",
+        lambda media: None,
+    )
+
+    def fake_decompose(video_path, **kwargs):
+        assert video_path == str(llm_video)
+        assert kwargs["preprocess_video"] is False
+        return [
+            {
+                "index": 1,
+                "start": 0.0,
+                "end": kwargs["duration_seconds"],
+                "duration": kwargs["duration_seconds"],
+                "description": "full video",
+            }
+        ]
+
+    monkeypatch.setattr("pipeline.shot_decompose.decompose_shots", fake_decompose)
+    monkeypatch.setattr(
+        "pipeline.shot_decompose.align_asr_to_shots",
+        lambda shots, asr_segments: shots,
+    )
+    monkeypatch.setattr(
+        "appcore.runtime_omni_steps.save_llm_debug_calls",
+        lambda **kwargs: captured_debug_calls.extend(kwargs["calls"]),
+    )
+
+    task_id = "omni-shot-debug-media"
+    task_state.create(task_id, str(original_video), str(tmp_path), "video.mp4")
+
+    step_shot_decompose(omni_runner, task_id, str(original_video), str(tmp_path))
+
+    debug_call = captured_debug_calls[0]
+    assert debug_call["request_payload"]["media"] == [str(llm_video)]
+    snapshot = debug_call["input_snapshot"][0]
+    assert snapshot["video_path"] == str(original_video)
+    assert snapshot["llm_video_path"] == str(llm_video)
+    assert snapshot["preprocessed"] is True
+    assert snapshot["original_bytes"] == 100
+    assert snapshot["llm_bytes"] == 10
+
+
 def test_shot_decompose_skips_existing_done_shots_for_reordered_resume(
     monkeypatch, tmp_path, omni_runner,
 ):

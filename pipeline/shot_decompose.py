@@ -5,10 +5,20 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+import logging
+from pathlib import Path
+import os
+import subprocess
+import tempfile
 from typing import Any, Dict, List
+
+from pipeline.ffutil import probe_media_info
 
 # 用 alias 便于测试 mock（patch 本模块的 gemini_generate，不触发真实调用）
 from appcore.llm_client import invoke_generate as gemini_generate
+
+log = logging.getLogger(__name__)
 
 SHOT_DECOMPOSE_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -48,6 +58,143 @@ SHOT_DECOMPOSE_PROMPT = """你是专业的视频分镜师。请分析这段视�
 """
 
 DEFAULT_MODEL = "google/gemini-3-flash-preview"
+SHOT_DECOMPOSE_PREPROCESS_FILTER = "scale=-2:min(480\\,ih),fps=15"
+
+
+@dataclass(frozen=True)
+class ShotDecomposeMedia:
+    original_path: str
+    llm_path: str
+    preprocessed: bool
+    cleanup_path: str | None = None
+    original_bytes: int | None = None
+    llm_bytes: int | None = None
+    error: str | None = None
+
+
+def _file_size(path: str) -> int | None:
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return None
+
+
+def prepare_shot_decompose_media(
+    video_path: str,
+    *,
+    output_dir: str | None = None,
+) -> ShotDecomposeMedia:
+    """Create a 480p/15fps/no-audio LLM input for shot decomposition.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-14-omni-shot-decompose-480p-preprocess-design.md
+    """
+    original = str(Path(video_path))
+    original_bytes = _file_size(original)
+    if not Path(original).is_file():
+        return ShotDecomposeMedia(
+            original_path=original,
+            llm_path=original,
+            preprocessed=False,
+            original_bytes=original_bytes,
+            llm_bytes=original_bytes,
+            error="source_missing",
+        )
+
+    info = probe_media_info(original)
+    height = int(info.get("height") or 0)
+    if height and height <= 480:
+        return ShotDecomposeMedia(
+            original_path=original,
+            llm_path=original,
+            preprocessed=False,
+            original_bytes=original_bytes,
+            llm_bytes=original_bytes,
+        )
+
+    fd = None
+    out_path = ""
+    try:
+        tmp_dir = str(Path(output_dir)) if output_dir else None
+        fd, out_path = tempfile.mkstemp(
+            prefix="shot_decompose_480p_",
+            suffix=".mp4",
+            dir=tmp_dir,
+        )
+        os.close(fd)
+        fd = None
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            original,
+            "-vf",
+            SHOT_DECOMPOSE_PREPROCESS_FILTER,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-b:v",
+            "600k",
+            "-maxrate",
+            "800k",
+            "-bufsize",
+            "1200k",
+            "-an",
+            "-movflags",
+            "+faststart",
+            out_path,
+        ]
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=True,
+        )
+        llm_bytes = _file_size(out_path)
+        if not llm_bytes:
+            raise RuntimeError("ffmpeg produced empty shot_decompose video")
+        return ShotDecomposeMedia(
+            original_path=original,
+            llm_path=out_path,
+            preprocessed=True,
+            cleanup_path=out_path,
+            original_bytes=original_bytes,
+            llm_bytes=llm_bytes,
+        )
+    except Exception as exc:  # noqa: BLE001 - preprocessing must not block the task.
+        if fd is not None:
+            os.close(fd)
+        if out_path:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+        log.warning(
+            "shot_decompose 480p preprocess failed for %s, using original video: %s",
+            original,
+            exc,
+        )
+        return ShotDecomposeMedia(
+            original_path=original,
+            llm_path=original,
+            preprocessed=False,
+            original_bytes=original_bytes,
+            llm_bytes=original_bytes,
+            error=str(exc)[:300],
+        )
+
+
+def cleanup_shot_decompose_media(media: ShotDecomposeMedia) -> None:
+    cleanup_path = media.cleanup_path
+    if not cleanup_path:
+        return
+    try:
+        if cleanup_path != media.original_path:
+            os.unlink(cleanup_path)
+    except OSError:
+        pass
 
 
 def decompose_shots(
@@ -56,24 +203,41 @@ def decompose_shots(
     user_id: int,
     duration_seconds: float,
     model: str | None = None,
+    preprocess_video: bool = True,
+    preprocess_output_dir: str | None = None,
 ) -> List[Dict[str, Any]]:
     """调用 Gemini 拆分分镜，返回归一化（首尾对齐、相邻衔接、附 duration）的 shots。"""
     prompt = SHOT_DECOMPOSE_PROMPT.format(duration=duration_seconds)
+    media_input = (
+        prepare_shot_decompose_media(video_path, output_dir=preprocess_output_dir)
+        if preprocess_video
+        else ShotDecomposeMedia(
+            original_path=str(Path(video_path)),
+            llm_path=str(Path(video_path)),
+            preprocessed=False,
+            original_bytes=_file_size(str(Path(video_path))),
+            llm_bytes=_file_size(str(Path(video_path))),
+        )
+    )
     # appcore.gemini.generate 的 media 参数接受路径字符串/Path 或其列表。
     # 测试通过 patch pipeline.shot_decompose.gemini_generate 拦截整条调用，
     # 不会真实走到 Gemini。
-    invoked = gemini_generate(
-        "shot_decompose.run",
-        prompt=prompt,
-        media=[video_path],
-        user_id=user_id,
-        model_override=model,
-        response_schema=SHOT_DECOMPOSE_SCHEMA,
-    )
-    response = invoked.get("json") or {}
-    shots = response.get("shots") or []
-    _normalize_shots(shots, duration_seconds)
-    return shots
+    try:
+        invoked = gemini_generate(
+            "shot_decompose.run",
+            prompt=prompt,
+            media=[media_input.llm_path],
+            user_id=user_id,
+            model_override=model,
+            response_schema=SHOT_DECOMPOSE_SCHEMA,
+        )
+        response = invoked.get("json") or {}
+        shots = response.get("shots") or []
+        _normalize_shots(shots, duration_seconds)
+        return shots
+    finally:
+        if preprocess_video:
+            cleanup_shot_decompose_media(media_input)
 
 
 def _normalize_shots(

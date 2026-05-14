@@ -261,7 +261,9 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
         SHOT_DECOMPOSE_PROMPT,
         SHOT_DECOMPOSE_SCHEMA,
         align_asr_to_shots,
+        cleanup_shot_decompose_media,
         decompose_shots,
+        prepare_shot_decompose_media,
     )
     from appcore import llm_bindings
 
@@ -275,7 +277,8 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
         task_state.update(task_id, video_duration=duration)
 
     prompt = SHOT_DECOMPOSE_PROMPT.format(duration=duration)
-    media = [video_path]
+    media_input = prepare_shot_decompose_media(video_path, output_dir=task_dir)
+    media = [media_input.llm_path]
     debug_call = prompt_file_payload(
         phase="shot_decompose",
         label="镜头分镜",
@@ -294,15 +297,24 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
         input_snapshot=[
             {
                 "video_path": video_path,
+                "llm_video_path": media_input.llm_path,
                 "duration_seconds": duration,
+                "preprocessed": media_input.preprocessed,
+                "preprocess_error": media_input.error,
+                "original_bytes": media_input.original_bytes,
+                "llm_bytes": media_input.llm_bytes,
             }
         ],
     )
-    shots = decompose_shots(
-        video_path,
-        user_id=runner.user_id,
-        duration_seconds=duration,
-    )
+    try:
+        shots = decompose_shots(
+            media_input.llm_path,
+            user_id=runner.user_id,
+            duration_seconds=duration,
+            preprocess_video=False,
+        )
+    finally:
+        cleanup_shot_decompose_media(media_input)
     save_llm_debug_calls(
         task_id=task_id,
         task_dir=task_dir,
