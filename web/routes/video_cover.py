@@ -139,8 +139,16 @@ def _parse_state(row: dict | None) -> dict:
     return state if isinstance(state, dict) else {}
 
 
+def _is_admin_user() -> bool:
+    return getattr(current_user, "is_admin", False)
+
+
 def _load_user_project(task_id: str) -> tuple[dict | None, dict]:
-    row = video_cover_project_store.get_user_project(task_id, int(current_user.id))
+    row = video_cover_project_store.get_project(
+        task_id,
+        user_id=int(current_user.id),
+        is_admin=_is_admin_user(),
+    )
     return row, _parse_state(row)
 
 
@@ -349,7 +357,10 @@ def _run_project_step(state: dict, step: str, *, provider: str | None, model: st
 @login_required
 @admin_required
 def page():
-    projects = video_cover_project_store.list_user_projects(int(current_user.id))
+    projects = video_cover_project_store.list_projects(
+        user_id=int(current_user.id),
+        is_admin=_is_admin_user(),
+    )
     return render_template("video_cover_list.html", projects=projects)
 
 
@@ -449,7 +460,7 @@ def api_run_project_step(task_id: str, step: str):
             step,
             provider=request.form.get("provider"),
             model=request.form.get("model"),
-            user_id=int(current_user.id),
+            user_id=int(row.get("user_id") or current_user.id),
         )
         state["steps"][step] = "done"
         state["step_messages"][step] = "已完成"

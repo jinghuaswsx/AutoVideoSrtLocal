@@ -29,17 +29,54 @@ def execute(sql: str, args: tuple = ()) -> object:
     return db_execute(sql, args)
 
 
+def list_projects(
+    *,
+    user_id: int,
+    is_admin: bool,
+    query_func: QueryFunc = query,
+) -> list[dict]:
+    where = "p.type = %s AND p.deleted_at IS NULL"
+    args: tuple = (VIDEO_COVER_TYPE,)
+    if not is_admin:
+        where += " AND p.user_id = %s"
+        args = (VIDEO_COVER_TYPE, user_id)
+    return query_func(
+        "SELECT p.id, p.user_id, p.display_name, p.original_filename, p.thumbnail_path, "
+        "p.status, p.created_at, u.username AS creator_name "
+        "FROM projects p "
+        "LEFT JOIN users u ON u.id = p.user_id "
+        f"WHERE {where} "
+        "ORDER BY p.created_at DESC",
+        args,
+    )
+
+
 def list_user_projects(
     user_id: int,
     *,
     query_func: QueryFunc = query,
 ) -> list[dict]:
-    return query_func(
-        "SELECT id, display_name, original_filename, thumbnail_path, status, created_at "
-        "FROM projects "
-        "WHERE user_id = %s AND type = %s AND deleted_at IS NULL "
-        "ORDER BY created_at DESC",
-        (user_id, VIDEO_COVER_TYPE),
+    return list_projects(user_id=user_id, is_admin=False, query_func=query_func)
+
+
+def get_project(
+    task_id: str,
+    *,
+    user_id: int,
+    is_admin: bool,
+    query_one_func: QueryOneFunc = query_one,
+) -> dict | None:
+    where = "p.id = %s AND p.type = %s AND p.deleted_at IS NULL"
+    args: tuple = (task_id, VIDEO_COVER_TYPE)
+    if not is_admin:
+        where += " AND p.user_id = %s"
+        args = (task_id, VIDEO_COVER_TYPE, user_id)
+    return query_one_func(
+        "SELECT p.*, u.username AS creator_name "
+        "FROM projects p "
+        "LEFT JOIN users u ON u.id = p.user_id "
+        f"WHERE {where}",
+        args,
     )
 
 
@@ -49,10 +86,11 @@ def get_user_project(
     *,
     query_one_func: QueryOneFunc = query_one,
 ) -> dict | None:
-    return query_one_func(
-        "SELECT * FROM projects "
-        "WHERE id = %s AND user_id = %s AND type = %s AND deleted_at IS NULL",
-        (task_id, user_id, VIDEO_COVER_TYPE),
+    return get_project(
+        task_id,
+        user_id=user_id,
+        is_admin=False,
+        query_one_func=query_one_func,
     )
 
 

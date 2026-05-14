@@ -17,6 +17,8 @@
 ## 1.1 项目工作流调整
 
 - `/video-cover` 从一次性工具页调整为项目列表页，入口只创建项目：商品链接 + 视频文件。
+- 管理员在 `/video-cover` 查看 `video_cover` 类型下全局所有未删除项目，不按创建人过滤；项目卡片展示创建人，便于区分来源。
+- 新建项目的视频输入框采用全能视频翻译一致的交互：竖版拖拽区，可拖入视频，也可点击打开文件选择；选中后显示 9:16 视频预览、文件名和移除按钮。
 - 每个项目落库到 `projects.type='video_cover'`，项目详情页按固定前后关系管理 4 个步骤：`video_analysis`、`product_analysis`、`ad_copy`、`cover_generation`。
 - 后续步骤必须等待前序步骤完成；重新运行上游步骤会清空其后的结果，避免过期分析被继续用于生成。
 - 视频分析调用大模型前必须使用共享 LLM 视频优化器转成 480p、15fps、H.264 600k 级别的临时文件，保留压缩音频以支持 voiceover 判断；转码失败时沿用优化器的原视频回退行为。
@@ -59,16 +61,18 @@
 
 ## 数据流
 
-1. 用户在 `/video-cover` 输入商品链接和视频文件。
-2. `fetch_product_analysis()` 解析商品标题与主图 URL。
-3. “视频分析”按钮调用 `POST /video-cover/api/video-analysis`，把视频文件发给所选文本模型。
-4. “产品分析”按钮调用 `POST /video-cover/api/product-analysis`，把商品主图和商品信息发给所选文本模型。
-5. “文案创作”按钮调用 `POST /video-cover/api/ad-copy`，基于 `product_analysis`、`video_analysis` 和当前日期输出 5 组合法 `ad_copy_sets` JSON。
-6. “封面生成”按钮调用 `POST /video-cover/api/generate`，下载商品主图、抽取视频帧并合成 9:16 参考图。
-7. 构造创意总监 prompt，替换 `product_analysis`、`video_analysis`、`ad_copy_sets` 占位。
-8. 调用本地接口或 OpenRouter 图片模型生成通用社媒封面。
-9. 输出图片居中裁切/扩展为 `1080x1920`，保存到 `artifacts/video_cover/<user>/<task_id>/`。
-10. API 返回产品信息、模型信息、参考图、封面图 URL 和中间输入结果。
+1. 管理员打开 `/video-cover` 查看项目列表；列表查询 `projects.type='video_cover' AND deleted_at IS NULL`，管理员不加 `user_id` 条件。
+2. 管理员点击“新建项目”，在弹窗输入商品链接并拖入或点击选择视频。
+3. `POST /video-cover/api/projects` 校验商品链接和视频扩展名，将视频保存到本地上传目录，抽取缩略图，写入 `projects`：`type='video_cover'`、`status='uploaded'`、`task_dir`、`thumbnail_path`、`state_json`。
+4. 用户进入 `/video-cover/<task_id>` 项目详情页后按步骤运行：视频分析、产品分析、文案创作、封面生成。
+5. “视频分析”步骤使用项目保存的视频文件，调用所选文本模型。
+6. “产品分析”步骤调用 `fetch_product_analysis()` 解析商品标题与主图 URL，并把商品主图和商品信息发给所选文本模型。
+7. “文案创作”步骤调用 `POST /video-cover/api/<task_id>/run/ad_copy`，基于 `product_analysis`、`video_analysis` 和当前日期输出 5 组合法 `ad_copy_sets` JSON。
+8. “封面生成”步骤下载商品主图、抽取视频帧并合成 9:16 参考图。
+9. 构造创意总监 prompt，替换 `product_analysis`、`video_analysis`、`ad_copy_sets` 占位。
+10. 调用本地接口或 OpenRouter 图片模型生成通用社媒封面。
+11. 输出图片居中裁切/扩展为 `1080x1920`，保存到 `artifacts/video_cover/<user>/<task_id>/`。
+12. 步骤完成后将输出、模型选择和状态写回项目 `state_json`，详情页顶部固定展示最终封面和下载按钮。
 
 ## 错误处理
 
@@ -81,5 +85,5 @@
 ## 测试
 
 - 服务层：校验商品链接解析、模型映射、产品/视频/文案/封面调用顺序、参考图生成、平台 prompt、输出 1080x1920。
-- 路由层：未登录跳登录，普通用户 403，管理员页面 200，生成接口传递模型配置并返回结果。
-- 模板层：侧栏出现「文案封面生成」，页面出现 4 个步骤按钮和供应商/模型配置。
+- 路由层：未登录跳登录，普通用户 403，管理员列表页 200；管理员列表查询全局 `video_cover` 项目；新建项目校验商品链接和视频扩展名并写入项目；详情页只允许管理员访问；步骤接口传递模型配置并返回结果。
+- 模板层：侧栏出现「文案封面生成」；列表页出现“新建项目”；新建弹窗视频输入框包含拖拽区、隐藏 file input、预览 video、移除按钮；详情页出现 4 个步骤按钮和供应商/模型配置。

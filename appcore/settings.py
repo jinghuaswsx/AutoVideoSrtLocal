@@ -18,6 +18,8 @@ PROJECT_TYPE_LABELS: dict[str, str] = {
     "translate_lab": "视频翻译（测试）",
     "image_translate": "图片翻译",
     "link_check": "链接检测",
+    "omni_translate": "全能视频翻译",
+    "video_cover": "文案封面生成",
 }
 
 _HARDCODE_DEFAULT_HOURS = 168

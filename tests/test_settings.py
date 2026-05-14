@@ -281,3 +281,10 @@ def test_project_type_labels_include_subtitle_removal():
     import appcore.settings as settings
 
     assert settings.PROJECT_TYPE_LABELS["subtitle_removal"] == "字幕移除"
+
+
+def test_project_type_labels_include_omni_and_video_cover():
+    import appcore.settings as settings
+
+    assert settings.PROJECT_TYPE_LABELS["omni_translate"] == "全能视频翻译"
+    assert settings.PROJECT_TYPE_LABELS["video_cover"] == "文案封面生成"

@@ -10,6 +10,7 @@
 .vc-card { display:flex; flex-direction:column; min-height:150px; padding:16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:inherit; text-decoration:none; transition:border-color .15s, box-shadow .15s; }
 .vc-card:hover { border-color:var(--primary-color); box-shadow:0 4px 14px rgba(15,23,42,.10); }
 .vc-card-title { font-size:14px; font-weight:700; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:8px; }
+.vc-card-subtitle { font-size:12px; color:#9ca3af; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vc-card-meta { margin-top:auto; display:flex; justify-content:space-between; gap:8px; color:#9ca3af; font-size:12px; }
 .vc-status { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:999px; font-size:12px; font-weight:700; }
 .vc-status.done { background:rgba(22,163,74,.14); color:#16a34a; }
@@ -25,6 +26,17 @@
 .vc-field { display:grid; gap:7px; }
 .vc-label { font-size:13px; font-weight:700; color:var(--text-main); }
 .vc-input { width:100%; min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:8px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
+.video-dropzone { position:relative; min-height:290px; border:1.5px dashed var(--border-main); border-radius:8px; display:grid; place-items:center; padding:18px; background:rgba(14,165,233,.04); cursor:pointer; overflow:hidden; transition:border-color .15s, background .15s; }
+.video-dropzone:hover, .video-dropzone.dragover { border-color:var(--primary-color); background:rgba(14,165,233,.09); }
+.video-dropzone.has-file { border-style:solid; background:#0f172a; }
+.video-file-input { position:absolute; inset:0; width:1px; height:1px; opacity:0; pointer-events:none; }
+.video-dropzone-text { display:grid; gap:8px; text-align:center; color:#64748b; font-size:13px; line-height:1.5; }
+.video-dropzone-text strong { color:var(--text-main); font-size:15px; }
+.video-preview { width:100%; max-width:170px; aspect-ratio:9/16; border-radius:8px; background:#000; object-fit:cover; box-shadow:0 10px 28px rgba(15,23,42,.22); }
+.video-preview-wrap { display:grid; justify-items:center; gap:10px; width:100%; }
+.video-preview-name { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e5e7eb; font-size:12px; }
+.video-clear { position:absolute; top:10px; right:10px; }
+.preview-hidden { display:none !important; }
 .vc-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
 .vc-error { min-height:20px; color:#dc2626; font-size:13px; }
 @media (max-width:720px) {
@@ -44,7 +56,8 @@
   {% for p in projects %}
   <a class="vc-card" href="/video-cover/{{ p.id }}">
     <div class="vc-card-title">{{ p.display_name or p.original_filename or p.id }}</div>
-    <div style="font-size:12px;color:#9ca3af;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.original_filename or '' }}</div>
+    <div class="vc-card-subtitle">{{ p.original_filename or '' }}</div>
+    <div class="vc-card-subtitle">创建人：{{ p.creator_name or '未知' }}</div>
     <div class="vc-card-meta">
       <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
       <span class="vc-status {{ p.status }}">
@@ -66,10 +79,21 @@
         <span class="vc-label">商品链接</span>
         <input class="vc-input" type="url" name="product_url" required placeholder="https://example.com/products/name">
       </label>
-      <label class="vc-field">
+      <div class="vc-field">
         <span class="vc-label">视频文件</span>
-        <input class="vc-input" type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.mpeg,.mpg,.avi,.webm,.m4v" required>
-      </label>
+        <div id="videoCoverDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
+          <input id="videoCoverFile" class="video-file-input" type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.mpeg,.mpg,.avi,.webm,.m4v">
+          <div class="video-dropzone-text" id="videoCoverPrompt">
+            <strong>拖入视频</strong>
+            <span>或点击选择文件</span>
+          </div>
+          <div class="video-preview-wrap preview-hidden" id="videoCoverPreviewWrap">
+            <video id="videoCoverPreview" class="video-preview" muted playsinline controls></video>
+            <div class="video-preview-name" id="videoCoverFileName"></div>
+          </div>
+          <button class="btn btn-ghost btn-sm video-clear preview-hidden" type="button" id="previewClear">移除</button>
+        </div>
+      </div>
       <div class="vc-error" id="vcCreateError"></div>
       <div class="vc-actions">
         <button class="btn btn-ghost" type="button" id="vcCancelCreate">取消</button>
@@ -89,25 +113,101 @@
   const form = document.getElementById('vcCreateForm');
   const submit = document.getElementById('vcCreateSubmit');
   const errorBox = document.getElementById('vcCreateError');
+  const dropzone = document.getElementById('videoCoverDropzone');
+  const fileInput = document.getElementById('videoCoverFile');
+  const prompt = document.getElementById('videoCoverPrompt');
+  const previewWrap = document.getElementById('videoCoverPreviewWrap');
+  const preview = document.getElementById('videoCoverPreview');
+  const fileName = document.getElementById('videoCoverFileName');
+  const clearBtn = document.getElementById('previewClear');
+  let selectedFile = null;
+  let previewUrl = '';
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? meta.getAttribute('content') || '' : '';
   }
+  function setInputFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    if (window.DataTransfer) {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      fileInput.files = transfer.files;
+    }
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    preview.src = previewUrl;
+    fileName.textContent = file.name || 'selected-video';
+    dropzone.classList.add('has-file');
+    prompt.classList.add('preview-hidden');
+    previewWrap.classList.remove('preview-hidden');
+    clearBtn.classList.remove('preview-hidden');
+  }
+  function clearFile() {
+    selectedFile = null;
+    fileInput.value = '';
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = '';
+    preview.removeAttribute('src');
+    preview.load();
+    fileName.textContent = '';
+    dropzone.classList.remove('has-file');
+    dropzone.classList.remove('dragover');
+    prompt.classList.remove('preview-hidden');
+    previewWrap.classList.add('preview-hidden');
+    clearBtn.classList.add('preview-hidden');
+  }
   function show() { backdrop.classList.add('show'); errorBox.textContent = ''; }
-  function hide() { backdrop.classList.remove('show'); form.reset(); errorBox.textContent = ''; submit.disabled = false; submit.textContent = '创建项目'; }
+  function hide() { backdrop.classList.remove('show'); form.reset(); clearFile(); errorBox.textContent = ''; submit.disabled = false; submit.textContent = '创建项目'; }
   showBtn.addEventListener('click', show);
   cancelBtn.addEventListener('click', hide);
   backdrop.addEventListener('click', event => { if (event.target === backdrop) hide(); });
+  dropzone.addEventListener('click', event => {
+    if (event.target !== clearBtn && !previewWrap.contains(event.target)) fileInput.click();
+  });
+  dropzone.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+  ['dragenter', 'dragover'].forEach(name => {
+    dropzone.addEventListener(name, event => {
+      event.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach(name => {
+    dropzone.addEventListener(name, event => {
+      event.preventDefault();
+      dropzone.classList.remove('dragover');
+    });
+  });
+  dropzone.addEventListener('drop', event => {
+    const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+    if (file) setInputFile(file);
+  });
+  fileInput.addEventListener('change', () => setInputFile(fileInput.files[0]));
+  clearBtn.addEventListener('click', event => {
+    event.stopPropagation();
+    clearFile();
+  });
   form.addEventListener('submit', async event => {
     event.preventDefault();
+    if (!selectedFile && !(fileInput.files && fileInput.files[0])) {
+      errorBox.textContent = '请上传视频文件';
+      return;
+    }
     submit.disabled = true;
     submit.textContent = '创建中...';
     errorBox.textContent = '';
     try {
+      const body = new FormData(form);
+      if (selectedFile) body.set('video_file', selectedFile, selectedFile.name || 'video.mp4');
       const response = await fetch('/video-cover/api/projects', {
         method: 'POST',
         headers: {'X-CSRFToken': csrfToken()},
-        body: new FormData(form)
+        body
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || '创建失败');
