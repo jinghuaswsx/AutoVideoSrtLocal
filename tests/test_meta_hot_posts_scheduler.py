@@ -55,18 +55,21 @@ def test_sync_hot_posts_stops_when_upstream_returns_empty(monkeypatch):
 
 def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     calls = []
+    now = datetime(2026, 5, 14, 18, 0, 0)
 
     monkeypatch.setattr(
         scheduler.scheduled_tasks,
         "add_controlled_job",
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
+    monkeypatch.setattr(scheduler, "_now", lambda: now)
 
     scheduler.register(object())
 
     sync_args, sync_kwargs = calls[0]
     analysis_args, analysis_kwargs = calls[1]
     translation_args, translation_kwargs = calls[2]
+    video_args, video_kwargs = calls[3]
     assert sync_args[1] == "meta_hot_posts_sync_tick"
     assert sync_args[3] == "cron"
     assert sync_kwargs["hour"] == 7
@@ -77,6 +80,10 @@ def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     assert translation_args[1] == "meta_hot_posts_translate_messages_tick"
     assert translation_args[3] == "interval"
     assert translation_kwargs["minutes"] == 10
+    assert video_args[1] == "meta_hot_posts_video_localization_tick"
+    assert video_args[3] == "interval"
+    assert video_kwargs["minutes"] == 10
+    assert video_kwargs["next_run_time"] == now
 
 
 def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):

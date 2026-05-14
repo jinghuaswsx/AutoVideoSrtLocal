@@ -641,4 +641,5 @@ def register(scheduler) -> None:
         id=VIDEO_LOCALIZATION_TASK_CODE,
         replace_existing=True,
         max_instances=1,
+        next_run_time=_now(),
     )
