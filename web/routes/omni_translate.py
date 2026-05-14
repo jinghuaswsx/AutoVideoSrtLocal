@@ -1,9 +1,12 @@
 """全能视频翻译蓝图：页面路由 + API。"""
 from __future__ import annotations
 
+import copy
 import json
 import logging
+import mimetypes
 import os
+import shutil
 import uuid
 from datetime import datetime
 
@@ -239,6 +242,56 @@ def _ensure_uploaded_video_thumbnail(task_id: str, video_path: str, task_dir: st
     if task is not None:
         task["thumbnail_path"] = thumb
     return thumb
+
+
+def _task_from_project_row(row: dict | None) -> dict:
+    if not row:
+        return {}
+    try:
+        task = json.loads(row.get("state_json") or "{}")
+    except Exception:
+        task = {}
+    if row.get("user_id") is not None:
+        task.setdefault("_user_id", row.get("user_id"))
+    for key in ("id", "original_filename", "display_name", "task_dir"):
+        if row.get(key) and not task.get(key):
+            task[key] = row[key]
+    return task
+
+
+def _copy_source_video_for_duplicate(
+    *,
+    source_video_path: str,
+    task_id: str,
+    original_filename: str,
+) -> tuple[str, int, str]:
+    ext = os.path.splitext(original_filename or source_video_path)[1].lower()
+    if not ext:
+        ext = os.path.splitext(source_video_path)[1].lower() or ".mp4"
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    destination = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
+    shutil.copy2(source_video_path, destination)
+
+    try:
+        from appcore import tos_backup_storage
+
+        tos_backup_storage.ensure_remote_copy_for_local_path(destination)
+    except Exception:
+        log.warning(
+            "[omni_translate] TOS backup sync failed after duplicate source copy: %s",
+            destination,
+            exc_info=True,
+        )
+
+    content_type = mimetypes.guess_type(original_filename or destination)[0] or "application/octet-stream"
+    return destination, os.path.getsize(destination), content_type
+
+
+def _duplicate_display_name(task: dict, row: dict) -> str:
+    original_filename = task.get("original_filename") or row.get("original_filename") or ""
+    base = task.get("display_name") or row.get("display_name") or _default_display_name(original_filename)
+    return f"{base} 副本"
 
 
 def _is_admin_user() -> bool:
@@ -494,6 +547,120 @@ def upload_and_start():
 
     omni_pipeline_runner.start(task_id, user_id=user_id)
     return _json_response({"task_id": task_id}, 201)
+
+
+@bp.route("/api/omni-translate/<task_id>/duplicate", methods=["POST"])
+@login_required
+def duplicate(task_id: str):
+    """复制一个全能视频翻译项目，使用独立源视频文件重新跑。"""
+    row = _query_viewable_project(
+        task_id,
+        "id, user_id, original_filename, display_name, task_dir, state_json",
+        include_deleted=False,
+    )
+    if not row:
+        return _json_response({"error": "Task not found"}, 404)
+
+    row_task = _task_from_project_row(row)
+    source_task = copy.deepcopy(store.get(task_id) or {})
+    if source_task:
+        for key, value in row_task.items():
+            source_task.setdefault(key, value)
+    else:
+        source_task = row_task
+
+    source_video_path = (source_task.get("video_path") or "").strip()
+    if not source_video_path:
+        return _json_response({"error": "源视频缺失，无法复制项目。"}, 409)
+
+    if not os.path.exists(source_video_path):
+        try:
+            from web.services.task_source_video import ensure_local_source_video
+
+            ensure_local_source_video(task_id, source_task)
+        except FileNotFoundError as exc:
+            return _json_response({"error": str(exc)}, 409)
+
+    if not os.path.exists(source_video_path):
+        return _json_response({"error": f"源视频缺失: {source_video_path}"}, 409)
+
+    original_filename = (
+        source_task.get("original_filename")
+        or row.get("original_filename")
+        or os.path.basename(source_video_path)
+    )
+    new_task_id = str(uuid.uuid4())
+    new_task_dir = os.path.join(OUTPUT_DIR, new_task_id)
+    os.makedirs(new_task_dir, exist_ok=True)
+
+    try:
+        new_video_path, file_size, content_type = _copy_source_video_for_duplicate(
+            source_video_path=source_video_path,
+            task_id=new_task_id,
+            original_filename=original_filename,
+        )
+    except OSError as exc:
+        log.exception("[omni_translate] duplicate source copy failed task=%s", task_id)
+        return _json_response({"error": f"复制源视频失败: {exc}"}, 500)
+
+    user_id = current_user.id
+    store.create(
+        new_task_id,
+        new_video_path,
+        new_task_dir,
+        original_filename=original_filename,
+        user_id=user_id,
+    )
+
+    from web.upload_util import build_source_object_info
+
+    display_name = _resolve_name_conflict(
+        user_id,
+        _duplicate_display_name(source_task, row),
+    )
+    update_kwargs = dict(
+        display_name=display_name,
+        type="omni_translate",
+        target_lang=source_task.get("target_lang") or "",
+        source_language=source_task.get("source_language") or "zh",
+        user_specified_source_language=bool(
+            source_task.get("user_specified_source_language", True)
+        ),
+        source_tos_key="",
+        source_object_info=build_source_object_info(
+            original_filename=original_filename,
+            content_type=content_type,
+            file_size=file_size,
+            storage_backend="local",
+            uploaded_at=datetime.now().isoformat(timespec="seconds"),
+        ),
+        delivery_mode="local_primary",
+    )
+    for key in (
+        "plugin_config",
+        "voice_gender",
+        "voice_id",
+        "subtitle_position",
+        "subtitle_font",
+        "subtitle_size",
+        "subtitle_position_y",
+        "interactive_review",
+        "loudness_profile",
+        "loudness_manual_boost_pct",
+    ):
+        if key in source_task:
+            update_kwargs[key] = copy.deepcopy(source_task[key])
+
+    store.update(new_task_id, **update_kwargs)
+    store.set_preview_file(new_task_id, "source_video", new_video_path)
+    _ensure_uploaded_video_thumbnail(new_task_id, new_video_path, new_task_dir)
+
+    omni_pipeline_runner.start(new_task_id, user_id=user_id)
+    return _json_response({
+        "status": "started",
+        "task_id": new_task_id,
+        "redirect_url": f"/omni-translate/{new_task_id}",
+    }, 201)
 
 
 @bp.route("/api/omni-translate/bootstrap", methods=["POST"])

@@ -104,6 +104,19 @@ def test_javascript_does_not_create_or_delete_presets_from_create_modal(omni_lis
     assert "fetch('/api/omni-presets/'" not in omni_list_html
 
 
+def test_project_card_menu_contains_duplicate_action(omni_list_html):
+    assert "复制项目" in omni_list_html
+    assert "duplicateTask(event" in omni_list_html
+    assert "/api/omni-translate/' + taskId + '/duplicate" in omni_list_html
+
+
+def test_duplicate_project_javascript_posts_with_csrf(omni_list_html):
+    assert "async function duplicateTask" in omni_list_html
+    assert "method: 'POST'" in omni_list_html
+    assert "headers: { 'X-CSRFToken': csrfToken }" in omni_list_html
+    assert "await _readOmniJsonResponse(res)" in omni_list_html
+
+
 def test_javascript_appends_plugin_config_to_form_data(omni_list_html):
     """submit 时 plugin_config 作为 JSON 加到 FormData。"""
     assert "formData.set('plugin_config'," in omni_list_html

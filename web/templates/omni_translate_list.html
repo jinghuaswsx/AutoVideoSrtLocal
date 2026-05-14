@@ -387,6 +387,7 @@
     </a>
     <button class="card-menu-btn" onclick='toggleMenu(event, "menu-" + {{ p.id | tojson }})'>⋯</button>
     <div class="card-menu" id="menu-{{ p.id }}">
+      <button onclick='duplicateTask(event, {{ p.id | tojson }})'>复制项目</button>
       <button class="danger" onclick='deleteTask(event, {{ p.id | tojson }})'>删除</button>
     </div>
   </div>
@@ -426,6 +427,7 @@
     </a>
     <button class="list-menu-btn" onclick='toggleMenu(event, "lmenu-" + {{ p.id | tojson }})'>⋯</button>
     <div class="card-menu" id="lmenu-{{ p.id }}">
+      <button onclick='duplicateTask(event, {{ p.id | tojson }})'>复制项目</button>
       <button class="danger" onclick='deleteTask(event, {{ p.id | tojson }})'>删除</button>
     </div>
   </div>
@@ -553,6 +555,25 @@ async function deleteTask(e, taskId) {
   });
   if (res.ok) { location.reload(); }
   else { var data = await res.json(); alert(data.error || '删除失败'); }
+}
+
+async function duplicateTask(e, taskId) {
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
+  if (!confirm('复制后会创建新项目并重新开始处理，确定继续吗？')) return;
+  var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  try {
+    var res = await fetch('/api/omni-translate/' + taskId + '/duplicate', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+    });
+    var data = await _readOmniJsonResponse(res);
+    if (!res.ok) throw new Error(data.error || '复制失败');
+    var fallbackUrl = '/omni-translate/' + encodeURIComponent(data.task_id || '');
+    window.location.href = safeInternalHref(data.redirect_url, fallbackUrl);
+  } catch (err) {
+    alert(err.message || '复制失败');
+  }
 }
 
 var LANG_ZH_NAMES = {

@@ -260,6 +260,161 @@ def test_loudness_profile_route_rejects_json_array(authed_client_no_db):
     mock_store.update.assert_not_called()
 
 
+def test_duplicate_project_copies_source_config_and_starts_runner(
+    authed_client_no_db,
+    tmp_path,
+    monkeypatch,
+):
+    from web.routes import omni_translate as route
+
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"source-video-bytes")
+    original_task = {
+        "id": "source-task",
+        "_user_id": 7,
+        "type": "omni_translate",
+        "status": "done",
+        "video_path": str(source_video),
+        "task_dir": str(tmp_path / "source-task"),
+        "original_filename": "source.mp4",
+        "display_name": "原项目",
+        "source_language": "es",
+        "target_lang": "de",
+        "plugin_config": CFG_ASR_CLEAN,
+        "voice_gender": "female",
+        "voice_id": "voice-1",
+        "subtitle_position": "top",
+        "subtitle_font": "Arial",
+        "subtitle_size": 18,
+        "subtitle_position_y": 0.42,
+        "interactive_review": True,
+        "artifacts": {"export": {"hard_video": "old.mp4"}},
+        "result": {"hard_video": "old.mp4"},
+    }
+    captured = {}
+
+    class StoreStub:
+        def get(self, task_id):
+            return original_task if task_id == "source-task" else None
+
+        def create(self, task_id, video_path, task_dir, **kwargs):
+            captured["create"] = (task_id, video_path, task_dir, kwargs)
+
+        def update(self, task_id, **kwargs):
+            captured["update"] = (task_id, kwargs)
+
+        def set_preview_file(self, task_id, name, path):
+            captured["preview"] = (task_id, name, path)
+
+    class RunnerStub:
+        def start(self, task_id, *, user_id):
+            captured["runner"] = (task_id, user_id)
+
+    monkeypatch.setattr(route, "store", StoreStub())
+    monkeypatch.setattr(route, "omni_pipeline_runner", RunnerStub())
+    monkeypatch.setattr(route, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(route, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(route.uuid, "uuid4", lambda: "dup-task")
+    monkeypatch.setattr(route, "_resolve_name_conflict", lambda user_id, name: name)
+    monkeypatch.setattr(route, "_ensure_uploaded_video_thumbnail", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        route,
+        "_query_viewable_project",
+        lambda task_id, columns="*", include_deleted=True: {
+            "id": task_id,
+            "user_id": 7,
+            "state_json": json.dumps(original_task, ensure_ascii=False),
+            "original_filename": "source.mp4",
+            "display_name": "原项目",
+        },
+    )
+
+    resp = authed_client_no_db.post("/api/omni-translate/source-task/duplicate")
+
+    assert resp.status_code == 201
+    body = resp.get_json()
+    assert body["task_id"] == "dup-task"
+    assert body["redirect_url"] == "/omni-translate/dup-task"
+
+    created_task_id, new_video_path, new_task_dir, create_kwargs = captured["create"]
+    assert created_task_id == "dup-task"
+    assert create_kwargs["user_id"] == 1
+    assert create_kwargs["original_filename"] == "source.mp4"
+    assert new_task_dir.endswith("dup-task")
+    assert (tmp_path / "uploads" / "dup-task.mp4").read_bytes() == b"source-video-bytes"
+    assert new_video_path == str(tmp_path / "uploads" / "dup-task.mp4")
+
+    updated_task_id, update_kwargs = captured["update"]
+    assert updated_task_id == "dup-task"
+    assert update_kwargs["display_name"] == "原项目 副本"
+    assert update_kwargs["type"] == "omni_translate"
+    assert update_kwargs["source_language"] == "es"
+    assert update_kwargs["target_lang"] == "de"
+    assert update_kwargs["plugin_config"] == CFG_ASR_CLEAN
+    assert update_kwargs["voice_gender"] == "female"
+    assert update_kwargs["voice_id"] == "voice-1"
+    assert update_kwargs["subtitle_position"] == "top"
+    assert update_kwargs["subtitle_font"] == "Arial"
+    assert update_kwargs["subtitle_size"] == 18
+    assert update_kwargs["subtitle_position_y"] == 0.42
+    assert update_kwargs["interactive_review"] is True
+    assert update_kwargs["source_object_info"]["file_size"] == len(b"source-video-bytes")
+    assert "artifacts" not in update_kwargs
+    assert "result" not in update_kwargs
+    assert captured["preview"] == ("dup-task", "source_video", new_video_path)
+    assert captured["runner"] == ("dup-task", 1)
+
+
+def test_duplicate_project_returns_409_when_source_video_missing(
+    authed_client_no_db,
+    tmp_path,
+    monkeypatch,
+):
+    from web.routes import omni_translate as route
+
+    original_task = {
+        "id": "missing-source",
+        "type": "omni_translate",
+        "video_path": str(tmp_path / "missing.mp4"),
+        "task_dir": str(tmp_path / "missing-source"),
+        "original_filename": "missing.mp4",
+        "display_name": "缺源项目",
+        "source_language": "es",
+        "target_lang": "de",
+        "plugin_config": CFG_ASR_CLEAN,
+    }
+
+    class StoreStub:
+        def get(self, task_id):
+            return original_task
+
+        def create(self, *args, **kwargs):
+            raise AssertionError("duplicate must not create without source video")
+
+    class RunnerStub:
+        def start(self, *args, **kwargs):
+            raise AssertionError("duplicate must not start without source video")
+
+    monkeypatch.setattr(route, "store", StoreStub())
+    monkeypatch.setattr(route, "omni_pipeline_runner", RunnerStub())
+    monkeypatch.setattr(
+        route,
+        "_query_viewable_project",
+        lambda task_id, columns="*", include_deleted=True: {
+            "id": task_id,
+            "user_id": 1,
+            "state_json": json.dumps(original_task, ensure_ascii=False),
+            "original_filename": "missing.mp4",
+            "display_name": "缺源项目",
+        },
+    )
+
+    resp = authed_client_no_db.post("/api/omni-translate/missing-source/duplicate")
+
+    assert resp.status_code == 409
+    assert "源视频" in resp.get_json()["error"]
+
+
 def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db):
     """body.source_language='es' → 改写 task + resume from asr_clean。"""
     fake_task = {
