@@ -121,6 +121,93 @@ def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
     assert body["items"][0]["request_payload"]["provider"] == "openrouter"
 
 
+def test_loudness_profile_route_saves_standard_without_starting_runner(
+    authed_client_no_db,
+):
+    fake_task = {
+        "_user_id": 1,
+        "loudness_profile": "bg_boost",
+        "separation": {"tts_loudness": {"profile": "bg_boost"}},
+    }
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "standard"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["profile"] == "standard"
+    assert body["manual_boost_pct"] is None
+    assert body["applied_profile"] == "bg_boost"
+    assert body["needs_resume"] is True
+    mock_store.update.assert_called_once_with(
+        "t-1",
+        loudness_profile="standard",
+        loudness_manual_boost_pct=None,
+    )
+    mock_runner.resume.assert_not_called()
+
+
+def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "separation": {"tts_loudness": {"profile": "standard"}},
+    }
+    with patch("web.routes.omni_translate.store") as mock_store:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "manual_boost", "manual_boost_pct": 50},
+        )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["profile"] == "manual_boost"
+    assert body["manual_boost_pct"] == 50
+    assert body["applied_profile"] == "standard"
+    assert body["applied_manual_boost_pct"] is None
+    assert body["needs_resume"] is True
+    mock_store.update.assert_called_once_with(
+        "t-1",
+        loudness_profile="manual_boost",
+        loudness_manual_boost_pct=50,
+    )
+
+
+@pytest.mark.parametrize("pct", [0, 5, 55, 101, "abc", None])
+def test_loudness_profile_route_rejects_invalid_manual_pct(
+    authed_client_no_db, pct,
+):
+    fake_task = {"_user_id": 1}
+    with patch("web.routes.omni_translate.store") as mock_store:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "manual_boost", "manual_boost_pct": pct},
+        )
+
+    assert resp.status_code == 400
+    assert "manual_boost_pct" in resp.get_json()["error"]
+    mock_store.update.assert_not_called()
+
+
+def test_loudness_profile_route_rejects_unknown_profile(authed_client_no_db):
+    fake_task = {"_user_id": 1}
+    with patch("web.routes.omni_translate.store") as mock_store:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "louder"},
+        )
+
+    assert resp.status_code == 400
+    assert "loudness profile" in resp.get_json()["error"]
+    mock_store.update.assert_not_called()
+
+
 def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db):
     """body.source_language='es' → 改写 task + resume from asr_clean。"""
     fake_task = {

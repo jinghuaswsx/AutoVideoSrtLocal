@@ -12,6 +12,7 @@ from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import task_state, medias, translation_route_store
+from appcore.audio_loudness import validate_loudness_profile
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.project_state import save_project_state
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
@@ -165,6 +166,27 @@ def _resume_cleanup_updates(task: dict, step_names: list[str], start_step: str) 
             detected_source_language=None,
         )
     return updates
+
+
+def _applied_loudness_profile(task: dict) -> tuple[str | None, int | None]:
+    tl = ((task.get("separation") or {}).get("tts_loudness") or {})
+    applied_profile = tl.get("profile")
+    applied_manual_pct = tl.get("manual_boost_pct")
+    return applied_profile, applied_manual_pct
+
+
+def _loudness_profile_needs_resume(
+    *,
+    selected_profile: str,
+    selected_manual_pct: int | None,
+    applied_profile: str | None,
+    applied_manual_pct: int | None,
+) -> bool:
+    if applied_profile != selected_profile:
+        return True
+    if selected_profile == "manual_boost":
+        return applied_manual_pct != selected_manual_pct
+    return False
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -714,6 +736,44 @@ RESUMABLE_STEPS = [
     "compose",
     "export",
 ]
+
+
+@bp.route("/api/omni-translate/<task_id>/loudness-profile", methods=["POST"])
+@login_required
+def set_loudness_profile(task_id):
+    recover_task_if_needed(task_id)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+
+    body = request.get_json(silent=True) or {}
+    try:
+        profile, manual_pct = validate_loudness_profile(
+            body.get("profile"),
+            body.get("manual_boost_pct"),
+        )
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+
+    applied_profile, applied_manual_pct = _applied_loudness_profile(task)
+    store.update(
+        task_id,
+        loudness_profile=profile,
+        loudness_manual_boost_pct=manual_pct,
+    )
+    return _json_response({
+        "status": "ok",
+        "profile": profile,
+        "manual_boost_pct": manual_pct,
+        "applied_profile": applied_profile,
+        "applied_manual_boost_pct": applied_manual_pct,
+        "needs_resume": _loudness_profile_needs_resume(
+            selected_profile=profile,
+            selected_manual_pct=manual_pct,
+            applied_profile=applied_profile,
+            applied_manual_pct=applied_manual_pct,
+        ),
+    })
 
 
 @bp.route("/api/omni-translate/<task_id>/resume", methods=["POST"])
