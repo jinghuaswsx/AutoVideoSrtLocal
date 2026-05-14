@@ -922,7 +922,6 @@ def generate_product_analysis(
             model_override=selection.model,
             temperature=0.2,
             max_output_tokens=3600,
-            response_format={"type": "json_object"},
             billing_extra={"source": "video_cover"},
         )
     except VideoCoverGenerationError:
@@ -978,7 +977,6 @@ def generate_video_analysis(
             model_override=selection.model,
             temperature=0.2,
             max_output_tokens=3600,
-            response_format={"type": "json_object"},
             billing_extra={
                 "source": "video_cover",
                 "media_optimization": media_debug_snapshot(media),

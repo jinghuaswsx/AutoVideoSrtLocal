@@ -13,6 +13,8 @@
 .vcd-count-pills { display:flex; gap:8px; flex-wrap:wrap; }
 .vcd-count-pill { height:30px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-size:13px; font-weight:800; cursor:pointer; }
 .vcd-count-pill.active { border-color:var(--primary-color); background:var(--primary-color); color:#f8fafc; }
+.vcd-restart-btn { border-color:var(--text-btn-danger); background:var(--text-btn-danger); color:#f8fafc; }
+.vcd-restart-btn:hover { border-color:var(--text-btn-danger); background:var(--text-btn-danger); color:#f8fafc; filter:brightness(.92); }
 .vcd-progress-steps { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
 .vcd-progress-step { min-width:0; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; }
 .vcd-progress-step.done { border-color:rgba(22,163,74,.35); background:rgba(22,163,74,.10); }
@@ -110,7 +112,7 @@
         {% endfor %}
       </div>
     </div>
-    <button class="btn btn-danger" type="button" id="vcdRestartBtn">强制重新开始</button>
+    <button class="btn btn-danger vcd-restart-btn" type="button" id="vcdRestartBtn">强制重新开始</button>
   </div>
   <div class="vcd-progress-steps" id="vcdProgressSteps">
     {% for step in step_order %}
@@ -257,6 +259,20 @@
     if (status === 'running') return '运行中';
     if (status === 'error') return '失败';
     return '等待中';
+  }
+  function normalizeRestartCount(value) {
+    const count = Number(value || 2);
+    return [1, 2, 3, 4].includes(count) ? count : 2;
+  }
+  function selectedRestartCount() {
+    const active = document.querySelector('[data-restart-count].active');
+    return normalizeRestartCount(active ? active.dataset.restartCount : restartCount);
+  }
+  function setRestartCount(count) {
+    restartCount = normalizeRestartCount(count);
+    document.querySelectorAll('[data-restart-count]').forEach(item => {
+      item.classList.toggle('active', normalizeRestartCount(item.dataset.restartCount) === restartCount);
+    });
   }
   function compactJson(value) {
     if (value == null || value === '') return '';
@@ -417,8 +433,10 @@
     catch (e) { errorBox.textContent = e.message || '重新跑失败'; }
   }
   async function restart() {
+    const count = selectedRestartCount();
+    if (!window.confirm(`确认强制重新开始？当前中间状态和结果会清空，并重新生成 ${count} 张封面图。`)) return;
     errorBox.textContent = '';
-    try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: restartCount}); }
+    try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: selectedRestartCount()}); }
     catch (e) { errorBox.textContent = e.message || '强制重新开始失败'; }
   }
   function openPrompt(step) {
@@ -444,8 +462,7 @@
     }
   }
   document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
-    restartCount = Number(btn.dataset.restartCount || 2);
-    document.querySelectorAll('[data-restart-count]').forEach(item => item.classList.toggle('active', Number(item.dataset.restartCount) === restartCount));
+    setRestartCount(btn.dataset.restartCount);
   }));
   document.getElementById('vcdRestartBtn').addEventListener('click', restart);
   document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {

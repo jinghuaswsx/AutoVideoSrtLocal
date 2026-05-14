@@ -412,6 +412,7 @@ def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatc
     def fake_invoke(use_case_code: str, **kwargs):
         captured["use_case_code"] = use_case_code
         captured["media"] = kwargs["media"]
+        assert "response_format" not in kwargs
         return {"text": "video_text: demo\nvoiceover: demo"}
 
     monkeypatch.setattr("appcore.video_cover_generation.prepare_video_for_llm", fake_prepare)
@@ -431,6 +432,32 @@ def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatc
     assert captured["use_case_code"] == "video_cover.video_analysis"
     assert captured["media"] == str(optimized)
     assert captured["cleanup_path"] == str(optimized)
+
+
+def test_generate_product_analysis_does_not_send_chat_response_format(tmp_path):
+    from appcore.video_cover_generation import generate_product_analysis
+
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg")
+    captured = {}
+
+    def fake_invoke(use_case_code: str, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured.update(kwargs)
+        assert "response_format" not in kwargs
+        return {"text": '{"product_definition":"demo"}'}
+
+    result = generate_product_analysis(
+        product=_FakeProduct(),
+        product_title="Portable Blender Pro",
+        main_image_url="https://cdn.example/blender.png",
+        product_image_path=product_image,
+        invoke_generate_fn=fake_invoke,
+    )
+
+    assert "product_definition" in result
+    assert captured["use_case_code"] == "video_cover.product_analysis"
+    assert captured["media"] == str(product_image)
 
 
 def test_build_platform_prompt_uses_creative_director_inputs():
@@ -813,6 +840,10 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "强制重新开始" in html
+    assert "vcd-restart-btn" in html
+    assert "window.confirm" in html
+    assert "selectedRestartCount()" in html
+    assert "image_count: selectedRestartCount()" in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html
