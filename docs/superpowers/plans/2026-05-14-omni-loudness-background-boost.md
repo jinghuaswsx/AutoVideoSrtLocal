@@ -1340,6 +1340,89 @@ git commit -m "feat(omni): render loudness profile controls" -m "Docs-anchor: do
 
 ---
 
+### Task 4B: Loudness Card Button Scale And Runtime Logic Label
+
+**Files:**
+- Modify: `web/templates/_separation_card.html`
+- Modify: `tests/test_translate_detail_shell_templates.py`
+
+- [ ] **Step 1: Write failing static UI assertions**
+
+Extend `test_loudness_card_exposes_profile_controls_and_actual_algorithm` in `tests/test_translate_detail_shell_templates.py` with these assertions:
+
+```python
+    assert "当前运行逻辑：" in separation
+    assert "appliedLoudnessProfileLabel" in separation
+    assert "min-width: 104px" in separation
+    assert "min-height: 56px" in separation
+    assert "font-size: 16px" in separation
+    assert "white-space: normal" in separation
+    assert "overflow-wrap: anywhere" in separation
+```
+
+- [ ] **Step 2: Run the focused static UI test and verify failure**
+
+Run:
+
+```bash
+pytest tests/test_translate_detail_shell_templates.py::test_loudness_card_exposes_profile_controls_and_actual_algorithm -q
+```
+
+Expected: failure on missing `当前运行逻辑：` or the enlarged button CSS strings.
+
+- [ ] **Step 3: Add applied profile label helper**
+
+In `web/templates/_separation_card.html`, add a helper that reads `tl.profile` and `tl.manual_boost_pct` from the latest `tts_loudness` summary:
+
+```javascript
+  function appliedLoudnessProfileLabel(tl) {
+    if (!tl || !tl.profile) return "尚未生成";
+    return profileLabel(tl.profile, tl.manual_boost_pct || selectedManualBoostPct);
+  }
+```
+
+- [ ] **Step 4: Render the current runtime logic line**
+
+In `renderLoudnessProfileControls(tl)`, include this line before the selected-status hint:
+
+```javascript
+      '<div class="loudness-profile-runtime">当前运行逻辑：' + escapeHtml(appliedLoudnessProfileLabel(tl)) + '</div>' +
+```
+
+- [ ] **Step 5: Enlarge and harden the pill CSS**
+
+Update `#preview-loudness_match .loudness-profile-pill` so the controls are larger and text stays visible:
+
+```css
+    padding: 10px 18px;
+    min-width: 104px;
+    min-height: 56px;
+    font-size: 16px;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+```
+
+- [ ] **Step 6: Run focused test and commit**
+
+Run:
+
+```bash
+pytest tests/test_translate_detail_shell_templates.py::test_loudness_card_exposes_profile_controls_and_actual_algorithm -q
+```
+
+Expected: pass.
+
+Commit:
+
+```bash
+git add web/templates/_separation_card.html tests/test_translate_detail_shell_templates.py
+git commit -m "fix(omni): enlarge loudness profile controls" -m "Docs-anchor: docs/superpowers/specs/2026-05-14-omni-loudness-background-boost-design.md#ux-设计"
+```
+
+---
+
 ### Task 5: Regression Verification
 
 **Files:**
@@ -1415,6 +1498,7 @@ If no files changed during verification, do not create an empty commit.
   - Source backup to prevent repeated loudnorm drift: Task 3.
   - Compose fallback uses effective volume: Task 3.
   - Actual B-to-A algorithm display: Task 4.
+  - Enlarged adaptive buttons and current runtime logic label: Task 4B.
   - Verification: Task 5.
 - Placeholder scan: no red-flag placeholders and no intentionally incomplete steps.
 - Type consistency:
