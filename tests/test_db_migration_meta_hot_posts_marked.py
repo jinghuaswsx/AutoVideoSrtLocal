@@ -85,3 +85,15 @@ def test_meta_hot_posts_video_copyability_migration_adds_result_table():
     assert "UNIQUE KEY uniq_meta_hot_post_video_copyability_hot_post" in body
     assert "idx_meta_hot_post_video_copyability_score" in body
     assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-copyability-analysis-design.md" in body
+
+
+def test_meta_hot_posts_video_retry_backoff_migration_marks_exhausted_failures():
+    body = Path("db/migrations/2026_05_15_meta_hot_posts_video_retry_backoff.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "UPDATE meta_hot_posts" in body
+    assert "local_video_status = 'unavailable'" in body
+    assert "local_video_status = 'failed'" in body
+    assert "local_video_attempts >= 5" in body
+    assert "unavailable after max retry attempts" in body

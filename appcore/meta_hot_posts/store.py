@@ -12,6 +12,9 @@ from appcore.meta_hot_posts.category_route import CATEGORY_MODEL, CATEGORY_PROVI
 QueryFn = Callable[[str, tuple[Any, ...]], list[dict]]
 ExecuteFn = Callable[[str, tuple[Any, ...]], Any]
 
+LOCAL_VIDEO_MAX_ATTEMPTS = 5
+LOCAL_VIDEO_RETRY_AFTER_HOURS = 12
+
 
 def _json(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False, default=str)
@@ -391,10 +394,13 @@ def reset_stale_running_message_translations(
 def next_pending_local_videos(
     *,
     limit: int = 20,
-    max_attempts: int = 3,
+    max_attempts: int = LOCAL_VIDEO_MAX_ATTEMPTS,
+    retry_after_hours: int = LOCAL_VIDEO_RETRY_AFTER_HOURS,
     query_fn: QueryFn = query,
 ) -> list[dict]:
     safe_limit = max(1, min(100, int(limit)))
+    safe_max_attempts = max(1, int(max_attempts))
+    safe_retry_hours = max(1, int(retry_after_hours))
     return query_fn(
         """
         SELECT id, wedev_post_id, page_id, post_id, video_url,
@@ -404,11 +410,17 @@ def next_pending_local_videos(
           AND TRIM(video_url) <> ''
           AND (local_video_status IS NULL OR local_video_status = '' OR local_video_status IN ('pending', 'failed'))
           AND (local_video_status IS NULL OR local_video_status <> 'downloaded')
+          AND (local_video_status IS NULL OR local_video_status <> 'unavailable')
           AND local_video_attempts < %s
+          AND (
+            local_video_status IS NULL
+            OR local_video_status <> 'failed'
+            OR TIMESTAMPDIFF(HOUR, updated_at, NOW()) >= %s
+          )
         ORDER BY COALESCE(sync_period_likes, 0) DESC, creation_time DESC, id ASC
         LIMIT %s
         """,
-        (int(max_attempts), safe_limit),
+        (safe_max_attempts, safe_retry_hours, safe_limit),
     )
 
 
@@ -434,17 +446,22 @@ def finish_local_video_download(
     *,
     local_video_path: str | None,
     error_message: str | None,
+    max_attempts: int = LOCAL_VIDEO_MAX_ATTEMPTS,
     execute_fn: ExecuteFn = execute,
 ) -> int:
     if error_message:
+        message = str(error_message)[:1000]
         return execute_fn(
             """
             UPDATE meta_hot_posts
-            SET local_video_status='failed',
-                local_video_error=%s
+            SET local_video_status=CASE WHEN local_video_attempts >= %s THEN 'unavailable' ELSE 'failed' END,
+                local_video_error=CASE
+                  WHEN local_video_attempts >= %s THEN CONCAT('unavailable after max retry attempts: ', %s)
+                  ELSE %s
+                END
             WHERE id=%s
             """,
-            (str(error_message)[:1000], int(post_id)),
+            (int(max_attempts), int(max_attempts), message, message, int(post_id)),
         )
     return execute_fn(
         """

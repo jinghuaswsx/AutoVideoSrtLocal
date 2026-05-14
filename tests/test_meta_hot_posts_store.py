@@ -246,10 +246,13 @@ def test_next_pending_local_videos_selects_undownloaded_video_rows():
     assert rows[0]["id"] == 9
     assert "video_url IS NOT NULL" in sql
     assert "local_video_status IN ('pending', 'failed')" in sql
+    assert "local_video_status <> 'failed'" in sql
+    assert "TIMESTAMPDIFF(HOUR, updated_at, NOW()) >= %s" in sql
     assert "local_video_status IS NULL" in sql
     assert "local_video_attempts < %s" in sql
     assert "local_video_status <> 'downloaded'" in sql
-    assert params == (3, 100)
+    assert "local_video_status <> 'unavailable'" in sql
+    assert params == (5, 12, 100)
 
 
 def test_local_video_status_transitions_are_recorded():
@@ -281,9 +284,25 @@ def test_local_video_status_transitions_are_recorded():
     assert "local_video_status='downloaded'" in success_sql
     assert "local_video_downloaded_at=NOW()" in success_sql
     assert success_params == ("meta_hot_posts/videos/77.mp4", 77)
-    assert "local_video_status='failed'" in failure_sql
-    assert "local_video_error=%s" in failure_sql
-    assert failure_params == ("download failed", 78)
+    assert "ELSE 'failed'" in failure_sql
+    assert "local_video_error=CASE" in failure_sql
+    assert failure_params == (5, 5, "download failed", "download failed", 78)
+
+
+def test_finish_local_video_download_marks_unavailable_after_fifth_failure():
+    calls = []
+
+    store.finish_local_video_download(
+        88,
+        local_video_path=None,
+        error_message="still blocked",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "local_video_status=CASE WHEN local_video_attempts >= %s THEN 'unavailable' ELSE 'failed' END" in sql
+    assert "unavailable after max retry attempts" in sql
+    assert params == (5, 5, "still blocked", "still blocked", 88)
 
 
 def test_reset_running_local_videos_marks_all_downloading_failed_for_takeover():

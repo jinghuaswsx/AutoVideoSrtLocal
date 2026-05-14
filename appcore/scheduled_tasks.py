@@ -293,6 +293,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "description": (
             "每 10 分钟串行下载 Meta 热帖中尚未本地化的视频，默认每轮最多 30 条；"
             "每条下载完成或失败后至少间隔 30 秒再处理下一条，下载结果写回 local_video_* 字段。"
+            "失败视频至少 12 小时后才重试，最多尝试 5 次，仍失败则标记 unavailable；"
             "页面优先使用本地 MP4，缺失时回退 Facebook iframe。Docs-anchor: "
             "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md"
         ),

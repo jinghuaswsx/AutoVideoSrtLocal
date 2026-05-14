@@ -28,7 +28,7 @@ This design adds a conservative local cache for hot-post videos. It follows the 
 `meta_hot_posts` gains local-video cache fields:
 
 - `local_video_path`: relative path under the configured local cache root.
-- `local_video_status`: `pending`, `downloading`, `downloaded`, `failed`, or `skipped`.
+- `local_video_status`: `pending`, `downloading`, `downloaded`, `failed`, or `unavailable`.
 - `local_video_error`: last failure or skip reason.
 - `local_video_downloaded_at`: timestamp for successful downloads.
 - `local_video_attempts`: number of download attempts.
@@ -51,6 +51,8 @@ The default command is intentionally serial. Operators can run a limited batch r
 ## Singleton Takeover
 
 Video localization uses a startup takeover singleton. The APScheduler job schedules a startup run a few seconds after the web service starts, then continues every 10 minutes. The startup run checks for an existing `meta_hot_posts_video_localization_tick` run that is still marked `running`. If one exists, startup immediately marks that older run `failed`, resets all rows still in `local_video_status='downloading'` to `failed`, records the takeover in the run summary, and then starts its own download batch. Regular interval runs do not take over a running row; they skip until the active batch finishes.
+
+Failed video downloads use a conservative retry policy: a failed row is not eligible for retry until its last failure is at least 12 hours old. A row is attempted at most 5 times; after the fifth failed attempt it is marked `local_video_status='unavailable'` and no longer enters the download queue.
 
 This is intentionally different from product analysis and message translation, which still skip or take over only after their stale-run timeout. Video downloads are external and long-running, so a new invocation should own the queue instead of waiting behind a stale logical run.
 
