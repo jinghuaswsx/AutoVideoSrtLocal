@@ -5,6 +5,12 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from appcore.llm_media_optimizer import (
+    REVIEW_480P_AUDIO,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 from pipeline.llm_util import parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -56,18 +62,24 @@ def score_video(video_path: str | Path, *, user_id: int | None = None,
     if not p.is_file():
         raise FileNotFoundError(f"视频不存在：{p}")
 
+    # Docs-anchor:
+    # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    media_input = prepare_video_for_llm(p, REVIEW_480P_AUDIO, output_dir=p.parent)
     from appcore.llm_client import invoke_generate
-    result = invoke_generate(
-        "video_score.run",
-        prompt=USER_PROMPT,
-        system=SYSTEM_PROMPT,
-        media=[p],
-        temperature=0.2,
-        max_output_tokens=4096,
-        user_id=user_id,
-        project_id=project_id,
-        model_override=SCORE_MODEL,
-    )
+    try:
+        result = invoke_generate(
+            "video_score.run",
+            prompt=USER_PROMPT,
+            system=SYSTEM_PROMPT,
+            media=[media_input.llm_path],
+            temperature=0.2,
+            max_output_tokens=4096,
+            user_id=user_id,
+            project_id=project_id,
+            model_override=SCORE_MODEL,
+        )
+    finally:
+        cleanup_optimized_media(media_input)
     raw = result.get("json") if result.get("json") is not None else (result.get("text") or "")
     if isinstance(raw, dict):
         data = raw
@@ -113,4 +125,5 @@ def score_video(video_path: str | Path, *, user_id: int | None = None,
                         if isinstance(s, str) and s.strip()][:5],
         "model": SCORE_MODEL,
         "scored_at": datetime.utcnow().isoformat() + "Z",
+        "_video_optimization": media_debug_snapshot(media_input),
     }

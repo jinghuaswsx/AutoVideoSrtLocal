@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_media_optimizer import (
+    VISUAL_480P_SILENT,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 from appcore.llm_debug_payloads import (
     build_generate_request_payload,
     default_provider_model,
@@ -242,6 +248,7 @@ def _build_debug_call(
     script_segments: list[dict],
     target_language: str,
     target_market: str,
+    media_snapshot: dict | None = None,
 ) -> dict:
     provider, model = default_provider_model(USE_CASE_CODE)
     messages = [
@@ -259,6 +266,20 @@ def _build_debug_call(
         temperature=0.2,
         max_output_tokens=4096,
     )
+    input_snapshot = []
+    if media_snapshot:
+        input_snapshot.append(media_snapshot)
+    input_snapshot.extend(
+        [
+            {
+                "index": _segment_asr_index(segment, fallback_index),
+                "start_time": _segment_start(segment),
+                "end_time": _segment_end(segment),
+                "text": _segment_text(segment),
+            }
+            for fallback_index, segment in enumerate(script_segments or [])
+        ]
+    )
     return prompt_file_payload(
         phase="shot_notes",
         label="句级画面笔记",
@@ -267,15 +288,7 @@ def _build_debug_call(
         model=model,
         messages=messages,
         request_payload=request_payload,
-        input_snapshot=[
-            {
-                "index": _segment_asr_index(segment, fallback_index),
-                "start_time": _segment_start(segment),
-                "end_time": _segment_end(segment),
-                "text": _segment_text(segment),
-            }
-            for fallback_index, segment in enumerate(script_segments or [])
-        ],
+        input_snapshot=input_snapshot,
         meta={
             "target_language": target_language,
             "target_market": target_market,
@@ -345,37 +358,48 @@ def generate_shot_notes(
     max_retries: int = 2,
 ) -> dict:
     prompt = _build_prompt(script_segments, target_language, target_market)
-    media = [str(video_path)]
+    # Docs-anchor:
+    # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    media_input = prepare_video_for_llm(
+        str(video_path),
+        VISUAL_480P_SILENT,
+        output_dir=Path(video_path).parent,
+    )
+    media = [media_input.llm_path]
     debug_call = _build_debug_call(
         prompt=prompt,
         media=media,
         script_segments=script_segments,
         target_language=target_language,
         target_market=target_market,
+        media_snapshot=media_debug_snapshot(media_input),
     )
     last_error: Exception | None = None
 
-    for attempt in range(max_retries + 1):
-        try:
-            result = llm_client.invoke_generate(
-                USE_CASE_CODE,
-                prompt=prompt,
-                system=SYSTEM_PROMPT,
-                media=media,
-                response_schema=SHOT_NOTES_SCHEMA,
-                user_id=user_id,
-                project_id=project_id,
-                temperature=0.2,
-                max_output_tokens=4096,
-            )
-            notes = _normalize_output(result, script_segments)
-            notes["_llm_debug_calls"] = [debug_call]
-            return notes
-        except Exception as exc:  # pragma: no cover - error path asserted by tests
-            last_error = exc
-            if attempt >= max_retries:
-                raise
-            time.sleep(0.1 * (2**attempt))
+    try:
+        for attempt in range(max_retries + 1):
+            try:
+                result = llm_client.invoke_generate(
+                    USE_CASE_CODE,
+                    prompt=prompt,
+                    system=SYSTEM_PROMPT,
+                    media=media,
+                    response_schema=SHOT_NOTES_SCHEMA,
+                    user_id=user_id,
+                    project_id=project_id,
+                    temperature=0.2,
+                    max_output_tokens=4096,
+                )
+                notes = _normalize_output(result, script_segments)
+                notes["_llm_debug_calls"] = [debug_call]
+                return notes
+            except Exception as exc:  # pragma: no cover - error path asserted by tests
+                last_error = exc
+                if attempt >= max_retries:
+                    raise
+                time.sleep(0.1 * (2**attempt))
+    finally:
+        cleanup_optimized_media(media_input)
 
     if last_error is not None:
         raise last_error

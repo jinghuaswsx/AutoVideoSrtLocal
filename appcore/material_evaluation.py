@@ -16,6 +16,7 @@ from urllib.parse import quote
 
 from appcore import llm_bindings, llm_client, local_media_storage, medias, pushes, tos_clients
 from appcore.db import execute, query, query_one
+from appcore.llm_media_optimizer import SHORT_CLIP_AUDIO, prepare_video_for_llm
 
 logger = logging.getLogger(__name__)
 
@@ -103,20 +104,32 @@ def _make_eval_clip_15s(
     clips_root: Path | None = None,
 ) -> Path:
     src_path = _materialize_media(item["object_key"])
-    duration = item.get("duration_seconds")
-    try:
-        if duration is not None and float(duration) <= 15:
-            return src_path
-    except (TypeError, ValueError):
-        pass
-
     item_id = int(item["id"])
     root = clips_root or EVAL_CLIPS_ROOT
     out_dir = root / str(int(product_id))
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{item_id}_15s.mp4"
+    llm_out_path = out_dir / f"{item_id}_15s_llm.mp4"
+    if llm_out_path.is_file() and llm_out_path.stat().st_size > 0:
+        return llm_out_path
+
+    duration = item.get("duration_seconds")
+    try:
+        if duration is not None and float(duration) <= 15:
+            return _optimize_eval_clip_for_llm(
+                src_path,
+                llm_out_path=llm_out_path,
+                out_dir=out_dir,
+            )
+    except (TypeError, ValueError):
+        pass
+
     if out_path.is_file() and out_path.stat().st_size > 0:
-        return out_path
+        return _optimize_eval_clip_for_llm(
+            out_path,
+            llm_out_path=llm_out_path,
+            out_dir=out_dir,
+        )
 
     cmd = [
         "ffmpeg",
@@ -136,7 +149,11 @@ def _make_eval_clip_15s(
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=60, check=False)
         if result.returncode == 0 and out_path.is_file() and out_path.stat().st_size > 0:
-            return out_path
+            return _optimize_eval_clip_for_llm(
+                out_path,
+                llm_out_path=llm_out_path,
+                out_dir=out_dir,
+            )
         logger.warning(
             "ffmpeg eval clip cut failed, fallback to original. cmd=%s stderr=%s",
             cmd,
@@ -152,6 +169,34 @@ def _make_eval_clip_15s(
     except FileNotFoundError as exc:
         logger.warning("ffmpeg not found for eval clip, fallback to original: %s", exc)
     return src_path
+
+
+def _optimize_eval_clip_for_llm(
+    clip_path: Path,
+    *,
+    llm_out_path: Path,
+    out_dir: Path,
+) -> Path:
+    """Prepare the material-evaluation video for LLM upload.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    """
+    media = prepare_video_for_llm(
+        clip_path,
+        SHORT_CLIP_AUDIO,
+        output_dir=out_dir,
+        output_path=llm_out_path,
+    )
+    if media.optimized and Path(media.llm_path).is_file():
+        return Path(media.llm_path)
+    if media.error:
+        logger.warning(
+            "material evaluation clip optimization failed, fallback to raw clip. path=%s error=%s",
+            clip_path,
+            media.error,
+        )
+    return clip_path
 
 
 def _normalize_languages(languages: list[Any]) -> list[dict[str, str]]:

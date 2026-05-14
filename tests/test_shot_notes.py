@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from appcore.llm_media_optimizer import OptimizedMedia
 from pipeline import shot_notes
 
 
@@ -100,6 +101,94 @@ def test_shot_notes_happy_path(monkeypatch):
     assert debug_call["messages"][0]["content"] == shot_notes.SYSTEM_PROMPT
     assert debug_call["request_payload"]["type"] == "generate"
     assert debug_call["request_payload"]["media"] == ["demo.mp4"]
+
+
+def test_shot_notes_uses_optimized_visual_video_and_debug_snapshot(monkeypatch, tmp_path):
+    original = tmp_path / "source.mp4"
+    optimized = tmp_path / "source.visual.mp4"
+    original.write_bytes(b"source")
+    optimized.write_bytes(b"small")
+    captured = {}
+
+    def fake_prepare(video_path, policy, output_dir=None):
+        captured["policy"] = policy
+        captured["output_dir"] = output_dir
+        return OptimizedMedia(
+            original_path=str(original),
+            llm_path=str(optimized),
+            optimized=True,
+            cleanup_path=str(optimized),
+            original_bytes=6,
+            llm_bytes=5,
+            command=["ffmpeg", "-i", str(original), str(optimized)],
+            policy_name=policy.name,
+        )
+
+    def fake_invoke_generate(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        assert optimized.exists()
+        return _shot_notes_payload()
+
+    monkeypatch.setattr(shot_notes, "prepare_video_for_llm", fake_prepare)
+    monkeypatch.setattr(shot_notes.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = shot_notes.generate_shot_notes(
+        video_path=original,
+        script_segments=SCRIPT_SEGMENTS,
+        target_language="en",
+        target_market="US",
+    )
+
+    assert captured["policy"].name == "visual_480p_silent"
+    assert captured["kwargs"]["media"] == [str(optimized)]
+    assert result["_llm_debug_calls"][0]["request_payload"]["media"] == [str(optimized)]
+    snapshot = result["_llm_debug_calls"][0]["input_snapshot"][0]
+    assert snapshot["original_video_path"] == str(original)
+    assert snapshot["llm_video_path"] == str(optimized)
+    assert snapshot["optimized"] is True
+    assert snapshot["policy_name"] == "visual_480p_silent"
+    assert snapshot["llm_bytes"] == 5
+    assert not optimized.exists()
+
+
+def test_shot_notes_falls_back_to_original_when_optimization_fails(monkeypatch, tmp_path):
+    original = tmp_path / "source.mp4"
+    original.write_bytes(b"source")
+    captured = {}
+
+    def fake_prepare(video_path, policy, output_dir=None):
+        return OptimizedMedia(
+            original_path=str(original),
+            llm_path=str(original),
+            optimized=False,
+            cleanup_path=None,
+            original_bytes=6,
+            llm_bytes=6,
+            command=["ffmpeg"],
+            error="ffmpeg failed",
+            policy_name=policy.name,
+        )
+
+    def fake_invoke_generate(use_case_code, **kwargs):
+        captured["kwargs"] = kwargs
+        return _shot_notes_payload()
+
+    monkeypatch.setattr(shot_notes, "prepare_video_for_llm", fake_prepare)
+    monkeypatch.setattr(shot_notes.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = shot_notes.generate_shot_notes(
+        video_path=original,
+        script_segments=SCRIPT_SEGMENTS,
+        target_language="en",
+        target_market="US",
+    )
+
+    assert captured["kwargs"]["media"] == [str(original)]
+    snapshot = result["_llm_debug_calls"][0]["input_snapshot"][0]
+    assert snapshot["llm_video_path"] == str(original)
+    assert snapshot["optimized"] is False
+    assert snapshot["optimization_error"] == "ffmpeg failed"
 
 
 def test_shot_notes_fills_missing_sentences(monkeypatch):

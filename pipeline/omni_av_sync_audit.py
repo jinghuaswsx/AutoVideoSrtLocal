@@ -13,6 +13,12 @@ from appcore.llm_debug_payloads import (
     build_generate_request_payload,
     prompt_file_payload,
 )
+from appcore.llm_media_optimizer import (
+    REVIEW_480P_AUDIO,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 from appcore.omni_plugin_config import validate_plugin_config
 from appcore.preview_artifacts import build_tts_artifact
 from appcore.runtime import (
@@ -530,6 +536,16 @@ def _call_video_understand(
         "不要输出 JSON，不要做复杂结构化审计。"
     )
     provider, model = _resolve_llm_binding(use_case_code)
+    media_input = None
+    llm_video_path = video_path
+    if video_path:
+        # Docs-anchor:
+        # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+        media_input = prepare_video_for_llm(
+            video_path,
+            REVIEW_480P_AUDIO,
+        )
+        llm_video_path = media_input.llm_path
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": prompt},
@@ -540,10 +556,21 @@ def _call_video_understand(
         model=model,
         prompt=prompt,
         system=system,
-        media=[video_path] if video_path else None,
+        media=[llm_video_path] if llm_video_path else None,
         temperature=0.1,
         max_output_tokens=1800,
     )
+    input_snapshot = []
+    if media_input is not None:
+        input_snapshot.append(media_debug_snapshot(media_input))
+    else:
+        input_snapshot.append(
+            {
+                "key": "video_path",
+                "title": "合成成片视频",
+                "content": video_path,
+            }
+        )
     _save_debug_payload(
         task_id,
         task_dir,
@@ -554,20 +581,14 @@ def _call_video_understand(
         model=model,
         messages=messages,
         request_payload=request_payload,
-        input_snapshot=[
-            {
-                "key": "video_path",
-                "title": "合成成片视频",
-                "content": video_path,
-            },
-        ],
+        input_snapshot=input_snapshot,
     )
     try:
         result = llm_client.invoke_generate(
             use_case_code,
             prompt=prompt,
             system=system,
-            media=[video_path] if video_path else None,
+            media=[llm_video_path] if llm_video_path else None,
             user_id=getattr(runner, "user_id", None),
             project_id=task_id,
             response_schema=None,
@@ -576,6 +597,8 @@ def _call_video_understand(
         )
     except Exception as exc:  # noqa: BLE001 - keep program audit usable if video understanding fails
         return {"summary": "", "error": str(exc)[:500]}
+    finally:
+        cleanup_optimized_media(media_input)
     notes = str((result or {}).get("text") or "").strip() if isinstance(result, dict) else ""
     return {"summary": notes}
 

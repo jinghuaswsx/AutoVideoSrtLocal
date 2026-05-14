@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
+from appcore.llm_media_optimizer import OptimizedMedia
 import appcore.new_product_review as npr
 
 
@@ -195,14 +196,35 @@ def test_make_eval_clip_15s_creates_file(monkeypatch, tmp_path):
         result.stderr = b""
         return result
 
+    optimize_count = {"n": 0}
+
+    def fake_prepare(video_path, policy, output_dir=None, output_path=None):
+        optimize_count["n"] += 1
+        Path(output_path).write_bytes(b"llm-clip")
+        return OptimizedMedia(
+            original_path=str(video_path),
+            llm_path=str(output_path),
+            optimized=True,
+            cleanup_path=str(output_path),
+            original_bytes=4,
+            llm_bytes=8,
+            command=["ffmpeg"],
+            policy_name=policy.name,
+        )
+
     monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "appcore.new_product_review.material_evaluation.prepare_video_for_llm",
+        fake_prepare,
+    )
 
     item = {"id": 99, "object_key": "key/v.mp4"}
     path1 = npr._make_eval_clip_15s(1, item)
     path2 = npr._make_eval_clip_15s(1, item)  # 复用
     assert call_count["n"] == 1  # 第二次不重跑
+    assert optimize_count["n"] == 1
     assert path1 == path2
-    assert "99_15s.mp4" in path1
+    assert "99_15s_llm.mp4" in path1
 
 
 def test_make_eval_clip_15s_falls_back_on_ffmpeg_failure(monkeypatch, tmp_path):
@@ -261,7 +283,27 @@ def test_make_eval_clip_15s_reuses_existing(monkeypatch, tmp_path):
         run_called["n"] += 1
         return MagicMock(returncode=0, stderr=b"")
 
+    optimize_called = {"n": 0}
+
+    def fake_prepare(video_path, policy, output_dir=None, output_path=None):
+        optimize_called["n"] += 1
+        Path(output_path).write_bytes(b"llm-clip")
+        return OptimizedMedia(
+            original_path=str(video_path),
+            llm_path=str(output_path),
+            optimized=True,
+            cleanup_path=str(output_path),
+            original_bytes=13,
+            llm_bytes=8,
+            command=["ffmpeg"],
+            policy_name=policy.name,
+        )
+
     monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "appcore.new_product_review.material_evaluation.prepare_video_for_llm",
+        fake_prepare,
+    )
     monkeypatch.setattr(
         "appcore.new_product_review.material_evaluation._materialize_media",
         lambda key: tmp_path / "v.mp4",
@@ -269,7 +311,8 @@ def test_make_eval_clip_15s_reuses_existing(monkeypatch, tmp_path):
 
     path = npr._make_eval_clip_15s(1, {"id": 55, "object_key": "k"})
     assert run_called["n"] == 0
-    assert "55_15s.mp4" in path
+    assert optimize_called["n"] == 1
+    assert "55_15s_llm.mp4" in path
 
 
 def test_resolve_translator_rejects_inactive(monkeypatch):

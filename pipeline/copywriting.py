@@ -13,6 +13,12 @@ from decimal import Decimal
 from typing import Any
 
 from appcore import llm_client
+from appcore.llm_media_optimizer import (
+    VISUAL_480P_SILENT,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 
 log = logging.getLogger(__name__)
 
@@ -474,6 +480,19 @@ def generate_copy(
     # 判断是否支持直接视频输入
     use_video = _supports_video(provider, model) and video_path and os.path.isfile(video_path)
     use_vision = _supports_vision(provider) and keyframe_paths and not use_video
+    video_media = None
+    llm_video_path = str(video_path) if video_path else None
+    video_optimization = None
+    if use_video:
+        # Docs-anchor:
+        # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+        video_media = prepare_video_for_llm(
+            str(video_path),
+            VISUAL_480P_SILENT,
+            output_dir=os.path.dirname(str(video_path)) or None,
+        )
+        llm_video_path = video_media.llm_path
+        video_optimization = media_debug_snapshot(video_media)
 
     # 豆包多模态：模型只接收可拉取的媒体 URL，这里走公网交换例外。
     exchange_urls: dict[str, str] = {}  # local_path -> public URL
@@ -481,7 +500,7 @@ def generate_copy(
     if is_doubao and (use_video or use_vision):
         log.info("豆包多模态：暂存媒体文件供上游模型拉取...")
         if use_video:
-            exchange_urls[video_path] = _upload_to_public_exchange(video_path)
+            exchange_urls[llm_video_path] = _upload_to_public_exchange(llm_video_path)
         elif use_vision:
             for path in keyframe_paths:
                 exchange_urls[path] = _upload_to_public_exchange(path)
@@ -493,18 +512,18 @@ def generate_copy(
     content: list[dict[str, Any]] = []
 
     if use_video:
-        log.info("模型支持视频输入，直接传视频: %s", os.path.basename(video_path))
+        log.info("模型支持视频输入，直接传视频: %s", os.path.basename(llm_video_path))
         content.append({"type": "text", "text": "Source video:"})
         if is_doubao:
             content.append({
                 "type": "video_url",
-                "video_url": {"url": exchange_urls[video_path]},
-                "public_url": exchange_urls[video_path],
+                "video_url": {"url": exchange_urls[llm_video_path]},
+                "public_url": exchange_urls[llm_video_path],
             })
         else:
             content.append({
                 "type": "video_url",
-                "video_url": {"url": _video_to_base64_url(video_path)},
+                "video_url": {"url": _video_to_base64_url(llm_video_path)},
             })
     elif use_vision:
         content.append({"type": "text", "text": "Video keyframes (in chronological order):"})
@@ -581,7 +600,7 @@ def generate_copy(
             info = "(public URL image)" if is_doubao else "(base64 image)"
             debug_content.append({"type": "image", "info": info})
         elif item["type"] == "video_url":
-            info = f"(public URL video: {os.path.basename(video_path)})" if is_doubao else f"(base64 video: {os.path.basename(video_path)})"
+            info = f"(public URL video: {os.path.basename(llm_video_path)})" if is_doubao else f"(base64 video: {os.path.basename(llm_video_path)})"
             debug_content.append({"type": "video", "info": info})
 
     # ── 实际调用 ──
@@ -673,7 +692,9 @@ def generate_copy(
         "system_prompt": system_prompt,
         "user_content": debug_content,
         "video_input": use_video,
-        "video_file": os.path.basename(video_path) if use_video else None,
+        "video_file": os.path.basename(llm_video_path) if use_video else None,
+        "original_video_file": os.path.basename(video_path) if use_video else None,
+        "video_optimization": video_optimization,
         "image_count": len(keyframe_paths) if use_vision else 0,
         "keyframe_paths": [os.path.basename(p) for p in keyframe_paths] if not use_video else [],
         "public_exchange_urls": (
@@ -694,6 +715,7 @@ def generate_copy(
 
     log.info("文案生成完成: %d 段, 预计时长 %ds",
              len(result.get("segments", [])), result.get("target_duration", 0))
+    cleanup_optimized_media(video_media)
     return result
 
 
