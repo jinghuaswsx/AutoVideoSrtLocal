@@ -447,10 +447,11 @@ class OmniTranslateRunner(MultiTranslateRunner):
         names = ["extract", "asr"]
         if cfg["voice_separation"]:
             names.append("separate")
+        names.append("asr_clean" if cfg["asr_post"] == "asr_clean" else "asr_normalize")
+        names.extend(["voice_match", "alignment"])
         if cfg["shot_decompose"]:
             names.append("shot_decompose")
-        names.append("asr_clean" if cfg["asr_post"] == "asr_clean" else "asr_normalize")
-        names.extend(["voice_match", "alignment", "translate", "tts"])
+        names.extend(["translate", "tts"])
         if cfg["av_sync_audit"] != "off":
             names.append("av_sync_audit")
         if cfg["loudness_match"]:

@@ -5,8 +5,8 @@
   const MAIN_STEPS = {{ pipeline_main_steps|default([])|tojson }};
   const PROGRESS_STEPS = {{ pipeline_progress_steps|default(pipeline_main_steps|default([]))|tojson }};
   {% elif api_base == '/api/omni-translate' %}
-  const STEP_ORDER = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];
-  const MAIN_STEPS = ["extract", "asr", "separate", "shot_decompose", "asr_clean", "voice_match", "alignment", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export"];
+  const STEP_ORDER = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];
+  const MAIN_STEPS = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export"];
   const PROGRESS_STEPS = MAIN_STEPS;
   {% elif pipeline_kind == 'multi_translate' %}
   const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export", "analysis"];

@@ -96,13 +96,13 @@ def test_omni_js_step_order_tracks_dynamic_pipeline_steps():
     scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
 
     assert (
-        'const STEP_ORDER = ["extract", "asr", "separate", "shot_decompose", '
-        '"asr_clean", "voice_match", "alignment", "translate", "tts", '
+        'const STEP_ORDER = ["extract", "asr", "separate", '
+        '"asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", '
         '"av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];'
     ) in scripts
     assert (
-        'const MAIN_STEPS = ["extract", "asr", "separate", "shot_decompose", '
-        '"asr_clean", "voice_match", "alignment", "translate", "tts", '
+        'const MAIN_STEPS = ["extract", "asr", "separate", '
+        '"asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", '
         '"av_sync_audit", "loudness_match", "subtitle", "compose", "export"];'
     ) in scripts
 

@@ -525,11 +525,18 @@
   {% set show_asr_clean_step = is_omni_pipeline and ('asr_clean' in pipeline_steps) %}
   {% set show_av_sync_audit_step = 'av_sync_audit' in pipeline_steps %}
   {% set show_loudness_step = (extended_pipeline and not pipeline_steps) or ('loudness_match' in pipeline_steps) %}
+  {% macro step_icon(name, fallback) -%}
+    {%- if pipeline_steps and name in pipeline_steps -%}
+      {{ pipeline_steps.index(name) + 1 }}
+    {%- else -%}
+      {{ fallback }}
+    {%- endif -%}
+  {%- endmacro %}
   <h2>处理进度</h2>
   <div class="steps">
     <div class="step" id="step-extract">
       <div class="step-main">
-        <div class="step-icon" id="icon-extract">1</div>
+        <div class="step-icon" id="icon-extract">{{ step_icon('extract', 1) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">音频提取</span>
@@ -542,7 +549,7 @@
     </div>
     <div class="step" id="step-asr">
       <div class="step-main">
-        <div class="step-icon" id="icon-asr">2</div>
+        <div class="step-icon" id="icon-asr">{{ step_icon('asr', 2) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">语音识别</span>
@@ -553,10 +560,25 @@
       </div>
       <div class="step-preview" id="preview-asr"></div>
     </div>
+    {% if show_separate_step %}
+    <div class="step" id="step-separate">
+      <div class="step-main">
+        <div class="step-icon" id="icon-separate">{{ step_icon('separate', 3) }}</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">人声分离</span>
+            <button class="resume-btn hidden" id="resume-separate" data-step="separate">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-separate">等待中...<span class="step-model-tag hidden" id="model-tag-separate"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-separate"></div>
+    </div>
+    {% endif %}
     {% if show_asr_normalize_step %}
     <div class="step" id="step-asr_normalize">
       <div class="step-main">
-        <div class="step-icon" id="icon-asr_normalize">3</div>
+        <div class="step-icon" id="icon-asr_normalize">{{ step_icon('asr_normalize', 4 if show_separate_step else 3) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">原文标准化和ASR结果纯净化</span>
@@ -632,7 +654,7 @@
     {% elif show_asr_clean_step %}
     <div class="step" id="step-asr_clean">
       <div class="step-main">
-        <div class="step-icon" id="icon-asr_clean">3</div>
+        <div class="step-icon" id="icon-asr_clean">{{ step_icon('asr_clean', 4 if show_separate_step else 3) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">原文纯净化</span>
@@ -704,25 +726,23 @@
       <div class="step-preview" id="preview-asr_clean"></div>
     </div>
     {% endif %}
-    {% if show_separate_step %}
-    <div class="step" id="step-separate">
+    <div class="step" id="step-alignment">
       <div class="step-main">
-        <div class="step-icon" id="icon-separate">4</div>
+        <div class="step-icon" id="icon-alignment">{{ step_icon('alignment', 5 if extended_pipeline else 3) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
-            <span class="step-name">人声分离</span>
-            <button class="resume-btn hidden" id="resume-separate" data-step="separate">从此步继续</button>
+            <span class="step-name">分段确认</span>
+            <button class="resume-btn hidden" id="resume-alignment" data-step="alignment">从此步继续</button>
           </div>
-          <div class="step-msg" id="msg-separate">等待中...<span class="step-model-tag hidden" id="model-tag-separate"></span></div>
+          <div class="step-msg" id="msg-alignment">等待中...<span class="step-model-tag hidden" id="model-tag-alignment"></span></div>
         </div>
       </div>
-      <div class="step-preview" id="preview-separate"></div>
+      <div class="step-preview" id="preview-alignment"></div>
     </div>
-    {% endif %}
     {% if show_shot_decompose_step %}
     <div class="step" id="step-shot_decompose">
       <div class="step-main">
-        <div class="step-icon" id="icon-shot_decompose">5</div>
+        <div class="step-icon" id="icon-shot_decompose">{{ step_icon('shot_decompose', 7 if show_separate_step else 6) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">镜头分镜</span>
@@ -734,22 +754,9 @@
       <div class="step-preview" id="preview-shot_decompose"></div>
     </div>
     {% endif %}
-    <div class="step" id="step-alignment">
-      <div class="step-main">
-        <div class="step-icon" id="icon-alignment">{{ 5 if extended_pipeline else 3 }}</div>
-        <div style="flex:1">
-          <div class="step-name-row">
-            <span class="step-name">分段确认</span>
-            <button class="resume-btn hidden" id="resume-alignment" data-step="alignment">从此步继续</button>
-          </div>
-          <div class="step-msg" id="msg-alignment">等待中...<span class="step-model-tag hidden" id="model-tag-alignment"></span></div>
-        </div>
-      </div>
-      <div class="step-preview" id="preview-alignment"></div>
-    </div>
     <div class="step" id="step-translate">
       <div class="step-main">
-        <div class="step-icon" id="icon-translate">{{ 6 if extended_pipeline else 4 }}</div>
+        <div class="step-icon" id="icon-translate">{{ step_icon('translate', 6 if extended_pipeline else 4) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">翻译本土化</span>
@@ -767,7 +774,7 @@
     </div>
     <div class="step" id="step-tts">
       <div class="step-main">
-        <div class="step-icon" id="icon-tts">{{ 7 if extended_pipeline else 5 }}</div>
+        <div class="step-icon" id="icon-tts">{{ step_icon('tts', 7 if extended_pipeline else 5) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">语音生成</span>
@@ -787,7 +794,7 @@
     {% if show_loudness_step %}
     <div class="step" id="step-loudness_match">
       <div class="step-main">
-        <div class="step-icon" id="icon-loudness_match">8</div>
+        <div class="step-icon" id="icon-loudness_match">{{ step_icon('loudness_match', 8) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">响度匹配</span>
@@ -801,7 +808,7 @@
     {% endif %}
     <div class="step" id="step-subtitle">
       <div class="step-main">
-        <div class="step-icon" id="icon-subtitle">{{ 9 if extended_pipeline else 6 }}</div>
+        <div class="step-icon" id="icon-subtitle">{{ step_icon('subtitle', 9 if extended_pipeline else 6) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">字幕生成</span>
@@ -839,7 +846,7 @@
     {% endif %}
     <div class="step" id="step-compose">
       <div class="step-main">
-        <div class="step-icon" id="icon-compose">{{ 10 if extended_pipeline else 7 }}</div>
+        <div class="step-icon" id="icon-compose">{{ step_icon('compose', 10 if extended_pipeline else 7) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">视频合成</span>
@@ -853,7 +860,7 @@
     {% if show_av_sync_audit_step %}
     <div class="step" id="step-av_sync_audit">
       <div class="step-main">
-        <div class="step-icon" id="icon-av_sync_audit">8</div>
+        <div class="step-icon" id="icon-av_sync_audit">{{ step_icon('av_sync_audit', 8) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">音画同步审计</span>
@@ -867,7 +874,7 @@
     {% endif %}
     <div class="step" id="step-export">
       <div class="step-main">
-        <div class="step-icon" id="icon-export">{{ 11 if extended_pipeline else 8 }}</div>
+        <div class="step-icon" id="icon-export">{{ step_icon('export', 11 if extended_pipeline else 8) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">CapCut 导出</span>

@@ -140,12 +140,12 @@ def test_pipeline_skips_av_sync_audit_when_off(monkeypatch, omni_runner):
 def test_pipeline_steps_for_lab_current(monkeypatch, omni_runner):
     _patch_resolve_cfg(monkeypatch, CFG_LAB_CURRENT)
     names = _step_names(omni_runner)
-    # shot_decompose 插在 separate 后、post_asr 前
+    # shot_decompose 延后到音色选择/分段确认之后，避免阻塞用户选音色。
     assert names == [
         "extract", "asr", "separate",
-        "shot_decompose",
         "asr_normalize",
         "voice_match", "alignment",
+        "shot_decompose",
         "translate", "tts", "loudness_match", "subtitle",
         "compose", "export",
     ]
@@ -488,6 +488,35 @@ def test_shot_decompose_falls_back_to_asr_end_when_video_duration_missing(
     )
 
     assert captured["duration_seconds"] == 23.3
+
+
+def test_shot_decompose_skips_existing_done_shots_for_reordered_resume(
+    monkeypatch, tmp_path, omni_runner,
+):
+    import appcore.task_state as task_state
+    from appcore.runtime_omni_steps import step_shot_decompose
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
+    def fail_decompose(*args, **kwargs):
+        raise AssertionError("existing completed shot_decompose must not rerun")
+
+    monkeypatch.setattr("pipeline.shot_decompose.decompose_shots", fail_decompose)
+
+    task_id = "omni-shot-decompose-existing-done"
+    existing_shots = [{"index": 1, "start": 0.0, "end": 1.0, "description": "existing"}]
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(task_id, shots=existing_shots)
+    task_state.set_step(task_id, "shot_decompose", "done")
+
+    step_shot_decompose(omni_runner, task_id, str(tmp_path / "video.mp4"), str(tmp_path))
+
+    task = task_state.get(task_id)
+    assert task["shots"] == existing_shots
+    assert task["steps"]["shot_decompose"] == "done"
+    assert task["step_messages"]["shot_decompose"] == "已有分镜结果，共 1 段，已跳过"
 
 
 def test_pipeline_keeps_loudness_when_voice_separation_on(

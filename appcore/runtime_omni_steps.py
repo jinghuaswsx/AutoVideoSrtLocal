@@ -246,6 +246,17 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
     源头: appcore/runtime_v2.py:_step_shot_decompose（master b50b72c1）。
     适配: V2 task 用 ``video_duration``；omni 走 _step_extract 也写了这个字段。
     """
+    task = task_state.get(task_id) or {}
+    existing_shots = task.get("shots") or []
+    if (task.get("steps") or {}).get("shot_decompose") == "done" and existing_shots:
+        runner._set_step(
+            task_id,
+            "shot_decompose",
+            "done",
+            f"已有分镜结果，共 {len(existing_shots)} 段，已跳过",
+        )
+        return
+
     from pipeline.shot_decompose import (
         SHOT_DECOMPOSE_PROMPT,
         SHOT_DECOMPOSE_SCHEMA,
@@ -259,7 +270,6 @@ def step_shot_decompose(runner, task_id: str, video_path: str, task_dir: str) ->
     _sd_model = _sd_binding.get("model") or "google/gemini-3-flash-preview"
     runner._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...",
                      model_tag=f"{_sd_provider} · {_sd_model}")
-    task = task_state.get(task_id) or {}
     duration = _resolve_shot_decompose_duration(task, video_path)
     if duration > 0 and not task.get("video_duration"):
         task_state.update(task_id, video_duration=duration)

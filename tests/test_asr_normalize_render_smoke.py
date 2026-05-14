@@ -145,6 +145,8 @@ def test_omni_detail_renders_dynamic_pipeline_steps(authed_client_no_db):
     assert 'id="step-asr_clean"' not in html
     assert 'id="step-shot_decompose"' in html
     assert 'id="step-av_sync_audit"' in html
+    assert html.index('id="step-alignment"') < html.index('id="step-shot_decompose"')
+    assert html.index('id="step-shot_decompose"') < html.index('id="step-translate"')
     assert '"shot_decompose"' in html
     assert '"asr_normalize"' in html
     assert '"av_sync_audit"' in html

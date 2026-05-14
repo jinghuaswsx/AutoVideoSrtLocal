@@ -72,8 +72,8 @@ EXPECTED_AV_SYNC_CURRENT_STEPS = [
     "loudness_match", "subtitle", "compose", "export",
 ]
 EXPECTED_LAB_CURRENT_STEPS = [
-    "extract", "asr", "separate", "shot_decompose", "asr_normalize",
-    "voice_match", "alignment", "translate", "tts",
+    "extract", "asr", "separate", "asr_normalize",
+    "voice_match", "alignment", "shot_decompose", "translate", "tts",
     "loudness_match", "subtitle", "compose", "export",
 ]
 
@@ -217,10 +217,11 @@ def test_av_sentence_translate_keeps_alignment(in_memory_task_state):
     assert "alignment" in step_order
 
 
-def test_shot_decompose_inserts_after_separate_before_post_asr(in_memory_task_state):
-    """shot_decompose 必须在 separate 后、asr_normalize 前（spec §6.1）。"""
+def test_shot_decompose_runs_after_voice_and_alignment_before_translate(in_memory_task_state):
+    """shot_decompose 必须延后到音色确认/分段后，并在 translate 前完成。"""
     _, step_order = _resolve_steps_for(CFG_LAB_CURRENT)
-    sep_idx = step_order.index("separate")
+    voice_idx = step_order.index("voice_match")
+    alignment_idx = step_order.index("alignment")
     sd_idx = step_order.index("shot_decompose")
-    norm_idx = step_order.index("asr_normalize")
-    assert sep_idx < sd_idx < norm_idx
+    translate_idx = step_order.index("translate")
+    assert voice_idx < alignment_idx < sd_idx < translate_idx

@@ -18,8 +18,8 @@ from datetime import datetime
 _TASK_AUTO_RETRY_MAX = 3
 _TASK_AUTO_RETRY_DELAYS = [5, 30, 120]  # seconds before retry 1, 2, 3
 _ALL_STEP_NAMES = (
-    "extract", "asr", "separate", "shot_decompose", "asr_normalize",
-    "asr_clean", "voice_match", "alignment", "translate", "tts",
+    "extract", "asr", "separate", "asr_normalize", "asr_clean",
+    "voice_match", "alignment", "shot_decompose", "translate", "tts",
     "av_sync_audit", "loudness_match", "subtitle", "compose", "export",
 )
 
