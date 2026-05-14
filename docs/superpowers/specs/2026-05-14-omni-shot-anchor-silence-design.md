@@ -12,6 +12,7 @@
 - `docs/superpowers/specs/2026-05-13-tts-deferred-adaptive-speedup-design.md`: final timing optimization runs after TTS convergence, not as an early shortcut.
 - `docs/superpowers/specs/2026-05-14-omni-final-fallback-compose-summary-design.md`: final audio processing must be explicit in task metadata and UI diagnostics.
 - `docs/superpowers/specs/2026-05-13-omni-tts-process-visualization-design.md`: the detail page can expose detailed TTS/post-TTS diagnostics without changing the core convergence algorithm.
+- `docs/superpowers/specs/2026-05-07-omni-dynamic-resume-and-prompt-display-fix.md`: restart/resume must clear stale downstream state and keep detail cards consistent with the real task state.
 
 ## Problem
 
@@ -63,6 +64,7 @@ must show what was analyzed, what changed, and why candidates were skipped.
   timing problem and must be reproducible in tests.
 - Do not layer a new silence segment on top of an already scheduled compact
   gap. There is only one final `audio_gap_before` per sentence boundary.
+- Do not preserve stale speech-shot alignment diagnostics after a force restart.
 
 ## Inputs
 
@@ -322,6 +324,30 @@ Later this can become a preset flag, but the first implementation should avoid
 adding new UI configuration unless production review shows per-task control is
 needed.
 
+## Restart and Resume Semantics
+
+The `强制重新开始` button calls `/restart` and must clear every speech-shot
+alignment output from the previous run before the new pipeline starts.
+
+Restart clearing must remove:
+
+- top-level `speech_shot_alignment`;
+- `final_compose_summary.speech_shot_alignment_*`;
+- `final_compose_summary.shot_anchor_*`;
+- per-sentence fields such as `base_compact_gap`, `shot_anchor_final_gap`,
+  `shot_anchor_extra_silence`, `shot_anchor_cut_time`,
+  `shot_anchor_before_start`, `shot_anchor_after_start`,
+  `shot_anchor_reason`;
+- the same fields inside `variants.av.final_compose_summary`,
+  `variants.av.sentences`, and `variants.av.av_debug.final_compose_summary`;
+- any preview/artifact entry used only by the `语音镜头对齐` card.
+
+After restart, the card should render the normal pending/skipped-empty state
+from the refreshed task, not the previous run's table. Resume from `tts` or a
+later step should recompute alignment from the current TTS sentences before
+subtitle/compose. Resume from an earlier step naturally clears downstream state
+through the existing restart/resume cleanup.
+
 ## Verification
 
 Unit tests:
@@ -342,6 +368,9 @@ Runtime tests:
   TTS convergence output exists and before final audio is rebuilt for compose.
 - `final_compose_summary` includes speech-shot alignment metrics without hiding
   existing truncation, best-effort, or semantic warning metrics.
+- `restart_task` clears top-level, variant-level, sentence-level, and debug
+  speech-shot alignment fields so the detail card cannot show stale data after
+  `强制重新开始`.
 - The detail shell renders the `语音镜头对齐` card for applied, no-op, and
   skipped states.
 
