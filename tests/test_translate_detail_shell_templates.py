@@ -170,6 +170,24 @@ def test_voice_separation_card_stays_after_audio_extract_before_tts_selector():
     assert "moveSeparateBeforeVoiceSelector" not in separation
 
 
+def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
+    root = Path(__file__).resolve().parents[1]
+    separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")
+
+    assert "loudness-profile-controls" in separation
+    assert "标准" in separation
+    assert "增强背景" in separation
+    assert "手动调整" in separation
+    assert "manualBoostModal" in separation
+    assert "manual_boost_pct" in separation
+    assert "/loudness-profile" in separation
+    assert "X-CSRFToken" in separation
+    assert "API_BASE !== \"/api/omni-translate\"" in separation
+    assert "primary.algorithm || tl.algorithm" in separation
+    assert "A_after_B_excess_deviation" in separation
+    assert "已选择，点击“从此步继续”后生效" in separation
+
+
 def test_tts_generation_summary_is_rendered_in_duration_log():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
