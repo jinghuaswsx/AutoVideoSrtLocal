@@ -22,15 +22,17 @@
 .vc-modal-backdrop { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,.42); padding:20px; }
 .vc-modal-backdrop.show { display:flex; }
 .vc-modal { width:min(560px, 100%); border-radius:8px; border:1px solid var(--border-main); background:var(--bg-card); padding:22px; box-shadow:0 18px 48px rgba(15,23,42,.22); }
+.vc-config-modal { width:min(920px, 100%); }
 .vc-modal h2 { margin:0 0 16px; font-size:17px; color:var(--text-main); }
 .vc-form { display:grid; gap:14px; }
 .vc-field { display:grid; gap:7px; }
 .vc-label { font-size:13px; font-weight:700; color:var(--text-main); }
 .vc-input { width:100%; min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:8px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
 .vc-config-grid { display:grid; gap:10px; }
-.vc-config-row { display:grid; grid-template-columns:120px minmax(120px, .8fr) minmax(180px, 1fr); gap:8px; align-items:end; padding:10px; border:1px solid var(--border-main); border-radius:8px; }
+.vc-config-row { display:grid; grid-template-columns:110px minmax(130px, .75fr) minmax(260px, 1.25fr) minmax(140px, .65fr); gap:8px; align-items:end; padding:10px; border:1px solid var(--border-main); border-radius:8px; }
 .vc-config-step { font-size:13px; font-weight:800; color:var(--text-main); padding-bottom:8px; }
 .vc-config-field { display:grid; gap:6px; }
+.vc-config-field.is-hidden { display:none; }
 .vc-config-field span { font-size:12px; color:#64748b; font-weight:700; }
 .vc-config-status { min-height:20px; color:#16a34a; font-size:13px; }
 .vc-count-pills { display:flex; flex-wrap:wrap; gap:8px; }
@@ -90,7 +92,7 @@
 
 {% if current_user.is_superadmin %}
 <div class="vc-modal-backdrop" id="vcConfigBackdrop">
-  <div class="vc-modal">
+  <div class="vc-modal vc-config-modal">
     <h2>默认配置</h2>
     <form class="vc-form" id="vcConfigForm">
       <div class="vc-config-grid">
@@ -119,6 +121,15 @@
                     data-model-select="{{ step }}"
                     data-current-model="{{ defaults.get('model_id', '') }}"></select>
           </label>
+          {% if step == 'cover_generation' %}
+          <label class="vc-config-field" data-cover-execution-field>
+            <span>执行方式</span>
+            <select class="vc-input" name="cover_generation_execution_mode" data-cover-execution-select>
+              <option value="parallel" {% if defaults.get('execution_mode', 'parallel') != 'serial' %}selected{% endif %}>并发执行</option>
+              <option value="serial" {% if defaults.get('execution_mode') == 'serial' %}selected{% endif %}>串行执行</option>
+            </select>
+          </label>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -263,6 +274,11 @@
       const model = configForm.elements[step + '_model_id'];
       if (provider && row.provider) provider.value = row.provider;
       refreshModelSelect(step, row.model_id || (model && model.dataset.currentModel) || '');
+      if (step === 'cover_generation') {
+        const execution = configForm.elements.cover_generation_execution_mode;
+        if (execution) execution.value = row.execution_mode || (provider && provider.value === 'openrouter' ? 'parallel' : 'serial');
+        refreshCoverExecutionMode();
+      }
     });
   }
   function stepConfig(step) {
@@ -317,6 +333,21 @@
     }
     model.dataset.currentModel = model.value || preferred;
   }
+  function refreshCoverExecutionMode() {
+    if (!configForm) return;
+    const provider = configForm.elements.cover_generation_provider;
+    const execution = configForm.elements.cover_generation_execution_mode;
+    const field = configForm.querySelector('[data-cover-execution-field]');
+    if (!provider || !execution || !field) return;
+    const isOpenrouter = provider.value === 'openrouter';
+    field.classList.toggle('is-hidden', !isOpenrouter);
+    execution.disabled = !isOpenrouter;
+    if (!isOpenrouter) {
+      execution.value = 'serial';
+    } else if (!execution.value) {
+      execution.value = 'parallel';
+    }
+  }
   function initConfigModelSelects() {
     if (!configForm) return;
     configSteps.forEach(step => {
@@ -324,8 +355,16 @@
       const model = configForm.elements[step + '_model_id'];
       if (!provider || !model) return;
       refreshModelSelect(step, model.dataset.currentModel || '');
-      provider.addEventListener('change', () => refreshModelSelect(step, ''));
+      provider.addEventListener('change', () => {
+        refreshModelSelect(step, '');
+        if (step === 'cover_generation') {
+          const execution = configForm.elements.cover_generation_execution_mode;
+          if (provider.value === 'openrouter' && execution) execution.value = 'parallel';
+          refreshCoverExecutionMode();
+        }
+      });
     });
+    refreshCoverExecutionMode();
   }
   async function showConfig() {
     if (!configBackdrop) return;
@@ -388,10 +427,15 @@
       event.preventDefault();
       const steps = {};
       configSteps.forEach(step => {
+        const providerValue = (configForm.elements[step + '_provider'] || {}).value || '';
         steps[step] = {
-          provider: (configForm.elements[step + '_provider'] || {}).value || '',
+          provider: providerValue,
           model_id: (configForm.elements[step + '_model_id'] || {}).value || ''
         };
+        if (step === 'cover_generation') {
+          const execution = (configForm.elements.cover_generation_execution_mode || {}).value || '';
+          steps[step].execution_mode = providerValue === 'openrouter' ? (execution || 'parallel') : 'serial';
+        }
       });
       configSubmit.disabled = true;
       configSubmit.textContent = '保存中...';

@@ -28,6 +28,7 @@ from appcore.video_cover_generation import (
     generate_product_analysis,
     generate_video_analysis,
     generate_video_covers,
+    normalize_cover_execution_mode,
     normalize_image_count,
     normalize_product_image_jpg,
     resolve_cover_model_selection,
@@ -631,8 +632,16 @@ def _run_ad_copy_step(state: dict, *, provider: str | None, model: str | None, u
     return {"ad_copy_sets": ad_copy_sets}
 
 
-def _run_cover_generation_step(state: dict, *, provider: str | None, model: str | None, user_id: int) -> dict:
+def _run_cover_generation_step(
+    state: dict,
+    *,
+    provider: str | None,
+    model: str | None,
+    execution_mode: str | None = None,
+    user_id: int,
+) -> dict:
     selection = resolve_cover_model_selection(provider, model)
+    cover_execution_mode = normalize_cover_execution_mode(selection.provider, execution_mode)
     _product, title, image_url, product_image_path = _ensure_product_assets(state)
     product = state.get("product") or {}
     selected_prompt = build_platform_prompt(
@@ -653,9 +662,11 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
             "product_url": state.get("product_url") or "",
             "video_filename": state.get("video_filename") or "",
             "image_count": image_count,
+            "execution_mode": cover_execution_mode,
             "ad_copy_sets": state.get("ad_copy_sets") or {},
         },
         "prompt": selected_prompt,
+        "execution_mode": cover_execution_mode,
     })
 
     task_id = str(state.get("id") or "")
@@ -693,6 +704,7 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         task_id=state.get("id"),
         cover_provider=selection.provider,
         cover_model=selection.alias,
+        cover_execution_mode=cover_execution_mode,
         product_analysis_text=str(state.get("product_analysis") or ""),
         video_analysis_text=str(state.get("video_analysis") or ""),
         ad_copy_payload=state.get("ad_copy_sets") if isinstance(state.get("ad_copy_sets"), dict) else None,
@@ -700,10 +712,18 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         on_cover_done=persist_partial_cover_result,
     )
     apply_cover_result(result)
-    return _attach_urls(result)
+    return result
 
 
-def _run_project_step(state: dict, step: str, *, provider: str | None, model: str | None, user_id: int) -> dict:
+def _run_project_step(
+    state: dict,
+    step: str,
+    *,
+    provider: str | None,
+    model: str | None,
+    execution_mode: str | None = None,
+    user_id: int,
+) -> dict:
     if step == "video_analysis":
         return _run_video_analysis_step(state, provider=provider, model=model, user_id=user_id)
     if step == "product_analysis":
@@ -711,7 +731,13 @@ def _run_project_step(state: dict, step: str, *, provider: str | None, model: st
     if step == "ad_copy":
         return _run_ad_copy_step(state, provider=provider, model=model, user_id=user_id)
     if step == "cover_generation":
-        return _run_cover_generation_step(state, provider=provider, model=model, user_id=user_id)
+        return _run_cover_generation_step(
+            state,
+            provider=provider,
+            model=model,
+            execution_mode=execution_mode,
+            user_id=user_id,
+        )
     raise VideoCoverGenerationError(f"未知步骤：{step}")
 
 
@@ -774,6 +800,7 @@ def _run_video_cover_chain(task_id: str, *, start_step: str = "video_analysis", 
                 step,
                 provider=model_default.get("provider"),
                 model=model_default.get("model_id"),
+                execution_mode=model_default.get("execution_mode"),
                 user_id=user_id,
             )
             _mark_step_done(state, step)
@@ -899,6 +926,8 @@ def _config_payload_from_request() -> dict:
             "provider": request.form.get(f"{step}_provider") or "",
             "model_id": request.form.get(f"{step}_model_id") or "",
         }
+        if step == "cover_generation":
+            payload[step]["execution_mode"] = request.form.get(f"{step}_execution_mode") or ""
     return payload
 
 
@@ -1140,6 +1169,7 @@ def api_generate():
                 user_id=int(getattr(current_user, "id", 0) or 0),
                 cover_provider=request.form.get("cover_provider") or request.form.get("provider") or "",
                 cover_model=request.form.get("cover_model") or request.form.get("model") or "",
+                cover_execution_mode=request.form.get("cover_execution_mode") or "",
                 product_analysis_provider=request.form.get("product_provider") or "",
                 product_analysis_model=request.form.get("product_model") or "",
                 video_analysis_provider=request.form.get("video_provider") or "",

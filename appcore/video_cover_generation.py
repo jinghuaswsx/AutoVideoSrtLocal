@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
 from io import BytesIO
@@ -29,6 +30,7 @@ from pipeline.ffutil import extract_thumbnail, probe_media_info
 
 DEFAULT_IMAGE_CHANNEL = "local"
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_COVER_EXECUTION_MODE = ""
 LOCAL_IMAGE_PROVIDER_CODE = "video_cover_local_image"
 LOCAL_IMAGE_BASE_URL_DEFAULT = "http://172.30.254.14:82/v1"
 OUTPUT_SIZE = (1080, 1920)
@@ -143,6 +145,7 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
     "providers": {
         "local": "本地接口",
         "openrouter": "OPENROUTER",
+        "gemini_vertex_adc": "GOOGLE VERTEX ADC",
     },
     "models": {
         "local": {
@@ -155,6 +158,11 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "openai_image_2_low": "openai/gpt-5.4-image-2:low",
             "openai_image_2_mid": "openai/gpt-5.4-image-2:mid",
             "openai_image_2_high": "openai/gpt-5.4-image-2:high",
+            "nano_banana_2": "google/gemini-3.1-flash-image-preview",
+            "nano_banana_pro": "google/gemini-3-pro-image-preview",
+            "nano_banana_1": "google/gemini-2.5-flash-image-preview",
+        },
+        "gemini_vertex_adc": {
             "nano_banana_2": "gemini-3.1-flash-image-preview",
             "nano_banana_pro": "gemini-3-pro-image-preview",
             "nano_banana_1": "gemini-2.5-flash-image-preview",
@@ -172,6 +180,9 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
     "model_aliases": {
         "openrouter": {
             "gpt_image_2": "openai_image_2_mid",
+            "gemini-3.1-flash-image-preview": "nano_banana_2",
+            "gemini-3-pro-image-preview": "nano_banana_pro",
+            "gemini-2.5-flash-image-preview": "nano_banana_1",
         },
     },
 }
@@ -241,6 +252,14 @@ def resolve_cover_model_selection(provider: str | None, model: str | None) -> Mo
         alias=model_key,
         label=COVER_MODEL_OPTIONS["model_labels"][model_key],
     )
+
+
+def normalize_cover_execution_mode(provider: str | None, mode: Any) -> str:
+    provider_key = str(provider or "").strip().lower()
+    if provider_key != "openrouter":
+        return "serial"
+    requested = str(mode or "").strip().lower()
+    return requested if requested in {"parallel", "serial"} else "parallel"
 
 
 def video_cover_model_options() -> dict[str, Any]:
@@ -1309,6 +1328,17 @@ def generate_cover_image(
             service="video_cover.generate",
             channel="openrouter",
         )
+    if selection.provider == "gemini_vertex_adc":
+        return gemini_image.generate_image(
+            prompt,
+            source_image=source_image,
+            source_mime=source_mime,
+            model=selection.model,
+            user_id=user_id,
+            project_id=task_id,
+            service="video_cover.generate",
+            channel="cloud_adc",
+        )
     raise VideoCoverGenerationError(f"封面生成失败：不支持的供应商 {selection.provider}")
 
 
@@ -1372,6 +1402,7 @@ def generate_video_covers(
     task_id: str | None = None,
     cover_provider: str = DEFAULT_IMAGE_CHANNEL,
     cover_model: str = DEFAULT_IMAGE_MODEL,
+    cover_execution_mode: str | None = DEFAULT_COVER_EXECUTION_MODE,
     product_analysis_provider: str | None = None,
     product_analysis_model: str | None = None,
     video_analysis_provider: str | None = None,
@@ -1426,6 +1457,7 @@ def generate_video_covers(
     video_selection = resolve_text_model_selection("video_analysis", video_analysis_provider, video_analysis_model)
     ad_copy_selection = resolve_text_model_selection("ad_copy", ad_copy_provider, ad_copy_model)
     cover_selection = resolve_cover_model_selection(cover_provider, cover_model)
+    execution_mode = normalize_cover_execution_mode(cover_selection.provider, cover_execution_mode)
 
     with tempfile.TemporaryDirectory(prefix="video_cover_") as work_dir:
         normalized_product_image_path = Path(work_dir) / "product_image.jpg"
@@ -1474,9 +1506,13 @@ def generate_video_covers(
         invoke_chat_fn=ad_copy_invoke_fn,
     )
     copy_payload = normalize_ad_copy_payload(raw_copy_payload, require_five=False)
-    covers = []
+    cover_jobs = []
     image_prompts = []
+    covers: list[dict[str, Any]] = []
     spec = SOCIAL_REELS_SPEC
+
+    def ordered_covers() -> list[dict[str, Any]]:
+        return sorted(covers, key=lambda item: int(item.get("index") or 0))
 
     def build_result() -> dict[str, Any]:
         return {
@@ -1492,7 +1528,11 @@ def generate_video_covers(
                 "video_analysis": video_analysis,
                 "ad_copy_sets": copy_payload,
             },
-            "model": {"channel": cover_selection.provider, "model_id": cover_selection.model},
+            "model": {
+                "channel": cover_selection.provider,
+                "model_id": cover_selection.model,
+                "execution_mode": execution_mode,
+            },
             "image_count": image_count,
             "image_prompts": list(image_prompts),
             "models": {
@@ -1511,9 +1551,10 @@ def generate_video_covers(
                 "cover_generation": {
                     "provider": cover_selection.provider,
                     "model_id": cover_selection.model,
+                    "execution_mode": execution_mode,
                 },
             },
-            "covers": list(covers),
+            "covers": ordered_covers(),
         }
 
     for index in range(1, image_count + 1):
@@ -1535,6 +1576,12 @@ def generate_video_covers(
         if image_count > 1:
             prompt += f"\n\n本次需要生成 {image_count} 张候选封面。当前是第 {index} 张，请基于 selected_ad_copy 做出不同构图或使用瞬间。"
         image_prompts.append({"index": index, "prompt": prompt, "source_ad_copy_id": copy_item.get("id")})
+        cover_jobs.append({"index": index, "prompt": prompt, "copy_item": copy_item})
+
+    def build_cover(job: dict[str, Any]) -> dict[str, Any]:
+        index = int(job["index"])
+        prompt = str(job["prompt"])
+        copy_item = job["copy_item"] if isinstance(job.get("copy_item"), dict) else {}
         try:
             generated_bytes, _mime = generate_cover_image(
                 prompt,
@@ -1554,23 +1601,33 @@ def generate_video_covers(
         png, overlay_meta = apply_title_overlay(png, _cover_hook(copy_item))
         platform = spec.platform if image_count == 1 else f"{spec.platform}_{index}"
         key = _write_png_artifact(user_id, task_id, f"{platform}.png", png)
-        covers.append(
-            {
-                "platform": platform,
-                "label": spec.label if image_count == 1 else f"{spec.label} #{index}",
-                "index": index,
-                "object_key": key,
-                "width": width,
-                "height": height,
-                "source_ad_copy_id": copy_item.get("id"),
-                "hook": _cover_hook(copy_item),
-                "copy": copy_item,
-                "formatted_copy": format_ad_copy_text(copy_item),
-                "prompt": prompt,
-                **overlay_meta,
-            }
-        )
+        return {
+            "platform": platform,
+            "label": spec.label if image_count == 1 else f"{spec.label} #{index}",
+            "index": index,
+            "object_key": key,
+            "width": width,
+            "height": height,
+            "source_ad_copy_id": copy_item.get("id"),
+            "hook": _cover_hook(copy_item),
+            "copy": copy_item,
+            "formatted_copy": format_ad_copy_text(copy_item),
+            "prompt": prompt,
+            **overlay_meta,
+        }
+
+    def record_cover(cover: dict[str, Any]) -> None:
+        covers.append(cover)
         if on_cover_done:
             on_cover_done(build_result())
+
+    if execution_mode == "parallel" and len(cover_jobs) > 1:
+        with ThreadPoolExecutor(max_workers=len(cover_jobs)) as executor:
+            future_map = {executor.submit(build_cover, job): job for job in cover_jobs}
+            for future in as_completed(future_map):
+                record_cover(future.result())
+    else:
+        for job in cover_jobs:
+            record_cover(build_cover(job))
 
     return build_result()

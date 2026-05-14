@@ -7,6 +7,7 @@ from appcore import settings as system_settings
 from appcore.video_cover_generation import (
     COVER_MODEL_OPTIONS,
     TEXT_STEP_MODEL_OPTIONS,
+    normalize_cover_execution_mode,
     resolve_cover_model_selection,
     resolve_text_model_selection,
 )
@@ -24,6 +25,7 @@ def builtin_model_defaults() -> dict[str, dict[str, str]]:
     defaults["cover_generation"] = {
         "provider": cover_selection.provider,
         "model_id": cover_selection.model,
+        "execution_mode": normalize_cover_execution_mode(cover_selection.provider, None),
     }
     return defaults
 
@@ -53,7 +55,15 @@ def _normalize_cover_step(row: Any, fallback: dict[str, str]) -> dict[str, str]:
         provider = fallback["provider"]
     model_id = str(source.get("model_id") or source.get("model") or fallback["model_id"]).strip()
     selection = resolve_cover_model_selection(provider, model_id)
-    return {"provider": selection.provider, "model_id": selection.model}
+    execution_mode = normalize_cover_execution_mode(
+        selection.provider,
+        source.get("execution_mode") if isinstance(source, dict) else fallback.get("execution_mode"),
+    )
+    return {
+        "provider": selection.provider,
+        "model_id": selection.model,
+        "execution_mode": execution_mode,
+    }
 
 
 def normalize_model_defaults(payload: Any) -> dict[str, dict[str, str]]:
