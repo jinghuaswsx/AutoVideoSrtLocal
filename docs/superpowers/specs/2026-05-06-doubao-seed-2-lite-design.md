@@ -2,10 +2,11 @@
 
 > 日期：2026-05-06
 > 范围：只把 Doubao Seed 2.0 Lite 接成可选文本模型，并写入精确价格；不改变任何 use case 默认绑定。
+> 2026-05-14 修订：Seed 2.0 Lite 的 ARK key 改为独立 provider 配置 `doubao_seed_2_lite`，其它 Doubao 文本模型继续使用 `doubao_llm`。
 
 ## 1. 背景
 
-火山方舟已提供 Doubao Seed 2.0 Lite 文本模型。当前项目已经有 `doubao` provider adapter，走 ARK 的 OpenAI-compatible `chat.completions` 协议，因此本次不新增 adapter、不新增 provider code。
+火山方舟已提供 Doubao Seed 2.0 Lite 文本模型。当前项目已经有 `doubao` provider adapter，走 ARK 的 OpenAI-compatible `chat.completions` 协议，因此不新增 adapter。2026-05-14 起，为支持专用 key，新增凭据 provider code `doubao_seed_2_lite`，但业务绑定里的 adapter provider 仍保持 `doubao`。
 
 官方参考：
 
@@ -19,7 +20,7 @@
 - 后台 `/settings?tab=bindings` 中，`doubao` provider 的模型候选包含 Seed 2.0 Lite。
 - `ai_model_prices` 写入 Seed 2.0 Lite 精确 token 价格，避免继续走 `doubao/*` 通配兜底价。
 - 不修改 `appcore/llm_use_cases.py` 中任何 default provider/model。
-- 不新增 `doubao_lite` 之类的 provider 字符串。
+- `doubao-seed-2-0-lite-*` 模型的凭据从 `llm_provider_configs.doubao_seed_2_lite` 读取；其它 `doubao` 文本模型仍读 `doubao_llm`。
 
 ## 3. 价格口径
 
@@ -39,6 +40,10 @@
   - 在 `DOUBAO_MODELS` 中加入 `doubao-seed-2-0-lite-260215`。
 - `db/migrations/*_doubao_seed_2_lite_price.sql`
   - upsert `provider='doubao'`、`model='doubao-seed-2-0-lite-260215'`、`units_type='tokens'` 的精确价格。
+- `db/migrations/*_doubao_seed_2_lite_provider.sql`
+  - seed `llm_provider_configs.provider_code='doubao_seed_2_lite'`，只写默认 `base_url/model_id`，不在迁移里写入密钥。
+- `appcore/llm_provider_configs.py` / `appcore/llm_providers/openrouter_adapter.py`
+  - `credential_provider_for_adapter("doubao", model_id=...)` 对 Seed 2.0 Lite 返回 `doubao_seed_2_lite`。
 - 测试
   - 覆盖后台绑定页模型候选中出现 Seed 2.0 Lite。
   - 覆盖迁移 SQL 写入精确价格。
@@ -52,4 +57,4 @@
   - `pytest tests/test_architecture_boundaries.py::test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files -v`
 - 真实调用：
   - 使用现有 `DoubaoAdapter.chat(...)`，指定 `model='doubao-seed-2-0-lite-260215'`，发起最小 chat 请求。
-  - 调用凭据只从现有 `doubao_llm` provider 配置读取，不新增环境变量或直连 SDK 路径。
+  - 调用凭据从 `doubao_seed_2_lite` provider 配置读取，不新增环境变量或直连 SDK 路径。

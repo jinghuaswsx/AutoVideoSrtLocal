@@ -288,6 +288,41 @@ def test_credential_provider_for_adapter_single_row_providers():
     assert lpc.credential_provider_for_adapter("apimart") == "apimart_image"
 
 
+def test_credential_provider_for_adapter_routes_seed_2_lite_to_dedicated_row():
+    assert (
+        lpc.credential_provider_for_adapter(
+            "doubao",
+            model_id="doubao-seed-2-0-lite-260215",
+        )
+        == "doubao_seed_2_lite"
+    )
+    assert (
+        lpc.credential_provider_for_adapter(
+            "doubao",
+            model_id="doubao-seed-2-0-pro-260215",
+        )
+        == "doubao_llm"
+    )
+
+
+def test_save_provider_config_creates_doubao_seed_2_lite_row(fake_db):
+    assert lpc.get_provider_config("doubao_seed_2_lite") is None
+    lpc.save_provider_config(
+        "doubao_seed_2_lite",
+        {
+            "api_key": "ark-lite-key",
+            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+            "model_id": "doubao-seed-2-0-lite-260215",
+        },
+        updated_by=1,
+    )
+
+    cfg = lpc.get_provider_config("doubao_seed_2_lite")
+    assert cfg is not None
+    assert cfg.api_key == "ark-lite-key"
+    assert cfg.model_id == "doubao-seed-2-0-lite-260215"
+
+
 def test_credential_provider_for_adapter_rejects_unknown():
     with pytest.raises(lpc.ProviderConfigError):
         lpc.credential_provider_for_adapter("made_up_provider")

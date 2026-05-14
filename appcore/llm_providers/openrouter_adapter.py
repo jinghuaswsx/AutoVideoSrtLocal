@@ -396,8 +396,13 @@ class OpenRouterAdapter(LLMAdapter):
 class DoubaoAdapter(LLMAdapter):
     provider_code = "doubao"
 
-    def resolve_credentials(self, user_id, *, media_kind: str | None = None):
-        provider_code = credential_provider_for_adapter("doubao", media_kind=media_kind)
+    def resolve_credentials(self, user_id, *, media_kind: str | None = None,
+                            model_id: str | None = None):
+        provider_code = credential_provider_for_adapter(
+            "doubao",
+            media_kind=media_kind,
+            model_id=model_id,
+        )
         cfg = require_provider_config(provider_code)
         api_key = cfg.require_api_key()
         base_url = cfg.require_base_url(default=DOUBAO_LLM_BASE_URL_DEFAULT)
@@ -410,7 +415,7 @@ class DoubaoAdapter(LLMAdapter):
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None):
-        creds = self.resolve_credentials(user_id)
+        creds = self.resolve_credentials(user_id, model_id=model)
         client = OpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
         # 豆包不支持 response_format / OpenRouter plugins；一律忽略
         kwargs: dict = {}
@@ -420,7 +425,7 @@ class DoubaoAdapter(LLMAdapter):
             kwargs["max_tokens"] = max_tokens
         resp = _call_with_network_retry(
             lambda: client.chat.completions.create(model=model, messages=messages, **kwargs),
-            label="doubao",
+            label=f"doubao:{creds.get('provider_code', 'unknown')}",
         )
         usage = getattr(resp, "usage", None)
         return {
@@ -435,7 +440,11 @@ class DoubaoAdapter(LLMAdapter):
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
                  max_output_tokens=None, google_search=None):
-        creds = self.resolve_credentials(user_id, media_kind="video" if media else "text")
+        creds = self.resolve_credentials(
+            user_id,
+            media_kind="video" if media else "text",
+            model_id=model,
+        )
         client = _create_ark_client(api_key=creds["api_key"], base_url=creds["base_url"])
         media_list = _normalize_media(media)
         prompt_for_model = _append_schema_instruction(prompt, response_schema)

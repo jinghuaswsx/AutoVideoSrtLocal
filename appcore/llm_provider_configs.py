@@ -35,7 +35,7 @@ GROUP_AUX = "aux"
 
 
 # provider_code -> (display_name, group_code)
-# 与 db/migrations/2026_04_25_llm_provider_configs.sql 的 INSERT IGNORE 列表对齐。
+# 与 db/migrations/ 下的 llm_provider_configs 种子行对齐。
 # 这里同时作为 Python 侧"合法 provider_code 白名单"：save_provider_config 只接受
 # 这里声明过的 code，避免前端随意写入未定义 provider_code。
 _KNOWN_PROVIDERS: dict[str, tuple[str, str]] = {
@@ -48,6 +48,7 @@ _KNOWN_PROVIDERS: dict[str, tuple[str, str]] = {
     "gemini_vertex_adc_text":  ("Google Vertex AI · ADC（文本）",    GROUP_TEXT_LLM),
     "gemini_vertex_adc_image": ("Google Vertex AI · ADC（图片）",    GROUP_IMAGE),
     "doubao_llm":            ("豆包 ARK 文本模型",                  GROUP_TEXT_LLM),
+    "doubao_seed_2_lite":     ("豆包 Seed 2.0 Lite 专用模型",        GROUP_TEXT_LLM),
     "doubao_seedream":       ("豆包 Seedream 图片生成",             GROUP_IMAGE),
     "doubao_asr":            ("火山 ASR 语音识别",                   GROUP_ASR),
     "seedance_video":        ("Seedance 视频生成",                  GROUP_VIDEO),
@@ -303,9 +304,11 @@ def save_provider_config(
 def credential_provider_for_adapter(
     adapter_provider: str,
     media_kind: str | None = None,
+    model_id: str | None = None,
 ) -> str:
     """把 llm_use_case_bindings.provider_code 映射到 llm_provider_configs.provider_code。
 
+    Doubao Seed 2.0 Lite 使用独立凭据行，避免和普通 doubao_llm 文本模型共用 key。
     media_kind="image" 且该 adapter 有独立的 image 凭据行时，返回 *_image；
     否则返回该 adapter 的主凭据行。
     """
@@ -315,6 +318,9 @@ def credential_provider_for_adapter(
             "请在 appcore.llm_provider_configs._ADAPTER_CREDENTIAL_MAP 里注册。"
         )
     text_code, image_code = _ADAPTER_CREDENTIAL_MAP[adapter_provider]
+    normalized_model = (model_id or "").strip().lower()
+    if adapter_provider == "doubao" and normalized_model.startswith("doubao-seed-2-0-lite"):
+        return "doubao_seed_2_lite"
     if (media_kind or "").strip().lower() == "image" and image_code:
         return image_code
     return text_code

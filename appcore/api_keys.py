@@ -26,6 +26,7 @@ _NON_PROVIDER_ADMIN_SERVICES = {"jianying", "translate_pref"}
 _LEGACY_SERVICE_MAP: dict[str, str] = {
     "openrouter": "openrouter_text",
     "doubao_llm": "doubao_llm",
+    "doubao_seed_2_lite": "doubao_seed_2_lite",
     "doubao_asr": "doubao_asr",
     "volc": "doubao_asr",
     "gemini": "gemini_aistudio_text",

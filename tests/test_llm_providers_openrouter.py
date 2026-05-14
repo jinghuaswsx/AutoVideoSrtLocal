@@ -4,6 +4,7 @@ text / image 通道通过 media_kind 路由到不同 provider_code：
   - openrouter + text  → openrouter_text
   - openrouter + image → openrouter_image
   - doubao            → doubao_llm
+  - doubao seed 2 lite → doubao_seed_2_lite
 """
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -356,10 +357,12 @@ def test_doubao_chat_does_not_reuse_doubao_seedream_or_asr_keys(fake_provider_db
         )
 
 
-def test_doubao_generate_uploads_video_media_and_parses_schema(
+def test_doubao_generate_seed_2_lite_uses_dedicated_credentials_and_parses_schema(
     fake_provider_db, monkeypatch, tmp_path,
 ):
-    fake_provider_db.seed("doubao_llm", api_key="k",
+    fake_provider_db.seed("doubao_llm", api_key="general-key",
+                          base_url="https://general.example/api/v3")
+    fake_provider_db.seed("doubao_seed_2_lite", api_key="lite-key",
                           base_url="https://ark.example/api/v3")
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"fake video")
@@ -373,9 +376,16 @@ def test_doubao_generate_uploads_video_media_and_parses_schema(
     fake_response.usage = MagicMock(prompt_tokens=11, completion_tokens=7)
     fake_client = MagicMock()
     fake_client.responses.create.return_value = fake_response
+    captured_client_kwargs = {}
+
+    def fake_create_ark_client(*, api_key, base_url):
+        captured_client_kwargs["api_key"] = api_key
+        captured_client_kwargs["base_url"] = base_url
+        return fake_client
+
     monkeypatch.setattr(
         "appcore.llm_providers.openrouter_adapter._create_ark_client",
-        lambda *, api_key, base_url: fake_client,
+        fake_create_ark_client,
     )
 
     result = DoubaoAdapter().generate(
@@ -390,6 +400,10 @@ def test_doubao_generate_uploads_video_media_and_parses_schema(
     assert result["text"] is None
     assert result["usage"]["input_tokens"] == 11
     assert result["usage"]["output_tokens"] == 7
+    assert captured_client_kwargs == {
+        "api_key": "lite-key",
+        "base_url": "https://ark.example/api/v3",
+    }
     payload = fake_client.responses.create.call_args.kwargs
     assert payload["model"] == "doubao-seed-2-0-lite-260215"
     user_content = payload["input"][1]["content"]
@@ -400,7 +414,7 @@ def test_doubao_generate_uploads_video_media_and_parses_schema(
 def test_doubao_generate_keeps_raw_text_when_schema_json_is_invalid(
     fake_provider_db, monkeypatch, tmp_path,
 ):
-    fake_provider_db.seed("doubao_llm", api_key="k",
+    fake_provider_db.seed("doubao_seed_2_lite", api_key="lite-key",
                           base_url="https://ark.example/api/v3")
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"fake video")
