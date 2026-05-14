@@ -119,7 +119,7 @@ def _delay_seconds(value: float | int | str | None) -> float:
 def download_hot_post_videos(
     *,
     limit: int = 20,
-    max_attempts: int = 3,
+    max_attempts: int = store.LOCAL_VIDEO_MAX_ATTEMPTS,
     min_delay_seconds: float | int | str | None = MIN_DOWNLOAD_DELAY_SECONDS,
     cache_root: str | Path | None = None,
     output_dir: str | Path = OUTPUT_DIR,
@@ -144,6 +144,7 @@ def download_hot_post_videos(
                 post_id,
                 local_video_path=None,
                 error_message=str(exc)[:1000],
+                max_attempts=max_attempts,
             )
             summary["failed"] += 1
         else:

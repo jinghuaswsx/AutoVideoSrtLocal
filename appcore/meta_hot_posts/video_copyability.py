@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -15,8 +16,11 @@ VIDEO_COPYABILITY_USE_CASE = "meta_hot_posts.video_copyability"
 VIDEO_COPYABILITY_PROVIDER = "gemini_vertex_adc"
 VIDEO_COPYABILITY_MODEL = "gemini-3-flash-preview"
 DEFAULT_ANALYSIS_SUBDIR = Path("meta_hot_posts") / "analysis_videos"
+DEFAULT_ANALYSIS_LIMIT = 20
+DEFAULT_ANALYSIS_DELAY_SECONDS = 20
 
 RunFn = Callable[..., Any]
+SleepFn = Callable[[float], None]
 
 
 def _safe_id(value: Any) -> str:
@@ -168,6 +172,27 @@ def _parse_response_payload(response: Mapping[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _coerce_delay_seconds(value: float | int | str | None) -> float:
+    try:
+        delay = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, delay)
+
+
+def _sleep_after_item(
+    *,
+    index: int,
+    total: int,
+    per_item_delay_seconds: float | int | str | None,
+    sleep_fn: SleepFn | None,
+) -> None:
+    delay = _coerce_delay_seconds(per_item_delay_seconds)
+    if delay <= 0 or index >= total - 1:
+        return
+    (sleep_fn or time.sleep)(delay)
+
+
 def analyze_video_copyability(
     row: Mapping[str, Any],
     *,
@@ -217,14 +242,17 @@ def analyze_video_copyability(
 
 def run_pending_video_copyability_analyses(
     *,
-    limit: int = 1,
+    limit: int = DEFAULT_ANALYSIS_LIMIT,
     user_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = DEFAULT_ANALYSIS_DELAY_SECONDS,
+    sleep_fn: SleepFn | None = None,
     analyze_fn: Callable[..., dict[str, Any]] = analyze_video_copyability,
 ) -> dict[str, int]:
     queued = int(store.ensure_video_copyability_candidates() or 0)
     rows = store.next_pending_video_copyability_analyses(limit=limit)
     summary = {"queued": queued, "scanned": 0, "done": 0, "failed": 0}
-    for row in rows:
+    total = len(rows)
+    for index, row in enumerate(rows):
         analysis_id = int(row["analysis_id"])
         summary["scanned"] += 1
         store.mark_video_copyability_running(analysis_id)
@@ -237,11 +265,17 @@ def run_pending_video_copyability_analyses(
                 error_message=str(exc)[:1000],
             )
             summary["failed"] += 1
-            continue
-        store.finish_video_copyability_analysis(
-            analysis_id,
-            result=result,
-            error_message=None,
+        else:
+            store.finish_video_copyability_analysis(
+                analysis_id,
+                result=result,
+                error_message=None,
+            )
+            summary["done"] += 1
+        _sleep_after_item(
+            index=index,
+            total=total,
+            per_item_delay_seconds=per_item_delay_seconds,
+            sleep_fn=sleep_fn,
         )
-        summary["done"] += 1
     return summary

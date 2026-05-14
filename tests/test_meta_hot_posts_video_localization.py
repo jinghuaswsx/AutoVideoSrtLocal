@@ -17,7 +17,7 @@ def test_download_hot_post_videos_is_serial_and_waits_between_items(tmp_path, mo
     events = []
     sleeps = []
 
-    monkeypatch.setattr(store, "next_pending_local_videos", lambda limit, max_attempts=3: rows)
+    monkeypatch.setattr(store, "next_pending_local_videos", lambda limit, max_attempts=5: rows)
     monkeypatch.setattr(store, "mark_local_video_downloading", lambda post_id: events.append(("running", post_id)))
     monkeypatch.setattr(
         store,
@@ -62,12 +62,12 @@ def test_download_hot_post_videos_records_failure_and_still_waits_before_next(tm
     finishes = []
     sleeps = []
 
-    monkeypatch.setattr(store, "next_pending_local_videos", lambda limit, max_attempts=3: rows)
+    monkeypatch.setattr(store, "next_pending_local_videos", lambda limit, max_attempts=5: rows)
     monkeypatch.setattr(store, "mark_local_video_downloading", lambda post_id: None)
     monkeypatch.setattr(
         store,
         "finish_local_video_download",
-        lambda post_id, local_video_path=None, error_message=None: finishes.append(
+        lambda post_id, local_video_path=None, error_message=None, max_attempts=5: finishes.append(
             (post_id, local_video_path, error_message)
         ),
     )
@@ -89,6 +89,24 @@ def test_download_hot_post_videos_records_failure_and_still_waits_before_next(tm
     assert finishes[0] == (1, None, "facebook throttled")
     assert finishes[1] == (2, "meta_hot_posts/videos/2.mp4", None)
     assert sleeps == [30.0]
+
+
+def test_download_hot_post_videos_defaults_to_five_attempts(monkeypatch):
+    from appcore.meta_hot_posts import store, video_localization
+
+    captured = {}
+
+    def fake_next_pending(*, limit, max_attempts):
+        captured["limit"] = limit
+        captured["max_attempts"] = max_attempts
+        return []
+
+    monkeypatch.setattr(store, "next_pending_local_videos", fake_next_pending)
+
+    result = video_localization.download_hot_post_videos(limit=9)
+
+    assert result == {"scanned": 0, "downloaded": 0, "failed": 0}
+    assert captured == {"limit": 9, "max_attempts": 5}
 
 
 def test_download_with_ytdlp_writes_under_cache_root_and_returns_relative_path(tmp_path):

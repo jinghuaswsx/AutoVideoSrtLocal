@@ -103,24 +103,26 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_europe_fit
     assert copyability_kwargs["max_instances"] == 1
 
 
-def test_video_copyability_tick_once_defaults_to_one_video(monkeypatch):
+def test_video_copyability_tick_once_defaults_to_twenty_videos_with_20_second_spacing(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: None)
     monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
     monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
 
-    def fake_run(*, limit, user_id=None):
+    def fake_run(*, limit, user_id=None, per_item_delay_seconds):
         captured["limit"] = limit
         captured["user_id"] = user_id
+        captured["per_item_delay_seconds"] = per_item_delay_seconds
         return {"queued": 0, "scanned": 0, "done": 0, "failed": 0}
 
     monkeypatch.setattr(scheduler.video_copyability, "run_pending_video_copyability_analyses", fake_run)
 
     scheduler.video_copyability_tick_once(user_id=9)
 
-    assert captured["limit"] == 1
+    assert captured["limit"] == 20
     assert captured["user_id"] == 9
+    assert captured["per_item_delay_seconds"] == 20
 
 
 def test_video_copyability_tick_once_skips_when_recent_run_is_still_running(monkeypatch):

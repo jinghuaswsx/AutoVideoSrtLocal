@@ -293,6 +293,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "description": (
             "每 10 分钟串行下载 Meta 热帖中尚未本地化的视频，默认每轮最多 30 条；"
             "每条下载完成或失败后至少间隔 30 秒再处理下一条，下载结果写回 local_video_* 字段。"
+            "失败视频至少 12 小时后才重试，最多尝试 5 次，仍失败则标记 unavailable；"
             "页面优先使用本地 MP4，缺失时回退 Facebook iframe。Docs-anchor: "
             "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md"
         ),
@@ -325,8 +326,9 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "meta_hot_posts_video_copyability_tick",
         "name": "Meta hot posts video copyability analysis",
         "description": (
-            "Every 10 minutes, analyze one localized Meta hot post video for direct Meta ad reuse "
-            "after compression to 480p / 15fps / 600k. "
+            "每 10 分钟串行分析最多 20 条已本地化 Meta 热帖视频，任务之间间隔 20 秒；先压缩到 480p / 15fps / 600k，"
+            "再通过 Google ADC 通道 Gemini 3 Flash 判断是否适合直接抄作业投放美国 Meta 市场广告；"
+            "结果写入 meta_hot_post_video_copyability_analyses，并支撑 Meta 热帖页面的「可抄 Top 50」。"
             "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-video-copyability-analysis-design.md"
         ),
         "schedule": "Every 10 minutes",
@@ -336,7 +338,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "runner": "appcore.meta_hot_posts.scheduler.video_copyability_tick_once",
         "deployment": "Registered on Web service startup",
         "log_table": "scheduled_task_runs",
-    },    "tos_backup": {
+    },
+    "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",
         "description": "每天凌晨同步受保护文件到 autovideosrtlocal 桶，并保留 7 天 MySQL dump。",

@@ -412,6 +412,7 @@ def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatc
     def fake_invoke(use_case_code: str, **kwargs):
         captured["use_case_code"] = use_case_code
         captured["media"] = kwargs["media"]
+        assert "response_format" not in kwargs
         return {"text": "video_text: demo\nvoiceover: demo"}
 
     monkeypatch.setattr("appcore.video_cover_generation.prepare_video_for_llm", fake_prepare)
@@ -431,6 +432,32 @@ def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatc
     assert captured["use_case_code"] == "video_cover.video_analysis"
     assert captured["media"] == str(optimized)
     assert captured["cleanup_path"] == str(optimized)
+
+
+def test_generate_product_analysis_does_not_send_chat_response_format(tmp_path):
+    from appcore.video_cover_generation import generate_product_analysis
+
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg")
+    captured = {}
+
+    def fake_invoke(use_case_code: str, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured.update(kwargs)
+        assert "response_format" not in kwargs
+        return {"text": '{"product_definition":"demo"}'}
+
+    result = generate_product_analysis(
+        product=_FakeProduct(),
+        product_title="Portable Blender Pro",
+        main_image_url="https://cdn.example/blender.png",
+        product_image_path=product_image,
+        invoke_generate_fn=fake_invoke,
+    )
+
+    assert "product_definition" in result
+    assert captured["use_case_code"] == "video_cover.product_analysis"
+    assert captured["media"] == str(product_image)
 
 
 def test_build_platform_prompt_uses_creative_director_inputs():
@@ -813,18 +840,81 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "强制重新开始" in html
+    assert "vcd-restart-btn" in html
+    assert "window.confirm" in html
+    assert "selectedRestartCount()" in html
+    assert "image_count: selectedRestartCount()" in html
+    assert "全部报文预览" in html
+    assert 'id="vcdAllPayloadModal"' in html
+    assert 'id="vcdAllPayloadBody"' in html
+    assert 'data-all-payload-preview' in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html
         assert f'data-prompt-step="{step}"' in html
-        assert f'data-result-step="{step}"' in html
         assert f'data-visual-step="{step}"' in html
         assert f'data-retry-step="{step}"' in html
         assert f'data-step-timer="{step}"' in html
+    assert "结果展示" not in html
+    assert "vcd-result-box" not in html
+    assert "data-result-step" not in html
     assert "保存图片" in html
     assert "复制图片" in html
     assert "一键复制文案" in html
     assert "/video-cover/api/task-1/download/social_reels" in html
+
+
+def test_video_cover_detail_matches_multi_translate_step_status_style(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "image_count": 2,
+        "steps": {
+            "video_analysis": "running",
+            "product_analysis": "done",
+            "ad_copy": "error",
+            "cover_generation": "waiting",
+        },
+        "step_messages": {
+            "video_analysis": "运行中...",
+            "product_analysis": "已完成",
+            "ad_copy": "模型返回错误",
+            "cover_generation": "等待确认",
+        },
+        "step_timing": {
+            "video_analysis": {"running_seconds": 17},
+            "product_analysis": {"elapsed_seconds": 8},
+            "ad_copy": {"elapsed_seconds": 3},
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'class="vcd-process-card step running"' in html
+    assert 'class="vcd-process-card step done"' in html
+    assert 'class="vcd-process-card step error"' in html
+    assert 'class="vcd-process-card step waiting"' in html
+    assert 'class="vcd-step-icon step-icon running"' in html
+    assert 'data-step-icon="video_analysis"' in html
+    assert 'data-step-message="ad_copy"' in html
+    assert 'vcd-timer-spinner spinner' in html
+    assert ".vcd-process-card.running { border-color:#86efac; background:rgba(34,197,94,.10);" in html
+    assert ".vcd-process-card.done { border-color:#16a34a; background:rgba(22,163,74,.18);" in html
+    assert ".vcd-process-card.waiting { border-color:#fcd34d; background:rgba(217,119,6,.12);" in html
+    assert ".vcd-process-card.error { border-color:#fca5a5; background:#fef2f2;" in html
+    assert ".vcd-card-timer { margin-left:100px;" in html
+    assert "font-weight:900;" in html
+    assert "timer.innerHTML = timerHtml(step, status);" in html
 
 
 def test_video_cover_detail_renders_input_card_without_get_recovery(authed_client_no_db, monkeypatch, tmp_path):

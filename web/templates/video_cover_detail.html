@@ -13,20 +13,24 @@
 .vcd-count-pills { display:flex; gap:8px; flex-wrap:wrap; }
 .vcd-count-pill { height:30px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-size:13px; font-weight:800; cursor:pointer; }
 .vcd-count-pill.active { border-color:var(--primary-color); background:var(--primary-color); color:#f8fafc; }
+.vcd-restart-btn { border-color:var(--text-btn-danger); background:var(--text-btn-danger); color:#f8fafc; }
+.vcd-restart-btn:hover { border-color:var(--text-btn-danger); background:var(--text-btn-danger); color:#f8fafc; filter:brightness(.92); }
 .vcd-progress-steps { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
 .vcd-progress-step { min-width:0; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; }
-.vcd-progress-step.done { border-color:rgba(22,163,74,.35); background:rgba(22,163,74,.10); }
-.vcd-progress-step.running { border-color:rgba(2,132,199,.40); background:rgba(14,165,233,.12); }
-.vcd-progress-step.error { border-color:rgba(220,38,38,.35); background:rgba(239,68,68,.10); }
+.vcd-progress-step.running { border-color:#86efac; background:rgba(34,197,94,.10); }
+.vcd-progress-step.done { border-color:#16a34a; background:rgba(22,163,74,.18); }
+.vcd-progress-step.waiting { border-color:#fcd34d; background:rgba(217,119,6,.12); }
+.vcd-progress-step.error { border-color:#fca5a5; background:#fef2f2; }
 .vcd-progress-head { display:flex; align-items:center; gap:8px; }
 .vcd-progress-index { flex:0 0 auto; width:24px; height:24px; border-radius:999px; display:grid; place-items:center; background:var(--bg-card); border:1px solid var(--border-main); font-size:12px; font-weight:900; color:#64748b; }
-.vcd-progress-step.done .vcd-progress-index { color:#16a34a; border-color:rgba(22,163,74,.45); }
-.vcd-progress-step.running .vcd-progress-index { color:#0284c7; border-color:rgba(2,132,199,.45); }
-.vcd-progress-step.error .vcd-progress-index { color:#dc2626; border-color:rgba(220,38,38,.45); }
+.vcd-progress-step.running .vcd-progress-index { color:#15803d; border-color:#86efac; background:rgba(34,197,94,.14); }
+.vcd-progress-step.done .vcd-progress-index { color:#166534; border-color:#16a34a; background:rgba(22,163,74,.18); }
+.vcd-progress-step.waiting .vcd-progress-index { color:#b45309; border-color:#fcd34d; background:rgba(217,119,6,.16); }
+.vcd-progress-step.error .vcd-progress-index { color:#b91c1c; border-color:#fca5a5; background:#fef2f2; }
 .vcd-progress-name { min-width:0; font-size:13px; font-weight:900; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vcd-progress-msg { margin-top:6px; font-size:12px; color:#64748b; min-height:18px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vcd-project-grid { display:grid; grid-template-columns:minmax(240px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
-.vcd-panel, .vcd-process-card { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
+.vcd-panel { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
 .vcd-title { margin:0 0 12px; font-size:15px; font-weight:900; color:var(--text-main); }
 .vcd-kv { display:grid; gap:10px; }
 .vcd-kv dt { font-size:12px; color:#64748b; font-weight:800; }
@@ -40,18 +44,37 @@
 .vcd-product-image { width:180px; height:180px; object-fit:cover; border:1px solid var(--border-main); border-radius:8px; background:#fff; }
 .vcd-source-video { width:180px; height:320px; object-fit:contain; border:1px solid var(--border-main); border-radius:8px; background:#000; }
 .vcd-cards { display:grid; gap:14px; }
-.vcd-process-card { padding:0; overflow:hidden; }
-.vcd-card-head { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); gap:12px; align-items:center; padding:14px 16px; border-bottom:1px solid var(--border-main); background:#f8fafc; }
-.vcd-card-title { font-size:15px; font-weight:900; color:var(--text-main); }
-.vcd-card-timer { justify-self:center; min-width:112px; text-align:center; font-size:12px; font-weight:900; color:#64748b; padding:5px 10px; border-radius:999px; background:var(--bg-card); border:1px solid var(--border-main); }
+.vcd-process-card { border:1.5px solid var(--border-main); border-radius:14px; background:var(--bg-card); padding:16px; min-width:0; overflow:hidden; transition:border-color .3s, background .3s, box-shadow .3s; }
+.vcd-process-card.running { border-color:#86efac; background:rgba(34,197,94,.10); box-shadow:0 0 10px rgba(34,197,94,.10); }
+.vcd-process-card.done { border-color:#16a34a; background:rgba(22,163,74,.18); }
+.vcd-process-card.waiting { border-color:#fcd34d; background:rgba(217,119,6,.12); }
+.vcd-process-card.error { border-color:#fca5a5; background:#fef2f2; }
+.vcd-card-head { display:flex; align-items:flex-start; gap:12px; padding:0; border-bottom:0; background:transparent; }
+.vcd-step-icon { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--bg-body); color:#9ca3af; font-weight:700; flex-shrink:0; }
+.vcd-step-icon.running { color:#15803d; background:rgba(34,197,94,.18); }
+.vcd-step-icon.done { color:#166534; background:rgba(22,163,74,.22); }
+.vcd-step-icon.waiting { color:#b45309; background:rgba(217,119,6,.18); }
+.vcd-step-icon.error { color:#b91c1c; background:#fee2e2; }
+.vcd-card-main { flex:1; min-width:0; }
+.vcd-step-name-row { display:flex; align-items:center; gap:10px; margin-bottom:2px; flex-wrap:wrap; min-width:0; }
+.vcd-card-title { display:inline-flex; align-items:center; min-width:0; font-size:15px; font-weight:700; color:var(--text-main); }
+.vcd-card-timer { margin-left:100px; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:24px; padding:3px 10px; border-radius:999px; border:1px solid var(--border-main); background:var(--bg-card); color:#64748b; font-size:12px; font-weight:900; line-height:1; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.vcd-card-timer b { font-weight:900; color:inherit; }
+.vcd-process-card.running .vcd-card-timer { border-color:#86efac; background:rgba(34,197,94,.16); color:#15803d; }
+.vcd-process-card.done .vcd-card-timer { border-color:#16a34a; background:rgba(22,163,74,.18); color:#166534; }
+.vcd-process-card.waiting .vcd-card-timer { border-color:#fcd34d; background:rgba(217,119,6,.16); color:#b45309; }
+.vcd-process-card.error .vcd-card-timer { border-color:#fca5a5; background:#fee2e2; color:#b91c1c; }
+.vcd-step-message { color:#9ca3af; font-size:12px; line-height:1.5; }
 .vcd-card-actions { justify-self:end; display:flex; flex-wrap:wrap; gap:8px; }
-.vcd-status-dot { display:inline-block; width:8px; height:8px; border-radius:999px; margin-right:7px; background:#94a3b8; }
-.vcd-process-card.done .vcd-status-dot { background:#16a34a; }
-.vcd-process-card.running .vcd-status-dot { background:#0284c7; }
-.vcd-process-card.error .vcd-status-dot { background:#dc2626; }
-.vcd-card-body { padding:16px; display:grid; gap:14px; }
+.vcd-prompt-pill { display:inline-flex; align-items:center; height:24px; padding:0 10px; border-radius:999px; border:1px solid var(--border-main); background:rgba(59,130,246,.08); color:var(--primary-color); font-size:11px; font-weight:700; line-height:1; cursor:pointer; font-family:inherit; white-space:nowrap; }
+.vcd-prompt-pill:hover { border-color:var(--primary-color); background:rgba(59,130,246,.12); }
+.vcd-retry-btn { padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; border:1.5px solid var(--primary-color); background:transparent; color:var(--primary-color); cursor:pointer; font-family:inherit; transition:all .2s; }
+.vcd-retry-btn:hover:not(:disabled) { background:var(--sidebar-hover-bg); box-shadow:0 0 8px rgba(59,130,246,.22); }
+.vcd-retry-btn:disabled { opacity:.5; cursor:wait; }
+.vcd-process-card .spinner, .vcd-card-timer .spinner { width:14px; height:14px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:vcd-spin .7s linear infinite; }
+@keyframes vcd-spin { to { transform:rotate(360deg); } }
+.vcd-card-body { margin-top:14px; padding-top:14px; border-top:1.5px solid var(--border-main); display:grid; gap:14px; }
 .vcd-section-title { font-size:12px; font-weight:900; color:#64748b; margin-bottom:8px; }
-.vcd-result-box { min-height:44px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:12px; font-size:13px; line-height:1.6; color:var(--text-main); white-space:pre-wrap; overflow-wrap:anywhere; }
 .vcd-visual-box { min-height:72px; display:grid; gap:10px; }
 .vcd-field-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
 .vcd-mini-card { border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; }
@@ -88,8 +111,7 @@
 @media (max-width:1080px) {
   .vcd-project-grid, .vcd-final-layout { grid-template-columns:1fr; }
   .vcd-progress-steps { grid-template-columns:repeat(2, minmax(0, 1fr)); }
-  .vcd-card-head { grid-template-columns:1fr; }
-  .vcd-card-timer, .vcd-card-actions { justify-self:start; }
+  .vcd-card-timer { margin-left:0; }
 }
 @media (max-width:720px) {
   .vcd-top-actions { align-items:stretch; flex-direction:column; }
@@ -110,7 +132,10 @@
         {% endfor %}
       </div>
     </div>
-    <button class="btn btn-danger" type="button" id="vcdRestartBtn">强制重新开始</button>
+    <div class="vcd-card-actions">
+      <button class="btn btn-ghost" type="button" data-all-payload-preview>全部报文预览</button>
+      <button class="btn btn-danger vcd-restart-btn" type="button" id="vcdRestartBtn">强制重新开始</button>
+    </div>
   </div>
   <div class="vcd-progress-steps" id="vcdProgressSteps">
     {% for step in step_order %}
@@ -175,22 +200,24 @@
     {% for step in step_order %}
     {% set status = state.get('steps', {}).get(step, 'pending') %}
     {% set timing = (state.get('step_timing') or {}).get(step, {}) %}
-    <section class="vcd-process-card {{ status }}" data-process-card="{{ step }}">
-      <div class="vcd-card-head">
-        <div class="vcd-card-title"><span class="vcd-status-dot"></span>{{ step_labels[step] }}</div>
-        <div class="vcd-card-timer" data-step-timer="{{ step }}">
-          {% if status == 'running' %}已运行 {{ timing.get('running_seconds', 0) }} 秒{% elif timing.get('elapsed_seconds') is not none %}耗时 {{ timing.get('elapsed_seconds') }} 秒{% else %}等待开始{% endif %}
+    <section class="vcd-process-card step {{ status }}" data-process-card="{{ step }}">
+      <div class="vcd-card-head step-main">
+        <div class="vcd-step-icon step-icon {{ status }}" data-step-icon="{{ step }}" data-step-index="{{ loop.index }}">
+          {% if status == 'running' %}<span class="spinner"></span>{% elif status == 'done' %}✓{% elif status == 'waiting' %}!{% elif status == 'error' %}×{% else %}{{ loop.index }}{% endif %}
         </div>
-        <div class="vcd-card-actions">
-          <button class="btn btn-ghost btn-sm" type="button" data-prompt-step="{{ step }}">提示词</button>
-          <button class="btn btn-primary btn-sm" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>重新跑</button>
+        <div class="vcd-card-main">
+          <div class="vcd-step-name-row step-name-row">
+            <span class="vcd-card-title step-name">{{ step_labels[step] }}</span>
+            <span class="vcd-card-timer" data-step-timer="{{ step }}">
+              {% if status == 'running' %}<span class="vcd-timer-spinner spinner"></span><span>已运行 <b>{{ timing.get('running_seconds', 0) }}</b> 秒</span>{% elif timing.get('elapsed_seconds') is not none %}<span>耗时 <b>{{ timing.get('elapsed_seconds') }}</b> 秒</span>{% elif status == 'waiting' %}<span>等待确认</span>{% else %}<span>等待开始</span>{% endif %}
+            </span>
+            <button class="vcd-prompt-pill llm-prompt-pill" type="button" data-prompt-step="{{ step }}">提示词</button>
+            <button class="vcd-retry-btn resume-btn" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>重新跑</button>
+          </div>
+          <div class="vcd-step-message step-msg" data-step-message="{{ step }}">{{ state.get('step_messages', {}).get(step, '') or '等待中...' }}</div>
         </div>
       </div>
       <div class="vcd-card-body">
-        <div>
-          <div class="vcd-section-title">结果展示</div>
-          <div class="vcd-result-box" data-result-step="{{ step }}">等待结果</div>
-        </div>
         <div>
           <div class="vcd-section-title">可视化展现</div>
           <div class="vcd-visual-box" data-visual-step="{{ step }}"><div class="vcd-empty">等待前序步骤完成后展示结构化结果。</div></div>
@@ -200,6 +227,18 @@
     {% endfor %}
     <div class="vcd-error" id="vcdError"></div>
   </main>
+</div>
+
+<div class="vcd-modal-backdrop" id="vcdAllPayloadModal">
+  <div class="vcd-modal">
+    <div class="vcd-modal-head">
+      <div class="vcd-modal-title">全部报文预览</div>
+      <button class="btn btn-ghost btn-sm" type="button" id="vcdAllPayloadClose">关闭</button>
+    </div>
+    <div class="vcd-modal-body">
+      <pre class="vcd-pre" id="vcdAllPayloadBody"></pre>
+    </div>
+  </div>
 </div>
 
 <div class="vcd-modal-backdrop" id="vcdPromptModal">
@@ -228,6 +267,8 @@
   const modal = document.getElementById('vcdPromptModal');
   const modalTitle = document.getElementById('vcdPromptTitle');
   const modalBody = document.getElementById('vcdPromptBody');
+  const allPayloadModal = document.getElementById('vcdAllPayloadModal');
+  const allPayloadBody = document.getElementById('vcdAllPayloadBody');
 
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -255,8 +296,35 @@
   function statusText(status) {
     if (status === 'done') return '已完成';
     if (status === 'running') return '运行中';
+    if (status === 'waiting') return '等待确认';
     if (status === 'error') return '失败';
     return '等待中';
+  }
+  function visualStatus(status) {
+    if (['failed', 'interrupted', 'cancelled'].includes(status)) return 'error';
+    return status || 'pending';
+  }
+  function stepIconHtml(step, status) {
+    if (status === 'running') return '<span class="spinner"></span>';
+    if (status === 'done') return '✓';
+    if (status === 'waiting') return '!';
+    if (visualStatus(status) === 'error') return '×';
+    const icon = document.querySelector(`[data-step-icon="${step}"]`);
+    return escapeHtml((icon && icon.dataset.stepIndex) || '·');
+  }
+  function normalizeRestartCount(value) {
+    const count = Number(value || 2);
+    return [1, 2, 3, 4].includes(count) ? count : 2;
+  }
+  function selectedRestartCount() {
+    const active = document.querySelector('[data-restart-count].active');
+    return normalizeRestartCount(active ? active.dataset.restartCount : restartCount);
+  }
+  function setRestartCount(count) {
+    restartCount = normalizeRestartCount(count);
+    document.querySelectorAll('[data-restart-count]').forEach(item => {
+      item.classList.toggle('active', normalizeRestartCount(item.dataset.restartCount) === restartCount);
+    });
   }
   function compactJson(value) {
     if (value == null || value === '') return '';
@@ -268,15 +336,6 @@
   }
   function getStructured(step) {
     return getStepResult(step).structured_result || {};
-  }
-  function rawStepText(step) {
-    const result = getStepResult(step);
-    if (result.raw_response) return compactJson(result.raw_response);
-    if (step === 'video_analysis') return compactJson(currentState.video_analysis || currentState.video_analysis_structured);
-    if (step === 'product_analysis') return compactJson(currentState.product_analysis || currentState.product_analysis_structured);
-    if (step === 'ad_copy') return compactJson(currentState.ad_copy_sets);
-    if (step === 'cover_generation') return compactJson(currentState.result);
-    return '';
   }
   function renderFieldGrid(fields, labels) {
     const html = labels.map(([key, label]) => {
@@ -360,11 +419,12 @@
     if (step === 'cover_generation') return renderCoverVisual();
     return '<div class="vcd-empty">等待结果。</div>';
   }
-  function timerText(step, status) {
+  function timerHtml(step, status) {
     const timing = ((currentState.step_timing || {})[step]) || {};
-    if (status === 'running') return `已运行 ${Number(timing.running_seconds || 0)} 秒`;
-    if (timing.elapsed_seconds != null) return `耗时 ${Number(timing.elapsed_seconds || 0)} 秒`;
-    return '等待开始';
+    if (status === 'running') return `<span class="vcd-timer-spinner spinner"></span><span>已运行 <b>${Number(timing.running_seconds || 0)}</b> 秒</span>`;
+    if (timing.elapsed_seconds != null) return `<span>耗时 <b>${Number(timing.elapsed_seconds || 0)}</b> 秒</span>`;
+    if (status === 'waiting') return '<span>等待确认</span>';
+    return '<span>等待开始</span>';
   }
   function render() {
     const steps = currentState.steps || {};
@@ -372,18 +432,24 @@
     document.querySelector('[data-current-image-count]').textContent = currentState.image_count || 2;
     STEP_ORDER.forEach((step) => {
       const status = steps[step] || 'pending';
+      const displayStatus = visualStatus(status);
       const progress = document.querySelector(`[data-progress-step="${step}"]`);
       if (progress) {
-        progress.className = `vcd-progress-step ${status}`;
+        progress.className = `vcd-progress-step ${displayStatus}`;
         const msg = progress.querySelector(`[data-progress-msg="${step}"]`);
         if (msg) msg.textContent = messages[step] || statusText(status);
       }
       const card = document.querySelector(`[data-process-card="${step}"]`);
-      if (card) card.className = `vcd-process-card ${status}`;
+      if (card) card.className = `vcd-process-card step ${displayStatus}`;
+      const icon = document.querySelector(`[data-step-icon="${step}"]`);
+      if (icon) {
+        icon.className = `vcd-step-icon step-icon ${displayStatus}`;
+        icon.innerHTML = stepIconHtml(step, status);
+      }
+      const stepMessage = document.querySelector(`[data-step-message="${step}"]`);
+      if (stepMessage) stepMessage.textContent = messages[step] || statusText(status);
       const timer = document.querySelector(`[data-step-timer="${step}"]`);
-      if (timer) timer.textContent = timerText(step, status);
-      const resultBox = document.querySelector(`[data-result-step="${step}"]`);
-      if (resultBox) resultBox.textContent = rawStepText(step) || (status === 'running' ? '正在生成结果...' : '等待结果');
+      if (timer) timer.innerHTML = timerHtml(step, status);
       const visualBox = document.querySelector(`[data-visual-step="${step}"]`);
       if (visualBox) visualBox.innerHTML = renderVisual(step);
       const retry = document.querySelector(`[data-retry-step="${step}"]`);
@@ -417,8 +483,10 @@
     catch (e) { errorBox.textContent = e.message || '重新跑失败'; }
   }
   async function restart() {
+    const count = selectedRestartCount();
+    if (!window.confirm(`确认强制重新开始？当前中间状态和结果会清空，并重新生成 ${count} 张封面图。`)) return;
     errorBox.textContent = '';
-    try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: restartCount}); }
+    try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: selectedRestartCount()}); }
     catch (e) { errorBox.textContent = e.message || '强制重新开始失败'; }
   }
   function openPrompt(step) {
@@ -427,6 +495,31 @@
     modalTitle.textContent = `${STEP_LABELS[step] || step}提示词`;
     modalBody.textContent = compactJson({request, result});
     modal.classList.add('show');
+  }
+  function stepPayload(step) {
+    return {
+      label: STEP_LABELS[step] || step,
+      status: (currentState.steps || {})[step] || 'pending',
+      message: (currentState.step_messages || {})[step] || '',
+      timing: ((currentState.step_timing || {})[step]) || {},
+      model: ((currentState.models || {})[step]) || {},
+      request: ((currentState.step_requests || {})[step]) || {},
+      result: ((currentState.step_results || {})[step]) || {}
+    };
+  }
+  function openAllPayloads() {
+    const payload = {
+      task_id: TASK_ID,
+      image_count: currentState.image_count || 2,
+      model_defaults: currentState.model_defaults || {},
+      product: currentState.product || {},
+      steps: STEP_ORDER.reduce((acc, step) => {
+        acc[step] = stepPayload(step);
+        return acc;
+      }, {})
+    };
+    allPayloadBody.textContent = compactJson(payload);
+    allPayloadModal.classList.add('show');
   }
   async function copyCoverText() {
     const text = copyTextForCover(selectedCover());
@@ -444,8 +537,7 @@
     }
   }
   document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
-    restartCount = Number(btn.dataset.restartCount || 2);
-    document.querySelectorAll('[data-restart-count]').forEach(item => item.classList.toggle('active', Number(item.dataset.restartCount) === restartCount));
+    setRestartCount(btn.dataset.restartCount);
   }));
   document.getElementById('vcdRestartBtn').addEventListener('click', restart);
   document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {
@@ -460,8 +552,11 @@
   }));
   document.querySelectorAll('[data-retry-step]').forEach(btn => btn.addEventListener('click', () => retryStep(btn.dataset.retryStep)));
   document.querySelectorAll('[data-prompt-step]').forEach(btn => btn.addEventListener('click', () => openPrompt(btn.dataset.promptStep)));
+  document.querySelector('[data-all-payload-preview]').addEventListener('click', openAllPayloads);
   document.getElementById('vcdPromptClose').addEventListener('click', () => modal.classList.remove('show'));
+  document.getElementById('vcdAllPayloadClose').addEventListener('click', () => allPayloadModal.classList.remove('show'));
   modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('show'); });
+  allPayloadModal.addEventListener('click', event => { if (event.target === allPayloadModal) allPayloadModal.classList.remove('show'); });
   render();
   setInterval(() => { loadState().catch(() => {}); }, 2500);
 })();
