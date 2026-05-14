@@ -91,6 +91,7 @@
       <button class="mh-btn secondary" type="button" onclick="showFailureRecords()">商品分析失败记录</button>
       <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
       <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
+      <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
     </div>
   </div>
 
@@ -321,6 +322,11 @@ async function refreshMetaHotPosts() {
 async function analyzeMetaHotPosts() {
   qs('mhStatus').textContent = 'Analyzing...';
   await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, per_item_delay_seconds:20})});
+  loadMetaHotPosts(mhPage);
+}
+async function translateMetaHotPostMessages() {
+  qs('mhStatus').textContent = '翻译中...';
+  await fetch('/xuanpin/api/meta-hot-posts/translate-messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:50, per_item_delay_seconds:3})});
   loadMetaHotPosts(mhPage);
 }
 function markStatusLabel(markStatus) {

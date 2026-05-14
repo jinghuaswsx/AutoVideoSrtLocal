@@ -8,16 +8,20 @@ from typing import Any, Callable
 
 from appcore import scheduled_tasks
 from appcore.db import query_one
-from appcore.meta_hot_posts import product_analysis, store
+from appcore.meta_hot_posts import message_translation, product_analysis, store
 from tools.meta_hot_posts.client import MetaHotPostsClient
 
 log = logging.getLogger(__name__)
 
 SYNC_TASK_CODE = "meta_hot_posts_sync_tick"
 ANALYSIS_TASK_CODE = "meta_hot_posts_analysis_tick"
+TRANSLATION_TASK_CODE = "meta_hot_posts_translate_messages_tick"
 ANALYSIS_STALE_AFTER_SECONDS = 3600
+MESSAGE_TRANSLATION_STALE_AFTER_SECONDS = 3600
 SCHEDULED_ANALYSIS_LIMIT = 30
 SCHEDULED_ANALYSIS_DELAY_SECONDS = 20
+SCHEDULED_TRANSLATION_LIMIT = 50
+SCHEDULED_TRANSLATION_DELAY_SECONDS = 3
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -255,6 +259,61 @@ def analyze_pending_products(
     return summary
 
 
+def translate_pending_messages(
+    *,
+    limit: int = SCHEDULED_TRANSLATION_LIMIT,
+    user_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = SCHEDULED_TRANSLATION_DELAY_SECONDS,
+    sleep_fn: SleepFn | None = None,
+) -> dict[str, Any]:
+    summary = {"scanned": 0, "done": 0, "failed": 0}
+    billing_user_id = resolve_billing_user_id(user_id)
+    rows = store.next_pending_message_translations(limit=limit)
+    total = len(rows)
+    for index, row in enumerate(rows):
+        summary["scanned"] += 1
+        post_id = int(row["id"])
+        store.mark_message_translation_running(post_id)
+        try:
+            translated_html = message_translation.translate_message_html(
+                str(row.get("message_html") or ""),
+                user_id=billing_user_id,
+            )
+        except Exception as exc:
+            log.warning("meta hot post message translation failed id=%s: %s", post_id, exc)
+            store.finish_message_translation(
+                post_id,
+                translated_html=None,
+                error_message=str(exc)[:1000],
+            )
+            summary["failed"] += 1
+            if _is_global_category_provider_error(exc):
+                summary["stopped"] = True
+                summary["stop_reason"] = "global_translation_provider_error"
+                break
+            _sleep_after_item(
+                index=index,
+                total=total,
+                per_item_delay_seconds=per_item_delay_seconds,
+                sleep_fn=sleep_fn,
+            )
+            continue
+
+        store.finish_message_translation(
+            post_id,
+            translated_html=translated_html,
+            error_message=None,
+        )
+        summary["done"] += 1
+        _sleep_after_item(
+            index=index,
+            total=total,
+            per_item_delay_seconds=per_item_delay_seconds,
+            sleep_fn=sleep_fn,
+        )
+    return summary
+
+
 def reanalyze_categories(
     *,
     limit: int = 100,
@@ -374,6 +433,43 @@ def _guard_analysis_singleton(*, stale_after_seconds: int = ANALYSIS_STALE_AFTER
     }
 
 
+def _guard_translation_singleton(
+    *,
+    stale_after_seconds: int = MESSAGE_TRANSLATION_STALE_AFTER_SECONDS,
+) -> dict[str, Any]:
+    running = scheduled_tasks.latest_running_run(TRANSLATION_TASK_CODE)
+    if not running:
+        return {}
+    age_seconds = _running_age_seconds(running)
+    running_id = int(running["id"])
+    if age_seconds < int(stale_after_seconds):
+        return {
+            "skipped": True,
+            "reason": "previous_run_still_running",
+            "running_run_id": running_id,
+            "running_started_at": running.get("started_at"),
+            "running_age_seconds": age_seconds,
+        }
+    reset_count = store.reset_stale_running_message_translations(
+        older_than_seconds=int(stale_after_seconds),
+    )
+    scheduled_tasks.finish_run(
+        running_id,
+        status="failed",
+        summary={
+            "stale_run_replaced": running_id,
+            "running_age_seconds": age_seconds,
+            "stale_messages_reset": reset_count,
+        },
+        error_message=f"running message translation exceeded {int(stale_after_seconds)}s; superseded by a new run",
+    )
+    return {
+        "stale_run_replaced": running_id,
+        "running_age_seconds": age_seconds,
+        "stale_messages_reset": reset_count,
+    }
+
+
 def analysis_tick_once(
     *,
     limit: int = SCHEDULED_ANALYSIS_LIMIT,
@@ -416,6 +512,38 @@ def analysis_tick_once(
     return summary
 
 
+def translation_tick_once(
+    *,
+    limit: int = SCHEDULED_TRANSLATION_LIMIT,
+    user_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = SCHEDULED_TRANSLATION_DELAY_SECONDS,
+) -> dict[str, Any]:
+    guard_summary = _guard_translation_singleton()
+    if guard_summary.get("skipped"):
+        return guard_summary
+    run_id = None
+    try:
+        run_id = scheduled_tasks.start_run(TRANSLATION_TASK_CODE)
+    except Exception:
+        log.debug("failed to start meta hot posts message translation run", exc_info=True)
+    try:
+        summary = translate_pending_messages(
+            limit=limit,
+            user_id=user_id,
+            per_item_delay_seconds=per_item_delay_seconds,
+        )
+    except Exception as exc:
+        if run_id:
+            scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])
+        raise
+    summary.update(guard_summary)
+    if run_id:
+        status = "success" if summary.get("failed", 0) == 0 else "failed"
+        error = None if status == "success" else f"{summary['failed']} message(s) failed"
+        scheduled_tasks.finish_run(run_id, status=status, summary=summary, error_message=error)
+    return summary
+
+
 def register(scheduler) -> None:
     scheduled_tasks.add_controlled_job(
         scheduler,
@@ -435,6 +563,16 @@ def register(scheduler) -> None:
         "interval",
         minutes=10,
         id=ANALYSIS_TASK_CODE,
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        TRANSLATION_TASK_CODE,
+        translation_tick_once,
+        "interval",
+        minutes=10,
+        id=TRANSLATION_TASK_CODE,
         replace_existing=True,
         max_instances=1,
     )

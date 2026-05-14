@@ -112,9 +112,12 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
 
     keyword = _text_arg(args, "q")
     if keyword:
-        where.append("(p.message_html LIKE %s OR a.product_title LIKE %s OR p.product_url LIKE %s)")
+        where.append(
+            "(p.message_html LIKE %s OR p.message_zh_html LIKE %s "
+            "OR a.product_title LIKE %s OR p.product_url LIKE %s)"
+        )
         like = f"%{keyword}%"
-        params.extend([like, like, like])
+        params.extend([like, like, like, like])
 
     where_sql = "WHERE " + " AND ".join(where) if where else ""
     count_rows = query_fn(
@@ -135,7 +138,8 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
                p.sync_period_likes, p.sync_period_hours, p.copycat,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                p.video_url, p.image_url, p.invisible, p.invisible_region,
-               p.message_html,
+               p.message_html, p.message_zh_html, p.message_zh_status,
+               p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
                a.status AS analysis_status,
                a.product_title, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
@@ -195,10 +199,11 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
           product_url, product_url_hash, creation_time, last_synced_at,
           likes, comments, shares, latest_likes, latest_comments, latest_shares,
           sync_period_likes, sync_period_hours, copycat, select_json, video_url,
-          image_url, invisible, invisible_region, message_html, raw_json
+          image_url, invisible, invisible_region, message_html,
+          message_zh_html, message_zh_status, raw_json
         ) VALUES (
           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+          %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, 'pending', %s
         )
         ON DUPLICATE KEY UPDATE
           page_id=VALUES(page_id),
@@ -224,6 +229,11 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
           image_url=VALUES(image_url),
           invisible=VALUES(invisible),
           invisible_region=VALUES(invisible_region),
+          message_zh_html=CASE WHEN VALUES(message_html) <=> message_html THEN message_zh_html ELSE NULL END,
+          message_zh_status=CASE WHEN VALUES(message_html) <=> message_html THEN message_zh_status ELSE 'pending' END,
+          message_zh_attempts=CASE WHEN VALUES(message_html) <=> message_html THEN message_zh_attempts ELSE 0 END,
+          message_zh_error=CASE WHEN VALUES(message_html) <=> message_html THEN message_zh_error ELSE NULL END,
+          message_zh_translated_at=CASE WHEN VALUES(message_html) <=> message_html THEN message_zh_translated_at ELSE NULL END,
           message_html=VALUES(message_html),
           raw_json=VALUES(raw_json)
         """,
@@ -266,6 +276,96 @@ def set_hot_post_marked(
         mark_status="bad" if marked else None,
         user_id=user_id,
         execute_fn=execute_fn,
+    )
+
+
+def next_pending_message_translations(
+    *,
+    limit: int = 50,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(100, int(limit)))
+    return query_fn(
+        """
+        SELECT id, message_html
+        FROM meta_hot_posts
+        WHERE message_html IS NOT NULL
+          AND TRIM(message_html) <> ''
+          AND (
+            message_zh_html IS NULL
+            OR message_zh_html = ''
+            OR message_zh_status IN ('pending', 'failed')
+          )
+          AND message_zh_attempts < %s
+        ORDER BY updated_at ASC, id ASC
+        LIMIT %s
+        """,
+        (int(max_attempts), safe_limit),
+    )
+
+
+def mark_message_translation_running(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET message_zh_status='running',
+            message_zh_attempts=message_zh_attempts + 1,
+            message_zh_error=NULL
+        WHERE id=%s
+        """,
+        (int(post_id),),
+    )
+
+
+def finish_message_translation(
+    post_id: int,
+    *,
+    translated_html: str | None,
+    error_message: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    if error_message:
+        return execute_fn(
+            """
+            UPDATE meta_hot_posts
+            SET message_zh_status='failed',
+                message_zh_error=%s
+            WHERE id=%s
+            """,
+            (str(error_message)[:1000], int(post_id)),
+        )
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET message_zh_html=%s,
+            message_zh_status='done',
+            message_zh_error=NULL,
+            message_zh_translated_at=NOW()
+        WHERE id=%s
+        """,
+        (translated_html or "", int(post_id)),
+    )
+
+
+def reset_stale_running_message_translations(
+    *,
+    older_than_seconds: int = 3600,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET message_zh_status='failed',
+            message_zh_error='message translation stale running reset'
+        WHERE message_zh_status='running'
+          AND TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s
+        """,
+        (int(older_than_seconds),),
     )
 
 

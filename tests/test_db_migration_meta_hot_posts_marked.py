@@ -24,3 +24,16 @@ def test_meta_hot_posts_mark_status_migration_adds_two_choice_field():
     assert "UPDATE meta_hot_posts" in body
     assert "mark_status = 'bad'" in body
     assert "is_marked = 1" in body
+
+
+def test_meta_hot_posts_message_translation_migration_adds_cached_chinese_fields():
+    body = Path("db/migrations/2026_05_14_meta_hot_posts_message_translation.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "message_zh_html" in body
+    assert "message_zh_status" in body
+    assert "message_zh_attempts" in body
+    assert "message_zh_translated_at" in body
+    assert "idx_meta_hot_posts_message_zh_status" in body

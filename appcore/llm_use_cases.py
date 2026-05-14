@@ -499,6 +499,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "meta_hot_posts.translate_message": _uc(
+        "meta_hot_posts.translate_message",
+        "xuanpin",
+        "Meta 热帖文案翻译",
+        "把 Meta 热帖视频下方英文文案翻译为简体中文并缓存",
+        "openrouter",
+        "google/gemini-3.1-flash-lite-preview",
+        "openrouter",
+        "tokens",
+    ),
     # 视频创作
     "video_creation.generate": _uc(
         "video_creation.generate",

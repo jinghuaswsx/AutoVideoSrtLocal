@@ -270,6 +270,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "meta_hot_posts_translate_messages_tick": {
+        "code": "meta_hot_posts_translate_messages_tick",
+        "name": "Meta 热帖文案翻译",
+        "description": (
+            "每 10 分钟扫描 Meta 热帖下方视频文案中尚未生成中文缓存的记录，"
+            "每轮最多 50 条，逐条调用 LLM 翻译为简体中文并写回 message_zh_html；"
+            "页面优先展示中文缓存，原始英文仍保留在 message_html。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-14-meta-hot-posts-message-translation-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "meta_hot_posts_translate_messages_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.translation_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",

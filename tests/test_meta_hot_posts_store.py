@@ -20,6 +20,7 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
             "mark_status": "ok",
             "created_from": "2026-05-01",
             "created_to": "2026-05-13",
+            "q": "magic",
             "page": "1",
             "page_size": "20",
         },
@@ -40,8 +41,11 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "p.mark_status" in data_sql
     assert "p.marked_at" in data_sql
     assert "p.marked_by" in data_sql
+    assert "p.message_zh_html" in data_sql
+    assert "(p.message_html LIKE %s OR p.message_zh_html LIKE %s" in data_sql
     assert "ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC" in data_sql
     assert data_params[:8] == ["Kitchenware", 10.0, 30.5, 1000, 50, "ok", "2026-05-01", "2026-05-13"]
+    assert data_params[8:12] == ["%magic%", "%magic%", "%magic%", "%magic%"]
 
 
 def test_upsert_hot_post_uses_wedev_post_unique_key():
@@ -80,6 +84,10 @@ def test_upsert_hot_post_uses_wedev_post_unique_key():
     assert "INSERT INTO meta_hot_posts" in sql
     assert "ON DUPLICATE KEY UPDATE" in sql
     assert "wedev_post_id" in sql
+    assert "message_zh_status" in sql
+    assert "message_zh_html=CASE WHEN VALUES(message_html) <=> message_html" in sql
+    assert "message_zh_status=CASE WHEN VALUES(message_html) <=> message_html" in sql
+    assert "message_zh_attempts=CASE WHEN VALUES(message_html) <=> message_html" in sql
     assert params[0] == 123
 
 
@@ -101,6 +109,87 @@ def test_set_hot_post_mark_status_updates_local_mark_audit_fields():
     assert "marked_by=CASE WHEN %s = 1 THEN %s ELSE NULL END" in sql
     assert "WHERE id=%s" in sql
     assert params == ("bad", 1, 1, 1, 88, 123)
+
+
+def test_next_pending_message_translations_selects_untranslated_rows():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"id": 7, "message_html": "<p>Hello</p>"}]
+
+    rows = store.next_pending_message_translations(limit=500, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["id"] == 7
+    assert "message_html IS NOT NULL" in sql
+    assert "message_zh_status IN ('pending', 'failed')" in sql
+    assert "message_zh_attempts < %s" in sql
+    assert params == (3, 100)
+
+
+def test_mark_message_translation_running_increments_attempts():
+    calls = []
+
+    store.mark_message_translation_running(
+        123,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_posts" in sql
+    assert "message_zh_status='running'" in sql
+    assert "message_zh_attempts=message_zh_attempts + 1" in sql
+    assert params == (123,)
+
+
+def test_finish_message_translation_saves_translated_html():
+    calls = []
+
+    store.finish_message_translation(
+        123,
+        translated_html="你好<br>世界",
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_posts" in sql
+    assert "message_zh_html=%s" in sql
+    assert "message_zh_status='done'" in sql
+    assert "message_zh_translated_at=NOW()" in sql
+    assert params == ("你好<br>世界", 123)
+
+
+def test_finish_message_translation_failure_records_error():
+    calls = []
+
+    store.finish_message_translation(
+        123,
+        translated_html=None,
+        error_message="provider failed",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "message_zh_status='failed'" in sql
+    assert "message_zh_error=%s" in sql
+    assert params == ("provider failed", 123)
+
+
+def test_reset_stale_running_message_translations_marks_old_running_failed():
+    calls = []
+
+    store.reset_stale_running_message_translations(
+        older_than_seconds=3600,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 2,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_posts" in sql
+    assert "message_zh_status='running'" in sql
+    assert "TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s" in sql
+    assert params == (3600,)
 
 
 def test_next_pending_product_analyses_selects_unfinished_rows():

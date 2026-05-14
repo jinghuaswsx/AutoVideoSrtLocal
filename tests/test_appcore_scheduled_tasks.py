@@ -324,6 +324,14 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert "30 个" in analysis_task["description"]
     assert "20 秒" in analysis_task["description"]
 
+    translation_task = definitions["meta_hot_posts_translate_messages_tick"]
+    assert translation_task["schedule"] == "每 10 分钟"
+    assert translation_task["source_type"] == "apscheduler"
+    assert translation_task["runner"] == "appcore.meta_hot_posts.scheduler.translation_tick_once"
+    assert translation_task["log_table"] == "scheduled_task_runs"
+    assert "50 条" in translation_task["description"]
+    assert "中文" in translation_task["description"]
+
 
 def test_task_definitions_include_server_and_app_timers():
     from appcore import scheduled_tasks
