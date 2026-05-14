@@ -94,7 +94,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 48
+    assert len(USE_CASES) == 52
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -103,6 +103,49 @@ def test_registry_count_and_new_units_types():
     assert "ja_translate.rewrite" in USE_CASES
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
     assert USE_CASES["image_translate.generate"]["units_type"] == "images"
+    assert USE_CASES["video_cover.product_analysis"]["units_type"] == "tokens"
+    assert USE_CASES["video_cover.video_analysis"]["units_type"] == "tokens"
+    assert USE_CASES["video_cover.generate"]["units_type"] == "images"
+    assert USE_CASES["video_cover.ad_copy"]["units_type"] == "tokens"
+
+
+def test_video_cover_generate_use_case_defaults_to_local_image():
+    uc = USE_CASES["video_cover.generate"]
+
+    assert uc["module"] == "video_cover"
+    assert uc["default_provider"] == "local_image"
+    assert uc["default_model"] == "gpt-image-2"
+    assert uc["usage_log_service"] == "local_image"
+    assert uc["units_type"] == "images"
+    assert MODULE_LABELS["video_cover"] == "文案封面生成"
+
+
+def test_video_cover_analysis_use_cases_match_requested_models():
+    product = USE_CASES["video_cover.product_analysis"]
+    video = USE_CASES["video_cover.video_analysis"]
+
+    assert product["module"] == "video_cover"
+    assert product["default_provider"] == "openrouter"
+    assert product["default_model"] == "google/gemini-3-flash-preview"
+    assert product["usage_log_service"] == "openrouter"
+    assert product["units_type"] == "tokens"
+
+    assert video["module"] == "video_cover"
+    assert video["default_provider"] == "gemini_vertex_adc"
+    assert video["default_model"] == "gemini-3.1-pro-preview"
+    assert video["usage_log_service"] == "gemini_vertex_adc"
+    assert video["units_type"] == "tokens"
+
+
+def test_video_cover_ad_copy_use_case_defaults_to_openrouter():
+    uc = USE_CASES["video_cover.ad_copy"]
+
+    assert uc["module"] == "video_cover"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3-flash-preview"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+    assert MODULE_LABELS["video_cover"] == "文案封面生成"
 
 
 def test_meta_hot_posts_categorize_use_case_is_registered_for_billing():

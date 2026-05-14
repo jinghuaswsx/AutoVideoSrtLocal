@@ -15,6 +15,7 @@ LLM_PROVIDER_CODES = frozenset({
 NON_LLM_PROVIDER_CODES = frozenset({
     "elevenlabs",
     "doubao_asr",
+    "local_image",
 })
 
 KNOWN_USE_CASE_PROVIDER_CODES = LLM_PROVIDER_CODES | NON_LLM_PROVIDER_CODES
@@ -510,6 +511,46 @@ USE_CASES: dict[str, UseCase] = {
         "doubao",
         "seconds",
     ),
+    "video_cover.product_analysis": _uc(
+        "video_cover.product_analysis",
+        "video_cover",
+        "视频封面产品分析",
+        "基于商品标题、描述、主图和价格生成封面/文案可用的产品分析报告",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
+        "tokens",
+    ),
+    "video_cover.video_analysis": _uc(
+        "video_cover.video_analysis",
+        "video_cover",
+        "视频封面素材分析",
+        "使用 Gemini 3.1 Pro Preview 分析上传视频素材的动作、构图和封面线索",
+        "gemini_vertex_adc",
+        "gemini-3.1-pro-preview",
+        "gemini_vertex_adc",
+        "tokens",
+    ),
+    "video_cover.generate": _uc(
+        "video_cover.generate",
+        "video_cover",
+        "视频封面生成",
+        "基于商品主图、视频分析、产品分析和文案生成 9:16 竖版短视频封面",
+        "local_image",
+        "gpt-image-2",
+        "local_image",
+        "images",
+    ),
+    "video_cover.ad_copy": _uc(
+        "video_cover.ad_copy",
+        "video_cover",
+        "视频封面文案创作",
+        "基于产品分析和视频素材分析生成 5 组欧美 Reels 英文广告文案",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
+        "tokens",
+    ),
     # 原文标准化（ASR 后插入步骤）
     "asr_normalize.detect_language": _uc(
         "asr_normalize.detect_language",
@@ -578,6 +619,7 @@ MODULE_LABELS: dict[str, str] = {
     "text_translate": "文本翻译",
     "prompt_library": "提示词库",
     "video_creation": "视频创作",
+    "video_cover": "文案封面生成",
     "asr_clean": "ASR 同语言纯净化",
     "translation_quality": "翻译质量评估",
     "video_ai_review": "AI 视频分析",

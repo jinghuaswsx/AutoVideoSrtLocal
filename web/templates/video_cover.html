@@ -1,0 +1,455 @@
+{% extends "layout.html" %}
+
+{% block title %}文案封面生成{% endblock %}
+{% block page_title %}文案封面生成{% endblock %}
+
+{% block extra_style %}
+.vc-page {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.vc-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 10px;
+  padding: 18px;
+}
+.vc-form {
+  display: grid;
+  gap: 14px;
+}
+.vc-field {
+  display: grid;
+  gap: 7px;
+}
+.vc-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.vc-input,
+.vc-select,
+.vc-textarea {
+  width: 100%;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  font: inherit;
+}
+.vc-input,
+.vc-select {
+  min-height: 36px;
+}
+.vc-textarea {
+  min-height: 150px;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.vc-input:focus {
+  outline: 2px solid rgba(14, 165, 233, 0.22);
+  border-color: var(--primary-color);
+}
+.vc-step-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.vc-step {
+  min-height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-weight: 700;
+  cursor: pointer;
+}
+.vc-step.active {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: rgba(14, 165, 233, 0.08);
+}
+.vc-config {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) minmax(220px, 320px) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.vc-submit {
+  justify-self: start;
+  min-height: 36px;
+  border-radius: 8px;
+}
+.vc-submit:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+.vc-status {
+  min-height: 22px;
+  font-size: 13px;
+  color: var(--text-user-badge);
+  line-height: 1.5;
+}
+.vc-status.error {
+  color: #b91c1c;
+}
+.vc-empty {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border-main);
+  border-radius: 10px;
+  color: var(--text-user-badge);
+  font-size: 14px;
+}
+.vc-result {
+  display: grid;
+  gap: 18px;
+}
+.vc-result[hidden],
+.vc-empty[hidden] {
+  display: none;
+}
+.vc-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.vc-meta-item {
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(14, 165, 233, 0.04);
+  min-width: 0;
+}
+.vc-meta-label {
+  font-size: 12px;
+  color: var(--text-user-badge);
+  margin-bottom: 4px;
+}
+.vc-meta-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+}
+.vc-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.vc-preview {
+  border: 1px solid var(--border-main);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-card);
+  min-width: 0;
+}
+.vc-preview-media {
+  aspect-ratio: 9 / 16;
+  background: #e5e7eb;
+  display: block;
+  width: 100%;
+  object-fit: cover;
+}
+.vc-preview-body {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vc-preview-title {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vc-download {
+  flex: 0 0 auto;
+  color: var(--primary-color);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+@media (max-width: 1100px) {
+  .vc-page,
+  .vc-config {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .vc-meta,
+  .vc-preview-grid,
+  .vc-step-list {
+    grid-template-columns: 1fr;
+  }
+}
+{% endblock %}
+
+{% block content %}
+<div class="vc-page">
+  <section class="vc-panel" aria-labelledby="vcFormTitle">
+    <h2 id="vcFormTitle" style="font-size:16px;line-height:1.3;margin-bottom:14px;">输入项目</h2>
+    <form class="vc-form" id="videoCoverForm">
+      <label class="vc-field">
+        <span class="vc-label">商品链接</span>
+        <input class="vc-input" type="url" name="product_url" required placeholder="https://example.com/products/name">
+      </label>
+      <label class="vc-field">
+        <span class="vc-label">视频文件</span>
+        <input class="vc-input" type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.mpeg,.mpg,.avi,.webm,.m4v" required>
+      </label>
+      <div class="vc-status" id="videoCoverStatus" role="status" aria-live="polite"></div>
+    </form>
+    <div class="vc-step-list" style="margin-top:14px;">
+      <button class="vc-step active" type="button" data-step="video_analysis">视频分析</button>
+      <button class="vc-step" type="button" data-step="product_analysis">产品分析</button>
+      <button class="vc-step" type="button" data-step="ad_copy">文案创作</button>
+      <button class="vc-step" type="button" data-step="cover_generation">封面生成</button>
+    </div>
+  </section>
+
+  <section class="vc-panel" aria-labelledby="vcResultTitle">
+    <h2 id="vcResultTitle" style="font-size:16px;line-height:1.3;margin-bottom:14px;">工作窗口</h2>
+    <div class="vc-config">
+      <label class="vc-field">
+        <span class="vc-label">模型供应商</span>
+        <select class="vc-select" id="videoCoverProvider"></select>
+      </label>
+      <label class="vc-field">
+        <span class="vc-label">具体模型</span>
+        <select class="vc-select" id="videoCoverModel"></select>
+      </label>
+      <button class="btn btn-primary vc-submit" type="button" id="videoCoverSubmit">运行</button>
+    </div>
+    <div class="vc-status">可选供应商：OPENROUTER / GOOGLE VERTEX ADC / 本地接口</div>
+    <div class="vc-empty" id="videoCoverEmpty">暂无结果</div>
+    <div class="vc-result" id="videoCoverResult" hidden></div>
+    <div class="vc-result" style="margin-top:14px;">
+      <label class="vc-field">
+        <span class="vc-label">视频分析结果</span>
+        <textarea class="vc-textarea" id="videoAnalysisOutput"></textarea>
+      </label>
+      <label class="vc-field">
+        <span class="vc-label">产品分析结果</span>
+        <textarea class="vc-textarea" id="productAnalysisOutput"></textarea>
+      </label>
+      <label class="vc-field">
+        <span class="vc-label">文案创作结果 JSON</span>
+        <textarea class="vc-textarea" id="adCopyOutput"></textarea>
+      </label>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var MODEL_OPTIONS = {{ model_options|tojson }};
+  var form = document.getElementById('videoCoverForm');
+  var submit = document.getElementById('videoCoverSubmit');
+  var providerSelect = document.getElementById('videoCoverProvider');
+  var modelSelect = document.getElementById('videoCoverModel');
+  var status = document.getElementById('videoCoverStatus');
+  var empty = document.getElementById('videoCoverEmpty');
+  var result = document.getElementById('videoCoverResult');
+  var videoOutput = document.getElementById('videoAnalysisOutput');
+  var productOutput = document.getElementById('productAnalysisOutput');
+  var adCopyOutput = document.getElementById('adCopyOutput');
+  var activeStep = 'video_analysis';
+  var stepLabels = {
+    video_analysis: '视频分析',
+    product_analysis: '产品分析',
+    ad_copy: '文案创作',
+    cover_generation: '封面生成'
+  };
+  var stepEndpoints = {
+    video_analysis: '/video-cover/api/video-analysis',
+    product_analysis: '/video-cover/api/product-analysis',
+    ad_copy: '/video-cover/api/ad-copy',
+    cover_generation: '/video-cover/api/generate'
+  };
+  if (!form || !submit || !providerSelect || !modelSelect || !status || !empty || !result) return;
+
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') || '' : '';
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+    });
+  }
+
+  function setStatus(text, isError) {
+    status.textContent = text || '';
+    status.classList.toggle('error', !!isError);
+  }
+
+  function stepConfig(step) {
+    return (MODEL_OPTIONS.steps || {})[step] || {};
+  }
+
+  function providerMap(step) {
+    return stepConfig(step).providers || {};
+  }
+
+  function modelMap(step, provider) {
+    var cfg = stepConfig(step);
+    if (step === 'cover_generation') return ((cfg.models || {})[provider]) || {};
+    return (((cfg.providers || {})[provider] || {}).models) || {};
+  }
+
+  function modelLabel(step, key, value) {
+    var cfg = stepConfig(step);
+    if (step === 'cover_generation') return ((cfg.model_labels || {})[key]) || value;
+    return value.label || value.model || key;
+  }
+
+  function modelValue(step, value) {
+    if (step === 'cover_generation') return value;
+    return value.model || '';
+  }
+
+  function configureModels() {
+    var models = modelMap(activeStep, providerSelect.value);
+    modelSelect.innerHTML = '';
+    Object.keys(models).forEach(function(key) {
+      var opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = modelLabel(activeStep, key, models[key]) + ' · ' + modelValue(activeStep, models[key]);
+      modelSelect.appendChild(opt);
+    });
+  }
+
+  function configureStep(step) {
+    activeStep = step;
+    document.querySelectorAll('.vc-step').forEach(function(btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-step') === step);
+    });
+    providerSelect.innerHTML = '';
+    var providers = providerMap(step);
+    Object.keys(providers).forEach(function(key) {
+      var opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = typeof providers[key] === 'string' ? providers[key] : providers[key].label;
+      providerSelect.appendChild(opt);
+    });
+    providerSelect.value = stepConfig(step).default_provider || providerSelect.value;
+    submit.textContent = '运行' + (stepLabels[step] || '');
+    configureModels();
+  }
+
+  function previewCard(title, url) {
+    var safeTitle = escapeHtml(title);
+    var safeUrl = escapeHtml(url || '');
+    return [
+      '<article class="vc-preview">',
+        '<img class="vc-preview-media" src="' + safeUrl + '" alt="' + safeTitle + '" loading="lazy">',
+        '<div class="vc-preview-body">',
+          '<div class="vc-preview-title" title="' + safeTitle + '">' + safeTitle + '</div>',
+          '<a class="vc-download" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">下载</a>',
+        '</div>',
+      '</article>'
+    ].join('');
+  }
+
+  function render(data) {
+    var covers = Array.isArray(data.covers) ? data.covers : [];
+    var product = data.product || {};
+    var model = data.model || {};
+    var reference = data.reference || {};
+    var previews = [];
+    if (reference.url) previews.push(previewCard('参考图', reference.url));
+    covers.forEach(function(cover) {
+      previews.push(previewCard(cover.label || cover.platform || '封面', cover.url));
+    });
+    result.innerHTML = [
+      '<div class="vc-meta">',
+        '<div class="vc-meta-item"><div class="vc-meta-label">商品标题</div><div class="vc-meta-value">' + escapeHtml(product.title || '') + '</div></div>',
+        '<div class="vc-meta-item"><div class="vc-meta-label">生成通道</div><div class="vc-meta-value">' + escapeHtml(model.channel || '') + '</div></div>',
+        '<div class="vc-meta-item"><div class="vc-meta-label">模型</div><div class="vc-meta-value">' + escapeHtml(model.model_id || '') + '</div></div>',
+      '</div>',
+      '<div class="vc-preview-grid">',
+        previews.join(''),
+      '</div>'
+    ].join('');
+    empty.hidden = true;
+    result.hidden = false;
+  }
+
+  function runStep() {
+    var body = new FormData(form);
+    body.append('provider', providerSelect.value);
+    body.append('model', modelSelect.value);
+    if (activeStep === 'ad_copy') {
+      if (!productOutput.value.trim() || !videoOutput.value.trim()) {
+        setStatus('请先完成视频分析和产品分析', true);
+        return;
+      }
+      body.append('product_analysis', productOutput.value);
+      body.append('video_analysis', videoOutput.value);
+    }
+    if (activeStep === 'cover_generation') {
+      if (!productOutput.value.trim() || !videoOutput.value.trim() || !adCopyOutput.value.trim()) {
+        setStatus('请先完成视频分析、产品分析和文案创作', true);
+        return;
+      }
+      body.append('product_analysis', productOutput.value);
+      body.append('video_analysis', videoOutput.value);
+      body.append('ad_copy_sets', adCopyOutput.value);
+      body.append('cover_provider', providerSelect.value);
+      body.append('cover_model', modelSelect.value);
+    }
+    setStatus((stepLabels[activeStep] || '任务') + '运行中...');
+    submit.disabled = true;
+    fetch(stepEndpoints[activeStep], {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrfToken()},
+      body: body
+    }).then(function(resp) {
+      return resp.json().catch(function() { return {}; }).then(function(payload) {
+        if (!resp.ok || !payload.ok) {
+          throw new Error(payload.error || '生成失败');
+        }
+        return payload.data;
+      });
+    }).then(function(data) {
+      if (data.video_analysis) videoOutput.value = data.video_analysis;
+      if (data.product_analysis) productOutput.value = data.product_analysis;
+      if (data.ad_copy_sets) adCopyOutput.value = JSON.stringify(data.ad_copy_sets, null, 2);
+      if (data.covers) render(data || {});
+      if (!data.covers && data.product) {
+        render({product: data.product, model: {}, reference: {}, covers: []});
+      }
+      setStatus((stepLabels[activeStep] || '任务') + '完成');
+    }).catch(function(err) {
+      setStatus(err && err.message ? err.message : '运行失败', true);
+    }).finally(function() {
+      submit.disabled = false;
+    });
+  }
+
+  submit.addEventListener('click', runStep);
+  document.querySelectorAll('.vc-step').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      configureStep(btn.getAttribute('data-step'));
+    });
+  });
+  providerSelect.addEventListener('change', configureModels);
+  configureStep(activeStep);
+})();
+</script>
+{% endblock %}
