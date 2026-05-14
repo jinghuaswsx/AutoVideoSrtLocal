@@ -10,7 +10,7 @@ from typing import Any, Callable, Mapping
 from config import OUTPUT_DIR
 from appcore.meta_hot_posts import store
 
-MIN_DOWNLOAD_DELAY_SECONDS = 10.0
+MIN_DOWNLOAD_DELAY_SECONDS = 30.0
 DEFAULT_CACHE_SUBDIR = Path("meta_hot_posts") / "videos"
 
 RunFn = Callable[..., Any]

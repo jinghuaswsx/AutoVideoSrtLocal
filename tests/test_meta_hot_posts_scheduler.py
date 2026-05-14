@@ -70,6 +70,7 @@ def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     analysis_args, analysis_kwargs = calls[1]
     translation_args, translation_kwargs = calls[2]
     video_args, video_kwargs = calls[3]
+    startup_args, startup_kwargs = calls[4]
     assert sync_args[1] == "meta_hot_posts_sync_tick"
     assert sync_args[3] == "cron"
     assert sync_kwargs["hour"] == 7
@@ -83,8 +84,33 @@ def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     assert video_args[1] == "meta_hot_posts_video_localization_tick"
     assert video_args[3] == "interval"
     assert video_kwargs["minutes"] == 10
+    assert "next_run_time" not in video_kwargs
+    assert startup_args[1] == "meta_hot_posts_video_localization_tick"
+    assert startup_args[2] == scheduler.video_localization_startup_tick_once
+    assert startup_args[3] == "date"
     assert video_kwargs["misfire_grace_time"] == 60
-    assert video_kwargs["next_run_time"] == now + timedelta(seconds=5)
+    assert startup_kwargs["id"] == "meta_hot_posts_video_localization_tick_startup"
+    assert startup_kwargs["run_date"] == now + timedelta(seconds=5)
+
+
+def test_video_localization_tick_once_defaults_to_30_seconds(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: None)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
+
+    def fake_download_hot_post_videos(*, limit, min_delay_seconds):
+        captured["limit"] = limit
+        captured["min_delay_seconds"] = min_delay_seconds
+        return {"scanned": 0, "downloaded": 0, "failed": 0}
+
+    monkeypatch.setattr(scheduler.video_localization, "download_hot_post_videos", fake_download_hot_post_videos)
+
+    scheduler.video_localization_tick_once()
+
+    assert captured["limit"] == 30
+    assert captured["min_delay_seconds"] == 30
 
 
 def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):
@@ -223,7 +249,35 @@ def test_translation_tick_once_marks_stale_running_run_failed_then_starts(monkey
     assert "exceeded 3600s" in stale_finish[2]["error_message"]
 
 
-def test_video_localization_tick_once_replaces_running_run_every_time(monkeypatch):
+def test_video_localization_tick_once_skips_when_running_run_exists(monkeypatch):
+    started_at = datetime(2026, 5, 14, 10, 0, 0)
+
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "latest_running_run",
+        lambda task_code: {"id": 21, "started_at": started_at},
+    )
+    monkeypatch.setattr(scheduler, "_now", lambda: started_at + timedelta(minutes=5))
+    monkeypatch.setattr(
+        scheduler.store,
+        "reset_running_local_videos",
+        lambda: (_ for _ in ()).throw(AssertionError("regular interval must not reset running videos")),
+    )
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "start_run",
+        lambda task_code: (_ for _ in ()).throw(AssertionError("new run must not start")),
+    )
+
+    summary = scheduler.video_localization_tick_once()
+
+    assert summary["skipped"] is True
+    assert summary["reason"] == "previous_run_still_running"
+    assert summary["running_run_id"] == 21
+    assert summary["running_age_seconds"] == 300
+
+
+def test_video_localization_startup_tick_once_replaces_running_run(monkeypatch):
     started_at = datetime(2026, 5, 14, 10, 0, 0)
     events = []
 
@@ -255,7 +309,7 @@ def test_video_localization_tick_once_replaces_running_run_every_time(monkeypatc
         or {"scanned": 1, "downloaded": 1, "failed": 0},
     )
 
-    summary = scheduler.video_localization_tick_once(limit=1, min_delay_seconds=10)
+    summary = scheduler.video_localization_startup_tick_once(limit=1, min_delay_seconds=30)
 
     assert summary["running_run_replaced"] == 21
     assert summary["running_videos_reset"] == 2
@@ -268,7 +322,7 @@ def test_video_localization_tick_once_replaces_running_run_every_time(monkeypatc
     assert events[1][2]["status"] == "failed"
     assert "superseded by a new run" in events[1][2]["error_message"]
     assert events[2] == ("start", scheduler.VIDEO_LOCALIZATION_TASK_CODE)
-    assert events[3] == ("download", 1, 10)
+    assert events[3] == ("download", 1, 30)
 
 
 def test_translate_pending_messages_translates_and_saves(monkeypatch):

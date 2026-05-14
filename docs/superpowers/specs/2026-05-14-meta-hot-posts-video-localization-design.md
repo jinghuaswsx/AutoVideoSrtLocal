@@ -13,7 +13,7 @@ This design adds a conservative local cache for hot-post videos. It follows the 
 - Download every hot-post video that has `video_url` and no local cached video yet.
 - Render cards with the local MP4 first when available.
 - Keep Facebook iframe fallback for videos that are not downloaded, failed, or not yet processed.
-- Avoid triggering upstream rate limits by using one worker, no concurrency, and a minimum 10 second pause after each video attempt.
+- Avoid triggering upstream rate limits by using one worker, no concurrency, and a minimum 30 second pause after each video attempt.
 - Make the job resumable and auditable through persisted status fields.
 
 ## Non-goals
@@ -44,13 +44,13 @@ The downloader selects a small batch ordered by newest/most useful rows, then pr
 3. Save the video as an MP4 under `output/meta_hot_posts/videos/`.
 4. Verify the output file exists and is non-empty.
 5. Mark success with the relative local path, or mark failure/skipped with a bounded error message.
-6. Sleep at least 10 seconds before the next row, regardless of success or failure.
+6. Sleep at least 30 seconds before the next row, regardless of success or failure.
 
 The default command is intentionally serial. Operators can run a limited batch repeatedly until there are no pending videos.
 
 ## Singleton Takeover
 
-Video localization uses a takeover singleton. The APScheduler job schedules a startup run a few seconds after the web service starts, then continues every 10 minutes. At the beginning of every new run, the scheduler checks for an existing `meta_hot_posts_video_localization_tick` run that is still marked `running`. If one exists, the new run immediately marks that older run `failed`, resets all rows still in `local_video_status='downloading'` to `failed`, records the takeover in the run summary, and then starts its own download batch.
+Video localization uses a startup takeover singleton. The APScheduler job schedules a startup run a few seconds after the web service starts, then continues every 10 minutes. The startup run checks for an existing `meta_hot_posts_video_localization_tick` run that is still marked `running`. If one exists, startup immediately marks that older run `failed`, resets all rows still in `local_video_status='downloading'` to `failed`, records the takeover in the run summary, and then starts its own download batch. Regular interval runs do not take over a running row; they skip until the active batch finishes.
 
 This is intentionally different from product analysis and message translation, which still skip or take over only after their stale-run timeout. Video downloads are external and long-running, so a new invocation should own the queue instead of waiting behind a stale logical run.
 
@@ -67,10 +67,10 @@ The local media route only serves files resolved inside the hot-post video cache
 
 ## Safety
 
-- Each new run takes over any older `running` video-localization run before downloading, so the persisted task state remains a singleton.
+- Each startup run takes over any older `running` video-localization run before downloading, so the persisted task state remains a singleton after deploys/restarts.
 - Service startup schedules an initial video-localization run instead of waiting for the first 10-minute interval.
 - The downloader itself never starts parallel downloads.
-- The minimum per-item delay is clamped to 10 seconds.
+- The minimum per-item delay is clamped to 30 seconds.
 - Existing downloaded files are not fetched again unless explicitly reset later.
 - Failed attempts are recorded and capped by a max-attempts filter.
 - Paths are stored relative to a known cache root and served through safe path resolution.

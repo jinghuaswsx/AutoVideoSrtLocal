@@ -24,7 +24,7 @@ SCHEDULED_ANALYSIS_DELAY_SECONDS = 20
 SCHEDULED_TRANSLATION_LIMIT = 50
 SCHEDULED_TRANSLATION_DELAY_SECONDS = 3
 SCHEDULED_VIDEO_LOCALIZATION_LIMIT = 30
-SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS = 10
+SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS = 30
 SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS = 5
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
@@ -499,6 +499,21 @@ def _take_over_video_localization_singleton() -> dict[str, Any]:
     }
 
 
+def _guard_video_localization_singleton() -> dict[str, Any]:
+    running = scheduled_tasks.latest_running_run(VIDEO_LOCALIZATION_TASK_CODE)
+    if not running:
+        return {}
+    age_seconds = _running_age_seconds(running)
+    running_id = int(running["id"])
+    return {
+        "skipped": True,
+        "reason": "previous_run_still_running",
+        "running_run_id": running_id,
+        "running_started_at": running.get("started_at"),
+        "running_age_seconds": age_seconds,
+    }
+
+
 def analysis_tick_once(
     *,
     limit: int = SCHEDULED_ANALYSIS_LIMIT,
@@ -577,8 +592,14 @@ def video_localization_tick_once(
     *,
     limit: int = SCHEDULED_VIDEO_LOCALIZATION_LIMIT,
     min_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS,
+    takeover_running: bool = False,
 ) -> dict[str, Any]:
-    guard_summary = _take_over_video_localization_singleton()
+    if takeover_running:
+        guard_summary = _take_over_video_localization_singleton()
+    else:
+        guard_summary = _guard_video_localization_singleton()
+    if guard_summary.get("skipped"):
+        return guard_summary
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(VIDEO_LOCALIZATION_TASK_CODE)
@@ -599,6 +620,18 @@ def video_localization_tick_once(
         error = None if status == "success" else f"{summary['failed']} video(s) failed"
         scheduled_tasks.finish_run(run_id, status=status, summary=summary, error_message=error)
     return summary
+
+
+def video_localization_startup_tick_once(
+    *,
+    limit: int = SCHEDULED_VIDEO_LOCALIZATION_LIMIT,
+    min_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS,
+) -> dict[str, Any]:
+    return video_localization_tick_once(
+        limit=limit,
+        min_delay_seconds=min_delay_seconds,
+        takeover_running=True,
+    )
 
 
 def register(scheduler) -> None:
@@ -643,5 +676,14 @@ def register(scheduler) -> None:
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=60,
-        next_run_time=_now() + timedelta(seconds=SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS),
+    )
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        VIDEO_LOCALIZATION_TASK_CODE,
+        video_localization_startup_tick_once,
+        "date",
+        id=f"{VIDEO_LOCALIZATION_TASK_CODE}_startup",
+        replace_existing=True,
+        misfire_grace_time=60,
+        run_date=_now() + timedelta(seconds=SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS),
     )

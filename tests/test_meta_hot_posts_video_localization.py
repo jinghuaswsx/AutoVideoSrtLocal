@@ -49,7 +49,7 @@ def test_download_hot_post_videos_is_serial_and_waits_between_items(tmp_path, mo
         ("download", 2, str(tmp_path / "videos"), str(tmp_path)),
         ("finish", 2, "meta_hot_posts/videos/2.mp4", None),
     ]
-    assert sleeps == [10.0]
+    assert sleeps == [30.0]
 
 
 def test_download_hot_post_videos_records_failure_and_still_waits_before_next(tmp_path, monkeypatch):
@@ -88,7 +88,7 @@ def test_download_hot_post_videos_records_failure_and_still_waits_before_next(tm
     assert result == {"scanned": 2, "downloaded": 1, "failed": 1}
     assert finishes[0] == (1, None, "facebook throttled")
     assert finishes[1] == (2, "meta_hot_posts/videos/2.mp4", None)
-    assert sleeps == [10.0]
+    assert sleeps == [30.0]
 
 
 def test_download_with_ytdlp_writes_under_cache_root_and_returns_relative_path(tmp_path):
