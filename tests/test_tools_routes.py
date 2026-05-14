@@ -74,3 +74,31 @@ def test_sidebar_nav_icons_use_fixed_alignment_column(authed_user_client_no_db):
     assert "display: inline-flex" in rules
     assert "width: 20px" in rules
     assert "justify-content: center" in rules
+
+
+def test_sidebar_runtime_badges_default_to_local_server_and_local_files(
+    authed_user_client_no_db,
+):
+    response = authed_user_client_no_db.get("/tools/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'class="sidebar-runtime-badge sidebar-runtime-env-badge"' in body
+    assert ">localsever</span>" in body
+    assert 'class="sidebar-runtime-badge sidebar-runtime-storage-badge"' in body
+    assert ">lcl</span>" in body
+
+
+def test_sidebar_runtime_badges_use_configured_runtime_values(
+    monkeypatch,
+    authed_user_client_no_db,
+):
+    monkeypatch.setattr("config.SERVER_ENV", "volengine", raising=False)
+    monkeypatch.setattr("config.FILE_STORAGE_MODE", "tos_primary", raising=False)
+
+    response = authed_user_client_no_db.get("/tools/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert ">vol</span>" in body
+    assert ">tos</span>" in body

@@ -52,6 +52,7 @@ def _optional_path(name: str) -> str:
 # ---------------------------------------------------------------------------
 # Flask / 服务端口 / 公网地址
 # ---------------------------------------------------------------------------
+SERVER_ENV = _env("SERVER_ENV", "local").lower() or "local"
 LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", "http://127.0.0.1:5000")
 
 
