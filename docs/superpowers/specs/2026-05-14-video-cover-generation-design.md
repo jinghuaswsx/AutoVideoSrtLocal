@@ -29,6 +29,7 @@
 - 任务详情页顶部进度卡片参考多语种视频翻译的顶部任务卡片：固定 sticky 在内容区顶部，不透明白底，使用多状态颜色区分 pending / running / done / error；进度卡片上方必须有“强制重新开始”按钮，按钮前方同样提供 1 / 2 / 3 / 4 张胶囊选择。强制重新开始按钮必须使用红色危险样式，点击后先弹出确认提示；用户确认后清空全部中间状态、按当前选中的张数更新 `image_count`，并从第 1 步重新执行。
 - 视频分析调用大模型前必须使用共享 LLM 视频优化器转成 480p、15fps、H.264 600k 级别的临时文件，保留压缩音频以支持 voiceover 判断；转码失败时沿用优化器的原视频回退行为。
 - 视频封面详情页的普通 GET 不做“中断恢复”；运行中的步骤不能因为用户刷新或打开详情页被误标为失败，真正的进程中断由启动恢复逻辑处理。
+- 任务详情页在桌面端滚动主页面时，左侧“项目输入”栏必须固定在可视区域内；左侧栏内容超出可视高度时只在左侧栏内部出现独立纵向滚动条。窄屏单列布局不启用固定，避免遮挡正文。
 - 封面生成完成后，最终结果显示在“封面生成”卡片内：按封面生成顺序从左到右展示结果卡片。每张卡片上方展示对应三段式文案和复制文案按钮，下方展示对应封面图和图片操作。
 
 ### 2026-05-15 默认张数修订
@@ -52,7 +53,7 @@
 - `video_analysis`、`product_analysis`、`ad_copy` 必须要求模型返回结构化 JSON；后端保存 `raw_response` 和 `structured_result`，前端优先用 `structured_result` 渲染。
 - 视频分析可视化建议字段：`video_text`、`voiceover`、`cover_reference`、`actions`、`composition`、`authenticity_cues`、`ignore_elements`、`cover_suggestions`。
 - 产品分析可视化建议字段：`information_check`、`product_definition`、`core_functions`、`usage_analysis`、`physical_features`、`western_scene_suggestions`、`visual_category`、`cover_decision`、`ad_copy_direction`、`overall_judgment`。
-- 文案创作可视化字段沿用 `ad_copy_sets` 五组结构化文案，卡片化展示 angle、英文 title / message / description、中文翻译和使用建议。
+- 文案创作可视化字段沿用 `ad_copy_sets` 五组结构化文案，卡片化展示 angle、英文 title / message / description、中文翻译和使用建议。第三步每一张文案卡片必须提供“复制文案”按钮，复制内容固定为三行格式：`标题: <english.title>`、`文案: <english.message>`、`描述: <english.description>`；历史 `headline / body_text / cta` 数据按兼容映射后再复制。
 - 封面生成根据 `image_count` 生成 1 到 4 张封面。每张封面记录自己的 `index`、`object_key`、`width`、`height`、`source_ad_copy_id`、`hook`、`copy`；前端不再用缩略图切换，而是按已有 `covers` 数组从左到右直接显示全部已生成结果。
 - 多张封面在后端必须排队串行生成：先完成第 1 张并写入状态，再进入第 2 张，不并发提交多张图片生成请求。
 - 运行中的封面生成若 `state.result.covers` 已经包含部分封面，前端轮询时必须立即渲染这些已生成卡片；全部完成后同一套网格按最终张数重新对齐排列，保持卡片宽度、左右间距和顶部/底部对齐稳定。

@@ -1022,6 +1022,13 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "`标题: ${en.title}`" in html
     assert "`文案: ${en.message}`" in html
     assert "`描述: ${en.description}`" in html
+    assert ".vcd-input-panel { position:sticky;" in html
+    assert "overflow-y:auto" in html
+    assert "overscroll-behavior:contain" in html
+    assert '<aside class="vcd-panel vcd-input-panel">' in html
+    assert 'data-copy-ad-copy="${idx}"' in html
+    assert "copyAdCopyText(btn.dataset.copyAdCopy)" in html
+    assert "formattedCopyText(sets[index])" in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html

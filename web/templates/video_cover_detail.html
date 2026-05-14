@@ -31,6 +31,7 @@
 .vcd-progress-msg { margin-top:6px; font-size:12px; color:#64748b; min-height:18px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vcd-project-grid { display:grid; grid-template-columns:minmax(240px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
 .vcd-panel { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
+.vcd-input-panel { position:sticky; top:calc(var(--header-h, 56px) + 128px); max-height:calc(100vh - var(--header-h, 56px) - 144px); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
 .vcd-title { margin:0 0 12px; font-size:15px; font-weight:900; color:var(--text-main); }
 .vcd-kv { display:grid; gap:10px; }
 .vcd-kv dt { font-size:12px; color:#64748b; font-weight:800; }
@@ -85,6 +86,7 @@
 .vcd-copy-headline { font-size:15px; font-weight:900; color:var(--text-main); margin-bottom:6px; }
 .vcd-copy-body { font-size:13px; color:var(--text-main); line-height:1.5; }
 .vcd-copy-meta { margin-top:8px; font-size:12px; color:#64748b; }
+.vcd-copy-card-button { width:100%; margin-top:10px; }
 .vcd-cover-results-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 280px)); gap:18px; align-items:start; justify-content:start; }
 .vcd-cover-result-card { width:100%; display:grid; gap:10px; align-content:start; }
 .vcd-cover-copy-panel { width:100%; display:grid; gap:10px; align-content:start; min-height:190px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:12px; }
@@ -115,6 +117,7 @@
 .vcd-pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.55; padding:12px; border:1px solid var(--border-main); border-radius:8px; background:#0f172a; color:#e5e7eb; }
 @media (max-width:1080px) {
   .vcd-project-grid { grid-template-columns:1fr; }
+  .vcd-input-panel { position:static; top:auto; max-height:none; overflow:visible; }
   .vcd-progress-steps { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .vcd-card-timer { margin-left:0; }
 }
@@ -164,7 +167,7 @@
 {% set product_image_src = url_for('video_cover.product_image', task_id=task_id) if product.get('product_image_path') else product.get('main_image_url') %}
 
 <div class="vcd-project-grid">
-  <aside class="vcd-panel">
+  <aside class="vcd-panel vcd-input-panel">
     <h2 class="vcd-title">项目输入</h2>
     <section class="vcd-input-card" aria-label="项目输入">
       <div class="vcd-product-title">{{ product_title }}</div>
@@ -402,6 +405,7 @@
         <div class="vcd-final-cta">${escapeHtml(en.description)}</div>
         <div class="vcd-copy-meta">${escapeHtml(item.angle || '')} · ${escapeHtml(item.usage_note || '')}</div>
         <div class="vcd-copy-meta">${escapeHtml(zh.title)} / ${escapeHtml(zh.message)} / ${escapeHtml(zh.description)}</div>
+        <button class="vcd-pill-btn primary vcd-copy-card-button" type="button" data-copy-ad-copy="${idx}">复制文案</button>
       </article>`;
     }).join('')}</div>`;
   }
@@ -479,6 +483,7 @@
       const retry = document.querySelector(`[data-retry-step="${step}"]`);
       if (retry) retry.disabled = status === 'running';
     });
+    document.querySelectorAll('[data-copy-ad-copy]').forEach(btn => btn.addEventListener('click', () => copyAdCopyText(btn.dataset.copyAdCopy)));
     document.querySelectorAll('[data-copy-cover-text]').forEach(btn => btn.addEventListener('click', () => copyCoverText(btn.dataset.copyCoverText)));
     document.querySelectorAll('[data-copy-image]').forEach(btn => btn.addEventListener('click', () => copyImage(btn.dataset.copyImage)));
   }
@@ -548,6 +553,14 @@
     const covers = (((currentState.result || {}).covers) || []);
     index = Number(index || 0);
     const text = copyTextForCover(covers[index]);
+    if (!text) return;
+    await copyText(text);
+  }
+  async function copyAdCopyText(index) {
+    const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
+    index = Number(index || 0);
+    if (!sets[index]) return;
+    const text = formattedCopyText(sets[index]);
     if (!text) return;
     await copyText(text);
   }
