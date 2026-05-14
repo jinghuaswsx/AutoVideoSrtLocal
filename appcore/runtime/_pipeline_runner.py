@@ -2385,6 +2385,33 @@ class PipelineRunner:
         # status 始终用 "done"——分离失败不阻塞主任务，message 标降级原因。
         self._set_step(task_id, "separate", "done", msg)
 
+    def _clear_loudness_source_backups(self, task_dir: str) -> None:
+        loudness_dir = os.path.join(task_dir, "loudness_match")
+        if not os.path.isdir(loudness_dir):
+            return
+        for name in os.listdir(loudness_dir):
+            if name.startswith("source.") and name.endswith(".mp3"):
+                try:
+                    os.unlink(os.path.join(loudness_dir, name))
+                except OSError:
+                    log.warning("[loudness_match] failed to remove old source backup: %s", name)
+
+    def _prepare_loudness_source_audio(
+        self,
+        *,
+        audio_path: str,
+        loudness_dir: str,
+        variant_name: str,
+    ) -> str:
+        import shutil
+
+        source_path = os.path.join(loudness_dir, f"source.{variant_name}.mp3")
+        if os.path.isfile(source_path):
+            shutil.copy2(source_path, audio_path)
+            return "existing_source_backup"
+        shutil.copy2(audio_path, source_path)
+        return "current_tts_audio"
+
     def _step_loudness_match(self, task_id: str, task_dir: str) -> None:
         """B 算法（整体对整体）响度匹配。
 
@@ -2413,7 +2440,12 @@ class PipelineRunner:
         task = task_state.get(task_id) or {}
         separation = task.get("separation") or {}
 
-        if not sep.is_usable(separation):
+        has_minimum_mix_inputs = (
+            separation.get("status") == "done"
+            and separation.get("accompaniment_path")
+            and separation.get("vocals_lufs") is not None
+        )
+        if not sep.is_usable(separation) and not has_minimum_mix_inputs:
             status_word = separation.get("status") or "disabled"
             msg = {
                 "disabled":    "人声分离未启用，跳过响度匹配",
@@ -2447,10 +2479,42 @@ class PipelineRunner:
             measure_integrated_lufs,
             mix_with_background,
             normalize_to_lufs,
+            resolve_background_volume_profile,
         )
 
         loudness_dir = os.path.join(task_dir, "loudness_match")
         os.makedirs(loudness_dir, exist_ok=True)
+
+        accompaniment_lufs = separation.get("accompaniment_lufs")
+        if (
+            accompaniment_lufs is None
+            and (task.get("loudness_profile") or "standard") == "bg_boost"
+            and os.path.isfile(accompaniment_path)
+        ):
+            try:
+                accompaniment_lufs = measure_integrated_lufs(accompaniment_path)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[loudness_match] accompaniment LUFS measure failed: %s", exc,
+                )
+        profile_summary = resolve_background_volume_profile(
+            task.get("loudness_profile"),
+            standard_volume=bg_volume,
+            accompaniment_lufs=accompaniment_lufs,
+            tts_reference_lufs=separation.get("vocals_lufs"),
+            manual_boost_pct=task.get("loudness_manual_boost_pct"),
+        )
+        profile_summary = dict(profile_summary)
+        effective_bg_volume = round(float(profile_summary["effective_background_volume"]), 10)
+        profile_summary["effective_background_volume"] = effective_bg_volume
+        if isinstance(profile_summary.get("manual_boost"), dict):
+            profile_summary["manual_boost"] = dict(profile_summary["manual_boost"])
+            if "effective_volume" in profile_summary["manual_boost"]:
+                profile_summary["manual_boost"]["effective_volume"] = effective_bg_volume
+        if isinstance(profile_summary.get("background_boost"), dict):
+            profile_summary["background_boost"] = dict(profile_summary["background_boost"])
+            if "effective_volume" in profile_summary["background_boost"]:
+                profile_summary["background_boost"]["effective_volume"] = effective_bg_volume
 
         variants = dict(task.get("variants") or {})
         summaries: list[dict] = []
@@ -2464,6 +2528,11 @@ class PipelineRunner:
             # B 算法会 in-place 修改 audio_path（TTS 文件）。如果 B 跑完发现
             # 偏差过大需要切 A 兜底，A 必须用原始 TTS 而不是 B 改过的版本，
             # 否则 A 跑出的响度也偏。先备份 TTS 原始 mp3。
+            source_backup_origin = self._prepare_loudness_source_audio(
+                audio_path=audio_path,
+                loudness_dir=loudness_dir,
+                variant_name=variant_name,
+            )
             backup = audio_path + ".pre_loudness.bak.mp3"
             backup_consumed = False
             try:
@@ -2479,7 +2548,7 @@ class PipelineRunner:
                         audio_path=audio_path,
                         accompaniment_path=accompaniment_path,
                         video_lufs=float(video_lufs),
-                        bg_volume=bg_volume,
+                        bg_volume=effective_bg_volume,
                         loudness_dir=loudness_dir,
                         variant_name=variant_name,
                     )
@@ -2547,18 +2616,27 @@ class PipelineRunner:
             if not summary:
                 continue
             summary["variant"] = variant_name
+            summary["source_backup_origin"] = source_backup_origin
             summaries.append(summary)
 
         separation = dict(separation)
         separation["tts_loudness"] = {
             "algorithm": algorithm,
+            "profile": profile_summary["profile"],
+            "manual_boost_pct": profile_summary["manual_boost_pct"],
             "video_lufs": video_lufs,
             "vocals_lufs": separation.get("vocals_lufs"),
-            "background_volume": bg_volume,
+            "background_volume": profile_summary["background_volume"],
+            "effective_background_volume": effective_bg_volume,
+            "background_boost": profile_summary["background_boost"],
+            "manual_boost": profile_summary["manual_boost"],
             "variants": summaries,
         }
         # 暴露 background_volume 给 UI（前端 separation_card 直接读）
-        separation["background_volume"] = bg_volume
+        separation["background_volume"] = profile_summary["background_volume"]
+        separation["effective_background_volume"] = effective_bg_volume
+        if accompaniment_lufs is not None:
+            separation["accompaniment_lufs"] = accompaniment_lufs
         task_state.update(task_id, separation=separation)
 
         if summaries:
@@ -2984,6 +3062,7 @@ class PipelineRunner:
         import appcore.task_state as task_state
 
         task = task_state.get(task_id)
+        self._clear_loudness_source_backups(task_dir)
         if _is_av_pipeline_task(task):
             if (task.get("steps") or {}).get("tts") == "done":
                 return
@@ -3382,7 +3461,12 @@ class PipelineRunner:
 
         task = task_state.get(task_id) or {}
         separation = task.get("separation") or {}
-        if not sep.is_usable(separation):
+        has_minimum_mix_inputs = (
+            separation.get("status") == "done"
+            and separation.get("accompaniment_path")
+            and separation.get("vocals_lufs") is not None
+        )
+        if not sep.is_usable(separation) and not has_minimum_mix_inputs:
             return tts_audio_path
 
         # 优先复用 B 算法 post_mix_path
@@ -3404,6 +3488,11 @@ class PipelineRunner:
 
         # 没有 post_mix（A 算法 / loudness_match 跳过）→ 现场 mix
         settings = sep.load_settings()
+        background_volume = float(
+            separation.get("effective_background_volume")
+            or separation.get("background_volume")
+            or settings.background_volume
+        )
         mixed_path = os.path.join(
             task_dir, f"final_audio_mixed.{variant}.wav",
         )
@@ -3412,7 +3501,7 @@ class PipelineRunner:
                 main_path=tts_audio_path,
                 background_path=separation["accompaniment_path"],
                 output_path=mixed_path,
-                background_volume=settings.background_volume,
+                background_volume=background_volume,
                 duration="longest",
             )
         except Exception as exc:  # noqa: BLE001
@@ -3424,11 +3513,11 @@ class PipelineRunner:
 
         log.info(
             "[compose] mixed TTS + accompaniment on the fly (bg_volume=%.2f) -> %s",
-            settings.background_volume, mixed_path,
+            background_volume, mixed_path,
         )
         separation = dict(separation)
         separation["composite_audio_path"] = mixed_path
-        separation["background_volume"] = settings.background_volume
+        separation["effective_background_volume"] = background_volume
         task_state.update(task_id, separation=separation)
         return mixed_path
 
