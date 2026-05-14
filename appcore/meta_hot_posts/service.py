@@ -27,12 +27,23 @@ def _decode_sku_json(value: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _bool_payload(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "checked", "marked"}
+    return False
+
+
 def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item = dict(row)
     item["sku_prices"] = _decode_sku_json(item.pop("sku_prices_json", None))
     item["sku_count"] = len(item["sku_prices"])
     item.setdefault("analysis_status", "pending")
     item["category_l1_zh"] = categories.category_label_zh(item.get("category_l1"))
+    item["is_marked"] = _bool_payload(item.get("is_marked"))
     return item
 
 
@@ -81,6 +92,20 @@ def build_failures_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
         limit = 100
     items = store.list_failed_product_analyses(limit=limit)
     return MetaHotPostsResponse({"items": items, "total": len(items), "limit": max(1, min(100, limit))})
+
+
+def build_mark_response(
+    post_id: int,
+    payload: Mapping[str, Any] | None = None,
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    payload = payload or {}
+    marked = _bool_payload(payload.get("marked"))
+    affected = store.set_hot_post_marked(post_id, marked=marked, user_id=user_id)
+    if not affected:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    return MetaHotPostsResponse({"ok": True, "id": int(post_id), "is_marked": marked})
 
 
 def build_refresh_response() -> MetaHotPostsResponse:

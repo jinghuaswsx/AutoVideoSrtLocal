@@ -190,6 +190,20 @@ def api_meta_hot_posts_failures():
     return jsonify(result.payload), result.status_code
 
 
+@bp.route("/api/meta-hot-posts/<int:post_id>/mark", methods=["POST"])
+@login_required
+def api_meta_hot_posts_mark(post_id: int):
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    result = _meta_hot_posts().build_mark_response(
+        post_id,
+        payload,
+        user_id=getattr(current_user, "id", None),
+    )
+    return jsonify(result.payload), result.status_code
+
+
 @bp.route("/api/meta-hot-posts/refresh", methods=["POST"])
 @login_required
 def api_meta_hot_posts_refresh():

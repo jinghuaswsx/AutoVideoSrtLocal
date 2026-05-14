@@ -34,6 +34,9 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "p.latest_comments >= %s" in data_sql
     assert "p.creation_time >= %s" in data_sql
     assert "p.creation_time < DATE_ADD(%s, INTERVAL 1 DAY)" in data_sql
+    assert "p.is_marked" in data_sql
+    assert "p.marked_at" in data_sql
+    assert "p.marked_by" in data_sql
     assert "ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC" in data_sql
     assert data_params[:7] == ["Kitchenware", 10.0, 30.5, 1000, 50, "2026-05-01", "2026-05-13"]
 
@@ -75,6 +78,25 @@ def test_upsert_hot_post_uses_wedev_post_unique_key():
     assert "ON DUPLICATE KEY UPDATE" in sql
     assert "wedev_post_id" in sql
     assert params[0] == 123
+
+
+def test_set_hot_post_marked_updates_local_mark_audit_fields():
+    calls = []
+
+    store.set_hot_post_marked(
+        123,
+        marked=True,
+        user_id=88,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_posts" in sql
+    assert "is_marked=%s" in sql
+    assert "marked_at=CASE WHEN %s = 1 THEN NOW() ELSE NULL END" in sql
+    assert "marked_by=CASE WHEN %s = 1 THEN %s ELSE NULL END" in sql
+    assert "WHERE id=%s" in sql
+    assert params == (1, 1, 1, 88, 123)
 
 
 def test_next_pending_product_analyses_selects_unfinished_rows():

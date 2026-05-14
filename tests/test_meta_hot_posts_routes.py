@@ -1,3 +1,12 @@
+def test_meta_hot_posts_page_requires_login(authed_client_no_db):
+    raw_client = authed_client_no_db.application.test_client()
+
+    resp = raw_client.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+
 def test_meta_hot_posts_page_requires_admin(authed_user_client_no_db):
     resp = authed_user_client_no_db.get("/xuanpin/meta-hot-posts")
 
@@ -33,6 +42,9 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "下一页" in body
     assert "末页" in body
     assert "JSON.stringify({limit:30, per_item_delay_seconds:20})" in body
+    assert "mh-mark-toggle" in body
+    assert "function toggleMetaHotPostMark" in body
+    assert "/xuanpin/api/meta-hot-posts/${postId}/mark" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -85,3 +97,23 @@ def test_meta_hot_posts_analyze_api_passes_current_user_for_billing(authed_clien
     assert resp.status_code == 202
     assert captured["payload"]["limit"] == 100
     assert captured["payload"]["user_id"]
+
+
+def test_meta_hot_posts_mark_api_passes_current_user(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(post_id, payload, user_id=None):
+        captured["post_id"] = post_id
+        captured["payload"] = payload
+        captured["user_id"] = user_id
+        return type("Resp", (), {"payload": {"ok": True, "id": post_id, "is_marked": True}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_mark_response", fake_response)
+
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/7/mark", json={"marked": True})
+
+    assert resp.status_code == 200
+    assert resp.get_json()["is_marked"] is True
+    assert captured["post_id"] == 7
+    assert captured["payload"] == {"marked": True}
+    assert captured["user_id"]
