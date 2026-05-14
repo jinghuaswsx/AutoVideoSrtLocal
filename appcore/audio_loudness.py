@@ -66,7 +66,9 @@ def validate_loudness_profile(
     manual_boost_pct: int | None = None,
 ) -> tuple[str, int | None]:
     """Normalize and validate a loudness profile selection."""
-    normalized_profile = profile or LOUDNESS_PROFILE_STANDARD
+    normalized_profile = (
+        LOUDNESS_PROFILE_STANDARD if profile is None else profile
+    )
     if normalized_profile not in LOUDNESS_PROFILES:
         raise ValueError(f"unsupported loudness profile: {normalized_profile}")
 

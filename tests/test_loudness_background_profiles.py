@@ -127,6 +127,12 @@ def test_validate_loudness_profile_rejects_invalid_manual_pct(pct):
         validate_loudness_profile(LOUDNESS_PROFILE_MANUAL_BOOST, pct)
 
 
+@pytest.mark.parametrize("profile", ["", "louder"])
+def test_validate_loudness_profile_rejects_invalid_profile_strings(profile):
+    with pytest.raises(ValueError):
+        validate_loudness_profile(profile, None)
+
+
 def test_validate_loudness_profile_normalizes_non_manual_profiles():
     assert validate_loudness_profile(None, None) == (LOUDNESS_PROFILE_STANDARD, None)
     assert validate_loudness_profile(LOUDNESS_PROFILE_AUTO_BOOST, None) == (
