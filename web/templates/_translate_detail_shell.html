@@ -33,6 +33,9 @@
 
   /* ===== 顶部实时状态卡（multi/omni） — 与 .step / .qa-step 同款风格 ===== */
   .task-status-card {
+    position: sticky;
+    top: 68px;
+    z-index: 40;
     border: 1.5px solid var(--border-main);
     border-radius: 14px;
     padding: 16px;
@@ -41,7 +44,8 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    transition: border-color .3s, background .3s;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    transition: border-color .3s, background .3s, box-shadow .3s;
   }
   .task-status-card.is-running { border-color: var(--primary-color); background: var(--sidebar-hover-bg); box-shadow: 0 0 10px rgba(59, 130, 246, 0.10); }
   .task-status-card.is-done    { border-color: #86efac; background: rgba(22, 163, 74, 0.10); }
@@ -145,6 +149,12 @@
   .task-status-card .opt-state--running { background: rgba(59, 130, 246, 0.14); color: #1d4ed8; }
   .task-status-card .opt-state--done    { background: rgba(22, 163, 74, 0.14); color: #15803d; }
   .task-status-card .opt-state--error   { background: rgba(220, 38, 38, 0.12); color: #b91c1c; }
+
+  @media (max-width: 768px) {
+    .task-status-card {
+      top: 60px;
+    }
+  }
 
   {% if detail_mode in ('multi', 'av_sync') %}
   /* 多语种视频翻译：隐藏 _task_workbench.html 里老的 voicePanel（仅 2 个默认音色），
