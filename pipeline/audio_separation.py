@@ -24,7 +24,9 @@ from appcore.audio_loudness import (
 )
 from appcore.audio_separation_client import (
     DEFAULT_BASE_URL,
+    DEFAULT_OUTPUT_FORMAT,
     DEFAULT_PRESET,
+    DEFAULT_SEPARATION_GOAL,
     DEFAULT_TASK_TIMEOUT,
     SeparationApiUnavailable,
     SeparationClient,
@@ -39,6 +41,7 @@ log = logging.getLogger(__name__)
 SETTING_ENABLED = "audio_separation_enabled"
 SETTING_API_URL = "audio_separation_api_url"
 SETTING_PRESET = "audio_separation_preset"
+SETTING_SEPARATION_GOAL = "audio_separation_goal"
 SETTING_TASK_TIMEOUT = "audio_separation_task_timeout"
 SETTING_BACKGROUND_VOLUME = "audio_separation_background_volume"
 
@@ -50,6 +53,7 @@ class SeparationSettings:
     enabled: bool
     api_url: str
     preset: str
+    separation_goal: str
     task_timeout: float
     background_volume: float
 
@@ -76,6 +80,9 @@ def load_settings() -> SeparationSettings:
     else:
         api_url = api_url_raw.strip()
     preset = (get_setting(SETTING_PRESET) or DEFAULT_PRESET).strip() or DEFAULT_PRESET
+    separation_goal = (
+        get_setting(SETTING_SEPARATION_GOAL) or DEFAULT_SEPARATION_GOAL
+    ).strip() or DEFAULT_SEPARATION_GOAL
 
     try:
         task_timeout = float(get_setting(SETTING_TASK_TIMEOUT) or DEFAULT_TASK_TIMEOUT)
@@ -96,6 +103,7 @@ def load_settings() -> SeparationSettings:
         enabled=enabled,
         api_url=api_url,
         preset=preset,
+        separation_goal=separation_goal,
         task_timeout=task_timeout,
         background_volume=bg,
     )
@@ -107,6 +115,7 @@ def run_separation(
     output_dir: str,
     api_url: str,
     preset: str = "vocal_balanced",
+    separation_goal: str = DEFAULT_SEPARATION_GOAL,
     model_filename: str | None = None,
     task_timeout: float = DEFAULT_TASK_TIMEOUT,
 ) -> dict[str, Any]:
@@ -136,7 +145,11 @@ def run_separation(
     out.mkdir(parents=True, exist_ok=True)
 
     base: dict[str, Any] = {
-        "model": model_filename or preset,
+        "model": _model_label(
+            model_filename=model_filename,
+            preset=preset,
+            separation_goal=separation_goal,
+        ),
         "api_url": api_url,
         "started_at_epoch": started,
         "finished_at_epoch": None,
@@ -159,7 +172,10 @@ def run_separation(
         result = client.separate(
             audio_path=audio_path,
             output_dir=str(out),
-            model=(model_filename or preset),
+            preset=preset,
+            model=model_filename,
+            separation_goal=separation_goal,
+            output_format=DEFAULT_OUTPUT_FORMAT,
         )
     except SeparationTimeout as exc:
         return _finish(base, status="timeout", error=str(exc),
@@ -211,6 +227,14 @@ def run_separation(
                        error_kind="silence")
 
     return _finish(base, status="done", error=None, error_kind=None)
+
+
+def _model_label(*, model_filename: str | None, preset: str, separation_goal: str) -> str:
+    if model_filename:
+        return model_filename
+    if (preset or "").strip() and preset != DEFAULT_PRESET:
+        return preset
+    return separation_goal or DEFAULT_SEPARATION_GOAL
 
 
 def _finish(

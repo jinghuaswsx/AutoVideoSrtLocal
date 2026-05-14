@@ -792,11 +792,28 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 
     <div style="margin-top:16px;">
       <label style="display:block;font-size:13px;font-weight:600;color:var(--settings-fg);margin-bottom:6px;">
-        默认 Ensemble Preset
+        分离目标
+      </label>
+      <select name="separation_goal" style="width:100%;max-width:320px;">
+        {% for code in ['background_preserve'] %}
+        <option value="{{ code }}" {{ 'selected' if audio_separation.separation_goal == code }}>
+          {{ code }}
+        </option>
+        {% endfor %}
+      </select>
+      <p class="hint" style="margin-top:6px;">
+        默认 <code>background_preserve</code>，上传高保真 WAV 后让上游优先保留背景音乐和环境音。
+      </p>
+    </div>
+
+    <div style="margin-top:16px;">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--settings-fg);margin-bottom:6px;">
+        Ensemble Preset（旧协议兼容）
       </label>
       <select name="preset" style="width:100%;max-width:320px;">
         {% for code in [
           'vocal_balanced','vocal_clean','vocal_full','vocal_rvc',
+          'instrumental_full','instrumental_balanced','instrumental_clean',
         ] %}
         <option value="{{ code }}" {{ 'selected' if audio_separation.preset == code }}>
           {{ code }}
@@ -804,7 +821,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         {% endfor %}
       </select>
       <p class="hint" style="margin-top:6px;">
-        <code>vocal_balanced</code> 是上游服务的默认推荐，整体最均衡。其它选项见
+        背景保留默认链路不再发送 <code>vocal_balanced</code>；仅在这里选择非默认 preset 时作为兼容字段传给旧服务端。其它选项见
         <a href="{{ audio_separation.api_url }}/presets" target="_blank" rel="noopener noreferrer">/presets</a> 接口。
       </p>
     </div>

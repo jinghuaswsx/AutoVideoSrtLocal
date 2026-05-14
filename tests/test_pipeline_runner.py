@@ -3,6 +3,8 @@ Pipeline runner integration tests.
 
 Now tests appcore.runtime directly; web/services/pipeline_runner is a thin adapter.
 """
+from types import SimpleNamespace
+
 import appcore.runtime as runtime
 import pytest
 from appcore.events import EventBus
@@ -98,6 +100,11 @@ def test_step_extract_stores_original_video_duration(tmp_path, monkeypatch):
     task_id = "task-extract-duration"
     store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
     monkeypatch.setattr("pipeline.extract.extract_audio", lambda video_path, task_dir: str(tmp_path / "audio.wav"))
+    monkeypatch.setattr(
+        "pipeline.extract.extract_separation_audio",
+        lambda video_path, task_dir: str(tmp_path / "separation.wav"),
+        raising=False,
+    )
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda video_path: 21.37)
 
     runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=1)
@@ -105,7 +112,88 @@ def test_step_extract_stores_original_video_duration(tmp_path, monkeypatch):
 
     task = task_state.get(task_id)
     assert task["audio_path"] == str(tmp_path / "audio.wav")
+    assert task["separation_audio_path"] == str(tmp_path / "separation.wav")
     assert task["video_duration"] == pytest.approx(21.37)
+
+
+def test_step_separate_prefers_separation_audio_path(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    task_id = "task-separate-prefers-hifi-audio"
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
+    store.update(
+        task_id,
+        audio_path=str(tmp_path / "asr_16k_mono.wav"),
+        separation_audio_path=str(tmp_path / "source_separation.wav"),
+    )
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "pipeline.audio_separation.load_settings",
+        lambda: SimpleNamespace(
+            is_runnable=True,
+            preset="vocal_balanced",
+            separation_goal="background_preserve",
+            api_url="http://x.test",
+            task_timeout=300.0,
+        ),
+    )
+
+    def fake_run_separation(**kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "done",
+            "elapsed_seconds": 1.2,
+            "timeout_seconds": 300.0,
+            "vocals_lufs": -18.5,
+            "vocals_path": str(tmp_path / "vocals.wav"),
+            "accompaniment_path": str(tmp_path / "accompaniment.wav"),
+        }
+
+    monkeypatch.setattr("pipeline.audio_separation.run_separation", fake_run_separation)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=1)
+    runner._step_separate(task_id, str(tmp_path))
+
+    assert captured["audio_path"] == str(tmp_path / "source_separation.wav")
+
+
+def test_step_separate_falls_back_to_asr_audio_path(tmp_path, monkeypatch):
+    task_id = "task-separate-falls-back-asr-audio"
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
+    store.update(task_id, audio_path=str(tmp_path / "asr_16k_mono.wav"))
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "pipeline.audio_separation.load_settings",
+        lambda: SimpleNamespace(
+            is_runnable=True,
+            preset="vocal_balanced",
+            separation_goal="background_preserve",
+            api_url="http://x.test",
+            task_timeout=300.0,
+        ),
+    )
+
+    def fake_run_separation(**kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "done",
+            "elapsed_seconds": 1.2,
+            "timeout_seconds": 300.0,
+            "vocals_lufs": -18.5,
+            "vocals_path": str(tmp_path / "vocals.wav"),
+            "accompaniment_path": str(tmp_path / "accompaniment.wav"),
+        }
+
+    monkeypatch.setattr("pipeline.audio_separation.run_separation", fake_run_separation)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=1)
+    runner._step_separate(task_id, str(tmp_path))
+
+    assert captured["audio_path"] == str(tmp_path / "asr_16k_mono.wav")
 
 
 def test_base_pipeline_runner_av_steps_delegate_to_facade(tmp_path, monkeypatch):

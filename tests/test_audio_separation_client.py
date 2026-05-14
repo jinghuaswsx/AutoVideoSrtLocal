@@ -5,8 +5,9 @@
 
 mock 覆盖：
 - happy path（POST 200 → ZIP 二进制 → 解压两个 wav）
-- WAV 输入触发 ffmpeg 转 mp3 → 上传成功
-- MP3 输入直接走，不调 ffmpeg
+- WAV 输入直接上传，不触发 ffmpeg 转 mp3
+- 默认背景保留协议传 separation_goal=background_preserve + output_format=WAV
+- 旧 ensemble_preset 仅在显式非默认 preset 时兼容发送
 - 5xx 重试机制（前两次 5xx，第三次成功）
 - 4xx 不重试
 - read timeout 抛 SeparationTimeout（仍是 SeparationApiUnavailable 子类）
@@ -191,7 +192,7 @@ def test_separate_missing_audio_file_raises(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_separate_happy_path_with_mp3_input(tmp_path, mp3_file):
-    """MP3 输入直接 POST，不经过 ffmpeg。"""
+    """默认背景保留协议直接 POST，不传旧 vocal_balanced preset。"""
     client = SeparationClient(
         "http://x.test",
         connect_timeout=1, task_timeout=10,
@@ -214,20 +215,22 @@ def test_separate_happy_path_with_mp3_input(tmp_path, mp3_file):
         )
 
     assert result.task_id == ""
-    assert result.model == "vocal_balanced"
+    assert result.model == "background_preserve"
     assert result.elapsed_seconds >= 0
     assert (out_dir / "vocals.wav").read_bytes() == b"VOCALSWAVDATA"
     assert (out_dir / "accompaniment.wav").read_bytes() == b"ACCOMPWAVDATA"
 
-    # 验证发过去的 multipart 字段名
+    # 验证发过去的 multipart 字段名与新版背景保留协议
     _, kwargs = r.post.call_args
     assert "file" in kwargs["files"]
-    assert kwargs["data"]["ensemble_preset"] == "vocal_balanced"
+    assert kwargs["data"]["separation_goal"] == "background_preserve"
+    assert kwargs["data"]["output_format"] == "WAV"
+    assert "ensemble_preset" not in kwargs["data"]
     assert r.post.call_args.args[0] == "http://x.test/separate/download"
 
 
-def test_separate_wav_input_transcodes_to_mp3(tmp_path, wav_file):
-    """WAV 输入会先调 ffmpeg 转 mp3 再上传。"""
+def test_separate_wav_input_uploads_without_mp3_transcode(tmp_path, wav_file):
+    """WAV 输入直接上传，不再调 ffmpeg 转 192kbps MP3。"""
     client = SeparationClient(
         "http://x.test",
         connect_timeout=1, task_timeout=10,
@@ -236,12 +239,9 @@ def test_separate_wav_input_transcodes_to_mp3(tmp_path, wav_file):
     out_dir = tmp_path / "out"
     zip_bytes = _make_zip_bytes()
 
-    fake_mp3 = tmp_path / "fake_transcoded.mp3"
-    fake_mp3.write_bytes(b"\xff\xfb\x90mp3body")
-
     with patch("appcore.audio_separation_client.requests") as r, \
          patch.object(SeparationClient, "_ensure_mp3",
-                      return_value=fake_mp3) as ensure_mp3:
+                      side_effect=AssertionError("must not transcode wav to mp3")) as ensure_mp3:
         r.post.return_value = _FakePostResponse(200, content=zip_bytes)
         r.ConnectionError = _requests.ConnectionError
         r.Timeout = _requests.Timeout
@@ -251,14 +251,20 @@ def test_separate_wav_input_transcodes_to_mp3(tmp_path, wav_file):
             preset="vocal_balanced",
         )
 
-    ensure_mp3.assert_called_once()
+    ensure_mp3.assert_not_called()
     assert result.elapsed_seconds >= 0
     assert (out_dir / "vocals.wav").exists()
     assert (out_dir / "accompaniment.wav").exists()
+    _, kwargs = r.post.call_args
+    uploaded = kwargs["files"]["file"]
+    assert uploaded[0] == wav_file.name
+    assert uploaded[2] == "audio/wav"
+    assert kwargs["data"]["separation_goal"] == "background_preserve"
+    assert kwargs["data"]["output_format"] == "WAV"
 
 
-def test_separate_legacy_model_kwarg_used_as_preset(tmp_path, mp3_file):
-    """老 caller 传 ``model=...`` 时被当作 preset 使用。"""
+def test_separate_legacy_model_kwarg_used_as_non_default_preset(tmp_path, mp3_file):
+    """老 caller 传非默认 ``model=...`` 时仍按 ensemble_preset 兼容发送。"""
     client = SeparationClient("http://x.test", network_retries=1)
     zip_bytes = _make_zip_bytes()
 
@@ -268,12 +274,14 @@ def test_separate_legacy_model_kwarg_used_as_preset(tmp_path, mp3_file):
         r.Timeout = _requests.Timeout
         result = client.separate(
             str(mp3_file), output_dir=str(tmp_path / "out"),
-            model="vocal_balanced",
+            model="instrumental_clean",
         )
 
-    assert result.model == "vocal_balanced"
+    assert result.model == "instrumental_clean"
     _, kwargs = r.post.call_args
-    assert kwargs["data"]["ensemble_preset"] == "vocal_balanced"
+    assert kwargs["data"]["separation_goal"] == "background_preserve"
+    assert kwargs["data"]["output_format"] == "WAV"
+    assert kwargs["data"]["ensemble_preset"] == "instrumental_clean"
 
 
 # ---------------------------------------------------------------------------

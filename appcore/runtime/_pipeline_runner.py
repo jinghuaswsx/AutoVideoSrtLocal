@@ -2273,10 +2273,14 @@ class PipelineRunner:
 
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
         self._set_step(task_id, "extract", "running", "正在提取音频...")
-        from pipeline.extract import extract_audio, get_video_duration
+        from pipeline.extract import extract_audio, extract_separation_audio, get_video_duration
 
         audio_path = extract_audio(video_path, task_dir)
-        updates = {"audio_path": audio_path}
+        separation_audio_path = extract_separation_audio(video_path, task_dir)
+        updates = {
+            "audio_path": audio_path,
+            "separation_audio_path": separation_audio_path,
+        }
         try:
             video_duration = float(get_video_duration(video_path) or 0.0)
         except Exception:
@@ -2305,7 +2309,7 @@ class PipelineRunner:
         from pipeline import audio_separation as sep
 
         task = task_state.get(task_id) or {}
-        audio_path = task.get("audio_path")
+        audio_path = task.get("separation_audio_path") or task.get("audio_path")
         if not audio_path:
             self._set_step(task_id, "separate", "done", "未检测到 audio_path，跳过")
             return
@@ -2322,7 +2326,7 @@ class PipelineRunner:
         started = _time.time()
         placeholder = {
             "status": "running",
-            "model": settings.preset,
+            "model": settings.separation_goal,
             "api_url": settings.api_url,
             "started_at_epoch": started,
             "finished_at_epoch": None,
@@ -2337,8 +2341,8 @@ class PipelineRunner:
         task_state.update(task_id, separation=placeholder)
         self._set_step(
             task_id, "separate", "running",
-            f"调上游 GPU 分离（preset={settings.preset}，最长 {settings.task_timeout:.0f}s）...",
-            model_tag=f"audio-separator · {settings.preset}",
+            f"调上游 GPU 分离（goal={settings.separation_goal}，最长 {settings.task_timeout:.0f}s）...",
+            model_tag=f"audio-separator · {settings.separation_goal}",
         )
 
         out_dir = os.path.join(task_dir, "separation")
@@ -2347,6 +2351,7 @@ class PipelineRunner:
             output_dir=out_dir,
             api_url=settings.api_url,
             preset=settings.preset,
+            separation_goal=settings.separation_goal,
             task_timeout=settings.task_timeout,
         )
         task_state.update(task_id, separation=result)

@@ -4,15 +4,15 @@
 部署地址为 ``http://127.0.0.1:83``。
 
 协议（同步阻塞模式，单次 POST 拿 ZIP）：
-- ``POST /separate/download``  multipart {file=mp3, ensemble_preset=...}
+- ``POST /separate/download``  multipart
+  {file=wav, separation_goal=background_preserve, output_format=WAV}
   → ``application/zip``，包含两个 wav：``..._(Vocals)_..._.wav``、
   ``..._(Instrumental)_..._.wav``
 - ``GET  /health`` → ``200`` 表示服务健康
 
 注意点：
-- 客户端内部把任意格式转成 192kbps MP3 临时文件再上传，降低传输体积并
-  保持历史调用行为稳定。
-- 服务端有 1h MD5 缓存：相同 MP3 + 相同 preset 几乎秒返。
+- 翻译配音背景保留流程直接上传高保真 WAV，不再压成 192kbps MP3。
+- 服务端有 1h MD5 缓存：相同文件 + 相同目标 / 格式几乎秒返。
 - 单次 POST 可能阻塞 GPU 排队 + 推理 + ZIP 打包，需要较长 read timeout。
 
 异常分两层：
@@ -24,7 +24,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import subprocess
 import tempfile
 import time
 import zipfile
@@ -37,6 +36,8 @@ log = logging.getLogger(__name__)
 
 
 DEFAULT_PRESET = "vocal_balanced"
+DEFAULT_SEPARATION_GOAL = "background_preserve"
+DEFAULT_OUTPUT_FORMAT = "WAV"
 DEFAULT_BASE_URL = "http://127.0.0.1:83"
 
 # 任务总超时（含 API 端内部排队 + GPU 推理 + ZIP 打包 + 流式下载）。
@@ -46,11 +47,6 @@ DEFAULT_TASK_TIMEOUT = 300.0
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_NETWORK_RETRIES = 3
 DEFAULT_NETWORK_RETRY_BACKOFF = 2.0
-
-# ffmpeg 转 MP3 的固定参数：44.1kHz、双声道、192kbps。
-_MP3_SAMPLE_RATE = "44100"
-_MP3_CHANNELS = "2"
-_MP3_BITRATE = "192k"
 
 
 class SeparationApiUnavailable(RuntimeError):
@@ -109,7 +105,9 @@ class SeparationClient:
         audio_path: str,
         *,
         output_dir: str,
-        preset: str = DEFAULT_PRESET,
+        preset: str | None = DEFAULT_PRESET,
+        separation_goal: str = DEFAULT_SEPARATION_GOAL,
+        output_format: str = DEFAULT_OUTPUT_FORMAT,
         vocals_filename: str = "vocals.wav",
         accompaniment_filename: str = "accompaniment.wav",
         # 兼容老 caller 仍然传 ``model=...``：旧异步协议是模型名，新协议是
@@ -125,33 +123,49 @@ class SeparationClient:
 
         # 兼容老调用：``model=`` 当作 preset 使用。
         effective_preset = model if model else preset
+        effective_goal = (
+            separation_goal or DEFAULT_SEPARATION_GOAL
+        ).strip() or DEFAULT_SEPARATION_GOAL
+        effective_format = (
+            output_format or DEFAULT_OUTPUT_FORMAT
+        ).strip().upper() or DEFAULT_OUTPUT_FORMAT
+        preset_for_request = _preset_for_request(effective_preset)
+        model_label = preset_for_request or effective_goal
 
         started = time.monotonic()
 
-        with self._mp3_upload_path(in_p) as mp3_path:
-            zip_path = self._post_separate_download(mp3_path, effective_preset)
+        zip_path = self._post_separate_download(
+            in_p,
+            separation_goal=effective_goal,
+            output_format=effective_format,
+            preset=preset_for_request,
+        )
+        try:
+            self._extract_stems(
+                zip_path,
+                out_d,
+                vocals_filename=vocals_filename,
+                accompaniment_filename=accompaniment_filename,
+            )
+        finally:
             try:
-                self._extract_stems(
-                    zip_path,
-                    out_d,
-                    vocals_filename=vocals_filename,
-                    accompaniment_filename=accompaniment_filename,
-                )
-            finally:
-                try:
-                    os.unlink(zip_path)
-                except OSError:
-                    pass
+                os.unlink(zip_path)
+            except OSError:
+                pass
 
         elapsed = time.monotonic() - started
         log.info(
-            "[audio_separation] preset=%s done in %.1fs (src=%s)",
-            effective_preset, elapsed, in_p.name,
+            "[audio_separation] goal=%s preset=%s format=%s done in %.1fs (src=%s)",
+            effective_goal,
+            preset_for_request or "-",
+            effective_format,
+            elapsed,
+            in_p.name,
         )
         return SeparationResult(
             vocals_path=str(out_d / vocals_filename),
             accompaniment_path=str(out_d / accompaniment_filename),
-            model=effective_preset,
+            model=model_label,
             elapsed_seconds=elapsed,
             task_id="",
         )
@@ -178,66 +192,20 @@ class SeparationClient:
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
-    class _Mp3Context:
-        """contextlib 风格：__enter__ 返回 mp3 路径，__exit__ 清理临时文件。"""
-
-        def __init__(self, mp3_path: Path, is_temp: bool):
-            self.mp3_path = mp3_path
-            self.is_temp = is_temp
-
-        def __enter__(self) -> Path:
-            return self.mp3_path
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            if self.is_temp:
-                try:
-                    self.mp3_path.unlink()
-                except OSError:
-                    pass
-
-    def _mp3_upload_path(self, audio_path: Path) -> "_Mp3Context":
-        """如果输入已经是 mp3 直接复用；否则用 ffmpeg 转 192kbps mp3。"""
-        if audio_path.suffix.lower() == ".mp3":
-            return self._Mp3Context(audio_path, is_temp=False)
-        return self._Mp3Context(self._ensure_mp3(audio_path), is_temp=True)
-
     def _ensure_mp3(self, audio_path: Path) -> Path:
-        """ffmpeg 转 192kbps mp3，返回临时文件路径。"""
-        fd, tmp_name = tempfile.mkstemp(prefix="sep_upload_", suffix=".mp3")
-        os.close(fd)
-        tmp_path = Path(tmp_name)
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", str(audio_path),
-            "-vn",
-            "-ar", _MP3_SAMPLE_RATE,
-            "-ac", _MP3_CHANNELS,
-            "-b:a", _MP3_BITRATE,
-            str(tmp_path),
-        ]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except FileNotFoundError as exc:
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-            raise SeparationFailed(
-                "ffmpeg not found on PATH; cannot transcode "
-                f"{audio_path} to mp3"
-            ) from exc
-        except subprocess.CalledProcessError as exc:
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-            raise SeparationFailed(
-                f"ffmpeg failed converting {audio_path} to mp3: "
-                f"{exc.stderr[:300] if exc.stderr else exc}"
-            ) from exc
-        return tmp_path
+        """Deprecated compatibility hook; production upload no longer transcodes."""
+        raise SeparationFailed(
+            "mp3 upload transcoding is disabled; pass the source audio directly"
+        )
 
-    def _post_separate_download(self, mp3_path: Path, preset: str) -> Path:
+    def _post_separate_download(
+        self,
+        upload_path: Path,
+        *,
+        separation_goal: str,
+        output_format: str,
+        preset: str | None,
+    ) -> Path:
         """单次 POST /separate/download，stream 把 ZIP 接到临时文件返回路径。
 
         重试策略：连接失败 / 5xx / read timeout 重试 ``network_retries`` 次；
@@ -250,9 +218,20 @@ class SeparationClient:
             os.close(fd)
             zip_path = Path(zip_name)
             try:
-                with mp3_path.open("rb") as fh:
-                    files = {"file": (mp3_path.name, fh, "audio/mpeg")}
-                    data = {"ensemble_preset": preset}
+                with upload_path.open("rb") as fh:
+                    files = {
+                        "file": (
+                            upload_path.name,
+                            fh,
+                            _content_type_for_path(upload_path),
+                        )
+                    }
+                    data = {
+                        "separation_goal": separation_goal,
+                        "output_format": output_format,
+                    }
+                    if preset:
+                        data["ensemble_preset"] = preset
                     with requests.post(
                         url, files=files, data=data,
                         headers=self._headers(),
@@ -362,6 +341,28 @@ def _pick_stem_member(names: list[str], stem_kind: str) -> str | None:
         if needle in name.lower():
             return name
     return None
+
+
+def _preset_for_request(preset: str | None) -> str | None:
+    preset_clean = (preset or "").strip()
+    if not preset_clean or preset_clean == DEFAULT_PRESET:
+        return None
+    return preset_clean
+
+
+def _content_type_for_path(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".wav":
+        return "audio/wav"
+    if suffix == ".mp3":
+        return "audio/mpeg"
+    if suffix == ".flac":
+        return "audio/flac"
+    if suffix == ".ogg":
+        return "audio/ogg"
+    if suffix in {".m4a", ".mp4"}:
+        return "audio/mp4"
+    return "application/octet-stream"
 
 
 def _extract_member_to(zf: zipfile.ZipFile, member: str, dest: Path) -> None:

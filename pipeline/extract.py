@@ -45,6 +45,37 @@ def extract_audio(video_path: str, output_dir: str) -> str:
     return audio_path
 
 
+def extract_separation_audio(video_path: str, output_dir: str) -> str:
+    """
+    从视频文件提取高保真音频，输出 44.1kHz 立体声 PCM WAV。
+
+    只供 AudioSeparator 人声分离使用；ASR 继续使用 extract_audio 输出的
+    16kHz 单声道 WAV。
+
+    Returns:
+        str: 输出 WAV 音频文件路径
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    base_name = os.path.splitext(os.path.basename(video_path))[0]
+    audio_path = os.path.join(output_dir, f"{base_name}_separation.wav")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "44100",
+        "-ac", "2",
+        audio_path,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg 高保真分离音频提取失败: {result.stderr}")
+
+    return audio_path
+
+
 def get_video_duration(video_path: str) -> float:
     """获取视频时长（秒）"""
     cmd = [

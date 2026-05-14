@@ -545,12 +545,16 @@ def _handle_audio_separation_post() -> None:
         SETTING_ENABLED,
         SETTING_API_URL,
         SETTING_PRESET,
+        SETTING_SEPARATION_GOAL,
         SETTING_TASK_TIMEOUT,
     )
 
     enabled = "1" if request.form.get("enabled") in ("on", "1", "true") else "0"
     api_url = (request.form.get("api_url") or "").strip()
     preset = (request.form.get("preset") or "vocal_balanced").strip() or "vocal_balanced"
+    separation_goal = (
+        request.form.get("separation_goal") or "background_preserve"
+    ).strip() or "background_preserve"
 
     try:
         timeout = float(request.form.get("task_timeout") or 300)
@@ -567,6 +571,7 @@ def _handle_audio_separation_post() -> None:
     _settings.set_setting(SETTING_ENABLED, enabled)
     _settings.set_setting(SETTING_API_URL, api_url)
     _settings.set_setting(SETTING_PRESET, preset)
+    _settings.set_setting(SETTING_SEPARATION_GOAL, separation_goal)
     _settings.set_setting(SETTING_TASK_TIMEOUT, str(int(timeout)))
     _settings.set_setting(SETTING_BACKGROUND_VOLUME, f"{bg:.2f}")
 
