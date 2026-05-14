@@ -83,7 +83,8 @@ def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     assert video_args[1] == "meta_hot_posts_video_localization_tick"
     assert video_args[3] == "interval"
     assert video_kwargs["minutes"] == 10
-    assert video_kwargs["next_run_time"] == now
+    assert video_kwargs["misfire_grace_time"] == 60
+    assert video_kwargs["next_run_time"] == now + timedelta(seconds=5)
 
 
 def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):

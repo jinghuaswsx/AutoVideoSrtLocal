@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from concurrent.futures import FIRST_COMPLETED, Future, wait
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from appcore import scheduled_tasks
@@ -25,6 +25,7 @@ SCHEDULED_TRANSLATION_LIMIT = 50
 SCHEDULED_TRANSLATION_DELAY_SECONDS = 3
 SCHEDULED_VIDEO_LOCALIZATION_LIMIT = 30
 SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS = 10
+SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS = 5
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -641,5 +642,6 @@ def register(scheduler) -> None:
         id=VIDEO_LOCALIZATION_TASK_CODE,
         replace_existing=True,
         max_instances=1,
-        next_run_time=_now(),
+        misfire_grace_time=60,
+        next_run_time=_now() + timedelta(seconds=SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS),
     )

@@ -50,7 +50,7 @@ The default command is intentionally serial. Operators can run a limited batch r
 
 ## Singleton Takeover
 
-Video localization uses a takeover singleton. The APScheduler job runs once immediately when the web service starts, then continues every 10 minutes. At the beginning of every new run, the scheduler checks for an existing `meta_hot_posts_video_localization_tick` run that is still marked `running`. If one exists, the new run immediately marks that older run `failed`, resets all rows still in `local_video_status='downloading'` to `failed`, records the takeover in the run summary, and then starts its own download batch.
+Video localization uses a takeover singleton. The APScheduler job schedules a startup run a few seconds after the web service starts, then continues every 10 minutes. At the beginning of every new run, the scheduler checks for an existing `meta_hot_posts_video_localization_tick` run that is still marked `running`. If one exists, the new run immediately marks that older run `failed`, resets all rows still in `local_video_status='downloading'` to `failed`, records the takeover in the run summary, and then starts its own download batch.
 
 This is intentionally different from product analysis and message translation, which still skip or take over only after their stale-run timeout. Video downloads are external and long-running, so a new invocation should own the queue instead of waiting behind a stale logical run.
 
@@ -68,7 +68,7 @@ The local media route only serves files resolved inside the hot-post video cache
 ## Safety
 
 - Each new run takes over any older `running` video-localization run before downloading, so the persisted task state remains a singleton.
-- Service startup schedules an immediate video-localization run instead of waiting for the first 10-minute interval.
+- Service startup schedules an initial video-localization run instead of waiting for the first 10-minute interval.
 - The downloader itself never starts parallel downloads.
 - The minimum per-item delay is clamped to 10 seconds.
 - Existing downloaded files are not fetched again unless explicitly reset later.
