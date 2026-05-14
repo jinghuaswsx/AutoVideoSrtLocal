@@ -5,10 +5,23 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+import logging
+from pathlib import Path
+import os
 from typing import Any, Dict, List
+
+from appcore.llm_media_optimizer import (
+    OptimizedMedia,
+    VISUAL_480P_SILENT,
+    cleanup_optimized_media,
+    prepare_video_for_llm,
+)
 
 # 用 alias 便于测试 mock（patch 本模块的 gemini_generate，不触发真实调用）
 from appcore.llm_client import invoke_generate as gemini_generate
+
+log = logging.getLogger(__name__)
 
 SHOT_DECOMPOSE_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -50,30 +63,113 @@ SHOT_DECOMPOSE_PROMPT = """你是专业的视频分镜师。请分析这段视�
 DEFAULT_MODEL = "google/gemini-3-flash-preview"
 
 
+@dataclass(frozen=True)
+class ShotDecomposeMedia:
+    original_path: str
+    llm_path: str
+    preprocessed: bool
+    cleanup_path: str | None = None
+    original_bytes: int | None = None
+    llm_bytes: int | None = None
+    error: str | None = None
+
+
+def _file_size(path: str) -> int | None:
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return None
+
+
+def prepare_shot_decompose_media(
+    video_path: str,
+    *,
+    output_dir: str | None = None,
+) -> ShotDecomposeMedia:
+    """Create a 480p/15fps/no-audio LLM input for shot decomposition.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-14-omni-shot-decompose-480p-preprocess-design.md
+    docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    """
+    media = prepare_video_for_llm(
+        str(Path(video_path)),
+        VISUAL_480P_SILENT,
+        output_dir=output_dir,
+    )
+    if media.error:
+        log.warning(
+            "shot_decompose 480p preprocess failed for %s, using original video: %s",
+            media.original_path,
+            media.error,
+        )
+    return ShotDecomposeMedia(
+        original_path=media.original_path,
+        llm_path=media.llm_path,
+        preprocessed=media.optimized,
+        cleanup_path=media.cleanup_path,
+        original_bytes=media.original_bytes,
+        llm_bytes=media.llm_bytes,
+        error=media.error,
+    )
+
+
+def cleanup_shot_decompose_media(media: ShotDecomposeMedia) -> None:
+    cleanup_optimized_media(
+        OptimizedMedia(
+            original_path=media.original_path,
+            llm_path=media.llm_path,
+            optimized=media.preprocessed,
+            cleanup_path=media.cleanup_path,
+            original_bytes=media.original_bytes,
+            llm_bytes=media.llm_bytes,
+            error=media.error,
+            policy_name=VISUAL_480P_SILENT.name,
+        )
+    )
+
+
 def decompose_shots(
     video_path: str,
     *,
     user_id: int,
     duration_seconds: float,
     model: str | None = None,
+    preprocess_video: bool = True,
+    preprocess_output_dir: str | None = None,
 ) -> List[Dict[str, Any]]:
     """调用 Gemini 拆分分镜，返回归一化（首尾对齐、相邻衔接、附 duration）的 shots。"""
     prompt = SHOT_DECOMPOSE_PROMPT.format(duration=duration_seconds)
+    media_input = (
+        prepare_shot_decompose_media(video_path, output_dir=preprocess_output_dir)
+        if preprocess_video
+        else ShotDecomposeMedia(
+            original_path=str(Path(video_path)),
+            llm_path=str(Path(video_path)),
+            preprocessed=False,
+            original_bytes=_file_size(str(Path(video_path))),
+            llm_bytes=_file_size(str(Path(video_path))),
+        )
+    )
     # appcore.gemini.generate 的 media 参数接受路径字符串/Path 或其列表。
     # 测试通过 patch pipeline.shot_decompose.gemini_generate 拦截整条调用，
     # 不会真实走到 Gemini。
-    invoked = gemini_generate(
-        "shot_decompose.run",
-        prompt=prompt,
-        media=[video_path],
-        user_id=user_id,
-        model_override=model,
-        response_schema=SHOT_DECOMPOSE_SCHEMA,
-    )
-    response = invoked.get("json") or {}
-    shots = response.get("shots") or []
-    _normalize_shots(shots, duration_seconds)
-    return shots
+    try:
+        invoked = gemini_generate(
+            "shot_decompose.run",
+            prompt=prompt,
+            media=[media_input.llm_path],
+            user_id=user_id,
+            model_override=model,
+            response_schema=SHOT_DECOMPOSE_SCHEMA,
+        )
+        response = invoked.get("json") or {}
+        shots = response.get("shots") or []
+        _normalize_shots(shots, duration_seconds)
+        return shots
+    finally:
+        if preprocess_video:
+            cleanup_shot_decompose_media(media_input)
 
 
 def _normalize_shots(

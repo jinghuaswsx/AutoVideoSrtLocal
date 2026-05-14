@@ -6,7 +6,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 
+from appcore.llm_media_optimizer import (
+    REVIEW_480P_AUDIO,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 from appcore.llm_models import VIDEO_CAPABLE_MODELS
 
 log = logging.getLogger(__name__)
@@ -216,17 +223,27 @@ def review_video(
     log.info("[VideoReview] 开始评估: model=%s, video=%s (%.1fMB)",
              resolved_model, video_path, file_size_mb)
 
-    from appcore.llm_client import invoke_generate
-    invoked = invoke_generate(
-        "video_review.analyze",
-        prompt="请评估这段视频，返回 JSON 格式的评估报告。",
-        system=system,
-        media=[video_path],
-        user_id=user_id,
-        model_override=model,
-        temperature=0.3,
-        max_output_tokens=4096,
+    # Docs-anchor:
+    # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    media_input = prepare_video_for_llm(
+        video_path,
+        REVIEW_480P_AUDIO,
+        output_dir=Path(video_path).parent,
     )
+    from appcore.llm_client import invoke_generate
+    try:
+        invoked = invoke_generate(
+            "video_review.analyze",
+            prompt="请评估这段视频，返回 JSON 格式的评估报告。",
+            system=system,
+            media=[media_input.llm_path],
+            user_id=user_id,
+            model_override=model,
+            temperature=0.3,
+            max_output_tokens=4096,
+        )
+    finally:
+        cleanup_optimized_media(media_input)
     raw = invoked.get("text") or ""
     if not raw and isinstance(invoked.get("json"), dict):
         raw = json.dumps(invoked["json"], ensure_ascii=False)
@@ -236,6 +253,7 @@ def review_video(
     result["_raw"] = raw
     result["_model"] = resolved_model
     result["_usage"] = {}
+    result["_video_optimization"] = media_debug_snapshot(media_input)
     return result
 
 

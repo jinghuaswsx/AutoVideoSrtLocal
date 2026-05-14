@@ -11,3 +11,16 @@ def test_meta_hot_posts_marked_migration_adds_local_annotation_fields():
     assert "ADD COLUMN marked_at DATETIME DEFAULT NULL" in body
     assert "ADD COLUMN marked_by INT DEFAULT NULL" in body
     assert "ADD KEY idx_meta_hot_posts_is_marked" in body
+
+
+def test_meta_hot_posts_mark_status_migration_adds_two_choice_field():
+    body = Path("db/migrations/2026_05_14_meta_hot_posts_mark_status.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "ADD COLUMN mark_status VARCHAR(16) NULL" in body
+    assert "ADD KEY idx_meta_hot_posts_mark_status" in body
+    assert "UPDATE meta_hot_posts" in body
+    assert "mark_status = 'bad'" in body
+    assert "is_marked = 1" in body

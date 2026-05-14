@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from appcore import task_state
+from appcore.llm_media_optimizer import OptimizedMedia
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +61,63 @@ class _FakeTtsEngine:
         segment["tts_duration"] = duration
         segment.setdefault("speed", 1.0)
         return {"full_audio_path": str(path), "segments": [segment]}
+
+
+def test_call_video_understand_optimizes_video_for_llm(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    original = tmp_path / "video.mp4"
+    optimized = tmp_path / "video.llm.mp4"
+    original.write_bytes(b"video")
+    optimized.write_bytes(b"small")
+    captured = {}
+
+    monkeypatch.setattr(omni_av_sync_audit, "_resolve_llm_binding", lambda use_case: ("doubao", "doubao-model"))
+
+    def fake_prepare(video_path, policy, output_dir=None):
+        captured["policy"] = policy
+        return OptimizedMedia(
+            original_path=str(original),
+            llm_path=str(optimized),
+            optimized=True,
+            cleanup_path=str(optimized),
+            original_bytes=5,
+            llm_bytes=5,
+            command=["ffmpeg", "-i", str(original), str(optimized)],
+            policy_name=policy.name,
+        )
+
+    def fake_save_debug_payload(*args, **kwargs):
+        captured["debug"] = kwargs
+
+    def fake_invoke_generate(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {"text": "视频理解结果"}
+
+    cleanup_calls = []
+    monkeypatch.setattr(omni_av_sync_audit, "prepare_video_for_llm", fake_prepare)
+    monkeypatch.setattr(omni_av_sync_audit, "cleanup_optimized_media", lambda media: cleanup_calls.append(media.llm_path))
+    monkeypatch.setattr(omni_av_sync_audit, "_save_debug_payload", fake_save_debug_payload)
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = omni_av_sync_audit._call_video_understand(
+        _FakeRunner(),
+        "task-1",
+        str(original),
+        str(tmp_path),
+        {"variants": {}},
+        {},
+    )
+
+    assert result["summary"] == "视频理解结果"
+    assert captured["policy"].name == "review_480p_audio"
+    assert captured["kwargs"]["media"] == [str(optimized)]
+    assert captured["debug"]["request_payload"]["media"] == [str(optimized)]
+    snapshot = captured["debug"]["input_snapshot"][0]
+    assert snapshot["original_video_path"] == str(original)
+    assert snapshot["llm_video_path"] == str(optimized)
+    assert cleanup_calls == [str(optimized)]
 
 
 def _create_task(tmp_path, *, mode="report_only", sentences=None):

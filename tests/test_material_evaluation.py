@@ -447,6 +447,23 @@ def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
         return Result()
 
     monkeypatch.setattr("subprocess.run", fake_run)
+
+    from appcore.llm_media_optimizer import OptimizedMedia
+
+    def fake_prepare(video_path, policy, output_dir=None, output_path=None):
+        Path(output_path).write_bytes(b"llm-clip")
+        return OptimizedMedia(
+            original_path=str(video_path),
+            llm_path=str(output_path),
+            optimized=True,
+            cleanup_path=str(output_path),
+            original_bytes=4,
+            llm_bytes=8,
+            command=["ffmpeg"],
+            policy_name=policy.name,
+        )
+
+    monkeypatch.setattr(material_evaluation, "prepare_video_for_llm", fake_prepare)
     monkeypatch.setattr(
         material_evaluation.llm_client,
         "invoke_generate",
@@ -484,12 +501,13 @@ def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
     assert ffmpeg_calls[0][ffmpeg_calls[0].index("-t") + 1] == "15"
     media = llm_calls[0][1]["media"]
     assert media[0] == cover
-    assert str(media[1]).endswith("11_15s.mp4")
-    assert Path(media[1]).read_bytes() == b"clip"
+    assert str(media[1]).endswith("11_15s_llm.mp4")
+    assert Path(media[1]).read_bytes() == b"llm-clip"
 
 
-def test_make_eval_clip_15s_returns_original_for_short_video(monkeypatch, tmp_path):
+def test_make_eval_clip_15s_optimizes_short_video_without_raw_cut(monkeypatch, tmp_path):
     from appcore import material_evaluation
+    from appcore.llm_media_optimizer import OptimizedMedia
 
     video = tmp_path / "short.mp4"
     video.write_bytes(b"video")
@@ -501,12 +519,33 @@ def test_make_eval_clip_15s_returns_original_for_short_video(monkeypatch, tmp_pa
 
     monkeypatch.setattr("subprocess.run", fail_if_ffmpeg_runs)
 
+    captured = {}
+
+    def fake_prepare(video_path, policy, output_dir=None, output_path=None):
+        captured["video_path"] = str(video_path)
+        Path(output_path).write_bytes(b"llm-short")
+        return OptimizedMedia(
+            original_path=str(video_path),
+            llm_path=str(output_path),
+            optimized=True,
+            cleanup_path=str(output_path),
+            original_bytes=5,
+            llm_bytes=9,
+            command=["ffmpeg"],
+            policy_name=policy.name,
+        )
+
+    monkeypatch.setattr(material_evaluation, "prepare_video_for_llm", fake_prepare)
+
     result = material_evaluation._make_eval_clip_15s(
         7,
         {"id": 11, "object_key": "media/short.mp4", "duration_seconds": 14.9},
+        clips_root=tmp_path / "eval_clips",
     )
 
-    assert result == video
+    assert captured["video_path"] == str(video)
+    assert result.name == "11_15s_llm.mp4"
+    assert result.read_bytes() == b"llm-short"
 
 
 def test_auto_evaluation_skips_after_one_logged_attempt(monkeypatch, tmp_path):
@@ -1112,3 +1151,135 @@ def test_normalize_result_fills_missing_language_for_manual_review():
     assert normalized["countries"][1]["reason"] == "模型未返回该语种结果，需人工复核。"
     assert normalized["ai_evaluation_result"] == "需人工复核"
     assert "listing_status" not in normalized
+
+
+def test_make_eval_clip_15s_optimizes_clip_for_llm(monkeypatch, tmp_path):
+    from unittest.mock import MagicMock
+
+    from appcore.llm_media_optimizer import OptimizedMedia
+    from appcore import material_evaluation
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source-video")
+    captured = {}
+
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda key: source)
+
+    def fake_run(cmd, **kwargs):
+        Path(cmd[-1]).write_bytes(b"raw-clip")
+        return MagicMock(returncode=0, stderr=b"")
+
+    def fake_prepare(video_path, policy, output_dir=None, output_path=None):
+        captured["video_path"] = str(video_path)
+        captured["policy"] = policy
+        captured["output_dir"] = output_dir
+        captured["output_path"] = output_path
+        Path(output_path).write_bytes(b"llm-clip")
+        return OptimizedMedia(
+            original_path=str(video_path),
+            llm_path=str(output_path),
+            optimized=True,
+            cleanup_path=str(output_path),
+            original_bytes=8,
+            llm_bytes=8,
+            command=["ffmpeg"],
+            policy_name=policy.name,
+        )
+
+    monkeypatch.setattr(material_evaluation.subprocess, "run", fake_run)
+    monkeypatch.setattr(material_evaluation, "prepare_video_for_llm", fake_prepare)
+
+    result = material_evaluation._make_eval_clip_15s(
+        7,
+        {"id": 99, "object_key": "key/source.mp4", "duration_seconds": 30},
+        clips_root=tmp_path / "eval_clips",
+    )
+
+    assert result.name == "99_15s_llm.mp4"
+    assert result.read_bytes() == b"llm-clip"
+    assert captured["policy"].name == "short_clip_audio"
+    assert captured["video_path"].endswith("99_15s.mp4")
+    assert captured["output_path"] == result
+
+
+def test_make_eval_clip_15s_falls_back_to_raw_clip_when_optimization_fails(monkeypatch, tmp_path):
+    from unittest.mock import MagicMock
+
+    from appcore.llm_media_optimizer import OptimizedMedia
+    from appcore import material_evaluation
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source-video")
+
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda key: source)
+
+    def fake_run(cmd, **kwargs):
+        Path(cmd[-1]).write_bytes(b"raw-clip")
+        return MagicMock(returncode=0, stderr=b"")
+
+    def fake_prepare(video_path, policy, output_dir=None, output_path=None):
+        return OptimizedMedia(
+            original_path=str(video_path),
+            llm_path=str(video_path),
+            optimized=False,
+            cleanup_path=None,
+            original_bytes=8,
+            llm_bytes=8,
+            command=["ffmpeg"],
+            error="ffmpeg failed",
+            policy_name=policy.name,
+        )
+
+    monkeypatch.setattr(material_evaluation.subprocess, "run", fake_run)
+    monkeypatch.setattr(material_evaluation, "prepare_video_for_llm", fake_prepare)
+
+    result = material_evaluation._make_eval_clip_15s(
+        7,
+        {"id": 88, "object_key": "key/source.mp4", "duration_seconds": 30},
+        clips_root=tmp_path / "eval_clips",
+    )
+
+    assert result.name == "88_15s.mp4"
+    assert result.read_bytes() == b"raw-clip"
+
+
+def test_build_request_debug_payload_base64_uses_llm_eval_video(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover_path = tmp_path / "cover.jpg"
+    video_path = tmp_path / "99_15s_llm.mp4"
+    cover_path.write_bytes(b"cover")
+    video_path.write_bytes(b"llm-video")
+    product = {
+        "id": 7,
+        "name": "Debug Product",
+        "product_code": "DP-7",
+        "product_link": "https://example.test/products/debug",
+        "user_id": 42,
+        "cover_object_key": "covers/7.jpg",
+    }
+    video = {
+        "id": 99,
+        "object_key": "videos/7.mp4",
+        "filename": "7.mp4",
+        "duration_seconds": 30,
+        "file_size": 123,
+    }
+
+    monkeypatch.setattr(material_evaluation.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(material_evaluation.medias, "resolve_cover", lambda pid, lang: "covers/7.jpg")
+    monkeypatch.setattr(material_evaluation.medias, "list_items", lambda pid, lang=None: [video])
+    monkeypatch.setattr(material_evaluation.pushes, "resolve_product_page_url", lambda lang, product: product["product_link"])
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: cover_path)
+    monkeypatch.setattr(material_evaluation, "_make_eval_clip_15s", lambda pid, item: video_path)
+
+    payload = material_evaluation.build_request_debug_payload(7, include_base64=True)
+
+    assert payload["media"][1]["role"] == "english_video"
+    assert payload["media"][1]["byte_size"] == len(b"llm-video")
+    assert payload["request"]["media"][1]["filename"] == "7.mp4"

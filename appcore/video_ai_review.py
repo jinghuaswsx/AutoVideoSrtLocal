@@ -15,6 +15,7 @@ from typing import Any
 
 from appcore import runner_lifecycle, task_state
 from appcore.db import execute as db_execute, query_one as db_query_one
+from appcore.llm_media_optimizer import VERTEX_INLINE_AUDIO, prepare_video_for_llm
 from pipeline import video_ai_review
 
 log = logging.getLogger(__name__)
@@ -165,57 +166,23 @@ _INLINE_TARGET_BYTES = 18 * 1024 * 1024
 def _compress_for_inline(raw_path: str, label: str) -> str | None:
     """把原始视频转码到 ≤18MB 以塞进 Vertex Gemini inline 通道。
 
-    单遍 H.264 + AAC mono 64k；目标视频码率按 (target_bytes*8/duration - audio)
-    现算。720p 不达标降 480p；都不行就返回最后一次输出（让 LLM 试一下，
-    pipeline 那边的 _validate_media_path 会 warn）。"""
-    import subprocess
-    import tempfile
-    from pipeline.ffutil import probe_media_info
-
-    info = probe_media_info(raw_path)
-    duration = float(info.get("duration") or 0.0)
-    if duration <= 0:
-        # 没探到时长就不敢算 bitrate，直接返回原文件让上层 warn 处理。
-        log.warning("[video_ai_review] probe duration=0 for %s, skip compress", raw_path)
-        return raw_path
-
-    fd, out_path = tempfile.mkstemp(prefix=f"video_ai_review_{label}_", suffix=".mp4")
-    os.close(fd)
-    audio_bitrate = 64_000
-
-    def _encode(max_height: int) -> bool:
-        video_bitrate = max(150_000,
-                            int(_INLINE_TARGET_BYTES * 8 / duration) - audio_bitrate)
-        cmd = [
-            "ffmpeg", "-y", "-i", raw_path,
-            "-vf", f"scale=-2:'min({max_height},ih)'",
-            "-c:v", "libx264", "-preset", "veryfast",
-            "-b:v", str(video_bitrate),
-            "-maxrate", str(int(video_bitrate * 1.3)),
-            "-bufsize", str(int(video_bitrate * 2)),
-            "-c:a", "aac", "-b:a", str(audio_bitrate), "-ac", "1",
-            "-movflags", "+faststart",
-            out_path,
-        ]
-        try:
-            subprocess.run(cmd, capture_output=True, timeout=600, check=True)
-            return True
-        except subprocess.SubprocessError as exc:
-            log.warning("[video_ai_review] ffmpeg encode @%dp failed: %s",
-                        max_height, getattr(exc, "stderr", exc))
-            return False
-
-    if _encode(720) and os.path.getsize(out_path) <= int(_INLINE_TARGET_BYTES * 1.1):
-        return out_path
-    if _encode(480) and os.path.getsize(out_path) <= int(_INLINE_TARGET_BYTES * 1.15):
-        return out_path
-    if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
-        return out_path
-    try:
-        os.unlink(out_path)
-    except OSError:
-        pass
-    return None
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    """
+    media = prepare_video_for_llm(
+        raw_path,
+        VERTEX_INLINE_AUDIO,
+        output_dir=os.path.dirname(raw_path) or None,
+    )
+    if media.optimized:
+        return media.llm_path
+    if media.error:
+        log.warning(
+            "[video_ai_review] inline optimization failed for %s, using raw video: %s",
+            raw_path,
+            media.error,
+        )
+    return media.llm_path or raw_path
 
 
 def _fetch_and_prepare_media_video(file_url: str | None,

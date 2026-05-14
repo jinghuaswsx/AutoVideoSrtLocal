@@ -17,6 +17,12 @@ from typing import Any
 
 from appcore import llm_client
 from appcore.llm_debug_payloads import build_generate_request_payload, prompt_file_payload
+from appcore.llm_media_optimizer import (
+    VERTEX_INLINE_AUDIO,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 
 log = logging.getLogger(__name__)
 
@@ -122,6 +128,20 @@ def _validate_media_path(label: str, path: str | None) -> str | None:
     return str(p)
 
 
+def _prepare_inline_review_video(label: str, path: str | None):
+    valid_path = _validate_media_path(label, path)
+    if not valid_path:
+        return None, None
+    # Docs-anchor:
+    # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    media = prepare_video_for_llm(
+        valid_path,
+        VERTEX_INLINE_AUDIO,
+        output_dir=Path(valid_path).parent,
+    )
+    return media.llm_path, media
+
+
 def assess(
     *,
     source_language: str,
@@ -140,8 +160,10 @@ def assess(
 
     src_label = _LANG_LABEL.get(source_language, source_language or "?")
     tgt_label = _LANG_LABEL.get(target_language, target_language or "?")
-    src_video = _validate_media_path("source_video", source_video_path)
-    tgt_video = _validate_media_path("target_video", target_video_path)
+    src_video, src_media = _prepare_inline_review_video("source_video", source_video_path)
+    tgt_video, tgt_media = _prepare_inline_review_video("target_video", target_video_path)
+    optimized_media = [media for media in (src_media, tgt_media) if media is not None]
+    media_snapshots = [media_debug_snapshot(media) for media in optimized_media]
     has_product = bool(product_info or product_image_paths)
     product_image_paths = list(product_image_paths or [])
     valid_product_imgs = [
@@ -185,7 +207,7 @@ def assess(
     except Exception:
         provider = None
         model = None
-    media_debug = [Path(path).name for path in media]
+    media_debug = list(media)
     debug_call = prompt_file_payload(
         phase="video_ai_review.assess",
         label="AI 视频分析",
@@ -207,6 +229,7 @@ def assess(
             temperature=0.0,
         ),
         input_snapshot=[
+            *media_snapshots,
             {"key": "source_text", "title": "源文案", "content": source_text},
             {"key": "target_text", "title": "目标文案", "content": target_text},
             {
@@ -223,53 +246,57 @@ def assess(
         },
     )
 
-    log.info(
-        "video_ai_review.assess starting (task=%s lang=%s→%s media=%d)",
-        task_id, source_language, target_language, len(media),
-    )
     try:
-        result = llm_client.invoke_generate(
-            "video_ai_review.assess",
-            prompt=user_text,
-            system=system,
-            media=media or None,
-            response_schema=response_schema,
-            temperature=0.0,
-            user_id=user_id,
-            project_id=task_id,
+        log.info(
+            "video_ai_review.assess starting (task=%s lang=%s→%s media=%d)",
+            task_id, source_language, target_language, len(media),
         )
-    except Exception as exc:
-        raise VideoReviewResponseInvalidError(f"LLM call failed: {exc}") from exc
-
-    payload = result.get("json")
-    if payload is None:
-        raw_text = (result.get("text") or "").strip()
-        debug_call["response_preview"] = raw_text[:4000]
         try:
-            payload = json.loads(raw_text)
+            result = llm_client.invoke_generate(
+                "video_ai_review.assess",
+                prompt=user_text,
+                system=system,
+                media=media or None,
+                response_schema=response_schema,
+                temperature=0.0,
+                user_id=user_id,
+                project_id=task_id,
+            )
         except Exception as exc:
-            raise VideoReviewResponseInvalidError(
-                f"non-JSON: {raw_text[:200]!r}"
-            ) from exc
+            raise VideoReviewResponseInvalidError(f"LLM call failed: {exc}") from exc
 
-    if not isinstance(payload, dict) or "dimensions" not in payload:
-        raise VideoReviewResponseInvalidError("response missing dimensions")
-    if "response_preview" not in debug_call:
-        debug_call["response_preview"] = json.dumps(payload, ensure_ascii=False)[:4000]
+        payload = result.get("json")
+        if payload is None:
+            raw_text = (result.get("text") or "").strip()
+            debug_call["response_preview"] = raw_text[:4000]
+            try:
+                payload = json.loads(raw_text)
+            except Exception as exc:
+                raise VideoReviewResponseInvalidError(
+                    f"non-JSON: {raw_text[:200]!r}"
+                ) from exc
 
-    elapsed_ms = int((time.monotonic() - t0) * 1000)
-    return {
-        "overall_score":   int(payload.get("overall_score") or 0),
-        "dimensions":      payload.get("dimensions") or {},
-        "verdict":         (payload.get("verdict") or "").strip(),
-        "verdict_reason":  (payload.get("verdict_reason") or "").strip(),
-        "issues":          list(payload.get("issues") or []),
-        "highlights":      list(payload.get("highlights") or []),
-        "raw_response":    payload,
-        "system_prompt":   system,
-        "user_text":       user_text,
-        "media_count":     len(media),
-        "usage":           result.get("usage") or {},
-        "elapsed_ms":      elapsed_ms,
-        "_llm_debug_call":  debug_call,
-    }
+        if not isinstance(payload, dict) or "dimensions" not in payload:
+            raise VideoReviewResponseInvalidError("response missing dimensions")
+        if "response_preview" not in debug_call:
+            debug_call["response_preview"] = json.dumps(payload, ensure_ascii=False)[:4000]
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "overall_score":   int(payload.get("overall_score") or 0),
+            "dimensions":      payload.get("dimensions") or {},
+            "verdict":         (payload.get("verdict") or "").strip(),
+            "verdict_reason":  (payload.get("verdict_reason") or "").strip(),
+            "issues":          list(payload.get("issues") or []),
+            "highlights":      list(payload.get("highlights") or []),
+            "raw_response":    payload,
+            "system_prompt":   system,
+            "user_text":       user_text,
+            "media_count":     len(media),
+            "usage":           result.get("usage") or {},
+            "elapsed_ms":      elapsed_ms,
+            "_llm_debug_call":  debug_call,
+        }
+    finally:
+        for media_item in optimized_media:
+            cleanup_optimized_media(media_item)

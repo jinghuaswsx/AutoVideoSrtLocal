@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from appcore.llm_media_optimizer import OptimizedMedia
 from appcore.safe_paths import PathSafetyError
 
 
@@ -505,6 +506,7 @@ def test_video_clip_uses_first_five_seconds(monkeypatch, tmp_path):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"video")
     captured = {}
+    monkeypatch.setattr(qc.tempfile, "gettempdir", lambda: str(tmp_path))
 
     def fake_run(cmd, capture_output, timeout, check):
         captured["cmd"] = cmd
@@ -524,3 +526,50 @@ def test_video_clip_uses_first_five_seconds(monkeypatch, tmp_path):
     assert clip.is_file()
     assert "-t" in captured["cmd"]
     assert captured["cmd"][captured["cmd"].index("-t") + 1] == "5"
+
+
+def test_check_video_optimizes_five_second_clip_before_llm(monkeypatch, tmp_path):
+    from appcore import push_quality_checks as qc
+
+    source = tmp_path / "source.mp4"
+    clip = tmp_path / "clip_5s.mp4"
+    optimized = tmp_path / "clip_5s_llm.mp4"
+    source.write_bytes(b"source")
+    clip.write_bytes(b"clip")
+    optimized.write_bytes(b"small")
+    captured = {}
+
+    monkeypatch.setattr(qc, "_materialize_media", lambda object_key: source)
+    monkeypatch.setattr(qc, "_make_video_clip_5s", lambda source, item_id: clip)
+
+    def fake_prepare(video_path, policy, output_dir=None):
+        captured["policy"] = policy
+        captured["output_dir"] = output_dir
+        return OptimizedMedia(
+            original_path=str(clip),
+            llm_path=str(optimized),
+            optimized=True,
+            cleanup_path=str(optimized),
+            original_bytes=4,
+            llm_bytes=5,
+            command=["ffmpeg", "-i", str(clip), str(optimized)],
+            policy_name=policy.name,
+        )
+
+    def fake_invoke_generate(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {"status": "passed", "is_clean": True, "summary": "ok", "issues": []}
+
+    monkeypatch.setattr(qc, "prepare_video_for_llm", fake_prepare)
+    monkeypatch.setattr(qc.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = qc.check_video(
+        {"id": 12, "object_key": "videos/source.mp4", "lang": "de"},
+        {"id": 3, "user_id": 7, "name": "Demo"},
+    )
+
+    assert result["status"] == "passed"
+    assert captured["policy"].name == "short_clip_audio"
+    assert captured["kwargs"]["media"] == [optimized]
+    assert captured["kwargs"]["billing_extra"]["video_optimization"]["llm_video_path"] == str(optimized)

@@ -1,5 +1,12 @@
+from pathlib import Path
 from unittest.mock import patch
-from pipeline.shot_decompose import decompose_shots, align_asr_to_shots
+
+from appcore.llm_media_optimizer import OptimizedMedia
+from pipeline.shot_decompose import (
+    align_asr_to_shots,
+    decompose_shots,
+    prepare_shot_decompose_media,
+)
 
 
 def test_decompose_shots_parses_response_and_normalizes_boundaries():
@@ -79,6 +86,129 @@ def test_decompose_shots_uses_configured_binding_model_by_default():
         )
 
     assert generate.call_args.kwargs["model_override"] is None
+
+
+def test_decompose_shots_preprocesses_existing_video_before_llm(tmp_path):
+    source = tmp_path / "source.mp4"
+    llm_video = tmp_path / "source.llm.mp4"
+    source.write_bytes(b"source-video")
+    llm_video.write_bytes(b"small-video")
+    captured_prepare = {}
+
+    fake_response = {
+        "json": {
+            "shots": [
+                {"index": 1, "start": 0.0, "end": 10.0, "description": "shot"},
+            ]
+        },
+        "text": None,
+        "raw": None,
+        "usage": {},
+    }
+
+    def fake_generate(*args, **kwargs):
+        assert kwargs["media"] == [str(llm_video)]
+        assert llm_video.exists()
+        return fake_response
+
+    def fake_prepare(video_path, policy, output_dir=None):
+        captured_prepare["video_path"] = video_path
+        captured_prepare["policy"] = policy
+        captured_prepare["output_dir"] = output_dir
+        return OptimizedMedia(
+            original_path=str(source),
+            llm_path=str(llm_video),
+            optimized=True,
+            cleanup_path=str(llm_video),
+            original_bytes=12,
+            llm_bytes=11,
+            command=["ffmpeg", "-i", str(source), str(llm_video)],
+            policy_name=policy.name,
+        )
+
+    with patch("pipeline.shot_decompose.prepare_video_for_llm", side_effect=fake_prepare), \
+         patch("pipeline.shot_decompose.gemini_generate", side_effect=fake_generate) as generate:
+        shots = decompose_shots(
+            video_path=str(source),
+            user_id=1,
+            duration_seconds=10.0,
+            preprocess_output_dir=str(tmp_path),
+        )
+
+    assert captured_prepare["video_path"] == str(source)
+    assert captured_prepare["policy"].name == "visual_480p_silent"
+    assert captured_prepare["output_dir"] == str(tmp_path)
+    assert not Path(generate.call_args.kwargs["media"][0]).exists()
+    assert shots[0]["duration"] == 10.0
+
+
+def test_decompose_shots_falls_back_to_original_video_when_preprocess_fails(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source-video")
+    fake_response = {
+        "json": {
+            "shots": [
+                {"index": 1, "start": 0.0, "end": 10.0, "description": "shot"},
+            ]
+        },
+        "text": None,
+        "raw": None,
+        "usage": {},
+    }
+
+    with patch(
+        "pipeline.shot_decompose.prepare_video_for_llm",
+        return_value=OptimizedMedia(
+            original_path=str(source),
+            llm_path=str(source),
+            optimized=False,
+            cleanup_path=None,
+            original_bytes=12,
+            llm_bytes=12,
+            command=["ffmpeg"],
+            error="ffmpeg failed",
+            policy_name="visual_480p_silent",
+        ),
+    ), \
+         patch("pipeline.shot_decompose.gemini_generate",
+               return_value=fake_response) as generate:
+        decompose_shots(
+            video_path=str(source),
+            user_id=1,
+            duration_seconds=10.0,
+        )
+
+    assert generate.call_args.kwargs["media"] == [str(source)]
+
+
+def test_prepare_shot_decompose_media_preserves_public_fields_from_shared_optimizer(tmp_path):
+    source = tmp_path / "source.mp4"
+    llm_video = tmp_path / "source.llm.mp4"
+    source.write_bytes(b"source-video")
+    llm_video.write_bytes(b"small-video")
+
+    def fake_prepare(video_path, policy, output_dir=None):
+        return OptimizedMedia(
+            original_path=str(source),
+            llm_path=str(llm_video),
+            optimized=True,
+            cleanup_path=str(llm_video),
+            original_bytes=12,
+            llm_bytes=11,
+            command=["ffmpeg"],
+            policy_name=policy.name,
+        )
+
+    with patch("pipeline.shot_decompose.prepare_video_for_llm", side_effect=fake_prepare):
+        media = prepare_shot_decompose_media(str(source), output_dir=str(tmp_path))
+
+    assert media.original_path == str(source)
+    assert media.llm_path == str(llm_video)
+    assert media.preprocessed is True
+    assert media.cleanup_path == str(llm_video)
+    assert media.original_bytes == 12
+    assert media.llm_bytes == 11
+    assert media.error is None
 
 
 def test_decompose_shots_raises_when_empty():

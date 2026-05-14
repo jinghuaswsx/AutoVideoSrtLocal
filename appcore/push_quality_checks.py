@@ -14,6 +14,12 @@ from typing import Any
 
 from appcore import llm_client, local_media_storage, medias, pushes, tos_clients
 from appcore.db import execute, query, query_one
+from appcore.llm_media_optimizer import (
+    SHORT_CLIP_AUDIO,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 
 log = logging.getLogger(__name__)
 
@@ -758,17 +764,33 @@ def check_video(item: dict, product: dict) -> dict[str, Any]:
         }
     source = _materialize_media(object_key)
     clip = _make_video_clip_5s(source, item_id=int(item.get("id") or 0))
-    response = llm_client.invoke_generate(
-        USE_CASE_CODE,
-        prompt=_visual_prompt("视频前 5 秒", item, product),
-        media=[clip],
-        user_id=product.get("user_id"),
-        project_id=f"push-quality-video-{item.get('id')}",
-        response_schema=_response_schema(),
-        temperature=0.1,
-        max_output_tokens=1024,
-        provider_override=PROVIDER,
-        model_override=MODEL,
-        billing_extra={"media_kind": "video", "clip_seconds": 5, "mime_type": _mime_for_path(clip)},
+    # Docs-anchor:
+    # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
+    media_input = prepare_video_for_llm(
+        clip,
+        SHORT_CLIP_AUDIO,
+        output_dir=Path(clip).parent,
     )
-    return _normalize_model_result(response)
+    llm_clip = Path(media_input.llm_path)
+    try:
+        response = llm_client.invoke_generate(
+            USE_CASE_CODE,
+            prompt=_visual_prompt("视频前 5 秒", item, product),
+            media=[llm_clip],
+            user_id=product.get("user_id"),
+            project_id=f"push-quality-video-{item.get('id')}",
+            response_schema=_response_schema(),
+            temperature=0.1,
+            max_output_tokens=1024,
+            provider_override=PROVIDER,
+            model_override=MODEL,
+            billing_extra={
+                "media_kind": "video",
+                "clip_seconds": 5,
+                "mime_type": _mime_for_path(llm_clip),
+                "video_optimization": media_debug_snapshot(media_input),
+            },
+        )
+        return _normalize_model_result(response)
+    finally:
+        cleanup_optimized_media(media_input)

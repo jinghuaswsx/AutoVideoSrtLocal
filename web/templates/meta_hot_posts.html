@@ -37,12 +37,13 @@
 .mh-card-side { display:flex; flex-direction:column; align-items:flex-end; gap:8px; min-width:0; }
 .mh-tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 .mh-tag { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #e2e8f0; border-radius:4px; color:#475569; background:#f8fafc; font-size:12px; }
-.mh-mark-toggle { display:inline-flex; align-items:center; gap:7px; height:28px; padding:0 8px; border:1px solid #cbd5e1; border-radius:5px; background:#fff; color:#475569; font-size:13px; font-weight:700; cursor:pointer; }
-.mh-mark-toggle:disabled { opacity:.65; cursor:wait; }
-.mh-mark-toggle.is-marked { border-color:var(--mh-accent); color:var(--mh-accent); background:var(--mh-soft); }
+.mh-mark-options { display:flex; align-items:center; gap:10px; min-height:28px; }
+.mh-mark-option { display:inline-flex; align-items:center; gap:5px; min-width:0; height:24px; padding:0; border:0; background:transparent; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
+.mh-mark-option.bad { color:var(--mh-danger); }
+.mh-mark-option:disabled { opacity:.65; cursor:wait; }
 .mh-mark-box { width:17px; height:17px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #94a3b8; border-radius:3px; background:#fff; color:#fff; line-height:1; }
-.mh-mark-toggle.is-marked .mh-mark-box { border-color:var(--mh-accent); background:var(--mh-accent); }
-.mh-mark-toggle.is-marked .mh-mark-box::after { content:"✓"; color:#fff; font-size:13px; font-weight:800; }
+.mh-mark-option.is-marked .mh-mark-box { border-color:#0f72d9; background:#0f72d9; }
+.mh-mark-option.is-marked .mh-mark-box::after { content:"✓"; color:#fff; font-size:13px; font-weight:800; }
 .mh-card-body { padding:12px 14px; }
 .mh-time, .mh-metric { margin-bottom:7px; color:#64748b; font-size:13px; }
 .mh-metric b { color:#334155; }
@@ -198,11 +199,21 @@ function cardMedia(row) {
 function isMetaHotPostMarked(row) {
   return row.is_marked === true || row.is_marked === 1 || row.is_marked === '1';
 }
-function renderMarkToggle(row) {
-  const marked = isMetaHotPostMarked(row);
-  const postId = Number(row.id || 0);
+function metaHotPostMarkStatus(row) {
+  const status = String(row.mark_status || '').toLowerCase();
+  if (status === 'ok' || status === 'bad') return status;
+  return isMetaHotPostMarked(row) ? 'bad' : '';
+}
+function renderMarkOption(postId, currentStatus, status, label) {
+  const marked = currentStatus === status;
+  const toneClass = status === 'bad' ? ' bad' : '';
   const stateClass = marked ? ' is-marked' : '';
-  return `<button class="mh-mark-toggle${stateClass}" type="button" data-post-id="${postId}" aria-pressed="${marked ? 'true' : 'false'}" onclick="toggleMetaHotPostMark(event, ${postId})"><span class="mh-mark-box" aria-hidden="true"></span><span>标注</span></button>`;
+  return `<button class="mh-mark-option${toneClass}${stateClass}" type="button" data-post-id="${postId}" data-mark-status="${status}" aria-pressed="${marked ? 'true' : 'false'}" onclick="toggleMetaHotPostMark(event, ${postId}, '${status}')"><span class="mh-mark-box" aria-hidden="true"></span><span>${label}</span></button>`;
+}
+function renderMarkOptions(row) {
+  const currentStatus = metaHotPostMarkStatus(row);
+  const postId = Number(row.id || 0);
+  return `<div class="mh-mark-options" data-post-id="${postId}" data-mark-status="${currentStatus}" aria-label="标注结果">${renderMarkOption(postId, currentStatus, 'ok', '行')}${renderMarkOption(postId, currentStatus, 'bad', '不行')}</div>`;
 }
 function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
@@ -211,7 +222,7 @@ function renderCard(row) {
     <div class="mh-card-head">
       <div class="mh-card-title">帖子</div>
       <div class="mh-card-side">
-        ${renderMarkToggle(row)}
+        ${renderMarkOptions(row)}
         <div class="mh-tags"><span class="mh-tag">互动变化: ${fmt(row.sync_period_likes)}</span><span class="mh-tag">变化周期: ${fmt(row.sync_period_hours)}h</span></div>
       </div>
     </div>
@@ -303,32 +314,51 @@ async function analyzeMetaHotPosts() {
   await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, per_item_delay_seconds:20})});
   loadMetaHotPosts(mhPage);
 }
-function setMetaHotMarkButtonState(button, marked) {
-  button.classList.toggle('is-marked', Boolean(marked));
-  button.setAttribute('aria-pressed', marked ? 'true' : 'false');
+function markStatusLabel(markStatus) {
+  if (markStatus === 'ok') return '行';
+  if (markStatus === 'bad') return '不行';
+  return '';
 }
-async function toggleMetaHotPostMark(event, postId) {
+function setMetaHotMarkState(postId, markStatus) {
+  document.querySelectorAll(`.mh-mark-options[data-post-id="${postId}"]`).forEach(group => {
+    group.setAttribute('data-mark-status', markStatus || '');
+  });
+  document.querySelectorAll(`.mh-mark-option[data-post-id="${postId}"]`).forEach(button => {
+    const selected = button.getAttribute('data-mark-status') === markStatus;
+    button.classList.toggle('is-marked', Boolean(selected));
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+}
+function setMetaHotMarkDisabled(postId, disabled) {
+  document.querySelectorAll(`.mh-mark-option[data-post-id="${postId}"]`).forEach(button => {
+    button.disabled = Boolean(disabled);
+  });
+}
+async function toggleMetaHotPostMark(event, postId, requestedStatus) {
   const button = event.currentTarget;
   if (!postId || button.disabled) return;
-  const previousMarked = button.classList.contains('is-marked');
-  const nextMarked = !previousMarked;
-  button.disabled = true;
-  setMetaHotMarkButtonState(button, nextMarked);
+  const group = button.closest('.mh-mark-options');
+  const previousStatus = group ? group.getAttribute('data-mark-status') || '' : '';
+  const nextStatus = previousStatus === requestedStatus ? '' : requestedStatus;
+  setMetaHotMarkDisabled(postId, true);
+  setMetaHotMarkState(postId, nextStatus);
   try {
     const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/mark`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({marked: nextMarked})
+      body: JSON.stringify({mark_status: nextStatus || null})
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error || 'mark_failed');
-    setMetaHotMarkButtonState(button, Boolean(data.is_marked));
-    qs('mhStatus').textContent = data.is_marked ? '已标注' : '已取消标注';
+    const serverStatus = data.mark_status || '';
+    setMetaHotMarkState(postId, serverStatus);
+    const label = markStatusLabel(serverStatus);
+    qs('mhStatus').textContent = label ? `已标注：${label}` : '已取消标注';
   } catch (err) {
-    setMetaHotMarkButtonState(button, previousMarked);
+    setMetaHotMarkState(postId, previousStatus);
     qs('mhStatus').textContent = '标注失败';
   } finally {
-    button.disabled = false;
+    setMetaHotMarkDisabled(postId, false);
   }
 }
 function closeMetaHotModal(id) {
