@@ -16,6 +16,12 @@ from PIL import Image, ImageOps
 import requests
 
 from appcore import gemini_image, llm_client, local_media_storage
+from appcore.llm_media_optimizer import (
+    REVIEW_480P_AUDIO,
+    cleanup_optimized_media,
+    media_debug_snapshot,
+    prepare_video_for_llm,
+)
 from appcore.llm_provider_configs import get_provider_config
 from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
 from pipeline.ffutil import extract_thumbnail, probe_media_info
@@ -893,23 +899,33 @@ def generate_video_analysis(
         main_image_url=main_image_url,
         video_info=video_info,
     )
+    media = prepare_video_for_llm(
+        video_path,
+        REVIEW_480P_AUDIO,
+        output_dir=Path(video_path).parent,
+    )
     try:
         response = invoke_generate_fn(
             "video_cover.video_analysis",
             prompt=prompt,
-            media=str(video_path),
+            media=media.llm_path,
             user_id=user_id,
             project_id=task_id,
             provider_override=selection.provider,
             model_override=selection.model,
             temperature=0.2,
             max_output_tokens=3600,
-            billing_extra={"source": "video_cover"},
+            billing_extra={
+                "source": "video_cover",
+                "media_optimization": media_debug_snapshot(media),
+            },
         )
     except VideoCoverGenerationError:
         raise
     except Exception as exc:
         raise VideoCoverGenerationError(f"视频分析失败：{exc}") from exc
+    finally:
+        cleanup_optimized_media(media)
     text = str(response.get("text") or "").strip()
     if not text:
         raise VideoCoverGenerationError("视频分析失败：模型未返回内容")

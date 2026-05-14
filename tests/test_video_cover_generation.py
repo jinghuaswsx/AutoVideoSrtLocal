@@ -273,6 +273,60 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert "ad_copy_sets" in prompt
 
 
+def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatch):
+    from appcore.llm_media_optimizer import OptimizedMedia
+    from appcore.video_cover_generation import generate_video_analysis
+
+    source = tmp_path / "source.mp4"
+    optimized = tmp_path / "source.review480p.mp4"
+    source.write_bytes(b"source")
+    optimized.write_bytes(b"optimized")
+    captured = {}
+
+    def fake_prepare(video_path, policy, output_dir=None):
+        captured["prepare"] = {
+            "video_path": str(video_path),
+            "policy": policy.name,
+            "output_dir": str(output_dir),
+        }
+        return OptimizedMedia(
+            original_path=str(source),
+            llm_path=str(optimized),
+            optimized=True,
+            cleanup_path=str(optimized),
+            original_bytes=6,
+            llm_bytes=9,
+            command=["ffmpeg", "-i", str(source), str(optimized)],
+            policy_name=policy.name,
+        )
+
+    def fake_cleanup(media):
+        captured["cleanup_path"] = media.cleanup_path
+
+    def fake_invoke(use_case_code: str, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["media"] = kwargs["media"]
+        return {"text": "video_text: demo\nvoiceover: demo"}
+
+    monkeypatch.setattr("appcore.video_cover_generation.prepare_video_for_llm", fake_prepare)
+    monkeypatch.setattr("appcore.video_cover_generation.cleanup_optimized_media", fake_cleanup)
+
+    result = generate_video_analysis(
+        video_path=str(source),
+        product_title="Portable Blender Pro",
+        product_url="https://shop.example/products/blender",
+        main_image_url="https://cdn.example/blender.png",
+        invoke_generate_fn=fake_invoke,
+    )
+
+    assert result.startswith("video_text")
+    assert captured["prepare"]["policy"] == "review_480p_audio"
+    assert captured["prepare"]["output_dir"] == str(tmp_path)
+    assert captured["use_case_code"] == "video_cover.video_analysis"
+    assert captured["media"] == str(optimized)
+    assert captured["cleanup_path"] == str(optimized)
+
+
 def test_build_platform_prompt_uses_creative_director_inputs():
     from appcore.video_cover_generation import SOCIAL_REELS_SPEC, build_platform_prompt
 
@@ -319,18 +373,206 @@ def test_video_cover_page_rejects_non_admin(authed_user_client_no_db):
     assert user_resp.status_code == 403
 
 
-def test_video_cover_page_renders_for_admin(authed_client_no_db):
+def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    monkeypatch.setattr(video_cover.video_cover_project_store, "list_user_projects", lambda user_id: [])
+
     admin_resp = authed_client_no_db.get("/video-cover")
     assert admin_resp.status_code == 200
     html = admin_resp.get_data(as_text=True)
     assert "文案封面生成" in html
-    assert "视频分析" in html
-    assert "产品分析" in html
-    assert "文案创作" in html
-    assert "封面生成" in html
-    assert "OPENROUTER" in html
-    assert "GOOGLE VERTEX ADC" in html
-    assert "本地接口" in html
+    assert "新建项目" in html
+    assert "商品链接" in html
+    assert "视频文件" in html
+
+
+def test_video_cover_project_create_persists_initial_workflow(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    inserted = {}
+
+    def fake_insert_project(**kwargs):
+        inserted.update(kwargs)
+
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
+    monkeypatch.setattr(
+        video_cover,
+        "extract_thumbnail",
+        lambda video_path, output_dir, scale=None: str(Path(output_dir) / "thumb.jpg"),
+    )
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/projects",
+        data={
+            "product_url": "https://shop.example/products/lamp",
+            "video_file": (BytesIO(b"video"), "lamp.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 201
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["id"] == inserted["task_id"]
+    assert inserted["user_id"] == 1
+    assert inserted["original_filename"] == "lamp.mp4"
+    state = inserted["state"]
+    assert state["type"] == "video_cover"
+    assert state["product_url"] == "https://shop.example/products/lamp"
+    assert Path(state["video_path"]).is_file()
+    assert state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+
+
+def test_video_cover_detail_shows_final_result_download_at_top(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "result": {
+            "covers": [
+                {
+                    "platform": "social_reels",
+                    "label": "Facebook / Instagram / TikTok / Shorts",
+                    "object_key": "artifacts/video_cover/1/task-1/social_reels.png",
+                    "width": 1080,
+                    "height": 1920,
+                }
+            ]
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_user_project", lambda task_id, user_id: row)
+    monkeypatch.setattr(video_cover, "recover_project_if_needed", lambda task_id, project_type: state)
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "最终封面" in html
+    assert "下载最终封面" in html
+    assert "/video-cover/api/task-1/download/social_reels" in html
+
+
+def test_video_cover_step_requires_previous_steps_done(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path),
+        "steps": {
+            "video_analysis": "pending",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "pending",
+        },
+        "step_messages": {},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_user_project", lambda task_id, user_id: row)
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/run/ad_copy", data={})
+
+    assert resp.status_code == 400
+    assert "请先完成视频分析" in resp.get_json()["error"]
+
+
+def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    saved = {}
+    product = _FakeProduct()
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path),
+        "steps": {
+            "video_analysis": "pending",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "pending",
+        },
+        "step_messages": {},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_user_project", lambda task_id, user_id: row)
+    monkeypatch.setattr(video_cover, "_extract_product", lambda product_url: (product, product.title, product.main_image_url))
+    monkeypatch.setattr(video_cover, "probe_media_info", lambda video_path_arg: {"duration": 8.0, "resolution": "720x1280"})
+    monkeypatch.setattr(video_cover, "generate_video_analysis", lambda **kwargs: "video_text: demo")
+
+    def fake_save(task_id, next_state, status=None, execute_func=None, **kwargs):
+        saved["task_id"] = task_id
+        saved["state"] = next_state
+        saved["status"] = status
+
+    monkeypatch.setattr(video_cover, "save_project_state", fake_save)
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/task-1/run/video_analysis",
+        data={"provider": "gemini_vertex_adc", "model": "gemini_31_pro"},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["data"]["video_analysis"] == "video_text: demo"
+    assert saved["task_id"] == "task-1"
+    assert saved["status"] == "running"
+    assert saved["state"]["steps"]["video_analysis"] == "done"
+    assert saved["state"]["video_analysis"] == "video_text: demo"
+    assert saved["state"]["models"]["video_analysis"]["provider"] == "gemini_vertex_adc"
+
+
+def test_video_cover_download_serves_owned_cover(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    cover_path = tmp_path / "social_reels.png"
+    cover_path.write_bytes(b"png-data")
+    state = {
+        "result": {
+            "covers": [
+                {
+                    "platform": "social_reels",
+                    "object_key": "artifacts/video_cover/1/task-1/social_reels.png",
+                }
+            ]
+        }
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_user_project", lambda task_id, user_id: row)
+    monkeypatch.setattr(video_cover.local_media_storage, "safe_local_path_for", lambda object_key: cover_path)
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/download/social_reels")
+
+    assert resp.status_code == 200
+    assert resp.data == b"png-data"
+    assert resp.headers["Content-Disposition"].startswith("attachment;")
 
 
 def test_video_cover_generate_route_calls_service(authed_client_no_db, monkeypatch):

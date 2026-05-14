@@ -14,6 +14,14 @@
 - 封面生成默认调用本地 OpenAI-compatible 图片接口，生成一张通用于 Facebook Reels / Instagram Reels / TikTok / Shorts 的 9:16 竖版封面。
 - 结果统一后处理为 `1080x1920` PNG，保存到 `local_media_storage`，页面返回预览和下载 URL。
 
+## 1.1 项目工作流调整
+
+- `/video-cover` 从一次性工具页调整为项目列表页，入口只创建项目：商品链接 + 视频文件。
+- 每个项目落库到 `projects.type='video_cover'`，项目详情页按固定前后关系管理 4 个步骤：`video_analysis`、`product_analysis`、`ad_copy`、`cover_generation`。
+- 后续步骤必须等待前序步骤完成；重新运行上游步骤会清空其后的结果，避免过期分析被继续用于生成。
+- 视频分析调用大模型前必须使用共享 LLM 视频优化器转成 480p、15fps、H.264 600k 级别的临时文件，保留压缩音频以支持 voiceover 判断；转码失败时沿用优化器的原视频回退行为。
+- 封面生成完成后，最终封面结果显示在项目详情页最顶部，并提供直接下载按钮。
+
 ## 模型与平台决策
 
 当前 1.0 按步骤固定默认模型，同时允许用户在工作窗口顶部切换供应商：

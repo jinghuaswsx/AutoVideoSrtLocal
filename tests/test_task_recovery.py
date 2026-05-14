@@ -53,6 +53,34 @@ def test_recover_project_state_marks_video_creation_orphan_running_as_error():
     assert "服务重启" in recovered["error"]
 
 
+def test_recover_project_state_marks_video_cover_running_step_as_error():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="video_cover",
+        task_id="cover-orphan",
+        state={
+            "status": "running",
+            "steps": {
+                "video_analysis": "done",
+                "product_analysis": "running",
+                "ad_copy": "pending",
+                "cover_generation": "pending",
+            },
+            "step_messages": {"product_analysis": "运行中..."},
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "error"
+    assert recovered["steps"]["video_analysis"] == "done"
+    assert recovered["steps"]["product_analysis"] == "error"
+    assert recovered["steps"]["ad_copy"] == "pending"
+    assert "服务重启" in recovered["step_messages"]["product_analysis"]
+    assert "服务重启" in recovered["error"]
+
+
 def test_recover_project_state_marks_video_review_and_clears_started_at():
     from appcore import task_recovery
 
