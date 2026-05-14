@@ -129,7 +129,8 @@ def test_loudness_profile_route_saves_standard_without_starting_runner(
         "loudness_profile": "bg_boost",
         "separation": {"tts_loudness": {"profile": "bg_boost"}},
     }
-    with patch("web.routes.omni_translate.store") as mock_store, \
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
         mock_store.get.return_value = fake_task
         resp = authed_client_no_db.post(
@@ -149,6 +150,7 @@ def test_loudness_profile_route_saves_standard_without_starting_runner(
         loudness_manual_boost_pct=None,
     )
     mock_runner.resume.assert_not_called()
+    mock_runner.start.assert_not_called()
 
 
 def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
@@ -156,7 +158,9 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
         "_user_id": 1,
         "separation": {"tts_loudness": {"profile": "standard"}},
     }
-    with patch("web.routes.omni_translate.store") as mock_store:
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
         mock_store.get.return_value = fake_task
         resp = authed_client_no_db.post(
             "/api/omni-translate/t-1/loudness-profile",
@@ -175,6 +179,8 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
         loudness_profile="manual_boost",
         loudness_manual_boost_pct=50,
     )
+    mock_runner.resume.assert_not_called()
+    mock_runner.start.assert_not_called()
 
 
 @pytest.mark.parametrize("pct", [0, 5, 55, 101, "abc", None])
@@ -182,7 +188,8 @@ def test_loudness_profile_route_rejects_invalid_manual_pct(
     authed_client_no_db, pct,
 ):
     fake_task = {"_user_id": 1}
-    with patch("web.routes.omni_translate.store") as mock_store:
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store:
         mock_store.get.return_value = fake_task
         resp = authed_client_no_db.post(
             "/api/omni-translate/t-1/loudness-profile",
@@ -196,7 +203,8 @@ def test_loudness_profile_route_rejects_invalid_manual_pct(
 
 def test_loudness_profile_route_rejects_unknown_profile(authed_client_no_db):
     fake_task = {"_user_id": 1}
-    with patch("web.routes.omni_translate.store") as mock_store:
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store:
         mock_store.get.return_value = fake_task
         resp = authed_client_no_db.post(
             "/api/omni-translate/t-1/loudness-profile",
@@ -205,6 +213,37 @@ def test_loudness_profile_route_rejects_unknown_profile(authed_client_no_db):
 
     assert resp.status_code == 400
     assert "loudness profile" in resp.get_json()["error"]
+    mock_store.update.assert_not_called()
+
+
+def test_loudness_profile_route_rejects_malformed_json(authed_client_no_db):
+    fake_task = {"_user_id": 1}
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            data="{",
+            content_type="application/json",
+        )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid JSON body"
+    mock_store.update.assert_not_called()
+
+
+def test_loudness_profile_route_rejects_json_array(authed_client_no_db):
+    fake_task = {"_user_id": 1}
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json=["standard"],
+        )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "JSON body must be an object"
     mock_store.update.assert_not_called()
 
 

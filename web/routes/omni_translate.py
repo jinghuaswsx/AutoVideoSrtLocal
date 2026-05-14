@@ -746,7 +746,14 @@ def set_loudness_profile(task_id):
     if not task:
         return _json_response({"error": "Task not found"}, 404)
 
-    body = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if request.is_json and body is None:
+        return _json_response({"error": "invalid JSON body"}, 400)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _json_response({"error": "JSON body must be an object"}, 400)
+
     try:
         profile, manual_pct = validate_loudness_profile(
             body.get("profile"),
