@@ -710,6 +710,14 @@ def is_task_enabled(task_code: str) -> bool:
     return bool(_with_control_state(task, row).get("control_enabled"))
 
 
+def _global_scheduled_tasks_enabled() -> bool:
+    try:
+        import config
+    except Exception:
+        return True
+    return bool(getattr(config, "SCHEDULED_TASKS_ENABLED", True))
+
+
 def _record_control_state(
     task_code: str,
     *,
@@ -878,6 +886,13 @@ def apply_scheduler_controls(scheduler: Any) -> None:
 
 
 def run_if_enabled(task_code: str, func, *args, **kwargs):
+    if not _global_scheduled_tasks_enabled():
+        log.info("scheduled task skipped because global scheduling is disabled: %s", task_code)
+        return {
+            "skipped": True,
+            "reason": "scheduled tasks globally disabled",
+            "task_code": task_code,
+        }
     if not is_task_enabled(task_code):
         log.info("scheduled task skipped because it is disabled: %s", task_code)
         return {

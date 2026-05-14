@@ -164,6 +164,14 @@ def _cleanup_loop() -> None:
 
 
 def _should_start_cleanup_thread() -> bool:
+    try:
+        import config
+    except Exception:
+        scheduled_tasks_enabled = True
+    else:
+        scheduled_tasks_enabled = bool(getattr(config, "SCHEDULED_TASKS_ENABLED", True))
+    if not scheduled_tasks_enabled:
+        return False
     disabled = os.getenv("AUTOVIDEOSRT_DISABLE_BACKGROUND_THREADS", "").strip().lower()
     if disabled in {"1", "true", "yes", "on"}:
         return False

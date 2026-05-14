@@ -97,7 +97,17 @@ def _cleanup_loop() -> None:
             log.warning("medias_detail_fetch TTL cleanup failed", exc_info=True)
 
 
-_cleanup_thread = threading.Thread(
-    target=_cleanup_loop, daemon=True, name="mdf-cleanup",
-)
-_cleanup_thread.start()
+def _scheduled_tasks_enabled() -> bool:
+    try:
+        import config
+    except Exception:
+        return True
+    return bool(getattr(config, "SCHEDULED_TASKS_ENABLED", True))
+
+
+_cleanup_thread: threading.Thread | None = None
+if _scheduled_tasks_enabled():
+    _cleanup_thread = threading.Thread(
+        target=_cleanup_loop, daemon=True, name="mdf-cleanup",
+    )
+    _cleanup_thread.start()
