@@ -5,6 +5,9 @@ from typing import Any, Mapping
 
 from appcore.meta_hot_posts import categories, product_analysis, store
 
+MARK_STATUS_OK = "ok"
+MARK_STATUS_BAD = "bad"
+
 
 @dataclass(frozen=True)
 class MetaHotPostsResponse:
@@ -37,13 +40,26 @@ def _bool_payload(value: Any) -> bool:
     return False
 
 
+def _normalize_mark_status(value: Any) -> str | None:
+    raw = str(value or "").strip().lower()
+    if raw in {MARK_STATUS_OK, "pass", "yes", "行"}:
+        return MARK_STATUS_OK
+    if raw in {MARK_STATUS_BAD, "fail", "no", "不行"}:
+        return MARK_STATUS_BAD
+    return None
+
+
 def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item = dict(row)
     item["sku_prices"] = _decode_sku_json(item.pop("sku_prices_json", None))
     item["sku_count"] = len(item["sku_prices"])
     item.setdefault("analysis_status", "pending")
     item["category_l1_zh"] = categories.category_label_zh(item.get("category_l1"))
-    item["is_marked"] = _bool_payload(item.get("is_marked"))
+    mark_status = _normalize_mark_status(item.get("mark_status"))
+    if not mark_status and _bool_payload(item.get("is_marked")):
+        mark_status = MARK_STATUS_BAD
+    item["mark_status"] = mark_status
+    item["is_marked"] = bool(mark_status)
     return item
 
 
@@ -101,11 +117,16 @@ def build_mark_response(
     user_id: int | None = None,
 ) -> MetaHotPostsResponse:
     payload = payload or {}
-    marked = _bool_payload(payload.get("marked"))
-    affected = store.set_hot_post_marked(post_id, marked=marked, user_id=user_id)
+    if "mark_status" in payload or "status" in payload:
+        mark_status = _normalize_mark_status(payload.get("mark_status", payload.get("status")))
+    else:
+        mark_status = MARK_STATUS_BAD if _bool_payload(payload.get("marked")) else None
+    affected = store.set_hot_post_mark_status(post_id, mark_status=mark_status, user_id=user_id)
     if not affected:
         return MetaHotPostsResponse({"error": "not_found"}, 404)
-    return MetaHotPostsResponse({"ok": True, "id": int(post_id), "is_marked": marked})
+    return MetaHotPostsResponse(
+        {"ok": True, "id": int(post_id), "mark_status": mark_status, "is_marked": bool(mark_status)}
+    )
 
 
 def build_refresh_response() -> MetaHotPostsResponse:

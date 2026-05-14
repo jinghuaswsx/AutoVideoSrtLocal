@@ -119,7 +119,7 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
                p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
-               p.is_marked, p.marked_at, p.marked_by,
+               p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html,
                a.status AS analysis_status,
@@ -217,6 +217,29 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
     )
 
 
+def set_hot_post_mark_status(
+    post_id: int,
+    *,
+    mark_status: str | None,
+    user_id: int | None = None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    status_value = str(mark_status or "").strip() or None
+    mark_value = 1 if status_value else 0
+    actor_id = int(user_id) if user_id else None
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET mark_status=%s,
+            is_marked=%s,
+            marked_at=CASE WHEN %s = 1 THEN NOW() ELSE NULL END,
+            marked_by=CASE WHEN %s = 1 THEN %s ELSE NULL END
+        WHERE id=%s
+        """,
+        (status_value, mark_value, mark_value, mark_value, actor_id, int(post_id)),
+    )
+
+
 def set_hot_post_marked(
     post_id: int,
     *,
@@ -224,17 +247,11 @@ def set_hot_post_marked(
     user_id: int | None = None,
     execute_fn: ExecuteFn = execute,
 ) -> int:
-    mark_value = 1 if marked else 0
-    actor_id = int(user_id) if user_id else None
-    return execute_fn(
-        """
-        UPDATE meta_hot_posts
-        SET is_marked=%s,
-            marked_at=CASE WHEN %s = 1 THEN NOW() ELSE NULL END,
-            marked_by=CASE WHEN %s = 1 THEN %s ELSE NULL END
-        WHERE id=%s
-        """,
-        (mark_value, mark_value, mark_value, actor_id, int(post_id)),
+    return set_hot_post_mark_status(
+        post_id,
+        mark_status="bad" if marked else None,
+        user_id=user_id,
+        execute_fn=execute_fn,
     )
 
 

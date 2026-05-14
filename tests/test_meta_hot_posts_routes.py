@@ -42,7 +42,12 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "下一页" in body
     assert "末页" in body
     assert "JSON.stringify({limit:30, per_item_delay_seconds:20})" in body
-    assert "mh-mark-toggle" in body
+    assert "mh-mark-options" in body
+    assert "data-mark-status" in body
+    assert "renderMarkOption(postId, currentStatus, 'ok', '行')" in body
+    assert "renderMarkOption(postId, currentStatus, 'bad', '不行')" in body
+    assert "行" in body
+    assert "不行" in body
     assert "function toggleMetaHotPostMark" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/mark" in body
 
@@ -99,21 +104,21 @@ def test_meta_hot_posts_analyze_api_passes_current_user_for_billing(authed_clien
     assert captured["payload"]["user_id"]
 
 
-def test_meta_hot_posts_mark_api_passes_current_user(authed_client_no_db, monkeypatch):
+def test_meta_hot_posts_mark_api_passes_current_user_and_status(authed_client_no_db, monkeypatch):
     captured = {}
 
     def fake_response(post_id, payload, user_id=None):
         captured["post_id"] = post_id
         captured["payload"] = payload
         captured["user_id"] = user_id
-        return type("Resp", (), {"payload": {"ok": True, "id": post_id, "is_marked": True}, "status_code": 200})()
+        return type("Resp", (), {"payload": {"ok": True, "id": post_id, "mark_status": "bad"}, "status_code": 200})()
 
     monkeypatch.setattr("appcore.meta_hot_posts.service.build_mark_response", fake_response)
 
-    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/7/mark", json={"marked": True})
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/7/mark", json={"mark_status": "bad"})
 
     assert resp.status_code == 200
-    assert resp.get_json()["is_marked"] is True
+    assert resp.get_json()["mark_status"] == "bad"
     assert captured["post_id"] == 7
-    assert captured["payload"] == {"marked": True}
+    assert captured["payload"] == {"mark_status": "bad"}
     assert captured["user_id"]
