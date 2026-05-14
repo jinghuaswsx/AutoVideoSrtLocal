@@ -472,6 +472,10 @@ def _cover_by_platform(state: dict, platform: str) -> dict | None:
 
 def _state_with_urls(task_id: str, state: dict) -> dict:
     view_state = _with_runtime_timing(state)
+    defaults = view_state.get("model_defaults")
+    if not isinstance(defaults, dict):
+        defaults = video_cover_settings.get_model_defaults()
+    view_state["model_defaults"] = video_cover_settings.normalize_model_defaults(defaults)
     result = dict(view_state.get("result") or {})
     covers = []
     for cover in result.get("covers") or []:

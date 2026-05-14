@@ -59,6 +59,8 @@
 .vcd-card-main { flex:1; min-width:0; }
 .vcd-step-name-row { display:flex; align-items:center; gap:10px; margin-bottom:2px; flex-wrap:wrap; min-width:0; }
 .vcd-card-title { display:inline-flex; align-items:center; min-width:0; font-size:15px; font-weight:700; color:var(--text-main); }
+.vcd-model-meta { min-width:0; max-width:min(100%, 560px); color:#64748b; font-size:12px; font-weight:800; line-height:1.35; overflow-wrap:anywhere; word-break:break-word; }
+.vcd-model-meta::before { content:""; display:inline-block; width:1px; height:14px; margin:0 8px 0 2px; background:var(--border-main); vertical-align:-2px; }
 .vcd-card-timer { margin-left:100px; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:24px; padding:3px 10px; border-radius:999px; border:1px solid var(--border-main); background:var(--bg-card); color:#64748b; font-size:12px; font-weight:900; line-height:1; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .vcd-card-timer b { font-weight:900; color:inherit; }
 .vcd-process-card.running .vcd-card-timer { border-color:#86efac; background:rgba(34,197,94,.16); color:#15803d; }
@@ -209,6 +211,11 @@
     {% for step in step_order %}
     {% set status = state.get('steps', {}).get(step, 'pending') %}
     {% set timing = (state.get('step_timing') or {}).get(step, {}) %}
+    {% set model_default = (state.get('model_defaults') or {}).get(step) or {} %}
+    {% set model_actual = (state.get('models') or {}).get(step) or {} %}
+    {% set model_provider = model_actual.get('provider') or model_default.get('provider') or '未配置' %}
+    {% set model_id = model_actual.get('model_id') or model_actual.get('model') or model_default.get('model_id') or model_default.get('model') or '未配置' %}
+    {% set execution_mode = model_actual.get('execution_mode') or model_default.get('execution_mode') %}
     <section class="vcd-process-card step {{ status }}" data-process-card="{{ step }}">
       <div class="vcd-card-head step-main">
         <div class="vcd-step-icon step-icon {{ status }}" data-step-icon="{{ step }}" data-step-index="{{ loop.index }}">
@@ -217,6 +224,9 @@
         <div class="vcd-card-main">
           <div class="vcd-step-name-row step-name-row">
             <span class="vcd-card-title step-name">{{ step_labels[step] }}</span>
+            <span class="vcd-model-meta" data-step-model-badge="{{ step }}">
+              {{ model_provider }} · {{ model_id }}{% if step == 'cover_generation' and execution_mode %} · {{ '并行' if execution_mode == 'parallel' else '串行' if execution_mode == 'serial' else execution_mode }}{% endif %}
+            </span>
             <span class="vcd-card-timer" data-step-timer="{{ step }}">
               {% if status == 'running' %}<span class="vcd-timer-spinner spinner"></span><span>已运行 <b>{{ timing.get('running_seconds', 0) }}</b> 秒</span>{% elif timing.get('elapsed_seconds') is not none %}<span>耗时 <b>{{ timing.get('elapsed_seconds') }}</b> 秒</span>{% elif status == 'waiting' %}<span>等待确认</span>{% else %}<span>等待开始</span>{% endif %}
             </span>
@@ -307,6 +317,25 @@
     if (status === 'waiting') return '等待确认';
     if (status === 'error') return '失败';
     return '等待中';
+  }
+  function executionModeText(mode) {
+    if (mode === 'parallel') return '并行';
+    if (mode === 'serial') return '串行';
+    return mode || '';
+  }
+  function stepModelText(step) {
+    const defaults = ((currentState.model_defaults || {})[step]) || {};
+    const actual = ((currentState.models || {})[step]) || {};
+    const model = {...defaults, ...actual};
+    const parts = [
+      model.provider || '未配置',
+      model.model_id || model.model || '未配置'
+    ];
+    if (step === 'cover_generation') {
+      const mode = executionModeText(model.execution_mode);
+      if (mode) parts.push(mode);
+    }
+    return parts.join(' · ');
   }
   function visualStatus(status) {
     if (['failed', 'interrupted', 'cancelled'].includes(status)) return 'error';
@@ -478,6 +507,11 @@
       if (stepMessage) stepMessage.textContent = messages[step] || statusText(status);
       const timer = document.querySelector(`[data-step-timer="${step}"]`);
       if (timer) timer.innerHTML = timerHtml(step, status);
+      const badge = document.querySelector(`[data-step-model-badge="${step}"]`);
+      if (badge) {
+        badge.textContent = stepModelText(step);
+        badge.title = badge.textContent;
+      }
       const visualBox = document.querySelector(`[data-visual-step="${step}"]`);
       if (visualBox) visualBox.innerHTML = renderVisual(step);
       const retry = document.querySelector(`[data-retry-step="${step}"]`);

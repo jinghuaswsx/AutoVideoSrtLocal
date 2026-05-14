@@ -1303,6 +1303,59 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "/video-cover/api/task-1/download/social_reels_2" in html
 
 
+def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defaults(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "image_count": 2,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "done",
+        },
+        "model_defaults": {
+            "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
+            "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "anthropic/claude-sonnet-4.6"},
+            "cover_generation": {
+                "provider": "openrouter",
+                "model_id": "openai/gpt-5.4-image-2:mid",
+                "execution_mode": "parallel",
+            },
+        },
+        "models": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "cover_generation": {
+                "provider": "openrouter",
+                "model_id": "openai/gpt-5.4-image-2:high",
+                "execution_mode": "serial",
+            },
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'data-step-model-badge="video_analysis"' in html
+    assert 'data-step-model-badge="cover_generation"' in html
+    assert "openrouter · google/gemini-3.1-pro-preview" in html
+    assert "gemini_vertex_adc · gemini-3-flash-preview" in html
+    assert "openrouter · anthropic/claude-sonnet-4.6" in html
+    assert "openrouter · openai/gpt-5.4-image-2:high · 串行" in html
+    assert "function stepModelText(step)" in html
+    assert "badge.textContent = stepModelText(step);" in html
+
+
 def test_video_cover_detail_matches_multi_translate_step_status_style(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
