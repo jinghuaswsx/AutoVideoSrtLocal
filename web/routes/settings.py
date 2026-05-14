@@ -312,6 +312,8 @@ def index():
         "settings.html",
         provider_groups=_provider_rows_by_group(),
         infrastructure_groups=_infrastructure_rows_by_group() if is_admin else [],
+        tos_channel_options=infra_credentials.tos_channel_options() if is_admin else [],
+        active_tos_channel=infra_credentials.get_active_tos_channel_code() if is_admin else "tos_main",
         browser_credentials=(
             browser_login_credentials.list_credentials_view()
             if is_admin and active_tab == "browser_credentials"
@@ -481,6 +483,12 @@ def _handle_infrastructure_post() -> None:
     if not getattr(current_user, "is_admin", False):
         return
     user_id = current_user.id
+    active_tos_channel = (request.form.get("active_tos_channel") or "").strip()
+    if active_tos_channel:
+        try:
+            infra_credentials.set_active_tos_channel_code(active_tos_channel)
+        except ValueError as exc:
+            flash(str(exc), "error")
     clear_keys = set(request.form.getlist("clear") or [])
     for code in infra_credentials.known_codes():
         prefix = f"infra_{code}_"

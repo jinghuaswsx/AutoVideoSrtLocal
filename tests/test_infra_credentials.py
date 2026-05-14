@@ -18,9 +18,9 @@ import pytest
 from appcore import infra_credentials as ic
 
 
-def test_schema_covers_three_known_codes():
-    assert set(ic._CREDENTIAL_SCHEMA.keys()) == {"tos_main", "tos_backup", "vod_main"}
-    assert ic.known_codes() == ["tos_main", "tos_backup", "vod_main"]
+def test_schema_covers_known_codes():
+    assert set(ic._CREDENTIAL_SCHEMA.keys()) == {"tos_main", "tos_wj", "tos_backup", "vod_main"}
+    assert ic.known_codes() == ["tos_main", "tos_wj", "tos_backup", "vod_main"]
 
 
 def test_schema_marks_ak_sk_as_secret_for_each_code():
@@ -86,6 +86,60 @@ def test_sync_to_runtime_writes_db_values_to_config_and_environ(monkeypatch):
     assert os.environ["TOS_ACCESS_KEY"] == "AK_FROM_DB"
     assert os.environ["TOS_SECRET_KEY"] == "SK_FROM_DB"
     assert os.environ["VOD_ACCESS_KEY"] == "VOD_AK"
+
+
+def test_sync_to_runtime_uses_selected_tos_channel(monkeypatch):
+    fake_rows = [
+        ic.InfraCredential(
+            code="tos_main",
+            display_name="CJH",
+            group_code="object_storage",
+            config={
+                "access_key": "CJH_AK",
+                "secret_key": "CJH_SK",
+                "region": "cn-shanghai",
+                "bucket": "cjh-bucket",
+                "public_endpoint": "cjh-public.example.com",
+            },
+            enabled=True,
+        ),
+        ic.InfraCredential(
+            code="tos_wj",
+            display_name="WJ",
+            group_code="object_storage",
+            config={
+                "access_key": "WJ_AK",
+                "secret_key": "WJ_SK",
+                "region": "cn-shanghai",
+                "bucket": "wj-bucket",
+                "public_endpoint": "wj-public.example.com",
+            },
+            enabled=True,
+        ),
+    ]
+    monkeypatch.setattr(ic, "list_configs", lambda: fake_rows)
+    monkeypatch.setattr(ic.settings_store, "get_setting", lambda key: "tos_wj")
+
+    import config
+
+    monkeypatch.setattr(config, "TOS_ACCESS_KEY", "OLD_AK")
+    monkeypatch.setattr(config, "TOS_SECRET_KEY", "OLD_SK")
+    monkeypatch.setattr(config, "TOS_BUCKET", "old-bucket")
+    monkeypatch.setattr(config, "TOS_PUBLIC_ENDPOINT", "old-public.example.com")
+
+    ic.sync_to_runtime()
+
+    assert config.TOS_ACCESS_KEY == "WJ_AK"
+    assert config.TOS_SECRET_KEY == "WJ_SK"
+    assert config.TOS_BUCKET == "wj-bucket"
+    assert config.TOS_PUBLIC_ENDPOINT == "wj-public.example.com"
+    assert os.environ["TOS_ACCESS_KEY"] == "WJ_AK"
+    assert os.environ["TOS_BUCKET"] == "wj-bucket"
+
+
+def test_set_active_tos_channel_rejects_unknown_code():
+    with pytest.raises(ValueError):
+        ic.set_active_tos_channel_code("unknown")
 
 
 def test_sync_to_runtime_does_not_overwrite_with_empty_db_value(monkeypatch):

@@ -27,9 +27,17 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from appcore import settings as settings_store
 from appcore.db import execute, query, query_one
 
 log = logging.getLogger(__name__)
+
+TOS_ACTIVE_CHANNEL_SETTING_KEY = "infra_credentials.tos_active_channel"
+TOS_CHANNEL_CODES = ("tos_main", "tos_wj")
+TOS_CHANNEL_DISPLAY_NAMES = {
+    "tos_main": "3482299@qq.com CJH",
+    "tos_wj": "495828376@qq.com WJ",
+}
 
 
 @dataclass(frozen=True)
@@ -59,6 +67,20 @@ _CREDENTIAL_SCHEMA: dict[str, list[CredentialField]] = {
         CredentialField("browser_upload_prefix", "TOS_BROWSER_UPLOAD_PREFIX", "TOS_BROWSER_UPLOAD_PREFIX", "浏览器上传 Prefix"),
         CredentialField("final_artifact_prefix", "TOS_FINAL_ARTIFACT_PREFIX", "TOS_FINAL_ARTIFACT_PREFIX", "最终产物 Prefix"),
     ],
+    "tos_wj": [
+        CredentialField("access_key",            "TOS_ACCESS_KEY",            "TOS_ACCESS_KEY",            "Access Key", is_secret=True),
+        CredentialField("secret_key",            "TOS_SECRET_KEY",            "TOS_SECRET_KEY",            "Secret Key", is_secret=True),
+        CredentialField("region",                "TOS_REGION",                "TOS_REGION",                "Region"),
+        CredentialField("bucket",                "TOS_BUCKET",                "TOS_BUCKET",                "Main Bucket"),
+        CredentialField("asr_bucket",            "TOS_ASR_BUCKET",            "TOS_ASR_BUCKET",            "ASR Bucket"),
+        CredentialField("media_bucket",          "TOS_MEDIA_BUCKET",          "TOS_MEDIA_BUCKET",          "Media Bucket"),
+        CredentialField("endpoint",              "TOS_ENDPOINT",              "TOS_ENDPOINT",              "Endpoint"),
+        CredentialField("public_endpoint",       "TOS_PUBLIC_ENDPOINT",       "TOS_PUBLIC_ENDPOINT",       "Public Endpoint"),
+        CredentialField("private_endpoint",      "TOS_PRIVATE_ENDPOINT",      "TOS_PRIVATE_ENDPOINT",      "Private Endpoint"),
+        CredentialField("prefix",                "TOS_PREFIX",                "TOS_PREFIX",                "ASR Audio Prefix"),
+        CredentialField("browser_upload_prefix", "TOS_BROWSER_UPLOAD_PREFIX", "TOS_BROWSER_UPLOAD_PREFIX", "Browser Upload Prefix"),
+        CredentialField("final_artifact_prefix", "TOS_FINAL_ARTIFACT_PREFIX", "TOS_FINAL_ARTIFACT_PREFIX", "Final Artifact Prefix"),
+    ],
     "tos_backup": [
         CredentialField("access_key",       "TOS_BACKUP_ACCESS_KEY",       "TOS_BACKUP_ACCESS_KEY",       "Access Key（留空则继承主 TOS）", is_secret=True),
         CredentialField("secret_key",       "TOS_BACKUP_SECRET_KEY",       "TOS_BACKUP_SECRET_KEY",       "Secret Key（留空则继承主 TOS）", is_secret=True),
@@ -82,7 +104,8 @@ _CREDENTIAL_SCHEMA: dict[str, list[CredentialField]] = {
 
 # 与 SQL 种子行的 display_name / group_code 对齐
 _DISPLAY_META: dict[str, tuple[str, str]] = {
-    "tos_main":   ("火山引擎 TOS · 主对象存储",  "object_storage"),
+    "tos_main":   ("3482299@qq.com CJH",        "object_storage"),
+    "tos_wj":     ("495828376@qq.com WJ",       "object_storage"),
     "tos_backup": ("火山引擎 TOS · 灾备桶",      "object_storage"),
     "vod_main":   ("火山引擎 VOD · 视频点播",    "object_storage"),
 }
@@ -162,6 +185,31 @@ def schema_for(code: str) -> list[CredentialField]:
 
 def display_meta(code: str) -> tuple[str, str]:
     return _DISPLAY_META.get(code, (code, "object_storage"))
+
+
+def tos_channel_options() -> list[tuple[str, str]]:
+    return [(code, TOS_CHANNEL_DISPLAY_NAMES[code]) for code in TOS_CHANNEL_CODES]
+
+
+def _coerce_tos_channel_code(raw: str | None) -> str:
+    code = (raw or "").strip()
+    return code if code in TOS_CHANNEL_CODES else "tos_main"
+
+
+def get_active_tos_channel_code() -> str:
+    try:
+        stored = settings_store.get_setting(TOS_ACTIVE_CHANNEL_SETTING_KEY)
+    except Exception:
+        stored = None
+    return _coerce_tos_channel_code(stored or os.getenv("TOS_ACTIVE_CHANNEL") or "tos_main")
+
+
+def set_active_tos_channel_code(code: str) -> None:
+    selected = (code or "").strip()
+    if selected not in TOS_CHANNEL_CODES:
+        raise ValueError(f"unknown TOS channel: {code}")
+    settings_store.set_setting(TOS_ACTIVE_CHANNEL_SETTING_KEY, selected)
+    sync_to_runtime()
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +295,9 @@ def sync_to_runtime() -> None:
         return
 
     by_code = {r.code: r for r in rows if r.enabled}
+    active_tos_channel = get_active_tos_channel_code()
+    if active_tos_channel not in by_code:
+        active_tos_channel = "tos_main"
 
     try:
         import config as cfg
@@ -255,6 +306,8 @@ def sync_to_runtime() -> None:
         return
 
     for code, fields in _CREDENTIAL_SCHEMA.items():
+        if code in TOS_CHANNEL_CODES and code != active_tos_channel:
+            continue
         cred = by_code.get(code)
         if cred is None:
             continue
@@ -272,7 +325,7 @@ def sync_to_runtime() -> None:
     # tos_backup 的 ak/sk 留空时回落到 tos_main 的值，与 config.py 行 83-84 的
     # ``_env(name, default=TOS_ACCESS_KEY)`` 行为对齐。
     backup = by_code.get("tos_backup")
-    main = by_code.get("tos_main")
+    main = by_code.get(active_tos_channel) or by_code.get("tos_main")
     if backup and main:
         for json_key, attr in (
             ("access_key", "TOS_BACKUP_ACCESS_KEY"),

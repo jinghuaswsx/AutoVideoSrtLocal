@@ -950,6 +950,18 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     DB 留空字段会保留 <code>.env</code> 兜底值（平滑过渡），所以可以分批迁移。
   </div>
 
+  <div class="settings-card">
+    <h2>TOS 主通道</h2>
+    <p class="step-desc">业务代码仍读取 <code>config.TOS_*</code>，这里选择哪一组 TOS 凭据同步到运行时。</p>
+    <label for="active_tos_channel">当前主 TOS 通道</label>
+    <select id="active_tos_channel" name="active_tos_channel">
+      {% for code, label in tos_channel_options %}
+      <option value="{{ code }}" {{ 'selected' if active_tos_channel == code }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">原通道为 <code>3482299@qq.com CJH</code>，新通道为 <code>495828376@qq.com WJ</code>。</p>
+  </div>
+
   {% for group in infrastructure_groups %}
   <div class="settings-card">
     <h2>{{ group.label }}</h2>

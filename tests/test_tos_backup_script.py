@@ -20,3 +20,15 @@ def test_tos_backup_restore_script_exposes_recovery_modes():
     assert "--files-only" in source
     assert "--db-only" in source
     assert "run_restore" in source
+
+
+def test_tos_channel_backup_script_exposes_wj_copy_modes():
+    script = Path("scripts/tos_channel_backup.py")
+
+    assert script.exists()
+    source = script.read_text(encoding="utf-8")
+    assert "--target-code" in source
+    assert "--files-only" in source
+    assert "--db-only" in source
+    assert "--mysql-prefix" in source
+    assert "run_channel_backup" in source

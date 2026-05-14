@@ -270,6 +270,22 @@ def test_settings_post_infrastructure_clears_secret_only_when_requested(
 # 权限
 # ---------------------------------------------------------------------------
 
+def test_settings_post_infrastructure_updates_active_tos_channel(admin_no_db_client):
+    selected = []
+    with patch("web.routes.settings.infra_credentials.known_codes", return_value=[]), \
+         patch(
+             "web.routes.settings.infra_credentials.set_active_tos_channel_code",
+             side_effect=lambda code: selected.append(code),
+         ):
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "infrastructure",
+            "active_tos_channel": "tos_wj",
+        })
+
+    assert resp.status_code in (302, 303)
+    assert selected == ["tos_wj"]
+
+
 def test_settings_requires_exact_admin_username(non_owner_clients):
     manager_client, normal_client = non_owner_clients
     assert manager_client.get("/settings").status_code == 403
