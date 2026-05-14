@@ -31,4 +31,5 @@ def test_tos_channel_backup_script_exposes_wj_copy_modes():
     assert "--files-only" in source
     assert "--db-only" in source
     assert "--mysql-prefix" in source
+    assert "--mysql-retention-count" in source
     assert "run_channel_backup" in source

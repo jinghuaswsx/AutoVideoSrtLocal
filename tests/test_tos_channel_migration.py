@@ -8,6 +8,7 @@ class FakeTargetClient:
     def __init__(self, existing=None):
         self.existing = set(existing or [])
         self.uploaded: dict[str, bytes] = {}
+        self.deleted: list[str] = []
 
     def head_object(self, bucket, object_key):
         if object_key not in self.existing:
@@ -17,6 +18,18 @@ class FakeTargetClient:
     def put_object_from_file(self, bucket, object_key, local_path):
         self.uploaded[object_key] = Path(local_path).read_bytes()
         self.existing.add(object_key)
+
+    def delete_object(self, bucket, object_key):
+        self.deleted.append(object_key)
+        self.existing.discard(object_key)
+
+    def list_objects(self, bucket, prefix="", marker=""):
+        keys = sorted(key for key in self.existing if key.startswith(prefix))
+        return types.SimpleNamespace(
+            contents=[types.SimpleNamespace(key=key) for key in keys],
+            is_truncated=False,
+            next_marker="",
+        )
 
 
 def _fake_target_config():
@@ -143,3 +156,53 @@ def test_latest_mysql_dump_copies_to_mysqldump_prefix(monkeypatch, tmp_path):
     assert summary["target_object_key"] == "mysqldump/test/2026-05-13/appdb_2026-05-13_020000.sql.gz"
     assert summary["action"] == "uploaded"
     assert fake_client.uploaded[summary["target_object_key"]] == b"dump"
+
+
+def test_cleanup_channel_mysql_dumps_keeps_latest_seven(monkeypatch):
+    from appcore import tos_channel_migration as migration
+
+    keys = {
+        f"mysqldump/test/2026-05-{day:02d}/appdb_2026-05-{day:02d}_020000.sql.gz"
+        for day in range(1, 10)
+    }
+    fake_client = FakeTargetClient(existing=keys)
+    monkeypatch.setattr(migration, "load_tos_channel_config", lambda code: _fake_target_config())
+    monkeypatch.setattr(migration, "_build_target_client", lambda target: fake_client)
+    monkeypatch.setattr(migration.config, "TOS_BACKUP_ENV", "test")
+
+    summary = migration.cleanup_channel_mysql_dumps(target_prefix="mysqldump", keep_count=7)
+
+    assert summary == {
+        "target_code": "tos_wj",
+        "target_bucket": "avs-rjc",
+        "prefix": "mysqldump/test/",
+        "dumps_scanned": 9,
+        "dumps_deleted": 2,
+        "deleted": [
+            "mysqldump/test/2026-05-01/appdb_2026-05-01_020000.sql.gz",
+            "mysqldump/test/2026-05-02/appdb_2026-05-02_020000.sql.gz",
+        ],
+    }
+    assert fake_client.deleted == summary["deleted"]
+
+
+def test_cleanup_channel_mysql_dumps_dry_run_only_reports(monkeypatch):
+    from appcore import tos_channel_migration as migration
+
+    keys = {
+        f"mysqldump/test/2026-05-{day:02d}/appdb_2026-05-{day:02d}_020000.sql.gz"
+        for day in range(1, 9)
+    }
+    fake_client = FakeTargetClient(existing=keys)
+    monkeypatch.setattr(migration, "load_tos_channel_config", lambda code: _fake_target_config())
+    monkeypatch.setattr(migration, "_build_target_client", lambda target: fake_client)
+    monkeypatch.setattr(migration.config, "TOS_BACKUP_ENV", "test")
+
+    summary = migration.cleanup_channel_mysql_dumps(target_prefix="mysqldump", keep_count=7, dry_run=True)
+
+    assert summary["dumps_scanned"] == 8
+    assert summary["dumps_deleted"] == 0
+    assert summary["would_delete"] == [
+        "mysqldump/test/2026-05-01/appdb_2026-05-01_020000.sql.gz",
+    ]
+    assert fake_client.deleted == []

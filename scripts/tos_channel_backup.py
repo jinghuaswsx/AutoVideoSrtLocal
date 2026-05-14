@@ -21,6 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--db-only", action="store_true", help="Only copy the latest MySQL dump.")
     parser.add_argument("--target-code", default="tos_wj", help="infra_credentials TOS channel code.")
     parser.add_argument("--mysql-prefix", default="mysqldump", help="Target prefix for copied MySQL dumps.")
+    parser.add_argument(
+        "--mysql-retention-count",
+        type=int,
+        default=7,
+        help="Keep only this many MySQL dump objects in the target prefix.",
+    )
     parser.add_argument("--output-dir", default="", help="Temporary directory for downloaded .sql.gz dumps.")
     parser.add_argument("--dry-run", action="store_true", help="Report intended copies without uploading.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite objects that already exist in the target bucket.")
@@ -36,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         files=copy_files,
         db_dump=copy_db,
         mysql_prefix=args.mysql_prefix,
+        mysql_retention_count=args.mysql_retention_count,
         output_dir=args.output_dir or None,
         dry_run=args.dry_run,
         overwrite=args.overwrite,
