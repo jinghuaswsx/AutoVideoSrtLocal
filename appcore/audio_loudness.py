@@ -119,6 +119,7 @@ def resolve_background_volume_profile(
     standard_volume = float(standard_volume)
     result = {
         "profile": normalized_profile,
+        "manual_boost_pct": validated_pct,
         "background_volume": standard_volume,
         "effective_background_volume": standard_volume,
         **_empty_boost_summary(),
@@ -134,8 +135,10 @@ def resolve_background_volume_profile(
         result["manual_boost"] = {
             "enabled": True,
             "boost_pct": validated_pct,
+            "standard_volume": standard_volume,
             "raw_volume": raw_volume,
             "effective_volume": effective_volume,
+            "max_volume": BOOST_MAX_BACKGROUND_VOLUME,
             "capped": effective_volume < raw_volume,
         }
         return result
@@ -161,6 +164,11 @@ def resolve_background_volume_profile(
     result["background_boost"] = {
         "enabled": True,
         "target_gap_lu": BOOST_TARGET_GAP_LU,
+        "standard_volume": standard_volume,
+        "max_volume": BOOST_MAX_BACKGROUND_VOLUME,
+        "accompaniment_lufs": accompaniment_lufs,
+        "tts_reference_lufs": tts_reference_lufs,
+        "fallback_reason": None,
         "target_background_lufs": target_bg_lufs,
         "needed_gain_lu": needed_gain_lu,
         "raw_volume": raw_volume,
