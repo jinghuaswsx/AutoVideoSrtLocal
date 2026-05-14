@@ -8,14 +8,15 @@ Analyze localized Meta hot post videos and persist whether each material is wort
 
 ## Rate Limit Guardrail
 
-Official Google docs describe Gemini API limits as project-level RPM, TPM, and RPD limits, and Vertex Standard PayGo as token-per-minute baseline throughput with a recommendation to smooth traffic and avoid second-level spikes. For the lowest-risk baseline, this task runs at most one Gemini video request every 10 minutes.
+Official Google docs describe Gemini API limits as project-level RPM, TPM, and RPD limits, and Vertex Standard PayGo as token-per-minute baseline throughput with a recommendation to smooth traffic and avoid second-level spikes. This task remains serial and bounded: each 10-minute interval can analyze at most 20 videos, and it waits 20 seconds between two Gemini video analysis requests.
 
 Guardrails:
 
-- 6 requests per hour maximum from this task.
+- 20 requests maximum per interval run.
+- 20 seconds minimum between analysis requests within one run.
 - 1 compressed video per request.
 - No parallel Gemini calls from this task.
-- Normal interval runs skip while another run is active.
+- Normal interval runs skip while another run is active, so a longer 20-item batch will not overlap with the next tick.
 
 ## Video Input
 

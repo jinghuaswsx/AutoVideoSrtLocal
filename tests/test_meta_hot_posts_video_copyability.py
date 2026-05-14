@@ -106,6 +106,7 @@ def test_analyze_video_copyability_invokes_gemini_adc_with_product_and_video(tmp
 
 def test_run_pending_video_copyability_analyses_persists_success_and_failure(monkeypatch):
     events = []
+    sleep_calls = []
 
     monkeypatch.setattr(
         video_copyability.store,
@@ -139,6 +140,8 @@ def test_run_pending_video_copyability_analyses_persists_success_and_failure(mon
     summary = video_copyability.run_pending_video_copyability_analyses(
         limit=2,
         user_id=7,
+        per_item_delay_seconds=20,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
         analyze_fn=fake_analyze,
     )
 
@@ -150,3 +153,4 @@ def test_run_pending_video_copyability_analyses_persists_success_and_failure(mon
     assert events[3] == ("mark", 2)
     assert events[4][0:2] == ("finish", 2)
     assert "quota exhausted" in events[4][2]["error_message"]
+    assert sleep_calls == [20]

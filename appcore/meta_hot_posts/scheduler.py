@@ -37,7 +37,8 @@ SCHEDULED_VIDEO_LOCALIZATION_LIMIT = 30
 SCHEDULED_VIDEO_LOCALIZATION_DELAY_SECONDS = 30
 SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS = 5
 SCHEDULED_EUROPE_FIT_LIMIT = 30
-SCHEDULED_VIDEO_COPYABILITY_LIMIT = 1
+SCHEDULED_VIDEO_COPYABILITY_LIMIT = 20
+SCHEDULED_VIDEO_COPYABILITY_DELAY_SECONDS = 20
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -806,6 +807,7 @@ def video_copyability_tick_once(
     *,
     limit: int = SCHEDULED_VIDEO_COPYABILITY_LIMIT,
     user_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_COPYABILITY_DELAY_SECONDS,
 ) -> dict[str, Any]:
     guard_summary = _guard_video_copyability_singleton()
     if guard_summary.get("skipped"):
@@ -819,6 +821,7 @@ def video_copyability_tick_once(
         summary = video_copyability.run_pending_video_copyability_analyses(
             limit=limit,
             user_id=user_id,
+            per_item_delay_seconds=per_item_delay_seconds,
         )
     except Exception as exc:
         if run_id:
