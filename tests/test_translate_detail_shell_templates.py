@@ -62,6 +62,24 @@ def test_task_workbench_config_exposes_detail_mode_and_selector_endpoints():
     assert "detailMode:" in script
 
 
+def test_translate_status_card_is_sticky_below_topbar():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    status_rule = re.search(r"\.task-status-card\s*\{(?P<body>.*?)\n\s*\}", shared, re.S)
+    assert status_rule
+    status_css = re.sub(r"\s+", "", status_rule.group("body"))
+
+    assert "position:sticky;" in status_css
+    assert "top:68px;" in status_css
+    assert "z-index:40;" in status_css
+
+    mobile_start = shared.index("@media (max-width: 768px)")
+    mobile_css = shared[mobile_start:]
+    assert ".task-status-card" in mobile_css
+    assert "top: 60px;" in mobile_css
+
+
 def test_omni_detail_shell_contains_preset_summary_slot():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
