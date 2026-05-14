@@ -33,6 +33,26 @@ SESSION_LIFETIME = timedelta(days=30)
 
 csrf = CSRFProtect()
 
+
+def _sidebar_server_env_label() -> str:
+    import config
+
+    value = (getattr(config, "SERVER_ENV", "local") or "local").strip().lower()
+    if value in {"volengine", "vol"}:
+        return "vol"
+    if value in {"local", "localserver", "localsever"}:
+        return "localsever"
+    return value
+
+
+def _sidebar_file_storage_label() -> str:
+    import config
+
+    value = (getattr(config, "FILE_STORAGE_MODE", "local_primary") or "").strip().lower()
+    if value == "tos_primary":
+        return "tos"
+    return "lcl"
+
 from web.routes.task import bp as task_bp
 from web.routes.voice import bp as voice_bp
 from web.routes.auth import bp as auth_bp
@@ -368,6 +388,13 @@ def create_app() -> Flask:
         except Exception:
             log.warning("scheduled task alert injection failed", exc_info=True)
             return {"scheduled_task_failure_alert": None}
+
+    @app.context_processor
+    def inject_sidebar_runtime_badges():
+        return {
+            "sidebar_server_env_label": _sidebar_server_env_label(),
+            "sidebar_file_storage_label": _sidebar_file_storage_label(),
+        }
 
     # 服务启动只做状态标记，不启动任何任务 runner，避免重启风暴。
     _run_startup_recovery()
