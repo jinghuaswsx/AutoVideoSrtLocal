@@ -219,6 +219,26 @@ def test_tts_card_has_expand_collapse_control():
     assert ".step.tts-card-collapsed #ttsDurationLog" in styles
 
 
+def test_omni_speech_shot_alignment_card_is_rendered_between_tts_and_subtitle():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert 'id="speechShotAlignmentCard"' in template
+    assert "语音镜头对齐" in template
+    assert (
+        template.index('id="step-tts"')
+        < template.index('id="speechShotAlignmentCard"')
+        < template.index('id="step-subtitle"')
+    )
+    assert "renderSpeechShotAlignmentCard" in script
+    assert "speech_shot_alignment_decisions" in script
+    assert "没有使用大模型" in script
+    assert "为什么没做" in script
+    assert ".speech-shot-card" in styles
+
+
 def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")

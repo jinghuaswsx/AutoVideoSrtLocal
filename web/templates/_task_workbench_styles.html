@@ -429,6 +429,124 @@ video.media-player {
 .step.tts-card-collapsed #ttsDurationLog {
   display: none !important;
 }
+.speech-shot-card {
+  border-color: #bae6fd;
+  background: #f8fafc;
+}
+.speech-shot-icon {
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+.speech-shot-card-body {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-main);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.speech-shot-note {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.speech-shot-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.speech-shot-metrics > div {
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  min-width: 0;
+}
+.speech-shot-metrics span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.speech-shot-metrics strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.speech-shot-subtitle {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+.speech-shot-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.speech-shot-reason-chip {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.speech-shot-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+}
+.speech-shot-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+  font-size: 12px;
+}
+.speech-shot-table th,
+.speech-shot-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.speech-shot-table th {
+  color: #475569;
+  background: #f1f5f9;
+  font-weight: 800;
+}
+.speech-shot-table tr:last-child td {
+  border-bottom: 0;
+}
+.speech-shot-decision {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.speech-shot-decision.is-applied {
+  background: #dcfce7;
+  color: #166534;
+}
+.speech-shot-decision.is-skipped {
+  background: #f1f5f9;
+  color: #475569;
+}
+.speech-shot-empty,
+.speech-shot-more {
+  color: #64748b;
+  font-size: 12px;
+}
 .llm-prompt-pill {
   display: inline-flex;
   align-items: center;

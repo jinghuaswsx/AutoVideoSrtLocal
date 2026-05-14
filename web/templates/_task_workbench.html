@@ -791,6 +791,20 @@
       <div class="step-preview" id="preview-tts"></div>
       <div id="ttsDurationLog" class="duration-log" hidden></div>
     </div>
+    {% if api_base == '/api/omni-translate' %}
+    <div class="step speech-shot-card hidden" id="speechShotAlignmentCard">
+      <div class="step-main">
+        <div class="step-icon speech-shot-icon" id="icon-speech-shot-alignment">↔</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">语音镜头对齐</span>
+          </div>
+          <div class="step-msg" id="speechShotAlignmentMsg">等待语音生成完成...</div>
+        </div>
+      </div>
+      <div class="speech-shot-card-body" id="speechShotAlignmentBody"></div>
+    </div>
+    {% endif %}
     {% if show_loudness_step %}
     <div class="step" id="step-loudness_match">
       <div class="step-main">

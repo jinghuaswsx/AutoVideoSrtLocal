@@ -907,8 +907,136 @@
     updateResumeButtons(currentTask);
     syncActiveRefreshLoop(currentTask);
     renderTtsDurationLog();
+    renderSpeechShotAlignmentCard();
     syncTtsCardCollapseState();
     renderStatusCard();
+  }
+
+  function speechShotAlignmentStatus(summary = {}) {
+    const status = String(summary.speech_shot_alignment_status || "").toLowerCase();
+    if (status === "optimized") return { label: "已优化", className: "success" };
+    if (status === "no_op") return { label: "无优化空间", className: "muted" };
+    if (status === "skipped_no_anchors") return { label: "无镜头锚点", className: "muted" };
+    if (status === "skipped_no_sentences") return { label: "无句子", className: "muted" };
+    if (status === "skipped_content_over_video") return { label: "跳过：音频已超视频", className: "warning" };
+    if (status === "skipped_not_omni_sentence_reconcile") return { label: "不适用", className: "muted" };
+    if (status) return { label: status, className: "muted" };
+    return { label: "等待分析", className: "running" };
+  }
+
+  function speechShotAlignmentReasonLabel(reason) {
+    return ({
+      nearby_cut_soft_snap: "贴近镜头切点",
+      too_far_from_cut: "附近没有可用镜头切点",
+      would_exceed_final_gap_cap: "会超过单段最终静音上限",
+      hook_protection: "开头 Hook 保护",
+      over_budget: "超过全局额外静音预算",
+      would_overrun_video: "会超过最终视频时长",
+      final_speech_exceeds_video: "收敛后音频已超过视频",
+      no_extra_needed: "原排程已足够贴近",
+    })[String(reason || "")] || (reason || "--");
+  }
+
+  function speechShotAlignmentSummary() {
+    const av = currentTask?.variants?.av || {};
+    const avDebug = currentTask?.av_debug || av.av_debug || {};
+    const candidates = [
+      currentTask?.speech_shot_alignment,
+      av.speech_shot_alignment,
+      currentTask?.final_compose_summary,
+      av.final_compose_summary,
+      avDebug.final_compose_summary,
+    ];
+    return candidates.find(item => (
+      item && Object.prototype.hasOwnProperty.call(item, "speech_shot_alignment_status")
+    )) || {};
+  }
+
+  function renderSpeechShotAlignmentCard() {
+    const card = document.getElementById("speechShotAlignmentCard");
+    const body = document.getElementById("speechShotAlignmentBody");
+    const msg = document.getElementById("speechShotAlignmentMsg");
+    if (!card || !body || !msg) return;
+
+    const summary = speechShotAlignmentSummary();
+    const hasSummary = Object.prototype.hasOwnProperty.call(summary, "speech_shot_alignment_status");
+    const ttsStatus = String(currentTask?.steps?.tts || "");
+    const shouldShow = TASK_WORKBENCH_CONFIG.apiBase === "/api/omni-translate"
+      && (hasSummary || ["running", "done", "error", "failed"].includes(ttsStatus));
+    card.classList.toggle("hidden", !shouldShow);
+    if (!shouldShow) {
+      body.innerHTML = "";
+      return;
+    }
+
+    const status = speechShotAlignmentStatus(summary);
+    const decisions = Array.isArray(summary.speech_shot_alignment_decisions)
+      ? summary.speech_shot_alignment_decisions
+      : [];
+    const skipReasons = summary.shot_anchor_skip_reasons || {};
+    const skipRows = Object.entries(skipReasons)
+      .filter(([, count]) => Number(count || 0) > 0)
+      .map(([reason, count]) => `
+        <span class="speech-shot-reason-chip">
+          ${escapeHtml(speechShotAlignmentReasonLabel(reason))} × ${escapeHtml(count)}
+        </span>
+      `).join("");
+    const decisionRows = decisions.slice(0, 16).map(row => {
+      const decision = row.decision === "applied" ? "已优化" : "未改动";
+      const finalGap = row.final_gap ?? row.required_final_gap ?? null;
+      return `
+        <tr>
+          <td>#${escapeHtml(row.asr_index ?? row.sentence_index ?? "--")}</td>
+          <td>${formatAvDuration(row.cut_time)}</td>
+          <td>${formatAvDuration(row.base_compact_gap)}</td>
+          <td>${formatAvDuration(finalGap)}</td>
+          <td>${formatAvDuration(row.extra_silence)}</td>
+          <td><span class="speech-shot-decision ${row.decision === "applied" ? "is-applied" : "is-skipped"}">${decision}</span></td>
+          <td>${escapeHtml(speechShotAlignmentReasonLabel(row.reason))}</td>
+        </tr>
+      `;
+    }).join("");
+    const decisionTable = decisionRows ? `
+      <div class="speech-shot-table-wrap">
+        <table class="speech-shot-table">
+          <thead>
+            <tr>
+              <th>句</th>
+              <th>镜头切点</th>
+              <th>原紧凑静音</th>
+              <th>最终静音</th>
+              <th>新增静音</th>
+              <th>决策</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody>${decisionRows}</tbody>
+        </table>
+      </div>
+    ` : '<div class="speech-shot-empty">暂无逐句决策；通常表示没有镜头锚点或语音尚未完成。</div>';
+    const moreRows = decisions.length > 16
+      ? `<div class="speech-shot-more">还有 ${escapeHtml(decisions.length - 16)} 条决策已省略。</div>`
+      : "";
+
+    msg.innerHTML = `状态：<span class="duration-status-tag ${escapeAttr(status.className)}">${escapeHtml(status.label)}</span>`;
+    body.innerHTML = `
+      <div class="speech-shot-note">
+        没有使用大模型；这里仅结合收敛后的语音时间轴、原有紧凑静音和镜头切点做确定性判断。
+      </div>
+      <div class="speech-shot-metrics">
+        <div><span>分析断点</span><strong>${escapeHtml(summary.speech_shot_alignment_analyzed_boundaries ?? 0)}</strong></div>
+        <div><span>镜头锚点</span><strong>${escapeHtml(summary.shot_anchor_cut_count ?? 0)}</strong></div>
+        <div><span>优化断点</span><strong>${escapeHtml(summary.shot_anchor_aligned_boundary_count ?? 0)}</strong></div>
+        <div><span>额外静音</span><strong>${formatAvDuration(summary.shot_anchor_extra_silence_total)}</strong></div>
+        <div><span>最终最大断点</span><strong>${formatAvDuration(summary.speech_shot_alignment_max_final_gap)}</strong></div>
+        <div><span>预算</span><strong>${formatAvDuration(summary.shot_anchor_extra_silence_budget)}</strong></div>
+      </div>
+      <div class="speech-shot-subtitle">为什么没做</div>
+      <div class="speech-shot-reasons">${skipRows || '<span class="speech-shot-reason-chip">没有跳过项</span>'}</div>
+      <div class="speech-shot-subtitle">逐句决策</div>
+      ${decisionTable}
+      ${moreRows}
+    `;
   }
 
   function syncTtsCardCollapseState(nextCollapsed = null) {
