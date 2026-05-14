@@ -40,6 +40,8 @@
   - 标题旁的“提示词”按钮：打开 Modal，展示该步骤本次请求的输入、模型选择、媒体输入摘要、prompt / messages、原始返回和结构化结果。
   - “可视化展现”：主流程只展示按结构化字段设计的前端布局，不直接展示完整原始报文或密集 JSON。
   - “重新跑”按钮：步骤失败或已完成后可用；运行中禁用。
+- 步骤卡片的执行状态视觉必须高保真复刻多语种视频翻译任务执行页的 step 卡片结构和动效：卡片用同款圆角、边框、图标圆点、`step-name-row`、`step-msg` 和 running spinner。状态色按文案封面当前需求落地为：正在执行浅绿色、已完成深绿色、报错红色、堵塞等待确认橙色；pending 保持白底等待态。
+- 每张步骤卡片的耗时信息必须改成更显眼的标题行 badge，放在卡片标题右侧并与标题约 100px 间隔，整体靠近卡片左侧而不是居中。运行中展示“已运行 Ns”并带旋转 spinner，完成后展示“耗时 Ns”，字体加粗。
 - `video_analysis`、`product_analysis`、`ad_copy` 必须要求模型返回结构化 JSON；后端保存 `raw_response` 和 `structured_result`，前端优先用 `structured_result` 渲染。
 - 视频分析可视化建议字段：`video_text`、`voiceover`、`cover_reference`、`actions`、`composition`、`authenticity_cues`、`ignore_elements`、`cover_suggestions`。
 - 产品分析可视化建议字段：`information_check`、`product_definition`、`core_functions`、`usage_analysis`、`physical_features`、`western_scene_suggestions`、`visual_category`、`cover_decision`、`ad_copy_direction`、`overall_judgment`。

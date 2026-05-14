@@ -864,6 +864,59 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "/video-cover/api/task-1/download/social_reels" in html
 
 
+def test_video_cover_detail_matches_multi_translate_step_status_style(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "image_count": 2,
+        "steps": {
+            "video_analysis": "running",
+            "product_analysis": "done",
+            "ad_copy": "error",
+            "cover_generation": "waiting",
+        },
+        "step_messages": {
+            "video_analysis": "运行中...",
+            "product_analysis": "已完成",
+            "ad_copy": "模型返回错误",
+            "cover_generation": "等待确认",
+        },
+        "step_timing": {
+            "video_analysis": {"running_seconds": 17},
+            "product_analysis": {"elapsed_seconds": 8},
+            "ad_copy": {"elapsed_seconds": 3},
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'class="vcd-process-card step running"' in html
+    assert 'class="vcd-process-card step done"' in html
+    assert 'class="vcd-process-card step error"' in html
+    assert 'class="vcd-process-card step waiting"' in html
+    assert 'class="vcd-step-icon step-icon running"' in html
+    assert 'data-step-icon="video_analysis"' in html
+    assert 'data-step-message="ad_copy"' in html
+    assert 'vcd-timer-spinner spinner' in html
+    assert ".vcd-process-card.running { border-color:#86efac; background:rgba(34,197,94,.10);" in html
+    assert ".vcd-process-card.done { border-color:#16a34a; background:rgba(22,163,74,.18);" in html
+    assert ".vcd-process-card.waiting { border-color:#fcd34d; background:rgba(217,119,6,.12);" in html
+    assert ".vcd-process-card.error { border-color:#fca5a5; background:#fef2f2;" in html
+    assert ".vcd-card-timer { margin-left:100px;" in html
+    assert "font-weight:900;" in html
+    assert "timer.innerHTML = timerHtml(step, status);" in html
+
+
 def test_video_cover_detail_renders_input_card_without_get_recovery(authed_client_no_db, monkeypatch, tmp_path):
     from web.routes import video_cover
 
