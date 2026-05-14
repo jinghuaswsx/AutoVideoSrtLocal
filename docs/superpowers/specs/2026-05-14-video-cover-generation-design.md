@@ -20,8 +20,11 @@
 - 管理员在 `/video-cover` 查看 `video_cover` 类型下全局所有未删除项目，不按创建人过滤；项目卡片展示创建人，便于区分来源。
 - 新建项目的视频输入框采用全能视频翻译一致的交互：竖版拖拽区，可拖入视频，也可点击打开文件选择；选中后显示 9:16 视频预览、文件名和移除按钮。
 - 每个项目落库到 `projects.type='video_cover'`，项目详情页按固定前后关系管理 4 个步骤：`video_analysis`、`product_analysis`、`ad_copy`、`cover_generation`。
+- 创建项目时必须从商品链接提取商品标题和商品主图 URL，下载商品主图并程序化标准化为 `400x400` JPG，写入项目状态；后续步骤复用这些项目输入，不在详情页展示时重新抓取。
+- 项目详情页第一步「视频分析」卡片上方固定展示项目输入卡片：第一行商品标题；第二行商品链接预览与「复制」「跳转访问」按钮；第三行左侧 `180x180` 商品主图、右侧 `180x320` 可播放视频框。
 - 后续步骤必须等待前序步骤完成；重新运行上游步骤会清空其后的结果，避免过期分析被继续用于生成。
 - 视频分析调用大模型前必须使用共享 LLM 视频优化器转成 480p、15fps、H.264 600k 级别的临时文件，保留压缩音频以支持 voiceover 判断；转码失败时沿用优化器的原视频回退行为。
+- 视频封面详情页的普通 GET 不做“中断恢复”；运行中的步骤不能因为用户刷新或打开详情页被误标为失败，真正的进程中断由启动恢复逻辑处理。
 - 封面生成完成后，最终封面结果显示在项目详情页最顶部，并提供直接下载按钮。
 
 ## 模型与平台决策
@@ -55,19 +58,19 @@
 
 1.0 中的上下文构造：
 
-- `product_analysis`：调用 `video_cover.product_analysis`，基于商品标题、描述、主图、价格线索和产品分析提示词生成产品分析报告。
-- `video_analysis`：调用 `video_cover.video_analysis`，基于上传视频文件和补充商品信息生成视频素材分析。
-- `ad_copy_sets`：先调用 `video_cover.ad_copy` 文案创作提示词，基于 `product_analysis`、`video_analysis` 和当前日期生成 5 组英文广告文案 JSON，再作为封面 hook 方向输入。
+- `product_analysis`：调用 `video_cover.product_analysis`，prompt 明确声明输入已包含商品标题、商品主图 URL 和标准化后的 `400x400` JPG 商品主图文件；media 使用该标准化 JPG，基于标题、描述、主图、价格线索和产品分析提示词生成产品分析报告。
+- `video_analysis`：调用 `video_cover.video_analysis`，prompt 明确声明输入已包含商品标题、商品主图 URL、标准化 `400x400` JPG 商品主图文件和上传视频；media 同时传入优化后视频与标准化商品主图，生成视频素材分析。
+- `ad_copy_sets`：先调用 `video_cover.ad_copy` 文案创作提示词，prompt 带上商品标题、商品主图 URL、`product_analysis`、`video_analysis` 和当前日期，输出 5 组英文广告文案 JSON，再作为封面 hook 方向输入。
 
 ## 数据流
 
 1. 管理员打开 `/video-cover` 查看项目列表；列表查询 `projects.type='video_cover' AND deleted_at IS NULL`，管理员不加 `user_id` 条件。
 2. 管理员点击“新建项目”，在弹窗输入商品链接并拖入或点击选择视频。
-3. `POST /video-cover/api/projects` 校验商品链接和视频扩展名，将视频保存到本地上传目录，抽取缩略图，写入 `projects`：`type='video_cover'`、`status='uploaded'`、`task_dir`、`thumbnail_path`、`state_json`。
+3. `POST /video-cover/api/projects` 校验商品链接和视频扩展名，提取商品标题与商品主图 URL，下载商品主图并标准化保存为 `400x400` JPG；将视频保存到本地上传目录，抽取缩略图，写入 `projects`：`type='video_cover'`、`status='uploaded'`、`task_dir`、`thumbnail_path`、`state_json`。
 4. 用户进入 `/video-cover/<task_id>` 项目详情页后按步骤运行：视频分析、产品分析、文案创作、封面生成。
-5. “视频分析”步骤使用项目保存的视频文件，调用所选文本模型。
-6. “产品分析”步骤调用 `fetch_product_analysis()` 解析商品标题与主图 URL，并把商品主图和商品信息发给所选文本模型。
-7. “文案创作”步骤调用 `POST /video-cover/api/<task_id>/run/ad_copy`，基于 `product_analysis`、`video_analysis` 和当前日期输出 5 组合法 `ad_copy_sets` JSON。
+5. “视频分析”步骤使用项目保存的视频文件、商品标题和标准化商品主图，调用所选文本模型。
+6. “产品分析”步骤复用项目创建时保存的商品标题、商品主图 URL 和标准化商品主图，并把商品信息发给所选文本模型。
+7. “文案创作”步骤调用 `POST /video-cover/api/<task_id>/run/ad_copy`，基于商品标题、商品主图 URL、`product_analysis`、`video_analysis` 和当前日期输出 5 组合法 `ad_copy_sets` JSON。
 8. “封面生成”步骤下载商品主图、抽取视频帧并合成 9:16 参考图。
 9. 构造创意总监 prompt，替换 `product_analysis`、`video_analysis`、`ad_copy_sets` 占位。
 10. 调用本地接口或 OpenRouter 图片模型生成通用社媒封面。
@@ -84,6 +87,6 @@
 
 ## 测试
 
-- 服务层：校验商品链接解析、模型映射、产品/视频/文案/封面调用顺序、参考图生成、平台 prompt、输出 1080x1920。
+- 服务层：校验商品链接解析、商品主图标准化为 `400x400` JPG、模型映射、产品/视频/文案/封面调用顺序、参考图生成、平台 prompt、输出 1080x1920。
 - 路由层：未登录跳登录，普通用户 403，管理员列表页 200；管理员列表查询全局 `video_cover` 项目；新建项目校验商品链接和视频扩展名并写入项目；详情页只允许管理员访问；步骤接口传递模型配置并返回结果。
-- 模板层：侧栏出现「文案封面生成」；列表页出现“新建项目”；新建弹窗视频输入框包含拖拽区、隐藏 file input、预览 video、移除按钮；详情页出现 4 个步骤按钮和供应商/模型配置。
+- 模板层：侧栏出现「文案封面生成」；列表页出现“新建项目”；新建弹窗视频输入框包含拖拽区、隐藏 file input、预览 video、移除按钮；详情页第一步上方出现项目输入卡片，展示商品标题、链接复制/跳转按钮、`180x180` 商品主图和 `180x320` 视频播放框；详情页出现 4 个步骤按钮和供应商/模型配置。

@@ -6,7 +6,7 @@
 {% block extra_style %}
 .vcd-back { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; margin-bottom:16px; border:1px solid var(--border-main); border-radius:8px; color:var(--text-main); text-decoration:none; font-size:13px; font-weight:700; }
 .vcd-back:hover { border-color:var(--primary-color); color:var(--primary-color); }
-.vcd-layout { display:grid; grid-template-columns:minmax(280px, 380px) minmax(0, 1fr); gap:18px; align-items:start; }
+.vcd-layout { display:block; }
 .vcd-panel { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
 .vcd-title { margin:0 0 12px; font-size:15px; font-weight:800; color:var(--text-main); }
 .vcd-result { display:grid; grid-template-columns:minmax(160px, 230px) minmax(0, 1fr); gap:16px; align-items:start; margin-bottom:18px; border-color:rgba(22,163,74,.45); }
@@ -16,8 +16,14 @@
 .vcd-kv { display:grid; gap:10px; }
 .vcd-kv dt { font-size:12px; color:#9ca3af; font-weight:700; }
 .vcd-kv dd { margin:3px 0 0; font-size:13px; color:var(--text-main); overflow-wrap:anywhere; }
-.vcd-video { width:100%; max-height:260px; border-radius:8px; background:#000; }
 .vcd-steps { display:grid; gap:10px; }
+.vcd-input-card { display:grid; gap:12px; padding:14px; border:1px solid rgba(14,165,233,.28); border-radius:8px; background:rgba(14,165,233,.05); }
+.vcd-product-title { font-size:15px; line-height:1.45; font-weight:800; color:var(--text-main); overflow-wrap:anywhere; }
+.vcd-link-row { display:flex; align-items:center; gap:8px; min-width:0; }
+.vcd-link-preview { flex:1; min-height:36px; display:flex; align-items:center; padding:7px 10px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:var(--text-main); font-size:13px; overflow-wrap:anywhere; min-width:0; }
+.vcd-input-media { display:grid; grid-template-columns:180px 180px; gap:14px; align-items:start; }
+.vcd-product-image { width:180px; height:180px; object-fit:cover; border:1px solid var(--border-main); border-radius:8px; background:#fff; }
+.vcd-source-video { width:180px; height:320px; object-fit:contain; border:1px solid var(--border-main); border-radius:8px; background:#000; }
 .vcd-step { display:grid; grid-template-columns:32px minmax(0, 1fr); gap:10px; padding:12px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-body); }
 .vcd-step-icon { width:28px; height:28px; border-radius:999px; display:grid; place-items:center; font-size:12px; font-weight:800; border:1px solid var(--border-main); color:#9ca3af; background:var(--bg-card); }
 .vcd-step-icon.done { color:#16a34a; background:rgba(22,163,74,.12); border-color:rgba(22,163,74,.35); }
@@ -36,7 +42,13 @@
 .vcd-output-grid { display:grid; gap:12px; margin-top:14px; }
 .vcd-error { min-height:20px; margin-top:10px; color:#dc2626; font-size:13px; }
 @media (max-width:1080px) {
-  .vcd-layout, .vcd-result, .vcd-config { grid-template-columns:1fr; }
+  .vcd-result, .vcd-config { grid-template-columns:1fr; }
+}
+@media (max-width:560px) {
+  .vcd-link-row { align-items:stretch; flex-direction:column; }
+  .vcd-link-row .btn { width:100%; }
+  .vcd-input-media { grid-template-columns:1fr; }
+  .vcd-product-image, .vcd-source-video { width:100%; max-width:180px; }
 }
 {% endblock %}
 
@@ -45,6 +57,10 @@
 
 {% set result = state.get('result') or {} %}
 {% set covers = result.get('covers') or [] %}
+{% set product = state.get('product') or result.get('product') or {} %}
+{% set product_title = product.get('title') or state.get('display_name') or project.display_name or project.original_filename or task_id %}
+{% set product_url = product.get('product_url') or state.get('product_url') %}
+{% set product_image_src = url_for('video_cover.product_image', task_id=task_id) if product.get('product_image_path') else product.get('main_image_url') %}
 <section class="vcd-panel vcd-result">
   <div>
     {% if covers %}
@@ -70,27 +86,21 @@
 </section>
 
 <div class="vcd-layout">
-  <aside class="vcd-panel">
-    <h2 class="vcd-title">项目输入</h2>
-    <dl class="vcd-kv">
-      <div>
-        <dt>项目名</dt>
-        <dd>{{ state.get('display_name') or project.display_name or project.original_filename or task_id }}</dd>
-      </div>
-      <div>
-        <dt>商品链接</dt>
-        <dd><a href="{{ state.get('product_url') }}" target="_blank" rel="noopener noreferrer">{{ state.get('product_url') }}</a></dd>
-      </div>
-      <div>
-        <dt>视频文件</dt>
-        <dd>{{ state.get('video_filename') or project.original_filename }}</dd>
-      </div>
-    </dl>
-  </aside>
-
   <main class="vcd-panel">
     <h2 class="vcd-title">工作流</h2>
     <div class="vcd-steps">
+      <section class="vcd-input-card" aria-label="项目输入">
+        <div class="vcd-product-title">{{ product_title }}</div>
+        <div class="vcd-link-row">
+          <div class="vcd-link-preview">{{ product_url }}</div>
+          <button class="btn btn-ghost btn-sm" type="button" data-copy-product-url="{{ product_url }}">复制</button>
+          <a class="btn btn-primary btn-sm" href="{{ product_url }}" target="_blank" rel="noopener noreferrer">跳转访问</a>
+        </div>
+        <div class="vcd-input-media">
+          <img class="vcd-product-image" src="{{ product_image_src }}" alt="商品主图" loading="lazy">
+          <video class="vcd-source-video" src="{{ url_for('video_cover.source_video', task_id=task_id) }}" controls preload="metadata" playsinline></video>
+        </div>
+      </section>
       {% for step in step_order %}
       {% set status = state.get('steps', {}).get(step, 'pending') %}
       <section class="vcd-step" data-step-row="{{ step }}">
@@ -146,6 +156,33 @@
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? meta.getAttribute('content') || '' : '';
+  }
+  function bindCopyButtons() {
+    document.querySelectorAll('[data-copy-product-url]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const value = button.getAttribute('data-copy-product-url') || '';
+        const originalText = button.textContent;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(value);
+          } else {
+            const input = document.createElement('textarea');
+            input.value = value;
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            input.remove();
+          }
+          button.textContent = '已复制';
+          window.setTimeout(() => { button.textContent = originalText; }, 1200);
+        } catch (error) {
+          button.textContent = '复制失败';
+          window.setTimeout(() => { button.textContent = originalText; }, 1200);
+        }
+      });
+    });
   }
   function stepConfig(step) {
     return (MODEL_OPTIONS.steps || {})[step] || {};
@@ -219,6 +256,7 @@
     }
   }
   document.querySelectorAll('[data-provider-select]').forEach(select => configureStep(select.getAttribute('data-provider-select')));
+  bindCopyButtons();
   document.querySelectorAll('[data-run-step]').forEach(button => {
     button.addEventListener('click', () => runStep(button.getAttribute('data-run-step'), button));
   });

@@ -22,6 +22,18 @@ def _jpg_file(path: Path, size=(720, 1280), color=(180, 80, 20)) -> Path:
     return path
 
 
+def test_normalize_product_image_jpg_outputs_400_square_jpeg():
+    from appcore.video_cover_generation import normalize_product_image_jpg
+
+    payload = normalize_product_image_jpg(_png_bytes(size=(900, 240), color=(20, 120, 180)))
+
+    assert payload.startswith(b"\xff\xd8")
+    with Image.open(BytesIO(payload)) as img:
+        assert img.format == "JPEG"
+        assert img.mode == "RGB"
+        assert img.size == (400, 400)
+
+
 class _FakeProduct:
     title = "Portable Blender Pro"
     main_image_url = "https://cdn.example/blender.png"
@@ -53,11 +65,15 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     def fake_analysis(use_case_code: str, **kwargs):
         analysis_calls.append({"use_case_code": use_case_code, "kwargs": kwargs})
         if use_case_code == "video_cover.video_analysis":
-            assert Path(kwargs["media"]).is_file()
+            assert len(kwargs["media"]) == 2
+            assert Path(kwargs["media"][0]).is_file()
+            assert Path(kwargs["media"][1]).is_file()
+            assert kwargs["media"][1].endswith(".jpg")
             return {"text": "video_text: fresh smoothie\ncover_reference: hand using blender"}
         if use_case_code == "video_cover.product_analysis":
             media = kwargs["media"]
             assert Path(media).is_file()
+            assert str(media).endswith(".jpg")
             return {"text": "<产品分析报告>\n<使用方式解析>\n手持搅拌杯制作奶昔</产品分析报告>"}
         raise AssertionError(use_case_code)
 
@@ -120,6 +136,7 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert "{video_analysis}" not in calls[0]["prompt"]
     assert "{ad_copy_sets}" not in calls[0]["prompt"]
     assert "Portable Blender Pro" in calls[0]["prompt"]
+    assert "商品主图 URL" in calls[0]["prompt"]
     assert calls[0]["kwargs"]["channel"] == "local"
     assert calls[0]["kwargs"]["model"] == "gpt-image-2"
     assert calls[0]["kwargs"]["service"] == "video_cover.generate"
@@ -251,6 +268,8 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
         }
 
     result = generate_ad_copy_sets(
+        product_title="Portable Blender Pro",
+        main_image_url="https://cdn.example/blender.png",
         product_analysis="<使用方式解析>\nHandheld blender",
         video_analysis="video_text: fresh smoothie",
         current_date="2026-05-14",
@@ -267,6 +286,8 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert captured["response_format"] == {"type": "json_object"}
     prompt = captured["messages"][1]["content"]
     assert "资深 Facebook / Instagram Reels 视频广告文案专家" in prompt
+    assert "商品标题：Portable Blender Pro" in prompt
+    assert "商品主图 URL：https://cdn.example/blender.png" in prompt
     assert "产品分析：<使用方式解析>" in prompt
     assert "视频素材分析：video_text: fresh smoothie" in prompt
     assert "当前日期：2026-05-14" in prompt
@@ -281,6 +302,9 @@ def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatc
     optimized = tmp_path / "source.review480p.mp4"
     source.write_bytes(b"source")
     optimized.write_bytes(b"optimized")
+    product_image = tmp_path / "product.jpg"
+    product_image_bytes = _png_bytes(size=(400, 400))
+    product_image.write_bytes(product_image_bytes)
     captured = {}
 
     def fake_prepare(video_path, policy, output_dir=None):
@@ -316,6 +340,7 @@ def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatc
         product_title="Portable Blender Pro",
         product_url="https://shop.example/products/blender",
         main_image_url="https://cdn.example/blender.png",
+        product_image_path=product_image,
         invoke_generate_fn=fake_invoke,
     )
 
@@ -323,8 +348,37 @@ def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatc
     assert captured["prepare"]["policy"] == "review_480p_audio"
     assert captured["prepare"]["output_dir"] == str(tmp_path)
     assert captured["use_case_code"] == "video_cover.video_analysis"
-    assert captured["media"] == str(optimized)
+    assert captured["media"] == [str(optimized), str(product_image)]
     assert captured["cleanup_path"] == str(optimized)
+    assert product_image.read_bytes() == product_image_bytes
+
+
+def test_product_analysis_prompt_declares_standardized_product_image(tmp_path):
+    from appcore.video_cover_generation import generate_product_analysis
+
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg")
+    captured = {}
+
+    def fake_invoke(use_case_code: str, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured.update(kwargs)
+        return {"text": "<产品分析报告>ok</产品分析报告>"}
+
+    result = generate_product_analysis(
+        product=_FakeProduct(),
+        product_title="Portable Blender Pro",
+        main_image_url="https://cdn.example/blender.png",
+        product_image_path=product_image,
+        invoke_generate_fn=fake_invoke,
+    )
+
+    assert result.startswith("<产品分析报告>")
+    assert captured["use_case_code"] == "video_cover.product_analysis"
+    assert captured["media"] == str(product_image)
+    assert "商品标题：Portable Blender Pro" in captured["prompt"]
+    assert "商品主图 URL：https://cdn.example/blender.png" in captured["prompt"]
+    assert "400x400 JPG" in captured["prompt"]
 
 
 def test_build_platform_prompt_uses_creative_director_inputs():
@@ -432,6 +486,12 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
     monkeypatch.setattr(
         video_cover,
+        "_extract_product",
+        lambda product_url: (_FakeProduct(), _FakeProduct.title, _FakeProduct.main_image_url),
+    )
+    monkeypatch.setattr(video_cover, "_fetch_product_image", lambda image_url: _png_bytes(size=(900, 240)))
+    monkeypatch.setattr(
+        video_cover,
         "extract_thumbnail",
         lambda video_path, output_dir, scale=None: str(Path(output_dir) / "thumb.jpg"),
     )
@@ -454,6 +514,12 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     state = inserted["state"]
     assert state["type"] == "video_cover"
     assert state["product_url"] == "https://shop.example/products/lamp"
+    assert state["product"]["title"] == "Portable Blender Pro"
+    assert state["product"]["main_image_url"] == "https://cdn.example/blender.png"
+    assert Path(state["product"]["product_image_path"]).is_file()
+    with Image.open(state["product"]["product_image_path"]) as img:
+        assert img.format == "JPEG"
+        assert img.size == (400, 400)
     assert Path(state["video_path"]).is_file()
     assert state["steps"] == {
         "video_analysis": "pending",
@@ -502,6 +568,83 @@ def test_video_cover_detail_shows_final_result_download_at_top(authed_client_no_
     assert "最终封面" in html
     assert "下载最终封面" in html
     assert "/video-cover/api/task-1/download/social_reels" in html
+
+
+def test_video_cover_detail_renders_input_card_and_skips_get_recovery(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg")
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(product_image),
+        },
+        "steps": {
+            "video_analysis": "running",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "pending",
+        },
+        "step_messages": {"video_analysis": "运行中..."},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    def fail_recovery(task_id, project_type):
+        raise AssertionError("detail page must not recover a running video_cover step on GET")
+
+    monkeypatch.setattr(video_cover, "recover_project_if_needed", fail_recovery)
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "项目输入" in html
+    assert "Portable Blender Pro" in html
+    assert 'data-copy-product-url="https://shop.example/products/lamp"' in html
+    assert "/video-cover/api/task-1/product-image" in html
+    assert "/video-cover/api/task-1/source-video" in html
+    assert "vcd-product-image" in html
+    assert "vcd-source-video" in html
+
+
+def test_video_cover_source_media_routes_serve_project_files(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video-data")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg-data")
+    state = {
+        "video_path": str(video_path),
+        "product": {"product_image_path": str(product_image)},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    video_resp = authed_client_no_db.get("/video-cover/api/task-1/source-video")
+    image_resp = authed_client_no_db.get("/video-cover/api/task-1/product-image")
+
+    assert video_resp.status_code == 200
+    assert video_resp.data == b"video-data"
+    assert image_resp.status_code == 200
+    assert image_resp.data == b"jpg-data"
 
 
 def test_video_cover_step_requires_previous_steps_done(authed_client_no_db, monkeypatch, tmp_path):
@@ -572,6 +715,7 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
         lambda task_id, *, user_id, is_admin: row,
     )
     monkeypatch.setattr(video_cover, "_extract_product", lambda product_url: (product, product.title, product.main_image_url))
+    monkeypatch.setattr(video_cover, "_fetch_product_image", lambda image_url: _png_bytes(size=(900, 240)))
     monkeypatch.setattr(video_cover, "probe_media_info", lambda video_path_arg: {"duration": 8.0, "resolution": "720x1280"})
     def fake_generate_video_analysis(**kwargs):
         captured.update(kwargs)
@@ -600,6 +744,8 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
     assert saved["state"]["steps"]["video_analysis"] == "done"
     assert saved["state"]["video_analysis"] == "video_text: demo"
     assert saved["state"]["models"]["video_analysis"]["provider"] == "gemini_vertex_adc"
+    assert Path(saved["state"]["product"]["product_image_path"]).is_file()
+    assert Path(captured["product_image_path"]).is_file()
     assert captured["user_id"] == 8
 
 

@@ -33,6 +33,7 @@ LOCAL_IMAGE_PROVIDER_CODE = "video_cover_local_image"
 LOCAL_IMAGE_BASE_URL_DEFAULT = "http://172.30.254.14:82/v1"
 OUTPUT_SIZE = (1080, 1920)
 REFERENCE_SIZE = (1080, 1920)
+PRODUCT_IMAGE_SIZE = (400, 400)
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mpeg", ".mpg", ".avi", ".webm", ".m4v"}
 
 
@@ -330,6 +331,7 @@ CREATIVE_DIRECTOR_PROMPT_TEMPLATE = """请基于上传的产品图片、精选�
 补充上下文：
 - product_title: {product_title}
 - product_url: {product_url}
+- 商品主图 URL: {main_image_url}
 - reference_image: 上半部分为 product_image_*，下半部分为精选视频帧。"""
 
 PRODUCT_ANALYSIS_PROMPT_TEMPLATE = """角色：资深跨境电商产品分析师 + 欧美短视频广告封面策略专家。你的任务是根据用户提供的产品信息，生成可用于「文生图、视频封面生成、广告文案创作」的产品分析报告。
@@ -345,9 +347,10 @@ PRODUCT_ANALYSIS_PROMPT_TEMPLATE = """角色：资深跨境电商产品分析师
 
 输入：
 
-- 标题：{title}
+- 商品标题：{title}
 - 描述：{description}
-- 图片：{image_url}
+- 商品主图 URL：{image_url}
+- 商品主图文件：已下载并标准化为 400x400 JPG，作为本次多模态 media 输入；产品外观、颜色、结构、材质判断必须优先参考该图片文件。
 - 价格：{price_info}
 
 分析原则：
@@ -387,6 +390,7 @@ VIDEO_ANALYSIS_PROMPT_TEMPLATE = """角色：欧美短视频广告素材分析�
 - 商品标题：{product_title}
 - 商品链接：{product_url}
 - 商品主图：{main_image_url}
+- 商品主图文件：已下载并标准化为 400x400 JPG，作为本次多模态 media 输入；请用它校验视频中的产品是否一致，并辅助判断正确使用方式。
 - 视频元信息：{video_meta}
 
 分析目标：
@@ -425,6 +429,8 @@ AD_COPY_PROMPT_TEMPLATE = """角色：资深 Facebook / Instagram Reels 视频�
 
 输入信息：
 
+- 商品标题：{product_title}
+- 商品主图 URL：{main_image_url}
 - 产品分析：{product_analysis}
 - 视频素材分析：{video_analysis}
 - 当前日期：{current_date}
@@ -701,6 +707,22 @@ def _png_bytes(image: Image.Image) -> bytes:
     return out.getvalue()
 
 
+def _jpg_bytes(image: Image.Image) -> bytes:
+    out = BytesIO()
+    image.save(out, format="JPEG", quality=92, optimize=True)
+    return out.getvalue()
+
+
+def normalize_product_image_jpg(product_image_bytes: bytes) -> bytes:
+    image = _open_rgb_image(product_image_bytes)
+    panel = Image.new("RGB", PRODUCT_IMAGE_SIZE, (255, 255, 255))
+    fitted = ImageOps.contain(image, PRODUCT_IMAGE_SIZE, method=Image.Resampling.LANCZOS)
+    x = (PRODUCT_IMAGE_SIZE[0] - fitted.width) // 2
+    y = (PRODUCT_IMAGE_SIZE[1] - fitted.height) // 2
+    panel.paste(fitted, (x, y))
+    return _jpg_bytes(panel)
+
+
 def build_reference_image(product_image_bytes: bytes, frame_path: str) -> bytes:
     product_image = _open_rgb_image(product_image_bytes)
     video_frame = _read_image_file(frame_path)
@@ -792,9 +814,18 @@ def build_video_analysis_prompt(
     )
 
 
-def build_ad_copy_prompt(*, product_analysis: str, video_analysis: str, current_date: str) -> str:
+def build_ad_copy_prompt(
+    *,
+    product_title: str = "",
+    main_image_url: str = "",
+    product_analysis: str,
+    video_analysis: str,
+    current_date: str,
+) -> str:
     return (
         AD_COPY_PROMPT_TEMPLATE
+        .replace("{product_title}", product_title or "未提供")
+        .replace("{main_image_url}", main_image_url or "未提供")
         .replace("{product_analysis}", product_analysis)
         .replace("{video_analysis}", video_analysis)
         .replace("{current_date}", current_date)
@@ -885,6 +916,7 @@ def generate_video_analysis(
     product_title: str,
     product_url: str,
     main_image_url: str,
+    product_image_path: str | os.PathLike[str] | None = None,
     video_info: dict[str, Any] | None = None,
     provider: str | None = None,
     model: str | None = None,
@@ -905,10 +937,13 @@ def generate_video_analysis(
         output_dir=Path(video_path).parent,
     )
     try:
+        media_inputs: list[str] | str = media.llm_path
+        if product_image_path:
+            media_inputs = [media.llm_path, str(product_image_path)]
         response = invoke_generate_fn(
             "video_cover.video_analysis",
             prompt=prompt,
-            media=media.llm_path,
+            media=media_inputs,
             user_id=user_id,
             project_id=task_id,
             provider_override=selection.provider,
@@ -934,6 +969,8 @@ def generate_video_analysis(
 
 def generate_ad_copy_sets(
     *,
+    product_title: str = "",
+    main_image_url: str = "",
     product_analysis: str,
     video_analysis: str,
     current_date: str,
@@ -945,6 +982,8 @@ def generate_ad_copy_sets(
 ) -> dict[str, Any]:
     selection = resolve_text_model_selection("ad_copy", provider, model)
     prompt = build_ad_copy_prompt(
+        product_title=product_title,
+        main_image_url=main_image_url,
         product_analysis=product_analysis,
         video_analysis=video_analysis,
         current_date=current_date,
@@ -977,6 +1016,7 @@ def build_platform_prompt(
     *,
     product_title: str,
     product_url: str,
+    main_image_url: str = "",
     product_analysis: str,
     video_analysis: str,
     ad_copy_sets: str,
@@ -984,6 +1024,7 @@ def build_platform_prompt(
     return CREATIVE_DIRECTOR_PROMPT_TEMPLATE.format(
         product_title=product_title,
         product_url=product_url,
+        main_image_url=main_image_url,
         product_analysis=product_analysis,
         video_analysis=video_analysis,
         ad_copy_sets=ad_copy_sets,
@@ -1141,6 +1182,9 @@ def generate_video_covers(
     product_url: str,
     video_path: str,
     video_filename: str,
+    product_title: str | None = None,
+    main_image_url: str | None = None,
+    product_image_path: str | os.PathLike[str] | None = None,
     user_id: int | None = None,
     task_id: str | None = None,
     cover_provider: str = DEFAULT_IMAGE_CHANNEL,
@@ -1166,15 +1210,31 @@ def generate_video_covers(
     _validate_video_path(video_path, video_filename)
     video_info = probe_media_info(video_path)
 
-    product = product_fetch_fn(product_url)
-    product_title = _product_value(product, "title")
-    main_image_url = _product_value(product, "main_image_url")
+    provided_product_title = str(product_title or "").strip()
+    provided_main_image_url = str(main_image_url or "").strip()
+    needs_product_fetch = (
+        not provided_product_title
+        or not provided_main_image_url
+        or not (product_analysis_text or "").strip()
+    )
+    if needs_product_fetch:
+        product = product_fetch_fn(product_url)
+        product_title = (provided_product_title or _product_value(product, "title")).strip()
+        main_image_url = (provided_main_image_url or _product_value(product, "main_image_url")).strip()
+    else:
+        product_title = provided_product_title
+        main_image_url = provided_main_image_url
+        product = {"title": product_title, "main_image_url": main_image_url, "product_url": product_url}
     if not product_title:
         raise VideoCoverGenerationError("无法从商品链接提取商品标题")
     if not main_image_url:
         raise VideoCoverGenerationError("无法从商品链接提取商品主图")
 
-    image_bytes = image_fetch_fn(main_image_url)
+    if product_image_path and Path(product_image_path).is_file():
+        raw_image_bytes = Path(product_image_path).read_bytes()
+    else:
+        raw_image_bytes = image_fetch_fn(main_image_url)
+    image_bytes = normalize_product_image_jpg(raw_image_bytes)
     task_id = (task_id or uuid.uuid4().hex).strip()
     product_selection = resolve_text_model_selection("product_analysis", product_analysis_provider, product_analysis_model)
     video_selection = resolve_text_model_selection("video_analysis", video_analysis_provider, video_analysis_model)
@@ -1182,8 +1242,8 @@ def generate_video_covers(
     cover_selection = resolve_cover_model_selection(cover_provider, cover_model)
 
     with tempfile.TemporaryDirectory(prefix="video_cover_") as work_dir:
-        product_image_path = Path(work_dir) / "product_image.png"
-        product_image_path.write_bytes(image_bytes)
+        normalized_product_image_path = Path(work_dir) / "product_image.jpg"
+        normalized_product_image_path.write_bytes(image_bytes)
         thumbnail_path = thumbnail_extractor(video_path, work_dir, scale="1080:-1")
         if not thumbnail_path or not Path(thumbnail_path).is_file():
             raise VideoCoverGenerationError("视频抽帧失败")
@@ -1193,7 +1253,7 @@ def generate_video_covers(
             product=product,
             product_title=product_title,
             main_image_url=main_image_url,
-            product_image_path=product_image_path,
+            product_image_path=normalized_product_image_path,
             provider=product_selection.provider,
             model=product_selection.alias,
             user_id=user_id,
@@ -1205,6 +1265,7 @@ def generate_video_covers(
             product_title=product_title,
             product_url=product_url,
             main_image_url=main_image_url,
+            product_image_path=normalized_product_image_path,
             video_info=video_info,
             provider=video_selection.provider,
             model=video_selection.alias,
@@ -1215,6 +1276,8 @@ def generate_video_covers(
 
     reference_key = _write_png_artifact(user_id, task_id, "reference.png", reference_bytes)
     copy_payload = ad_copy_payload or generate_ad_copy_sets(
+        product_title=product_title,
+        main_image_url=main_image_url,
         product_analysis=product_analysis,
         video_analysis=video_analysis,
         current_date=current_date or date.today().isoformat(),
@@ -1231,6 +1294,7 @@ def generate_video_covers(
             spec,
             product_title=product_title,
             product_url=product_url,
+            main_image_url=main_image_url,
             product_analysis=product_analysis,
             video_analysis=video_analysis,
             ad_copy_sets=ad_copy_sets,

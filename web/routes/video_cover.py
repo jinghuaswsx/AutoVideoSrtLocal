@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import mimetypes
 import os
 import tempfile
 import uuid
@@ -21,6 +22,7 @@ from appcore.video_cover_generation import (
     generate_product_analysis,
     generate_video_analysis,
     generate_video_covers,
+    normalize_product_image_jpg,
     resolve_cover_model_selection,
     resolve_text_model_selection,
     video_cover_model_options,
@@ -117,12 +119,23 @@ def _extract_product(product_url: str):
     return product, title, image_url
 
 
-def _product_payload(product_url: str, title: str, image_url: str) -> dict:
-    return {
+def _product_payload(product_url: str, title: str, image_url: str, product_image_path: str = "") -> dict:
+    payload = {
         "title": title,
         "main_image_url": image_url,
         "product_url": product_url,
     }
+    if product_image_path:
+        payload["product_image_path"] = product_image_path
+    return payload
+
+
+def _save_product_image_asset(image_url: str, task_dir: str) -> str:
+    os.makedirs(task_dir, exist_ok=True)
+    normalized = normalize_product_image_jpg(_fetch_product_image(image_url))
+    path = Path(task_dir) / "product_main.jpg"
+    path.write_bytes(normalized)
+    return str(path)
 
 
 def _json_response(payload: dict, status: int = 200):
@@ -174,6 +187,9 @@ def _initial_state(
     task_dir: str,
     display_name: str,
     thumbnail_path: str | None,
+    product_title: str,
+    main_image_url: str,
+    product_image_path: str,
 ) -> dict:
     return {
         "id": task_id,
@@ -186,6 +202,7 @@ def _initial_state(
         "video_filename": video_filename,
         "task_dir": task_dir,
         "thumbnail_path": thumbnail_path or "",
+        "product": _product_payload(product_url, product_title, main_image_url, product_image_path),
         "steps": _initial_steps(),
         "step_messages": {step: "" for step in STEP_ORDER},
         "models": {},
@@ -220,6 +237,34 @@ def _save_state(task_id: str, state: dict, *, status: str) -> None:
     save_project_state(task_id, state, status=status)
 
 
+def _state_product(state: dict) -> dict:
+    product = state.get("product")
+    return product if isinstance(product, dict) else {}
+
+
+def _state_product_image_path(state: dict) -> str:
+    product = _state_product(state)
+    return str(product.get("product_image_path") or state.get("product_image_path") or "").strip()
+
+
+def _ensure_product_assets(state: dict, *, fetch_product: bool = False) -> tuple[object, str, str, str]:
+    product_url = _validate_product_url(state.get("product_url") or "")
+    stored = _state_product(state)
+    title = str(stored.get("title") or "").strip()
+    image_url = str(stored.get("main_image_url") or "").strip()
+    product: object | None = None
+    if fetch_product or not title or not image_url:
+        product, title, image_url = _extract_product(product_url)
+    else:
+        product = {"title": title, "main_image_url": image_url, "product_url": product_url}
+    product_image_path = _state_product_image_path(state)
+    if not product_image_path or not Path(product_image_path).is_file():
+        task_dir = str(state.get("task_dir") or tempfile.mkdtemp(prefix="video_cover_product_"))
+        product_image_path = _save_product_image_asset(image_url, task_dir)
+    state["product"] = _product_payload(product_url, title, image_url, product_image_path)
+    return product, title, image_url, product_image_path
+
+
 def _cover_by_platform(state: dict, platform: str) -> dict | None:
     result = state.get("result") or {}
     for cover in result.get("covers") or []:
@@ -250,20 +295,20 @@ def _state_with_urls(task_id: str, state: dict) -> dict:
 
 def _run_video_analysis_step(state: dict, *, provider: str | None, model: str | None, user_id: int) -> dict:
     product_url = _validate_product_url(state.get("product_url") or "")
-    _product, title, image_url = _extract_product(product_url)
+    _product, title, image_url, product_image_path = _ensure_product_assets(state)
     selection = resolve_text_model_selection("video_analysis", provider, model)
     analysis = generate_video_analysis(
         video_path=str(state.get("video_path") or ""),
         product_title=title,
         product_url=product_url,
         main_image_url=image_url,
+        product_image_path=product_image_path,
         video_info=probe_media_info(str(state.get("video_path") or "")),
         provider=selection.provider,
         model=selection.alias,
         user_id=user_id,
         task_id=state.get("id"),
     )
-    state["product"] = _product_payload(product_url, title, image_url)
     state["video_analysis"] = analysis
     state.setdefault("models", {})["video_analysis"] = {
         "provider": selection.provider,
@@ -275,23 +320,18 @@ def _run_video_analysis_step(state: dict, *, provider: str | None, model: str | 
 
 def _run_product_analysis_step(state: dict, *, provider: str | None, model: str | None, user_id: int) -> dict:
     product_url = _validate_product_url(state.get("product_url") or "")
-    product, title, image_url = _extract_product(product_url)
+    product, title, image_url, product_image_path = _ensure_product_assets(state, fetch_product=True)
     selection = resolve_text_model_selection("product_analysis", provider, model)
-    with tempfile.TemporaryDirectory(prefix="video_cover_product_") as work_dir:
-        image_bytes = _fetch_product_image(image_url)
-        product_image_path = Path(work_dir) / "product_image.png"
-        product_image_path.write_bytes(image_bytes)
-        product_analysis = generate_product_analysis(
-            product=product,
-            product_title=title,
-            main_image_url=image_url,
-            product_image_path=product_image_path,
-            provider=selection.provider,
-            model=selection.alias,
-            user_id=user_id,
-            task_id=state.get("id"),
-        )
-    state["product"] = _product_payload(product_url, title, image_url)
+    product_analysis = generate_product_analysis(
+        product=product,
+        product_title=title,
+        main_image_url=image_url,
+        product_image_path=product_image_path,
+        provider=selection.provider,
+        model=selection.alias,
+        user_id=user_id,
+        task_id=state.get("id"),
+    )
     state["product_analysis"] = product_analysis
     state.setdefault("models", {})["product_analysis"] = {
         "provider": selection.provider,
@@ -303,7 +343,10 @@ def _run_product_analysis_step(state: dict, *, provider: str | None, model: str 
 
 def _run_ad_copy_step(state: dict, *, provider: str | None, model: str | None, user_id: int) -> dict:
     selection = resolve_text_model_selection("ad_copy", provider, model)
+    product = _state_product(state)
     ad_copy_sets = generate_ad_copy_sets(
+        product_title=str(product.get("title") or ""),
+        main_image_url=str(product.get("main_image_url") or ""),
         product_analysis=str(state.get("product_analysis") or ""),
         video_analysis=str(state.get("video_analysis") or ""),
         current_date=(request.form.get("current_date") or date.today().isoformat()),
@@ -323,10 +366,14 @@ def _run_ad_copy_step(state: dict, *, provider: str | None, model: str | None, u
 
 def _run_cover_generation_step(state: dict, *, provider: str | None, model: str | None, user_id: int) -> dict:
     selection = resolve_cover_model_selection(provider, model)
+    _product, title, image_url, product_image_path = _ensure_product_assets(state)
     result = generate_video_covers(
         product_url=str(state.get("product_url") or ""),
         video_path=str(state.get("video_path") or ""),
         video_filename=str(state.get("video_filename") or "video.mp4"),
+        product_title=title,
+        main_image_url=image_url,
+        product_image_path=product_image_path,
         user_id=user_id,
         task_id=state.get("id"),
         cover_provider=selection.provider,
@@ -368,7 +415,6 @@ def page():
 @login_required
 @admin_required
 def detail_page(task_id: str):
-    recover_project_if_needed(task_id, video_cover_project_store.VIDEO_COVER_TYPE)
     row, state = _load_user_project(task_id)
     if not row:
         return "Not Found", 404
@@ -396,11 +442,13 @@ def api_create_project():
         original_filename = client_filename_basename(upload.filename)
         if not validate_video_extension(original_filename):
             raise VideoCoverGenerationError("不支持的视频格式")
+        product, title, image_url = _extract_product(product_url)
 
         task_id = uuid.uuid4().hex
         task_dir = os.path.join(OUTPUT_DIR, task_id)
         os.makedirs(task_dir, exist_ok=True)
         os.makedirs(UPLOAD_DIR, exist_ok=True)
+        product_image_path = _save_product_image_asset(image_url, task_dir)
         safe_name = secure_filename_component(original_filename)
         video_path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{safe_name}")
         save_uploaded_file_to_path(upload, video_path)
@@ -421,6 +469,9 @@ def api_create_project():
             task_dir=task_dir,
             display_name=display_name,
             thumbnail_path=thumbnail_path,
+            product_title=title,
+            main_image_url=image_url,
+            product_image_path=product_image_path,
         )
         video_cover_project_store.insert_project(
             task_id=task_id,
@@ -500,6 +551,34 @@ def download_cover(task_id: str, platform: str):
     return send_file(path, mimetype="image/png", as_attachment=True, download_name=f"{platform}.png")
 
 
+def _send_project_file(path_value: str, *, mimetype: str | None = None):
+    path = Path(path_value or "")
+    if not path.is_file():
+        return "Not Found", 404
+    guessed = mimetype or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return send_file(path, mimetype=guessed, conditional=True)
+
+
+@bp.route("/video-cover/api/<task_id>/source-video", methods=["GET"])
+@login_required
+@admin_required
+def source_video(task_id: str):
+    row, state = _load_user_project(task_id)
+    if not row:
+        return "Not Found", 404
+    return _send_project_file(str(state.get("video_path") or ""))
+
+
+@bp.route("/video-cover/api/<task_id>/product-image", methods=["GET"])
+@login_required
+@admin_required
+def product_image(task_id: str):
+    row, state = _load_user_project(task_id)
+    if not row:
+        return "Not Found", 404
+    return _send_project_file(_state_product_image_path(state), mimetype="image/jpeg")
+
+
 @bp.route("/video-cover/api/product-analysis", methods=["POST"])
 @login_required
 @admin_required
@@ -508,9 +587,8 @@ def api_product_analysis():
     try:
         with tempfile.TemporaryDirectory(prefix="video_cover_product_") as work_dir:
             product, title, image_url = _extract_product(product_url)
-            image_bytes = _fetch_product_image(image_url)
-            product_image_path = Path(work_dir) / "product_image.png"
-            product_image_path.write_bytes(image_bytes)
+            product_image_path = Path(work_dir) / "product_image.jpg"
+            product_image_path.write_bytes(normalize_product_image_jpg(_fetch_product_image(image_url)))
             product_analysis = generate_product_analysis(
                 product=product,
                 product_title=title,
@@ -542,11 +620,14 @@ def api_video_analysis():
         with tempfile.TemporaryDirectory(prefix="video_cover_video_") as work_dir:
             filename, video_path = _save_upload_to_temp(work_dir)
             product, title, image_url = _extract_product(product_url)
+            product_image_path = Path(work_dir) / "product_image.jpg"
+            product_image_path.write_bytes(normalize_product_image_jpg(_fetch_product_image(image_url)))
             video_analysis = generate_video_analysis(
                 video_path=str(video_path),
                 product_title=title,
                 product_url=product_url,
                 main_image_url=image_url,
+                product_image_path=product_image_path,
                 video_info=probe_media_info(str(video_path)),
                 provider=request.form.get("provider") or request.form.get("video_provider"),
                 model=request.form.get("model") or request.form.get("video_model"),
