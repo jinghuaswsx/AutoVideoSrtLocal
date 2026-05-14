@@ -53,7 +53,7 @@ def test_sync_hot_posts_stops_when_upstream_returns_empty(monkeypatch):
     assert summary["posts"] == 1
 
 
-def test_register_schedules_daily_sync_at_7am_and_analysis_interval(monkeypatch):
+def test_register_schedules_daily_sync_analysis_and_translation(monkeypatch):
     calls = []
 
     monkeypatch.setattr(
@@ -66,6 +66,7 @@ def test_register_schedules_daily_sync_at_7am_and_analysis_interval(monkeypatch)
 
     sync_args, sync_kwargs = calls[0]
     analysis_args, analysis_kwargs = calls[1]
+    translation_args, translation_kwargs = calls[2]
     assert sync_args[1] == "meta_hot_posts_sync_tick"
     assert sync_args[3] == "cron"
     assert sync_kwargs["hour"] == 7
@@ -73,6 +74,9 @@ def test_register_schedules_daily_sync_at_7am_and_analysis_interval(monkeypatch)
     assert analysis_args[1] == "meta_hot_posts_analysis_tick"
     assert analysis_args[3] == "interval"
     assert analysis_kwargs["minutes"] == 10
+    assert translation_args[1] == "meta_hot_posts_translate_messages_tick"
+    assert translation_args[3] == "interval"
+    assert translation_kwargs["minutes"] == 10
 
 
 def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):
@@ -92,6 +96,25 @@ def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monke
 
     assert captured["limit"] == 30
     assert captured["per_item_delay_seconds"] == 20
+
+
+def test_translation_tick_once_defaults_to_50_messages_with_3_second_spacing(monkeypatch):
+    captured = {}
+
+    def fake_translate_pending_messages(*, limit, user_id=None, per_item_delay_seconds):
+        captured["limit"] = limit
+        captured["per_item_delay_seconds"] = per_item_delay_seconds
+        return {"scanned": 0, "done": 0, "failed": 0}
+
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: None)
+    monkeypatch.setattr(scheduler, "translate_pending_messages", fake_translate_pending_messages)
+
+    scheduler.translation_tick_once()
+
+    assert captured["limit"] == 50
+    assert captured["per_item_delay_seconds"] == 3
 
 
 def test_analysis_tick_once_skips_when_recent_run_is_still_running(monkeypatch):
@@ -153,6 +176,110 @@ def test_analysis_tick_once_marks_stale_running_run_failed_then_starts(monkeypat
     assert stale_finish[1] == 10
     assert stale_finish[2]["status"] == "failed"
     assert "exceeded 3600s" in stale_finish[2]["error_message"]
+
+
+def test_translation_tick_once_marks_stale_running_run_failed_then_starts(monkeypatch):
+    started_at = datetime(2026, 5, 13, 10, 0, 0)
+    events = []
+
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "latest_running_run",
+        lambda task_code: {"id": 12, "started_at": started_at},
+    )
+    monkeypatch.setattr(scheduler, "_now", lambda: started_at + timedelta(hours=1, minutes=2))
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: events.append(("finish", run_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "reset_stale_running_message_translations",
+        lambda older_than_seconds: events.append(("reset_messages", older_than_seconds)) or 4,
+    )
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 100)
+    monkeypatch.setattr(
+        scheduler,
+        "translate_pending_messages",
+        lambda *, limit, user_id=None, per_item_delay_seconds: {"scanned": 0, "done": 0, "failed": 0},
+    )
+
+    summary = scheduler.translation_tick_once()
+
+    assert summary["stale_run_replaced"] == 12
+    assert summary["stale_messages_reset"] == 4
+    assert ("reset_messages", 3600) in events
+    stale_finish = next(event for event in events if event[0] == "finish" and event[1] == 12)
+    assert stale_finish[2]["status"] == "failed"
+    assert "exceeded 3600s" in stale_finish[2]["error_message"]
+
+
+def test_translate_pending_messages_translates_and_saves(monkeypatch):
+    finished = []
+    marked = []
+    sleep_calls = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_message_translations",
+        lambda limit: [
+            {"id": 1, "message_html": "<p>Deep Clean.</p>"},
+            {"id": 2, "message_html": "<p>Bright Garden.</p>"},
+        ],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_message_translation_running", lambda post_id: marked.append(post_id))
+    monkeypatch.setattr(
+        scheduler.message_translation,
+        "translate_message_html",
+        lambda message_html, user_id=None: f"中文:{message_html}",
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_message_translation",
+        lambda post_id, **kwargs: finished.append((post_id, kwargs)),
+    )
+
+    summary = scheduler.translate_pending_messages(
+        limit=2,
+        user_id=9,
+        per_item_delay_seconds=3,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
+
+    assert summary == {"scanned": 2, "done": 2, "failed": 0}
+    assert marked == [1, 2]
+    assert finished[0] == (1, {"translated_html": "中文:<p>Deep Clean.</p>", "error_message": None})
+    assert finished[1] == (2, {"translated_html": "中文:<p>Bright Garden.</p>", "error_message": None})
+    assert sleep_calls == [3]
+
+
+def test_translate_pending_messages_records_failures(monkeypatch):
+    finished = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_message_translations",
+        lambda limit: [{"id": 1, "message_html": "<p>Deep Clean.</p>"}],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_message_translation_running", lambda post_id: None)
+
+    def fail_translate(*args, **kwargs):
+        raise RuntimeError("provider failed")
+
+    monkeypatch.setattr(scheduler.message_translation, "translate_message_html", fail_translate)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_message_translation",
+        lambda post_id, **kwargs: finished.append((post_id, kwargs)),
+    )
+
+    summary = scheduler.translate_pending_messages(limit=1, user_id=9)
+
+    assert summary == {"scanned": 1, "done": 0, "failed": 1}
+    assert finished == [(1, {"translated_html": None, "error_message": "provider failed"})]
 
 
 def test_analyze_pending_products_keeps_product_result_when_category_fails(monkeypatch):

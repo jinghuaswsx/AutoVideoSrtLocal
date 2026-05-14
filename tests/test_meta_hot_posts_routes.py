@@ -36,6 +36,10 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "const mhPageSize = 50;" in body
     assert 'id="mhPagerTop"' in body
     assert 'id="mhPagerBottom"' in body
+    assert 'id="mhMarkStatus"' in body
+    assert "标注" in body
+    assert '<option value="empty">空</option>' in body
+    assert "params.set('mark_status', qs('mhMarkStatus').value)" in body
     assert "function renderMetaHotPager(data)" in body
     assert "首页" in body
     assert "上一页" in body
@@ -50,6 +54,9 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "不行" in body
     assert "function toggleMetaHotPostMark" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/mark" in body
+    assert "翻译文案" in body
+    assert "function translateMetaHotPostMessages" in body
+    assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -101,6 +108,22 @@ def test_meta_hot_posts_analyze_api_passes_current_user_for_billing(authed_clien
 
     assert resp.status_code == 202
     assert captured["payload"]["limit"] == 100
+    assert captured["payload"]["user_id"]
+
+
+def test_meta_hot_posts_translate_api_passes_current_user_for_billing(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(payload):
+        captured["payload"] = payload
+        return type("Resp", (), {"payload": {"ok": True}, "status_code": 202})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_translate_response", fake_response)
+
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/translate-messages", json={"limit": 80})
+
+    assert resp.status_code == 202
+    assert captured["payload"]["limit"] == 80
     assert captured["payload"]["user_id"]
 
 

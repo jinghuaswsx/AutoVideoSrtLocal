@@ -55,6 +55,11 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item["sku_count"] = len(item["sku_prices"])
     item.setdefault("analysis_status", "pending")
     item["category_l1_zh"] = categories.category_label_zh(item.get("category_l1"))
+    source_message = str(item.get("message_html") or "")
+    translated_message = str(item.get("message_zh_html") or "").strip()
+    item["message_source_html"] = source_message
+    if translated_message:
+        item["message_html"] = translated_message
     mark_status = _normalize_mark_status(item.get("mark_status"))
     if not mark_status and _bool_payload(item.get("is_marked")):
         mark_status = MARK_STATUS_BAD
@@ -165,6 +170,39 @@ def build_analyze_response(payload: Mapping[str, Any] | None = None) -> MetaHotP
                 user_id=user_id,
                 recategorize_only=recategorize_only,
                 include_all_categories=include_all_categories,
+                per_item_delay_seconds=delay,
+            ),
+        },
+        202,
+    )
+
+
+def build_translate_response(payload: Mapping[str, Any] | None = None) -> MetaHotPostsResponse:
+    from appcore.meta_hot_posts import scheduler
+
+    payload = payload or {}
+    try:
+        limit = int(payload.get("limit") or scheduler.SCHEDULED_TRANSLATION_LIMIT)
+    except (TypeError, ValueError):
+        limit = scheduler.SCHEDULED_TRANSLATION_LIMIT
+    try:
+        delay = float(
+            payload.get("per_item_delay_seconds")
+            if payload.get("per_item_delay_seconds") is not None
+            else scheduler.SCHEDULED_TRANSLATION_DELAY_SECONDS
+        )
+    except (TypeError, ValueError):
+        delay = scheduler.SCHEDULED_TRANSLATION_DELAY_SECONDS
+    try:
+        user_id = int(payload.get("user_id") or 0) or None
+    except (TypeError, ValueError):
+        user_id = None
+    return MetaHotPostsResponse(
+        {
+            "ok": True,
+            "result": scheduler.translation_tick_once(
+                limit=limit,
+                user_id=user_id,
                 per_item_delay_seconds=delay,
             ),
         },

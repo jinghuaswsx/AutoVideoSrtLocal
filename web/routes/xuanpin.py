@@ -224,6 +224,17 @@ def api_meta_hot_posts_analyze():
     return jsonify(result.payload), result.status_code
 
 
+@bp.route("/api/meta-hot-posts/translate-messages", methods=["POST"])
+@login_required
+def api_meta_hot_posts_translate_messages():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    payload["user_id"] = getattr(current_user, "id", None)
+    result = _meta_hot_posts().build_translate_response(payload)
+    return jsonify(result.payload), result.status_code
+
+
 @bp.route("/api/new-products/list", methods=["GET"])
 @login_required
 def api_new_products_list():
