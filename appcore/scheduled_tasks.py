@@ -14,6 +14,10 @@ log = logging.getLogger(__name__)
 
 TaskDefinition = dict[str, Any]
 
+META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE = "meta_hot_posts_video_localization_tick"
+VIDEO_LOCALIZATION_ALERT_MIN_DAILY_ATTEMPTS = 20
+VIDEO_LOCALIZATION_ALERT_FAILURE_RATE_THRESHOLD = 0.80
+
 TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "shopifyid": {
         "code": "shopifyid",
@@ -1028,9 +1032,16 @@ def _dispatch_failure_alert(run_id: int) -> None:
         row = _scheduled_task_run_by_id(run_id)
         if not row:
             return
+        task_code = str(row.get("task_code") or "")
+        if not _should_dispatch_failure_alert_for_run(row):
+            log.info(
+                "scheduled task failure alert suppressed by task rule task_code=%s run_id=%s",
+                task_code,
+                run_id,
+            )
+            return
         from appcore import feishu_alerts
 
-        task_code = str(row.get("task_code") or "")
         should_send, streak = feishu_alerts.should_dispatch_failure(
             task_code, current_run_id=run_id
         )
@@ -1054,9 +1065,16 @@ def _dispatch_recovery_alert(run_id: int) -> None:
         row = _scheduled_task_run_by_id(run_id)
         if not row:
             return
+        task_code = str(row.get("task_code") or "")
+        if not _should_dispatch_recovery_alert_for_run(row):
+            log.info(
+                "scheduled task recovery alert suppressed by task rule task_code=%s run_id=%s",
+                task_code,
+                run_id,
+            )
+            return
         from appcore import feishu_alerts
 
-        task_code = str(row.get("task_code") or "")
         prior = feishu_alerts.prior_consecutive_failures_before_run(
             task_code, current_run_id=run_id
         )
@@ -1094,6 +1112,94 @@ def _decode_summary(value: Any) -> dict[str, Any]:
         return json.loads(value)
     except (TypeError, json.JSONDecodeError):
         return {}
+
+
+def _non_negative_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _download_attempts_from_summary(summary: dict[str, Any]) -> tuple[int, int]:
+    downloaded = _non_negative_int(summary.get("downloaded"))
+    failed = _non_negative_int(summary.get("failed"))
+    scanned = _non_negative_int(summary.get("scanned"))
+    return max(scanned, downloaded + failed), failed
+
+
+def _video_localization_daily_download_metrics(
+    row: dict[str, Any],
+) -> dict[str, int | float]:
+    current_run_id = _non_negative_int(row.get("id")) or None
+    if current_run_id:
+        rows = query(
+            """
+            SELECT id, summary_json
+            FROM scheduled_task_runs
+            WHERE task_code = %s
+              AND status IN ('success','failed')
+              AND started_at >= CURDATE()
+              AND started_at < CURDATE() + INTERVAL 1 DAY
+              AND id <= %s
+            ORDER BY started_at ASC, id ASC
+            """,
+            (META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE, current_run_id),
+        )
+    else:
+        rows = query(
+            """
+            SELECT id, summary_json
+            FROM scheduled_task_runs
+            WHERE task_code = %s
+              AND status IN ('success','failed')
+              AND started_at >= CURDATE()
+              AND started_at < CURDATE() + INTERVAL 1 DAY
+            ORDER BY started_at ASC, id ASC
+            """,
+            (META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE,),
+        )
+
+    attempts = 0
+    failed = 0
+    seen_current = False
+    for item in rows or []:
+        item_id = _non_negative_int(item.get("id"))
+        if current_run_id and item_id == current_run_id:
+            seen_current = True
+        item_attempts, item_failed = _download_attempts_from_summary(
+            _decode_summary(item.get("summary_json") or item.get("summary"))
+        )
+        attempts += item_attempts
+        failed += item_failed
+
+    if current_run_id and not seen_current:
+        item_attempts, item_failed = _download_attempts_from_summary(row.get("summary") or {})
+        if not item_attempts:
+            item_attempts, item_failed = _download_attempts_from_summary(
+                _decode_summary(row.get("summary_json"))
+            )
+        attempts += item_attempts
+        failed += item_failed
+
+    failure_rate = (failed / attempts) if attempts else 0.0
+    return {"attempts": attempts, "failed": failed, "failure_rate": failure_rate}
+
+
+def _should_dispatch_failure_alert_for_run(row: dict[str, Any]) -> bool:
+    task_code = str(row.get("task_code") or "")
+    if task_code != META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE:
+        return True
+    metrics = _video_localization_daily_download_metrics(row)
+    return (
+        int(metrics["attempts"]) > VIDEO_LOCALIZATION_ALERT_MIN_DAILY_ATTEMPTS
+        and float(metrics["failure_rate"]) > VIDEO_LOCALIZATION_ALERT_FAILURE_RATE_THRESHOLD
+    )
+
+
+def _should_dispatch_recovery_alert_for_run(row: dict[str, Any]) -> bool:
+    task_code = str(row.get("task_code") or "")
+    return task_code != META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE
 
 
 def _decode_json_value(value: Any) -> Any:
@@ -1366,5 +1472,10 @@ def latest_failure_alert() -> dict[str, Any] | None:
             log.warning("failed to load scheduled task alert", exc_info=True)
             continue
         if row and row.get("status") == "failed":
-            return row
+            try:
+                if _should_dispatch_failure_alert_for_run(row):
+                    return row
+            except Exception:
+                log.warning("failed to apply scheduled task alert rule", exc_info=True)
+                continue
     return None

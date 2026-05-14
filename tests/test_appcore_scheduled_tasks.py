@@ -134,6 +134,102 @@ def test_finish_run_suppresses_feishu_failure_when_dedup_says_no(monkeypatch):
     assert sent == []
 
 
+def _video_localization_alert_query(daily_summary_rows):
+    def fake_query(sql, params=()):
+        if "WHERE id = %s" in sql:
+            return [
+                {
+                    "id": params[0],
+                    "task_code": "meta_hot_posts_video_localization_tick",
+                    "task_name": "Meta hot posts video localization",
+                    "status": "failed",
+                    "summary_json": '{"scanned": 5, "downloaded": 0, "failed": 5}',
+                    "error_message": "5 video(s) failed",
+                }
+            ]
+        if "task_code = %s" in sql and "CURDATE()" in sql:
+            return daily_summary_rows
+        return []
+
+    return fake_query
+
+
+def test_video_localization_failure_alert_suppressed_until_daily_attempts_exceed_20(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    daily_rows = [
+        {"id": 41, "summary_json": '{"scanned": 10, "downloaded": 0, "failed": 10}'},
+        {"id": 42, "summary_json": '{"scanned": 10, "downloaded": 0, "failed": 10}'},
+    ]
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _video_localization_alert_query(daily_rows))
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id: (True, 20),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
+
+    assert sent == []
+
+
+def test_video_localization_failure_alert_suppressed_at_eighty_percent_failure_rate(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    daily_rows = [
+        {"id": 43, "summary_json": '{"scanned": 25, "downloaded": 5, "failed": 20}'},
+    ]
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _video_localization_alert_query(daily_rows))
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id: (True, 5),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(43, status="failed", error_message="boom")
+
+    assert sent == []
+
+
+def test_video_localization_failure_alert_sends_when_daily_failure_rate_above_eighty_percent(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    daily_rows = [
+        {"id": 44, "summary_json": '{"scanned": 21, "downloaded": 4, "failed": 17}'},
+    ]
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _video_localization_alert_query(daily_rows))
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id: (True, 5),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(44, status="failed", error_message="boom")
+
+    assert sent and sent[0]["id"] == 44
+
+
 def test_finish_run_dispatches_recovery_alert_when_prior_failures(monkeypatch):
     from appcore import feishu_alerts, scheduled_tasks
 
@@ -201,6 +297,40 @@ def test_finish_run_does_not_dispatch_recovery_when_no_prior_failures(monkeypatc
     )
 
     scheduled_tasks.finish_run(81, status="success")
+
+    assert sent == []
+
+
+def test_video_localization_success_does_not_dispatch_recovery_alert(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "meta_hot_posts_video_localization_tick",
+                "task_name": "Meta hot posts video localization",
+                "status": "success",
+                "summary_json": '{"scanned": 3, "downloaded": 3, "failed": 0}',
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "prior_consecutive_failures_before_run",
+        lambda task_code, *, current_run_id: 4,
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_recovery",
+        lambda row, *, prior_failures: sent.append((row["id"], prior_failures)),
+    )
+
+    scheduled_tasks.finish_run(90, status="success")
 
     assert sent == []
 
