@@ -1,6 +1,12 @@
 from pathlib import Path
 
 
+def test_ytdlp_dependency_is_declared_for_video_localization():
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+
+    assert "yt-dlp" in requirements
+
+
 def test_download_hot_post_videos_is_serial_and_waits_between_items(tmp_path, monkeypatch):
     from appcore.meta_hot_posts import store, video_localization
 
