@@ -242,6 +242,60 @@ def test_restart_clears_display_intermediate_state(done_task):
     assert task["_alignment_confirmed"] is False
 
 
+def test_restart_clears_speech_shot_alignment_state(done_task):
+    store.update(
+        done_task["task_id"],
+        final_compose_summary={
+            "speech_shot_alignment_status": "optimized",
+            "shot_anchor_extra_silence_total": 0.24,
+        },
+        speech_shot_alignment={
+            "speech_shot_alignment_status": "optimized",
+            "speech_shot_alignment_decisions": [{"decision": "applied"}],
+        },
+        variants={
+            "av": {
+                "label": "av",
+                "sentences": [
+                    {
+                        "asr_index": 1,
+                        "base_compact_gap": 0.2,
+                        "shot_anchor_final_gap": 0.28,
+                        "shot_anchor_extra_silence": 0.08,
+                        "shot_anchor_cut_time": 2.28,
+                    }
+                ],
+                "final_compose_summary": {
+                    "speech_shot_alignment_status": "optimized",
+                },
+                "av_debug": {
+                    "final_compose_summary": {
+                        "shot_anchor_extra_silence_total": 0.08,
+                    }
+                },
+            }
+        },
+    )
+
+    task_restart.restart_task(
+        done_task["task_id"],
+        voice_id=None,
+        voice_gender="male",
+        subtitle_font="Impact",
+        subtitle_size=14,
+        subtitle_position_y=0.68,
+        subtitle_position="bottom",
+        interactive_review=False,
+        user_id=1,
+        runner=_Runner(),
+    )
+
+    task = store.get(done_task["task_id"])
+    assert task["speech_shot_alignment"] == {}
+    assert task["final_compose_summary"] == {}
+    assert "av" not in task["variants"]
+
+
 def test_restart_triggers_pipeline_start(done_task):
     runner = _Runner()
     task_restart.restart_task(

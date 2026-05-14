@@ -117,6 +117,8 @@ def _build_reset_fields() -> dict[str, Any]:
         "tts_duration_rounds": [],
         "tts_duration_status": None,
         "tts_generation_summary": None,
+        "final_compose_summary": {},
+        "speech_shot_alignment": {},
         "translation_history": [],
         "selected_translation_index": None,
         "selected_voice_id": None,
