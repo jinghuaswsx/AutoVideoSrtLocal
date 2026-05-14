@@ -60,6 +60,10 @@ def test_prepare_video_for_llm_audio_policy_preserves_audio(tmp_path, monkeypatc
     media = prepare_video_for_llm(source, REVIEW_480P_AUDIO, output_dir=tmp_path)
 
     assert media.optimized is True
+    assert calls[0][calls[0].index("-vf") + 1] == "scale=-2:min(480\\,ih),fps=15"
+    assert calls[0][calls[0].index("-b:v") + 1] == "600k"
+    assert calls[0][calls[0].index("-maxrate") + 1] == "800k"
+    assert calls[0][calls[0].index("-bufsize") + 1] == "1200k"
     assert "-an" not in calls[0]
     assert calls[0][calls[0].index("-c:a") + 1] == "aac"
     assert calls[0][calls[0].index("-b:a") + 1] == "64k"
@@ -124,7 +128,7 @@ def test_cleanup_optimized_media_deletes_only_temp_file(tmp_path):
     assert not optimized.exists()
 
 
-def test_vertex_inline_policy_computes_dynamic_video_bitrate(tmp_path, monkeypatch):
+def test_vertex_inline_policy_uses_omni_default_480p_600k(tmp_path, monkeypatch):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"source")
     calls = []
@@ -143,9 +147,10 @@ def test_vertex_inline_policy_computes_dynamic_video_bitrate(tmp_path, monkeypat
     media = prepare_video_for_llm(source, VERTEX_INLINE_AUDIO, output_dir=tmp_path)
 
     assert media.optimized is True
-    assert "-b:v" in calls[0]
-    assert calls[0][calls[0].index("-b:v") + 1].endswith("k")
-    assert calls[0][calls[0].index("-vf") + 1] == "scale=-2:min(720\\,ih),fps=15"
+    assert calls[0][calls[0].index("-vf") + 1] == "scale=-2:min(480\\,ih),fps=15"
+    assert calls[0][calls[0].index("-b:v") + 1] == "600k"
+    assert calls[0][calls[0].index("-maxrate") + 1] == "800k"
+    assert calls[0][calls[0].index("-bufsize") + 1] == "1200k"
     assert calls[0][calls[0].index("-c:a") + 1] == "aac"
 
 

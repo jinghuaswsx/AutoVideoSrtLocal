@@ -8,6 +8,7 @@
 - `docs/superpowers/specs/2026-05-01-llm-client-consolidation-design.md` §1：业务代码通过 `use_case -> adapter -> SDK` 调用，不再绕开统一入口。
 - `docs/superpowers/specs/2026-05-14-omni-shot-decompose-480p-preprocess-design.md`：`shot_decompose.run` 已验证 OpenRouter base64 视频请求在 480p/15fps/600k/去音频后显著降体积与耗时。
 - 本 spec 固化 2026-05-14 的新增要求：复查全项目所有调用大模型时上传视频/媒体的模块，按功能分批优化；每个功能完成后单独跑测试，全部验证通过后再执行上线流程。
+- 2026-05-14 追加决策：采用“方案 A”，所有 LLM 视频预处理默认先统一为当前 Omni 镜头分析配置：480p、15fps、H.264 600k。需要音频的场景只保留 AAC mono 音频，不再默认使用 700k 或动态 720p/18MiB 视频策略；后续若某个 use case 识别质量不足，再单独开 spec 调整。
 
 ## 背景
 
@@ -26,7 +27,7 @@
 2. 对只做视觉理解、不需要音频的调用，优先使用 480p、15fps、低码率、去音频。
 3. 对需要判断语音/音画/TTS 的调用，降低分辨率、帧率、码率，但保留压缩音频。
 4. 对 OpenRouter base64 视频请求，重点降低实际请求体字节数。
-5. 对 Gemini 原生通道，保留 AI Studio Files API 现状；Vertex/ADC inline 通道优先压到 inline 目标以内，失败时降级使用原路径并记录 warning。
+5. 对 Gemini 原生通道，保留 AI Studio Files API 现状；Vertex/ADC inline 通道也先按方案 A 默认 480p/15fps/600k 处理，失败时降级使用原路径并记录 warning。
 6. 不改变现有 use case 的 provider/model 默认绑定，不改变 prompt 语义，不改变业务输出 schema。
 7. 任何压缩、裁剪、转码失败都不得直接让业务任务失败；应回退到原媒体、已有 keyframes 或文本兜底路径。
 8. 每个功能单独 TDD：先写失败测试，再实现，再跑该功能相关测试；所有批次通过后再按 AGENTS 发布流程上线。
@@ -46,7 +47,7 @@
 | Omni 分镜 `pipeline/shot_decompose.py` | `shot_decompose.run` | openrouter / `google/gemini-3-flash-preview` | OpenRouter base64 | 视频 | 已 480p/15fps/600k/去音频 | 低 | 已复用，改为共享 helper | P1 |
 | AV 句级画面笔记 `pipeline/shot_notes.py` | `video_translate.shot_notes` | openrouter / `google/gemini-3.1-pro-preview` | OpenRouter base64 | 视频 | 无 | 高 | 是，去音频 | P0 |
 | 文案生成 `pipeline/copywriting.py` | `copywriting.generate` | openrouter / `google/gemini-3-flash-preview` | OpenRouter base64 或 Doubao URL | 视频/图片 | 50MB base64 上限，无视频压缩 | 高 | 视频优先压缩；OpenRouter 去音频，Doubao 按模型 URL 拉取策略传轻量视频 | P0 |
-| AI 视频分析 `pipeline/video_ai_review.py` + `appcore/video_ai_review.py` | `video_ai_review.assess` | gemini_vertex_adc / `gemini-3.1-pro-preview` | Vertex inline bytes | 源/目标视频、图片 | media_item 下载后有 720/480 压缩；task 视频仅 warn | 高 | 保留音频，压到 inline 目标 | P0 |
+| AI 视频分析 `pipeline/video_ai_review.py` + `appcore/video_ai_review.py` | `video_ai_review.assess` | gemini_vertex_adc / `gemini-3.1-pro-preview` | Vertex inline bytes | 源/目标视频、图片 | media_item 下载后曾有 720/480 动态压缩；task 视频仅 warn | 高 | 保留音频，按方案 A 统一 480p/15fps/600k | P0 |
 | 素材评估 `appcore/material_evaluation.py` | `material_evaluation.evaluate` | gemini_vertex_adc / `gemini-3.1-pro-preview` | Vertex inline；可绑定 OpenRouter base64 | 图片 + 15s 视频 | 只 `-t 15 -c copy` | 中高 | 保留音频，15s 后转低码率 | P0 |
 | 新品评估 `appcore/new_product_review.py` | `material_evaluation.evaluate` | gemini_vertex_adc / `gemini-3.1-pro-preview` | 同素材评估 | 图片 + 15s 视频 | 复用素材评估 15s copy | 中高 | 跟随素材评估 | P0 |
 | 推送质量视频前 5 秒 `appcore/push_quality_checks.py` | `push_quality.check` | openrouter / `google/gemini-3.1-flash-lite-preview` | OpenRouter base64 | 视频+音频 | 5s copy | 中 | 保留音频，5s 后转低码率 | P1 |
@@ -70,9 +71,9 @@
 默认策略：
 
 - `visual_480p_silent`：`scale=-2:min(480\,ih),fps=15`，H.264 `600k/maxrate 800k/bufsize 1200k`，`-an`。
-- `review_480p_audio`：`scale=-2:min(480\,ih),fps=15`，H.264 `700k/maxrate 900k/bufsize 1400k`，AAC mono `64k`。
+- `review_480p_audio`：`scale=-2:min(480\,ih),fps=15`，H.264 `600k/maxrate 800k/bufsize 1200k`，AAC mono `64k`。
 - `short_clip_audio`：用于 5s/15s 已裁剪片段，`480p/15fps/600k`，AAC mono `64k`。
-- `vertex_inline_audio`：按时长计算码率，目标 ≤18MiB，先 720p 再 480p，保留 AAC mono。
+- `vertex_inline_audio`：同样默认 `480p/15fps/600k`，保留 AAC mono；不再先走 720p 或按 18MiB 动态抬高码率。
 
 所有策略都必须满足：源文件缺失不吞掉业务原有错误；ffmpeg 缺失、超时、非零退出、输出为空时回退原路径；debug payload 能看到实际传给 LLM 的路径。
 
@@ -81,7 +82,7 @@
 - `shot_decompose.run`：迁到共享 `visual_480p_silent`，保持现有行为和测试。
 - `video_translate.shot_notes`：使用 `visual_480p_silent`，因为 prompt 使用 ASR 时间轴，画面笔记不需要音频。
 - `copywriting.generate`：视频输入使用 `visual_480p_silent`；如果压缩失败且 OpenRouter base64 仍超过既有 50MB 上限，降级到 keyframes + 商品图 + 文本，不让任务失败。
-- `video_ai_review.assess`：源/目标视频使用 `vertex_inline_audio`，保留音频以判断 TTS/音画；产品图不改。
+- `video_ai_review.assess`：源/目标视频使用 `vertex_inline_audio`，按方案 A 默认 480p/15fps/600k，保留音频以判断 TTS/音画；产品图不改。
 - `material_evaluation.evaluate` / `new_product_review.evaluate_product`：继续先取 15s 片段，再用 `short_clip_audio` 降体积；失败回退 15s copy 或原视频。
 - `push_quality.check` 视频：继续先取 5s，再用 `short_clip_audio`；失败回退 5s copy。
 - `omni_av_sync.understand`：用 `review_480p_audio` 后再走 Doubao URL 上传；失败用原视频 URL 上传。
@@ -144,6 +145,6 @@ pytest tests/test_llm_media_optimizer.py \
 
 ## 剩余风险
 
-- 压缩视频可能降低 OCR 或细节识别准确度；CSK、video_review、video_score 保留音频且只降到 480p，若后续发现细节不足，可按 use case 调整到 720p。
-- Gemini Vertex inline 对大视频仍可能失败；本期策略是尽量压到 18MiB，失败回退原路径并保留业务原错误语义。
+- 压缩视频可能降低 OCR 或细节识别准确度；方案 A 先统一到 480p/15fps/600k，若后续发现细节不足，可按 use case 单独调整。
+- Gemini Vertex inline 对长视频仍可能超过 inline 限制；方案 A 优先统一压缩参数，失败回退原路径并保留业务原错误语义。若长视频仍高频超限，再单独评估更低码率或分段策略。
 - Doubao URL 拉取依赖临时公网交换，压缩只减少对象大小，不改变凭据或 URL 有效期。
