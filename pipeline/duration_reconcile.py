@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from queue import Empty, Queue
 from typing import Any, Callable
@@ -9,6 +10,8 @@ from pipeline import av_translate, tts
 
 MIN_DURATION_RATIO = 0.95
 MAX_DURATION_RATIO = 1.05
+MIN_FFMPEG_TEMPO_RATIO = 0.9
+MAX_FFMPEG_TEMPO_RATIO = 1.1
 MIN_TTS_SPEED = 0.95
 MAX_TTS_SPEED = 1.05
 MAX_TEXT_REWRITE_ATTEMPTS = 10
@@ -130,6 +133,47 @@ def _candidate_suffix(kind: str, round_number: int, attempt_number: int | None =
     return f"{kind}_r{round_number}_a{attempt_number}"
 
 
+def _ffmpeg_tempo_output_path(current: dict, *, round_number: int, attempt_number: int) -> str:
+    output_path = current.get("tts_path") or f"av_seg_{current['asr_index']}.mp3"
+    base, ext = os.path.splitext(output_path)
+    return f"{base}.ffmpeg_tempo_r{round_number}_a{attempt_number}{ext or '.mp3'}"
+
+
+def _apply_ffmpeg_tempo_alignment(
+    *,
+    audio_path: str,
+    audio_duration: float,
+    target_duration: float,
+    output_path: str,
+) -> dict | None:
+    if not audio_path or audio_duration <= 0 or target_duration <= 0:
+        return None
+    ratio = audio_duration / target_duration
+    if not (MIN_FFMPEG_TEMPO_RATIO <= ratio <= MAX_FFMPEG_TEMPO_RATIO):
+        return None
+    cmd = [
+        "ffmpeg", "-y", "-i", audio_path,
+        "-filter:a", f"atempo={ratio:.4f}",
+        "-vn", "-acodec", "libmp3lame", "-q:a", "3",
+        output_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except Exception as exc:
+        return {"failed_reason": _error_text(exc)}
+    if result.returncode != 0:
+        return {"failed_reason": (result.stderr or "ffmpeg tempo alignment failed")[:500]}
+    post_duration = tts.get_audio_duration(output_path)
+    if post_duration <= 0:
+        return {"failed_reason": "ffprobe returned empty duration"}
+    return {
+        "ratio": round(ratio, 4),
+        "pre_duration": round(audio_duration, 3),
+        "post_duration": round(post_duration, 3),
+        "new_audio_path": output_path,
+    }
+
+
 def _mark_selected_attempt(attempts: list[dict], selected_round: int) -> None:
     for attempt in attempts:
         attempt["selected"] = int(attempt.get("round", -1)) == selected_round
@@ -200,6 +244,18 @@ def _sentence_progress_payload(position: int, current: dict, phase: str) -> dict
         "rewrite_skip_reason": current.get("rewrite_skip_reason", ""),
         "best_effort": bool(current.get("best_effort")),
         "best_effort_reason": current.get("best_effort_reason", ""),
+        "final_fallback_action": current.get("final_fallback_action", ""),
+        "final_fallback_reason": current.get("final_fallback_reason", ""),
+        "ffmpeg_tempo_applied": bool(current.get("ffmpeg_tempo_applied")),
+        "ffmpeg_tempo_ratio": current.get("ffmpeg_tempo_ratio"),
+        "ffmpeg_tempo_pre_duration": current.get("ffmpeg_tempo_pre_duration"),
+        "ffmpeg_tempo_post_duration": current.get("ffmpeg_tempo_post_duration"),
+        "ffmpeg_tempo_audio_path": current.get("ffmpeg_tempo_audio_path"),
+        "ffmpeg_tempo_failed_reason": current.get("ffmpeg_tempo_failed_reason", ""),
+        "final_extra_expand_attempted": bool(current.get("final_extra_expand_attempted")),
+        "final_extra_expand_result": current.get("final_extra_expand_result", ""),
+        "final_extra_expand_before_text": current.get("final_extra_expand_before_text", ""),
+        "final_extra_expand_after_text": current.get("final_extra_expand_after_text", ""),
         "attempts": list(current.get("attempts") or []),
     }
 
@@ -252,49 +308,208 @@ def _regenerate_segment(
     return output_path, tts.get_audio_duration(output_path)
 
 
-def _try_speed_adjustment(*, current: dict, voice_id: str, target_language: str) -> None:
-    speed_for_target = compute_speed_for_target(current["target_duration"], current["tts_duration"])
-    if speed_for_target is None or speed_for_target == 1.0:
-        return
+def _try_ffmpeg_tempo_alignment(
+    *,
+    current: dict,
+    position: int,
+    on_progress: Callable[[dict], None] | None,
+    reason: str,
+) -> bool:
+    target_duration = float(current.get("target_duration", 0.0) or 0.0)
+    audio_duration = float(current.get("tts_duration", 0.0) or 0.0)
+    ratio = duration_ratio(target_duration, audio_duration)
+    if not (MIN_FFMPEG_TEMPO_RATIO <= ratio <= MAX_FFMPEG_TEMPO_RATIO):
+        return False
+    if abs(audio_duration - target_duration) < 0.001:
+        return False
 
     current["speed_adjustment_attempts"] += 1
-    before_candidate = _candidate_from_current(
+    round_number = int(current.get("selected_attempt_round", 0) or 0)
+    output_path = _ffmpeg_tempo_output_path(
         current,
-        round_number=int(current.get("selected_attempt_round", 0) or 0),
+        round_number=round_number,
+        attempt_number=current["speed_adjustment_attempts"],
     )
-    before_distance = _duration_distance(current["target_duration"], current["tts_duration"])
-    adjusted_path, adjusted_duration = _regenerate_segment(
+    result = _apply_ffmpeg_tempo_alignment(
+        audio_path=str(current.get("tts_path") or ""),
+        audio_duration=audio_duration,
+        target_duration=target_duration,
+        output_path=output_path,
+    )
+    current["final_fallback_action"] = "ffmpeg_tempo_align"
+    current["final_fallback_reason"] = reason
+    if not result or result.get("failed_reason"):
+        current["ffmpeg_tempo_applied"] = False
+        current["ffmpeg_tempo_failed_reason"] = (
+            (result or {}).get("failed_reason") or "ffmpeg tempo alignment skipped"
+        )
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="ffmpeg_tempo_align")
+        return False
+
+    current["tts_path"] = result["new_audio_path"]
+    current["tts_duration"] = float(result["post_duration"])
+    current["duration_ratio"] = duration_ratio(target_duration, current["tts_duration"])
+    current["speed"] = result["ratio"]
+    current["status"] = "speed_adjusted"
+    current["ffmpeg_tempo_applied"] = True
+    current["ffmpeg_tempo_ratio"] = result["ratio"]
+    current["ffmpeg_tempo_pre_duration"] = result["pre_duration"]
+    current["ffmpeg_tempo_post_duration"] = result["post_duration"]
+    current["ffmpeg_tempo_audio_path"] = result["new_audio_path"]
+    if not _semantic_coverage_issue(current):
+        current["best_effort"] = False
+        current.pop("best_effort_reason", None)
+    _emit_sentence_progress(on_progress, position=position, current=current, phase="ffmpeg_tempo_align")
+    return True
+
+
+def _resolve_near_miss_with_ffmpeg(
+    *,
+    current: dict,
+    position: int,
+    on_progress: Callable[[dict], None] | None,
+    reason: str,
+) -> bool:
+    if _semantic_coverage_issue(current):
+        return False
+    ratio = duration_ratio(
+        float(current.get("target_duration", 0.0) or 0.0),
+        float(current.get("tts_duration", 0.0) or 0.0),
+    )
+    if not (MIN_FFMPEG_TEMPO_RATIO <= ratio <= MAX_FFMPEG_TEMPO_RATIO):
+        return False
+
+    applied = _try_ffmpeg_tempo_alignment(
+        current=current,
+        position=position,
+        on_progress=on_progress,
+        reason=reason,
+    )
+    if applied:
+        return True
+    if current.get("status") != "ok":
+        current["status"] = _warning_status_for_ratio(ratio)
+        current["best_effort"] = True
+        current["best_effort_reason"] = (
+            "ffmpeg_tempo_failed" if current.get("ffmpeg_tempo_failed_reason")
+            else "near_miss_without_alignment"
+        )
+    return True
+
+
+def _mark_clip_overlong_fallback(
+    *,
+    current: dict,
+    position: int,
+    on_progress: Callable[[dict], None] | None,
+) -> None:
+    current["final_fallback_action"] = "clip_overlong"
+    current["final_fallback_reason"] = "overlong_after_attempts"
+    _emit_sentence_progress(on_progress, position=position, current=current, phase="final_clip_fallback")
+
+
+def _run_final_extra_expand(
+    *,
+    current: dict,
+    position: int,
+    voice_id: str,
+    target_language: str,
+    av_inputs: dict,
+    shot_notes: dict,
+    script_segments: list[dict],
+    user_id: int | None,
+    project_id: str | None,
+    on_progress: Callable[[dict], None] | None,
+) -> None:
+    before_text = current.get("text", "")
+    current["final_extra_expand_attempted"] = True
+    current["final_fallback_action"] = "extra_expand"
+    current["final_fallback_reason"] = "short_after_attempts"
+    current["final_extra_expand_before_text"] = before_text
+    current["active_attempt"] = 999
+    current["active_action"] = "expand"
+    current["active_temperature"] = av_translate.rewrite_temperature_for_attempt(999)
+    current["active_tts_attempt"] = current.get("tts_regenerate_attempts", 0) + 1
+    _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_start")
+    try:
+        rewrite_result = av_translate.rewrite_one(
+            asr_index=int(current.get("asr_index", position)),
+            prev_text=before_text,
+            overshoot_sec=0.0,
+            direction="expand",
+            new_target_chars_range=tuple(current.get("target_chars_range") or (1, 2)),
+            script_segments=script_segments,
+            shot_notes=shot_notes,
+            av_inputs=av_inputs,
+            voice_id=voice_id,
+            user_id=user_id,
+            project_id=project_id,
+            attempt_number=999,
+            previous_attempts=list(current.get("attempts") or []),
+            temperature=current["active_temperature"],
+            required_terms=list(current.get("must_keep_terms") or []),
+            omitted_terms=list(current.get("omitted_source_terms") or []),
+            return_sentence=True,
+        )
+    except Exception as exc:
+        current["final_fallback_action"] = "extra_expand_failed"
+        current["final_extra_expand_result"] = "rewrite_failed"
+        current["final_extra_expand_error"] = _error_text(exc)
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
+        return
+
+    if isinstance(rewrite_result, dict):
+        new_text = str(rewrite_result.get("text") or "")
+        if "covered_source_terms" in rewrite_result:
+            current["covered_source_terms"] = list(rewrite_result.get("covered_source_terms") or [])
+        if "omitted_source_terms" in rewrite_result:
+            current["omitted_source_terms"] = list(rewrite_result.get("omitted_source_terms") or [])
+        if "coverage_ok" in rewrite_result:
+            current["coverage_ok"] = bool(rewrite_result.get("coverage_ok"))
+    else:
+        new_text = str(rewrite_result or "")
+
+    current["text"] = new_text
+    current["est_chars"] = len(new_text)
+    current["final_extra_expand_after_text"] = new_text
+    current["tts_path"], current_duration = _regenerate_segment(
         sentence=current,
         voice_id=voice_id,
         target_language=target_language,
-        speed=speed_for_target,
-        suffix=_candidate_suffix(
-            "speed",
-            int(current.get("selected_attempt_round", 0) or 0),
-            current["speed_adjustment_attempts"],
-        ),
+        suffix=_candidate_suffix("final_expand", 999),
     )
-    adjusted_status, _speed = classify_overshoot(current["target_duration"], adjusted_duration)
-    adjusted_distance = _duration_distance(current["target_duration"], adjusted_duration)
-    if adjusted_status == "ok" and adjusted_distance <= before_distance:
-        current["tts_path"] = adjusted_path
-        current["tts_duration"] = adjusted_duration
-        current["speed"] = speed_for_target
-        current["status"] = "speed_adjusted"
-        current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
+    current["tts_regenerate_attempts"] += 1
+    current["tts_duration"] = current_duration
+    current["duration_ratio"] = duration_ratio(current["target_duration"], current_duration)
+    status, speed = classify_overshoot(current["target_duration"], current_duration)
+    if _semantic_coverage_issue(current):
+        status = "needs_semantic_repair"
+    current["status"] = status
+    current["speed"] = speed
+
+    if _resolve_near_miss_with_ffmpeg(
+        current=current,
+        position=position,
+        on_progress=on_progress,
+        reason="short_after_attempts",
+    ):
+        aligned = current.get("ffmpeg_tempo_applied") or current.get("status") in {"ok", "speed_adjusted"}
+        current["final_extra_expand_result"] = "aligned" if aligned else "still_short"
+        if not aligned:
+            current["final_fallback_action"] = "extra_expand_failed"
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
         return
 
-    _apply_candidate(current, before_candidate)
-    current["speed_adjustment_failed"] = True
-    current["speed_adjustment_failure"] = {
-        "speed": speed_for_target,
-        "tts_path": adjusted_path,
-        "tts_duration": adjusted_duration,
-        "duration_ratio": round(duration_ratio(current["target_duration"], adjusted_duration), 4),
-        "delta_pct": _delta_pct(current["target_duration"], adjusted_duration),
-        "status": adjusted_status,
-        "reason": "speed_adjustment_not_closer",
-    }
+    current["final_fallback_action"] = "extra_expand_failed"
+    if current["duration_ratio"] < MIN_FFMPEG_TEMPO_RATIO:
+        current["final_extra_expand_result"] = "still_short"
+        current["status"] = "warning_short"
+    else:
+        current["final_extra_expand_result"] = "still_long"
+        current["status"] = _warning_status_for_ratio(current["duration_ratio"])
+    current["best_effort"] = True
+    current["best_effort_reason"] = "final_extra_expand_missed"
+    _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
 
 
 def _initial_sentence_state(
@@ -373,9 +588,13 @@ def _reconcile_one_sentence(
     status = current["status"]
     asr_index = int(current.get("asr_index", position))
 
-    if status == "ok":
-        _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
-        _emit_sentence_progress(on_progress, position=position, current=current, phase="speed_adjust")
+    if status != "needs_semantic_repair" and _resolve_near_miss_with_ffmpeg(
+        current=current,
+        position=position,
+        on_progress=on_progress,
+        reason="near_miss_ratio",
+    ):
+        pass
     elif status in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
         if not text_rewrite_enabled and status != "needs_semantic_repair":
             current["text_rewrite_disabled"] = True
@@ -528,8 +747,12 @@ def _reconcile_one_sentence(
                 if status == "ok":
                     current["selected_attempt_round"] = rewrite_round
                     _mark_selected_attempt(current["attempts"], rewrite_round)
-                    _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
-                    _emit_sentence_progress(on_progress, position=position, current=current, phase="speed_adjust")
+                    _resolve_near_miss_with_ffmpeg(
+                        current=current,
+                        position=position,
+                        on_progress=on_progress,
+                        reason="near_miss_ratio",
+                    )
                     break
 
             if current["status"] in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
@@ -539,6 +762,33 @@ def _reconcile_one_sentence(
                 current["speed"] = 1.0
                 current["best_effort"] = True
                 current["best_effort_reason"] = "max_attempts_exhausted"
+                final_ratio = duration_ratio(current["target_duration"], current["tts_duration"])
+                if MIN_FFMPEG_TEMPO_RATIO <= final_ratio <= MAX_FFMPEG_TEMPO_RATIO:
+                    _resolve_near_miss_with_ffmpeg(
+                        current=current,
+                        position=position,
+                        on_progress=on_progress,
+                        reason="near_miss_ratio",
+                    )
+                elif final_ratio > MAX_FFMPEG_TEMPO_RATIO:
+                    _mark_clip_overlong_fallback(
+                        current=current,
+                        position=position,
+                        on_progress=on_progress,
+                    )
+                else:
+                    _run_final_extra_expand(
+                        current=current,
+                        position=position,
+                        voice_id=voice_id,
+                        target_language=target_language,
+                        av_inputs=av_inputs,
+                        shot_notes=shot_notes,
+                        script_segments=script_segments,
+                        user_id=user_id,
+                        project_id=project_id,
+                        on_progress=on_progress,
+                    )
 
     _emit_sentence_progress(on_progress, position=position, current=current, phase="sentence_done")
     return current

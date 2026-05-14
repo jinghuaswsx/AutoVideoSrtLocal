@@ -3472,6 +3472,10 @@
       tts_regen_start: "音频重生成",
       rewrite_attempt: "重翻译 + 音频测量完成",
       rewrite_error: "语句重新翻译失败",
+      ffmpeg_tempo_align: "FFmpeg 对齐",
+      final_extra_expand_start: "二次扩写开始",
+      final_extra_expand_result: "二次扩写结果",
+      final_clip_fallback: "超长截断",
       speed_adjust: "速度微调",
       sentence_done: "当前句完成",
     })[phase] || phase || "--";
@@ -3558,6 +3562,47 @@
     const omittedText = omitted.length ? ` · 遗漏：${omitted.join("、")}` : "";
     const label = compact ? state.label : `语义判断 ${state.label}${omittedText}`;
     return `<span class="semantic-coverage-chip ${escapeAttr(state.state)}">${escapeHtml(label)}</span>`;
+  }
+
+  function renderSentenceFinalFallbackBadge(sentence = {}, debug = {}) {
+    const action = String(sentence.final_fallback_action || debug.final_fallback_action || "");
+    const extraAttempted = Boolean(sentence.final_extra_expand_attempted || debug.final_extra_expand_attempted);
+    const extraResult = String(sentence.final_extra_expand_result || debug.final_extra_expand_result || "");
+    const labels = {
+      ffmpeg_tempo_align: "FFmpeg 对齐",
+      clip_overlong: "超长截断",
+      extra_expand: "二次扩写",
+      extra_expand_failed: "二次扩写未收敛",
+    };
+    const chips = [];
+    if (extraAttempted) {
+      chips.push(extraResult === "aligned" ? "二次扩写" : "二次扩写未收敛");
+    }
+    if (labels[action]) chips.push(labels[action]);
+    return chips.map(label => `<span class="semantic-coverage-chip warning">${escapeHtml(label)}</span>`).join("");
+  }
+
+  function renderSentenceFinalFallbackDetail(sentence = {}, debug = {}) {
+    const action = String(sentence.final_fallback_action || debug.final_fallback_action || "");
+    const extraAttempted = Boolean(sentence.final_extra_expand_attempted || debug.final_extra_expand_attempted);
+    if (!action && !extraAttempted) return "";
+    const pre = numberOrNull(sentence.ffmpeg_tempo_pre_duration ?? debug.ffmpeg_tempo_pre_duration);
+    const post = numberOrNull(sentence.ffmpeg_tempo_post_duration ?? debug.ffmpeg_tempo_post_duration);
+    const ratio = numberOrNull(sentence.ffmpeg_tempo_ratio ?? debug.ffmpeg_tempo_ratio);
+    const details = [];
+    if (extraAttempted) {
+      const beforeText = sentence.final_extra_expand_before_text || debug.final_extra_expand_before_text || "";
+      const afterText = sentence.final_extra_expand_after_text || debug.final_extra_expand_after_text || "";
+      const result = sentence.final_extra_expand_result || debug.final_extra_expand_result || "";
+      details.push(`<div class="duration-round-meta warning">二次扩写：${escapeHtml(result || "--")}${beforeText ? ` · 扩写前：${escapeHtml(beforeText)}` : ""}${afterText ? ` · 扩写后：${escapeHtml(afterText)}` : ""}</div>`);
+    }
+    if (action === "ffmpeg_tempo_align") {
+      details.push(`<div class="duration-round-meta">FFmpeg 对齐：${escapeHtml(formatAvDuration(pre))} → ${escapeHtml(formatAvDuration(post))} · atempo=${escapeHtml(ratio != null ? ratio.toFixed(4) : "--")}</div>`);
+    }
+    if (action === "clip_overlong") {
+      details.push('<div class="duration-round-meta warning">超长截断：最终仍超过目标窗口，进入最终时间轴裁剪兜底。</div>');
+    }
+    return details.join("");
   }
 
   function sentenceFinalComposeSummary(sourceRows, context = {}) {
@@ -3734,6 +3779,8 @@
         ? `<div class="duration-round-meta warning">问题点：${escapeHtml(syncIssue.reason)} · 建议调整：${escapeHtml(syncIssue.advice)}</div>`
         : "";
       const semanticHtml = renderSemanticCoverageChip(sentenceSemanticCoverageState(sentence, debug));
+      const fallbackBadgeHtml = renderSentenceFinalFallbackBadge(sentence, debug);
+      const fallbackDetailHtml = renderSentenceFinalFallbackDetail(sentence, debug);
       const clipHtml = sentence.audio_clipped || debug.audio_clipped
         ? `<div class="duration-round-meta warning">音频裁剪：${escapeHtml(formatAvDuration(sentence.audio_clipped_seconds ?? debug.audio_clipped_seconds))} · 原因 ${escapeHtml(sentence.audio_clip_reason || debug.audio_clip_reason || "--")}</div>`
         : "";
@@ -3745,6 +3792,7 @@
             <span>句 ${escapeHtml(asrIndex)}</span>
             <span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span>
             ${semanticHtml}
+            ${fallbackBadgeHtml}
           </div>
           <div class="duration-round-meta">目标时长 ${formatAvDuration(targetDuration)} · 当前时长 ${formatAvDuration(ttsDuration)} · 偏差 ${formatAvDelta(computedDelta)}${charLabel}</div>
           <div class="duration-round-meta">原文：${escapeHtml(sourceText || "--")}</div>
@@ -3752,6 +3800,7 @@
           ${sourceNote ? `<div class="duration-round-meta">原文纯净化：${escapeHtml(sourceNote)}</div>` : ""}
           <div class="duration-round-meta">句级翻译：${escapeHtml(finalText || "--")}</div>
           ${selectedLabel ? `<div class="duration-round-meta">候选：${escapeHtml(selectedLabel)}</div>` : ""}
+          ${fallbackDetailHtml}
           ${issueHtml}
           ${clipHtml}
           ${skipHtml}
