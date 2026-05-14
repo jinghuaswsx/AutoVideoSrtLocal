@@ -3573,6 +3573,13 @@ class PipelineRunner:
         variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
+        timeline_manifest = (
+            variant_state.get("timeline_manifest")
+            or task.get("timeline_manifest")
+            or {}
+        )
+        if not isinstance(timeline_manifest, dict):
+            timeline_manifest = {}
         jianying_project_root = resolve_jianying_project_root(self.user_id)
         draft_title = (
             task.get("display_name")
@@ -3592,7 +3599,7 @@ class PipelineRunner:
             tts_audio_path=variant_state["tts_audio_path"],
             srt_path=variant_state["srt_path"],
             output_dir=task_dir,
-            timeline_manifest=variant_state.get("timeline_manifest"),
+            timeline_manifest=timeline_manifest,
             variant=variant,
             draft_title=draft_title,
             jianying_project_root=jianying_project_root,

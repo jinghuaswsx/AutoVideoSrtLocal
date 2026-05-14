@@ -679,6 +679,46 @@ def test_step_export_uses_av_variant_for_av_pipeline(tmp_path, monkeypatch):
     assert saved["status"] == "done"
 
 
+def test_step_export_uses_empty_manifest_for_av_variant_without_timeline(tmp_path, monkeypatch):
+    task_id = "task-av-export-missing-timeline"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    task["video_path"] = "video.mp4"
+    task["pipeline_version"] = "av"
+    task["subtitle_position"] = "bottom"
+
+    audio_path = tmp_path / "tts_full.av.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.av.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["variants"]["av"] = {
+        "tts_audio_path": str(audio_path),
+        "srt_path": str(srt_path),
+    }
+
+    captured = {}
+
+    def fake_export_capcut_project(**kwargs):
+        captured.update(kwargs)
+        manifest_path = tmp_path / "manifest.av.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        return {
+            "project_dir": str(tmp_path / "capcut_av"),
+            "archive_path": str(tmp_path / "capcut_av.zip"),
+            "manifest_path": str(manifest_path),
+            "jianying_project_dir": "",
+        }
+
+    monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
+    monkeypatch.setattr("appcore.runtime._pipeline_runner.resolve_jianying_project_root", lambda user_id: "")
+    monkeypatch.setattr("appcore.task_state.set_expires_at", lambda *args, **kwargs: None)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_export(task_id, "video.mp4", str(tmp_path))
+
+    assert captured["variant"] == "av"
+    assert captured["timeline_manifest"] == {}
+
+
 def test_step_export_passes_user_jianying_root_to_capcut_export(tmp_path, monkeypatch):
     task = store.create("task-export-jianying-root", "video.mp4", str(tmp_path), user_id=123)
     task["video_path"] = "video.mp4"

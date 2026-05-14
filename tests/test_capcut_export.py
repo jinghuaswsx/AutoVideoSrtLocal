@@ -110,6 +110,70 @@ def test_capcut_export_prefers_pyjianyingdraft_backend_when_available(tmp_path, 
     assert manifest["backend"] == "pyJianYingDraft"
 
 
+def test_capcut_export_treats_missing_timeline_manifest_as_empty(tmp_path, monkeypatch):
+    fake_module = types.ModuleType("pyJianYingDraft")
+    calls = []
+
+    class FakeScript:
+        def add_track(self, *args, **kwargs):
+            return self
+
+        def add_segment(self, *args, **kwargs):
+            return self
+
+        def import_srt(self, *args, **kwargs):
+            return self
+
+        def save(self):
+            calls.append(("save",))
+
+    class FakeDraftFolder:
+        def __init__(self, root):
+            self.root = Path(root)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+        def create_draft(self, name, width, height, allow_replace=True):
+            calls.append(("create_draft", name))
+            draft_dir = self.root / name
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            return FakeScript()
+
+    class FakeSegment:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_module.DraftFolder = FakeDraftFolder
+    fake_module.TrackType = types.SimpleNamespace(audio="audio", video="video", text="text")
+    fake_module.AudioSegment = type("AudioSegment", (FakeSegment,), {})
+    fake_module.VideoSegment = type("VideoSegment", (FakeSegment,), {})
+    fake_module.TextStyle = lambda **kwargs: ("TextStyle", kwargs)
+    fake_module.ClipSettings = lambda **kwargs: ("ClipSettings", kwargs)
+    fake_module.trange = lambda start, duration: ("trange", start, duration)
+
+    monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
+
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest=None,
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+    )
+
+    manifest = json.loads(Path(export["manifest_path"]).read_text(encoding="utf-8"))
+    assert ("create_draft", "sample_capcut") in calls
+    assert manifest["backend"] == "pyJianYingDraft"
+    assert manifest["timeline_manifest"] == {}
+
+
 def test_capcut_export_uses_video_filename_for_stable_capcut_name(tmp_path, monkeypatch):
     fake_module = types.ModuleType("pyJianYingDraft")
     calls = []

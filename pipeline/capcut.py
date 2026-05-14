@@ -17,7 +17,7 @@ def export_capcut_project(
     video_path: str,
     tts_audio_path: str,
     srt_path: str,
-    timeline_manifest: dict,
+    timeline_manifest: dict | None,
     output_dir: str,
     subtitle_position: str = "bottom",
     draft_title: str | None = None,
@@ -28,6 +28,8 @@ def export_capcut_project(
     subtitle_position_y: float | None = None,
     accompaniment_audio_path: str | None = None,
 ) -> dict:
+    if not isinstance(timeline_manifest, dict):
+        timeline_manifest = {}
     source_name = draft_title or Path(video_path).name
     draft_name = build_capcut_draft_name(source_name, variant=variant)
     output_root = Path(output_dir)
