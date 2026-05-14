@@ -858,7 +858,12 @@ def sync_scheduler_job_state(scheduler: Any, task_code: str) -> None:
     if not all(hasattr(scheduler, name) for name in ("get_job", "pause_job", "resume_job")):
         return
     try:
+        job = scheduler.get_job(task_code)
+        if not job:
+            return
         if is_task_enabled(task_code):
+            if getattr(job, "next_run_time", None) is not None:
+                return
             scheduler.resume_job(task_code)
         else:
             scheduler.pause_job(task_code)

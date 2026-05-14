@@ -847,3 +847,57 @@ def test_run_if_enabled_skips_disabled_task(monkeypatch):
         "reason": "scheduled task disabled",
         "task_code": "product_cover_backfill_tick",
     }
+
+
+def test_sync_scheduler_job_state_preserves_active_next_run_time(monkeypatch):
+    from appcore import scheduled_tasks
+
+    class Job:
+        next_run_time = datetime(2026, 5, 14, 18, 0, 5)
+
+    class FakeScheduler:
+        def __init__(self):
+            self.calls = []
+
+        def get_job(self, task_code):
+            return Job()
+
+        def resume_job(self, task_code):
+            self.calls.append(("resume", task_code))
+
+        def pause_job(self, task_code):
+            self.calls.append(("pause", task_code))
+
+    fake = FakeScheduler()
+    monkeypatch.setattr(scheduled_tasks, "is_task_enabled", lambda task_code: True)
+
+    scheduled_tasks.sync_scheduler_job_state(fake, "meta_hot_posts_video_localization_tick")
+
+    assert fake.calls == []
+
+
+def test_sync_scheduler_job_state_resumes_paused_enabled_job(monkeypatch):
+    from appcore import scheduled_tasks
+
+    class Job:
+        next_run_time = None
+
+    class FakeScheduler:
+        def __init__(self):
+            self.calls = []
+
+        def get_job(self, task_code):
+            return Job()
+
+        def resume_job(self, task_code):
+            self.calls.append(("resume", task_code))
+
+        def pause_job(self, task_code):
+            self.calls.append(("pause", task_code))
+
+    fake = FakeScheduler()
+    monkeypatch.setattr(scheduled_tasks, "is_task_enabled", lambda task_code: True)
+
+    scheduled_tasks.sync_scheduler_job_state(fake, "meta_hot_posts_video_localization_tick")
+
+    assert fake.calls == [("resume", "meta_hot_posts_video_localization_tick")]
