@@ -62,78 +62,78 @@ SOCIAL_REELS_SPEC = PlatformSpec(
 PLATFORM_SPECS = (SOCIAL_REELS_SPEC,)
 ALLOWED_IMAGE_COUNTS = {1, 2, 3, 4}
 
+GEMINI_TEXT_MODEL_LABELS: dict[str, tuple[str, str]] = {
+    "gemini_31_pro": ("Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"),
+    "gemini_3_flash": ("Gemini 3 Flash", "gemini-3-flash-preview"),
+    "gemini_31_flash_lite": ("Gemini 3.1 Flash-Lite", "gemini-3.1-flash-lite-preview"),
+}
+OPENROUTER_TEXT_EXTRAS: dict[str, tuple[str, str]] = {
+    "claude_sonnet": ("Claude Sonnet 4.6", "anthropic/claude-sonnet-4.6"),
+    "gpt_5_5": ("GPT-5.5", "openai/gpt-5.5"),
+    "gpt_5_mini": ("GPT-5 Mini", "openai/gpt-5-mini"),
+}
+
+
+def _gemini_text_models(alias_order: tuple[str, ...], *, openrouter: bool = False) -> dict[str, dict[str, str]]:
+    return {
+        alias: {
+            "label": GEMINI_TEXT_MODEL_LABELS[alias][0],
+            "model": (
+                f"google/{GEMINI_TEXT_MODEL_LABELS[alias][1]}"
+                if openrouter
+                else GEMINI_TEXT_MODEL_LABELS[alias][1]
+            ),
+        }
+        for alias in alias_order
+    }
+
+
+def _text_providers(alias_order: tuple[str, ...], *, openrouter_extra: bool = False) -> dict[str, dict[str, Any]]:
+    openrouter_models = _gemini_text_models(alias_order, openrouter=True)
+    if openrouter_extra:
+        openrouter_models.update(
+            {
+                alias: {"label": label, "model": model}
+                for alias, (label, model) in OPENROUTER_TEXT_EXTRAS.items()
+            }
+        )
+    return {
+        "openrouter": {
+            "label": "OPENROUTER",
+            "models": openrouter_models,
+        },
+        "gemini_aistudio": {
+            "label": "GOOGLE AI STUDIO",
+            "models": _gemini_text_models(alias_order),
+        },
+        "gemini_vertex": {
+            "label": "GOOGLE VERTEX",
+            "models": _gemini_text_models(alias_order),
+        },
+        "gemini_vertex_adc": {
+            "label": "GOOGLE VERTEX ADC",
+            "models": _gemini_text_models(alias_order),
+        },
+    }
+
 TEXT_STEP_MODEL_OPTIONS: dict[str, dict[str, Any]] = {
     "video_analysis": {
         "label": "视频分析",
         "default_provider": "gemini_vertex_adc",
-        "providers": {
-            "openrouter": {
-                "label": "OPENROUTER",
-                "models": {
-                    "gemini_31_pro": {
-                        "label": "Gemini 3.1 Pro Preview",
-                        "model": "google/gemini-3.1-pro-preview",
-                    },
-                },
-            },
-            "gemini_vertex_adc": {
-                "label": "GOOGLE VERTEX ADC",
-                "models": {
-                    "gemini_31_pro": {
-                        "label": "Gemini 3.1 Pro Preview",
-                        "model": "gemini-3.1-pro-preview",
-                    },
-                },
-            },
-        },
+        "providers": _text_providers(("gemini_31_pro", "gemini_3_flash", "gemini_31_flash_lite")),
     },
     "product_analysis": {
         "label": "产品分析",
         "default_provider": "openrouter",
-        "providers": {
-            "openrouter": {
-                "label": "OPENROUTER",
-                "models": {
-                    "gemini_3_flash": {
-                        "label": "Gemini 3 Flash",
-                        "model": "google/gemini-3-flash-preview",
-                    },
-                },
-            },
-            "gemini_vertex_adc": {
-                "label": "GOOGLE VERTEX ADC",
-                "models": {
-                    "gemini_3_flash": {
-                        "label": "Gemini 3 Flash",
-                        "model": "gemini-3-flash-preview",
-                    },
-                },
-            },
-        },
+        "providers": _text_providers(("gemini_3_flash", "gemini_31_pro", "gemini_31_flash_lite")),
     },
     "ad_copy": {
         "label": "文案创作",
         "default_provider": "openrouter",
-        "providers": {
-            "openrouter": {
-                "label": "OPENROUTER",
-                "models": {
-                    "gemini_3_flash": {
-                        "label": "Gemini 3 Flash",
-                        "model": "google/gemini-3-flash-preview",
-                    },
-                },
-            },
-            "gemini_vertex_adc": {
-                "label": "GOOGLE VERTEX ADC",
-                "models": {
-                    "gemini_3_flash": {
-                        "label": "Gemini 3 Flash",
-                        "model": "gemini-3-flash-preview",
-                    },
-                },
-            },
-        },
+        "providers": _text_providers(
+            ("gemini_3_flash", "gemini_31_pro", "gemini_31_flash_lite"),
+            openrouter_extra=True,
+        ),
     },
 }
 
@@ -149,17 +149,30 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "gpt_image_2": "gpt-image-2",
             "nano_banana_2": "gemini-3.1-flash-image-preview",
             "nano_banana_pro": "gemini-3-pro-image-preview",
+            "nano_banana_1": "gemini-2.5-flash-image-preview",
         },
         "openrouter": {
-            "gpt_image_2": "openai/gpt-5.4-image-2:mid",
+            "openai_image_2_low": "openai/gpt-5.4-image-2:low",
+            "openai_image_2_mid": "openai/gpt-5.4-image-2:mid",
+            "openai_image_2_high": "openai/gpt-5.4-image-2:high",
             "nano_banana_2": "gemini-3.1-flash-image-preview",
             "nano_banana_pro": "gemini-3-pro-image-preview",
+            "nano_banana_1": "gemini-2.5-flash-image-preview",
         },
     },
     "model_labels": {
         "gpt_image_2": "GPT-Image-2",
+        "openai_image_2_low": "OpenAI Image 2（Low）",
+        "openai_image_2_mid": "OpenAI Image 2（Mid）",
+        "openai_image_2_high": "OpenAI Image 2（High）",
         "nano_banana_2": "Nano Banana 2",
         "nano_banana_pro": "Nano Banana Pro",
+        "nano_banana_1": "Nano Banana 1",
+    },
+    "model_aliases": {
+        "openrouter": {
+            "gpt_image_2": "openai_image_2_mid",
+        },
     },
 }
 
@@ -207,6 +220,7 @@ def resolve_cover_model_selection(provider: str | None, model: str | None) -> Mo
         provider_key = COVER_MODEL_OPTIONS["default_provider"]
     model_options = COVER_MODEL_OPTIONS["models"][provider_key]
     model_key = (model or "").strip()
+    model_key = COVER_MODEL_OPTIONS.get("model_aliases", {}).get(provider_key, {}).get(model_key, model_key)
     if model_key not in model_options:
         for alias, actual in model_options.items():
             if model_key and model_key == actual:

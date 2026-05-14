@@ -47,6 +47,9 @@ def _make_superadmin_client_no_db(monkeypatch):
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
     monkeypatch.setattr(
         "appcore.medias.list_enabled_language_codes",
         lambda: ["de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"],
@@ -253,8 +256,11 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
 
     assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "").model == "gemini-3.1-pro-preview"
     assert resolve_text_model_selection("video_analysis", "openrouter", "").model == "google/gemini-3.1-pro-preview"
+    assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "gemini_3_flash").model == "gemini-3-flash-preview"
     assert resolve_text_model_selection("product_analysis", "gemini_vertex_adc", "").model == "gemini-3-flash-preview"
     assert resolve_text_model_selection("ad_copy", "openrouter", "").model == "google/gemini-3-flash-preview"
+    assert resolve_text_model_selection("ad_copy", "openrouter", "claude_sonnet").model == "anthropic/claude-sonnet-4.6"
+    assert resolve_text_model_selection("ad_copy", "openrouter", "openai/gpt-5.5").alias == "gpt_5_5"
 
     local = resolve_cover_model_selection("local", "gpt_image_2")
     assert local.provider == "local"
@@ -262,11 +268,19 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     openrouter = resolve_cover_model_selection("openrouter", "nano_banana_pro")
     assert openrouter.provider == "openrouter"
     assert openrouter.model == "gemini-3-pro-image-preview"
+    openrouter_image2 = resolve_cover_model_selection("openrouter", "openai_image_2_high")
+    assert openrouter_image2.provider == "openrouter"
+    assert openrouter_image2.model == "openai/gpt-5.4-image-2:high"
 
     options = video_cover_model_options()
     assert options["steps"]["video_analysis"]["default_provider"] == "gemini_vertex_adc"
+    assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_vertex_adc"]["models"]
+    assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
+    assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
     assert "local" in options["steps"]["cover_generation"]["providers"]
     assert options["steps"]["cover_generation"]["models"]["local"]["gpt_image_2"] == "gpt-image-2"
+    assert options["steps"]["cover_generation"]["models"]["openrouter"]["openai_image_2_mid"] == "openai/gpt-5.4-image-2:mid"
+    assert options["steps"]["cover_generation"]["models"]["openrouter"]["nano_banana_2"] == "gemini-3.1-flash-image-preview"
 
 
 def test_generate_local_cover_image_posts_docs_image_edit_payload():
@@ -586,7 +600,10 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     assert 'id="vcShowDefaultConfig"' in html
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'name="{step}_provider"' in html
-        assert f'name="{step}_model_id"' in html
+        assert f'<select class="vc-input" name="{step}_model_id"' in html
+    assert 'id="vcModelOptions"' in html
+    assert "Nano Banana 2" in html
+    assert "openai/gpt-5.4-image-2:mid" in html
 
 
 def test_video_cover_default_config_requires_superadmin(authed_client_no_db):

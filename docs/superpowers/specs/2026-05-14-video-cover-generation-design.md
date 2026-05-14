@@ -56,17 +56,20 @@
 - 默认配置支持分别配置四个步骤的模型供应商和模型 ID：`video_analysis`、`product_analysis`、`ad_copy`、`cover_generation`。
 - 默认配置保存到 `system_settings`，值为结构化 JSON；读取失败、缺失或字段非法时回退到代码内置默认模型。
 - 新建项目时必须把当前默认配置快照写入项目 `state_json.model_defaults`。该项目后续自动执行、失败重试、强制重新开始都使用这份项目级快照，避免管理员后续改默认配置影响已创建项目。
-- “默认配置”弹窗内的供应商和模型 ID 输入必须保存实际调用值；界面可以展示建议值，但允许超级管理员输入新模型 ID，便于供应商模型更新时无需改代码。
+- “默认配置”弹窗内的模型 ID 必须是供应商联动下拉框。用户先选择步骤供应商，再从该供应商在当前步骤可用的模型池中选择模型；保存时提交并落库实际调用的 `model_id`，不提交展示名或内部别名。
+- 文本步骤的模型池必须按场景给出多个可选模型。视频分析可选 Gemini 3.1 Pro Preview、Gemini 3 Flash、Gemini 3.1 Flash-Lite；产品分析和文案创作同样提供 Gemini 3 系列，其中文案创作在 OpenRouter 下额外提供 Claude Sonnet、GPT-5.5、GPT-5 Mini 等文本模型。
+- 封面生成的模型池必须提供图片生成模型候选。本地接口和 OpenRouter 都至少提供 GPT-Image-2、Nano Banana 2、Nano Banana Pro；OpenRouter 可额外提供 OpenAI Image 2 low / mid / high 质量档位和 Nano Banana 1 兜底。
+- 如果历史配置中存在当前模型池未收录但仍可被后端规范化保留的 `model_id`，弹窗应临时显示“当前历史值”选项，避免打开配置后静默覆盖旧值；用户主动切换供应商或模型后，再回到预设模型池。
 - 保存接口必须使用 `@superadmin_required`；普通管理员直接请求读取或保存接口返回 403。
 
 ## 模型与平台决策
 
 当前 1.0 按步骤内置默认模型运行；超级管理员可以通过 `/video-cover` 列表页的“默认配置”覆盖全局默认值：
 
-- 视频分析：默认 `GOOGLE VERTEX ADC` / `gemini-3.1-pro-preview`；OpenRouter 对应 `google/gemini-3.1-pro-preview`。
-- 产品分析：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。
-- 文案创作：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。
-- 封面生成：默认 `本地接口` / `gpt-image-2`，本地接口默认 base URL 为 `http://172.30.254.14:82/v1`，API key 存放在 `llm_provider_configs.video_cover_local_image`；OpenRouter 可选 `gpt-image-2`、`nano_banana_2`、`nano_banana_pro` 的映射模型。
+- 视频分析：默认 `GOOGLE VERTEX ADC` / `gemini-3.1-pro-preview`；OpenRouter 对应 `google/gemini-3.1-pro-preview`。同供应商还可选择 Gemini 3 Flash 和 Gemini 3.1 Flash-Lite。
+- 产品分析：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。同供应商还可选择 Gemini 3.1 Pro Preview 和 Gemini 3.1 Flash-Lite。
+- 文案创作：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。OpenRouter 文案池还可选择 `anthropic/claude-sonnet-4.6`、`openai/gpt-5.5`、`openai/gpt-5-mini`。
+- 封面生成：默认 `本地接口` / `gpt-image-2`，本地接口默认 base URL 为 `http://172.30.254.14:82/v1`，API key 存放在 `llm_provider_configs.video_cover_local_image`；OpenRouter 可选 OpenAI Image 2 low / mid / high、Nano Banana 2、Nano Banana Pro、Nano Banana 1 兜底。本地接口可选 GPT-Image-2、Nano Banana 2、Nano Banana Pro、Nano Banana 1 兜底。
 - 本地图片生成接口按接口文档使用图生图编辑能力：`POST /images/edits`，请求为 `multipart/form-data`，字段包含 `model`、`prompt`、`n`、`size`，参考图通过 `image` 文件上传；9:16 原始生成尺寸使用 `1024x1536`，响应支持 `b64_json` 或 `url`。
 - 这个功能需要基于商品主图和视频画面做图片生成/编辑；视频分析阶段读取上传视频文件，封面生成阶段使用商品主图与精选视频帧组成的 9:16 参考图。
 - 输出后处理强制为平台常用的 `1080x1920` 竖版 PNG，模型原始输出尺寸不直接暴露给用户。

@@ -115,7 +115,9 @@
           </label>
           <label class="vc-config-field">
             <span>模型 ID</span>
-            <input class="vc-input" name="{{ step }}_model_id" value="{{ defaults.get('model_id', '') }}" placeholder="model-id">
+            <select class="vc-input" name="{{ step }}_model_id"
+                    data-model-select="{{ step }}"
+                    data-current-model="{{ defaults.get('model_id', '') }}"></select>
           </label>
         </div>
         {% endfor %}
@@ -175,6 +177,9 @@
 {% endblock %}
 
 {% block scripts %}
+<script id="vcModelOptions" type="application/json">
+  {{ model_options | tojson }}
+</script>
 <script>
 (function() {
   const backdrop = document.getElementById('vcCreateBackdrop');
@@ -200,6 +205,13 @@
   const configError = document.getElementById('vcConfigError');
   const configStatus = document.getElementById('vcConfigStatus');
   const configSteps = {{ (step_order or [])|list|tojson }};
+  const modelOptionsEl = document.getElementById('vcModelOptions');
+  let modelOptions = {};
+  try {
+    modelOptions = JSON.parse(modelOptionsEl ? modelOptionsEl.textContent || '{}' : '{}');
+  } catch (error) {
+    modelOptions = {};
+  }
   let selectedFile = null;
   let previewUrl = '';
   function csrfToken() {
@@ -250,7 +262,69 @@
       const provider = configForm.elements[step + '_provider'];
       const model = configForm.elements[step + '_model_id'];
       if (provider && row.provider) provider.value = row.provider;
-      if (model && row.model_id) model.value = row.model_id;
+      refreshModelSelect(step, row.model_id || (model && model.dataset.currentModel) || '');
+    });
+  }
+  function stepConfig(step) {
+    return (modelOptions.steps || {})[step] || {};
+  }
+  function modelRows(step, providerCode) {
+    const cfg = stepConfig(step);
+    if (step === 'cover_generation') {
+      const models = ((cfg.models || {})[providerCode]) || {};
+      const labels = cfg.model_labels || {};
+      return Object.keys(models).map(alias => ({
+        alias,
+        value: models[alias],
+        label: (labels[alias] || alias) + ' · ' + models[alias]
+      }));
+    }
+    const provider = ((cfg.providers || {})[providerCode]) || {};
+    const models = provider.models || {};
+    return Object.keys(models).map(alias => ({
+      alias,
+      value: (models[alias] || {}).model || alias,
+      label: (((models[alias] || {}).label) || alias) + ' · ' + (((models[alias] || {}).model) || alias)
+    }));
+  }
+  function refreshModelSelect(step, preferredValue) {
+    if (!configForm) return;
+    const provider = configForm.elements[step + '_provider'];
+    const model = configForm.elements[step + '_model_id'];
+    if (!provider || !model) return;
+    const rows = modelRows(step, provider.value);
+    const preferred = String(preferredValue || '').trim();
+    model.innerHTML = '';
+    let matched = false;
+    rows.forEach(row => {
+      const option = document.createElement('option');
+      option.value = row.value;
+      option.textContent = row.label;
+      if (preferred && row.value === preferred) {
+        option.selected = true;
+        matched = true;
+      }
+      model.appendChild(option);
+    });
+    if (preferred && !matched) {
+      const option = document.createElement('option');
+      option.value = preferred;
+      option.textContent = '当前历史值 · ' + preferred;
+      option.selected = true;
+      model.appendChild(option);
+    } else if (!preferred && model.options.length) {
+      model.options[0].selected = true;
+    }
+    model.dataset.currentModel = model.value || preferred;
+  }
+  function initConfigModelSelects() {
+    if (!configForm) return;
+    configSteps.forEach(step => {
+      const provider = configForm.elements[step + '_provider'];
+      const model = configForm.elements[step + '_model_id'];
+      if (!provider || !model) return;
+      refreshModelSelect(step, model.dataset.currentModel || '');
+      provider.addEventListener('change', () => refreshModelSelect(step, ''));
     });
   }
   async function showConfig() {
@@ -309,6 +383,7 @@
   fileInput.addEventListener('change', () => setInputFile(fileInput.files[0]));
   imageCountPills.forEach(btn => btn.addEventListener('click', () => setImageCount(btn.dataset.imageCount)));
   if (configForm) {
+    initConfigModelSelects();
     configForm.addEventListener('submit', async event => {
       event.preventDefault();
       const steps = {};
