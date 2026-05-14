@@ -80,6 +80,28 @@ def test_translate_status_card_is_sticky_below_topbar():
     assert "top: 60px;" in mobile_css
 
 
+def test_translate_status_card_state_backgrounds_are_opaque():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    selectors = (
+        r"\.task-status-card\.is-running",
+        r"\.task-status-card\.is-done",
+        r"\.task-status-card\.is-waiting",
+        r"\.task-status-card\.is-error",
+    )
+    forbidden_background_parts = ("rgba(", "hsla(", "transparent", "--sidebar-hover-bg", "--bg-btn-danger")
+
+    for selector in selectors:
+        rule = re.search(selector + r"\s*\{(?P<body>.*?)\}", shared, re.S)
+        assert rule, selector
+        background = re.search(r"background\s*:\s*(?P<value>[^;]+);", rule.group("body"))
+        assert background, selector
+        value = background.group("value").strip().lower()
+        for forbidden in forbidden_background_parts:
+            assert forbidden not in value
+
+
 def test_omni_detail_shell_contains_preset_summary_slot():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

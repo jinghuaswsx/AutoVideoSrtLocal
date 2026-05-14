@@ -47,10 +47,14 @@
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
     transition: border-color .3s, background .3s, box-shadow .3s;
   }
-  .task-status-card.is-running { border-color: var(--primary-color); background: var(--sidebar-hover-bg); box-shadow: 0 0 10px rgba(59, 130, 246, 0.10); }
-  .task-status-card.is-done    { border-color: #86efac; background: rgba(22, 163, 74, 0.10); }
-  .task-status-card.is-waiting { border-color: #fcd34d; background: rgba(217, 119, 6, 0.10); }
-  .task-status-card.is-error   { border-color: #fca5a5; background: var(--bg-btn-danger); }
+  .task-status-card.is-running { border-color: var(--primary-color); background: #eff6ff; box-shadow: 0 0 10px rgba(59, 130, 246, 0.10); }
+  .task-status-card.is-done    { border-color: #86efac; background: #f0fdf4; }
+  .task-status-card.is-waiting { border-color: #fcd34d; background: #fffbeb; }
+  .task-status-card.is-error   { border-color: #fca5a5; background: #fef2f2; }
+  [data-theme='dark'] .task-status-card.is-running { background: #0b1f33; }
+  [data-theme='dark'] .task-status-card.is-done    { background: #0f2f1f; }
+  [data-theme='dark'] .task-status-card.is-waiting { background: #33260b; }
+  [data-theme='dark'] .task-status-card.is-error   { background: #3a1518; }
 
   .task-status-card .status-head { display: flex; align-items: center; gap: 12px; }
   .task-status-card .status-icon {

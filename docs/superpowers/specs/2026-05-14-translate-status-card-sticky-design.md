@@ -26,7 +26,9 @@ The card will use CSS `position: sticky` with a top offset below the shared `.to
 
 The sticky state keeps the same DOM and the same `renderStatusCard()` updates. This avoids syncing two cards and preserves existing resume button delegation, progress updates, AI analysis status, and translation quality assessment status.
 
-The card gets a higher local z-index and a lightweight shadow / backdrop so it remains legible above step cards while scrolling. Width stays in normal document flow, so it remains aligned with the content column and does not cover the sidebar or escape the main layout.
+The card gets a higher local z-index and a lightweight shadow so it remains legible above step cards while scrolling. Width stays in normal document flow, so it remains aligned with the content column and does not cover the sidebar or escape the main layout.
+
+The sticky card background must be opaque. Use solid state-tinted backgrounds instead of transparent overlays: a very light blue for running, a very light green for done, a very light amber for waiting, and a very light red for error. The default idle background can stay on `var(--bg-card)`. This keeps the fixed card from showing scrolled content through it while preserving status recognition.
 
 ## Non-Goals
 
@@ -40,8 +42,9 @@ The card gets a higher local z-index and a lightweight shadow / backdrop so it r
 1. `_translate_detail_shell.html` keeps a single `id="taskStatusCard"` status card.
 2. The status card CSS includes `position: sticky`, top offsets, and a z-index.
 3. Mobile CSS keeps the sticky offset below the 52px mobile topbar.
-4. Existing progress rendering still targets the same `#taskStatusCard`, `#statusProgressFill`, and `#statusResumeBtn` elements.
-5. Multi and omni route tests still render their detail pages successfully.
+4. Status modifier backgrounds are opaque solid colors and do not use transparent `rgba(...)`, `hsla(...)`, `transparent`, or translucent layout tokens.
+5. Existing progress rendering still targets the same `#taskStatusCard`, `#statusProgressFill`, and `#statusResumeBtn` elements.
+6. Multi and omni route tests still render their detail pages successfully.
 
 ## Verification
 
