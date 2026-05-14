@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import subprocess
 from dataclasses import dataclass
@@ -27,6 +28,18 @@ DEFAULT_TRUE_PEAK = -1.0
 DEFAULT_LRA = 11.0
 SILENCE_LUFS_THRESHOLD = -50.0
 EBUR128_FLOOR = -70.0
+LOUDNESS_PROFILE_STANDARD = "standard"
+LOUDNESS_PROFILE_AUTO_BOOST = "bg_boost"
+LOUDNESS_PROFILE_MANUAL_BOOST = "manual_boost"
+LOUDNESS_PROFILES = {
+    LOUDNESS_PROFILE_STANDARD,
+    LOUDNESS_PROFILE_AUTO_BOOST,
+    LOUDNESS_PROFILE_MANUAL_BOOST,
+}
+
+BOOST_TARGET_GAP_LU = 10.0
+BOOST_MAX_BACKGROUND_VOLUME = 1.8
+DEFAULT_MANUAL_BOOST_PCT = 50
 
 
 @dataclass
@@ -46,6 +59,115 @@ _INTEGRATED_LOUDNESS_RE = re.compile(
     r"Integrated loudness:.*?I:\s*(-?\d+(?:\.\d+)?|-inf)\s*LUFS",
     re.DOTALL,
 )
+
+
+def validate_loudness_profile(
+    profile: str | None,
+    manual_boost_pct: int | None = None,
+) -> tuple[str, int | None]:
+    """Normalize and validate a loudness profile selection."""
+    normalized_profile = profile or LOUDNESS_PROFILE_STANDARD
+    if normalized_profile not in LOUDNESS_PROFILES:
+        raise ValueError(f"unsupported loudness profile: {normalized_profile}")
+
+    if normalized_profile != LOUDNESS_PROFILE_MANUAL_BOOST:
+        return normalized_profile, None
+
+    if (
+        isinstance(manual_boost_pct, bool)
+        or not isinstance(manual_boost_pct, int)
+        or manual_boost_pct < 10
+        or manual_boost_pct > 100
+        or manual_boost_pct % 10 != 0
+    ):
+        raise ValueError(
+            "manual_boost_pct must be an integer multiple of 10 from 10 to 100"
+        )
+    return normalized_profile, manual_boost_pct
+
+
+def _empty_boost_summary() -> dict:
+    return {
+        "background_boost": {
+            "enabled": False,
+            "target_gap_lu": BOOST_TARGET_GAP_LU,
+            "capped": False,
+        },
+        "manual_boost": {
+            "enabled": False,
+            "capped": False,
+        },
+    }
+
+
+def _is_available_lufs(value: float | None) -> bool:
+    return value is not None and math.isfinite(float(value))
+
+
+def resolve_background_volume_profile(
+    profile: str | None,
+    *,
+    standard_volume: float,
+    accompaniment_lufs: float | None = None,
+    tts_reference_lufs: float | None = None,
+    manual_boost_pct: int | None = None,
+) -> dict:
+    """Resolve a loudness profile into the background volume used for mixing."""
+    normalized_profile, validated_pct = validate_loudness_profile(
+        profile, manual_boost_pct
+    )
+    standard_volume = float(standard_volume)
+    result = {
+        "profile": normalized_profile,
+        "background_volume": standard_volume,
+        "effective_background_volume": standard_volume,
+        **_empty_boost_summary(),
+    }
+
+    if normalized_profile == LOUDNESS_PROFILE_STANDARD:
+        return result
+
+    if normalized_profile == LOUDNESS_PROFILE_MANUAL_BOOST:
+        raw_volume = standard_volume * (1 + validated_pct / 100)
+        effective_volume = min(BOOST_MAX_BACKGROUND_VOLUME, raw_volume)
+        result["effective_background_volume"] = effective_volume
+        result["manual_boost"] = {
+            "enabled": True,
+            "boost_pct": validated_pct,
+            "raw_volume": raw_volume,
+            "effective_volume": effective_volume,
+            "capped": effective_volume < raw_volume,
+        }
+        return result
+
+    if not _is_available_lufs(accompaniment_lufs):
+        result["background_boost"]["fallback_reason"] = "accompaniment_lufs_unavailable"
+        return result
+    if float(accompaniment_lufs) < SILENCE_LUFS_THRESHOLD:
+        result["background_boost"]["fallback_reason"] = "accompaniment_near_silence"
+        return result
+    if not _is_available_lufs(tts_reference_lufs):
+        result["background_boost"]["fallback_reason"] = "tts_reference_lufs_unavailable"
+        return result
+
+    accompaniment_lufs = float(accompaniment_lufs)
+    tts_reference_lufs = float(tts_reference_lufs)
+    target_bg_lufs = tts_reference_lufs - BOOST_TARGET_GAP_LU
+    needed_gain_lu = target_bg_lufs - accompaniment_lufs
+    raw_volume = standard_volume * (10 ** (needed_gain_lu / 20))
+    uncapped_volume = max(standard_volume, raw_volume)
+    effective_volume = min(BOOST_MAX_BACKGROUND_VOLUME, uncapped_volume)
+    result["effective_background_volume"] = effective_volume
+    result["background_boost"] = {
+        "enabled": True,
+        "target_gap_lu": BOOST_TARGET_GAP_LU,
+        "target_background_lufs": target_bg_lufs,
+        "needed_gain_lu": needed_gain_lu,
+        "raw_volume": raw_volume,
+        "effective_volume": effective_volume,
+        "capped": effective_volume < uncapped_volume,
+    }
+    return result
 
 
 def measure_integrated_lufs(audio_path: str) -> float:
