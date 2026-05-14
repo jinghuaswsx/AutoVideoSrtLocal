@@ -36,6 +36,7 @@ from web.services.translate_route_responses import (
     build_translate_route_payload_response,
     translate_route_flask_response,
 )
+from web.auth import admin_required
 
 log = logging.getLogger(__name__)
 
@@ -740,6 +741,7 @@ RESUMABLE_STEPS = [
 
 @bp.route("/api/omni-translate/<task_id>/loudness-profile", methods=["POST"])
 @login_required
+@admin_required
 def set_loudness_profile(task_id):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)

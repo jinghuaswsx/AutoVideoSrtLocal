@@ -183,6 +183,19 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
     mock_runner.start.assert_not_called()
 
 
+def test_loudness_profile_route_rejects_non_admin(authed_user_client_no_db):
+    with patch("web.routes.omni_translate.recover_task_if_needed") as mock_recover, \
+         patch("web.routes.omni_translate.store") as mock_store:
+        resp = authed_user_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "standard"},
+        )
+
+    assert resp.status_code == 403
+    mock_recover.assert_not_called()
+    mock_store.update.assert_not_called()
+
+
 @pytest.mark.parametrize("pct", [0, 5, 55, 101, "abc", None])
 def test_loudness_profile_route_rejects_invalid_manual_pct(
     authed_client_no_db, pct,
