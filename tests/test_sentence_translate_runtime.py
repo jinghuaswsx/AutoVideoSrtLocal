@@ -337,6 +337,7 @@ def test_tts_step_records_fallback_final_compose_summary(tmp_path, monkeypatch):
         segments[0]["audio_clipped"] = True
         segments[0]["audio_clipped_seconds"] = 0.2
         segments[0]["audio_clip_reason"] = "source_window"
+        segments[0]["final_fallback_action"] = "clip_overlong"
         return str(final_audio)
 
     monkeypatch.setattr(
@@ -359,6 +360,7 @@ def test_tts_step_records_fallback_final_compose_summary(tmp_path, monkeypatch):
     assert summary["tail_padding_duration"] == pytest.approx(0.0)
     assert "最终输出" in summary["final_processing_label"]
     assert "截断" in summary["final_processing_label"]
+    assert any("超长截断" in note for note in summary["notes"])
 
 
 def test_final_compose_summary_spells_out_tail_padding_without_truncation():

@@ -264,6 +264,14 @@ def _build_av_tts_segments(sentences: list[dict]) -> list[dict]:
                 "speed": float(sentence.get("speed", 1.0) or 1.0),
                 "rewrite_rounds": int(sentence.get("rewrite_rounds", 0) or 0),
                 "status": sentence.get("status"),
+                "final_fallback_action": sentence.get("final_fallback_action"),
+                "final_fallback_reason": sentence.get("final_fallback_reason"),
+                "ffmpeg_tempo_applied": bool(sentence.get("ffmpeg_tempo_applied")),
+                "ffmpeg_tempo_ratio": sentence.get("ffmpeg_tempo_ratio"),
+                "ffmpeg_tempo_pre_duration": sentence.get("ffmpeg_tempo_pre_duration"),
+                "ffmpeg_tempo_post_duration": sentence.get("ffmpeg_tempo_post_duration"),
+                "final_extra_expand_attempted": bool(sentence.get("final_extra_expand_attempted")),
+                "final_extra_expand_result": sentence.get("final_extra_expand_result"),
             }
         )
     return segments

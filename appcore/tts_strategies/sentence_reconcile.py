@@ -255,6 +255,11 @@ def _build_final_compose_summary(
     ]
     if clipped_segments:
         notes.append("存在超出句子窗口或最终时间轴的音频片段，已先裁剪再参与视频合成。")
+        if any(
+            str(segment.get("final_fallback_action") or "") == "clip_overlong"
+            for segment in clipped_segments
+        ):
+            notes.append("超长截断兜底：句级收敛最终仍超过目标窗口，已按最终时间轴裁剪后输出。")
     elif warning_sentence_count:
         notes.append("存在语义或时长软问题，任务继续输出，结果需复核。")
 
@@ -292,6 +297,7 @@ def _build_final_compose_summary(
                 "reason": segment.get("audio_clip_reason") or "",
                 "clipped_seconds": round(_float_value(segment.get("audio_clipped_seconds"), 0.0), 3),
                 "clip_duration": round(_float_value(segment.get("audio_clip_duration"), 0.0), 3),
+                "final_fallback_action": segment.get("final_fallback_action") or "",
             }
             for index, segment in enumerate(clipped_segments)
         ],
