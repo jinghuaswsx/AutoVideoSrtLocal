@@ -128,7 +128,7 @@
       <span class="vcd-count-label">重新生成张数</span>
       <div class="vcd-count-pills" role="group" aria-label="重新生成张数">
         {% for count in [1, 2, 3, 4] %}
-        <button type="button" class="vcd-count-pill{% if (state.get('image_count') or 2) == count %} active{% endif %}" data-restart-count="{{ count }}">{{ count }} 张</button>
+        <button type="button" class="vcd-count-pill{% if (state.get('image_count') or 4) == count %} active{% endif %}" data-restart-count="{{ count }}">{{ count }} 张</button>
         {% endfor %}
       </div>
     </div>
@@ -191,7 +191,7 @@
       </div>
       <div>
         <dt>生成张数</dt>
-        <dd><span data-current-image-count>{{ state.get('image_count') or 2 }}</span> 张</dd>
+        <dd><span data-current-image-count>{{ state.get('image_count') or 4 }}</span> 张</dd>
       </div>
     </dl>
   </aside>
@@ -261,7 +261,7 @@
   const STEP_ORDER = {{ step_order|list|tojson }};
   const STEP_LABELS = {{ step_labels|tojson }};
   let currentState = {{ state|tojson }};
-  let restartCount = Number(currentState.image_count || 2);
+  let restartCount = Number(currentState.image_count || 4);
   let selectedCoverIndex = 0;
   const errorBox = document.getElementById('vcdError');
   const modal = document.getElementById('vcdPromptModal');
@@ -453,7 +453,7 @@
   function render() {
     const steps = currentState.steps || {};
     const messages = currentState.step_messages || {};
-    document.querySelector('[data-current-image-count]').textContent = currentState.image_count || 2;
+    document.querySelector('[data-current-image-count]').textContent = currentState.image_count || 4;
     STEP_ORDER.forEach((step) => {
       const status = steps[step] || 'pending';
       const displayStatus = visualStatus(status);
@@ -534,7 +534,7 @@
   function openAllPayloads() {
     const payload = {
       task_id: TASK_ID,
-      image_count: currentState.image_count || 2,
+      image_count: currentState.image_count || 4,
       model_defaults: currentState.model_defaults || {},
       product: currentState.product || {},
       steps: STEP_ORDER.reduce((acc, step) => {

@@ -644,7 +644,8 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert 'data-image-count="3"' in html
     assert 'data-image-count="4"' in html
     assert 'name="image_count"' in html
-    assert 'value="2"' in html
+    assert 'value="4"' in html
+    assert '<button class="vc-count-pill active" type="button" data-image-count="4">4 张</button>' in html
     assert "默认配置" not in html
     assert calls == [{"user_id": 1, "is_admin": True}]
 
@@ -812,6 +813,53 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
         "cover_generation": "pending",
     }
     assert started == [(payload["id"], "video_analysis", 3)]
+
+
+def test_video_cover_project_create_defaults_to_four_covers(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    inserted = {}
+    started = []
+
+    def fake_insert_project(**kwargs):
+        inserted.update(kwargs)
+
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: {})
+    monkeypatch.setattr(
+        video_cover,
+        "_extract_product",
+        lambda product_url: (_FakeProduct(), _FakeProduct.title, _FakeProduct.main_image_url),
+    )
+    monkeypatch.setattr(video_cover, "_fetch_product_image", lambda image_url: _png_bytes(size=(900, 240)))
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "extract_thumbnail",
+        lambda video_path, output_dir, scale=None: str(Path(output_dir) / "thumb.jpg"),
+    )
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/projects",
+        data={
+            "product_url": "https://shop.example/products/lamp",
+            "video_file": (BytesIO(b"video"), "lamp.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 201
+    payload = resp.get_json()
+    assert inserted["state"]["image_count"] == 4
+    assert started == [(payload["id"], "video_analysis", 4)]
 
 
 def test_video_cover_background_chain_uses_project_model_default_snapshot(monkeypatch, tmp_path):
@@ -1323,6 +1371,11 @@ def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed
         "product_analysis": "old product",
         "ad_copy_sets": {"ad_copy_sets": []},
         "result": {"covers": []},
+        "inputs": {"old": True},
+        "models": {"cover_generation": {"provider": "old"}},
+        "error": "old error",
+        "video_analysis_structured": {"video_text": "old"},
+        "product_analysis_structured": {"product_definition": "old"},
         "step_timing": {"video_analysis": {"elapsed_seconds": 1}},
         "step_requests": {"video_analysis": {"prompt": "old"}},
         "step_results": {"video_analysis": {"raw_response": "old"}},
@@ -1352,7 +1405,7 @@ def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed
         raising=False,
     )
 
-    resp = authed_client_no_db.post("/video-cover/api/task-1/restart", json={"image_count": 4})
+    resp = authed_client_no_db.post("/video-cover/api/task-1/restart", json={})
 
     assert resp.status_code == 202
     payload = resp.get_json()
@@ -1367,7 +1420,20 @@ def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed
         "ad_copy": "pending",
         "cover_generation": "pending",
     }
-    for key in ("video_analysis", "product_analysis", "ad_copy_sets", "result", "step_timing", "step_requests", "step_results"):
+    for key in (
+        "video_analysis",
+        "product_analysis",
+        "ad_copy_sets",
+        "result",
+        "inputs",
+        "models",
+        "error",
+        "video_analysis_structured",
+        "product_analysis_structured",
+        "step_timing",
+        "step_requests",
+        "step_results",
+    ):
         assert key not in next_state
     assert started == [("task-1", "video_analysis", 4)]
 

@@ -52,6 +52,7 @@ from web.upload_util import (
 bp = Blueprint("video_cover", __name__)
 
 STEP_ORDER = ("video_analysis", "product_analysis", "ad_copy", "cover_generation")
+DEFAULT_IMAGE_COUNT = 4
 STEP_LABELS = {
     "video_analysis": "视频分析",
     "product_analysis": "产品分析",
@@ -202,7 +203,7 @@ def _initial_state(
     product_title: str,
     main_image_url: str,
     product_image_path: str,
-    image_count: int = 2,
+    image_count: int = DEFAULT_IMAGE_COUNT,
     model_defaults: dict | None = None,
 ) -> dict:
     return {
@@ -217,7 +218,7 @@ def _initial_state(
         "task_dir": task_dir,
         "thumbnail_path": thumbnail_path or "",
         "product": _product_payload(product_url, product_title, main_image_url, product_image_path),
-        "image_count": normalize_image_count(image_count),
+        "image_count": normalize_image_count(image_count, default=DEFAULT_IMAGE_COUNT),
         "model_defaults": video_cover_settings.normalize_model_defaults(model_defaults),
         "steps": _initial_steps(),
         "step_messages": {step: "" for step in STEP_ORDER},
@@ -252,19 +253,24 @@ def _clear_step_outputs(state: dict, step: str) -> None:
 
 
 def _clear_all_outputs(state: dict) -> None:
-    for key in (
-        "video_analysis",
-        "product_analysis",
-        "ad_copy_sets",
-        "result",
-        "inputs",
-        "models",
-        "error",
-        "step_requests",
-        "step_results",
-        "step_timing",
-    ):
-        state.pop(key, None)
+    preserved_keys = (
+        "id",
+        "type",
+        "status",
+        "user_id",
+        "display_name",
+        "product_url",
+        "video_path",
+        "video_filename",
+        "task_dir",
+        "thumbnail_path",
+        "product",
+        "image_count",
+        "model_defaults",
+    )
+    preserved = {key: state[key] for key in preserved_keys if key in state}
+    state.clear()
+    state.update(preserved)
     state["steps"] = _initial_steps()
     state["step_messages"] = {step: "" for step in STEP_ORDER}
     state["status"] = "running"
@@ -638,7 +644,7 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         video_analysis=str(state.get("video_analysis") or ""),
         ad_copy_sets=json.dumps(state.get("ad_copy_sets") or {}, ensure_ascii=False, indent=2),
     )
-    image_count = normalize_image_count(state.get("image_count"), default=2)
+    image_count = normalize_image_count(state.get("image_count"), default=DEFAULT_IMAGE_COUNT)
     _store_step_request(state, "cover_generation", {
         "provider": selection.provider,
         "model": selection.model,
@@ -815,7 +821,7 @@ def api_create_project():
         original_filename = client_filename_basename(upload.filename)
         if not validate_video_extension(original_filename):
             raise VideoCoverGenerationError("不支持的视频格式")
-        image_count = normalize_image_count(request.form.get("image_count"), default=2)
+        image_count = normalize_image_count(request.form.get("image_count"), default=DEFAULT_IMAGE_COUNT)
         _product, title, image_url = _extract_product(product_url)
 
         task_id = uuid.uuid4().hex
@@ -928,7 +934,7 @@ def api_project_state(task_id: str):
     state.setdefault("id", task_id)
     state.setdefault("steps", _initial_steps())
     state.setdefault("step_messages", {name: "" for name in STEP_ORDER})
-    state.setdefault("image_count", 2)
+    state.setdefault("image_count", DEFAULT_IMAGE_COUNT)
     return _json_response({"ok": True, "state": _state_with_urls(task_id, state)})
 
 
@@ -940,7 +946,10 @@ def api_restart_project(task_id: str):
     if not row:
         return _json_response({"ok": False, "error": "not found"}, 404)
     payload = request.get_json(silent=True) or {}
-    image_count = normalize_image_count(payload.get("image_count") or request.form.get("image_count"), default=2)
+    image_count = normalize_image_count(
+        payload.get("image_count") or request.form.get("image_count"),
+        default=DEFAULT_IMAGE_COUNT,
+    )
     state.setdefault("id", task_id)
     state.setdefault("type", video_cover_project_store.VIDEO_COVER_TYPE)
     _clear_all_outputs(state)
