@@ -511,6 +511,16 @@ USE_CASES: dict[str, UseCase] = {
         "tokens",
     ),
     # 视频创作
+    "meta_hot_posts.video_copyability": _uc(
+        "meta_hot_posts.video_copyability",
+        "xuanpin",
+        "Meta 热帖视频可抄适配度",
+        "使用 Google ADC / Gemini 3 Flash 分析本地化热帖视频是否适合直接抄作业投放美国 Meta 市场广告",
+        "gemini_vertex_adc",
+        "gemini-3-flash-preview",
+        "gemini_vertex_adc",
+        "tokens",
+    ),
     "video_creation.generate": _uc(
         "video_creation.generate",
         "video_creation",

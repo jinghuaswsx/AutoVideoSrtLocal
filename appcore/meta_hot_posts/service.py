@@ -38,6 +38,21 @@ def _decode_sku_json(value: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _decode_json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value:
+        import json
+
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
 def _bool_payload(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -81,6 +96,26 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         mark_status = MARK_STATUS_BAD
     item["mark_status"] = mark_status
     item["is_marked"] = bool(mark_status)
+    return item
+
+
+def _hydrate_video_copyability_item(row: Mapping[str, Any]) -> dict[str, Any]:
+    item = _hydrate_item(row)
+    analysis = _decode_json_object(item.pop("analysis_json", None))
+    item["video_copyability"] = {
+        "analysis_id": item.get("analysis_id"),
+        "overall_score": item.get("overall_score"),
+        "copyability_score": item.get("copyability_score"),
+        "meta_us_ad_fit_score": item.get("meta_us_ad_fit_score"),
+        "product_fit_score": item.get("product_fit_score"),
+        "compliance_risk_score": item.get("compliance_risk_score"),
+        "recommendation": item.get("recommendation"),
+        "summary": item.get("summary"),
+        "provider": item.get("llm_provider"),
+        "model": item.get("llm_model"),
+        "analyzed_at": item.get("analyzed_at"),
+        "raw": analysis,
+    }
     return item
 
 
@@ -254,6 +289,42 @@ def build_localize_videos_response(payload: Mapping[str, Any] | None = None) -> 
         },
         202,
     )
+
+
+def build_video_copyability_response(payload: Mapping[str, Any] | None = None) -> MetaHotPostsResponse:
+    from appcore.meta_hot_posts import scheduler
+
+    payload = payload or {}
+    try:
+        limit = int(payload.get("limit") or scheduler.SCHEDULED_VIDEO_COPYABILITY_LIMIT)
+    except (TypeError, ValueError):
+        limit = scheduler.SCHEDULED_VIDEO_COPYABILITY_LIMIT
+    try:
+        user_id = int(payload.get("user_id") or 0) or None
+    except (TypeError, ValueError):
+        user_id = None
+    return MetaHotPostsResponse(
+        {
+            "ok": True,
+            "result": scheduler.video_copyability_tick_once(
+                limit=max(1, min(10, limit)),
+                user_id=user_id,
+            ),
+        },
+        202,
+    )
+
+
+def build_video_copyability_top50_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
+    try:
+        limit = int(args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    items = [
+        _hydrate_video_copyability_item(row)
+        for row in store.list_top_video_copyability_analyses(limit=limit)
+    ]
+    return MetaHotPostsResponse({"items": items, "total": len(items), "limit": max(1, min(50, limit))})
 
 
 def resolve_local_video_response(post_id: int) -> LocalVideoResponse:

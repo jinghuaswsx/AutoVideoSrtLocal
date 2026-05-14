@@ -52,3 +52,20 @@ def test_meta_hot_posts_local_video_migration_adds_cache_fields():
     assert "local_video_attempts" in body
     assert "idx_meta_hot_posts_local_video_status" in body
     assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md" in body
+
+
+def test_meta_hot_posts_video_copyability_migration_adds_result_table():
+    body = Path("db/migrations/2026_05_14_meta_hot_posts_video_copyability.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CREATE TABLE IF NOT EXISTS meta_hot_post_video_copyability_analyses" in body
+    assert "hot_post_id BIGINT UNSIGNED NOT NULL" in body
+    assert "compressed_video_path VARCHAR(2048)" in body
+    assert "overall_score DECIMAL(5, 2)" in body
+    assert "copyability_score DECIMAL(5, 2)" in body
+    assert "meta_us_ad_fit_score DECIMAL(5, 2)" in body
+    assert "analysis_json JSON" in body
+    assert "UNIQUE KEY uniq_meta_hot_post_video_copyability_hot_post" in body
+    assert "idx_meta_hot_post_video_copyability_score" in body
+    assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-copyability-analysis-design.md" in body

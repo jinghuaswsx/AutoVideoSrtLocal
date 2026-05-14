@@ -304,6 +304,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "meta_hot_posts_video_copyability_tick": {
+        "code": "meta_hot_posts_video_copyability_tick",
+        "name": "Meta 热帖可抄视频分析",
+        "description": (
+            "每 10 分钟分析 1 条已本地化 Meta 热帖视频，先压缩到 480p / 15fps / 600k，"
+            "再通过 Google ADC 通道 Gemini 3 Flash 判断是否适合直接抄作业投放美国 Meta 市场广告；"
+            "结果写入 meta_hot_post_video_copyability_analyses，并支撑 Meta 热帖页面的「可抄 Top 50」。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-video-copyability-analysis-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "meta_hot_posts_video_copyability_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.video_copyability_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",
