@@ -633,6 +633,7 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         SOCIAL_REELS_SPEC,
         product_title=title,
         product_url=str(state.get("product_url") or ""),
+        main_image_url=image_url,
         product_analysis=str(state.get("product_analysis") or ""),
         video_analysis=str(state.get("video_analysis") or ""),
         ad_copy_sets=json.dumps(state.get("ad_copy_sets") or {}, ensure_ascii=False, indent=2),
@@ -666,6 +667,11 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         ad_copy_payload=state.get("ad_copy_sets") if isinstance(state.get("ad_copy_sets"), dict) else None,
         image_count=image_count,
     )
+    image_prompts = result.get("image_prompts") if isinstance(result.get("image_prompts"), list) else []
+    request_payload = state.setdefault("step_requests", {}).setdefault("cover_generation", {})
+    request_payload["image_prompts"] = image_prompts
+    if image_prompts and isinstance(image_prompts[0], dict):
+        request_payload["prompt"] = str(image_prompts[0].get("prompt") or request_payload.get("prompt") or "")
     state["result"] = result
     state["inputs"] = result.get("inputs") or {}
     _store_step_result(state, "cover_generation", result, {"covers": result.get("covers") or []})

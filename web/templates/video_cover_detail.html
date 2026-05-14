@@ -360,18 +360,43 @@
       ['ad_copy_direction', '文案方向'], ['overall_judgment', '综合判断']
     ]);
   }
+  function normalizeCopyTextFields(copy) {
+    const enRaw = (copy && copy.english) || {};
+    const zhRaw = (copy && copy.chinese_translation) || {};
+    return {
+      english: {
+        title: enRaw.title || enRaw.headline || '',
+        message: enRaw.message || enRaw.body_text || '',
+        description: enRaw.description || enRaw.cta || ''
+      },
+      chinese_translation: {
+        title: zhRaw.title || zhRaw.headline || '',
+        message: zhRaw.message || zhRaw.body_text || '',
+        description: zhRaw.description || zhRaw.cta || ''
+      }
+    };
+  }
+  function formattedCopyText(copy) {
+    const en = normalizeCopyTextFields(copy).english;
+    return [
+      `标题: ${en.title}`,
+      `文案: ${en.message}`,
+      `描述: ${en.description}`
+    ].join('\n');
+  }
   function renderCopyVisual() {
     const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
     if (!sets.length) return '<div class="vcd-empty">等待文案创作结果。</div>';
     return `<div class="vcd-copy-grid">${sets.map(item => {
-      const en = item.english || {};
-      const zh = item.chinese_translation || {};
+      const normalized = normalizeCopyTextFields(item);
+      const en = normalized.english;
+      const zh = normalized.chinese_translation;
       return `<article class="vcd-copy-card">
-        <div class="vcd-copy-headline">${escapeHtml(en.headline || '')}</div>
-        <div class="vcd-copy-body">${escapeHtml(en.body_text || '')}</div>
-        <div class="vcd-final-cta">${escapeHtml(en.cta || '')}</div>
+        <div class="vcd-copy-headline">${escapeHtml(en.title)}</div>
+        <div class="vcd-copy-body">${escapeHtml(en.message)}</div>
+        <div class="vcd-final-cta">${escapeHtml(en.description)}</div>
         <div class="vcd-copy-meta">${escapeHtml(item.angle || '')} · ${escapeHtml(item.usage_note || '')}</div>
-        <div class="vcd-copy-meta">${escapeHtml(zh.headline || '')} / ${escapeHtml(zh.body_text || '')}</div>
+        <div class="vcd-copy-meta">${escapeHtml(zh.title)} / ${escapeHtml(zh.message)} / ${escapeHtml(zh.description)}</div>
       </article>`;
     }).join('')}</div>`;
   }
@@ -382,17 +407,16 @@
     return covers[selectedCoverIndex];
   }
   function copyTextForCover(cover) {
-    const copy = (cover && cover.copy) || {};
-    const en = copy.english || {};
-    return [en.headline, en.body_text, en.cta].filter(Boolean).join('\n');
+    if (cover && cover.formatted_copy) return cover.formatted_copy;
+    return formattedCopyText((cover && cover.copy) || {});
   }
   function renderCoverVisual() {
     const covers = (((currentState.result || {}).covers) || []);
     if (!covers.length) return '<div class="vcd-empty">完成封面生成后，这里会显示左图右文案结果。</div>';
     const cover = selectedCover();
-    const copy = cover.copy || {};
-    const en = copy.english || {};
-    const zh = copy.chinese_translation || {};
+    const normalized = normalizeCopyTextFields(cover.copy || {});
+    const en = normalized.english;
+    const zh = normalized.chinese_translation;
     const thumbs = covers.length > 1 ? `<div class="vcd-thumbs">${covers.map((row, idx) => `<button type="button" class="vcd-thumb ${idx === selectedCoverIndex ? 'active' : ''}" data-cover-index="${idx}"><img src="${escapeHtml(row.url || '')}" alt="封面 ${idx + 1}"></button>`).join('')}</div>` : '';
     return `<div class="vcd-final-layout">
       <div class="vcd-cover-pane">
@@ -404,10 +428,10 @@
         </div>
       </div>
       <div class="vcd-final-copy">
-        <div class="vcd-final-hook">${escapeHtml(en.headline || cover.hook || '')}</div>
-        <div class="vcd-final-body">${escapeHtml(en.body_text || '')}</div>
-        <div class="vcd-final-cta">${escapeHtml(en.cta || '')}</div>
-        <div class="vcd-copy-meta">${escapeHtml(zh.headline || '')} ${escapeHtml(zh.body_text || '')}</div>
+        <div class="vcd-final-hook">${escapeHtml(en.title || cover.hook || '')}</div>
+        <div class="vcd-final-body">${escapeHtml(en.message)}</div>
+        <div class="vcd-final-cta">${escapeHtml(en.description)}</div>
+        <div class="vcd-copy-meta">${escapeHtml(zh.title)} ${escapeHtml(zh.message)} ${escapeHtml(zh.description)}</div>
         <button class="vcd-pill-btn primary" type="button" data-copy-cover-text="1">一键复制文案</button>
       </div>
     </div>`;

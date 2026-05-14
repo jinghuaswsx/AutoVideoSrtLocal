@@ -117,14 +117,14 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
                             "id": idx,
                             "angle": "痛点解决型",
                             "english": {
-                                "headline": "Blend Anywhere",
-                                "body_text": "Make smoothies without dragging out the big blender.",
-                                "cta": "Shop Now",
+                                "title": "Blend Anywhere",
+                                "message": "Make smoothies without dragging out the big blender.",
+                                "description": "Fresh Drinks Made Simple",
                             },
                             "chinese_translation": {
-                                "headline": "随处搅拌",
-                                "body_text": "不用搬出大型搅拌机也能做奶昔。",
-                                "cta": "立即购买",
+                                "title": "随处搅拌",
+                                "message": "不用搬出大型搅拌机也能做奶昔。",
+                                "description": "轻松制作新鲜饮品",
                             },
                             "usage_note": "适合手持使用场景。",
                         }
@@ -160,8 +160,9 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert len(calls) == 1
     assert "Facebook Reels / Instagram Reels / TikTok / Shorts" in calls[0]["prompt"]
     assert "优秀的创意总监" in calls[0]["prompt"]
-    assert "必须且只能添加一句简短英文 hook" in calls[0]["prompt"]
-    assert '"headline": "Blend Anywhere"' in calls[0]["prompt"]
+    assert "不要在图片中生成任何文字" in calls[0]["prompt"]
+    assert "必须且只能添加一句简短英文 hook" not in calls[0]["prompt"]
+    assert '"title": "Blend Anywhere"' in calls[0]["prompt"]
     assert "{product_analysis}" not in calls[0]["prompt"]
     assert "{video_analysis}" not in calls[0]["prompt"]
     assert "{ad_copy_sets}" not in calls[0]["prompt"]
@@ -197,14 +198,14 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
                 "id": idx,
                 "angle": f"角度 {idx}",
                 "english": {
-                    "headline": f"Hook {idx}",
-                    "body_text": f"Body copy {idx}",
-                    "cta": "Shop Now",
+                    "title": f"Hook {idx}",
+                    "message": f"Body copy {idx}",
+                    "description": f"Description {idx}",
                 },
                 "chinese_translation": {
-                    "headline": f"钩子 {idx}",
-                    "body_text": f"正文 {idx}",
-                    "cta": "立即购买",
+                    "title": f"钩子 {idx}",
+                    "message": f"正文 {idx}",
+                    "description": f"描述 {idx}",
                 },
                 "usage_note": f"画面建议 {idx}",
             }
@@ -239,12 +240,82 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
     assert [cover["index"] for cover in result["covers"]] == [1, 2, 3]
     assert [cover["source_ad_copy_id"] for cover in result["covers"]] == [1, 2, 3]
     assert [cover["hook"] for cover in result["covers"]] == ["Hook 1", "Hook 2", "Hook 3"]
-    assert [cover["copy"]["english"]["body_text"] for cover in result["covers"]] == [
+    assert [cover["copy"]["english"]["message"] for cover in result["covers"]] == [
         "Body copy 1",
         "Body copy 2",
         "Body copy 3",
     ]
+    assert [cover["copy"]["english"]["description"] for cover in result["covers"]] == [
+        "Description 1",
+        "Description 2",
+        "Description 3",
+    ]
+    assert all(cover["overlay_text"].startswith("Hook ") for cover in result["covers"])
+    assert all(cover["overlay_box"]["width"] <= 1080 for cover in result["covers"])
+    assert all(cover["formatted_copy"].startswith("标题: Hook ") for cover in result["covers"])
+    assert "不要在图片中生成任何文字" in calls[0]
     assert all(local_media_storage.exists(cover["object_key"]) for cover in result["covers"])
+
+
+def test_generate_video_covers_normalizes_legacy_copy_metadata(tmp_path):
+    from appcore.video_cover_generation import generate_video_covers
+
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake video")
+    copy_payload = {
+        "ad_copy_sets": [
+            {
+                "id": 1,
+                "angle": "旧结构",
+                "english": {
+                    "headline": "Legacy Hook",
+                    "body_text": "Legacy body copy.",
+                    "cta": "Legacy Description",
+                },
+                "chinese_translation": {
+                    "headline": "旧钩子",
+                    "body_text": "旧正文",
+                    "cta": "旧描述",
+                },
+                "usage_note": "兼容旧任务。",
+            }
+        ]
+    }
+
+    def fake_thumbnail(video_path_arg: str, output_dir: str, scale=None):
+        return str(_jpg_file(Path(output_dir) / "thumbnail.jpg"))
+
+    def fake_generate_image(prompt: str, *, source_image: bytes, source_mime: str, **kwargs):
+        return _png_bytes(size=(900, 900), color=(30, 160, 210)), "image/png"
+
+    result = generate_video_covers(
+        product_url="https://shop.example/products/blender",
+        video_path=str(video_path),
+        video_filename="demo.mp4",
+        user_id=7,
+        task_id="cover-task-legacy",
+        product_fetch_fn=lambda url: _FakeProduct(),
+        image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
+        thumbnail_extractor=fake_thumbnail,
+        image_generate_fn=fake_generate_image,
+        product_analysis_text="<产品分析报告>demo</产品分析报告>",
+        video_analysis_text="<视频素材分析>demo</视频素材分析>",
+        ad_copy_payload=copy_payload,
+        image_count=1,
+    )
+
+    cover = result["covers"][0]
+    assert cover["copy"]["english"] == {
+        "title": "Legacy Hook",
+        "message": "Legacy body copy.",
+        "description": "Legacy Description",
+    }
+    assert cover["formatted_copy"] == (
+        "标题: Legacy Hook\n"
+        "文案: Legacy body copy.\n"
+        "描述: Legacy Description"
+    )
+    assert cover["overlay_text"] == "Legacy Hook"
 
 
 def test_resolve_video_cover_model_options_matches_requested_mappings():
@@ -352,14 +423,14 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
                             "id": idx,
                             "angle": "痛点解决型",
                             "english": {
-                                "headline": "Easy Daily Fix",
-                                "body_text": "A simple upgrade for busy mornings.",
-                                "cta": "Learn More",
+                                "title": "Easy Daily Fix",
+                                "message": "A simple upgrade for busy mornings.",
+                                "description": "Upgrade Your Routine",
                             },
                             "chinese_translation": {
-                                "headline": "轻松日常改进",
-                                "body_text": "适合忙碌早晨的小升级。",
-                                "cta": "了解更多",
+                                "title": "轻松日常改进",
+                                "message": "适合忙碌早晨的小升级。",
+                                "description": "升级你的日常",
                             },
                             "usage_note": "适合生活方式场景。",
                         }
@@ -380,7 +451,9 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
         invoke_chat_fn=fake_invoke,
     )
 
-    assert result["ad_copy_sets"][0]["english"]["headline"] == "Easy Daily Fix"
+    assert result["ad_copy_sets"][0]["english"]["title"] == "Easy Daily Fix"
+    assert result["ad_copy_sets"][0]["english"]["message"] == "A simple upgrade for busy mornings."
+    assert result["ad_copy_sets"][0]["english"]["description"] == "Upgrade Your Routine"
     assert captured["use_case_code"] == "video_cover.ad_copy"
     assert captured["provider_override"] == "gemini_vertex_adc"
     assert captured["model_override"] == "gemini-3-flash-preview"
@@ -391,6 +464,8 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert "视频素材分析：video_text: fresh smoothie" in prompt
     assert "当前日期：2026-05-14" in prompt
     assert "ad_copy_sets" in prompt
+    assert "title、message、description" in prompt
+    assert "headline" not in prompt
 
 
 def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatch):
@@ -486,11 +561,13 @@ def test_build_platform_prompt_uses_creative_director_inputs():
         ad_copy_sets="- Blend Anywhere\n- Daily Smoothies Made Easy",
     )
 
-    assert "请基于上传的产品图片、精选视频帧、<产品核心理解>" in prompt
+    assert "生成一张 9:16 竖版无文字封面背景图" in prompt
+    assert "product_analysis: <产品核心理解>" in prompt
     assert "hand using the blender in a kitchen" in prompt
     assert "Blend Anywhere" in prompt
     assert "不要做成电商商品主图、海报、影棚产品照，也不要做成截图" in prompt
-    assert "画面中必须且只能包含一句简短英文 hook" in prompt
+    assert "不要在图片中生成任何文字" in prompt
+    assert "画面中必须且只能包含一句简短英文 hook" not in prompt
     assert "{product_analysis}" not in prompt
     assert "{video_analysis}" not in prompt
     assert "{ad_copy_sets}" not in prompt
@@ -865,6 +942,11 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert 'id="vcdAllPayloadModal"' in html
     assert 'id="vcdAllPayloadBody"' in html
     assert 'data-all-payload-preview' in html
+    assert "normalizeCopyTextFields" in html
+    assert "formattedCopyText" in html
+    assert "`标题: ${en.title}`" in html
+    assert "`文案: ${en.message}`" in html
+    assert "`描述: ${en.description}`" in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html
@@ -1088,6 +1170,86 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
     payload = resp.get_json()
     assert payload["ok"] is True
     assert started == [("task-1", "video_analysis", None)]
+
+
+def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(_png_bytes())
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "image_count": 1,
+        "product": {
+            "title": "Emergency Roadside Light",
+            "main_image_url": "https://cdn.example/light.png",
+            "product_image_path": str(product_image),
+        },
+        "product_analysis": '{"product_definition":"light"}',
+        "video_analysis": '{"cover_reference":"trunk scene"}',
+        "ad_copy_sets": {
+            "ad_copy_sets": [
+                {
+                    "id": 1,
+                    "angle": "场景型",
+                    "english": {
+                        "title": "Don’t Get Stuck Unprepared",
+                        "message": "Add high-visibility warning light to your trunk.",
+                        "description": "Road Trips Made Safer",
+                    },
+                    "chinese_translation": {
+                        "title": "别在紧急时毫无准备",
+                        "message": "为后备箱增加高可见警示灯。",
+                        "description": "让自驾更安全",
+                    },
+                    "usage_note": "适合后备箱场景。",
+                }
+            ]
+        },
+    }
+
+    def fake_generate_video_covers(**kwargs):
+        return {
+            "product": state["product"],
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "inputs": {},
+            "models": {"cover_generation": {"provider": "local", "model_id": "gpt-image-2"}},
+            "image_prompts": [
+                {"index": 1, "prompt": "actual prompt without rendered text", "source_ad_copy_id": 1}
+            ],
+            "covers": [
+                {
+                    "platform": "social_reels",
+                    "index": 1,
+                    "object_key": "artifacts/video_cover/8/task-1/social_reels.png",
+                    "copy": state["ad_copy_sets"]["ad_copy_sets"][0],
+                    "formatted_copy": (
+                        "标题: Don’t Get Stuck Unprepared\n"
+                        "文案: Add high-visibility warning light to your trunk.\n"
+                        "描述: Road Trips Made Safer"
+                    ),
+                    "overlay_text": "Don’t Get Stuck Unprepared",
+                    "overlay_box": {"x": 52, "y": 98, "width": 800, "height": 130},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(video_cover, "generate_video_covers", fake_generate_video_covers)
+    monkeypatch.setattr(video_cover, "_attach_urls", lambda payload: payload)
+
+    video_cover._run_cover_generation_step(state, provider="local", model="gpt-image-2", user_id=8)
+
+    request_payload = state["step_requests"]["cover_generation"]
+    assert request_payload["image_prompts"][0]["prompt"] == "actual prompt without rendered text"
+    assert request_payload["request_data"]["ad_copy_sets"]["ad_copy_sets"][0]["english"]["title"] == (
+        "Don’t Get Stuck Unprepared"
+    )
 
 
 def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db, monkeypatch):
