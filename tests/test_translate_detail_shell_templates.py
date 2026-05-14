@@ -185,7 +185,15 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     assert "API_BASE !== \"/api/omni-translate\"" in separation
     assert "primary.algorithm || tl.algorithm" in separation
     assert "A_after_B_excess_deviation" in separation
+    assert "A_after_B_failure" in separation
     assert "已选择，点击“从此步继续”后生效" in separation
+    assert "当前结果已按此方案生成" in separation
+    assert "+10%" in separation
+    assert "+100%" in separation
+    assert "loudnessStepStatus" in separation
+    assert 'state.steps.loudness_match' in separation
+    assert 'task.steps.loudness_match' in separation
+    assert 'loudnessStepStatus === "running"' in separation
 
 
 def test_tts_generation_summary_is_rendered_in_duration_log():

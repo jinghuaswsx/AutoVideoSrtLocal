@@ -22,6 +22,7 @@
   var separation = {{ sep|tojson }} || null;
   var selectedLoudnessProfile = {{ (state.loudness_profile or 'standard')|tojson }};
   var selectedManualBoostPct = Number({{ (state.loudness_manual_boost_pct or 50)|tojson }}) || 50;
+  var loudnessStepStatus = {{ (state.steps.loudness_match if state.steps else '')|tojson }};
   var loudnessProfileSaving = false;
 
   var STATUS_LABEL_ZH = {
@@ -92,6 +93,7 @@
 
   function saveLoudnessProfile(profile, manualPct) {
     if (API_BASE !== "/api/omni-translate") return Promise.resolve();
+    if (loudnessStepStatus === "running") return Promise.resolve();
     if (loudnessProfileSaving) return Promise.resolve();
     loudnessProfileSaving = true;
     var payload = { profile: profile };
@@ -126,11 +128,14 @@
 
   function openManualBoostModal() {
     if (API_BASE !== "/api/omni-translate") return;
+    if (loudnessStepStatus === "running") return;
     var existing = document.getElementById("manualBoostModal");
     if (existing) existing.remove();
-    var options = [10,20,30,40,50,60,70,80,90,100].map(function (pct) {
+    var manualBoostPctLabels = ["+10%", "+20%", "+30%", "+40%", "+50%", "+60%", "+70%", "+80%", "+90%", "+100%"];
+    var options = manualBoostPctLabels.map(function (label) {
+      var pct = Number(label.replace("+", "").replace("%", ""));
       var active = pct === Number(selectedManualBoostPct) ? " active" : "";
-      return '<button type="button" class="manual-boost-option' + active + '" data-pct="' + pct + '">+' + pct + '%</button>';
+      return '<button type="button" class="manual-boost-option' + active + '" data-pct="' + pct + '">' + label + '</button>';
     }).join("");
     var wrap = document.createElement("div");
     wrap.id = "manualBoostModal";
@@ -241,20 +246,28 @@
       '</div>');
   }
 
-  function renderLoudnessProfileControls(tl, status) {
+  function renderLoudnessProfileControls(tl) {
     if (API_BASE !== "/api/omni-translate") return "";
-    var disabled = loudnessProfileSaving || status === "running";
+    var disabled = loudnessProfileSaving || loudnessStepStatus === "running";
     var disabledAttr = disabled ? " disabled" : "";
-    var buttons = [
+    var profileItems = [
       { profile: "standard", label: "标准", hint: "按当前背景音量混入，优先保证配音清晰。" },
       { profile: "bg_boost", label: "增强背景", hint: "自动提高 BGM/环境音，最高 1.8，避免盖住配音。" },
       { profile: "manual_boost", label: "手动调整", hint: "按所选比例提高背景音，最高 1.8。" },
-    ].map(function (item) {
+    ];
+    var buttons = profileItems.map(function (item) {
       var active = selectedLoudnessProfile === item.profile ? " active" : "";
       var pct = item.profile === "manual_boost" ? ' data-manual-pct="' + selectedManualBoostPct + '"' : "";
       return '<button type="button" class="loudness-profile-pill' + active + '" data-profile="' + item.profile + '"' + pct + disabledAttr + '>' +
         item.label +
       '</button>';
+    }).join("");
+    var hintLines = profileItems.map(function (item) {
+      var active = selectedLoudnessProfile === item.profile ? " active" : "";
+      return '<div class="loudness-profile-hint-line' + active + '">' +
+        '<span class="loudness-profile-hint-label">' + item.label + '</span>' +
+        '<span>' + item.hint + '</span>' +
+      '</div>';
     }).join("");
     var profileStatus = profileNeedsResume(tl)
       ? "已选择，点击“从此步继续”后生效。"
@@ -265,6 +278,7 @@
       : "";
     return '<div class="loudness-profile-controls">' +
       '<div class="loudness-profile-pills">' + buttons + '</div>' +
+      '<div class="loudness-profile-hints">' + hintLines + '</div>' +
       '<div class="loudness-profile-hint">' + profileLabel(selectedLoudnessProfile, selectedManualBoostPct) + '：' + profileStatus + '</div>' +
       error +
     '</div>';
@@ -275,14 +289,14 @@
     if (!preview) return;
 
     if (!sep || sep.status === "disabled") {
-      setHtmlIfChanged(preview, renderLoudnessProfileControls(null, sep && sep.status));
+      setHtmlIfChanged(preview, renderLoudnessProfileControls(null));
       return;
     }
 
     var tl = sep.tts_loudness;
     if (!tl || !tl.variants || !tl.variants.length) {
       // 还没跑到 loudness_match step（separate 还没 done 或 TTS 还没好）
-      setHtmlIfChanged(preview, renderLoudnessProfileControls(tl, sep.status));
+      setHtmlIfChanged(preview, renderLoudnessProfileControls(tl));
       return;
     }
 
@@ -347,7 +361,7 @@
     }
 
     setHtmlIfChanged(preview, '<div class="loudness-detail">' +
-        renderLoudnessProfileControls(tl, sep.status) +
+        renderLoudnessProfileControls(tl) +
         originHint +
         '<div class="loudness-algo-row">' + algoBadge + '</div>' +
         coreRows +
@@ -367,6 +381,7 @@
           if (task.separation) separation = task.separation;
           selectedLoudnessProfile = task.loudness_profile || selectedLoudnessProfile || "standard";
           selectedManualBoostPct = Number(task.loudness_manual_boost_pct || selectedManualBoostPct || 50);
+          loudnessStepStatus = (task.steps && task.steps.loudness_match) || loudnessStepStatus || "";
         }
         refreshAll();
       })
@@ -506,6 +521,24 @@
     color: var(--fg-muted, #64748b);
     font-size: var(--text-xs);
     line-height: 1.45;
+  }
+  #preview-loudness_match .loudness-profile-hints {
+    display: grid;
+    gap: var(--space-1);
+    color: var(--fg-muted, #64748b);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+  }
+  #preview-loudness_match .loudness-profile-hint-line {
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  #preview-loudness_match .loudness-profile-hint-line.active {
+    color: var(--fg, #0f172a);
+  }
+  #preview-loudness_match .loudness-profile-hint-label {
+    font-weight: 700;
   }
   #preview-loudness_match .loudness-profile-error {
     color: var(--danger-fg);
