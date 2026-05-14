@@ -860,6 +860,27 @@ function safeInternalHref(url, fallback) {
   }
 }
 
+async function _readOmniJsonResponse(res) {
+  var contentType = (res.headers.get('content-type') || '').toLowerCase();
+  if (contentType.indexOf('application/json') >= 0) {
+    try {
+      return await res.json();
+    } catch (err) {
+      if (!res.ok) throw new Error('服务器返回了无效 JSON 错误响应 (HTTP ' + res.status + ')');
+      throw err;
+    }
+  }
+  var text = await res.text();
+  if (!res.ok) {
+    var message = String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!message || String(text || '').trim().charAt(0) === '<') {
+      message = '服务器返回了非 JSON 错误响应';
+    }
+    throw new Error(message + ' (HTTP ' + res.status + ')');
+  }
+  return {};
+}
+
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   var uploadForm = document.getElementById('uploadForm');
@@ -918,7 +939,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
       method: 'POST',
       body: formData,
     });
-    var data = await res.json();
+    var data = await _readOmniJsonResponse(res);
     if (!res.ok) throw new Error(data.error || '创建任务失败');
     var fallbackUrl = '/omni-translate/' + encodeURIComponent(data.task_id || '');
     var detailUrl = safeInternalHref(data.redirect_url, fallbackUrl);

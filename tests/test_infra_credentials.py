@@ -214,6 +214,44 @@ def test_sync_falls_back_tos_backup_to_main_when_empty(monkeypatch):
     assert config.TOS_BACKUP_SECRET_KEY == "MAIN_SK"
 
 
+def test_sync_falls_back_tos_backup_to_main_even_when_wj_channel_active(monkeypatch):
+    fake_rows = [
+        ic.InfraCredential(
+            code="tos_main",
+            display_name="cjh",
+            group_code="object_storage",
+            config={"access_key": "MAIN_AK", "secret_key": "MAIN_SK"},
+            enabled=True,
+        ),
+        ic.InfraCredential(
+            code="tos_wj",
+            display_name="wj",
+            group_code="object_storage",
+            config={"access_key": "WJ_AK", "secret_key": "WJ_SK"},
+            enabled=True,
+        ),
+        ic.InfraCredential(
+            code="tos_backup",
+            display_name="backup",
+            group_code="object_storage",
+            config={"access_key": "", "secret_key": ""},
+            enabled=True,
+        ),
+    ]
+    monkeypatch.setattr(ic, "list_configs", lambda: fake_rows)
+    monkeypatch.setattr(ic.settings_store, "get_setting", lambda key: "tos_wj")
+
+    import config
+
+    monkeypatch.setattr(config, "TOS_BACKUP_ACCESS_KEY", "OLD")
+    monkeypatch.setattr(config, "TOS_BACKUP_SECRET_KEY", "OLD")
+
+    ic.sync_to_runtime()
+
+    assert config.TOS_BACKUP_ACCESS_KEY == "MAIN_AK"
+    assert config.TOS_BACKUP_SECRET_KEY == "MAIN_SK"
+
+
 def test_sync_keeps_tos_backup_explicit_value_over_main(monkeypatch):
     fake_rows = [
         ic.InfraCredential(

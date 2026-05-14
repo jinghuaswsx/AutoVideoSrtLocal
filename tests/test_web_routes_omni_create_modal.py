@@ -109,6 +109,14 @@ def test_javascript_appends_plugin_config_to_form_data(omni_list_html):
     assert "formData.set('plugin_config'," in omni_list_html
 
 
+def test_javascript_upload_submit_handles_non_json_error_response(omni_list_html):
+    """后端 500/HTML 错误页不能被 res.json() 二次盖成 JSON 解析错误。"""
+    assert "async function _readOmniJsonResponse" in omni_list_html
+    assert "content-type" in omni_list_html
+    assert "res.text()" in omni_list_html
+    assert "await _readOmniJsonResponse(res)" in omni_list_html
+
+
 def test_css_uses_ocean_blue_tokens_no_purple(omni_list_html):
     """CSS 走 oklch hue 200-240，不含紫色色相 (260+)。"""
     import re

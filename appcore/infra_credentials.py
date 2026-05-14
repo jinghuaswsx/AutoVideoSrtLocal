@@ -325,7 +325,7 @@ def sync_to_runtime() -> None:
     # tos_backup 的 ak/sk 留空时回落到 tos_main 的值，与 config.py 行 83-84 的
     # ``_env(name, default=TOS_ACCESS_KEY)`` 行为对齐。
     backup = by_code.get("tos_backup")
-    main = by_code.get(active_tos_channel) or by_code.get("tos_main")
+    main = by_code.get("tos_main") or by_code.get(active_tos_channel)
     if backup and main:
         for json_key, attr in (
             ("access_key", "TOS_BACKUP_ACCESS_KEY"),

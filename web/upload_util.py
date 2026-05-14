@@ -1,4 +1,5 @@
 """上传文件校验工具。"""
+import logging
 import mimetypes
 import os
 import re
@@ -10,6 +11,7 @@ from appcore import tos_backup_storage
 
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+log = logging.getLogger(__name__)
 
 
 def validate_video_extension(filename: str) -> bool:
@@ -70,7 +72,14 @@ def _write_temp_and_commit(destination: str | os.PathLike[str], writer) -> str:
             tos_backup_storage.upload_local_file(temp_name, object_key)
         os.replace(temp_name, destination_path)
         if not _should_upload_before_local_replace():
-            tos_backup_storage.ensure_remote_copy_for_local_path(destination_path)
+            try:
+                tos_backup_storage.ensure_remote_copy_for_local_path(destination_path)
+            except Exception:
+                log.warning(
+                    "TOS backup sync failed after local upload commit: %s",
+                    destination_path,
+                    exc_info=True,
+                )
         return str(destination_path)
     finally:
         if os.path.exists(temp_name):

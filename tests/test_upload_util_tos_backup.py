@@ -66,6 +66,24 @@ def test_save_uploaded_file_to_path_syncs_after_local_replace(monkeypatch, tmp_p
     assert synced == [(destination, True, b"new-video")]
 
 
+def test_save_uploaded_file_to_path_keeps_local_file_when_local_primary_backup_fails(monkeypatch, tmp_path):
+    from web import upload_util
+
+    destination = tmp_path / "nested" / "video.mp4"
+    monkeypatch.setattr(upload_util.tos_backup_storage, "is_enabled", lambda: True)
+    monkeypatch.setattr(upload_util.tos_backup_storage, "storage_mode", lambda: "local_primary")
+
+    def fail_backup(local_path):
+        raise RuntimeError("TOS AccessDenied")
+
+    monkeypatch.setattr(upload_util.tos_backup_storage, "ensure_remote_copy_for_local_path", fail_backup)
+
+    saved_path = upload_util.save_uploaded_file_to_path(FakeFileStorage(b"new-video"), destination)
+
+    assert Path(saved_path) == destination
+    assert destination.read_bytes() == b"new-video"
+
+
 def test_write_stream_to_path_uploads_temp_first_in_tos_primary(monkeypatch, tmp_path):
     from web import upload_util
 
