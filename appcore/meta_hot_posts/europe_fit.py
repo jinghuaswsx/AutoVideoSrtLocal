@@ -42,7 +42,7 @@ def build_system_prompt() -> str:
         "You are a senior Meta performance creative reviewer for European e-commerce. "
         "Judge whether a short product-ad video and its product link can be directly moved "
         "into Meta ads for Germany, France, Italy, Spain, and similar European markets. "
-        "Be practical: consider product-market fit, visual clarity, spoken language, on-screen text, "
+        "Be practical: consider product-market fit, visible product demo, spoken language, on-screen text, "
         "claims/compliance risk, cultural fit, and whether the ad needs localization before launch. "
         "Return only valid JSON matching the schema."
     )

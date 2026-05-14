@@ -27,6 +27,14 @@ def test_build_prompt_contains_product_video_and_european_markets():
     assert "directly moved" in prompt
 
 
+def test_system_prompt_ignores_video_clarity_after_review_compression():
+    prompt = europe_fit.build_system_prompt()
+
+    assert "visual clarity" not in prompt
+    assert "clarity" not in prompt.lower()
+    assert "visible product demo" in prompt
+
+
 def test_normalize_response_clamps_score_and_maps_recommendation():
     result = europe_fit.normalize_assessment_response(
         {
