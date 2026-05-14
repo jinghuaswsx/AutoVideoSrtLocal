@@ -635,6 +635,63 @@ def test_loudness_match_manual_profile_writes_effective_volume_and_summary(
     assert os.path.isfile(task_dir / "loudness_match" / "source.normal.mp3")
 
 
+def test_loudness_match_auto_profile_measures_accompaniment_when_missing(
+    monkeypatch, tmp_path,
+):
+    task_state = _disable_task_state_db(monkeypatch)
+    runner = PipelineRunner(bus=EventBus(), user_id=1)
+    task_id = "auto-loudness-profile"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    audio_path = _write(task_dir / "tts.mp3", "original")
+    accomp_path = _write(task_dir / "accompaniment.wav", "background")
+
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        separation={
+            "status": "done",
+            "vocals_lufs": -13.0,
+            "video_lufs": None,
+            "accompaniment_path": accomp_path,
+        },
+        variants={"normal": {"tts_audio_path": audio_path}},
+        loudness_profile="bg_boost",
+    )
+    monkeypatch.setattr(
+        "pipeline.audio_separation.load_settings",
+        lambda: SimpleNamespace(background_volume=0.8),
+    )
+
+    def fake_measure(path):
+        assert path == accomp_path
+        return -24.0
+
+    def fake_normalize(input_path, output_path, *, target_lufs):
+        with open(output_path, "w", encoding="utf-8") as fh:
+            fh.write("normalized")
+        return SimpleNamespace(
+            input_lufs=-20.0,
+            target_lufs=target_lufs,
+            output_lufs=target_lufs,
+            deviation_lu=0.0,
+            deviation_pct=0.0,
+            converged=True,
+        )
+
+    monkeypatch.setattr("appcore.audio_loudness.measure_integrated_lufs", fake_measure)
+    monkeypatch.setattr("appcore.audio_loudness.normalize_to_lufs", fake_normalize)
+
+    runner._step_loudness_match(task_id, str(task_dir))
+
+    sep = task_state.get(task_id)["separation"]
+    assert sep["accompaniment_lufs"] == -24.0
+    assert sep["effective_background_volume"] > 0.8
+    assert sep["tts_loudness"]["profile"] == "bg_boost"
+    assert sep["tts_loudness"]["background_boost"]["enabled"] is True
+    assert sep["tts_loudness"]["background_boost"]["accompaniment_lufs"] == -24.0
+
+
 def test_loudness_match_restores_source_backup_on_repeat_run(monkeypatch, tmp_path):
     task_state = _disable_task_state_db(monkeypatch)
     runner = PipelineRunner(bus=EventBus(), user_id=1)
@@ -790,10 +847,18 @@ Inside `_step_loudness_match()`, extend the `appcore.audio_loudness` import to i
 Immediately after `bg_volume = float(settings.background_volume)`, insert:
 
 ```python
+        accompaniment_lufs = separation.get("accompaniment_lufs")
+        if accompaniment_lufs is None and os.path.isfile(accompaniment_path):
+            try:
+                accompaniment_lufs = measure_integrated_lufs(accompaniment_path)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[loudness_match] accompaniment LUFS measure failed: %s", exc,
+                )
         profile_summary = resolve_background_volume_profile(
             task.get("loudness_profile"),
             standard_volume=bg_volume,
-            accompaniment_lufs=separation.get("accompaniment_lufs"),
+            accompaniment_lufs=accompaniment_lufs,
             tts_reference_lufs=separation.get("vocals_lufs"),
             manual_boost_pct=task.get("loudness_manual_boost_pct"),
         )
@@ -838,6 +903,8 @@ Replace the existing `separation["background_volume"] = bg_volume` assignment wi
 ```python
         separation["background_volume"] = profile_summary["background_volume"]
         separation["effective_background_volume"] = effective_bg_volume
+        if accompaniment_lufs is not None:
+            separation["accompaniment_lufs"] = accompaniment_lufs
 ```
 
 - [ ] **Step 5: Make compose fallback use effective volume**
