@@ -48,6 +48,27 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert data_params[8:12] == ["%magic%", "%magic%", "%magic%", "%magic%"]
 
 
+def test_list_hot_posts_empty_mark_status_selects_unchecked_rows():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 2}]
+        return [{"wedev_post_id": 1}, {"wedev_post_id": 2}]
+
+    payload = store.list_hot_posts(
+        {"mark_status": "empty"},
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert payload["total"] == 2
+    assert "(p.mark_status IS NULL OR p.mark_status = '')" in data_sql
+    assert "COALESCE(p.is_marked, 0) = 0" in data_sql
+    assert data_params == [30, 0]
+
+
 def test_upsert_hot_post_uses_wedev_post_unique_key():
     calls = []
 

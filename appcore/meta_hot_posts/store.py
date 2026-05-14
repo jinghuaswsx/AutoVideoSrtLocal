@@ -56,6 +56,8 @@ def _date_arg(args: Mapping[str, Any], name: str) -> str | None:
 
 def _mark_status_arg(args: Mapping[str, Any]) -> str | None:
     value = str(args.get("mark_status") or "").strip().lower()
+    if value in {"empty", "blank", "none", "unmarked", "空"}:
+        return "empty"
     if value in {"ok", "pass", "yes", "行"}:
         return "ok"
     if value in {"bad", "fail", "no", "不行"}:
@@ -96,7 +98,9 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
         params.append(min_comments)
 
     mark_status = _mark_status_arg(args)
-    if mark_status:
+    if mark_status == "empty":
+        where.append("((p.mark_status IS NULL OR p.mark_status = '') AND COALESCE(p.is_marked, 0) = 0)")
+    elif mark_status:
         where.append("p.mark_status = %s")
         params.append(mark_status)
 

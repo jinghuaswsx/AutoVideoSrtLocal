@@ -38,6 +38,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert 'id="mhPagerBottom"' in body
     assert 'id="mhMarkStatus"' in body
     assert "标注" in body
+    assert '<option value="empty">空</option>' in body
     assert "params.set('mark_status', qs('mhMarkStatus').value)" in body
     assert "function renderMetaHotPager(data)" in body
     assert "首页" in body
