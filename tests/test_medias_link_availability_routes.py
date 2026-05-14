@@ -203,6 +203,69 @@ def test_link_availability_post_supports_single_domain_filter(authed_client_no_d
     assert domain_results["omurio.com"]["http_status"] == 404
 
 
+def test_link_availability_post_manual_confirm_marks_only_requested_domain(
+    authed_client_no_db,
+    stub_medias,
+    monkeypatch,
+):
+    calls: list[tuple] = []
+
+    def manual_confirm(*, product_id, lang, domain, link_url):
+        calls.append((product_id, lang, domain, link_url))
+
+    monkeypatch.setattr("appcore.link_availability.manual_confirm_result", manual_confirm)
+    monkeypatch.setattr(
+        "appcore.link_availability.probe_and_record",
+        lambda *args, **kwargs: pytest.fail("manual confirm should not run HTTP probe"),
+    )
+    monkeypatch.setattr(
+        "appcore.link_availability.list_results",
+        lambda pid, lang: [
+            {
+                "product_id": pid,
+                "lang": lang,
+                "domain": "newjoyloo.com",
+                "link_url": "https://newjoyloo.com/de/products/demo-rjc",
+                "http_status": None,
+                "ok": False,
+                "error": "timeout",
+                "elapsed_ms": 5000,
+                "checked_at": "2026-05-14T10:00:00",
+            },
+            {
+                "product_id": pid,
+                "lang": lang,
+                "domain": "omurio.com",
+                "link_url": "https://omurio.com/de/products/demo-rjc",
+                "http_status": 200,
+                "ok": True,
+                "error": "manual_confirmed",
+                "elapsed_ms": 0,
+                "checked_at": "2026-05-14T10:01:00",
+            },
+        ],
+    )
+
+    response = authed_client_no_db.post(
+        "/medias/api/products/7/link-availability/de",
+        json={"domain": "omurio.com", "manual_confirm": True},
+    )
+
+    assert response.status_code == 200
+    assert calls == [
+        (
+            7,
+            "de",
+            "omurio.com",
+            "https://omurio.com/de/products/demo-rjc",
+        )
+    ]
+    payload = response.get_json()
+    assert [item["domain"] for item in payload["items"]] == ["newjoyloo.com", "omurio.com"]
+    assert payload["items"][1]["ok"] is True
+    assert payload["items"][1]["error"] == "manual_confirmed"
+
+
 def test_link_availability_post_invalid_domain_returns_400(authed_client_no_db, stub_medias):
     response = authed_client_no_db.post(
         "/medias/api/products/7/link-availability/de",

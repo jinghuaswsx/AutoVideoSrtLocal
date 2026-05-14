@@ -196,6 +196,28 @@ def upsert_result(
     )
 
 
+def manual_confirm_result(
+    *,
+    product_id: int,
+    lang: str,
+    domain: str,
+    link_url: str,
+) -> None:
+    """Mark one product-link domain as manually confirmed reachable."""
+    upsert_result(
+        product_id=product_id,
+        lang=lang,
+        domain=domain,
+        link_url=link_url,
+        result={
+            "http_status": 200,
+            "ok": True,
+            "error": "manual_confirmed",
+            "elapsed_ms": 0,
+        },
+    )
+
+
 def list_results(product_id: int, lang: str) -> list[dict[str, Any]]:
     pid = int(product_id)
     lang_code = (lang or "").strip().lower()

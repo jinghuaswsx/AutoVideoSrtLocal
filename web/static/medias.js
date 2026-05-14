@@ -5460,6 +5460,7 @@
 
   function edProductLinksHttpBadgeLabel(item) {
     if (!item) return '未检测';
+    if (item.error === 'manual_confirmed') return '人工确认';
     if (item.error === 'timeout') return '超时';
     if (item.http_status == null) return item.checked_at ? '检测失败' : '未检测';
     return `HTTP ${item.http_status}`;
@@ -5467,6 +5468,7 @@
 
   function edProductLinksOkBadge(item) {
     if (!item || item.checked_at === '') return edLinkCheckBadge('未检测', 'info');
+    if (item.ok && item.error === 'manual_confirmed') return edLinkCheckBadge('人工确认正常', 'success');
     if (item.ok) return edLinkCheckBadge('链接正常', 'success');
     if (item.error === 'timeout') return edLinkCheckBadge('请求超时', 'warning');
     if (item.http_status === 404) return edLinkCheckBadge('链接失联（404）', 'danger');
@@ -5496,6 +5498,7 @@
     const domainAttr = `data-domain="${escapeHtml(item.domain)}"`;
     const buttons = [];
     buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="recheck-one" ${domainAttr}>重新检查可用性</button>`);
+    buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="confirm-link" ${domainAttr}>确认链接正常</button>`);
     if (lang && lang !== 'en') {
       buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
       buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-requeue" data-lang="${escapeHtml(lang)}" ${domainAttr}>重新排队换图</button>`);
@@ -5644,6 +5647,35 @@
     }
   }
 
+  async function edConfirmProductLinkNormal(domain) {
+    const product = (edState.productData && edState.productData.product) || null;
+    const pid = product && product.id;
+    const state = edState.productLinksModal;
+    if (!pid || !state.lang || !domain) return;
+
+    state.loading = true;
+    state.error = '';
+    edRenderProductLinksModal();
+    try {
+      const url = `/medias/api/products/${pid}/link-availability/${encodeURIComponent(state.lang)}`;
+      const data = await fetchJSON(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, manual_confirm: true }),
+      });
+      state.items = Array.isArray(data && data.items) ? data.items : state.items;
+      state.lastChecked = state.items.reduce((acc, item) => {
+        if (!item.checked_at) return acc;
+        return !acc || item.checked_at > acc ? item.checked_at : acc;
+      }, '');
+    } catch (err) {
+      state.error = '产品链接人工确认失败：' + (err && err.message ? err.message : err);
+    } finally {
+      state.loading = false;
+      edRenderProductLinksModal();
+    }
+  }
+
   function edOpenProductLinksModal() {
     const product = (edState.productData && edState.productData.product) || null;
     if (!product || !product.id) return;
@@ -5667,6 +5699,9 @@
     const lang = langArg || edState.productLinksModal.lang || edState.activeLang;
     if (action === 'recheck-one') {
       return edRunSingleAvailability(domain);
+    }
+    if (action === 'confirm-link') {
+      return edConfirmProductLinkNormal(domain);
     }
     if (action === 'copy') {
       const item = (edState.productLinksModal.items || []).find((it) => it.domain === domain);

@@ -161,3 +161,15 @@ def test_product_links_modal_always_renders_shopify_action_buttons():
     assert 'data-product-links-action="shopify-unavailable"' in row_actions
     assert "status.replace_status !== 'confirmed'" not in row_actions
     assert "status.link_status !== 'unavailable'" not in row_actions
+
+
+def test_product_links_modal_renders_per_row_manual_link_confirm_button():
+    js = open("web/static/medias.js", encoding="utf-8").read()
+    row_actions = js[
+        js.index("function edProductLinksRowActions"):
+        js.index("function edProductLinksRowHtml")
+    ]
+
+    assert 'data-product-links-action="confirm-link"' in row_actions
+    assert "确认链接正常" in row_actions
+    assert 'data-domain="${escapeHtml(item.domain)}"' in row_actions

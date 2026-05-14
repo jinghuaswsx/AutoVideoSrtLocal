@@ -333,6 +333,40 @@ def build_product_link_availability_run_response(
             _availability_payload(product, lang_code, []), 200
         )
 
+    if body.get("manual_confirm") is True:
+        if not only_domain:
+            return MediaLinkCheckResponse({"error": "domain required"}, 400)
+        target = targets[0]
+        link_availability.manual_confirm_result(
+            product_id=int(product.get("id") or 0),
+            lang=lang_code,
+            domain=target["domain"],
+            link_url=target["url"],
+        )
+        cached = list_fn(int(product.get("id") or 0), lang_code) or []
+        cached_by_domain = {item["domain"]: item for item in cached}
+        items: list[dict[str, Any]] = []
+        for row in product_link_domains.resolve_product_page_url_rows(product, lang_code):
+            item = cached_by_domain.get(row["domain"])
+            if item:
+                item["link_url"] = row["url"]
+                items.append(item)
+            else:
+                items.append({
+                    "product_id": int(product.get("id") or 0),
+                    "lang": lang_code,
+                    "domain": row["domain"],
+                    "link_url": row["url"],
+                    "http_status": None,
+                    "ok": False,
+                    "error": None,
+                    "elapsed_ms": None,
+                    "checked_at": "",
+                })
+        return MediaLinkCheckResponse(
+            _availability_payload(product, lang_code, items), 200
+        )
+
     probed = probe_fn(
         product_id=int(product.get("id") or 0),
         lang=lang_code,

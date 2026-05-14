@@ -218,6 +218,29 @@ def test_upsert_result_records_error_for_failed_probe(monkeypatch):
     assert captured[0][6] == "http 404"
 
 
+def test_manual_confirm_result_marks_domain_ok(monkeypatch):
+    captured: list[tuple] = []
+    monkeypatch.setattr(link_availability, "_execute", lambda sql, args=(): captured.append(args) or 1)
+
+    link_availability.manual_confirm_result(
+        product_id=7,
+        lang="DE",
+        domain="NewJoyLoo.com",
+        link_url="https://newjoyloo.com/de/products/demo",
+    )
+
+    assert len(captured) == 1
+    args = captured[0]
+    assert args[0] == 7
+    assert args[1] == "de"
+    assert args[2] == "newjoyloo.com"
+    assert args[3] == "https://newjoyloo.com/de/products/demo"
+    assert args[4] == 200
+    assert args[5] == 1
+    assert args[6] == "manual_confirmed"
+    assert args[7] == 0
+
+
 def test_upsert_result_no_op_for_invalid_input(monkeypatch):
     monkeypatch.setattr(
         link_availability,
