@@ -106,22 +106,21 @@ Canvas Realm 用户字段映射：
 2. 新增 `drawing_studio` Flask blueprint：
    - `GET /drawing-studio/sso`
    - `@login_required`
-   - `@permission_required("drawing_studio")`
    - 读取当前用户后重定向到 81 端口接收接口。
 3. `web/app.py` 注册 blueprint。
-4. `appcore/permissions.py` 新增菜单权限 `drawing_studio`：
-   - 分组：业务功能。
-   - admin 默认开启。
-   - user 默认开启。
+4. 「画图工作室」不是可配置菜单权限，不在 `appcore/permissions.py` 中登记。
+   - 所有已登录用户都可见、可进入。
+   - 旧用户 `permissions` JSON 中即使残留 `drawing_studio: false`，也不得影响入口可见性或 SSO 路由访问。
 5. `web/templates/layout.html` 左侧主菜单新增「画图工作室」大功能项：
    - 目标：`url_for('drawing_studio.sso')`
    - 图标建议：`🎨`
    - 默认新窗口打开，保持现有主菜单习惯。
 6. 新增或更新测试：
-   - 权限注册与默认值测试。
-   - 菜单可见性测试。
+   - 确认 `drawing_studio` 不再作为可配置菜单权限登记。
+   - 菜单对普通已登录用户可见。
+   - 菜单对旧权限数据里 `drawing_studio: false` 的已登录用户仍可见。
    - SSO 路由未登录 302 到登录页。
-   - SSO 路由对关闭 `drawing_studio` 权限的用户返回 403。
+   - SSO 路由对旧权限数据里 `drawing_studio: false` 的已登录用户仍生成签名跳转。
    - SSO 路由已登录时生成到 `127.0.0.1:81` 的签名跳转。
 
 ## Canvas Realm 改动范围
@@ -192,7 +191,7 @@ bun run typecheck
 端到端手动验证：
 
 1. AutoVideoSrtLocal 未登录访问 `/drawing-studio/sso` 应跳登录页。
-2. 登录 AutoVideoSrtLocal 后点击左侧「画图工作室」。
+2. 任意已登录 AutoVideoSrtLocal 用户都能看到并点击左侧「画图工作室」。
 3. 浏览器跳到 `http://127.0.0.1:81/`。
 4. Canvas Realm 顶部显示当前用户名，不再要求输入密码。
 5. 管理员用户在 Canvas Realm 仍可访问管理员后台，普通用户不可访问管理员后台。

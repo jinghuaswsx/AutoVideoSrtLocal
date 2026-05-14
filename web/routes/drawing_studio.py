@@ -7,7 +7,6 @@ from appcore.drawing_studio_sso import (
     DrawingStudioSsoConfigError,
     build_drawing_studio_sso_url,
 )
-from web.auth import permission_required
 
 
 bp = Blueprint("drawing_studio", __name__, url_prefix="/drawing-studio")
@@ -15,7 +14,6 @@ bp = Blueprint("drawing_studio", __name__, url_prefix="/drawing-studio")
 
 @bp.route("/sso")
 @login_required
-@permission_required("drawing_studio")
 def sso():
     try:
         target = build_drawing_studio_sso_url(

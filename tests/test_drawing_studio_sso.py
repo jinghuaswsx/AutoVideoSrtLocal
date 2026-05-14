@@ -78,7 +78,7 @@ def test_drawing_studio_sso_redirects_authenticated_user_to_canvas_realm(
     assert query["sig"] == _expected_sig("unit-test-secret", signed_params)
 
 
-def test_drawing_studio_sso_requires_menu_permission(monkeypatch):
+def test_drawing_studio_sso_allows_legacy_false_menu_permission(monkeypatch):
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
@@ -104,4 +104,13 @@ def test_drawing_studio_sso_requires_menu_permission(monkeypatch):
 
     response = client.get("/drawing-studio/sso")
 
-    assert response.status_code == 403
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    parsed = urlparse(location)
+    assert parsed.netloc == "127.0.0.1:81"
+    query = {key: values[0] for key, values in parse_qs(parsed.query).items()}
+    assert query["avs_user_id"] == "3"
+    assert query["avs_username"] == "blocked-user"
+    assert query["avs_role"] == "user"
+    signed_params = {key: value for key, value in query.items() if key != "sig"}
+    assert query["sig"] == _expected_sig("unit-test-secret", signed_params)

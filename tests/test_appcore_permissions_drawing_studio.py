@@ -1,17 +1,14 @@
 from appcore.permissions import (
     PERMISSION_CODES,
-    ROLE_ADMIN,
-    ROLE_SUPERADMIN,
-    ROLE_USER,
-    default_permissions_for_role,
+    grouped_permissions,
 )
 
 
-def test_drawing_studio_permission_is_registered():
-    assert "drawing_studio" in PERMISSION_CODES
-
-
-def test_drawing_studio_defaults_on_for_admin_and_user():
-    assert default_permissions_for_role(ROLE_ADMIN)["drawing_studio"] is True
-    assert default_permissions_for_role(ROLE_USER)["drawing_studio"] is True
-    assert default_permissions_for_role(ROLE_SUPERADMIN)["drawing_studio"] is True
+def test_drawing_studio_is_not_a_configurable_menu_permission():
+    assert "drawing_studio" not in PERMISSION_CODES
+    labels = [
+        item["label"]
+        for _group_code, _group_label, items in grouped_permissions()
+        for item in items
+    ]
+    assert "画图工作室" not in labels

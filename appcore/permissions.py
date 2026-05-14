@@ -3,7 +3,7 @@
 权限模型设计（见 docs/superpowers/specs/2026-04-25-permission-system-design.md）：
 
 - 三级角色：superadmin / admin / user
-- 权限项粒度：菜单/页面级 + 任务能力位，共 26 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
+- 权限项粒度：菜单/页面级 + 任务能力位，共 25 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
 - 角色决定「页面里能做什么」（看自己 vs 看全局 vs 改别人）
 - permissions（菜单级）决定「能否进入某个菜单/页面」
 - superadmin 唯一（绑定 username='admin'），永远视为全部权限开启
@@ -54,7 +54,6 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("multi_translate",       GROUP_BUSINESS,   "多语种视频翻译",   True,  True),
     ("title_translate",       GROUP_BUSINESS,   "多语言标题翻译",   True,  True),
     ("image_translate",       GROUP_BUSINESS,   "图片翻译",         True,  True),
-    ("drawing_studio",        GROUP_BUSINESS,   "画图工作室",       True,  True),
     ("subtitle_removal",      GROUP_BUSINESS,   "字幕移除",         True,  True),
     ("pushes",                GROUP_BUSINESS,   "推送管理",         True,  True),
     ("task_center",           GROUP_BUSINESS,   "任务中心",         True,  True),
