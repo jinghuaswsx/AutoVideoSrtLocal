@@ -77,6 +77,7 @@ from web.routes.openapi_materials import shopify_localizer_bp as openapi_shopify
 from web.routes.pushes import bp as pushes_bp
 from web.routes.tasks import bp as tasks_bp
 from web.routes.image_translate import bp as image_translate_bp
+from web.routes.drawing_studio import bp as drawing_studio_bp
 from web.routes.link_check import bp as link_check_bp
 from web.routes.voice_library import bp as voice_library_bp
 from web.routes.order_analytics import bp as order_analytics_bp
@@ -305,6 +306,7 @@ def create_app() -> Flask:
     csrf.exempt(pushes_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(image_translate_bp)
+    app.register_blueprint(drawing_studio_bp)
     # 图片翻译蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
     csrf.exempt(image_translate_bp)
     app.register_blueprint(link_check_bp)

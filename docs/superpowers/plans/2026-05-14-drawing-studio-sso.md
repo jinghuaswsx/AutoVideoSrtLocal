@@ -107,11 +107,11 @@ Create `tests/test_drawing_studio_sso.py` with this first test:
 ```python
 import hashlib
 import hmac
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 
 def _expected_sig(secret: str, params: dict[str, str]) -> str:
-    canonical = "&".join(f"{key}={params[key]}" for key in sorted(params))
+    canonical = urlencode([(key, params[key]) for key in sorted(params)])
     return hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -316,6 +316,7 @@ from appcore.drawing_studio_sso import (
     DrawingStudioSsoConfigError,
     build_drawing_studio_sso_url,
 )
+from web.auth import permission_required
 
 
 bp = Blueprint("drawing_studio", __name__, url_prefix="/drawing-studio")
@@ -323,6 +324,7 @@ bp = Blueprint("drawing_studio", __name__, url_prefix="/drawing-studio")
 
 @bp.route("/sso")
 @login_required
+@permission_required("drawing_studio")
 def sso():
     try:
         target = build_drawing_studio_sso_url(

@@ -20,6 +20,16 @@ def test_tools_menu_entry_is_visible_to_normal_users(authed_user_client_no_db):
     assert "平均运费" in body
 
 
+def test_drawing_studio_menu_entry_is_visible_to_normal_users(authed_user_client_no_db):
+    response = authed_user_client_no_db.get("/tools/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "画图工作室" in body
+    assert 'href="/drawing-studio/sso"' in body
+    assert '<span class="nav-icon">🎨</span> 画图工作室' in body
+
+
 def test_sidebar_nav_icons_use_fixed_alignment_column(authed_user_client_no_db):
     response = authed_user_client_no_db.get("/tools/")
 
