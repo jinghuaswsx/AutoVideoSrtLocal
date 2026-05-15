@@ -1724,7 +1724,7 @@
         </div>
         <div class="av-sync-timeline-grid table-only">
           ${renderAvSyncAsrField(row)}
-          ${renderAvSyncTimelineField("正常翻译/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
+          ${renderAvSyncTargetTextField(row)}
           ${renderAvSyncTimelineField("视频画面", row.visual_observation || "画面不清晰/无法确认")}
           ${renderAvSyncTimelineField("问题诊断", avSyncTableDiagnosis(row), `diagnosis-field ${isIssue ? "is-issue" : ""}`)}
         </div>
@@ -1754,7 +1754,7 @@
       ${timingBits.length ? `<div class="preview-note">${escapeHtml(timingBits.join(" · "))}</div>` : ""}
       <div class="av-sync-timeline-grid">
         ${renderAvSyncAsrField(row)}
-        ${renderAvSyncTimelineField("目标/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
+        ${renderAvSyncTargetTextField(row, "目标/TTS")}
         ${renderAvSyncTimelineField("画面内容", row.visual_observation || "未记录画面描述，请结合成片人工复核。")}
         ${renderAvSyncTimelineField("诊断意见", diagnosis)}
       </div>
@@ -1768,6 +1768,13 @@
     return renderAvSyncTimelineField("ASR 内容", value);
   }
 
+  function renderAvSyncTargetTextField(row, label = "正常翻译/TTS") {
+    const targetText = row?.target_text || row?.sentence_text || "未记录目标文案";
+    const targetTextZh = avSyncTargetChineseReference(row, targetText);
+    const value = targetTextZh ? `${targetText}\n\n中文对照：${targetTextZh}` : targetText;
+    return renderAvSyncTimelineField(label, value);
+  }
+
   function avSyncAsrChineseReference(row, asrText = "") {
     if (isAvSyncChineseSource(row, asrText)) return "";
     const value = String(
@@ -1779,6 +1786,29 @@
     ).trim();
     if (!value) return "";
     return normalizeAvSyncText(value) === normalizeAvSyncText(asrText) ? "" : value;
+  }
+
+  function avSyncTargetChineseReference(row, targetText = "") {
+    if (isAvSyncChineseTarget(row, targetText)) return "";
+    const zhFromLLM = String(
+      row?.target_text_zh
+      || row?.target_translation_zh
+      || ""
+    ).trim();
+    if (zhFromLLM) return zhFromLLM;
+    const asrText = String(row?.asr_text || row?.source_text || "").trim();
+    if (asrText && isMostlyChineseText(asrText)) return asrText;
+    return "";
+  }
+
+  function isAvSyncChineseTarget(row, targetText = "") {
+    const lang = String(
+      row?.target_lang
+      || currentTask?.target_lang
+      || ""
+    ).trim().toLowerCase();
+    if (lang === "zh" || lang.startsWith("zh-") || lang.startsWith("zh_")) return true;
+    return isMostlyChineseText(targetText || row?.target_text || "");
   }
 
   function isAvSyncChineseSource(row, asrText = "") {

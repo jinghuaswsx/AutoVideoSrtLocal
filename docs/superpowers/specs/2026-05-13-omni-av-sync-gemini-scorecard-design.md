@@ -71,3 +71,21 @@ The scorecard must make problematic diagnosis rows visually obvious for operator
 - Backend tests prove the Gemini assessment prompt contains `scorecard_rows` and no verification prompt is called for report-only mode.
 - Frontend asset tests continue to require the scorecard table columns.
 - Frontend asset tests require the problem-row predicate, red card class, and diagnosis-cell red text class.
+
+## 2026-05-15 翻译后处理重构
+
+将 `asr_text_zh` 和 `target_text_zh` 从 Gemini assess 步骤中分离，改为 assess 完成后的独立后处理步骤。
+
+### 动机
+- assess 的职责是音画同步评分（判断/推理），翻译是机械任务，不应耦合
+- 翻译可用专用模型 `text_translate.generate`（同为 Gemini 3 Flash），与评分隔离
+- 翻译失败不阻塞评分结果展示
+- 重跑审计不会重复翻译
+
+### 架构
+```
+assess (纯评分，不翻译) → audit_timeline 落定 → _translate_timeline_chinese 后处理
+```
+- `_translate_timeline_chinese` 收集需要翻译的 asr_text / target_text，一次批量调用 `text_translate.generate`
+- 触发条件：源语言非中文时翻译 ASR，目标语言非中文时翻译 target
+- 前端 `avSyncTargetChineseReference` 优先读取 LLM 产出的 `target_text_zh`，无数据时回退 ASR 中文原文兜底

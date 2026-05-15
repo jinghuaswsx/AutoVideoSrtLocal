@@ -258,7 +258,8 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     generate = MagicMock(return_value={
         "text": "00:00-00:02 画面中有人拉动把手，字幕显示 Zieh am Griff，音频结尾略拖到下一镜头。",
     })
-    chat = MagicMock(return_value={
+    chat = MagicMock(side_effect=[
+        {
             "json": {
                 "timeline": [
                 {
@@ -277,7 +278,11 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
                 },
             ],
         },
-    })
+    },
+    {
+        "content": '{"items":[{"i":0,"c":"抓住把手并拉动。"},{"i":1,"c":"指示灯闪烁。"}]}',
+    },
+    ])
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
 
@@ -325,7 +330,9 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     assert "sync_score" in assess_call.kwargs["messages"][0]["content"]
     assert "recommendation" in assess_call.kwargs["messages"][0]["content"]
     assert "不要输出总结" in assess_call.kwargs["messages"][0]["content"]
-    assert chat.call_count == 1
+    assert chat.call_count == 2  # assess + translate
+    translate_call = chat.call_args_list[1]
+    assert translate_call.args[0] == "text_translate.generate"
     refs = task["llm_debug_refs"]["av_sync_audit"]
     assert [ref["id"] for ref in refs] == [
         "av_sync_audit.understand",
@@ -360,7 +367,10 @@ def test_multi_report_only_does_not_promote_program_candidate_when_table_is_empt
         Path(segment["tts_path"]).write_bytes(b"mp3")
 
     generate = MagicMock(return_value={"text": "画面理解：第一句对应拉把手动作，随后切到灯闪。"})
-    chat = MagicMock(return_value={"json": {"issues": [], "summary": "Gemini 未返回结构化问题"}})
+    chat = MagicMock(side_effect=[
+        {"json": {"issues": [], "summary": "Gemini 未返回结构化问题"}},
+        {"content": '{"items":[{"i":0,"c":"抓住把手并拉动。"},{"i":1,"c":"灯光闪烁。"}]}'},
+    ])
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_generate", generate)
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", chat)
 
@@ -378,7 +388,7 @@ def test_multi_report_only_does_not_promote_program_candidate_when_table_is_empt
     assert "program_candidates" not in assess_payload
     assert "duration_delta" not in assess_payload
     assert "duration_ratio" in assess_payload
-    assert chat.call_count == 1
+    assert chat.call_count == 2  # assess + translate
 
 
 def test_multi_report_only_includes_final_subtitle_context_in_assess_prompt(monkeypatch, tmp_path):
@@ -574,25 +584,28 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
     monkeypatch.setattr(
         omni_av_sync_audit.llm_client,
         "invoke_chat",
-        MagicMock(return_value={
-            "json": {
-                "timeline": [{
-                    "asr_index": 0,
-                    "asr_text_zh": "抓住把手并拉动。",
-                    "visual_observation": "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。",
-                    "sync_score": 94,
-                    "diagnosis": "翻译音频与拉把手动作同步。",
-                    "recommendation": "无需调整。",
-                }, {
-                    "asr_index": 1,
-                    "asr_text_zh": "灯光闪烁。",
-                    "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
-                    "sync_score": 70,
-                    "diagnosis": "TTS 长于灯光闪烁画面，结尾可能拖到后续画面。",
-                    "recommendation": "压缩这一句目标文案后重新生成音频。",
-                }],
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "timeline": [{
+                        "asr_index": 0,
+                        "visual_observation": "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。",
+                        "sync_score": 94,
+                        "diagnosis": "翻译音频与拉把手动作同步。",
+                        "recommendation": "无需调整。",
+                    }, {
+                        "asr_index": 1,
+                        "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
+                        "sync_score": 70,
+                        "diagnosis": "TTS 长于灯光闪烁画面，结尾可能拖到后续画面。",
+                        "recommendation": "压缩这一句目标文案后重新生成音频。",
+                    }],
+                },
             },
-        }),
+            {
+                "content": '{"items":[{"i":0,"c":"抓住把手并拉动。"},{"i":1,"c":"灯光闪烁。"}]}',
+            },
+        ]),
     )
 
     omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
@@ -616,18 +629,18 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
     assert timeline[1]["verified"] is False
     assert timeline[1]["problem"] == ""
 
-    assess_system = omni_av_sync_audit.llm_client.invoke_chat.call_args.kwargs["messages"][0]["content"]
+    assess_system = omni_av_sync_audit.llm_client.invoke_chat.call_args_list[0].kwargs["messages"][0]["content"]
     assert "唯一任务是填写逐段审片表" in assess_system
     assert "不要输出总结" in assess_system
     assert "不要输出问题列表" in assess_system
     assert "sync_score" in assess_system
     assert "recommendation" in assess_system
-    assert "asr_text_zh" in assess_system
+    assert "asr_text_zh" not in assess_system  # translation is now a separate step
     assert "issues 内每项" not in assess_system
     assert "处理建议只能" not in assess_system
-    assess_payload = json.loads(omni_av_sync_audit.llm_client.invoke_chat.call_args.kwargs["messages"][1]["content"])
-    assert assess_payload["constraints"]["include_asr_chinese_reference"] is True
-    assert assess_payload["scorecard_rows"][0]["needs_asr_text_zh"] is True
+    assess_payload = json.loads(omni_av_sync_audit.llm_client.invoke_chat.call_args_list[0].kwargs["messages"][1]["content"])
+    assert "include_asr_chinese_reference" not in assess_payload["constraints"]  # no longer in assess
+    assert "needs_asr_text_zh" not in assess_payload["scorecard_rows"][0]  # no longer in scorecard rows
 
 
 def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_path):
@@ -759,8 +772,14 @@ def test_scorecard_prompt_skips_asr_chinese_reference_for_chinese_source():
     )
 
     payload = json.loads(messages[1]["content"])
-    assert payload["constraints"]["include_asr_chinese_reference"] is False
-    assert payload["scorecard_rows"][0]["needs_asr_text_zh"] is False
+    assert "include_asr_chinese_reference" not in payload["constraints"]
+    assert "needs_asr_text_zh" not in payload["scorecard_rows"][0]
+    assert "needs_target_text_zh" not in payload["scorecard_rows"][0]
+
+    # Chinese source: _needs_asr_chinese_reference returns False → no translation
+    assert omni_av_sync_audit._needs_asr_chinese_reference({"source_language": "zh"}) is False
+    # Non-Chinese target: _needs_target_chinese_reference returns True
+    assert omni_av_sync_audit._needs_target_chinese_reference({"target_lang": "en"}) is True
 
 
 def test_multi_report_only_skips_when_normal_segments_missing(monkeypatch, tmp_path):
