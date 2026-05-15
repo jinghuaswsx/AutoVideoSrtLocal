@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 from pipeline import ja_translate
@@ -76,6 +77,52 @@ def test_build_rewrite_sentence_inputs_distributes_total_chars():
     assert sum(item["target_chars"] for item in result) == 18
     assert result[0]["target_chars_range"] == (7, 9)
     assert result[1]["target_chars_range"] == (9, 11)
+
+
+def test_rewrite_ja_localized_translation_accepts_retry_feedback_and_temperature(monkeypatch):
+    localized = {
+        "sentences": [
+            {"asr_index": 0, "text": "帽子収納に便利です。", "source_segment_indices": [0]},
+        ]
+    }
+    segments = [
+        {"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Great for hats."},
+    ]
+    captured = {}
+
+    def fake_invoke_chat(use_case, **kwargs):
+        captured["use_case"] = use_case
+        captured.update(kwargs)
+        return {
+            "json": {
+                "sentences": [
+                    {"asr_index": 0, "text": "帽子をすっきり収納できます。", "est_chars": 15},
+                ]
+            },
+            "usage": {"prompt_tokens": Decimal("10")},
+        }
+
+    monkeypatch.setattr(ja_translate.llm_client, "invoke_chat", fake_invoke_chat)
+
+    result = ja_translate.rewrite_ja_localized_translation(
+        localized_translation=localized,
+        script_segments=segments,
+        target_total_chars=16,
+        direction="expand",
+        last_audio_duration=1.2,
+        video_duration=2.0,
+        user_id=1,
+        project_id="task-ja",
+        temperature=1.0,
+        feedback_notes="previous counts: [12], target 16",
+    )
+
+    user_payload = json.loads(captured["messages"][1]["content"])
+    assert captured["use_case"] == "ja_translate.rewrite"
+    assert captured["temperature"] == 1.0
+    assert user_payload["retry_feedback"] == "previous counts: [12], target 16"
+    assert result["_usage"]["prompt_tokens"] == 10
+    assert result["full_text"] == "帽子をすっきり収納できます。"
 
 
 def test_split_ja_subtitle_chunks_respects_length_and_particle_boundary():
