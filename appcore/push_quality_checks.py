@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 USE_CASE_CODE = "push_quality.check"
 PROVIDER = "openrouter"
-MODEL = "google/gemini-3.1-flash-lite-preview"
+MODEL = "google/gemini-3.1-flash-lite"
 QUALITY_PROMPT_VERSION = "zh-cn-human-readable-2026-04-30"
 _CHECK_STATUSES = {"passed", "warning", "failed", "error"}
 
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS media_push_quality_checks (
   summary VARCHAR(500) DEFAULT NULL,
   failed_reasons JSON NULL,
   provider VARCHAR(32) NOT NULL DEFAULT 'openrouter',
-  model VARCHAR(128) NOT NULL DEFAULT 'google/gemini-3.1-flash-lite-preview',
+  model VARCHAR(128) NOT NULL DEFAULT 'google/gemini-3.1-flash-lite',
   started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

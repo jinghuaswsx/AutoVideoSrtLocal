@@ -93,7 +93,7 @@ BINDING_PROVIDER_LABELS = {
 IMAGE_TEXT_DETECT_PROVIDERS = (
     "gemini_aistudio", "gemini_vertex", "gemini_vertex_adc", "openrouter",
 )
-IMAGE_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite-preview"
+IMAGE_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite"
 HIDDEN_BINDING_CODES = {"image_translate.generate"}
 PRICING_UNITS_TYPES = ("tokens", "chars", "seconds", "images")
 IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS = {

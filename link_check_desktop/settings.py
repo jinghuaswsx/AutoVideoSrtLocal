@@ -15,7 +15,7 @@ CONFIG_FILENAME = "link_check_desktop_config.json"
 # existing server only over HTTP APIs. The multimodal Gemini key stays local.
 GEMINI_API_KEY = os.getenv("LINK_CHECK_DESKTOP_GEMINI_API_KEY", "").strip()
 GEMINI_ANALYZE_MODEL = "gemini-2.5-flash"
-GEMINI_SAME_IMAGE_MODEL = "gemini-3.1-flash-lite-preview"
+GEMINI_SAME_IMAGE_MODEL = "gemini-3.1-flash-lite"
 GEMINI_CHANNEL = "aistudio"
 GEMINI_CHANNEL_LABEL = "Google AI Studio"
 

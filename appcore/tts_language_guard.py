@@ -22,7 +22,7 @@ LANGUAGE_NAMES = {
 }
 USE_CASE_CODE = "video_translate.tts_language_check"
 PROVIDER_OVERRIDE = "openrouter"
-MODEL_OVERRIDE = "google/gemini-3.1-flash-lite-preview"
+MODEL_OVERRIDE = "google/gemini-3.1-flash-lite"
 
 
 class TtsLanguageValidationError(RuntimeError):

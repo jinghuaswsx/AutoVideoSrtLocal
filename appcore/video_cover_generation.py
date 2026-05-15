@@ -67,7 +67,7 @@ ALLOWED_IMAGE_COUNTS = {1, 2, 3, 4}
 GEMINI_TEXT_MODEL_LABELS: dict[str, tuple[str, str]] = {
     "gemini_31_pro": ("Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"),
     "gemini_3_flash": ("Gemini 3 Flash", "gemini-3-flash-preview"),
-    "gemini_31_flash_lite": ("Gemini 3.1 Flash-Lite", "gemini-3.1-flash-lite-preview"),
+    "gemini_31_flash_lite": ("Gemini 3.1 Flash-Lite", "gemini-3.1-flash-lite"),
 }
 OPENROUTER_TEXT_EXTRAS: dict[str, tuple[str, str]] = {
     "claude_sonnet": ("Claude Sonnet 4.6", "anthropic/claude-sonnet-4.6"),

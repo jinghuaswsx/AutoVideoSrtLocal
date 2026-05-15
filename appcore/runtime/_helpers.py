@@ -213,7 +213,7 @@ def _seconds_to_request_units(audio_duration_seconds: float | None) -> int | Non
 
 _VALID_TRANSLATE_PREFS = (
     # Vertex AI（Google Cloud Express Mode，凭据来自 llm_provider_configs.gemini_cloud_text）
-    "vertex_gemini_31_flash_lite",   # gemini-3.1-flash-lite-preview（默认）
+    "vertex_gemini_31_flash_lite",   # gemini-3.1-flash-lite（默认）
     "vertex_gemini_3_flash",         # gemini-3-flash-preview
     "vertex_gemini_31_pro",          # gemini-3.1-pro-preview
     # Vertex AI ADC（凭据来自服务器 Application Default Credentials）
@@ -221,7 +221,7 @@ _VALID_TRANSLATE_PREFS = (
     "vertex_adc_gemini_3_flash",
     "vertex_adc_gemini_31_pro",
     # OpenRouter
-    "gemini_31_flash",               # google/gemini-3.1-flash-lite-preview via openrouter
+    "gemini_31_flash",               # google/gemini-3.1-flash-lite via openrouter
     "gemini_31_pro",                 # google/gemini-3.1-pro-preview via openrouter
     "gemini_3_flash",                # google/gemini-3-flash-preview via openrouter
     "gpt_5_mini",                    # openai/gpt-5-mini via openrouter

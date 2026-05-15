@@ -26,7 +26,7 @@ from web.services.media_mk_selection import normalize_mk_media_path
 USE_CASE_CODE = "xuanpin.today_recommendations"
 OUTPUT_DIR = REPO_ROOT / "output" / "today_recommendations"
 DEFAULT_PROVIDER = "gemini_vertex"
-DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
 
 def _as_int(value: Any, default: int = 0) -> int:

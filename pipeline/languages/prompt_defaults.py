@@ -845,7 +845,7 @@ DEFAULTS: dict[tuple[str, str | None], dict] = {
     },
     # 原文标准化（asr_normalize 步骤；lang 字段为空字符串占位）
     ("asr_normalize.detect", ""): {
-        "provider": "gemini_aistudio", "model": "gemini-3.1-flash-lite-preview",
+        "provider": "gemini_aistudio", "model": "gemini-3.1-flash-lite",
         "content": _ASR_DETECT,
     },
     ("asr_normalize.translate_zh_en", ""): {
