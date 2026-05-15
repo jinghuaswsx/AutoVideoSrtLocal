@@ -1656,6 +1656,8 @@ def test_video_cover_detail_renders_input_card_without_get_recovery(authed_clien
 
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
+    assert '<div class="vcd-project-heading">' in html
+    assert '<h1 class="vcd-project-title">Lamp</h1>' in html
     assert "项目输入" in html
     assert "Portable Blender Pro" in html
     assert 'data-copy-product-url="https://shop.example/products/lamp"' in html
@@ -1663,6 +1665,12 @@ def test_video_cover_detail_renders_input_card_without_get_recovery(authed_clien
     assert "/video-cover/api/task-1/source-video" in html
     assert "vcd-product-image" in html
     assert "vcd-source-video" in html
+    assert "const currentImageCount = document.querySelector('[data-current-image-count]');" in html
+    assert "if (currentImageCount) currentImageCount.textContent = currentState.image_count || 4;" in html
+    assert "<dt>项目名</dt>" not in html
+    assert "<dt>商品链接</dt>" not in html
+    assert "<dt>视频文件</dt>" not in html
+    assert "<dt>生成张数</dt>" not in html
 
 
 def test_video_cover_source_media_routes_serve_project_files(authed_client_no_db, monkeypatch, tmp_path):
