@@ -98,6 +98,7 @@
   <div class="mh-subtabs" role="tablist" aria-label="Meta热帖子菜单">
     <button class="mh-subtab active" id="mhLibrarySubtab" type="button" onclick="switchMetaHotSubtab('library')">素材库</button>
     <button class="mh-subtab" id="mhEuropeSubtab" type="button" onclick="switchMetaHotSubtab('europe')">欧洲Top50</button>
+    <button class="mh-subtab" id="mhUsSubtab" type="button" onclick="switchMetaHotSubtab('us')">美国Top50</button>
   </div>
 
   <div class="mh-tool-row">
@@ -334,11 +335,14 @@ function buildParams(page) {
   return params;
 }
 function switchMetaHotSubtab(tab) {
-  mhSubtab = tab === 'europe' ? 'europe' : 'library';
+  mhSubtab = ['europe', 'us'].includes(tab) ? tab : 'library';
   qs('mhLibrarySubtab').classList.toggle('active', mhSubtab === 'library');
   qs('mhEuropeSubtab').classList.toggle('active', mhSubtab === 'europe');
+  qs('mhUsSubtab').classList.toggle('active', mhSubtab === 'us');
   if (mhSubtab === 'europe') {
     loadEuropeTopMaterials();
+  } else if (mhSubtab === 'us') {
+    loadUsTopMaterials();
   } else {
     loadMetaHotPosts(mhPage || 1);
   }
@@ -375,6 +379,7 @@ async function loadMetaHotPosts(page = 1) {
   mhSubtab = 'library';
   qs('mhLibrarySubtab').classList.add('active');
   qs('mhEuropeSubtab').classList.remove('active');
+  qs('mhUsSubtab').classList.remove('active');
   mhPage = page;
   qs('mhStatus').textContent = 'Loading...';
   const res = await fetch(`/xuanpin/api/meta-hot-posts?${buildParams(page)}`);
@@ -391,6 +396,7 @@ async function loadEuropeTopMaterials() {
   mhSubtab = 'europe';
   qs('mhLibrarySubtab').classList.remove('active');
   qs('mhEuropeSubtab').classList.add('active');
+  qs('mhUsSubtab').classList.remove('active');
   qs('mhStatus').textContent = 'Loading Europe Top50...';
   const res = await fetch('/xuanpin/api/meta-hot-posts/europe-top?limit=50');
   const data = await res.json();
@@ -400,6 +406,22 @@ async function loadEuropeTopMaterials() {
     : '<div class="mh-empty">暂无欧洲评估结果</div>';
   ['mhPagerTop', 'mhPagerBottom'].forEach(id => { qs(id).innerHTML = ''; });
   qs('mhStatus').textContent = '欧洲Top50';
+}
+async function loadUsTopMaterials() {
+  mhSubtab = 'us';
+  qs('mhLibrarySubtab').classList.remove('active');
+  qs('mhEuropeSubtab').classList.remove('active');
+  qs('mhUsSubtab').classList.add('active');
+  qs('mhStatus').textContent = 'Loading US Top50...';
+  qs('mhPagerTop').innerHTML = '';
+  qs('mhPagerBottom').innerHTML = '';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50');
+  const data = await res.json();
+  qs('mhCount').textContent = data.total ?? 0;
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
+  qs('mhStatus').textContent = `美国Top50 · ${data.total || 0} 条`;
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
@@ -433,19 +455,10 @@ async function assessEuropeFitMaterials() {
 async function analyzeMetaHotPostVideos() {
   qs('mhStatus').textContent = 'Analyzing video...';
   await fetch('/xuanpin/api/meta-hot-posts/analyze-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:1})});
-  showVideoCopyabilityTop50();
+  await loadUsTopMaterials();
 }
 async function showVideoCopyabilityTop50() {
-  qs('mhStatus').textContent = 'Loading Top 50...';
-  qs('mhPagerTop').innerHTML = '';
-  qs('mhPagerBottom').innerHTML = '';
-  const res = await fetch('/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50');
-  const data = await res.json();
-  qs('mhCount').textContent = data.total ?? 0;
-  qs('metaHotCardGrid').innerHTML = (data.items || []).length
-    ? data.items.map(renderCard).join('')
-    : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
-  qs('mhStatus').textContent = `可抄 Top 50 · ${data.total || 0} 条`;
+  return loadUsTopMaterials();
 }
 function markStatusLabel(markStatus) {
   if (markStatus === 'ok') return '行';

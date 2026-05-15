@@ -334,8 +334,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta hot posts video copyability analysis",
         "description": (
             "每 10 分钟串行分析最多 20 条已本地化 Meta 热帖视频，任务之间间隔 20 秒；先压缩到 480p / 15fps / 600k，"
-            "再通过 Google ADC 通道 Gemini 3 Flash 判断是否适合直接抄作业投放美国 Meta 市场广告；"
-            "结果写入 meta_hot_post_video_copyability_analyses，并支撑 Meta 热帖页面的「可抄 Top 50」。"
+            "再通过 OpenRouter 通道 Gemini 3 Flash 判断是否适合直接抄作业投放美国 Meta 市场广告；"
+            "结果写入 meta_hot_post_video_copyability_analyses，并支撑 Meta 热帖页面的「美国Top50」。"
             "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-video-copyability-analysis-design.md"
         ),
         "schedule": "Every 10 minutes",

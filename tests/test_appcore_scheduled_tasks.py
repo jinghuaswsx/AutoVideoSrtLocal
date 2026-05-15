@@ -567,6 +567,7 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert copyability_task["log_table"] == "scheduled_task_runs"
     assert "20 条" in copyability_task["description"]
     assert "20 秒" in copyability_task["description"]
+    assert "OpenRouter" in copyability_task["description"]
     assert "2026-05-14-meta-hot-posts-video-copyability-analysis-design.md" in copyability_task["description"]
 
     translation_task = definitions["meta_hot_posts_translate_messages_tick"]
