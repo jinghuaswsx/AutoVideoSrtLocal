@@ -1074,6 +1074,24 @@
     toggle.title = collapsed ? "展开语音生成日志" : "收拢语音生成日志";
   }
 
+  function normalizeStepMessage(step, message) {
+    const text = String(message || "");
+    if (!text || step !== "translate") return text;
+    const cfg = currentTask?.plugin_config || {};
+    if (cfg.translate_algo !== "shot_char_limit") return text;
+    const legacy = text.match(/^([A-Za-z]{2,8})\s+镜头级翻译完成（\s*(\d+)\s*段\s*）$/);
+    if (!legacy) return text;
+    const target = legacy[1].toUpperCase();
+    const translatedCount = Number(legacy[2]) || (Array.isArray(currentTask?.translations) ? currentTask.translations.length : 0);
+    const visualShotCount = Array.isArray(currentTask?.shots) ? currentTask.shots.length : 0;
+    return `${target} 时间轴分段翻译完成（${translatedCount}段，附${visualShotCount}个视觉分镜上下文）`;
+  }
+
+  function stepMessage(step, fallback) {
+    const raw = currentTask?.step_messages?.[step] || fallback || "";
+    return normalizeStepMessage(step, raw);
+  }
+
   function renderStepMessages() {
     STEP_ORDER.forEach(step => {
       const stepEl = document.getElementById(`step-${step}`);
@@ -1091,7 +1109,7 @@
       const fallback = step === "analysis" && status === "idle"
         ? "可选附加分析 · 点击按钮手动触发"
         : placeholderText(displayStatus);
-      const message = currentTask?.step_messages?.[step] || fallback;
+      const message = stepMessage(step, fallback);
       stepEl.className = `step ${displayStatus}`;
       iconEl.className = `step-icon ${displayStatus}`;
       iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
@@ -1313,14 +1331,14 @@
       } else if (step === "av_sync_audit" && artifact) {
         html = renderAvSyncAuditArtifact(artifact);
       } else if (!artifact) {
-        const message = currentTask?.step_messages?.[step] || placeholderText(displayStatus);
+        const message = stepMessage(step, placeholderText(displayStatus));
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else if (artifact.layout === "variant_compare") {
         html = renderVariantCompareArtifact(artifact);
       } else if (artifact.layout === "analysis") {
         html = renderAnalysisArtifact(artifact);
       } else if (!artifact.items || !artifact.items.length) {
-        const message = currentTask?.step_messages?.[step] || placeholderText(displayStatus);
+        const message = stepMessage(step, placeholderText(displayStatus));
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else {
         // 老项目的 compose artifact 里可能还留着 soft_video 条目 → 过滤

@@ -399,3 +399,13 @@ def test_shot_char_limit_translate_process_has_legacy_state_fallback():
     assert "时间轴分段过程和结果" in script
     assert "镜头级翻译过程" not in script
     assert ".shot-translation-grid" in styles
+
+
+def test_shot_char_limit_legacy_translate_message_is_normalized_for_display():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "normalizeStepMessage" in script
+    assert "时间轴分段翻译完成" in script
+    assert "视觉分镜上下文" in script
+    assert "镜头级翻译完成" in script
