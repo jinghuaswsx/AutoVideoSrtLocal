@@ -16,8 +16,8 @@ from appcore.meta_hot_posts import video_localization
 
 
 USE_CASE_CODE = "meta_hot_posts.europe_fit"
-EUROPE_FIT_PROVIDER = "openrouter"
-EUROPE_FIT_MODEL = "google/gemini-3-flash-preview"
+EUROPE_FIT_PROVIDER = "gemini_vertex_adc"
+EUROPE_FIT_MODEL = "gemini-3.1-pro-preview"
 TARGET_MARKETS = ("Germany", "France", "Italy", "Spain")
 RECOMMENDATIONS = {
     "direct_reuse": "direct_reuse",

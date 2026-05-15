@@ -2,6 +2,8 @@
 
 Date: 2026-05-14
 
+Superseded scheduling/model note: as of 2026-05-15, scheduled and manual US copyability analysis is run by the unified queue in `2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md`. The result table and US Top 50 ranking from this document remain active, but the runner uses task type `us_copyability`, Google Vertex ADC, `gemini-3.1-pro-preview`, a 30-second queue interval, and a shared 10-item round limit.
+
 ## Goal
 
 Analyze localized Meta hot post videos and persist whether each material is worth copying for US Meta ad placement. The job uses the OpenRouter channel, the Gemini 3 Flash model, the associated product URL, and a compressed local video. Reviewers can open the US Top 50 shortlist from the Meta Hot Posts page.

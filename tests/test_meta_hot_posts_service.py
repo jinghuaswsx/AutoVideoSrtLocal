@@ -83,16 +83,16 @@ def test_build_translate_response_runs_message_translation_tick(monkeypatch):
     assert captured == {"limit": 80, "user_id": 7, "per_item_delay_seconds": 1.5}
 
 
-def test_build_europe_fit_response_runs_scheduler_with_current_user(monkeypatch):
+def test_build_europe_fit_response_runs_unified_video_queue_with_current_user(monkeypatch):
     captured = {}
 
-    def fake_europe_fit_tick_once(**kwargs):
+    def fake_video_analysis_queue_tick_once(**kwargs):
         captured.update(kwargs)
         return {"scanned": 3, "done": 3, "failed": 0}
 
     monkeypatch.setattr(
-        "appcore.meta_hot_posts.scheduler.europe_fit_tick_once",
-        fake_europe_fit_tick_once,
+        "appcore.meta_hot_posts.scheduler.video_analysis_queue_tick_once",
+        fake_video_analysis_queue_tick_once,
     )
 
     result = service.build_europe_fit_response({"limit": "30", "user_id": "7"})
@@ -100,7 +100,27 @@ def test_build_europe_fit_response_runs_scheduler_with_current_user(monkeypatch)
     assert result.status_code == 202
     assert result.payload["ok"] is True
     assert result.payload["result"] == {"scanned": 3, "done": 3, "failed": 0}
-    assert captured == {"limit": 30, "user_id": 7}
+    assert captured == {"limit": 10, "user_id": 7}
+
+
+def test_build_video_copyability_response_runs_unified_video_queue(monkeypatch):
+    captured = {}
+
+    def fake_video_analysis_queue_tick_once(**kwargs):
+        captured.update(kwargs)
+        return {"scanned": 2, "done": 2, "failed": 0}
+
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.scheduler.video_analysis_queue_tick_once",
+        fake_video_analysis_queue_tick_once,
+    )
+
+    result = service.build_video_copyability_response({"limit": "50", "user_id": "7"})
+
+    assert result.status_code == 202
+    assert result.payload["ok"] is True
+    assert result.payload["result"] == {"scanned": 2, "done": 2, "failed": 0}
+    assert captured == {"limit": 10, "user_id": 7}
 
 
 def test_build_europe_top_response_hydrates_assessment_fields(monkeypatch):
