@@ -107,3 +107,15 @@ def test_meta_hot_posts_sync_period_likes_migration_allows_negative_changes():
     assert "ALTER TABLE meta_hot_posts" in body
     assert "MODIFY COLUMN sync_period_likes BIGINT NULL" in body
     assert "UNSIGNED" not in body.upper()
+
+
+def test_meta_hot_posts_vertex_adc_pro_binding_migration_pins_queue_use_cases():
+    body = Path("db/migrations/2026_05_15_meta_hot_posts_vertex_adc_pro_binding.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "'meta_hot_posts.europe_fit'" in body
+    assert "'meta_hot_posts.video_copyability'" in body
+    assert "'gemini_vertex_adc'" in body
+    assert "'gemini-3.1-pro-preview'" in body
+    assert "ON DUPLICATE KEY UPDATE" in body
