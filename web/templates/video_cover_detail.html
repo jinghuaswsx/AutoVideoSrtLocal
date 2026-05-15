@@ -233,7 +233,7 @@
               {% if status == 'running' %}<span class="vcd-timer-spinner spinner"></span><span>已运行 <b>{{ timing.get('running_seconds', 0) }}</b> 秒</span>{% elif timing.get('elapsed_seconds') is not none %}<span>耗时 <b>{{ timing.get('elapsed_seconds') }}</b> 秒</span>{% elif status == 'waiting' %}<span>等待确认</span>{% else %}<span>等待开始</span>{% endif %}
             </span>
             <button class="vcd-prompt-pill llm-prompt-pill" type="button" data-prompt-step="{{ step }}">提示词</button>
-            <button class="vcd-retry-btn resume-btn" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>重新跑</button>
+            <button class="vcd-retry-btn resume-btn" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>从此步继续</button>
           </div>
           <div class="vcd-step-message step-msg" data-step-message="{{ step }}">{{ state.get('step_messages', {}).get(step, '') or '等待中...' }}</div>
         </div>
@@ -574,7 +574,7 @@
         if (status === 'running') {
           retry.textContent = '运行中...';
         } else {
-          retry.textContent = '重新跑';
+          retry.textContent = '从此步继续';
         }
       }
     });
