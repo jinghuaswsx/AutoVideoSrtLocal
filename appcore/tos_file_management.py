@@ -503,6 +503,7 @@ def register(scheduler) -> None:
         "tos_file_inventory_scan",
         run_scheduled_inventory_scan,
         "cron",
+        day_of_week="sun",  # Sunday
         hour=5,
         minute=0,
         id="tos_file_inventory_scan",

@@ -503,8 +503,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "tos_file_inventory_scan": {
         "code": "tos_file_inventory_scan",
         "name": "TOS文件管理资产扫描",
-        "description": "扫描受保护业务文件并更新 TOS 文件映射表；每天凌晨5点自动执行。",
-        "schedule": "每天 05:00",
+        "description": "扫描受保护业务文件并更新 TOS 文件映射表；每周日凌晨5点自动执行。",
+        "schedule": "每周日 05:00",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "tos_file_inventory_scan",
