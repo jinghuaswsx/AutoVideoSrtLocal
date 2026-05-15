@@ -97,3 +97,13 @@ def test_meta_hot_posts_video_retry_backoff_migration_marks_exhausted_failures()
     assert "local_video_status = 'failed'" in body
     assert "local_video_attempts >= 5" in body
     assert "unavailable after max retry attempts" in body
+
+
+def test_meta_hot_posts_sync_period_likes_migration_allows_negative_changes():
+    body = Path("db/migrations/2026_05_15_meta_hot_posts_sync_period_signed.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "MODIFY COLUMN sync_period_likes BIGINT NULL" in body
+    assert "UNSIGNED" not in body.upper()

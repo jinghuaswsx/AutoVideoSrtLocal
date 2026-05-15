@@ -21,6 +21,7 @@ Meta 热帖同步任务当前每天 07:00 只采集 500 条。线上只读探测
 - `FULL_SYNC_MAX_PAGES = 120`
 - 当前 page size 为 30，120 页可覆盖 3600 条，足够覆盖当前 2307 条，并为短期增长留余量。
 - 保留 `target_count` 兼容参数，`target_count=None` 或 `target_count<=0` 表示全集。
+- `sync_period_likes` 表示周期互动变化，上游可能返回负数，数据库字段必须使用 signed `BIGINT`。
 
 ## 验收
 
