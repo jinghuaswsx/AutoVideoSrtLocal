@@ -50,6 +50,10 @@ db_query = translation_route_store.query
 db_query_one = translation_route_store.query_one
 db_execute = translation_route_store.execute
 
+_PROJECT_STATE_COLUMNS = (
+    "id, user_id, original_filename, display_name, task_dir, state_json"
+)
+
 
 def _json_response(payload: dict, status_code: int = 200):
     return translate_route_flask_response(
@@ -223,11 +227,30 @@ def _task_from_project_row(row: dict | None) -> dict:
     except Exception:
         task = {}
     if row.get("user_id") is not None:
-        task.setdefault("_user_id", row.get("user_id"))
+        task["_user_id"] = row.get("user_id")
     for key in ("id", "original_filename", "display_name", "task_dir"):
         if row.get(key) and not task.get(key):
             task[key] = row[key]
     return task
+
+
+def _fresh_viewable_project_task(task_id: str) -> dict | None:
+    try:
+        row = _query_viewable_project(task_id, _PROJECT_STATE_COLUMNS)
+    except Exception:
+        log.warning("[omni_translate] fresh project state lookup failed task=%s", task_id, exc_info=True)
+        return None
+    task = _task_from_project_row(row)
+    if not task or not _can_view_task(task):
+        return None
+    return task
+
+
+def _hydrate_task_state_cache(task_id: str, task: dict) -> None:
+    if store is not task_state:
+        return
+    with task_state._lock:
+        task_state._tasks[task_id] = copy.deepcopy(task)
 
 
 def _copy_source_video_for_duplicate(
@@ -278,6 +301,11 @@ def _can_view_task(task: dict) -> bool:
 
 
 def _get_viewable_task(task_id: str) -> dict | None:
+    fresh_task = _fresh_viewable_project_task(task_id)
+    if fresh_task:
+        _hydrate_task_state_cache(task_id, fresh_task)
+        return fresh_task
+
     task = store.get(task_id)
     if not task or not _can_view_task(task):
         return None

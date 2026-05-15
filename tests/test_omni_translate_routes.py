@@ -183,6 +183,106 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
     mock_runner.start.assert_not_called()
 
 
+def test_omni_get_task_prefers_fresh_project_state_for_loudness_profile(
+    authed_client_no_db, monkeypatch, tmp_path,
+):
+    from appcore import task_state
+
+    task_id = "stale-loudness-get"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        type="omni_translate",
+        plugin_config=CFG_ASR_CLEAN,
+        loudness_profile="standard",
+        loudness_manual_boost_pct=None,
+    )
+
+    fresh_state = dict(task_state.get(task_id) or {})
+    fresh_state["loudness_profile"] = "bg_boost"
+    fresh_state["loudness_manual_boost_pct"] = None
+
+    def fake_project_row(row_task_id, columns="*", *, include_deleted=True):
+        assert row_task_id == task_id
+        return {
+            "id": task_id,
+            "user_id": 1,
+            "task_dir": str(task_dir),
+            "state_json": json.dumps(fresh_state, ensure_ascii=False),
+        }
+
+    monkeypatch.setattr("web.routes.omni_translate._query_viewable_project", fake_project_row)
+    monkeypatch.setattr("web.routes.omni_translate.recover_task_if_needed", lambda *_args, **_kwargs: None)
+
+    resp = authed_client_no_db.get(f"/api/omni-translate/{task_id}")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["loudness_profile"] == "bg_boost"
+
+
+def test_resume_uses_fresh_loudness_profile_before_starting_runner(
+    authed_client_no_db, monkeypatch, tmp_path,
+):
+    from appcore import task_state
+
+    task_id = "stale-loudness-resume"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        type="omni_translate",
+        plugin_config=CFG_ASR_CLEAN,
+        loudness_profile="standard",
+        loudness_manual_boost_pct=None,
+    )
+
+    fresh_state = dict(task_state.get(task_id) or {})
+    fresh_state["loudness_profile"] = "manual_boost"
+    fresh_state["loudness_manual_boost_pct"] = 70
+
+    def fake_project_row(row_task_id, columns="*", *, include_deleted=True):
+        assert row_task_id == task_id
+        return {
+            "id": task_id,
+            "user_id": 1,
+            "task_dir": str(task_dir),
+            "state_json": json.dumps(fresh_state, ensure_ascii=False),
+        }
+
+    captured = {}
+
+    def fake_resume(row_task_id, start_step, user_id=None):
+        task = task_state.get(row_task_id) or {}
+        captured["profile"] = task.get("loudness_profile")
+        captured["manual_pct"] = task.get("loudness_manual_boost_pct")
+        captured["start_step"] = start_step
+        captured["user_id"] = user_id
+
+    monkeypatch.setattr("web.routes.omni_translate._query_viewable_project", fake_project_row)
+    monkeypatch.setattr("web.routes.omni_translate.recover_task_if_needed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("web.routes.omni_translate.omni_pipeline_runner.resume", fake_resume)
+
+    resp = authed_client_no_db.post(
+        f"/api/omni-translate/{task_id}/resume",
+        json={"start_step": "loudness_match"},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "profile": "manual_boost",
+        "manual_pct": 70,
+        "start_step": "loudness_match",
+        "user_id": 1,
+    }
+
+
 def test_loudness_profile_route_rejects_non_admin(authed_user_client_no_db):
     with patch("web.routes.omni_translate.recover_task_if_needed") as mock_recover, \
          patch("web.routes.omni_translate.store") as mock_store:
