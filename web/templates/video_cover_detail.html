@@ -193,7 +193,13 @@
         {% if product_image_src %}
         <img class="vcd-product-image" src="{{ product_image_src }}" alt="商品主图" loading="lazy">
         {% endif %}
+        {% if state.get('video_path') %}
         <video class="vcd-source-video" src="{{ url_for('video_cover.source_video', task_id=task_id) }}" controls preload="metadata" playsinline></video>
+        {% else %}
+        <div class="vcd-empty" style="width:180px;height:240px;display:grid;place-items:center;">
+          <span>源视频文件已清理<br>可查看已生成结果</span>
+        </div>
+        {% endif %}
       </div>
     </section>
     <dl class="vcd-kv">
