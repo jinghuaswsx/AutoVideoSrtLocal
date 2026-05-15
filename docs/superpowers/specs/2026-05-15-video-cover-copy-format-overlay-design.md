@@ -20,7 +20,7 @@
 ## 目标
 
 1. 第 3 步输出和保存 5 组 `ad_copy_sets`，每组英文文案字段为 `title / message / description`。
-2. 第 4 步图片模型必须把当前 `selected_ad_copy.english.title` 原生嵌入封面，作为唯一可读 hook。
+2. 第 4 步图片模型必须把当前 `selected_ad_copy.english.title` 原生排版进封面，作为唯一可读 hook。
 3. 后端只对图片模型结果做 `1080x1920` PNG 规范化和 artifact 保存，不再进行 PIL 固定叠字。
 4. 最终结果不写入 `overlay_text`、`overlay_box`、`overlay_font_size`、`overlay_lines` 等固定叠字元数据。
 5. 前端最终文案展示与复制必须输出三段式：
@@ -85,7 +85,7 @@
 - 图片中必须且只能有一个可读英文 hook，内容严格等于当前 `selected_ad_copy.english.title`。
 - 除该 `title` 外，禁止生成任何可读文字、字幕、UI、价格、按钮、贴纸、箭头、红圈、水印、品牌字样或评论框。
 - 禁止固定位置半透明背景框、整条黑色横幅、模板化标题栏。
-- 允许字体、位置、字号、阴影和局部轻量托底随产品、动作和构图变化，只要 hook 清晰可读且像封面原生组成部分。
+- 允许字体、位置、字号、阴影、描边和局部轻量托底随产品、动作和构图变化，只要 hook 清晰可读且像封面原生组成部分。
 - prompt 中只传入当前 `selected_ad_copy`，不重复塞全部长文案。
 
 ### 后处理

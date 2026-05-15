@@ -163,12 +163,9 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert len(calls) == 1
     assert "Facebook Reels / Instagram Reels / TikTok / Shorts" in calls[0]["prompt"]
     assert "优秀的创意总监" in calls[0]["prompt"]
-    assert "原生嵌入 selected_ad_copy.english.title" in calls[0]["prompt"]
-    assert "唯一可读 hook" in calls[0]["prompt"]
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]["prompt"]
+    assert "不要使用固定位置的半透明背景框" in calls[0]["prompt"]
     assert "不要在图片中生成任何文字" not in calls[0]["prompt"]
-    assert "固定位置半透明背景框" in calls[0]["prompt"]
-    assert "整条黑色横幅" in calls[0]["prompt"]
-    assert "模板化标题栏" in calls[0]["prompt"]
     assert '"title": "Blend Anywhere"' in calls[0]["prompt"]
     assert all("overlay_text" not in cover for cover in result["covers"])
     assert all("overlay_box" not in cover for cover in result["covers"])
@@ -267,8 +264,8 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
     assert all("overlay_font_size" not in cover for cover in result["covers"])
     assert all("overlay_lines" not in cover for cover in result["covers"])
     assert all(cover["formatted_copy"].startswith("标题: Hook ") for cover in result["covers"])
-    assert "原生嵌入 selected_ad_copy.english.title" in calls[0]
-    assert "唯一可读 hook" in calls[0]
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]
+    assert "不要在图片中生成任何文字" not in calls[0]
     assert all(local_media_storage.exists(cover["object_key"]) for cover in result["covers"])
 
 
@@ -815,12 +812,9 @@ def test_build_platform_prompt_uses_creative_director_inputs():
     assert "hand using the blender in a kitchen" in prompt
     assert "Blend Anywhere" in prompt
     assert "不要做成电商商品主图、海报、影棚产品照，也不要做成截图" in prompt
-    assert "原生嵌入 selected_ad_copy.english.title" in prompt
-    assert "唯一可读 hook" in prompt
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in prompt
+    assert "不要使用固定位置的半透明背景框" in prompt
     assert "不要在图片中生成任何文字" not in prompt
-    assert "固定位置半透明背景框" in prompt
-    assert "整条黑色横幅" in prompt
-    assert "模板化标题栏" in prompt
     assert "{product_analysis}" not in prompt
     assert "{video_analysis}" not in prompt
     assert "{ad_copy_sets}" not in prompt
@@ -1477,9 +1471,18 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "overscroll-behavior:contain" in html
     assert '<aside class="vcd-panel vcd-input-panel">' in html
     assert "sets.map((item, idx)" in html
-    assert 'data-copy-ad-copy="${idx}"' in html
-    assert "copyAdCopyText(btn.dataset.copyAdCopy)" in html
-    assert "formattedCopyText(sets[index])" in html
+    assert ".vcd-copy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));" in html
+    assert "vcd-copy-card-actions" in html
+    assert "vcd-copy-lang-grid" in html
+    assert "复制英文" in html
+    assert "复制中文" in html
+    assert "复制双语" in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="english"' in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="chinese"' in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="bilingual"' in html
+    assert "copyAdCopyText(btn.dataset.copyAdCopy, btn.dataset.copyMode)" in html
+    assert "formattedBilingualCopyText" in html
+    assert "copyTextByMode(sets[index], mode)" in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html
@@ -1831,7 +1834,7 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
                 }
             },
             "image_prompts": [
-                {"index": 1, "prompt": "actual prompt without rendered text", "source_ad_copy_id": 1}
+                {"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}
             ],
             "covers": [
                 {
@@ -1872,7 +1875,7 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
     assert captured["cover_execution_mode"] == "parallel"
     assert request_payload["request_data"]["execution_mode"] == "parallel"
     assert state["models"]["cover_generation"]["execution_mode"] == "parallel"
-    assert request_payload["image_prompts"][0]["prompt"] == "actual prompt without rendered text"
+    assert request_payload["image_prompts"][0]["prompt"] == "actual prompt with native hook text"
     assert request_payload["request_data"]["ad_copy_sets"]["ad_copy_sets"][0]["english"]["title"] == (
         "Don’t Get Stuck Unprepared"
     )
@@ -1934,7 +1937,7 @@ def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path
             "inputs": {},
             "models": {"cover_generation": {"provider": "local", "model_id": "gpt-image-2"}},
             "image_prompts": [
-                {"index": 1, "prompt": "actual prompt without rendered text", "source_ad_copy_id": 1}
+                {"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}
             ],
             "covers": [
                 {
