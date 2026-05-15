@@ -83,12 +83,21 @@
 .vcd-mini-card { border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; }
 .vcd-mini-label { font-size:11px; font-weight:900; color:#64748b; margin-bottom:5px; }
 .vcd-mini-value { font-size:13px; color:var(--text-main); line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-.vcd-copy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
-.vcd-copy-card { border:1px solid var(--border-main); border-radius:8px; padding:12px; background:#f8fafc; }
-.vcd-copy-headline { font-size:15px; font-weight:900; color:var(--text-main); margin-bottom:6px; }
-.vcd-copy-body { font-size:13px; color:var(--text-main); line-height:1.5; }
-.vcd-copy-meta { margin-top:8px; font-size:12px; color:#64748b; }
-.vcd-copy-card-button { width:100%; margin-top:10px; }
+.vcd-copy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; align-items:stretch; }
+.vcd-copy-card { min-width:0; display:grid; gap:10px; align-content:start; border:1px solid var(--border-main); border-radius:8px; padding:12px; background:#f8fafc; }
+.vcd-copy-card-top { display:grid; gap:4px; min-width:0; }
+.vcd-copy-card-title { font-size:14px; font-weight:900; color:var(--text-main); line-height:1.35; }
+.vcd-copy-card-note { font-size:12px; color:#64748b; line-height:1.45; overflow-wrap:anywhere; }
+.vcd-copy-lang-grid { display:grid; grid-template-columns:1fr; gap:10px; min-width:0; }
+.vcd-copy-lang-block { display:grid; gap:7px; min-width:0; }
+.vcd-copy-lang-title { font-size:12px; font-weight:900; color:var(--primary-color); line-height:1.25; }
+.vcd-copy-line { display:grid; gap:2px; min-width:0; }
+.vcd-copy-line-label { font-size:11px; font-weight:900; color:#64748b; line-height:1.2; }
+.vcd-copy-line-value { font-size:12px; color:var(--text-main); line-height:1.45; overflow-wrap:anywhere; }
+.vcd-copy-line-value.title { font-size:13px; font-weight:900; line-height:1.35; }
+.vcd-copy-card-actions { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; align-self:end; }
+.vcd-copy-card-actions .vcd-pill-btn { width:100%; padding:0 6px; font-size:11px; white-space:nowrap; }
+.vcd-copy-meta { font-size:12px; color:#64748b; line-height:1.45; overflow-wrap:anywhere; }
 .vcd-cover-results-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 280px)); gap:18px; align-items:start; justify-content:start; }
 .vcd-cover-result-card { width:100%; display:grid; gap:10px; align-content:start; }
 .vcd-cover-copy-panel { width:100%; display:grid; gap:10px; align-content:start; min-height:190px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:12px; }
@@ -413,13 +422,40 @@
       }
     };
   }
-  function formattedCopyText(copy) {
-    const en = normalizeCopyTextFields(copy).english;
+  function formattedCopyText(copy, lang) {
+    const fields = normalizeCopyTextFields(copy);
+    const en = lang === 'chinese' || lang === 'chinese_translation' ? fields.chinese_translation : fields.english;
     return [
       `标题: ${en.title}`,
       `文案: ${en.message}`,
       `描述: ${en.description}`
     ].join('\n');
+  }
+  function formattedBilingualCopyText(copy) {
+    return [
+      '英文',
+      formattedCopyText(copy, 'english'),
+      '',
+      '中文',
+      formattedCopyText(copy, 'chinese')
+    ].join('\n');
+  }
+  function copyTextByMode(copy, mode) {
+    if (mode === 'chinese') return formattedCopyText(copy, 'chinese');
+    if (mode === 'bilingual') return formattedBilingualCopyText(copy);
+    return formattedCopyText(copy, 'english');
+  }
+  function renderCopyRows(fields) {
+    return [
+      ['标题', fields.title, ' title'],
+      ['文案', fields.message, ''],
+      ['描述', fields.description, '']
+    ].map(([label, value, extraClass]) => (
+      `<div class="vcd-copy-line">
+        <span class="vcd-copy-line-label">${escapeHtml(label)}</span>
+        <span class="vcd-copy-line-value${extraClass}">${escapeHtml(value)}</span>
+      </div>`
+    )).join('');
   }
   function renderCopyVisual() {
     const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
@@ -429,12 +465,25 @@
       const en = normalized.english;
       const zh = normalized.chinese_translation;
       return `<article class="vcd-copy-card">
-        <div class="vcd-copy-headline">${escapeHtml(en.title)}</div>
-        <div class="vcd-copy-body">${escapeHtml(en.message)}</div>
-        <div class="vcd-final-cta">${escapeHtml(en.description)}</div>
-        <div class="vcd-copy-meta">${escapeHtml(item.angle || '')} · ${escapeHtml(item.usage_note || '')}</div>
-        <div class="vcd-copy-meta">${escapeHtml(zh.title)} / ${escapeHtml(zh.message)} / ${escapeHtml(zh.description)}</div>
-        <button class="vcd-pill-btn primary vcd-copy-card-button" type="button" data-copy-ad-copy="${idx}">复制文案</button>
+        <div class="vcd-copy-card-top">
+          <div class="vcd-copy-card-title">文案组 ${idx + 1}</div>
+          <div class="vcd-copy-card-note">${escapeHtml([item.angle || '', item.usage_note || ''].filter(Boolean).join(' · '))}</div>
+        </div>
+        <div class="vcd-copy-lang-grid">
+          <section class="vcd-copy-lang-block" aria-label="英文文案">
+            <div class="vcd-copy-lang-title">英文</div>
+            ${renderCopyRows(en)}
+          </section>
+          <section class="vcd-copy-lang-block" aria-label="中文文案">
+            <div class="vcd-copy-lang-title">中文</div>
+            ${renderCopyRows(zh)}
+          </section>
+        </div>
+        <div class="vcd-copy-card-actions">
+          <button class="vcd-pill-btn primary" type="button" data-copy-ad-copy="${idx}" data-copy-mode="english">复制英文</button>
+          <button class="vcd-pill-btn primary" type="button" data-copy-ad-copy="${idx}" data-copy-mode="chinese">复制中文</button>
+          <button class="vcd-pill-btn primary" type="button" data-copy-ad-copy="${idx}" data-copy-mode="bilingual">复制双语</button>
+        </div>
       </article>`;
     }).join('')}</div>`;
   }
@@ -516,7 +565,7 @@
       const retry = document.querySelector(`[data-retry-step="${step}"]`);
       if (retry) retry.disabled = status === 'running';
     });
-    document.querySelectorAll('[data-copy-ad-copy]').forEach(btn => btn.addEventListener('click', () => copyAdCopyText(btn.dataset.copyAdCopy)));
+    document.querySelectorAll('[data-copy-ad-copy]').forEach(btn => btn.addEventListener('click', () => copyAdCopyText(btn.dataset.copyAdCopy, btn.dataset.copyMode)));
     document.querySelectorAll('[data-copy-cover-text]').forEach(btn => btn.addEventListener('click', () => copyCoverText(btn.dataset.copyCoverText)));
   }
   async function loadState() {
@@ -588,11 +637,11 @@
     if (!text) return;
     await copyText(text);
   }
-  async function copyAdCopyText(index) {
+  async function copyAdCopyText(index, mode) {
     const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
     index = Number(index || 0);
     if (!sets[index]) return;
-    const text = formattedCopyText(sets[index]);
+    const text = copyTextByMode(sets[index], mode);
     if (!text) return;
     await copyText(text);
   }

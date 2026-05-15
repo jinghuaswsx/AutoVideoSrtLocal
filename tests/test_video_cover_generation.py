@@ -1370,9 +1370,18 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "overscroll-behavior:contain" in html
     assert '<aside class="vcd-panel vcd-input-panel">' in html
     assert "sets.map((item, idx)" in html
-    assert 'data-copy-ad-copy="${idx}"' in html
-    assert "copyAdCopyText(btn.dataset.copyAdCopy)" in html
-    assert "formattedCopyText(sets[index])" in html
+    assert ".vcd-copy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));" in html
+    assert "vcd-copy-card-actions" in html
+    assert "vcd-copy-lang-grid" in html
+    assert "复制英文" in html
+    assert "复制中文" in html
+    assert "复制双语" in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="english"' in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="chinese"' in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="bilingual"' in html
+    assert "copyAdCopyText(btn.dataset.copyAdCopy, btn.dataset.copyMode)" in html
+    assert "formattedBilingualCopyText" in html
+    assert "copyTextByMode(sets[index], mode)" in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html
