@@ -4,131 +4,166 @@
 {% block content %}
 <div class="it-shell" data-page="image-translate-list">
 
-  <section class="card">
-    <h2>新建图片翻译任务</h2>
+    <section class="card">
+        <h2>新建图片翻译任务</h2>
 
-    <div class="it-backend-hint">
-      <span>系统默认</span>
-      <span class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
-      <span class="hint" style="margin-left:auto;color:var(--fg-subtle,#9ca3af)">新任务默认取这里；下方选择只影响本次任务</span>
-    </div>
+        <div class="it-backend-hint">
+            <span>系统默认</span>
+            <span class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
+            <span class="hint" style="margin-left:auto;color:var(--fg-subtle,#9ca3af)">新任务默认取这里；下方选择只影响本次任务</span>
+        </div>
 
-    <div class="form-row it-product-name-row">
-      <label for="itProductName">产品名 <span class="required">*</span></label>
-      <p class="it-product-name-callout">提交任务前先输入产品名</p>
-      <input id="itProductName" class="it-product-name-input" type="text" maxlength="60" autocomplete="off"
-             placeholder="例如：三轮童车、儿童智能手表">
-      <p class="hint">项目名将自动生成为「产品名-语言-日期」，用于后续存档检索</p>
-    </div>
+        <div class="form-row it-product-name-row">
+            <label for="itProductName">产品名 <span class="required">*</span></label>
+            <p class="it-product-name-callout">提交任务前先输入产品名</p>
+            <input id="itProductName" class="it-product-name-input" type="text" maxlength="60" autocomplete="off"
+                   placeholder="例如：三轮童车、儿童智能手表">
+            <p class="hint">项目名将自动生成为「产品名-语言-日期」，用于后续存档检索。</p>
+        </div>
 
-    <div class="form-row">
-      <label>场景预设</label>
-      <div id="itPresetPills" class="it-pill-group" role="radiogroup">
-        <button type="button" class="it-pill is-active" data-value="cover" role="radio" aria-checked="true">封面图翻译</button>
-        <button type="button" class="it-pill" data-value="detail" role="radio" aria-checked="false">产品详情图翻译</button>
-      </div>
-      <input type="hidden" id="itPreset" value="cover">
-    </div>
+        <div class="form-row">
+            <label>场景预设</label>
+            <div id="itPresetPills" class="it-pill-group" role="radiogroup">
+                <button type="button" class="it-pill is-active" data-value="cover" role="radio" aria-checked="true">封面图翻译</button>
+                <button type="button" class="it-pill" data-value="detail" role="radio" aria-checked="false">产品详情图翻译</button>
+            </div>
+            <input type="hidden" id="itPreset" value="cover">
+        </div>
 
-    <div class="form-row">
-      <label>目标语言 <span class="required">*</span></label>
-      <div id="itLanguagePills" class="it-pill-group" role="radiogroup"></div>
-      <div id="itLanguageEmpty" hidden></div>
-      <input type="hidden" id="itLanguage" value="">
-    </div>
+        <div class="form-row">
+            <label>目标语言 <span class="required">*</span></label>
+            <div id="itLanguagePills" class="it-pill-group" role="radiogroup"></div>
+            <div id="itLanguageEmpty" hidden></div>
+            <input type="hidden" id="itLanguage" value="">
+        </div>
 
-    <div class="form-row">
-      <label>大模型供应商 <span class="required">*</span></label>
-      <div id="itChannelPills" class="it-pill-group" role="radiogroup">
-        {% for channel in image_translate_channels %}
-        <button type="button"
-                class="it-pill {{ 'is-active' if channel.id == image_translate_default_channel }}"
-                data-value="{{ channel.id }}"
-                role="radio"
-                aria-checked="{{ 'true' if channel.id == image_translate_default_channel else 'false' }}">
-          {{ channel.name }}
-        </button>
-        {% endfor %}
-      </div>
-      <input type="hidden" id="itChannel" value="{{ image_translate_default_channel }}">
-    </div>
+        <div class="form-row">
+            <label>大模型供应商 <span class="required">*</span></label>
+            <div id="itChannelPills" class="it-pill-group" role="radiogroup">
+                {% for channel in image_translate_channels %}
+                <button type="button"
+                        class="it-pill {{ 'is-active' if channel.id == image_translate_default_channel }}"
+                        data-value="{{ channel.id }}"
+                        role="radio"
+                        aria-checked="{{ 'true' if channel.id == image_translate_default_channel else 'false' }}">
+                    {{ channel.name }}
+                </button>
+                {% endfor %}
+            </div>
+            <input type="hidden" id="itChannel" value="{{ image_translate_default_channel }}">
+        </div>
 
-    <div class="form-row">
-      <label>使用模型 <span class="required">*</span></label>
-      <div id="itModelPills" class="it-pill-group" role="radiogroup"></div>
-      <input type="hidden" id="itModel" value="">
-    </div>
+        <div class="form-row">
+            <label>使用模型 <span class="required">*</span></label>
+            <div id="itModelPills" class="it-pill-group" role="radiogroup"></div>
+            <input type="hidden" id="itModel" value="">
+        </div>
 
-    <div class="form-row">
-      <label>处理模式</label>
-      <div id="itConcurrencyPills" class="it-pill-group" role="radiogroup">
-        <button type="button" class="it-pill" data-value="sequential" role="radio" aria-checked="false">串行</button>
-        <button type="button" class="it-pill is-active" data-value="parallel" role="radio" aria-checked="true">并行（默认）</button>
-      </div>
-      <p class="hint">串行：一张一张跑，稳。并行：单批最多 15 张同时跑，快但对上游限流更敏感。</p>
-      <input type="hidden" id="itConcurrencyMode" value="parallel">
-    </div>
+        <div class="form-row">
+            <label>处理模式</label>
+            <div id="itConcurrencyPills" class="it-pill-group" role="radiogroup">
+                <button type="button" class="it-pill" data-value="sequential" role="radio" aria-checked="false">串行</button>
+                <button type="button" class="it-pill is-active" data-value="parallel" role="radio" aria-checked="true">并行（默认）</button>
+            </div>
+            <p class="hint">串行：一张一张跑，稳。并行：单批最多 15 张同时跑，快但对上游限流更敏感。</p>
+            <input type="hidden" id="itConcurrencyMode" value="parallel">
+        </div>
 
-    <div class="form-row">
-      <label>提示词（可编辑，切换语言/预设会加载对应系统默认）</label>
-      <textarea id="itPrompt" rows="16" style="width:100%;font-family:var(--font-mono,monospace);font-size:13px"></textarea>
-    </div>
+        <div class="form-row">
+            <label>提示词（可编辑，切换语言/预设会加载对应系统默认）</label>
+            <textarea id="itPrompt" rows="16" style="width:100%;font-family:var(--font-mono,monospace);font-size:13px"></textarea>
+        </div>
 
-    <div class="form-row">
-      <label>图片（最多 1000 张）</label>
-      <input id="itFileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-      <div id="itThumbs" class="it-thumbs"></div>
-    </div>
+        <div class="form-row">
+            <label>图片（最多 1000 张）</label>
+            <input id="itFileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+            <div id="itThumbs" class="it-thumbs"></div>
+        </div>
 
-    <div class="form-row">
-      <button id="itSubmit" class="btn btn-primary">提交任务</button>
-      <span id="itHint" class="hint"></span>
-    </div>
+        <div class="form-row">
+            <button id="itSubmit" class="btn btn-primary">提交任务</button>
+            <span id="itHint" class="hint"></span>
+        </div>
 
-    <div id="itError" class="inline-error" style="display:none"></div>
-  </section>
+        <div id="itError" class="inline-error" style="display:none"></div>
+    </section>
 
-  <section class="card">
-    <h2>历史任务</h2>
-    {% if not history %}
-      <div class="empty">暂无任务</div>
-    {% else %}
-      <table class="table" id="itHistoryTable">
-        <thead>
-          <tr><th>时间</th><th>项目名</th><th>预设</th><th>目标语言</th><th>模型</th><th>处理模式</th><th>进度</th><th>状态</th><th>操作</th></tr>
-        </thead>
-        <tbody>
-          {% for item in history %}
-          <tr data-task-id="{{ item.id }}"
-              data-status="{{ item.status }}"
-              data-interrupted="{{ '1' if item.is_interrupted else '0' }}"
-              style="cursor:pointer">
-            <td>{{ item.created_at }}</td>
-            <td>{{ item.project_name or '—' }}</td>
-            <td>{{ item.preset_label }}</td>
-            <td>{{ item.target_language_name }}</td>
-            <td>{{ item.model_id }}</td>
-            <td>
-              <span class="it-pill it-mode-pill is-active is-{{ item.concurrency_mode }}"
-                    data-concurrency-mode="{{ item.concurrency_mode }}">
-                {{ item.concurrency_mode_label }}
-              </span>
-            </td>
-            <td>{{ item.done }} / {{ item.total }}</td>
-            <td><span class="chip chip--status is-{{ item.status or 'queued' }}">{{ item.status_label or item.status }}</span></td>
-            <td>
-              {% if item.is_interrupted %}
-              <button type="button" class="it-list-retry" data-action="retry">重新生成</button>
-              {% else %}
-              <span style="color:var(--fg-subtle,#9ca3af);font-size:12px">—</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
-  </section>
+    <section class="card">
+        <h2>历史任务</h2>
+
+        <!-- 标签页导航 -->
+        <div style="margin-bottom:16px;border-bottom:1px solid var(--border-subtle,#e5e7eb);">
+            <nav style="display:flex;gap:8px;">
+                <a href="{{ url_for('image_translate.page_list', tab='all') }}"
+                   style="padding:8px 16px;text-decoration:none;border-bottom:2px solid {{ 'var(--accent-primary,#3b82f6)' if tab == 'all' else 'transparent' }};color:{{ 'var(--accent-primary,#3b82f6)' if tab == 'all' else 'var(--fg-subtle,#6b7280)' }};">
+                    图片翻译
+                </a>
+                <a href="{{ url_for('image_translate.page_list', tab='product_detail') }}"
+                   style="padding:8px 16px;text-decoration:none;border-bottom:2px solid {{ 'var(--accent-primary,#3b82f6)' if tab == 'product_detail' else 'transparent' }};color:{{ 'var(--accent-primary,#3b82f6)' if tab == 'product_detail' else 'var(--fg-subtle,#6b7280)' }};">
+                    商品图翻译任务
+                </a>
+                <a href="{{ url_for('image_translate.page_list', tab='video_cover') }}"
+                   style="padding:8px 16px;text-decoration:none;border-bottom:2px solid {{ 'var(--accent-primary,#3b82f6)' if tab == 'video_cover' else 'transparent' }};color:{{ 'var(--accent-primary,#3b82f6)' if tab == 'video_cover' else 'var(--fg-subtle,#6b7280)' }};">
+                    视频封面图任务
+                </a>
+            </nav>
+        </div>
+
+        {% if not history %}
+            <div class="empty">暂无任务</div>
+        {% else %}
+            <table class="table" id="itHistoryTable">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        {% if is_admin %}
+                        <th>用户ID</th>
+                        {% endif %}
+                        <th>项目名</th>
+                        <th>预设</th>
+                        <th>目标语言</th>
+                        <th>模型</th>
+                        <th>处理模式</th>
+                        <th>进度</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in history %}
+                    <tr data-task-id="{{ item.id }}"
+                        data-status="{{ item.status }}"
+                        data-interrupted="{{ '1' if item.is_interrupted else '0' }}"
+                        style="cursor:pointer">
+                        <td>{{ item.created_at }}</td>
+                        {% if is_admin %}
+                        <td>{{ item.user_id or '—' }}</td>
+                        {% endif %}
+                        <td>{{ item.project_name or '—' }}</td>
+                        <td>{{ item.preset_label }}</td>
+                        <td>{{ item.target_language_name }}</td>
+                        <td>{{ item.model_id }}</td>
+                        <td>
+                            <span class="it-pill it-mode-pill is-active is-{{ item.concurrency_mode }}"
+                                  data-concurrency-mode="{{ item.concurrency_mode }}">
+                                {{ item.concurrency_mode_label }}
+                            </span>
+                        </td>
+                        <td>{{ item.done }} / {{ item.total }}</td>
+                        <td><span class="chip chip--status is-{{ item.status or 'queued' }}">{{ item.status_label or item.status }}</span></td>
+                        <td>
+                            {% if item.is_interrupted %}
+                            <button type="button" class="it-list-retry" data-action="retry">重新生成</button>
+                            {% else %}
+                            <span style="color:var(--fg-subtle,#9ca3af);font-size:12px">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </section>
 
 </div>
 {% include "_image_translate_styles.html" %}
