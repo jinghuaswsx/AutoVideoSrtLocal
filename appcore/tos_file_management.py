@@ -485,3 +485,27 @@ def run_channel_sync(
             ("failed", str(e), sync_run_id),
         )
         raise
+
+
+# -----------------------------------------------------------------------------
+# 定时任务入口
+# -----------------------------------------------------------------------------
+def run_scheduled_inventory_scan(*, scheduled_for=None) -> dict[str, Any]:
+    """定时任务入口：扫描默认通道（tos_wj）的清单。"""
+    return run_inventory_scan("tos_wj")
+
+
+def register(scheduler) -> None:
+    """向调度器注册任务。"""
+    from appcore import scheduled_tasks
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        "tos_file_inventory_scan",
+        run_scheduled_inventory_scan,
+        "cron",
+        hour=5,
+        minute=0,
+        id="tos_file_inventory_scan",
+        replace_existing=True,
+        max_instances=1,
+    )
