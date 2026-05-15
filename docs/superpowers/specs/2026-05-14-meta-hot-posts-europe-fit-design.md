@@ -2,6 +2,8 @@
 
 Last updated: 2026-05-14
 
+Superseded scheduling/model note: as of 2026-05-15, scheduled and manual Europe fit assessment is run by the unified queue in `2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md`. The Europe assessment table and Europe Top 50 ranking from this document remain active, but the runner uses task type `europe_fit`, Google Vertex ADC, `gemini-3.1-pro-preview`, a 30-second queue interval, and starts only after US copyability work has no remaining capacity in the same 10-item round.
+
 ## Background
 
 Meta hot posts already have four local workflows: wedev sync, product extraction/category analysis, message translation, and local video download. Operators now need an additional evaluation pass that decides whether a hot-post video and its product link can be used directly for Meta advertising in European markets such as Germany, France, Italy, and Spain.

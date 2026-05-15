@@ -13,11 +13,11 @@ from appcore import llm_client
 from appcore.meta_hot_posts import store, video_localization
 
 VIDEO_COPYABILITY_USE_CASE = "meta_hot_posts.video_copyability"
-VIDEO_COPYABILITY_PROVIDER = "openrouter"
-VIDEO_COPYABILITY_MODEL = "google/gemini-3-flash-preview"
+VIDEO_COPYABILITY_PROVIDER = "gemini_vertex_adc"
+VIDEO_COPYABILITY_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_ANALYSIS_SUBDIR = Path("meta_hot_posts") / "analysis_videos"
 DEFAULT_ANALYSIS_LIMIT = 20
-DEFAULT_ANALYSIS_DELAY_SECONDS = 20
+DEFAULT_ANALYSIS_DELAY_SECONDS = 30
 
 RunFn = Callable[..., Any]
 SleepFn = Callable[[float], None]

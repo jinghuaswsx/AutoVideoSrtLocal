@@ -443,6 +443,22 @@ def test_video_copyability_status_transitions_are_recorded():
     assert failure_params[1] == "provider failed"
 
 
+def test_reset_running_video_copyability_analyses_requeues_for_takeover():
+    calls = []
+
+    result = store.reset_running_video_copyability_analyses(
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 4,
+    )
+
+    sql, params = calls[0]
+    assert result == 4
+    assert "UPDATE meta_hot_post_video_copyability_analyses" in sql
+    assert "status='pending'" in sql
+    assert "status='running'" in sql
+    assert "superseded by a new run" in sql
+    assert params == ()
+
+
 def test_list_top_video_copyability_analyses_orders_best_50():
     calls = []
 

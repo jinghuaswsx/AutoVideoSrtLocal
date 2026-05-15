@@ -26,6 +26,9 @@ TRANSLATION_TASK_CODE = "meta_hot_posts_translate_messages_tick"
 VIDEO_LOCALIZATION_TASK_CODE = "meta_hot_posts_video_localization_tick"
 EUROPE_FIT_TASK_CODE = "meta_hot_posts_europe_fit_tick"
 VIDEO_COPYABILITY_TASK_CODE = "meta_hot_posts_video_copyability_tick"
+VIDEO_ANALYSIS_QUEUE_TASK_CODE = "meta_hot_posts_video_analysis_queue_tick"
+VIDEO_ANALYSIS_TASK_US_COPYABILITY = "us_copyability"
+VIDEO_ANALYSIS_TASK_EUROPE_FIT = "europe_fit"
 ANALYSIS_STALE_AFTER_SECONDS = 3600
 MESSAGE_TRANSLATION_STALE_AFTER_SECONDS = 3600
 VIDEO_COPYABILITY_STALE_AFTER_SECONDS = 3600
@@ -40,6 +43,8 @@ SCHEDULED_EUROPE_FIT_LIMIT = 30
 SCHEDULED_VIDEO_COPYABILITY_LIMIT = 20
 SCHEDULED_VIDEO_COPYABILITY_DELAY_SECONDS = 20
 FULL_SYNC_MAX_PAGES = 120
+SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT = 10
+SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS = 30
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -567,6 +572,34 @@ def _take_over_europe_fit_singleton() -> dict[str, Any]:
     }
 
 
+def _take_over_video_analysis_queue_singleton() -> dict[str, Any]:
+    running = scheduled_tasks.latest_running_run(VIDEO_ANALYSIS_QUEUE_TASK_CODE)
+    if not running:
+        return {}
+    age_seconds = _running_age_seconds(running)
+    running_id = int(running["id"])
+    us_reset_count = store.reset_running_video_copyability_analyses()
+    europe_reset_count = store.reset_running_europe_fit_assessments()
+    scheduled_tasks.finish_run(
+        running_id,
+        status="failed",
+        summary={
+            "running_run_replaced": running_id,
+            "running_age_seconds": age_seconds,
+            "running_us_copyability_reset": us_reset_count,
+            "running_europe_fit_reset": europe_reset_count,
+        },
+        error_message="running Meta hot posts video analysis queue superseded by a new run",
+    )
+    return {
+        "running_run_replaced": running_id,
+        "running_started_at": running.get("started_at"),
+        "running_age_seconds": age_seconds,
+        "running_us_copyability_reset": us_reset_count,
+        "running_europe_fit_reset": europe_reset_count,
+    }
+
+
 def _guard_video_localization_singleton() -> dict[str, Any]:
     running = scheduled_tasks.latest_running_run(VIDEO_LOCALIZATION_TASK_CODE)
     if not running:
@@ -737,6 +770,187 @@ def video_localization_startup_tick_once(
         min_delay_seconds=min_delay_seconds,
         takeover_running=True,
     )
+
+
+def _is_current_video_analysis_queue_run(run_id: int | None) -> bool:
+    if not run_id:
+        return True
+    running = scheduled_tasks.latest_running_run(VIDEO_ANALYSIS_QUEUE_TASK_CODE)
+    if not running:
+        return False
+    try:
+        return int(running.get("id") or 0) == int(run_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def _video_analysis_queue_items(limit: int) -> tuple[int, list[dict[str, Any]]]:
+    safe_limit = max(1, min(SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, int(limit)))
+    queued_us = int(store.ensure_video_copyability_candidates() or 0)
+    items: list[dict[str, Any]] = []
+    us_rows = store.next_pending_video_copyability_analyses(limit=safe_limit)
+    for row in us_rows[:safe_limit]:
+        items.append({"task_type": VIDEO_ANALYSIS_TASK_US_COPYABILITY, "row": row})
+    remaining = safe_limit - len(items)
+    if remaining > 0:
+        europe_rows = store.next_pending_europe_fit_materials(limit=remaining)
+        for row in europe_rows[:remaining]:
+            items.append({"task_type": VIDEO_ANALYSIS_TASK_EUROPE_FIT, "row": row})
+    return queued_us, items
+
+
+def _video_analysis_queue_summary(queued_us: int) -> dict[str, int]:
+    return {
+        "queued_us_copyability": queued_us,
+        "scanned": 0,
+        "done": 0,
+        "failed": 0,
+        "us_copyability_scanned": 0,
+        "us_copyability_done": 0,
+        "us_copyability_failed": 0,
+        "europe_fit_scanned": 0,
+        "europe_fit_done": 0,
+        "europe_fit_failed": 0,
+    }
+
+
+def _mark_video_analysis_queue_superseded(summary: dict[str, Any]) -> None:
+    summary["superseded"] = True
+    summary["stop_reason"] = "newer_run_started"
+
+
+def process_video_analysis_queue(
+    *,
+    limit: int = SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT,
+    user_id: int | None = None,
+    run_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS,
+    sleep_fn: SleepFn | None = None,
+) -> dict[str, Any]:
+    queued_us, items = _video_analysis_queue_items(limit)
+    summary: dict[str, Any] = _video_analysis_queue_summary(queued_us)
+    total = len(items)
+    if total <= 0:
+        return summary
+    billing_user_id = resolve_billing_user_id(user_id)
+    for index, item in enumerate(items):
+        if not _is_current_video_analysis_queue_run(run_id):
+            _mark_video_analysis_queue_superseded(summary)
+            break
+        task_type = str(item["task_type"])
+        row = dict(item["row"])
+        summary["scanned"] += 1
+        summary[f"{task_type}_scanned"] += 1
+        if task_type == VIDEO_ANALYSIS_TASK_US_COPYABILITY:
+            analysis_id = int(row["analysis_id"])
+            store.mark_video_copyability_running(analysis_id)
+            if not _is_current_video_analysis_queue_run(run_id):
+                _mark_video_analysis_queue_superseded(summary)
+                break
+            try:
+                result = video_copyability.analyze_video_copyability(row, user_id=billing_user_id)
+            except Exception as exc:
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
+                log.warning("meta hot post US copyability analysis failed id=%s: %s", analysis_id, exc)
+                store.finish_video_copyability_analysis(
+                    analysis_id,
+                    result={},
+                    error_message=str(exc)[:1000],
+                )
+                summary["failed"] += 1
+                summary[f"{task_type}_failed"] += 1
+            else:
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
+                store.finish_video_copyability_analysis(
+                    analysis_id,
+                    result=result,
+                    error_message=None,
+                )
+                summary["done"] += 1
+                summary[f"{task_type}_done"] += 1
+        else:
+            post_id = int(row["id"])
+            store.mark_europe_fit_running(post_id)
+            if not _is_current_video_analysis_queue_run(run_id):
+                _mark_video_analysis_queue_superseded(summary)
+                break
+            try:
+                result = europe_fit.assess_material(row, user_id=billing_user_id)
+            except Exception as exc:
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
+                log.warning("meta hot post Europe fit assessment failed id=%s: %s", post_id, exc)
+                store.finish_europe_fit_assessment(
+                    post_id,
+                    status="failed",
+                    result={},
+                    video_optimization={},
+                    error_message=str(exc)[:1000],
+                )
+                summary["failed"] += 1
+                summary[f"{task_type}_failed"] += 1
+            else:
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
+                store.finish_europe_fit_assessment(
+                    post_id,
+                    status="done",
+                    result=result,
+                    video_optimization=result.get("video_optimization") or {},
+                    error_message=None,
+                )
+                summary["done"] += 1
+                summary[f"{task_type}_done"] += 1
+        _sleep_after_item(
+            index=index,
+            total=total,
+            per_item_delay_seconds=per_item_delay_seconds,
+            sleep_fn=sleep_fn,
+        )
+    return summary
+
+
+def video_analysis_queue_tick_once(
+    *,
+    limit: int = SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT,
+    user_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS,
+) -> dict[str, Any]:
+    guard_summary = _take_over_video_analysis_queue_singleton()
+    run_id = None
+    try:
+        run_id = scheduled_tasks.start_run(VIDEO_ANALYSIS_QUEUE_TASK_CODE)
+    except Exception:
+        log.debug("failed to start meta hot posts video analysis queue run", exc_info=True)
+    try:
+        summary = process_video_analysis_queue(
+            limit=limit,
+            user_id=user_id,
+            run_id=run_id,
+            per_item_delay_seconds=per_item_delay_seconds,
+        )
+    except Exception as exc:
+        if run_id:
+            scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])
+        raise
+    summary.update(guard_summary)
+    if run_id:
+        status = "failed" if summary.get("failed", 0) > 0 or summary.get("superseded") else "success"
+        if summary.get("superseded"):
+            error = "Meta hot posts video analysis queue superseded by a newer run"
+        elif status == "failed":
+            error = f"{summary['failed']} video analysis queue item(s) failed"
+        else:
+            error = None
+        scheduled_tasks.finish_run(run_id, status=status, summary=summary, error_message=error)
+    return summary
+
 
 def _is_current_europe_fit_run(run_id: int | None) -> bool:
     if not run_id:
@@ -910,11 +1124,11 @@ def register(scheduler) -> None:
     )
     scheduled_tasks.add_controlled_job(
         scheduler,
-        EUROPE_FIT_TASK_CODE,
-        europe_fit_tick_once,
+        VIDEO_ANALYSIS_QUEUE_TASK_CODE,
+        video_analysis_queue_tick_once,
         "interval",
         minutes=10,
-        id=EUROPE_FIT_TASK_CODE,
+        id=VIDEO_ANALYSIS_QUEUE_TASK_CODE,
         replace_existing=True,
         max_instances=2,
         misfire_grace_time=60,
@@ -928,15 +1142,4 @@ def register(scheduler) -> None:
         replace_existing=True,
         misfire_grace_time=60,
         run_date=_now() + timedelta(seconds=SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS),
-    )
-    scheduled_tasks.add_controlled_job(
-        scheduler,
-        VIDEO_COPYABILITY_TASK_CODE,
-        video_copyability_tick_once,
-        "interval",
-        minutes=10,
-        id=VIDEO_COPYABILITY_TASK_CODE,
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=60,
     )

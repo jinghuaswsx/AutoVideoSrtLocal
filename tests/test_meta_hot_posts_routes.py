@@ -77,6 +77,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function loadUsTopMaterials" in body
     assert "function assessEuropeFitMaterials" in body
     assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
+    assert "JSON.stringify({limit:10})" in body
     assert "renderEuropeFitPanel" in body
 
 
