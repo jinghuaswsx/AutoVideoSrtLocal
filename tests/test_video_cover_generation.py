@@ -1384,13 +1384,16 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "vcd-result-box" not in html
     assert "data-result-step" not in html
     assert "保存图片" in html
-    assert "复制图片" in html
+    assert "复制图片" not in html
+    assert "data-copy-image" not in html
+    assert "copyImage(" not in html
     assert "复制文案" in html
     assert "一键复制文案" not in html
     assert "vcd-cover-results-grid" in html
     assert "vcd-cover-result-card" in html
     assert "vcd-cover-copy-panel" in html
     assert "vcd-cover-copy-button" in html
+    assert ".vcd-cover-actions { width:100%; display:grid; grid-template-columns:1fr;" in html
     assert "covers.map((cover, idx)" in html
     assert 'data-copy-cover-text="${idx}"' in html
     assert "copyTextForCover(covers[index])" in html

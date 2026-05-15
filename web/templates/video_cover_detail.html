@@ -100,7 +100,7 @@
 .vcd-cover-copy-button { width:100%; }
 .vcd-cover-image-panel { width:100%; display:grid; gap:8px; }
 .vcd-cover-img { width:100%; aspect-ratio:9/16; object-fit:cover; border-radius:8px; border:1px solid var(--border-main); background:#e5e7eb; }
-.vcd-cover-actions { width:100%; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+.vcd-cover-actions { width:100%; display:grid; grid-template-columns:1fr; gap:8px; justify-items:center; }
 .vcd-cover-actions .vcd-pill-btn { width:100%; padding:0 8px; }
 .vcd-pill-btn { display:inline-flex; align-items:center; justify-content:center; height:30px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-size:12px; font-weight:900; text-decoration:none; cursor:pointer; }
 .vcd-pill-btn.primary { border-color:var(--primary-color); background:var(--primary-color); color:#f8fafc; }
@@ -463,7 +463,6 @@
           <img class="vcd-cover-img" src="${escapeHtml(cover.url || '')}" alt="最终封面 ${idx + 1}" loading="lazy">
           <div class="vcd-cover-actions">
             <a class="vcd-pill-btn primary" href="${escapeHtml(cover.download_url || '#')}" download>保存图片</a>
-            <button class="vcd-pill-btn" type="button" data-copy-image="${escapeHtml(cover.url || '')}">复制图片</button>
           </div>
         </div>
       </article>`;
@@ -519,7 +518,6 @@
     });
     document.querySelectorAll('[data-copy-ad-copy]').forEach(btn => btn.addEventListener('click', () => copyAdCopyText(btn.dataset.copyAdCopy)));
     document.querySelectorAll('[data-copy-cover-text]').forEach(btn => btn.addEventListener('click', () => copyCoverText(btn.dataset.copyCoverText)));
-    document.querySelectorAll('[data-copy-image]').forEach(btn => btn.addEventListener('click', () => copyImage(btn.dataset.copyImage)));
   }
   async function loadState() {
     const response = await fetch(`/video-cover/api/${encodeURIComponent(TASK_ID)}/state`, {cache: 'no-store'});
@@ -597,16 +595,6 @@
     const text = formattedCopyText(sets[index]);
     if (!text) return;
     await copyText(text);
-  }
-  async function copyImage(url) {
-    try {
-      if (!navigator.clipboard || !window.ClipboardItem) throw new Error('当前浏览器不支持复制图片');
-      const response = await fetch(url);
-      const blob = await response.blob();
-      await navigator.clipboard.write([new ClipboardItem({[blob.type || 'image/png']: blob})]);
-    } catch (e) {
-      errorBox.textContent = '复制图片失败，请使用保存图片。';
-    }
   }
   document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
     setRestartCount(btn.dataset.restartCount);
