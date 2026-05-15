@@ -1119,6 +1119,49 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     outline: none; border-color: oklch(56% 0.16 230);
     box-shadow: 0 0 0 2px oklch(56% 0.16 230 / 0.22);
   }
+  .omni-ffmpeg-fallback-row {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 10px; padding-top: 6px;
+  }
+  .omni-ffmpeg-toggle {
+    display: inline-flex; align-items: center; gap: 10px;
+    cursor: pointer; user-select: none;
+  }
+  .omni-ffmpeg-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .omni-ffmpeg-toggle-track {
+    width: 38px; height: 22px; border-radius: 999px;
+    background: oklch(88% 0.012 230);
+    border: 1px solid oklch(80% 0.015 230);
+    position: relative; flex: 0 0 auto;
+    transition: background .16s ease, border-color .16s ease;
+  }
+  .omni-ffmpeg-toggle-track::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .22);
+    transition: transform .16s ease;
+  }
+  .omni-ffmpeg-toggle input:checked + .omni-ffmpeg-toggle-track {
+    background: oklch(56% 0.16 230); border-color: oklch(56% 0.16 230);
+  }
+  .omni-ffmpeg-toggle input:checked + .omni-ffmpeg-toggle-track::after {
+    transform: translateX(16px);
+  }
+  .omni-ffmpeg-toggle-copy { display: flex; flex-direction: column; gap: 2px; }
+  .omni-ffmpeg-toggle-copy strong {
+    font-size: 13px; color: oklch(22% 0.020 235); font-weight: 600;
+  }
+  .omni-ffmpeg-toggle-copy small {
+    font-size: 12px; line-height: 1.4; color: oklch(48% 0.018 230);
+  }
+  .omni-ffmpeg-status {
+    font-size: 12px; color: oklch(48% 0.018 230);
+    padding: 2px 7px; border-radius: 999px;
+    background: oklch(96% 0.006 230);
+  }
+  .omni-ffmpeg-status.is-enabled {
+    color: oklch(45% 0.16 230); background: oklch(94% 0.04 225);
+  }
   .omni-preset-table {
     width: 100%; border-collapse: collapse; margin-top: 6px;
     border: 1px solid oklch(91% 0.012 230); border-radius: 8px; overflow: hidden;
@@ -1198,6 +1241,17 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         修改后立即生效；所有用户新建任务时初始勾选都跟随该 preset。
       </span>
     </div>
+    <div class="omni-ffmpeg-fallback-row">
+      <label class="omni-ffmpeg-toggle" for="omniFfmpegTempoFallbackEnabled">
+        <input type="checkbox" id="omniFfmpegTempoFallbackEnabled">
+        <span class="omni-ffmpeg-toggle-track" aria-hidden="true"></span>
+        <span class="omni-ffmpeg-toggle-copy">
+          <strong>FFmpeg 变速兜底</strong>
+          <small>默认关闭。开启后仅最终超长且接近目标时才允许变速，短音频和已收敛句子不变速。</small>
+        </span>
+      </label>
+      <span class="omni-ffmpeg-status" id="omniFfmpegTempoFallbackStatus">关闭</span>
+    </div>
   </section>
 
   <section class="omni-preset-section">
@@ -1241,6 +1295,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     capGroups: null,
     presets: [],
     defaultId: null,
+    ffmpegTempoFallbackEnabled: false,
     editing: { id: null, scope: 'system', cfg: null },
   };
 
@@ -1264,10 +1319,13 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       ]);
       if (!listRes.ok || !defRes.ok) throw new Error('加载失败');
       var listData = await listRes.json();
+      var defData = await defRes.json();
       state.capGroups = listData.capability_groups;
       state.presets = listData.presets;
       state.defaultId = listData.default_preset_id;
+      state.ffmpegTempoFallbackEnabled = !!defData.ffmpeg_tempo_fallback_enabled;
       renderGlobalDefault();
+      renderFfmpegTempoFallback();
       renderSystemTable();
     } catch (err) {
       alert('preset 列表加载失败：' + (err.message || err));
@@ -1286,6 +1344,15 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       return '<option value="' + p.id + '"' + (p.id === state.defaultId ? ' selected' : '')
            + '>' + escapeHtml(p.name) + marker + '</option>';
     }).join('');
+  }
+
+  function renderFfmpegTempoFallback() {
+    var toggle = document.getElementById('omniFfmpegTempoFallbackEnabled');
+    var status = document.getElementById('omniFfmpegTempoFallbackStatus');
+    if (!toggle || !status) return;
+    toggle.checked = !!state.ffmpegTempoFallbackEnabled;
+    status.textContent = toggle.checked ? '已开启' : '关闭';
+    status.classList.toggle('is-enabled', toggle.checked);
   }
 
   function renderSystemTable() {
@@ -1498,6 +1565,28 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     } catch (err) {
       alert(err.message || err);
       reload();
+    }
+  });
+
+  document.getElementById('omniFfmpegTempoFallbackEnabled').addEventListener('change', async function(ev) {
+    var previous = !!state.ffmpegTempoFallbackEnabled;
+    var next = !!ev.target.checked;
+    state.ffmpegTempoFallbackEnabled = next;
+    renderFfmpegTempoFallback();
+    try {
+      var res = await fetch('/api/omni-presets/ffmpeg-tempo-fallback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+        body: JSON.stringify({ enabled: next }),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || '设置失败');
+      state.ffmpegTempoFallbackEnabled = !!data.ffmpeg_tempo_fallback_enabled;
+      renderFfmpegTempoFallback();
+    } catch (err) {
+      state.ffmpegTempoFallbackEnabled = previous;
+      renderFfmpegTempoFallback();
+      alert(err.message || err);
     }
   });
 
