@@ -395,5 +395,7 @@ def test_shot_char_limit_translate_process_has_legacy_state_fallback():
     assert "shot_context" in script
     assert 'item.type === "shot_translation_summary"' in script
     assert 'item.type === "shot_translations"' in script
-    assert "镜头级翻译过程" in script
+    assert "时间轴分段翻译过程" in script
+    assert "时间轴分段过程和结果" in script
+    assert "镜头级翻译过程" not in script
     assert ".shot-translation-grid" in styles

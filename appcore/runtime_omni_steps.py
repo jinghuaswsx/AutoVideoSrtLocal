@@ -628,7 +628,7 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     _tr_binding = llm_bindings.resolve("translate_lab.shot_translate")
     _tr_provider = _tr_binding.get("provider") or ""
     _tr_model = _tr_binding.get("model") or ""
-    runner._set_step(task_id, "translate", "running", "正在按镜头翻译...",
+    runner._set_step(task_id, "translate", "running", "正在按时间轴分段翻译，并附加视觉分镜上下文...",
                      model_tag=f"{_tr_provider} · {_tr_model}")
     task = task_state.get(task_id) or {}
     shots: list[dict[str, Any]] = task.get("shots") or []
@@ -839,8 +839,13 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
             target_language=target_lang,
         ),
     )
-    runner._set_step(task_id, "translate", "done",
-                     f"{target_lang.upper()} 镜头级翻译完成（{len(translations)} 段）")
+    visual_shot_count = len(shots)
+    runner._set_step(
+        task_id,
+        "translate",
+        "done",
+        f"{target_lang.upper()} 时间轴分段翻译完成（{len(translations)}段，附{visual_shot_count}个视觉分镜上下文）",
+    )
 
 
 # ---------------------------------------------------------------------------

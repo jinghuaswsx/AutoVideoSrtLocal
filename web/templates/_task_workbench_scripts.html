@@ -1199,7 +1199,7 @@
     const items = [
       {
         type: "shot_translation_summary",
-        label: "镜头级翻译过程",
+        label: "时间轴分段翻译过程",
         total: rows.length,
         translated_count: translatedCount,
         over_limit_count: overLimitCount,
@@ -1207,7 +1207,7 @@
       },
       {
         type: "shot_translations",
-        label: "逐镜头过程和结果",
+        label: "时间轴分段过程和结果",
         shots: rows,
       },
     ];
@@ -1970,7 +1970,7 @@
     const over = Number(item.over_limit_count) || 0;
     const retries = Number(item.retry_count) || 0;
     return `<div class="preview-block">
-      <div class="preview-label">${escapeHtml(item.label || "镜头级翻译过程")}</div>
+      <div class="preview-label">${escapeHtml(item.label || "时间轴分段翻译过程")}</div>
       <div class="shot-translation-summary">
         <span class="shot-translation-stat"><strong>${translated}</strong>/<span>${total}</span> 已翻译</span>
         <span class="shot-translation-stat"><strong>${retries}</strong> 次缩写重试</span>
@@ -1982,10 +1982,10 @@
   function renderShotTranslations(item) {
     const rows = Array.isArray(item.shots) ? item.shots : [];
     if (!rows.length) {
-      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div><div class="preview-note">暂无镜头翻译明细。</div></div>`;
+      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "时间轴分段过程和结果")}</div><div class="preview-note">暂无时间轴分段翻译明细。</div></div>`;
     }
     return `<div class="preview-block">
-      <div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div>
+      <div class="preview-label">${escapeHtml(item.label || "时间轴分段过程和结果")}</div>
       <div class="shot-translation-grid">${rows.map(renderShotTranslationRow).join("")}</div>
     </div>`;
   }

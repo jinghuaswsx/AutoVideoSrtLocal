@@ -171,7 +171,7 @@ def build_shot_translate_artifact(
     items = [
         {
             "type": "shot_translation_summary",
-            "label": "镜头级翻译过程",
+            "label": "时间轴分段翻译过程",
             "total": len(shot_rows),
             "translated_count": translated_count,
             "over_limit_count": over_limit_count,
@@ -179,7 +179,7 @@ def build_shot_translate_artifact(
         },
         {
             "type": "shot_translations",
-            "label": "逐镜头过程和结果",
+            "label": "时间轴分段过程和结果",
             "shots": shot_rows,
         },
     ]
