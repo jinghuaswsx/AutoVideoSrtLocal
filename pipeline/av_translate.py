@@ -23,6 +23,7 @@ FALLBACK_CPS = {
 }
 
 REWRITE_TEMPERATURE_LADDER = (0.6, 0.8, 1.0, 1.05, 1.1, 1.1, 1.15, 1.15, 1.2, 1.2)
+SECOND_REWRITE_TEMPERATURE_LADDER = (1.0, 1.2, 1.35, 1.4, 1.45, 1.5, 1.5, 1.55, 1.55, 1.6)
 AV_LOCALIZE_USE_CASE = "video_translate.av_localize"
 AV_REWRITE_USE_CASE = "video_translate.av_rewrite"
 
@@ -180,6 +181,12 @@ def rewrite_temperature_for_attempt(attempt_number: int | None) -> float:
     normalized = max(1, int(attempt_number or 1))
     index = min(normalized - 1, len(REWRITE_TEMPERATURE_LADDER) - 1)
     return REWRITE_TEMPERATURE_LADDER[index]
+
+
+def second_rewrite_temperature_for_attempt(attempt_number: int | None) -> float:
+    normalized = max(1, int(attempt_number or 1))
+    index = min(normalized - 1, len(SECOND_REWRITE_TEMPERATURE_LADDER) - 1)
+    return SECOND_REWRITE_TEMPERATURE_LADDER[index]
 
 
 def _first_non_empty(*values):

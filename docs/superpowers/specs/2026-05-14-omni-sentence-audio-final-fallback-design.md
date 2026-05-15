@@ -26,8 +26,8 @@ This design applies to Omni tasks using `tts_strategy = "sentence_reconcile"`.
 2. Rewrite/regenerate attempts also keep `ok` candidates as-is; accepted short audio must not be slowed down just to fill the source ASR window.
 3. FFmpeg tempo alignment is only allowed when the global switch is enabled, after the normal convergence loop has exhausted, and the selected final candidate is still overlong: `duration_ratio > 1.05` and `duration_ratio <= 1.1`. The intent is to avoid clipping or timeline overflow for a near-miss overlong sentence.
 4. If the ratio is above `1.1` after normal convergence attempts, the final output proceeds with clipping/truncation instead of another text rewrite. The clipped segment must be marked visibly in metadata and UI.
-5. If the ratio is below `0.95` after normal convergence attempts, the sentence gets one final expansion rewrite opportunity. That expansion is treated as another candidate, not an unconditional replacement. The final sentence must be the best candidate across normal rewrite rounds plus the final expansion result, ranked by semantic coverage first and duration distance second.
-6. The final expansion opportunity is one bounded chance per sentence. It must not create an unbounded retry loop and must not reset the existing normal rewrite attempt counters.
+5. If the ratio is below `0.95` after normal convergence attempts, the sentence enters a second rewrite loop with up to 10 attempts. Each attempt uses higher temperature to increase randomness and explore more possibilities. The second rewrite attempts are tracked in a separate `second_rewrite_attempts` list. The final sentence must be the best candidate across normal rewrite rounds (up to 10) plus the second rewrite attempts (up to 10 = 20 total candidates), ranked by semantic coverage first and duration distance second.
+6. The second rewrite loop is bounded at 10 attempts per sentence. It uses an independent higher-temperature ladder (`SECOND_REWRITE_TEMPERATURE_LADDER`: 1.0→1.6) to encourage diverse outputs rather than conservative convergence. If a second rewrite candidate converges, the loop exits early.
 7. Existing semantic coverage repair remains higher priority than duration-only final fallback. If required source terms are still missing, the sentence remains review-needed even if ffmpeg duration alignment succeeds.
 
 ## Runtime Flow
@@ -42,7 +42,7 @@ For each sentence:
    - ratio in `(1.05, 1.1]` and the global FFmpeg tempo fallback switch is enabled: run FFmpeg tempo alignment directly to `target_duration`.
    - ratio in `(1.05, 1.1]` and the switch is disabled: keep the selected overlong candidate, mark `ffmpeg_tempo_skipped_reason = "disabled"`, and let downstream stitching/clipping handle the remaining overflow.
    - ratio `> 1.1`: keep the selected overlong candidate and let source-timeline audio stitching clip it to its sentence window or final output timeline.
-   - ratio `< 0.95`: run one final expansion rewrite, regenerate audio once, then re-evaluate. If the new candidate is better than the previous best candidate, adopt it; otherwise restore the previous best candidate. If the adopted candidate enters `0.95-1.05`, accept it without FFmpeg. Otherwise keep the closest candidate as `warning_short` or `warning_long`.
+   - ratio `< 0.95`: run the second rewrite loop (up to 10 attempts with higher temperatures). Each attempt rewrites, regenerates audio, and re-evaluates. If a candidate converges (0.95-1.05), stop early. After the loop, if the best second rewrite candidate outperforms the best first-round candidate, adopt it; otherwise restore the best first-round candidate. If the adopted candidate enters `0.95-1.05`, accept it without FFmpeg. Otherwise keep the closest candidate as `warning_short` or `warning_long`.
 
 The FFmpeg tempo step uses `atempo = current_duration / target_duration`. It is only used to make final overlong audio faster; it is not used to slow short audio down.
 
@@ -54,27 +54,28 @@ Sentence records should expose final fallback details without hiding existing fi
 
 - `status`: existing statuses remain valid; aligned final overlong audio may use `speed_adjusted`.
 - `duration_ratio`: final measured ratio after the adopted candidate is selected.
-- `final_fallback_action`: one of `ffmpeg_tempo_align`, `clip_overlong`, `extra_expand`, `extra_expand_failed`, or empty.
-- `final_fallback_reason`: human-readable machine string such as `overlong_after_attempts`, `overlong_after_extra_expand`, or `short_after_attempts`.
+- `final_fallback_action`: one of `ffmpeg_tempo_align`, `clip_overlong`, `second_rewrite`, `second_rewrite_failed`, or empty.
+- `final_fallback_reason`: human-readable machine string such as `overlong_after_attempts`, `overlong_after_second_rewrite`, or `short_after_attempts`.
 - `ffmpeg_tempo_applied`: boolean.
 - `ffmpeg_tempo_ratio`: current duration divided by target duration.
 - `ffmpeg_tempo_pre_duration` and `ffmpeg_tempo_post_duration`.
 - `ffmpeg_tempo_audio_path`.
 - `ffmpeg_tempo_skipped_reason`: currently `disabled` when the global switch prevents a final overlong near-miss from entering FFmpeg tempo alignment.
-- `final_extra_expand_attempted`: boolean.
-- `final_extra_expand_result`: `accepted`, `aligned`, `still_short`, `still_long`, `not_selected`, `rewrite_failed`, or empty. `aligned` means FFmpeg was actually applied to an overlong final expansion result; `accepted` means the expansion reached the normal convergence band without FFmpeg; `not_selected` means the final expansion candidate was worse than the previous best candidate and was not adopted.
-- `final_extra_expand_before_text` and `final_extra_expand_after_text` when an extra rewrite ran.
-- `final_extra_expand_selected`: boolean showing whether the final expansion candidate was adopted.
-- `final_extra_expand_tts_duration`, `final_extra_expand_target_duration`, `final_extra_expand_duration_ratio`, `final_extra_expand_delta_pct`, `final_extra_expand_status`, and `final_extra_expand_reason`: measured details for the final expansion candidate, even when it was not adopted.
-- `final_extra_expand_attempt`: a table-row-shaped record for the UI so the second expansion appears in the same voice-generation process table as normal rewrite attempts.
+- `second_rewrite_attempted`: boolean.
+- `second_rewrite_result`: `accepted`, `aligned`, `still_short`, `still_long`, `not_selected`, `rewrite_failed`, or empty. `aligned` means FFmpeg was actually applied to an overlong second rewrite result; `accepted` means the second rewrite reached the normal convergence band without FFmpeg; `not_selected` means the best second rewrite candidate was worse than the best first-round candidate and was not adopted.
+- `second_rewrite_before_text` and `second_rewrite_after_text` when a second rewrite ran.
+- `second_rewrite_selected`: boolean showing whether the second rewrite candidate was adopted.
+- `second_rewrite_tts_duration`, `second_rewrite_target_duration`, `second_rewrite_duration_ratio`, `second_rewrite_delta_pct`, `second_rewrite_status`, and `second_rewrite_reason`: measured details for the selected second rewrite candidate, even when it was not adopted.
+- `second_rewrite_selected_round`: the round number of the selected second rewrite candidate.
+- `second_rewrite_attempts`: list of all second rewrite attempt records (up to 10), each with round, text, duration, status, selected, second_rewrite flag.
 - `audio_clipped`, `audio_clip_reason`, `audio_clip_duration`, and `audio_clipped_seconds` continue to be written by the timeline audio builder for truncation.
 
 Progress events in `tts_duration_rounds` should include:
 
 - `phase = "ffmpeg_tempo_align"` when final overlong fallback audio is aligned.
 - `phase = "ffmpeg_tempo_skipped"` when final overlong fallback would be eligible for FFmpeg alignment but the global switch is disabled.
-- `phase = "final_extra_expand_start"` before the bounded extra expansion rewrite.
-- `phase = "final_extra_expand_result"` after the extra expansion TTS measurement.
+- `phase = "second_rewrite_start"` before each second rewrite attempt (up to 10).
+- `phase = "second_rewrite_result"` after each second rewrite TTS measurement.
 - `phase = "final_clip_fallback"` when the sentence is knowingly left overlong for clipping.
 
 ## Front-End Display
@@ -84,12 +85,12 @@ The Omni task detail page should show the fallback in the existing "语音生成
 1. Sentence rows show a compact badge for final fallback action:
    - `FFmpeg 对齐`
    - `超长截断`
-   - `二次扩写`
-   - `二次扩写未收敛`
+   - `二次重写`
+   - `二次重写未收敛`
 2. Attempt details show pre/post durations and ratio for ffmpeg alignment.
 3. The final compose summary already shows clipping; update the wording so overlong fallback is described as an intentional final truncation path, not only as a generic overflow.
-4. When short audio receives the extra expansion chance, the modal shows the before/after text and measured duration.
-5. The final expansion appears as a visible "二次扩写候选" row in the voice-generation process. It must show whether it was adopted or not adopted, with target/current duration and deviation.
+4. When short audio receives the secondary rewrite chance, the modal shows the before/after text and measured duration for each attempt.
+5. The secondary rewrite appears as visible "二次重写候选" rows in the voice-generation process (up to 10 attempts). It must show whether each was adopted or not adopted, with target/current duration and deviation. The best candidate is selected from all 20 results (10 first-round + 10 second-rewrite).
 6. Old tasks without these new fields continue to render through existing inferred summary fallback.
 
 The settings page exposes a compact **FFmpeg 变速兜底** switch under the global default preset selector. It defaults to off and writes through `/api/omni-presets/ffmpeg-tempo-fallback`.
@@ -97,7 +98,7 @@ The settings page exposes a compact **FFmpeg 变速兜底** switch under the glo
 ## Error Handling
 
 - ffmpeg alignment failure must not fail the whole task. The sentence keeps the pre-alignment candidate and records `ffmpeg_tempo_failed_reason`.
-- Extra expansion rewrite failure must not fail the whole task. The sentence keeps the best previous candidate, records `final_extra_expand_result = "rewrite_failed"`, and remains `warning_short`.
+- Second rewrite failure for any individual attempt must not fail the whole task. The sentence continues to the next attempt. If all attempts fail, the sentence keeps the best first-round candidate, records `second_rewrite_result = "rewrite_failed"`, and remains `warning_short`.
 - Missing audio files, corrupt media, invalid timeline data, and ffmpeg stitching failures remain blocking errors as defined by the final compose summary design.
 
 ## Verification
@@ -109,10 +110,10 @@ Add focused tests before implementation:
 3. A final overlong sentence inside `(1.05, 1.1]` aligns with FFmpeg only after normal attempts are exhausted.
 4. With the global switch disabled, the same final overlong near-miss skips FFmpeg and records `ffmpeg_tempo_skipped_reason = "disabled"`.
 5. A final overlong sentence beyond `1.1` records `clip_overlong` and the final compose summary renders clipped output.
-6. A final short sentence below `0.95` runs exactly one extra expansion attempt and never uses FFmpeg just to slow audio down.
-7. If the final expansion candidate is worse than the previous best normal-round candidate, `reconcile_duration` restores the previous best candidate and records the expansion as `not_selected`.
-8. API and settings template tests confirm the admin switch is readable, writable, and rendered under the global preset selector.
-9. Template tests confirm the new fallback labels, final expansion candidate row, and phase labels are present in the task-detail script.
+6. A final short sentence below `0.95` runs up to 10 second rewrite attempts with increasing temperature and never uses FFmpeg just to slow audio down.
+7. If no second rewrite candidate is better than the best normal-round candidate, `reconcile_duration` restores the best first-round candidate and records the attempt as `not_selected`.
+8. The second rewrite loop uses a higher-temperature ladder (1.0→1.6) independent from the first-round ladder (0.6→1.2).
+9. Template tests confirm the new "二次重写" labels, second rewrite candidate rows, and `second_rewrite_*` phase labels are present in the task-detail script.
 
 Run:
 

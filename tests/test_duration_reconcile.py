@@ -548,20 +548,23 @@ def test_reconcile_duration_marks_final_overlong_for_clip_without_extra_rewrite(
     assert any(event["phase"] == "final_clip_fallback" for event in progress)
 
 
-def test_reconcile_duration_final_short_extra_expand_does_not_slow_with_ffmpeg(monkeypatch):
-    durations = iter([4.0, 4.45, 4.7])
+def test_reconcile_duration_second_rewrite_does_not_slow_with_ffmpeg(monkeypatch):
+    durations = iter([4.0] + [4.45] * 2 + [4.7] * 10)
     rewrite_calls = []
     align_calls = []
 
     def fake_rewrite_one(**kwargs):
         rewrite_calls.append(kwargs)
-        if kwargs["attempt_number"] == 999:
-            return "Final expanded candidate"
-        return f"Candidate {kwargs['attempt_number']}"
+        attempt = kwargs["attempt_number"]
+        prev = kwargs.get("previous_attempts") or []
+        has_second = any(a.get("second_rewrite") for a in prev)
+        if has_second or attempt > 2:
+            return "Second rewrite candidate"
+        return f"Candidate {attempt}"
 
     def fake_align(**kwargs):
         align_calls.append(kwargs)
-        pytest.fail("final short extra expansion should not be FFmpeg-slowed")
+        pytest.fail("short second rewrite should not be FFmpeg-slowed")
 
     monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
     monkeypatch.setattr("pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment", fake_align)
@@ -597,31 +600,34 @@ def test_reconcile_duration_final_short_extra_expand_does_not_slow_with_ffmpeg(m
 
     sentence = result[0]
     assert sentence["status"] == "warning_short"
-    assert sentence["text"] == "Final expanded candidate"
-    assert sentence["tts_duration"] == pytest.approx(4.7)
-    assert sentence["duration_ratio"] == pytest.approx(0.94)
-    assert sentence["final_fallback_action"] == "extra_expand_failed"
-    assert sentence["final_extra_expand_attempted"] is True
-    assert sentence["final_extra_expand_result"] == "still_short"
-    assert sentence["final_extra_expand_selected"] is True
-    assert sentence["final_extra_expand_before_text"] == "Candidate 2"
-    assert sentence["final_extra_expand_after_text"] == "Final expanded candidate"
-    assert sentence["final_extra_expand_tts_duration"] == pytest.approx(4.7)
-    assert sentence["final_extra_expand_duration_ratio"] == pytest.approx(0.94)
-    assert [call["direction"] for call in rewrite_calls] == ["expand", "expand", "expand"]
-    assert rewrite_calls[-1]["attempt_number"] == 999
+    assert sentence["final_fallback_action"] == "second_rewrite_failed"
+    assert sentence["second_rewrite_attempted"] is True
+    assert sentence["second_rewrite_result"] == "still_short"
+    assert sentence["second_rewrite_selected"] is True
+    assert sentence["second_rewrite_before_text"] == "Candidate 2"
+    assert sentence["second_rewrite_after_text"] == "Second rewrite candidate"
+    assert sentence["second_rewrite_tts_duration"] == pytest.approx(4.7)
+    assert sentence["second_rewrite_duration_ratio"] == pytest.approx(0.94)
+    main_calls = rewrite_calls[:2]
+    second_calls = rewrite_calls[2:]
+    assert [c["direction"] for c in main_calls] == ["expand", "expand"]
+    assert all(c["direction"] == "expand" for c in second_calls)
+    assert len(second_calls) >= 1
     assert align_calls == []
 
 
-def test_reconcile_duration_final_extra_expand_reverts_when_candidate_is_worse(monkeypatch):
-    durations = iter([4.1, 4.63, 6.15])
+def test_reconcile_duration_second_rewrite_reverts_when_candidate_is_worse(monkeypatch):
+    durations = iter([4.1, 4.63] + [6.15] * 10)
     rewrite_calls = []
 
     def fake_rewrite_one(**kwargs):
         rewrite_calls.append(kwargs)
-        if kwargs["attempt_number"] == 999:
-            return "Expanded but much too long"
-        return f"Candidate {kwargs['attempt_number']}"
+        attempt = kwargs["attempt_number"]
+        prev = kwargs.get("previous_attempts") or []
+        has_second = any(a.get("second_rewrite") for a in prev)
+        if has_second or attempt > 2:
+            return "Second rewrite much too long"
+        return f"Candidate {attempt}"
 
     monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
     monkeypatch.setattr(
@@ -661,27 +667,35 @@ def test_reconcile_duration_final_extra_expand_reverts_when_candidate_is_worse(m
     assert sentence["status"] == "warning_short"
     assert sentence["selected_attempt_round"] == 2
     assert sentence["attempts"][1]["selected"] is True
-    assert sentence["final_fallback_action"] == "extra_expand_failed"
+    assert sentence["final_fallback_action"] == "second_rewrite_failed"
     assert sentence["final_fallback_reason"] == "short_after_attempts"
-    assert sentence["final_extra_expand_attempted"] is True
-    assert sentence["final_extra_expand_result"] == "not_selected"
-    assert sentence["final_extra_expand_selected"] is False
-    assert sentence["final_extra_expand_before_text"] == "Candidate 2"
-    assert sentence["final_extra_expand_after_text"] == "Expanded but much too long"
-    assert sentence["final_extra_expand_tts_duration"] == pytest.approx(6.15)
-    assert sentence["final_extra_expand_duration_ratio"] == pytest.approx(1.23)
-    assert sentence["final_extra_expand_status"] == "needs_rewrite"
-    assert sentence["best_effort_reason"] == "final_extra_expand_candidate_not_selected"
-    assert [call["attempt_number"] for call in rewrite_calls] == [1, 2, 999]
+    assert sentence["second_rewrite_attempted"] is True
+    assert sentence["second_rewrite_result"] == "not_selected"
+    assert sentence["second_rewrite_selected"] is False
+    assert sentence["second_rewrite_before_text"] == "Candidate 2"
+    assert sentence["second_rewrite_after_text"] == "Second rewrite much too long"
+    assert sentence["second_rewrite_tts_duration"] == pytest.approx(6.15)
+    assert sentence["second_rewrite_duration_ratio"] == pytest.approx(1.23)
+    assert sentence["second_rewrite_status"] == "needs_rewrite"
+    assert sentence["best_effort_reason"] == "second_rewrite_candidate_not_selected"
+    main_calls = rewrite_calls[:2]
+    second_calls = rewrite_calls[2:]
+    assert [c["attempt_number"] for c in main_calls] == [1, 2]
+    assert len(second_calls) >= 1
 
 
-def test_reconcile_duration_final_short_extra_expand_failure_does_not_loop(monkeypatch):
-    durations = iter([4.0, 4.1, 4.2])
+def test_reconcile_duration_second_rewrite_runs_multi_round(monkeypatch):
+    durations = iter([4.0, 4.1, 4.2] + [4.2] * 10)
     rewrite_calls = []
 
     def fake_rewrite_one(**kwargs):
         rewrite_calls.append(kwargs)
-        return f"Candidate {kwargs['attempt_number']}"
+        attempt = kwargs["attempt_number"]
+        prev = kwargs.get("previous_attempts") or []
+        has_second = any(a.get("second_rewrite") for a in prev)
+        if has_second or attempt > 2:
+            return f"Second rewrite R{attempt}"
+        return f"Candidate {attempt}"
 
     monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
     monkeypatch.setattr(
@@ -716,12 +730,14 @@ def test_reconcile_duration_final_short_extra_expand_failure_does_not_loop(monke
 
     sentence = result[0]
     assert sentence["status"] == "warning_short"
-    assert sentence["final_fallback_action"] == "extra_expand_failed"
+    assert sentence["final_fallback_action"] == "second_rewrite_failed"
     assert sentence["final_fallback_reason"] == "short_after_attempts"
-    assert sentence["final_extra_expand_attempted"] is True
-    assert sentence["final_extra_expand_result"] == "still_short"
-    assert len(rewrite_calls) == 3
-    assert rewrite_calls[-1]["attempt_number"] == 999
+    assert sentence["second_rewrite_attempted"] is True
+    assert sentence["second_rewrite_result"] == "still_short"
+    main_calls = rewrite_calls[:2]
+    second_calls = rewrite_calls[2:]
+    assert len(main_calls) == 2
+    assert len(second_calls) >= 2
 
 
 def test_reconcile_duration_repairs_semantic_coverage_before_accepting_timing(monkeypatch):
@@ -1363,7 +1379,7 @@ def test_reconcile_duration_expands_short_sentence(monkeypatch):
 
 
 def test_reconcile_duration_expand_gives_up_without_out_of_range_speed(monkeypatch):
-    durations = iter([4.0, 4.0, 4.0])
+    durations = iter([4.0] * 13)
     regenerate_calls = []
 
     monkeypatch.setattr(
@@ -1404,14 +1420,13 @@ def test_reconcile_duration_expand_gives_up_without_out_of_range_speed(monkeypat
 
     assert result[0]["status"] == "warning_short"
     assert result[0]["speed"] == pytest.approx(1.0)
-    assert result[0]["rewrite_rounds"] == 2
+    assert result[0]["rewrite_rounds"] == 12
     assert len(result[0]["attempts"]) == 2
-    assert [attempt["action"] for attempt in result[0]["attempts"]] == ["expand", "expand"]
-    assert result[0]["final_fallback_action"] == "extra_expand_failed"
-    assert result[0]["final_extra_expand_result"] == "still_short"
+    second_rewrite_attempts = result[0].get("second_rewrite_attempts") or []
+    assert len(second_rewrite_attempts) == 10
+    assert [a["action"] for a in result[0]["attempts"]] == ["expand", "expand"]
+    assert all(a["action"] == "expand" for a in second_rewrite_attempts)
+    assert result[0]["final_fallback_action"] == "second_rewrite_failed"
+    assert result[0]["second_rewrite_result"] == "still_short"
     assert result[0]["duration_ratio"] == pytest.approx(0.8)
-    assert regenerate_calls == [
-        {"text": "Still too short", "speed": None},
-        {"text": "Still too short", "speed": None},
-        {"text": "Still too short", "speed": None},
-    ]
+    assert len(regenerate_calls) == 12
