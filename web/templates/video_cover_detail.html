@@ -4,8 +4,10 @@
 {% block page_title %}文案封面生成{% endblock %}
 
 {% block extra_style %}
-.vcd-back { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; margin-bottom:12px; border:1px solid var(--border-main); border-radius:8px; color:var(--text-main); text-decoration:none; font-size:13px; font-weight:700; background:var(--bg-card); }
+.vcd-project-heading { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:14px; align-items:center; margin-bottom:12px; }
+.vcd-back { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border:1px solid var(--border-main); border-radius:8px; color:var(--text-main); text-decoration:none; font-size:13px; font-weight:700; background:var(--bg-card); }
 .vcd-back:hover { border-color:var(--primary-color); color:var(--primary-color); }
+.vcd-project-title { min-width:0; min-height:42px; display:flex; align-items:center; justify-content:center; margin:0; padding:6px 16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:var(--text-main); font-size:20px; font-weight:900; line-height:1.25; text-align:center; overflow-wrap:anywhere; }
 .vcd-top-card { position:sticky; top:var(--header-h, 56px); z-index:30; margin-bottom:16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:14px 16px; box-shadow:0 8px 24px rgba(15,23,42,.10); }
 .vcd-top-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
 .vcd-count-wrap { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -33,9 +35,6 @@
 .vcd-panel { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
 .vcd-input-panel { position:sticky; top:calc(var(--header-h, 56px) + 128px); max-height:calc(100vh - var(--header-h, 56px) - 144px); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
 .vcd-title { margin:0 0 12px; font-size:15px; font-weight:900; color:var(--text-main); }
-.vcd-kv { display:grid; gap:10px; }
-.vcd-kv dt { font-size:12px; color:#64748b; font-weight:800; }
-.vcd-kv dd { margin:3px 0 0; font-size:13px; color:var(--text-main); overflow-wrap:anywhere; }
 .vcd-input-card { display:grid; gap:12px; padding:12px; margin-bottom:14px; border:1px solid rgba(14,165,233,.28); border-radius:8px; background:rgba(14,165,233,.05); }
 .vcd-product-title { font-size:14px; line-height:1.45; font-weight:900; color:var(--text-main); overflow-wrap:anywhere; }
 .vcd-link-row { display:grid; grid-template-columns:minmax(0, 1fr); gap:8px; }
@@ -133,6 +132,8 @@
   .vcd-card-timer { margin-left:0; }
 }
 @media (max-width:720px) {
+  .vcd-project-heading { grid-template-columns:1fr; }
+  .vcd-project-title { justify-content:flex-start; text-align:left; }
   .vcd-top-actions { align-items:stretch; flex-direction:column; }
   .vcd-progress-steps, .vcd-field-grid { grid-template-columns:1fr; }
   .vcd-cover-results-grid { grid-template-columns:minmax(0, 280px); justify-content:center; }
@@ -140,7 +141,11 @@
 {% endblock %}
 
 {% block content %}
-<a class="vcd-back" href="/video-cover">&lt; 返回项目列表</a>
+{% set detail_project_name = state.get('display_name') or project.display_name or project.original_filename or task_id %}
+<div class="vcd-project-heading">
+  <a class="vcd-back" href="/video-cover">&lt; 返回项目列表</a>
+  <h1 class="vcd-project-title">{{ detail_project_name }}</h1>
+</div>
 
 <section class="vcd-top-card" id="vcdTopCard">
   <div class="vcd-top-actions">
@@ -173,7 +178,7 @@
 
 {% set result = state.get('result') or {} %}
 {% set product = state.get('product') or result.get('product') or {} %}
-{% set product_title = product.get('title') or state.get('display_name') or project.display_name or project.original_filename or task_id %}
+{% set product_title = product.get('title') or detail_project_name %}
 {% set product_url = product.get('product_url') or state.get('product_url') %}
 {% set product_image_src = url_for('video_cover.product_image', task_id=task_id) if product.get('product_image_path') else product.get('main_image_url') %}
 
@@ -196,24 +201,6 @@
         <video class="vcd-source-video" src="{{ url_for('video_cover.source_video', task_id=task_id) }}" controls preload="metadata" playsinline></video>
       </div>
     </section>
-    <dl class="vcd-kv">
-      <div>
-        <dt>项目名</dt>
-        <dd>{{ state.get('display_name') or project.display_name or project.original_filename or task_id }}</dd>
-      </div>
-      <div>
-        <dt>商品链接</dt>
-        <dd><a href="{{ state.get('product_url') }}" target="_blank" rel="noopener noreferrer">{{ state.get('product_url') }}</a></dd>
-      </div>
-      <div>
-        <dt>视频文件</dt>
-        <dd>{{ state.get('video_filename') or project.original_filename }}</dd>
-      </div>
-      <div>
-        <dt>生成张数</dt>
-        <dd><span data-current-image-count>{{ state.get('image_count') or 4 }}</span> 张</dd>
-      </div>
-    </dl>
   </aside>
 
   <main class="vcd-cards" id="vcdCards">
@@ -534,7 +521,8 @@
   function render() {
     const steps = currentState.steps || {};
     const messages = currentState.step_messages || {};
-    document.querySelector('[data-current-image-count]').textContent = currentState.image_count || 4;
+    const currentImageCount = document.querySelector('[data-current-image-count]');
+    if (currentImageCount) currentImageCount.textContent = currentState.image_count || 4;
     STEP_ORDER.forEach((step) => {
       const status = steps[step] || 'pending';
       const displayStatus = visualStatus(status);
