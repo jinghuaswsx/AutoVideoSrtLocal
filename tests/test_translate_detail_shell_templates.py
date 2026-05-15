@@ -350,12 +350,16 @@ def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     assert "ffmpeg_tempo_align" in script
     assert "final_extra_expand_start" in script
     assert "final_extra_expand_result" in script
+    assert "final_extra_expand_attempt" in script
+    assert "final_extra_expand_selected" in script
     assert "final_clip_fallback" in script
     assert "语句重新翻译" in script
     assert "音频重生成" in script
     assert "FFmpeg 对齐" in script
     assert "超长截断" in script
     assert "二次扩写" in script
+    assert "二次扩写候选" in script
+    assert "未采用" in script
     assert "rewrite_skip_reason" in script
     assert "final_compose_summary" in script
     assert "最终合成说明" in script

@@ -3657,7 +3657,7 @@
     };
     const chips = [];
     if (extraAttempted) {
-      chips.push(extraResult === "aligned" ? "二次扩写" : "二次扩写未收敛");
+      chips.push(extraResult === "not_selected" ? "二次扩写未采用" : (extraResult === "aligned" ? "二次扩写" : "二次扩写未收敛"));
     }
     if (labels[action]) chips.push(labels[action]);
     return chips.map(label => `<span class="semantic-coverage-chip warning">${escapeHtml(label)}</span>`).join("");
@@ -3675,7 +3675,25 @@
       const beforeText = sentence.final_extra_expand_before_text || debug.final_extra_expand_before_text || "";
       const afterText = sentence.final_extra_expand_after_text || debug.final_extra_expand_after_text || "";
       const result = sentence.final_extra_expand_result || debug.final_extra_expand_result || "";
-      details.push(`<div class="duration-round-meta warning">二次扩写：${escapeHtml(result || "--")}${beforeText ? ` · 扩写前：${escapeHtml(beforeText)}` : ""}${afterText ? ` · 扩写后：${escapeHtml(afterText)}` : ""}</div>`);
+      const selectedRaw = sentence.final_extra_expand_selected ?? debug.final_extra_expand_selected;
+      const selected = selectedRaw === true || selectedRaw === "true";
+      const target = numberOrNull(sentence.final_extra_expand_target_duration ?? debug.final_extra_expand_target_duration ?? sentence.target_duration ?? debug.target_duration);
+      const duration = numberOrNull(sentence.final_extra_expand_tts_duration ?? debug.final_extra_expand_tts_duration);
+      const delta = numberOrNull(sentence.final_extra_expand_delta_pct ?? debug.final_extra_expand_delta_pct);
+      const computedDelta = delta != null
+        ? delta
+        : (target && duration != null ? ((duration - target) / target) * 100 : null);
+      const status = sentence.final_extra_expand_status || debug.final_extra_expand_status || "";
+      const selectedLabel = selected ? "采用" : "未采用";
+      const metrics = [
+        `结果 ${result || "--"}`,
+        `候选 ${selectedLabel}`,
+        status ? `状态 ${status}` : "",
+        `目标 ${formatAvDuration(target)}`,
+        `当前 ${formatAvDuration(duration)}`,
+        `偏差 ${formatAvDelta(computedDelta)}`,
+      ].filter(Boolean).join(" · ");
+      details.push(`<div class="duration-round-meta warning">二次扩写候选：${escapeHtml(metrics)}${beforeText ? ` · 扩写前：${escapeHtml(beforeText)}` : ""}${afterText ? ` · 扩写后：${escapeHtml(afterText)}` : ""}</div>`);
     }
     if (action === "ffmpeg_tempo_align") {
       details.push(`<div class="duration-round-meta">FFmpeg 对齐：${escapeHtml(formatAvDuration(pre))} → ${escapeHtml(formatAvDuration(post))} · atempo=${escapeHtml(ratio != null ? ratio.toFixed(4) : "--")}</div>`);
@@ -4057,8 +4075,31 @@
   }
 
   function normalizeAvAttempts(sentence, debug) {
-    const attempts = Array.isArray(sentence?.attempts) ? sentence.attempts : (Array.isArray(debug?.attempts) ? debug.attempts : []);
-    return attempts.filter(Boolean);
+    const attempts = (Array.isArray(sentence?.attempts) ? sentence.attempts : (Array.isArray(debug?.attempts) ? debug.attempts : [])).filter(Boolean);
+    const extraAttempt = sentence?.final_extra_expand_attempt || debug?.final_extra_expand_attempt || null;
+    const extraAttempted = Boolean(sentence?.final_extra_expand_attempted || debug?.final_extra_expand_attempted);
+    if (extraAttempt && !attempts.some(item => item && item.final_extra_expand)) {
+      attempts.push(extraAttempt);
+    } else if (extraAttempted && !attempts.some(item => item && item.final_extra_expand)) {
+      const target = sentence?.final_extra_expand_target_duration ?? debug?.final_extra_expand_target_duration ?? sentence?.target_duration ?? debug?.target_duration;
+      const duration = sentence?.final_extra_expand_tts_duration ?? debug?.final_extra_expand_tts_duration;
+      const selected = sentence?.final_extra_expand_selected ?? debug?.final_extra_expand_selected;
+      attempts.push({
+        round: 999,
+        action: "expand",
+        before_text: sentence?.final_extra_expand_before_text || debug?.final_extra_expand_before_text || "",
+        after_text: sentence?.final_extra_expand_after_text || debug?.final_extra_expand_after_text || "",
+        target_duration: target,
+        tts_duration: duration,
+        duration_ratio: sentence?.final_extra_expand_duration_ratio ?? debug?.final_extra_expand_duration_ratio,
+        delta_pct: sentence?.final_extra_expand_delta_pct ?? debug?.final_extra_expand_delta_pct,
+        status: sentence?.final_extra_expand_status || debug?.final_extra_expand_status || "",
+        reason: sentence?.final_extra_expand_reason || debug?.final_extra_expand_reason || "",
+        selected: selected === true || selected === "true",
+        final_extra_expand: true,
+      });
+    }
+    return attempts;
   }
 
   function avAttemptCount(sentence, debug, attempts, fieldName, attemptFieldName) {
@@ -4093,6 +4134,7 @@
   function renderAvAttemptsDetail(attempts) {
     const rows = attempts.map((attempt, index) => {
       const round = attempt.round ?? attempt.rewrite_round ?? index + 1;
+      const isFinalExtra = Boolean(attempt.final_extra_expand);
       const action = attempt.action || attempt.operation || "";
       const status = attempt.status || "";
       const reason = attempt.reason || "";
@@ -4125,6 +4167,7 @@
       const resultMeta = [
         status ? `状态 ${status}` : "",
         reason ? `原因 ${reason}` : "",
+        isFinalExtra ? (selected ? "二次扩写候选采用" : "二次扩写候选未采用") : "",
         selected ? "最佳候选" : "",
       ].filter(Boolean).join(" · ");
       const semanticHtml = renderSemanticCoverageChip(sentenceSemanticCoverageState(attempt, {}), { compact: false });
@@ -4132,7 +4175,8 @@
       return `
         <tr class="${selected ? "is-selected" : ""}">
           <td class="av-attempt-round">
-            <strong>R${escapeHtml(round)}</strong>
+            <strong>${isFinalExtra ? "二次" : `R${escapeHtml(round)}`}</strong>
+            ${isFinalExtra ? '<span class="av-attempt-pill">二次扩写候选</span>' : ""}
             ${selected ? '<span class="av-attempt-pill">最佳候选</span>' : ""}
           </td>
           <td>

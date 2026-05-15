@@ -603,11 +603,76 @@ def test_reconcile_duration_final_short_extra_expand_does_not_slow_with_ffmpeg(m
     assert sentence["final_fallback_action"] == "extra_expand_failed"
     assert sentence["final_extra_expand_attempted"] is True
     assert sentence["final_extra_expand_result"] == "still_short"
+    assert sentence["final_extra_expand_selected"] is True
     assert sentence["final_extra_expand_before_text"] == "Candidate 2"
     assert sentence["final_extra_expand_after_text"] == "Final expanded candidate"
+    assert sentence["final_extra_expand_tts_duration"] == pytest.approx(4.7)
+    assert sentence["final_extra_expand_duration_ratio"] == pytest.approx(0.94)
     assert [call["direction"] for call in rewrite_calls] == ["expand", "expand", "expand"]
     assert rewrite_calls[-1]["attempt_number"] == 999
     assert align_calls == []
+
+
+def test_reconcile_duration_final_extra_expand_reverts_when_candidate_is_worse(monkeypatch):
+    durations = iter([4.1, 4.63, 6.15])
+    rewrite_calls = []
+
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        if kwargs["attempt_number"] == 999:
+            return "Expanded but much too long"
+        return f"Candidate {kwargs['attempt_number']}"
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.generate_segment_audio",
+        lambda text, voice_id, output_path, **kwargs: output_path,
+    )
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (20, 30),
+                    "text": "Short",
+                    "est_chars": 5,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 4.0}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+        max_rewrite_rounds=2,
+    )
+
+    sentence = result[0]
+    assert sentence["text"] == "Candidate 2"
+    assert sentence["tts_duration"] == pytest.approx(4.63)
+    assert sentence["duration_ratio"] == pytest.approx(4.63 / 5.0)
+    assert sentence["status"] == "warning_short"
+    assert sentence["selected_attempt_round"] == 2
+    assert sentence["attempts"][1]["selected"] is True
+    assert sentence["final_fallback_action"] == "extra_expand_failed"
+    assert sentence["final_fallback_reason"] == "short_after_attempts"
+    assert sentence["final_extra_expand_attempted"] is True
+    assert sentence["final_extra_expand_result"] == "not_selected"
+    assert sentence["final_extra_expand_selected"] is False
+    assert sentence["final_extra_expand_before_text"] == "Candidate 2"
+    assert sentence["final_extra_expand_after_text"] == "Expanded but much too long"
+    assert sentence["final_extra_expand_tts_duration"] == pytest.approx(6.15)
+    assert sentence["final_extra_expand_duration_ratio"] == pytest.approx(1.23)
+    assert sentence["final_extra_expand_status"] == "needs_rewrite"
+    assert sentence["best_effort_reason"] == "final_extra_expand_candidate_not_selected"
+    assert [call["attempt_number"] for call in rewrite_calls] == [1, 2, 999]
 
 
 def test_reconcile_duration_final_short_extra_expand_failure_does_not_loop(monkeypatch):

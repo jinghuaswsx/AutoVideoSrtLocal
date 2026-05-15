@@ -272,6 +272,16 @@ def _build_av_tts_segments(sentences: list[dict]) -> list[dict]:
                 "ffmpeg_tempo_post_duration": sentence.get("ffmpeg_tempo_post_duration"),
                 "final_extra_expand_attempted": bool(sentence.get("final_extra_expand_attempted")),
                 "final_extra_expand_result": sentence.get("final_extra_expand_result"),
+                "final_extra_expand_before_text": sentence.get("final_extra_expand_before_text"),
+                "final_extra_expand_after_text": sentence.get("final_extra_expand_after_text"),
+                "final_extra_expand_selected": sentence.get("final_extra_expand_selected"),
+                "final_extra_expand_tts_duration": sentence.get("final_extra_expand_tts_duration"),
+                "final_extra_expand_target_duration": sentence.get("final_extra_expand_target_duration"),
+                "final_extra_expand_duration_ratio": sentence.get("final_extra_expand_duration_ratio"),
+                "final_extra_expand_delta_pct": sentence.get("final_extra_expand_delta_pct"),
+                "final_extra_expand_status": sentence.get("final_extra_expand_status"),
+                "final_extra_expand_reason": sentence.get("final_extra_expand_reason"),
+                "final_extra_expand_attempt": sentence.get("final_extra_expand_attempt"),
             }
         )
     return segments

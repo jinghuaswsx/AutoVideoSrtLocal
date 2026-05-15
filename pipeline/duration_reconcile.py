@@ -128,6 +128,66 @@ def _apply_candidate(current: dict, candidate: dict) -> None:
         current["semantic_repair_attempts"] = int(candidate.get("semantic_repair_attempts") or 0)
 
 
+def _final_extra_expand_attempt_record(
+    *,
+    current: dict,
+    before_text: str,
+    after_text: str,
+    status: str,
+    selected: bool,
+) -> dict:
+    target_duration = float(current.get("target_duration", 0.0) or 0.0)
+    tts_duration = float(current.get("tts_duration", 0.0) or 0.0)
+    ratio = duration_ratio(target_duration, tts_duration)
+    return {
+        "round": 999,
+        "text_attempt": current.get("text_rewrite_attempts"),
+        "tts_attempt": current.get("tts_regenerate_attempts"),
+        "temperature": current.get("active_temperature"),
+        "action": "expand",
+        "before_text": before_text,
+        "after_text": after_text,
+        "target_duration": target_duration,
+        "tts_duration": tts_duration,
+        "duration_ratio": round(ratio, 4),
+        "delta_pct": _delta_pct(target_duration, tts_duration),
+        "status": status,
+        "reason": _duration_reason(status),
+        "coverage_ok": current.get("coverage_ok", True),
+        "omitted_source_terms": list(current.get("omitted_source_terms") or []),
+        "selected": selected,
+        "final_extra_expand": True,
+    }
+
+
+def _record_final_extra_expand_candidate(
+    *,
+    current: dict,
+    before_text: str,
+    after_text: str,
+    status: str,
+    selected: bool,
+) -> None:
+    target_duration = float(current.get("target_duration", 0.0) or 0.0)
+    tts_duration = float(current.get("tts_duration", 0.0) or 0.0)
+    ratio = duration_ratio(target_duration, tts_duration)
+    current["final_extra_expand_after_text"] = after_text
+    current["final_extra_expand_tts_duration"] = tts_duration
+    current["final_extra_expand_target_duration"] = target_duration
+    current["final_extra_expand_duration_ratio"] = ratio
+    current["final_extra_expand_delta_pct"] = _delta_pct(target_duration, tts_duration)
+    current["final_extra_expand_status"] = status
+    current["final_extra_expand_reason"] = _duration_reason(status)
+    current["final_extra_expand_selected"] = selected
+    current["final_extra_expand_attempt"] = _final_extra_expand_attempt_record(
+        current=current,
+        before_text=before_text,
+        after_text=after_text,
+        status=status,
+        selected=selected,
+    )
+
+
 def _candidate_suffix(kind: str, round_number: int, attempt_number: int | None = None) -> str:
     if attempt_number is None:
         return f"{kind}_r{round_number}"
@@ -258,6 +318,14 @@ def _sentence_progress_payload(position: int, current: dict, phase: str) -> dict
         "final_extra_expand_result": current.get("final_extra_expand_result", ""),
         "final_extra_expand_before_text": current.get("final_extra_expand_before_text", ""),
         "final_extra_expand_after_text": current.get("final_extra_expand_after_text", ""),
+        "final_extra_expand_selected": current.get("final_extra_expand_selected"),
+        "final_extra_expand_tts_duration": current.get("final_extra_expand_tts_duration"),
+        "final_extra_expand_target_duration": current.get("final_extra_expand_target_duration"),
+        "final_extra_expand_duration_ratio": current.get("final_extra_expand_duration_ratio"),
+        "final_extra_expand_delta_pct": current.get("final_extra_expand_delta_pct"),
+        "final_extra_expand_status": current.get("final_extra_expand_status", ""),
+        "final_extra_expand_reason": current.get("final_extra_expand_reason", ""),
+        "final_extra_expand_attempt": current.get("final_extra_expand_attempt"),
         "attempts": list(current.get("attempts") or []),
     }
 
@@ -441,6 +509,10 @@ def _run_final_extra_expand(
     ffmpeg_tempo_enabled: bool,
 ) -> None:
     before_text = current.get("text", "")
+    before_candidate = _candidate_from_current(
+        current,
+        round_number=int(current.get("selected_attempt_round", 0) or 0),
+    )
     current["final_extra_expand_attempted"] = True
     current["final_fallback_action"] = "extra_expand"
     current["final_fallback_reason"] = "short_after_attempts"
@@ -490,7 +562,6 @@ def _run_final_extra_expand(
 
     current["text"] = new_text
     current["est_chars"] = len(new_text)
-    current["final_extra_expand_after_text"] = new_text
     current["tts_path"], current_duration = _regenerate_segment(
         sentence=current,
         voice_id=voice_id,
@@ -505,6 +576,29 @@ def _run_final_extra_expand(
         status = "needs_semantic_repair"
     current["status"] = status
     current["speed"] = speed
+    extra_candidate = _candidate_from_current(current, round_number=999)
+
+    select_extra_candidate = _candidate_rank(extra_candidate) <= _candidate_rank(before_candidate)
+    _record_final_extra_expand_candidate(
+        current=current,
+        before_text=before_text,
+        after_text=new_text,
+        status=status,
+        selected=select_extra_candidate,
+    )
+
+    if not select_extra_candidate:
+        _apply_candidate(current, before_candidate)
+        _mark_selected_attempt(current["attempts"], current["selected_attempt_round"])
+        current["status"] = _warning_status_for_current(current)
+        current["speed"] = 1.0
+        current["final_fallback_action"] = "extra_expand_failed"
+        current["final_fallback_reason"] = "short_after_attempts"
+        current["final_extra_expand_result"] = "not_selected"
+        current["best_effort"] = True
+        current["best_effort_reason"] = "final_extra_expand_candidate_not_selected"
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
+        return
 
     if current["status"] == "ok" and not _semantic_coverage_issue(current):
         current["final_extra_expand_result"] = "accepted"
