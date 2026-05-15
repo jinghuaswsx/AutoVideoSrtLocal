@@ -94,7 +94,7 @@ def test_consecutive_failure_count_counts_back_until_success(monkeypatch):
     assert streak == 3
 
 
-def test_should_dispatch_failure_first_failure_after_success(monkeypatch):
+def test_should_dispatch_failure_suppresses_first_failure_after_success(monkeypatch):
     from appcore import feishu_alerts
 
     rows = [
@@ -106,6 +106,22 @@ def test_should_dispatch_failure_first_failure_after_success(monkeypatch):
 
     should_send, streak = feishu_alerts.should_dispatch_failure(
         "roi_hourly_sync", current_run_id=11
+    )
+    assert (should_send, streak) == (False, 1)
+
+
+def test_should_dispatch_failure_allows_first_failure_when_sample_gate_passed(monkeypatch):
+    from appcore import feishu_alerts
+
+    rows = [
+        {"id": 11, "status": "failed"},
+        {"id": 10, "status": "success"},
+    ]
+    monkeypatch.setattr(feishu_alerts, "_query_recent_run_statuses", lambda task_code: rows)
+    _stub_settings(monkeypatch)
+
+    should_send, streak = feishu_alerts.should_dispatch_failure(
+        "roi_hourly_sync", current_run_id=11, immediate=True
     )
     assert (should_send, streak) == (True, 1)
 
@@ -132,28 +148,38 @@ def test_should_dispatch_failure_throttles_until_repeat_threshold(monkeypatch):
     assert (should_send, streak) == (False, 3)
 
 
-def test_should_dispatch_failure_fires_at_configured_repeat(monkeypatch):
+def test_should_dispatch_failure_fires_at_twentieth_consecutive_failure(monkeypatch):
     from appcore import feishu_alerts
 
-    # Streak of 5 with repeat_every=5 → send.
     monkeypatch.setattr(
         feishu_alerts,
         "_query_recent_run_statuses",
-        lambda task_code: [
-            {"id": 15, "status": "failed"},
-            {"id": 14, "status": "failed"},
-            {"id": 13, "status": "failed"},
-            {"id": 12, "status": "failed"},
-            {"id": 11, "status": "failed"},
-            {"id": 10, "status": "success"},
-        ],
+        lambda task_code: [{"id": run_id, "status": "failed"} for run_id in range(30, 10, -1)]
+        + [{"id": 10, "status": "success"}],
     )
     _stub_settings(monkeypatch, **{"feishu_alerts.failure_repeat_every": "5"})
 
     should_send, streak = feishu_alerts.should_dispatch_failure(
-        "roi_hourly_sync", current_run_id=15
+        "roi_hourly_sync", current_run_id=30
     )
-    assert (should_send, streak) == (True, 5)
+    assert (should_send, streak) == (True, 20)
+
+
+def test_should_dispatch_failure_floors_repeat_interval_to_twenty(monkeypatch):
+    from appcore import feishu_alerts
+
+    monkeypatch.setattr(
+        feishu_alerts,
+        "_query_recent_run_statuses",
+        lambda task_code: [{"id": run_id, "status": "failed"} for run_id in range(35, 10, -1)]
+        + [{"id": 10, "status": "success"}],
+    )
+    _stub_settings(monkeypatch, **{"feishu_alerts.failure_repeat_every": "5"})
+
+    should_send, streak = feishu_alerts.should_dispatch_failure(
+        "roi_hourly_sync", current_run_id=35
+    )
+    assert (should_send, streak) == (False, 25)
 
 
 def test_prior_consecutive_failures_before_run_excludes_current(monkeypatch):
