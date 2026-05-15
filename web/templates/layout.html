@@ -738,6 +738,9 @@
           <a href="{{ url_for('security_audit.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/security-audit') %}class="active"{% endif %}>
             <span class="nav-icon">SA</span> 系统安全审计
           </a>
+          <a href="{{ url_for('tos_file_management.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/tos-files') %}class="active"{% endif %}>
+            <span class="nav-icon">🗄️</span> TOS文件管理
+          </a>
           {% endif %}
         </div>
       </details>

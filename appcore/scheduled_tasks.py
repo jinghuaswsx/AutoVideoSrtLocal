@@ -496,6 +496,20 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },
+    "tos_file_inventory_scan": {
+        "code": "tos_file_inventory_scan",
+        "name": "TOS文件管理资产扫描",
+        "description": "扫描受保护业务文件并更新 TOS 文件映射表；默认手动触发。",
+        "schedule": "手动触发",
+        "source_type": "manual_ops",
+        "source_label": "管理后台手动触发",
+        "source_ref": "/admin/tos-files",
+        "runner": "appcore.tos_file_management.run_inventory_scan",
+        "deployment": "管理后台手动触发",
+        "log_table": "tos_file_scan_runs",
+        "default_enabled": False,
+        "control_strategy": "readonly",
+    },
 }
 
 _RUNS_TABLE_SQL = """
