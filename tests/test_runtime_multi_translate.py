@@ -152,18 +152,24 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     assert debug_ref["use_case"] == "video_translate.localize"
 
 
-def test_multi_resolves_dedicated_localization_modules_for_de_fr():
+def test_multi_resolves_dedicated_localization_modules_for_de_fr_es_it():
     runner = _make_runner()
 
     de_adapter = runner._get_language_adapter({"target_lang": "de"})
     fr_adapter = runner._get_language_adapter({"target_lang": "fr"})
     es_adapter = runner._get_language_adapter({"target_lang": "es"})
+    it_adapter = runner._get_language_adapter({"target_lang": "it"})
+    pt_adapter = runner._get_language_adapter({"target_lang": "pt"})
 
     assert de_adapter.__name__ == "pipeline.localization_de"
     assert fr_adapter.__name__ == "pipeline.localization_fr"
-    assert es_adapter.__name__ == "multi_translate.localization.es"
+    assert es_adapter.__name__ == "pipeline.localization_es"
+    assert it_adapter.__name__ == "pipeline.localization_it"
+    assert pt_adapter.__name__ == "multi_translate.localization.pt"
     assert de_adapter.build_tts_segments is not None
     assert fr_adapter.build_tts_segments is not None
+    assert es_adapter.build_tts_segments is not None
+    assert it_adapter.build_tts_segments is not None
 
 
 def test_de_fr_adapters_keep_admin_prompt_resolver(monkeypatch):
@@ -281,14 +287,16 @@ def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, 
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
     monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 2.0)
     monkeypatch.setattr("appcore.runtime.ai_billing.log_request", lambda **kwargs: None)
+    prompt_config = {
+        "provider": "openrouter",
+        "model": "gpt",
+        "content": "Prepare Spanish text for ElevenLabs TTS.",
+    }
     monkeypatch.setattr(
         "appcore.runtime_multi.resolve_prompt_config",
-        lambda slot, lang: {
-            "provider": "openrouter",
-            "model": "gpt",
-            "content": "Prepare Spanish text for ElevenLabs TTS.",
-        },
+        lambda slot, lang: prompt_config,
     )
+    monkeypatch.setattr("pipeline.localization_es.resolve_prompt_config", lambda slot, lang: prompt_config)
 
     runner._step_tts(task_id, str(tmp_path))
 
