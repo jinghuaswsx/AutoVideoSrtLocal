@@ -710,6 +710,18 @@ def reset_stale_running_video_copyability_analyses(
     )
 
 
+def reset_running_video_copyability_analyses(*, execute_fn: ExecuteFn = execute) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET status='pending',
+            last_error='video analysis queue superseded by a new run'
+        WHERE status='running'
+        """,
+        (),
+    )
+
+
 def list_top_video_copyability_analyses(
     *,
     limit: int = 50,

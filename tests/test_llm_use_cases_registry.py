@@ -172,9 +172,9 @@ def test_meta_hot_posts_europe_fit_use_case_is_registered_for_billing():
     uc = USE_CASES["meta_hot_posts.europe_fit"]
 
     assert uc["module"] == "xuanpin"
-    assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3-flash-preview"
-    assert uc["usage_log_service"] == "openrouter"
+    assert uc["default_provider"] == "gemini_vertex_adc"
+    assert uc["default_model"] == "gemini-3.1-pro-preview"
+    assert uc["usage_log_service"] == "gemini_vertex_adc"
     assert uc["units_type"] == "tokens"
 
 
@@ -182,9 +182,9 @@ def test_meta_hot_posts_video_copyability_use_case_is_registered_for_billing():
     uc = USE_CASES["meta_hot_posts.video_copyability"]
 
     assert uc["module"] == "xuanpin"
-    assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3-flash-preview"
-    assert uc["usage_log_service"] == "openrouter"
+    assert uc["default_provider"] == "gemini_vertex_adc"
+    assert uc["default_model"] == "gemini-3.1-pro-preview"
+    assert uc["usage_log_service"] == "gemini_vertex_adc"
     assert uc["units_type"] == "tokens"
 
 

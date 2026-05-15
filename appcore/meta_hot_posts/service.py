@@ -347,9 +347,9 @@ def build_europe_fit_response(payload: Mapping[str, Any] | None = None) -> MetaH
 
     payload = payload or {}
     try:
-        limit = int(payload.get("limit") or scheduler.SCHEDULED_EUROPE_FIT_LIMIT)
+        limit = int(payload.get("limit") or scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT)
     except (TypeError, ValueError):
-        limit = scheduler.SCHEDULED_EUROPE_FIT_LIMIT
+        limit = scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT
     try:
         user_id = int(payload.get("user_id") or 0) or None
     except (TypeError, ValueError):
@@ -357,8 +357,8 @@ def build_europe_fit_response(payload: Mapping[str, Any] | None = None) -> MetaH
     return MetaHotPostsResponse(
         {
             "ok": True,
-            "result": scheduler.europe_fit_tick_once(
-                limit=limit,
+            "result": scheduler.video_analysis_queue_tick_once(
+                limit=max(1, min(scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, limit)),
                 user_id=user_id,
             ),
         },
@@ -371,9 +371,9 @@ def build_video_copyability_response(payload: Mapping[str, Any] | None = None) -
 
     payload = payload or {}
     try:
-        limit = int(payload.get("limit") or scheduler.SCHEDULED_VIDEO_COPYABILITY_LIMIT)
+        limit = int(payload.get("limit") or scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT)
     except (TypeError, ValueError):
-        limit = scheduler.SCHEDULED_VIDEO_COPYABILITY_LIMIT
+        limit = scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT
     try:
         user_id = int(payload.get("user_id") or 0) or None
     except (TypeError, ValueError):
@@ -381,8 +381,8 @@ def build_video_copyability_response(payload: Mapping[str, Any] | None = None) -
     return MetaHotPostsResponse(
         {
             "ok": True,
-            "result": scheduler.video_copyability_tick_once(
-                limit=max(1, min(10, limit)),
+            "result": scheduler.video_analysis_queue_tick_once(
+                limit=max(1, min(scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, limit)),
                 user_id=user_id,
             ),
         },

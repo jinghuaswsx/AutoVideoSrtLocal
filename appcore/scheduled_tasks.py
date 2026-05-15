@@ -312,37 +312,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
-    "meta_hot_posts_europe_fit_tick": {
-        "code": "meta_hot_posts_europe_fit_tick",
-        "name": "Meta hot posts Europe fit assessment",
+    "meta_hot_posts_video_analysis_queue_tick": {
+        "code": "meta_hot_posts_video_analysis_queue_tick",
+        "name": "Meta hot posts unified video analysis queue",
         "description": (
-            "Every 10 minutes, assess up to 30 downloaded Meta hot post videos with product links "
-            "for direct reuse in European Meta ad markets through OpenRouter Gemini 3 Flash. "
-            "Videos are compressed to 480p / 15fps / 600k, and a new run takes over an old running run. "
-            "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-europe-fit-design.md"
+            "Every 10 minutes, run one unified queue for Meta hot post video analysis. "
+            "Each round processes at most 10 tasks with a 30 second delay between LLM video calls; "
+            "task_type=us_copyability runs before task_type=europe_fit, and Europe starts only after "
+            "US copyability has no remaining capacity in the round. Both modes use Vertex ADC "
+            "gemini-3.1-pro-preview. A new round takes over any previous running queue run and resets "
+            "running US/Europe rows. Docs-anchor: "
+            "docs/superpowers/specs/2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md"
         ),
         "schedule": "Every 10 minutes",
         "source_type": "apscheduler",
         "source_label": "Web process APScheduler",
-        "source_ref": "meta_hot_posts_europe_fit_tick",
-        "runner": "appcore.meta_hot_posts.scheduler.europe_fit_tick_once",
-        "deployment": "Registered on Web service startup",
-        "log_table": "scheduled_task_runs",
-    },
-    "meta_hot_posts_video_copyability_tick": {
-        "code": "meta_hot_posts_video_copyability_tick",
-        "name": "Meta hot posts video copyability analysis",
-        "description": (
-            "每 10 分钟串行分析最多 20 条已本地化 Meta 热帖视频，任务之间间隔 20 秒；先压缩到 480p / 15fps / 600k，"
-            "再通过 OpenRouter 通道 Gemini 3 Flash 判断是否适合直接抄作业投放美国 Meta 市场广告；"
-            "结果写入 meta_hot_post_video_copyability_analyses，并支撑 Meta 热帖页面的「美国Top50」。"
-            "Docs-anchor: docs/superpowers/specs/2026-05-14-meta-hot-posts-video-copyability-analysis-design.md"
-        ),
-        "schedule": "Every 10 minutes",
-        "source_type": "apscheduler",
-        "source_label": "Web process APScheduler",
-        "source_ref": "meta_hot_posts_video_copyability_tick",
-        "runner": "appcore.meta_hot_posts.scheduler.video_copyability_tick_once",
+        "source_ref": "meta_hot_posts_video_analysis_queue_tick",
+        "runner": "appcore.meta_hot_posts.scheduler.video_analysis_queue_tick_once",
         "deployment": "Registered on Web service startup",
         "log_table": "scheduled_task_runs",
     },

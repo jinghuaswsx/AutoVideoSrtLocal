@@ -473,12 +473,12 @@ async function localizeMetaHotPostVideos() {
 }
 async function assessEuropeFitMaterials() {
   qs('mhStatus').textContent = '欧洲评估中...';
-  await fetch('/xuanpin/api/meta-hot-posts/europe-fit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30})});
+  await fetch('/xuanpin/api/meta-hot-posts/europe-fit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:10})});
   loadEuropeTopMaterials();
 }
 async function analyzeMetaHotPostVideos() {
   qs('mhStatus').textContent = 'Analyzing video...';
-  await fetch('/xuanpin/api/meta-hot-posts/analyze-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:1})});
+  await fetch('/xuanpin/api/meta-hot-posts/analyze-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:10})});
   await loadUsTopMaterials();
 }
 async function showVideoCopyabilityTop50() {

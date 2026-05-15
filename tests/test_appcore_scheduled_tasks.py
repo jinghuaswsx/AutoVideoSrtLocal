@@ -184,12 +184,13 @@ def test_failure_alert_policy_suppresses_single_failed_run_without_samples(monke
     assert not scheduled_tasks._should_dispatch_failure_alert_for_run(
         {
             "id": 19810,
-            "task_code": "meta_hot_posts_video_copyability_tick",
+            "task_code": "meta_hot_posts_video_analysis_queue_tick",
             "status": "failed",
             "summary": {
-                "stale_run_replaced": 19810,
+                "running_run_replaced": 19810,
                 "running_age_seconds": 4094,
-                "stale_video_copyability_reset": 1,
+                "running_us_copyability_reset": 1,
+                "running_europe_fit_reset": 0,
             },
         }
     )
@@ -560,15 +561,16 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert video_task["log_table"] == "scheduled_task_runs"
     assert "2026-05-14-meta-hot-posts-video-localization-design.md" in video_task["description"]
 
-    copyability_task = definitions["meta_hot_posts_video_copyability_tick"]
-    assert copyability_task["schedule"]
-    assert copyability_task["source_type"] == "apscheduler"
-    assert copyability_task["runner"] == "appcore.meta_hot_posts.scheduler.video_copyability_tick_once"
-    assert copyability_task["log_table"] == "scheduled_task_runs"
-    assert "20 条" in copyability_task["description"]
-    assert "20 秒" in copyability_task["description"]
-    assert "OpenRouter" in copyability_task["description"]
-    assert "2026-05-14-meta-hot-posts-video-copyability-analysis-design.md" in copyability_task["description"]
+    queue_task = definitions["meta_hot_posts_video_analysis_queue_tick"]
+    assert queue_task["schedule"] == "Every 10 minutes"
+    assert queue_task["source_type"] == "apscheduler"
+    assert queue_task["runner"] == "appcore.meta_hot_posts.scheduler.video_analysis_queue_tick_once"
+    assert queue_task["log_table"] == "scheduled_task_runs"
+    assert "10" in queue_task["description"]
+    assert "30" in queue_task["description"]
+    assert "Vertex ADC" in queue_task["description"]
+    assert "gemini-3.1-pro-preview" in queue_task["description"]
+    assert "2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md" in queue_task["description"]
 
     translation_task = definitions["meta_hot_posts_translate_messages_tick"]
     assert translation_task["schedule"] == "每 10 分钟"
@@ -578,14 +580,8 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert "50 条" in translation_task["description"]
     assert "中文" in translation_task["description"]
 
-    europe_task = definitions["meta_hot_posts_europe_fit_tick"]
-    assert europe_task["schedule"] == "Every 10 minutes"
-    assert europe_task["source_type"] == "apscheduler"
-    assert europe_task["runner"] == "appcore.meta_hot_posts.scheduler.europe_fit_tick_once"
-    assert europe_task["log_table"] == "scheduled_task_runs"
-    assert "30" in europe_task["description"]
-    assert "OpenRouter" in europe_task["description"]
-    assert "2026-05-14-meta-hot-posts-europe-fit-design.md" in europe_task["description"]
+    assert "meta_hot_posts_video_copyability_tick" not in definitions
+    assert "meta_hot_posts_europe_fit_tick" not in definitions
 
 
 def test_task_definitions_include_server_and_app_timers():
