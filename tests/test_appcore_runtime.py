@@ -4,6 +4,7 @@ All pipeline steps are mocked — runtime logic only.
 """
 from __future__ import annotations
 
+import copy
 import json
 from unittest.mock import MagicMock, patch
 
@@ -34,6 +35,26 @@ def test_set_step_publishes_step_update_event():
         for e in events
     )
     assert task_state.get(task_id)["steps"]["asr"] == "running"
+
+
+def test_set_step_persists_status_message_and_model_tag_atomically(monkeypatch):
+    task_id = "test_set_step_atomic"
+    _make_task(task_id)
+    runner, _events = _make_runner()
+    snapshots: list[dict] = []
+
+    def capture_sync(sync_task_id: str) -> None:
+        snapshots.append(copy.deepcopy(task_state._tasks[sync_task_id]))
+
+    monkeypatch.setattr(task_state, "_sync_task_to_db", capture_sync)
+
+    runner._set_step(task_id, "translate", "done", "translation complete", model_tag="provider / model")
+
+    assert len(snapshots) == 1
+    persisted = snapshots[0]
+    assert persisted["steps"]["translate"] == "done"
+    assert persisted["step_messages"]["translate"] == "translation complete"
+    assert persisted["step_model_tags"]["translate"] == "provider / model"
 
 
 def test_emit_substep_msg_publishes_event_and_persists_message(monkeypatch):
@@ -121,6 +142,53 @@ def test_run_calls_all_steps_in_order():
         runner._run(task_id)
 
     assert call_order == ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+
+
+def test_run_reconciles_stale_running_steps_when_pipeline_finishes():
+    task_id = "test_run_final_reconcile"
+    _make_task(task_id)
+    calls: list[str] = []
+
+    class FinalizingRunner(PipelineRunner):
+        def _get_pipeline_steps(self, task_id, video_path, task_dir):
+            return [
+                ("translate", lambda: self._step_translate(task_id)),
+                ("tts", lambda: self._step_tts(task_id)),
+                ("subtitle", lambda: self._step_subtitle(task_id)),
+                ("export", lambda: self._step_export(task_id)),
+            ]
+
+        def _step_translate(self, task_id):
+            calls.append("translate")
+            self._set_step(task_id, "translate", "running", "translation complete")
+
+        def _step_tts(self, task_id):
+            calls.append("tts")
+            self._set_step(task_id, "tts", "done", "tts complete")
+
+        def _step_subtitle(self, task_id):
+            calls.append("subtitle")
+            self._set_step(task_id, "subtitle", "running", "subtitle complete")
+
+        def _step_export(self, task_id):
+            calls.append("export")
+            self._set_step(task_id, "export", "done", "export complete")
+            task_state.update(task_id, status="done", error="")
+
+    runner = FinalizingRunner(bus=EventBus())
+
+    with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
+        runner._run(task_id, start_step="translate")
+
+    saved = task_state.get(task_id)
+    assert calls == ["translate", "tts", "subtitle", "export"]
+    assert saved["status"] == "done"
+    assert saved["steps"]["translate"] == "done"
+    assert saved["steps"]["tts"] == "done"
+    assert saved["steps"]["subtitle"] == "done"
+    assert saved["steps"]["export"] == "done"
+    assert saved["step_messages"]["translate"] == "translation complete"
+    assert saved["step_messages"]["subtitle"] == "subtitle complete"
 
 
 def test_run_marks_error_when_start_step_is_not_in_pipeline():

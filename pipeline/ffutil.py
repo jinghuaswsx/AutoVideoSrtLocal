@@ -62,3 +62,25 @@ def extract_thumbnail(video_path: str, output_dir: str, scale: str | None = None
         return thumb_path if os.path.exists(thumb_path) else None
     except Exception:
         return None
+
+
+def extract_frame_at_timestamp(
+    video_path: str,
+    output_dir: str,
+    *,
+    timestamp: str,
+    index: int = 1,
+    scale: str | None = None,
+) -> str | None:
+    """从视频指定时间点提取 JPEG 帧。失败返回 None。"""
+    safe_index = max(1, int(index or 1))
+    frame_path = os.path.join(output_dir, f"reference_frame_{safe_index}.jpg")
+    cmd = ["ffmpeg", "-y", "-ss", str(timestamp), "-i", video_path, "-vframes", "1"]
+    if scale:
+        cmd += ["-vf", f"scale={scale}"]
+    cmd += ["-f", "image2", frame_path]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=30)
+        return frame_path if os.path.exists(frame_path) else None
+    except Exception:
+        return None

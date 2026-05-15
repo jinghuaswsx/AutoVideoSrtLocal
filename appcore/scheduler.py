@@ -36,6 +36,8 @@ def get_scheduler() -> BackgroundScheduler:
         weekly_roas_report.register(_scheduler)
         from appcore.meta_hot_posts import scheduler as meta_hot_posts_scheduler
         meta_hot_posts_scheduler.register(_scheduler)
+        from appcore import tos_file_management
+        tos_file_management.register(_scheduler)
         scheduled_tasks.apply_scheduler_controls(_scheduler)
     return _scheduler
 

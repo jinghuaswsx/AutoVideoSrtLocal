@@ -15,8 +15,6 @@ logging.basicConfig(
 sys.path.insert(0, os.path.dirname(__file__))
 
 from config import OUTPUT_DIR, UPLOAD_DIR, validate_runtime_config
-from web.app import create_app
-from web.extensions import socketio
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -34,6 +32,9 @@ from appcore import infra_credentials
 infra_credentials.sync_to_runtime()
 
 validate_runtime_config()
+
+from web.app import create_app
+from web.extensions import socketio
 
 app = create_app()
 

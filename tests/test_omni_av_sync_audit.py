@@ -174,7 +174,7 @@ def _create_task(tmp_path, *, mode="report_only", sentences=None):
     return task_id, str(video_path)
 
 
-def _create_multi_task(tmp_path, *, segments=None):
+def _create_multi_task(tmp_path, *, segments=None, source_language="en"):
     task_id = "multi-av-audit"
     video_path = tmp_path / "video.mp4"
     video_path.write_bytes(b"video")
@@ -205,7 +205,7 @@ def _create_multi_task(tmp_path, *, segments=None):
             Path(path).write_bytes(b"mp3")
     task_state.update(
         task_id,
-        source_language="en",
+        source_language=source_language,
         target_lang="de",
         script_segments=[
             {"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Grab the handle and pull."},
@@ -578,12 +578,14 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
             "json": {
                 "timeline": [{
                     "asr_index": 0,
+                    "asr_text_zh": "抓住把手并拉动。",
                     "visual_observation": "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。",
                     "sync_score": 94,
                     "diagnosis": "翻译音频与拉把手动作同步。",
                     "recommendation": "无需调整。",
                 }, {
                     "asr_index": 1,
+                    "asr_text_zh": "灯光闪烁。",
                     "visual_observation": "画面里只有灯光闪烁，没有后续动作。",
                     "sync_score": 70,
                     "diagnosis": "TTS 长于灯光闪烁画面，结尾可能拖到后续画面。",
@@ -599,6 +601,7 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
     timeline = report["audit_timeline"]
     assert [row["asr_index"] for row in timeline] == [0, 1]
     assert timeline[0]["asr_text"] == "Grab the handle and pull."
+    assert timeline[0]["asr_text_zh"] == "抓住把手并拉动。"
     assert timeline[0]["target_text"] == "Zieh am Griff."
     assert timeline[0]["visual_observation"] == "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。"
     assert timeline[0]["sync_score"] == 94
@@ -619,8 +622,12 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
     assert "不要输出问题列表" in assess_system
     assert "sync_score" in assess_system
     assert "recommendation" in assess_system
+    assert "asr_text_zh" in assess_system
     assert "issues 内每项" not in assess_system
     assert "处理建议只能" not in assess_system
+    assess_payload = json.loads(omni_av_sync_audit.llm_client.invoke_chat.call_args.kwargs["messages"][1]["content"])
+    assert assess_payload["constraints"]["include_asr_chinese_reference"] is True
+    assert assess_payload["scorecard_rows"][0]["needs_asr_text_zh"] is True
 
 
 def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_path):
@@ -729,6 +736,31 @@ def test_omni_run_builds_verified_asr_ordered_audit_timeline(monkeypatch, tmp_pa
     assert timeline[1]["verified"] is True
     assert "音频太长" in timeline[1]["problem"]
     assert "压缩这一句文案后重新生成音频" in timeline[1]["recommendation"]
+
+
+def test_scorecard_prompt_skips_asr_chinese_reference_for_chinese_source():
+    from pipeline import omni_av_sync_audit
+
+    cfg = {"av_sync_audit": "report_only", "project_type": "multi_translate"}
+    sentence = {
+        "asr_index": 0,
+        "source_text": "抓住把手并拉动。",
+        "text": "Grab the handle and pull.",
+        "start_time": 0.0,
+        "end_time": 2.0,
+    }
+
+    messages = omni_av_sync_audit._build_assess_messages(
+        {"summary": "画面中用户拉动把手。"},
+        {"source_language": "zh", "target_lang": "en"},
+        cfg,
+        [sentence],
+        [],
+    )
+
+    payload = json.loads(messages[1]["content"])
+    assert payload["constraints"]["include_asr_chinese_reference"] is False
+    assert payload["scorecard_rows"][0]["needs_asr_text_zh"] is False
 
 
 def test_multi_report_only_skips_when_normal_segments_missing(monkeypatch, tmp_path):

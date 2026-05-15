@@ -104,6 +104,22 @@ def _mark_inflight_steps_as_interrupted(state: dict) -> bool:
     return changed
 
 
+def _heal_completed_running_steps(state: dict) -> bool:
+    if state.get("status") != "done":
+        return False
+    steps = state.setdefault("steps", {})
+    changed = False
+    for step, status in list(steps.items()):
+        if step == "analysis":
+            continue
+        if status == "running":
+            steps[step] = "done"
+            changed = True
+    if changed:
+        state["error"] = ""
+    return changed
+
+
 def _has_waiting_steps(state: dict) -> bool:
     steps = state.get("steps", {}) or {}
     return any(status == "waiting" for status in steps.values())
@@ -148,6 +164,8 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
 
     steps = recovered.setdefault("steps", {})
     changed = False
+    if _heal_completed_running_steps(recovered):
+        return True, recovered, "done"
 
     if project_type == "video_creation" and steps.get("generate") == "running":
         steps["generate"] = "error"

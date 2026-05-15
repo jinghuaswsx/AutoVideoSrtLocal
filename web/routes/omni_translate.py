@@ -30,6 +30,7 @@ from web.services import omni_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.llm_debug import build_llm_debug_payload
 from web.services.omni_preset_annotation import build_plugin_config_annotation
+from web.services.translate_step_reset import build_step_resume_reset_updates
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     normalize_confirm_voice_payload,
@@ -48,6 +49,10 @@ bp = Blueprint("omni_translate", __name__)
 db_query = translation_route_store.query
 db_query_one = translation_route_store.query_one
 db_execute = translation_route_store.execute
+
+_PROJECT_STATE_COLUMNS = (
+    "id, user_id, original_filename, display_name, task_dir, state_json"
+)
 
 
 def _json_response(payload: dict, status_code: int = 200):
@@ -78,13 +83,6 @@ def _list_filter_langs() -> tuple[str, ...]:
         log.warning("[omni_translate] failed to load enabled languages for filter, falling back", exc_info=True)
         return SUPPORTED_LANGS
     return normalize_enabled_target_langs(enabled)
-
-
-def _drop_artifacts(task: dict, *steps: str) -> dict:
-    artifacts = dict(task.get("artifacts") or {})
-    for step in steps:
-        artifacts.pop(step, None)
-    return artifacts
 
 
 def _omni_pipeline_steps_for_task(
@@ -127,17 +125,6 @@ def _post_asr_step(step_names: list[str]) -> str:
     raise ValueError("omni pipeline missing post-ASR step")
 
 
-def _drop_steps_from(step_names: list[str], start_step: str) -> list[str]:
-    idx = step_names.index(start_step)
-    drop_steps = list(step_names[idx:])
-    if start_step in {"asr_clean", "asr_normalize"}:
-        drop_steps = ["asr_clean", "asr_normalize"] + [
-            step for step in drop_steps
-            if step not in {"asr_clean", "asr_normalize"}
-        ]
-    return drop_steps
-
-
 def _reset_steps_from(task_id: str, step_names: list[str], start_step: str) -> None:
     started = False
     for step in step_names:
@@ -149,26 +136,14 @@ def _reset_steps_from(task_id: str, step_names: list[str], start_step: str) -> N
 
 
 def _resume_cleanup_updates(task: dict, step_names: list[str], start_step: str) -> dict:
-    updates: dict = {
-        "artifacts": _drop_artifacts(task, *_drop_steps_from(step_names, start_step)),
-        "status": "running",
-        "error": "",
-        "current_review_step": "",
-    }
+    updates = build_step_resume_reset_updates(task, step_names, start_step)
     if start_step in {"asr_clean", "asr_normalize"}:
         source_language = (task.get("source_language") or "en").strip()
         if source_language not in ALLOWED_SOURCE_LANGUAGES:
             raise ValueError(
                 f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
             )
-        updates.update(
-            source_language=source_language,
-            user_specified_source_language=True,
-            utterances_en=None,
-            utterances_raw=None,
-            asr_normalize_artifact=None,
-            detected_source_language=None,
-        )
+        updates.update(source_language=source_language, user_specified_source_language=True)
     return updates
 
 
@@ -252,11 +227,30 @@ def _task_from_project_row(row: dict | None) -> dict:
     except Exception:
         task = {}
     if row.get("user_id") is not None:
-        task.setdefault("_user_id", row.get("user_id"))
+        task["_user_id"] = row.get("user_id")
     for key in ("id", "original_filename", "display_name", "task_dir"):
         if row.get(key) and not task.get(key):
             task[key] = row[key]
     return task
+
+
+def _fresh_viewable_project_task(task_id: str) -> dict | None:
+    try:
+        row = _query_viewable_project(task_id, _PROJECT_STATE_COLUMNS)
+    except Exception:
+        log.warning("[omni_translate] fresh project state lookup failed task=%s", task_id, exc_info=True)
+        return None
+    task = _task_from_project_row(row)
+    if not task or not _can_view_task(task):
+        return None
+    return task
+
+
+def _hydrate_task_state_cache(task_id: str, task: dict) -> None:
+    if store is not task_state:
+        return
+    with task_state._lock:
+        task_state._tasks[task_id] = copy.deepcopy(task)
 
 
 def _copy_source_video_for_duplicate(
@@ -307,6 +301,11 @@ def _can_view_task(task: dict) -> bool:
 
 
 def _get_viewable_task(task_id: str) -> dict | None:
+    fresh_task = _fresh_viewable_project_task(task_id)
+    if fresh_task:
+        _hydrate_task_state_cache(task_id, fresh_task)
+        return fresh_task
+
     task = store.get(task_id)
     if not task or not _can_view_task(task):
         return None
@@ -773,23 +772,14 @@ def update_source_language(task_id):
 
     step_names = _omni_pipeline_steps_for_task(task_id, task)
     start_step = _post_asr_step(step_names)
-    artifacts = _drop_artifacts(
-        task,
-        *_drop_steps_from(step_names, start_step),
-    )
-    store.update(
-        task_id,
-        source_language=new_lang,
-        user_specified_source_language=True,
-        utterances_en=None,
-        utterances_raw=None,
-        asr_normalize_artifact=None,
-        detected_source_language=None,
-        artifacts=artifacts,
-        status="running",
-        error="",
-        current_review_step="",
-    )
+    reset_task = dict(task)
+    reset_task["source_language"] = new_lang
+    try:
+        updates = _resume_cleanup_updates(reset_task, step_names, start_step)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    updates.update(source_language=new_lang, user_specified_source_language=True)
+    store.update(task_id, **updates)
 
     _reset_steps_from(task_id, step_names, start_step)
 

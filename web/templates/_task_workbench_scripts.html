@@ -1074,6 +1074,24 @@
     toggle.title = collapsed ? "展开语音生成日志" : "收拢语音生成日志";
   }
 
+  function normalizeStepMessage(step, message) {
+    const text = String(message || "");
+    if (!text || step !== "translate") return text;
+    const cfg = currentTask?.plugin_config || {};
+    if (cfg.translate_algo !== "shot_char_limit") return text;
+    const legacy = text.match(/^([A-Za-z]{2,8})\s+镜头级翻译完成（\s*(\d+)\s*段\s*）$/);
+    if (!legacy) return text;
+    const target = legacy[1].toUpperCase();
+    const translatedCount = Number(legacy[2]) || (Array.isArray(currentTask?.translations) ? currentTask.translations.length : 0);
+    const visualShotCount = Array.isArray(currentTask?.shots) ? currentTask.shots.length : 0;
+    return `${target} 时间轴分段翻译完成（${translatedCount}段，附${visualShotCount}个视觉分镜上下文）`;
+  }
+
+  function stepMessage(step, fallback) {
+    const raw = currentTask?.step_messages?.[step] || fallback || "";
+    return normalizeStepMessage(step, raw);
+  }
+
   function renderStepMessages() {
     STEP_ORDER.forEach(step => {
       const stepEl = document.getElementById(`step-${step}`);
@@ -1091,7 +1109,7 @@
       const fallback = step === "analysis" && status === "idle"
         ? "可选附加分析 · 点击按钮手动触发"
         : placeholderText(displayStatus);
-      const message = currentTask?.step_messages?.[step] || fallback;
+      const message = stepMessage(step, fallback);
       stepEl.className = `step ${displayStatus}`;
       iconEl.className = `step-icon ${displayStatus}`;
       iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
@@ -1199,7 +1217,7 @@
     const items = [
       {
         type: "shot_translation_summary",
-        label: "镜头级翻译过程",
+        label: "时间轴分段翻译过程",
         total: rows.length,
         translated_count: translatedCount,
         over_limit_count: overLimitCount,
@@ -1207,7 +1225,7 @@
       },
       {
         type: "shot_translations",
-        label: "逐镜头过程和结果",
+        label: "时间轴分段过程和结果",
         shots: rows,
       },
     ];
@@ -1313,14 +1331,14 @@
       } else if (step === "av_sync_audit" && artifact) {
         html = renderAvSyncAuditArtifact(artifact);
       } else if (!artifact) {
-        const message = currentTask?.step_messages?.[step] || placeholderText(displayStatus);
+        const message = stepMessage(step, placeholderText(displayStatus));
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else if (artifact.layout === "variant_compare") {
         html = renderVariantCompareArtifact(artifact);
       } else if (artifact.layout === "analysis") {
         html = renderAnalysisArtifact(artifact);
       } else if (!artifact.items || !artifact.items.length) {
-        const message = currentTask?.step_messages?.[step] || placeholderText(displayStatus);
+        const message = stepMessage(step, placeholderText(displayStatus));
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else {
         // 老项目的 compose artifact 里可能还留着 soft_video 条目 → 过滤
@@ -1705,7 +1723,7 @@
           <div class="preview-time">${escapeHtml(title)}</div>
         </div>
         <div class="av-sync-timeline-grid table-only">
-          ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
+          ${renderAvSyncAsrField(row)}
           ${renderAvSyncTimelineField("正常翻译/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
           ${renderAvSyncTimelineField("视频画面", row.visual_observation || "画面不清晰/无法确认")}
           ${renderAvSyncTimelineField("问题诊断", avSyncTableDiagnosis(row), `diagnosis-field ${isIssue ? "is-issue" : ""}`)}
@@ -1735,12 +1753,54 @@
       </div>
       ${timingBits.length ? `<div class="preview-note">${escapeHtml(timingBits.join(" · "))}</div>` : ""}
       <div class="av-sync-timeline-grid">
-        ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
+        ${renderAvSyncAsrField(row)}
         ${renderAvSyncTimelineField("目标/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
         ${renderAvSyncTimelineField("画面内容", row.visual_observation || "未记录画面描述，请结合成片人工复核。")}
         ${renderAvSyncTimelineField("诊断意见", diagnosis)}
       </div>
     </div>`;
+  }
+
+  function renderAvSyncAsrField(row) {
+    const asrText = row?.asr_text || row?.source_text || "未记录 ASR 文本";
+    const asrTextZh = avSyncAsrChineseReference(row, asrText);
+    const value = asrTextZh ? `${asrText}\n\n中文对照：${asrTextZh}` : asrText;
+    return renderAvSyncTimelineField("ASR 内容", value);
+  }
+
+  function avSyncAsrChineseReference(row, asrText = "") {
+    if (isAvSyncChineseSource(row, asrText)) return "";
+    const value = String(
+      row?.asr_text_zh
+      || row?.source_text_zh
+      || row?.source_translation_zh
+      || row?.asr_chinese
+      || ""
+    ).trim();
+    if (!value) return "";
+    return normalizeAvSyncText(value) === normalizeAvSyncText(asrText) ? "" : value;
+  }
+
+  function isAvSyncChineseSource(row, asrText = "") {
+    const lang = String(
+      row?.source_language
+      || currentTask?.source_language
+      || TASK_WORKBENCH_CONFIG.defaultSourceLanguage
+      || ""
+    ).trim().toLowerCase();
+    if (lang === "zh" || lang.startsWith("zh-") || lang.startsWith("zh_")) return true;
+    return isMostlyChineseText(asrText || row?.asr_text || row?.source_text || "");
+  }
+
+  function isMostlyChineseText(text) {
+    const content = String(text || "");
+    const cjkCount = (content.match(/[\u3400-\u9fff]/g) || []).length;
+    const latinCount = (content.match(/[A-Za-z]/g) || []).length;
+    return cjkCount > 0 && cjkCount / Math.max(cjkCount + latinCount, 1) > 0.3;
+  }
+
+  function normalizeAvSyncText(text) {
+    return String(text || "").replace(/\s+/g, "").toLowerCase();
   }
 
   function renderAvSyncTimelineField(label, value, extraClass = "") {
@@ -1970,7 +2030,7 @@
     const over = Number(item.over_limit_count) || 0;
     const retries = Number(item.retry_count) || 0;
     return `<div class="preview-block">
-      <div class="preview-label">${escapeHtml(item.label || "镜头级翻译过程")}</div>
+      <div class="preview-label">${escapeHtml(item.label || "时间轴分段翻译过程")}</div>
       <div class="shot-translation-summary">
         <span class="shot-translation-stat"><strong>${translated}</strong>/<span>${total}</span> 已翻译</span>
         <span class="shot-translation-stat"><strong>${retries}</strong> 次缩写重试</span>
@@ -1982,10 +2042,10 @@
   function renderShotTranslations(item) {
     const rows = Array.isArray(item.shots) ? item.shots : [];
     if (!rows.length) {
-      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div><div class="preview-note">暂无镜头翻译明细。</div></div>`;
+      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "时间轴分段过程和结果")}</div><div class="preview-note">暂无时间轴分段翻译明细。</div></div>`;
     }
     return `<div class="preview-block">
-      <div class="preview-label">${escapeHtml(item.label || "逐镜头过程和结果")}</div>
+      <div class="preview-label">${escapeHtml(item.label || "时间轴分段过程和结果")}</div>
       <div class="shot-translation-grid">${rows.map(renderShotTranslationRow).join("")}</div>
     </div>`;
   }
@@ -2581,7 +2641,9 @@
       const phaseLabel = payload.phase === 'initial_translate' ? '初始翻译（Round 1 输入）' : '';
       const metaParts = [];
       if (phaseLabel) metaParts.push(phaseLabel);
-      if (payload.target_words != null) metaParts.push(`目标 ${payload.target_words} 词`);
+      const unitLabel = payload.rewrite_unit_label || '词';
+      const targetUnits = payload.target_units != null ? payload.target_units : payload.target_words;
+      if (targetUnits != null) metaParts.push(`目标 ${targetUnits} ${unitLabel}`);
       if (payload.direction) metaParts.push(`方向：${payload.direction}`);
       if (payload.target_language) metaParts.push(`目标语言：${payload.target_language}`);
       const metaHtml = metaParts.length ? `<div class="json-modal-meta">${escapeHtml(metaParts.join(' · '))}</div>` : '';
@@ -2747,6 +2809,7 @@
   // 文案收敛内循环 —— 表格 + attempt 弹窗预览
   // ============================================================
   function _rewriteWordWindowLabel(round) {
+    const unitLabel = round.rewrite_unit_label || '词';
     const rawWindow = Array.isArray(round.rewrite_word_window) ? round.rewrite_word_window : null;
     const lo = rawWindow && rawWindow.length >= 2 ? Number(rawWindow[0]) : NaN;
     const hi = rawWindow && rawWindow.length >= 2 ? Number(rawWindow[1]) : NaN;
@@ -2756,10 +2819,10 @@
       ? `±${Math.round(ratio * 100)}%`
       : '';
     const abs = Number(round.rewrite_word_tolerance_abs);
-    const absLabel = Number.isFinite(abs) && abs > 0 ? `约 ±${abs} 词` : '';
+    const absLabel = Number.isFinite(abs) && abs > 0 ? `约 ±${abs} ${unitLabel}` : '';
     const detailBits = [pctLabel, absLabel].filter(Boolean);
     if (hasWindow) {
-      return `允许 ${lo}–${hi} 词${detailBits.length ? `（${detailBits.join('，')}）` : ''}`;
+      return `允许 ${lo}–${hi} ${unitLabel}${detailBits.length ? `（${detailBits.join('，')}）` : ''}`;
     }
     if (detailBits.length) return `允许 ${detailBits.join('，')}`;
     return '';
@@ -2770,7 +2833,10 @@
     if (!attempts.length) return '';
     const base = (typeof TASK_WORKBENCH_CONFIG !== 'undefined' && TASK_WORKBENCH_CONFIG.apiBase) || '/api/tasks';
     const windowLabel = _rewriteWordWindowLabel(round);
+    const unitLabel = round.rewrite_unit_label || '词';
     const rows = attempts.map(a => {
+      const actualUnits = a.units != null ? a.units : a.words;
+      const rowUnitLabel = a.unit_label || unitLabel;
       const ok = a.accepted
         ? '<span style="color:var(--success-fg);">✓ 命中</span>'
         : '<span style="color:var(--fg-subtle);">✗ 超差</span>';
@@ -2787,7 +2853,7 @@
          </button>`;
       return `<tr class="duration-attempt-row${a.is_used_for_tts ? ' is-used' : ''}">
           <td>#${a.attempt} ${used}</td>
-          <td>${a.words} 词</td>
+          <td>${actualUnits} ${rowUnitLabel}</td>
           <td>偏差 ${a.diff}</td>
           <td>${ok}</td>
           <td>${btn}</td>
@@ -2795,15 +2861,18 @@
         <tr class="duration-attempt-preview-row"><td colspan="5">${previewHtml}</td></tr>`;
     }).join('');
     const windowSuffix = windowLabel ? `；${windowLabel}` : '';
+    const actualUsedUnits = round.rewrite_units_actual != null
+      ? round.rewrite_units_actual
+      : round.rewrite_words_actual;
     const pickInfo = round.rewrite_converged === false
-      ? `（${attempts.length} 次均未命中${windowLabel || '词数窗口'}，挑最接近目标的第 ${round.rewrite_attempt_closest || round.rewrite_attempt_used} 次：${round.rewrite_words_actual} 词）`
-      : `（第 ${round.rewrite_attempt_used} 次命中，${round.rewrite_words_actual} 词${windowSuffix}）`;
+      ? `（${attempts.length} 次均未命中${windowLabel || unitLabel + '数窗口'}，挑最接近目标的第 ${round.rewrite_attempt_closest || round.rewrite_attempt_used} 次：${actualUsedUnits} ${unitLabel}）`
+      : `（第 ${round.rewrite_attempt_used} 次命中，${actualUsedUnits} ${unitLabel}${windowSuffix}）`;
     return `
       <details class="duration-round-attempts" open>
         <summary>文案收敛内循环：${attempts.length} 次 rewrite ${pickInfo}</summary>
         <table class="duration-attempts-table">
           <thead><tr>
-            <th>尝试</th><th>实际字数</th><th>偏差</th><th>结果</th><th>完整译文</th>
+            <th>尝试</th><th>实际${unitLabel}数</th><th>偏差</th><th>结果</th><th>完整译文</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -2895,20 +2964,32 @@
       const [iconClass, iconChar] = _roundStatusIcon(round, status === 'failed' && isLast);
       const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase, round) : '';
 
-      const targetWords = round.target_words != null ? round.target_words : round.target_chars;
+      const unitLabel = round.rewrite_unit_label || '词';
+      const targetWords = round.target_units != null
+        ? round.target_units
+        : (round.target_words != null ? round.target_words : round.target_chars);
       const dirLabel = ({ shrink: '缩写', expand: '扩写' })[round.direction] || round.direction || '';
       const targetStr = (round.target_duration != null && targetWords != null)
-        ? `目标 ${round.target_duration.toFixed(1)}s / ${targetWords} 词${dirLabel ? ` (${dirLabel})` : ''}`
+        ? `目标 ${round.target_duration.toFixed(1)}s / ${targetWords} ${unitLabel}${dirLabel ? ` (${dirLabel})` : ''}`
         : '初始翻译（来自 translate 步骤）';
-      const measuredWords = round.word_count != null ? round.word_count : round.char_count;
+      const measuredWords = round.tts_unit_count != null
+        ? round.tts_unit_count
+        : (round.word_count != null ? round.word_count : round.char_count);
       const measuredStr = (round.audio_duration != null && measuredWords != null)
-        ? `实测 ${round.audio_duration.toFixed(1)}s / ${measuredWords} 词`
+        ? `实测 ${round.audio_duration.toFixed(1)}s / ${measuredWords} ${unitLabel}`
         : '';
 
       // TTS 切分摘要（朗读块数 / 平均 / 最长）
       let ttsSummary = '';
       if (round.tts_block_count != null) {
-        ttsSummary = `朗读块 ${round.tts_block_count} 块 · 平均 ${round.tts_avg_block_words} 词 / 最长 ${round.tts_max_block_words} 词`;
+        const avgBlockUnits = round.tts_avg_block_units != null
+          ? round.tts_avg_block_units
+          : round.tts_avg_block_words;
+        const maxBlockUnits = round.tts_max_block_units != null
+          ? round.tts_max_block_units
+          : round.tts_max_block_words;
+        const blockUnitLabel = round.tts_block_unit_label || unitLabel;
+        ttsSummary = `朗读块 ${round.tts_block_count} 块 · 平均 ${avgBlockUnits} ${blockUnitLabel} / 最长 ${maxBlockUnits} ${blockUnitLabel}`;
       }
 
       // Token usage 摘要
@@ -2971,7 +3052,7 @@
       const truncationInfo = truncationParts.join(' · ');
       const rewriteWindowLabel = _rewriteWordWindowLabel(round);
       const skippedInfo = round.rewrite_audio_skipped
-        ? `文案未进入词数置信区间（目标 ${round.target_words} 词${rewriteWindowLabel ? '，' + rewriteWindowLabel : ''}），本轮未生成语音。`
+        ? `文案未进入${unitLabel}数置信区间（目标 ${targetWords} ${unitLabel}${rewriteWindowLabel ? '，' + rewriteWindowLabel : ''}），本轮未生成语音。`
         : '';
 
       // 内联音频播放器

@@ -130,6 +130,8 @@ DOUBAO_LLM_BASE_URL_DEFAULT = "https://ark.cn-beijing.volces.com/api/v3"
 ELEVENLABS_BASE_URL_DEFAULT = "https://api.elevenlabs.io/v1"
 APIMART_BASE_URL_DEFAULT = "https://api.apimart.ai"
 SUBTITLE_REMOVAL_PROVIDER_URL_DEFAULT = "https://goodline.simplemokey.com/api/openAi"
+NIUMA_ERASE_API_KEY = _env("NIUMA_ERASE_API_KEY")
+NIUMA_ERASE_BASE_URL = _env("NIUMA_ERASE_BASE_URL", SUBTITLE_REMOVAL_PROVIDER_URL_DEFAULT)
 
 # 火山 ASR（豆包）HTTP 调用端点，本身是固定的服务器地址
 VOLC_ASR_SUBMIT_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"

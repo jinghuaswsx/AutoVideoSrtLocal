@@ -183,6 +183,106 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
     mock_runner.start.assert_not_called()
 
 
+def test_omni_get_task_prefers_fresh_project_state_for_loudness_profile(
+    authed_client_no_db, monkeypatch, tmp_path,
+):
+    from appcore import task_state
+
+    task_id = "stale-loudness-get"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        type="omni_translate",
+        plugin_config=CFG_ASR_CLEAN,
+        loudness_profile="standard",
+        loudness_manual_boost_pct=None,
+    )
+
+    fresh_state = dict(task_state.get(task_id) or {})
+    fresh_state["loudness_profile"] = "bg_boost"
+    fresh_state["loudness_manual_boost_pct"] = None
+
+    def fake_project_row(row_task_id, columns="*", *, include_deleted=True):
+        assert row_task_id == task_id
+        return {
+            "id": task_id,
+            "user_id": 1,
+            "task_dir": str(task_dir),
+            "state_json": json.dumps(fresh_state, ensure_ascii=False),
+        }
+
+    monkeypatch.setattr("web.routes.omni_translate._query_viewable_project", fake_project_row)
+    monkeypatch.setattr("web.routes.omni_translate.recover_task_if_needed", lambda *_args, **_kwargs: None)
+
+    resp = authed_client_no_db.get(f"/api/omni-translate/{task_id}")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["loudness_profile"] == "bg_boost"
+
+
+def test_resume_uses_fresh_loudness_profile_before_starting_runner(
+    authed_client_no_db, monkeypatch, tmp_path,
+):
+    from appcore import task_state
+
+    task_id = "stale-loudness-resume"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        type="omni_translate",
+        plugin_config=CFG_ASR_CLEAN,
+        loudness_profile="standard",
+        loudness_manual_boost_pct=None,
+    )
+
+    fresh_state = dict(task_state.get(task_id) or {})
+    fresh_state["loudness_profile"] = "manual_boost"
+    fresh_state["loudness_manual_boost_pct"] = 70
+
+    def fake_project_row(row_task_id, columns="*", *, include_deleted=True):
+        assert row_task_id == task_id
+        return {
+            "id": task_id,
+            "user_id": 1,
+            "task_dir": str(task_dir),
+            "state_json": json.dumps(fresh_state, ensure_ascii=False),
+        }
+
+    captured = {}
+
+    def fake_resume(row_task_id, start_step, user_id=None):
+        task = task_state.get(row_task_id) or {}
+        captured["profile"] = task.get("loudness_profile")
+        captured["manual_pct"] = task.get("loudness_manual_boost_pct")
+        captured["start_step"] = start_step
+        captured["user_id"] = user_id
+
+    monkeypatch.setattr("web.routes.omni_translate._query_viewable_project", fake_project_row)
+    monkeypatch.setattr("web.routes.omni_translate.recover_task_if_needed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("web.routes.omni_translate.omni_pipeline_runner.resume", fake_resume)
+
+    resp = authed_client_no_db.post(
+        f"/api/omni-translate/{task_id}/resume",
+        json={"start_step": "loudness_match"},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "profile": "manual_boost",
+        "manual_pct": 70,
+        "start_step": "loudness_match",
+        "user_id": 1,
+    }
+
+
 def test_loudness_profile_route_rejects_non_admin(authed_user_client_no_db):
     with patch("web.routes.omni_translate.recover_task_if_needed") as mock_recover, \
          patch("web.routes.omni_translate.store") as mock_store:
@@ -662,6 +762,148 @@ def test_resume_accepts_dynamic_steps_from_plugin_config(authed_client_no_db, st
     ]
     assert pending_steps[0] == start_step
     mock_runner.resume.assert_called_once_with("t-1", start_step, user_id=1)
+
+
+def test_resume_from_translate_clears_omni_current_and_downstream_state(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    from web import store
+    from web.routes import omni_translate as omni_module
+
+    resume_calls = []
+    monkeypatch.setattr(
+        omni_module.omni_pipeline_runner,
+        "resume",
+        lambda task_id, start_step, user_id=None: resume_calls.append((task_id, start_step, user_id)),
+    )
+
+    task_id = "omni-resume-clear-translate"
+    store.create(task_id, "/tmp/source.mp4", str(tmp_path))
+    script_segments = [{"index": 0, "text": "source"}]
+    store.update(
+        task_id,
+        _user_id=1,
+        type="omni_translate",
+        plugin_config=CFG_DYNAMIC_ALL,
+        source_language="es",
+        target_lang="de",
+        current_review_step="translate",
+        script_segments=script_segments,
+        segments=[{"index": 0, "translated": "stale translated"}],
+        source_full_text_zh="old source text",
+        translations=[{"translated_text": "old shot translation"}],
+        localized_translation={"full_text": "old translation"},
+        tts_script={"full_text": "old tts"},
+        tts_audio_path="/tmp/old-tts.mp3",
+        timeline_manifest={"tracks": []},
+        corrected_subtitle={"chunks": [{"text": "old subtitle"}]},
+        english_asr_result={"utterances": [{"text": "old subtitle asr"}]},
+        srt_path="/tmp/old.srt",
+        result={"hard_video": "/tmp/old-hard.mp4"},
+        exports={"normal": {"archive_url": "/old.zip"}},
+        final_compose_summary={"compose_completed": True},
+        tts_duration_rounds=[{"round": 1}],
+        tts_duration_status="done",
+        tts_final_round=1,
+        tts_final_reason="old",
+        tts_final_distance=0,
+        artifacts={
+            "alignment": {"title": "keep alignment"},
+            "translate": {"title": "old translate"},
+            "tts": {"title": "old tts"},
+            "subtitle": {"title": "old subtitle"},
+            "compose": {"title": "old compose"},
+            "export": {"title": "old export"},
+        },
+        preview_files={
+            "source_video": "/tmp/source.mp4",
+            "audio_extract": "/tmp/audio.wav",
+            "separation_vocals": "/tmp/vocals.wav",
+            "tts_full_audio": "/tmp/old-tts.mp3",
+            "srt": "/tmp/old.srt",
+            "hard_video": "/tmp/old-hard.mp4",
+            "soft_video": "/tmp/old-soft.mp4",
+        },
+        llm_debug_refs={
+            "alignment": [{"id": "keep"}],
+            "translate": [{"id": "drop-translate"}],
+            "tts": [{"id": "drop-tts"}],
+        },
+        step_model_tags={
+            "alignment": "keep-model",
+            "translate": "drop-model",
+            "tts": "drop-tts-model",
+        },
+        variants={
+            "normal": {
+                "label": "普通版",
+                "localized_translation": {"full_text": "old translation"},
+                "tts_script": {"full_text": "old tts"},
+                "segments": [{"text": "old tts segment"}],
+                "tts_audio_path": "/tmp/old-tts.mp3",
+                "timeline_manifest": {"tracks": []},
+                "english_asr_result": {"utterances": [{"text": "old subtitle asr"}]},
+                "corrected_subtitle": {"chunks": [{"text": "old subtitle"}]},
+                "srt_path": "/tmp/old.srt",
+                "result": {"hard_video": "/tmp/old-hard.mp4"},
+                "exports": {"archive_url": "/old.zip"},
+                "artifacts": {
+                    "translate": {"title": "old translate"},
+                    "tts": {"title": "old tts"},
+                    "subtitle": {"title": "old subtitle"},
+                    "compose": {"title": "old compose"},
+                    "export": {"title": "old export"},
+                },
+                "preview_files": {
+                    "tts_full_audio": "/tmp/old-tts.mp3",
+                    "srt": "/tmp/old.srt",
+                    "hard_video": "/tmp/old-hard.mp4",
+                },
+            }
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/omni-translate/{task_id}/resume",
+        json={"start_step": "translate"},
+    )
+
+    assert resp.status_code == 200, resp.get_json()
+    task = store.get(task_id)
+    assert task["steps"]["translate"] == "pending"
+    assert task["steps"]["tts"] == "pending"
+    assert task["current_review_step"] == ""
+    assert task["status"] == "running"
+    assert task["segments"] == script_segments
+    assert task["localized_translation"] == {}
+    assert task["tts_script"] == {}
+    assert task["tts_audio_path"] == ""
+    assert task["corrected_subtitle"] == {}
+    assert task["english_asr_result"] == {}
+    assert task["srt_path"] == ""
+    assert task["result"] == {}
+    assert task["exports"] == {}
+    assert task["tts_duration_rounds"] == []
+    assert task["tts_duration_status"] is None
+    assert task["artifacts"] == {"alignment": {"title": "keep alignment"}}
+    assert task["preview_files"] == {
+        "source_video": "/tmp/source.mp4",
+        "audio_extract": "/tmp/audio.wav",
+        "separation_vocals": "/tmp/vocals.wav",
+    }
+    assert task["llm_debug_refs"] == {"alignment": [{"id": "keep"}]}
+    assert task["step_model_tags"] == {"alignment": "keep-model"}
+    normal = task["variants"]["normal"]
+    assert normal["localized_translation"] == {}
+    assert normal["tts_script"] == {}
+    assert normal["segments"] == []
+    assert normal["tts_audio_path"] == ""
+    assert normal["corrected_subtitle"] == {}
+    assert normal["result"] == {}
+    assert normal["exports"] == {}
+    assert normal["artifacts"] == {}
+    assert normal["preview_files"] == {}
+    assert resume_calls == [(task_id, "translate", 1)]
 
 
 # ---------------------------------------------------------------------------

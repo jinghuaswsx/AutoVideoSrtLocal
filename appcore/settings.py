@@ -172,6 +172,9 @@ def get_retention_hours(project_type: str) -> int:
     default = _parse_positive_hours(get_setting("retention_default_hours"))
     if default is not None:
         return default
+    # 文案封面项目默认保留10天，其他项目默认7天
+    if project_type == "video_cover":
+        return 240
     return _HARDCODE_DEFAULT_HOURS
 
 

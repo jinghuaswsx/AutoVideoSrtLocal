@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from io import BytesIO
 import json
 from pathlib import Path
+import threading
+import time
 
 import pytest
 from PIL import Image
@@ -47,6 +50,9 @@ def _make_superadmin_client_no_db(monkeypatch):
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
     monkeypatch.setattr(
         "appcore.medias.list_enabled_language_codes",
         lambda: ["de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"],
@@ -114,14 +120,14 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
                             "id": idx,
                             "angle": "痛点解决型",
                             "english": {
-                                "headline": "Blend Anywhere",
-                                "body_text": "Make smoothies without dragging out the big blender.",
-                                "cta": "Shop Now",
+                                "title": "Blend Anywhere",
+                                "message": "Make smoothies without dragging out the big blender.",
+                                "description": "Fresh Drinks Made Simple",
                             },
                             "chinese_translation": {
-                                "headline": "随处搅拌",
-                                "body_text": "不用搬出大型搅拌机也能做奶昔。",
-                                "cta": "立即购买",
+                                "title": "随处搅拌",
+                                "message": "不用搬出大型搅拌机也能做奶昔。",
+                                "description": "轻松制作新鲜饮品",
                             },
                             "usage_note": "适合手持使用场景。",
                         }
@@ -157,8 +163,12 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert len(calls) == 1
     assert "Facebook Reels / Instagram Reels / TikTok / Shorts" in calls[0]["prompt"]
     assert "优秀的创意总监" in calls[0]["prompt"]
-    assert "必须且只能添加一句简短英文 hook" in calls[0]["prompt"]
-    assert '"headline": "Blend Anywhere"' in calls[0]["prompt"]
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]["prompt"]
+    assert "不要使用固定位置的半透明背景框" in calls[0]["prompt"]
+    assert "不要在图片中生成任何文字" not in calls[0]["prompt"]
+    assert '"title": "Blend Anywhere"' in calls[0]["prompt"]
+    assert all("overlay_text" not in cover for cover in result["covers"])
+    assert all("overlay_box" not in cover for cover in result["covers"])
     assert "{product_analysis}" not in calls[0]["prompt"]
     assert "{video_analysis}" not in calls[0]["prompt"]
     assert "{ad_copy_sets}" not in calls[0]["prompt"]
@@ -188,20 +198,21 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
     video_path = tmp_path / "input.mp4"
     video_path.write_bytes(b"fake video")
     calls = []
+    progress = []
     copy_payload = {
         "ad_copy_sets": [
             {
                 "id": idx,
                 "angle": f"角度 {idx}",
                 "english": {
-                    "headline": f"Hook {idx}",
-                    "body_text": f"Body copy {idx}",
-                    "cta": "Shop Now",
+                    "title": f"Hook {idx}",
+                    "message": f"Body copy {idx}",
+                    "description": f"Description {idx}",
                 },
                 "chinese_translation": {
-                    "headline": f"钩子 {idx}",
-                    "body_text": f"正文 {idx}",
-                    "cta": "立即购买",
+                    "title": f"钩子 {idx}",
+                    "message": f"正文 {idx}",
+                    "description": f"描述 {idx}",
                 },
                 "usage_note": f"画面建议 {idx}",
             }
@@ -230,18 +241,287 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
         video_analysis_text="<视频素材分析>demo</视频素材分析>",
         ad_copy_payload=copy_payload,
         image_count=3,
+        on_cover_done=lambda partial: progress.append([cover["index"] for cover in partial["covers"]]),
     )
 
     assert len(calls) == 3
+    assert progress == [[1], [1, 2], [1, 2, 3]]
     assert [cover["index"] for cover in result["covers"]] == [1, 2, 3]
     assert [cover["source_ad_copy_id"] for cover in result["covers"]] == [1, 2, 3]
     assert [cover["hook"] for cover in result["covers"]] == ["Hook 1", "Hook 2", "Hook 3"]
-    assert [cover["copy"]["english"]["body_text"] for cover in result["covers"]] == [
+    assert [cover["copy"]["english"]["message"] for cover in result["covers"]] == [
         "Body copy 1",
         "Body copy 2",
         "Body copy 3",
     ]
+    assert [cover["copy"]["english"]["description"] for cover in result["covers"]] == [
+        "Description 1",
+        "Description 2",
+        "Description 3",
+    ]
+    assert all("overlay_text" not in cover for cover in result["covers"])
+    assert all("overlay_box" not in cover for cover in result["covers"])
+    assert all("overlay_font_size" not in cover for cover in result["covers"])
+    assert all("overlay_lines" not in cover for cover in result["covers"])
+    assert all(cover["formatted_copy"].startswith("标题: Hook ") for cover in result["covers"])
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]
+    assert "不要在图片中生成任何文字" not in calls[0]
     assert all(local_media_storage.exists(cover["object_key"]) for cover in result["covers"])
+
+
+def test_generate_video_covers_extracts_structured_keyframes_for_reference(tmp_path):
+    from appcore.video_cover_generation import generate_video_covers
+
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake video")
+    extracted_frames = []
+    thumbnail_calls = []
+    copy_payload = {
+        "ad_copy_sets": [
+            {
+                "id": idx,
+                "angle": f"角度 {idx}",
+                "english": {"title": f"Hook {idx}", "message": f"Body {idx}", "description": f"Desc {idx}"},
+                "chinese_translation": {"title": f"钩子 {idx}", "message": f"正文 {idx}", "description": f"描述 {idx}"},
+                "usage_note": f"画面建议 {idx}",
+            }
+            for idx in range(1, 6)
+        ]
+    }
+    video_analysis = {
+        "video_analysis": {"summary": "手部操作便携搅拌杯"},
+        "keyframes": [
+            {"timestamp": "00:01.200", "type": "Hero Shot / Front View", "visual_content": "产品正面"},
+            {"timestamp": "00:02.500", "type": "Detail Close-up", "visual_content": "刀头细节"},
+            {"timestamp": "00:04.000", "type": "Usage Scenario", "visual_content": "厨房使用"},
+        ],
+        "cover_reference": {
+            "best_cover_reference_timestamp": "00:02.500",
+            "why_best_for_cover": "这一帧同时看清产品和手部位置",
+        },
+    }
+
+    def fake_thumbnail(video_path_arg: str, output_dir: str, scale=None):
+        thumbnail_calls.append({"video_path": video_path_arg, "scale": scale})
+        return str(_jpg_file(Path(output_dir) / "fallback.jpg", color=(160, 160, 160)))
+
+    def fake_reference_frame(video_path_arg: str, output_dir: str, *, timestamp: str, index: int):
+        extracted_frames.append({"video_path": video_path_arg, "timestamp": timestamp, "index": index})
+        return str(_jpg_file(Path(output_dir) / f"reference_{index}.jpg", color=(30 * index, 80, 160)))
+
+    result = generate_video_covers(
+        product_url="https://shop.example/products/blender",
+        video_path=str(video_path),
+        video_filename="demo.mp4",
+        user_id=7,
+        task_id="cover-task-keyframes",
+        product_fetch_fn=lambda url: _FakeProduct(),
+        image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
+        thumbnail_extractor=fake_thumbnail,
+        reference_frame_extractor=fake_reference_frame,
+        image_generate_fn=lambda *args, **kwargs: (_png_bytes(size=(900, 900), color=(30, 160, 210)), "image/png"),
+        product_analysis_text="<产品分析报告>demo</产品分析报告>",
+        video_analysis_text=json.dumps(video_analysis, ensure_ascii=False),
+        ad_copy_payload=copy_payload,
+        image_count=1,
+    )
+
+    assert [item["timestamp"] for item in extracted_frames] == ["00:01.200", "00:02.500", "00:04.000"]
+    assert thumbnail_calls == []
+    assert [frame["timestamp"] for frame in result["reference"]["frames"]] == ["00:01.200", "00:02.500", "00:04.000"]
+    assert [frame["type"] for frame in result["reference"]["frames"]] == [
+        "Hero Shot / Front View",
+        "Detail Close-up",
+        "Usage Scenario",
+    ]
+    assert all(frame["path"] for frame in result["reference"]["frames"])
+    assert "reference_frames" in result["image_prompts"][0]
+
+
+def test_generate_video_covers_parallelizes_openrouter_cover_requests(tmp_path):
+    from appcore.video_cover_generation import generate_video_covers
+
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake video")
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def fake_thumbnail(video_path_arg: str, output_dir: str, scale=None):
+        return str(_jpg_file(Path(output_dir) / "thumbnail.jpg"))
+
+    def fake_generate_image(prompt: str, *, source_image: bytes, source_mime: str, **kwargs):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            if "第 1 张" in prompt:
+                time.sleep(0.06)
+            elif "第 2 张" in prompt:
+                time.sleep(0.03)
+            else:
+                time.sleep(0.01)
+            return _png_bytes(size=(900, 900), color=(30, 160, 210)), "image/png"
+        finally:
+            with lock:
+                active -= 1
+
+    result = generate_video_covers(
+        product_url="https://shop.example/products/blender",
+        video_path=str(video_path),
+        video_filename="demo.mp4",
+        user_id=7,
+        task_id="cover-task-parallel",
+        product_fetch_fn=lambda url: _FakeProduct(),
+        image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
+        thumbnail_extractor=fake_thumbnail,
+        image_generate_fn=fake_generate_image,
+        product_analysis_text="<产品分析报告>demo</产品分析报告>",
+        video_analysis_text="<视频素材分析>demo</视频素材分析>",
+        ad_copy_payload={
+            "ad_copy_sets": [
+                {
+                    "id": idx,
+                    "angle": f"角度 {idx}",
+                    "english": {"title": f"Hook {idx}", "message": f"Body {idx}", "description": f"Desc {idx}"},
+                    "chinese_translation": {"title": f"钩子 {idx}", "message": f"正文 {idx}", "description": f"描述 {idx}"},
+                    "usage_note": f"画面建议 {idx}",
+                }
+                for idx in range(1, 4)
+            ]
+        },
+        cover_provider="openrouter",
+        cover_model="openai_image_2_mid",
+        cover_execution_mode="parallel",
+        image_count=3,
+    )
+
+    assert max_active > 1
+    assert result["models"]["cover_generation"]["execution_mode"] == "parallel"
+    assert [cover["index"] for cover in result["covers"]] == [1, 2, 3]
+
+
+def test_generate_video_covers_forces_non_openrouter_serial_execution(tmp_path):
+    from appcore.video_cover_generation import generate_video_covers
+
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake video")
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def fake_thumbnail(video_path_arg: str, output_dir: str, scale=None):
+        return str(_jpg_file(Path(output_dir) / "thumbnail.jpg"))
+
+    def fake_generate_image(prompt: str, *, source_image: bytes, source_mime: str, **kwargs):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            time.sleep(0.01)
+            return _png_bytes(size=(900, 900), color=(30, 160, 210)), "image/png"
+        finally:
+            with lock:
+                active -= 1
+
+    result = generate_video_covers(
+        product_url="https://shop.example/products/blender",
+        video_path=str(video_path),
+        video_filename="demo.mp4",
+        user_id=7,
+        task_id="cover-task-serial",
+        product_fetch_fn=lambda url: _FakeProduct(),
+        image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
+        thumbnail_extractor=fake_thumbnail,
+        image_generate_fn=fake_generate_image,
+        product_analysis_text="<产品分析报告>demo</产品分析报告>",
+        video_analysis_text="<视频素材分析>demo</视频素材分析>",
+        ad_copy_payload={
+            "ad_copy_sets": [
+                {
+                    "id": idx,
+                    "angle": f"角度 {idx}",
+                    "english": {"title": f"Hook {idx}", "message": f"Body {idx}", "description": f"Desc {idx}"},
+                    "chinese_translation": {"title": f"钩子 {idx}", "message": f"正文 {idx}", "description": f"描述 {idx}"},
+                    "usage_note": f"画面建议 {idx}",
+                }
+                for idx in range(1, 4)
+            ]
+        },
+        cover_provider="gemini_vertex_adc",
+        cover_model="nano_banana_2",
+        cover_execution_mode="parallel",
+        image_count=3,
+    )
+
+    assert max_active == 1
+    assert result["models"]["cover_generation"]["execution_mode"] == "serial"
+    assert [cover["index"] for cover in result["covers"]] == [1, 2, 3]
+
+
+def test_generate_video_covers_normalizes_legacy_copy_metadata(tmp_path):
+    from appcore.video_cover_generation import generate_video_covers
+
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake video")
+    copy_payload = {
+        "ad_copy_sets": [
+            {
+                "id": 1,
+                "angle": "旧结构",
+                "english": {
+                    "headline": "Legacy Hook",
+                    "body_text": "Legacy body copy.",
+                    "cta": "Legacy Description",
+                },
+                "chinese_translation": {
+                    "headline": "旧钩子",
+                    "body_text": "旧正文",
+                    "cta": "旧描述",
+                },
+                "usage_note": "兼容旧任务。",
+            }
+        ]
+    }
+
+    def fake_thumbnail(video_path_arg: str, output_dir: str, scale=None):
+        return str(_jpg_file(Path(output_dir) / "thumbnail.jpg"))
+
+    def fake_generate_image(prompt: str, *, source_image: bytes, source_mime: str, **kwargs):
+        return _png_bytes(size=(900, 900), color=(30, 160, 210)), "image/png"
+
+    result = generate_video_covers(
+        product_url="https://shop.example/products/blender",
+        video_path=str(video_path),
+        video_filename="demo.mp4",
+        user_id=7,
+        task_id="cover-task-legacy",
+        product_fetch_fn=lambda url: _FakeProduct(),
+        image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
+        thumbnail_extractor=fake_thumbnail,
+        image_generate_fn=fake_generate_image,
+        product_analysis_text="<产品分析报告>demo</产品分析报告>",
+        video_analysis_text="<视频素材分析>demo</视频素材分析>",
+        ad_copy_payload=copy_payload,
+        image_count=1,
+    )
+
+    cover = result["covers"][0]
+    assert cover["copy"]["english"] == {
+        "title": "Legacy Hook",
+        "message": "Legacy body copy.",
+        "description": "Legacy Description",
+    }
+    assert cover["formatted_copy"] == (
+        "标题: Legacy Hook\n"
+        "文案: Legacy body copy.\n"
+        "描述: Legacy Description"
+    )
+    assert cover["hook"] == "Legacy Hook"
+    assert "overlay_text" not in cover
+    assert "overlay_box" not in cover
 
 
 def test_resolve_video_cover_model_options_matches_requested_mappings():
@@ -253,20 +533,130 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
 
     assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "").model == "gemini-3.1-pro-preview"
     assert resolve_text_model_selection("video_analysis", "openrouter", "").model == "google/gemini-3.1-pro-preview"
+    assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "gemini_3_flash").model == "gemini-3-flash-preview"
     assert resolve_text_model_selection("product_analysis", "gemini_vertex_adc", "").model == "gemini-3-flash-preview"
     assert resolve_text_model_selection("ad_copy", "openrouter", "").model == "google/gemini-3-flash-preview"
+    assert resolve_text_model_selection("ad_copy", "openrouter", "claude_sonnet").model == "anthropic/claude-sonnet-4.6"
+    assert resolve_text_model_selection("ad_copy", "openrouter", "openai/gpt-5.5").alias == "gpt_5_5"
 
     local = resolve_cover_model_selection("local", "gpt_image_2")
     assert local.provider == "local"
     assert local.model == "gpt-image-2"
     openrouter = resolve_cover_model_selection("openrouter", "nano_banana_pro")
     assert openrouter.provider == "openrouter"
-    assert openrouter.model == "gemini-3-pro-image-preview"
+    assert openrouter.model == "google/gemini-3-pro-image-preview"
+    legacy_openrouter = resolve_cover_model_selection("openrouter", "gemini-3-pro-image-preview")
+    assert legacy_openrouter.model == "google/gemini-3-pro-image-preview"
+    openrouter_image2 = resolve_cover_model_selection("openrouter", "openai_image_2_high")
+    assert openrouter_image2.provider == "openrouter"
+    assert openrouter_image2.model == "openai/gpt-5.4-image-2:high"
+    vertex_adc = resolve_cover_model_selection("gemini_vertex_adc", "nano_banana_2")
+    assert vertex_adc.provider == "gemini_vertex_adc"
+    assert vertex_adc.model == "gemini-3.1-flash-image-preview"
+    apimart = resolve_cover_model_selection("apimart", "apimart_gpt_image_2")
+    assert apimart.provider == "apimart"
+    assert apimart.model == "gpt-image-2"
+    apimart_banana = resolve_cover_model_selection("apimart", "apimart_nano_banana_pro")
+    assert apimart_banana.model == "gemini-3-pro-image-preview"
 
     options = video_cover_model_options()
     assert options["steps"]["video_analysis"]["default_provider"] == "gemini_vertex_adc"
+    assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_vertex_adc"]["models"]
+    assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
+    assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
     assert "local" in options["steps"]["cover_generation"]["providers"]
+    assert options["steps"]["cover_generation"]["providers"]["gemini_vertex_adc"] == "GOOGLE VERTEX ADC"
     assert options["steps"]["cover_generation"]["models"]["local"]["gpt_image_2"] == "gpt-image-2"
+    assert options["steps"]["cover_generation"]["models"]["openrouter"]["openai_image_2_mid"] == "openai/gpt-5.4-image-2:mid"
+    assert options["steps"]["cover_generation"]["models"]["openrouter"]["nano_banana_2"] == "google/gemini-3.1-flash-image-preview"
+    assert options["steps"]["cover_generation"]["models"]["gemini_vertex_adc"]["nano_banana_2"] == "gemini-3.1-flash-image-preview"
+    assert options["steps"]["cover_generation"]["providers"]["apimart"] == "APIMART"
+    assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_gpt_image_2"] == "gpt-image-2"
+    assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_nano_banana_2"] == "gemini-3.1-flash-image-preview"
+    assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_nano_banana_pro"] == "gemini-3-pro-image-preview"
+    assert "doubao" not in options["steps"]["cover_generation"]["providers"]
+    assert "doubao" not in options["steps"]["cover_generation"]["models"]
+
+
+def test_generate_cover_image_uses_vertex_adc_cloud_channel(monkeypatch):
+    from appcore.video_cover_generation import generate_cover_image, resolve_cover_model_selection
+
+    captured = {}
+
+    def fake_generate_image(prompt, *, source_image, source_mime, **kwargs):
+        captured.update({
+            "prompt": prompt,
+            "source_image": source_image,
+            "source_mime": source_mime,
+            "kwargs": kwargs,
+        })
+        return _png_bytes(), "image/png"
+
+    monkeypatch.setattr("appcore.video_cover_generation.gemini_image.generate_image", fake_generate_image)
+
+    selection = resolve_cover_model_selection("gemini_vertex_adc", "nano_banana_2")
+    payload, mime = generate_cover_image(
+        "make a cover",
+        source_image=_png_bytes(),
+        source_mime="image/png",
+        selection=selection,
+        user_id=8,
+        task_id="task-1",
+    )
+
+    assert payload.startswith(b"\x89PNG")
+    assert mime == "image/png"
+    assert captured["kwargs"]["channel"] == "cloud_adc"
+    assert captured["kwargs"]["model"] == "gemini-3.1-flash-image-preview"
+    assert captured["kwargs"]["service"] == "video_cover.generate"
+
+
+@pytest.mark.parametrize(
+    ("provider", "alias", "expected_channel", "expected_model"),
+    [
+        ("apimart", "apimart_gpt_image_2", "apimart", "gpt-image-2"),
+        ("apimart", "apimart_nano_banana_2", "apimart", "gemini-3.1-flash-image-preview"),
+    ],
+)
+def test_generate_cover_image_uses_apimart_channel(
+    monkeypatch,
+    provider,
+    alias,
+    expected_channel,
+    expected_model,
+):
+    from appcore.video_cover_generation import generate_cover_image, resolve_cover_model_selection
+
+    captured = {}
+
+    def fake_generate_image(prompt, *, source_image, source_mime, **kwargs):
+        captured.update({
+            "prompt": prompt,
+            "source_image": source_image,
+            "source_mime": source_mime,
+            "kwargs": kwargs,
+        })
+        return _png_bytes(), "image/png"
+
+    monkeypatch.setattr("appcore.video_cover_generation.gemini_image.generate_image", fake_generate_image)
+
+    selection = resolve_cover_model_selection(provider, alias)
+    assert selection.provider == provider
+    assert selection.model == expected_model
+    payload, mime = generate_cover_image(
+        "make a cover",
+        source_image=_png_bytes(),
+        source_mime="image/png",
+        selection=selection,
+        user_id=8,
+        task_id="task-1",
+    )
+
+    assert payload.startswith(b"\x89PNG")
+    assert mime == "image/png"
+    assert captured["kwargs"]["channel"] == expected_channel
+    assert captured["kwargs"]["model"] == expected_model
+    assert captured["kwargs"]["service"] == "video_cover.generate"
 
 
 def test_generate_local_cover_image_posts_docs_image_edit_payload():
@@ -338,14 +728,14 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
                             "id": idx,
                             "angle": "痛点解决型",
                             "english": {
-                                "headline": "Easy Daily Fix",
-                                "body_text": "A simple upgrade for busy mornings.",
-                                "cta": "Learn More",
+                                "title": "Easy Daily Fix",
+                                "message": "A simple upgrade for busy mornings.",
+                                "description": "Upgrade Your Routine",
                             },
                             "chinese_translation": {
-                                "headline": "轻松日常改进",
-                                "body_text": "适合忙碌早晨的小升级。",
-                                "cta": "了解更多",
+                                "title": "轻松日常改进",
+                                "message": "适合忙碌早晨的小升级。",
+                                "description": "升级你的日常",
                             },
                             "usage_note": "适合生活方式场景。",
                         }
@@ -366,7 +756,9 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
         invoke_chat_fn=fake_invoke,
     )
 
-    assert result["ad_copy_sets"][0]["english"]["headline"] == "Easy Daily Fix"
+    assert result["ad_copy_sets"][0]["english"]["title"] == "Easy Daily Fix"
+    assert result["ad_copy_sets"][0]["english"]["message"] == "A simple upgrade for busy mornings."
+    assert result["ad_copy_sets"][0]["english"]["description"] == "Upgrade Your Routine"
     assert captured["use_case_code"] == "video_cover.ad_copy"
     assert captured["provider_override"] == "gemini_vertex_adc"
     assert captured["model_override"] == "gemini-3-flash-preview"
@@ -377,6 +769,8 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert "视频素材分析：video_text: fresh smoothie" in prompt
     assert "当前日期：2026-05-14" in prompt
     assert "ad_copy_sets" in prompt
+    assert "title、message、description" in prompt
+    assert "headline" not in prompt
 
 
 def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatch):
@@ -472,14 +866,40 @@ def test_build_platform_prompt_uses_creative_director_inputs():
         ad_copy_sets="- Blend Anywhere\n- Daily Smoothies Made Easy",
     )
 
-    assert "请基于上传的产品图片、精选视频帧、<产品核心理解>" in prompt
+    assert "生成一张 9:16 竖版封面图" in prompt
+    assert "product_analysis: <产品核心理解>" in prompt
     assert "hand using the blender in a kitchen" in prompt
     assert "Blend Anywhere" in prompt
     assert "不要做成电商商品主图、海报、影棚产品照，也不要做成截图" in prompt
-    assert "画面中必须且只能包含一句简短英文 hook" in prompt
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in prompt
+    assert "不要使用固定位置的半透明背景框" in prompt
+    assert "不要在图片中生成任何文字" not in prompt
     assert "{product_analysis}" not in prompt
     assert "{video_analysis}" not in prompt
     assert "{ad_copy_sets}" not in prompt
+
+
+def test_build_platform_prompt_uses_compact_cover_brief_instead_of_full_analysis():
+    from appcore.video_cover_generation import SOCIAL_REELS_SPEC, build_platform_prompt
+
+    noisy_product = "PRODUCT_SIGNAL " + ("冗长产品分析噪声 " * 260)
+    noisy_video = "VIDEO_SIGNAL " + ("冗长视频分析噪声 " * 260)
+
+    prompt = build_platform_prompt(
+        SOCIAL_REELS_SPEC,
+        product_title="Portable Blender Pro",
+        product_url="https://shop.example/products/blender",
+        main_image_url="https://cdn.example/blender.png",
+        product_analysis=noisy_product,
+        video_analysis=noisy_video,
+        ad_copy_sets='{"selected_ad_copy":{"english":{"title":"Blend Anywhere"}}}',
+    )
+
+    assert "cover_brief" in prompt
+    assert "PRODUCT_SIGNAL" in prompt
+    assert "VIDEO_SIGNAL" in prompt
+    assert prompt.count("冗长产品分析噪声") < 40
+    assert prompt.count("冗长视频分析噪声") < 40
 
 
 def test_generate_video_covers_requires_product_title_and_main_image(tmp_path):
@@ -520,16 +940,33 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
 
     calls = []
 
-    def fake_list_projects(*, user_id, is_admin):
-        calls.append({"user_id": user_id, "is_admin": is_admin})
+    monkeypatch.setattr(
+        video_cover,
+        "_video_cover_creator_name_expr",
+        lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
+        raising=False,
+    )
+
+    def fake_list_projects(*, user_id, is_admin, owner_name_expr=""):
+        calls.append({"user_id": user_id, "is_admin": is_admin, "owner_name_expr": owner_name_expr})
         return [
             {
                 "id": "task-1",
                 "display_name": "Lamp Cover",
                 "original_filename": "lamp.mp4",
+                "thumbnail_path": "/tmp/task-1/thumb.jpg",
                 "status": "uploaded",
-                "created_at": None,
-                "creator_name": "alice",
+                "created_at": datetime(2026, 5, 15, 9, 8),
+                "creator_name": "张三",
+            },
+            {
+                "id": "task-2",
+                "display_name": "No Thumb",
+                "original_filename": "blank.mp4",
+                "thumbnail_path": "",
+                "status": "error",
+                "created_at": datetime(2026, 5, 15, 10, 1),
+                "creator_name": "李四",
             }
         ]
 
@@ -541,7 +978,22 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert "文案封面生成" in html
     assert "新建项目" in html
     assert "Lamp Cover" in html
-    assert "alice" in html
+    assert "张三" in html
+    assert "李四" in html
+    assert ".vc-grid { display:grid; grid-template-columns:repeat(auto-fill, 180px);" in html
+    assert ".vc-card-cover { width:180px; height:270px; background:#fff;" in html
+    assert '<img src="/api/tasks/task-1/thumbnail" alt="" loading="lazy">' in html
+    assert '<div class="vc-card-cover vc-card-cover-empty" aria-label="无封面"></div>' in html
+    assert "创建人：" in html
+    assert "创建时间：" in html
+    assert "05-15 09:08" in html
+    assert "复制项目" in html
+    assert "删除项目" in html
+    assert "toggleProjectMenu(event, 'menu-' + " in html
+    assert "duplicateProject(event, " in html
+    assert "deleteProject(event, " in html
+    assert "fetch('/video-cover/api/' + encodeURIComponent(taskId) + '/duplicate'" in html
+    assert "fetch('/video-cover/api/' + encodeURIComponent(taskId)" in html
     assert "商品链接" in html
     assert "videoCoverDropzone" in html
     assert 'id="videoCoverFile"' in html
@@ -553,9 +1005,16 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert 'data-image-count="3"' in html
     assert 'data-image-count="4"' in html
     assert 'name="image_count"' in html
-    assert 'value="2"' in html
+    assert 'value="4"' in html
+    assert '<button class="vc-count-pill active" type="button" data-image-count="4">4 张</button>' in html
     assert "默认配置" not in html
-    assert calls == [{"user_id": 1, "is_admin": True}]
+    assert calls == [
+        {
+            "user_id": 1,
+            "is_admin": True,
+            "owner_name_expr": "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
+        }
+    ]
 
 
 def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
@@ -564,7 +1023,7 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     monkeypatch.setattr(
         video_cover.video_cover_project_store,
         "list_projects",
-        lambda *, user_id, is_admin: [],
+        lambda *, user_id, is_admin, owner_name_expr="": [],
     )
     monkeypatch.setattr(
         video_cover.video_cover_settings,
@@ -573,7 +1032,7 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
             "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
             "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
-            "cover_generation": {"provider": "local", "model_id": "gpt-image-2"},
+            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid", "execution_mode": "parallel"},
         },
     )
     client = _make_superadmin_client_no_db(monkeypatch)
@@ -586,7 +1045,22 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     assert 'id="vcShowDefaultConfig"' in html
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'name="{step}_provider"' in html
-        assert f'name="{step}_model_id"' in html
+        assert f'<select class="vc-input" name="{step}_model_id"' in html
+    assert 'id="vcModelOptions"' in html
+    assert 'name="cover_generation_execution_mode"' in html
+    assert 'data-cover-execution-field' in html
+    assert '<option value="parallel"' in html
+    assert "并发执行" in html
+    assert "refreshCoverExecutionMode" in html
+    assert "execution.value = 'parallel'" in html
+    assert "Nano Banana 2" in html
+    assert "GOOGLE VERTEX ADC" in html
+    assert "APIMART" in html
+    assert "google/gemini-3.1-flash-image-preview" in html
+    assert "gemini-3.1-flash-image-preview" in html
+    assert "gpt-image-2" in html
+    assert "doubao-seedream-5-0-260128" not in html
+    assert "openai/gpt-5.4-image-2:mid" in html
 
 
 def test_video_cover_default_config_requires_superadmin(authed_client_no_db):
@@ -600,6 +1074,68 @@ def test_video_cover_default_config_requires_superadmin(authed_client_no_db):
     assert post_resp.status_code == 403
 
 
+def test_video_cover_default_config_normalizes_cover_execution_mode():
+    from appcore import video_cover_settings
+    from appcore.video_cover_generation import normalize_cover_execution_mode
+
+    assert normalize_cover_execution_mode("openrouter", None) == "parallel"
+    assert normalize_cover_execution_mode("openrouter", "") == "parallel"
+    assert normalize_cover_execution_mode("local", "parallel") == "serial"
+    assert normalize_cover_execution_mode("apimart", "parallel") == "serial"
+
+    openrouter = video_cover_settings.normalize_model_defaults({
+        "cover_generation": {
+            "provider": "openrouter",
+            "model_id": "google/gemini-3.1-flash-image-preview",
+        }
+    })
+    assert openrouter["cover_generation"]["execution_mode"] == "parallel"
+
+    serial = video_cover_settings.normalize_model_defaults({
+        "cover_generation": {
+            "provider": "openrouter",
+            "model_id": "openai/gpt-5.4-image-2:mid",
+            "execution_mode": "serial",
+        }
+    })
+    assert serial["cover_generation"]["execution_mode"] == "serial"
+
+    local = video_cover_settings.normalize_model_defaults({
+        "cover_generation": {
+            "provider": "local",
+            "model_id": "gpt-image-2",
+            "execution_mode": "parallel",
+        }
+    })
+    assert local["cover_generation"]["execution_mode"] == "serial"
+
+    vertex = video_cover_settings.normalize_model_defaults({
+        "cover_generation": {
+            "provider": "gemini_vertex_adc",
+            "model_id": "gemini-3-pro-image-preview",
+            "execution_mode": "parallel",
+        }
+    })
+    assert vertex["cover_generation"] == {
+        "provider": "gemini_vertex_adc",
+        "model_id": "gemini-3-pro-image-preview",
+        "execution_mode": "serial",
+    }
+
+    apimart = video_cover_settings.normalize_model_defaults({
+        "cover_generation": {
+            "provider": "apimart",
+            "model_id": "gemini-3.1-flash-image-preview",
+            "execution_mode": "parallel",
+        }
+    })
+    assert apimart["cover_generation"] == {
+        "provider": "apimart",
+        "model_id": "gemini-3.1-flash-image-preview",
+        "execution_mode": "serial",
+    }
+
+
 def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
     from web.routes import video_cover
 
@@ -608,7 +1144,7 @@ def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
         "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
         "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
         "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
-        "cover_generation": {"provider": "local", "model_id": "gpt-image-2"},
+        "cover_generation": {"provider": "local", "model_id": "gpt-image-2", "execution_mode": "serial"},
     }
 
     monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: defaults)
@@ -619,7 +1155,11 @@ def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
             "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
             "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
-            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+            "cover_generation": {
+                "provider": "openrouter",
+                "model_id": "openai/gpt-5.4-image-2:mid",
+                "execution_mode": "parallel",
+            },
         },
     )
     client = _make_superadmin_client_no_db(monkeypatch)
@@ -632,7 +1172,11 @@ def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
                 "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
                 "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
                 "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
-                "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+                "cover_generation": {
+                    "provider": "openrouter",
+                    "model_id": "openai/gpt-5.4-image-2:mid",
+                    "execution_mode": "parallel",
+                },
             }
         },
     )
@@ -642,6 +1186,7 @@ def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
     assert post_resp.status_code == 200
     assert saved["payload"]["video_analysis"]["provider"] == "openrouter"
     assert saved["payload"]["cover_generation"]["model_id"] == "openai/gpt-5.4-image-2:mid"
+    assert saved["payload"]["cover_generation"]["execution_mode"] == "parallel"
     assert post_resp.get_json()["data"]["steps"]["cover_generation"]["provider"] == "openrouter"
 
 
@@ -650,11 +1195,16 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
 
     inserted = {}
     started = []
+    thumbnail_calls = []
     model_defaults = {
         "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
         "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
         "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
-        "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+        "cover_generation": {
+            "provider": "openrouter",
+            "model_id": "openai/gpt-5.4-image-2:mid",
+            "execution_mode": "parallel",
+        },
     }
 
     def fake_insert_project(**kwargs):
@@ -665,6 +1215,84 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
     monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
     monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: model_defaults)
+    monkeypatch.setattr(
+        video_cover,
+        "_extract_product",
+        lambda product_url: (_FakeProduct(), _FakeProduct.title, _FakeProduct.main_image_url),
+    )
+    monkeypatch.setattr(video_cover, "_fetch_product_image", lambda image_url: _png_bytes(size=(900, 240)))
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+    def fake_extract_thumbnail(video_path, output_dir, scale=None):
+        thumbnail_calls.append({"video_path": video_path, "output_dir": output_dir, "scale": scale})
+        return str(Path(output_dir) / "thumb.jpg")
+
+    monkeypatch.setattr(video_cover, "extract_thumbnail", fake_extract_thumbnail)
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/projects",
+        data={
+            "product_url": "https://shop.example/products/lamp",
+            "video_file": (BytesIO(b"video"), "lamp.mp4"),
+            "image_count": "3",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 201
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["id"] == inserted["task_id"]
+    assert inserted["user_id"] == 1
+    assert inserted["original_filename"] == "lamp.mp4"
+    state = inserted["state"]
+    assert state["type"] == "video_cover"
+    assert state["product_url"] == "https://shop.example/products/lamp"
+    assert state["image_count"] == 3
+    assert state["model_defaults"] == model_defaults
+    assert state["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
+    assert inserted["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
+    assert thumbnail_calls == [
+        {
+            "video_path": state["video_path"],
+            "output_dir": inserted["task_dir"],
+            "scale": "180:270:force_original_aspect_ratio=increase,crop=180:270",
+        }
+    ]
+    assert state["product"]["title"] == "Portable Blender Pro"
+    assert state["product"]["main_image_url"] == "https://cdn.example/blender.png"
+    assert Path(state["product"]["product_image_path"]).is_file()
+    with Image.open(state["product"]["product_image_path"]) as img:
+        assert img.format == "JPEG"
+        assert img.size == (400, 400)
+    assert Path(state["video_path"]).is_file()
+    assert state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+    assert started == [(payload["id"], "video_analysis", 3)]
+
+
+def test_video_cover_project_create_defaults_to_four_covers(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    inserted = {}
+    started = []
+
+    def fake_insert_project(**kwargs):
+        inserted.update(kwargs)
+
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: {})
     monkeypatch.setattr(
         video_cover,
         "_extract_product",
@@ -688,36 +1316,63 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
         data={
             "product_url": "https://shop.example/products/lamp",
             "video_file": (BytesIO(b"video"), "lamp.mp4"),
-            "image_count": "3",
         },
         content_type="multipart/form-data",
     )
 
     assert resp.status_code == 201
     payload = resp.get_json()
-    assert payload["ok"] is True
-    assert payload["id"] == inserted["task_id"]
-    assert inserted["user_id"] == 1
-    assert inserted["original_filename"] == "lamp.mp4"
-    state = inserted["state"]
-    assert state["type"] == "video_cover"
-    assert state["product_url"] == "https://shop.example/products/lamp"
-    assert state["image_count"] == 3
-    assert state["model_defaults"] == model_defaults
-    assert state["product"]["title"] == "Portable Blender Pro"
-    assert state["product"]["main_image_url"] == "https://cdn.example/blender.png"
-    assert Path(state["product"]["product_image_path"]).is_file()
-    with Image.open(state["product"]["product_image_path"]) as img:
-        assert img.format == "JPEG"
-        assert img.size == (400, 400)
-    assert Path(state["video_path"]).is_file()
-    assert state["steps"] == {
-        "video_analysis": "pending",
-        "product_analysis": "pending",
-        "ad_copy": "pending",
-        "cover_generation": "pending",
-    }
-    assert started == [(payload["id"], "video_analysis", 3)]
+    assert inserted["state"]["image_count"] == 4
+    assert started == [(payload["id"], "video_analysis", 4)]
+
+
+def test_video_cover_project_create_uses_white_card_fallback_when_thumbnail_fails(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    inserted = {}
+
+    def fake_insert_project(**kwargs):
+        inserted.update(kwargs)
+
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(video_cover.video_cover_project_store, "insert_project", fake_insert_project)
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: {})
+    monkeypatch.setattr(
+        video_cover,
+        "_extract_product",
+        lambda product_url: (_FakeProduct(), _FakeProduct.title, _FakeProduct.main_image_url),
+    )
+    monkeypatch.setattr(video_cover, "_fetch_product_image", lambda image_url: _png_bytes(size=(900, 240)))
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: True,
+        raising=False,
+    )
+
+    def fail_extract_thumbnail(video_path, output_dir, scale=None):
+        raise RuntimeError("ffmpeg failed")
+
+    monkeypatch.setattr(video_cover, "extract_thumbnail", fail_extract_thumbnail)
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/projects",
+        data={
+            "product_url": "https://shop.example/products/lamp",
+            "video_file": (BytesIO(b"video"), "lamp.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 201
+    assert inserted["thumbnail_path"] == ""
+    assert inserted["state"]["thumbnail_path"] == ""
 
 
 def test_video_cover_background_chain_uses_project_model_default_snapshot(monkeypatch, tmp_path):
@@ -741,15 +1396,25 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
             "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
             "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
-            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+            "cover_generation": {
+                "provider": "openrouter",
+                "model_id": "openai/gpt-5.4-image-2:mid",
+                "execution_mode": "serial",
+            },
         },
     }
     row = {"id": "task-1", "user_id": 8, "state_json": json.dumps(state, ensure_ascii=False)}
     monkeypatch.setattr(video_cover, "_load_project_for_background", lambda task_id: (row, state))
     monkeypatch.setattr(video_cover, "_save_state", lambda task_id, next_state, status: None)
 
-    def fake_run_step(next_state, step, *, provider, model, user_id):
-        calls.append({"step": step, "provider": provider, "model": model, "user_id": user_id})
+    def fake_run_step(next_state, step, *, provider, model, user_id, execution_mode=None):
+        calls.append({
+            "step": step,
+            "provider": provider,
+            "model": model,
+            "execution_mode": execution_mode,
+            "user_id": user_id,
+        })
         return {}
 
     monkeypatch.setattr(video_cover, "_run_project_step", fake_run_step)
@@ -757,10 +1422,10 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
     video_cover._run_video_cover_chain("task-1")
 
     assert calls == [
-        {"step": "video_analysis", "provider": "openrouter", "model": "google/gemini-3.1-pro-preview", "user_id": 8},
-        {"step": "product_analysis", "provider": "gemini_vertex_adc", "model": "gemini-3-flash-preview", "user_id": 8},
-        {"step": "ad_copy", "provider": "openrouter", "model": "google/gemini-3-flash-preview", "user_id": 8},
-        {"step": "cover_generation", "provider": "openrouter", "model": "openai/gpt-5.4-image-2:mid", "user_id": 8},
+        {"step": "video_analysis", "provider": "openrouter", "model": "google/gemini-3.1-pro-preview", "execution_mode": None, "user_id": 8},
+        {"step": "product_analysis", "provider": "gemini_vertex_adc", "model": "gemini-3-flash-preview", "execution_mode": None, "user_id": 8},
+        {"step": "ad_copy", "provider": "openrouter", "model": "google/gemini-3-flash-preview", "execution_mode": None, "user_id": 8},
+        {"step": "cover_generation", "provider": "openrouter", "model": "openai/gpt-5.4-image-2:mid", "execution_mode": "serial", "user_id": 8},
     ]
 
 
@@ -805,14 +1470,15 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
         "result": {
             "covers": [
                 {
-                    "platform": "social_reels",
+                    "platform": "social_reels_1",
                     "label": "Facebook / Instagram / TikTok / Shorts",
                     "index": 1,
-                    "object_key": "artifacts/video_cover/1/task-1/social_reels.png",
+                    "object_key": "artifacts/video_cover/1/task-1/social_reels_1.png",
                     "width": 1080,
                     "height": 1920,
                     "source_ad_copy_id": 1,
                     "hook": "Hook 1",
+                    "formatted_copy": "标题: Hook 1\n文案: Body copy 1\n描述: Shop Now",
                     "copy": {
                         "english": {
                             "headline": "Hook 1",
@@ -823,6 +1489,29 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
                             "headline": "钩子 1",
                             "body_text": "正文 1",
                             "cta": "立即购买",
+                        },
+                    },
+                },
+                {
+                    "platform": "social_reels_2",
+                    "label": "Facebook / Instagram / TikTok / Shorts #2",
+                    "index": 2,
+                    "object_key": "artifacts/video_cover/1/task-1/social_reels_2.png",
+                    "width": 1080,
+                    "height": 1920,
+                    "source_ad_copy_id": 1,
+                    "hook": "Hook 2",
+                    "formatted_copy": "标题: Hook 2\n文案: Body copy 2\n描述: Save Time",
+                    "copy": {
+                        "english": {
+                            "title": "Hook 2",
+                            "message": "Body copy 2",
+                            "description": "Save Time",
+                        },
+                        "chinese_translation": {
+                            "title": "钩子 2",
+                            "message": "正文 2",
+                            "description": "节省时间",
                         },
                     },
                 }
@@ -848,6 +1537,28 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert 'id="vcdAllPayloadModal"' in html
     assert 'id="vcdAllPayloadBody"' in html
     assert 'data-all-payload-preview' in html
+    assert "normalizeCopyTextFields" in html
+    assert "formattedCopyText" in html
+    assert "`标题: ${en.title}`" in html
+    assert "`文案: ${en.message}`" in html
+    assert "`描述: ${en.description}`" in html
+    assert ".vcd-input-panel { position:sticky;" in html
+    assert "overflow-y:auto" in html
+    assert "overscroll-behavior:contain" in html
+    assert '<aside class="vcd-panel vcd-input-panel">' in html
+    assert "sets.map((item, idx)" in html
+    assert ".vcd-copy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));" in html
+    assert "vcd-copy-card-actions" in html
+    assert "vcd-copy-lang-grid" in html
+    assert "复制英文" in html
+    assert "复制中文" in html
+    assert "复制双语" in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="english"' in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="chinese"' in html
+    assert 'data-copy-ad-copy="${idx}" data-copy-mode="bilingual"' in html
+    assert "copyAdCopyText(copyAdBtn, copyAdBtn.dataset.copyAdCopy, copyAdBtn.dataset.copyMode)" in html
+    assert "formattedBilingualCopyText" in html
+    assert "copyTextByMode(sets[index], mode)" in html
     assert html.count('<section class="vcd-process-card') == 4
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'data-process-card="{step}"' in html
@@ -859,9 +1570,77 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "vcd-result-box" not in html
     assert "data-result-step" not in html
     assert "保存图片" in html
-    assert "复制图片" in html
-    assert "一键复制文案" in html
-    assert "/video-cover/api/task-1/download/social_reels" in html
+    assert "复制图片" not in html
+    assert "data-copy-image" not in html
+    assert "copyImage(" not in html
+    assert "复制文案" in html
+    assert "一键复制文案" not in html
+    assert "vcd-cover-results-grid" in html
+    assert "vcd-cover-result-card" in html
+    assert "vcd-cover-copy-panel" in html
+    assert "vcd-cover-copy-button" in html
+    assert ".vcd-cover-actions { width:100%; display:grid; grid-template-columns:1fr;" in html
+    assert "covers.map((cover, idx)" in html
+    assert 'data-copy-cover-text="${idx}"' in html
+    assert "copyTextForCover(covers[index])" in html
+    assert "selectedCoverIndex" not in html
+    assert "data-cover-index" not in html
+    assert "vcd-thumbs" not in html
+    assert "/video-cover/api/task-1/download/social_reels_1" in html
+    assert "/video-cover/api/task-1/download/social_reels_2" in html
+
+
+def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defaults(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "image_count": 2,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "done",
+        },
+        "model_defaults": {
+            "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
+            "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "anthropic/claude-sonnet-4.6"},
+            "cover_generation": {
+                "provider": "openrouter",
+                "model_id": "openai/gpt-5.4-image-2:mid",
+                "execution_mode": "parallel",
+            },
+        },
+        "models": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "cover_generation": {
+                "provider": "openrouter",
+                "model_id": "openai/gpt-5.4-image-2:high",
+                "execution_mode": "serial",
+            },
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'data-step-model-badge="video_analysis"' in html
+    assert 'data-step-model-badge="cover_generation"' in html
+    assert "openrouter · google/gemini-3.1-pro-preview" in html
+    assert "gemini_vertex_adc · gemini-3-flash-preview" in html
+    assert "openrouter · anthropic/claude-sonnet-4.6" in html
+    assert "openrouter · openai/gpt-5.4-image-2:high · 串行" in html
+    assert "function stepModelText(step)" in html
+    assert "badge.textContent = stepModelText(step);" in html
 
 
 def test_video_cover_detail_matches_multi_translate_step_status_style(authed_client_no_db, monkeypatch):
@@ -953,6 +1732,8 @@ def test_video_cover_detail_renders_input_card_without_get_recovery(authed_clien
 
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
+    assert '<div class="vcd-project-heading">' in html
+    assert '<h1 class="vcd-project-title">Lamp</h1>' in html
     assert "项目输入" in html
     assert "Portable Blender Pro" in html
     assert 'data-copy-product-url="https://shop.example/products/lamp"' in html
@@ -960,6 +1741,12 @@ def test_video_cover_detail_renders_input_card_without_get_recovery(authed_clien
     assert "/video-cover/api/task-1/source-video" in html
     assert "vcd-product-image" in html
     assert "vcd-source-video" in html
+    assert "const currentImageCount = document.querySelector('[data-current-image-count]');" in html
+    assert "if (currentImageCount) currentImageCount.textContent = currentState.image_count || 4;" in html
+    assert "<dt>项目名</dt>" not in html
+    assert "<dt>商品链接</dt>" not in html
+    assert "<dt>视频文件</dt>" not in html
+    assert "<dt>生成张数</dt>" not in html
 
 
 def test_video_cover_source_media_routes_serve_project_files(authed_client_no_db, monkeypatch, tmp_path):
@@ -1073,6 +1860,195 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
     assert started == [("task-1", "video_analysis", None)]
 
 
+def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(_png_bytes())
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "image_count": 1,
+        "product": {
+            "title": "Emergency Roadside Light",
+            "main_image_url": "https://cdn.example/light.png",
+            "product_image_path": str(product_image),
+        },
+        "product_analysis": '{"product_definition":"light"}',
+        "video_analysis": '{"cover_reference":"trunk scene"}',
+        "ad_copy_sets": {
+            "ad_copy_sets": [
+                {
+                    "id": 1,
+                    "angle": "场景型",
+                    "english": {
+                        "title": "Don’t Get Stuck Unprepared",
+                        "message": "Add high-visibility warning light to your trunk.",
+                        "description": "Road Trips Made Safer",
+                    },
+                    "chinese_translation": {
+                        "title": "别在紧急时毫无准备",
+                        "message": "为后备箱增加高可见警示灯。",
+                        "description": "让自驾更安全",
+                    },
+                    "usage_note": "适合后备箱场景。",
+                }
+            ]
+        },
+    }
+    saved_states = []
+    captured = {}
+
+    def fake_generate_video_covers(**kwargs):
+        captured.update(kwargs)
+        partial = {
+            "product": state["product"],
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "inputs": {},
+            "models": {
+                "cover_generation": {
+                    "provider": "openrouter",
+                    "model_id": "openai/gpt-5.4-image-2:mid",
+                    "execution_mode": "parallel",
+                }
+            },
+            "image_prompts": [
+                {"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}
+            ],
+            "covers": [
+                {
+                    "platform": "social_reels",
+                    "index": 1,
+                    "object_key": "artifacts/video_cover/8/task-1/social_reels.png",
+                    "copy": state["ad_copy_sets"]["ad_copy_sets"][0],
+                    "formatted_copy": (
+                        "标题: Don’t Get Stuck Unprepared\n"
+                        "文案: Add high-visibility warning light to your trunk.\n"
+                        "描述: Road Trips Made Safer"
+                    ),
+                }
+            ],
+        }
+        kwargs["on_cover_done"](partial)
+        return partial
+
+    monkeypatch.setattr(video_cover, "generate_video_covers", fake_generate_video_covers)
+    monkeypatch.setattr(video_cover, "_attach_urls", lambda payload: payload)
+    monkeypatch.setattr(
+        video_cover,
+        "save_project_state",
+        lambda task_id, next_state, status: saved_states.append(
+            {"task_id": task_id, "state": json.loads(json.dumps(next_state, ensure_ascii=False)), "status": status}
+        ),
+    )
+
+    video_cover._run_cover_generation_step(
+        state,
+        provider="openrouter",
+        model="openai/gpt-5.4-image-2:mid",
+        execution_mode="parallel",
+        user_id=8,
+    )
+
+    request_payload = state["step_requests"]["cover_generation"]
+    assert captured["cover_execution_mode"] == "parallel"
+    assert request_payload["request_data"]["execution_mode"] == "parallel"
+    assert state["models"]["cover_generation"]["execution_mode"] == "parallel"
+    assert request_payload["image_prompts"][0]["prompt"] == "actual prompt with native hook text"
+    assert request_payload["request_data"]["ad_copy_sets"]["ad_copy_sets"][0]["english"]["title"] == (
+        "Don’t Get Stuck Unprepared"
+    )
+    assert saved_states[0]["task_id"] == "task-1"
+    assert saved_states[0]["status"] == "running"
+    assert saved_states[0]["state"]["result"]["covers"][0]["formatted_copy"].startswith("标题: Don’t Get Stuck")
+    assert "overlay_text" not in saved_states[0]["state"]["result"]["covers"][0]
+    assert "overlay_box" not in saved_states[0]["state"]["result"]["covers"][0]
+    assert saved_states[0]["state"]["step_messages"]["cover_generation"] == "已生成 1/1 张封面，正在整理结果..."
+
+
+def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path):
+    from flask import has_app_context, has_request_context
+    from web.routes import video_cover
+
+    assert not has_app_context()
+    assert not has_request_context()
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(_png_bytes())
+    copy_item = {
+        "id": 1,
+        "angle": "场景型",
+        "english": {
+            "title": "Don’t Get Stuck Unprepared",
+            "message": "Add high-visibility warning light to your trunk.",
+            "description": "Road Trips Made Safer",
+        },
+        "chinese_translation": {
+            "title": "别在紧急时毫无准备",
+            "message": "为后备箱增加高可见警示灯。",
+            "description": "让自驾更安全",
+        },
+        "usage_note": "适合后备箱场景。",
+    }
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "image_count": 1,
+        "product": {
+            "title": "Emergency Roadside Light",
+            "main_image_url": "https://cdn.example/light.png",
+            "product_image_path": str(product_image),
+        },
+        "product_analysis": '{"product_definition":"light"}',
+        "video_analysis": '{"cover_reference":"trunk scene"}',
+        "ad_copy_sets": {"ad_copy_sets": [copy_item]},
+    }
+
+    def fake_generate_video_covers(**kwargs):
+        return {
+            "product": state["product"],
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "inputs": {},
+            "models": {"cover_generation": {"provider": "local", "model_id": "gpt-image-2"}},
+            "image_prompts": [
+                {"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}
+            ],
+            "covers": [
+                {
+                    "platform": "social_reels",
+                    "index": 1,
+                    "object_key": "artifacts/video_cover/8/task-1/social_reels.png",
+                    "copy": copy_item,
+                    "formatted_copy": (
+                        "标题: Don’t Get Stuck Unprepared\n"
+                        "文案: Add high-visibility warning light to your trunk.\n"
+                        "描述: Road Trips Made Safer"
+                    ),
+                }
+            ],
+        }
+
+    monkeypatch.setattr(video_cover, "generate_video_covers", fake_generate_video_covers)
+
+    result = video_cover._run_cover_generation_step(state, provider="local", model="gpt-image-2", user_id=8)
+
+    assert result["covers"][0]["object_key"] == "artifacts/video_cover/8/task-1/social_reels.png"
+    assert "url" not in result["covers"][0]
+    assert "overlay_text" not in state["result"]["covers"][0]
+    assert "overlay_box" not in state["result"]["covers"][0]
+    assert state["step_results"]["cover_generation"]["structured_result"]["covers"][0]["object_key"]
+
+
 def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
@@ -1144,6 +2120,11 @@ def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed
         "product_analysis": "old product",
         "ad_copy_sets": {"ad_copy_sets": []},
         "result": {"covers": []},
+        "inputs": {"old": True},
+        "models": {"cover_generation": {"provider": "old"}},
+        "error": "old error",
+        "video_analysis_structured": {"video_text": "old"},
+        "product_analysis_structured": {"product_definition": "old"},
         "step_timing": {"video_analysis": {"elapsed_seconds": 1}},
         "step_requests": {"video_analysis": {"prompt": "old"}},
         "step_results": {"video_analysis": {"raw_response": "old"}},
@@ -1173,7 +2154,7 @@ def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed
         raising=False,
     )
 
-    resp = authed_client_no_db.post("/video-cover/api/task-1/restart", json={"image_count": 4})
+    resp = authed_client_no_db.post("/video-cover/api/task-1/restart", json={})
 
     assert resp.status_code == 202
     payload = resp.get_json()
@@ -1188,9 +2169,196 @@ def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed
         "ad_copy": "pending",
         "cover_generation": "pending",
     }
-    for key in ("video_analysis", "product_analysis", "ad_copy_sets", "result", "step_timing", "step_requests", "step_results"):
+    for key in (
+        "video_analysis",
+        "product_analysis",
+        "ad_copy_sets",
+        "result",
+        "inputs",
+        "models",
+        "error",
+        "video_analysis_structured",
+        "product_analysis_structured",
+        "step_timing",
+        "step_requests",
+        "step_results",
+    ):
         assert key not in next_state
     assert started == [("task-1", "video_analysis", 4)]
+
+
+def test_video_cover_delete_soft_deletes_visible_project_and_cleans_storage(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    task_dir = tmp_path / "task-1"
+    task_dir.mkdir()
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    state = {"video_path": str(video_path)}
+    row = {
+        "id": "task-1",
+        "task_dir": str(task_dir),
+        "state_json": json.dumps(state, ensure_ascii=False),
+        "display_name": "Lamp",
+    }
+    cleanup_calls = []
+    delete_calls = []
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        "appcore.cleanup.delete_task_storage",
+        lambda payload: cleanup_calls.append(payload),
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "soft_delete_project",
+        lambda task_id, *, user_id, is_admin: delete_calls.append(
+            {"task_id": task_id, "user_id": user_id, "is_admin": is_admin}
+        ),
+    )
+
+    resp = authed_client_no_db.delete("/video-cover/api/task-1")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert cleanup_calls == [
+        {
+            "task_dir": str(task_dir),
+            "state_json": row["state_json"],
+        }
+    ]
+    assert delete_calls == [{"task_id": "task-1", "user_id": 1, "is_admin": True}]
+
+
+def test_video_cover_duplicate_copies_inputs_and_restarts(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"source-video")
+    source_product = tmp_path / "product_main.jpg"
+    source_product.write_bytes(b"source-product")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "display_name": "Lamp Cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(source_video),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path / "old-task"),
+        "thumbnail_path": str(tmp_path / "old-task" / "thumbnail.jpg"),
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(source_product),
+        },
+        "image_count": 3,
+        "model_defaults": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},
+        },
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "result": {"covers": [{"object_key": "old"}]},
+        "error": "old error",
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "display_name": "Lamp Cover",
+        "original_filename": "lamp.mp4",
+        "task_dir": state["task_dir"],
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }
+    inserted = {}
+    started = []
+    thumbnail_calls = []
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "insert_project",
+        lambda **kwargs: inserted.update(kwargs),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "resolve_project_display_name_conflict",
+        lambda user_id, desired_name: desired_name,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+
+    def fake_extract_thumbnail(video_path, output_dir, scale=None):
+        thumbnail_calls.append({"video_path": video_path, "output_dir": output_dir, "scale": scale})
+        return str(Path(output_dir) / "thumb.jpg")
+
+    monkeypatch.setattr(video_cover, "extract_thumbnail", fake_extract_thumbnail)
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/duplicate")
+
+    assert resp.status_code == 201
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["id"] == inserted["task_id"]
+    assert payload["redirect_url"] == f"/video-cover/{inserted['task_id']}"
+    next_state = inserted["state"]
+    assert inserted["user_id"] == 1
+    assert inserted["display_name"] == "Lamp Cover 复制"
+    assert inserted["original_filename"] == "lamp.mp4"
+    assert inserted["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
+    assert next_state["display_name"] == "Lamp Cover 复制"
+    assert next_state["product_url"] == "https://shop.example/products/lamp"
+    assert next_state["image_count"] == 3
+    for step, defaults in state["model_defaults"].items():
+        assert next_state["model_defaults"][step]["provider"] == defaults["provider"]
+        assert next_state["model_defaults"][step]["model_id"] == defaults["model_id"]
+    assert next_state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+    assert "result" not in next_state
+    assert "error" not in next_state
+    assert Path(next_state["video_path"]).read_bytes() == b"source-video"
+    assert next_state["video_path"] != str(source_video)
+    assert Path(next_state["product"]["product_image_path"]).read_bytes() == b"source-product"
+    assert next_state["product"]["product_image_path"] != str(source_product)
+    assert thumbnail_calls == [
+        {
+            "video_path": next_state["video_path"],
+            "output_dir": inserted["task_dir"],
+            "scale": "180:270:force_original_aspect_ratio=increase,crop=180:270",
+        }
+    ]
+    assert started == [(inserted["task_id"], "video_analysis", 3)]
 
 
 def test_video_cover_download_serves_owned_cover(authed_client_no_db, monkeypatch, tmp_path):
@@ -1260,6 +2428,7 @@ def test_video_cover_generate_route_calls_service(authed_client_no_db, monkeypat
             "product_provider": "gemini_vertex_adc",
             "video_provider": "gemini_vertex_adc",
             "ad_copy_provider": "openrouter",
+            "cover_execution_mode": "serial",
         },
         content_type="multipart/form-data",
     )
@@ -1274,6 +2443,7 @@ def test_video_cover_generate_route_calls_service(authed_client_no_db, monkeypat
     assert captured["video_path_existed_during_call"] is True
     assert captured["cover_provider"] == "openrouter"
     assert captured["cover_model"] == "nano_banana_2"
+    assert captured["cover_execution_mode"] == "serial"
     assert captured["product_analysis_provider"] == "gemini_vertex_adc"
     assert captured["video_analysis_provider"] == "gemini_vertex_adc"
     assert captured["ad_copy_provider"] == "openrouter"

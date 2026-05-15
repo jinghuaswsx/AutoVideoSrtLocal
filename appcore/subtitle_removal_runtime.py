@@ -16,7 +16,12 @@ from appcore.cancellation import (
     throw_if_cancel_requested,
 )
 from appcore.events import Event, EventBus, EVT_SR_DONE, EVT_SR_ERROR, EVT_SR_STEP_UPDATE
-from appcore.subtitle_removal_provider import SubtitleRemovalProviderError, query_progress, submit_task
+from appcore.subtitle_removal_provider import (
+    NIUMA_CREDENTIAL_CODE,
+    SubtitleRemovalProviderError,
+    query_progress,
+    submit_task,
+)
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +80,11 @@ def _should_resume_existing_upload(task: dict) -> bool:
         and (steps.get("upload_result") or "").strip().lower() in {"pending", "running"}
         and bool(result_video_path)
     )
+
+
+def _provider_credential_code(task: dict | None) -> str:
+    backend = str((task or {}).get("subtitle_backend") or "volc").strip().lower().replace("-", "_")
+    return NIUMA_CREDENTIAL_CODE if backend == "niuma" else "subtitle_removal"
 
 
 class SubtitleRemovalRuntime:
@@ -181,13 +191,19 @@ class SubtitleRemovalRuntime:
             raise RuntimeError("source_tos_key is missing")
         media_info = task.get("media_info") or {}
         selection = _box_bounds(task.get("selection_box") or task.get("position_payload"), media_info)
-        video_name = f"sr_{task_id}_{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
+        credential_code = _provider_credential_code(task)
+        if credential_code == NIUMA_CREDENTIAL_CODE:
+            video_name = f"{task_id}_{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
+        else:
+            video_name = f"sr_{task_id}_{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
         source_url = subtitle_removal_source_storage.generate_public_source_url(
             task,
             source_tos_key,
             expires=86400,
         )
         erase_text_type = (task.get("erase_text_type") or "subtitle").strip().lower()
+        if credential_code == NIUMA_CREDENTIAL_CODE:
+            erase_text_type = "subtitle"
         if erase_text_type not in {"subtitle", "text"}:
             erase_text_type = "subtitle"
         self._set_step(task_id, "submit", "running", "正在提交去字幕任务")
@@ -199,6 +215,7 @@ class SubtitleRemovalRuntime:
                 video_name=video_name,
                 source_url=source_url,
                 erase_text_type=erase_text_type,
+                credential_code=credential_code,
             )
         except Exception as exc:
             self._set_step(task_id, "submit", "error", f"提交失败: {exc}")
@@ -229,7 +246,11 @@ class SubtitleRemovalRuntime:
             if not provider_task_id:
                 raise RuntimeError("provider_task_id is missing")
 
-            progress = query_progress(provider_task_id)
+            credential_code = _provider_credential_code(task)
+            if credential_code == NIUMA_CREDENTIAL_CODE:
+                progress = query_progress(provider_task_id, credential_code=credential_code)
+            else:
+                progress = query_progress(provider_task_id)
             if _task_is_deleted(task_id):
                 raise SubtitleRemovalTaskDeleted(task_id)
             status = (progress.get("status") or "").strip().lower()

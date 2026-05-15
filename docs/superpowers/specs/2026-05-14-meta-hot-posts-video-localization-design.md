@@ -1,6 +1,6 @@
 # Meta Hot Posts Video Localization Design
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 ## Background
 
@@ -55,6 +55,17 @@ Video localization uses a startup takeover singleton. The APScheduler job schedu
 Failed video downloads use a conservative retry policy: a failed row is not eligible for retry until its last failure is at least 12 hours old. A row is attempted at most 5 times; after the fifth failed attempt it is marked `local_video_status='unavailable'` and no longer enters the download queue.
 
 This is intentionally different from product analysis and message translation, which still skip or take over only after their stale-run timeout. Video downloads are external and long-running, so a new invocation should own the queue instead of waiting behind a stale logical run.
+
+## Alerting
+
+The video localization task may legitimately produce failed run rows for low-volume batches, upstream throttling, unavailable videos, or startup takeover cleanup. Those rows remain in `scheduled_task_runs` for audit, but they should not page the operations chat by consecutive-failure count alone.
+
+Feishu and the Web scheduled-task alert banner only surface this task when the current Beijing-day download attempts are high enough and the failure rate is severe:
+
+- Daily download attempts must be greater than 20.
+- Daily failed attempts divided by download attempts must be greater than 80%.
+- Otherwise the failed run is recorded but alert dispatch is suppressed.
+- Recovery notifications are also suppressed for this task, because low-volume failures may never have produced a failure alert.
 
 ## Rendering
 

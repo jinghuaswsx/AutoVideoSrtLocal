@@ -53,13 +53,13 @@ _INFLIGHT_STEP_STATUSES = {
     "download_result": {"running"},
     "upload_result": {"running"},
 }
-_SUBTITLE_BACKENDS = {"volc", "local_vsr"}
+_SUBTITLE_BACKENDS = {"volc", "niuma", "local_vsr"}
 
 
 def _normalize_subtitle_backend(value: str | None) -> str:
     backend = str(value or "volc").strip().lower().replace("-", "_")
     if backend not in _SUBTITLE_BACKENDS:
-        raise ValueError("subtitle_backend must be volc or local_vsr")
+        raise ValueError("subtitle_backend must be volc, niuma or local_vsr")
     return backend
 
 
@@ -68,6 +68,8 @@ def _subtitle_backend_label(value: str | None) -> str:
         backend = _normalize_subtitle_backend(value)
     except ValueError:
         backend = "volc"
+    if backend == "niuma":
+        return "牛马"
     if backend == "local_vsr":
         return "本地 VSR"
     return "火山"
@@ -452,7 +454,7 @@ def _submit_locked(task_id: str, task: dict, body: dict):
         return _json_response({"error": str(exc)}), 400
 
     erase_text_type = ""
-    if subtitle_backend != "local_vsr":
+    if subtitle_backend == "volc":
         erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
         if erase_text_type not in {"subtitle", "text"}:
             return _json_response({"error": "erase_text_type must be subtitle or text"}), 400
@@ -527,7 +529,7 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "subtitle_backend": task.get("subtitle_backend") or "volc",
         "subtitle_backend_label": _subtitle_backend_label(task.get("subtitle_backend")),
         "remove_mode": task.get("remove_mode") or "",
-        "erase_text_type": "" if (task.get("subtitle_backend") or "volc") == "local_vsr" else (task.get("erase_text_type") or "subtitle"),
+        "erase_text_type": (task.get("erase_text_type") or "subtitle") if (task.get("subtitle_backend") or "volc") == "volc" else "",
         "local_vsr_options": dict(task.get("local_vsr_options") or {}),
         "selection_box": task.get("selection_box"),
         "position_payload": task.get("position_payload"),
@@ -677,7 +679,7 @@ def list_tasks():
                 "provider_result_url": state.get("provider_result_url") or "",
                 "subtitle_backend": subtitle_backend,
                 "subtitle_backend_label": _subtitle_backend_label(subtitle_backend),
-                "erase_text_type": "" if subtitle_backend == "local_vsr" else (state.get("erase_text_type") or ""),
+                "erase_text_type": (state.get("erase_text_type") or "") if subtitle_backend == "volc" else "",
                 "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=row.get("id")) if state.get("thumbnail_path") else "",
                 "detail_url": url_for("subtitle_removal.detail_page", task_id=row.get("id")),
                 "download_url": url_for("subtitle_removal.download_result", task_id=row.get("id")),
@@ -802,7 +804,7 @@ def complete_upload():
     if not os.path.exists(video_path):
         return _json_response({"error": "uploaded video file missing"}), 400
 
-    if subtitle_backend == "volc" and not tos_clients.object_exists(object_key):
+    if subtitle_backend != "local_vsr" and not tos_clients.object_exists(object_key):
         try:
             tos_clients.upload_file(video_path, object_key)
         except Exception as exc:
@@ -810,7 +812,7 @@ def complete_upload():
             return _json_response({"error": f"unable to push to TOS: {exc}"}), 502
 
     object_size = int(os.path.getsize(video_path) or file_size or 0)
-    storage_backend = "tos" if subtitle_backend == "volc" else "local"
+    storage_backend = "local" if subtitle_backend == "local_vsr" else "tos"
     source_object_info = build_source_object_info(
         original_filename=original_filename,
         content_type=content_type or reservation.get("content_type") or "application/octet-stream",
@@ -828,7 +830,7 @@ def complete_upload():
     )
     store.update(
         task_id,
-        source_tos_key=object_key if subtitle_backend == "volc" else "",
+        source_tos_key=object_key if subtitle_backend != "local_vsr" else "",
         source_object_info=source_object_info,
         subtitle_backend=subtitle_backend,
         erase_text_type=erase_text_type if subtitle_backend == "volc" else "",

@@ -4,8 +4,10 @@
 {% block page_title %}文案封面生成{% endblock %}
 
 {% block extra_style %}
-.vcd-back { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; margin-bottom:12px; border:1px solid var(--border-main); border-radius:8px; color:var(--text-main); text-decoration:none; font-size:13px; font-weight:700; background:var(--bg-card); }
+.vcd-project-heading { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:14px; align-items:center; margin-bottom:12px; }
+.vcd-back { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border:1px solid var(--border-main); border-radius:8px; color:var(--text-main); text-decoration:none; font-size:13px; font-weight:700; background:var(--bg-card); }
 .vcd-back:hover { border-color:var(--primary-color); color:var(--primary-color); }
+.vcd-project-title { min-width:0; min-height:42px; display:flex; align-items:center; justify-content:center; margin:0; padding:6px 16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:var(--text-main); font-size:20px; font-weight:900; line-height:1.25; text-align:center; overflow-wrap:anywhere; }
 .vcd-top-card { position:sticky; top:var(--header-h, 56px); z-index:30; margin-bottom:16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:14px 16px; box-shadow:0 8px 24px rgba(15,23,42,.10); }
 .vcd-top-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
 .vcd-count-wrap { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -31,10 +33,8 @@
 .vcd-progress-msg { margin-top:6px; font-size:12px; color:#64748b; min-height:18px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vcd-project-grid { display:grid; grid-template-columns:minmax(240px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
 .vcd-panel { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
+.vcd-input-panel { position:sticky; top:calc(var(--header-h, 56px) + 128px); max-height:calc(100vh - var(--header-h, 56px) - 144px); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
 .vcd-title { margin:0 0 12px; font-size:15px; font-weight:900; color:var(--text-main); }
-.vcd-kv { display:grid; gap:10px; }
-.vcd-kv dt { font-size:12px; color:#64748b; font-weight:800; }
-.vcd-kv dd { margin:3px 0 0; font-size:13px; color:var(--text-main); overflow-wrap:anywhere; }
 .vcd-input-card { display:grid; gap:12px; padding:12px; margin-bottom:14px; border:1px solid rgba(14,165,233,.28); border-radius:8px; background:rgba(14,165,233,.05); }
 .vcd-product-title { font-size:14px; line-height:1.45; font-weight:900; color:var(--text-main); overflow-wrap:anywhere; }
 .vcd-link-row { display:grid; grid-template-columns:minmax(0, 1fr); gap:8px; }
@@ -58,6 +58,8 @@
 .vcd-card-main { flex:1; min-width:0; }
 .vcd-step-name-row { display:flex; align-items:center; gap:10px; margin-bottom:2px; flex-wrap:wrap; min-width:0; }
 .vcd-card-title { display:inline-flex; align-items:center; min-width:0; font-size:15px; font-weight:700; color:var(--text-main); }
+.vcd-model-meta { min-width:0; max-width:min(100%, 560px); color:#64748b; font-size:12px; font-weight:800; line-height:1.35; overflow-wrap:anywhere; word-break:break-word; }
+.vcd-model-meta::before { content:""; display:inline-block; width:1px; height:14px; margin:0 8px 0 2px; background:var(--border-main); vertical-align:-2px; }
 .vcd-card-timer { margin-left:100px; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:24px; padding:3px 10px; border-radius:999px; border:1px solid var(--border-main); background:var(--bg-card); color:#64748b; font-size:12px; font-weight:900; line-height:1; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .vcd-card-timer b { font-weight:900; color:inherit; }
 .vcd-process-card.running .vcd-card-timer { border-color:#86efac; background:rgba(34,197,94,.16); color:#15803d; }
@@ -80,21 +82,36 @@
 .vcd-mini-card { border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; }
 .vcd-mini-label { font-size:11px; font-weight:900; color:#64748b; margin-bottom:5px; }
 .vcd-mini-value { font-size:13px; color:var(--text-main); line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-.vcd-copy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
-.vcd-copy-card { border:1px solid var(--border-main); border-radius:8px; padding:12px; background:#f8fafc; }
-.vcd-copy-headline { font-size:15px; font-weight:900; color:var(--text-main); margin-bottom:6px; }
-.vcd-copy-body { font-size:13px; color:var(--text-main); line-height:1.5; }
-.vcd-copy-meta { margin-top:8px; font-size:12px; color:#64748b; }
-.vcd-final-layout { display:grid; grid-template-columns:minmax(220px, 360px) minmax(0, 1fr); gap:18px; align-items:center; }
-.vcd-cover-pane { display:grid; justify-items:center; gap:10px; }
-.vcd-cover-img { width:min(280px, 100%); aspect-ratio:9/16; object-fit:cover; border-radius:8px; border:1px solid var(--border-main); background:#e5e7eb; }
-.vcd-cover-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+.vcd-copy-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; align-items:stretch; }
+.vcd-copy-card { min-width:0; display:grid; gap:10px; align-content:start; border:1px solid var(--border-main); border-radius:8px; padding:12px; background:#f8fafc; }
+.vcd-copy-card-top { display:grid; gap:4px; min-width:0; }
+.vcd-copy-card-title { font-size:14px; font-weight:900; color:var(--text-main); line-height:1.35; }
+.vcd-copy-card-note { font-size:12px; color:#64748b; line-height:1.45; overflow-wrap:anywhere; }
+.vcd-copy-lang-grid { display:grid; grid-template-columns:1fr; gap:10px; min-width:0; }
+.vcd-copy-lang-block { display:grid; gap:7px; min-width:0; }
+.vcd-copy-lang-title { font-size:12px; font-weight:900; color:var(--primary-color); line-height:1.25; }
+.vcd-copy-line { display:grid; gap:2px; min-width:0; }
+.vcd-copy-line-label { font-size:11px; font-weight:900; color:#64748b; line-height:1.2; }
+.vcd-copy-line-value { font-size:12px; color:var(--text-main); line-height:1.45; overflow-wrap:anywhere; }
+.vcd-copy-line-value.title { font-size:13px; font-weight:900; line-height:1.35; }
+.vcd-copy-card-actions { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; align-self:end; }
+.vcd-copy-card-actions .vcd-pill-btn { width:100%; padding:0 6px; font-size:11px; white-space:nowrap; }
+.vcd-copy-meta { font-size:12px; color:#64748b; line-height:1.45; overflow-wrap:anywhere; }
+.vcd-cover-results-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 280px)); gap:18px; align-items:start; justify-content:start; }
+.vcd-cover-result-card { width:100%; display:grid; gap:10px; align-content:start; }
+.vcd-cover-copy-panel { width:100%; display:grid; gap:10px; align-content:start; min-height:190px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:12px; }
+.vcd-cover-copy-lines { display:grid; gap:8px; }
+.vcd-cover-copy-line { display:grid; gap:3px; }
+.vcd-cover-copy-label { font-size:11px; font-weight:900; color:#64748b; }
+.vcd-cover-copy-value { font-size:13px; line-height:1.55; color:var(--text-main); overflow-wrap:anywhere; }
+.vcd-cover-copy-value.title { font-size:16px; font-weight:900; line-height:1.35; }
+.vcd-cover-copy-button { width:100%; }
+.vcd-cover-image-panel { width:100%; display:grid; gap:8px; }
+.vcd-cover-img { width:100%; aspect-ratio:9/16; object-fit:cover; border-radius:8px; border:1px solid var(--border-main); background:#e5e7eb; }
+.vcd-cover-actions { width:100%; display:grid; grid-template-columns:1fr; gap:8px; justify-items:center; }
+.vcd-cover-actions .vcd-pill-btn { width:100%; padding:0 8px; }
 .vcd-pill-btn { display:inline-flex; align-items:center; justify-content:center; height:30px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-size:12px; font-weight:900; text-decoration:none; cursor:pointer; }
 .vcd-pill-btn.primary { border-color:var(--primary-color); background:var(--primary-color); color:#f8fafc; }
-.vcd-thumbs { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-.vcd-thumb { width:42px; height:58px; border:2px solid transparent; border-radius:8px; overflow:hidden; padding:0; background:#e5e7eb; cursor:pointer; }
-.vcd-thumb.active { border-color:var(--primary-color); }
-.vcd-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
 .vcd-final-copy { display:grid; gap:10px; align-content:center; }
 .vcd-final-hook { font-size:20px; font-weight:900; color:var(--text-main); }
 .vcd-final-body { font-size:14px; line-height:1.7; color:var(--text-main); }
@@ -109,18 +126,26 @@
 .vcd-modal-body { padding:16px; }
 .vcd-pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.55; padding:12px; border:1px solid var(--border-main); border-radius:8px; background:#0f172a; color:#e5e7eb; }
 @media (max-width:1080px) {
-  .vcd-project-grid, .vcd-final-layout { grid-template-columns:1fr; }
+  .vcd-project-grid { grid-template-columns:1fr; }
+  .vcd-input-panel { position:static; top:auto; max-height:none; overflow:visible; }
   .vcd-progress-steps { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .vcd-card-timer { margin-left:0; }
 }
 @media (max-width:720px) {
+  .vcd-project-heading { grid-template-columns:1fr; }
+  .vcd-project-title { justify-content:flex-start; text-align:left; }
   .vcd-top-actions { align-items:stretch; flex-direction:column; }
   .vcd-progress-steps, .vcd-field-grid { grid-template-columns:1fr; }
+  .vcd-cover-results-grid { grid-template-columns:minmax(0, 280px); justify-content:center; }
 }
 {% endblock %}
 
 {% block content %}
-<a class="vcd-back" href="/video-cover">&lt; 返回项目列表</a>
+{% set detail_project_name = state.get('display_name') or project.display_name or project.original_filename or task_id %}
+<div class="vcd-project-heading">
+  <a class="vcd-back" href="/video-cover">&lt; 返回项目列表</a>
+  <h1 class="vcd-project-title">{{ detail_project_name }}</h1>
+</div>
 
 <section class="vcd-top-card" id="vcdTopCard">
   <div class="vcd-top-actions">
@@ -128,7 +153,7 @@
       <span class="vcd-count-label">重新生成张数</span>
       <div class="vcd-count-pills" role="group" aria-label="重新生成张数">
         {% for count in [1, 2, 3, 4] %}
-        <button type="button" class="vcd-count-pill{% if (state.get('image_count') or 2) == count %} active{% endif %}" data-restart-count="{{ count }}">{{ count }} 张</button>
+        <button type="button" class="vcd-count-pill{% if (state.get('image_count') or 4) == count %} active{% endif %}" data-restart-count="{{ count }}">{{ count }} 张</button>
         {% endfor %}
       </div>
     </div>
@@ -153,12 +178,12 @@
 
 {% set result = state.get('result') or {} %}
 {% set product = state.get('product') or result.get('product') or {} %}
-{% set product_title = product.get('title') or state.get('display_name') or project.display_name or project.original_filename or task_id %}
+{% set product_title = product.get('title') or detail_project_name %}
 {% set product_url = product.get('product_url') or state.get('product_url') %}
 {% set product_image_src = url_for('video_cover.product_image', task_id=task_id) if product.get('product_image_path') else product.get('main_image_url') %}
 
 <div class="vcd-project-grid">
-  <aside class="vcd-panel">
+  <aside class="vcd-panel vcd-input-panel">
     <h2 class="vcd-title">项目输入</h2>
     <section class="vcd-input-card" aria-label="项目输入">
       <div class="vcd-product-title">{{ product_title }}</div>
@@ -173,33 +198,26 @@
         {% if product_image_src %}
         <img class="vcd-product-image" src="{{ product_image_src }}" alt="商品主图" loading="lazy">
         {% endif %}
+        {% if state.get('video_path') %}
         <video class="vcd-source-video" src="{{ url_for('video_cover.source_video', task_id=task_id) }}" controls preload="metadata" playsinline></video>
+        {% else %}
+        <div class="vcd-empty" style="width:180px;height:240px;display:grid;place-items:center;">
+          <span>源视频文件已清理<br>可查看已生成结果</span>
+        </div>
+        {% endif %}
       </div>
     </section>
-    <dl class="vcd-kv">
-      <div>
-        <dt>项目名</dt>
-        <dd>{{ state.get('display_name') or project.display_name or project.original_filename or task_id }}</dd>
-      </div>
-      <div>
-        <dt>商品链接</dt>
-        <dd><a href="{{ state.get('product_url') }}" target="_blank" rel="noopener noreferrer">{{ state.get('product_url') }}</a></dd>
-      </div>
-      <div>
-        <dt>视频文件</dt>
-        <dd>{{ state.get('video_filename') or project.original_filename }}</dd>
-      </div>
-      <div>
-        <dt>生成张数</dt>
-        <dd><span data-current-image-count>{{ state.get('image_count') or 2 }}</span> 张</dd>
-      </div>
-    </dl>
   </aside>
 
   <main class="vcd-cards" id="vcdCards">
     {% for step in step_order %}
     {% set status = state.get('steps', {}).get(step, 'pending') %}
     {% set timing = (state.get('step_timing') or {}).get(step, {}) %}
+    {% set model_default = (state.get('model_defaults') or {}).get(step) or {} %}
+    {% set model_actual = (state.get('models') or {}).get(step) or {} %}
+    {% set model_provider = model_actual.get('provider') or model_default.get('provider') or '未配置' %}
+    {% set model_id = model_actual.get('model_id') or model_actual.get('model') or model_default.get('model_id') or model_default.get('model') or '未配置' %}
+    {% set execution_mode = model_actual.get('execution_mode') or model_default.get('execution_mode') %}
     <section class="vcd-process-card step {{ status }}" data-process-card="{{ step }}">
       <div class="vcd-card-head step-main">
         <div class="vcd-step-icon step-icon {{ status }}" data-step-icon="{{ step }}" data-step-index="{{ loop.index }}">
@@ -208,11 +226,14 @@
         <div class="vcd-card-main">
           <div class="vcd-step-name-row step-name-row">
             <span class="vcd-card-title step-name">{{ step_labels[step] }}</span>
+            <span class="vcd-model-meta" data-step-model-badge="{{ step }}">
+              {{ model_provider }} · {{ model_id }}{% if step == 'cover_generation' and execution_mode %} · {{ '并行' if execution_mode == 'parallel' else '串行' if execution_mode == 'serial' else execution_mode }}{% endif %}
+            </span>
             <span class="vcd-card-timer" data-step-timer="{{ step }}">
               {% if status == 'running' %}<span class="vcd-timer-spinner spinner"></span><span>已运行 <b>{{ timing.get('running_seconds', 0) }}</b> 秒</span>{% elif timing.get('elapsed_seconds') is not none %}<span>耗时 <b>{{ timing.get('elapsed_seconds') }}</b> 秒</span>{% elif status == 'waiting' %}<span>等待确认</span>{% else %}<span>等待开始</span>{% endif %}
             </span>
             <button class="vcd-prompt-pill llm-prompt-pill" type="button" data-prompt-step="{{ step }}">提示词</button>
-            <button class="vcd-retry-btn resume-btn" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>重新跑</button>
+            <button class="vcd-retry-btn resume-btn" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>从此步继续</button>
           </div>
           <div class="vcd-step-message step-msg" data-step-message="{{ step }}">{{ state.get('step_messages', {}).get(step, '') or '等待中...' }}</div>
         </div>
@@ -261,14 +282,16 @@
   const STEP_ORDER = {{ step_order|list|tojson }};
   const STEP_LABELS = {{ step_labels|tojson }};
   let currentState = {{ state|tojson }};
-  let restartCount = Number(currentState.image_count || 2);
-  let selectedCoverIndex = 0;
+  let restartCount = Number(currentState.image_count || 4);
   const errorBox = document.getElementById('vcdError');
   const modal = document.getElementById('vcdPromptModal');
   const modalTitle = document.getElementById('vcdPromptTitle');
   const modalBody = document.getElementById('vcdPromptBody');
   const allPayloadModal = document.getElementById('vcdAllPayloadModal');
   const allPayloadBody = document.getElementById('vcdAllPayloadBody');
+
+  // 事件监听器已绑定标记，避免重复绑定
+  let eventListenersBound = false;
 
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -290,6 +313,15 @@
     document.execCommand('copy');
     input.remove();
   }
+  // 显示复制成功反馈
+  function showCopyFeedback(btn, originalText) {
+    btn.textContent = '已复制';
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 1200);
+  }
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
   }
@@ -299,6 +331,25 @@
     if (status === 'waiting') return '等待确认';
     if (status === 'error') return '失败';
     return '等待中';
+  }
+  function executionModeText(mode) {
+    if (mode === 'parallel') return '并行';
+    if (mode === 'serial') return '串行';
+    return mode || '';
+  }
+  function stepModelText(step) {
+    const defaults = ((currentState.model_defaults || {})[step]) || {};
+    const actual = ((currentState.models || {})[step]) || {};
+    const model = {...defaults, ...actual};
+    const parts = [
+      model.provider || '未配置',
+      model.model_id || model.model || '未配置'
+    ];
+    if (step === 'cover_generation') {
+      const mode = executionModeText(model.execution_mode);
+      if (mode) parts.push(mode);
+    }
+    return parts.join(' · ');
   }
   function visualStatus(status) {
     if (['failed', 'interrupted', 'cancelled'].includes(status)) return 'error';
@@ -360,57 +411,116 @@
       ['ad_copy_direction', '文案方向'], ['overall_judgment', '综合判断']
     ]);
   }
+  function normalizeCopyTextFields(copy) {
+    const enRaw = (copy && copy.english) || {};
+    const zhRaw = (copy && copy.chinese_translation) || {};
+    return {
+      english: {
+        title: enRaw.title || enRaw.headline || '',
+        message: enRaw.message || enRaw.body_text || '',
+        description: enRaw.description || enRaw.cta || ''
+      },
+      chinese_translation: {
+        title: zhRaw.title || zhRaw.headline || '',
+        message: zhRaw.message || zhRaw.body_text || '',
+        description: zhRaw.description || zhRaw.cta || ''
+      }
+    };
+  }
+  function formattedCopyText(copy, lang) {
+    const fields = normalizeCopyTextFields(copy);
+    const en = lang === 'chinese' || lang === 'chinese_translation' ? fields.chinese_translation : fields.english;
+    return [
+      `标题: ${en.title}`,
+      `文案: ${en.message}`,
+      `描述: ${en.description}`
+    ].join('\n');
+  }
+  function formattedBilingualCopyText(copy) {
+    return [
+      '英文',
+      formattedCopyText(copy, 'english'),
+      '',
+      '中文',
+      formattedCopyText(copy, 'chinese')
+    ].join('\n');
+  }
+  function copyTextByMode(copy, mode) {
+    if (mode === 'chinese') return formattedCopyText(copy, 'chinese');
+    if (mode === 'bilingual') return formattedBilingualCopyText(copy);
+    return formattedCopyText(copy, 'english');
+  }
+  function renderCopyRows(fields) {
+    return [
+      ['标题', fields.title, ' title'],
+      ['文案', fields.message, ''],
+      ['描述', fields.description, '']
+    ].map(([label, value, extraClass]) => (
+      `<div class="vcd-copy-line">
+        <span class="vcd-copy-line-label">${escapeHtml(label)}</span>
+        <span class="vcd-copy-line-value${extraClass}">${escapeHtml(value)}</span>
+      </div>`
+    )).join('');
+  }
   function renderCopyVisual() {
     const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
     if (!sets.length) return '<div class="vcd-empty">等待文案创作结果。</div>';
-    return `<div class="vcd-copy-grid">${sets.map(item => {
-      const en = item.english || {};
-      const zh = item.chinese_translation || {};
+    return `<div class="vcd-copy-grid">${sets.map((item, idx) => {
+      const normalized = normalizeCopyTextFields(item);
+      const en = normalized.english;
+      const zh = normalized.chinese_translation;
       return `<article class="vcd-copy-card">
-        <div class="vcd-copy-headline">${escapeHtml(en.headline || '')}</div>
-        <div class="vcd-copy-body">${escapeHtml(en.body_text || '')}</div>
-        <div class="vcd-final-cta">${escapeHtml(en.cta || '')}</div>
-        <div class="vcd-copy-meta">${escapeHtml(item.angle || '')} · ${escapeHtml(item.usage_note || '')}</div>
-        <div class="vcd-copy-meta">${escapeHtml(zh.headline || '')} / ${escapeHtml(zh.body_text || '')}</div>
+        <div class="vcd-copy-card-top">
+          <div class="vcd-copy-card-title">文案组 ${idx + 1}</div>
+          <div class="vcd-copy-card-note">${escapeHtml([item.angle || '', item.usage_note || ''].filter(Boolean).join(' · '))}</div>
+        </div>
+        <div class="vcd-copy-lang-grid">
+          <section class="vcd-copy-lang-block" aria-label="英文文案">
+            <div class="vcd-copy-lang-title">英文</div>
+            ${renderCopyRows(en)}
+          </section>
+          <section class="vcd-copy-lang-block" aria-label="中文文案">
+            <div class="vcd-copy-lang-title">中文</div>
+            ${renderCopyRows(zh)}
+          </section>
+        </div>
+        <div class="vcd-copy-card-actions">
+          <button class="vcd-pill-btn primary" type="button" data-copy-ad-copy="${idx}" data-copy-mode="english">复制英文</button>
+          <button class="vcd-pill-btn primary" type="button" data-copy-ad-copy="${idx}" data-copy-mode="chinese">复制中文</button>
+          <button class="vcd-pill-btn primary" type="button" data-copy-ad-copy="${idx}" data-copy-mode="bilingual">复制双语</button>
+        </div>
       </article>`;
     }).join('')}</div>`;
   }
-  function selectedCover() {
-    const covers = (((currentState.result || {}).covers) || []);
-    if (!covers.length) return null;
-    if (selectedCoverIndex >= covers.length) selectedCoverIndex = 0;
-    return covers[selectedCoverIndex];
-  }
   function copyTextForCover(cover) {
-    const copy = (cover && cover.copy) || {};
-    const en = copy.english || {};
-    return [en.headline, en.body_text, en.cta].filter(Boolean).join('\n');
+    if (cover && cover.formatted_copy) return cover.formatted_copy;
+    return formattedCopyText((cover && cover.copy) || {});
   }
   function renderCoverVisual() {
     const covers = (((currentState.result || {}).covers) || []);
-    if (!covers.length) return '<div class="vcd-empty">完成封面生成后，这里会显示左图右文案结果。</div>';
-    const cover = selectedCover();
-    const copy = cover.copy || {};
-    const en = copy.english || {};
-    const zh = copy.chinese_translation || {};
-    const thumbs = covers.length > 1 ? `<div class="vcd-thumbs">${covers.map((row, idx) => `<button type="button" class="vcd-thumb ${idx === selectedCoverIndex ? 'active' : ''}" data-cover-index="${idx}"><img src="${escapeHtml(row.url || '')}" alt="封面 ${idx + 1}"></button>`).join('')}</div>` : '';
-    return `<div class="vcd-final-layout">
-      <div class="vcd-cover-pane">
-        <img class="vcd-cover-img" src="${escapeHtml(cover.url || '')}" alt="最终封面" loading="lazy">
-        ${thumbs}
-        <div class="vcd-cover-actions">
-          <a class="vcd-pill-btn primary" href="${escapeHtml(cover.download_url || '#')}" download>保存图片</a>
-          <button class="vcd-pill-btn" type="button" data-copy-image="${escapeHtml(cover.url || '')}">复制图片</button>
+    if (!covers.length) return '<div class="vcd-empty">封面生成过程中，已完成的图片和文案会在这里从左到右显示。</div>';
+    return `<div class="vcd-cover-results-grid">${covers.map((cover, idx) => {
+      const normalized = normalizeCopyTextFields(cover.copy || {});
+      const en = normalized.english;
+      const zh = normalized.chinese_translation;
+      return `<article class="vcd-cover-result-card">
+        <div class="vcd-cover-copy-panel">
+          <div class="vcd-cover-copy-lines">
+            <div class="vcd-cover-copy-line"><span class="vcd-cover-copy-label">标题</span><span class="vcd-cover-copy-value title">${escapeHtml(en.title || cover.hook || '')}</span></div>
+            <div class="vcd-cover-copy-line"><span class="vcd-cover-copy-label">文案</span><span class="vcd-cover-copy-value">${escapeHtml(en.message)}</span></div>
+            <div class="vcd-cover-copy-line"><span class="vcd-cover-copy-label">描述</span><span class="vcd-cover-copy-value">${escapeHtml(en.description)}</span></div>
+          </div>
+          <div class="vcd-copy-meta">${escapeHtml(zh.title)} ${escapeHtml(zh.message)} ${escapeHtml(zh.description)}</div>
+          <button class="vcd-pill-btn primary vcd-cover-copy-button" type="button" data-copy-cover-text="${idx}">复制文案</button>
         </div>
-      </div>
-      <div class="vcd-final-copy">
-        <div class="vcd-final-hook">${escapeHtml(en.headline || cover.hook || '')}</div>
-        <div class="vcd-final-body">${escapeHtml(en.body_text || '')}</div>
-        <div class="vcd-final-cta">${escapeHtml(en.cta || '')}</div>
-        <div class="vcd-copy-meta">${escapeHtml(zh.headline || '')} ${escapeHtml(zh.body_text || '')}</div>
-        <button class="vcd-pill-btn primary" type="button" data-copy-cover-text="1">一键复制文案</button>
-      </div>
-    </div>`;
+        <div class="vcd-cover-image-panel">
+          <img class="vcd-cover-img" src="${escapeHtml(cover.url || '')}" alt="最终封面 ${idx + 1}" loading="lazy">
+          <div class="vcd-cover-actions">
+            <a class="vcd-pill-btn primary" href="${escapeHtml(cover.download_url || '#')}" download>保存图片</a>
+          </div>
+        </div>
+      </article>`;
+    }).join('')}</div>`;
   }
   function renderVisual(step) {
     if (step === 'video_analysis') return renderVideoVisual();
@@ -429,7 +539,8 @@
   function render() {
     const steps = currentState.steps || {};
     const messages = currentState.step_messages || {};
-    document.querySelector('[data-current-image-count]').textContent = currentState.image_count || 2;
+    const currentImageCount = document.querySelector('[data-current-image-count]');
+    if (currentImageCount) currentImageCount.textContent = currentState.image_count || 4;
     STEP_ORDER.forEach((step) => {
       const status = steps[step] || 'pending';
       const displayStatus = visualStatus(status);
@@ -450,14 +561,23 @@
       if (stepMessage) stepMessage.textContent = messages[step] || statusText(status);
       const timer = document.querySelector(`[data-step-timer="${step}"]`);
       if (timer) timer.innerHTML = timerHtml(step, status);
+      const badge = document.querySelector(`[data-step-model-badge="${step}"]`);
+      if (badge) {
+        badge.textContent = stepModelText(step);
+        badge.title = badge.textContent;
+      }
       const visualBox = document.querySelector(`[data-visual-step="${step}"]`);
       if (visualBox) visualBox.innerHTML = renderVisual(step);
       const retry = document.querySelector(`[data-retry-step="${step}"]`);
-      if (retry) retry.disabled = status === 'running';
+      if (retry) {
+        retry.disabled = status === 'running';
+        if (status === 'running') {
+          retry.textContent = '运行中...';
+        } else {
+          retry.textContent = '从此步继续';
+        }
+      }
     });
-    document.querySelectorAll('[data-cover-index]').forEach(btn => btn.addEventListener('click', () => { selectedCoverIndex = Number(btn.dataset.coverIndex || 0); render(); }));
-    document.querySelectorAll('[data-copy-cover-text]').forEach(btn => btn.addEventListener('click', copyCoverText));
-    document.querySelectorAll('[data-copy-image]').forEach(btn => btn.addEventListener('click', () => copyImage(btn.dataset.copyImage)));
   }
   async function loadState() {
     const response = await fetch(`/video-cover/api/${encodeURIComponent(TASK_ID)}/state`, {cache: 'no-store'});
@@ -510,7 +630,7 @@
   function openAllPayloads() {
     const payload = {
       task_id: TASK_ID,
-      image_count: currentState.image_count || 2,
+      image_count: currentState.image_count || 4,
       model_defaults: currentState.model_defaults || {},
       product: currentState.product || {},
       steps: STEP_ORDER.reduce((acc, step) => {
@@ -521,42 +641,94 @@
     allPayloadBody.textContent = compactJson(payload);
     allPayloadModal.classList.add('show');
   }
-  async function copyCoverText() {
-    const text = copyTextForCover(selectedCover());
+  async function copyCoverText(btn, index) {
+    const covers = (((currentState.result || {}).covers) || []);
+    index = Number(index || 0);
+    const text = copyTextForCover(covers[index]);
     if (!text) return;
-    await copyText(text);
-  }
-  async function copyImage(url) {
-    try {
-      if (!navigator.clipboard || !window.ClipboardItem) throw new Error('当前浏览器不支持复制图片');
-      const response = await fetch(url);
-      const blob = await response.blob();
-      await navigator.clipboard.write([new ClipboardItem({[blob.type || 'image/png']: blob})]);
-    } catch (e) {
-      errorBox.textContent = '复制图片失败，请使用保存图片。';
-    }
-  }
-  document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
-    setRestartCount(btn.dataset.restartCount);
-  }));
-  document.getElementById('vcdRestartBtn').addEventListener('click', restart);
-  document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {
     const original = btn.textContent;
     try {
-      await copyText(btn.dataset.copyProductUrl || '');
-      btn.textContent = '已复制';
+      await copyText(text);
+      showCopyFeedback(btn, original);
     } catch (e) {
       btn.textContent = '复制失败';
+      setTimeout(() => { btn.textContent = original; }, 1200);
     }
-    window.setTimeout(() => { btn.textContent = original; }, 1200);
-  }));
-  document.querySelectorAll('[data-retry-step]').forEach(btn => btn.addEventListener('click', () => retryStep(btn.dataset.retryStep)));
-  document.querySelectorAll('[data-prompt-step]').forEach(btn => btn.addEventListener('click', () => openPrompt(btn.dataset.promptStep)));
-  document.querySelector('[data-all-payload-preview]').addEventListener('click', openAllPayloads);
-  document.getElementById('vcdPromptClose').addEventListener('click', () => modal.classList.remove('show'));
-  document.getElementById('vcdAllPayloadClose').addEventListener('click', () => allPayloadModal.classList.remove('show'));
-  modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('show'); });
-  allPayloadModal.addEventListener('click', event => { if (event.target === allPayloadModal) allPayloadModal.classList.remove('show'); });
+  }
+  async function copyAdCopyText(btn, index, mode) {
+    const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
+    index = Number(index || 0);
+    if (!sets[index]) return;
+    const text = copyTextByMode(sets[index], mode);
+    if (!text) return;
+    const original = btn.textContent;
+    try {
+      await copyText(text);
+      showCopyFeedback(btn, original);
+    } catch (e) {
+      btn.textContent = '复制失败';
+      setTimeout(() => { btn.textContent = original; }, 1200);
+    }
+  }
+  // 一次性绑定所有事件监听器
+  function bindEventListeners() {
+    if (eventListenersBound) return;
+    eventListenersBound = true;
+
+    // 张数选择按钮
+    document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
+      setRestartCount(btn.dataset.restartCount);
+    }));
+
+    // 强制重新开始按钮
+    document.getElementById('vcdRestartBtn').addEventListener('click', restart);
+
+    // 复制产品链接按钮
+    document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {
+      const original = btn.textContent;
+      try {
+        await copyText(btn.dataset.copyProductUrl || '');
+        showCopyFeedback(btn, original);
+      } catch (e) {
+        btn.textContent = '复制失败';
+        setTimeout(() => { btn.textContent = original; }, 1200);
+      }
+    }));
+
+    // 重新跑步骤按钮（事件委托）
+    document.addEventListener('click', (e) => {
+      const retryBtn = e.target.closest('[data-retry-step]');
+      if (retryBtn && !retryBtn.disabled) {
+        retryStep(retryBtn.dataset.retryStep);
+      }
+    });
+
+    // 提示词按钮
+    document.querySelectorAll('[data-prompt-step]').forEach(btn => btn.addEventListener('click', () => openPrompt(btn.dataset.promptStep)));
+
+    // 全部报文预览
+    document.querySelector('[data-all-payload-preview]').addEventListener('click', openAllPayloads);
+
+    // 模态框关闭
+    document.getElementById('vcdPromptClose').addEventListener('click', () => modal.classList.remove('show'));
+    document.getElementById('vcdAllPayloadClose').addEventListener('click', () => allPayloadModal.classList.remove('show'));
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('show'); });
+    allPayloadModal.addEventListener('click', event => { if (event.target === allPayloadModal) allPayloadModal.classList.remove('show'); });
+
+    // 复制文案按钮（事件委托）
+    document.addEventListener('click', (e) => {
+      const copyAdBtn = e.target.closest('[data-copy-ad-copy]');
+      if (copyAdBtn) {
+        copyAdCopyText(copyAdBtn, copyAdBtn.dataset.copyAdCopy, copyAdBtn.dataset.copyMode);
+      }
+      const copyCoverBtn = e.target.closest('[data-copy-cover-text]');
+      if (copyCoverBtn) {
+        copyCoverText(copyCoverBtn, copyCoverBtn.dataset.copyCoverText);
+      }
+    });
+  }
+
+  bindEventListeners();
   render();
   setInterval(() => { loadState().catch(() => {}); }, 2500);
 })();

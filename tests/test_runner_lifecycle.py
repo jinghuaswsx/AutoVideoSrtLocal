@@ -154,6 +154,63 @@ def test_subtitle_removal_runner_registers_active_task_before_thread_runs(monkey
             subtitle_removal_runner._running_tasks.discard(task_id)
 
 
+def test_subtitle_removal_runner_uses_standard_runtime_for_niuma_even_when_global_provider_is_vod(monkeypatch):
+    from appcore import runner_lifecycle, task_recovery, task_state
+    from web.services import subtitle_removal_runner
+
+    task_id = "sr-niuma-active"
+    task_recovery.unregister_active_task("subtitle_removal", task_id)
+    with subtitle_removal_runner._running_tasks_lock:
+        subtitle_removal_runner._running_tasks.discard(task_id)
+    with task_state._lock:
+        task_state._tasks[task_id] = {
+            "id": task_id,
+            "type": "subtitle_removal",
+            "status": "queued",
+            "subtitle_backend": "niuma",
+        }
+    threads = []
+    called = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            threads.append(self)
+            self.target()
+
+    class FakeRuntime:
+        def __init__(self, bus, user_id=None):
+            self.user_id = user_id
+
+        def start(self, task_id):
+            called.append((task_id, self.user_id))
+
+    monkeypatch.setattr("config.SUBTITLE_REMOVAL_PROVIDER", "vod")
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+    monkeypatch.setattr(subtitle_removal_runner, "SubtitleRemovalRuntime", FakeRuntime, raising=False)
+    monkeypatch.setattr(
+        subtitle_removal_runner.SubtitleRemovalVodRuntime,
+        "start",
+        lambda self, task_id: (_ for _ in ()).throw(AssertionError("niuma must not use VOD runtime")),
+    )
+
+    try:
+        assert subtitle_removal_runner.start(task_id, user_id=1) is True
+    finally:
+        task_recovery.unregister_active_task("subtitle_removal", task_id)
+        with subtitle_removal_runner._running_tasks_lock:
+            subtitle_removal_runner._running_tasks.discard(task_id)
+        with task_state._lock:
+            task_state._tasks.pop(task_id, None)
+
+    assert len(threads) == 1
+    assert called == [(task_id, 1)]
+
+
 def test_link_check_runner_registers_active_task_before_thread_runs(monkeypatch):
     from appcore import runner_lifecycle, task_recovery
     from web.services import link_check_runner

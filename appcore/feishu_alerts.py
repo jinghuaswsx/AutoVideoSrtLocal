@@ -22,6 +22,7 @@ SETTING_APP_SECRET = "feishu_alerts.app_secret"
 SETTING_CHAT_ID = "feishu_alerts.chat_id"
 SETTING_FAILURE_REPEAT_EVERY = "feishu_alerts.failure_repeat_every"
 DEFAULT_FAILURE_REPEAT_EVERY = 5
+DEFAULT_FAILURE_MIN_CONSECUTIVE = 20
 
 REQUEST_TIMEOUT = 8
 ERROR_LIMIT = 900
@@ -265,14 +266,21 @@ def consecutive_failure_count(task_code: str, *, current_run_id: int | None) -> 
     return streak
 
 
-def should_dispatch_failure(task_code: str, *, current_run_id: int | None) -> tuple[bool, int]:
+def should_dispatch_failure(
+    task_code: str,
+    *,
+    current_run_id: int | None,
+    immediate: bool = False,
+) -> tuple[bool, int]:
     streak = consecutive_failure_count(task_code, current_run_id=current_run_id)
     if streak <= 0:
         return False, streak
-    if streak == 1:
+    if immediate and streak == 1:
         return True, streak
-    repeat = _failure_repeat_every()
-    return (streak % repeat == 0), streak
+    if streak < DEFAULT_FAILURE_MIN_CONSECUTIVE:
+        return False, streak
+    repeat = max(_failure_repeat_every(), DEFAULT_FAILURE_MIN_CONSECUTIVE)
+    return (streak == DEFAULT_FAILURE_MIN_CONSECUTIVE or streak % repeat == 0), streak
 
 
 def format_scheduled_task_recovery(row: dict[str, Any], *, prior_failures: int) -> str:

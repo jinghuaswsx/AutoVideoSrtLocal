@@ -129,11 +129,13 @@ def test_transcribe_local_uploads_then_cleans(
     upload_calls: list[tuple[str, str]] = []
     delete_calls: list[str] = []
 
-    def _fake_upload(path: str, key: str) -> str:
+    def _fake_upload(path: str, key: str, *, bucket: str | None = None) -> str:
+        del bucket
         upload_calls.append((path, key))
         return f"https://tos.example.com/{key}"
 
-    def _fake_delete(key: str) -> None:
+    def _fake_delete(key: str, *, bucket: str | None = None) -> None:
+        del bucket
         delete_calls.append(key)
 
     fake_storage = mock.MagicMock()
@@ -160,6 +162,48 @@ def test_transcribe_local_uploads_then_cleans(
     assert upload_calls[0][0] == str(audio)
     assert len(delete_calls) == 1
     assert delete_calls[0] == upload_calls[0][1]
+
+
+def test_transcribe_local_uses_current_runtime_asr_bucket(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _stub_resolve_key(monkeypatch)
+
+    import config
+
+    monkeypatch.setattr(config, "TOS_ASR_BUCKET", "runtime-asr-bucket")
+    upload_calls: list[tuple[str, str, str | None]] = []
+    delete_calls: list[tuple[str, str | None]] = []
+
+    def _fake_upload(path: str, key: str, *, bucket: str | None = None) -> str:
+        upload_calls.append((path, key, bucket))
+        return f"https://tos.example.com/{key}"
+
+    def _fake_delete(key: str, *, bucket: str | None = None) -> None:
+        delete_calls.append((key, bucket))
+
+    fake_storage = mock.MagicMock()
+    fake_storage.upload_file = _fake_upload
+    fake_storage.delete_file = _fake_delete
+    monkeypatch.setitem(__import__("sys").modules, "pipeline.storage", fake_storage)
+
+    submit_resp = _FakeResponse(headers={"X-Api-Status-Code": "20000000"})
+    poll_resp = _FakeResponse(
+        headers={"X-Api-Status-Code": "20000000"},
+        json_data={"result": {"utterances": []}},
+    )
+    seq = iter([submit_resp, poll_resp])
+    monkeypatch.setattr(
+        "appcore.asr_providers.doubao.requests.post",
+        lambda *a, **kw: next(seq),
+    )
+
+    audio = tmp_path / "input.mp3"
+    audio.write_bytes(b"fake-mp3")
+    DoubaoAdapter().transcribe(audio)
+
+    assert upload_calls[0][2] == "runtime-asr-bucket"
+    assert delete_calls[0][1] == "runtime-asr-bucket"
 
 
 def test_legacy_wrapper_compat(monkeypatch: pytest.MonkeyPatch) -> None:

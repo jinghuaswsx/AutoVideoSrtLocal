@@ -4,6 +4,7 @@ from datetime import date
 import json
 import mimetypes
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -13,8 +14,8 @@ from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
-from appcore import local_media_storage, video_cover_project_store, video_cover_settings
-from appcore.project_state import save_project_state
+from appcore import local_media_storage, medias, video_cover_project_store, video_cover_settings
+from appcore.project_state import resolve_project_display_name_conflict, save_project_state
 from appcore.settings import get_retention_hours
 from appcore.task_recovery import try_register_active_task, unregister_active_task
 from appcore.video_cover_generation import (
@@ -28,6 +29,7 @@ from appcore.video_cover_generation import (
     generate_product_analysis,
     generate_video_analysis,
     generate_video_covers,
+    normalize_cover_execution_mode,
     normalize_image_count,
     normalize_product_image_jpg,
     resolve_cover_model_selection,
@@ -52,6 +54,8 @@ from web.upload_util import (
 bp = Blueprint("video_cover", __name__)
 
 STEP_ORDER = ("video_analysis", "product_analysis", "ad_copy", "cover_generation")
+DEFAULT_IMAGE_COUNT = 4
+CARD_THUMBNAIL_FILTER = "180:270:force_original_aspect_ratio=increase,crop=180:270"
 STEP_LABELS = {
     "video_analysis": "视频分析",
     "product_analysis": "产品分析",
@@ -150,6 +154,13 @@ def _save_product_image_asset(image_url: str, task_dir: str) -> str:
     return str(path)
 
 
+def _extract_card_thumbnail(video_path: str, task_dir: str) -> str:
+    try:
+        return extract_thumbnail(video_path, task_dir, scale=CARD_THUMBNAIL_FILTER) or ""
+    except Exception:
+        return ""
+
+
 def _json_response(payload: dict, status: int = 200):
     return video_cover_flask_response(VideoCoverResponse(payload, status))
 
@@ -166,6 +177,13 @@ def _parse_state(row: dict | None) -> dict:
 
 def _is_admin_user() -> bool:
     return getattr(current_user, "is_admin", False)
+
+
+def _video_cover_creator_name_expr() -> str:
+    try:
+        return medias._media_product_owner_name_expr()
+    except Exception:
+        return "u.username"
 
 
 def _load_user_project(task_id: str) -> tuple[dict | None, dict]:
@@ -202,7 +220,7 @@ def _initial_state(
     product_title: str,
     main_image_url: str,
     product_image_path: str,
-    image_count: int = 2,
+    image_count: int = DEFAULT_IMAGE_COUNT,
     model_defaults: dict | None = None,
 ) -> dict:
     return {
@@ -217,7 +235,7 @@ def _initial_state(
         "task_dir": task_dir,
         "thumbnail_path": thumbnail_path or "",
         "product": _product_payload(product_url, product_title, main_image_url, product_image_path),
-        "image_count": normalize_image_count(image_count),
+        "image_count": normalize_image_count(image_count, default=DEFAULT_IMAGE_COUNT),
         "model_defaults": video_cover_settings.normalize_model_defaults(model_defaults),
         "steps": _initial_steps(),
         "step_messages": {step: "" for step in STEP_ORDER},
@@ -252,19 +270,24 @@ def _clear_step_outputs(state: dict, step: str) -> None:
 
 
 def _clear_all_outputs(state: dict) -> None:
-    for key in (
-        "video_analysis",
-        "product_analysis",
-        "ad_copy_sets",
-        "result",
-        "inputs",
-        "models",
-        "error",
-        "step_requests",
-        "step_results",
-        "step_timing",
-    ):
-        state.pop(key, None)
+    preserved_keys = (
+        "id",
+        "type",
+        "status",
+        "user_id",
+        "display_name",
+        "product_url",
+        "video_path",
+        "video_filename",
+        "task_dir",
+        "thumbnail_path",
+        "product",
+        "image_count",
+        "model_defaults",
+    )
+    preserved = {key: state[key] for key in preserved_keys if key in state}
+    state.clear()
+    state.update(preserved)
     state["steps"] = _initial_steps()
     state["step_messages"] = {step: "" for step in STEP_ORDER}
     state["status"] = "running"
@@ -383,6 +406,17 @@ def _structured_video_analysis(raw_response) -> dict:
             },
         )
         return fields or parsed
+    nested = parsed.get("video_analysis")
+    if isinstance(nested, dict):
+        merged = dict(parsed)
+        for key in ("video_text", "voiceover"):
+            if key in nested and key not in merged:
+                merged[key] = nested[key]
+        if "usage_logic" in nested and "actions" not in merged:
+            merged["actions"] = nested["usage_logic"]
+        if parsed.get("keyframes") and "cover_suggestions" not in merged:
+            merged["cover_suggestions"] = {"keyframes": parsed.get("keyframes")}
+        return merged
     return parsed
 
 
@@ -422,6 +456,12 @@ def _state_product(state: dict) -> dict:
 def _state_product_image_path(state: dict) -> str:
     product = _state_product(state)
     return str(product.get("product_image_path") or state.get("product_image_path") or "").strip()
+
+
+def _duplicate_display_name(state: dict, row: dict) -> str:
+    original_filename = str(state.get("video_filename") or row.get("original_filename") or "").strip()
+    base = str(state.get("display_name") or row.get("display_name") or Path(original_filename).stem or "video-cover").strip()
+    return f"{base} 复制"
 
 
 def _ensure_product_assets(state: dict, *, fetch_product: bool = False) -> tuple[object, str, str, str]:
@@ -465,6 +505,10 @@ def _cover_by_platform(state: dict, platform: str) -> dict | None:
 
 def _state_with_urls(task_id: str, state: dict) -> dict:
     view_state = _with_runtime_timing(state)
+    defaults = view_state.get("model_defaults")
+    if not isinstance(defaults, dict):
+        defaults = video_cover_settings.get_model_defaults()
+    view_state["model_defaults"] = video_cover_settings.normalize_model_defaults(defaults)
     result = dict(view_state.get("result") or {})
     covers = []
     for cover in result.get("covers") or []:
@@ -625,19 +669,28 @@ def _run_ad_copy_step(state: dict, *, provider: str | None, model: str | None, u
     return {"ad_copy_sets": ad_copy_sets}
 
 
-def _run_cover_generation_step(state: dict, *, provider: str | None, model: str | None, user_id: int) -> dict:
+def _run_cover_generation_step(
+    state: dict,
+    *,
+    provider: str | None,
+    model: str | None,
+    execution_mode: str | None = None,
+    user_id: int,
+) -> dict:
     selection = resolve_cover_model_selection(provider, model)
+    cover_execution_mode = normalize_cover_execution_mode(selection.provider, execution_mode)
     _product, title, image_url, product_image_path = _ensure_product_assets(state)
     product = state.get("product") or {}
     selected_prompt = build_platform_prompt(
         SOCIAL_REELS_SPEC,
         product_title=title,
         product_url=str(state.get("product_url") or ""),
+        main_image_url=image_url,
         product_analysis=str(state.get("product_analysis") or ""),
         video_analysis=str(state.get("video_analysis") or ""),
         ad_copy_sets=json.dumps(state.get("ad_copy_sets") or {}, ensure_ascii=False, indent=2),
     )
-    image_count = normalize_image_count(state.get("image_count"), default=2)
+    image_count = normalize_image_count(state.get("image_count"), default=DEFAULT_IMAGE_COUNT)
     _store_step_request(state, "cover_generation", {
         "provider": selection.provider,
         "model": selection.model,
@@ -646,10 +699,37 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
             "product_url": state.get("product_url") or "",
             "video_filename": state.get("video_filename") or "",
             "image_count": image_count,
+            "execution_mode": cover_execution_mode,
             "ad_copy_sets": state.get("ad_copy_sets") or {},
         },
         "prompt": selected_prompt,
+        "execution_mode": cover_execution_mode,
     })
+
+    task_id = str(state.get("id") or "")
+
+    def apply_cover_result(next_result: dict) -> None:
+        image_prompts = next_result.get("image_prompts") if isinstance(next_result.get("image_prompts"), list) else []
+        request_payload = state.setdefault("step_requests", {}).setdefault("cover_generation", {})
+        request_payload["image_prompts"] = image_prompts
+        if image_prompts and isinstance(image_prompts[0], dict):
+            request_payload["prompt"] = str(image_prompts[0].get("prompt") or request_payload.get("prompt") or "")
+        state["result"] = next_result
+        state["inputs"] = next_result.get("inputs") or {}
+        _store_step_result(state, "cover_generation", next_result, {"covers": next_result.get("covers") or []})
+        state.setdefault("models", {}).update(next_result.get("models") or {})
+
+    def persist_partial_cover_result(partial_result: dict) -> None:
+        apply_cover_result(partial_result)
+        done_count = len(partial_result.get("covers") or [])
+        if done_count < image_count:
+            message = f"已生成 {done_count}/{image_count} 张封面，继续排队生成下一张..."
+        else:
+            message = f"已生成 {done_count}/{image_count} 张封面，正在整理结果..."
+        state.setdefault("step_messages", {})["cover_generation"] = message
+        if task_id:
+            _save_state(task_id, state, status="running")
+
     result = generate_video_covers(
         product_url=str(state.get("product_url") or ""),
         video_path=str(state.get("video_path") or ""),
@@ -661,19 +741,26 @@ def _run_cover_generation_step(state: dict, *, provider: str | None, model: str 
         task_id=state.get("id"),
         cover_provider=selection.provider,
         cover_model=selection.alias,
+        cover_execution_mode=cover_execution_mode,
         product_analysis_text=str(state.get("product_analysis") or ""),
         video_analysis_text=str(state.get("video_analysis") or ""),
         ad_copy_payload=state.get("ad_copy_sets") if isinstance(state.get("ad_copy_sets"), dict) else None,
         image_count=image_count,
+        on_cover_done=persist_partial_cover_result,
     )
-    state["result"] = result
-    state["inputs"] = result.get("inputs") or {}
-    _store_step_result(state, "cover_generation", result, {"covers": result.get("covers") or []})
-    state.setdefault("models", {}).update(result.get("models") or {})
-    return _attach_urls(result)
+    apply_cover_result(result)
+    return result
 
 
-def _run_project_step(state: dict, step: str, *, provider: str | None, model: str | None, user_id: int) -> dict:
+def _run_project_step(
+    state: dict,
+    step: str,
+    *,
+    provider: str | None,
+    model: str | None,
+    execution_mode: str | None = None,
+    user_id: int,
+) -> dict:
     if step == "video_analysis":
         return _run_video_analysis_step(state, provider=provider, model=model, user_id=user_id)
     if step == "product_analysis":
@@ -681,7 +768,13 @@ def _run_project_step(state: dict, step: str, *, provider: str | None, model: st
     if step == "ad_copy":
         return _run_ad_copy_step(state, provider=provider, model=model, user_id=user_id)
     if step == "cover_generation":
-        return _run_cover_generation_step(state, provider=provider, model=model, user_id=user_id)
+        return _run_cover_generation_step(
+            state,
+            provider=provider,
+            model=model,
+            execution_mode=execution_mode,
+            user_id=user_id,
+        )
     raise VideoCoverGenerationError(f"未知步骤：{step}")
 
 
@@ -744,6 +837,7 @@ def _run_video_cover_chain(task_id: str, *, start_step: str = "video_analysis", 
                 step,
                 provider=model_default.get("provider"),
                 model=model_default.get("model_id"),
+                execution_mode=model_default.get("execution_mode"),
                 user_id=user_id,
             )
             _mark_step_done(state, step)
@@ -766,6 +860,7 @@ def page():
     projects = video_cover_project_store.list_projects(
         user_id=int(current_user.id),
         is_admin=_is_admin_user(),
+        owner_name_expr=_video_cover_creator_name_expr(),
     )
     model_defaults = video_cover_settings.get_model_defaults() if current_user.is_superadmin else {}
     return render_template(
@@ -809,7 +904,7 @@ def api_create_project():
         original_filename = client_filename_basename(upload.filename)
         if not validate_video_extension(original_filename):
             raise VideoCoverGenerationError("不支持的视频格式")
-        image_count = normalize_image_count(request.form.get("image_count"), default=2)
+        image_count = normalize_image_count(request.form.get("image_count"), default=DEFAULT_IMAGE_COUNT)
         _product, title, image_url = _extract_product(product_url)
 
         task_id = uuid.uuid4().hex
@@ -821,11 +916,7 @@ def api_create_project():
         video_path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{safe_name}")
         save_uploaded_file_to_path(upload, video_path)
 
-        thumbnail_path = ""
-        try:
-            thumbnail_path = extract_thumbnail(video_path, task_dir, scale="360:-2") or ""
-        except Exception:
-            thumbnail_path = ""
+        thumbnail_path = _extract_card_thumbnail(video_path, task_dir)
 
         display_name = Path(original_filename).stem or "video-cover"
         state = _initial_state(
@@ -859,6 +950,156 @@ def api_create_project():
     return _json_response({"ok": True, "id": task_id}, 201)
 
 
+@bp.route("/video-cover/api/<task_id>", methods=["DELETE"])
+@login_required
+@admin_required
+def api_delete_project(task_id: str):
+    row, _state = _load_user_project(task_id)
+    if not row:
+        return _json_response({"ok": False, "error": "not found"}, 404)
+
+    from appcore import cleanup
+
+    try:
+        cleanup.delete_task_storage({
+            "task_dir": row.get("task_dir") or "",
+            "state_json": row.get("state_json") or "",
+        })
+    except Exception:
+        pass
+
+    video_cover_project_store.soft_delete_project(
+        task_id,
+        user_id=int(current_user.id),
+        is_admin=_is_admin_user(),
+    )
+    return _json_response({"ok": True})
+
+
+@bp.route("/video-cover/api/<task_id>/duplicate", methods=["POST"])
+@login_required
+@admin_required
+def api_duplicate_project(task_id: str):
+    row, state = _load_user_project(task_id)
+    if not row:
+        return _json_response({"ok": False, "error": "not found"}, 404)
+
+    source_video_path = str(state.get("video_path") or "").strip()
+    video_available = source_video_path and Path(source_video_path).is_file()
+
+    try:
+        product_url = _validate_product_url(state.get("product_url") or "")
+        product = _state_product(state)
+        title = str(product.get("title") or "").strip()
+        image_url = str(product.get("main_image_url") or "").strip()
+        source_product_image_path = _state_product_image_path(state)
+        if not title or not image_url:
+            _product, title, image_url, source_product_image_path = _ensure_product_assets(state, fetch_product=True)
+    except VideoCoverGenerationError as exc:
+        return _json_response({"ok": False, "error": str(exc)}, 409)
+
+    original_filename = (
+        str(state.get("video_filename") or "").strip()
+        or str(row.get("original_filename") or "").strip()
+        or (Path(source_video_path).name if source_video_path else "video.mp4")
+    )
+    new_task_id = uuid.uuid4().hex
+    new_task_dir = os.path.join(OUTPUT_DIR, new_task_id)
+    os.makedirs(new_task_dir, exist_ok=True)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    new_video_path = ""
+    thumbnail_path = str(state.get("thumbnail_path") or "").strip()
+
+    if video_available:
+        safe_name = secure_filename_component(original_filename)
+        new_video_path = os.path.join(UPLOAD_DIR, f"{new_task_id}_video_{safe_name}")
+        try:
+            shutil.copy2(source_video_path, new_video_path)
+        except OSError as exc:
+            return _json_response({"ok": False, "error": f"复制源视频失败: {exc}"}, 500)
+        try:
+            thumbnail_path = _extract_card_thumbnail(new_video_path, new_task_dir)
+        except Exception:
+            pass
+
+    new_product_image_path = os.path.join(new_task_dir, "product_main.jpg")
+    try:
+        if source_product_image_path and Path(source_product_image_path).is_file():
+            shutil.copy2(source_product_image_path, new_product_image_path)
+        else:
+            new_product_image_path = _save_product_image_asset(image_url, new_task_dir)
+    except Exception as exc:
+        return _json_response({"ok": False, "error": f"复制商品主图失败: {exc}"}, 500)
+
+    display_name = resolve_project_display_name_conflict(
+        int(current_user.id),
+        _duplicate_display_name(state, row),
+    )
+    image_count = normalize_image_count(state.get("image_count"), default=DEFAULT_IMAGE_COUNT)
+    model_defaults = _project_model_defaults(state)
+
+    if video_available:
+        next_state = _initial_state(
+            task_id=new_task_id,
+            user_id=int(current_user.id),
+            product_url=product_url,
+            video_path=new_video_path,
+            video_filename=original_filename,
+            task_dir=new_task_dir,
+            display_name=display_name,
+            thumbnail_path=thumbnail_path,
+            product_title=title,
+            main_image_url=image_url,
+            product_image_path=new_product_image_path,
+            image_count=image_count,
+            model_defaults=model_defaults,
+        )
+        video_cover_project_store.insert_project(
+            task_id=new_task_id,
+            user_id=int(current_user.id),
+            original_filename=original_filename,
+            display_name=display_name,
+            thumbnail_path=thumbnail_path,
+            task_dir=new_task_dir,
+            state=next_state,
+            retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
+        )
+        _start_video_cover_background(new_task_id, "video_analysis", image_count)
+    else:
+        # 源视频不可用：深度复制已有状态，保留源项目的所有结果
+        next_state = dict(state)
+        next_state["id"] = new_task_id
+        next_state["user_id"] = int(current_user.id)
+        next_state["display_name"] = display_name
+        next_state["task_dir"] = new_task_dir
+        next_state["video_path"] = ""
+        next_state["video_filename"] = original_filename
+        next_state["product_image_path"] = new_product_image_path
+        product_payload = _product_payload(product_url, title, image_url, new_product_image_path)
+        next_state["product"] = product_payload
+        if thumbnail_path and Path(thumbnail_path).is_file():
+            next_state["thumbnail_path"] = thumbnail_path
+        next_state["model_defaults"] = model_defaults
+
+        video_cover_project_store.insert_project(
+            task_id=new_task_id,
+            user_id=int(current_user.id),
+            original_filename=original_filename,
+            display_name=display_name,
+            thumbnail_path=thumbnail_path,
+            task_dir=new_task_dir,
+            state=next_state,
+            retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
+        )
+
+    return _json_response({
+        "ok": True,
+        "id": new_task_id,
+        "redirect_url": f"/video-cover/{new_task_id}",
+    }, 201)
+
+
 def _config_payload_from_request() -> dict:
     if request.is_json:
         payload = request.get_json(silent=True) or {}
@@ -869,6 +1110,8 @@ def _config_payload_from_request() -> dict:
             "provider": request.form.get(f"{step}_provider") or "",
             "model_id": request.form.get(f"{step}_model_id") or "",
         }
+        if step == "cover_generation":
+            payload[step]["execution_mode"] = request.form.get(f"{step}_execution_mode") or ""
     return payload
 
 
@@ -922,7 +1165,7 @@ def api_project_state(task_id: str):
     state.setdefault("id", task_id)
     state.setdefault("steps", _initial_steps())
     state.setdefault("step_messages", {name: "" for name in STEP_ORDER})
-    state.setdefault("image_count", 2)
+    state.setdefault("image_count", DEFAULT_IMAGE_COUNT)
     return _json_response({"ok": True, "state": _state_with_urls(task_id, state)})
 
 
@@ -934,7 +1177,10 @@ def api_restart_project(task_id: str):
     if not row:
         return _json_response({"ok": False, "error": "not found"}, 404)
     payload = request.get_json(silent=True) or {}
-    image_count = normalize_image_count(payload.get("image_count") or request.form.get("image_count"), default=2)
+    image_count = normalize_image_count(
+        payload.get("image_count") or request.form.get("image_count"),
+        default=DEFAULT_IMAGE_COUNT,
+    )
     state.setdefault("id", task_id)
     state.setdefault("type", video_cover_project_store.VIDEO_COVER_TYPE)
     _clear_all_outputs(state)
@@ -1107,6 +1353,7 @@ def api_generate():
                 user_id=int(getattr(current_user, "id", 0) or 0),
                 cover_provider=request.form.get("cover_provider") or request.form.get("provider") or "",
                 cover_model=request.form.get("cover_model") or request.form.get("model") or "",
+                cover_execution_mode=request.form.get("cover_execution_mode") or "",
                 product_analysis_provider=request.form.get("product_provider") or "",
                 product_analysis_model=request.form.get("product_model") or "",
                 video_analysis_provider=request.form.get("video_provider") or "",

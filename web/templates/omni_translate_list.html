@@ -171,6 +171,28 @@
 .card-menu button.danger { color: var(--text-btn-danger); }
 .card-menu button.danger:hover { background: var(--bg-btn-danger); color: var(--text-btn-danger); }
 .list-item .card-menu { top: 40px; right: 0; }
+.duplicate-progress-overlay {
+  position: fixed; inset: 0; z-index: 260;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.36); backdrop-filter: blur(2px);
+}
+.duplicate-progress-overlay[hidden] { display: none; }
+.duplicate-progress-box {
+  width: min(360px, calc(100vw - 40px));
+  background: var(--bg-card); color: var(--text-main);
+  border: 1.5px solid var(--border-main); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.28);
+  padding: 24px; text-align: center;
+}
+.duplicate-progress-spinner {
+  width: 34px; height: 34px; margin: 0 auto 14px;
+  border-radius: 50%; border: 3px solid oklch(88% 0.04 220);
+  border-top-color: oklch(56% 0.16 230);
+  animation: duplicateProgressSpin .8s linear infinite;
+}
+.duplicate-progress-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.duplicate-progress-note { font-size: 12px; color: #9ca3af; line-height: 1.5; }
+@keyframes duplicateProgressSpin { to { transform: rotate(360deg); } }
 .expire-notice {
   display: flex; align-items: center; gap: 10px;
   background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px;
@@ -440,6 +462,14 @@
 </div>
 {% endif %}
 
+<div class="duplicate-progress-overlay" id="duplicateProgress" role="status" aria-live="polite" aria-hidden="true" hidden>
+  <div class="duplicate-progress-box">
+    <div class="duplicate-progress-spinner" aria-hidden="true"></div>
+    <div class="duplicate-progress-title" id="duplicateProgressTitle">正在复制项目</div>
+    <div class="duplicate-progress-note">项目就绪后会自动打开</div>
+  </div>
+</div>
+
 <!-- 上传弹窗 -->
 <div class="modal-overlay" id="uploadOverlay">
   <div class="modal-box modal-box-wide">
@@ -544,6 +574,17 @@ document.addEventListener('click', function() {
   document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
 });
 
+var __omniDuplicateInFlight = false;
+
+function setDuplicateProgress(visible, message) {
+  var overlay = document.getElementById('duplicateProgress');
+  if (!overlay) return;
+  var title = document.getElementById('duplicateProgressTitle');
+  if (title && message) title.textContent = message;
+  overlay.hidden = !visible;
+  overlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
 async function deleteTask(e, taskId) {
   e.preventDefault(); e.stopPropagation();
   document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
@@ -559,9 +600,13 @@ async function deleteTask(e, taskId) {
 
 async function duplicateTask(e, taskId) {
   e.preventDefault(); e.stopPropagation();
+  if (__omniDuplicateInFlight) return;
   document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
   if (!confirm('复制后会创建新项目并重新开始处理，确定继续吗？')) return;
-  var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  var csrfToken = csrfMeta ? csrfMeta.content : '';
+  __omniDuplicateInFlight = true;
+  setDuplicateProgress(true, '正在复制项目，请稍候');
   try {
     var res = await fetch('/api/omni-translate/' + taskId + '/duplicate', {
       method: 'POST',
@@ -570,8 +615,11 @@ async function duplicateTask(e, taskId) {
     var data = await _readOmniJsonResponse(res);
     if (!res.ok) throw new Error(data.error || '复制失败');
     var fallbackUrl = '/omni-translate/' + encodeURIComponent(data.task_id || '');
+    setDuplicateProgress(true, '项目已就绪，正在打开');
     window.location.href = safeInternalHref(data.redirect_url, fallbackUrl);
   } catch (err) {
+    __omniDuplicateInFlight = false;
+    setDuplicateProgress(false);
     alert(err.message || '复制失败');
   }
 }

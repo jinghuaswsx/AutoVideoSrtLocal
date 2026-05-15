@@ -19,7 +19,7 @@
 - `/video-cover` 从一次性工具页调整为项目列表页，入口只创建项目：商品链接 + 视频文件。
 - 管理员在 `/video-cover` 查看 `video_cover` 类型下全局所有未删除项目，不按创建人过滤；项目卡片展示创建人，便于区分来源。
 - 新建项目的视频输入框采用全能视频翻译一致的交互：竖版拖拽区，可拖入视频，也可点击打开文件选择；选中后显示 9:16 视频预览、文件名和移除按钮。
-- 新建项目时必须提供本次生成封面张数选择，使用 1 / 2 / 3 / 4 四个胶囊按钮；默认选中 2 张，选中态为蓝色，未选中为白底描边。
+- 新建项目时必须提供本次生成封面张数选择，使用 1 / 2 / 3 / 4 四个胶囊按钮；默认选中 4 张，选中态为蓝色，未选中为白底描边。
 - 每个项目落库到 `projects.type='video_cover'`，项目详情页按固定前后关系管理 4 个步骤：`video_analysis`、`product_analysis`、`ad_copy`、`cover_generation`。
 - 创建项目时必须从商品链接提取商品标题和商品主图 URL，下载商品主图并程序化标准化为 `400x400` JPG，写入项目状态；后续步骤复用这些项目输入，不在详情页展示时重新抓取。
 - 项目详情页第一步「视频分析」卡片上方固定展示项目输入卡片：第一行商品标题；第二行商品链接预览与「复制」「跳转访问」按钮；第三行展示商品主图和可播放视频框。
@@ -29,7 +29,23 @@
 - 任务详情页顶部进度卡片参考多语种视频翻译的顶部任务卡片：固定 sticky 在内容区顶部，不透明白底，使用多状态颜色区分 pending / running / done / error；进度卡片上方必须有“强制重新开始”按钮，按钮前方同样提供 1 / 2 / 3 / 4 张胶囊选择。强制重新开始按钮必须使用红色危险样式，点击后先弹出确认提示；用户确认后清空全部中间状态、按当前选中的张数更新 `image_count`，并从第 1 步重新执行。
 - 视频分析调用大模型前必须使用共享 LLM 视频优化器转成 480p、15fps、H.264 600k 级别的临时文件，保留压缩音频以支持 voiceover 判断；转码失败时沿用优化器的原视频回退行为。
 - 视频封面详情页的普通 GET 不做“中断恢复”；运行中的步骤不能因为用户刷新或打开详情页被误标为失败，真正的进程中断由启动恢复逻辑处理。
-- 封面生成完成后，最终结果显示在“封面生成”卡片内：左侧居中展示封面图和图片操作，右侧展示对应文案和一键复制文案。
+- 任务详情页在桌面端滚动主页面时，左侧“项目输入”栏必须固定在可视区域内；左侧栏内容超出可视高度时只在左侧栏内部出现独立纵向滚动条。窄屏单列布局不启用固定，避免遮挡正文。
+- 封面生成完成后，最终结果显示在“封面生成”卡片内：按封面生成顺序从左到右展示结果卡片。每张卡片上方展示对应三段式文案和复制文案按钮，下方展示对应封面图和图片操作。
+
+### 2026-05-15 默认张数修订
+
+- 新建文案封面项目的默认封面数量为 4 张。
+- 详情页强制重新开始的张数选择沿用项目当前 `image_count`；历史任务缺失 `image_count` 时按 4 张兜底。
+- 后端所有创建、自动链路、状态接口和重启接口的缺省 `image_count` 必须一致使用 4，避免前端显示和实际生成数量不一致。
+- 强制重新开始必须把任务中所有中间过程数据清零，从第 1 步重新开始。允许保留的只有项目基础输入和配置快照，例如 `id`、`type`、`status`、`user_id`、`display_name`、`product_url`、`video_path`、`video_filename`、`task_dir`、`thumbnail_path`、`product`、`image_count`、`model_defaults`。视频分析、产品分析、文案创作、封面结果、结构化结果、请求报文、返回报文、耗时、错误和运行中消息都必须清空。
+
+### 2026-05-15 提示词合同与关键帧参考图修订
+
+- `title-cover-prompt` 中的四段提示词是文案封面模块的业务合同来源；代码内置 prompt 必须与其核心合同保持一致，差异必须有对应设计文档说明。
+- 第 4 步以 `docs/superpowers/specs/2026-05-15-video-cover-copy-format-overlay-design.md` 为准：图片模型必须把 `selected_ad_copy.english.title` 原生嵌入画面，作为唯一可读 hook；后端不再做固定位置 PIL 叠字，也不写入 `overlay_text` / `overlay_box` 等叠字元数据。
+- 视频分析返回的 `keyframes` 和 `cover_reference.best_cover_reference_timestamp` 必须进入封面生成链路。封面生成应优先按这些时间点从原视频抽取 Hero / Detail / Usage / best cover reference 帧，再和商品主图合成参考图；如果结构化时间点缺失或抽帧失败，才回退到原有首帧缩略图。
+- 参考图必须记录实际使用的帧元数据，包括 `timestamp`、`type`、`source` 和本地帧路径，写入 `state.result.reference.frames` 和第四步请求快照，便于排查“模型为什么参考了这张图”。
+- 第四步图片 prompt 不应直接拼接冗长的完整视频分析和产品分析全文；应先构造短 `cover_brief`，只包含产品保真、使用约束、欧美本地化、关键帧参考和选中文案，降低模型被长文本噪声带偏的概率。
 
 ## 1.2 过程可视化与结构化结果
 
@@ -45,9 +61,11 @@
 - `video_analysis`、`product_analysis`、`ad_copy` 必须要求模型返回结构化 JSON；后端保存 `raw_response` 和 `structured_result`，前端优先用 `structured_result` 渲染。
 - 视频分析可视化建议字段：`video_text`、`voiceover`、`cover_reference`、`actions`、`composition`、`authenticity_cues`、`ignore_elements`、`cover_suggestions`。
 - 产品分析可视化建议字段：`information_check`、`product_definition`、`core_functions`、`usage_analysis`、`physical_features`、`western_scene_suggestions`、`visual_category`、`cover_decision`、`ad_copy_direction`、`overall_judgment`。
-- 文案创作可视化字段沿用 `ad_copy_sets` 五组结构化文案，卡片化展示 angle、英文 headline / body_text / cta、中文翻译和使用建议。
-- 封面生成根据 `image_count` 生成 1 到 4 张封面。每张封面记录自己的 `index`、`object_key`、`width`、`height`、`source_ad_copy_id`、`hook`、`copy`；前端用缩略图切换，左图右文案保持一一对应。
-- 图片下方提供“保存图片”和“复制图片”胶囊按钮；复制图片优先使用浏览器 Clipboard API，不支持时提示使用保存图片兜底。文案区提供“一键复制文案”按钮。
+- 文案创作可视化字段沿用 `ad_copy_sets` 五组结构化文案，卡片化展示 angle、英文 title / message / description、中文翻译和使用建议。第三步每一张文案卡片必须提供“复制文案”按钮，复制内容固定为三行格式：`标题: <english.title>`、`文案: <english.message>`、`描述: <english.description>`；历史 `headline / body_text / cta` 数据按兼容映射后再复制。
+- 封面生成根据 `image_count` 生成 1 到 4 张封面。每张封面记录自己的 `index`、`object_key`、`width`、`height`、`source_ad_copy_id`、`hook`、`copy`；前端不再用缩略图切换，而是按已有 `covers` 数组从左到右直接显示全部已生成结果。
+- 多张封面在后端必须排队串行生成：先完成第 1 张并写入状态，再进入第 2 张，不并发提交多张图片生成请求。
+- 运行中的封面生成若 `state.result.covers` 已经包含部分封面，前端轮询时必须立即渲染这些已生成卡片；全部完成后同一套网格按最终张数重新对齐排列，保持卡片宽度、左右间距和顶部/底部对齐稳定。
+- 图片下方只提供一个“保存图片”胶囊按钮，不再提供“复制图片”；按钮居中展示，宽度与对应封面图一致。文案区提供蓝色胶囊“复制文案”按钮，按钮宽度与对应封面图一致。
 
 ## 1.3 全局默认模型配置
 
@@ -56,17 +74,20 @@
 - 默认配置支持分别配置四个步骤的模型供应商和模型 ID：`video_analysis`、`product_analysis`、`ad_copy`、`cover_generation`。
 - 默认配置保存到 `system_settings`，值为结构化 JSON；读取失败、缺失或字段非法时回退到代码内置默认模型。
 - 新建项目时必须把当前默认配置快照写入项目 `state_json.model_defaults`。该项目后续自动执行、失败重试、强制重新开始都使用这份项目级快照，避免管理员后续改默认配置影响已创建项目。
-- “默认配置”弹窗内的供应商和模型 ID 输入必须保存实际调用值；界面可以展示建议值，但允许超级管理员输入新模型 ID，便于供应商模型更新时无需改代码。
+- “默认配置”弹窗内的模型 ID 必须是供应商联动下拉框。用户先选择步骤供应商，再从该供应商在当前步骤可用的模型池中选择模型；保存时提交并落库实际调用的 `model_id`，不提交展示名或内部别名。
+- 文本步骤的模型池必须按场景给出多个可选模型。视频分析可选 Gemini 3.1 Pro Preview、Gemini 3 Flash、Gemini 3.1 Flash-Lite；产品分析和文案创作同样提供 Gemini 3 系列，其中文案创作在 OpenRouter 下额外提供 Claude Sonnet、GPT-5.5、GPT-5 Mini 等文本模型。
+- 封面生成的模型池必须提供图片生成模型候选。本地接口和 OpenRouter 都至少提供 GPT-Image-2、Nano Banana 2、Nano Banana Pro；OpenRouter 可额外提供 OpenAI Image 2 low / mid / high 质量档位和 Nano Banana 1 兜底。
+- 如果历史配置中存在当前模型池未收录但仍可被后端规范化保留的 `model_id`，弹窗应临时显示“当前历史值”选项，避免打开配置后静默覆盖旧值；用户主动切换供应商或模型后，再回到预设模型池。
 - 保存接口必须使用 `@superadmin_required`；普通管理员直接请求读取或保存接口返回 403。
 
 ## 模型与平台决策
 
 当前 1.0 按步骤内置默认模型运行；超级管理员可以通过 `/video-cover` 列表页的“默认配置”覆盖全局默认值：
 
-- 视频分析：默认 `GOOGLE VERTEX ADC` / `gemini-3.1-pro-preview`；OpenRouter 对应 `google/gemini-3.1-pro-preview`。
-- 产品分析：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。
-- 文案创作：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。
-- 封面生成：默认 `本地接口` / `gpt-image-2`，本地接口默认 base URL 为 `http://172.30.254.14:82/v1`，API key 存放在 `llm_provider_configs.video_cover_local_image`；OpenRouter 可选 `gpt-image-2`、`nano_banana_2`、`nano_banana_pro` 的映射模型。
+- 视频分析：默认 `GOOGLE VERTEX ADC` / `gemini-3.1-pro-preview`；OpenRouter 对应 `google/gemini-3.1-pro-preview`。同供应商还可选择 Gemini 3 Flash 和 Gemini 3.1 Flash-Lite。
+- 产品分析：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。同供应商还可选择 Gemini 3.1 Pro Preview 和 Gemini 3.1 Flash-Lite。
+- 文案创作：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。OpenRouter 文案池还可选择 `anthropic/claude-sonnet-4.6`、`openai/gpt-5.5`、`openai/gpt-5-mini`。
+- 封面生成：默认 `本地接口` / `gpt-image-2`，本地接口默认 base URL 为 `http://172.30.254.14:82/v1`，API key 存放在 `llm_provider_configs.video_cover_local_image`；OpenRouter 可选 OpenAI Image 2 low / mid / high、Nano Banana 2、Nano Banana Pro、Nano Banana 1 兜底。本地接口可选 GPT-Image-2、Nano Banana 2、Nano Banana Pro、Nano Banana 1 兜底。
 - 本地图片生成接口按接口文档使用图生图编辑能力：`POST /images/edits`，请求为 `multipart/form-data`，字段包含 `model`、`prompt`、`n`、`size`，参考图通过 `image` 文件上传；9:16 原始生成尺寸使用 `1024x1536`，响应支持 `b64_json` 或 `url`。
 - 这个功能需要基于商品主图和视频画面做图片生成/编辑；视频分析阶段读取上传视频文件，封面生成阶段使用商品主图与精选视频帧组成的 9:16 参考图。
 - 输出后处理强制为平台常用的 `1080x1920` 竖版 PNG，模型原始输出尺寸不直接暴露给用户。
@@ -85,8 +106,9 @@
 - 产品形状、颜色、材质、比例和功能部件必须忠实于产品图片。
 - 使用方式必须可信，必要时展示手部、身体互动、安装位置或可见结果。
 - 画面要有西方生活方式和社交平台原生感。
-- 画面中必须且只能包含一句简短英文 hook，优先从 `ad_copy_sets` 选择或缩写。
+- 画面中必须且只能包含一句简短英文 hook，内容必须来自当前 `selected_ad_copy.english.title`，并作为唯一可读文字原生嵌入图片。
 - 禁止平台 UI、用户名、假评论框、红圈、箭头、价格/折扣、CTA、多句 hook、海报式排版和重度图形装饰。
+- 禁止固定位置半透明背景框、整条黑色横幅、模板化标题栏；字体、位置、阴影和局部轻量托底允许随构图变化。
 
 1.0 中的上下文构造：
 

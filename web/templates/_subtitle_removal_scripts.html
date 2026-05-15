@@ -204,13 +204,13 @@
 
     function syncUploadBackendControls() {
       var backend = readUploadSubtitleBackend();
-      var isLocalVsr = backend === "local_vsr";
+      var isVolc = backend === "volc";
       var groups = Array.prototype.slice.call(document.querySelectorAll(".sr-upload-card .sr-erase-type-group"));
       groups.forEach(function (group) {
-        group.hidden = isLocalVsr;
-        group.classList.toggle("sr-hidden", isLocalVsr);
+        group.hidden = !isVolc;
+        group.classList.toggle("sr-hidden", !isVolc);
         Array.prototype.slice.call(group.querySelectorAll("input[name='erase_text_type']")).forEach(function (input) {
-          input.disabled = isLocalVsr;
+          input.disabled = !isVolc;
         });
       });
     }
@@ -242,7 +242,7 @@
           file_size: file.size,
           content_type: file.type || "application/octet-stream",
           subtitle_backend: subtitleBackend,
-          erase_text_type: subtitleBackend === "local_vsr" ? "" : readUploadEraseType(),
+          erase_text_type: subtitleBackend === "volc" ? readUploadEraseType() : "",
         }),
       }).then(function (response) {
         return response.json().then(function (data) {
@@ -509,7 +509,7 @@
       var payload = {
         remove_mode: selectionState.mode,
       };
-      if (subtitleBackend !== "local_vsr") {
+      if (subtitleBackend === "volc") {
         payload.erase_text_type = currentEraseType();
       }
       if (selectionState.mode === "box") {
@@ -658,14 +658,14 @@
       if (stateBackend) {
         stateBackend.textContent = backendLabel((state && state.subtitle_backend) || "volc");
       }
-      var isLocalVsr = ((state && state.subtitle_backend) || "volc") === "local_vsr";
+      var isVolc = ((state && state.subtitle_backend) || "volc") === "volc";
       if (detailEraseTypeGroup) {
-        detailEraseTypeGroup.hidden = isLocalVsr;
-        detailEraseTypeGroup.classList.toggle("sr-hidden", isLocalVsr);
+        detailEraseTypeGroup.hidden = !isVolc;
+        detailEraseTypeGroup.classList.toggle("sr-hidden", !isVolc);
       }
       if (stateEraseTypeItem) {
-        stateEraseTypeItem.hidden = isLocalVsr;
-        stateEraseTypeItem.classList.toggle("sr-hidden", isLocalVsr);
+        stateEraseTypeItem.hidden = !isVolc;
+        stateEraseTypeItem.classList.toggle("sr-hidden", !isVolc);
       }
       var mode = state.remove_mode || selectionState.mode || "full";
       selectionState.mode = mode;
@@ -705,11 +705,11 @@
           updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, state.media_info || getMediaInfo()));
         }
       }
-      var nextEraseType = isLocalVsr ? "" : ((state && state.erase_text_type) || "subtitle");
+      var nextEraseType = isVolc ? ((state && state.erase_text_type) || "subtitle") : "";
       syncEraseType(nextEraseType);
       var srStatus = (state && state.status) || "";
       var lockStates = { queued: 1, running: 1, submitted: 1, done: 1, error: 1 };
-      setEraseTypeDisabled(isLocalVsr || !!lockStates[srStatus]);
+      setEraseTypeDisabled(!isVolc || !!lockStates[srStatus]);
       renderResultPanel(state);
       renderComparePreviews(state);
     }
@@ -749,6 +749,7 @@
     }
 
     function backendLabel(value) {
+      if (value === "niuma") return "牛马";
       if (value === "local_vsr") return "本地 VSR";
       return "火山";
     }

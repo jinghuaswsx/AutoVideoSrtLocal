@@ -66,6 +66,12 @@ def delete_task_storage(task_or_row: dict) -> None:
             log.warning("Skip deleting task_dir outside OUTPUT_DIR: %s", task_dir)
 
     state = _load_task_state(task_or_row)
+    # 文案封面项目的源视频要保留，不删除
+    project_type = state.get("type") or task_or_row.get("type") or ""
+    if project_type == "video_cover":
+        log.info("Skip deleting video file for video_cover project")
+        return
+
     video_path = state.get("video_path") or task_or_row.get("video_path") or ""
     if video_path and os.path.isfile(video_path):
         try:

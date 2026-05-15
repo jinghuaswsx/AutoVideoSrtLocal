@@ -26,6 +26,7 @@ from web import store
 from web.services import multi_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.llm_debug import build_llm_debug_payload
+from web.services.translate_step_reset import build_step_resume_reset_updates
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     normalize_confirm_voice_payload,
@@ -75,13 +76,6 @@ def _list_filter_langs() -> tuple[str, ...]:
         log.warning("[multi_translate] failed to load enabled languages for filter, falling back", exc_info=True)
         return SUPPORTED_LANGS
     return normalize_enabled_target_langs(enabled)
-
-
-def _drop_artifacts(task: dict, *steps: str) -> dict:
-    artifacts = dict(task.get("artifacts") or {})
-    for step in steps:
-        artifacts.pop(step, None)
-    return artifacts
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -544,32 +538,16 @@ def resume(task_id):
     if start_step not in RESUMABLE_STEPS:
         return _json_response({"error": f"start_step must be one of {RESUMABLE_STEPS}"}, 400)
 
+    updates = build_step_resume_reset_updates(task, RESUMABLE_STEPS, start_step)
     if start_step == "asr_normalize":
         source_language = (task.get("source_language") or "en").strip()
         if source_language not in ALLOWED_SOURCE_LANGUAGES:
             return _json_response({
                 "error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
             }, 400)
-        store.update(
-            task_id,
-            utterances_en=None,
-            asr_normalize_artifact=None,
-            source_language=source_language,
-            user_specified_source_language=True,
-            detected_source_language=None,
-            artifacts=_drop_artifacts(
-                task,
-                "asr_normalize",
-                "alignment",
-                "translate",
-                "tts",
-                "av_sync_audit",
-                "subtitle",
-                "compose",
-                "export",
-            ),
-        )
+        updates.update(source_language=source_language, user_specified_source_language=True)
 
+    store.update(task_id, **updates)
     started = False
     for s in RESUMABLE_STEPS:
         if s == start_step:
@@ -578,7 +556,6 @@ def resume(task_id):
             store.set_step(task_id, s, "pending")
             store.set_step_message(task_id, s, "等待中...")
 
-    store.update(task_id, status="running", current_review_step="")
     multi_pipeline_runner.resume(task_id, start_step, user_id=current_user.id)
     return _json_response({"status": "started", "start_step": start_step})
 

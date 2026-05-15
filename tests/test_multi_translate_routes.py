@@ -1262,6 +1262,139 @@ def test_resume_from_asr_normalize_clears_stale_state(
     assert not task.get("detected_source_language")
 
 
+def test_resume_from_tts_clears_multi_current_and_downstream_state(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    from web import store
+    from web.routes import multi_translate as mt_module
+
+    resume_calls = []
+    monkeypatch.setattr(
+        mt_module.multi_pipeline_runner,
+        "resume",
+        lambda task_id, start_step, user_id=None: resume_calls.append((task_id, start_step, user_id)),
+    )
+
+    task_id = "multi-resume-clear-tts"
+    store.create(task_id, "/tmp/source.mp4", str(tmp_path))
+    localized_translation = {"full_text": "translated text"}
+    store.update(
+        task_id,
+        _user_id=1,
+        type="multi_translate",
+        target_lang="de",
+        source_language="es",
+        current_review_step="tts",
+        script_segments=[{"index": 0, "text": "source"}],
+        segments=[{"text": "old tts segment"}],
+        localized_translation=localized_translation,
+        tts_script={"full_text": "old tts"},
+        tts_audio_path="/tmp/old-tts.mp3",
+        timeline_manifest={"tracks": []},
+        corrected_subtitle={"chunks": [{"text": "old subtitle"}]},
+        english_asr_result={"utterances": [{"text": "old subtitle asr"}]},
+        srt_path="/tmp/old.srt",
+        result={"hard_video": "/tmp/old-hard.mp4"},
+        exports={"normal": {"archive_url": "/old.zip"}},
+        final_compose_summary={"compose_completed": True},
+        tts_duration_rounds=[{"round": 1}],
+        tts_duration_status="done",
+        tts_final_round=1,
+        tts_final_reason="old",
+        tts_final_distance=0,
+        artifacts={
+            "translate": {"title": "keep translate"},
+            "tts": {"title": "old tts"},
+            "subtitle": {"title": "old subtitle"},
+            "compose": {"title": "old compose"},
+            "export": {"title": "old export"},
+        },
+        preview_files={
+            "source_video": "/tmp/source.mp4",
+            "audio_extract": "/tmp/audio.wav",
+            "tts_full_audio": "/tmp/old-tts.mp3",
+            "srt": "/tmp/old.srt",
+            "hard_video": "/tmp/old-hard.mp4",
+            "soft_video": "/tmp/old-soft.mp4",
+        },
+        llm_debug_refs={
+            "translate": [{"id": "keep-translate"}],
+            "tts": [{"id": "drop-tts"}],
+        },
+        step_model_tags={
+            "translate": "keep-model",
+            "tts": "drop-model",
+        },
+        variants={
+            "normal": {
+                "label": "普通版",
+                "localized_translation": localized_translation,
+                "tts_script": {"full_text": "old tts"},
+                "segments": [{"text": "old tts segment"}],
+                "tts_audio_path": "/tmp/old-tts.mp3",
+                "timeline_manifest": {"tracks": []},
+                "english_asr_result": {"utterances": [{"text": "old subtitle asr"}]},
+                "corrected_subtitle": {"chunks": [{"text": "old subtitle"}]},
+                "srt_path": "/tmp/old.srt",
+                "result": {"hard_video": "/tmp/old-hard.mp4"},
+                "exports": {"archive_url": "/old.zip"},
+                "artifacts": {
+                    "translate": {"title": "keep translate"},
+                    "tts": {"title": "old tts"},
+                    "subtitle": {"title": "old subtitle"},
+                    "compose": {"title": "old compose"},
+                    "export": {"title": "old export"},
+                },
+                "preview_files": {
+                    "tts_full_audio": "/tmp/old-tts.mp3",
+                    "srt": "/tmp/old.srt",
+                    "hard_video": "/tmp/old-hard.mp4",
+                },
+            }
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/multi-translate/{task_id}/resume",
+        json={"start_step": "tts"},
+    )
+
+    assert resp.status_code == 200, resp.get_json()
+    task = store.get(task_id)
+    assert task["steps"]["tts"] == "pending"
+    assert task["steps"]["subtitle"] == "pending"
+    assert task["current_review_step"] == ""
+    assert task["localized_translation"] == localized_translation
+    assert task["segments"] == []
+    assert task["tts_script"] == {}
+    assert task["tts_audio_path"] == ""
+    assert task["corrected_subtitle"] == {}
+    assert task["english_asr_result"] == {}
+    assert task["srt_path"] == ""
+    assert task["result"] == {}
+    assert task["exports"] == {}
+    assert task["tts_duration_rounds"] == []
+    assert task["tts_duration_status"] is None
+    assert task["artifacts"] == {"translate": {"title": "keep translate"}}
+    assert task["preview_files"] == {
+        "source_video": "/tmp/source.mp4",
+        "audio_extract": "/tmp/audio.wav",
+    }
+    assert task["llm_debug_refs"] == {"translate": [{"id": "keep-translate"}]}
+    assert task["step_model_tags"] == {"translate": "keep-model"}
+    normal = task["variants"]["normal"]
+    assert normal["localized_translation"] == localized_translation
+    assert normal["tts_script"] == {}
+    assert normal["segments"] == []
+    assert normal["tts_audio_path"] == ""
+    assert normal["corrected_subtitle"] == {}
+    assert normal["result"] == {}
+    assert normal["exports"] == {}
+    assert normal["artifacts"] == {"translate": {"title": "keep translate"}}
+    assert normal["preview_files"] == {}
+    assert resume_calls == [(task_id, "tts", 1)]
+
+
 # ── Task 10: upload modal hint text ─────────────────────────────────────────
 
 def test_multi_translate_list_upload_modal_text_requires_manual_source_language():

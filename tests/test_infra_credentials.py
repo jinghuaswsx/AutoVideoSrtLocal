@@ -19,14 +19,17 @@ from appcore import infra_credentials as ic
 
 
 def test_schema_covers_known_codes():
-    assert set(ic._CREDENTIAL_SCHEMA.keys()) == {"tos_main", "tos_wj", "tos_backup", "vod_main"}
-    assert ic.known_codes() == ["tos_main", "tos_wj", "tos_backup", "vod_main"]
+    assert set(ic._CREDENTIAL_SCHEMA.keys()) == {"tos_main", "tos_wj", "tos_backup", "vod_main", "niuma_main"}
+    assert ic.known_codes() == ["tos_main", "tos_wj", "tos_backup", "vod_main", "niuma_main"]
 
 
 def test_schema_marks_ak_sk_as_secret_for_each_code():
     for code in ic.known_codes():
         secrets = {f.json_key for f in ic.schema_for(code) if f.is_secret}
-        assert {"access_key", "secret_key"}.issubset(secrets), code
+        if code == "niuma_main":
+            assert secrets == {"api_key"}, code
+        else:
+            assert {"access_key", "secret_key"}.issubset(secrets), code
 
 
 def test_schema_maps_json_keys_to_config_attrs():
@@ -39,6 +42,10 @@ def test_schema_maps_json_keys_to_config_attrs():
     vod = {f.json_key: f.config_attr for f in ic.schema_for("vod_main")}
     assert vod["access_key"] == "VOD_ACCESS_KEY"
     assert vod["secret_key"] == "VOD_SECRET_KEY"
+
+    niuma = {f.json_key: f.config_attr for f in ic.schema_for("niuma_main")}
+    assert niuma["api_key"] == "NIUMA_ERASE_API_KEY"
+    assert niuma["base_url"] == "NIUMA_ERASE_BASE_URL"
 
 
 def test_sync_to_runtime_writes_db_values_to_config_and_environ(monkeypatch):
@@ -62,6 +69,13 @@ def test_sync_to_runtime_writes_db_values_to_config_and_environ(monkeypatch):
             config={"access_key": "VOD_AK", "secret_key": "VOD_SK"},
             enabled=True,
         ),
+        ic.InfraCredential(
+            code="niuma_main",
+            display_name="n",
+            group_code="external_api",
+            config={"api_key": "NIUMA_KEY", "base_url": "https://niuma.example/openAi"},
+            enabled=True,
+        ),
     ]
     monkeypatch.setattr(ic, "list_configs", lambda: fake_rows)
 
@@ -73,6 +87,8 @@ def test_sync_to_runtime_writes_db_values_to_config_and_environ(monkeypatch):
     monkeypatch.setattr(config, "TOS_MEDIA_BUCKET", "old-bucket")
     monkeypatch.setattr(config, "VOD_ACCESS_KEY", "OLD_VOD_AK")
     monkeypatch.setattr(config, "VOD_SECRET_KEY", "OLD_VOD_SK")
+    monkeypatch.setattr(config, "NIUMA_ERASE_API_KEY", "OLD_NIUMA_KEY", raising=False)
+    monkeypatch.setattr(config, "NIUMA_ERASE_BASE_URL", "https://old-niuma.example", raising=False)
 
     ic.sync_to_runtime()
 
@@ -82,10 +98,14 @@ def test_sync_to_runtime_writes_db_values_to_config_and_environ(monkeypatch):
     assert config.TOS_MEDIA_BUCKET == "media-bucket-from-db"
     assert config.VOD_ACCESS_KEY == "VOD_AK"
     assert config.VOD_SECRET_KEY == "VOD_SK"
+    assert config.NIUMA_ERASE_API_KEY == "NIUMA_KEY"
+    assert config.NIUMA_ERASE_BASE_URL == "https://niuma.example/openAi"
 
     assert os.environ["TOS_ACCESS_KEY"] == "AK_FROM_DB"
     assert os.environ["TOS_SECRET_KEY"] == "SK_FROM_DB"
     assert os.environ["VOD_ACCESS_KEY"] == "VOD_AK"
+    assert os.environ["NIUMA_ERASE_API_KEY"] == "NIUMA_KEY"
+    assert os.environ["NIUMA_ERASE_BASE_URL"] == "https://niuma.example/openAi"
 
 
 def test_sync_to_runtime_uses_selected_tos_channel(monkeypatch):

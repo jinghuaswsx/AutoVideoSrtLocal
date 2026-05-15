@@ -110,6 +110,27 @@ def test_subtitle_removal_bootstrap_local_vsr_uses_local_upload_url(authed_clien
     assert reservation["subtitle_backend"] == "local_vsr"
 
 
+def test_subtitle_removal_bootstrap_niuma_uses_tos_proxy_upload_url(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
+        lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4", "subtitle_backend": "niuma"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["subtitle_backend"] == "niuma"
+    assert payload["subtitle_backend_label"] == "牛马"
+    assert payload["upload_backend"] == "tos_via_server"
+    assert payload["upload_url"].endswith(f"/api/subtitle-removal/upload/local/{payload['task_id']}")
+    reservation = subtitle_removal._upload_bootstrap_reservations[payload["task_id"]]
+    assert reservation["subtitle_backend"] == "niuma"
+
+
 def test_subtitle_removal_bootstrap_strips_windows_client_path_segments(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(subtitle_removal.os.path, "basename", posixpath.basename)
     monkeypatch.setattr(
@@ -138,7 +159,7 @@ def test_subtitle_removal_bootstrap_rejects_invalid_backend(authed_client_no_db)
     )
 
     assert response.status_code == 400
-    assert response.get_json()["error"] == "subtitle_backend must be volc or local_vsr"
+    assert response.get_json()["error"] == "subtitle_backend must be volc, niuma or local_vsr"
 
 
 def test_subtitle_removal_complete_volc_pushes_local_source_to_tos(
@@ -180,6 +201,47 @@ def test_subtitle_removal_complete_volc_pushes_local_source_to_tos(
     assert task["source_tos_key"] == payload["object_key"]
     assert task["source_object_info"]["storage_backend"] == "tos"
     assert task["erase_text_type"] == "text"
+
+
+def test_subtitle_removal_complete_niuma_pushes_local_source_to_tos_and_ignores_erase_text_type(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.object_keys.build_source_object_key",
+        lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.object_exists", lambda key: False)
+    uploaded = []
+
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.upload_file",
+        lambda local_path, object_key: uploaded.append((local_path, object_key)),
+    )
+
+    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db, subtitle_backend="niuma")
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload, data=b"video-bytes")
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+            "subtitle_backend": "niuma",
+            "erase_text_type": "text",
+        },
+    )
+
+    assert response.status_code == 201
+    task = store.get(payload["task_id"])
+    assert uploaded == [(task["video_path"], payload["object_key"])]
+    assert task["subtitle_backend"] == "niuma"
+    assert task["source_tos_key"] == payload["object_key"]
+    assert task["source_object_info"]["storage_backend"] == "tos"
+    assert task.get("erase_text_type") == ""
 
 
 def test_subtitle_removal_complete_rejects_backend_mismatch(
@@ -313,7 +375,7 @@ def test_subtitle_removal_complete_upload_rejects_invalid_backend(
     )
 
     assert response.status_code == 400
-    assert response.get_json()["error"] == "subtitle_backend must be volc or local_vsr"
+    assert response.get_json()["error"] == "subtitle_backend must be volc, niuma or local_vsr"
 
 
 def test_subtitle_removal_complete_upload_rejects_unreserved_task_id(tmp_path, authed_client_no_db, monkeypatch):
@@ -1435,6 +1497,44 @@ def test_subtitle_removal_submit_persists_erase_text_type_text(authed_client_no_
     assert saved["erase_text_type"] == "text"
 
 
+def test_subtitle_removal_submit_niuma_ignores_erase_text_type(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-submit-niuma",
+        "uploads/source.mp4",
+        "output/sr-submit-niuma",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-niuma",
+        status="ready",
+        subtitle_backend="niuma",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-niuma/submit",
+        json={"remove_mode": "full", "erase_text_type": "text"},
+    )
+
+    assert response.status_code == 202
+    saved = store.get("sr-submit-niuma")
+    assert saved["subtitle_backend"] == "niuma"
+    assert saved["erase_text_type"] == ""
+
+
 def test_subtitle_removal_submit_defaults_erase_text_type_to_subtitle(authed_client_no_db, monkeypatch):
     store.create_subtitle_removal(
         "sr-submit-erase-default",
@@ -1637,6 +1737,23 @@ def test_subtitle_removal_list_filters_by_backend_and_returns_label(authed_clien
                 "username": "tester",
             },
             {
+                "id": "sr-list-niuma",
+                "user_id": 1,
+                "status": "done",
+                "state_json": _json.dumps({
+                    "display_name": "niuma task",
+                    "original_filename": "niuma.mp4",
+                    "status": "done",
+                    "subtitle_backend": "niuma",
+                    "erase_text_type": "",
+                    "media_info": {"resolution": "720x1280", "duration": 10.0},
+                    "thumbnail_path": "",
+                    "provider_result_url": "",
+                }),
+                "created_at": None,
+                "username": "tester",
+            },
+            {
                 "id": "sr-list-local",
                 "user_id": 1,
                 "status": "done",
@@ -1665,12 +1782,19 @@ def test_subtitle_removal_list_filters_by_backend_and_returns_label(authed_clien
     assert items[0]["subtitle_backend"] == "local_vsr"
     assert items[0]["subtitle_backend_label"] == "本地 VSR"
 
+    response = authed_client_no_db.get("/api/subtitle-removal/list?subtitle_backend=niuma")
+    assert response.status_code == 200
+    items = (response.get_json() or {}).get("items") or []
+    assert [item["id"] for item in items] == ["sr-list-niuma"]
+    assert items[0]["subtitle_backend"] == "niuma"
+    assert items[0]["subtitle_backend_label"] == "牛马"
+
 
 def test_subtitle_removal_list_rejects_invalid_backend_filter(authed_client_no_db):
     response = authed_client_no_db.get("/api/subtitle-removal/list?subtitle_backend=unknown")
 
     assert response.status_code == 400
-    assert response.get_json()["error"] == "subtitle_backend must be volc or local_vsr"
+    assert response.get_json()["error"] == "subtitle_backend must be volc, niuma or local_vsr"
 
 
 def test_subtitle_removal_list_applies_submitter_and_project_search_filters(authed_client_no_db, monkeypatch):

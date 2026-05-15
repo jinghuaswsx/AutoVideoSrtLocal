@@ -72,6 +72,7 @@ _DIAGNOSIS_SCHEMA = {
                 "additionalProperties": True,
                 "properties": {
                     "asr_index": {"type": "integer"},
+                    "asr_text_zh": {"type": "string"},
                     "visual_observation": {"type": "string"},
                     "sync_score": {"type": "number"},
                     "diagnosis": {"type": "string"},
@@ -102,6 +103,7 @@ _SCORECARD_SCHEMA = {
                 ],
                 "properties": {
                     "asr_index": {"type": "integer"},
+                    "asr_text_zh": {"type": "string"},
                     "visual_observation": {"type": "string"},
                     "sync_score": {"type": "number", "minimum": 0, "maximum": 100},
                     "diagnosis": {"type": "string"},
@@ -129,6 +131,16 @@ def _is_multi_translate_report(cfg: dict) -> bool:
 
 def _is_report_only_scorecard(cfg: dict) -> bool:
     return str((cfg or {}).get("av_sync_audit") or "") == "report_only"
+
+
+def _is_chinese_source_language(task: dict | None) -> bool:
+    raw = str((task or {}).get("source_language") or "").strip().lower()
+    return raw == "zh" or raw.startswith("zh-") or raw.startswith("zh_")
+
+
+def _needs_asr_chinese_reference(task: dict | None) -> bool:
+    raw = str((task or {}).get("source_language") or "").strip()
+    return bool(raw) and not _is_chinese_source_language(task)
 
 
 def _json_from_result(result: dict | None, default: dict) -> dict:
@@ -209,6 +221,7 @@ def _compact_sentences(sentences: list[dict]) -> list[dict]:
 
 def _scorecard_rows(sentences: list[dict], task: dict | None) -> list[dict]:
     notes_by_asr = _shot_notes_by_asr(task)
+    needs_asr_text_zh = _needs_asr_chinese_reference(task)
     rows: list[dict] = []
     for pos, sentence in enumerate(sentences or []):
         if not isinstance(sentence, dict):
@@ -230,6 +243,7 @@ def _scorecard_rows(sentences: list[dict], task: dict | None) -> list[dict]:
             "start_time": start_time,
             "end_time": end_time,
             "asr_text": str(sentence.get("source_text") or "").strip(),
+            "needs_asr_text_zh": needs_asr_text_zh,
             "target_text": _report_sentence_text(sentence, {}),
             "visual_observation": _format_visual_context(notes_by_asr.get(asr_index)),
             "target_duration": target_duration,
@@ -360,6 +374,7 @@ def _build_assess_messages(
             "constraints": {
                 "output_only_timeline": True,
                 "one_row_per_asr": True,
+                "include_asr_chinese_reference": _needs_asr_chinese_reference(task),
                 "do_not_change_video": True,
                 "do_not_change_asr_or_tts_text": True,
                 "do_not_write_summary": True,
@@ -395,6 +410,8 @@ def _build_assess_messages(
                     "只输出 JSON，根字段只能使用 timeline。不要输出总结，不要输出问题列表。"
                     "timeline 必须按 scorecard_rows 的 ASR 顺序覆盖每一段；每项必须包含 asr_index、"
                     "visual_observation、sync_score、diagnosis、recommendation。"
+                    "当 constraints.include_asr_chinese_reference 为 true 时，每项还必须包含 asr_text_zh，"
+                    "用于填写 ASR 内容的简体中文直译对照；为 false 时不要额外翻译 ASR。"
                     "你只能根据每行的 ASR 内容、正常翻译/TTS 文案，以及 Doubao 视频理解笔记归纳出的实际视频画面评分。"
                     "ASR 内容和正常翻译/TTS 文案已经在 scorecard_rows 中提供，不要改写。"
                     "visual_observation 只写该 ASR 时间段配套视频里实际看到的画面：动作、物体、字幕、屏幕文字、镜头变化；"
@@ -623,6 +640,11 @@ def _normalize_scorecard_timeline(raw: Any, *, require_rows: bool) -> list[dict]
         row = dict(item)
         row["asr_index"] = asr_index
         row["sync_score"] = max(0.0, min(100.0, score))
+        asr_text_zh = str(row.get("asr_text_zh") or "").strip()
+        if asr_text_zh:
+            row["asr_text_zh"] = asr_text_zh
+        elif "asr_text_zh" in row:
+            row.pop("asr_text_zh", None)
         for key in required_text:
             value = str(row.get(key) or "").strip()
             if not value:
@@ -1140,6 +1162,22 @@ def _sync_score_for_timeline(source: dict | None) -> float | None:
     return _as_float_or_none(score)
 
 
+def _asr_chinese_reference_for_timeline(
+    task: dict | None,
+    *sources: dict | None,
+) -> str:
+    if not _needs_asr_chinese_reference(task):
+        return ""
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in ("asr_text_zh", "source_text_zh", "source_translation_zh", "asr_chinese"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
 def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict | None) -> list[dict]:
     issues_by_asr = _report_issues_for_timeline(report)
     hints_by_asr = _timeline_hints_by_asr(report)
@@ -1197,6 +1235,9 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
             "evidence": "",
             "suggested_text": "",
         }
+        asr_text_zh = _asr_chinese_reference_for_timeline(task, hint, issue, sentence)
+        if asr_text_zh:
+            row["asr_text_zh"] = asr_text_zh
         if row["severity"]:
             row["severity_label"] = _SEVERITY_LABELS.get(row["severity"], row["severity"].upper())
         if issue:
@@ -1230,7 +1271,7 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
         sync_score = _sync_score_for_timeline(issue)
         if sync_score is None:
             sync_score = _sync_score_for_timeline(hint)
-        rows.append({
+        issue_row = {
             "asr_index": asr_index,
             "source_segment_indices": [],
             "sync_point": issue.get("sync_point") or f"ASR {asr_index}",
@@ -1260,7 +1301,11 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
             "recommendation": (hint or {}).get("recommendation") or issue.get("recommendation") or "",
             "evidence": issue.get("evidence") or issue.get("reason") or "",
             "suggested_text": issue.get("final_text") or issue.get("suggested_text") or "",
-        })
+        }
+        asr_text_zh = _asr_chinese_reference_for_timeline(task, hint, issue)
+        if asr_text_zh:
+            issue_row["asr_text_zh"] = asr_text_zh
+        rows.append(issue_row)
 
     return sorted(
         rows,

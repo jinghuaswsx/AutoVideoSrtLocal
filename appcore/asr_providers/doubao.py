@@ -19,11 +19,11 @@ from typing import Dict, List
 
 import requests
 
+import config
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     require_provider_config,
 )
-from config import TOS_ASR_BUCKET, VOLC_ASR_QUERY_URL, VOLC_ASR_SUBMIT_URL
 
 from .base import ASRCapabilities, BaseASRAdapter, Utterance
 
@@ -71,12 +71,12 @@ class DoubaoAdapter(BaseASRAdapter):
 
         local_path = str(local_audio_path)
         object_key = f"asr_doubao_{uuid.uuid4().hex[:12]}.mp3"
-        audio_url = upload_file(local_path, object_key, bucket=TOS_ASR_BUCKET)
+        audio_url = upload_file(local_path, object_key, bucket=config.TOS_ASR_BUCKET)
         try:
             return self.transcribe_url(audio_url)
         finally:
             try:
-                delete_file(object_key, bucket=TOS_ASR_BUCKET)
+                delete_file(object_key, bucket=config.TOS_ASR_BUCKET)
             except Exception:
                 log.warning("[Doubao] 清理临时音频失败: %s", object_key, exc_info=True)
 
@@ -127,7 +127,7 @@ class DoubaoAdapter(BaseASRAdapter):
         }
         headers = self._build_headers(request_id, api_key)
         resp = requests.post(
-            VOLC_ASR_SUBMIT_URL, json=payload, headers=headers, timeout=30
+            config.VOLC_ASR_SUBMIT_URL, json=payload, headers=headers, timeout=30
         )
         resp.raise_for_status()
         status = resp.headers.get("X-Api-Status-Code", "")
@@ -142,7 +142,7 @@ class DoubaoAdapter(BaseASRAdapter):
         headers = self._build_headers(request_id, api_key)
         for attempt in range(_POLL_MAX_RETRIES):
             resp = requests.post(
-                VOLC_ASR_QUERY_URL, json={}, headers=headers, timeout=30
+                config.VOLC_ASR_QUERY_URL, json={}, headers=headers, timeout=30
             )
             resp.raise_for_status()
             status = resp.headers.get("X-Api-Status-Code", "")

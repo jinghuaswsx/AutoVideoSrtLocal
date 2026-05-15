@@ -40,6 +40,8 @@ def start(task_id: str, user_id: int | None = None) -> bool:
     provider = (getattr(config, "SUBTITLE_REMOVAL_PROVIDER", "goodline") or "goodline").strip().lower()
     if subtitle_backend == "local_vsr":
         runtime = SubtitleRemovalLocalVsrRuntime(bus=bus, user_id=user_id)
+    elif subtitle_backend == "niuma":
+        runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)
     elif provider == "vod":
         runtime = SubtitleRemovalVodRuntime(bus=bus, user_id=user_id)
     else:

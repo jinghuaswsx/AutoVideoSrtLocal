@@ -174,13 +174,53 @@ class _ModuleLocalizationAdapter(_PromptLocalizationAdapter):
             self.module, "build_tts_segments", build_tts_segments,
         )
 
+    def _use_module_message_builders(self) -> bool:
+        return bool(getattr(self.module, "USE_MODULE_MESSAGE_BUILDERS", False))
+
+    def build_tts_script_messages(self, localized_translation: dict) -> list[dict]:
+        builder = getattr(self.module, "build_tts_script_messages", None)
+        if self._use_module_message_builders() and callable(builder):
+            return builder(localized_translation)
+        return super().build_tts_script_messages(localized_translation)
+
+    def build_localized_rewrite_messages(
+        self,
+        source_full_text: str,
+        prev_localized_translation: dict,
+        target_words: int,
+        direction: str,
+        source_language: str = "zh",
+        feedback_notes: str | None = None,
+    ) -> list[dict]:
+        builder = getattr(self.module, "build_localized_rewrite_messages", None)
+        if self._use_module_message_builders() and callable(builder):
+            return builder(
+                source_full_text=source_full_text,
+                prev_localized_translation=prev_localized_translation,
+                target_words=target_words,
+                direction=direction,
+                source_language=source_language,
+                feedback_notes=feedback_notes,
+            )
+        return super().build_localized_rewrite_messages(
+            source_full_text,
+            prev_localized_translation,
+            target_words,
+            direction,
+            source_language=source_language,
+            feedback_notes=feedback_notes,
+        )
+
 
 class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
     """Japanese adapter placeholder; task-specific overrides are added below."""
 
     handles_translate = True
-    handles_tts = True
+    handles_tts = False
     handles_subtitle = True
+    rewrite_unit_label = "字"
+    DEFAULT_TTS_UNITS_PER_SECOND = 7.0
+    rewrite_use_case_code = "ja_translate.rewrite"
 
     def __init__(self):
         super().__init__("ja")
@@ -188,11 +228,48 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
 
         self.module = ja_translate
         self.__name__ = "pipeline.ja_translate"
+        self.build_tts_segments = ja_translate.build_ja_tts_segments
 
     @staticmethod
     def _voice_public_id(voice: dict | None) -> str:
         voice = voice or {}
         return str(voice.get("elevenlabs_voice_id") or voice.get("voice_id") or "")
+
+    def count_tts_units(self, text: str) -> int:
+        return self.module.count_visible_japanese_chars(text)
+
+    def build_tts_script_from_localized(self, localized_translation: dict) -> dict:
+        return self.module.build_ja_tts_script(localized_translation)
+
+    def generate_duration_rewrite(
+        self,
+        *,
+        source_full_text: str,
+        prev_localized_translation: dict,
+        target_units: int,
+        direction: str,
+        source_language: str,
+        script_segments: list[dict],
+        last_audio_duration: float,
+        video_duration: float,
+        user_id: int | None,
+        project_id: str,
+        temperature: float,
+        feedback_notes: str | None = None,
+    ) -> dict:
+        del source_full_text, source_language
+        return self.module.rewrite_ja_localized_translation(
+            localized_translation=prev_localized_translation,
+            script_segments=script_segments,
+            target_total_chars=target_units,
+            direction=direction,
+            last_audio_duration=last_audio_duration,
+            video_duration=video_duration,
+            user_id=user_id,
+            project_id=project_id,
+            temperature=temperature,
+            feedback_notes=feedback_notes,
+        )
 
     def run_translate(self, runner: "MultiTranslateRunner", task_id: str) -> None:
         task = task_state.get(task_id)
@@ -771,6 +848,10 @@ class MultiTranslateRunner(PipelineRunner):
             return _ModuleLocalizationAdapter("de", "pipeline.localization_de")
         if lang == "fr":
             return _ModuleLocalizationAdapter("fr", "pipeline.localization_fr")
+        if lang == "es":
+            return _ModuleLocalizationAdapter("es", "pipeline.localization_es")
+        if lang == "it":
+            return _ModuleLocalizationAdapter("it", "pipeline.localization_it")
         if lang == "ja":
             return _JapaneseMultiTranslateAdapter()
         return _PromptLocalizationAdapter(lang)

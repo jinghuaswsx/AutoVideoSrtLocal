@@ -8,6 +8,11 @@ def test_latest_failure_alert_only_returns_failed_latest_run(monkeypatch):
 
     monkeypatch.setattr(
         scheduled_tasks,
+        "_should_dispatch_failure_alert_for_run",
+        lambda row: True,
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
         "latest_run",
         lambda task_code: {"id": 9, "task_code": task_code, "status": "failed"},
     )
@@ -22,6 +27,23 @@ def test_latest_failure_alert_only_returns_failed_latest_run(monkeypatch):
         scheduled_tasks,
         "latest_run",
         lambda task_code: {"id": 10, "task_code": task_code, "status": "success"},
+    )
+
+    assert scheduled_tasks.latest_failure_alert() is None
+
+
+def test_latest_failure_alert_suppresses_unworthy_failed_latest_run(monkeypatch):
+    from appcore import scheduled_tasks
+
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "_should_dispatch_failure_alert_for_run",
+        lambda row: False,
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "latest_run",
+        lambda task_code: {"id": 9, "task_code": task_code, "status": "failed"},
     )
 
     assert scheduled_tasks.latest_failure_alert() is None
@@ -61,7 +83,7 @@ def test_finish_run_injects_consecutive_failures_when_streak_ge_2(monkeypatch):
     monkeypatch.setattr(
         feishu_alerts,
         "should_dispatch_failure",
-        lambda task_code, *, current_run_id: (True, 5),
+        lambda task_code, *, current_run_id, immediate=False: (True, 20),
     )
     monkeypatch.setattr(
         feishu_alerts,
@@ -72,21 +94,37 @@ def test_finish_run_injects_consecutive_failures_when_streak_ge_2(monkeypatch):
     scheduled_tasks.finish_run(42, status="failed", error_message="boom")
 
     assert sent and sent[0]["id"] == 42
-    assert sent[0]["consecutive_failures"] == 5
+    assert sent[0]["consecutive_failures"] == 20
 
 
-def test_finish_run_omits_consecutive_failures_for_first_failure(monkeypatch):
-    """Streak == 1 (first failure under AUT-21 dedup) → still send, but
-    do NOT inject `consecutive_failures` so the message stays clean."""
+def test_finish_run_sample_gate_first_failure_sends_without_consecutive(monkeypatch):
     from appcore import feishu_alerts, scheduled_tasks
 
     sent = []
     monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
-    monkeypatch.setattr(scheduled_tasks, "query", _failure_run_row_mock)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "roi_hourly_sync",
+                "task_name": "ROI sync",
+                "status": "failed",
+                "summary_json": '{"total": 21, "failed": 17}',
+                "error_message": "sample batch failed",
+            }
+        ],
+    )
+
+    def fake_should_dispatch(task_code, *, current_run_id, immediate=False):
+        assert immediate is True
+        return True, 1
+
     monkeypatch.setattr(
         feishu_alerts,
         "should_dispatch_failure",
-        lambda task_code, *, current_run_id: (True, 1),
+        fake_should_dispatch,
     )
     monkeypatch.setattr(
         feishu_alerts,
@@ -121,7 +159,7 @@ def test_finish_run_suppresses_feishu_failure_when_dedup_says_no(monkeypatch):
     monkeypatch.setattr(
         feishu_alerts,
         "should_dispatch_failure",
-        lambda task_code, *, current_run_id: (False, 3),
+        lambda task_code, *, current_run_id, immediate=False: (False, 3),
     )
     monkeypatch.setattr(
         feishu_alerts,
@@ -132,6 +170,163 @@ def test_finish_run_suppresses_feishu_failure_when_dedup_says_no(monkeypatch):
     scheduled_tasks.finish_run(7, status="failed", error_message="boom")
 
     assert sent == []
+
+
+def test_failure_alert_policy_suppresses_single_failed_run_without_samples(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    monkeypatch.setattr(
+        feishu_alerts,
+        "consecutive_failure_count",
+        lambda task_code, *, current_run_id: 1,
+    )
+
+    assert not scheduled_tasks._should_dispatch_failure_alert_for_run(
+        {
+            "id": 19810,
+            "task_code": "meta_hot_posts_video_copyability_tick",
+            "status": "failed",
+            "summary": {
+                "stale_run_replaced": 19810,
+                "running_age_seconds": 4094,
+                "stale_video_copyability_reset": 1,
+            },
+        }
+    )
+
+
+def test_failure_alert_policy_allows_sample_failure_rate_above_threshold(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    monkeypatch.setattr(
+        feishu_alerts,
+        "consecutive_failure_count",
+        lambda task_code, *, current_run_id: 1,
+    )
+
+    assert scheduled_tasks._should_dispatch_failure_alert_for_run(
+        {
+            "id": 120,
+            "task_code": "roi_hourly_sync",
+            "status": "failed",
+            "summary": {"total": 21, "failed": 17},
+        }
+    )
+
+
+def test_failure_alert_policy_suppresses_sample_failure_rate_at_eighty_percent(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    monkeypatch.setattr(
+        feishu_alerts,
+        "consecutive_failure_count",
+        lambda task_code, *, current_run_id: 1,
+    )
+
+    assert not scheduled_tasks._should_dispatch_failure_alert_for_run(
+        {
+            "id": 121,
+            "task_code": "roi_hourly_sync",
+            "status": "failed",
+            "summary": {"total": 25, "failed": 20},
+        }
+    )
+
+
+def _video_localization_alert_query(daily_summary_rows):
+    def fake_query(sql, params=()):
+        if "WHERE id = %s" in sql:
+            return [
+                {
+                    "id": params[0],
+                    "task_code": "meta_hot_posts_video_localization_tick",
+                    "task_name": "Meta hot posts video localization",
+                    "status": "failed",
+                    "summary_json": '{"scanned": 5, "downloaded": 0, "failed": 5}',
+                    "error_message": "5 video(s) failed",
+                }
+            ]
+        if "task_code = %s" in sql and "CURDATE()" in sql:
+            return daily_summary_rows
+        return []
+
+    return fake_query
+
+
+def test_video_localization_failure_alert_suppressed_until_daily_attempts_exceed_20(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    daily_rows = [
+        {"id": 41, "summary_json": '{"scanned": 10, "downloaded": 0, "failed": 10}'},
+        {"id": 42, "summary_json": '{"scanned": 10, "downloaded": 0, "failed": 10}'},
+    ]
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _video_localization_alert_query(daily_rows))
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id, immediate=False: (immediate, 1),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(42, status="failed", error_message="boom")
+
+    assert sent == []
+
+
+def test_video_localization_failure_alert_suppressed_at_eighty_percent_failure_rate(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    daily_rows = [
+        {"id": 43, "summary_json": '{"scanned": 25, "downloaded": 5, "failed": 20}'},
+    ]
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _video_localization_alert_query(daily_rows))
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id, immediate=False: (immediate, 1),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(43, status="failed", error_message="boom")
+
+    assert sent == []
+
+
+def test_video_localization_failure_alert_sends_when_daily_failure_rate_above_eighty_percent(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    daily_rows = [
+        {"id": 44, "summary_json": '{"scanned": 21, "downloaded": 4, "failed": 17}'},
+    ]
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", _video_localization_alert_query(daily_rows))
+    monkeypatch.setattr(
+        feishu_alerts,
+        "should_dispatch_failure",
+        lambda task_code, *, current_run_id, immediate=False: (immediate, 1),
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_failure",
+        lambda row: sent.append(row),
+    )
+
+    scheduled_tasks.finish_run(44, status="failed", error_message="boom")
+
+    assert sent and sent[0]["id"] == 44
 
 
 def test_finish_run_dispatches_recovery_alert_when_prior_failures(monkeypatch):
@@ -158,7 +353,7 @@ def test_finish_run_dispatches_recovery_alert_when_prior_failures(monkeypatch):
     monkeypatch.setattr(
         feishu_alerts,
         "prior_consecutive_failures_before_run",
-        lambda task_code, *, current_run_id: 4,
+        lambda task_code, *, current_run_id: 20,
     )
     monkeypatch.setattr(
         feishu_alerts,
@@ -168,7 +363,7 @@ def test_finish_run_dispatches_recovery_alert_when_prior_failures(monkeypatch):
 
     scheduled_tasks.finish_run(80, status="success")
 
-    assert sent == [(80, 4)]
+    assert sent == [(80, 20)]
 
 
 def test_finish_run_does_not_dispatch_recovery_when_no_prior_failures(monkeypatch):
@@ -205,6 +400,40 @@ def test_finish_run_does_not_dispatch_recovery_when_no_prior_failures(monkeypatc
     assert sent == []
 
 
+def test_video_localization_success_does_not_dispatch_recovery_alert(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    sent = []
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "query",
+        lambda sql, params=(): [
+            {
+                "id": params[0],
+                "task_code": "meta_hot_posts_video_localization_tick",
+                "task_name": "Meta hot posts video localization",
+                "status": "success",
+                "summary_json": '{"scanned": 3, "downloaded": 3, "failed": 0}',
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "prior_consecutive_failures_before_run",
+        lambda task_code, *, current_run_id: 4,
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "send_scheduled_task_recovery",
+        lambda row, *, prior_failures: sent.append((row["id"], prior_failures)),
+    )
+
+    scheduled_tasks.finish_run(90, status="success")
+
+    assert sent == []
+
+
 def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
     from appcore import feishu_alerts, scheduled_tasks
 
@@ -214,7 +443,7 @@ def test_finish_run_feishu_alert_error_does_not_block_update(monkeypatch):
     monkeypatch.setattr(
         feishu_alerts,
         "should_dispatch_failure",
-        lambda task_code, *, current_run_id: (True, 1),
+        lambda task_code, *, current_run_id, immediate=False: (True, 1),
     )
 
     def fake_send(row):
@@ -338,6 +567,7 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert copyability_task["log_table"] == "scheduled_task_runs"
     assert "20 条" in copyability_task["description"]
     assert "20 秒" in copyability_task["description"]
+    assert "OpenRouter" in copyability_task["description"]
     assert "2026-05-14-meta-hot-posts-video-copyability-analysis-design.md" in copyability_task["description"]
 
     translation_task = definitions["meta_hot_posts_translate_messages_tick"]

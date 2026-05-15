@@ -117,6 +117,16 @@ def test_duplicate_project_javascript_posts_with_csrf(omni_list_html):
     assert "await _readOmniJsonResponse(res)" in omni_list_html
 
 
+def test_duplicate_project_shows_progress_until_redirect(omni_list_html):
+    assert 'id="duplicateProgress"' in omni_list_html
+    assert "function setDuplicateProgress" in omni_list_html
+    assert "正在复制项目" in omni_list_html
+    assert "项目就绪后会自动打开" in omni_list_html
+    assert "setDuplicateProgress(true, '正在复制项目" in omni_list_html
+    assert "setDuplicateProgress(true, '项目已就绪" in omni_list_html
+    assert "setDuplicateProgress(false)" in omni_list_html
+
+
 def test_javascript_appends_plugin_config_to_form_data(omni_list_html):
     """submit 时 plugin_config 作为 JSON 加到 FormData。"""
     assert "formData.set('plugin_config'," in omni_list_html

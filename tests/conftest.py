@@ -54,6 +54,9 @@ def authed_client_no_db(monkeypatch):
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
     monkeypatch.setattr(
         "appcore.medias.list_enabled_language_codes",
         lambda: ["de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"],
@@ -106,6 +109,9 @@ def authed_user_client_no_db(monkeypatch):
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
     from web.app import create_app
 
     fake_user = {

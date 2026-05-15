@@ -76,27 +76,39 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
         log.warning("[task_state] DB upsert 失败 task_id=%s", task_id, exc_info=True)
 
 
+def _db_payload_for_task(task_id: str) -> tuple[str, str, str, str] | None:
+    with _lock:
+        task = _tasks.get(task_id)
+        if not task:
+            return None
+        if task.get("_persist_state") is False:
+            return None
+        if task.get("_user_id") is None:
+            return None
+        return (
+            json.dumps(task, ensure_ascii=False, default=str),
+            task.get("status", "uploaded"),
+            task.get("type", "translation"),
+            task.get("display_name", ""),
+        )
+
+
 def _sync_task_to_db(task_id: str) -> None:
     """Sync current in-memory state to DB state_json and status column."""
-    task = _tasks.get(task_id)
-    if not task:
+    payload = _db_payload_for_task(task_id)
+    if payload is None:
         return
-    if task.get("_persist_state") is False:
-        return
-    user_id = task.get("_user_id")
-    if user_id is None:
-        return
+    state_json, status, project_type, display_name = payload
     try:
         from appcore.db import execute as db_execute
-        state_json = json.dumps(task, ensure_ascii=False, default=str)
         db_execute(
             "UPDATE projects SET state_json = %s, status = %s, type = %s, "
             "display_name = COALESCE(NULLIF(%s, ''), display_name) WHERE id = %s",
             (
                 state_json,
-                task.get("status", "uploaded"),
-                task.get("type", "translation"),
-                task.get("display_name", ""),
+                status,
+                project_type,
+                display_name,
                 task_id,
             ),
         )
@@ -267,6 +279,26 @@ def set_step_model_tag(task_id: str, step: str, tag: str):
         task = _tasks.get(task_id)
         if task:
             task.setdefault("step_model_tags", {})[step] = tag
+    if task:
+        _sync_task_to_db(task_id)
+
+
+def set_step_state(
+    task_id: str,
+    step: str,
+    status: str,
+    message: str | None = None,
+    *,
+    model_tag: str | None = None,
+):
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task.setdefault("steps", {})[step] = status
+            if message is not None:
+                task.setdefault("step_messages", {})[step] = message
+            if model_tag:
+                task.setdefault("step_model_tags", {})[step] = model_tag
     if task:
         _sync_task_to_db(task_id)
 

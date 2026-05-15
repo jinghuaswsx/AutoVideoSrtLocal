@@ -15,6 +15,7 @@ ring-fenced into its own runner + routes + templates.
 """
 from __future__ import annotations
 
+import importlib
 import logging
 import uuid
 
@@ -29,6 +30,7 @@ log = logging.getLogger(__name__)
 import json as _json_anchor
 from appcore.llm_prompt_configs import resolve_prompt_config as _resolve_prompt_anchor
 from appcore.runtime_multi import _PromptLocalizationAdapter as _BaseAdapter
+from appcore.runtime_multi import _JapaneseMultiTranslateAdapter as _JaAdapter
 
 
 class OmniLocalizationAdapter(_BaseAdapter):
@@ -79,6 +81,97 @@ class OmniLocalizationAdapter(_BaseAdapter):
             {"role": "system", "content": prompt},
             {"role": "user", "content": user_content},
         ]
+
+
+class OmniJapaneseLocalizationAdapter(OmniLocalizationAdapter):
+    """Omni rewrite context plus Japanese character-budget TTS hooks."""
+
+    rewrite_unit_label = _JaAdapter.rewrite_unit_label
+    DEFAULT_TTS_UNITS_PER_SECOND = _JaAdapter.DEFAULT_TTS_UNITS_PER_SECOND
+    rewrite_use_case_code = _JaAdapter.rewrite_use_case_code
+
+    def __init__(self, source_language: str, original_asr_text: str):
+        super().__init__(
+            lang="ja",
+            source_language=source_language,
+            original_asr_text=original_asr_text,
+        )
+        self._ja_adapter = _JaAdapter()
+        self.module = self._ja_adapter.module
+        self.build_tts_segments = self._ja_adapter.build_tts_segments
+
+    def count_tts_units(self, text: str) -> int:
+        return self._ja_adapter.count_tts_units(text)
+
+    def build_tts_script_from_localized(self, localized_translation: dict) -> dict:
+        return self._ja_adapter.build_tts_script_from_localized(localized_translation)
+
+    def generate_duration_rewrite(self, **kwargs) -> dict:
+        return self._ja_adapter.generate_duration_rewrite(**kwargs)
+
+
+class OmniModuleLocalizationAdapter(OmniLocalizationAdapter):
+    """Omni source-anchored adapter backed by a language localization module."""
+
+    def __init__(
+        self,
+        *,
+        lang: str,
+        source_language: str,
+        original_asr_text: str,
+        module_name: str,
+    ):
+        super().__init__(
+            lang=lang,
+            source_language=source_language,
+            original_asr_text=original_asr_text,
+        )
+        self.module = importlib.import_module(module_name)
+        self.__name__ = self.module.__name__
+        self.validate_tts_script = getattr(
+            self.module, "validate_tts_script", self.validate_tts_script,
+        )
+        self.build_tts_segments = getattr(
+            self.module, "build_tts_segments", self.build_tts_segments,
+        )
+
+    def _use_module_message_builders(self) -> bool:
+        return bool(getattr(self.module, "USE_MODULE_MESSAGE_BUILDERS", False))
+
+    def build_tts_script_messages(self, localized_translation: dict) -> list[dict]:
+        builder = getattr(self.module, "build_tts_script_messages", None)
+        if self._use_module_message_builders() and callable(builder):
+            return builder(localized_translation)
+        return super().build_tts_script_messages(localized_translation)
+
+    def build_localized_rewrite_messages(
+        self,
+        source_full_text: str,
+        prev_localized_translation: dict,
+        target_words: int,
+        direction: str,
+        source_language: str = "zh",
+        feedback_notes: str | None = None,
+    ) -> list[dict]:
+        builder = getattr(self.module, "build_omni_localized_rewrite_messages", None)
+        if self._use_module_message_builders() and callable(builder):
+            return builder(
+                source_full_text=source_full_text,
+                prev_localized_translation=prev_localized_translation,
+                target_words=target_words,
+                direction=direction,
+                source_language=self.source_language or source_language,
+                original_asr_text=self.original_asr_text,
+                feedback_notes=feedback_notes,
+            )
+        return super().build_localized_rewrite_messages(
+            source_full_text,
+            prev_localized_translation,
+            target_words,
+            direction,
+            source_language=source_language,
+            feedback_notes=feedback_notes,
+        )
 
 
 class OmniTranslateRunner(MultiTranslateRunner):
@@ -547,6 +640,18 @@ class OmniTranslateRunner(MultiTranslateRunner):
         original_asr_text = " ".join(
             (u.get("text") or "").strip() for u in utterances if u.get("text")
         ).strip()
+        if lang == "ja":
+            return OmniJapaneseLocalizationAdapter(
+                source_language=source_language,
+                original_asr_text=original_asr_text,
+            )
+        if lang in {"es", "it"}:
+            return OmniModuleLocalizationAdapter(
+                lang=lang,
+                source_language=source_language,
+                original_asr_text=original_asr_text,
+                module_name=f"pipeline.localization_{lang}",
+            )
         return OmniLocalizationAdapter(
             lang=lang,
             source_language=source_language,

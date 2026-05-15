@@ -72,6 +72,9 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/today-new" in body
     assert "function loadEuropeTopMaterials" in body
     assert "/xuanpin/api/meta-hot-posts/europe-top" in body
+    assert 'id="mhUsSubtab"' in body
+    assert "switchMetaHotSubtab('us')" in body
+    assert "function loadUsTopMaterials" in body
     assert "function assessEuropeFitMaterials" in body
     assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
     assert "renderEuropeFitPanel" in body

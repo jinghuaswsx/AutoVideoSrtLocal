@@ -180,10 +180,7 @@ class PipelineRunner:
         self.bus.publish(Event(type=event_type, task_id=task_id, payload=payload))
 
     def _set_step(self, task_id: str, step: str, status: str, message: str = "", *, model_tag: str = "") -> None:
-        task_state.set_step(task_id, step, status)
-        task_state.set_step_message(task_id, step, message)
-        if model_tag:
-            task_state.set_step_model_tag(task_id, step, model_tag)
+        task_state.set_step_state(task_id, step, status, message, model_tag=model_tag)
         payload = {"step": step, "status": status, "message": message}
         existing_tag = model_tag or (task_state.get(task_id) or {}).get("step_model_tags", {}).get(step, "")
         if existing_tag:
@@ -200,6 +197,31 @@ class PipelineRunner:
         if existing_tag:
             payload["model_tag"] = existing_tag
         self._emit(task_id, EVT_STEP_UPDATE, payload)
+
+    def _reconcile_completed_pipeline_steps(self, task_id: str, step_names: tuple[str, ...] | list[str]) -> None:
+        task = task_state.get(task_id) or {}
+        steps = dict(task.get("steps") or {})
+        step_messages = dict(task.get("step_messages") or {})
+        changed = False
+        for step_name in step_names:
+            if steps.get(step_name) in {"pending", "queued", "running"}:
+                steps[step_name] = "done"
+                step_messages.setdefault(step_name, "")
+                changed = True
+        if changed:
+            task_state.update(task_id, steps=steps, step_messages=step_messages)
+
+    def _step_names_for_completion_reconcile(
+        self,
+        task_id: str,
+        video_path: str = "",
+        task_dir: str = "",
+    ) -> tuple[str, ...]:
+        try:
+            return tuple(name for name, _fn in self._get_pipeline_steps(task_id, video_path, task_dir))
+        except Exception:
+            log.warning("[task %s] failed to resolve step names for completion reconcile", task_id, exc_info=True)
+            return _ALL_STEP_NAMES
 
     def _get_localization_module(self, task: dict):
         del task
@@ -302,10 +324,35 @@ class PipelineRunner:
         round_products: list[dict] = []  # full per-round products (kept in-memory only)
         last_audio_duration = 0.0
         last_word_count = 0
-        default_wps = _DEFAULT_WPS.get(target_language_label, 2.5)
 
         from functools import partial
         from pipeline.localization import count_words as _count_words
+        unit_counter = getattr(loc_mod, "count_tts_units", _count_words)
+        unit_label = str(getattr(loc_mod, "rewrite_unit_label", "词") or "词")
+        rewrite_use_case_code = str(
+            getattr(loc_mod, "rewrite_use_case_code", "video_translate.rewrite")
+            or "video_translate.rewrite"
+        )
+        default_wps = float(
+            getattr(
+                loc_mod,
+                "DEFAULT_TTS_UNITS_PER_SECOND",
+                _DEFAULT_WPS.get(target_language_label, 2.5),
+            )
+            or _DEFAULT_WPS.get(target_language_label, 2.5)
+        )
+
+        def _count_rewrite_units(text: str) -> int:
+            try:
+                return int(unit_counter(text))
+            except Exception:
+                log.warning(
+                    "failed to count rewrite units for %s; falling back to words",
+                    target_language_label,
+                    exc_info=True,
+                )
+                return _count_words(text)
+
         validator = partial(
             getattr(loc_mod, "validate_tts_script", None)
             or importlib.import_module("pipeline.localization").validate_tts_script,
@@ -390,9 +437,10 @@ class PipelineRunner:
             if not path:
                 return None
             try:
-                return os.path.relpath(path, task_dir)
+                rel = os.path.relpath(path, task_dir)
             except Exception:
-                return path
+                rel = path
+            return rel.replace("\\", "/")
 
         def _serialize_segment_assembly_candidates(
             candidates: list[dict], *, display_round: int | None = None,
@@ -712,6 +760,7 @@ class PipelineRunner:
                 "duration_hi": final_target_hi,
                 "stage1_lo": stage1_lo,
                 "stage1_hi": stage1_hi,
+                "rewrite_unit_label": unit_label,
                 "artifact_paths": {},
             }
 
@@ -754,11 +803,12 @@ class PipelineRunner:
                 )
                 round_record["target_duration"] = target_duration
                 round_record["target_words"] = target_words
+                round_record["target_units"] = target_words
                 round_record["wps_used"] = wps
                 round_record["direction"] = direction
                 round_record["message"] = (
                     f"第 {round_index} 轮：重译{_lang_display(target_language_label)}文案"
-                    f"（目标 {target_words} 单词，{direction}）"
+                    f"（目标 {target_words} {unit_label}，{direction}）"
                 )
                 _substep("准备重写译文")
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
@@ -796,13 +846,13 @@ class PipelineRunner:
                     attempt_temperature = 0.6 if attempt == 1 else 1.0
                     _substep(
                         f"重写译文 attempt {attempt}/{MAX_REWRITE_ATTEMPTS}"
-                        f"（目标 {target_words} 词，{direction}）"
+                        f"（目标 {target_words} {unit_label}，{direction}）"
                     )
                     feedback_notes = None
                     if prior_word_counts:
                         feedback_notes = (
                             "RETRY CONTEXT (attempt {n} of {m}):\n"
-                            "  · Earlier attempts in this round produced these word counts: "
+                            "  · Earlier attempts in this round produced these {unit_label} counts: "
                             "{prior} (target {target}, allowed window [{lo}, {hi}], direction {dir}).\n"
                             "  · ALL were rejected as outside the window.\n"
                             "  · DO NOT repeat the same translation. Generate a SUBSTANTIVELY "
@@ -812,6 +862,7 @@ class PipelineRunner:
                         ).format(
                             n=attempt,
                             m=MAX_REWRITE_ATTEMPTS,
+                            unit_label=unit_label,
                             prior=prior_word_counts,
                             target=target_words,
                             lo=target_words - tolerance_abs,
@@ -819,21 +870,38 @@ class PipelineRunner:
                             dir=direction,
                         )
 
-                    candidate = generate_localized_rewrite(
-                        source_full_text=source_full_text,
-                        prev_localized_translation=initial_localized_translation,
-                        target_words=target_words,
-                        direction=direction,
-                        source_language=source_language,
-                        messages_builder=loc_mod.build_localized_rewrite_messages,
-                        provider=provider,
-                        user_id=self.user_id,
-                        temperature=attempt_temperature,
-                        feedback_notes=feedback_notes,
-                        use_case="video_translate.rewrite",
-                        project_id=task_id,
-                        checkpoint_key=f"rewrite.{variant}.r{round_index}.a{attempt}",
-                    )
+                    custom_rewrite = getattr(loc_mod, "generate_duration_rewrite", None)
+                    if callable(custom_rewrite):
+                        candidate = custom_rewrite(
+                            source_full_text=source_full_text,
+                            prev_localized_translation=initial_localized_translation,
+                            target_units=target_words,
+                            direction=direction,
+                            source_language=source_language,
+                            script_segments=script_segments,
+                            last_audio_duration=last_audio_duration,
+                            video_duration=video_duration,
+                            user_id=self.user_id,
+                            project_id=task_id,
+                            temperature=attempt_temperature,
+                            feedback_notes=feedback_notes,
+                        )
+                    else:
+                        candidate = generate_localized_rewrite(
+                            source_full_text=source_full_text,
+                            prev_localized_translation=initial_localized_translation,
+                            target_words=target_words,
+                            direction=direction,
+                            source_language=source_language,
+                            messages_builder=loc_mod.build_localized_rewrite_messages,
+                            provider=provider,
+                            user_id=self.user_id,
+                            temperature=attempt_temperature,
+                            feedback_notes=feedback_notes,
+                            use_case="video_translate.rewrite",
+                            project_id=task_id,
+                            checkpoint_key=f"rewrite.{variant}.r{round_index}.a{attempt}",
+                        )
                     candidate_messages = candidate.get("_messages") or []
                     if candidate_messages:
                         rewrite_input_snapshot = [
@@ -868,12 +936,12 @@ class PipelineRunner:
                             ),
                             label=f"第 {round_index} 轮改写 attempt {attempt}",
                             phase="localized_rewrite",
-                            use_case_code="video_translate.rewrite",
+                            use_case_code=rewrite_use_case_code,
                             provider=provider,
                             model=llm_model_id,
                             messages=candidate_messages,
                             request_payload=build_chat_request_payload(
-                                use_case_code="video_translate.rewrite",
+                                use_case_code=rewrite_use_case_code,
                                 provider=provider,
                                 model=llm_model_id,
                                 messages=candidate_messages,
@@ -901,7 +969,7 @@ class PipelineRunner:
                                 "direction": direction,
                             },
                         )
-                    cand_words = _count_words(candidate.get("full_text", ""))
+                    cand_words = _count_rewrite_units(candidate.get("full_text", ""))
                     diff = abs(cand_words - target_words)
                     candidates.append((diff, candidate))
                     prior_word_counts.append(cand_words)
@@ -913,13 +981,15 @@ class PipelineRunner:
                     _save_json(task_dir, attempt_filename, candidate)
 
                     log.info(
-                        "rewrite attempt %d/%d: got %d words (target %d, tol ±%d, T=%.2f)",
-                        attempt, MAX_REWRITE_ATTEMPTS, cand_words, target_words,
-                        tolerance_abs, attempt_temperature,
+                        "rewrite attempt %d/%d: got %d %s (target %d, tol ±%d, T=%.2f)",
+                        attempt, MAX_REWRITE_ATTEMPTS, cand_words, unit_label,
+                        target_words, tolerance_abs, attempt_temperature,
                     )
                     round_record.setdefault("rewrite_attempts", []).append({
                         "attempt": attempt,
                         "words": cand_words,
+                        "units": cand_words,
+                        "unit_label": unit_label,
                         "diff": diff,
                         "accepted": diff <= tolerance_abs,
                         "temperature": attempt_temperature,
@@ -933,6 +1003,7 @@ class PipelineRunner:
                         chosen_attempt_idx = attempt - 1  # 列表下标
                         round_record["rewrite_attempt_used"] = attempt
                         round_record["rewrite_words_actual"] = cand_words
+                        round_record["rewrite_units_actual"] = cand_words
                         break
                 if localized_translation is None:
                     # 5 次都没收敛 → 记录最接近候选，但不进入 TTS。
@@ -943,22 +1014,22 @@ class PipelineRunner:
                     )
                     chosen_attempt_idx = ranked[0][0]
                     closest_diff, closest_candidate = candidates[chosen_attempt_idx]
-                    closest_words = _count_words(closest_candidate.get("full_text", ""))
+                    closest_words = _count_rewrite_units(closest_candidate.get("full_text", ""))
                     round_record["rewrite_attempt_closest"] = chosen_attempt_idx + 1
-                    round_record["rewrite_words_actual"] = _count_words(
-                        closest_candidate.get("full_text", "")
-                    )
+                    round_record["rewrite_words_actual"] = closest_words
+                    round_record["rewrite_units_actual"] = closest_words
                     round_record["rewrite_converged"] = False
                     round_record["rewrite_audio_skipped"] = True
                     round_record["rewrite_reject_reason"] = (
-                        f"closest candidate has {closest_words} words; "
+                        f"closest candidate has {closest_words} {unit_label}; "
                         f"target {target_words} ±{tolerance_abs}"
                     )
                     log.warning(
                         "rewrite did not converge after %d attempts, skipping TTS "
-                        "(closest %d words, target %d ±%d, diff %d)",
+                        "(closest %d %s, target %d ±%d, diff %d)",
                         MAX_REWRITE_ATTEMPTS,
                         closest_words,
+                        unit_label,
                         target_words,
                         tolerance_abs,
                         closest_diff,
@@ -968,7 +1039,7 @@ class PipelineRunner:
                         a["is_closest"] = (i == chosen_attempt_idx)
                         a["is_used_for_tts"] = False
                     round_record["message"] = (
-                        f"第 {round_index} 轮文案未进入词数置信区间，跳过语音生成"
+                        f"第 {round_index} 轮文案未进入{unit_label}数置信区间，跳过语音生成"
                     )
                     rounds.append(round_record)
                     round_products.append(None)
@@ -1009,30 +1080,34 @@ class PipelineRunner:
                             ),
                         },
                     ]
-                    _save_json(task_dir,
-                               f"localized_rewrite_messages.round_{round_index}.json",
-                               prompt_file_payload(
-                                   phase="localized_rewrite",
-                                   label=f"第 {round_index} 轮改写",
-                                   use_case_code="video_translate.rewrite",
-                                   provider=provider,
-                                   model=llm_model_id,
-                                   messages=localized_translation["_messages"],
-                                   request_payload=build_chat_request_payload(
-                                       use_case_code="video_translate.rewrite",
-                                       provider=provider,
-                                       model=llm_model_id,
-                                       messages=localized_translation["_messages"],
-                                       max_tokens=4096,
-                                   ),
-                                   input_snapshot=rewrite_input_snapshot,
-                                   meta={
-                                       "round": round_index,
-                                       "target_words": target_words,
-                                       "direction": direction,
-                                       "source_language": source_language,
-                                   },
-                               ))
+                    _save_json(
+                        task_dir,
+                        f"localized_rewrite_messages.round_{round_index}.json",
+                        prompt_file_payload(
+                            phase="localized_rewrite",
+                            label=f"第 {round_index} 轮改写",
+                            use_case_code=rewrite_use_case_code,
+                            provider=provider,
+                            model=llm_model_id,
+                            messages=localized_translation["_messages"],
+                            request_payload=build_chat_request_payload(
+                                use_case_code=rewrite_use_case_code,
+                                provider=provider,
+                                model=llm_model_id,
+                                messages=localized_translation["_messages"],
+                                max_tokens=4096,
+                            ),
+                            input_snapshot=rewrite_input_snapshot,
+                            meta={
+                                "round": round_index,
+                                "target_words": target_words,
+                                "target_units": target_words,
+                                "rewrite_unit_label": unit_label,
+                                "direction": direction,
+                                "source_language": source_language,
+                            },
+                        ),
+                    )
                     round_record["artifact_paths"]["localized_rewrite_messages"] = (
                         f"localized_rewrite_messages.round_{round_index}.json"
                     )
@@ -1041,15 +1116,20 @@ class PipelineRunner:
             # Phase 2: tts_script_regen
             _substep("切分朗读文案中")
             self._emit_duration_round(task_id, round_index, "tts_script_regen", round_record)
-            tts_script = generate_tts_script(
-                localized_translation,
-                provider=provider, user_id=self.user_id,
-                messages_builder=loc_mod.build_tts_script_messages,
-                validator=validator,
-                use_case="video_translate.tts_script",
-                project_id=task_id,
-                checkpoint_key=f"tts_script.{variant}.r{round_index}",
-            )
+            custom_tts_script_builder = getattr(loc_mod, "build_tts_script_from_localized", None)
+            if callable(custom_tts_script_builder):
+                tts_script = custom_tts_script_builder(localized_translation)
+                round_record["tts_script_source"] = "deterministic"
+            else:
+                tts_script = generate_tts_script(
+                    localized_translation,
+                    provider=provider, user_id=self.user_id,
+                    messages_builder=loc_mod.build_tts_script_messages,
+                    validator=validator,
+                    use_case="video_translate.tts_script",
+                    project_id=task_id,
+                    checkpoint_key=f"tts_script.{variant}.r{round_index}",
+                )
             tts_script_messages = tts_script.get("_messages") or []
             if tts_script_messages:
                 _save_llm_prompt_debug(
@@ -1093,13 +1173,18 @@ class PipelineRunner:
             blocks = tts_script.get("blocks") or []
             if blocks:
                 block_word_counts = [
-                    _count_words(b.get("text", "")) for b in blocks
+                    _count_rewrite_units(b.get("text", "")) for b in blocks
                 ]
                 round_record["tts_block_count"] = len(blocks)
                 round_record["tts_avg_block_words"] = round(
                     sum(block_word_counts) / max(1, len(block_word_counts)), 1
                 )
                 round_record["tts_max_block_words"] = max(block_word_counts) if block_word_counts else 0
+                round_record["tts_avg_block_units"] = round(
+                    sum(block_word_counts) / max(1, len(block_word_counts)), 1
+                )
+                round_record["tts_max_block_units"] = max(block_word_counts) if block_word_counts else 0
+                round_record["tts_block_unit_label"] = unit_label
             # TTS script LLM token 消耗
             tts_usage = (tts_script or {}).get("_usage") or {}
             if tts_usage:
@@ -1166,10 +1251,16 @@ class PipelineRunner:
             # Phase 4: measure
             tts_full_text = tts_script.get("full_text", "")
             audio_duration = tts_engine.get_audio_duration(result["full_audio_path"])
-            word_count = _count_words(tts_full_text)
+            word_count = _count_rewrite_units(tts_full_text)
             round_record["audio_duration"] = audio_duration
             round_record["word_count"] = word_count
-            round_record["tts_char_count"] = len(tts_full_text)
+            round_record["tts_unit_count"] = word_count
+            round_record["rewrite_unit_label"] = unit_label
+            round_record["tts_char_count"] = (
+                word_count if unit_label == "字" else _count_visible_chars(tts_full_text)
+            )
+            if unit_label == "字":
+                round_record["ja_char_count"] = word_count
             round_record["wps_observed"] = (word_count / audio_duration) if audio_duration > 0 else 0.0
 
             # persist rounds incrementally so UI survives page refresh
@@ -2032,7 +2123,10 @@ class PipelineRunner:
                     task_state.update(task_id, _failure_count=0)
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
-                if current.get("status") in {"failed", "error", "done"}:
+                if current.get("status") == "done":
+                    self._reconcile_completed_pipeline_steps(task_id, step_names)
+                    return
+                if current.get("status") in {"failed", "error"}:
                     return
         except OperationCancelled as exc:
             current_step = (task_state.get(task_id) or {}).get("current_step") or "?"
@@ -2267,6 +2361,10 @@ class PipelineRunner:
         task_state.set_expires_at(task_id, self.project_type)
         task_state.set_artifact(task_id, "export", build_export_artifact("", archive_url=""))
         self._set_step(task_id, "export", "done", "音乐视频直通完成，已跳过 CapCut 导出")
+        self._reconcile_completed_pipeline_steps(
+            task_id,
+            self._step_names_for_completion_reconcile(task_id, video_path, task_dir),
+        )
         self._emit(task_id, EVT_PIPELINE_DONE, {"task_id": task_id, "exports": {variant: exports}})
         _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
         return result
@@ -3724,6 +3822,10 @@ class PipelineRunner:
         task_state.set_expires_at(task_id, self.project_type)
         task_state.set_artifact(task_id, "export", build_export_artifact(manifest_text, archive_url=archive_url))
         self._set_step(task_id, "export", "done", "CapCut 项目已导出")
+        self._reconcile_completed_pipeline_steps(
+            task_id,
+            self._step_names_for_completion_reconcile(task_id, video_path, task_dir),
+        )
         self._emit(task_id, EVT_CAPCUT_READY, {"variants": [variant]})
         self._emit(task_id, EVT_PIPELINE_DONE, {
             "task_id": task_id,

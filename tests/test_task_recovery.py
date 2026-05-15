@@ -797,6 +797,42 @@ def test_recover_project_state_keeps_terminal_omni_error_state():
     assert recovered["step_messages"]["shot_decompose"] == "API key expired"
 
 
+def test_recover_project_state_heals_done_omni_with_running_completed_steps():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="omni_translate",
+        task_id="omni-done-stale-running",
+        state={
+            "type": "omni_translate",
+            "status": "done",
+            "error": "",
+            "steps": {
+                "extract": "done",
+                "translate": "running",
+                "tts": "done",
+                "subtitle": "running",
+                "compose": "done",
+                "export": "done",
+                "analysis": "running",
+            },
+            "step_messages": {
+                "translate": "JA 镜头级翻译完成（71 段）",
+                "subtitle": "ja 字幕生成完成",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "done"
+    assert recovered["status"] == "done"
+    assert recovered["steps"]["translate"] == "done"
+    assert recovered["steps"]["subtitle"] == "done"
+    assert recovered["steps"]["analysis"] == "running"
+    assert recovered["step_messages"]["translate"] == "JA 镜头级翻译完成（71 段）"
+
+
 def test_recover_project_state_treats_av_pipeline_translation_as_interrupted():
     from appcore import task_recovery
 

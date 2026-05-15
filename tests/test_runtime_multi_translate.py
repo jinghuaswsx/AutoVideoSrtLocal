@@ -152,18 +152,24 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     assert debug_ref["use_case"] == "video_translate.localize"
 
 
-def test_multi_resolves_dedicated_localization_modules_for_de_fr():
+def test_multi_resolves_dedicated_localization_modules_for_de_fr_es_it():
     runner = _make_runner()
 
     de_adapter = runner._get_language_adapter({"target_lang": "de"})
     fr_adapter = runner._get_language_adapter({"target_lang": "fr"})
     es_adapter = runner._get_language_adapter({"target_lang": "es"})
+    it_adapter = runner._get_language_adapter({"target_lang": "it"})
+    pt_adapter = runner._get_language_adapter({"target_lang": "pt"})
 
     assert de_adapter.__name__ == "pipeline.localization_de"
     assert fr_adapter.__name__ == "pipeline.localization_fr"
-    assert es_adapter.__name__ == "multi_translate.localization.es"
+    assert es_adapter.__name__ == "pipeline.localization_es"
+    assert it_adapter.__name__ == "pipeline.localization_it"
+    assert pt_adapter.__name__ == "multi_translate.localization.pt"
     assert de_adapter.build_tts_segments is not None
     assert fr_adapter.build_tts_segments is not None
+    assert es_adapter.build_tts_segments is not None
+    assert it_adapter.build_tts_segments is not None
 
 
 def test_de_fr_adapters_keep_admin_prompt_resolver(monkeypatch):
@@ -281,14 +287,16 @@ def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, 
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
     monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 2.0)
     monkeypatch.setattr("appcore.runtime.ai_billing.log_request", lambda **kwargs: None)
+    prompt_config = {
+        "provider": "openrouter",
+        "model": "gpt",
+        "content": "Prepare Spanish text for ElevenLabs TTS.",
+    }
     monkeypatch.setattr(
         "appcore.runtime_multi.resolve_prompt_config",
-        lambda slot, lang: {
-            "provider": "openrouter",
-            "model": "gpt",
-            "content": "Prepare Spanish text for ElevenLabs TTS.",
-        },
+        lambda slot, lang: prompt_config,
     )
+    monkeypatch.setattr("pipeline.localization_es.resolve_prompt_config", lambda slot, lang: prompt_config)
 
     runner._step_tts(task_id, str(tmp_path))
 
@@ -381,7 +389,7 @@ def test_multi_ja_translate_uses_character_budget_localizer(tmp_path, monkeypatc
     )
 
 
-def test_multi_ja_tts_uses_character_budget_duration_loop(tmp_path, monkeypatch):
+def test_multi_ja_tts_uses_shared_loop_with_character_budget_adapter(tmp_path, monkeypatch):
     from appcore import task_state
 
     monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
@@ -424,90 +432,56 @@ def test_multi_ja_tts_uses_character_budget_duration_loop(tmp_path, monkeypatch)
 
     runner = _make_runner()
 
-    def fail_generic_loop(**kwargs):
-        raise AssertionError("generic duration loop should not run for ja")
+    captured = {}
 
-    monkeypatch.setattr(runner, "_run_tts_duration_loop", fail_generic_loop)
+    def fake_tts_loop(**kwargs):
+        captured.update(kwargs)
+        audio_path = tmp_path / "tts_full.round_1.mp3"
+        audio_path.write_bytes(b"audio")
+        tts_script = kwargs["loc_mod"].build_tts_script_from_localized(
+            kwargs["initial_localized_translation"]
+        )
+        tts_segments = kwargs["loc_mod"].build_tts_segments(
+            tts_script,
+            kwargs["script_segments"],
+        )
+        return {
+            "localized_translation": kwargs["initial_localized_translation"],
+            "tts_script": tts_script,
+            "tts_audio_path": str(audio_path),
+            "tts_segments": [{**tts_segments[0], "tts_duration": 3.0}],
+            "rounds": [{"round": 1, "audio_duration": 3.0, "tts_char_count": 12}],
+            "final_round": 1,
+        }
+
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fake_tts_loop)
+    monkeypatch.setattr(
+        "appcore.runtime_multi._JapaneseMultiTranslateAdapter.run_tts",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("ja should use the shared duration loop")
+        ),
+    )
     monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
-    monkeypatch.setattr("appcore.runtime_multi.resolve_key", lambda *a, **kw: "fake-elevenlabs")
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *a, **kw: "fake-elevenlabs")
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
-    monkeypatch.setattr("appcore.runtime_multi._get_audio_duration", lambda path: 3.0)
+    monkeypatch.setattr("appcore.tts_engines.elevenlabs.ElevenLabsEngine.get_audio_duration", lambda self, path: 3.0)
     monkeypatch.setattr("appcore.ai_billing.log_request", lambda **kw: None)
-    monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
     monkeypatch.setattr(
         "pipeline.timeline.build_timeline_manifest",
         lambda segments, video_duration: {"segments": len(segments), "video_duration": video_duration},
     )
 
-    captured = {}
-
-    def fake_build_script(current_localized):
-        captured["localized_translation"] = current_localized
-        return {
-            "full_text": ja_text,
-            "blocks": [
-                {
-                    "index": 0,
-                    "text": ja_text,
-                    "sentence_indices": [0],
-                    "source_segment_indices": [0],
-                }
-            ],
-            "subtitle_chunks": [
-                {
-                    "text": ja_text,
-                    "block_indices": [0],
-                    "source_segment_indices": [0],
-                }
-            ],
-        }
-
-    def fake_build_segments(tts_script, script_segments):
-        captured["tts_script"] = tts_script
-        captured["script_segments"] = script_segments
-        return [
-            {
-                "index": 0,
-                "text": "Keep this bottle clean.",
-                "translated": ja_text,
-                "tts_text": ja_text,
-                "source_segment_indices": [0],
-                "start_time": 0.0,
-                "end_time": 3.0,
-            }
-        ]
-
-    def fake_generate_audio(tts_segments, **kwargs):
-        captured["tts_segments"] = tts_segments
-        captured["tts_kwargs"] = kwargs
-        audio = tmp_path / "tts_full.ja_round_1.mp3"
-        audio.write_bytes(b"audio")
-        return {
-            "full_audio_path": str(audio),
-            "segments": [{**tts_segments[0], "tts_duration": 3.0}],
-        }
-
-    monkeypatch.setattr("pipeline.ja_translate.build_ja_tts_script", fake_build_script)
-    monkeypatch.setattr("pipeline.ja_translate.build_ja_tts_segments", fake_build_segments)
-    monkeypatch.setattr("pipeline.ja_translate.count_visible_japanese_chars", lambda text: 11)
-    monkeypatch.setattr(
-        "pipeline.ja_translate.rewrite_ja_localized_translation",
-        lambda *a, **kw: (_ for _ in ()).throw(
-            AssertionError("ja rewrite should not run after converged first round")
-        ),
-    )
-    monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_generate_audio)
-
     runner._step_tts(task_id, str(tmp_path))
 
     updated = task_state.get(task_id)
-    assert captured["localized_translation"] == localized_translation
+    assert captured["target_language_label"] == "ja"
+    assert captured["tts_language_code"] == "ja"
+    assert captured["tts_model_id"] == "eleven_multilingual_v2"
+    assert captured["loc_mod"].count_tts_units(f"{ja_text} \n") == len(ja_text)
+    assert captured["loc_mod"].rewrite_unit_label == "字"
+    assert captured["loc_mod"].DEFAULT_TTS_UNITS_PER_SECOND == 7.0
     assert captured["script_segments"] == updated["script_segments"]
-    assert captured["tts_kwargs"]["voice_id"] == "ja-voice"
-    assert captured["tts_kwargs"]["language_code"] == "ja"
-    assert updated["tts_duration_rounds"][0]["ja_char_count"] == 11
-    assert updated["tts_final_reason"] == "converged"
+    assert updated["tts_duration_rounds"][0]["tts_char_count"] == 12
     assert updated["variants"]["normal"]["tts_script"]["full_text"] == ja_text
 
 

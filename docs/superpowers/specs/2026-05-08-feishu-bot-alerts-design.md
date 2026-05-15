@@ -150,3 +150,10 @@ python3 -m tools.send_feishu_test_alert
 - 编译检查：`python3 -m compileall appcore/feishu_alerts.py appcore/scheduled_tasks.py web/routes/settings.py tools/send_feishu_test_alert.py` 通过。
 - 格式检查：`git diff --check` 通过。
 - 使用测试环境配置发送真实飞书测试通知成功，飞书返回 `message_id=om_x100b50e0a13c0c98c4f135cb1d02078`。
+## 2026-05-15 Noise Gate Update
+
+The earlier "first failed run sends immediately" rule is superseded by
+`docs/superpowers/specs/2026-05-15-scheduled-task-alert-noise-gate-design.md`.
+Scheduled-task alerts now require at least 20 consecutive failed runs, or more
+than 20 batch/sample attempts with a failure rate greater than 80%. Recovery
+alerts are also gated so low-volume failures do not create recovery noise.

@@ -6,6 +6,7 @@
 3. web.upload_util.validate_video_extension — 统一的上传扩展名校验
 """
 import json
+from pathlib import Path
 
 import pytest
 
@@ -56,6 +57,51 @@ class TestGetMediaDuration:
 
         duration = get_media_duration("/some/file.mp4")
         assert duration == 0.0
+
+
+class TestExtractFrameAtTimestamp:
+    """pipeline.ffutil.extract_frame_at_timestamp 应按指定时间点抽取参考帧。"""
+
+    def test_builds_ffmpeg_command_and_returns_created_frame(self, tmp_path, monkeypatch):
+        from pipeline.ffutil import extract_frame_at_timestamp
+
+        calls = []
+
+        class FakeResult:
+            returncode = 0
+
+        def fake_run(cmd, *args, **kwargs):
+            calls.append({"cmd": cmd, "kwargs": kwargs})
+            Path(cmd[-1]).write_bytes(b"jpg")
+            return FakeResult()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        frame_path = extract_frame_at_timestamp(
+            "demo.mp4",
+            str(tmp_path),
+            timestamp="00:02.500",
+            index=3,
+            scale="1080:-1",
+        )
+
+        assert frame_path == str(tmp_path / "reference_frame_3.jpg")
+        assert calls[0]["cmd"] == [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            "00:02.500",
+            "-i",
+            "demo.mp4",
+            "-vframes",
+            "1",
+            "-vf",
+            "scale=1080:-1",
+            "-f",
+            "image2",
+            str(tmp_path / "reference_frame_3.jpg"),
+        ]
+        assert calls[0]["kwargs"]["timeout"] == 30
 
 
 # ── 2. llm_util: 统一 JSON 解析 ──

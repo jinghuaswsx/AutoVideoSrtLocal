@@ -99,6 +99,10 @@ _CREDENTIAL_SCHEMA: dict[str, list[CredentialField]] = {
         CredentialField("space_name",      "VOD_SPACE_NAME",      "VOD_SPACE_NAME",      "Space 名"),
         CredentialField("playback_domain", "VOD_PLAYBACK_DOMAIN", "VOD_PLAYBACK_DOMAIN", "播放域名"),
     ],
+    "niuma_main": [
+        CredentialField("api_key",  "NIUMA_ERASE_API_KEY",  "NIUMA_ERASE_API_KEY",  "API Key", is_secret=True),
+        CredentialField("base_url", "NIUMA_ERASE_BASE_URL", "NIUMA_ERASE_BASE_URL", "Base URL"),
+    ],
 }
 
 
@@ -108,12 +112,14 @@ _DISPLAY_META: dict[str, tuple[str, str]] = {
     "tos_wj":     ("495828376@qq.com WJ",       "object_storage"),
     "tos_backup": ("火山引擎 TOS · 灾备桶",      "object_storage"),
     "vod_main":   ("火山引擎 VOD · 视频点播",    "object_storage"),
+    "niuma_main": ("牛马去字幕 API",             "external_api"),
 }
 
 
 # 在 settings 页和后台展示时的分组顺序
 GROUP_ORDER: list[tuple[str, str]] = [
     ("object_storage", "对象存储 / 视频点播"),
+    ("external_api", "外部 API"),
 ]
 
 
