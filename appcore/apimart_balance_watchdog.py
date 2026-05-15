@@ -238,7 +238,7 @@ def evaluate_snapshot(
     local_usage: dict[str, Any],
 ) -> dict[str, Any]:
     api_key_balance = current["apimart"]["api_key"]
-    remaining_usd = _to_decimal(api_key_balance.get("remaining_usd"), field="remaining_usd")
+    account_balance = current["apimart"].get("account") or {}
     current_used = _to_decimal(api_key_balance.get("used_usd"), field="used_usd")
     previous_used = (
         _to_decimal(previous.get("api_key_used_usd"), field="previous.api_key_used_usd")
@@ -260,15 +260,24 @@ def evaluate_snapshot(
         "gap_ratio_threshold": MIN_GAP_RATIO,
     }
 
-    if remaining_usd < LOW_BALANCE_USD and not api_key_balance.get("unlimited_quota"):
+    for balance in (api_key_balance, account_balance):
+        label = str(balance.get("label") or "balance")
+        remaining_usd = _to_decimal(
+            balance.get("remaining_usd"),
+            field=f"{label}.remaining_usd",
+        )
+        if remaining_usd >= LOW_BALANCE_USD or balance.get("unlimited_quota"):
+            continue
         return {
             **base,
             "alert": True,
             "reason": "low_balance",
             "message": (
-                f"APIMART remaining balance is {remaining_usd} USD, "
+                f"APIMART {label} remaining balance is {remaining_usd} USD, "
                 f"below {LOW_BALANCE_USD} USD."
             ),
+            "low_balance_label": label,
+            "low_balance_remaining_usd": remaining_usd,
         }
 
     if previous is None:

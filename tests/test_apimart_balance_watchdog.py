@@ -97,6 +97,37 @@ def test_evaluate_snapshot_alerts_on_low_remaining_balance():
     assert "remaining balance" in result["message"]
 
 
+def test_evaluate_snapshot_alerts_on_low_account_balance_even_when_key_quota_is_high():
+    from appcore import apimart_balance_watchdog as watchdog
+
+    result = watchdog.evaluate_snapshot(
+        current=watchdog.balance_snapshot(
+            api_key_balance={
+                "label": "api_key",
+                "remaining_usd": Decimal("99.50"),
+                "used_usd": Decimal("25"),
+                "unlimited_quota": False,
+            },
+            account_balance={
+                "label": "account",
+                "remaining_usd": Decimal("9.99"),
+                "used_usd": Decimal("25"),
+                "unlimited_quota": False,
+            },
+            base_url="https://api.apimart.ai",
+            api_key_tail="keyend",
+            fetched_at=datetime(2026, 5, 15, 12, 0, 0),
+        ),
+        previous=None,
+        local_usage=watchdog.local_usage_summary(),
+    )
+
+    assert result["alert"] is True
+    assert result["reason"] == "low_balance"
+    assert result["low_balance_label"] == "account"
+    assert result["low_balance_remaining_usd"] == Decimal("9.99")
+
+
 def test_evaluate_snapshot_alerts_when_remote_usage_exceeds_local_billing():
     from appcore import apimart_balance_watchdog as watchdog
 

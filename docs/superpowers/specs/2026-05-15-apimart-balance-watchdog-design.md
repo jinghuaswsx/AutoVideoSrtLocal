@@ -42,7 +42,7 @@ Let:
 Alert when any condition is true:
 
 - balance query failed
-- remaining balance is lower than 20 USD
+- API key remaining balance or account remaining balance is lower than 20 USD
 - `gap_usd >= 1.00` and `gap_ratio >= 0.20`
 
 Small negative deltas are clamped to zero in summaries so APIMART corrections do not create false positives.
