@@ -1,0 +1,437 @@
+{% extends "layout.html" %}
+{% block title %}TOS文件管理 - AutoVideoSrt{% endblock %}
+{% block page_title %}TOS文件管理{% endblock %}
+{% block extra_style %}
+.tos-page {
+  max-width: 1440px;
+}
+.tos-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.tos-head h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  line-height: 1.3;
+}
+.tos-head p {
+  margin: 0;
+  color: var(--text-user-badge);
+  font-size: 14px;
+}
+.tos-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.tos-actions select {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 14px;
+}
+.tos-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.tos-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 16px;
+}
+.tos-card-label {
+  font-size: 12px;
+  color: var(--text-user-badge);
+  margin-bottom: 6px;
+}
+.tos-card-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+.tos-module-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  background: var(--bg-card);
+  margin-bottom: 20px;
+}
+.tos-module-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+.tos-module-table th,
+.tos-module-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-main);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+.tos-module-table th {
+  color: var(--text-user-badge);
+  background: var(--bg-body);
+  font-weight: 700;
+}
+.tos-module-table tr:last-child td {
+  border-bottom: 0;
+}
+.tos-files-title {
+  margin: 20px 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.tos-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+.tos-filters input,
+.tos-filters select {
+  height: 34px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.tos-filters input:focus,
+.tos-filters select:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.2);
+  border-color: var(--primary-color);
+}
+.tos-files-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  background: var(--bg-card);
+  margin-bottom: 16px;
+}
+.tos-files-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1000px;
+}
+.tos-files-table th,
+.tos-files-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-main);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+.tos-files-table th {
+  color: var(--text-user-badge);
+  background: var(--bg-body);
+  font-weight: 700;
+}
+.tos-files-table tr:last-child td {
+  border-bottom: 0;
+}
+.tos-status-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.tos-status-badge.synced {
+  background: oklch(94% 0.04 140);
+  color: oklch(45% 0.12 140);
+}
+.tos-status-badge.missing_target {
+  background: oklch(96% 0.04 25);
+  color: oklch(45% 0.14 25);
+}
+.tos-status-badge.missing_local {
+  background: oklch(94% 0.03 220);
+  color: oklch(45% 0.12 220);
+}
+.tos-status-badge.failed {
+  background: oklch(94% 0.04 25);
+  color: oklch(42% 0.14 25);
+}
+.tos-status-badge.unknown {
+  background: var(--bg-user-badge);
+  color: var(--text-user-badge);
+}
+.tos-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tos-pagination-info {
+  font-size: 13px;
+  color: var(--text-user-badge);
+}
+.tos-pagination-buttons {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 960px) {
+  .tos-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tos-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tos-filters button { grid-column: 1 / -1; }
+}
+{% endblock %}
+{% block content %}
+<section class="tos-page" data-tos-file-management>
+  <div class="tos-head">
+    <div>
+      <h1>TOS文件管理</h1>
+      <p>仅超级管理员可查看，用于管理受保护业务文件的 TOS 备份状态。</p>
+    </div>
+    <form class="tos-actions" method="get">
+      <select name="channel" onchange="this.form.submit()" aria-label="选择 TOS 通道">
+        {% for code, label in channel_options %}
+        <option value="{{ code }}" {% if channel == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if summary %}
+  <div class="tos-cards">
+    <div class="tos-card">
+      <div class="tos-card-label">受保护文件数</div>
+      <div class="tos-card-value">{{ summary.total_files }}</div>
+    </div>
+    <div class="tos-card">
+      <div class="tos-card-label">本地总大小</div>
+      <div class="tos-card-value">{{ (summary.total_bytes / 1024 / 1024) | round(2) }} MB</div>
+    </div>
+    <div class="tos-card">
+      <div class="tos-card-label">目标已存在</div>
+      <div class="tos-card-value">{{ summary.total_files - summary.target_missing_count - summary.local_missing_count - summary.failed_count }}</div>
+    </div>
+    <div class="tos-card">
+      <div class="tos-card-label">目标缺失</div>
+      <div class="tos-card-value" style="color: var(--text-btn-danger);">{{ summary.target_missing_count }}</div>
+    </div>
+    <div class="tos-card">
+      <div class="tos-card-label">本地缺失</div>
+      <div class="tos-card-value" style="color: var(--text-user-badge);">{{ summary.local_missing_count }}</div>
+    </div>
+    <div class="tos-card">
+      <div class="tos-card-label">失败</div>
+      <div class="tos-card-value" style="color: var(--text-btn-danger);">{{ summary.failed_count }}</div>
+    </div>
+  </div>
+
+  {% if summary.modules %}
+  <div class="tos-module-table-wrap">
+    <table class="tos-module-table">
+      <thead>
+        <tr>
+          <th>模块</th>
+          <th>文件数</th>
+          <th>总大小</th>
+          <th>目标已存在</th>
+          <th>目标缺失</th>
+          <th>失败</th>
+          <th>同步率</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mod in summary.modules %}
+        <tr>
+          <td><strong>{{ mod.module_name }}</strong></td>
+          <td>{{ mod.file_count }}</td>
+          <td>{{ (mod.total_bytes / 1024 / 1024) | round(2) }} MB</td>
+          <td>{{ mod.target_existing_count }}</td>
+          <td>{{ mod.missing_count }}</td>
+          <td>{{ mod.failed_count }}</td>
+          <td>{% if mod.file_count > 0 %}{{ ((mod.target_existing_count / mod.file_count) * 100) | round(1) }}%{% else %}100%{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+    <form method="post" action="{{ url_for('tos_file_management.scan') }}">
+      <input type="hidden" name="channel" value="{{ channel }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-ghost">🔍 扫描清单</button>
+    </form>
+    <form method="post" action="{{ url_for('tos_file_management.sync') }}">
+      <input type="hidden" name="channel" value="{{ channel }}">
+      <input type="hidden" name="dry_run" value="1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-ghost">📝 干运行同步</button>
+    </form>
+    <form method="post" action="{{ url_for('tos_file_management.sync') }}">
+      <input type="hidden" name="channel" value="{{ channel }}">
+      <input type="hidden" name="dry_run" value="0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-primary">🚀 实际同步</button>
+    </form>
+  </div>
+
+  <div class="tos-files-title">文件列表</div>
+  <form class="tos-filters" data-tos-filters>
+    <select name="module" aria-label="模块筛选">
+      <option value="">全部模块</option>
+    </select>
+    <select name="status" aria-label="状态筛选">
+      <option value="">全部状态</option>
+      <option value="synced">已同步</option>
+      <option value="missing_target">目标缺失</option>
+      <option value="missing_local">本地缺失</option>
+      <option value="failed">失败</option>
+      <option value="unknown">未知</option>
+    </select>
+    <input type="search" name="q" placeholder="本地路径关键词" aria-label="搜索">
+    <button type="submit" class="btn btn-primary btn-sm">查询</button>
+  </form>
+
+  <div class="tos-files-table-wrap">
+    <table class="tos-files-table" data-tos-files-table>
+      <thead>
+        <tr>
+          <th>模块</th>
+          <th>文件类型</th>
+          <th>本地路径</th>
+          <th>本地大小</th>
+          <th>目标对象键</th>
+          <th>状态</th>
+          <th>最后错误</th>
+          <th>最后检查</th>
+        </tr>
+      </thead>
+      <tbody data-tos-files-body>
+        <tr><td colspan="8" style="color: var(--text-user-badge);">请先点击"扫描清单"加载数据</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tos-pagination" data-tos-pagination>
+    <div class="tos-pagination-info" data-tos-pagination-info></div>
+    <div class="tos-pagination-buttons">
+      <button type="button" class="btn btn-ghost btn-sm" data-tos-prev-page disabled>上一页</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-tos-next-page disabled>下一页</button>
+    </div>
+  </div>
+</section>
+<script>
+(function() {
+  var page = document.querySelector('[data-tos-file-management]');
+  if (!page) return;
+
+  var currentPage = 1;
+  var currentChannel = '{{ channel }}';
+  var currentModule = '';
+  var currentStatus = '';
+  var currentQ = '';
+
+  function loadFiles(pageNum) {
+    currentPage = pageNum;
+    var params = new URLSearchParams({
+      channel: currentChannel,
+      page: currentPage,
+    });
+    if (currentModule) params.set('module', currentModule);
+    if (currentStatus) params.set('status', currentStatus);
+    if (currentQ) params.set('q', currentQ);
+
+    fetch('{{ url_for('tos_file_management.api_files') }}?' + params.toString())
+      .then(function(resp) { return resp.json(); })
+      .then(function(data) { renderFiles(data); })
+      .catch(function(err) { console.error('Load failed:', err); });
+  }
+
+  function renderFiles(data) {
+    var tbody = document.querySelector('[data-tos-files-body]');
+    var info = document.querySelector('[data-tos-pagination-info]');
+    var prevBtn = document.querySelector('[data-tos-prev-page]');
+    var nextBtn = document.querySelector('[data-tos-next-page]');
+
+    if (!data.items || data.items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="color: var(--text-user-badge);">暂无数据</td></tr>';
+      info.textContent = '共 0 条';
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
+      return;
+    }
+
+    var html = '';
+    data.items.forEach(function(item) {
+      var statusClass = item.sync_status || 'unknown';
+      var statusLabel = {
+        'synced': '已同步',
+        'missing_target': '目标缺失',
+        'missing_local': '本地缺失',
+        'failed': '失败',
+        'unknown': '未知',
+      }[statusClass] || statusClass;
+      var localSize = item.local_size_bytes ? (item.local_size_bytes / 1024 / 1024).toFixed(2) + ' MB' : '';
+      html += '<tr>' +
+        '<td><strong>' + (item.module_name || item.module_code || '') + '</strong></td>' +
+        '<td>' + (item.file_type || '') + '</td>' +
+        '<td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + (item.local_path || '') + '">' + (item.local_path || '') + '</td>' +
+        '<td>' + localSize + '</td>' +
+        '<td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + (item.target_object_key || '') + '">' + (item.target_object_key || '') + '</td>' +
+        '<td><span class="tos-status-badge ' + statusClass + '">' + statusLabel + '</span></td>' +
+        '<td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;" title="' + (item.last_error || '') + '">' + (item.last_error || '') + '</td>' +
+        '<td>' + (item.last_seen_at || '') + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+
+    var total = data.total || 0;
+    var pageSize = data.page_size || 50;
+    var start = (currentPage - 1) * pageSize + 1;
+    var end = Math.min(currentPage * pageSize, total);
+    info.textContent = '共 ' + total + ' 条，显示 ' + start + '-' + end;
+
+    prevBtn.disabled = currentPage <= 1;
+    nextBtn.disabled = end >= total;
+  }
+
+  var filtersForm = document.querySelector('[data-tos-filters]');
+  if (filtersForm) {
+    filtersForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      currentModule = filtersForm.querySelector('[name="module"]').value;
+      currentStatus = filtersForm.querySelector('[name="status"]').value;
+      currentQ = filtersForm.querySelector('[name="q"]').value;
+      loadFiles(1);
+    });
+  }
+
+  var prevBtn = document.querySelector('[data-tos-prev-page]');
+  var nextBtn = document.querySelector('[data-tos-next-page]');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', function() { loadFiles(currentPage - 1); });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener('click', function() { loadFiles(currentPage + 1); });
+  }
+
+  // Initial load if we have a scan
+  {% if summary %}
+  loadFiles(1);
+  {% endif %}
+})();
+</script>
+{% endblock %}
