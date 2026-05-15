@@ -149,6 +149,10 @@ def test_multi_av_sync_audit_renderer_is_table_only():
     assert "正常翻译/TTS" in scripts
     assert "视频画面" in scripts
     assert "问题诊断" in scripts
+    assert "function renderAvSyncAsrField" in scripts
+    assert "asr_text_zh" in scripts
+    assert "中文对照" in scripts
+    assert "isAvSyncChineseSource" in scripts
     assert "同步评分" in scripts
     assert "整改建议" in scripts
     assert "av-sync-timeline-grid table-only" in scripts

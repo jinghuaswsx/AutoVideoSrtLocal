@@ -1723,7 +1723,7 @@
           <div class="preview-time">${escapeHtml(title)}</div>
         </div>
         <div class="av-sync-timeline-grid table-only">
-          ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
+          ${renderAvSyncAsrField(row)}
           ${renderAvSyncTimelineField("正常翻译/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
           ${renderAvSyncTimelineField("视频画面", row.visual_observation || "画面不清晰/无法确认")}
           ${renderAvSyncTimelineField("问题诊断", avSyncTableDiagnosis(row), `diagnosis-field ${isIssue ? "is-issue" : ""}`)}
@@ -1753,12 +1753,54 @@
       </div>
       ${timingBits.length ? `<div class="preview-note">${escapeHtml(timingBits.join(" · "))}</div>` : ""}
       <div class="av-sync-timeline-grid">
-        ${renderAvSyncTimelineField("ASR 内容", row.asr_text || row.source_text || "未记录 ASR 文本")}
+        ${renderAvSyncAsrField(row)}
         ${renderAvSyncTimelineField("目标/TTS", row.target_text || row.sentence_text || "未记录目标文案")}
         ${renderAvSyncTimelineField("画面内容", row.visual_observation || "未记录画面描述，请结合成片人工复核。")}
         ${renderAvSyncTimelineField("诊断意见", diagnosis)}
       </div>
     </div>`;
+  }
+
+  function renderAvSyncAsrField(row) {
+    const asrText = row?.asr_text || row?.source_text || "未记录 ASR 文本";
+    const asrTextZh = avSyncAsrChineseReference(row, asrText);
+    const value = asrTextZh ? `${asrText}\n\n中文对照：${asrTextZh}` : asrText;
+    return renderAvSyncTimelineField("ASR 内容", value);
+  }
+
+  function avSyncAsrChineseReference(row, asrText = "") {
+    if (isAvSyncChineseSource(row, asrText)) return "";
+    const value = String(
+      row?.asr_text_zh
+      || row?.source_text_zh
+      || row?.source_translation_zh
+      || row?.asr_chinese
+      || ""
+    ).trim();
+    if (!value) return "";
+    return normalizeAvSyncText(value) === normalizeAvSyncText(asrText) ? "" : value;
+  }
+
+  function isAvSyncChineseSource(row, asrText = "") {
+    const lang = String(
+      row?.source_language
+      || currentTask?.source_language
+      || TASK_WORKBENCH_CONFIG.defaultSourceLanguage
+      || ""
+    ).trim().toLowerCase();
+    if (lang === "zh" || lang.startsWith("zh-") || lang.startsWith("zh_")) return true;
+    return isMostlyChineseText(asrText || row?.asr_text || row?.source_text || "");
+  }
+
+  function isMostlyChineseText(text) {
+    const content = String(text || "");
+    const cjkCount = (content.match(/[\u3400-\u9fff]/g) || []).length;
+    const latinCount = (content.match(/[A-Za-z]/g) || []).length;
+    return cjkCount > 0 && cjkCount / Math.max(cjkCount + latinCount, 1) > 0.3;
+  }
+
+  function normalizeAvSyncText(text) {
+    return String(text || "").replace(/\s+/g, "").toLowerCase();
   }
 
   function renderAvSyncTimelineField(label, value, extraClass = "") {
