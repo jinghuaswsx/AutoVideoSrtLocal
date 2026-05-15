@@ -727,7 +727,7 @@ def test_runtime_submit_uses_niuma_credentials_and_video_name(monkeypatch, tmp_p
     runner._submit("sr-niuma-runtime")
 
     assert captured["credential_code"] == "niuma_main"
-    assert captured["video_name"] == "sr-niuma-runtime_11_22_333_444"
+    assert captured["video_name"] == "sr-niuma-runtime_0_0_11_22_333_444"
     assert "erase_text_type" not in captured or captured["erase_text_type"] == "subtitle"
 
 

@@ -21,7 +21,7 @@ So this integration must not add a second provider/runtime directory for the sam
 - Reuse `appcore/subtitle_removal_provider.py`, adding a `credential_code` or equivalent selector so:
   - existing calls keep using `llm_provider_configs.subtitle_removal`
   - Niuma calls use `infra_credentials.niuma_main` synced into `config.NIUMA_ERASE_*`
-- Reuse `appcore/subtitle_removal_runtime.py`, adding backend-aware submit/poll calls and the Niuma `videoName={task_id}_{x1}_{y1}_{x2}_{y2}` format.
+- Reuse `appcore/subtitle_removal_runtime.py`, adding backend-aware submit/poll calls and a Niuma-compatible `videoName` format.
 - Keep VOD and local VSR files unchanged unless dispatch/labels require a small compatibility tweak.
 - Add `infra_credentials.niuma_main` and a migration seed row without committing the API key.
 
@@ -31,7 +31,15 @@ So this integration must not add a second provider/runtime directory for the sam
 2. Upload complete treats Niuma like Volc for storage: local upload through server, then push to TOS and store `source_tos_key`.
 3. Submit stores the normalized removal area and queues the task.
 4. Runner starts the existing `SubtitleRemovalRuntime`.
-5. Runtime sees `subtitle_backend=niuma`, uses Niuma credentials, builds `videoName` without the `sr_` prefix, polls the existing progress API, downloads `resultUrl`, and marks the task done.
+5. Runtime sees `subtitle_backend=niuma`, uses Niuma credentials, builds a Niuma-compatible `videoName`, polls the existing progress API, downloads `resultUrl`, and marks the task done.
+
+## Niuma videoName Compatibility
+
+The handoff note said `videoName={task_id}_{x1}_{y1}_{x2}_{y2}`. Live verification against Niuma showed that five-segment names are accepted at submit time but fail in progress with `G:list index out of range`. The API document examples use seven segments, such as `api1_timestamp_rand_x1_y1_x2_y2`, and that shape reaches `doing`.
+
+So the runtime keeps the local task id as the first prefix segment and pads two stable prefix segments before the coordinates:
+
+`{task_id_without_underscores}_0_0_{x1}_{y1}_{x2}_{y2}`
 
 ## Configuration
 

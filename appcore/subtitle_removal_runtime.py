@@ -87,6 +87,16 @@ def _provider_credential_code(task: dict | None) -> str:
     return NIUMA_CREDENTIAL_CODE if backend == "niuma" else "subtitle_removal"
 
 
+def _niuma_video_name(task_id: str, selection: dict[str, int]) -> str:
+    # Niuma's live parser expects three prefix segments before x1_y1_x2_y2,
+    # matching the docs example: api1_timestamp_rand_x1_y1_x2_y2.
+    prefix = str(task_id or "task").strip().replace("_", "-") or "task"
+    return (
+        f"{prefix}_0_0_"
+        f"{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
+    )
+
+
 class SubtitleRemovalRuntime:
     def __init__(self, bus: EventBus, user_id: int | None = None):
         self._bus = bus
@@ -193,7 +203,7 @@ class SubtitleRemovalRuntime:
         selection = _box_bounds(task.get("selection_box") or task.get("position_payload"), media_info)
         credential_code = _provider_credential_code(task)
         if credential_code == NIUMA_CREDENTIAL_CODE:
-            video_name = f"{task_id}_{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
+            video_name = _niuma_video_name(task_id, selection)
         else:
             video_name = f"sr_{task_id}_{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
         source_url = subtitle_removal_source_storage.generate_public_source_url(

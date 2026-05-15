@@ -22,7 +22,7 @@
 
 - [ ] Add infra tests for `niuma_main` schema and runtime sync into `config.NIUMA_ERASE_*`.
 - [ ] Add provider tests proving `credential_code="niuma_main"` reads Niuma config and preserves the existing default behavior.
-- [ ] Add runtime test proving Niuma uses `videoName={task_id}_{x1}_{y1}_{x2}_{y2}` and passes `credential_code="niuma_main"` to existing submit/query functions.
+- [ ] Add runtime test proving Niuma uses the live-compatible `videoName={task_id}_0_0_{x1}_{y1}_{x2}_{y2}` shape and passes `credential_code="niuma_main"` to existing submit/query functions.
 - [ ] Add route tests for accepting `subtitle_backend=niuma`, treating upload as TOS-backed, list filtering, labels, and hiding erase type from non-Volc backends.
 - [ ] Add UI tests for visible "牛马" upload radio and list filter pill.
 - [ ] Run targeted tests and confirm the new assertions fail before implementation.
